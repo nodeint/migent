@@ -20,7 +20,7 @@
     "@migent/adapters": "workspace:*",
     "@migent/kernel": "workspace:*",
     "@migent/registry": "workspace:*",
-    "citty": "^0.2.2",
+    "commander": "^14.0.2",
     "picocolors": "^1.1.1"
   },
   "devDependencies": {
