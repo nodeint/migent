@@ -1,0 +1,29 @@
+{
+  "name": "@migent/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "migent": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -b && rm -rf dist/templates && cp -R src/templates dist/templates"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.8.1",
+    "@migent/adapters": "workspace:*",
+    "@migent/kernel": "workspace:*",
+    "@migent/registry": "workspace:*",
+    "citty": "^0.2.2",
+    "picocolors": "^1.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4"
+  }
+}

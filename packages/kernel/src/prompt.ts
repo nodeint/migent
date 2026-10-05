@@ -1,0 +1,168 @@
+import { realpathSync, statSync } from "node:fs";
+import path from "node:path";
+import type { ExecutionSnapshot } from "./outputs.js";
+import { isRecord } from "./record.js";
+import { latestCompleteByStage } from "./selection.js";
+import type { WorkflowDocument } from "./workflow.js";
+
+export function buildStagePrompt(input: {
+  workflow: WorkflowDocument;
+  stageId: string;
+  task: string;
+  snapshots: readonly ExecutionSnapshot[];
+  workspace: string;
+  priorSessionId?: string | null;
+  priorOutputs?: Readonly<Record<string, unknown>> | null;
+}): string {
+  const stage = input.workflow.stages[input.stageId];
+  if (stage === undefined) throw new Error(`Stage is not declared: ${input.stageId}.`);
+  const sections = [`Task: ${input.task}`, `Stage: ${stage.id} (role: ${stage.role})`];
+  if (stage.instructions.length > 0) {
+    const lines = ["Instructions:", ...stage.instructions.map((item) => `- ${item}`)];
+    sections.push(lines.join("\n"));
+  }
+  if (input.workflow.constraints.length > 0) {
+    const lines = ["Constraints:", ...input.workflow.constraints.map((item) => `- ${item}`)];
+    sections.push(lines.join("\n"));
+  }
+  const upstream = upstreamArtifactLines(input.workflow, stage.dependsOn, input.snapshots);
+  if (upstream.length > 0) {
+    sections.push(`Upstream artifacts on this session:\n${upstream.join("\n")}`);
+  }
+  const routed = routedResultLines(input.workflow, input.stageId, input.snapshots);
+  if (routed.length > 0) {
+    sections.push(`Decision that routed to this stage:\n${routed.join("\n")}`);
+  }
+  const prior = priorResultLines(input.workspace, input.priorSessionId, input.priorOutputs);
+  if (prior.length > 0) sections.push(`Required prior workflow result:\n${prior.join("\n")}`);
+  if (stage.artifact) {
+    sections.push(
+      `Write the file artifact as \`${stage.artifact}\` in the execution artifacts directory.`,
+    );
+  }
+  return sections.join("\n\n");
+}
+
+function upstreamArtifactLines(
+  workflow: WorkflowDocument,
+  dependsOn: readonly string[],
+  snapshots: readonly ExecutionSnapshot[],
+): string[] {
+  const complete = latestCompleteByStage(snapshots);
+  const lines: string[] = [];
+  for (const depId of dependsOn) {
+    const dep = workflow.stages[depId];
+    if (dep === undefined || !dep.artifact) continue;
+    const snapshot = complete[depId];
+    if (snapshot === undefined) continue;
+    const artifactPath = resolvePath(path.join(snapshot.artifactDirectory, dep.artifact));
+    lines.push(`- ${depId}: ${artifactPath}`);
+  }
+  return lines;
+}
+
+function routedResultLines(
+  workflow: WorkflowDocument,
+  stageId: string,
+  snapshots: readonly ExecutionSnapshot[],
+): string[] {
+  const complete = latestCompleteByStage(snapshots);
+  const previous = complete[stageId];
+  const previousOrder = previous ? previous.executionOrder : 0;
+  const routed = snapshots.filter((snapshot) => {
+    if (snapshot.status !== "completed" || snapshot.outcomeStatus !== "complete") return false;
+    if (snapshot.executionOrder <= previousOrder) return false;
+    const source = workflow.stages[snapshot.stageId];
+    if (source === undefined) return false;
+    return source.routes[(snapshot.outcomeDecision ?? "").toLowerCase()] === stageId;
+  });
+  if (routed.length === 0) return [];
+  let decision = routed[0]!;
+  for (const snapshot of routed.slice(1)) {
+    if (snapshot.executionOrder > decision.executionOrder) decision = snapshot;
+  }
+  const response = resolvePath(path.join(path.dirname(decision.artifactDirectory), "response.md"));
+  if (!isFile(response)) throw new Error(`Routed stage response is missing: ${response}`);
+  const lines = [
+    `- ${decision.stageId} (${decision.outcomeDecision}): ${response}`,
+    "Read this response and use its decision and feedback when working on this stage.",
+  ];
+  const stage = workflow.stages[stageId]!;
+  if (previous && stage.artifact) {
+    const artifact = resolvePath(path.join(previous.artifactDirectory, stage.artifact));
+    if (isFile(artifact)) lines.push(`- Previous ${stageId} artifact: ${artifact}`);
+  }
+  return lines;
+}
+
+function priorResultLines(
+  workspace: string,
+  priorSessionId: string | null | undefined,
+  priorOutputs: Readonly<Record<string, unknown>> | null | undefined,
+): string[] {
+  if (!priorSessionId) return [];
+  const lines = [`- session: ${priorSessionId}`];
+  const paths = priorOutputPaths(workspace, priorSessionId, priorOutputs);
+  if (paths.length > 0) lines.push(`- outputs: ${paths.join(", ")}`);
+  return lines;
+}
+
+function priorOutputPaths(
+  workspace: string,
+  priorSessionId: string,
+  priorOutputs: Readonly<Record<string, unknown>> | null | undefined,
+): string[] {
+  if (priorOutputs === null || priorOutputs === undefined) return [];
+  if (Object.keys(priorOutputs).length === 0) return [];
+  const paths: string[] = [];
+  for (const entry of Object.values(priorOutputs)) {
+    const outputPath = absoluteOutputPath(workspace, priorSessionId, entry);
+    if (outputPath !== null) paths.push(outputPath);
+  }
+  return paths;
+}
+
+function absoluteOutputPath(
+  workspace: string,
+  priorSessionId: string,
+  entry: unknown,
+): string | null {
+  if (!isRecord(entry)) return null;
+  const raw = entry.path;
+  if (typeof raw !== "string" || raw.trim() === "") return null;
+  const trimmed = raw.trim();
+  if (path.isAbsolute(trimmed)) return path.normalize(trimmed);
+  return resolvePath(
+    path.join(workspace, ".migent", "sessions", priorSessionId, trimmed),
+  );
+}
+
+function resolvePath(target: string): string {
+  const absolute = path.resolve(target);
+  let cursor = absolute;
+  const suffix: string[] = [];
+  for (;;) {
+    try {
+      const real = realpathSync(cursor);
+      return suffix.length === 0 ? real : path.join(real, ...suffix);
+    } catch (error) {
+      const code =
+        typeof error === "object" && error !== null && "code" in error
+          ? (error as { code?: unknown }).code
+          : undefined;
+      if (code !== "ENOENT" && code !== "ENOTDIR") throw error;
+      const parent = path.dirname(cursor);
+      if (parent === cursor) return absolute;
+      suffix.unshift(path.basename(cursor));
+      cursor = parent;
+    }
+  }
+}
+
+function isFile(filePath: string): boolean {
+  try {
+    return statSync(filePath).isFile();
+  } catch {
+    return false;
+  }
+}

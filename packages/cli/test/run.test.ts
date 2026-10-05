@@ -1,0 +1,837 @@
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { AgentToolRunner, ConfigurationError, DEFAULT_MAX_DISPATCHES, listSessionRows } from "@migent/kernel";
+import { expect, test } from "vitest";
+import { executeWorkflow } from "../src/commands/execute.ts";
+import { listSessions } from "../src/commands/sessions.ts";
+import { watchSession } from "../src/commands/watch.ts";
+import { cliHooks } from "../src/hooks.ts";
+import { main } from "../src/index.ts";
+import { ScriptedAdapter, capture, removeWorkspace, repoWorkflowText, writeFakeWorkflowWorkspace } from "./support.ts";
+
+type Row = Record<string, unknown>;
+
+function writeWatchSession(
+  workspace: string,
+  args: { events: Record<string, unknown>[]; execution: Record<string, unknown>; sessionStatus?: Record<string, unknown> },
+): void {
+  const executionId = "0001-implement--attempt-01";
+  const sessionDirectory = path.join(workspace, ".migent", "sessions", "run-1");
+  const executionDirectory = path.join(sessionDirectory, "executions", executionId);
+  mkdirSync(executionDirectory, { recursive: true });
+  writeFileSync(
+    path.join(sessionDirectory, "events.jsonl"),
+    args.events.map((event) => `${JSON.stringify(event)}\n`).join(""),
+    "utf8",
+  );
+  const payload = { execution_id: executionId, stage_id: "implement", status: "running", ...args.execution };
+  writeFileSync(path.join(executionDirectory, "execution.json"), JSON.stringify(payload), "utf8");
+  const status: Record<string, unknown> = {
+    session_id: "run-1",
+    status: "active",
+    latest_execution_id: executionId,
+    latest_execution_status: payload.status,
+    updated_at: "2026-09-19T10:20:30Z",
+    ...args.sessionStatus,
+  };
+  writeFileSync(path.join(sessionDirectory, "status.json"), JSON.stringify(status), "utf8");
+}
+
+async function runExecute(workspace: string, argv: string[], adapter: ScriptedAdapter): Promise<[number, Row[]]> {
+  cliHooks.runner = new AgentToolRunner({ fake: adapter }, 10);
+  const captured = await capture(() => main(argv, workspace));
+  const payload = JSON.parse(captured.stdout) as Row & { stages: Row[] };
+  const summary = {
+    session_id: payload.session_id,
+    session_status: payload.session_status,
+    stop_reason: payload.stop_reason,
+    outputs: payload.outputs,
+  };
+  return [captured.value as number, [...payload.stages, summary]];
+}
+
+function executions(workspace: string, sessionId: string): string[] {
+  return readdirSync(path.join(workspace, ".migent", "sessions", sessionId, "executions"));
+}
+
+test("watch once prints a snapshot without replaying events", async () => {
+  const workspace = mkdtempSync(path.join(tmpdir(), "migent-cli-"));
+  try {
+    writeWatchSession(workspace, {
+      events: [
+        {
+          event: "provider.heartbeat",
+          stage_id: "implement",
+          timestamp: "2026-09-19T10:20:30Z",
+          summary: "running for 30s",
+        },
+      ],
+      execution: { status: "running" },
+    });
+    const captured = await capture(() => watchSession(workspace, "run-1", { once: true }));
+    expect(captured.value).toBe(0);
+    expect(captured.stdout).toContain("run-1");
+    expect(captured.stdout).toContain("active");
+    expect(captured.stdout).toContain("events_cursor");
+    expect(captured.stdout).not.toContain("heartbeat");
+    expect(captured.stdout).not.toContain("running for 30s");
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("until terminal reads execution json not session status", async () => {
+  const workspace = mkdtempSync(path.join(tmpdir(), "migent-cli-"));
+  try {
+    writeWatchSession(workspace, {
+      events: [
+        {
+          event: "execution.failed",
+          execution_id: "0001-implement--attempt-01",
+          stage_id: "implement",
+          timestamp: "2026-09-19T10:20:30Z",
+        },
+      ],
+      execution: { status: "failed", error: "missing status header" },
+      sessionStatus: { status: "active" },
+    });
+    expect(
+      await watchSession(workspace, "run-1", {
+        executionId: "0001-implement--attempt-01",
+        untilTerminal: true,
+      }),
+    ).toBe(1);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("lists sorted rows and skips invalid status json", async () => {
+  const workspace = mkdtempSync(path.join(tmpdir(), "migent-cli-"));
+  try {
+    const runs = path.join(workspace, ".migent", "sessions");
+    for (const [name, payload] of [
+      [
+        "older",
+        {
+          updated_at: "2026-09-19T00:00:00+00:00",
+          workflow_id: "plan",
+          status: "completed",
+          latest_execution_id: "0001",
+          latest_decision: "approved",
+          outputs: { plan: {} },
+          task: "old task",
+        },
+      ],
+      [
+        "newer",
+        {
+          updated_at: "2026-09-20T00:00:00+00:00",
+          workflow_id: "plan-implement",
+          status: "active",
+          task: "new task",
+        },
+      ],
+    ] as const) {
+      const directory = path.join(runs, name);
+      mkdirSync(directory, { recursive: true });
+      writeFileSync(path.join(directory, "status.json"), JSON.stringify(payload), "utf8");
+    }
+    const broken = path.join(runs, "broken");
+    mkdirSync(broken);
+    writeFileSync(path.join(broken, "status.json"), "{", "utf8");
+    expect(listSessionRows(workspace).map((row) => row[1])).toEqual(["newer", "older"]);
+    const text = await capture(() => listSessions(workspace));
+    expect(text.value).toBe(0);
+    expect(text.stdout.indexOf("newer")).toBeLessThan(text.stdout.indexOf("older"));
+    expect(text.stdout).toContain("plan-implement");
+    expect(text.stdout).toContain("not started");
+    expect(text.stdout).toContain("new task");
+    expect(text.stdout).toContain("plan");
+    expect(text.stdout).toContain("0001");
+    expect(text.stdout).toContain("approved");
+    expect(text.stdout).toContain("old task");
+    expect(text.stdout).not.toContain("broken");
+    const jsonOut = await capture(() => listSessions(workspace, { asJson: true }));
+    expect(jsonOut.value).toBe(0);
+    const rows = JSON.parse(jsonOut.stdout) as Array<Record<string, string>>;
+    expect(rows.map((row) => row.session)).toEqual(["newer", "older"]);
+    expect(rows[1]?.decision).toBe("approved");
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("execute completes plan review and publishes plan", async () => {
+  const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
+  try {
+    const adapter = new ScriptedAdapter(
+      ["status: complete\n\nplanned", "status: complete\ndecision: approved\n\nok"],
+      ["# Plan\n", null],
+    );
+    const [code, objects] = await runExecute(workspace, ["start", "plan", "--task", "Write a plan"], adapter);
+    expect(code).toBe(0);
+    expect(objects.at(-1)?.session_status).toBe("completed");
+    expect(objects.at(-1)?.stop_reason).toBe("completed");
+    expect(objects.at(-1)?.outputs as object).toHaveProperty("plan");
+    expect(objects[0]?.outcome_status).toBe("complete");
+    expect(objects[1]?.outcome_decision).toBe("approved");
+    const published = path.join(
+      workspace,
+      ".migent",
+      "sessions",
+      String(objects.at(-1)?.session_id),
+      "outputs",
+      "plan",
+    );
+    expect(readFileSync(published, "utf8").trim().length).toBeGreaterThan(0);
+  } finally {
+    removeWorkspace(workspace);
+  }
+});
+
+test("execute reruns plan then review after revise", async () => {
+  const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
+  try {
+    const adapter = new ScriptedAdapter(
+      [
+        "status: complete\n\nplanned v1",
+        "status: complete\ndecision: revise\n\nneeds work",
+        "status: complete\n\nplanned v2",
+        "status: complete\ndecision: approved\n\nok",
+      ],
+      ["# Plan v1\n", null, "# Plan v2\n", null],
+    );
+    const [code, objects] = await runExecute(workspace, ["start", "plan", "--task", "Write a plan"], adapter);
+    expect(code).toBe(0);
+    expect(objects.slice(0, -1).map((item) => item.outcome_decision)).toEqual(["", "revise", "", "approved"]);
+    expect(objects.at(-1)?.stop_reason).toBe("completed");
+  } finally {
+    removeWorkspace(workspace);
+  }
+});
+
+test("execute requires prior session then completes plan implement", async () => {
+  const requiring = `requires:\n  workflow: plan\n  decision: approved\n${repoWorkflowText("plan-implement")}`;
+  const workspace = writeFakeWorkflowWorkspace({
+    plan: repoWorkflowText("plan"),
+    "plan-implement": requiring,
+  });
+  try {
+    for (const argv of [
+      ["start", "plan-implement", "--task", "Do work"],
+      ["stage", "--workflow", "plan-implement", "--task", "Do work"],
+    ]) {
+      const captured = await capture(() => main(argv, workspace));
+      expect(captured.value).toBe(2);
+      expect(captured.stderr).toContain("pass --prior");
+    }
+    expect(readdirSync(path.join(workspace, ".migent")).includes("sessions")).toBe(false);
+    const [priorCode, priorObjects] = await runExecute(
+      workspace,
+      ["start", "plan", "--task", "Write a plan"],
+      new ScriptedAdapter(
+        ["status: complete\n\nplanned", "status: complete\ndecision: approved\n\nok"],
+        ["# Plan\n", null],
+      ),
+    );
+    expect(priorCode).toBe(0);
+    const priorId = String(priorObjects.at(-1)?.session_id);
+    const adapter = new ScriptedAdapter(
+      [
+        "status: complete\n\nimplemented",
+        "status: complete\ndecision: approved\n\nok",
+        "status: complete\n\ntests written",
+        "status: complete\ndecision: approved\n\nok",
+      ],
+      ["# impl\n", null, "# tests\n", null],
+    );
+    const [code, objects] = await runExecute(
+      workspace,
+      ["start", "plan-implement", "--task", "Do work", "--prior", priorId],
+      adapter,
+    );
+    expect(code).toBe(0);
+    expect(new Set(Object.keys(objects.at(-1)?.outputs as object))).toEqual(
+      new Set(["implementation-result", "test-result"]),
+    );
+    const resumed = JSON.parse(
+      readFileSync(
+        path.join(
+          workspace,
+          ".migent",
+          "sessions",
+          String(objects.at(-1)?.session_id),
+          "executions",
+          String(objects[2]?.execution_id),
+          "execution.json",
+        ),
+        "utf8",
+      ),
+    ) as { resumes_execution_id?: string };
+    expect(resumed.resumes_execution_id).toBe(objects[0]?.execution_id);
+    expect(adapter.calls[2]?.agent_id).toBe("native-session-1");
+    expect(adapter.calls[0]?.agent_id).toBeNull();
+  } finally {
+    removeWorkspace(workspace);
+  }
+});
+
+test("execute session id on terminal sessions does not dispatch", async () => {
+  const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
+  try {
+    const blockedAdapter = new ScriptedAdapter(
+      ["status: complete\n\nplanned", "status: blocked\nblocker: missing design\n\nnope"],
+      ["# Plan\n", null],
+    );
+    const [code, objects] = await runExecute(workspace, ["start", "plan", "--task", "Write a plan"], blockedAdapter);
+    expect(code).toBe(1);
+    expect(objects.at(-1)?.stop_reason).toBe("blocked");
+    const sessionId = String(objects.at(-1)?.session_id);
+    const before = executions(workspace, sessionId);
+    const idle = new ScriptedAdapter(["status: complete\ndecision: approved\n\nok"], [null]);
+    const [code2, objects2] = await runExecute(workspace, ["continue", sessionId], idle);
+    expect(code2).toBe(1);
+    expect(objects2).toHaveLength(1);
+    expect(idle.calls).toEqual([]);
+    expect(executions(workspace, sessionId)).toEqual(before);
+    const blockedAgain = new ScriptedAdapter(["status: complete\ndecision: approved\n\nok"], [null]);
+    const [stageCode, stageObjects] = await runExecute(workspace, ["stage", sessionId], blockedAgain);
+    expect(stageCode).toBe(1);
+    expect(stageObjects.at(-1)?.stop_reason).toBe("blocked");
+    expect(blockedAgain.calls).toEqual([]);
+    expect(executions(workspace, sessionId)).toEqual(before);
+  } finally {
+    removeWorkspace(workspace);
+  }
+
+  const completedWorkspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
+  try {
+    const [doneCode, doneObjects] = await runExecute(
+      completedWorkspace,
+      ["start", "plan", "--task", "Write a plan"],
+      new ScriptedAdapter(
+        ["status: complete\n\nplanned", "status: complete\ndecision: approved\n\nok"],
+        ["# Plan\n", null],
+      ),
+    );
+    expect(doneCode).toBe(0);
+    const completedId = String(doneObjects.at(-1)?.session_id);
+    const unused = new ScriptedAdapter(["status: complete\n\nnope"], ["# x\n"]);
+    const [code3, objects3] = await runExecute(completedWorkspace, ["continue", completedId], unused);
+    expect(code3).toBe(0);
+    expect(objects3.at(-1)?.stop_reason).toBe("completed");
+    expect(unused.calls).toEqual([]);
+    const unusedStage = new ScriptedAdapter(["status: complete\n\nnope"], ["# x\n"]);
+    const [codeStage, objectsStage] = await runExecute(completedWorkspace, ["stage", completedId], unusedStage);
+    expect(codeStage).toBe(0);
+    expect(objectsStage.at(-1)?.stop_reason).toBe("completed");
+    expect(unusedStage.calls).toEqual([]);
+
+    const cancelledId = String(doneObjects.at(-1)?.session_id);
+    const statusPath = path.join(completedWorkspace, ".migent", "sessions", cancelledId, "status.json");
+    const status = JSON.parse(readFileSync(statusPath, "utf8")) as Record<string, unknown>;
+    status.status = "cancelled";
+    writeFileSync(statusPath, JSON.stringify(status), "utf8");
+    const unused2 = new ScriptedAdapter(["status: complete\n\nnope"], ["# x\n"]);
+    const [code4, objects4] = await runExecute(completedWorkspace, ["continue", cancelledId], unused2);
+    expect(code4).toBe(130);
+    expect(objects4.at(-1)?.stop_reason).toBe("cancelled");
+    expect(unused2.calls).toEqual([]);
+  } finally {
+    removeWorkspace(completedWorkspace);
+  }
+});
+
+test("retry budget keeps session active and stage can continue", async () => {
+  const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
+  try {
+    const adapter = new ScriptedAdapter(["status: complete\n\nplanned", "not a header"], ["# Plan\n", null]);
+    const [code, objects] = await runExecute(
+      workspace,
+      ["start", "plan", "--task", "Write a plan", "--attempts", "1"],
+      adapter,
+    );
+    expect(code).toBe(3);
+    expect(objects.at(-1)?.stop_reason).toBe("retry_exhausted");
+    expect(objects.at(-1)?.session_status).toBe("active");
+    const sessionId = String(objects.at(-1)?.session_id);
+    const [stageCode, stageObjects] = await runExecute(
+      workspace,
+      ["stage", sessionId],
+      new ScriptedAdapter(["status: complete\ndecision: approved\n\nok"], [null]),
+    );
+    expect(stageCode).toBe(0);
+    expect(stageObjects[0]?.outcome_decision).toBe("approved");
+    expect(stageObjects.at(-1)?.session_status).toBe("completed");
+    expect(stageObjects.at(-1)?.stop_reason).toBe("completed");
+  } finally {
+    removeWorkspace(workspace);
+  }
+});
+
+test("retry budget is retained across execute invocations", async () => {
+  const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
+  try {
+    const [code, objects] = await runExecute(
+      workspace,
+      ["start", "plan", "--task", "Write a plan", "--attempts", "1"],
+      new ScriptedAdapter(["status: complete\n\nplanned", "not a header"], ["# Plan\n", null]),
+    );
+    expect(code).toBe(3);
+    const sessionId = String(objects.at(-1)?.session_id);
+    const second = new ScriptedAdapter(["status: complete\ndecision: approved\n\nok"], [null]);
+    const [code2, objects2] = await runExecute(workspace, ["continue", sessionId, "--attempts", "1"], second);
+    expect(code2).toBe(3);
+    expect(objects2.at(-1)?.stop_reason).toBe("retry_exhausted");
+    expect(objects2.at(-1)?.session_status).toBe("active");
+    expect(second.calls).toEqual([]);
+  } finally {
+    removeWorkspace(workspace);
+  }
+});
+
+test("rejects a non positive max attempts", async () => {
+  const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
+  try {
+    await expect(
+      executeWorkflow(workspace, { action: "start", workflowId: "plan", task: "Write a plan", maxAttempts: 0 }),
+    ).rejects.toThrow(/--attempts/);
+    await expect(
+      executeWorkflow(workspace, { action: "start", workflowId: "plan", task: "Write a plan", maxAttempts: 0 }),
+    ).rejects.toBeInstanceOf(ConfigurationError);
+  } finally {
+    removeWorkspace(workspace);
+  }
+});
+
+test("stage id runs the first stage and stops", async () => {
+  const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
+  try {
+    const adapter = new ScriptedAdapter(
+      ["status: complete\n\nplanned", "status: complete\ndecision: approved\n\nshould not run"],
+      ["# Plan\n", null],
+    );
+    const [code, objects] = await runExecute(
+      workspace,
+      ["stage", "--workflow", "plan", "--task", "Write a plan"],
+      adapter,
+    );
+    expect(code).toBe(0);
+    expect(objects[0]?.outcome_status).toBe("complete");
+    expect(objects.at(-1)?.stop_reason).toBe("stage");
+    expect(objects.at(-1)?.session_status).toBe("active");
+    expect(adapter.calls).toHaveLength(1);
+  } finally {
+    removeWorkspace(workspace);
+  }
+});
+
+test("stage id of a later stage creates no session", async () => {
+  const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
+  try {
+    const adapter = new ScriptedAdapter(["status: complete\ndecision: approved\n\nok"], [null]);
+    const [code, objects] = await runExecute(
+      workspace,
+      ["stage", "--workflow", "plan", "--task", "Write a plan"],
+      adapter,
+    );
+    expect(code).toBe(0);
+    expect(objects.at(-1)?.stop_reason).toBe("stage");
+    expect(adapter.calls).toHaveLength(1);
+  } finally {
+    removeWorkspace(workspace);
+  }
+});
+
+test("stage id follows eligibility after the first stage", async () => {
+  const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
+  try {
+    const first = new ScriptedAdapter(["status: complete\n\nplanned"], ["# Plan\n"]);
+    const [code, objects] = await runExecute(
+      workspace,
+      ["stage", "--workflow", "plan", "--task", "Write a plan"],
+      first,
+    );
+    expect(code).toBe(0);
+    const sessionId = String(objects.at(-1)?.session_id);
+    const review = new ScriptedAdapter(
+      ["status: complete\ndecision: revise\n\nneeds work", "status: complete\n\nshould not run"],
+      [null, "# Plan\n"],
+    );
+    const [code2, objects2] = await runExecute(workspace, ["stage", sessionId], review);
+    expect(code2).toBe(0);
+    expect(objects2[0]?.outcome_decision).toBe("revise");
+    expect(objects2.at(-1)?.stop_reason).toBe("stage");
+    expect(objects2.at(-1)?.session_status).toBe("active");
+    expect(review.calls).toHaveLength(1);
+  } finally {
+    removeWorkspace(workspace);
+  }
+});
+
+test("stage id rejects max attempts", async () => {
+  const captured = await capture(() =>
+    main(["stage", "--workflow", "plan", "--task", "Write a plan", "--attempts", "1"]),
+  );
+  expect(captured.value).toBe(2);
+  expect(captured.stderr).toContain("--attempts");
+});
+
+test("stage rejects a dispatch ceiling", async () => {
+  const captured = await capture(() =>
+    main(["stage", "--workflow", "plan", "--task", "Write a plan", "--max-dispatches", "2"]),
+  );
+  expect(captured.value).toBe(2);
+  expect(captured.stderr).toContain("--max-dispatches");
+});
+
+test("stage id resumes the declared source session", async () => {
+  const workflow = `\
+schema_version: 1
+id: resume-sample
+stages:
+  - id: draft
+    role: developer
+    depends_on: []
+    produces:
+      artifact: draft.md
+  - id: revise-draft
+    role: developer
+    session:
+      resume_from: draft
+    depends_on:
+      - draft
+    produces:
+      artifact: revision.md
+`;
+  const workspace = writeFakeWorkflowWorkspace({ "resume-sample": workflow });
+  try {
+    const [code, objects] = await runExecute(
+      workspace,
+      ["stage", "--workflow", "resume-sample", "--task", "Draft"],
+      new ScriptedAdapter(["status: complete\n\ndraft"], ["# draft\n"]),
+    );
+    expect(code).toBe(0);
+    const sessionId = String(objects.at(-1)?.session_id);
+    const second = new ScriptedAdapter(["status: complete\n\nrevised"], ["# revision\n"]);
+    const [code2, objects2] = await runExecute(workspace, ["stage", sessionId], second);
+    expect(code2).toBe(0);
+    const resumed = JSON.parse(
+      readFileSync(
+        path.join(
+          workspace,
+          ".migent",
+          "sessions",
+          sessionId,
+          "executions",
+          String(objects2[0]?.execution_id),
+          "execution.json",
+        ),
+        "utf8",
+      ),
+    ) as { resumes_execution_id?: string };
+    expect(resumed.resumes_execution_id).toBe(objects[0]?.execution_id);
+    expect(second.calls).toHaveLength(1);
+    expect(second.calls[0]?.agent_id).toBe("native-session-1");
+    expect(second.calls[0]?.new_agent_id).toBeNull();
+  } finally {
+    removeWorkspace(workspace);
+  }
+});
+
+const REVISION_LOOP = `\
+schema_version: 1
+id: loop
+stages:
+  - id: plan
+    role: planner
+    max_revisions: 0
+    produces:
+      artifact: plan.md
+  - id: review-plan
+    role: reviewer
+    depends_on:
+      - plan
+    decision:
+      values:
+        - approved
+        - revise
+      routes:
+        approved: complete
+        revise: plan
+`;
+
+const OPEN_LOOP = `\
+schema_version: 1
+id: loop
+stages:
+  - id: plan
+    role: planner
+    produces:
+      artifact: plan.md
+  - id: review-plan
+    role: reviewer
+    depends_on:
+      - plan
+    decision:
+      values:
+        - approved
+        - revise
+      routes:
+        approved: complete
+        revise: plan
+`;
+
+test("continue resets revision count and stage keeps new limit", async () => {
+  const workspace = writeFakeWorkflowWorkspace({ loop: REVISION_LOOP.replace("max_revisions: 0", "max_revisions: 1") });
+  try {
+    const [code, objects] = await runExecute(
+      workspace,
+      ["start", "loop", "--task", "Write a plan"],
+      new ScriptedAdapter(
+        [
+          "status: complete\n\ninitial plan",
+          "status: complete\ndecision: revise\n\nrevise",
+          "status: complete\n\nfirst revision",
+          "status: complete\ndecision: revise\n\nrevise again",
+        ],
+        ["# Initial\n", null, "# First revision\n", null],
+      ),
+    );
+    expect(code).toBe(4);
+    expect(objects.at(-1)?.stop_reason).toBe("revisions_exhausted");
+    const sessionId = String(objects.at(-1)?.session_id);
+    const root = path.join(workspace, ".migent", "sessions", sessionId, "executions");
+    const revisionPrompt = readFileSync(path.join(root, String(objects[2]?.execution_id), "prompt.md"), "utf8");
+    expect(revisionPrompt).toContain(path.join(root, String(objects[1]?.execution_id), "response.md"));
+    expect(revisionPrompt).toContain(path.join(root, String(objects[0]?.execution_id), "artifacts", "plan.md"));
+
+    const second = new ScriptedAdapter(["status: complete\n\nsecond revision"], ["# Second revision\n"]);
+    const [limited, limitedObjects] = await runExecute(
+      workspace,
+      ["continue", sessionId, "--max-dispatches", "1"],
+      second,
+    );
+    expect(limited).toBe(5);
+    expect(limitedObjects.at(-1)?.stop_reason).toBe("dispatch_limit");
+    expect(second.calls).toHaveLength(1);
+    const status = JSON.parse(
+      readFileSync(path.join(workspace, ".migent", "sessions", sessionId, "status.json"), "utf8"),
+    ) as { revision_baselines?: Record<string, number> };
+    expect(status.revision_baselines).toEqual({ plan: 2, "review-plan": 2 });
+
+    const reviewer = new ScriptedAdapter(["status: complete\ndecision: revise\n\nrevise again"]);
+    expect((await runExecute(workspace, ["stage", sessionId], reviewer))[0]).toBe(0);
+    const stopped = new ScriptedAdapter(["status: complete\n\nshould not run"]);
+    const [stoppedCode, stoppedObjects] = await runExecute(workspace, ["stage", sessionId], stopped);
+    expect(stoppedCode).toBe(4);
+    expect(stoppedObjects.at(-1)?.stop_reason).toBe("revisions_exhausted");
+    expect(stopped.calls).toEqual([]);
+
+    const last = new ScriptedAdapter(
+      ["status: complete\n\nthird revision", "status: complete\ndecision: approved\n\napproved"],
+      ["# Third revision\n", null],
+    );
+    const [done, doneObjects] = await runExecute(workspace, ["continue", sessionId], last);
+    expect(done).toBe(0);
+    expect(doneObjects.at(-1)?.stop_reason).toBe("completed");
+    expect(last.calls).toHaveLength(2);
+  } finally {
+    removeWorkspace(workspace);
+  }
+}, 60_000);
+
+test("revise stops before another plan and later commands stop too", async () => {
+  const workspace = writeFakeWorkflowWorkspace({ loop: REVISION_LOOP });
+  try {
+    const adapter = new ScriptedAdapter(
+      [
+        "status: complete\n\nplanned",
+        "status: complete\ndecision: revise\n\nagain",
+        "status: complete\n\nshould not run",
+      ],
+      ["# Plan\n", null, "# Plan\n"],
+    );
+    const [code, objects] = await runExecute(
+      workspace,
+      ["start", "loop", "--task", "Write a plan", "--max-dispatches", "10"],
+      adapter,
+    );
+    expect(code).toBe(4);
+    expect(objects.at(-1)?.stop_reason).toBe("revisions_exhausted");
+    expect(objects.at(-1)?.session_status).toBe("active");
+    expect(objects.slice(0, -1).map((item) => item.outcome_decision)).toEqual(["", "revise"]);
+    expect(adapter.calls).toHaveLength(2);
+    const sessionId = String(objects.at(-1)?.session_id);
+    const idle = new ScriptedAdapter(["status: complete\n\nnope"], ["# Plan\n"]);
+    const [continueCode, continueObjects] = await runExecute(
+      workspace,
+      ["continue", sessionId, "--max-dispatches", "10"],
+      idle,
+    );
+    expect(continueCode).toBe(4);
+    expect(continueObjects.at(-1)?.stop_reason).toBe("revisions_exhausted");
+    expect(idle.calls).toEqual([]);
+    const stage = new ScriptedAdapter(["status: complete\n\nnope"], ["# Plan\n"]);
+    const [stageCode, stageObjects] = await runExecute(workspace, ["stage", sessionId], stage);
+    expect(stageCode).toBe(4);
+    expect(stageObjects.at(-1)?.stop_reason).toBe("revisions_exhausted");
+    expect(stageObjects.at(-1)?.session_status).toBe("active");
+    expect(stage.calls).toEqual([]);
+  } finally {
+    removeWorkspace(workspace);
+  }
+});
+
+test("dispatch ceiling stops before the next stage", async () => {
+  const workspace = writeFakeWorkflowWorkspace({ loop: OPEN_LOOP });
+  try {
+    const adapter = new ScriptedAdapter(
+      [
+        "status: complete\n\nplanned",
+        "status: complete\ndecision: revise\n\nagain",
+        "status: complete\n\nshould not run",
+      ],
+      ["# Plan\n", null, "# Plan\n"],
+    );
+    const [code, objects] = await runExecute(
+      workspace,
+      ["start", "loop", "--task", "Write a plan", "--max-dispatches", "2"],
+      adapter,
+    );
+    expect(code).toBe(5);
+    expect(objects.at(-1)?.stop_reason).toBe("dispatch_limit");
+    expect(objects.at(-1)?.session_status).toBe("active");
+    expect(adapter.calls).toHaveLength(2);
+    expect(objects.at(-2)?.outcome_decision).toBe("revise");
+  } finally {
+    removeWorkspace(workspace);
+  }
+});
+
+test("default dispatch ceiling matches the constant", async () => {
+  const workspace = writeFakeWorkflowWorkspace({ loop: OPEN_LOOP });
+  try {
+    const responses: string[] = [];
+    const artifacts: Array<string | null> = [];
+    for (let index = 0; index < DEFAULT_MAX_DISPATCHES + 1; index += 1) {
+      if (index % 2 === 0) {
+        responses.push("status: complete\n\nplanned");
+        artifacts.push("# Plan\n");
+      } else {
+        responses.push("status: complete\ndecision: revise\n\nagain");
+        artifacts.push(null);
+      }
+    }
+    const adapter = new ScriptedAdapter(responses, artifacts);
+    const [code, objects] = await runExecute(workspace, ["start", "loop", "--task", "Write a plan"], adapter);
+    expect(code).toBe(5);
+    expect(objects.at(-1)?.stop_reason).toBe("dispatch_limit");
+    expect(adapter.calls).toHaveLength(DEFAULT_MAX_DISPATCHES);
+  } finally {
+    removeWorkspace(workspace);
+  }
+}, 60_000);
+
+test("unlimited dispatches runs past the default ceiling", async () => {
+  const workspace = writeFakeWorkflowWorkspace({ loop: OPEN_LOOP });
+  try {
+    const adapter = new ScriptedAdapter(
+      ["status: complete\n\nplanned", "status: complete\ndecision: approved\n\nok"],
+      ["# Plan\n", null],
+    );
+    const [code, objects] = await runExecute(
+      workspace,
+      ["start", "loop", "--task", "Write a plan", "--unlimited-dispatches"],
+      adapter,
+    );
+    expect(code).toBe(0);
+    expect(objects.at(-1)?.stop_reason).toBe("completed");
+    expect(adapter.calls).toHaveLength(2);
+  } finally {
+    removeWorkspace(workspace);
+  }
+});
+
+test("rejects a non positive dispatch ceiling", async () => {
+  const workspace = writeFakeWorkflowWorkspace({ loop: OPEN_LOOP });
+  try {
+    await expect(
+      executeWorkflow(workspace, { action: "start", workflowId: "loop", task: "Write a plan", maxDispatches: 0 }),
+    ).rejects.toThrow(/--max-dispatches/);
+  } finally {
+    removeWorkspace(workspace);
+  }
+});
+
+test("unlimited dispatches rejects an explicit ceiling", async () => {
+  const captured = await capture(() =>
+    main(["start", "loop", "--task", "Write a plan", "--max-dispatches", "4", "--unlimited-dispatches"]),
+  );
+  expect(captured.value).toBe(2);
+  expect(captured.stderr).toContain("--unlimited-dispatches");
+});
+
+test("continue rejects flags that start a session", async () => {
+  const captured = await capture(() => main(["continue", "run-1", "--task", "again"]));
+  expect(captured.value).toBe(2);
+  expect(captured.stderr).toContain("--task");
+});
+
+test("agent override requires both provider and model", async () => {
+  const captured = await capture(() =>
+    main(["agent", "start", "--role", "developer", "--provider", "grok", "--prompt", "x"]),
+  );
+  expect(captured.value).toBe(2);
+  expect(captured.stderr).toContain("--provider");
+  expect(captured.stderr).toContain("--model");
+});
+
+test("help prints command usage without a workspace", async () => {
+  const cwd = mkdtempSync(path.join(tmpdir(), "migent-cli-"));
+  try {
+    const captured = await capture(() => main(["start", "--help"], cwd));
+    expect(captured.value).toBe(0);
+    expect(captured.stdout).toContain("Usage: migent start");
+    expect(captured.stdout).toContain("Exit 3");
+    expect(captured.stdout).toContain("Exit 4");
+    expect(captured.stdout).toContain("Exit 5");
+    expect(captured.stdout).toContain("--attempts");
+    expect(captured.stdout).toContain("--max-dispatches");
+    expect(captured.stdout).toContain("--unlimited-dispatches");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("help subcommand prints flags declared on that subcommand", async () => {
+  const captured = await capture(() => main(["continue", "--help"]));
+  expect(captured.value).toBe(0);
+  expect(captured.stdout).toContain("Usage: migent continue");
+  expect(captured.stdout).toContain("--attempts");
+  expect(captured.stdout).toContain("--max-dispatches");
+});
+
+test("stage help has no dispatch ceiling", async () => {
+  const captured = await capture(() => main(["stage", "--help"]));
+  expect(captured.value).toBe(0);
+  expect(captured.stdout).toContain("Exit 4");
+  expect(captured.stdout).not.toContain("--max-dispatches");
+});
+
+test("help rejects an unknown subcommand", async () => {
+  const captured = await capture(() => main(["missing"]));
+  expect(captured.value).toBe(2);
+  expect(captured.stderr).toContain("missing");
+});
+
+test("no command prints help", async () => {
+  const captured = await capture(() => main([]));
+  expect(captured.value).toBe(2);
+  expect(captured.stdout).toContain("Usage: migent");
+  expect(captured.stdout).toContain("start");
+  expect(captured.stdout).toContain("stage");
+  expect(captured.stdout).not.toContain("execute");
+});

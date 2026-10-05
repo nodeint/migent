@@ -1,0 +1,15 @@
+{
+  "name": "migent",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b && chmod +x packages/cli/dist/index.js",
+    "test": "vitest run",
+    "migent": "node packages/cli/dist/index.js"
+  },
+  "devDependencies": {
+    "@migent/cli": "workspace:*",
+    "typescript": "^7.0.0",
+    "vitest": "^5.0.3"
+  }
+}

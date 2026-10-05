@@ -1,0 +1,345 @@
+import { randomBytes } from "node:crypto";
+import { mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import {
+  defaultAdapters,
+  type AgentAdapter,
+  type NewSession,
+} from "./adapter.js";
+import { CancellationRequested, CommandExecutor, DEFAULT_TIMEOUT_SEC } from "./command-executor.js";
+import { ConfigurationError } from "./errors.js";
+import { nonemptyArtifact } from "./outputs.js";
+import { isRecord } from "./record.js";
+import {
+  addArtifactContext,
+  addStageOutcomeContract,
+  flattenHistory,
+  log,
+} from "./runtime.js";
+import { ProviderEventReporter } from "./provider-events.js";
+import { AgentSessionRecord, SessionStore, type ExecutionContext } from "./session-store.js";
+import { parseStageOutcome, type StageOutcome } from "./stage-outcome.js";
+import { loadNamedWorkflow, loadStage, type StageSpec } from "./workflow.js";
+
+export interface RunResult {
+  agent_id: string;
+  options: Record<string, string>;
+  session_id: string;
+  execution_id: string;
+  artifact_directory: string;
+  outcome_status: string;
+  outcome_decision: string;
+  session_status: string;
+  response: string;
+}
+
+export interface RunRequest {
+  provider: string;
+  model: string;
+  prompt: string;
+  workspace: string;
+  sessionId?: string | null;
+  resumeExecutionId?: string | null;
+  stageId?: string;
+  stageAttempt?: number | null;
+  executionOrder?: number | null;
+  options?: Record<string, string> | null;
+}
+
+export class AgentToolRunner {
+  readonly adapters: Record<string, AgentAdapter>;
+  readonly executor: CommandExecutor;
+
+  constructor(
+    adapters?: Record<string, AgentAdapter>,
+    timeoutSec: number | null = DEFAULT_TIMEOUT_SEC,
+  ) {
+    this.adapters = adapters ?? defaultAdapters();
+    this.executor = new CommandExecutor(timeoutSec);
+  }
+
+  async run(request: RunRequest): Promise<RunResult> {
+    const workspacePath = resolveWorkspace(request.workspace);
+    const stageAttempt = request.stageAttempt ?? null;
+    const executionOrder = request.executionOrder ?? null;
+    if (stageAttempt !== null && stageAttempt < 1) throw new Error("Stage attempt must be at least 1.");
+    if (executionOrder !== null && executionOrder < 1) {
+      throw new Error("Execution order must be at least 1.");
+    }
+    const providerKey = request.provider.toLowerCase();
+    const adapter = this.adapters[providerKey];
+    if (adapter === undefined) {
+      const supported = Object.keys(this.adapters).sort().join(", ");
+      throw new Error(`Unsupported CLI provider: ${request.provider}. Supported: ${supported}`);
+    }
+    const resolvedOptions = { ...(request.options ?? {}) };
+    adapter.validateOptions(resolvedOptions);
+    const profile = profileOptions(adapter, resolvedOptions);
+    const store = new SessionStore(workspacePath);
+    const sessionId = request.sessionId ?? null;
+    const stageId = request.stageId ?? "agent";
+    const [record, isNew, context] = store.loadOrCreate(
+      providerKey,
+      request.model,
+      profile,
+      workspacePath,
+      sessionId,
+      stageId,
+      stageAttempt,
+      executionOrder,
+      request.prompt,
+      request.resumeExecutionId ?? null,
+    );
+    if (!isNew) {
+      validateSessionProfile(
+        record.provider,
+        record.model,
+        record.options,
+        providerKey,
+        request.model,
+        profile,
+      );
+    }
+    const newSession = isNew ? (adapter.createNewSession?.() ?? { agentId: null }) : null;
+    if (newSession?.agentId) record.agentId = newSession.agentId;
+    record.history.push({ role: "user", content: request.prompt });
+    record.status = "running";
+    store.save(record, context);
+    store.saveExecution(context, record, "running");
+    const eventReporter = new ProviderEventReporter(store, context, providerKey, request.model);
+    const agentId = isNew ? null : record.agentId;
+    let turnPrompt = request.prompt;
+    if (!isNew && !agentId) {
+      turnPrompt = flattenHistory(record.history as Array<{ role: string; content: string }>);
+    }
+    const stage = sessionId === null ? null : loadRunStage(store, context.sessionId, stageId);
+    const decisionValues = stage?.decisionValues ?? [];
+    if (sessionId !== null) turnPrompt = addStageOutcomeContract(turnPrompt, decisionValues);
+    const artifactName = stage?.artifact ?? null;
+    turnPrompt = addArtifactContext(turnPrompt, context.artifactDirectory, artifactName);
+    store.savePrompt(context, turnPrompt);
+    eventReporter.emit(
+      "provider.stage_started",
+      `${providerKey}/${request.model}`,
+      Object.keys(profile).length > 0 ? { options: profile } : null,
+    );
+
+    let responseText: string;
+    let parsedProviderId: string | null;
+    let invokeError: string | null;
+    try {
+      [responseText, parsedProviderId, invokeError] = await this.runTurn(
+        adapter,
+        request.model,
+        workspacePath,
+        turnPrompt,
+        agentId,
+        newSession,
+        resolvedOptions,
+        eventReporter,
+        store,
+        context,
+      );
+    } catch (error) {
+      if (error instanceof CancellationRequested) {
+        eventReporter.emit("provider.cancelled", "cancellation requested");
+        record.status = "cancelled";
+        store.save(record, context);
+        store.saveExecution(context, record, "cancelled");
+        log(`Execution ${context.executionId} marked cancelled.`);
+      }
+      throw error;
+    }
+
+    eventReporter.emit(
+      invokeError === null ? "provider.turn_completed" : "provider.turn_failed",
+      invokeError === null ? "completed" : invokeError,
+    );
+    record.agentId = parsedProviderId || record.agentId;
+    record.model = request.model;
+    record.options = profile;
+    record.workspace = workspacePath;
+    let outcome: StageOutcome | null = null;
+    if (invokeError === null) {
+      try {
+        outcome = parseStageOutcome(responseText, sessionId !== null, decisionValues);
+      } catch (error) {
+        if (!(error instanceof Error)) throw error;
+        invokeError = error.message;
+      }
+    }
+    if (invokeError === null && outcome?.status === "complete" && artifactName) {
+      const artifactPath = path.join(context.artifactDirectory, artifactName);
+      if (!nonemptyArtifact(artifactPath)) {
+        invokeError = `Stage artifact missing or empty: ${artifactName}.`;
+      }
+    }
+    if (invokeError === null && outcome !== null) {
+      const missing = store.missingCompletionOutputs(context, outcome);
+      if (missing.length > 0) {
+        invokeError = `Completion outputs missing or empty: ${missing.join(", ")}.`;
+      }
+    }
+    record.status = invokeError === null ? "completed" : "failed";
+    record.history.push({ role: "assistant", content: responseText });
+    store.save(record, context);
+    store.saveResponse(context, responseText);
+    store.saveExecution(context, record, record.status, invokeError, outcome);
+    const sessionStatus = store.readSessionStatus(context.sessionId);
+    return {
+      agent_id: record.agentId || "",
+      options: { ...record.options },
+      session_id: context.sessionId,
+      execution_id: context.executionId,
+      artifact_directory: context.artifactDirectory,
+      outcome_status: outcome?.status ?? "",
+      outcome_decision: outcome?.decision ?? "",
+      session_status: typeof sessionStatus.status === "string" ? sessionStatus.status : "",
+      response: responseText,
+    };
+  }
+
+  private async runTurn(
+    adapter: AgentAdapter,
+    model: string,
+    workspace: string,
+    prompt: string,
+    agentId: string | null,
+    newSession: NewSession | null,
+    options: Record<string, string>,
+    eventReporter: ProviderEventReporter,
+    store: SessionStore,
+    context: ExecutionContext,
+  ): Promise<[string, string | null, string | null]> {
+    const tmp = mkdtempSync(path.join(tmpdir(), "migent_"));
+    try {
+      const promptFile = path.join(tmp, "prompt.txt");
+      const lastMessageFile = path.join(tmp, "last_message.txt");
+      writeFileSync(promptFile, prompt, "utf8");
+      const spec = adapter.buildCommand({
+        model,
+        workspace,
+        prompt,
+        agentId,
+        newAgentId: newSession?.agentId ?? null,
+        promptFile,
+        lastMessageFile,
+        options,
+      });
+      const identityToken = randomBytes(16).toString("hex");
+      const identityPath = path.join(context.directory, "process.identity");
+      const [stdout, invokeError] = await this.executor.run(
+        spec,
+        workspace,
+        (line) => {
+          const event = adapter.parseProgressEvent?.(line);
+          if (!isRecord(event) || typeof event.event !== "string") return;
+          eventReporter.emit(
+            event.event,
+            typeof event.summary === "string" ? event.summary : null,
+            isRecord(event.details) ? event.details : null,
+          );
+        },
+        (elapsed) => {
+          eventReporter.emit("provider.heartbeat", `running for ${elapsed}s`, {
+            elapsed_seconds: elapsed,
+          });
+        },
+        (info) => {
+          store.saveProcessMetadata(context, info);
+        },
+        identityPath,
+        identityToken,
+      );
+      const [responseText, parsedProviderId] = adapter.parseResponse(stdout, lastMessageFile);
+      return [responseText || invokeError || "", parsedProviderId, invokeError];
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }
+}
+
+function loadRunStage(store: SessionStore, sessionId: string, stageId: string): StageSpec | null {
+  const sessionStatus = store.readSessionStatus(sessionId);
+  if (sessionStatus.workflow_id === "agent") return null;
+  const workflowPath = sessionStatus.workflow_path;
+  if (typeof workflowPath === "string") {
+    const stage = loadStage(store.workspace, workflowPath, stageId);
+    if (stage !== null) return stage;
+  }
+  const workflowId = sessionStatus.workflow_id;
+  if (typeof workflowId !== "string") return null;
+  try {
+    return loadNamedWorkflow(store.workspace, workflowId).stages[stageId] ?? null;
+  } catch (error) {
+    if (error instanceof ConfigurationError) return null;
+    throw error;
+  }
+}
+
+function profileOptions(adapter: AgentAdapter, options: Record<string, string>): Record<string, string> {
+  if (adapter.profileOptions) return { ...adapter.profileOptions(options) };
+  const names = new Set(
+    (adapter.providerOptions?.() ?? []).filter((item) => item.overridable).map((item) => item.name),
+  );
+  const profile: Record<string, string> = {};
+  for (const [key, value] of Object.entries(options)) {
+    if (names.has(key)) profile[key] = value;
+  }
+  return profile;
+}
+
+function validateSessionProfile(
+  previousProvider: string,
+  previousModel: string,
+  previousOptions: Record<string, string>,
+  provider: string,
+  model: string,
+  options: Record<string, string>,
+): void {
+  if (
+    previousProvider !== provider ||
+    previousModel !== model ||
+    !sameOptions(previousOptions, options)
+  ) {
+    throw new Error("Cannot resume an agent session with a different provider, model, or options.");
+  }
+}
+
+function sameOptions(left: Record<string, string>, right: Record<string, string>): boolean {
+  const leftKeys = Object.keys(left).sort();
+  const rightKeys = Object.keys(right).sort();
+  if (leftKeys.length !== rightKeys.length) return false;
+  return leftKeys.every((key, index) => key === rightKeys[index] && left[key] === right[key]);
+}
+
+function resolveWorkspace(workspace: string): string {
+  const expanded = expandHome(workspace);
+  const resolved = path.resolve(expanded);
+  try {
+    if (!statSync(resolved).isDirectory()) throw new Error("missing");
+    return resolved;
+  } catch (error) {
+    if (error instanceof Error && error.message === "missing") {
+      throw new Error(`Workspace does not exist: ${workspace}`);
+    }
+    if (isMissingPath(error)) throw new Error(`Workspace does not exist: ${workspace}`);
+    throw error;
+  }
+}
+
+function expandHome(target: string): string {
+  if (target === "~") return process.env.HOME || target;
+  if (target.startsWith("~/")) return path.join(process.env.HOME || "", target.slice(2));
+  return target;
+}
+
+function isMissingPath(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "ENOENT"
+  );
+}
