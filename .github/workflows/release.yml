@@ -1,0 +1,60 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.6.0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs npm >= 11.5.1; staged publishing needs >= 11.15.0.
+      - run: npm install -g npm@12.2.0
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Check tag matches package versions
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          for manifest in packages/*/package.json; do
+            version=$(node -p "require('./$manifest').version")
+            if [ "$version" != "$tag" ]; then
+              echo "::error file=$manifest::version $version does not match tag $GITHUB_REF_NAME"
+              exit 1
+            fi
+          done
+
+      - run: pnpm build
+      - run: pnpm test
+
+      # pnpm pack rewrites workspace:* to exact versions; npm stages the tarballs.
+      - name: Pack
+        run: pnpm -r pack --pack-destination "$RUNNER_TEMP/release"
+
+      - name: Stage for approval
+        run: |
+          cd "$RUNNER_TEMP/release"
+          version="${GITHUB_REF_NAME#v}"
+          for name in migent-kernel migent-adapters migent-registry migent; do
+            npm stage publish "./nodeint-$name-$version.tgz"
+          done

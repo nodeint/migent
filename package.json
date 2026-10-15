@@ -5,8 +5,7 @@
   "scripts": {
     "build": "tsc -b && rm -rf packages/cli/dist/templates && cp -R packages/cli/src/templates packages/cli/dist/templates && chmod +x packages/cli/dist/index.js",
     "test": "vitest run",
-    "migent": "node packages/cli/dist/index.js",
-    "release": "pnpm build && pnpm test && pnpm -r publish"
+    "migent": "node packages/cli/dist/index.js"
   },
   "devDependencies": {
     "@nodeint/migent": "workspace:*",
