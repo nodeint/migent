@@ -126,6 +126,12 @@ export { DEFAULT_MAX_DISPATCHES, executeNamedWorkflow } from "./execute.js";
 export type { ExecuteRequest, ExecuteResult } from "./execute.js";
 export { killProcessTree, wrapperEndpoint } from "./process-wrapper.js";
 export {
+  UnpassableArgument,
+  assertArgumentsPassable,
+  spawnProvider,
+  spawnProviderSync,
+} from "./provider-spawn.js";
+export {
   CancellationRequested,
   CommandExecutor,
   DEFAULT_TIMEOUT_SEC,

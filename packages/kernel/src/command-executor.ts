@@ -4,6 +4,7 @@ import type { Readable } from "node:stream";
 import { constants as osConstants } from "node:os";
 import { log } from "./runtime.js";
 import { collectProcessStartInfo, type ProcessStartInfo, wrapperArgv } from "./process-ownership.js";
+import { UnpassableArgument, assertArgumentsPassable } from "./provider-spawn.js";
 import { WRAPPER_READY, WRAPPER_START, killProcessTree, wrapperEndpoint } from "./process-wrapper.js";
 
 export const DEFAULT_TIMEOUT_SEC: number | null = null;
@@ -65,6 +66,12 @@ export class CommandExecutor {
     onStart?: ((info: ProcessStartInfo) => void) | null,
   ): Promise<[string, string | null]> {
     let child: ChildProcess | null = null;
+    try {
+      assertArgumentsPassable(spec.argv[0] ?? "", spec.argv.slice(1));
+    } catch (error) {
+      if (error instanceof UnpassableArgument) return ["", error.message];
+      throw error;
+    }
     try {
       const endpoint = wrapperEndpoint(randomBytes(16).toString("hex"));
       child = startWrapper(spec, cwd, endpoint);

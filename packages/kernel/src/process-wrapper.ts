@@ -1,12 +1,15 @@
-import { spawn, spawnSync } from "node:child_process";
+import { type ChildProcess, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { unlinkSync } from "node:fs";
 import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+// `.ts` so `node process-wrapper.ts` resolves it from source; tsc rewrites it to `.js`.
+import { UnpassableArgument, spawnProvider } from "./provider-spawn.ts";
 
-// The wrapper runs as `node process-wrapper.ts` from source, so it imports Node built-ins only.
+// The wrapper runs as `node process-wrapper.ts` from source, so it imports only Node built-ins
+// and modules that are themselves runnable from source.
 //
 // Protocol over the IPC channel (fd 3):
 //   wrapper -> owner  {type: "ready"}   once the liveness endpoint is listening
@@ -128,7 +131,7 @@ async function main(argv: string[]): Promise<void> {
     process.exit(code);
   };
 
-  let provider: ReturnType<typeof spawn> | null = null;
+  let provider: ChildProcess | null = null;
   let stopping = false;
 
   const stopProvider = async (): Promise<void> => {
@@ -171,8 +174,15 @@ async function main(argv: string[]): Promise<void> {
     if (provider !== null || stopping) return;
     if (!message || typeof message !== "object" || (message as { type?: unknown }).type !== WRAPPER_START) return;
     const command = options.command;
-    provider = spawn(command[0] ?? "", command.slice(1), { stdio: "inherit", windowsHide: true });
-    provider.on("error", (error: NodeJS.ErrnoException) => {
+    let started: ChildProcess;
+    try {
+      started = spawnProvider(command[0] ?? "", command.slice(1), { stdio: "inherit", windowsHide: true });
+    } catch (error) {
+      process.stderr.write(`${(error as Error).message}\n`);
+      return exit(error instanceof UnpassableArgument ? 2 : 1);
+    }
+    provider = started;
+    started.on("error", (error: NodeJS.ErrnoException) => {
       if (stopping) return;
       if (error.code === "ENOENT") {
         process.stderr.write(`CLI executable not found: ${command[0]}\n`);
@@ -180,7 +190,7 @@ async function main(argv: string[]): Promise<void> {
       }
       exit(1);
     });
-    provider.on("exit", (code, signal) => {
+    started.on("exit", (code, signal) => {
       if (stopping) return;
       exit(signal ? 1 : (code ?? 1));
     });

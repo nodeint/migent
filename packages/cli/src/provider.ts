@@ -1,6 +1,5 @@
-import { spawnSync } from "node:child_process";
 import { ModelCatalog, defaultAdapters } from "@nodeint/migent-adapters";
-import type { AgentAdapter, ProviderOption } from "@nodeint/migent-kernel";
+import { spawnProviderSync, type AgentAdapter, type ProviderOption } from "@nodeint/migent-kernel";
 
 export interface CatalogAdapter extends AgentAdapter {
   modelCatalogCommand(): string[];
@@ -157,7 +156,7 @@ export async function acceptedOptions(
 export function runProviderCommand(argv: string[]): string {
   const [command, ...args] = argv;
   if (command === undefined) throw new ProviderCommandFailed("Provider command is empty.");
-  const completed = spawnSync(command, args, { encoding: "utf8", timeout: 60_000 });
+  const completed = spawnProviderSync(command, args, { encoding: "utf8", timeout: 60_000, windowsHide: true });
   if (completed.error) {
     throw new Error(completed.error.message);
   }
