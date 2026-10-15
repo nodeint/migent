@@ -75,7 +75,7 @@ configuration.
 ### Install
 
 ```bash
-npm install -g @migent/cli
+npm install -g migent
 ```
 
 Verify with `migent --version`.
@@ -83,7 +83,7 @@ Verify with `migent --version`.
 ### Upgrade
 
 ```bash
-npm install -g @migent/cli@latest
+npm install -g migent@latest
 ```
 
 ### Create a project
@@ -173,8 +173,9 @@ and exit codes.
 
 ## Development
 
-The pnpm workspace contains four packages: `@migent/kernel`,
-`@migent/adapters`, `@migent/registry`, and `@migent/cli`.
+The pnpm workspace contains four packages: the `migent` CLI and its internal
+libraries `@migent/kernel`, `@migent/adapters`, and `@migent/registry`. The
+libraries have no stable API; depend on `migent`.
 
 ```bash
 pnpm install

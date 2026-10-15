@@ -1,5 +1,5 @@
 {
-  "name": "@migent/cli",
+  "name": "migent",
   "version": "0.1.0",
   "description": "Compose AI coding agents into repeatable engineering workflows.",
   "keywords": [

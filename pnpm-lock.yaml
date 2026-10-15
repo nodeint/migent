@@ -8,7 +8,7 @@ importers:
 
   .:
     devDependencies:
-      '@migent/cli':
+      migent:
         specifier: workspace:*
         version: link:packages/cli
       typescript:

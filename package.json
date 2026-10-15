@@ -1,5 +1,5 @@
 {
-  "name": "migent",
+  "name": "migent-monorepo",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,7 +9,7 @@
     "release": "pnpm build && pnpm test && pnpm -r publish"
   },
   "devDependencies": {
-    "@migent/cli": "workspace:*",
+    "migent": "workspace:*",
     "typescript": "^7.0.0",
     "vitest": "^5.0.3"
   }
