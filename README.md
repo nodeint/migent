@@ -185,22 +185,8 @@ pnpm test
 pnpm migent --help   # run the local build
 ```
 
-### Releasing
-
-All four packages share one version. Bump it, commit, and push a matching tag:
-
-```bash
-pnpm -r exec npm pkg set version=0.2.0
-pnpm install
-git commit -am "Release 0.2.0"
-git tag v0.2.0
-git push origin main v0.2.0
-```
-
-The tag runs `.github/workflows/release.yml`, which builds, tests, packs, and
-stages each package through npm trusted publishing. Nothing goes live until a
-maintainer approves the staged versions on npmjs.com (Staged Packages tab) or
-with `npm stage approve`, kernel first and `@nodeint/migent` last.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for testing rules, platform notes, and
+the release process.
 
 ## License
 
