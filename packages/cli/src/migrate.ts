@@ -12,7 +12,7 @@ import {
   workflowsDirectory,
   type MigrationAdapter,
   ConfigurationError,
-} from "@migent/kernel";
+} from "@nodeint/migent-kernel";
 import { printError, printNotice } from "./display.js";
 import { adapterMap } from "./provider.js";
 

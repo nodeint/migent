@@ -1,5 +1,5 @@
 {
-  "name": "@migent/registry",
+  "name": "@nodeint/migent-registry",
   "version": "0.1.0",
   "description": "Machine-local workspace registry service for Migent.",
   "keywords": [
@@ -47,7 +47,7 @@
   },
   "dependencies": {
     "@hono/node-server": "^2.1.3",
-    "@migent/kernel": "workspace:*",
+    "@nodeint/migent-kernel": "workspace:*",
     "hono": "^4.13.13",
     "koffi": "^3.3.2"
   },

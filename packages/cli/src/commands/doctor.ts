@@ -1,4 +1,4 @@
-import { diagnose, whichSync, type Check } from "@migent/kernel";
+import { diagnose, whichSync, type Check } from "@nodeint/migent-kernel";
 import { printDoctor } from "../display.js";
 import { cliHooks } from "../hooks.js";
 import { requireCurrentSchema } from "../migrate.js";

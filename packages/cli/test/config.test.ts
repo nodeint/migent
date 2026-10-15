@@ -1,7 +1,7 @@
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { loadYamlMapping } from "@migent/kernel";
+import { loadYamlMapping } from "@nodeint/migent-kernel";
 import { expect, test } from "vitest";
 import { runConfigModel, runConfigRole, type ConfigPrompter } from "../src/commands/config.ts";
 import { cliHooks } from "../src/hooks.ts";

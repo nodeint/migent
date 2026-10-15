@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
 import { Command, type OptionValues } from "commander";
-import { ConfigurationError, DEFAULT_MAX_DISPATCHES } from "@migent/kernel";
+import { ConfigurationError, DEFAULT_MAX_DISPATCHES } from "@nodeint/migent-kernel";
 import { dispatchAgent } from "./commands/agent.js";
 import { runConfigModel, runConfigRole, runConfigShow } from "./commands/config.js";
 import { runDoctor } from "./commands/doctor.js";

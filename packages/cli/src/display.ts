@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import type { Check } from "@migent/kernel";
+import type { Check } from "@nodeint/migent-kernel";
 
 const require = createRequire(import.meta.url);
 const pc = require("picocolors") as {

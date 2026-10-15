@@ -8,7 +8,7 @@ importers:
 
   .:
     devDependencies:
-      migent:
+      '@nodeint/migent':
         specifier: workspace:*
         version: link:packages/cli
       typescript:
@@ -20,7 +20,7 @@ importers:
 
   packages/adapters:
     dependencies:
-      '@migent/kernel':
+      '@nodeint/migent-kernel':
         specifier: workspace:*
         version: link:../kernel
 
@@ -29,13 +29,13 @@ importers:
       '@clack/prompts':
         specifier: ^1.8.1
         version: 1.8.1
-      '@migent/adapters':
+      '@nodeint/migent-adapters':
         specifier: workspace:*
         version: link:../adapters
-      '@migent/kernel':
+      '@nodeint/migent-kernel':
         specifier: workspace:*
         version: link:../kernel
-      '@migent/registry':
+      '@nodeint/migent-registry':
         specifier: workspace:*
         version: link:../registry
       commander:
@@ -73,7 +73,7 @@ importers:
       '@hono/node-server':
         specifier: ^2.1.3
         version: 2.1.3(hono@4.13.13)
-      '@migent/kernel':
+      '@nodeint/migent-kernel':
         specifier: workspace:*
         version: link:../kernel
       hono:

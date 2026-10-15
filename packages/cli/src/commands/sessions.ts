@@ -1,4 +1,4 @@
-import { listSessionRows } from "@migent/kernel";
+import { listSessionRows } from "@nodeint/migent-kernel";
 import { printSessions } from "../display.js";
 
 export function listSessions(workspace: string, options: { asJson?: boolean } = {}): number {

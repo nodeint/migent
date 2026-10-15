@@ -1,4 +1,4 @@
-import { KERNEL_PLACEHOLDER } from "@migent/kernel";
+import { KERNEL_PLACEHOLDER } from "@nodeint/migent-kernel";
 import { migentHomePath, ensureRegistryHome, registryHomePath } from "./home.js";
 import {
   ServiceEndpoint,

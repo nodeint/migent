@@ -1,8 +1,8 @@
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { ModelCatalog } from "@migent/adapters";
-import type { AgentAdapter } from "@migent/kernel";
+import type { ModelCatalog } from "@nodeint/migent-adapters";
+import type { AgentAdapter } from "@nodeint/migent-kernel";
 import { expect, test } from "vitest";
 import { runInit, type Prompter } from "../src/commands/init.ts";
 import { main } from "../src/index.ts";

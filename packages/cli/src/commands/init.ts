@@ -1,8 +1,8 @@
 import { mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { confirm as clackConfirm, isCancel, select as clackSelect } from "@clack/prompts";
-import type { ModelCatalog } from "@migent/adapters";
-import { diagnose, whichSync, yamlScalar, type AgentAdapter, type ProviderOption } from "@migent/kernel";
+import type { ModelCatalog } from "@nodeint/migent-adapters";
+import { diagnose, whichSync, yamlScalar, type AgentAdapter, type ProviderOption } from "@nodeint/migent-kernel";
 import {
   printAlreadyInitialized,
   printCreated,

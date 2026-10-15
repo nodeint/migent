@@ -1,7 +1,7 @@
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { ServiceEndpoint, ServiceError, StopResult } from "@migent/registry";
+import { ServiceEndpoint, ServiceError, StopResult } from "@nodeint/migent-registry";
 import { expect, test } from "vitest";
 import { serviceApi } from "../src/commands/service.ts";
 import { main } from "../src/index.ts";

@@ -1,11 +1,11 @@
-import { classifyProviderError, providerErrorMessage } from "@migent/kernel";
+import { classifyProviderError, providerErrorMessage } from "@nodeint/migent-kernel";
 import type {
   AgentAdapter,
   BuildCommandInput,
   NewSession,
   ProviderOption,
-} from "@migent/kernel";
-import type { CommandSpec } from "@migent/kernel";
+} from "@nodeint/migent-kernel";
+import type { CommandSpec } from "@nodeint/migent-kernel";
 import { ModelCatalog } from "./catalog.js";
 import { readExistingText } from "./read-text.js";
 

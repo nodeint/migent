@@ -9,7 +9,7 @@
     "release": "pnpm build && pnpm test && pnpm -r publish"
   },
   "devDependencies": {
-    "migent": "workspace:*",
+    "@nodeint/migent": "workspace:*",
     "typescript": "^7.0.0",
     "vitest": "^5.0.3"
   }

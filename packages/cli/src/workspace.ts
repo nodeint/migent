@@ -1,6 +1,6 @@
 import { readFileSync, statSync } from "node:fs";
 import path from "node:path";
-import { ConfigurationError } from "@migent/kernel";
+import { ConfigurationError } from "@nodeint/migent-kernel";
 
 let invocationCwd: string | null = null;
 

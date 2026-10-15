@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { closeSync } from "node:fs";
 import { constants as osConstants, hostname as osHostname } from "node:os";
-import { currentBootId, identityLockHolder, kernelProcessIdentity as kernelIdentity } from "@migent/kernel";
+import { currentBootId, identityLockHolder, kernelProcessIdentity as kernelIdentity } from "@nodeint/migent-kernel";
 import {
   type SpawnedChild,
   launchChild as launchChildImpl,

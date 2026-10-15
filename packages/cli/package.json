@@ -1,5 +1,5 @@
 {
-  "name": "migent",
+  "name": "@nodeint/migent",
   "version": "0.1.0",
   "description": "Compose AI coding agents into repeatable engineering workflows.",
   "keywords": [
@@ -51,9 +51,9 @@
   },
   "dependencies": {
     "@clack/prompts": "^1.8.1",
-    "@migent/adapters": "workspace:*",
-    "@migent/kernel": "workspace:*",
-    "@migent/registry": "workspace:*",
+    "@nodeint/migent-adapters": "workspace:*",
+    "@nodeint/migent-kernel": "workspace:*",
+    "@nodeint/migent-registry": "workspace:*",
     "commander": "^14.0.2",
     "picocolors": "^1.1.1"
   },

@@ -1,4 +1,4 @@
-import { parseStageOutcome } from "@migent/kernel";
+import { parseStageOutcome } from "@nodeint/migent-kernel";
 import { expect, test } from "vitest";
 import { GrokAdapter, providerCommands } from "../src/index.ts";
 

@@ -8,7 +8,7 @@ import {
   raiseCancellation,
   readExecutionFile,
   watchSnapshot,
-} from "@migent/kernel";
+} from "@nodeint/migent-kernel";
 import { printNotice, printWatchEvent, printWatchSnapshot } from "../display.js";
 
 const TERMINAL_EXECUTION_STATUSES = new Set(["completed", "failed", "cancelled"]);

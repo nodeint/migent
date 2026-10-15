@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { CodexAdapter, GrokAdapter } from "@migent/adapters";
+import { CodexAdapter, GrokAdapter } from "@nodeint/migent-adapters";
 import {
   ConfigurationError,
   SCHEMA_VERSION,

@@ -2,7 +2,7 @@
 import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { CommanderError } from "commander";
-import { ConfigurationError } from "@migent/kernel";
+import { ConfigurationError } from "@nodeint/migent-kernel";
 import { printError } from "./display.js";
 import { cliHooks } from "./hooks.js";
 import { createProgram, type CliStatus } from "./program.js";

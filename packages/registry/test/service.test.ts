@@ -5,7 +5,7 @@ import { constants as osConstants, tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, expect, test } from "vitest";
-import { identityLockHolder } from "@migent/kernel";
+import { identityLockHolder } from "@nodeint/migent-kernel";
 import { childInvocation, launchChild, readReadyLine } from "../src/child.ts";
 import { holdStartLock, threadHolds } from "../src/locks.ts";
 import { reapChild } from "../src/posix.ts";

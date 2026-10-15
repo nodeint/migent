@@ -8,7 +8,7 @@ import {
   requireAgentSession,
   resolveRoleTarget,
   SessionStore,
-} from "@migent/kernel";
+} from "@nodeint/migent-kernel";
 import { printAgent, printError, printNotice } from "../display.js";
 import { cliHooks } from "../hooks.js";
 import { requireCurrentSchema } from "../migrate.js";

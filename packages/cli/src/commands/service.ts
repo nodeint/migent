@@ -1,4 +1,4 @@
-import { ConfigurationError } from "@migent/kernel";
+import { ConfigurationError } from "@nodeint/migent-kernel";
 import {
   ServiceError,
   ensureRegistryHome,
@@ -7,7 +7,7 @@ import {
   serviceStatus,
   startDetached,
   stop,
-} from "@migent/registry";
+} from "@nodeint/migent-registry";
 import { printError } from "../display.js";
 
 const DEFAULT_PORT = 47321;

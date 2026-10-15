@@ -1,7 +1,7 @@
 import { chmodSync, closeSync, constants as fsConstants, existsSync, fstatSync, openSync, readFileSync, unlinkSync } from "node:fs";
 import { constants as osConstants, hostname as osHostname } from "node:os";
 import path from "node:path";
-import { currentBootId, identityLockHolder, kernelProcessIdentity as kernelIdentity } from "@migent/kernel";
+import { currentBootId, identityLockHolder, kernelProcessIdentity as kernelIdentity } from "@nodeint/migent-kernel";
 import { LockNotHeld, threadHolds } from "./locks.js";
 import { POSIX, fcntlInt, fcntlLock, posixGetpgid, reapChild } from "./posix.js";
 import { atomicReplace } from "./store.js";

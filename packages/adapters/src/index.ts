@@ -1,4 +1,4 @@
-import { KERNEL_PLACEHOLDER, type AgentAdapter } from "@migent/kernel";
+import { KERNEL_PLACEHOLDER, type AgentAdapter } from "@nodeint/migent-kernel";
 import { ClaudeAdapter } from "./claude-adapter.js";
 import { CodexAdapter } from "./codex-adapter.js";
 import { GrokAdapter } from "./grok-adapter.js";

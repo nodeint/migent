@@ -3,7 +3,7 @@ import {
   DEFAULT_MAX_DISPATCHES,
   executeNamedWorkflow,
   type ExecuteResult,
-} from "@migent/kernel";
+} from "@nodeint/migent-kernel";
 import { cliHooks } from "../hooks.js";
 import { requireCurrentSchema } from "../migrate.js";
 import { adapterMap } from "../provider.js";

@@ -1,10 +1,10 @@
 import { constants as fsConstants } from "node:fs";
 import { createRequire } from "node:module";
-import { POSIX, fcntlInt } from "@migent/kernel";
+import { POSIX, fcntlInt } from "@nodeint/migent-kernel";
 
 const require = createRequire(import.meta.url);
 
-export { POSIX, fcntlInt, fcntlLock } from "@migent/kernel";
+export { POSIX, fcntlInt, fcntlLock } from "@nodeint/migent-kernel";
 
 interface KoffiLib {
   func(definition: string): (...args: never[]) => unknown;

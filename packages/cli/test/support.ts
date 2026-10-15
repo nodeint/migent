@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { AgentAdapter, BuildCommandInput, CommandSpec } from "@migent/kernel";
+import type { AgentAdapter, BuildCommandInput, CommandSpec } from "@nodeint/migent-kernel";
 
 export interface AdapterCall {
   model: string;

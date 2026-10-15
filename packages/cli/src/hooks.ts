@@ -1,4 +1,4 @@
-import type { AgentToolRunner } from "@migent/kernel";
+import type { AgentToolRunner } from "@nodeint/migent-kernel";
 
 /** Test seams. Production leaves both null. */
 export const cliHooks: {

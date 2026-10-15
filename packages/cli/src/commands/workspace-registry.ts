@@ -1,6 +1,6 @@
 import { realpathSync } from "node:fs";
 import path from "node:path";
-import { ServiceError, callService, endpointFromHome, ensureRegistryHome, startDetached } from "@migent/registry";
+import { ServiceError, callService, endpointFromHome, ensureRegistryHome, startDetached } from "@nodeint/migent-registry";
 import { printError } from "../display.js";
 import { findWorkspace, invocationCwdPath } from "../workspace.js";
 

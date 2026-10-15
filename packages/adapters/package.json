@@ -1,5 +1,5 @@
 {
-  "name": "@migent/adapters",
+  "name": "@nodeint/migent-adapters",
   "version": "0.1.0",
   "description": "Provider adapters (Claude, Codex, Grok) for Migent.",
   "keywords": [
@@ -46,6 +46,6 @@
     "prepack": "pnpm -w run build && cp ../../LICENSE ."
   },
   "dependencies": {
-    "@migent/kernel": "workspace:*"
+    "@nodeint/migent-kernel": "workspace:*"
   }
 }

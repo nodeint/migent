@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { classifyProviderError } from "@migent/kernel";
+import { classifyProviderError } from "@nodeint/migent-kernel";
 import type {
   AgentAdapter,
   BuildCommandInput,
   NewSession,
   ProviderOption,
-} from "@migent/kernel";
-import type { CommandSpec } from "@migent/kernel";
+} from "@nodeint/migent-kernel";
+import type { CommandSpec } from "@nodeint/migent-kernel";
 import { ModelCatalog } from "./catalog.js";
 
 // `claude` has no command that lists models, so the catalog is the documented

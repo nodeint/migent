@@ -1,7 +1,7 @@
 import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { ServiceEndpoint } from "@migent/registry";
+import { ServiceEndpoint } from "@nodeint/migent-registry";
 import { expect, test } from "vitest";
 import { workspaceApi } from "../src/commands/workspace-registry.ts";
 import { main } from "../src/index.ts";

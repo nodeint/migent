@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { ModelCatalog, defaultAdapters } from "@migent/adapters";
-import type { AgentAdapter, ProviderOption } from "@migent/kernel";
+import { ModelCatalog, defaultAdapters } from "@nodeint/migent-adapters";
+import type { AgentAdapter, ProviderOption } from "@nodeint/migent-kernel";
 
 export interface CatalogAdapter extends AgentAdapter {
   modelCatalogCommand(): string[];

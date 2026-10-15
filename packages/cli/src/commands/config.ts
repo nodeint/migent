@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { confirm as clackConfirm, isCancel, select as clackSelect, text as clackText } from "@clack/prompts";
-import type { ModelCatalog } from "@migent/adapters";
+import type { ModelCatalog } from "@nodeint/migent-adapters";
 import {
   ConfigEditError,
   ConfigurationError,
@@ -26,7 +26,7 @@ import {
   type RoleView,
   type StageTarget,
   type WorkflowDocument,
-} from "@migent/kernel";
+} from "@nodeint/migent-kernel";
 import { printError } from "../display.js";
 import { cliHooks } from "../hooks.js";
 import { requireCurrentSchema } from "../migrate.js";
