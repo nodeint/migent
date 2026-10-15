@@ -129,7 +129,8 @@ export {
   currentBootId,
   identityLockHolder,
   kernelProcessIdentity,
-} from "./process-wrapper.js";
+} from "./process-identity.js";
+export { killProcessTree, wrapperEndpoint } from "./process-wrapper.js";
 export {
   CancellationRequested,
   CommandExecutor,
@@ -141,31 +142,28 @@ export {
 } from "./command-executor.js";
 export type { CommandSpec } from "./command-executor.js";
 export {
+  ENDPOINT_ALIVE,
+  ENDPOINT_GONE,
+  ENDPOINT_UNKNOWN,
   ERROR_ALREADY_EXITED,
-  ERROR_BOOT_MISMATCH,
-  ERROR_REAPED,
-  IDENTITY_FILENAME,
-  IDENTITY_LOCK_WAIT_SEC,
   PID_GONE,
   PID_PRESENT,
   PID_UNVERIFIED,
-  PosixProcessInspector,
   REAP_ALREADY_EXITED,
-  REAP_BOOT_MISMATCH,
   REAP_NOOP,
-  REAP_REAPED,
   REAP_STILL_RUNNING,
   REAP_UNVERIFIED,
+  SystemProcessInspector,
   classifyOrphanedExecution,
   collectProcessStartInfo,
+  probeEndpointSync,
   probePid,
   processMetadataPayload,
   raiseReapDecision,
-  stopVerifiedProcessGroup,
-  waitForIdentityLock,
   wrapperArgv,
 } from "./process-ownership.js";
 export type {
+  EndpointState,
   ProcessInspector,
   ProcessStartInfo,
   ReapDecision,

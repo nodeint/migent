@@ -12,7 +12,6 @@ import {
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
-import { TERMINATION_GRACE_SEC } from "./command-executor.js";
 import { ConfigurationError } from "./errors.js";
 import { STATUS_PROVIDER_EVENTS } from "./event-kinds.js";
 import {
@@ -27,15 +26,12 @@ import {
 } from "./outputs.js";
 import {
   REAP_ALREADY_EXITED,
-  REAP_BOOT_MISMATCH,
-  REAP_REAPED,
   REAP_STILL_RUNNING,
   REAP_UNVERIFIED,
-  PosixProcessInspector,
+  SystemProcessInspector,
   classifyOrphanedExecution,
   processMetadataPayload,
   raiseReapDecision,
-  stopVerifiedProcessGroup,
   type ProcessInspector,
   type ProcessStartInfo,
 } from "./process-ownership.js";
@@ -193,7 +189,7 @@ export class SessionStore {
   constructor(workspace: string, processInspector?: ProcessInspector) {
     this.workspace = workspace;
     this.sessionsDirectory = path.join(workspace, MIGENT_DIRNAME, SESSIONS_DIRNAME);
-    this.processInspector = processInspector ?? new PosixProcessInspector();
+    this.processInspector = processInspector ?? new SystemProcessInspector();
   }
 
   loadOrCreate(
@@ -284,7 +280,6 @@ export class SessionStore {
   }
 
   reapOrphanedExecutions(sessionId: string, onLiveOwner: string): void {
-    if (process.platform === "win32") return;
     for (const context of this.executionContexts(sessionId)) {
       this.reapExecution(context, onLiveOwner);
     }
@@ -470,29 +465,7 @@ export class SessionStore {
     this.withExecutionLock(filePath, () => {
       const metadata = readJsonObject(filePath);
       const decision = classifyOrphanedExecution(metadata, context.directory, this.processInspector);
-      if (decision.action === REAP_ALREADY_EXITED || decision.action === REAP_BOOT_MISMATCH) {
-        this.failOrphanedExecution(context, metadata, decision.error || "", true);
-        return;
-      }
-      if (decision.action === REAP_REAPED) {
-        if (
-          !stopVerifiedProcessGroup(
-            metadata,
-            context.directory,
-            this.processInspector,
-            TERMINATION_GRACE_SEC,
-          )
-        ) {
-          if (onLiveOwner === "raise") {
-            raiseReapDecision({
-              action: REAP_UNVERIFIED,
-              sessionId: decision.sessionId,
-              executionId: decision.executionId,
-              ownerPid: decision.ownerPid,
-            });
-          }
-          return;
-        }
+      if (decision.action === REAP_ALREADY_EXITED) {
         this.failOrphanedExecution(context, metadata, decision.error || "", true);
         return;
       }

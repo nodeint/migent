@@ -1,18 +1,10 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { closeSync, openSync, unlinkSync } from "node:fs";
 import type { Readable } from "node:stream";
-import { constants as osConstants, tmpdir } from "node:os";
-import path from "node:path";
+import { constants as osConstants } from "node:os";
 import { log } from "./runtime.js";
-import {
-  IDENTITY_LOCK_WAIT_SEC,
-  collectProcessStartInfo,
-  type ProcessStartInfo,
-  waitForIdentityLock,
-  wrapperArgv,
-} from "./process-ownership.js";
-import { createPipe, setFdCloexec, stdioKeepingFd } from "./process-wrapper.js";
+import { collectProcessStartInfo, type ProcessStartInfo, wrapperArgv } from "./process-ownership.js";
+import { WRAPPER_READY, WRAPPER_START, killProcessTree, wrapperEndpoint } from "./process-wrapper.js";
 
 export const DEFAULT_TIMEOUT_SEC: number | null = null;
 export const PROGRESS_INTERVAL_SEC = 30;
@@ -71,60 +63,22 @@ export class CommandExecutor {
     onOutput?: ((line: string) => void) | null,
     onHeartbeat?: ((elapsedSec: number) => void) | null,
     onStart?: ((info: ProcessStartInfo) => void) | null,
-    identityPath?: string | null,
-    identityToken?: string | null,
   ): Promise<[string, string | null]> {
-    let deathWrite: number | null = null;
     let child: ChildProcess | null = null;
-    let tempIdentity: string | null = null;
     try {
-      if (process.platform === "win32") {
-        child = startWindows(spec, cwd);
-        if (child === null) {
-          const missing = spec.argv[0] ?? "command";
-          return ["", `CLI executable not found: ${missing}`];
-        }
-        return await this.wait(child, spec, onOutput, onHeartbeat);
-      }
-
-      const token = identityToken || randomBytes(16).toString("hex");
-      let identityFile = identityPath ?? null;
-      if (identityFile === null) {
-        identityFile = path.join(tmpdir(), `migent_identity_${randomBytes(8).toString("hex")}`);
-        closeSync(openSync(identityFile, "w", 0o600));
-        tempIdentity = identityFile;
-      }
-      const pipe = createPipe();
-      deathWrite = pipe.writeFd;
-      setFdCloexec(deathWrite);
-      try {
-        child = startPosix(spec, cwd, pipe.readFd, identityFile, token);
-      } finally {
-        closeSync(pipe.readFd);
-      }
-      if (child === null) {
-        const missing = spec.argv[0] ?? "command";
-        return ["", `CLI executable not found: ${missing}`];
-      }
-      const spawnError = await waitForSpawn(child);
-      if (spawnError) {
-        if (spawnError.code !== "ENOENT") throw spawnError;
-        const missing = spec.argv[0] ?? "command";
-        return ["", `CLI executable not found: ${missing}`];
-      }
-      const locked = await waitForIdentityLock(identityFile, child.pid ?? -1, IDENTITY_LOCK_WAIT_SEC);
+      const endpoint = wrapperEndpoint(randomBytes(16).toString("hex"));
+      child = startWrapper(spec, cwd, endpoint);
+      const ready = await waitForReady(child);
       throwIfCancelled();
-      const exited = child.exitCode !== null || child.signalCode !== null;
-      if (exited && !locked) {
+      if (!ready) {
         if (childStatus(child) === 127) {
           return ["", `CLI executable not found: ${spec.argv[0] ?? "command"}`];
         }
-      } else if (!locked) {
         await stopProcessGroup(child);
-        return ["", "Provider process did not acquire the identity lock."];
-      } else if (onStart && child.pid !== undefined) {
-        onStart(collectProcessStartInfo(child.pid, identityFile, token));
+        return ["", "Provider process wrapper did not start."];
       }
+      if (onStart && child.pid !== undefined) onStart(collectProcessStartInfo(child.pid, endpoint));
+      child.send({ type: WRAPPER_START });
       const [stdout, error] = await this.wait(child, spec, onOutput, onHeartbeat);
       if (error !== null && childStatus(child) === 127) {
         return [stdout, `CLI executable not found: ${spec.argv[0] ?? "command"}`];
@@ -137,21 +91,6 @@ export class CommandExecutor {
         log("Sub-agent group stopped.");
       }
       throw error;
-    } finally {
-      if (deathWrite !== null) {
-        try {
-          closeSync(deathWrite);
-        } catch {
-          // already closed
-        }
-      }
-      if (tempIdentity !== null) {
-        try {
-          unlinkSync(tempIdentity);
-        } catch {
-          // already removed
-        }
-      }
     }
   }
 
@@ -306,18 +245,6 @@ function waitForExit(
   });
 }
 
-function waitForSpawn(child: ChildProcess): Promise<NodeJS.ErrnoException | null> {
-  if (child.pid) return Promise.resolve(null);
-  return new Promise((resolve) => {
-    child.once("error", (error: NodeJS.ErrnoException) => {
-      resolve(error);
-    });
-    child.once("spawn", () => {
-      resolve(null);
-    });
-  });
-}
-
 function childStatus(child: ChildProcess): number | null {
   if (typeof child.exitCode === "number") return child.exitCode;
   if (child.signalCode) {
@@ -327,73 +254,75 @@ function childStatus(child: ChildProcess): number | null {
   return null;
 }
 
-function startPosix(
-  spec: CommandSpec,
-  cwd: string,
-  deathRead: number,
-  identityPath: string,
-  token: string,
-): ChildProcess | null {
-  const argv = wrapperArgv(spec.argv, {
-    deathFd: deathRead,
-    identityPath,
-    token,
-    graceSec: TERMINATION_GRACE_SEC,
+function startWrapper(spec: CommandSpec, cwd: string, endpoint: string): ChildProcess {
+  const argv = wrapperArgv(spec.argv, { endpoint, graceSec: TERMINATION_GRACE_SEC });
+  const child = spawn(argv[0] ?? "", argv.slice(1), {
+    cwd,
+    // POSIX: a new process group, so the whole provider tree can be signalled at once.
+    // Windows: `taskkill /T` follows the tree instead, and detaching would open a new console.
+    detached: process.platform !== "win32",
+    stdio: [spec.stdin != null ? "pipe" : "inherit", "pipe", "inherit", "ipc"],
+    windowsHide: true,
   });
-  try {
-    const child = spawn(argv[0] ?? "", argv.slice(1), {
-      cwd,
-      detached: true,
-      stdio: stdioKeepingFd(
-        deathRead,
-        spec.stdin != null ? "pipe" : "inherit",
-        "pipe",
-        "inherit",
-      ),
-    });
-    child.on("error", () => undefined);
-    return child;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-    throw error;
-  }
+  child.on("error", () => undefined);
+  return child;
 }
 
-function startWindows(spec: CommandSpec, cwd: string): ChildProcess | null {
-  try {
-    return spawn(spec.argv[0] ?? "", spec.argv.slice(1), {
-      cwd,
-      detached: false,
-      stdio: [spec.stdin != null ? "pipe" : "inherit", "pipe", "inherit"],
-      windowsHide: true,
-    });
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-    throw error;
-  }
+/** Resolves true once the wrapper's endpoint is listening, false if it exits first. */
+function waitForReady(child: ChildProcess): Promise<boolean> {
+  return new Promise((resolve) => {
+    const finish = (ready: boolean) => {
+      child.off("message", onMessage);
+      child.off("exit", onExit);
+      child.off("error", onExit);
+      cancelWaiters.delete(onCancel);
+      resolve(ready);
+    };
+    const onMessage = (message: unknown) => {
+      if (message && typeof message === "object" && (message as { type?: unknown }).type === WRAPPER_READY) {
+        finish(true);
+      }
+    };
+    const onExit = () => finish(false);
+    const onCancel = () => finish(false);
+    child.on("message", onMessage);
+    child.once("exit", onExit);
+    child.once("error", onExit);
+    cancelWaiters.add(onCancel);
+  });
 }
 
 export async function stopProcessGroup(child: ChildProcess): Promise<void> {
   if (child.pid === undefined) return;
   try {
-    if (process.platform !== "win32") {
-      process.kill(-child.pid, "SIGTERM");
-    } else if (child.exitCode === null && child.signalCode === null) {
-      child.kill("SIGTERM");
-    }
+    killProcessTree(child.pid, "SIGTERM");
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ESRCH") return;
     throw error;
   }
-  const finished = await waitForExit(child, TERMINATION_GRACE_SEC * 1000);
-  if (finished !== true) {
+  // The wrapper exits with the provider, but other group members may outlive both.
+  const deadline = Date.now() + TERMINATION_GRACE_SEC * 1000;
+  await waitForExit(child, TERMINATION_GRACE_SEC * 1000);
+  while (processGroupAlive(child.pid) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  if (processGroupAlive(child.pid) || (child.exitCode === null && child.signalCode === null)) {
     try {
-      if (process.platform !== "win32") process.kill(-child.pid, "SIGKILL");
-      else if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+      killProcessTree(child.pid, "SIGKILL");
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
     }
     await waitForExit(child, 1000);
   }
   child.stdout?.destroy();
+}
+
+function processGroupAlive(pgid: number): boolean {
+  if (process.platform === "win32") return false;
+  try {
+    process.kill(-pgid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
 }

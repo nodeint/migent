@@ -1,31 +1,34 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import { closeSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, expect, test } from "vitest";
-import { TERMINATION_GRACE_SEC } from "../src/command-executor.ts";
 import {
+  ENDPOINT_ALIVE,
+  ENDPOINT_GONE,
+  ENDPOINT_UNKNOWN,
   ERROR_ALREADY_EXITED,
-  ERROR_BOOT_MISMATCH,
-  ERROR_REAPED,
-  IDENTITY_FILENAME,
+  type EndpointState,
   PID_GONE,
   PID_PRESENT,
   PID_UNVERIFIED,
   REAP_ALREADY_EXITED,
-  REAP_BOOT_MISMATCH,
-  REAP_REAPED,
+  REAP_NOOP,
   REAP_STILL_RUNNING,
   REAP_UNVERIFIED,
   classifyOrphanedExecution,
+  probeEndpointSync,
+  probePid,
   type ProcessInspector,
   wrapperArgv,
 } from "../src/process-ownership.ts";
-import { createPipe, setFdCloexec, stdioKeepingFd } from "../src/process-wrapper.ts";
+import { WRAPPER_READY, WRAPPER_START, killProcessTree, wrapperEndpoint } from "../src/process-wrapper.ts";
 
+// Writes its own pid to argv[1], then waits until argv[2] exists.
 const SENTINEL_SCRIPT = `
 const fs = require("fs");
-fs.writeFileSync(process.argv[1], "ready");
+fs.writeFileSync(process.argv[1], String(process.pid));
 while (!fs.existsSync(process.argv[2])) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
 }
@@ -33,64 +36,22 @@ while (!fs.existsSync(process.argv[2])) {
 
 class FakeInspector implements ProcessInspector {
   hostnameValue = "host.example";
-  bootIdValue: string | null = "boot-1";
   probes = new Map<number, string>();
-  identities = new Map<number, string | null>();
-  pgids = new Map<number, number | null>();
-  lockPid: number | null = 4242;
-  identityPayload: Record<string, unknown> | null = null;
-  missingIdentityFile = false;
-  killed: Array<[number, number]> = [];
+  endpointState: EndpointState = ENDPOINT_GONE;
+  probedEndpoints: string[] = [];
 
   hostname(): string {
     return this.hostnameValue;
-  }
-
-  bootId(): string | null {
-    return this.bootIdValue;
   }
 
   probePid(pid: number): string {
     return this.probes.get(pid) ?? PID_UNVERIFIED;
   }
 
-  kernelProcessIdentity(pid: number): string | null {
-    return this.identities.has(pid) ? (this.identities.get(pid) ?? null) : null;
+  probeEndpoint(endpoint: string): EndpointState {
+    this.probedEndpoints.push(endpoint);
+    return this.endpointState;
   }
-
-  getpgid(pid: number): number | null {
-    return this.pgids.has(pid) ? (this.pgids.get(pid) ?? null) : null;
-  }
-
-  identityLockHolder(_filePath: string): number | null {
-    if (this.missingIdentityFile) return null;
-    return this.lockPid;
-  }
-
-  readIdentityFile(_filePath: string): Record<string, unknown> | null {
-    if (this.missingIdentityFile) return null;
-    return this.identityPayload;
-  }
-
-  killpg(pgid: number, sig: number): void {
-    this.killed.push([pgid, sig]);
-  }
-}
-
-function inspector(ownerAlive: boolean, providerProbe: string): FakeInspector {
-  const fake = new FakeInspector();
-  fake.probes.set(111, ownerAlive ? PID_PRESENT : PID_GONE);
-  fake.probes.set(4242, providerProbe);
-  fake.identities.set(111, "owner-key");
-  fake.identities.set(4242, "provider-key");
-  fake.pgids.set(4242, 4242);
-  fake.identityPayload = {
-    token: "aa".repeat(16),
-    pid: 4242,
-    pgid: 4242,
-    start_key: "provider-key",
-  };
-  return fake;
 }
 
 function metadata(extra: Record<string, unknown> = {}): Record<string, unknown> {
@@ -99,14 +60,9 @@ function metadata(extra: Record<string, unknown> = {}): Record<string, unknown> 
     execution_id: "0001-implement--attempt-01",
     status: "running",
     hostname: "host.example",
-    boot_id: "boot-1",
     owner_pid: 111,
-    owner_start_key: "owner-key",
     provider_pid: 4242,
-    provider_pgid: 4242,
-    provider_start_key: "provider-key",
-    identity_path: IDENTITY_FILENAME,
-    identity_token: "aa".repeat(16),
+    provider_endpoint: "/tmp/migent-test.sock",
     ...extra,
   };
 }
@@ -120,218 +76,171 @@ async function waitUntil(predicate: () => boolean, timeoutSec: number): Promise<
   throw new Error(`condition not met within ${timeoutSec}s`);
 }
 
-function processGroupGone(pgid: number): boolean {
-  try {
-    process.kill(-pgid, 0);
-    return false;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "ESRCH";
-  }
-}
-
-const strayPids: number[] = [];
+const strays: number[] = [];
 
 afterEach(() => {
-  for (const pid of strayPids.splice(0)) {
+  for (const pid of strays.splice(0)) {
     try {
-      process.kill(-pid, "SIGKILL");
+      killProcessTree(pid, "SIGKILL");
     } catch {
       // already gone
     }
   }
 });
 
-function track(child: ChildProcess): ChildProcess {
-  if (child.pid !== undefined) strayPids.push(child.pid);
+function startWrapper(command: string[], endpoint: string, graceSec: number): ChildProcess {
+  const argv = wrapperArgv(command, { endpoint, graceSec });
+  const child = spawn(argv[0] ?? "", argv.slice(1), {
+    detached: process.platform !== "win32",
+    stdio: ["ignore", "inherit", "inherit", "ipc"],
+  });
+  if (child.pid !== undefined) strays.push(child.pid);
   return child;
 }
 
-async function stopChild(child: ChildProcess | undefined): Promise<void> {
-  if (!child?.pid) return;
-  if (child.exitCode === null && child.signalCode === null) {
-    try {
-      process.kill(-child.pid, "SIGKILL");
-    } catch {
-      // already gone
-    }
-    await new Promise((resolve) => child.once("exit", resolve));
-  }
+function nextMessage(child: ChildProcess): Promise<unknown> {
+  return new Promise((resolve) => child.once("message", resolve));
 }
 
-test("closed death pipe before exec does not start provider", async () => {
-  const directory = mkdtempSync(path.join(tmpdir(), "migent-own-"));
+function exited(child: ChildProcess): boolean {
+  return child.exitCode !== null || child.signalCode !== null;
+}
+
+function sentinelCommand(directory: string): { command: string[]; sentinel: string; release: string } {
   const sentinel = path.join(directory, "sentinel");
   const release = path.join(directory, "release");
-  const identityPath = path.join(directory, IDENTITY_FILENAME);
-  const pipe = createPipe();
-  closeSync(pipe.writeFd);
-  let child: ChildProcess | undefined;
+  return { command: [process.execPath, "-e", SENTINEL_SCRIPT, sentinel, release], sentinel, release };
+}
+
+test("owner gone before start does not start provider", async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "migent-own-"));
+  const { command, sentinel } = sentinelCommand(directory);
   try {
-    const argv = wrapperArgv(
-      [process.execPath, "-e", SENTINEL_SCRIPT, sentinel, release],
-      {
-        deathFd: pipe.readFd,
-        identityPath,
-        token: "ab".repeat(16),
-        graceSec: TERMINATION_GRACE_SEC,
-      },
-    );
-    child = track(
-      spawn(argv[0] ?? "", argv.slice(1), {
-        detached: true,
-        stdio: stdioKeepingFd(pipe.readFd, "inherit", "inherit", "inherit"),
-      }),
-    );
-    closeSync(pipe.readFd);
-    await waitUntil(() => child?.exitCode !== null || child?.signalCode !== null, 2);
+    const child = startWrapper(command, wrapperEndpoint(randomBytes(8).toString("hex")), 0.5);
+    expect(await nextMessage(child)).toEqual({ type: WRAPPER_READY });
+    child.disconnect();
+    await waitUntil(() => exited(child), 5);
     expect(child.exitCode).toBe(1);
     expect(existsSync(sentinel)).toBe(false);
   } finally {
-    await stopChild(child);
     rmSync(directory, { recursive: true, force: true });
   }
 });
 
-test("owner death after start exits process group", async () => {
+test("owner death after start stops the provider and frees the endpoint", async () => {
   const directory = mkdtempSync(path.join(tmpdir(), "migent-own-"));
-  const sentinel = path.join(directory, "sentinel");
-  const release = path.join(directory, "release");
-  const identityPath = path.join(directory, IDENTITY_FILENAME);
-  const pipe = createPipe();
-  setFdCloexec(pipe.writeFd);
-  let writeFd = pipe.writeFd;
-  let child: ChildProcess | undefined;
+  const { command, sentinel } = sentinelCommand(directory);
+  const endpoint = wrapperEndpoint(randomBytes(8).toString("hex"));
   try {
-    const argv = wrapperArgv(
-      [process.execPath, "-e", SENTINEL_SCRIPT, sentinel, release],
-      {
-        deathFd: pipe.readFd,
-        identityPath,
-        token: "ab".repeat(16),
-        graceSec: 0.5,
-      },
-    );
-    child = track(
-      spawn(argv[0] ?? "", argv.slice(1), {
-        detached: true,
-        stdio: stdioKeepingFd(pipe.readFd, "inherit", "inherit", "inherit"),
-      }),
-    );
-    closeSync(pipe.readFd);
-    await waitUntil(() => existsSync(sentinel), 2);
-    closeSync(writeFd);
-    writeFd = -1;
-    await waitUntil(() => child?.exitCode !== null || child?.signalCode !== null, 2);
-    expect(child?.exitCode !== null || child?.signalCode !== null).toBe(true);
-    await waitUntil(() => processGroupGone(child?.pid ?? -1), 2);
-    expect(processGroupGone(child?.pid ?? -1)).toBe(true);
-  } finally {
-    if (writeFd >= 0) {
-      try {
-        closeSync(writeFd);
-      } catch {
-        // already closed
-      }
-    }
-    await stopChild(child);
-    rmSync(directory, { recursive: true, force: true });
-  }
-});
-
-test("dead owner and gone provider already exited", () => {
-  const fake = inspector(false, PID_GONE);
-  const directory = mkdtempSync(path.join(tmpdir(), "migent-own-"));
-  try {
-    writeFileSync(path.join(directory, IDENTITY_FILENAME), "{}", "utf8");
-    const decision = classifyOrphanedExecution(metadata(), directory, fake);
-    expect(decision.action).toBe(REAP_ALREADY_EXITED);
-    expect(decision.error).toBe(ERROR_ALREADY_EXITED);
-    expect(fake.killed).toEqual([]);
+    const child = startWrapper(command, endpoint, 0.5);
+    expect(await nextMessage(child)).toEqual({ type: WRAPPER_READY });
+    expect(probeEndpointSync(endpoint, 1000)).toBe(ENDPOINT_ALIVE);
+    child.send({ type: WRAPPER_START });
+    await waitUntil(() => existsSync(sentinel) && readFileSync(sentinel, "utf8") !== "", 5);
+    const providerPid = Number(readFileSync(sentinel, "utf8"));
+    expect(probePid(providerPid)).toBe(PID_PRESENT);
+    child.disconnect();
+    await waitUntil(() => exited(child), 5);
+    await waitUntil(() => probePid(providerPid) === PID_GONE, 5);
+    expect(probeEndpointSync(endpoint, 1000)).toBe(ENDPOINT_GONE);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
 });
 
-test("matching identity is reaped", () => {
-  const fake = inspector(false, PID_PRESENT);
+// Owner that starts the wrapper (its argv) and then waits to be killed.
+const OWNER_SCRIPT = `
+const { spawn } = require("child_process");
+const argv = process.argv.slice(1);
+const child = spawn(argv[0], argv.slice(1), {
+  detached: process.platform !== "win32",
+  stdio: ["ignore", "inherit", "inherit", "ipc"],
+});
+child.on("message", (message) => {
+  if (message.type === "ready") child.send({ type: "start" });
+});
+setInterval(() => undefined, 1000);
+`;
+
+test("killed owner process stops the provider", async () => {
   const directory = mkdtempSync(path.join(tmpdir(), "migent-own-"));
+  const { command, sentinel } = sentinelCommand(directory);
+  const endpoint = wrapperEndpoint(randomBytes(8).toString("hex"));
+  const owner = spawn(
+    process.execPath,
+    ["-e", OWNER_SCRIPT, "--", ...wrapperArgv(command, { endpoint, graceSec: 0.5 })],
+    { stdio: "inherit" },
+  );
   try {
-    writeFileSync(path.join(directory, IDENTITY_FILENAME), "{}", "utf8");
-    const decision = classifyOrphanedExecution(metadata(), directory, fake);
-    expect(decision.action).toBe(REAP_REAPED);
-    expect(decision.error).toBe(ERROR_REAPED);
+    await waitUntil(() => existsSync(sentinel) && readFileSync(sentinel, "utf8") !== "", 5);
+    const providerPid = Number(readFileSync(sentinel, "utf8"));
+    strays.push(providerPid);
+    owner.kill("SIGKILL");
+    await waitUntil(() => probePid(providerPid) === PID_GONE, 5);
+    await waitUntil(() => probeEndpointSync(endpoint, 1000) === ENDPOINT_GONE, 5);
   } finally {
+    owner.kill("SIGKILL");
     rmSync(directory, { recursive: true, force: true });
   }
 });
 
-test("live owner is still running", () => {
-  const fake = inspector(true, PID_PRESENT);
-  const directory = mkdtempSync(path.join(tmpdir(), "migent-own-"));
-  try {
-    writeFileSync(path.join(directory, IDENTITY_FILENAME), "{}", "utf8");
-    const decision = classifyOrphanedExecution(metadata(), directory, fake);
-    expect(decision.action).toBe(REAP_STILL_RUNNING);
-    expect(fake.killed).toEqual([]);
-  } finally {
-    rmSync(directory, { recursive: true, force: true });
-  }
+test("wrapper reports the provider exit code", async () => {
+  const child = startWrapper([process.execPath, "-e", "process.exit(7)"], wrapperEndpoint(randomBytes(8).toString("hex")), 0.5);
+  expect(await nextMessage(child)).toEqual({ type: WRAPPER_READY });
+  child.send({ type: WRAPPER_START });
+  await waitUntil(() => exited(child), 5);
+  expect(child.exitCode).toBe(7);
 });
 
-test("boot mismatch does not kill", () => {
-  const fake = inspector(false, PID_PRESENT);
-  const directory = mkdtempSync(path.join(tmpdir(), "migent-own-"));
-  try {
-    writeFileSync(path.join(directory, IDENTITY_FILENAME), "{}", "utf8");
-    const decision = classifyOrphanedExecution(
-      metadata({ boot_id: "boot-previous" }),
-      directory,
-      fake,
-    );
-    expect(decision.action).toBe(REAP_BOOT_MISMATCH);
-    expect(decision.error).toBe(ERROR_BOOT_MISMATCH);
-    expect(fake.killed).toEqual([]);
-  } finally {
-    rmSync(directory, { recursive: true, force: true });
-  }
+test("missing provider executable exits 127", async () => {
+  const child = startWrapper(["migent-no-such-binary"], wrapperEndpoint(randomBytes(8).toString("hex")), 0.5);
+  expect(await nextMessage(child)).toEqual({ type: WRAPPER_READY });
+  child.send({ type: WRAPPER_START });
+  await waitUntil(() => exited(child), 5);
+  expect(child.exitCode).toBe(127);
 });
 
-test("unverified live provider does not kill", () => {
-  const mutations: Record<string, (fake: FakeInspector) => void> = {
-    "identity-mismatch": (fake) => {
-      fake.identities.set(4242, "other-start-key");
-    },
-    "missing-identity-file": (fake) => {
-      fake.missingIdentityFile = true;
-    },
-  };
-  for (const [label, mutate] of Object.entries(mutations)) {
-    const fake = inspector(false, PID_PRESENT);
-    mutate(fake);
-    const directory = mkdtempSync(path.join(tmpdir(), "migent-own-"));
-    try {
-      if (label !== "missing-identity-file") {
-        writeFileSync(path.join(directory, IDENTITY_FILENAME), "{}", "utf8");
-      }
-      const decision = classifyOrphanedExecution(metadata(), directory, fake);
-      expect(decision.action, label).toBe(REAP_UNVERIFIED);
-      expect(fake.killed, label).toEqual([]);
-    } finally {
-      rmSync(directory, { recursive: true, force: true });
-    }
-  }
+test("reachable endpoint is still running", () => {
+  const fake = new FakeInspector();
+  fake.endpointState = ENDPOINT_ALIVE;
+  const decision = classifyOrphanedExecution(metadata(), "/x", fake);
+  expect(decision.action).toBe(REAP_STILL_RUNNING);
+  expect(decision.ownerPid).toBe(111);
+  expect(fake.probedEndpoints).toEqual(["/tmp/migent-test.sock"]);
 });
 
-test("reused owner pid is treated as dead", () => {
-  const fake = inspector(true, PID_PRESENT);
-  fake.identities.set(111, "reused-owner-key");
-  const directory = mkdtempSync(path.join(tmpdir(), "migent-own-"));
-  try {
-    writeFileSync(path.join(directory, IDENTITY_FILENAME), "{}", "utf8");
-    const decision = classifyOrphanedExecution(metadata(), directory, fake);
-    expect(decision.action).toBe(REAP_REAPED);
-    expect(fake.killed).toEqual([]);
-  } finally {
-    rmSync(directory, { recursive: true, force: true });
-  }
+test("refused endpoint already exited", () => {
+  const fake = new FakeInspector();
+  fake.endpointState = ENDPOINT_GONE;
+  // A reused owner pid does not matter once the endpoint is gone.
+  fake.probes.set(111, PID_PRESENT);
+  const decision = classifyOrphanedExecution(metadata(), "/x", fake);
+  expect(decision.action).toBe(REAP_ALREADY_EXITED);
+  expect(decision.error).toBe(ERROR_ALREADY_EXITED);
+});
+
+test("unknown endpoint state is unverified", () => {
+  const fake = new FakeInspector();
+  fake.endpointState = ENDPOINT_UNKNOWN;
+  expect(classifyOrphanedExecution(metadata(), "/x", fake).action).toBe(REAP_UNVERIFIED);
+});
+
+test("other host, missing owner, or finished execution is not probed", () => {
+  const fake = new FakeInspector();
+  expect(classifyOrphanedExecution(metadata({ hostname: "elsewhere" }), "/x", fake).action).toBe(REAP_UNVERIFIED);
+  expect(classifyOrphanedExecution(metadata({ owner_pid: undefined }), "/x", fake).action).toBe(REAP_UNVERIFIED);
+  expect(classifyOrphanedExecution(metadata({ status: "complete" }), "/x", fake).action).toBe(REAP_NOOP);
+  expect(fake.probedEndpoints).toEqual([]);
+});
+
+test("legacy record without endpoint trusts only a vanished owner", () => {
+  const fake = new FakeInspector();
+  fake.probes.set(111, PID_GONE);
+  expect(classifyOrphanedExecution(metadata({ provider_endpoint: undefined }), "/x", fake).action).toBe(
+    REAP_ALREADY_EXITED,
+  );
+  fake.probes.set(111, PID_PRESENT);
+  expect(classifyOrphanedExecution(metadata({ provider_endpoint: undefined }), "/x", fake).action).toBe(
+    REAP_UNVERIFIED,
+  );
 });

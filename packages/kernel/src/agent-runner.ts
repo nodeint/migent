@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto";
 import { mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -227,8 +226,6 @@ export class AgentToolRunner {
         lastMessageFile,
         options,
       });
-      const identityToken = randomBytes(16).toString("hex");
-      const identityPath = path.join(context.directory, "process.identity");
       const [stdout, invokeError] = await this.executor.run(
         spec,
         workspace,
@@ -249,8 +246,6 @@ export class AgentToolRunner {
         (info) => {
           store.saveProcessMetadata(context, info);
         },
-        identityPath,
-        identityToken,
       );
       const [responseText, parsedProviderId] = adapter.parseResponse(stdout, lastMessageFile);
       return [responseText || invokeError || "", parsedProviderId, invokeError];
