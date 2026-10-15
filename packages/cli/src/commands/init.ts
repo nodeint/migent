@@ -11,6 +11,7 @@ import {
 } from "../display.js";
 import { cliHooks } from "../hooks.js";
 import { runDoctor } from "./doctor.js";
+import { installSkill } from "./skill.js";
 import {
   acceptedOptions,
   adapterMap,
@@ -51,6 +52,7 @@ export async function runInit(
     model?: string | null;
     options?: readonly string[];
     preset?: string;
+    skill?: boolean;
     interactive?: boolean;
     adapters?: Record<string, AgentAdapter> | null;
     which?: Which | null;
@@ -61,6 +63,7 @@ export async function runInit(
   const provider = options.provider ?? null;
   const model = options.model ?? null;
   const preset = options.preset ?? "implement";
+  const skill = options.skill === true;
   const interactive = options.interactive ?? false;
   const chosen = options.adapters ?? adapterMap();
   const resolve = options.which ?? cliHooks.which ?? whichSync;
@@ -86,6 +89,7 @@ export async function runInit(
   const classified = classify(workspace, chosen, resolve);
   if (classified.state === "ready") {
     printAlreadyInitialized();
+    if (skill) return installSkill(workspace);
     return 0;
   }
   if (classified.state === "conflict") {
@@ -107,6 +111,16 @@ export async function runInit(
     printError(error instanceof Error ? error.message : String(error));
     return 2;
   }
+  let install = skill;
+  if (!install && interactive) {
+    try {
+      install = await prompt.confirm("Install the Migent skill in .agents/skills/migent?");
+    } catch (error) {
+      printError(error instanceof Error ? error.message : String(error));
+      return 2;
+    }
+  }
+  if (install && installSkill(workspace) !== 0) return 1;
   const paths = writeProject(workspace, preset, primary, reviewer);
   printCreated(paths, `migent start ${preset} --task "..."`);
   return runDoctor(workspace, { which: resolve });

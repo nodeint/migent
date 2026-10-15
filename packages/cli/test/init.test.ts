@@ -187,7 +187,7 @@ test("interactive plan review can choose a second model", async () => {
       interactive: true,
       runCommand,
       which: which(new Set(["codex", "grok"])),
-      prompter: new ScriptedPrompt(["", "gpt-5", "", "n", "grok", "", "high"]),
+      prompter: new ScriptedPrompt(["", "gpt-5", "", "n", "grok", "", "high", "n"]),
     });
     const config = readFileSync(path.join(workspace, ".migent", "config.yaml"), "utf8");
     expect(code).toBe(0);
@@ -210,7 +210,7 @@ test("interactive prefers an installed provider", async () => {
       interactive: true,
       runCommand,
       which: which(new Set(["grok"])),
-      prompter: new ScriptedPrompt(["", "", ""]),
+      prompter: new ScriptedPrompt(["", "", "", "n"]),
     });
     const config = readFileSync(path.join(workspace, ".migent", "config.yaml"), "utf8");
     expect(code).toBe(0);
@@ -274,6 +274,126 @@ test("rejects an option value the provider does not list", async () => {
     expect(captured.value).toBe(2);
     expect(existsSync(path.join(workspace, ".migent"))).toBe(false);
     expect(captured.stderr).toContain("model_reasoning_effort must be one of");
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("installs the skill when --skill is set", async () => {
+  const workspace = tempDir();
+  try {
+    const captured = await capture(() =>
+      runInit(workspace, {
+        provider: "codex",
+        model: "gpt-5",
+        skill: true,
+        runCommand,
+        which: which(new Set(["codex"])),
+      }),
+    );
+    const skill = readFileSync(path.join(workspace, ".agents", "skills", "migent", "SKILL.md"), "utf8");
+    expect(captured.value).toBe(0);
+    expect(skill).toContain("name: migent");
+    expect(captured.stdout).toContain("Installed .agents/skills/migent");
+    expect(existsSync(path.join(workspace, ".migent", "config.yaml"))).toBe(true);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("leaves the skill uninstalled unless asked", async () => {
+  const workspace = tempDir();
+  try {
+    const code = await runInit(workspace, {
+      provider: "codex",
+      model: "gpt-5",
+      runCommand,
+      which: which(new Set(["codex"])),
+    });
+    expect(code).toBe(0);
+    expect(existsSync(path.join(workspace, ".agents"))).toBe(false);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("interactive init installs the skill only when confirmed", async () => {
+  const workspace = tempDir();
+  const declined = tempDir();
+  try {
+    const accepted = await runInit(workspace, {
+      interactive: true,
+      runCommand,
+      which: which(new Set(["codex"])),
+      prompter: new ScriptedPrompt(["", "gpt-5", "", "y"]),
+    });
+    const refused = await runInit(declined, {
+      interactive: true,
+      runCommand,
+      which: which(new Set(["codex"])),
+      prompter: new ScriptedPrompt(["", "gpt-5", "", "n"]),
+    });
+    expect(accepted).toBe(0);
+    expect(existsSync(path.join(workspace, ".agents", "skills", "migent", "SKILL.md"))).toBe(true);
+    expect(refused).toBe(0);
+    expect(existsSync(path.join(declined, ".agents"))).toBe(false);
+    expect(existsSync(path.join(declined, ".migent", "config.yaml"))).toBe(true);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+    rmSync(declined, { recursive: true, force: true });
+  }
+});
+
+test("refuses to replace an existing skill and writes no project", async () => {
+  const workspace = tempDir();
+  try {
+    const skillDirectory = path.join(workspace, ".agents", "skills", "migent");
+    mkdirSync(skillDirectory, { recursive: true });
+    const custom = path.join(skillDirectory, "SKILL.md");
+    writeFileSync(custom, "custom\n", "utf8");
+    const captured = await capture(() =>
+      runInit(workspace, {
+        provider: "codex",
+        model: "gpt-5",
+        skill: true,
+        runCommand,
+        which: which(new Set(["codex"])),
+      }),
+    );
+    expect(captured.value).toBe(1);
+    expect(readFileSync(custom, "utf8")).toBe("custom\n");
+    expect(existsSync(path.join(workspace, ".migent"))).toBe(false);
+    expect(captured.stderr).toContain("already exists");
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("--skill installs into an existing project", async () => {
+  const workspace = tempDir();
+  try {
+    expect(
+      await runInit(workspace, {
+        provider: "codex",
+        model: "gpt-5",
+        runCommand,
+        which: which(new Set(["codex"])),
+      }),
+    ).toBe(0);
+    const config = readFileSync(path.join(workspace, ".migent", "config.yaml"), "utf8");
+    const captured = await capture(() =>
+      runInit(workspace, {
+        provider: "codex",
+        model: "gpt-5",
+        skill: true,
+        runCommand,
+        which: which(new Set(["codex"])),
+      }),
+    );
+    expect(captured.value).toBe(0);
+    expect(captured.stdout).toContain("Already initialized.");
+    expect(captured.stdout).toContain("Installed .agents/skills/migent");
+    expect(readFileSync(path.join(workspace, ".migent", "config.yaml"), "utf8")).toBe(config);
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }

@@ -43,6 +43,7 @@ Workflow commands write progress to stderr and one JSON result to stdout. Run
 migent init
 migent init --provider codex --model gpt-5
 migent init --preset plan --provider codex --model gpt-5
+migent init --skill --provider codex --model gpt-5
 ```
 
 `init` writes `.migent/config.yaml`, one workflow, and `.migent/.gitignore`.
@@ -52,11 +53,16 @@ that provider for the model you picked. Omit `--option` to keep the provider
 default. The default workflow is `implement`, a single developer
 stage. `--preset plan` writes a planner and a reviewer. In a terminal,
 provider, model, and prompted options are chosen from lists, and `plan` can
-assign the reviewer a second model. Pass `--provider` and `--model` together
-when input is not a terminal.
+assign the reviewer a second model. In a terminal, init also asks whether to
+install the Migent skill at `.agents/skills/migent/`. `--skill` installs that
+skill without asking. Pass `--provider` and `--model` together when input is
+not a terminal. Without `--skill`, a non-interactive init leaves the skill
+uninstalled.
 
-An existing valid project is left unchanged. A partial `.migent/` directory
-stops init and lists the files in the way.
+An existing valid project is left unchanged. `--skill` still installs the
+skill on that project. A partial `.migent/` directory stops init and lists
+the files in the way. Init writes nothing when the skill directory already
+exists and installation was requested.
 
 ## Config
 

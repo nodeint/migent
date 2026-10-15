@@ -138,6 +138,7 @@ export function createProgram(status: CliStatus): Command {
     .option("--model <model>", "Model id for the default model. Pass with --provider.")
     .option("--option <pair>", "KEY=VALUE stored under models.*.options.", collect, [])
     .option("--preset <preset>", "Workflow to create: implement or plan. Default: implement.", "implement")
+    .option("--skill", "Install the Migent skill at .agents/skills/migent.")
     .action((options: OptionValues) =>
       settle(status, () => {
         const provider = optionalText(options.provider);
@@ -148,6 +149,7 @@ export function createProgram(status: CliStatus): Command {
           model,
           options: stringList(options.option),
           preset: typeof options.preset === "string" ? options.preset : "implement",
+          skill: options.skill === true,
           interactive,
         });
       }),
