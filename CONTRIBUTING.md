@@ -61,16 +61,25 @@ pnpm vitest run packages/cli/test/config.test.ts -t "keeps the model name"
 ## Platform notes
 
 CI runs the suite on both Ubuntu and macOS. Code that passes on one can fail
-on the other, mostly around processes and file descriptors:
+on the other, mostly around processes. Process and lock code uses Node
+built-ins and `proper-lockfile` only; do not add native dependencies or libc
+calls.
 
-- **Mark libc-created descriptors close-on-exec.** Descriptors from `socketpair`,
-  `open`, and the like (through koffi) are inheritable. On Linux, libuv forks
-  without closing stray descriptors, so a spawned child keeps them open; on
-  macOS, libuv's `posix_spawn` closes them. A leaked socket end means the other
-  side never sees EOF. Set `FD_CLOEXEC` right after creating the descriptor;
-  descriptors passed through `stdio` are still inherited.
-- Locks use `fcntl`/`flock` through `packages/kernel/src/posix.ts`. Keep libc
-  calls there rather than adding native dependencies.
+- **Liveness comes from local endpoints, not pids.** The provider wrapper and
+  the registry service each listen on a Unix socket (a named pipe on Windows)
+  for as long as they run. Another process proves one is alive by connecting;
+  the OS frees the endpoint when the process dies, so pid reuse cannot fool
+  it. Keep socket paths under 100 bytes; `wrapperEndpoint` and
+  `serviceEndpointPath` fall back to a short path in the temp directory.
+- **Owner death arrives over IPC.** Children that must not outlive their
+  parent (the provider wrapper, the registry child before it is published) get
+  an `ipc` stdio slot and act on `disconnect`, which fires even when the
+  parent is killed with SIGKILL.
+- **Stop process trees with `killProcessTree`.** On POSIX it signals the
+  process group (spawn with `detached: true`); on Windows it runs
+  `taskkill /T /F`, and `detached` must stay false to avoid a new console.
+- **Locks are `<path>.lock` directories** from `proper-lockfile`. A holder that
+  dies leaves the lock stale for a few seconds before others can take it.
 - The kernel process wrapper and the registry child re-execute their own
   module files (`import.meta.url`). Do not bundle the packages into a single
   file; that breaks those entry points.

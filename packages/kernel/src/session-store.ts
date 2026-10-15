@@ -1,11 +1,8 @@
 import { randomUUID } from "node:crypto";
 import {
   appendFileSync,
-  closeSync,
-  constants as fsConstants,
   existsSync,
   mkdirSync,
-  openSync,
   readFileSync,
   readdirSync,
   statSync,
@@ -46,7 +43,7 @@ import {
   safeComponent,
   utcNow,
 } from "./runtime.js";
-import { POSIX, flockSync } from "./posix.js";
+import { withFileLockSync } from "./file-lock.js";
 import type { StageOutcome } from "./stage-outcome.js";
 import { loadNamedWorkflow, loadWorkflowDocument, type WorkflowDocument } from "./workflow.js";
 
@@ -500,23 +497,8 @@ export class SessionStore {
   }
 
   private withExecutionLock<T>(filePath: string, fn: () => T): T {
-    if (process.platform === "win32" || !existsSync(filePath)) return fn();
-    const fd = openSync(filePath, fsConstants.O_RDWR);
-    let locked = false;
-    try {
-      flockSync(fd, POSIX.LOCK_EX);
-      locked = true;
-      return fn();
-    } finally {
-      if (locked) {
-        try {
-          flockSync(fd, POSIX.LOCK_UN);
-        } catch {
-          // The fd is closed below either way.
-        }
-      }
-      closeSync(fd);
-    }
+    if (!existsSync(filePath)) return fn();
+    return withFileLockSync(filePath, fn);
   }
 
   private ensureSessionIsRunnable(sessionId: string | null): void {

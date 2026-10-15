@@ -47,12 +47,13 @@
     "prepack": "pnpm -w run build && cp ../../LICENSE ."
   },
   "dependencies": {
-    "koffi": "^3.3.2",
+    "proper-lockfile": "^4.1.2",
     "which": "^7.0.0",
     "yaml": "^2.9.1",
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@types/node": "^26.6.4"
+    "@types/node": "^26.6.4",
+    "@types/proper-lockfile": "^4.1.4"
   }
 }
