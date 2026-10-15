@@ -294,7 +294,14 @@ test("sigterm leaves service json bytes unchanged", async () => {
   process.kill(endpoint.pid, "SIGTERM");
   expect(await waitFor(() => !pidAlive(endpoint.pid), 2)).toBe(true);
   expect(readFileSync(serviceJsonPath(home))).toEqual(before);
-  expect(await queryEndpoint(home)).toEqual({ state: "gone" });
+  // A Windows named pipe can take a moment to disappear after its process dies.
+  let state = "";
+  const deadline = monotonic() + 2;
+  while (state !== "gone" && monotonic() < deadline) {
+    state = (await queryEndpoint(home)).state;
+    if (state !== "gone") await sleep(0.05);
+  }
+  expect(state).toBe("gone");
   forget(endpoint.pid);
 }, 20000);
 
