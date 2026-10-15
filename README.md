@@ -17,9 +17,9 @@ where the process is.
   - [Supported CLIs](#supported-clis)
   - [Quickstart](#quickstart)
     - [Install](#install)
-    - [Upgrade](#upgrade)
     - [Create a project](#create-a-project)
     - [Run](#run)
+    - [Next](#next)
   - [Concepts](#concepts)
   - [Current scope](#current-scope)
   - [Documentation](#documentation)
@@ -69,59 +69,56 @@ ones your configuration names.
 
 ## Quickstart
 
-Node.js 22+ on macOS, Linux, or Windows, and authenticated provider CLIs named by your
-configuration.
+Requires Node.js 22+ (macOS, Linux, or Windows) and the provider CLIs your
+config uses, already signed in.
 
 ### Install
 
 ```bash
 npm install -g @nodeint/migent
+migent --version
 ```
 
-Verify with `migent --version`.
-
-### Upgrade
-
-```bash
-npm install -g @nodeint/migent@latest
-```
+Upgrade with `npm install -g @nodeint/migent@latest`.
 
 ### Create a project
 
-From the project where agents will work:
+From the repository where agents will work:
 
 ```bash
-migent init --preset plan
+migent init
 ```
 
-`init` writes the config, a plan-and-review workflow, and a gitignore for local
-session state:
+In a terminal, `init` walks you through the provider, model, and options, then
+offers to install the Migent skill so agents in the project know how to run it.
+Without a terminal, pass `--provider` and `--model` together. Pass `--skill` to
+install the skill without the prompt.
+
+It creates:
 
 ```text
 .migent/
-├── config.yaml
-├── .gitignore
+├── config.yaml        # models and roles
+├── .gitignore         # keeps sessions/ untracked
 └── workflows/
-    └── plan.yaml
+    └── plan.yaml      # plan-and-review workflow
+
+.agents/skills/migent/ # only if you install the skill
 ```
 
-In a terminal, pick the provider, model, and prompted options from the lists.
-Pass `--provider` and `--model` together when input is not a terminal. Commit
-`config.yaml` and `workflows/`. Leave `.migent/sessions/` untracked.
-
-Model and role shape is in [Providers and model configuration](https://github.com/nodeint/migent/blob/main/docs/providers.md).
-A full plan workflow is in [Writing workflows](https://github.com/nodeint/migent/blob/main/docs/workflows.md#complete-example).
+Commit `config.yaml` and `workflows/`. To add the skill later, run
+`migent skill install`.
 
 ### Run
 
-From that project or any of its subdirectories:
+From the project or any subdirectory:
 
 ```bash
 migent start plan --task "Plan the account settings redesign"
 ```
 
-Migent runs the next eligible stage until the workflow completes or stops.
-Progress goes to stderr. Stdout is one JSON result.
+Migent runs each eligible stage until the workflow completes or stops. Progress
+goes to stderr; stdout is a single JSON result. Then inspect or resume:
 
 ```bash
 migent sessions
@@ -129,9 +126,12 @@ migent watch <session-id>
 migent continue <session-id>
 ```
 
-Command fields and exit codes are in
-[CLI commands and execution controls](https://github.com/nodeint/migent/blob/main/docs/cli.md). Session files are in
-[Sessions and workflow composition](https://github.com/nodeint/migent/blob/main/docs/sessions.md).
+### Next
+
+- [Providers and model configuration](https://github.com/nodeint/migent/blob/main/docs/providers.md)
+- [Writing workflows](https://github.com/nodeint/migent/blob/main/docs/workflows.md#complete-example)
+- [CLI commands and exit codes](https://github.com/nodeint/migent/blob/main/docs/cli.md)
+- [Sessions and workflow composition](https://github.com/nodeint/migent/blob/main/docs/sessions.md)
 
 ## Concepts
 

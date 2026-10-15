@@ -97,14 +97,11 @@ export async function runInit(
     return 1;
   }
   let primary: ModelChoice;
-  let reviewer: ModelChoice | null;
   try {
-    [primary, reviewer] = await choices(chosen, resolve, prompt, {
+    primary = await choices(chosen, resolve, prompt, {
       provider,
       model,
       options: parseOptions(optionPairs),
-      preset,
-      interactive,
       runCommand: execute,
     });
   } catch (error) {
@@ -121,7 +118,7 @@ export async function runInit(
     }
   }
   if (install && installSkill(workspace) !== 0) return 1;
-  const paths = writeProject(workspace, preset, primary, reviewer);
+  const paths = writeProject(workspace, preset, primary);
   printCreated(paths, `migent start ${preset} --task "..."`);
   return runDoctor(workspace, { which: resolve });
 }
@@ -134,11 +131,9 @@ async function choices(
     provider: string | null;
     model: string | null;
     options: Record<string, string>;
-    preset: string;
-    interactive: boolean;
     runCommand: RunCommand;
   },
-): Promise<[ModelChoice, ModelChoice | null]> {
+): Promise<ModelChoice> {
   let provider = args.provider;
   let model = args.model;
   let stored: Record<string, string>;
@@ -159,25 +154,7 @@ async function choices(
   }
   if (model.trim() === "") throw new Error("Model is required.");
   const primary = { provider, model: model.trim(), options: stored };
-  if (args.preset !== "plan" || !args.interactive) return [primary, null];
-  if (await prompt.confirm("Use the default model for both planner and reviewer?")) return [primary, null];
-  const rows = detected(adapters, which);
-  const reviewerProvider = await prompt.selectProvider(rows, "Reviewer provider");
-  const reviewerAdapter = adapters[reviewerProvider];
-  if (reviewerAdapter === undefined) throw new Error(`Unknown provider: ${reviewerProvider}.`);
-  const reviewerCatalog = await loadCatalog(reviewerAdapter, which, args.runCommand);
-  const reviewerModel = (
-    await prompt.selectModel(reviewerProvider, reviewerCatalog, "Reviewer model")
-  ).trim();
-  const reviewerOptions = await promptOptions(
-    reviewerAdapter,
-    reviewerModel,
-    reviewerCatalog,
-    which,
-    args.runCommand,
-    prompt,
-  );
-  return [primary, { provider: reviewerProvider, model: reviewerModel, options: reviewerOptions }];
+  return primary;
 }
 
 function classify(
@@ -216,27 +193,22 @@ function writeProject(
   workspace: string,
   preset: string,
   primary: ModelChoice,
-  reviewer: ModelChoice | null,
 ): string[] {
   const root = path.join(workspace, ".migent");
   const workflows = path.join(root, "workflows");
   mkdirSync(workflows, { recursive: true });
-  writeFileSync(path.join(root, "config.yaml"), renderConfig(preset, primary, reviewer), "utf8");
+  writeFileSync(path.join(root, "config.yaml"), renderConfig(preset, primary), "utf8");
   const workflowName = `${preset}.yaml`;
   writeFileSync(path.join(workflows, workflowName), renderWorkflow(preset), "utf8");
   writeFileSync(path.join(root, ".gitignore"), "sessions/\n", "utf8");
   return [".migent/config.yaml", `.migent/workflows/${workflowName}`, ".migent/.gitignore"];
 }
 
-function renderConfig(preset: string, primary: ModelChoice, reviewer: ModelChoice | null): string {
+function renderConfig(preset: string, primary: ModelChoice): string {
   const models: Array<[string, ModelChoice]> = [["default", primary]];
   let roles: Array<[string, string]>;
   if (preset === "implement") roles = [["developer", "default"]];
-  else if (reviewer === null) roles = [["planner", "default"], ["reviewer", "default"]];
-  else {
-    models.push(["review", reviewer]);
-    roles = [["planner", "default"], ["reviewer", "review"]];
-  }
+  else roles = [["planner", "default"], ["reviewer", "default"]];
   const lines = ["schema_version: 1", "models:"];
   for (const [name, choice] of models) {
     lines.push(`  ${name}:`, `    provider: ${yamlScalar(choice.provider)}`, `    model: ${yamlScalar(choice.model)}`);

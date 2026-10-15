@@ -52,8 +52,9 @@ that provider's CLI, not from a built-in list. Prompted options come from
 that provider for the model you picked. Omit `--option` to keep the provider
 default. The default workflow is `implement`, a single developer
 stage. `--preset plan` writes a planner and a reviewer. In a terminal,
-provider, model, and prompted options are chosen from lists, and `plan` can
-assign the reviewer a second model. In a terminal, init also asks whether to
+provider, model, and prompted options are chosen from lists. Both `plan`
+roles use that model; give the reviewer another with `migent config role
+reviewer`. In a terminal, init also asks whether to
 install the Migent skill at `.agents/skills/migent/`. `--skill` installs that
 skill without asking. Pass `--provider` and `--model` together when input is
 not a terminal. Without `--skill`, a non-interactive init leaves the skill

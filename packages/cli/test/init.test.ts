@@ -179,30 +179,6 @@ test("plan review shares the default model", async () => {
   }
 });
 
-test("interactive plan review can choose a second model", async () => {
-  const workspace = tempDir();
-  try {
-    const code = await runInit(workspace, {
-      preset: "plan",
-      interactive: true,
-      runCommand,
-      which: which(new Set(["codex", "grok"])),
-      prompter: new ScriptedPrompt(["", "gpt-5", "", "n", "grok", "", "high", "n"]),
-    });
-    const config = readFileSync(path.join(workspace, ".migent", "config.yaml"), "utf8");
-    expect(code).toBe(0);
-    expect(config).toContain("provider: codex");
-    expect(config).toContain("model: gpt-5");
-    expect(config).not.toContain("model_reasoning_effort:");
-    expect(config).toContain("provider: grok");
-    expect(config).toContain("model: grok-4.7");
-    expect(config).toContain("reasoning-effort: high");
-    expect(config).toContain("default_model: review");
-  } finally {
-    rmSync(workspace, { recursive: true, force: true });
-  }
-});
-
 test("interactive prefers an installed provider", async () => {
   const workspace = tempDir();
   try {
