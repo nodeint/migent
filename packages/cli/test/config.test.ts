@@ -411,6 +411,7 @@ test("clear role option keeps the model name", async () => {
         clearOptions: ["reasoning-effort"],
         asJson: true,
         which,
+        runCommand,
       }),
     );
     const config = loadYamlMapping(configPath);

@@ -46,6 +46,11 @@ export function socketpair(): [number, number] {
     error.code = "EIO";
     throw error;
   }
+  // libc sockets are inheritable. On Linux libuv forks without closing stray fds, so
+  // a spawned child would hold both ends and never see EOF when its parent dies.
+  for (const fd of [out.a, out.b]) {
+    fcntlInt(fd, POSIX.F_SETFD, fcntlInt(fd, POSIX.F_GETFD) | POSIX.FD_CLOEXEC);
+  }
   return [out.a, out.b];
 }
 
