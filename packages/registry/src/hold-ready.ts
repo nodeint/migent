@@ -1,26 +1,18 @@
-import { closeSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { launchChild, readReadyLine } from "./child.js";
 import { ensureRegistryHome } from "./home.js";
 import { holdStartLock } from "./locks.js";
 import { monotonic, sleep } from "./time.js";
 
+/** Test helper: launch a service child, record its pid once ready, then wait to be killed. */
 export async function holdStartLockAfterChildReady(home: string, port: number, sentinel: string): Promise<void> {
   const directory = ensureRegistryHome(home);
   await holdStartLock(directory, 8, async () => {
-    const [, parent] = await launchChild(directory, port);
-    try {
-      const line = await readReadyLine(parent, monotonic() + 5);
-      if (!line) return;
-      const payload = JSON.parse(line.toString("utf8")) as { pid?: unknown };
-      writeFileSync(sentinel, String(payload.pid));
-      await sleep(120);
-    } finally {
-      try {
-        closeSync(parent);
-      } catch {
-        // already closed
-      }
-    }
+    const child = await launchChild(directory, port);
+    const payload = await readReadyLine(child, monotonic() + 5);
+    if (!payload) return;
+    writeFileSync(sentinel, String(payload.pid));
+    await sleep(120);
   });
 }
 

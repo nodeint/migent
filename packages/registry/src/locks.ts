@@ -1,8 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { chmodSync, closeSync, constants as fsConstants, openSync } from "node:fs";
-import { constants as osConstants } from "node:os";
+import { lstatSync, unlinkSync } from "node:fs";
 import path from "node:path";
-import { POSIX, fcntlLock } from "./posix.js";
+import lockfile from "proper-lockfile";
 import { monotonic, sleep } from "./time.js";
 
 export class RegistryBusy extends Error {
@@ -26,26 +25,43 @@ export class LockNotHeld extends Error {
   }
 }
 
-const contention = new Set<number>([
-  osConstants.errno.EAGAIN,
-  osConstants.errno.EACCES,
-  osConstants.errno.EWOULDBLOCK,
-]);
+// proper-lockfile holds a lock as a directory at the lock path and refreshes its mtime while held.
+// A holder that dies without releasing leaves it stale after STALE_MS.
+const STALE_MS = 5000;
+const UPDATE_MS = 1000;
+
+/** Migent 0.1 used plain fcntl-locked files at the same paths. */
+function removeLegacyLockFile(lockPath: string): void {
+  try {
+    if (lstatSync(lockPath).isFile()) unlinkSync(lockPath);
+  } catch {
+    // absent, or already a lock directory
+  }
+}
 
 const heldPaths = new AsyncLocalStorage<Set<string>>();
 const processLocks = new Map<string, ProcessLock>();
 
 export const lockOps = {
-  async fcntlFlock(fd: number, cmd: number, lockType: number): Promise<void> {
-    if (cmd !== POSIX.F_SETLK) {
-      throw new Error("registry locks use non-blocking F_SETLK");
+  /** One non-blocking attempt. Resolves to a release function, or null when another process holds it. */
+  async tryLock(lockPath: string): Promise<(() => Promise<void>) | null> {
+    removeLegacyLockFile(lockPath);
+    try {
+      return await lockfile.lock(lockPath, {
+        realpath: false,
+        lockfilePath: lockPath,
+        stale: STALE_MS,
+        update: UPDATE_MS,
+        retries: 0,
+        // A lost lock is reported by the next holder's own check; never crash the process for it.
+        onCompromised: () => undefined,
+      });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ELOCKED") return null;
+      throw error;
     }
-    await fcntlLock(fd, cmd, lockType);
   },
   sleep,
-  open(file: string, flags: number, mode = 0o777): number {
-    return openSync(file, flags, mode);
-  },
 };
 
 export function lockKey(lockPath: string): string {
@@ -117,55 +133,30 @@ export function startLockBusy(): StartLockBusy {
   return new StartLockBusy();
 }
 
-function errnoOf(error: unknown): number | undefined {
-  if (!error || typeof error !== "object") return undefined;
-  const err = error as NodeJS.ErrnoException;
-  if (typeof err.errno === "number") return Math.abs(err.errno);
-  if (err.code && err.code in osConstants.errno) {
-    return osConstants.errno[err.code as keyof typeof osConstants.errno];
-  }
-  return undefined;
-}
-
 async function acquireProcessLock(lock: ProcessLock, deadline: number): Promise<boolean> {
   const remaining = deadline - monotonic();
   if (remaining <= 0) return lock.tryAcquire();
   return lock.acquireTimeout(remaining);
 }
 
-async function acquireRecordLock(
-  fd: number,
-  lockType: number,
+async function acquireFileLock(
+  lockPath: string,
   deadline: number,
   busyError: () => Error,
-): Promise<void> {
-  let contended = false;
-  let eintr = 0;
+): Promise<() => Promise<void>> {
   for (;;) {
+    const release = await lockOps.tryLock(lockPath);
+    if (release !== null) return release;
     const remaining = deadline - monotonic();
-    if (contended && remaining <= 0) throw busyError();
-    try {
-      await lockOps.fcntlFlock(fd, POSIX.F_SETLK, lockType);
-      return;
-    } catch (error) {
-      const errno = errnoOf(error);
-      if (errno === osConstants.errno.EINTR) {
-        eintr += 1;
-        if (eintr > 100 && remaining <= 0) throw busyError();
-        continue;
-      }
-      if (errno !== undefined && contention.has(errno)) {
-        contended = true;
-        const now = deadline - monotonic();
-        if (now <= 0) throw busyError();
-        await lockOps.sleep(Math.min(0.05, now));
-        continue;
-      }
-      throw error;
-    }
+    if (remaining <= 0) throw busyError();
+    await lockOps.sleep(Math.min(0.05, remaining));
   }
 }
 
+/**
+ * Exclusive lock across threads of this process and across processes. `shared` is accepted for
+ * callers that only read, but every holder is exclusive; the critical sections are short.
+ */
 export async function interprocessLock<T>(
   lockPath: string,
   options: { shared: boolean; timeoutSec: number; busyError: () => Error },
@@ -174,39 +165,26 @@ export async function interprocessLock<T>(
   const key = lockKey(lockPath);
   const processLock = processLockFor(lockPath);
   const deadline = monotonic() + options.timeoutSec;
-  let fd: number | null = null;
+  let release: (() => Promise<void>) | null = null;
   let gotProcess = false;
-  let gotRecord = false;
   const existing = heldPaths.getStore();
   const held = existing ?? new Set<string>();
   const run = async (): Promise<T> => {
     try {
       gotProcess = await acquireProcessLock(processLock, deadline);
       if (!gotProcess) throw options.busyError();
-      const flags = fsConstants.O_RDWR | fsConstants.O_CREAT;
-      fd = lockOps.open(lockPath, flags, 0o600);
-      chmodSync(lockPath, 0o600);
-      const lockType = options.shared ? POSIX.F_RDLCK : POSIX.F_WRLCK;
-      await acquireRecordLock(fd, lockType, deadline, options.busyError);
-      gotRecord = true;
+      release = await acquireFileLock(lockPath, deadline, options.busyError);
       held.add(key);
       return await body();
     } finally {
-      if (gotRecord && fd !== null) {
-        try {
-          await lockOps.fcntlFlock(fd, POSIX.F_SETLK, POSIX.F_UNLCK);
-        } catch {
-          // The fd close below drops the lock if the explicit unlock fails.
-        }
-      }
-      if (fd !== null) {
-        try {
-          closeSync(fd);
-        } catch {
-          // already closed
-        }
-      }
       held.delete(key);
+      if (release !== null) {
+        try {
+          await (release as () => Promise<void>)();
+        } catch {
+          // Already released or compromised; it goes stale either way.
+        }
+      }
       if (gotProcess) processLock.release();
     }
   };

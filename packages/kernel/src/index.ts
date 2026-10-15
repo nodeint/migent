@@ -124,12 +124,6 @@ export {
 export type { StageDispatchRequest } from "./dispatch.js";
 export { DEFAULT_MAX_DISPATCHES, executeNamedWorkflow } from "./execute.js";
 export type { ExecuteRequest, ExecuteResult } from "./execute.js";
-export { POSIX, fcntlInt, fcntlLock, fcntlSetLock, flockSync } from "./posix.js";
-export {
-  currentBootId,
-  identityLockHolder,
-  kernelProcessIdentity,
-} from "./process-identity.js";
 export { killProcessTree, wrapperEndpoint } from "./process-wrapper.js";
 export {
   CancellationRequested,

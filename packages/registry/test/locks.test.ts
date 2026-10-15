@@ -1,123 +1,117 @@
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { constants as osConstants, tmpdir } from "node:os";
+import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, test } from "vitest";
 import { LockNotHeld, RegistryBusy, interprocessLock, lockOps, processLockFor, registryBusy, threadHolds } from "../src/locks.ts";
-import { POSIX } from "../src/posix.ts";
 import { publishServiceJson, unlinkServiceJsonIfUnchanged } from "../src/service.ts";
 import { monotonic } from "../src/time.ts";
 
-function heldError(): NodeJS.ErrnoException {
-  const error = new Error("held") as NodeJS.ErrnoException;
-  error.errno = osConstants.errno.EAGAIN;
-  error.code = "EAGAIN";
-  return error;
+function lockPathIn(prefix: string): string {
+  return path.join(mkdtempSync(path.join(tmpdir(), prefix)), "registry.lock");
 }
 
-test("contention uses setlk and times out", async () => {
-  const commands: number[] = [];
+test("contention polls without blocking and times out", async () => {
+  const tries: string[] = [];
   const sleeps: number[] = [];
-  const realFlock = lockOps.fcntlFlock;
+  const realTry = lockOps.tryLock;
   const realSleep = lockOps.sleep;
-  lockOps.fcntlFlock = async (_fd, cmd, lockType) => {
-    commands.push(cmd);
-    if (lockType === POSIX.F_UNLCK) return;
-    throw heldError();
+  lockOps.tryLock = async (file) => {
+    tries.push(file);
+    return null;
   };
   lockOps.sleep = async (seconds) => {
     sleeps.push(seconds);
   };
-  const tmp = mkdtempSync(path.join(tmpdir(), "registry-lock-"));
-  const lockPath = path.join(tmp, "registry.lock");
+  const lockPath = lockPathIn("registry-lock-");
   const started = monotonic();
   try {
     await expect(
       interprocessLock(lockPath, { shared: false, timeoutSec: 0.2, busyError: registryBusy }, () => undefined),
     ).rejects.toBeInstanceOf(RegistryBusy);
   } finally {
-    lockOps.fcntlFlock = realFlock;
+    lockOps.tryLock = realTry;
     lockOps.sleep = realSleep;
   }
   expect(monotonic() - started).toBeLessThan(1);
-  expect(commands.length).toBeGreaterThan(0);
-  expect(commands.every((cmd) => cmd === POSIX.F_SETLK)).toBe(true);
-  expect(commands).not.toContain(POSIX.F_SETLKW);
+  expect(tries.length).toBeGreaterThan(0);
   expect(sleeps.length).toBeGreaterThan(0);
 });
 
 test("lock acquired when it frees before the deadline", async () => {
-  const commands: number[] = [];
-  const state = { tries: 0 };
-  const realFlock = lockOps.fcntlFlock;
+  const state = { tries: 0, released: 0 };
+  const realTry = lockOps.tryLock;
   const realSleep = lockOps.sleep;
-  lockOps.fcntlFlock = async (_fd, cmd, lockType) => {
-    commands.push(cmd);
-    if (lockType === POSIX.F_UNLCK) return;
+  lockOps.tryLock = async () => {
     state.tries += 1;
-    if (state.tries < 3) throw heldError();
+    if (state.tries < 3) return null;
+    return async () => {
+      state.released += 1;
+    };
   };
   lockOps.sleep = async () => undefined;
-  const tmp = mkdtempSync(path.join(tmpdir(), "registry-lock-"));
-  const lockPath = path.join(tmp, "registry.lock");
+  const lockPath = lockPathIn("registry-lock-");
   try {
     await interprocessLock(lockPath, { shared: false, timeoutSec: 1, busyError: registryBusy }, () => {
       expect(threadHolds(lockPath)).toBe(true);
     });
     expect(threadHolds(lockPath)).toBe(false);
   } finally {
-    lockOps.fcntlFlock = realFlock;
+    lockOps.tryLock = realTry;
     lockOps.sleep = realSleep;
   }
-  expect(commands).not.toContain(POSIX.F_SETLKW);
-  expect(state.tries).toBeGreaterThanOrEqual(3);
+  expect(state.tries).toBe(3);
+  expect(state.released).toBe(1);
 });
 
-test("timeout zero fails on the first eagain without sleeping", async () => {
+test("timeout zero fails on the first contention without sleeping", async () => {
   const sleeps: number[] = [];
-  const realFlock = lockOps.fcntlFlock;
+  const realTry = lockOps.tryLock;
   const realSleep = lockOps.sleep;
-  lockOps.fcntlFlock = async (_fd, _cmd, lockType) => {
-    if (lockType === POSIX.F_UNLCK) return;
-    throw heldError();
-  };
+  lockOps.tryLock = async () => null;
   lockOps.sleep = async (seconds) => {
     sleeps.push(seconds);
   };
-  const tmp = mkdtempSync(path.join(tmpdir(), "registry-lock-"));
-  const lockPath = path.join(tmp, "registry.lock");
   const started = monotonic();
   try {
     await expect(
-      interprocessLock(lockPath, { shared: false, timeoutSec: 0, busyError: registryBusy }, () => undefined),
+      interprocessLock(lockPathIn("registry-lock-"), { shared: false, timeoutSec: 0, busyError: registryBusy }, () => undefined),
     ).rejects.toBeInstanceOf(RegistryBusy);
   } finally {
-    lockOps.fcntlFlock = realFlock;
+    lockOps.tryLock = realTry;
     lockOps.sleep = realSleep;
   }
   expect(monotonic() - started).toBeLessThan(0.5);
   expect(sleeps).toEqual([]);
 });
 
-test("process lock timeout does not open the lock file", async () => {
-  const tmp = mkdtempSync(path.join(tmpdir(), "registry-lock-"));
-  const lockPath = path.join(tmp, "registry.lock");
+test("process lock timeout does not touch the lock file", async () => {
+  const lockPath = lockPathIn("registry-lock-");
   const holder = processLockFor(lockPath);
   expect(holder.tryAcquire()).toBe(true);
-  const opened: string[] = [];
-  const realOpen = lockOps.open;
-  lockOps.open = (file, flags, mode) => {
-    opened.push(String(file));
-    return realOpen(file, flags, mode);
+  const tried: string[] = [];
+  const realTry = lockOps.tryLock;
+  lockOps.tryLock = async (file) => {
+    tried.push(file);
+    return realTry(file);
   };
   try {
     await expect(
       interprocessLock(lockPath, { shared: false, timeoutSec: 0.1, busyError: registryBusy }, () => undefined),
     ).rejects.toBeInstanceOf(RegistryBusy);
   } finally {
-    lockOps.open = realOpen;
+    lockOps.tryLock = realTry;
     holder.release();
   }
-  expect(opened).toEqual([]);
+  expect(tried).toEqual([]);
+});
+
+test("a lock file left by Migent 0.1 does not block", async () => {
+  const lockPath = lockPathIn("registry-lock-");
+  writeFileSync(lockPath, "");
+  await interprocessLock(lockPath, { shared: false, timeoutSec: 0.5, busyError: registryBusy }, () => {
+    expect(statSync(lockPath).isDirectory()).toBe(true);
+  });
+  expect(() => statSync(lockPath)).toThrow();
 });
 
 test("publish and unlink outside start lock raise lock not held", async () => {
@@ -125,7 +119,7 @@ test("publish and unlink outside start lock raise lock not held", async () => {
   const target = path.join(home, "service.json");
   writeFileSync(target, '{"keep":true}\n');
   const before = readFileSync(target);
-  expect(() => publishServiceJson(home, { schema_version: 1 })).toThrow(LockNotHeld);
-  await expect(unlinkServiceJsonIfUnchanged(home, "instance", 1, "start")).rejects.toThrow(LockNotHeld);
+  expect(() => publishServiceJson(home, { schema_version: 2 })).toThrow(LockNotHeld);
+  await expect(unlinkServiceJsonIfUnchanged(home, "instance")).rejects.toThrow(LockNotHeld);
   expect(readFileSync(target)).toEqual(before);
 });

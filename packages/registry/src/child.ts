@@ -1,16 +1,22 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { closeSync, constants as fsConstants, openSync, readSync, writeSync } from "node:fs";
+import { closeSync, constants as fsConstants, openSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { ServiceEndpointServer } from "./endpoint.js";
 import { ensureRegistryHome } from "./home.js";
-import { acquireServiceLock, handshakeOpen } from "./identity.js";
-import { setNonBlocking, socketpair } from "./posix.js";
 import { RegistryHTTPServer } from "./server.js";
 import { RegistryStore } from "./store.js";
-import { monotonic, sleep } from "./time.js";
+import { monotonic } from "./time.js";
 
-const ACK = Buffer.from("published\n");
+// Handshake over the IPC channel:
+//   child -> parent  {type: "ready", pid, port, instance_id, token}  endpoint and HTTP are listening
+//   parent -> child  {type: "published"}                           service.json names this child
+// The child serves only after "published". If the channel closes first, the parent died before
+// publishing and the child exits without ever being reachable through service.json.
+
+export const READY = "ready";
+export const PUBLISHED = "published";
 const ACK_TIMEOUT_SEC = 5;
 
 export interface SpawnedChild {
@@ -18,6 +24,12 @@ export interface SpawnedChild {
   returncode: number | null;
   kill(signal?: NodeJS.Signals | number): void;
   wait(timeoutSec: number): Promise<void>;
+  /** The ready payload, or null if the child exits, disconnects, or misses the deadline. */
+  readReady(deadline: number): Promise<Record<string, unknown> | null>;
+  /** Tell the child it was published. False when the channel is already closed. */
+  acknowledge(): boolean;
+  /** Drop the IPC channel so neither process keeps the other alive. */
+  release(): void;
 }
 
 export function childInvocation(script: string): { execPath: string; args: string[]; script: string } {
@@ -47,45 +59,51 @@ function closeQuiet(fd: number): void {
   }
 }
 
-export async function launchChild(home: string, port: number): Promise<[SpawnedChild, number]> {
+export async function launchChild(home: string, port: number): Promise<SpawnedChild> {
   const directory = ensureRegistryHome(home);
-  const [parentFd, childFd] = socketpair();
-  setNonBlocking(parentFd);
   const logPath = path.join(directory, "service.log");
   const logFd = openSync(logPath, fsConstants.O_CREAT | fsConstants.O_APPEND | fsConstants.O_WRONLY, 0o600);
-  const entry = childEntryScript();
-  const invocation = childInvocation(entry);
-  let child: ChildProcess | null = null;
+  const invocation = childInvocation(childEntryScript());
+  let proc: ChildProcess;
   try {
-    child = spawn(
+    proc = spawn(
       invocation.execPath,
-      [...invocation.args, invocation.script, "--child", "--home", directory, "--port", String(port), "--handshake-fd", "3"],
+      [...invocation.args, invocation.script, "--child", "--home", directory, "--port", String(port)],
       {
         cwd: directory,
         detached: true,
-        stdio: ["ignore", logFd, logFd, childFd],
+        stdio: ["ignore", logFd, logFd, "ipc"],
         env: process.env,
+        windowsHide: true,
       },
     );
-  } catch (error) {
-    closeQuiet(parentFd);
-    closeQuiet(childFd);
+  } finally {
     closeQuiet(logFd);
-    throw error;
   }
-  closeQuiet(childFd);
-  closeQuiet(logFd);
-  const proc = child;
   if (proc.pid === undefined) {
-    closeQuiet(parentFd);
+    proc.kill();
     throw new Error("child pid is unavailable");
   }
-  const spawned = trackChild(proc);
+  proc.on("error", () => undefined);
   proc.unref();
-  return [spawned, parentFd];
+  return trackChild(proc);
 }
 
 function trackChild(proc: ChildProcess): SpawnedChild {
+  let ready: Record<string, unknown> | null = null;
+  const readyWaiters = new Set<() => void>();
+  const wake = (): void => {
+    for (const waiter of readyWaiters) waiter();
+  };
+  proc.on("message", (message: unknown) => {
+    if (ready !== null || !message || typeof message !== "object") return;
+    const payload = message as Record<string, unknown>;
+    if (payload.type !== READY) return;
+    const { type: _type, ...rest } = payload;
+    ready = rest;
+    wake();
+  });
+  proc.on("disconnect", wake);
   const state: SpawnedChild = {
     pid: proc.pid ?? -1,
     returncode: null,
@@ -93,7 +111,7 @@ function trackChild(proc: ChildProcess): SpawnedChild {
       proc.kill(signal);
     },
     wait(timeoutSec: number) {
-      if (state.returncode !== null) return Promise.resolve();
+      if (state.returncode !== null || proc.exitCode !== null || proc.signalCode !== null) return Promise.resolve();
       return new Promise((resolve) => {
         const timer = setTimeout(() => {
           proc.off("exit", onExit);
@@ -106,70 +124,113 @@ function trackChild(proc: ChildProcess): SpawnedChild {
         proc.once("exit", onExit);
       });
     },
+    readReady(deadline: number) {
+      return new Promise((resolve) => {
+        const check = (): void => {
+          if (ready !== null) return done(ready);
+          if (!proc.connected || monotonic() >= deadline) return done(null);
+        };
+        const done = (value: Record<string, unknown> | null): void => {
+          clearTimeout(timer);
+          readyWaiters.delete(check);
+          resolve(value);
+        };
+        const timer = setTimeout(check, Math.max(0, deadline - monotonic()) * 1000);
+        readyWaiters.add(check);
+        check();
+      });
+    },
+    acknowledge() {
+      if (!proc.connected) return false;
+      try {
+        proc.send({ type: PUBLISHED });
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    release() {
+      if (proc.connected) proc.disconnect();
+    },
   };
   proc.on("exit", (code) => {
-    state.returncode = code;
+    state.returncode = code ?? 1;
+    wake();
   });
   return state;
 }
 
-export async function readReadyLine(source: number | { fd?: number }, deadline: number): Promise<Buffer | null> {
-  const fd = typeof source === "number" ? source : source.fd;
-  if (fd === undefined) return null;
-  return readLineFd(fd, deadline);
+export async function readReadyLine(child: SpawnedChild, deadline: number): Promise<Record<string, unknown> | null> {
+  return child.readReady(deadline);
 }
 
-export async function serveChild(home: string, port: number, handshakeFd: number): Promise<number> {
-  if (!handshakeOpen(handshakeFd)) return 2;
-  setNonBlocking(handshakeFd);
+function waitForAck(deadline: number, stop: { flag: boolean }): Promise<boolean> {
+  return new Promise((resolve) => {
+    const finish = (ok: boolean): void => {
+      clearTimeout(timer);
+      clearInterval(poll);
+      process.off("message", onMessage);
+      process.off("disconnect", onDisconnect);
+      resolve(ok);
+    };
+    const onMessage = (message: unknown): void => {
+      if (message && typeof message === "object" && (message as { type?: unknown }).type === PUBLISHED) finish(true);
+    };
+    const onDisconnect = (): void => finish(false);
+    const timer = setTimeout(() => finish(false), Math.max(0, deadline - monotonic()) * 1000);
+    const poll = setInterval(() => {
+      if (stop.flag) finish(false);
+    }, 50);
+    process.on("message", onMessage);
+    process.once("disconnect", onDisconnect);
+    if (!process.connected) finish(false);
+  });
+}
+
+export async function serveChild(home: string, port: number): Promise<number> {
+  if (!process.send || !process.connected) return 2;
+  const send = process.send.bind(process);
   const directory = ensureRegistryHome(home);
-  const lockFd = await acquireServiceLock(directory);
-  if (lockFd === null) return 1;
+  const instanceId = randomBytes(32).toString("base64url");
+  const token = randomBytes(32).toString("base64url");
   let server: RegistryHTTPServer | null = null;
-  let active: RegistryHTTPServer | null = null;
   const stop = { flag: false };
   const onSignal = (): void => {
     stop.flag = true;
     try {
-      active?.close();
+      server?.close();
     } catch {
       // socket already closed
     }
   };
+  const lifetime = await ServiceEndpointServer.listen(directory, { instance_id: instanceId, pid: process.pid }, token, onSignal);
+  if (lifetime === null) {
+    process.stderr.write("Another registry service holds the service endpoint.\n");
+    return 1;
+  }
   process.on("SIGINT", onSignal);
   process.on("SIGTERM", onSignal);
   try {
     try {
-      server = await RegistryHTTPServer.open(new RegistryStore(directory), "pending", "pending", "127.0.0.1", port);
-      active = server;
-    } catch {
-      closeQuiet(lockFd);
+      server = await RegistryHTTPServer.open(new RegistryStore(directory), token, instanceId, "127.0.0.1", port);
+    } catch (error) {
+      process.stderr.write(`Cannot listen on 127.0.0.1:${port}: ${(error as Error).message}\n`);
       return 1;
     }
-    const instanceId = randomBytes(32).toString("base64url");
-    const token = randomBytes(32).toString("base64url");
-    const ready = Buffer.from(
-      `${JSON.stringify({ pid: process.pid, port: server.port, instance_id: instanceId, token })}\n`,
-    );
     try {
-      if (!writeAllFd(handshakeFd, ready)) return 1;
+      send({ type: READY, pid: process.pid, port: server.port, instance_id: instanceId, token });
     } catch {
       return 1;
     }
-    if (!(await readAck(handshakeFd, monotonic() + ACK_TIMEOUT_SEC, stop))) return stop.flag ? 0 : 1;
-    closeQuiet(handshakeFd);
-    const published = server;
-    server = null;
-    active = published;
-    published.token = token;
-    published.instanceId = instanceId;
-    await serveLoop(published, stop);
+    if (!(await waitForAck(monotonic() + ACK_TIMEOUT_SEC, stop))) return stop.flag ? 0 : 1;
+    process.disconnect?.();
+    await serveLoop(server, stop);
     return 0;
   } finally {
     process.off("SIGINT", onSignal);
     process.off("SIGTERM", onSignal);
-    if (server) server.close();
-    closeQuiet(lockFd);
+    server?.close();
+    lifetime.close();
   }
 }
 
@@ -189,16 +250,14 @@ async function serveLoop(server: RegistryHTTPServer, stop: { flag: boolean }): P
 }
 
 export async function childMain(argv: string[]): Promise<number> {
-  if (!argv.includes("--child")) return 2;
   const parsed = parseChildArgs(argv);
   if (!parsed) return 2;
-  return serveChild(parsed.home, parsed.port, parsed.handshakeFd);
+  return serveChild(parsed.home, parsed.port);
 }
 
-function parseChildArgs(argv: string[]): { home: string; port: number; handshakeFd: number } | null {
+function parseChildArgs(argv: string[]): { home: string; port: number } | null {
   let home: string | null = null;
   let port: number | null = null;
-  let handshakeFd: number | null = null;
   let sawChild = false;
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -220,93 +279,10 @@ function parseChildArgs(argv: string[]): { home: string; port: number; handshake
       index += 1;
       continue;
     }
-    if (arg === "--handshake-fd" && next !== undefined && /^-?\d+$/.test(next)) {
-      if (handshakeFd !== null) return null;
-      handshakeFd = Number(next);
-      index += 1;
-      continue;
-    }
     return null;
   }
-  if (!sawChild || home === null || port === null || handshakeFd === null || handshakeFd < 0) return null;
-  return { home, port, handshakeFd };
-}
-
-async function readAck(fd: number, deadline: number, stop: { flag: boolean }): Promise<boolean> {
-  const chunks: Buffer[] = [];
-  while (Buffer.concat(chunks).length < ACK.length) {
-    if (stop.flag) return false;
-    const remaining = deadline - monotonic();
-    if (remaining <= 0) return false;
-    const data = await readSome(fd, ACK.length - Buffer.concat(chunks).length, Math.min(remaining, 0.1));
-    if (stop.flag) return false;
-    if (data === undefined) continue;
-    if (data === null || data.length === 0) return false;
-    chunks.push(data);
-    const got = Buffer.concat(chunks);
-    if (!got.equals(ACK.subarray(0, got.length))) return false;
-  }
-  return Buffer.concat(chunks).equals(ACK);
-}
-
-async function readLineFd(fd: number, deadline: number, limit = 65536): Promise<Buffer | null> {
-  const chunks: Buffer[] = [];
-  let total = 0;
-  for (;;) {
-    const joined = Buffer.concat(chunks);
-    const newline = joined.indexOf(0x0a);
-    if (newline !== -1) {
-      const rest = joined.subarray(newline + 1);
-      if (rest.length > 0) return null;
-      return joined.subarray(0, newline);
-    }
-    if (total >= limit) return null;
-    const remaining = deadline - monotonic();
-    if (remaining <= 0) return null;
-    const data = await readSome(fd, 4096, remaining);
-    if (data === undefined) continue;
-    if (data === null || data.length === 0) return null;
-    chunks.push(data);
-    total += data.length;
-  }
-}
-
-async function readSome(fd: number, length: number, timeoutSec: number): Promise<Buffer | null | undefined> {
-  const buffer = Buffer.alloc(length);
-  try {
-    const count = readSync(fd, buffer, 0, length, null);
-    if (count === 0) return Buffer.alloc(0);
-    return buffer.subarray(0, count);
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === "EAGAIN" || code === "EWOULDBLOCK") {
-      await sleep(Math.min(0.01, timeoutSec));
-      if (timeoutSec <= 0) return undefined;
-      return undefined;
-    }
-    if (code === "EINTR") return undefined;
-    return null;
-  }
-}
-
-export function writeFd(fd: number, payload: Buffer): boolean {
-  return writeAllFd(fd, payload);
-}
-
-function writeAllFd(fd: number, payload: Buffer): boolean {
-  let offset = 0;
-  while (offset < payload.length) {
-    try {
-      const written = writeSync(fd, payload, offset, payload.length - offset);
-      if (written <= 0) return false;
-      offset += written;
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code === "EAGAIN" || code === "EWOULDBLOCK" || code === "EINTR") continue;
-      throw error;
-    }
-  }
-  return true;
+  if (!sawChild || home === null || port === null) return null;
+  return { home, port };
 }
 
 export function isDirectChildEntry(): boolean {

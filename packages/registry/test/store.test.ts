@@ -2,13 +2,15 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
+import { childInvocation } from "../src/child.ts";
 import { RegistryBusy } from "../src/locks.ts";
 import { RegistryCorrupt, RegistryStore, WorkspaceNotFound, storeFs, workspaceIdFor } from "../src/store.ts";
 import { TOOL, makeWorkspace, registryBytes } from "./support.ts";
 import { sleep } from "../src/time.ts";
 
-const kernelPosix = new URL("../../kernel/src/posix.ts", import.meta.url).href;
+const locksModule = new URL("../src/locks.ts", import.meta.url);
 
 function resolved(filePath: string): string {
   return realpathSync(filePath);
@@ -272,19 +274,15 @@ test("cross process lock returns busy", async () => {
   mkdirSync(directory);
   const lockPath = path.join(directory, "registry.lock");
   const script = `
-    import { constants, openSync } from "node:fs";
-    const { POSIX, fcntlSetLock } = await import(${JSON.stringify(kernelPosix)});
-    const fd = openSync(process.argv[1], constants.O_RDWR | constants.O_CREAT, 0o600);
-    try {
-      fcntlSetLock(fd, POSIX.F_WRLCK);
-    } catch (err) {
-      process.stderr.write(String(err));
-      process.exit(1);
-    }
-    process.stdout.write("locked\\n");
-    setInterval(() => {}, 1000);
+    const { interprocessLock, registryBusy } = await import(${JSON.stringify(locksModule.href)});
+    await interprocessLock(process.argv[1], { shared: false, timeoutSec: 2, busyError: registryBusy }, async () => {
+      process.stdout.write("locked\\n");
+      await new Promise(() => setInterval(() => undefined, 1000));
+    });
   `;
-  const proc = spawn(process.execPath, ["--input-type=module", "-e", script, lockPath], {
+  // Strip types and map .js imports to .ts, as the registry child does when run from source.
+  const invocation = childInvocation(fileURLToPath(locksModule));
+  const proc = spawn(process.execPath, [...invocation.args, "--input-type=module", "-e", script, lockPath], {
     stdio: ["ignore", "pipe", "pipe"],
   });
   let stderr = "";

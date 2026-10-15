@@ -1,26 +1,14 @@
-import { chmodSync, closeSync, constants as fsConstants, existsSync, fstatSync, openSync, readFileSync, unlinkSync } from "node:fs";
-import { constants as osConstants, hostname as osHostname } from "node:os";
+import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import path from "node:path";
-import { currentBootId, identityLockHolder, kernelProcessIdentity as kernelIdentity } from "@nodeint/migent-kernel";
 import { LockNotHeld, threadHolds } from "./locks.js";
-import { POSIX, fcntlInt, fcntlLock, posixGetpgid, reapChild } from "./posix.js";
 import { atomicReplace } from "./store.js";
 
 export const CORRUPT = Symbol("corrupt");
+export const SERVICE_SCHEMA_VERSION = 2;
 
-const serviceKeys = new Set([
-  "schema_version",
-  "instance_id",
-  "pid",
-  "pgid",
-  "start_key",
-  "boot_id",
-  "hostname",
-  "host",
-  "port",
-  "token",
-  "started_at",
-]);
+const serviceKeys = new Set(["schema_version", "instance_id", "pid", "host", "port", "token", "started_at"]);
+// Migent 0.1 identified the service by libc process identity instead of a local endpoint.
+const legacyServiceKeys = new Set([...serviceKeys, "pgid", "start_key", "boot_id", "hostname"]);
 
 export class ServiceCorrupt extends Error {
   constructor() {
@@ -29,75 +17,18 @@ export class ServiceCorrupt extends Error {
   }
 }
 
-export interface IdentityInspector {
-  bootId(): string | null;
-  kernelProcessIdentity(pid: number): string | null;
-  lockHolder(lockPath: string): number | null;
-  pgid(pid: number): number | null;
-  hostname(): string | null;
-  pidAlive(pid: number): boolean;
-}
-
 export interface ServiceRecord {
   schema_version: number;
   instance_id: string;
   pid: number;
-  pgid: number;
-  start_key: string;
-  boot_id: string;
-  hostname: string;
   host: string;
   port: number;
   token: string;
   started_at: string;
 }
 
-export class LiveInspector implements IdentityInspector {
-  bootId(): string | null {
-    return currentBootId();
-  }
-
-  kernelProcessIdentity(pid: number): string | null {
-    return kernelIdentity(pid);
-  }
-
-  lockHolder(lockPath: string): number | null {
-    return identityLockHolder(lockPath);
-  }
-
-  pgid(pid: number): number | null {
-    return posixGetpgid(pid);
-  }
-
-  hostname(): string | null {
-    try {
-      const name = osHostname();
-      return name || null;
-    } catch {
-      return null;
-    }
-  }
-
-  pidAlive(pid: number): boolean {
-    if (!Number.isInteger(pid) || pid <= 0) return false;
-    if (reapChild(pid)) return false;
-    try {
-      process.kill(pid, 0);
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code === "EPERM") return true;
-      return false;
-    }
-    return true;
-  }
-}
-
 export function serviceJsonPath(home: string): string {
   return path.join(home, "service.json");
-}
-
-export function serviceLockPath(home: string): string {
-  return path.join(home, "service.lock");
 }
 
 export function startLockPath(home: string): string {
@@ -108,47 +39,6 @@ function sameKeySet(value: object, expected: Set<string>): boolean {
   const keys = Object.keys(value);
   if (keys.length !== expected.size) return false;
   return keys.every((key) => expected.has(key));
-}
-
-export function serviceIdentityMatches(
-  record: ServiceRecord | Record<string, unknown>,
-  inspector: IdentityInspector,
-  lockPath: string,
-): boolean {
-  const pid = record.pid;
-  if (typeof pid !== "number") return false;
-  const holder = inspector.lockHolder(lockPath);
-  if (holder === null || holder !== pid) return false;
-  const boot = inspector.bootId();
-  const recordedBoot = record.boot_id;
-  if (!boot || typeof recordedBoot !== "string" || boot !== recordedBoot) return false;
-  const start = inspector.kernelProcessIdentity(pid);
-  const recordedStart = record.start_key;
-  if (!start || typeof recordedStart !== "string" || start !== recordedStart) return false;
-  const pgid = inspector.pgid(pid);
-  if (pgid === null || pgid !== record.pgid) return false;
-  const host = inspector.hostname();
-  const recordedHost = record.hostname;
-  if (!host || typeof recordedHost !== "string" || host !== recordedHost) return false;
-  return true;
-}
-
-export function recordIsConfirmedGone(
-  record: ServiceRecord | Record<string, unknown>,
-  inspector: IdentityInspector,
-  lockPath: string,
-): boolean {
-  if (inspector.lockHolder(lockPath) !== null) return false;
-  const pid = record.pid;
-  if (typeof pid !== "number") return false;
-  if (!inspector.pidAlive(pid)) return true;
-  const boot = inspector.bootId();
-  const recordedBoot = record.boot_id;
-  if (boot && typeof recordedBoot === "string" && recordedBoot && boot !== recordedBoot) return true;
-  const start = inspector.kernelProcessIdentity(pid);
-  const recordedStart = record.start_key;
-  if (start && typeof recordedStart === "string" && recordedStart && start !== recordedStart) return true;
-  return false;
 }
 
 export function writeServiceJson(
@@ -164,12 +54,10 @@ export function writeServiceJson(
 export async function removeServiceJsonIfUnchanged(
   home: string,
   instanceId: string,
-  pid: number,
-  startKey: string,
-  beforeUnlink: (home: string, instanceId: string, pid: number, startKey: string) => void | Promise<void>,
+  beforeUnlink: (home: string, instanceId: string) => void | Promise<void>,
 ): Promise<"absent" | "changed" | "removed"> {
   if (!threadHolds(startLockPath(home))) throw new LockNotHeld();
-  await beforeUnlink(home, instanceId, pid, startKey);
+  await beforeUnlink(home, instanceId);
   const file = serviceJsonPath(home);
   if (!existsSync(file)) return "absent";
   let record: ServiceRecord;
@@ -178,7 +66,7 @@ export async function removeServiceJsonIfUnchanged(
   } catch {
     return "changed";
   }
-  if (record.instance_id === instanceId && record.pid === pid && record.start_key === startKey) {
+  if (record.instance_id === instanceId) {
     try {
       unlinkSync(file);
     } catch (error) {
@@ -188,36 +76,6 @@ export async function removeServiceJsonIfUnchanged(
     return "removed";
   }
   return "changed";
-}
-
-function errnoOf(error: unknown): number | undefined {
-  if (!error || typeof error !== "object") return undefined;
-  const err = error as NodeJS.ErrnoException;
-  if (typeof err.errno === "number") return Math.abs(err.errno);
-  if (err.code && err.code in osConstants.errno) return osConstants.errno[err.code as keyof typeof osConstants.errno];
-  return undefined;
-}
-
-export async function acquireServiceLock(home: string): Promise<number | null> {
-  const file = serviceLockPath(home);
-  const flags = fsConstants.O_RDWR | fsConstants.O_CREAT;
-  const fd = openSync(file, flags, 0o600);
-  try {
-    chmodSync(file, 0o600);
-    await fcntlLock(fd, POSIX.F_SETLK, POSIX.F_WRLCK);
-  } catch (error) {
-    closeSync(fd);
-    const errno = errnoOf(error);
-    if (
-      errno === osConstants.errno.EAGAIN ||
-      errno === osConstants.errno.EACCES ||
-      errno === osConstants.errno.EWOULDBLOCK
-    ) {
-      return null;
-    }
-    throw error;
-  }
-  return fd;
 }
 
 export async function authenticatedInstanceId(port: number, token: string, timeoutSec: number): Promise<string | null> {
@@ -254,30 +112,28 @@ export function parseServiceBytes(raw: Buffer): ServiceRecord {
   } catch {
     throw new ServiceCorrupt();
   }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || !sameKeySet(parsed, serviceKeys)) {
-    throw new ServiceCorrupt();
-  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new ServiceCorrupt();
   const record = parsed as Record<string, unknown>;
-  if (record.schema_version !== 1 || typeof record.schema_version !== "number") throw new ServiceCorrupt();
-  for (const key of ["instance_id", "start_key", "boot_id", "hostname", "host", "token", "started_at"]) {
+  const keys = record.schema_version === 1 ? legacyServiceKeys : serviceKeys;
+  if (record.schema_version !== 1 && record.schema_version !== SERVICE_SCHEMA_VERSION) throw new ServiceCorrupt();
+  if (!sameKeySet(record, keys)) throw new ServiceCorrupt();
+  for (const key of ["instance_id", "host", "token", "started_at"]) {
     if (typeof record[key] !== "string" || record[key] === "") throw new ServiceCorrupt();
   }
-  for (const key of ["pid", "pgid", "port"]) {
+  for (const key of ["pid", "port"]) {
     if (typeof record[key] !== "number" || !Number.isInteger(record[key])) throw new ServiceCorrupt();
   }
   const port = record.port as number;
   if (port < 1 || port > 65535) throw new ServiceCorrupt();
-  return record as unknown as ServiceRecord;
-}
-
-export function handshakeOpen(fd: number): boolean {
-  try {
-    fstatSync(fd);
-    fcntlInt(fd, POSIX.F_GETFL);
-    return true;
-  } catch {
-    return false;
-  }
+  return {
+    schema_version: record.schema_version,
+    instance_id: record.instance_id as string,
+    pid: record.pid as number,
+    host: record.host as string,
+    port,
+    token: record.token as string,
+    started_at: record.started_at as string,
+  };
 }
 
 export async function requestLocal(

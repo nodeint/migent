@@ -161,10 +161,13 @@ migent workspace remove ID
 
 `service start` runs a registry on `127.0.0.1`. The default port is 47321.
 Without `--foreground` it detaches and adopts an instance only when the
-lifetime lock, process identity, and authenticated health all agree.
+service's local endpoint (a Unix socket, or a named pipe on Windows) and its
+authenticated health both name the instance in `service.json`.
 `--foreground` serves in the current process until SIGINT or SIGTERM.
-`service stop` exits 0 when the service is already absent or was stopped, and
-exits 1 when the process is still alive or its identity cannot be verified.
+`service stop` asks the instance to exit through that endpoint and ends the
+process only if it does not. It exits 0 when the service is already absent or
+was stopped, and exits 1 when the process is still alive or its identity cannot
+be verified. A service started by Migent 0.1 must be stopped with that version.
 `status` prints `running` or `stopped`. A stale `service.json` is `stopped`.
 The bearer token is not printed.
 

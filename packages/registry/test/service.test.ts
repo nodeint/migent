@@ -1,26 +1,21 @@
 import { spawn } from "node:child_process";
-import { closeSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import net from "node:net";
-import { constants as osConstants, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, expect, test } from "vitest";
-import { identityLockHolder } from "@nodeint/migent-kernel";
 import { childInvocation, launchChild, readReadyLine } from "../src/child.ts";
+import { type EndpointStatus, ServiceEndpointServer, queryEndpoint } from "../src/endpoint.ts";
 import { holdStartLock, threadHolds } from "../src/locks.ts";
-import { reapChild } from "../src/posix.ts";
 import { RegistryHTTPServer } from "../src/server.ts";
 import {
-  LiveSignalBackend,
   ServiceEndpoint,
   ServiceError,
-  acquireServiceLock,
   authenticatedInstanceId,
   callService,
   serviceJsonPath,
-  serviceLockPath,
   serviceStatus,
-  signalVerifiedPid,
   startDetached,
   startLockPath,
   serveForeground,
@@ -28,21 +23,9 @@ import {
   svc,
 } from "../src/service.ts";
 import { monotonic, sleep } from "../src/time.ts";
-import { RecordingBackend, ScriptedInspector, logText, serviceRecord, waitFor, writeService } from "./support.ts";
+import { logText, serviceRecord, waitFor, writeService } from "./support.ts";
 
-const originalSvc = {
-  beforeServiceJsonPublish: svc.beforeServiceJsonPublish,
-  beforeServiceJsonUnlink: svc.beforeServiceJsonUnlink,
-  publishServiceJson: svc.publishServiceJson,
-  unlinkServiceJsonIfUnchanged: svc.unlinkServiceJsonIfUnchanged,
-  holdStartLock: svc.holdStartLock,
-  acquireServiceLock: svc.acquireServiceLock,
-  launchChild: svc.launchChild,
-  readReadyLine: svc.readReadyLine,
-  kernelProcessIdentity: svc.kernelProcessIdentity,
-  authenticatedInstanceId: svc.authenticatedInstanceId,
-  serviceIdentityMatches: svc.serviceIdentityMatches,
-};
+const originalSvc = { ...svc };
 const originalGetRequest = RegistryHTTPServer.prototype.getRequest;
 
 function restoreSvc(): void {
@@ -50,15 +33,7 @@ function restoreSvc(): void {
   RegistryHTTPServer.prototype.getRequest = originalGetRequest;
 }
 
-function esrch(): NodeJS.ErrnoException {
-  const error = new Error("No such process") as NodeJS.ErrnoException;
-  error.code = "ESRCH";
-  error.errno = osConstants.errno.ESRCH;
-  return error;
-}
-
 function pidAlive(pid: number): boolean {
-  if (reapChild(pid)) return false;
   try {
     process.kill(pid, 0);
     return true;
@@ -77,139 +52,36 @@ class Flag {
   }
 }
 
-test("unsupported backend kills only after a true recheck", () => {
-  const backend = new RecordingBackend({ supported: false });
-  const pid = 42;
-  signalVerifiedPid(
-    pid,
-    osConstants.signals.SIGTERM,
-    () => {
-      backend.log.push("recheck");
-      return true;
-    },
-    backend,
-  );
-  expect(backend.log[0]).toBe("recheck");
-  expect(backend.log[1]).toEqual(["kill", pid, osConstants.signals.SIGTERM]);
-});
+/** Scripted endpoint for stop tests: `alive` until `gone()` is called. */
+class ScriptedEndpoint {
+  state: EndpointStatus;
+  stopRequests = 0;
+  acceptStop = true;
+  goneOnStop = false;
+  goneOnKill = true;
+  killed: number[] = [];
 
-test("exit after recheck before kill is not an error", () => {
-  const backend = new RecordingBackend({ supported: false });
-  backend.kill = (pid, sig) => {
-    backend.log.push(["kill", pid, sig]);
-    throw esrch();
-  };
-  signalVerifiedPid(42, osConstants.signals.SIGTERM, () => true, backend);
-  expect(backend.log).toEqual([["kill", 42, osConstants.signals.SIGTERM]]);
-});
+  constructor(record: Record<string, unknown>) {
+    this.state = { state: "alive", hello: { instance_id: String(record.instance_id), pid: Number(record.pid) } };
+  }
 
-test("false recheck sends nothing", () => {
-  const backend = new RecordingBackend({ supported: false });
-  signalVerifiedPid(
-    42,
-    osConstants.signals.SIGTERM,
-    () => {
-      backend.log.push("recheck");
-      return false;
-    },
-    backend,
-  );
-  expect(backend.log).toEqual(["recheck"]);
-});
+  install(): void {
+    svc.queryEndpoint = async () => this.state;
+    svc.requestStop = async () => {
+      this.stopRequests += 1;
+      if (this.goneOnStop) this.gone();
+      return this.acceptStop;
+    };
+    svc.killPid = (pid) => {
+      this.killed.push(pid);
+      if (this.goneOnKill) this.gone();
+    };
+  }
 
-test("esrch sends nothing", () => {
-  const backend = new RecordingBackend({ supported: true, openErrno: osConstants.errno.ESRCH });
-  signalVerifiedPid(42, osConstants.signals.SIGTERM, () => true, backend);
-  expect(backend.log).toEqual([["open", 42]]);
-});
-
-test("open then false recheck closes without sending", () => {
-  const backend = new RecordingBackend({ supported: true });
-  signalVerifiedPid(
-    42,
-    osConstants.signals.SIGTERM,
-    () => {
-      backend.log.push("recheck");
-      return false;
-    },
-    backend,
-  );
-  expect(backend.log[0]).toEqual(["open", 42]);
-  expect(backend.log).toContain("recheck");
-  expect(backend.log).toContainEqual(["close", 80]);
-  expect(backend.log.some((item) => Array.isArray(item) && item[0] === "send")).toBe(false);
-  expect(backend.log.some((item) => Array.isArray(item) && item[0] === "kill")).toBe(false);
-});
-
-test("true recheck sends on that pidfd", () => {
-  const backend = new RecordingBackend({ supported: true });
-  signalVerifiedPid(
-    42,
-    osConstants.signals.SIGTERM,
-    () => {
-      backend.log.push("recheck");
-      return true;
-    },
-    backend,
-  );
-  expect(backend.log).toContainEqual(["send", 80, osConstants.signals.SIGTERM]);
-  expect(backend.log.indexOf(["open", 42] as unknown as string)).toBeLessThan(backend.log.indexOf("recheck"));
-  const openAt = backend.log.findIndex((item) => Array.isArray(item) && item[0] === "open");
-  const sendAt = backend.log.findIndex((item) => Array.isArray(item) && item[0] === "send");
-  expect(openAt).toBeLessThan(backend.log.indexOf("recheck"));
-  expect(backend.log.indexOf("recheck")).toBeLessThan(sendAt);
-});
-
-test("enosys from open uses the recheck fallback", () => {
-  const backend = new RecordingBackend({ supported: true, openErrno: osConstants.errno.ENOSYS });
-  signalVerifiedPid(
-    42,
-    osConstants.signals.SIGTERM,
-    () => {
-      backend.log.push("recheck");
-      return true;
-    },
-    backend,
-  );
-  expect(backend.log[0]).toEqual(["open", 42]);
-  expect(backend.log).toContain("recheck");
-  expect(backend.log).toContainEqual(["kill", 42, osConstants.signals.SIGTERM]);
-});
-
-test("sigkill opens a new pidfd", () => {
-  const backend = new RecordingBackend({ supported: true });
-  signalVerifiedPid(42, osConstants.signals.SIGTERM, () => true, backend);
-  signalVerifiedPid(42, osConstants.signals.SIGKILL, () => true, backend);
-  const opens = backend.log.filter((item) => Array.isArray(item) && item[0] === "open");
-  const sends = backend.log.filter((item) => Array.isArray(item) && item[0] === "send");
-  expect(opens).toEqual([
-    ["open", 42],
-    ["open", 42],
-  ]);
-  expect(sends[0]?.[1]).toBe(80);
-  expect(sends[1]?.[1]).toBe(81);
-  expect(sends[0]?.[1]).not.toBe(sends[1]?.[1]);
-});
-
-test("unsupported sigkill rechecks again", () => {
-  const backend = new RecordingBackend({ supported: false });
-  const checks: number[] = [];
-  const still = (): boolean => {
-    checks.push(checks.length === 0 ? osConstants.signals.SIGTERM : osConstants.signals.SIGKILL);
-    return true;
-  };
-  signalVerifiedPid(42, osConstants.signals.SIGTERM, still, backend);
-  signalVerifiedPid(42, osConstants.signals.SIGKILL, still, backend);
-  expect(checks).toEqual([osConstants.signals.SIGTERM, osConstants.signals.SIGKILL]);
-  expect(backend.log.filter((item) => Array.isArray(item))).toEqual([
-    ["kill", 42, osConstants.signals.SIGTERM],
-    ["kill", 42, osConstants.signals.SIGKILL],
-  ]);
-});
-
-test.skipIf(!new LiveSignalBackend().supported())("production send is pidfd_send_signal", () => {
-  expect(new LiveSignalBackend().supported()).toBe(true);
-});
+  gone(): void {
+    this.state = { state: "gone" };
+  }
+}
 
 const children: number[] = [];
 let envHome = process.env.MIGENT_HOME;
@@ -224,6 +96,11 @@ function freshHome(): string {
   return home;
 }
 
+function forget(pid: number): void {
+  const index = children.indexOf(pid);
+  if (index >= 0) children.splice(index, 1);
+}
+
 afterEach(() => {
   restoreSvc();
   for (const pid of children.splice(0)) {
@@ -232,7 +109,6 @@ afterEach(() => {
     } catch {
       // already gone
     }
-    reapChild(pid);
   }
   if (envHome === undefined) delete process.env.MIGENT_HOME;
   else process.env.MIGENT_HOME = envHome;
@@ -240,29 +116,21 @@ afterEach(() => {
   root = "";
 });
 
-test("start adopts a verified instance and status requires auth", async () => {
+test("start adopts a verified instance, status requires auth, and stop asks the service to exit", async () => {
   const home = freshHome();
   const published: Record<string, unknown>[] = [];
   svc.beforeServiceJsonPublish = (directory, record) => {
     expect(threadHolds(startLockPath(directory))).toBe(true);
-    const file = serviceJsonPath(directory);
-    let current = "";
-    try {
-      current = readFileSync(file, "utf8");
-    } catch {
-      current = "";
-    }
-    expect(current.includes(String(record.instance_id))).toBe(false);
     published.push(record);
   };
   const endpoint = await startDetached(home, 0, { termGraceSec: 0.3, killGraceSec: 0.3 });
   children.push(endpoint.pid);
   const file = serviceJsonPath(home);
   const text = readFileSync(file, "utf8");
-  expect(statSync(file).mode & 0o777).toBe(0o600);
+  if (process.platform !== "win32") expect(statSync(file).mode & 0o777).toBe(0o600);
   expect(text).toContain(String(endpoint.pid));
   expect(text).toContain(endpoint.instanceId);
-  expect(published.length).toBeGreaterThan(0);
+  expect(published.length).toBe(1);
   expect(threadHolds(startLockPath(home))).toBe(false);
   expect(await authenticatedInstanceId(endpoint.port, endpoint.token, 2)).toBe(endpoint.instanceId);
   const report = await serviceStatus(home);
@@ -273,13 +141,21 @@ test("start adopts a verified instance and status requires auth", async () => {
   expect(again.instanceId).toBe(endpoint.instanceId);
   expect(again.pid).toBe(endpoint.pid);
   await callService(endpoint.host, endpoint.port, endpoint.token, "GET", "/v1/health");
-  expect(identityLockHolder(serviceLockPath(home))).toBe(endpoint.pid);
-  const unauth = await unauthenticatedInstance(endpoint.port);
-  expect(unauth).toBeNull();
-  const stopped = await stop(home, 0.4, 0.4);
+  expect(await queryEndpoint(home)).toEqual({
+    state: "alive",
+    hello: { instance_id: endpoint.instanceId, pid: endpoint.pid },
+  });
+  expect(await unauthenticatedInstance(endpoint.port)).toBeNull();
+  const killed: number[] = [];
+  svc.killPid = (pid) => killed.push(pid);
+  const stopped = await stop(home, 2, 0.4);
   expect(stopped.outcome).toBe("stopped");
-  children.splice(children.indexOf(endpoint.pid), 1);
-  reapChild(endpoint.pid);
+  expect(killed).toEqual([]);
+  expect(await waitFor(() => !pidAlive(endpoint.pid), 2)).toBe(true);
+  expect(await queryEndpoint(home)).toEqual({ state: "gone" });
+  expect(statExists(serviceJsonPath(home))).toBe(false);
+  expect((await serviceStatus(home)).state).toBe("stopped");
+  forget(endpoint.pid);
 }, 30000);
 
 test("unauthenticated ok does not count as running", async () => {
@@ -296,17 +172,17 @@ test("unauthenticated ok does not count as running", async () => {
   const address = server.address();
   const port = typeof address === "object" && address ? address.port : 0;
   try {
-    const record = serviceRecord({ port, pid: process.pid, pgid: process.pid });
+    const record = serviceRecord({ port, pid: process.pid });
     writeService(home, record);
-    const inspector = new ScriptedInspector(record);
+    new ScriptedEndpoint(record).install();
     expect(await authenticatedInstanceId(port, String(record.token), 1)).toBeNull();
-    expect((await serviceStatus(home, inspector)).state).toBe("stopped");
+    expect((await serviceStatus(home)).state).toBe("stopped");
   } finally {
     server.close();
   }
 });
 
-test("foreground order and shutdown keeps service json", async () => {
+test("foreground order, stop request, and shutdown keeping service json", async () => {
   const home = freshHome();
   const events: string[] = [];
   const realHold = svc.holdStartLock;
@@ -320,9 +196,9 @@ test("foreground order and shutdown keeps service json", async () => {
       events.push("release-start");
     }
   };
-  svc.acquireServiceLock = async (directory) => {
+  svc.acquireServiceLock = async (...args) => {
     events.push("acquire-service");
-    return realServiceLock(directory);
+    return realServiceLock(...args);
   };
   svc.beforeServiceJsonPublish = () => {
     events.push("publish");
@@ -349,11 +225,25 @@ test("foreground order and shutdown keeps service json", async () => {
   probe.end();
   await Promise.race([worker, sleep(5).then(() => Promise.reject(new Error(`foreground hung ${events.join(",")}`)))]);
   expect(events.slice(0, 5)).toEqual(["acquire-start", "acquire-service", "publish", "release-start", "accept"]);
-  expect(statSync(serviceJsonPath(home)).isFile()).toBe(true);
+  expect(statExists(serviceJsonPath(home))).toBe(true);
   expect(holder[0]).toBeInstanceOf(ServiceEndpoint);
+  expect(await queryEndpoint(home)).toEqual({ state: "gone" });
 }, 20000);
 
-test("module without child or handshake exits 2", async () => {
+test("stop ends a foreground service through its endpoint", async () => {
+  const home = freshHome();
+  const worker = serveForeground(home, 0);
+  expect(await waitFor(() => statExists(serviceJsonPath(home)), 5)).toBe(true);
+  const killed: number[] = [];
+  svc.killPid = (pid) => killed.push(pid);
+  const result = await stop(home, 2, 0.2);
+  expect(result.outcome).toBe("stopped");
+  expect(killed).toEqual([]);
+  await Promise.race([worker, sleep(5).then(() => Promise.reject(new Error("foreground did not stop")))]);
+  expect(statExists(serviceJsonPath(home))).toBe(false);
+}, 20000);
+
+test("module without child args or an IPC channel exits 2", async () => {
   const home = freshHome();
   const main = fileURLToPath(new URL("../src/main.ts", import.meta.url));
   const invocation = childInvocation(main);
@@ -372,25 +262,25 @@ test("module without child or handshake exits 2", async () => {
   expect(statExists(startLockPath(home))).toBe(false);
 });
 
-test("child exits when service lock is held and leaves the file", async () => {
+test("child exits when the service endpoint is held and leaves the file", async () => {
   const home = freshHome();
   const original = Buffer.from('{"untouched": true}\n');
   writeFileSync(serviceJsonPath(home), original);
-  const lockFd = await acquireServiceLock(home);
-  expect(lockFd).not.toBeNull();
-  const [proc, parent] = await launchChild(home, 0);
-  children.push(proc.pid);
+  const held = await ServiceEndpointServer.listen(home, { instance_id: "holder", pid: process.pid }, "t", () => undefined);
+  expect(held).not.toBeNull();
+  const child = await launchChild(home, 0);
+  children.push(child.pid);
   try {
     const started = monotonic();
-    const line = await readReadyLine(parent, monotonic() + 2);
-    await proc.wait(1);
-    // A hung child would hit the 2s ready-line deadline; a slow cold start must not fail.
-    expect(monotonic() - started).toBeLessThan(2);
-    expect(line).toBeNull();
-    expect(proc.returncode).not.toBe(0);
+    const ready = await readReadyLine(child, monotonic() + 3);
+    await child.wait(1);
+    // A hung child would hit the ready deadline; a slow cold start must not fail.
+    expect(monotonic() - started).toBeLessThan(3);
+    expect(ready).toBeNull();
+    expect(child.returncode).not.toBe(0);
   } finally {
-    closeSync(parent);
-    if (lockFd !== null) closeSync(lockFd);
+    child.release();
+    held?.close();
   }
   expect(readFileSync(serviceJsonPath(home))).toEqual(original);
   expect(statExists(startLockPath(home))).toBe(false);
@@ -404,8 +294,8 @@ test("sigterm leaves service json bytes unchanged", async () => {
   process.kill(endpoint.pid, "SIGTERM");
   expect(await waitFor(() => !pidAlive(endpoint.pid), 2)).toBe(true);
   expect(readFileSync(serviceJsonPath(home))).toEqual(before);
-  reapChild(endpoint.pid);
-  children.splice(children.indexOf(endpoint.pid), 1);
+  expect(await queryEndpoint(home)).toEqual({ state: "gone" });
+  forget(endpoint.pid);
 }, 20000);
 
 test("parent death before publish leaves service json absent", async () => {
@@ -430,7 +320,7 @@ test("parent death before publish leaves service json absent", async () => {
     children.push(childPid);
     process.kill(support.pid ?? -1, "SIGKILL");
     await new Promise((resolve) => support.once("exit", resolve));
-    expect(await waitFor(() => !pidAlive(childPid), 1)).toBe(true);
+    expect(await waitFor(() => !pidAlive(childPid), 2)).toBe(true);
     const deadline = monotonic() + 0.5;
     while (monotonic() < deadline) {
       expect(statExists(serviceJsonPath(home))).toBe(false);
@@ -445,7 +335,6 @@ test("parent death before publish leaves service json absent", async () => {
       }
     }
   }
-  expect(statExists(serviceJsonPath(home))).toBe(false);
   const called: unknown[] = [];
   svc.beforeServiceJsonUnlink = () => {
     called.push(true);
@@ -454,116 +343,77 @@ test("parent death before publish leaves service json absent", async () => {
   expect(result.outcome).toBe("absent");
   expect(called).toEqual([]);
   expect(statExists(serviceJsonPath(home))).toBe(false);
-  expect(identityLockHolder(serviceLockPath(home))).toBeNull();
-  if (childPid) {
-    reapChild(childPid);
-    const index = children.indexOf(childPid);
-    if (index >= 0) children.splice(index, 1);
-  }
+  expect(await queryEndpoint(home)).toEqual({ state: "gone" });
+  if (childPid) forget(childPid);
 }, 20000);
 
-test("stop sends term then kill only after the identity stays", async () => {
+test("stop refuses an endpoint that names another instance", async () => {
   const home = freshHome();
   const record = serviceRecord();
   writeService(home, record);
   const before = readFileSync(serviceJsonPath(home));
-  const inspector = new ScriptedInspector(record);
-  const backend = new RecordingBackend({ supported: false });
-  const mismatched = new ScriptedInspector(record);
-  mismatched.startKey = "other-start";
-  const quiet = new RecordingBackend({ supported: false });
-  const mismatch = await stop(home, 0.2, 0.2, { inspector: mismatched, backend: quiet });
-  expect(mismatch.outcome).toBe("error");
-  expect(quiet.log).toEqual([]);
-  expect(readFileSync(serviceJsonPath(home))).toEqual(before);
-  const checks: string[] = [];
-  const real = svc.serviceIdentityMatches;
-  svc.serviceIdentityMatches = (loaded, checker, lockPath) => {
-    checks.push("match");
-    return real(loaded, checker, lockPath);
-  };
-  const result = await stop(home, 0.2, 0.2, { inspector, backend });
+  const endpoint = new ScriptedEndpoint(record);
+  endpoint.state = { state: "alive", hello: { instance_id: "someone-else", pid: 7 } };
+  endpoint.install();
+  const result = await stop(home, 0.2, 0.2);
   expect(result.outcome).toBe("error");
-  expect(["absent", "stopped"]).not.toContain(result.outcome);
-  expect(backend.log.filter((item) => Array.isArray(item))).toEqual([
-    ["kill", record.pid, osConstants.signals.SIGTERM],
-    ["kill", record.pid, osConstants.signals.SIGKILL],
-  ]);
-  expect(checks.filter((item) => item === "match").length).toBeGreaterThanOrEqual(3);
+  expect(endpoint.stopRequests).toBe(0);
+  expect(endpoint.killed).toEqual([]);
+  expect(readFileSync(serviceJsonPath(home))).toEqual(before);
+  endpoint.state = { state: "unknown" };
+  expect((await stop(home, 0.2, 0.2)).outcome).toBe("error");
   expect(readFileSync(serviceJsonPath(home))).toEqual(before);
 });
 
-test("stop unlinks when the process disappears during term grace", async () => {
+test("stop unlinks when the service exits on request", async () => {
   const home = freshHome();
   const record = serviceRecord();
   writeService(home, record);
-  const inspector = new ScriptedInspector(record);
-  const backend = new RecordingBackend({ supported: false });
-  backend.kill = (pid, sig) => {
-    backend.log.push(["kill", pid, sig]);
-    inspector.markGone();
-  };
-  const result = await stop(home, 0.2, 0.2, { inspector, backend });
+  const endpoint = new ScriptedEndpoint(record);
+  endpoint.goneOnStop = true;
+  endpoint.install();
+  const result = await stop(home, 0.2, 0.2);
   expect(result.outcome).toBe("stopped");
-  expect(backend.log).toEqual([["kill", record.pid, osConstants.signals.SIGTERM]]);
+  expect(endpoint.stopRequests).toBe(1);
+  expect(endpoint.killed).toEqual([]);
   expect(statExists(serviceJsonPath(home))).toBe(false);
 });
 
-test("stop confirms gone when the process exits before kill", async () => {
+test("stop kills the endpoint's own pid when the request does not end it", async () => {
   const home = freshHome();
   const record = serviceRecord();
   writeService(home, record);
-  const inspector = new ScriptedInspector(record);
-  const backend = new RecordingBackend({ supported: false });
-  backend.kill = (pid, sig) => {
-    backend.log.push(["kill", pid, sig]);
-    inspector.markGone();
-    throw esrch();
-  };
-  const result = await stop(home, 0.2, 0.2, { inspector, backend });
+  const endpoint = new ScriptedEndpoint(record);
+  endpoint.install();
+  const result = await stop(home, 0.2, 0.2);
   expect(result.outcome).toBe("stopped");
-  expect(backend.log).toEqual([["kill", record.pid, osConstants.signals.SIGTERM]]);
+  expect(endpoint.stopRequests).toBe(1);
+  expect(endpoint.killed).toEqual([record.pid]);
   expect(statExists(serviceJsonPath(home))).toBe(false);
 });
 
-test("stop still alive after sigkill keeps the file", async () => {
+test("stop still alive after kill keeps the file", async () => {
   const home = freshHome();
   const record = serviceRecord();
   writeService(home, record);
   const before = readFileSync(serviceJsonPath(home));
-  const inspector = new ScriptedInspector(record);
-  const backend = new RecordingBackend({ supported: false });
+  const endpoint = new ScriptedEndpoint(record);
+  endpoint.goneOnKill = false;
+  endpoint.install();
   const called: unknown[] = [];
   svc.beforeServiceJsonUnlink = () => {
     called.push(true);
   };
   const started = monotonic();
-  const result = await stop(home, 0.2, 0.2, { inspector, backend });
+  const result = await stop(home, 0.2, 0.2);
   const elapsed = monotonic() - started;
   expect(result.outcome).toBe("error");
-  expect(["absent", "stopped"]).not.toContain(result.outcome);
   expect(result.message).toContain("still alive");
   expect(readFileSync(serviceJsonPath(home))).toEqual(before);
   expect(called).toEqual([]);
-  expect(elapsed).toBeGreaterThanOrEqual(0.2);
-  expect(elapsed).toBeLessThan(1.2);
-  expect(backend.log).toContainEqual(["kill", record.pid, osConstants.signals.SIGKILL]);
-});
-
-test("stop unlinks after sigkill once the process is gone", async () => {
-  const home = freshHome();
-  const record = serviceRecord();
-  writeService(home, record);
-  const inspector = new ScriptedInspector(record);
-  const backend = new RecordingBackend({ supported: false });
-  backend.kill = (pid, sig) => {
-    backend.log.push(["kill", pid, sig]);
-    if (sig === osConstants.signals.SIGKILL) inspector.markGone();
-  };
-  const result = await stop(home, 0.2, 0.2, { inspector, backend });
-  expect(result.outcome).toBe("stopped");
-  expect(backend.log).toContainEqual(["kill", record.pid, osConstants.signals.SIGKILL]);
-  expect(statExists(serviceJsonPath(home))).toBe(false);
+  expect(elapsed).toBeGreaterThanOrEqual(0.4);
+  expect(elapsed).toBeLessThan(1.5);
+  expect(endpoint.killed).toEqual([record.pid]);
 });
 
 test("stop holds start lock across the unlink", async () => {
@@ -571,9 +421,6 @@ test("stop holds start lock across the unlink", async () => {
   const record = serviceRecord();
   writeService(home, record);
   const original = readFileSync(serviceJsonPath(home));
-  const inspector = new ScriptedInspector(record);
-  inspector.alive = false;
-  inspector.holdLock = false;
   let release: () => void = () => undefined;
   const released = new Promise<void>((resolve) => {
     release = resolve;
@@ -589,7 +436,8 @@ test("stop holds start lock across the unlink", async () => {
   };
   const stopped: Array<{ outcome: string }> = [];
   const startedResult: unknown[] = [];
-  const stopper = stop(home, 0.2, 0.2, { inspector, backend: new RecordingBackend() }).then((result) => {
+  // No endpoint is listening, so the record is stale.
+  const stopper = stop(home, 0.2, 0.2).then((result) => {
     stopped.push(result);
   });
   expect(await waitFor(() => entered, 2)).toBe(true);
@@ -607,7 +455,6 @@ test("stop holds start lock across the unlink", async () => {
     sleep(8).then(() => Promise.reject(new Error(`start hung\n${logText(home)}`))),
   ]);
   expect(stopped[0]?.outcome).toBe("stopped");
-  expect(startedResult.length).toBeGreaterThan(0);
   const endpoint = startedResult[0];
   expect(endpoint, `${String(endpoint)}\n${logText(home)}`).toBeInstanceOf(ServiceEndpoint);
   const adopted = endpoint as ServiceEndpoint;
@@ -616,39 +463,25 @@ test("stop holds start lock across the unlink", async () => {
   expect(document.instance_id).toBe(adopted.instanceId);
   expect(document.instance_id).not.toBe(record.instance_id);
   expect(published).toEqual([adopted.instanceId]);
-  await stop(home, 0.4, 0.4);
-  reapChild(adopted.pid);
-  children.splice(children.indexOf(adopted.pid), 1);
+  await stop(home, 2, 0.4);
+  forget(adopted.pid);
 }, 20000);
 
 test("unlink reread keeps a replaced document", async () => {
   const home = freshHome();
   const record = serviceRecord();
   writeService(home, record);
-  const inspector = new ScriptedInspector(record);
-  const backend = new RecordingBackend({ supported: false });
-  const replacementPid = 999111;
-  backend.kill = (pid, sig) => {
-    backend.log.push(["kill", pid, sig]);
-    inspector.markGone();
-  };
+  const endpoint = new ScriptedEndpoint(record);
+  endpoint.goneOnStop = true;
+  endpoint.install();
   svc.beforeServiceJsonUnlink = (directory) => {
-    const replacement = serviceRecord({
-      instance_id: "replacement-instance",
-      pid: replacementPid,
-      pgid: replacementPid,
-      start_key: "replacement-start",
-    });
+    const replacement = serviceRecord({ instance_id: "replacement-instance", pid: 999111 });
     writeFileSync(serviceJsonPath(directory), `${JSON.stringify(replacement)}\n`);
   };
-  const result = await stop(home, 0.2, 0.2, { inspector, backend });
-  const text = readFileSync(serviceJsonPath(home), "utf8");
-  expect(text).toContain("replacement-instance");
+  const result = await stop(home, 0.2, 0.2);
+  expect(readFileSync(serviceJsonPath(home), "utf8")).toContain("replacement-instance");
   expect(result.outcome).toBe("stopped");
   expect(result.message).toBe("");
-  const signaled = backend.log.filter((item) => Array.isArray(item) && item[0] === "kill").map((item) => item[1]);
-  expect(signaled).toContain(record.pid);
-  expect(signaled).not.toContain(replacementPid);
 });
 
 test("second start waits for the lock and adopts only authenticated health", async () => {
@@ -663,141 +496,86 @@ test("second start waits for the lock and adopts only authenticated health", asy
   };
   await holdStartLock(home, 2, async () => {
     svc.launchChild = forbid;
-    const errors: unknown[] = [];
-    try {
-      await startDetached(home, 0, { startLockTimeout: 0.3 });
-    } catch (error) {
-      if (error instanceof ServiceError) errors.push(error);
-      else throw error;
-    }
+    await expect(startDetached(home, 0, { startLockTimeout: 0.3 })).rejects.toBeInstanceOf(ServiceError);
     expect(spawned).toEqual([]);
-    expect(errors.length).toBeGreaterThan(0);
     expect(readFileSync(serviceJsonPath(home))).toEqual(original);
   });
   restoreSvc();
-  const inspector = new ScriptedInspector(record);
+  new ScriptedEndpoint(record).install();
   svc.launchChild = forbid;
   svc.authenticatedInstanceId = async () => String(record.instance_id);
-  const adopted = await startDetached(home, 0, { inspector, identityTimeout: 0.2 });
+  const adopted = await startDetached(home, 0, { identityTimeout: 0.2 });
   expect(adopted.token).toBe(record.token);
   expect(spawned).toEqual([]);
   svc.authenticatedInstanceId = async () => null;
-  await expect(startDetached(home, 0, { inspector, identityTimeout: 0.2 })).rejects.toBeInstanceOf(ServiceError);
+  await expect(startDetached(home, 0, { identityTimeout: 0.2 })).rejects.toBeInstanceOf(ServiceError);
   expect(readFileSync(serviceJsonPath(home))).toEqual(original);
 });
 
-test("stale pid with a different start key is replaced without a signal", async () => {
+test("a record whose endpoint is gone is replaced without a kill", async () => {
   const home = freshHome();
-  const record = serviceRecord({ pid: 424242, pgid: 424242, start_key: "old-start" });
-  writeService(home, record);
-  const inspector = new ScriptedInspector(record);
-  inspector.holdLock = false;
-  inspector.startKey = "live-start";
-  const backend = new RecordingBackend({ supported: false });
-  const endpoint = await startDetached(home, 0, {
-    inspector,
-    backend,
-    termGraceSec: 0.3,
-    killGraceSec: 0.3,
-  });
+  // pid 1 is alive but is not the service; only the endpoint decides.
+  writeService(home, serviceRecord({ pid: 1 }));
+  const killed: number[] = [];
+  svc.killPid = (pid) => killed.push(pid);
+  const endpoint = await startDetached(home, 0, { termGraceSec: 0.3, killGraceSec: 0.3 });
   children.push(endpoint.pid);
   const document = JSON.parse(readFileSync(serviceJsonPath(home), "utf8")) as { pid: number };
   expect(document.pid).toBe(endpoint.pid);
-  expect(document.pid).not.toBe(424242);
-  const killed = backend.log.filter((item) => Array.isArray(item) && item[0] === "kill").map((item) => item[1]);
-  expect(killed).not.toContain(424242);
+  expect(killed).toEqual([]);
   expect(threadHolds(startLockPath(home))).toBe(false);
-  await stop(home, 0.4, 0.4);
-  reapChild(endpoint.pid);
-  children.splice(children.indexOf(endpoint.pid), 1);
+  await stop(home, 2, 0.4);
+  forget(endpoint.pid);
 }, 20000);
 
-test("failed start does not signal when identity is unavailable", async () => {
+test("failed start stops its own child and publishes nothing", async () => {
   const home = freshHome();
-  const backend = new RecordingBackend({ supported: false });
   const spawned: number[] = [];
-  const kills: number[] = [];
   const realLaunch = svc.launchChild;
   svc.launchChild = async (directory, port) => {
-    const [proc, parent] = await realLaunch(directory, port);
-    spawned.push(proc.pid);
-    const original = proc.kill.bind(proc);
-    proc.kill = (signal) => {
-      kills.push(proc.pid);
-      original(signal);
-    };
-    return [proc, parent];
-  };
-  svc.kernelProcessIdentity = () => null;
-  try {
-    await expect(
-      startDetached(home, 0, { backend, readyTimeout: 2, termGraceSec: 0.2, killGraceSec: 0.2 }),
-    ).rejects.toBeInstanceOf(ServiceError);
-  } finally {
-    for (const pid of spawned) children.push(pid);
-  }
-  expect(spawned.length).toBeGreaterThan(0);
-  expect(kills).toEqual([]);
-  expect(backend.log).toEqual([]);
-  expect(statExists(serviceJsonPath(home))).toBe(false);
-}, 15000);
-
-test("failed start signals only the identity captured after popen", async () => {
-  const home = freshHome();
-  const backend = new RecordingBackend({ supported: false });
-  const spawned: number[] = [];
-  const kills: number[] = [];
-  const childPid: { pid?: number } = {};
-  const lookups: string[] = [];
-  const realLaunch = svc.launchChild;
-  svc.kernelProcessIdentity = (pid) => {
-    if (pid !== childPid.pid) return null;
-    lookups.push("hit");
-    if (lookups.length === 1) return "captured-start";
-    return "reused-start";
-  };
-  svc.launchChild = async (directory, port) => {
-    const [proc, parent] = await realLaunch(directory, port);
-    childPid.pid = proc.pid;
-    spawned.push(proc.pid);
-    const original = proc.kill.bind(proc);
-    proc.kill = (signal) => {
-      kills.push(proc.pid);
-      original(signal);
-    };
-    return [proc, parent];
+    const child = await realLaunch(directory, port);
+    spawned.push(child.pid);
+    return child;
   };
   svc.readReadyLine = async () => null;
+  const killed: number[] = [];
+  svc.killPid = (pid) => killed.push(pid);
   try {
     await expect(
-      startDetached(home, 0, { backend, readyTimeout: 0.3, termGraceSec: 0.2, killGraceSec: 0.2 }),
+      startDetached(home, 0, { readyTimeout: 0.3, termGraceSec: 0.5, killGraceSec: 0.5 }),
     ).rejects.toBeInstanceOf(ServiceError);
   } finally {
     for (const pid of spawned) children.push(pid);
   }
-  expect(spawned.length).toBeGreaterThan(0);
-  expect(lookups.length).toBeGreaterThanOrEqual(2);
-  expect(kills).toEqual([]);
-  expect(backend.log.some((item) => Array.isArray(item) && item[0] === "kill")).toBe(false);
+  expect(spawned.length).toBe(1);
+  expect(await waitFor(() => !pidAlive(spawned[0] ?? -1), 2)).toBe(true);
+  expect(killed).toEqual([]);
   expect(statExists(serviceJsonPath(home))).toBe(false);
 }, 15000);
 
-test("same start key without the service lock blocks start", async () => {
+test("a live Migent 0.1 service blocks start and stop; a dead one is replaced", async () => {
   const home = freshHome();
-  const record = serviceRecord();
-  writeService(home, record);
-  const original = readFileSync(serviceJsonPath(home));
-  const inspector = new ScriptedInspector(record);
-  inspector.holdLock = false;
-  const backend = new RecordingBackend({ supported: false });
+  const legacy = serviceRecord({
+    schema_version: 1,
+    pid: process.pid,
+    pgid: process.pid,
+    start_key: "start-key",
+    boot_id: "boot-1",
+    hostname: "host.example",
+  });
+  writeService(home, legacy);
+  const before = readFileSync(serviceJsonPath(home));
   svc.launchChild = async () => {
     throw new Error("start spawned");
   };
-  await expect(
-    startDetached(home, 0, { inspector, backend, identityTimeout: 0.2 }),
-  ).rejects.toBeInstanceOf(ServiceError);
-  expect(backend.log).toEqual([]);
-  expect(readFileSync(serviceJsonPath(home))).toEqual(original);
+  await expect(startDetached(home, 0, { identityTimeout: 0.2 })).rejects.toThrow(/Migent 0\.1/);
+  const stopped = await stop(home, 0.2, 0.2);
+  expect(stopped.outcome).toBe("error");
+  expect(stopped.message).toMatch(/Migent 0\.1/);
+  expect(readFileSync(serviceJsonPath(home))).toEqual(before);
+  svc.pidAlive = () => false;
+  expect((await stop(home, 0.2, 0.2)).outcome).toBe("stopped");
+  expect(statExists(serviceJsonPath(home))).toBe(false);
 });
 
 function statExists(file: string): boolean {
@@ -827,5 +605,3 @@ async function unauthenticatedInstance(port: number): Promise<string | null> {
   expect(payload).not.toHaveProperty("instance_id");
   return typeof payload.instance_id === "string" ? payload.instance_id : null;
 }
-
-
