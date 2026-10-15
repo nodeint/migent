@@ -1,10 +1,4 @@
 packages:
   - "packages/*"
 allowBuilds:
-  fs-ext: true
   koffi: true
-  node-gyp: true
-packageExtensions:
-  fs-ext@2.1.1:
-    dependencies:
-      node-gyp: ^11.4.2

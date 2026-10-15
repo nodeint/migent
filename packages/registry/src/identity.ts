@@ -3,7 +3,7 @@ import { constants as osConstants, hostname as osHostname } from "node:os";
 import path from "node:path";
 import { currentBootId, identityLockHolder, kernelProcessIdentity as kernelIdentity } from "@migent/kernel";
 import { LockNotHeld, threadHolds } from "./locks.js";
-import { fcntlLock, fsExt, posixGetpgid, reapChild } from "./posix.js";
+import { POSIX, fcntlInt, fcntlLock, posixGetpgid, reapChild } from "./posix.js";
 import { atomicReplace } from "./store.js";
 
 export const CORRUPT = Symbol("corrupt");
@@ -204,7 +204,7 @@ export async function acquireServiceLock(home: string): Promise<number | null> {
   const fd = openSync(file, flags, 0o600);
   try {
     chmodSync(file, 0o600);
-    await fcntlLock(fd, fsExt.constants.F_SETLK, fsExt.constants.F_WRLCK);
+    await fcntlLock(fd, POSIX.F_SETLK, POSIX.F_WRLCK);
   } catch (error) {
     closeSync(fd);
     const errno = errnoOf(error);
@@ -273,7 +273,7 @@ export function parseServiceBytes(raw: Buffer): ServiceRecord {
 export function handshakeOpen(fd: number): boolean {
   try {
     fstatSync(fd);
-    fsExt.fcntlSync(fd, 3, 0);
+    fcntlInt(fd, POSIX.F_GETFL);
     return true;
   } catch {
     return false;

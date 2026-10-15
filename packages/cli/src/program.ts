@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import { Command, type OptionValues } from "commander";
 import { ConfigurationError, DEFAULT_MAX_DISPATCHES } from "@migent/kernel";
 import { dispatchAgent } from "./commands/agent.js";
@@ -13,6 +14,8 @@ import { runRegister, runRemove, runWorkspaceList } from "./commands/workspace-r
 import { printError } from "./display.js";
 import { runMigrate } from "./migrate.js";
 import { findWorkspace, invocationCwdPath } from "./workspace.js";
+
+const { version } = createRequire(import.meta.url)("../package.json") as { version: string };
 
 const START_EXITS = [
   "Exit 0 when the session is completed.",
@@ -52,6 +55,7 @@ export function createProgram(status: CliStatus): Command {
   program
     .name("migent")
     .description("Run named workflows and standalone roles from .migent/.")
+    .version(version, "-V, --version", "Print the Migent version.")
     .exitOverride();
 
   const start = program

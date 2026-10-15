@@ -3,7 +3,7 @@ import { constants as osConstants, tmpdir } from "node:os";
 import path from "node:path";
 import { expect, test } from "vitest";
 import { LockNotHeld, RegistryBusy, interprocessLock, lockOps, processLockFor, registryBusy, threadHolds } from "../src/locks.ts";
-import { fsExt } from "../src/posix.ts";
+import { POSIX } from "../src/posix.ts";
 import { publishServiceJson, unlinkServiceJsonIfUnchanged } from "../src/service.ts";
 import { monotonic } from "../src/time.ts";
 
@@ -21,7 +21,7 @@ test("contention uses setlk and times out", async () => {
   const realSleep = lockOps.sleep;
   lockOps.fcntlFlock = async (_fd, cmd, lockType) => {
     commands.push(cmd);
-    if (lockType === fsExt.constants.F_UNLCK) return;
+    if (lockType === POSIX.F_UNLCK) return;
     throw heldError();
   };
   lockOps.sleep = async (seconds) => {
@@ -40,8 +40,8 @@ test("contention uses setlk and times out", async () => {
   }
   expect(monotonic() - started).toBeLessThan(1);
   expect(commands.length).toBeGreaterThan(0);
-  expect(commands.every((cmd) => cmd === fsExt.constants.F_SETLK)).toBe(true);
-  expect(commands).not.toContain(fsExt.constants.F_SETLKW);
+  expect(commands.every((cmd) => cmd === POSIX.F_SETLK)).toBe(true);
+  expect(commands).not.toContain(POSIX.F_SETLKW);
   expect(sleeps.length).toBeGreaterThan(0);
 });
 
@@ -52,7 +52,7 @@ test("lock acquired when it frees before the deadline", async () => {
   const realSleep = lockOps.sleep;
   lockOps.fcntlFlock = async (_fd, cmd, lockType) => {
     commands.push(cmd);
-    if (lockType === fsExt.constants.F_UNLCK) return;
+    if (lockType === POSIX.F_UNLCK) return;
     state.tries += 1;
     if (state.tries < 3) throw heldError();
   };
@@ -68,7 +68,7 @@ test("lock acquired when it frees before the deadline", async () => {
     lockOps.fcntlFlock = realFlock;
     lockOps.sleep = realSleep;
   }
-  expect(commands).not.toContain(fsExt.constants.F_SETLKW);
+  expect(commands).not.toContain(POSIX.F_SETLKW);
   expect(state.tries).toBeGreaterThanOrEqual(3);
 });
 
@@ -77,7 +77,7 @@ test("timeout zero fails on the first eagain without sleeping", async () => {
   const realFlock = lockOps.fcntlFlock;
   const realSleep = lockOps.sleep;
   lockOps.fcntlFlock = async (_fd, _cmd, lockType) => {
-    if (lockType === fsExt.constants.F_UNLCK) return;
+    if (lockType === POSIX.F_UNLCK) return;
     throw heldError();
   };
   lockOps.sleep = async (seconds) => {

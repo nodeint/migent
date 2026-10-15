@@ -1,18 +1,53 @@
 {
   "name": "@migent/registry",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Machine-local workspace registry service for Migent.",
+  "keywords": [
+    "ai",
+    "agents",
+    "workflow",
+    "cli",
+    "claude",
+    "codex",
+    "grok",
+    "migent"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/nodeint/migent/tree/main/packages/registry#readme",
+  "bugs": {
+    "url": "https://github.com/nodeint/migent/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nodeint/migent.git",
+    "directory": "packages/registry"
+  },
   "type": "module",
+  "files": [
+    "dist"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     }
   },
+  "engines": {
+    "node": ">=22"
+  },
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "prepack": "pnpm -w run build && cp ../../LICENSE ."
+  },
   "dependencies": {
     "@hono/node-server": "^2.1.3",
     "@migent/kernel": "workspace:*",
-    "fs-ext": "^2.1.1",
     "hono": "^4.13.13",
     "koffi": "^3.3.2"
   },

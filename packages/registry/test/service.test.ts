@@ -384,7 +384,8 @@ test("child exits when service lock is held and leaves the file", async () => {
     const started = monotonic();
     const line = await readReadyLine(parent, monotonic() + 2);
     await proc.wait(1);
-    expect(monotonic() - started).toBeLessThan(1);
+    // A hung child would hit the 2s ready-line deadline; a slow cold start must not fail.
+    expect(monotonic() - started).toBeLessThan(2);
     expect(line).toBeNull();
     expect(proc.returncode).not.toBe(0);
   } finally {

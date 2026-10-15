@@ -2,14 +2,13 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
-import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 import { RegistryBusy } from "../src/locks.ts";
 import { RegistryCorrupt, RegistryStore, WorkspaceNotFound, storeFs, workspaceIdFor } from "../src/store.ts";
 import { TOOL, makeWorkspace, registryBytes } from "./support.ts";
 import { sleep } from "../src/time.ts";
 
-const packageJson = fileURLToPath(new URL("../package.json", import.meta.url));
+const kernelPosix = new URL("../../kernel/src/posix.ts", import.meta.url).href;
 
 function resolved(filePath: string): string {
   return realpathSync(filePath);
@@ -273,18 +272,16 @@ test("cross process lock returns busy", async () => {
   mkdirSync(directory);
   const lockPath = path.join(directory, "registry.lock");
   const script = `
-    import { createRequire } from "node:module";
     import { constants, openSync } from "node:fs";
-    const require = createRequire(${JSON.stringify(packageJson)});
-    const fsExt = require("fs-ext");
+    const { POSIX, fcntlSetLock } = await import(${JSON.stringify(kernelPosix)});
     const fd = openSync(process.argv[1], constants.O_RDWR | constants.O_CREAT, 0o600);
-    fsExt.fcntl(fd, "setlk", fsExt.constants.F_WRLCK, (err) => {
-      if (err) {
-        process.stderr.write(String(err));
-        process.exit(1);
-      }
-      process.stdout.write("locked\\n");
-    });
+    try {
+      fcntlSetLock(fd, POSIX.F_WRLCK);
+    } catch (err) {
+      process.stderr.write(String(err));
+      process.exit(1);
+    }
+    process.stdout.write("locked\\n");
     setInterval(() => {}, 1000);
   `;
   const proc = spawn(process.execPath, ["--input-type=module", "-e", script, lockPath], {

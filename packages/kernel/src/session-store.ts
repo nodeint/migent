@@ -1,4 +1,3 @@
-import { createRequire } from "node:module";
 import { randomUUID } from "node:crypto";
 import {
   appendFileSync,
@@ -51,11 +50,9 @@ import {
   safeComponent,
   utcNow,
 } from "./runtime.js";
+import { POSIX, flockSync } from "./posix.js";
 import type { StageOutcome } from "./stage-outcome.js";
 import { loadNamedWorkflow, loadWorkflowDocument, type WorkflowDocument } from "./workflow.js";
-
-const require = createRequire(import.meta.url);
-const fsExt = require("fs-ext") as { flockSync(fd: number, flags: string): void };
 
 const RUNNING_STATUS_KEYS = [
   "workflow_id",
@@ -534,13 +531,13 @@ export class SessionStore {
     const fd = openSync(filePath, fsConstants.O_RDWR);
     let locked = false;
     try {
-      fsExt.flockSync(fd, "ex");
+      flockSync(fd, POSIX.LOCK_EX);
       locked = true;
       return fn();
     } finally {
       if (locked) {
         try {
-          fsExt.flockSync(fd, "un");
+          flockSync(fd, POSIX.LOCK_UN);
         } catch {
           // The fd is closed below either way.
         }

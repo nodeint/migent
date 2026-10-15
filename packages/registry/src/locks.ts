@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { chmodSync, closeSync, constants as fsConstants, openSync } from "node:fs";
 import { constants as osConstants } from "node:os";
 import path from "node:path";
-import { fcntlLock, fsExt } from "./posix.js";
+import { POSIX, fcntlLock } from "./posix.js";
 import { monotonic, sleep } from "./time.js";
 
 export class RegistryBusy extends Error {
@@ -37,7 +37,7 @@ const processLocks = new Map<string, ProcessLock>();
 
 export const lockOps = {
   async fcntlFlock(fd: number, cmd: number, lockType: number): Promise<void> {
-    if (cmd !== fsExt.constants.F_SETLK) {
+    if (cmd !== POSIX.F_SETLK) {
       throw new Error("registry locks use non-blocking F_SETLK");
     }
     await fcntlLock(fd, cmd, lockType);
@@ -145,7 +145,7 @@ async function acquireRecordLock(
     const remaining = deadline - monotonic();
     if (contended && remaining <= 0) throw busyError();
     try {
-      await lockOps.fcntlFlock(fd, fsExt.constants.F_SETLK, lockType);
+      await lockOps.fcntlFlock(fd, POSIX.F_SETLK, lockType);
       return;
     } catch (error) {
       const errno = errnoOf(error);
@@ -186,7 +186,7 @@ export async function interprocessLock<T>(
       const flags = fsConstants.O_RDWR | fsConstants.O_CREAT;
       fd = lockOps.open(lockPath, flags, 0o600);
       chmodSync(lockPath, 0o600);
-      const lockType = options.shared ? fsExt.constants.F_RDLCK : fsExt.constants.F_WRLCK;
+      const lockType = options.shared ? POSIX.F_RDLCK : POSIX.F_WRLCK;
       await acquireRecordLock(fd, lockType, deadline, options.busyError);
       gotRecord = true;
       held.add(key);
@@ -194,7 +194,7 @@ export async function interprocessLock<T>(
     } finally {
       if (gotRecord && fd !== null) {
         try {
-          await lockOps.fcntlFlock(fd, fsExt.constants.F_SETLK, fsExt.constants.F_UNLCK);
+          await lockOps.fcntlFlock(fd, POSIX.F_SETLK, POSIX.F_UNLCK);
         } catch {
           // The fd close below drops the lock if the explicit unlock fails.
         }

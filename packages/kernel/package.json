@@ -1,25 +1,58 @@
 {
   "name": "@migent/kernel",
-  "version": "0.0.0",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "build": "tsc -b"
+  "version": "0.1.0",
+  "description": "Workflow engine, configuration, and session store for Migent.",
+  "keywords": [
+    "ai",
+    "agents",
+    "workflow",
+    "cli",
+    "claude",
+    "codex",
+    "grok",
+    "migent"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/nodeint/migent/tree/main/packages/kernel#readme",
+  "bugs": {
+    "url": "https://github.com/nodeint/migent/issues"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nodeint/migent.git",
+    "directory": "packages/kernel"
+  },
+  "type": "module",
+  "files": [
+    "dist"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     }
   },
+  "engines": {
+    "node": ">=22"
+  },
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "prepack": "pnpm -w run build && cp ../../LICENSE ."
+  },
   "dependencies": {
-    "fs-ext": "2.1.1",
     "koffi": "^3.3.2",
     "which": "^7.0.0",
     "yaml": "^2.9.1",
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@types/node": "^24.19.1"
+    "@types/node": "^26.6.4"
   }
 }

@@ -1,13 +1,49 @@
 {
   "name": "@migent/adapters",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Provider adapters (Claude, Codex, Grok) for Migent.",
+  "keywords": [
+    "ai",
+    "agents",
+    "workflow",
+    "cli",
+    "claude",
+    "codex",
+    "grok",
+    "migent"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/nodeint/migent/tree/main/packages/adapters#readme",
+  "bugs": {
+    "url": "https://github.com/nodeint/migent/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nodeint/migent.git",
+    "directory": "packages/adapters"
+  },
   "type": "module",
+  "files": [
+    "dist"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     }
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "prepack": "pnpm -w run build && cp ../../LICENSE ."
   },
   "dependencies": {
     "@migent/kernel": "workspace:*"

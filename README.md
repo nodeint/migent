@@ -69,29 +69,22 @@ ones your configuration names.
 
 ## Quickstart
 
-Python 3.11+, [uv](https://docs.astral.sh/uv/), and authenticated provider CLIs
-named by your configuration.
+Node.js 22+ on macOS or Linux, and authenticated provider CLIs named by your
+configuration.
 
 ### Install
 
-From any directory:
-
 ```bash
-uv tool install --with 'git+ssh://git@github.com/nodeint/migent.git#subdirectory=packages/kernel' --with 'git+ssh://git@github.com/nodeint/migent.git#subdirectory=packages/adapters' --with 'git+ssh://git@github.com/nodeint/migent.git#subdirectory=packages/registry' 'git+ssh://git@github.com/nodeint/migent.git#subdirectory=packages/cli'
+npm install -g @migent/cli
 ```
 
-Verify with `migent --help`.
+Verify with `migent --version`.
 
 ### Upgrade
 
-Upgrade an existing install to the latest commit on the default branch:
-
 ```bash
-uv tool upgrade migent-cli
+npm install -g @migent/cli@latest
 ```
-
-That refreshes the packages recorded at install time. When the install command
-gains or drops a package, run the `uv tool install` command above again.
 
 ### Create a project
 
@@ -116,8 +109,8 @@ In a terminal, pick the provider, model, and prompted options from the lists.
 Pass `--provider` and `--model` together when input is not a terminal. Commit
 `config.yaml` and `workflows/`. Leave `.migent/sessions/` untracked.
 
-Model and role shape is in [Providers and model configuration](docs/providers.md).
-A full plan workflow is in [Writing workflows](docs/workflows.md#complete-example).
+Model and role shape is in [Providers and model configuration](https://github.com/nodeint/migent/blob/main/docs/providers.md).
+A full plan workflow is in [Writing workflows](https://github.com/nodeint/migent/blob/main/docs/workflows.md#complete-example).
 
 ### Run
 
@@ -137,8 +130,8 @@ migent continue <session-id>
 ```
 
 Command fields and exit codes are in
-[CLI commands and execution controls](docs/cli.md). Session files are in
-[Sessions and workflow composition](docs/sessions.md).
+[CLI commands and execution controls](https://github.com/nodeint/migent/blob/main/docs/cli.md). Session files are in
+[Sessions and workflow composition](https://github.com/nodeint/migent/blob/main/docs/sessions.md).
 
 ## Concepts
 
@@ -170,20 +163,29 @@ so another tool can ask which projects exist.
 
 ## Documentation
 
-- [Writing workflows](docs/workflows.md)
-- [Providers and model configuration](docs/providers.md)
-- [Sessions and workflow composition](docs/sessions.md)
-- [CLI commands and execution controls](docs/cli.md)
+- [Writing workflows](https://github.com/nodeint/migent/blob/main/docs/workflows.md)
+- [Providers and model configuration](https://github.com/nodeint/migent/blob/main/docs/providers.md)
+- [Sessions and workflow composition](https://github.com/nodeint/migent/blob/main/docs/sessions.md)
+- [CLI commands and execution controls](https://github.com/nodeint/migent/blob/main/docs/cli.md)
 
 Run `migent <command> --help` for the exact command contract, output fields,
 and exit codes.
 
 ## Development
 
-The workspace contains `migent-kernel`, `migent-adapters`,
-`migent-registry`, and `migent-cli`. See [CONTRIBUTION.md](CONTRIBUTION.md) for repository layout,
-test conventions, and development commands.
+The pnpm workspace contains four packages: `@migent/kernel`,
+`@migent/adapters`, `@migent/registry`, and `@migent/cli`.
+
+```bash
+pnpm install
+pnpm build
+pnpm test
+pnpm migent --help   # run the local build
+```
+
+Releases publish all four packages with `pnpm release`, which builds, tests,
+and runs `pnpm -r publish` so `workspace:*` ranges become real versions.
 
 ## License
 
-Migent is licensed under the [MIT License](LICENSE).
+Migent is licensed under the [MIT License](https://github.com/nodeint/migent/blob/main/LICENSE).

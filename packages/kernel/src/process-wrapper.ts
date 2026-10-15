@@ -10,38 +10,15 @@ import {
   readSync,
   writeSync,
 } from "node:fs";
-import { endianness, hostname } from "node:os";
+import { hostname } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+// `.ts` so `node process-wrapper.ts` resolves it from source; tsc rewrites it to `.js`.
+import { POSIX, fcntlFlockStruct, fcntlInt, fcntlLock, packFlock, readI32, readI64, unpackFlock } from "./posix.ts";
+
+export { packFlock, unpackFlock } from "./posix.ts";
 
 const require = createRequire(import.meta.url);
-
-interface FsExt {
-  fcntl(
-    fd: number,
-    cmd: number,
-    arg: number,
-    callback: (err: NodeJS.ErrnoException | null, result?: number) => void,
-  ): void;
-  fcntlSync(fd: number, cmd: number, arg?: number): number;
-  constants: {
-    F_GETFD: number;
-    F_SETFD: number;
-    F_GETLK: number;
-    F_SETLK: number;
-    F_SETLKW: number;
-    F_RDLCK: number;
-    F_WRLCK: number;
-    F_UNLCK: number;
-    FD_CLOEXEC: number;
-  };
-}
-
-const fsExt = require("fs-ext") as FsExt;
-
-/** POSIX F_GETFL / F_SETFL. fs-ext does not publish these; they are not flock ops. */
-const F_GETFL = 3;
-const F_SETFL = 4;
 
 const PROC_PIDTBSDINFO = 3;
 const DARWIN_PROC_BSDINFO_SIZE = 136;
@@ -66,8 +43,6 @@ interface PipeOut {
 }
 
 let systemLib: KoffiLib | null = null;
-let fcntlVariadic: ((fd: number, cmd: number, typeName: string, buf: Buffer) => number) | null =
-  null;
 let pipeFn: ((out: PipeOut) => number) | null = null;
 let getpgidFn: ((pid: number) => number) | null = null;
 let procPidinfoFn:
@@ -101,105 +76,6 @@ function libc(): KoffiLib {
   return loaded;
 }
 
-function fcntlCmd(): (fd: number, cmd: number, typeName: string, buf: Buffer) => number {
-  if (fcntlVariadic !== null) return fcntlVariadic;
-  // fcntl(2) is variadic. A non-variadic void* prototype passes a bad address (EFAULT).
-  fcntlVariadic = libc().func("int fcntl(int fd, int cmd, ...)") as unknown as (
-    fd: number,
-    cmd: number,
-    typeName: string,
-    buf: Buffer,
-  ) => number;
-  return fcntlVariadic;
-}
-
-function writeI16(buf: Buffer, offset: number, value: number): void {
-  if (endianness() === "LE") buf.writeInt16LE(value, offset);
-  else buf.writeInt16BE(value, offset);
-}
-
-function writeI32(buf: Buffer, offset: number, value: number): void {
-  if (endianness() === "LE") buf.writeInt32LE(value, offset);
-  else buf.writeInt32BE(value, offset);
-}
-
-function writeI64(buf: Buffer, offset: number, value: bigint): void {
-  if (endianness() === "LE") buf.writeBigInt64LE(value, offset);
-  else buf.writeBigInt64BE(value, offset);
-}
-
-function readI16(buf: Buffer, offset: number): number {
-  return endianness() === "LE" ? buf.readInt16LE(offset) : buf.readInt16BE(offset);
-}
-
-function readI32(buf: Buffer, offset: number): number {
-  return endianness() === "LE" ? buf.readInt32LE(offset) : buf.readInt32BE(offset);
-}
-
-function readI64(buf: Buffer, offset: number): bigint {
-  return endianness() === "LE" ? buf.readBigInt64LE(offset) : buf.readBigInt64BE(offset);
-}
-
-/** Darwin `struct flock` is `@qqihh` (24 bytes). Linux is `@hhqqi`. */
-export function packFlock(
-  lType: number,
-  lWhence = 0,
-  lStart = 0,
-  lLen = 0,
-  lPid = 0,
-): Buffer {
-  if (process.platform === "darwin") {
-    const buf = Buffer.alloc(24);
-    writeI64(buf, 0, BigInt(lStart));
-    writeI64(buf, 8, BigInt(lLen));
-    writeI32(buf, 16, lPid);
-    writeI16(buf, 20, lType);
-    writeI16(buf, 22, lWhence);
-    return buf;
-  }
-  const buf = Buffer.alloc(32);
-  writeI16(buf, 0, lType);
-  writeI16(buf, 2, lWhence);
-  writeI64(buf, 8, BigInt(lStart));
-  writeI64(buf, 16, BigInt(lLen));
-  writeI32(buf, 24, lPid);
-  return buf;
-}
-
-export function unpackFlock(buf: Buffer): {
-  lType: number;
-  lWhence: number;
-  lStart: bigint;
-  lLen: bigint;
-  lPid: number;
-} {
-  if (process.platform === "darwin") {
-    return {
-      lStart: readI64(buf, 0),
-      lLen: readI64(buf, 8),
-      lPid: readI32(buf, 16),
-      lType: readI16(buf, 20),
-      lWhence: readI16(buf, 22),
-    };
-  }
-  return {
-    lType: readI16(buf, 0),
-    lWhence: readI16(buf, 2),
-    lStart: readI64(buf, 8),
-    lLen: readI64(buf, 16),
-    lPid: readI32(buf, 24),
-  };
-}
-
-function fcntlLock(fd: number, cmd: number, lockType: number): Promise<void> {
-  return new Promise((resolve, reject) => {
-    fsExt.fcntl(fd, cmd, lockType, (err) => {
-      if (err) reject(err);
-      else resolve();
-    });
-  });
-}
-
 export function createPipe(): { readFd: number; writeFd: number } {
   if (pipeFn === null) {
     pipeFn = libc().func("int pipe(_Out_ MigentPipeFds *fds)") as unknown as (
@@ -217,13 +93,13 @@ export function createPipe(): { readFd: number; writeFd: number } {
 }
 
 export function setFdCloexec(fd: number): void {
-  const flags = fsExt.fcntlSync(fd, fsExt.constants.F_GETFD);
-  fsExt.fcntlSync(fd, fsExt.constants.F_SETFD, flags | fsExt.constants.FD_CLOEXEC);
+  const flags = fcntlInt(fd, POSIX.F_GETFD);
+  fcntlInt(fd, POSIX.F_SETFD, flags | POSIX.FD_CLOEXEC);
 }
 
 export function clearFdCloexec(fd: number): void {
-  const flags = fsExt.fcntlSync(fd, fsExt.constants.F_GETFD);
-  fsExt.fcntlSync(fd, fsExt.constants.F_SETFD, flags & ~fsExt.constants.FD_CLOEXEC);
+  const flags = fcntlInt(fd, POSIX.F_GETFD);
+  fcntlInt(fd, POSIX.F_SETFD, flags & ~POSIX.FD_CLOEXEC);
 }
 
 type StdioSlot = "pipe" | "inherit" | "ignore";
@@ -399,11 +275,7 @@ export function kernelProcessIdentity(pid: number): string | null {
   return null;
 }
 
-/**
- * fs-ext async F_GETLK builds a zeroed flock (l_type F_UNLCK) and returns only
- * the syscall status, so the holder pid is not available. Match Python's
- * F_GETLK by passing an `@qqihh` flock through variadic fcntl(2).
- */
+/** F_GETLK through variadic fcntl(2) so the holder pid comes back in the flock struct. */
 export function identityLockHolder(filePath: string): number | null {
   let fd: number | null = null;
   try {
@@ -412,11 +284,11 @@ export function identityLockHolder(filePath: string): number | null {
     return null;
   }
   try {
-    const buf = packFlock(fsExt.constants.F_WRLCK);
-    const rc = fcntlCmd()(fd, fsExt.constants.F_GETLK, "uint8_t *", buf);
+    const buf = packFlock(POSIX.F_WRLCK);
+    const rc = fcntlFlockStruct(fd, POSIX.F_GETLK, buf);
     if (rc !== 0) return null;
     const decoded = unpackFlock(buf);
-    if (decoded.lType === fsExt.constants.F_UNLCK || decoded.lPid <= 0) return null;
+    if (decoded.lType === POSIX.F_UNLCK || decoded.lPid <= 0) return null;
     return decoded.lPid;
   } catch {
     return null;
@@ -428,7 +300,7 @@ export function identityLockHolder(filePath: string): number | null {
 export async function acquireIdentityLock(filePath: string): Promise<number> {
   const fd = openSync(filePath, fsConstants.O_RDWR | fsConstants.O_CREAT, 0o600);
   try {
-    await fcntlLock(fd, fsExt.constants.F_SETLKW, fsExt.constants.F_WRLCK);
+    await fcntlLock(fd, POSIX.F_SETLKW, POSIX.F_WRLCK);
     clearFdCloexec(fd);
     return fd;
   } catch (error) {
@@ -445,8 +317,8 @@ export function writeIdentityPayload(fd: number, payload: Record<string, unknown
 }
 
 function deathPipeAlreadyClosed(deathFd: number): boolean {
-  const flags = fsExt.fcntlSync(deathFd, F_GETFL, 0);
-  fsExt.fcntlSync(deathFd, F_SETFL, flags | fsConstants.O_NONBLOCK);
+  const flags = fcntlInt(deathFd, POSIX.F_GETFL);
+  fcntlInt(deathFd, POSIX.F_SETFL, flags | fsConstants.O_NONBLOCK);
   let closed = false;
   try {
     const buf = Buffer.alloc(1);
@@ -456,7 +328,7 @@ function deathPipeAlreadyClosed(deathFd: number): boolean {
     const code = (error as NodeJS.ErrnoException).code;
     if (code !== "EAGAIN" && code !== "EWOULDBLOCK") process.exit(1);
   } finally {
-    fsExt.fcntlSync(deathFd, F_SETFL, flags & ~fsConstants.O_NONBLOCK);
+    fcntlInt(deathFd, POSIX.F_SETFL, flags & ~fsConstants.O_NONBLOCK);
   }
   return closed;
 }
