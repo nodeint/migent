@@ -51,8 +51,10 @@ test("register refresh list get and remove", async () => {
   expect(removed.id).toBe(other.id);
   await expect(store.get(other.id)).rejects.toBeInstanceOf(WorkspaceNotFound);
   await expect(store.remove(other.id)).rejects.toBeInstanceOf(WorkspaceNotFound);
-  const mode = statSync(path.join(root, "registry", "registry.json")).mode & 0o777;
-  expect(mode).toBe(0o600);
+  // Windows has no POSIX permission bits.
+  if (process.platform !== "win32") {
+    expect(statSync(path.join(root, "registry", "registry.json")).mode & 0o777).toBe(0o600);
+  }
 });
 
 test("two instances cannot interleave register", async () => {

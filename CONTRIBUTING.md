@@ -5,7 +5,7 @@ behavior is documented in [README.md](README.md) and [docs/](docs/).
 
 ## Requirements
 
-- macOS or Linux. Windows is not supported (`os` in every manifest).
+- macOS, Linux, or Windows.
 - Node.js 22 or later. CI uses Node 24.
 - pnpm 12.6.0.
 
@@ -48,7 +48,10 @@ pnpm vitest run packages/cli/test/config.test.ts -t "keeps the model name"
   `runCommand` to every command entry point. A missing `runCommand` falls back
   to `spawnSync` on whatever `codex` or `grok` is on `PATH`: it passes on a
   developer machine and fails on CI.
-- Integration tests put `integration/fixtures/bin` on `PATH` instead.
+- Integration tests put `integration/fixtures/bin` on `PATH` instead. Each fake
+  provider there is a `sh` shim and a `.cmd` shim around
+  `integration/fixtures/fake-provider.mjs`, so Windows runs exercise the same
+  `.cmd` path as npm-installed CLIs.
 - Before pushing, run the suite with provider CLIs off `PATH` to catch the
   above:
 
@@ -60,8 +63,8 @@ pnpm vitest run packages/cli/test/config.test.ts -t "keeps the model name"
 
 ## Platform notes
 
-CI runs the suite on both Ubuntu and macOS. Code that passes on one can fail
-on the other, mostly around processes. Process and lock code uses Node
+CI runs the suite on Ubuntu, macOS, and Windows. Code that passes on one can
+fail on another, mostly around processes. Process and lock code uses Node
 built-ins and `proper-lockfile` only; do not add native dependencies or libc
 calls.
 
@@ -86,8 +89,8 @@ calls.
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs install, build, and test on Ubuntu and macOS
-for every push to `main` and every pull request. Keep it green before tagging
+`.github/workflows/ci.yml` runs install, build, and test on Ubuntu, macOS, and
+Windows for every push to `main` and every pull request. Keep it green before tagging
 a release; the release workflow runs the same tests and stops on failure.
 
 ## Releasing

@@ -38,10 +38,6 @@
   "engines": {
     "node": ">=22"
   },
-  "os": [
-    "darwin",
-    "linux"
-  ],
   "publishConfig": {
     "access": "public"
   },

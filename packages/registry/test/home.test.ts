@@ -38,5 +38,6 @@ test("ensure creates the registry directory mode 0700", () => {
   const tmp = mkdtempSync(path.join(tmpdir(), "registry-ensure-"));
   const directory = ensureRegistryHome(path.join(tmp, "registry"));
   expect(statSync(directory).isDirectory()).toBe(true);
-  expect(statSync(directory).mode & 0o777).toBe(0o700);
+  // Windows has no POSIX permission bits.
+  if (process.platform !== "win32") expect(statSync(directory).mode & 0o777).toBe(0o700);
 });

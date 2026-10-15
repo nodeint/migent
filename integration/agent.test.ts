@@ -17,9 +17,7 @@ import {
   writeWorkspace,
 } from "./support.ts";
 
-const testPosix = process.platform === "win32" ? test.skip : test;
-
-testPosix("agent writes a session record", async () => {
+test("agent writes a session record", async () => {
   const workspace = tempWorkspace();
   try {
     writeWorkspace(workspace, GROK_CONFIG, {});
@@ -47,7 +45,7 @@ testPosix("agent writes a session record", async () => {
   }
 }, 30_000);
 
-testPosix("continue resumes the grok agent", async () => {
+test("continue resumes the grok agent", async () => {
   const workspace = tempWorkspace();
   try {
     writeWorkspace(workspace, GROK_CONFIG, {});
@@ -93,7 +91,7 @@ testPosix("continue resumes the grok agent", async () => {
   }
 }, 30_000);
 
-testPosix("continue resumes the codex thread", async () => {
+test("continue resumes the codex thread", async () => {
   const workspace = tempWorkspace();
   try {
     writeWorkspace(workspace, CODEX_CONFIG, {});
@@ -131,7 +129,7 @@ testPosix("continue resumes the codex thread", async () => {
   }
 }, 30_000);
 
-testPosix("a different option does not resume", async () => {
+test("a different option does not resume", async () => {
   const workspace = tempWorkspace();
   try {
     writeWorkspace(workspace, GROK_CONFIG, {});

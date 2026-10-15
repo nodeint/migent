@@ -28,9 +28,7 @@ import {
   writeWorkspace,
 } from "./support.ts";
 
-const testPosix = process.platform === "win32" ? test.skip : test;
-
-testPosix("plan review publishes the plan", async () => {
+test("plan review publishes the plan", async () => {
   const workspace = tempWorkspace();
   try {
     writeWorkspace(workspace, GROK_CONFIG, { plan: PLAN_REVIEW });
@@ -48,7 +46,7 @@ testPosix("plan review publishes the plan", async () => {
   }
 }, 30_000);
 
-testPosix("stage runs through the codex adapter", async () => {
+test("stage runs through the codex adapter", async () => {
   const workspace = tempWorkspace();
   try {
     writeWorkspace(workspace, CODEX_CONFIG, { "draft-note": DRAFT_NOTE });
@@ -72,7 +70,7 @@ testPosix("stage runs through the codex adapter", async () => {
   }
 }, 30_000);
 
-testPosix("invalid stdout fails the execution", async () => {
+test("invalid stdout fails the execution", async () => {
   const workspace = tempWorkspace();
   try {
     writeWorkspace(workspace, GROK_CONFIG, { solo: SOLO });
@@ -89,7 +87,7 @@ testPosix("invalid stdout fails the execution", async () => {
   }
 }, 30_000);
 
-testPosix("revise publishes the later plan", async () => {
+test("revise publishes the later plan", async () => {
   const workspace = tempWorkspace();
   try {
     writeWorkspace(workspace, GROK_CONFIG, { plan: PLAN_REVIEW });
@@ -117,7 +115,7 @@ testPosix("revise publishes the later plan", async () => {
   }
 }, 30_000);
 
-testPosix("blocked review is not dispatched again", async () => {
+test("blocked review is not dispatched again", async () => {
   const workspace = tempWorkspace();
   try {
     writeWorkspace(workspace, GROK_CONFIG, { plan: PLAN_REVIEW });
@@ -147,7 +145,7 @@ testPosix("blocked review is not dispatched again", async () => {
   }
 }, 30_000);
 
-testPosix("a bad response is retried and the workflow completes", async () => {
+test("a bad response is retried and the workflow completes", async () => {
   const workspace = tempWorkspace();
   try {
     writeWorkspace(workspace, GROK_CONFIG, { plan: PLAN_REVIEW });
@@ -177,7 +175,7 @@ testPosix("a bad response is retried and the workflow completes", async () => {
   }
 }, 30_000);
 
-testPosix("provider exit exhausts the attempt", async () => {
+test("provider exit exhausts the attempt", async () => {
   const workspace = tempWorkspace();
   try {
     writeWorkspace(workspace, GROK_CONFIG, { solo: SOLO });
@@ -194,7 +192,7 @@ testPosix("provider exit exhausts the attempt", async () => {
   }
 }, 30_000);
 
-testPosix("provider error event fails the stage", async () => {
+test("provider error event fails the stage", async () => {
   const workspace = tempWorkspace();
   try {
     writeWorkspace(workspace, GROK_CONFIG, { solo: SOLO });
@@ -210,7 +208,7 @@ testPosix("provider error event fails the stage", async () => {
   }
 }, 30_000);
 
-testPosix("complete without the artifact fails the stage", async () => {
+test("complete without the artifact fails the stage", async () => {
   const workspace = tempWorkspace();
   try {
     writeWorkspace(workspace, GROK_CONFIG, { solo: SOLO });
@@ -225,7 +223,7 @@ testPosix("complete without the artifact fails the stage", async () => {
   }
 }, 30_000);
 
-testPosix("continue finishes the stage left by stage", async () => {
+test("continue finishes the stage left by stage", async () => {
   const workspace = tempWorkspace();
   try {
     writeWorkspace(workspace, GROK_CONFIG, { plan: PLAN_REVIEW });
@@ -255,7 +253,7 @@ testPosix("continue finishes the stage left by stage", async () => {
   }
 }, 30_000);
 
-testPosix("dispatch limit leaves a session continue can finish", async () => {
+test("dispatch limit leaves a session continue can finish", async () => {
   const workspace = tempWorkspace();
   try {
     writeWorkspace(workspace, GROK_CONFIG, { plan: PLAN_REVIEW });
@@ -285,7 +283,7 @@ testPosix("dispatch limit leaves a session continue can finish", async () => {
   }
 }, 30_000);
 
-testPosix("grok resume from passes the agent id", async () => {
+test("grok resume from passes the agent id", async () => {
   const workspace = tempWorkspace();
   try {
     writeWorkspace(workspace, GROK_CONFIG, { notes: resumedNotes("planner") });
@@ -321,7 +319,7 @@ testPosix("grok resume from passes the agent id", async () => {
   }
 }, 30_000);
 
-testPosix("codex resume from passes the thread id", async () => {
+test("codex resume from passes the thread id", async () => {
   const workspace = tempWorkspace();
   try {
     writeWorkspace(workspace, CODEX_CONFIG, { notes: resumedNotes("writer") });
@@ -348,7 +346,7 @@ testPosix("codex resume from passes the thread id", async () => {
   }
 }, 30_000);
 
-testPosix("grok status after a tool event completes", async () => {
+test("grok status after a tool event completes", async () => {
   const workspace = tempWorkspace();
   try {
     writeWorkspace(workspace, GROK_CONFIG, { solo: SOLO });
@@ -362,7 +360,7 @@ testPosix("grok status after a tool event completes", async () => {
   }
 }, 30_000);
 
-testPosix("codex last message overrides stdout", async () => {
+test("codex last message overrides stdout", async () => {
   const workspace = tempWorkspace();
   try {
     writeWorkspace(workspace, CODEX_CONFIG, { "draft-note": DRAFT_NOTE });

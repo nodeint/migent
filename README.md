@@ -69,7 +69,7 @@ ones your configuration names.
 
 ## Quickstart
 
-Node.js 22+ on macOS or Linux, and authenticated provider CLIs named by your
+Node.js 22+ on macOS, Linux, or Windows, and authenticated provider CLIs named by your
 configuration.
 
 ### Install
