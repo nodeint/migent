@@ -38,7 +38,8 @@ export function childInvocation(script: string): { execPath: string; args: strin
     const register = path.join(path.dirname(script), "..", "hooks", "register.mjs");
     return {
       execPath: process.execPath,
-      args: ["--experimental-strip-types", "--import", path.resolve(register)],
+      // --import takes a URL; a bare Windows path (C:\...) is not one.
+      args: ["--experimental-strip-types", "--import", pathToFileURL(path.resolve(register)).href],
       script,
     };
   }

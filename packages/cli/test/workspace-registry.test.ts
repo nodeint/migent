@@ -59,7 +59,8 @@ test("register from a subdirectory sends the absolute root", async () => {
     expect(path.isAbsolute(body.path)).toBe(true);
     expect(body.tool.name).toBe("migent");
     expect(captured.stderr).toContain(absolute);
-    expect(captured.stdout).toContain(absolute);
+    // stdout is JSON, which escapes Windows backslashes.
+    expect(captured.stdout).toContain(JSON.stringify(absolute).slice(1, -1));
   });
 });
 

@@ -126,11 +126,14 @@ export function atomicReplace(destination: string, payload: Buffer): void {
     storeFs.replace(tmpPath, destination);
     replaced = true;
     chmodSync(destination, 0o600);
-    const dirFd = openSync(directory, fsConstants.O_RDONLY);
-    try {
-      storeFs.fsync(dirFd);
-    } finally {
-      closeSync(dirFd);
+    // Windows cannot open or fsync a directory; its rename is durable without it.
+    if (process.platform !== "win32") {
+      const dirFd = openSync(directory, fsConstants.O_RDONLY);
+      try {
+        storeFs.fsync(dirFd);
+      } finally {
+        closeSync(dirFd);
+      }
     }
   } finally {
     if (!replaced) {
@@ -195,7 +198,7 @@ function isTimestamp(value: string): boolean {
 function absoluteRegistryPath(filePath: string): boolean {
   if (filePath.includes("\0")) return false;
   try {
-    return path.posix.isAbsolute(filePath);
+    return path.isAbsolute(filePath);
   } catch {
     return false;
   }
@@ -235,7 +238,7 @@ function normalizeTool(tool: unknown): ToolRecord {
 }
 
 function prepareRegister(filePath: string, name: string | null, tool: unknown): [string, string, ToolRecord] {
-  if (typeof filePath !== "string" || filePath.includes("\0") || !path.posix.isAbsolute(filePath)) {
+  if (typeof filePath !== "string" || filePath.includes("\0") || !path.isAbsolute(filePath)) {
     throw new NotAWorkspace("Workspace path is not absolute.");
   }
   let stored = filePath;
@@ -244,7 +247,7 @@ function prepareRegister(filePath: string, name: string | null, tool: unknown): 
   } catch {
     stored = path.resolve(filePath);
   }
-  if (!path.posix.isAbsolute(stored)) throw new NotAWorkspace("Workspace path is not absolute.");
+  if (!path.isAbsolute(stored)) throw new NotAWorkspace("Workspace path is not absolute.");
   let chosen: string;
   if (name === null) chosen = path.basename(stored);
   else if (typeof name === "string" && name.length >= 1 && name.length <= 200) chosen = name;

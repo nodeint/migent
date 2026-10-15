@@ -11,10 +11,6 @@ export class WorkspaceLocationError extends Error {
   }
 }
 
-function isAbsolutePosix(value: string): boolean {
-  return path.posix.isAbsolute(value);
-}
-
 function resolveExisting(value: string): string {
   try {
     return realpathSync(value);
@@ -44,7 +40,7 @@ function walk(start: string): string[] {
 }
 
 export function locateWorkspace(input: string): string {
-  if (typeof input !== "string" || input === "" || input.includes("\0") || !isAbsolutePosix(input)) {
+  if (typeof input !== "string" || input === "" || input.includes("\0") || !path.isAbsolute(input)) {
     throw new WorkspaceLocationError("relative", "Workspace path is not absolute.");
   }
   const start = resolveExisting(input);
