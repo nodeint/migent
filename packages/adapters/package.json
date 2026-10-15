@@ -1,6 +1,6 @@
 {
   "name": "@nodeint/migent-adapters",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Provider adapters (Claude, Codex, Grok) for Migent.",
   "keywords": [
     "ai",
