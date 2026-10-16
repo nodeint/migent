@@ -1,12 +1,14 @@
 {
   "name": "@nodeint/migent-adapters",
   "version": "0.1.4",
-  "description": "Provider adapters (Claude, Codex, Grok) for Migent.",
+  "description": "Provider adapters (Antigravity, Claude, Codex, Grok) for Migent.",
   "keywords": [
     "ai",
     "agents",
     "workflow",
     "cli",
+    "agy",
+    "antigravity",
     "claude",
     "codex",
     "grok",

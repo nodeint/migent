@@ -49,7 +49,7 @@ the process, while each provider CLI remains responsible for authentication,
 agent execution, and its own tools and options.
 
 ```mermaid
-flowchart LR
+flowchart TD
     A[Task] --> B[Planner - Codex]
     B -->|plan.md| C[Reviewer - Grok]
     C -->|revise| B
@@ -61,11 +61,12 @@ flowchart LR
 Migent drives each provider through its headless CLI. Install and sign in to the
 ones your configuration names.
 
-| Provider | CLI      |
-| -------- | -------- |
-| Claude   | `claude` |
-| Codex    | `codex`  |
-| Grok     | `grok`   |
+| Provider           | CLI      |
+| -------------------| -------- |
+| Google Antigravity | `agy`    |
+| Claude             | `claude` |
+| Codex              | `codex`  |
+| Grok               | `grok`   |
 
 ## Quickstart
 

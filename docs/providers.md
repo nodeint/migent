@@ -55,6 +55,11 @@ Each adapter names its own options and lists the values for the selected
 model. `migent init` and `migent config` ask for options marked as
 prompts. Leaving one unset keeps the provider default.
 
+- Antigravity prompts for `effort` (`low`, `medium`, `high`, `xhigh`, or
+  `max`) and sends it as `agy --effort`. `mode` is `accept-edits`, `auto`, or
+  `plan`. `agent` selects a named agent. `sandbox` and `skip_permissions` are
+  `true` or `false`. Other keys are rejected. Leaving `skip_permissions` unset
+  passes `--dangerously-skip-permissions` for that run.
 - Codex prompts for `model_reasoning_effort`, read from
   `supported_reasoning_levels` in `codex debug models`. Any other option is a
   Codex config override passed as `codex exec -c key=value`.
@@ -98,6 +103,6 @@ stages:
 Model options provide the base configuration. A role `options` map overrides
 those keys, and a stage `options` map overrides them for that turn.
 
-Migent currently includes adapters for the headless `codex` and `grok` CLIs.
-Those CLIs own authentication, tool use, and agent execution; Migent owns
-selection, prompts, routing, and persistence.
+Migent currently includes adapters for the headless `agy`, `claude`, `codex`,
+and `grok` CLIs. Those CLIs own authentication, tool use, and agent execution;
+Migent owns selection, prompts, routing, and persistence.
