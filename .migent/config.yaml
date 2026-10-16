@@ -3,8 +3,14 @@ models:
   default:
     provider: claude
     model: fable
+
+  grok:
+    provider: grok
+    model: grok-4.7
+    options:
+      reasoning-effort: xhigh
 roles:
   planner:
     default_model: default
   reviewer:
-    default_model: default
+    default_model: grok
