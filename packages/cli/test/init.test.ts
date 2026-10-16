@@ -375,16 +375,81 @@ test("--skill installs into an existing project", async () => {
   }
 });
 
+test("init exits 0 when doctor later reports a missing provider", async () => {
+  const workspace = tempDir();
+  try {
+    let seen = 0;
+    const captured = await capture(() =>
+      runInit(workspace, {
+        provider: "codex",
+        model: "gpt-5",
+        runCommand,
+        which: (command) => {
+          seen += 1;
+          return command === "codex" && seen === 1 ? "/bin/codex" : null;
+        },
+      }),
+    );
+    expect(captured.value).toBe(0);
+    expect(existsSync(path.join(workspace, ".migent", "config.yaml"))).toBe(true);
+    expect(captured.stderr).toContain("Doctor reported problems:");
+    expect(captured.stderr).toContain("not on PATH");
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("already initialized ignores provider model option and explicit preset", async () => {
+  const workspace = tempDir();
+  try {
+    expect(
+      await runInit(workspace, {
+        provider: "codex",
+        model: "gpt-5",
+        runCommand,
+        which: which(new Set(["codex"])),
+      }),
+    ).toBe(0);
+    const captured = await capture(() =>
+      runInit(workspace, {
+        provider: "grok",
+        model: "grok-4",
+        options: ["reasoning=high"],
+        preset: "plan",
+        presetExplicit: true,
+        runCommand,
+        which: which(new Set()),
+      }),
+    );
+    expect(captured.value).toBe(0);
+    expect(captured.stderr).toContain("Already initialized; ignoring --provider/--model/--option.");
+    expect(captured.stderr).toContain("Already initialized; ignoring --preset.");
+    expect(captured.stdout).toContain("Already initialized.");
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
 test("requires provider and model when not interactive", async () => {
   const workspace = tempDir();
   try {
     const first = await capture(() => main(["init"], workspace));
     expect(first.value).toBe(2);
     expect(existsSync(path.join(workspace, ".migent"))).toBe(false);
-    expect(first.stderr).toContain("--provider");
+    expect(first.stderr).toContain("Pass --provider and --model when init is not interactive.");
     const second = await capture(() => main(["init", "--provider", "codex"], workspace));
     expect(second.value).toBe(2);
     expect(second.stderr).toContain("--model");
+    const previous = process.env.MIGENT_NO_INPUT;
+    process.env.MIGENT_NO_INPUT = "1";
+    try {
+      const third = await capture(() => main(["init"], workspace));
+      expect(third.value).toBe(2);
+      expect(third.stderr).toContain("Pass --provider and --model when init is not interactive.");
+    } finally {
+      if (previous === undefined) delete process.env.MIGENT_NO_INPUT;
+      else process.env.MIGENT_NO_INPUT = previous;
+    }
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }

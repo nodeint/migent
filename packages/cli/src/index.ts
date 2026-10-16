@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 import { CommanderError } from "commander";
 import { ConfigurationError } from "@nodeint/migent-kernel";
 import { printError } from "./display.js";
+import { PromptCancelled } from "./errors.js";
+import { EXIT_CANCELLED, EXIT_CONFIG } from "./exits.js";
 import { cliHooks } from "./hooks.js";
 import { createProgram, type CliStatus } from "./program.js";
 import { setInvocationCwd } from "./workspace.js";
@@ -20,9 +22,10 @@ export async function main(argv: string[] = process.argv.slice(2), cwd?: string)
     }
     return status.code;
   } catch (error) {
+    if (error instanceof PromptCancelled) return EXIT_CANCELLED;
     if (error instanceof ConfigurationError) {
       printError(error.message);
-      return 2;
+      return EXIT_CONFIG;
     }
     if (error instanceof CommanderError) return error.exitCode === 0 ? 0 : 2;
     throw error;

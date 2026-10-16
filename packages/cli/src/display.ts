@@ -1,5 +1,6 @@
 import { createRequire } from "node:module";
 import type { Check } from "@nodeint/migent-kernel";
+import { sessionFields } from "./session-row.js";
 
 const require = createRequire(import.meta.url);
 const pc = require("picocolors") as {
@@ -57,9 +58,9 @@ export function printSessions(rows: readonly string[][]): void {
     return;
   }
   for (const row of rows) {
-    const [, sessionId, workflowId, status, executionId, decision, outputs, task] = row;
+    const fields = sessionFields(row);
     process.stdout.write(
-      `${sessionId ?? ""}  ${workflowId ?? ""}  ${status ?? ""}  ${executionId ?? ""}  ${decision ?? ""}  ${outputs ?? ""}  ${task ?? ""}\n`,
+      `${fields.session}  ${fields.workflow}  ${fields.status}  ${fields.execution}  ${fields.decision}  ${fields.outputs}  ${fields.task}\n`,
     );
   }
 }

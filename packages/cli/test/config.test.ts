@@ -102,15 +102,17 @@ function tempDir(): string {
   return mkdtempSync(path.join(tmpdir(), "migent-cli-"));
 }
 
-test("config without a command prints help", async () => {
+test("config without a workspace exits 2 and help still lists subcommands", async () => {
   const workspace = tempDir();
   try {
     const captured = await capture(() => main(["config"], workspace));
     expect(captured.value).toBe(2);
-    expect(captured.stdout).toContain("show");
-    expect(captured.stdout).toContain("model");
-    expect(captured.stdout).toContain("role");
-    expect(captured.stdout).not.toContain("models:");
+    expect(captured.stderr).toContain(".migent/config.yaml");
+    const help = await capture(() => main(["config", "--help"]));
+    expect(help.value).toBe(0);
+    expect(help.stdout).toContain("show");
+    expect(help.stdout).toContain("model");
+    expect(help.stdout).toContain("role");
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }
@@ -421,6 +423,28 @@ test("clear role option keeps the model name", async () => {
     expect(reviewer).not.toHaveProperty("options");
     expect(reviewer.default_model).toBe("shared");
     expect(shared.options["reasoning-effort"]).toBe("medium");
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("bare config prints the file and no-input still lists", async () => {
+  const workspace = tempDir();
+  try {
+    project(workspace);
+    const shown = await capture(() => main(["config"], workspace));
+    expect(shown.value).toBe(0);
+    expect(shown.stdout).toBe(readFileSync(path.join(workspace, ".migent", "config.yaml"), "utf8"));
+    const previous = process.env.MIGENT_NO_INPUT;
+    process.env.MIGENT_NO_INPUT = "1";
+    try {
+      const listed = await capture(() => main(["config", "model", "--no-input"], workspace));
+      expect(listed.value).toBe(0);
+      expect(listed.stdout).toContain("shared");
+    } finally {
+      if (previous === undefined) delete process.env.MIGENT_NO_INPUT;
+      else process.env.MIGENT_NO_INPUT = previous;
+    }
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }

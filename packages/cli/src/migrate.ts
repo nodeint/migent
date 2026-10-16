@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { confirm as clackConfirm, isCancel } from "@clack/prompts";
 import {
@@ -14,6 +14,7 @@ import {
   ConfigurationError,
 } from "@nodeint/migent-kernel";
 import { printError, printNotice } from "./display.js";
+import { isDirectory, isFile } from "./fs-utils.js";
 import { adapterMap } from "./provider.js";
 
 const OUTDATED = "Schema is outdated. Run `migent migrate` to update.";
@@ -197,18 +198,4 @@ function workflowRewrites(
   return rewrites;
 }
 
-function isFile(filePath: string): boolean {
-  try {
-    return statSync(filePath).isFile();
-  } catch {
-    return false;
-  }
-}
 
-function isDirectory(filePath: string): boolean {
-  try {
-    return statSync(filePath).isDirectory();
-  } catch {
-    return false;
-  }
-}

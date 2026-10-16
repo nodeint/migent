@@ -28,6 +28,7 @@ import {
   type WorkflowDocument,
 } from "@nodeint/migent-kernel";
 import { printError } from "../display.js";
+import { PromptCancelled } from "../errors.js";
 import { cliHooks } from "../hooks.js";
 import { requireCurrentSchema } from "../migrate.js";
 import {
@@ -87,6 +88,7 @@ export async function runConfigModel(
       runCommand: options.runCommand ?? runProviderCommand,
     });
   } catch (error) {
+    if (error instanceof PromptCancelled) throw error;
     if (error instanceof ConfigurationError || error instanceof ConfigEditError || error instanceof Error) {
       printError(error.message);
       return 2;
@@ -121,6 +123,7 @@ export async function runConfigRole(
       runCommand: options.runCommand ?? runProviderCommand,
     });
   } catch (error) {
+    if (error instanceof PromptCancelled) throw error;
     if (error instanceof ConfigurationError || error instanceof ConfigEditError || error instanceof Error) {
       printError(error.message);
       return 2;
@@ -599,7 +602,7 @@ async function selectProvider(
   defaultValue: string | null,
 ): Promise<string> {
   const rows = detected(adapters, which);
-  if (rows.length === 0) throw new Error("No providers are available.");
+  if (rows.length === 0) throw new ConfigurationError("No providers are available.");
   const names = new Set(rows.map(([name]) => name));
   return prompter.select(
     message,
@@ -816,7 +819,7 @@ class ClackConfigPrompter implements ConfigPrompter {
     choices: ReadonlyArray<readonly [string, string]>,
     defaultValue?: string | null,
   ): Promise<string> {
-    if (choices.length === 0) throw new Error("Choose a value.");
+    if (choices.length === 0) throw new ConfigurationError("Choose a value.");
     const values = new Set(choices.map(([, value]) => value));
     const initial = defaultValue != null && values.has(defaultValue) ? defaultValue : choices[0]?.[1];
     const result = await clackSelect({
@@ -824,19 +827,22 @@ class ClackConfigPrompter implements ConfigPrompter {
       options: choices.map(([label, value]) => ({ label, value })),
       initialValue: initial,
     });
-    if (isCancel(result) || typeof result !== "string" || !values.has(result)) throw new Error("Choose a value.");
+    if (isCancel(result)) throw new PromptCancelled();
+    if (typeof result !== "string" || !values.has(result)) throw new ConfigurationError("Choose a value.");
     return result;
   }
 
   async confirm(message: string): Promise<boolean> {
     const result = await clackConfirm({ message, initialValue: true });
-    if (isCancel(result) || typeof result !== "boolean") throw new Error("Answer yes or no.");
+    if (isCancel(result)) throw new PromptCancelled();
+    if (typeof result !== "boolean") throw new ConfigurationError("Answer yes or no.");
     return result;
   }
 
   async text(message: string, defaultValue = ""): Promise<string> {
     const result = await clackText({ message, initialValue: defaultValue });
-    if (isCancel(result) || typeof result !== "string") throw new Error("Enter a value.");
+    if (isCancel(result)) throw new PromptCancelled();
+    if (typeof result !== "string") throw new ConfigurationError("Enter a value.");
     return result;
   }
 }

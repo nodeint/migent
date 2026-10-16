@@ -70,7 +70,8 @@ The review after the third revision still runs. Migent stops only when its
 decision would exceed the configured limit.
 Run `migent continue <session-id>` to reset the revision count and allow up
 to three more revisions in the same session. Each later `continue` resets the
-count again.
+count again. `migent continue <session-id> --once` dispatches one stage and
+does not reset the count.
 
 ## Completion outputs
 

@@ -2,6 +2,7 @@ import { realpathSync } from "node:fs";
 import path from "node:path";
 import { ServiceError, callService, endpointFromHome, ensureRegistryHome, startDetached } from "@nodeint/migent-registry";
 import { printError } from "../display.js";
+import { PACKAGE_VERSION } from "../version.js";
 import { findWorkspace, invocationCwdPath } from "../workspace.js";
 
 export const workspaceApi = {
@@ -26,7 +27,7 @@ export async function runRegister(workspacePath: string | null, name: string | n
     }
     throw error;
   }
-  const body: Record<string, unknown> = { path: root, tool: { name: "migent", version: "0.1.0" } };
+  const body: Record<string, unknown> = { path: root, tool: { name: "migent", version: PACKAGE_VERSION } };
   if (name !== null) body.name = name;
   if (!path.isAbsolute(String(body.path))) {
     printError("Workspace path is not absolute.");
@@ -99,6 +100,13 @@ async function finish(
   }
   if (status === 200 || status === 201) {
     process.stdout.write(`${JSON.stringify(payload)}\n`);
+    if (method === "POST") {
+      const id = typeof payload.id === "string" && payload.id !== "" ? payload.id : "workspace";
+      process.stderr.write(`Registered ${id}.\n`);
+    } else if (method === "DELETE") {
+      const id = requestPath.split("/").pop() ?? "workspace";
+      process.stderr.write(`Removed ${id}.\n`);
+    }
     return 0;
   }
   return statusExit(status, payload);

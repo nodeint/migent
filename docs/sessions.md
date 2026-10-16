@@ -35,10 +35,10 @@ The session-level files have distinct purposes:
   with `requires` records its prerequisite as `prior_session_id`.
 - `status.json` is the current, machine-readable session snapshot. It includes
   the latest execution and stage state, and records decisions, blockers, and
-  published outputs when applicable. Commands such as `sessions` and `watch`
-  read this file.
+  published outputs when applicable. `sessions` reads this file.
 - `events.jsonl` is the append-only event stream. Each line is one JSON object.
-  `watch --cursor` uses byte offsets into this file.
+  `sessions <session-id> --follow --cursor` uses byte offsets into this file.
+  `--cursor` is an option for tools that resume a follow.
 - `executions/` contains one record for every stage attempt. A completed,
   failed, or cancelled execution record is immutable. Execution directory names
   are ordered, for example `0002-review--attempt-01`.
@@ -112,12 +112,17 @@ be published.
 
 ```bash
 migent sessions
-migent watch <session-id>
+migent sessions <session-id>
+migent sessions <session-id> --follow
 migent continue <session-id>
+migent continue <session-id> --once
 ```
 
-`sessions` lists recorded runs. `watch` follows execution events. `continue`
-resumes an active workflow session from its recorded state.
+`sessions` lists recorded runs. `sessions <session-id>` prints a snapshot.
+`--follow` follows execution events until a signal, or until the session
+stops when `--exit-when-done` is set. `continue` resumes an active workflow
+session from its recorded state and resets revision counts. `continue --once`
+advances one stage and does not reset them.
 
 ## Artifact dependency versus provider-session resume
 

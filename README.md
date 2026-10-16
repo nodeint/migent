@@ -122,7 +122,7 @@ goes to stderr; stdout is a single JSON result. Then inspect or resume:
 
 ```bash
 migent sessions
-migent watch <session-id>
+migent sessions <session-id> --follow
 migent continue <session-id>
 ```
 

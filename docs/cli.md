@@ -9,11 +9,12 @@ Run commands from the configured project or any of its subdirectories.
 migent start <workflow> --task "<task>"
 
 # Resume an active session and run until it stops.
+# This resets revision counts.
 migent continue <session-id>
 
-# Create or advance a session by exactly one eligible stage.
-migent stage --workflow <workflow> --task "<task>"
-migent stage <session-id>
+# Dispatch exactly one eligible stage. This does not reset revision counts.
+migent start <workflow> --task "<task>" --once
+migent continue <session-id> --once
 ```
 
 `<workflow>` is the workflow id. A path to a workflow file is also accepted.
@@ -29,13 +30,24 @@ migent continue <session-id> --unlimited-dispatches
 ```
 
 `--attempts N` is the total failed-execution allowance for one stage, not an
-additional retry count. `stage` dispatches only once and has no dispatch
-ceiling. Revision limits are defined by `max_revisions` in the workflow.
-Each `continue` resets the session's revision counts before dispatching. The
-existing session history and artifacts remain available to later stages.
+additional retry count. `--once` dispatches only once and has no dispatch
+ceiling. Do not combine `--once` with `--attempts`, `--max-dispatches`, or
+`--unlimited-dispatches`. Revision limits are defined by `max_revisions` in
+the workflow. `continue` resets the session's revision counts before
+dispatching. `continue --once` does not. The existing session history and
+artifacts remain available to later stages.
 
-Workflow commands write progress to stderr and one JSON result to stdout. Run
-`migent <command> --help` for its fields, stop reasons, and exit codes.
+Stdout is the result. Stderr is progress and notices. `--json` selects
+machine output where a command has a human form. Nothing switches format
+because a terminal is attached. Workflow commands write progress to stderr
+and one JSON result to stdout. Run `migent <command> --help` for its fields,
+stop reasons, and exit codes.
+
+`stage`, `watch`, `agent start`, and `agent continue` still run, print a
+deprecation notice on stderr, and will be removed in 0.3.0. `stage SESSION`
+is `continue SESSION --once`. `stage --workflow W --task T` is
+`start W --task T --once`. `watch SESSION` is `sessions SESSION --follow`.
+`watch SESSION --once` is `sessions SESSION`.
 
 ## Init
 
@@ -57,8 +69,11 @@ roles use that model; give the reviewer another with `migent config role
 reviewer`. In a terminal, init also asks whether to
 install the Migent skill at `.agents/skills/migent/`. `--skill` installs that
 skill without asking. Pass `--provider` and `--model` together when input is
-not a terminal. Without `--skill`, a non-interactive init leaves the skill
-uninstalled.
+not a terminal, or when `--no-input` or `MIGENT_NO_INPUT=1` is set. Without
+`--skill`, a non-interactive init leaves the skill uninstalled. After the
+files are written, init exits 0. Doctor problems are printed as an advisory
+on stderr. An existing project ignores `--provider`, `--model`, `--option`,
+and an explicit `--preset`, and says so. `--skill` still installs.
 
 An existing valid project is left unchanged. `--skill` still installs the
 skill on that project. A partial `.migent/` directory stops init and lists
@@ -68,6 +83,7 @@ exists and installation was requested.
 ## Config
 
 ```bash
+migent config
 migent config show
 migent config model
 migent config model <name> --provider grok --model grok-4.7 --option reasoning-effort=medium
@@ -76,8 +92,9 @@ migent config role reviewer --model-name plain
 migent config role reviewer --provider grok --model grok-4.7 --option reasoning-effort=high
 ```
 
-`config` with no command prints help. `config show` prints
-`.migent/config.yaml` as stored.
+`config` and `config show` print `.migent/config.yaml` as stored and exit 0.
+`config model` and `config role` accept `--no-input` (and `MIGENT_NO_INPUT=1`).
+With no changes they still list and exit 0.
 
 ## Migrate
 
@@ -86,8 +103,8 @@ migent migrate
 migent migrate --yes
 ```
 
-`doctor`, `config model`, `config role`, `agent`, `start`, `continue`, and
-`stage` stop when `schema_version` is older than this Migent and print
+`doctor`, `config model`, `config role`, `agent`, `start`, and `continue`
+stop when `schema_version` is older than this Migent and print
 `Schema is outdated. Run migent migrate.` A missing `schema_version` is
 version 0.
 
@@ -97,11 +114,14 @@ unchanged. The upgrade still runs one version at a time. Each adapter defines
 its own function for a model, a role, and a stage at that version.
 
 In a terminal, `config model` or `config role` with no arguments opens a list.
+`--no-input` and `MIGENT_NO_INPUT=1` keep the list. Cancelling a prompt exits
+130 and prints nothing. `migrate` still treats cancel as a decline.
 The last choice adds a model or a role. Choosing a model edits that entry.
 Choosing a role points that role at a model, or adds a model for it.
 
 Pass the flags to write without prompts. `--model` is the provider model id.
-`--model-name` is the name under `models:` in `.migent/config.yaml`.
+`--model-name` is the name under `models:` in `.migent/config.yaml`, not a
+provider model id.
 `--provider` and `--model` are passed together. Model ids come from that
 provider's CLI. Prompted option values come from that provider for the chosen model.
 
@@ -172,10 +192,12 @@ service's local endpoint (a Unix socket, or a named pipe on Windows) and its
 authenticated health both name the instance in `service.json`.
 `--foreground` serves in the current process until SIGINT or SIGTERM.
 `service stop` asks the instance to exit through that endpoint and ends the
-process only if it does not. It exits 0 when the service is already absent or
-was stopped, and exits 1 when the process is still alive or its identity cannot
-be verified. A service started by Migent 0.1 must be stopped with that version.
-`status` prints `running` or `stopped`. A stale `service.json` is `stopped`.
+process only if it does not. Stop is idempotent: it exits 0 when the service
+is already absent or was stopped, and exits 1 when the process is still alive
+or its identity cannot be verified. A service started by Migent 0.1 must be
+stopped with that version. `status` is a query. It prints `running` or
+`stopped` and exits 1 when the service is stopped. `--json` output is
+unchanged. A stale `service.json` is `stopped`.
 The bearer token is not printed.
 
 `workspace register` records the directory that contains
@@ -190,8 +212,20 @@ unknown. The registry listens for clients on `http://127.0.0.1:{port}`.
 ```bash
 migent sessions
 migent sessions --json
-migent watch <session-id>
+migent sessions <session-id>
+migent sessions <session-id> --json
+migent sessions <session-id> --follow
+migent sessions <session-id> --follow --exit-when-done
 ```
+
+`sessions` lists recorded runs. `sessions <session-id>` prints one snapshot
+and exits 0, including when the session is blocked. `--follow` prints that
+snapshot and then follows events until a signal. `--cursor` is for tools that
+resume a follow; it requires `--follow` and skips the snapshot. `--json` is
+an array for a list, one object for a snapshot, and a snapshot object
+followed by JSON lines while following. With `--cursor`, follow prints only
+JSON lines. `--exit-when-done` is opt-in and exits when the session status
+is completed (0), blocked (1), or cancelled (130).
 
 ## Ad hoc role execution
 
@@ -199,9 +233,13 @@ Configured roles can also run directly without a workflow while retaining a
 local session:
 
 ```bash
-migent agent start --role reviewer --prompt "Review the latest changes"
-migent agent continue <session-id> --role reviewer --prompt "Summarize the risks"
+migent agent --role reviewer --prompt "Review the latest changes"
+migent agent --role reviewer --session <session-id> --prompt "Summarize the risks"
 ```
+
+`--task` labels the new session and cannot be combined with `--session`.
+The new session id is printed to stderr as soon as the session exists.
+`--json` still prints one result object on stdout.
 
 Use `--file PATH` or `--stdin` instead of `--prompt`. Pass `--json` for
 machine-readable output.

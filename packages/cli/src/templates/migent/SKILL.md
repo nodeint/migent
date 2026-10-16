@@ -29,14 +29,17 @@ Use Migent as the control plane for the project's multi-stage agent workflows.
   file name. If its
   `requires` block names a prerequisite workflow and decision, find a matching
   completed session and add `--prior <session-id>`.
-- Resume an active session: `migent continue <session-id>`.
-- Advance exactly one eligible stage: `migent stage <session-id>`.
+- Resume an active session: `migent continue <session-id>`. This resets
+  revision counts. `migent continue <session-id> --once` advances one stage
+  and does not reset them. Create and dispatch one stage with
+  `migent start <workflow> --task "<task>" --once`.
 - List recorded sessions: `migent sessions` or `migent sessions --json`.
-- Inspect a snapshot: `migent watch <session-id> --once --json`.
-- Follow new events: `migent watch <session-id>`.
+- Inspect a snapshot: `migent sessions <session-id> --json`.
+- Follow new events: `migent sessions <session-id> --follow`.
 - Run a configured role outside a workflow only when the user asks for ad hoc
-  role execution: `migent agent start --role <role> --prompt "<prompt>"`.
-- Read `.migent/config.yaml`: `migent config show`.
+  role execution: `migent agent --role <role> --prompt "<prompt>"`. Continue
+  that session with `--session <session-id>`.
+- Read `.migent/config.yaml`: `migent config` or `migent config show`.
 - Change a model entry: `migent config model <name> --provider <provider> --model <model-id>`.
   This updates every role and stage that uses the name.
 - Point one role at a model without changing a shared entry:
@@ -53,9 +56,10 @@ describe it as completed.
 `--attempts` on `continue` sets a new total, not extra retries.
 `revisions_exhausted` leaves the session active. `continue` resets revision
 counts for the existing session, allowing another batch up to `max_revisions`.
-`dispatch_limit` applies to the current command; continue the same session if
-further stages are appropriate. Do not start a replacement session to reset
-these limits.
+`continue --once` does not reset them. `dispatch_limit` applies to the current
+command; continue the same session if further stages are appropriate. Do not
+start a replacement session to reset these limits. Stdout is the result and
+stderr is progress and notices.
 
 Published output paths are relative to
 `.migent/sessions/<session-id>/`. Prefer the paths reported by Migent over

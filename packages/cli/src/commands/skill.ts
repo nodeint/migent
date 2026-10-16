@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { printError } from "../display.js";
+import { isDirectory, isFile } from "../fs-utils.js";
 
 const SKILL_RELATIVE = path.join(".agents", "skills", "migent");
 const STATE_FILENAME = ".migent-template.json";
@@ -90,18 +91,4 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isFile(filePath: string): boolean {
-  try {
-    return statSync(filePath).isFile();
-  } catch {
-    return false;
-  }
-}
 
-function isDirectory(filePath: string): boolean {
-  try {
-    return statSync(filePath).isDirectory();
-  } catch {
-    return false;
-  }
-}

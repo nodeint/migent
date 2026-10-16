@@ -45,6 +45,7 @@ export async function runServiceStop(): Promise<number> {
     printError(result.message || "Registry service did not stop.");
     return 1;
   }
+  process.stderr.write(result.outcome === "absent" ? "Not running.\n" : "Stopped.\n");
   return 0;
 }
 
@@ -58,12 +59,12 @@ export async function runServiceStatus(asJson: boolean): Promise<number> {
   } else {
     process.stdout.write("stopped\n");
   }
-  return 0;
+  return report.state === "running" ? 0 : 1;
 }
 
 export function parsePort(raw: string): number {
-  if (!/^[0-9]+$/.test(raw)) throw new ConfigurationError("--port must be an integer.");
+  if (!/^[0-9]+$/.test(raw)) throw new ConfigurationError("--port must be an integer from 1 to 65535.");
   const port = Number(raw);
-  if (port > 65535) throw new ConfigurationError("--port must be an integer.");
+  if (port < 1 || port > 65535) throw new ConfigurationError("--port must be an integer from 1 to 65535.");
   return port;
 }

@@ -1,15 +1,23 @@
-import { openSync, readSync, closeSync, statSync } from "node:fs";
+import { openSync, readSync, closeSync } from "node:fs";
 import path from "node:path";
 import {
   CancellationRequested,
   ConfigurationError,
   SessionStore,
   log,
-  raiseCancellation,
   readExecutionFile,
   watchSnapshot,
 } from "@nodeint/migent-kernel";
 import { printNotice, printWatchEvent, printWatchSnapshot } from "../display.js";
+import { EXIT_BLOCKED, EXIT_CANCELLED, EXIT_OK } from "../exits.js";
+import { isFile } from "../fs-utils.js";
+import { bindCancellationSignals, delay, throwIfCliCancelled } from "../signals.js";
+
+const SESSION_DONE_EXITS: Record<string, number> = {
+  completed: EXIT_OK,
+  blocked: EXIT_BLOCKED,
+  cancelled: EXIT_CANCELLED,
+};
 
 const TERMINAL_EXECUTION_STATUSES = new Set(["completed", "failed", "cancelled"]);
 
@@ -26,13 +34,33 @@ export async function watchSession(
 ): Promise<number> {
   const once = options.once ?? false;
   const untilTerminal = options.untilTerminal ?? false;
-  const jsonLines = options.jsonLines ?? false;
   const executionId = options.executionId ?? null;
   const cursor = options.cursor === undefined ? null : options.cursor;
   if (once && untilTerminal) throw new ConfigurationError("--once cannot be combined with --until.");
   if (once && cursor !== null) throw new ConfigurationError("--once cannot be combined with --cursor.");
   if (untilTerminal && !executionId) throw new ConfigurationError("--until requires --execution.");
   if (cursor !== null && cursor < 0) throw new ConfigurationError("--cursor must be >= 0.");
+  return followSession(workspace, sessionId, options);
+}
+
+export async function followSession(
+  workspace: string,
+  sessionId: string,
+  options: {
+    once?: boolean;
+    executionId?: string | null;
+    untilTerminal?: boolean;
+    jsonLines?: boolean;
+    cursor?: number | null;
+    exitWhenDone?: boolean;
+  } = {},
+): Promise<number> {
+  const once = options.once ?? false;
+  const untilTerminal = options.untilTerminal ?? false;
+  const jsonLines = options.jsonLines ?? false;
+  const executionId = options.executionId ?? null;
+  const cursor = options.cursor === undefined ? null : options.cursor;
+  const exitWhenDone = options.exitWhenDone === true;
   const sessionDirectory = path.join(workspace, ".migent", "sessions", sessionId);
   const eventsPath = path.join(sessionDirectory, "events.jsonl");
   if (!isFile(eventsPath)) throw new ConfigurationError(`No events found for session: ${sessionId}`);
@@ -53,27 +81,13 @@ export async function watchSession(
     followCursor = Number(snapshot.events_cursor ?? 0);
   }
   printNotice(`Watching session ${sessionId}.`);
-  const onSigint = () => {
-    try {
-      raiseCancellation(2);
-    } catch {
-      // The command loop observes the pending cancellation.
-    }
-  };
-  const onSigterm = () => {
-    try {
-      raiseCancellation(15);
-    } catch {
-      // The command loop observes the pending cancellation.
-    }
-  };
-  process.on("SIGINT", onSigint);
-  process.on("SIGTERM", onSigterm);
+  const unbind = bindCancellationSignals();
   const fd = openSync(eventsPath, "r");
   try {
     let position = followCursor;
     let pending = "";
     for (;;) {
+      throwIfCliCancelled();
       const read = readCompleteLines(fd, position, pending);
       position = read.position;
       pending = read.pending;
@@ -88,6 +102,15 @@ export async function watchSession(
           return untilTerminalExitCode(record);
         }
       }
+      if (exitWhenDone) {
+        const status = String(watchSnapshot(sessionDirectory, null).status ?? "");
+        const done = SESSION_DONE_EXITS[status];
+        if (done !== undefined) {
+          const drained = readCompleteLines(fd, position, pending);
+          for (const line of drained.lines) emitWatchEvent(line, executionId, jsonLines);
+          return done;
+        }
+      }
       await delay(250);
     }
   } catch (error) {
@@ -98,8 +121,7 @@ export async function watchSession(
     throw error;
   } finally {
     closeSync(fd);
-    process.off("SIGINT", onSigint);
-    process.off("SIGTERM", onSigterm);
+    unbind();
   }
 }
 
@@ -132,7 +154,6 @@ function untilTerminalExitCode(record: Record<string, unknown>): number {
     if (isRecord(outcome) && outcome.status === "complete") return 0;
     return 1;
   }
-  if (record.status === "failed" || record.status === "cancelled") return 1;
   return 1;
 }
 
@@ -155,20 +176,6 @@ function readCompleteLines(
   const pieces = pending.split("\n");
   const rest = pieces.pop() ?? "";
   return { lines: pieces, pending: rest, position: offset };
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
-}
-
-function isFile(filePath: string): boolean {
-  try {
-    return statSync(filePath).isFile();
-  } catch {
-    return false;
-  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

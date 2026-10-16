@@ -4,7 +4,6 @@ import {
   ConfigurationError,
   createAgentSession,
   log,
-  raiseCancellation,
   requireAgentSession,
   resolveRoleTarget,
   SessionStore,
@@ -12,6 +11,7 @@ import {
 import { printAgent, printError, printNotice } from "../display.js";
 import { cliHooks } from "../hooks.js";
 import { requireCurrentSchema } from "../migrate.js";
+import { bindCancellationSignals } from "../signals.js";
 import { adapterMap, parseOptions } from "../provider.js";
 import { resolvePrompt } from "../workspace.js";
 
@@ -39,6 +39,7 @@ export async function dispatchAgent(
     options: Object.keys(parsed).length > 0 ? parsed : null,
   });
   const [resolvedSessionId, createdSession] = resolveSession(workspace, args.sessionId ?? null, args.role, args.task ?? null);
+  if (createdSession) log(`session_id: ${resolvedSessionId}`);
   let resumeExecutionId: string | null = null;
   if (!createdSession) {
     const previous = new SessionStore(workspace).latestExecution(resolvedSessionId);
@@ -49,22 +50,7 @@ export async function dispatchAgent(
       .map(([key, value]) => `${key}: ${value}`)
       .join(", ") || "default";
   printNotice(`agent ${args.role} · ${target.provider}/${target.model} (${optionLabel}).`);
-  const onSigint = () => {
-    try {
-      raiseCancellation(2);
-    } catch {
-      // The runner observes the pending cancellation.
-    }
-  };
-  const onSigterm = () => {
-    try {
-      raiseCancellation(15);
-    } catch {
-      // The runner observes the pending cancellation.
-    }
-  };
-  process.on("SIGINT", onSigint);
-  process.on("SIGTERM", onSigterm);
+  const unbind = bindCancellationSignals();
   let result: Awaited<ReturnType<AgentToolRunner["run"]>>;
   try {
     const runner = args.runner ?? cliHooks.runner ?? new AgentToolRunner(adapterMap());
@@ -94,10 +80,8 @@ export async function dispatchAgent(
     }
     throw error;
   } finally {
-    process.off("SIGINT", onSigint);
-    process.off("SIGTERM", onSigterm);
+    unbind();
   }
-  if (createdSession) printNotice(`session_id: ${result.session_id}`);
   if (args.asJson) process.stdout.write(`${JSON.stringify(result)}\n`);
   else printAgent({ ...result }, args.role, target.provider, target.model);
   return result.outcome_status === "complete" ? 0 : 1;

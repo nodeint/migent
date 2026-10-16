@@ -812,6 +812,9 @@ test("help subcommand prints flags declared on that subcommand", async () => {
   expect(captured.stdout).toContain("Usage: migent continue");
   expect(captured.stdout).toContain("--attempts");
   expect(captured.stdout).toContain("--max-dispatches");
+  expect(captured.stdout).toContain("--once");
+  expect(captured.stdout).toContain("does not reset");
+  expect(captured.stdout).toContain("migent continue <session> --once");
 });
 
 test("stage help has no dispatch ceiling", async () => {

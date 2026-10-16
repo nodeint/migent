@@ -1,8 +1,17 @@
-import { mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { confirm as clackConfirm, isCancel, select as clackSelect } from "@clack/prompts";
 import type { ModelCatalog } from "@nodeint/migent-adapters";
-import { diagnose, whichSync, yamlScalar, type AgentAdapter, type ProviderOption } from "@nodeint/migent-kernel";
+import {
+  ConfigurationError,
+  diagnose,
+  whichSync,
+  yamlScalar,
+  type AgentAdapter,
+  type ProviderOption,
+} from "@nodeint/migent-kernel";
+import { PromptCancelled } from "../errors.js";
+import { exists, isDirectory, isFile } from "../fs-utils.js";
 import {
   printAlreadyInitialized,
   printCreated,
@@ -52,6 +61,7 @@ export async function runInit(
     model?: string | null;
     options?: readonly string[];
     preset?: string;
+    presetExplicit?: boolean;
     skill?: boolean;
     interactive?: boolean;
     adapters?: Record<string, AgentAdapter> | null;
@@ -73,11 +83,21 @@ export async function runInit(
     printError("preset must be implement or plan.");
     return 2;
   }
+  const optionPairs = options.options ?? [];
+  const classified = classify(workspace, chosen, resolve);
+  if (classified.state === "ready") {
+    if (provider !== null || model !== null || optionPairs.length > 0) {
+      printError("Already initialized; ignoring --provider/--model/--option.");
+    }
+    if (options.presetExplicit === true) printError("Already initialized; ignoring --preset.");
+    printAlreadyInitialized();
+    if (skill) return installSkill(workspace);
+    return 0;
+  }
   if ((provider === null) !== (model === null)) {
     printError("Pass both --provider and --model, or omit both.");
     return 2;
   }
-  const optionPairs = options.options ?? [];
   if (optionPairs.length > 0 && provider === null) {
     printError("Pass --provider and --model with --option.");
     return 2;
@@ -85,12 +105,6 @@ export async function runInit(
   if (provider === null && !interactive) {
     printError("Pass --provider and --model when init is not interactive.");
     return 2;
-  }
-  const classified = classify(workspace, chosen, resolve);
-  if (classified.state === "ready") {
-    printAlreadyInitialized();
-    if (skill) return installSkill(workspace);
-    return 0;
   }
   if (classified.state === "conflict") {
     printInitConflicts(classified.conflicts);
@@ -105,6 +119,7 @@ export async function runInit(
       runCommand: execute,
     });
   } catch (error) {
+    if (error instanceof PromptCancelled) throw error;
     printError(error instanceof Error ? error.message : String(error));
     return 2;
   }
@@ -113,6 +128,7 @@ export async function runInit(
     try {
       install = await prompt.confirm("Install the Migent skill in .agents/skills/migent?");
     } catch (error) {
+      if (error instanceof PromptCancelled) throw error;
       printError(error instanceof Error ? error.message : String(error));
       return 2;
     }
@@ -120,7 +136,15 @@ export async function runInit(
   if (install && installSkill(workspace) !== 0) return 1;
   const paths = writeProject(workspace, preset, primary);
   printCreated(paths, `migent start ${preset} --task "..."`);
-  return runDoctor(workspace, { which: resolve });
+  const doctorCode = await runDoctor(workspace, { which: resolve });
+  if (doctorCode !== 0) {
+    const problems = diagnose(workspace, { adapters: chosen, which: resolve }).flatMap((check) => check.problems);
+    if (problems.length > 0) {
+      process.stderr.write("Doctor reported problems:\n");
+      for (const problem of problems) process.stderr.write(`${problem}\n`);
+    }
+  }
+  return 0;
 }
 
 async function choices(
@@ -141,18 +165,18 @@ async function choices(
     const rows = detected(adapters, which);
     provider = await prompt.selectProvider(rows, "Default provider");
     const adapter = adapters[provider];
-    if (adapter === undefined) throw new Error(`Unknown provider: ${provider}.`);
+    if (adapter === undefined) throw new ConfigurationError(`Unknown provider: ${provider}.`);
     const catalog = await loadCatalog(adapter, which, args.runCommand);
     model = await prompt.selectModel(provider, catalog, "Model");
     stored = await promptOptions(adapter, model, catalog, which, args.runCommand, prompt);
   } else {
     const adapter = requireAdapter(adapters, provider);
-    if (model === null) throw new Error("Model is required.");
+    if (model === null) throw new ConfigurationError("Model is required.");
     const catalog = await loadCatalog(adapter, which, args.runCommand);
     model = knownModel(model, catalog);
     stored = await acceptedOptions(adapter, model, catalog, which, args.runCommand, args.options);
   }
-  if (model.trim() === "") throw new Error("Model is required.");
+  if (model.trim() === "") throw new ConfigurationError("Model is required.");
   const primary = { provider, model: model.trim(), options: stored };
   return primary;
 }
@@ -302,26 +326,28 @@ class ClackPrompter implements Prompter {
     rows: ReadonlyArray<readonly [string, string | null, AgentAdapter]>,
     message: string,
   ): Promise<string> {
-    if (rows.length === 0) throw new Error("No providers are available.");
+    if (rows.length === 0) throw new ConfigurationError("No providers are available.");
     const names = new Set(rows.map(([name]) => name));
     const result = await clackSelect({
       message,
       options: rows.map(([name, found]) => ({ value: name, label: `${name}  ${found ?? "not found"}` })),
       initialValue: rows[0]?.[0],
     });
-    if (isCancel(result) || typeof result !== "string" || !names.has(result)) throw new Error("Provider is required.");
+    if (isCancel(result)) throw new PromptCancelled();
+    if (typeof result !== "string" || !names.has(result)) throw new ConfigurationError("Provider is required.");
     return result;
   }
 
   async selectModel(_provider: string, catalog: ModelCatalog, message: string): Promise<string> {
-    if (catalog.ids.length === 0) throw new Error("Model is required.");
+    if (catalog.ids.length === 0) throw new ConfigurationError("Model is required.");
     const initial = catalog.defaultId && catalog.ids.includes(catalog.defaultId) ? catalog.defaultId : catalog.ids[0];
     const result = await clackSelect({
       message,
       options: catalog.ids.map((id) => ({ value: id, label: id })),
       initialValue: initial,
     });
-    if (isCancel(result) || !catalog.ids.includes(String(result))) throw new Error(`Unknown model: ${String(result)}.`);
+    if (isCancel(result)) throw new PromptCancelled();
+    if (!catalog.ids.includes(String(result))) throw new ConfigurationError(`Unknown model: ${String(result)}.`);
     return String(result);
   }
 
@@ -337,40 +363,17 @@ class ClackPrompter implements Prompter {
       initialValue: allowDefault ? "" : values[0],
     });
     const allowed = new Set(allowDefault ? ["", ...values] : values);
-    if (isCancel(result) || !allowed.has(String(result ?? ""))) {
-      throw new Error(`Unknown ${name} value: ${String(result)}.`);
+    if (isCancel(result)) throw new PromptCancelled();
+    if (!allowed.has(String(result ?? ""))) {
+      throw new ConfigurationError(`Unknown ${name} value: ${String(result)}.`);
     }
     return result == null ? "" : String(result);
   }
 
   async confirm(message: string): Promise<boolean> {
     const result = await clackConfirm({ message, initialValue: true });
-    if (isCancel(result) || typeof result !== "boolean") throw new Error("Answer yes or no.");
+    if (isCancel(result)) throw new PromptCancelled();
+    if (typeof result !== "boolean") throw new ConfigurationError("Answer yes or no.");
     return result;
-  }
-}
-
-function exists(filePath: string): boolean {
-  try {
-    statSync(filePath);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function isFile(filePath: string): boolean {
-  try {
-    return statSync(filePath).isFile();
-  } catch {
-    return false;
-  }
-}
-
-function isDirectory(filePath: string): boolean {
-  try {
-    return statSync(filePath).isDirectory();
-  } catch {
-    return false;
   }
 }

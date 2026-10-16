@@ -7,6 +7,7 @@ import {
 import { cliHooks } from "../hooks.js";
 import { requireCurrentSchema } from "../migrate.js";
 import { adapterMap } from "../provider.js";
+import { text } from "../text.js";
 
 export interface ExecuteWorkflowOptions {
   action: string;
@@ -41,6 +42,13 @@ export async function executeWorkflow(workspace: string, options: ExecuteWorkflo
     runner,
   );
   printResult(result);
+  if (
+    result.stopReason === "retry_exhausted" ||
+    result.stopReason === "revisions_exhausted" ||
+    result.stopReason === "dispatch_limit"
+  ) {
+    process.stderr.write(`Resume with: migent continue ${result.sessionId}\n`);
+  }
   return result.code;
 }
 
@@ -56,8 +64,4 @@ function printResult(result: ExecuteResult): void {
   );
 }
 
-function text(value: string | null | undefined): string | null {
-  if (typeof value !== "string") return null;
-  const stripped = value.trim();
-  return stripped === "" ? null : stripped;
-}
+

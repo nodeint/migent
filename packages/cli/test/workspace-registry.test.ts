@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { ServiceEndpoint } from "@nodeint/migent-registry";
 import { expect, test } from "vitest";
+import { PACKAGE_VERSION } from "../src/version.ts";
 import { workspaceApi } from "../src/commands/workspace-registry.ts";
 import { main } from "../src/index.ts";
 import { capture } from "./support.ts";
@@ -52,12 +53,13 @@ test("register from a subdirectory sends the absolute root", async () => {
     const captured = await capture(() => main(["workspace", "register"], child));
     expect(captured.value).toBe(0);
     expect(started).toBe(1);
-    const body = calls[0]?.[5] as { path: string; tool: { name: string } };
+    const body = calls[0]?.[5] as { path: string; tool: { name: string; version: string } };
     expect(calls[0]?.[3]).toBe("POST");
     const absolute = realpathSync(workspace);
     expect(body.path).toBe(absolute);
     expect(path.isAbsolute(body.path)).toBe(true);
-    expect(body.tool.name).toBe("migent");
+    expect(body.tool).toEqual({ name: "migent", version: PACKAGE_VERSION });
+    expect(captured.stderr).toContain("Registered ws_demo.");
     expect(captured.stderr).toContain(absolute);
     // stdout is JSON, which escapes Windows backslashes.
     expect(captured.stdout).toContain(JSON.stringify(absolute).slice(1, -1));

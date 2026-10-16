@@ -1,9 +1,10 @@
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { ConfigurationError } from "@nodeint/migent-kernel";
 import { ServiceEndpoint, ServiceError, StopResult } from "@nodeint/migent-registry";
 import { expect, test } from "vitest";
-import { serviceApi } from "../src/commands/service.ts";
+import { parsePort, serviceApi } from "../src/commands/service.ts";
 import { main } from "../src/index.ts";
 import { capture } from "./support.ts";
 
@@ -25,7 +26,7 @@ async function withHome(fn: (home: string) => Promise<void>): Promise<void> {
 test("status json is stopped without a service file", async () => {
   await withHome(async () => {
     const captured = await capture(() => main(["service", "status", "--json"]));
-    expect(captured.value).toBe(0);
+    expect(captured.value).toBe(1);
     expect(JSON.parse(captured.stdout)).toEqual({ state: "stopped" });
   });
 });
@@ -52,7 +53,7 @@ test("status json is stopped when identity does not match", async () => {
       "utf8",
     );
     const captured = await capture(() => main(["service", "status", "--json"]));
-    expect(captured.value).toBe(0);
+    expect(captured.value).toBe(1);
     expect(JSON.parse(captured.stdout)).toEqual({ state: "stopped" });
     expect(captured.stdout).not.toContain("secret-token-value");
     expect(captured.stderr).not.toContain("secret-token-value");
@@ -134,5 +135,24 @@ test("stop absent exits 0", async () => {
     serviceApi.stop = async () => new StopResult("absent");
     const captured = await capture(() => main(["service", "stop"]));
     expect(captured.value).toBe(0);
+    expect(captured.stderr).toContain("Not running.");
   });
+});
+
+test("stop prints Stopped when the service exits", async () => {
+  await withHome(async () => {
+    serviceApi.stop = async () => new StopResult("stopped");
+    const captured = await capture(() => main(["service", "stop"]));
+    expect(captured.value).toBe(0);
+    expect(captured.stderr).toContain("Stopped.");
+  });
+});
+
+test("parsePort rejects values outside 1 to 65535", () => {
+  for (const raw of ["0", "65536", "abc", "-1"]) {
+    expect(() => parsePort(raw)).toThrow(ConfigurationError);
+    expect(() => parsePort(raw)).toThrow("--port must be an integer from 1 to 65535.");
+  }
+  expect(parsePort("1")).toBe(1);
+  expect(parsePort("65535")).toBe(65535);
 });
