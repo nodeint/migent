@@ -136,15 +136,24 @@ export async function runInit(
   if (install && installSkill(workspace) !== 0) return 1;
   const paths = writeProject(workspace, preset, primary);
   printCreated(paths, `migent start ${preset} --task "..."`);
-  const doctorCode = await runDoctor(workspace, { which: resolve });
-  if (doctorCode !== 0) {
-    const problems = diagnose(workspace, { adapters: chosen, which: resolve }).flatMap((check) => check.problems);
-    if (problems.length > 0) {
-      process.stderr.write("Doctor reported problems:\n");
-      for (const problem of problems) process.stderr.write(`${problem}\n`);
-    }
+  if (interactive) {
+    const doctorCode = await runDoctor(workspace, { which: resolve });
+    if (doctorCode !== 0) writeDoctorProblems(workspace, chosen, resolve);
+  } else {
+    writeDoctorProblems(workspace, chosen, resolve);
   }
   return 0;
+}
+
+function writeDoctorProblems(
+  workspace: string,
+  adapters: Record<string, AgentAdapter>,
+  which: Which,
+): void {
+  const problems = diagnose(workspace, { adapters, which }).flatMap((check) => check.problems);
+  if (problems.length === 0) return;
+  process.stderr.write("Doctor reported problems:\n");
+  for (const problem of problems) process.stderr.write(`${problem}\n`);
 }
 
 async function choices(

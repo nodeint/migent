@@ -15,9 +15,10 @@ name defined in `.migent/config.yaml`. Each run is a session.
   `.migent/config.yaml`.
 - Read `.migent/config.yaml` and the relevant file under
   `.migent/workflows/` before changing or running a workflow.
-- Run `migent doctor` after editing configuration or workflows. If it reports
-  an outdated schema, run `migent migrate --yes`. `migent config model` and
-  `migent config role` run `doctor` after a write.
+- Run `migent doctor --json` after editing configuration or workflows. If it
+  reports an outdated schema, run `migent migrate --yes`. Pass `--json` on
+  `config model` and `config role` writes too. The object includes the doctor
+  result.
 - You have no terminal for prompts. Pass `--no-input` (or set
   `MIGENT_NO_INPUT=1`) to `init`, `config model`, and `config role`, and give
   every value as a flag.
@@ -30,7 +31,7 @@ name defined in `.migent/config.yaml`. Each run is a session.
 
 ```
 migent init --no-input --provider <provider> --model <model-id> [--preset implement|plan] [--option KEY=VALUE] [--skill]
-migent doctor
+migent doctor --json
 ```
 
 `--provider` and `--model` go together. `--preset` picks the workflow to
@@ -67,7 +68,7 @@ The result object on stdout includes `stop_reason`. Read the exit code first.
 | --- | --- | --- | --- | --- |
 | 0 | Completed (with `--once`: stage complete) | | completed or advancing | Report outputs. |
 | 1 | Blocked (with `--once`: stage not complete) | | see snapshot | Inspect the latest execution, fix the cause. |
-| 2 | Configuration error | | unchanged | Run `migent doctor`, fix config. |
+| 2 | Configuration error | | unchanged | Run `migent doctor --json`, fix config. |
 | 3 | `--attempts` spent | `retry_exhausted` | active | Inspect the failing execution, fix it, then `continue` (add `--attempts` for a higher total). |
 | 4 | A route would exceed `max_revisions` | `revisions_exhausted` | active | Review why the stage keeps being revised; `continue` (without `--once`) resets counts for another batch. |
 | 5 | `--max-dispatches` spent | `dispatch_limit` | active | `continue` the same session if more stages are appropriate. |
@@ -75,7 +76,7 @@ The result object on stdout includes `stop_reason`. Read the exit code first.
 
 A stopped active session is resumable; do not describe it as completed. Do
 not start a replacement session to reset limits. If you change a workflow or
-config while a session is active, run `migent doctor` and tell the user the
+config while a session is active, run `migent doctor --json` and tell the user the
 session was created under the earlier definition.
 
 ## Inspect sessions
@@ -114,11 +115,11 @@ result object. Exit 0 means the outcome is complete, 1 not complete.
 - List models or roles: `migent config model --json`,
   `migent config role --json`.
 - Change a model name:
-  `migent config model <name> --provider <provider> --model <model-id> --no-input`.
+  `migent config model <name> --provider <provider> --model <model-id> --no-input --json`.
   This updates every role and stage that uses the name. Use
   `--option KEY=VALUE` and `--clear-option KEY` for provider options.
 - Point roles at an existing model name:
-  `migent config role <role>... --model-name <name> --no-input`. The value is
+  `migent config role <role>... --model-name <name> --no-input --json`. The value is
   a name from `models`, not a provider model id.
 - Override one role without touching the shared name:
-  `migent config role <role> --provider <provider> --model <model-id> --no-input`.
+  `migent config role <role> --provider <provider> --model <model-id> --no-input --json`.

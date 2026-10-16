@@ -71,9 +71,11 @@ install the Migent skill at `.agents/skills/migent/`. `--skill` installs that
 skill without asking. Pass `--provider` and `--model` together when input is
 not a terminal, or when `--no-input` or `MIGENT_NO_INPUT=1` is set. Without
 `--skill`, a non-interactive init leaves the skill uninstalled. After the
-files are written, init exits 0. Doctor problems are printed as an advisory
-on stderr. An existing project ignores `--provider`, `--model`, `--option`,
-and an explicit `--preset`, and says so. `--skill` still installs.
+files are written, init exits 0. An interactive init prints the doctor
+report on stdout. A non-interactive init does not. Doctor problems are
+printed as an advisory on stderr. An existing project ignores `--provider`,
+`--model`, `--option`, and an explicit `--preset`, and says so. `--skill`
+still installs.
 
 An existing valid project is left unchanged. `--skill` still installs the
 skill on that project. A partial `.migent/` directory stops init and lists

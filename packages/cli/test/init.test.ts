@@ -97,7 +97,8 @@ test("writes one provider and the implement workflow", async () => {
     expect(gitignore).toBe("sessions/\n");
     expect(captured.stdout).toContain(".migent/workflows/implement.yaml");
     expect(captured.stdout).toContain('migent start implement --task "..."');
-    expect(captured.stdout).toContain("ok");
+    expect(captured.stdout).not.toContain("providers");
+    expect(captured.stderr).not.toContain("Doctor reported problems:");
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }
@@ -182,14 +183,18 @@ test("plan review shares the default model", async () => {
 test("interactive prefers an installed provider", async () => {
   const workspace = tempDir();
   try {
-    const code = await runInit(workspace, {
-      interactive: true,
-      runCommand,
-      which: which(new Set(["grok"])),
-      prompter: new ScriptedPrompt(["", "", "", "n"]),
-    });
+    const captured = await capture(() =>
+      runInit(workspace, {
+        interactive: true,
+        runCommand,
+        which: which(new Set(["grok"])),
+        prompter: new ScriptedPrompt(["", "", "", "n"]),
+      }),
+    );
     const config = readFileSync(path.join(workspace, ".migent", "config.yaml"), "utf8");
-    expect(code).toBe(0);
+    expect(captured.value).toBe(0);
+    expect(captured.stdout).toContain("providers");
+    expect(captured.stdout).toContain("ok");
     expect(config).toContain("provider: grok");
     expect(config).toContain("model: grok-4.7");
     expect(config).not.toContain("codex");
@@ -392,6 +397,8 @@ test("init exits 0 when doctor later reports a missing provider", async () => {
     );
     expect(captured.value).toBe(0);
     expect(existsSync(path.join(workspace, ".migent", "config.yaml"))).toBe(true);
+    expect(captured.stdout).toContain('migent start implement --task "..."');
+    expect(captured.stdout).not.toContain("failed");
     expect(captured.stderr).toContain("Doctor reported problems:");
     expect(captured.stderr).toContain("not on PATH");
   } finally {
