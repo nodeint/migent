@@ -1,66 +1,124 @@
 ---
 name: migent
-description: Set up Migent in a project, or configure, run, inspect, and resume its workflows. Use when the user asks about Migent configuration, workflows, sessions, stages, or published outputs.
+description: Set up Migent in a project, or configure, run, inspect, and resume its workflows with the migent CLI. Use when the user asks about Migent, .migent/ configuration, workflows, roles, models, sessions, stages, doctor, or published outputs.
 ---
 
 # Migent
 
-Use Migent as the control plane for the project's multi-stage agent workflows.
+Migent runs a project's multi-stage agent workflows from the `migent` CLI.
+A workflow is a set of stages; each stage runs a role; a role uses a model
+name defined in `.migent/config.yaml`. Each run is a session.
 
 ## Working rules
 
 - For an existing project, work from the root containing
-  `.migent/config.yaml`. To set up a new project, run `migent init` from
-  its root and follow the CLI's provider and model prompts or flags.
+  `.migent/config.yaml`.
 - Read `.migent/config.yaml` and the relevant file under
   `.migent/workflows/` before changing or running a workflow.
-- Run `migent doctor` after editing configuration or workflows.
-  `migent config model` and `migent config role` run it after a write.
+- Run `migent doctor` after editing configuration or workflows. If it reports
+  an outdated schema, run `migent migrate --yes`. `migent config model` and
+  `migent config role` run `doctor` after a write.
+- You have no terminal for prompts. Pass `--no-input` (or set
+  `MIGENT_NO_INPUT=1`) to `init`, `config model`, and `config role`, and give
+  every value as a flag.
 - Treat `.migent/sessions/` as generated, resumable state. Do not edit its
   files directly.
 - Preserve the user's task wording when passing `--task`.
-- Before continuing a stopped session, inspect the command's `stop_reason` and
-  latest execution. Fix the cause before retrying.
+- Stdout carries the result; stderr carries progress and notices.
 
-## Choose the command
+## Set up
 
-- Start a workflow: `migent start <workflow> --task "<task>"`. `<workflow>`
-  is the workflow id, or a path to a workflow file. An omitted `id` uses the
-  file name. If its
-  `requires` block names a prerequisite workflow and decision, find a matching
-  completed session and add `--prior <session-id>`.
+```
+migent init --no-input --provider <provider> --model <model-id> [--preset implement|plan] [--option KEY=VALUE] [--skill]
+migent doctor
+```
+
+`--provider` and `--model` go together. `--preset` picks the workflow to
+create (default `implement`). `--skill` installs this skill at
+`.agents/skills/migent`; `migent skill update` refreshes a managed copy.
+
+## Run workflows
+
+- Start: `migent start <workflow> --task "<task>"`. `<workflow>` is a
+  workflow id, or a path to a workflow file (the `id` field defaults to the
+  file name). Runs until the session stops.
+- Start and dispatch one stage only: add `--once`.
+- If the workflow's `requires` block names a prerequisite workflow and
+  decision, find a completed session of that workflow with that decision in
+  `migent sessions --json` and pass `--prior <session-id>`. `continue` accepts
+  `--prior` too.
 - Resume an active session: `migent continue <session-id>`. This resets
   revision counts. `migent continue <session-id> --once` advances one stage
-  and does not reset them. Create and dispatch one stage with
-  `migent start <workflow> --task "<task>" --once`.
-- List recorded sessions: `migent sessions` or `migent sessions --json`.
-- Inspect a snapshot: `migent sessions <session-id> --json`.
-- Follow new events: `migent sessions <session-id> --follow`.
-- Run a configured role outside a workflow only when the user asks for ad hoc
-  role execution: `migent agent --role <role> --prompt "<prompt>"`. Continue
-  that session with `--session <session-id>`.
-- Read `.migent/config.yaml`: `migent config` or `migent config show`.
-- Change a model entry: `migent config model <name> --provider <provider> --model <model-id>`.
-  This updates every role and stage that uses the name.
-- Point one role at a model without changing a shared entry:
-  `migent config role <role> --provider <provider> --model <model-id>`.
-  `migent config role <role> --model-name <name>` points it at a name that
-  already exists. Add `--json` to read the result.
+  and does not reset them.
 
-Workflow commands emit progress on stderr and one result object on stdout.
-Report the session ID, session status, stop reason, decisions, and published
-outputs that matter to the user. A stopped active session is resumable; do not
-describe it as completed.
+Limits, accepted by `start` and `continue`:
 
-`retry_exhausted` means the stage has used its total failed-attempt allowance;
-`--attempts` on `continue` sets a new total, not extra retries.
-`revisions_exhausted` leaves the session active. `continue` resets revision
-counts for the existing session, allowing another batch up to `max_revisions`.
-`continue --once` does not reset them. `dispatch_limit` applies to the current
-command; continue the same session if further stages are appropriate. Do not
-start a replacement session to reset these limits. Stdout is the result and
-stderr is progress and notices.
+- `--attempts <n>`: failed executions allowed for one stage (default 3). On
+  `continue` it sets a new total, not extra retries.
+- `--max-dispatches <n>`: stage dispatches allowed in this command (default
+  20). `--unlimited-dispatches` removes the ceiling; use it only if the user
+  agrees.
 
-Published output paths are relative to
-`.migent/sessions/<session-id>/`. Prefer the paths reported by Migent over
-guessing artifact locations.
+### Exit codes and stop reasons
+
+The result object on stdout includes `stop_reason`. Read the exit code first.
+
+| Exit | Meaning | `stop_reason` | Session | What to do |
+| --- | --- | --- | --- | --- |
+| 0 | Completed (with `--once`: stage complete) | | completed or advancing | Report outputs. |
+| 1 | Blocked (with `--once`: stage not complete) | | see snapshot | Inspect the latest execution, fix the cause. |
+| 2 | Configuration error | | unchanged | Run `migent doctor`, fix config. |
+| 3 | `--attempts` spent | `retry_exhausted` | active | Inspect the failing execution, fix it, then `continue` (add `--attempts` for a higher total). |
+| 4 | A route would exceed `max_revisions` | `revisions_exhausted` | active | Review why the stage keeps being revised; `continue` (without `--once`) resets counts for another batch. |
+| 5 | `--max-dispatches` spent | `dispatch_limit` | active | `continue` the same session if more stages are appropriate. |
+| 130 | Cancelled | | see snapshot | Ask the user before resuming. |
+
+A stopped active session is resumable; do not describe it as completed. Do
+not start a replacement session to reset limits. If you change a workflow or
+config while a session is active, run `migent doctor` and tell the user the
+session was created under the earlier definition.
+
+## Inspect sessions
+
+- List: `migent sessions` or `migent sessions --json`.
+- Snapshot, including `stop_reason` and executions:
+  `migent sessions <session-id> --json`.
+- Follow events: `migent sessions <session-id> --follow`. This runs until
+  signalled, so add `--exit-when-done` (exits 0 completed, 1 blocked, 130
+  cancelled) or `--execution <id> --until`.
+- To poll without replaying, use `--follow --json --cursor <offset>`
+  (byte offset in `events.jsonl`; `0` replays everything).
+
+Report the session ID, status, stop reason, decisions, and published outputs
+that matter to the user. Published output paths are relative to
+`.migent/sessions/<session-id>/`; use the paths Migent reports instead of
+guessing.
+
+## Ad hoc role execution
+
+Only when the user asks to run a role outside a workflow:
+
+```
+migent agent --role <role> --prompt "<prompt>"
+```
+
+Use `--file <path>` or `--stdin` for long or multi-line prompts. `--task`
+labels a new session and cannot be combined with `--session <session-id>`,
+which continues an earlier `agent` session. `--provider`/`--model` (together)
+and `--option KEY=VALUE` override the role for this turn. Add `--json` for one
+result object. Exit 0 means the outcome is complete, 1 not complete.
+
+## Configure models and roles
+
+- Show: `migent config` or `migent config show`.
+- List models or roles: `migent config model --json`,
+  `migent config role --json`.
+- Change a model name:
+  `migent config model <name> --provider <provider> --model <model-id> --no-input`.
+  This updates every role and stage that uses the name. Use
+  `--option KEY=VALUE` and `--clear-option KEY` for provider options.
+- Point roles at an existing model name:
+  `migent config role <role>... --model-name <name> --no-input`. The value is
+  a name from `models`, not a provider model id.
+- Override one role without touching the shared name:
+  `migent config role <role> --provider <provider> --model <model-id> --no-input`.
