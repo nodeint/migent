@@ -1,16 +1,22 @@
 schema_version: 1
 models:
-  default:
+  opus:
     provider: claude
-    model: fable
+    model: opus
 
   grok:
     provider: grok
     model: grok-4.7
     options:
       reasoning-effort: xhigh
+
+  sonnet:
+    provider: claude
+    model: sonnet
 roles:
   planner:
-    default_model: default
+    default_model: opus
   reviewer:
     default_model: grok
+  developer:
+    default_model: sonnet

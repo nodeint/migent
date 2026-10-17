@@ -1,0 +1,42 @@
+schema_version: 1
+id: implement
+requires:
+  workflow: plan-verify
+  decision: approved
+constraints:
+  - Implement the approved plan. Do not redesign it.
+  - Do not commit or push.
+stages:
+  - id: implement
+    role: developer
+    depends_on: []
+    max_revisions: 3
+    instructions:
+      - Read the prior session output named plan and implement that plan.
+      - Keep edits inside the files the plan names.
+      - Run the tests the plan names and fix failures before reporting complete.
+      - Write what changed, which tests ran, and any deviation from the plan.
+    produces:
+      artifact: implementation.md
+  - id: review-work
+    role: reviewer
+    depends_on:
+      - implement
+    instructions:
+      - Review the implementation against the prior plan and implementation.md.
+      - Check the diff for missing plan items, extra scope, and tests that skip a case the plan requires.
+      - Approve only when the code matches the plan and the named tests passed.
+    decision:
+      values:
+        - approved
+        - revise
+      routes:
+        approved: complete
+        revise: implement
+completion:
+  stage: review-work
+  decision: approved
+  outputs:
+    - name: implementation
+      from_stage: implement
+      artifact: implementation.md

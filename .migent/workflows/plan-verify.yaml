@@ -1,0 +1,35 @@
+schema_version: 1
+id: plan-verify
+stages:
+  - id: plan
+    role: planner
+    depends_on: []
+    max_revisions: 3
+    instructions:
+      - Analyze the task and write an implementation plan.
+      - Write the plan in English.
+    produces:
+      artifact: plan.md
+  - id: review-plan
+    role: reviewer
+    model: opus
+    depends_on:
+      - plan
+    instructions:
+      - Review the plan for correctness, missing risks, and unnecessary scope.
+      - Check the plan against the current kernel code before deciding.
+      - Write the review in English.
+    decision:
+      values:
+        - approved
+        - revise
+      routes:
+        approved: complete
+        revise: plan
+completion:
+  stage: review-plan
+  decision: approved
+  outputs:
+    - name: plan
+      from_stage: plan
+      artifact: plan.md
