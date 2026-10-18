@@ -135,7 +135,7 @@ export async function runInit(
   }
   if (install && installSkill(workspace) !== 0) return 1;
   const paths = writeProject(workspace, preset, primary);
-  printCreated(paths, `migent start ${preset} --task "..."`);
+  printCreated(paths, `migent session run --workflow ${preset} --task "..."`);
   if (interactive) {
     const doctorCode = await runDoctor(workspace, { which: resolve });
     if (doctorCode !== 0) writeDoctorProblems(workspace, chosen, resolve);

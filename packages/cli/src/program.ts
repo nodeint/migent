@@ -9,7 +9,6 @@ import { runInit } from "./commands/init.js";
 import { runSessions } from "./commands/sessions.js";
 import { parsePort, runServiceStart, runServiceStatus, runServiceStop } from "./commands/service.js";
 import { installSkill, updateSkill } from "./commands/skill.js";
-import { watchSession } from "./commands/watch.js";
 import { runRegister, runRemove, runWorkspaceList } from "./commands/workspace-registry.js";
 import { printError } from "./display.js";
 import { LOOP_EXITS, STAGE_EXITS } from "./exits.js";
@@ -37,158 +36,7 @@ export function createProgram(status: CliStatus): Command {
     .version(PACKAGE_VERSION, "-V, --version", "Print the Migent version.")
     .exitOverride();
 
-  const start = program
-    .command("start")
-    .description("Create a session and continue until it stops, or start a prepared session.")
-    .argument("[workflow]", "Workflow id, or a path to a workflow file. Omit with --session.")
-    .option("--task <task>", "One-line task for a new session. Stored in task.md.")
-    .option("--session <session>", "Prepared session to start. Omit --task and the workflow.");
-  addDispatchOptions(start, "Dispatch the next eligible stage once.");
-  start
-    .addHelpText(
-      "after",
-      `${exitText(LOOP_EXITS)}With --once:\n${exitText(STAGE_EXITS)}Examples:\n  migent start <workflow> --task "<one line>"\n  migent start --session <some-id>\n`,
-    )
-    .action((workflow: string | undefined, options: OptionValues) =>
-      settle(status, () => {
-        if (rejectOnce(options)) return 2;
-        const sessionId = optionalText(options.session);
-        const task = rawText(options.task);
-        const workflowId = text(workflow);
-        const prepared = sessionId !== null;
-        if (prepared && (workflowId !== null || task !== null)) {
-          printError("Pass a workflow and --task, or --session, not both.");
-          return 2;
-        }
-        if (!prepared && (workflowId === null || task === null)) {
-          printError("Pass a workflow and --task, or --session.");
-          return 2;
-        }
-        const once = options.once === true;
-        if (!once) {
-          const ceiling = dispatchCeiling(options);
-          if (typeof ceiling === "string") return 2;
-          return executeWorkflow(findWorkspace(invocationCwdPath()), {
-            action: "start",
-            workflowId: prepared ? null : workflowId,
-            task: prepared ? null : task,
-            sessionId: prepared ? sessionId : null,
-            startPrepared: prepared,
-            priorSessionId: optionalText(options.prior),
-            maxAttempts: attemptsOf(options),
-            maxDispatches: ceiling,
-            ...outputFlags(options),
-          });
-        }
-        return executeWorkflow(findWorkspace(invocationCwdPath()), {
-          action: "stage",
-          workflowId: prepared ? null : workflowId,
-          task: prepared ? null : task,
-          sessionId: prepared ? sessionId : null,
-          startPrepared: prepared,
-          priorSessionId: optionalText(options.prior),
-          maxAttempts: null,
-          maxDispatches: null,
-          ...outputFlags(options),
-        });
-      }),
-    );
-
-  program
-    .command("prepare")
-    .description("Create a prepared session and exit. Write task.md, then start --session.")
-    .argument("<id>", "Session id: a lowercase slug such as wave-3.")
-    .requiredOption("--workflow <workflow>", "Workflow id, or a path to a workflow file.")
-    .option("--prior <session>", PRIOR_HELP)
-    .addHelpText(
-      "after",
-      `${exitText(["Exit 0 when the session is prepared.", "Exit 2 on a configuration error."])}Examples:\n  migent prepare wave-3 --workflow plan\n`,
-    )
-    .action((id: string, options: OptionValues) =>
-      settle(status, () =>
-        prepareWorkflowSession(findWorkspace(invocationCwdPath()), id, String(options.workflow), optionalText(options.prior)),
-      ),
-    );
-
-  const continueCommand = program
-    .command("continue")
-    .description("Resume a session until it stops. Resets revision counts. --once dispatches one stage and does not reset them.")
-    .argument("<session>", "Session to resume.");
-  addDispatchOptions(
-    continueCommand,
-    "Dispatch the next eligible stage once and do not reset revision counts. Without --once, continue resets them.",
-  );
-  continueCommand
-    .addHelpText(
-      "after",
-      `${exitText(LOOP_EXITS)}With --once:\n${exitText(STAGE_EXITS)}Examples:\n  migent continue <session> --once\n`,
-    )
-    .action((session: string, options: OptionValues) =>
-      settle(status, () => {
-        if (rejectOnce(options)) return 2;
-        if (options.once === true) {
-          return executeWorkflow(findWorkspace(invocationCwdPath()), {
-            action: "stage",
-            sessionId: session,
-            priorSessionId: optionalText(options.prior),
-            maxAttempts: null,
-            maxDispatches: null,
-            ...outputFlags(options),
-          });
-        }
-        const ceiling = dispatchCeiling(options);
-        if (typeof ceiling === "string") return 2;
-        return executeWorkflow(findWorkspace(invocationCwdPath()), {
-          action: "continue",
-          sessionId: session,
-          priorSessionId: optionalText(options.prior),
-          maxAttempts: attemptsOf(options),
-          maxDispatches: ceiling,
-          ...outputFlags(options),
-        });
-      }),
-    );
-
-  program
-    .command("stage", { hidden: true })
-    .description("Advance one stage. Dispatch the next eligible stage once.")
-    .argument("[session]", "Session to advance. Omit when passing --workflow.")
-    .option("--workflow <workflow>", "Workflow id or path. Creates a session and dispatches its next stage once.")
-    .option("--task <task>", "Task recorded on the new session. Required with --workflow.")
-    .option("--prior <session>", PRIOR_HELP)
-    .option("--progress", PROGRESS_HELP)
-    .option("--verbose", VERBOSE_HELP)
-    .addHelpText("after", exitText(STAGE_EXITS))
-    .action((session: string | undefined, options: OptionValues) =>
-      settle(status, () => {
-        const sessionId = text(session);
-        const workflow = optionalText(options.workflow);
-        const task = rawText(options.task);
-        const replacement =
-          sessionId !== null
-            ? "continue SESSION --once"
-            : "start WORKFLOW --task TASK --once";
-        deprecate("stage", replacement);
-        if (sessionId !== null && (workflow !== null || task !== null)) {
-          printError("Pass SESSION, or --workflow and --task, not both.");
-          return 2;
-        }
-        if (sessionId === null && (workflow === null || task === null)) {
-          printError("Pass SESSION, or both --workflow and --task.");
-          return 2;
-        }
-        return executeWorkflow(findWorkspace(invocationCwdPath()), {
-          action: "stage",
-          workflowId: workflow,
-          task,
-          sessionId,
-          priorSessionId: optionalText(options.prior),
-          maxAttempts: null,
-          maxDispatches: null,
-          ...outputFlags(options),
-        });
-      }),
-    );
+  registerSessionCommand(program, status);
 
   const init = program
     .command("init")
@@ -307,126 +155,6 @@ export function createProgram(status: CliStatus): Command {
       settle(status, () => runMigrate(findWorkspace(invocationCwdPath()), { assumeYes: options.yes === true })),
     );
 
-  program
-    .command("sessions")
-    .description("List sessions, print one snapshot, or follow its events.")
-    .argument("[session]", "Session to inspect. Omit to list.")
-    .option("--json", "List: a JSON array without the task. --latest: one object, or null. Snapshot: one object without the task. Follow: a snapshot object, then JSON lines. With --cursor, only JSON lines.")
-    .option("--workflow <id>", "List sessions for this workflow id.")
-    .option("--status <status>", "List sessions with this status: active, prepared, completed, blocked, or cancelled.")
-    .option("--limit <n>", "List the newest n sessions. At least 1. Cannot be combined with --latest.")
-    .option("--latest", "Print the newest matching session. Cannot be combined with --limit.")
-    .option("--follow", "Print the snapshot, then follow events until a signal. With --cursor, skip the snapshot.")
-    .option("--execution <execution>", "Limit followed events and --until to this execution.")
-    .option("--cursor <offset>", "Byte offset in events.jsonl for tools that resume a follow. Requires --follow. 0 replays the whole log.")
-    .option("--until", "Exit when --execution reaches completed, failed, or cancelled. Requires --follow and --execution.")
-    .option("--exit-when-done", "With --follow, exit when the session is completed (0), blocked (1), or cancelled (130).")
-    .addHelpText(
-      "after",
-      `${exitText([
-        "Exit 0 after a list or a snapshot, including a blocked session.",
-        "Exit 0 when --exit-when-done and the session is completed.",
-        "Exit 1 when --exit-when-done and the session is blocked.",
-        "Exit 130 when --exit-when-done and the session is cancelled, or the follow is cancelled.",
-        "Exit 2 on a configuration error.",
-      ])}Examples:\n  migent sessions\n  migent sessions --latest --json\n  migent sessions <session>\n  migent sessions <session> --follow\n`,
-    )
-    .action((session: string | undefined, options: OptionValues) =>
-      settle(status, () =>
-        runSessions(findWorkspace(invocationCwdPath()), session, {
-          asJson: options.json === true,
-          follow: options.follow === true,
-          execution: optionalText(options.execution),
-          until: options.until === true,
-          cursor: options.cursor === undefined ? undefined : String(options.cursor),
-          exitWhenDone: options.exitWhenDone === true,
-          workflow: typeof options.workflow === "string" ? options.workflow : null,
-          status: typeof options.status === "string" ? options.status : null,
-          limit: options.limit === undefined ? null : String(options.limit),
-          latest: options.latest === true,
-        }),
-      ),
-    );
-
-  program
-    .command("watch", { hidden: true })
-    .description("Follow a session.")
-    .argument("<session>", "Session to follow.")
-    .option("--execution <execution>", "Limit followed events and --until to this execution.")
-    .option("--json", "With --once, print one JSON snapshot. While following, print JSON lines.")
-    .option("--cursor <offset>", "Replay events.jsonl from this byte offset. 0 replays the whole log.")
-    .option("--once", "Print the snapshot and events cursor, then exit.")
-    .option("--until", "Exit when --execution reaches completed, failed, or cancelled.")
-    .action((session: string, options: OptionValues) =>
-      settle(status, () => {
-        deprecate("watch", options.once === true ? "sessions SESSION" : "sessions SESSION --follow");
-        const cursor = options.cursor === undefined ? null : Number(options.cursor);
-        if (options.cursor !== undefined && (!Number.isInteger(cursor) || (cursor ?? 0) < 0)) {
-          throw new ConfigurationError("--cursor must be >= 0.");
-        }
-        return watchSession(findWorkspace(invocationCwdPath()), session, {
-          once: options.once === true,
-          executionId: optionalText(options.execution),
-          untilTerminal: options.until === true,
-          jsonLines: options.json === true,
-          cursor,
-        });
-      }),
-    );
-
-  const agent = program
-    .command("agent")
-    .description("Run one role outside a workflow.")
-    .option("--role <role>", "Key under roles in .migent/config.yaml.")
-    .option("--session <session>", "Session to continue. Omit to create one.")
-    .option("--task <task>", "Label for the new session. Cannot be used with --session.")
-    .option("--provider <provider>", "Provider for this role. Pass with --model, or omit both.")
-    .option("--model <model>", "Native model id for this role. Pass with --provider, or omit both.")
-    .option("--option <pair>", "KEY=VALUE overriding one provider option for this turn.", collect, [])
-    .option("--prompt <prompt>", "Prompt text.")
-    .option("--file <file>", "Read the prompt from this file.")
-    .option("--stdin", "Read the prompt from stdin.")
-    .option("--json", "Print the result as one JSON object.")
-    .usage("[options]")
-    .argument("[legacy]")
-    .argument("[legacy-session]")
-    .addHelpText(
-      "after",
-      exitText([
-        "Exit 0 when the outcome is complete.",
-        "Exit 1 when the outcome is not complete.",
-        "Exit 2 on a configuration error.",
-        "Exit 130 when cancelled.",
-      ]),
-    )
-    .action((legacy: string | undefined, legacySession: string | undefined, options: OptionValues) => {
-      if (legacy === "start" || legacy === "continue") {
-        return settle(status, () => {
-          if (legacy === "start") {
-            deprecate("agent start", "agent");
-            return runAgent(options, null);
-          }
-          const session = text(legacySession);
-          deprecate("agent continue", "agent --session SESSION");
-          if (session === null) {
-            printError("Pass a session.");
-            return 2;
-          }
-          return runAgent(options, session);
-        });
-      }
-      if (legacy !== undefined) {
-        agent.error(`error: unknown command '${legacy}'`, { code: "commander.unknownCommand" });
-      }
-      if (!agentInvoked(options)) {
-        agent.outputHelp();
-        status.handled = true;
-        status.code = 2;
-        return;
-      }
-      return settle(status, () => runAgent(options, optionalText(options.session)));
-    });
-
   const skill = program.command("skill").description("Install or update the Migent skill in this project.");
   skill
     .command("install")
@@ -499,6 +227,292 @@ export function createProgram(status: CliStatus): Command {
   return program;
 }
 
+const ROLE_EXITS = [
+  "Exit 0 when the outcome is complete.",
+  "Exit 1 when the outcome is not complete.",
+  "Exit 2 on a configuration error.",
+  "Exit 130 when cancelled.",
+];
+
+const RUN_SPLIT = "Pass --workflow for a workflow run, or --role for an agent run.";
+
+function registerSessionCommand(program: Command, status: CliStatus): void {
+  const session = program.command("session").description("Create, run, resume, and inspect sessions.");
+  const run = session
+    .command("run")
+    .description("Run a workflow, or one role when --workflow is omitted.")
+    .option("--workflow <workflow>", "Workflow id, or a path to a workflow file. Omit to run one role.")
+    .option("--task <task>", "Workflow: one-line task stored in task.md. Role: label for a new session.")
+    .option("--session <session>", "Workflow: prepared session to start, with --workflow. Role: session to continue.");
+  addDispatchOptions(run, "Dispatch the next eligible stage once. Requires --workflow.");
+  run
+    .option("--role <role>", "Role to run. Omit --workflow.")
+    .option("--provider <provider>", "Provider for this role. Pass with --model, or omit both.")
+    .option("--model <model>", "Native model id for this role. Pass with --provider, or omit both.")
+    .option("--option <pair>", "KEY=VALUE overriding one provider option for this turn.", collect, [])
+    .option("--prompt <prompt>", "Prompt text for a role run.")
+    .option("--file <file>", "Read the role prompt from this file.")
+    .option("--stdin", "Read the role prompt from stdin.")
+    .option("--json", "Print the role result as one JSON object. A workflow run is already JSON.")
+    .addHelpText(
+      "after",
+      `With --workflow:\n${exitText(LOOP_EXITS)}With --workflow and --once:\n${exitText(STAGE_EXITS)}Without --workflow:\n${exitText(ROLE_EXITS)}Examples:\n  migent session run --workflow plan --task "<one line>"\n  migent session run --session wave-3 --workflow plan\n  migent session run --role reviewer --prompt "<prompt>"\n`,
+    )
+    .action((options: OptionValues) => settle(status, () => runSessionCommand(options)));
+
+  session
+    .command("prepare")
+    .description("Create a prepared session and exit. Write task.md, then session run --session <id> --workflow <workflow>.")
+    .argument("<id>", "Session id: a lowercase slug such as wave-3.")
+    .requiredOption("--workflow <workflow>", "Workflow id, or a path to a workflow file.")
+    .option("--prior <session>", PRIOR_HELP)
+    .addHelpText(
+      "after",
+      `${exitText(["Exit 0 when the session is prepared.", "Exit 2 on a configuration error."])}Examples:\n  migent session prepare wave-3 --workflow plan\n`,
+    )
+    .action((id: string, options: OptionValues) =>
+      settle(status, () =>
+        prepareWorkflowSession(findWorkspace(invocationCwdPath()), id, String(options.workflow), optionalText(options.prior)),
+      ),
+    );
+
+  const continueCommand = session
+    .command("continue")
+    .description("Resume a workflow session until it stops. Resets revision counts. --once dispatches one stage and does not reset them.")
+    .argument("<session>", "Session to resume.");
+  addDispatchOptions(
+    continueCommand,
+    "Dispatch the next eligible stage once and do not reset revision counts. Without --once, continue resets them.",
+  );
+  continueCommand
+    .addHelpText(
+      "after",
+      `${exitText(LOOP_EXITS)}With --once:\n${exitText(STAGE_EXITS)}Examples:\n  migent session continue <session> --once\n`,
+    )
+    .action((id: string, options: OptionValues) => settle(status, () => continueSession(id, options)));
+
+  session
+    .command("list")
+    .description("List sessions, newest first.")
+    .option("--json", "Print a JSON array without the task. With --latest, print one object, or null.")
+    .option("--workflow <id>", "List sessions for this workflow id.")
+    .option("--status <status>", "List sessions with this status: active, prepared, completed, blocked, or cancelled.")
+    .option("--limit <n>", "List the newest n sessions. At least 1. Cannot be combined with --latest.")
+    .option("--latest", "Print the newest matching session. Cannot be combined with --limit.")
+    .addHelpText(
+      "after",
+      `${exitText(["Exit 0 after a list, including an empty list.", "Exit 2 on a configuration error."])}Examples:\n  migent session list\n  migent session list --latest --json\n  migent session list --workflow <id> --status completed --json\n`,
+    )
+    .action((options: OptionValues) =>
+      settle(status, () =>
+        runSessions(findWorkspace(invocationCwdPath()), undefined, {
+          asJson: options.json === true,
+          follow: false,
+          execution: null,
+          until: false,
+          cursor: undefined,
+          exitWhenDone: false,
+          workflow: typeof options.workflow === "string" ? options.workflow : null,
+          status: typeof options.status === "string" ? options.status : null,
+          limit: options.limit === undefined ? null : String(options.limit),
+          latest: options.latest === true,
+        }),
+      ),
+    );
+
+  session
+    .command("show")
+    .description("Print one session snapshot.")
+    .argument("<session>", "Session to inspect.")
+    .option("--json", "Print one JSON object without the task.")
+    .addHelpText(
+      "after",
+      `${exitText(["Exit 0 after a snapshot, including a blocked session.", "Exit 2 on a configuration error."])}Examples:\n  migent session show <session>\n  migent session show <session> --json\n`,
+    )
+    .action((id: string, options: OptionValues) =>
+      settle(status, () =>
+        runSessions(findWorkspace(invocationCwdPath()), id, {
+          asJson: options.json === true,
+          follow: false,
+          execution: null,
+          until: false,
+          cursor: undefined,
+          exitWhenDone: false,
+          workflow: null,
+          status: null,
+          limit: null,
+          latest: false,
+        }),
+      ),
+    );
+
+  session
+    .command("follow")
+    .description("Follow a session's events until a signal.")
+    .argument("<session>", "Session to follow.")
+    .option("--json", "Print a snapshot object, then JSON lines. With --cursor, only JSON lines.")
+    .option("--execution <execution>", "Limit followed events and --until to this execution.")
+    .option("--cursor <offset>", "Byte offset in events.jsonl. 0 replays the whole log. Skips the snapshot.")
+    .option("--until", "Exit when --execution reaches completed, failed, or cancelled. Requires --execution.")
+    .option("--exit-when-done", "Exit when the session is completed (0), blocked (1), or cancelled (130).")
+    .addHelpText(
+      "after",
+      `${exitText([
+        "Exit 0 when --exit-when-done and the session is completed.",
+        "Exit 1 when --exit-when-done and the session is blocked.",
+        "Exit 130 when --exit-when-done and the session is cancelled, or the follow is cancelled.",
+        "Exit 2 on a configuration error.",
+      ])}Examples:\n  migent session follow <session>\n  migent session follow <session> --exit-when-done\n`,
+    )
+    .action((id: string, options: OptionValues) =>
+      settle(status, () =>
+        runSessions(findWorkspace(invocationCwdPath()), id, {
+          asJson: options.json === true,
+          follow: true,
+          execution: optionalText(options.execution),
+          until: options.until === true,
+          cursor: options.cursor === undefined ? undefined : String(options.cursor),
+          exitWhenDone: options.exitWhenDone === true,
+          workflow: null,
+          status: null,
+          limit: null,
+          latest: false,
+        }),
+      ),
+    );
+  showHelpWhenBare(status, session);
+}
+
+function runSessionCommand(options: OptionValues): number | Promise<number> {
+  const workflowProvided = options.workflow !== undefined;
+  const workflowId = optionalText(options.workflow);
+  if (workflowProvided && workflowId === null) {
+    printError("--workflow is empty.");
+    return 2;
+  }
+  const roleMode = roleFlagsPresent(options);
+  const workflowMode = workflowFlagsPresent(options);
+  if ((workflowId !== null && roleMode) || (workflowId === null && workflowMode)) {
+    printError(RUN_SPLIT);
+    return 2;
+  }
+  if (workflowId !== null) {
+    const sessionId = optionalText(options.session);
+    const task = rawText(options.task);
+    const prepared = sessionId !== null;
+    if (prepared && task !== null) {
+      printError("Pass --workflow and --task, or --session and --workflow, not both.");
+      return 2;
+    }
+    if (!prepared && task === null) {
+      printError("Pass --task.");
+      return 2;
+    }
+    return runWorkflowCommand({
+      workflowId,
+      task,
+      sessionId,
+      prepared,
+      once: options.once === true,
+      options,
+    });
+  }
+  if (!roleMode) {
+    printError(RUN_SPLIT);
+    return 2;
+  }
+  return runAgent(options, optionalText(options.session));
+}
+
+function roleFlagsPresent(options: OptionValues): boolean {
+  return (
+    options.role !== undefined ||
+    options.provider !== undefined ||
+    options.model !== undefined ||
+    stringList(options.option).length > 0 ||
+    options.prompt !== undefined ||
+    options.file !== undefined ||
+    options.stdin === true ||
+    options.json === true
+  );
+}
+
+function workflowFlagsPresent(options: OptionValues): boolean {
+  return (
+    options.once === true ||
+    options.prior !== undefined ||
+    options.attempts !== undefined ||
+    options.maxDispatches !== undefined ||
+    options.unlimitedDispatches === true ||
+    options.progress === true ||
+    options.verbose === true
+  );
+}
+
+function runWorkflowCommand(args: {
+  workflowId: string | null;
+  task: string | null;
+  sessionId: string | null;
+  prepared: boolean;
+  once: boolean;
+  options: OptionValues;
+}): number | Promise<number> {
+  if (rejectOnce(args.options)) return 2;
+  const workflowId = args.workflowId;
+  const task = args.prepared ? null : args.task;
+  const sessionId = args.prepared ? args.sessionId : null;
+  if (!args.once) {
+    const ceiling = dispatchCeiling(args.options);
+    if (typeof ceiling === "string") return 2;
+    return executeWorkflow(findWorkspace(invocationCwdPath()), {
+      action: "start",
+      workflowId,
+      task,
+      sessionId,
+      startPrepared: args.prepared,
+      priorSessionId: optionalText(args.options.prior),
+      maxAttempts: attemptsOf(args.options),
+      maxDispatches: ceiling,
+      ...outputFlags(args.options),
+    });
+  }
+  return executeWorkflow(findWorkspace(invocationCwdPath()), {
+    action: "stage",
+    workflowId,
+    task,
+    sessionId,
+    startPrepared: args.prepared,
+    priorSessionId: optionalText(args.options.prior),
+    maxAttempts: null,
+    maxDispatches: null,
+    ...outputFlags(args.options),
+  });
+}
+
+function continueSession(session: string, options: OptionValues): number | Promise<number> {
+  if (rejectOnce(options)) return 2;
+  if (options.once === true) {
+    return executeWorkflow(findWorkspace(invocationCwdPath()), {
+      action: "stage",
+      sessionId: session,
+      priorSessionId: optionalText(options.prior),
+      maxAttempts: null,
+      maxDispatches: null,
+      ...outputFlags(options),
+    });
+  }
+  const ceiling = dispatchCeiling(options);
+  if (typeof ceiling === "string") return 2;
+  return executeWorkflow(findWorkspace(invocationCwdPath()), {
+    action: "continue",
+    sessionId: session,
+    priorSessionId: optionalText(options.prior),
+    maxAttempts: attemptsOf(options),
+    maxDispatches: ceiling,
+    ...outputFlags(options),
+  });
+}
+
 function addDispatchOptions(command: Command, onceDescription: string): void {
   command
     .option("--once", onceDescription)
@@ -544,21 +558,6 @@ function collect(value: string, previous: string[]): string[] {
 function stringList(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is string => typeof item === "string");
-}
-
-function agentInvoked(options: OptionValues): boolean {
-  return (
-    options.role !== undefined ||
-    options.session !== undefined ||
-    options.task !== undefined ||
-    options.provider !== undefined ||
-    options.model !== undefined ||
-    stringList(options.option).length > 0 ||
-    options.prompt !== undefined ||
-    options.file !== undefined ||
-    options.stdin === true ||
-    options.json === true
-  );
 }
 
 async function runAgent(options: OptionValues, sessionId: string | null): Promise<number> {
@@ -639,8 +638,4 @@ function integerFlag(raw: string, flag: string): number {
 
 function inputDisabled(options: OptionValues): boolean {
   return options.noInput === true || process.env.MIGENT_NO_INPUT === "1";
-}
-
-function deprecate(oldName: string, replacement: string): void {
-  process.stderr.write(`'${oldName}' is deprecated; use '${replacement}'.\n`);
 }

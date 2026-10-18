@@ -32,8 +32,10 @@ name defined in `.migent/config.yaml`. Each run is a session.
   it before the first stage. Do not change `task.md` after that stage starts.
 - Preserve the user's task wording. Pass a one-line task in `--task`. Write
   a longer task into `task.md` unchanged.
-- Stdout carries the result: `session_id`, `session_status`, `stop_reason`,
-  `latest_decision`, and `outputs`. Stderr carries stage boundaries and errors.
+- A workflow `session run` or `session continue` prints `session_id`,
+  `session_status`, `stop_reason`, `latest_decision`, and `outputs` on stdout.
+  Stderr carries stage boundaries and errors. A role run prints a table unless
+  `--json`. That JSON is the role result, not this object.
 - This skill is already in the prompt. Do not open its file again.
 - Do not read `task.md` or the documents it names. The stage agent reads
   them. Still read `.migent/config.yaml` and the workflow file before starting.
@@ -49,57 +51,67 @@ migent doctor --json
 create (default `implement`). `--skill` installs this skill at
 `.agents/skills/migent`; `migent skill update` refreshes a managed copy.
 
-## Run workflows
+## Run
 
-- Start a one-line task: `migent start <workflow> --task "<task>"`.
+`migent session run` runs a workflow when `--workflow` is set, and one role
+when `--workflow` is omitted.
+
+- Start a one-line task: `migent session run --workflow <workflow> --task "<task>"`.
   `<workflow>` is a workflow id, or a path to a workflow file (the `id`
   field defaults to the file name). The sentence is stored in `task.md`.
   `--task` must be one line. Runs until the session stops.
-- Start a longer task: `migent prepare <some-id> --workflow <workflow>`.
+- Start a longer task: `migent session prepare <some-id> --workflow <workflow>`.
   `<some-id>` is a lowercase slug such as `wave-3` (letters, digits, and
   single hyphens). Write `.migent/sessions/<some-id>/task.md`, then
-  `migent start --session <some-id>`. `continue` does not start a prepared
-  session.
-- Start and dispatch one stage only: add `--once`.
+  `migent session run --session <some-id> --workflow <workflow>`.
+  `session continue` does not start a prepared session.
+- Start and dispatch one stage only: add `--once`. `--once` requires `--workflow`.
 - If the workflow's `requires` block names a prerequisite workflow and
   decision, find it with
-  `migent sessions --workflow <workflow-id> --status completed --json`
-  and pass `--prior <session-id>`. `continue` accepts `--prior` too.
-- Resume an active session: `migent continue <session-id>`. This resets
-  revision counts. `migent continue <session-id> --once` advances one stage
-  and does not reset them.
-- Read the JSON result on stdout. Do not pass `--verbose` or `--progress`.
-  `--verbose` inlines every stage response. `--progress` prints each tool call.
+  `migent session list --workflow <workflow-id> --status completed --json`
+  and pass `--prior <session-id>`. `session continue` accepts `--prior` too.
+- Resume an active workflow session: `migent session continue <session-id>`.
+  This resets revision counts. `migent session continue <session-id> --once`
+  advances one stage and does not reset them.
+- Run one role: `migent session run --role <role> --prompt "<prompt>"`.
+  Use `--file <path>` or `--stdin` for a long prompt. `--task` labels a new
+  role session and cannot be combined with `--session <session-id>`, which
+  continues an earlier role session. `--provider`/`--model` (together) and
+  `--option KEY=VALUE` override the role for this turn. Add `--json` for one
+  result object. Exit 0 means the outcome is complete, 1 not complete.
+- Read the JSON result on stdout for a workflow run. Do not pass `--verbose`
+  or `--progress`. `--verbose` inlines every stage response. `--progress`
+  prints each tool call.
 - Exit 1, 3, and 6 also include `latest_execution_id` and `response_path`,
   relative to `.migent/sessions/<session-id>/`. Read that file when you must
   fix the execution.
 - Stderr is not the outcome. Do not read the command log while a run is healthy.
-- When `start` or `continue` is in the background, wait for that command's
-  completion notice. Do not add a watcher that only waits for the same exit.
+- When `session run` or `session continue` is in the background, wait for that
+  command's completion notice. Do not add a watcher that only waits for the same exit.
 - To check a run without waiting on the command, use
-  `migent sessions <session-id> --json` once.
-- Do not run `sessions --follow`, `watch`, or `--cursor`.
+  `migent session show <session-id> --json` once.
+- Do not run `session follow` or `--cursor`.
 
-Limits, accepted by `start` and `continue`:
+Limits, accepted by workflow `session run` and by `session continue`:
 
 - `--attempts <n>`: failed executions allowed for one stage (default 3). On
-  `continue` it sets a new total, not extra retries.
+  `session continue` it sets a new total, not extra retries.
 - `--max-dispatches <n>`: stage dispatches allowed in this command (default
   20). `--unlimited-dispatches` removes the ceiling; use it only if the user
   agrees.
 
 ### Exit codes and stop reasons
 
-The result object on stdout includes `stop_reason`. Read the exit code first.
+A workflow result on stdout includes `stop_reason`. Read the exit code first.
 
 | Exit | Meaning | `stop_reason` | Session | What to do |
 | --- | --- | --- | --- | --- |
 | 0 | Completed (with `--once`: stage complete) | | completed or advancing | Report outputs. |
 | 1 | Blocked (with `--once`: stage not complete) | | see snapshot | Read `response_path` and fix the cause. |
 | 2 | Configuration error | | unchanged | Run `migent doctor --json`, fix config. |
-| 3 | `--attempts` spent | `retry_exhausted` | active | Read `response_path`, fix the cause, then `continue` (add `--attempts` for a higher total). |
-| 4 | A route would exceed `max_revisions` | `revisions_exhausted` | active | Review why the stage keeps being revised; `continue` (without `--once`) resets counts for another batch. |
-| 5 | `--max-dispatches` spent | `dispatch_limit` | active | `continue` the same session if more stages are appropriate. |
+| 3 | `--attempts` spent | `retry_exhausted` | active | Read `response_path`, fix the cause, then `session continue` (add `--attempts` for a higher total). |
+| 4 | A route would exceed `max_revisions` | `revisions_exhausted` | active | Review why the stage keeps being revised; `session continue` (without `--once`) resets counts for another batch. |
+| 5 | `--max-dispatches` spent | `dispatch_limit` | active | `session continue` the same session if more stages are appropriate. |
 | 130 | Cancelled | | see snapshot | Ask the user before resuming. |
 
 A stopped active session is resumable; do not describe it as completed. Do
@@ -109,34 +121,19 @@ session was created under the earlier definition.
 
 ## Inspect sessions
 
-- Newest match: `migent sessions --latest --json`. Add `--workflow <id>` and
+- Newest match: `migent session list --latest --json`. Add `--workflow <id>` and
   `--status active|prepared|completed|blocked|cancelled` to narrow it. `--limit <n>`
-  returns the newest n rows. Do not combine `--latest` with `--limit`, or
-  these flags with a session id.
+  returns the newest n rows. Do not combine `--latest` with `--limit`.
 - `--latest --json` is one object, or `null` when nothing matches. A list is
-  a JSON array. Snapshot: `migent sessions <session-id> --json` has the
+  a JSON array. Snapshot: `migent session show <session-id> --json` has the
   status, latest execution, decision, and outputs. JSON omits the task text.
-- `sessions --follow` streams the event trace for a person at a terminal.
-  Do not use it, `watch`, or `--cursor` to coordinate a run.
+- `session follow` streams the event trace for a person at a terminal.
+  Do not use it or `--cursor` to coordinate a run.
 
 Report the session ID, status, stop reason, decisions, and published outputs
 that matter to the user. Published output paths are relative to
 `.migent/sessions/<session-id>/`; use the paths Migent reports instead of
 guessing.
-
-## Ad hoc role execution
-
-Only when the user asks to run a role outside a workflow:
-
-```
-migent agent --role <role> --prompt "<prompt>"
-```
-
-Use `--file <path>` or `--stdin` for long or multi-line prompts. `--task`
-labels a new session and cannot be combined with `--session <session-id>`,
-which continues an earlier `agent` session. `--provider`/`--model` (together)
-and `--option KEY=VALUE` override the role for this turn. Add `--json` for one
-result object. Exit 0 means the outcome is complete, 1 not complete.
 
 ## Configure models and roles
 

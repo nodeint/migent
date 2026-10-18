@@ -36,7 +36,7 @@ export async function executeWorkflow(workspace: string, options: ExecuteWorkflo
   const result = await executeNamedWorkflow(
     workspace,
     {
-      workflowId: creating ? (options.workflowId ?? null) : null,
+      workflowId: creating || startPrepared ? (options.workflowId ?? null) : null,
       task: creating ? (options.task ?? null) : null,
       sessionId: creating ? null : sessionId,
       priorSessionId: options.priorSessionId ?? null,
@@ -55,7 +55,7 @@ export async function executeWorkflow(workspace: string, options: ExecuteWorkflo
     result.stopReason === "dispatch_limit" ||
     result.stopReason === "verify_exhausted"
   ) {
-    process.stderr.write(`Resume with: migent continue ${result.sessionId}\n`);
+    process.stderr.write(`Resume with: migent session continue ${result.sessionId}\n`);
   }
   return result.code;
 }

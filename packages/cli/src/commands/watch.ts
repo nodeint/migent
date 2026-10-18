@@ -21,28 +21,6 @@ const SESSION_DONE_EXITS: Record<string, number> = {
 
 const TERMINAL_EXECUTION_STATUSES = new Set(["completed", "failed", "cancelled"]);
 
-export async function watchSession(
-  workspace: string,
-  sessionId: string,
-  options: {
-    once?: boolean;
-    executionId?: string | null;
-    untilTerminal?: boolean;
-    jsonLines?: boolean;
-    cursor?: number | null;
-  } = {},
-): Promise<number> {
-  const once = options.once ?? false;
-  const untilTerminal = options.untilTerminal ?? false;
-  const executionId = options.executionId ?? null;
-  const cursor = options.cursor === undefined ? null : options.cursor;
-  if (once && untilTerminal) throw new ConfigurationError("--once cannot be combined with --until.");
-  if (once && cursor !== null) throw new ConfigurationError("--once cannot be combined with --cursor.");
-  if (untilTerminal && !executionId) throw new ConfigurationError("--until requires --execution.");
-  if (cursor !== null && cursor < 0) throw new ConfigurationError("--cursor must be >= 0.");
-  return followSession(workspace, sessionId, options);
-}
-
 export async function followSession(
   workspace: string,
   sessionId: string,

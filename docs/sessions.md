@@ -35,17 +35,17 @@ The session-level files have distinct purposes:
 - `manifest.yaml` identifies the session, workflow, task label, creation time, and
   terminal status. An ad hoc agent session also records its role; a workflow
   with `requires` records its prerequisite as `prior_session_id`.
-- `task.md` is the task body. A one-line `start --task` writes that sentence
-  here. A prepared session leaves the file for you to write, along with any
+- `task.md` is the task body. A one-line `session run --workflow --task` writes
+  that sentence here. A prepared session leaves the file for you to write, along with any
   other files that belong next to it. Stage prompts name this path and the
   session directory. They do not include the task text. The first dispatch
   records a hash of `task.md`. A later change stops the next dispatch.
 - `status.json` is the current, machine-readable session snapshot. It includes
   the latest execution and stage state, and records decisions, blockers, and
-  published outputs when applicable. `sessions` reads this file.
+  published outputs when applicable. `session show` reads this file.
 - `events.jsonl` is the append-only event stream. Each line is one JSON object.
-  A prepared session starts with an empty file, so `sessions <session-id>` can
-  print the snapshot before the first stage. `sessions <session-id> --follow --cursor`
+  A prepared session starts with an empty file, so `session show <session-id>` can
+  print the snapshot before the first stage. `session follow <session-id> --cursor`
   uses byte offsets into this file.
   `--cursor` is an option for tools that resume a follow.
 - `executions/` contains one record for every stage attempt. A completed,
@@ -126,23 +126,23 @@ be published.
 ## Inspect and resume
 
 ```bash
-migent sessions
-migent sessions --latest --json
-migent sessions <session-id>
-migent sessions <session-id> --follow
-migent continue <session-id>
-migent continue <session-id> --once
+migent session list
+migent session list --latest --json
+migent session show <session-id>
+migent session follow <session-id>
+migent session continue <session-id>
+migent session continue <session-id> --once
 ```
 
-`sessions` lists recorded runs, newest first. `--workflow`, `--status`, and
-`--limit` narrow that list. `--latest` prints the newest match. `sessions
+`session list` lists recorded runs, newest first. `--workflow`, `--status`, and
+`--limit` narrow that list. `--latest` prints the newest match. `session show
 <session-id>` prints a snapshot. `--json` omits the task text from the list
-and the snapshot. `--follow` follows execution events until a signal, or until
-the session stops when `--exit-when-done` is set. `continue` resumes an active
-workflow session from its recorded state and resets revision counts.
-`continue --once` advances one stage and does not reset them. A session
-with status `prepared` is not resumed by `continue`. Write `task.md`, then
-run `migent start --session <session-id>`.
+and the snapshot. `session follow` follows execution events until a signal, or
+until the session stops when `--exit-when-done` is set. `session continue`
+resumes an active workflow session from its recorded state and resets revision
+counts. `session continue --once` advances one stage and does not reset them.
+A session with status `prepared` is not resumed by `session continue`. Write
+`task.md`, then run `migent session run --session <session-id> --workflow <workflow>`.
 
 ## Artifact dependency versus provider-session resume
 
@@ -180,7 +180,7 @@ requires:
 Start it with the completed prerequisite session:
 
 ```bash
-migent start implement \
+migent session run --workflow implement \
   --task "Build the approved plan" \
   --prior <plan-session-id>
 ```

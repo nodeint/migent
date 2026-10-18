@@ -21,7 +21,7 @@ export function assertManualSessionId(sessionId: string): void {
 export function assertSingleLineTask(task: string): void {
   if (task.includes("\n") || task.includes("\r")) {
     throw new ConfigurationError(
-      "Task must be one line. For a longer task, run migent prepare <some-id> --workflow <workflow> and write task.md.",
+      "Task must be one line. For a longer task, run migent session prepare <some-id> --workflow <workflow> and write task.md.",
     );
   }
 }
@@ -53,7 +53,7 @@ export function freezeSessionTask(
   const status = readStatus(statusPath);
   if (status.status === "prepared") {
     throw new ConfigurationError(
-      `Session ${sessionId} is prepared. Run: migent start --session ${sessionId}`,
+      `Session ${sessionId} is prepared. Run: ${preparedRunHint(sessionId, status)}`,
     );
   }
   const filePath = taskFilePath(workspace, sessionId);
@@ -101,6 +101,11 @@ export function requireTaskBody(workspace: string, sessionId: string): void {
 function readTask(filePath: string): string | null {
   if (!existsSync(filePath)) return null;
   return readFileSync(filePath, "utf8");
+}
+
+function preparedRunHint(sessionId: string, status: Record<string, unknown>): string {
+  const workflowId = typeof status.workflow_id === "string" && status.workflow_id ? status.workflow_id : "<workflow>";
+  return `migent session run --session ${sessionId} --workflow ${workflowId}`;
 }
 
 function readStatus(filePath: string): Record<string, unknown> {

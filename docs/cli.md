@@ -2,57 +2,76 @@
 
 Run commands from the configured project or any of its subdirectories.
 
-## Workflow commands
+## Session commands
 
 ```bash
 # Create a session and run until it stops. --task is one line and is stored in task.md.
-migent start <workflow> --task "<task>"
+migent session run --workflow <workflow> --task "<task>"
 
 # Create a prepared session, write a longer task, then start it.
-migent prepare <some-id> --workflow <workflow>
-migent start --session <some-id>
+migent session prepare <some-id> --workflow <workflow>
+migent session run --session <some-id> --workflow <workflow>
 
-# Resume an active session and run until it stops.
+# Resume an active workflow session and run until it stops.
 # This resets revision counts. A prepared session is not resumed here.
-migent continue <session-id>
+migent session continue <session-id>
 
 # Dispatch exactly one eligible stage. This does not reset revision counts.
-migent start <workflow> --task "<task>" --once
-migent start --session <some-id> --once
-migent continue <session-id> --once
+migent session run --workflow <workflow> --task "<task>" --once
+migent session run --session <some-id> --workflow <workflow> --once
+migent session continue <session-id> --once
+
+# Run one role. Omit --workflow.
+migent session run --role reviewer --prompt "Review the latest changes"
+migent session run --role reviewer --session <session-id> --prompt "Summarize the risks"
 ```
 
 `<workflow>` is the workflow id. A path to a workflow file is also accepted.
 The id comes from the file's `id` field, or from the file name when `id` is omitted.
+`session run` uses the workflow engine when `--workflow` is present. It runs
+one role when `--workflow` is omitted. Passing `--workflow` together with
+`--role`, a prompt, `--provider`, `--model`, `--option`, or `--json` is an error.
+Passing `--once`, `--prior`, `--attempts`, `--max-dispatches`,
+`--unlimited-dispatches`, `--progress`, or `--verbose` without `--workflow` is
+an error.
 
-`--task` is one line. Migent writes it to `.migent/sessions/<session-id>/task.md`.
-A longer task uses `prepare`. `<some-id>` is a lowercase slug such as `wave-3`:
-letters, digits, and single hyphens. The command creates the session with
-status `prepared` and prints `session_id`, `status`, and `task_path` on stdout.
-Write that file, and any companion files in the same directory, then
-`migent start --session <some-id>`. `continue` rejects a prepared session.
-`start --session` accepts only a prepared session. Stage prompts name `task.md`
-and the session directory. They do not include the task text. After the first
-dispatch, a change to `task.md` stops the next dispatch.
+`--task` is one line on a workflow run. Migent writes it to
+`.migent/sessions/<session-id>/task.md`. A longer task uses `session prepare`.
+`<some-id>` is a lowercase slug such as `wave-3`: letters, digits, and single
+hyphens. The command creates the session with status `prepared` and prints
+`session_id`, `status`, and `task_path` on stdout. Write that file, and any
+companion files in the same directory, then
+`migent session run --session <some-id> --workflow <workflow>`. The workflow
+must be the one stored on the session. `session continue` rejects a prepared
+session. `session run --session --workflow` accepts only a prepared session. Stage prompts
+name `task.md` and the session directory. They do not include the task text.
+After the first dispatch, a change to `task.md` stops the next dispatch.
 
-`start` and `continue` default to three failed execution attempts per stage and
-20 stage dispatches per command. Configure those guards with:
+On a role run, `--task` is only a label for a new session and cannot be
+combined with `--session`. Pass one of `--prompt`, `--file`, or `--stdin`.
+`--provider` and `--model` are passed together. `--json` prints one result
+object. Without `--json` the result is a table. Exit 0 means the outcome is
+complete. Exit 1 means it is not.
+
+Workflow `session run` and `session continue` default to three failed execution
+attempts per stage and 20 stage dispatches per command. Configure those guards
+with:
 
 ```bash
-migent continue <session-id> --attempts 5
-migent continue <session-id> --max-dispatches 50
-migent continue <session-id> --unlimited-dispatches
+migent session continue <session-id> --attempts 5
+migent session continue <session-id> --max-dispatches 50
+migent session continue <session-id> --unlimited-dispatches
 ```
 
 `--attempts N` is the total failed-execution allowance for one stage, not an
 additional retry count. `--once` dispatches only once and has no dispatch
 ceiling. Do not combine `--once` with `--attempts`, `--max-dispatches`, or
 `--unlimited-dispatches`. Revision limits are defined by `max_revisions` in
-the workflow. `continue` resets the session's revision counts before
-dispatching. `continue --once` does not. The existing session history and
-artifacts remain available to later stages.
+the workflow. `session continue` resets the session's revision counts before
+dispatching. `session continue --once` does not. The existing session history
+and artifacts remain available to later stages.
 
-Stdout is one JSON result: `session_id`, `session_status`, `stop_reason`,
+A workflow run's stdout is one JSON result: `session_id`, `session_status`, `stop_reason`,
 `latest_decision`, and `outputs`. Exit 1, 3, and 6 also include
 `latest_execution_id` and `response_path` (relative to the session directory).
 `--verbose` adds `stages`, including each stage's response text. Stderr is the
@@ -62,12 +81,6 @@ when it finishes. Other item traces stay in `events.jsonl`. Nothing switches
 format because a terminal is attached. `--json` selects machine output where a
 command has a human form. Run `migent <command> --help` for stop reasons and
 exit codes.
-
-`stage`, `watch`, `agent start`, and `agent continue` still run, print a
-deprecation notice on stderr, and will be removed in 0.3.0. `stage SESSION`
-is `continue SESSION --once`. `stage --workflow W --task T` is
-`start W --task T --once`. `watch SESSION` is `sessions SESSION --follow`.
-`watch SESSION --once` is `sessions SESSION`.
 
 ## Init
 
@@ -125,7 +138,7 @@ migent migrate
 migent migrate --yes
 ```
 
-`doctor`, `config model`, `config role`, `agent`, `start`, and `continue`
+`doctor`, `config model`, `config role`, `session run`, and `session continue`
 stop when `schema_version` is older than this Migent and print
 `Schema is outdated. Run migent migrate.` A missing `schema_version` is
 version 0.
@@ -229,48 +242,33 @@ resolved path again keeps the same id. `list` shows `available: false` when
 the config file is gone. `remove` drops one id and exits 2 when the id is
 unknown. The registry listens for clients on `http://127.0.0.1:{port}`.
 
-## Session commands
+## Inspect sessions
 
 ```bash
-migent sessions
-migent sessions --latest --json
-migent sessions --workflow <id> --status completed --json
-migent sessions <session-id>
-migent sessions <session-id> --json
-migent sessions <session-id> --follow
-migent sessions <session-id> --follow --exit-when-done
+migent session list
+migent session list --latest --json
+migent session list --workflow <id> --status completed --json
+migent session show <session-id>
+migent session show <session-id> --json
+migent session follow <session-id>
+migent session follow <session-id> --exit-when-done
 ```
 
-`sessions` lists recorded runs, newest first. `--workflow` and `--status`
-select rows before `--limit`. `--status` is `active`, `prepared`, `completed`, `blocked`,
-or `cancelled`. `--latest` prints the newest match. These flags cannot be
-combined with a session id, and `--latest` cannot be combined with `--limit`.
-An empty list exits 0.
+`session list` lists recorded runs, newest first. `--workflow` and `--status`
+select rows before `--limit`. `--status` is `active`, `prepared`, `completed`,
+`blocked`, or `cancelled`. `--latest` prints the newest match. `--latest`
+cannot be combined with `--limit`. An empty list exits 0.
 
-`sessions <session-id>` prints one snapshot and exits 0, including when the
-session is blocked. `--follow` prints that snapshot and then follows events
-until a signal. `--cursor` is for tools that resume a follow; it requires
-`--follow` and skips the snapshot. `--json` is an array for a list, one
-object for `--latest` (`null` when nothing matches), one object for a
-snapshot, and a snapshot object followed by JSON lines while following. With
-`--cursor`, follow prints only JSON lines. JSON list rows and the JSON
-snapshot omit `task`. The human list and snapshot still print it.
-`--exit-when-done` is opt-in and exits when the session status is completed
-(0), blocked (1), or cancelled (130).
+`session show <session-id>` prints one snapshot and exits 0, including when the
+session is blocked. `session follow` prints that snapshot and then follows
+events until a signal. `--cursor` is for tools that resume a follow. It skips
+the snapshot. `--json` is an array for a list, one object for `--latest`
+(`null` when nothing matches), one object for a snapshot, and a snapshot
+object followed by JSON lines while following. With `--cursor`, follow prints
+only JSON lines. JSON list rows and the JSON snapshot omit `task`. The human
+list and snapshot still print it. `--exit-when-done` is opt-in and exits when
+the session status is completed (0), blocked (1), or cancelled (130).
 
-## Ad hoc role execution
-
-Configured roles can also run directly without a workflow while retaining a
-local session:
-
-```bash
-migent agent --role reviewer --prompt "Review the latest changes"
-migent agent --role reviewer --session <session-id> --prompt "Summarize the risks"
-```
-
-`--task` labels the new session and cannot be combined with `--session`.
-The new session id is printed to stderr as soon as the session exists.
-`--json` still prints one result object on stdout.
-
-Use `--file PATH` or `--stdin` instead of `--prompt`. Pass `--json` for
-machine-readable output.
+A role run prints its new session id on stderr as soon as the session exists.
+`--json` prints one result object on stdout. Without `--json` the result is a
+table. Use `--file PATH` or `--stdin` instead of `--prompt`.

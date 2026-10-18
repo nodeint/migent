@@ -115,30 +115,31 @@ Commit `config.yaml` and `workflows/`. To add the skill later, run
 From the project or any subdirectory:
 
 ```bash
-migent start plan --task "Plan the account settings redesign"
+migent session run --workflow plan --task "Plan the account settings redesign"
 ```
 
 `--task` is one line and is stored in the session as `task.md`. For a longer
 task, create the session first, write the file, then start it:
 
 ```bash
-migent prepare wave-3 --workflow plan
-migent start --session wave-3
+migent session prepare wave-3 --workflow plan
+migent session run --session wave-3 --workflow plan
 ```
 
-Migent runs each eligible stage until the workflow completes or stops. Stdout
-is one JSON result with the session id, status, stop reason, decision, and
-output paths. Stderr prints one line when a stage starts and one when it
-finishes. Then inspect or resume:
+Migent runs each eligible stage until the workflow completes or stops. Omit
+`--workflow` and pass `--role` to run one role instead. A workflow run prints
+one JSON result with the session id, status, stop reason, decision, and output
+paths. A role run prints a table unless `--json`. Stderr prints one line when
+a stage starts and one when it finishes. Then inspect or resume:
 
 ```bash
-migent sessions
-migent sessions --latest --json
-migent sessions <session-id> --follow
-migent continue <session-id>
+migent session list
+migent session list --latest --json
+migent session follow <session-id>
+migent session continue <session-id>
 ```
 
-`sessions --json` and a JSON snapshot omit the task text.
+`session list --json` and a JSON snapshot omit the task text.
 
 ### Next
 

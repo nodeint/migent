@@ -146,7 +146,7 @@ git:
 
 **Acceptance.**
 
-- `migent sessions --json` lists sessions waiting for input apart from blocked sessions.
+- `migent session list --json` lists sessions waiting for input apart from blocked sessions.
 - A `revise` note from the owner reaches the planner prompt word for word.
 
 **Workaround without it.** The operator splits each wave into two sessions and copies the owner's answer by hand.

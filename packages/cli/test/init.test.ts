@@ -97,7 +97,7 @@ test("writes one provider and the implement workflow", async () => {
     expect(workflow).toContain("role: developer");
     expect(gitignore).toBe("sessions/\n");
     expect(captured.stdout).toContain(".migent/workflows/implement.yaml");
-    expect(captured.stdout).toContain('migent start implement --task "..."');
+    expect(captured.stdout).toContain('migent session run --workflow implement --task "..."');
     expect(captured.stdout).not.toContain("providers");
     expect(captured.stderr).not.toContain("Doctor reported problems:");
   } finally {
@@ -415,7 +415,7 @@ test("init exits 0 when doctor later reports a missing provider", async () => {
     );
     expect(captured.value).toBe(0);
     expect(existsSync(path.join(workspace, ".migent", "config.yaml"))).toBe(true);
-    expect(captured.stdout).toContain('migent start implement --task "..."');
+    expect(captured.stdout).toContain('migent session run --workflow implement --task "..."');
     expect(captured.stdout).not.toContain("failed");
     expect(captured.stderr).toContain("Doctor reported problems:");
     expect(captured.stderr).toContain("not on PATH");

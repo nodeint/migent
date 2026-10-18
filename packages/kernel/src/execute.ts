@@ -95,14 +95,16 @@ export async function executeNamedWorkflow(
       if (sessionStatus !== "prepared") {
         const hint =
           sessionStatus === "active"
-            ? `Session ${sessionId} is active. Resume with: migent continue ${sessionId}`
-            : `Session ${sessionId} is ${sessionStatus || "unknown"}. migent start --session only starts a prepared session.`;
+            ? `Session ${sessionId} is active. Resume with: migent session continue ${sessionId}`
+            : `Session ${sessionId} is ${sessionStatus || "unknown"}. migent session run --session --workflow only starts a prepared session.`;
         throw new ConfigurationError(hint);
       }
       activatePreparedSession(workspace, sessionId);
       sessionStatus = "active";
     } else if (sessionStatus === "prepared") {
-      throw new ConfigurationError(`Session ${sessionId} is prepared. Run: migent start --session ${sessionId}`);
+      throw new ConfigurationError(
+        `Session ${sessionId} is prepared. Run: ${preparedRunHint(sessionId, bound.status)}`,
+      );
     }
     if (TERMINAL_SESSION_STATUSES.has(sessionStatus)) {
       return executeFinal(bound.status, sessionStatus, []);
@@ -364,10 +366,18 @@ function bindExecuteRun(
     throw new ConfigurationError(`Session ${sessionId} is not a named workflow session.`);
   }
   if (workflowId && workflowId !== storedWorkflow) {
-    throw new ConfigurationError(`Workflow ${workflowId} does not match session ${storedWorkflow}.`);
+    const resolved = loadNamedWorkflow(workspace, workflowId).id;
+    if (resolved !== storedWorkflow) {
+      throw new ConfigurationError(`Workflow ${resolved} does not match session ${storedWorkflow}.`);
+    }
   }
   bindPriorSessionId(workspace, sessionId, priorSessionId);
   return { workflowId: storedWorkflow, status };
+}
+
+function preparedRunHint(sessionId: string, status: Record<string, unknown>): string {
+  const workflowId = typeof status.workflow_id === "string" && status.workflow_id ? status.workflow_id : "<workflow>";
+  return `migent session run --session ${sessionId} --workflow ${workflowId}`;
 }
 
 function storedPriorSessionId(status: Record<string, unknown>): string | null {

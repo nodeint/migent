@@ -4,7 +4,7 @@ A workflow is a set of stages connected by dependencies and explicit decision
 routes. Definitions live in `.migent/workflows/` as YAML files. The Migent skill
 lists every accepted key in `.agents/skills/migent/references/schema-workflow.yaml`.
 `id` is optional. When it is omitted, the id is the file name without `.yaml`. When
-`id` is set, that value is the workflow name used by `migent start`,
+`id` is set, that value is the workflow name used by `migent session run --workflow`,
 `requires`, and sessions. Two files with the same id are an error. A path to
 a workflow file also selects that file.
 
@@ -78,7 +78,7 @@ decide the result.
   `failure_reason: verify_exhausted`. The loop stops with stop reason
   `verify_exhausted` and exit code 6. The session stays active and
   `--attempts` is not consumed.
-- `migent continue <session-id>` resumes the same provider conversation with
+- `migent session continue <session-id>` resumes the same provider conversation with
   the last report and a fresh `max_verify` budget. It keeps the provider, model,
   and options of the exhausted execution. If config changed them, the resume is
   refused with exit code 2. To use a different model, start a new session.
@@ -108,9 +108,9 @@ plan -> review -> revise  # refused; session remains active
 
 The review after the third revision still runs. Migent stops only when its
 decision would exceed the configured limit.
-Run `migent continue <session-id>` to reset the revision count and allow up
-to three more revisions in the same session. Each later `continue` resets the
-count again. `migent continue <session-id> --once` dispatches one stage and
+Run `migent session continue <session-id>` to reset the revision count and allow up
+to three more revisions in the same session. Each later `session continue` resets the
+count again. `migent session continue <session-id> --once` dispatches one stage and
 does not reset the count.
 
 ## Completion outputs

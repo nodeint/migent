@@ -27,11 +27,11 @@ async function runOnce(
 test("prepare writes a chosen session and start runs task.md", async () => {
   const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
   try {
-    const badId = await capture(() => main(["prepare", "Wave-3", "--workflow", "plan"], workspace));
+    const badId = await capture(() => main(["session", "prepare", "Wave-3", "--workflow", "plan"], workspace));
     expect(badId.value).toBe(2);
     expect(badId.stderr).toContain("lowercase slug");
 
-    const prepared = await capture(() => main(["prepare", "wave-3", "--workflow", "plan"], workspace));
+    const prepared = await capture(() => main(["session", "prepare", "wave-3", "--workflow", "plan"], workspace));
     expect(prepared.value).toBe(0);
     expect(JSON.parse(prepared.stdout)).toEqual({
       session_id: "wave-3",
@@ -40,25 +40,25 @@ test("prepare writes a chosen session and start runs task.md", async () => {
     });
     expect(prepared.stderr).toContain("session_id: wave-3");
 
-    const duplicate = await capture(() => main(["prepare", "wave-3", "--workflow", "plan"], workspace));
+    const duplicate = await capture(() => main(["session", "prepare", "wave-3", "--workflow", "plan"], workspace));
     expect(duplicate.value).toBe(2);
     expect(duplicate.stderr).toContain("already exists");
 
-    const listed = await capture(() => main(["sessions", "--status", "prepared", "--json"], workspace));
+    const listed = await capture(() => main(["session", "list", "--status", "prepared", "--json"], workspace));
     expect(listed.value).toBe(0);
     expect(JSON.parse(listed.stdout)).toEqual([
       expect.objectContaining({ session: "wave-3", workflow: "plan", status: "prepared" }),
     ]);
 
-    const snapshot = await capture(() => main(["sessions", "wave-3", "--json"], workspace));
+    const snapshot = await capture(() => main(["session", "show", "wave-3", "--json"], workspace));
     expect(snapshot.value).toBe(0);
     expect(JSON.parse(snapshot.stdout)).toMatchObject({ session_id: "wave-3", status: "prepared" });
 
-    const early = await capture(() => main(["continue", "wave-3"], workspace));
+    const early = await capture(() => main(["session", "continue", "wave-3"], workspace));
     expect(early.value).toBe(2);
-    expect(early.stderr).toContain("migent start --session wave-3");
+    expect(early.stderr).toContain("migent session run --session wave-3 --workflow plan");
 
-    const missing = await capture(() => main(["start", "--session", "wave-3", "--once"], workspace));
+    const missing = await capture(() => main(["session", "run", "--session", "wave-3", "--workflow", "plan", "--once"], workspace));
     expect(missing.value).toBe(2);
     expect(missing.stderr).toContain("no task.md");
 
@@ -66,7 +66,7 @@ test("prepare writes a chosen session and start runs task.md", async () => {
     writeFileSync(taskPath, "Migrate the plugin API for wave 3.\nDetails follow.\n", "utf8");
     const started = await runOnce(
       workspace,
-      ["start", "--session", "wave-3", "--once", "--verbose"],
+      ["session", "run", "--session", "wave-3", "--workflow", "plan", "--once", "--verbose"],
       new ScriptedAdapter(["status: complete\n\nplanned"], ["# Plan\n"]),
     );
     expect(started.code).toBe(0);
@@ -85,12 +85,12 @@ test("prepare writes a chosen session and start runs task.md", async () => {
     expect(prompt).not.toContain("Migrate the plugin API");
     expect(readFileSync(path.join(executionDirectory, "task.md"), "utf8")).toContain("Migrate the plugin API");
 
-    const activeAgain = await capture(() => main(["start", "--session", "wave-3"], workspace));
+    const activeAgain = await capture(() => main(["session", "run", "--session", "wave-3", "--workflow", "plan"], workspace));
     expect(activeAgain.value).toBe(2);
-    expect(activeAgain.stderr).toContain("migent continue wave-3");
+    expect(activeAgain.stderr).toContain("migent session continue wave-3");
 
     writeFileSync(taskPath, "Changed after dispatch.\n", "utf8");
-    const changed = await capture(() => main(["continue", "wave-3", "--once"], workspace));
+    const changed = await capture(() => main(["session", "continue", "wave-3", "--once"], workspace));
     expect(changed.value).toBe(2);
     expect(changed.stderr).toContain("task.md changed");
   } finally {
@@ -101,19 +101,19 @@ test("prepare writes a chosen session and start runs task.md", async () => {
 test("start --task stores one line and rejects a newline", async () => {
   const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
   try {
-    const bad = await capture(() => main(["start", "plan", "--task", "one\ntwo"], workspace));
+    const bad = await capture(() => main(["session", "run", "--workflow", "plan", "--task", "one\ntwo"], workspace));
     expect(bad.value).toBe(2);
     expect(bad.stderr).toContain("one line");
     expect(existsSync(path.join(workspace, ".migent", "sessions"))).toBe(false);
 
-    const trailing = await capture(() => main(["start", "plan", "--task", "one\n"], workspace));
+    const trailing = await capture(() => main(["session", "run", "--workflow", "plan", "--task", "one\n"], workspace));
     expect(trailing.value).toBe(2);
     expect(trailing.stderr).toContain("one line");
     expect(existsSync(path.join(workspace, ".migent", "sessions"))).toBe(false);
 
     const started = await runOnce(
       workspace,
-      ["start", "plan", "--task", "Write a plan", "--once", "--verbose"],
+      ["session", "run", "--workflow", "plan", "--task", "Write a plan", "--once", "--verbose"],
       new ScriptedAdapter(["status: complete\n\nplanned"], ["# Plan\n"]),
     );
     expect(started.code).toBe(0);
