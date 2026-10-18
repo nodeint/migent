@@ -37,11 +37,16 @@ the workflow. `continue` resets the session's revision counts before
 dispatching. `continue --once` does not. The existing session history and
 artifacts remain available to later stages.
 
-Stdout is the result. Stderr is progress and notices. `--json` selects
-machine output where a command has a human form. Nothing switches format
-because a terminal is attached. Workflow commands write progress to stderr
-and one JSON result to stdout. Run `migent <command> --help` for its fields,
-stop reasons, and exit codes.
+Stdout is one JSON result: `session_id`, `session_status`, `stop_reason`,
+`latest_decision`, and `outputs`. Exit 1, 3, and 6 also include
+`latest_execution_id` and `response_path` (relative to the session directory).
+`--verbose` adds `stages`, including each stage's response text. Stderr is the
+session id, one line when a stage starts, one line when it finishes, provider
+errors, and the resume hint. `--progress` also prints each tool call once,
+when it finishes. Other item traces stay in `events.jsonl`. Nothing switches
+format because a terminal is attached. `--json` selects machine output where a
+command has a human form. Run `migent <command> --help` for stop reasons and
+exit codes.
 
 `stage`, `watch`, `agent start`, and `agent continue` still run, print a
 deprecation notice on stderr, and will be removed in 0.3.0. `stage SESSION`
@@ -213,21 +218,30 @@ unknown. The registry listens for clients on `http://127.0.0.1:{port}`.
 
 ```bash
 migent sessions
-migent sessions --json
+migent sessions --latest --json
+migent sessions --workflow <id> --status completed --json
 migent sessions <session-id>
 migent sessions <session-id> --json
 migent sessions <session-id> --follow
 migent sessions <session-id> --follow --exit-when-done
 ```
 
-`sessions` lists recorded runs. `sessions <session-id>` prints one snapshot
-and exits 0, including when the session is blocked. `--follow` prints that
-snapshot and then follows events until a signal. `--cursor` is for tools that
-resume a follow; it requires `--follow` and skips the snapshot. `--json` is
-an array for a list, one object for a snapshot, and a snapshot object
-followed by JSON lines while following. With `--cursor`, follow prints only
-JSON lines. `--exit-when-done` is opt-in and exits when the session status
-is completed (0), blocked (1), or cancelled (130).
+`sessions` lists recorded runs, newest first. `--workflow` and `--status`
+select rows before `--limit`. `--status` is `active`, `completed`, `blocked`,
+or `cancelled`. `--latest` prints the newest match. These flags cannot be
+combined with a session id, and `--latest` cannot be combined with `--limit`.
+An empty list exits 0.
+
+`sessions <session-id>` prints one snapshot and exits 0, including when the
+session is blocked. `--follow` prints that snapshot and then follows events
+until a signal. `--cursor` is for tools that resume a follow; it requires
+`--follow` and skips the snapshot. `--json` is an array for a list, one
+object for `--latest` (`null` when nothing matches), one object for a
+snapshot, and a snapshot object followed by JSON lines while following. With
+`--cursor`, follow prints only JSON lines. JSON list rows and the JSON
+snapshot omit `task`. The human list and snapshot still print it.
+`--exit-when-done` is opt-in and exits when the session status is completed
+(0), blocked (1), or cancelled (130).
 
 ## Ad hoc role execution
 

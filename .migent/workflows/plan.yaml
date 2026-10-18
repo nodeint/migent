@@ -7,14 +7,19 @@ stages:
     max_revisions: 3
     instructions:
       - Analyze the task and write an implementation plan.
+      - When revising, edit the existing plan.md in place. Do not replace the whole file.
     produces:
       artifact: plan.md
   - id: review-plan
     role: reviewer
     depends_on:
       - plan
+    # Stage options override the model. models.grok uses xhigh; this review uses high.
+    options:
+      reasoning-effort: high
     instructions:
       - Review the plan for correctness, missing risks, and unnecessary scope.
+      - Report every gap of the same kind in one response.
     decision:
       values:
         - approved

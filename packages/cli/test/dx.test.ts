@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { AgentToolRunner } from "@nodeint/migent-kernel";
+import { AgentToolRunner, type BuildCommandInput, type CommandSpec } from "@nodeint/migent-kernel";
 import { expect, test } from "vitest";
 import { cliHooks } from "../src/hooks.ts";
 import { main } from "../src/index.ts";
@@ -31,6 +31,7 @@ function writeWatchSession(workspace: string, status: string): void {
       status,
       latest_execution_id: "0001-implement--attempt-01",
       updated_at: "2026-09-19T10:20:30Z",
+      task: "ship the feature",
     }),
     "utf8",
   );
@@ -50,17 +51,76 @@ test("start --once and continue --once match a single stage", async () => {
     expect(started.stdout.trim().split("\n")).toHaveLength(1);
     expect(startedPayload.stop_reason).toBe("stage");
     expect(startedPayload.session_status).toBe("active");
+    expect(startedPayload).not.toHaveProperty("stages");
+    expect(started.stdout).not.toContain("planned");
 
     cliHooks.runner = new AgentToolRunner(
       { fake: new ScriptedAdapter(["status: complete\ndecision: revise\n\nneeds work", "status: complete\n\nshould not run"], [null, "# Plan\n"]) },
       10,
     );
-    const continued = await capture(() => main(["continue", startedPayload.session_id, "--once"], workspace));
+    const continued = await capture(() => main(["continue", startedPayload.session_id, "--once", "--verbose"], workspace));
     const continuedPayload = JSON.parse(continued.stdout) as { stop_reason: string; session_status: string; stages: Array<{ outcome_decision?: string }> };
     expect(continued.value).toBe(0);
     expect(continuedPayload.stop_reason).toBe("stage");
     expect(continuedPayload.session_status).toBe("active");
     expect(continuedPayload.stages[0]?.outcome_decision).toBe("revise");
+  } finally {
+    removeWorkspace(workspace);
+  }
+});
+
+class ItemAdapter extends ScriptedAdapter {
+  override buildCommand(input: BuildCommandInput): CommandSpec {
+    super.buildCommand(input);
+    return { argv: [process.execPath, "-e", "console.log('ITEM_START');console.log('ITEM_DONE');console.log('HEARTBEAT')"] };
+  }
+
+  parseProgressEvent(line: string): Record<string, unknown> | null {
+    if (line === "ITEM_START") return { event: "provider.item_started", summary: "command started: echo hi" };
+    if (line === "ITEM_DONE") return { event: "provider.item_completed", summary: "command completed: echo hi" };
+    if (line === "HEARTBEAT") return { event: "provider.heartbeat", summary: "running for 30s" };
+    return null;
+  }
+}
+
+test("start keeps tool traces out of the coordinator result", async () => {
+  const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
+  try {
+    cliHooks.runner = new AgentToolRunner(
+      { fake: new ItemAdapter(["status: complete\n\nUNIQUE_PLAN_BODY"], ["# Plan\n"]) },
+      10,
+    );
+    const started = await capture(() => main(["start", "plan", "--task", "Write a plan", "--once"], workspace));
+    const payload = JSON.parse(started.stdout) as { session_id: string; latest_decision: string | null };
+    expect(started.value).toBe(0);
+    expect(payload.latest_decision).toBeNull();
+    expect(started.stdout).not.toContain("UNIQUE_PLAN_BODY");
+    expect(started.stdout).not.toContain("stages");
+    expect(started.stderr).toContain("stage plan · complete.");
+    expect(started.stderr).not.toContain("command started");
+    expect(started.stderr).not.toContain("command completed");
+    expect(started.stderr).not.toContain("running for 30s");
+    const events = readFileSync(
+      path.join(workspace, ".migent", "sessions", payload.session_id, "events.jsonl"),
+      "utf8",
+    );
+    expect(events).toContain("provider.item_started");
+    expect(events).toContain("provider.item_completed");
+
+    cliHooks.runner = new AgentToolRunner(
+      { fake: new ItemAdapter(["status: complete\ndecision: revise\n\nUNIQUE_REVIEW"], [null]) },
+      10,
+    );
+    const verbose = await capture(() =>
+      main(["continue", payload.session_id, "--once", "--progress", "--verbose"], workspace),
+    );
+    const detailed = JSON.parse(verbose.stdout) as { stages: Array<{ response?: string }> };
+    expect(verbose.value).toBe(0);
+    expect(detailed.stages[0]?.response).toContain("UNIQUE_REVIEW");
+    const completed = verbose.stderr.split("\n").filter((line) => line.includes("command completed"));
+    expect(completed).toHaveLength(1);
+    expect(verbose.stderr).not.toContain("command started");
+    expect(verbose.stderr).not.toContain("running for 30s");
   } finally {
     removeWorkspace(workspace);
   }
@@ -136,6 +196,12 @@ test("deprecated aliases keep their exit codes and name the replacement", async 
     const body = JSON.parse(snapshot.stdout) as { session_id: string; status: string };
     expect(body.session_id).toBe("run-1");
     expect(body.status).toBe("blocked");
+    expect(body).not.toHaveProperty("task");
+    expect(body).toHaveProperty("events_cursor");
+    expect(snapshot.stdout).not.toContain("ship the feature");
+    const human = await capture(() => main(["sessions", "run-1"], workspace));
+    expect(human.value).toBe(0);
+    expect(human.stdout).toContain("ship the feature");
 
     const followed = await capture(() => main(["sessions", "run-1", "--follow", "--exit-when-done"], workspace));
     expect(followed.value).toBe(1);
@@ -164,6 +230,7 @@ test("sessions help shows list snapshot and follow examples", async () => {
   const captured = await capture(() => main(["sessions", "--help"]));
   expect(captured.value).toBe(0);
   expect(captured.stdout).toContain("migent sessions");
+  expect(captured.stdout).toContain("migent sessions --latest --json");
   expect(captured.stdout).toContain("migent sessions <session>");
   expect(captured.stdout).toContain("migent sessions <session> --follow");
   expect(captured.stdout).toContain("tools");

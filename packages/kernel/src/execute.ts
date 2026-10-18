@@ -59,6 +59,8 @@ export interface ExecuteResult {
   status: string;
   stopReason: string;
   sessionId: string;
+  latestDecision: string | null;
+  latestExecutionId: string | null;
   outputs: Record<string, unknown>;
   stages: Array<Record<string, unknown>>;
 }
@@ -153,6 +155,8 @@ export async function executeNamedWorkflow(
         status: "",
         stopReason: "configuration",
         sessionId,
+        latestDecision: null,
+        latestExecutionId: null,
         outputs: {},
         stages: [],
       };
@@ -320,6 +324,9 @@ async function dispatchExecuteStage(
     sessionId,
   };
   const result: StageDispatchResult = await dispatchNamedStage(workspace, request, runner);
+  const outcome = result.outcomeStatus || (result.failureReason ? "failed" : "finished");
+  const decision = result.outcomeDecision ? ` decision=${result.outcomeDecision}` : "";
+  log(`stage ${stageId} · ${outcome}${decision}.`);
   return result.toJson();
 }
 
@@ -378,9 +385,15 @@ function executeFinal(
     status: text(status.status),
     stopReason,
     sessionId: text(status.session_id),
+    latestDecision: optionalText(status.latest_decision),
+    latestExecutionId: optionalText(status.latest_execution_id),
     outputs: isRecord(status.outputs) ? status.outputs : {},
     stages,
   };
+}
+
+function optionalText(value: unknown): string | null {
+  return typeof value === "string" && value ? value : null;
 }
 
 function text(value: unknown): string {

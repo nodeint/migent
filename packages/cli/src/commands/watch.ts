@@ -127,9 +127,15 @@ export async function followSession(
 
 function printSnapshot(sessionDirectory: string, executionId: string | null, jsonLines: boolean): Record<string, unknown> {
   const snapshot = watchSnapshot(sessionDirectory, executionId);
-  if (jsonLines) process.stdout.write(`${JSON.stringify(snapshot)}\n`);
+  if (jsonLines) process.stdout.write(`${JSON.stringify(snapshotJson(snapshot))}\n`);
   else printWatchSnapshot(snapshot);
   return snapshot;
+}
+
+function snapshotJson(snapshot: Record<string, unknown>): Record<string, unknown> {
+  const body = { ...snapshot };
+  delete body.task;
+  return body;
 }
 
 function emitWatchEvent(line: string, executionId: string | null, jsonLines: boolean): void {

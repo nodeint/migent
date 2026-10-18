@@ -18,6 +18,8 @@ export interface ExecuteWorkflowOptions {
   maxAttempts?: number | null;
   maxDispatches?: number | null;
   runner?: AgentToolRunner | null;
+  verbose?: boolean;
+  itemProgress?: boolean;
 }
 
 export async function executeWorkflow(workspace: string, options: ExecuteWorkflowOptions): Promise<number> {
@@ -27,6 +29,7 @@ export async function executeWorkflow(workspace: string, options: ExecuteWorkflo
   const maxAttempts = options.maxAttempts === undefined ? 3 : options.maxAttempts;
   const maxDispatches = options.maxDispatches === undefined ? DEFAULT_MAX_DISPATCHES : options.maxDispatches;
   const runner = options.runner ?? cliHooks.runner ?? new AgentToolRunner(adapterMap());
+  runner.itemProgress = options.itemProgress === true;
   const result = await executeNamedWorkflow(
     workspace,
     {
@@ -41,7 +44,7 @@ export async function executeWorkflow(workspace: string, options: ExecuteWorkflo
     },
     runner,
   );
-  printResult(result);
+  printResult(result, options.verbose === true);
   if (
     result.stopReason === "retry_exhausted" ||
     result.stopReason === "revisions_exhausted" ||
@@ -53,16 +56,22 @@ export async function executeWorkflow(workspace: string, options: ExecuteWorkflo
   return result.code;
 }
 
-function printResult(result: ExecuteResult): void {
-  process.stdout.write(
-    `${JSON.stringify({
-      session_id: result.sessionId,
-      session_status: result.status,
-      stop_reason: result.stopReason,
-      outputs: result.outputs,
-      stages: result.stages,
-    })}\n`,
-  );
+const INSPECT_EXIT_CODES = new Set([1, 3, 6]);
+
+function printResult(result: ExecuteResult, verbose: boolean): void {
+  const payload: Record<string, unknown> = {
+    session_id: result.sessionId,
+    session_status: result.status,
+    stop_reason: result.stopReason,
+    latest_decision: result.latestDecision,
+    outputs: result.outputs,
+  };
+  if (INSPECT_EXIT_CODES.has(result.code) && result.latestExecutionId) {
+    payload.latest_execution_id = result.latestExecutionId;
+    payload.response_path = `executions/${result.latestExecutionId}/response.md`;
+  }
+  if (verbose) payload.stages = result.stages;
+  process.stdout.write(`${JSON.stringify(payload)}\n`);
 }
 
 

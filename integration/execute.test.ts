@@ -32,7 +32,7 @@ test("plan review publishes the plan", async () => {
   const workspace = tempWorkspace();
   try {
     writeWorkspace(workspace, GROK_CONFIG, { plan: PLAN_REVIEW });
-    const [code, objects, stderr] = await runMain(workspace, ["start", "plan", "--task", "Write a plan"]);
+    const [code, objects, stderr] = await runMain(workspace, ["start", "plan", "--task", "Write a plan", "--verbose"]);
     expect(code, stderr).toBe(0);
     const result = objects[0] ?? {};
     const stages = asRecords(result.stages);
@@ -56,6 +56,7 @@ test("stage runs through the codex adapter", async () => {
       "draft-note",
       "--task",
       "Draft a note",
+      "--verbose",
     ]);
     expect(code, stderr).toBe(0);
     const result = objects[0] ?? {};
@@ -97,7 +98,7 @@ test("revise publishes the later plan", async () => {
       { text: COMPLETE, artifact: "# v2\n" },
       { text: APPROVED },
     ]);
-    const [code, objects, stderr] = await runMain(workspace, ["start", "plan", "--task", "Write a plan"]);
+    const [code, objects, stderr] = await runMain(workspace, ["start", "plan", "--task", "Write a plan", "--verbose"]);
     expect(code, stderr).toBe(0);
     const result = objects[0] ?? {};
     expect(asRecords(result.stages).map((item) => item.outcome_decision)).toEqual(["", "revise", "", "approved"]);
@@ -105,7 +106,7 @@ test("revise publishes the later plan", async () => {
     const published = path.join(workspace, ".migent", "sessions", String(result.session_id), "outputs", "plan");
     expect(readFileSync(published, "utf8")).toBe("# v2\n");
     const invocations = providerInvocations(workspace).length;
-    const [againCode, again, againStderr] = await runMain(workspace, ["continue", String(result.session_id)]);
+    const [againCode, again, againStderr] = await runMain(workspace, ["continue", String(result.session_id), "--verbose"]);
     expect(againCode, againStderr).toBe(0);
     expect(again[0]?.stop_reason).toBe("completed");
     expect(again[0]?.stages).toEqual([]);
@@ -131,8 +132,8 @@ test("blocked review is not dispatched again", async () => {
     expect(sessionStatus(workspace, String(result.session_id)).status).toBe("blocked");
     expect(providerInvocations(workspace)).toHaveLength(2);
     for (const argv of [
-      ["continue", String(result.session_id)],
-      ["stage", String(result.session_id)],
+      ["continue", String(result.session_id), "--verbose"],
+      ["stage", String(result.session_id), "--verbose"],
     ]) {
       const [stoppedCode, stopped, stoppedStderr] = await runMain(workspace, argv);
       expect(stoppedCode, stoppedStderr).toBe(1);
@@ -351,8 +352,15 @@ test("grok status after a tool event completes", async () => {
   try {
     writeWorkspace(workspace, GROK_CONFIG, { solo: SOLO });
     installScript(workspace, [{ events: "tool", text: COMPLETE, artifact: "# noted\n" }]);
-    const [code, objects, stderr] = await runMain(workspace, ["start", "solo", "--task", "Write"]);
+    const [code, objects, stderr] = await runMain(workspace, ["start", "solo", "--task", "Write", "--verbose"]);
     expect(code, stderr).toBe(0);
+    expect(stderr).not.toContain("write started");
+    expect(stderr).not.toContain("write completed");
+    const events = readFileSync(
+      path.join(workspace, ".migent", "sessions", String(objects[0]?.session_id), "events.jsonl"),
+      "utf8",
+    );
+    expect(events).toContain("provider.item_started");
     expect(asRecords(objects[0]?.stages)[0]?.outcome_status).toBe("complete");
     expect(objects[0]?.stop_reason).toBe("completed");
   } finally {
@@ -377,6 +385,7 @@ test("codex last message overrides stdout", async () => {
       "draft-note",
       "--task",
       "Draft a note",
+      "--verbose",
     ]);
     expect(code, stderr).toBe(0);
     const stage = asRecords(objects[0]?.stages)[0] ?? {};

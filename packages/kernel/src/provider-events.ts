@@ -5,6 +5,19 @@ import { STATUS_PROVIDER_EVENTS } from "./event-kinds.js";
 
 const CONTROL_PLANE_WARNING_MARKERS = ["failed to refresh available models"];
 
+const STDERR_EVENTS = new Set([
+  "provider.turn_failed",
+  "provider.error",
+  "provider.warning",
+  "provider.cancelled",
+  "verify.failed",
+]);
+
+function reportsOnStderr(event: string, itemProgress: boolean): boolean {
+  if (STDERR_EVENTS.has(event)) return true;
+  return itemProgress && event === "provider.item_completed";
+}
+
 export function providerErrorMessage(payload: Record<string, unknown>): string | null {
   const message = payload.message;
   if (typeof message === "string" && message.trim()) return message.trim();
@@ -79,6 +92,7 @@ export class ProviderEventReporter {
     readonly context: ExecutionContext,
     readonly provider: string,
     readonly model: string,
+    readonly itemProgress = false,
   ) {}
 
   emit(event: string, summary?: string | null, details?: Record<string, unknown> | null): void {
@@ -92,10 +106,8 @@ export class ProviderEventReporter {
       details: details ?? {},
     });
     this.store.recordProviderEvent(this.context, providerEvent.toJson());
-    const message =
-      event === "provider.stage_started"
-        ? `${providerEvent.stageId} · started · ${summary || this.provider}`
-        : summary || event.replace(/^provider\./, "").replaceAll("_", " ");
+    if (!reportsOnStderr(event, this.itemProgress)) return;
+    const message = summary || event.replace(/^provider\./, "").replaceAll("_", " ");
     logProgress(message);
   }
 }

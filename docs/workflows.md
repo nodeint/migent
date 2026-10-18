@@ -167,6 +167,7 @@ stages:
     max_revisions: 3
     instructions:
       - Analyze the task and write an implementation plan.
+      - When revising, edit the existing plan.md in place. Do not replace the whole file.
     produces:
       artifact: plan.md
 
@@ -175,6 +176,7 @@ stages:
     depends_on: [plan]
     instructions:
       - Review the plan for correctness, missing risks, and unnecessary scope.
+      - Report every gap of the same kind in one response.
     decision:
       values: [approved, revise]
       routes:

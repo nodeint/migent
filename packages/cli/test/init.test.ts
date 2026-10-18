@@ -1,8 +1,9 @@
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ModelCatalog } from "@nodeint/migent-adapters";
-import type { AgentAdapter } from "@nodeint/migent-kernel";
+import { loadWorkflowDocument, type AgentAdapter } from "@nodeint/migent-kernel";
 import { expect, test } from "vitest";
 import { runInit, type Prompter } from "../src/commands/init.ts";
 import { main } from "../src/index.ts";
@@ -157,6 +158,20 @@ test("reports an existing valid project without changing it", async () => {
   }
 });
 
+test("repo plan review uses a lower reasoning effort than the model default", () => {
+  const document = loadWorkflowDocument(fileURLToPath(new URL("../../../.migent/workflows/plan.yaml", import.meta.url)));
+  expect(document.stages.plan?.instructions).toEqual([
+    "Analyze the task and write an implementation plan.",
+    "When revising, edit the existing plan.md in place. Do not replace the whole file.",
+  ]);
+  expect(document.stages["review-plan"]?.instructions).toEqual([
+    "Review the plan for correctness, missing risks, and unnecessary scope.",
+    "Report every gap of the same kind in one response.",
+  ]);
+  expect(document.stages.plan?.options).toEqual({});
+  expect(document.stages["review-plan"]?.options).toEqual({ "reasoning-effort": "high" });
+});
+
 test("plan review shares the default model", async () => {
   const workspace = tempDir();
   try {
@@ -175,6 +190,9 @@ test("plan review shares the default model", async () => {
     expect(config).not.toContain("\n  review:");
     expect(workflow).toContain("id: plan");
     expect(workflow).toContain("revise: plan");
+    expect(workflow).toContain("When revising, edit the existing plan.md in place. Do not replace the whole file.");
+    expect(workflow).toContain("Report every gap of the same kind in one response.");
+    expect(workflow).not.toContain("reasoning-effort");
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }

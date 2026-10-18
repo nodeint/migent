@@ -54,6 +54,7 @@ export class AgentToolRunner {
   readonly adapters: Record<string, AgentAdapter>;
   readonly executor: CommandExecutor;
   readonly verifyRunner: VerifyRunner;
+  itemProgress = false;
 
   constructor(
     adapters?: Record<string, AgentAdapter>,
@@ -113,7 +114,13 @@ export class AgentToolRunner {
     record.status = "running";
     store.save(record, context);
     store.saveExecution(context, record, "running");
-    const eventReporter = new ProviderEventReporter(store, context, providerKey, request.model);
+    const eventReporter = new ProviderEventReporter(
+      store,
+      context,
+      providerKey,
+      request.model,
+      this.itemProgress,
+    );
     const agentId = isNew ? null : record.agentId;
     let turnPrompt = request.prompt;
     if (!isNew && !agentId) {

@@ -4,6 +4,9 @@
 
 ### Changed
 
+- `sessions --workflow`, `--status`, and `--limit` filter the newest-first list. `--latest` prints one session, or `null` when nothing matches. JSON list rows and JSON snapshots omit the task text. The human list and snapshot still print it.
+- `init --preset plan` tells the planner to edit the existing plan in place when revising, and tells the reviewer to report every gap of the same kind in one response.
+- `start` and `continue` print a coordination result: `session_id`, `session_status`, `stop_reason`, `latest_decision`, and `outputs`. Exit 1, 3, and 6 also include `latest_execution_id` and `response_path`. `--verbose` adds `stages` with each response. Stderr prints stage boundaries and errors. `--progress` prints each tool call once, when it finishes. `stage` uses the same result.
 - `continue SESSION` still resumes until the session stops and resets revision counts. `continue SESSION --once` and `start WORKFLOW --task TASK --once` dispatch one stage and do not reset revision counts.
 - `agent --role ROLE [--session SESSION]` replaces `agent start` and `agent continue SESSION`.
 - `sessions` lists sessions. `sessions SESSION` prints one snapshot. `sessions SESSION --follow` follows events. `--exit-when-done` makes a follow exit when the session is completed, blocked, or cancelled.

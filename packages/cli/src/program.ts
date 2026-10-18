@@ -19,6 +19,9 @@ import { findWorkspace, invocationCwdPath } from "./workspace.js";
 
 const PRIOR_HELP =
   "Completed session with the workflow id and decision named in requires. Checked before outputs are injected.";
+const PROGRESS_HELP =
+  "Print each tool call when it finishes. The default prints one line when a stage starts and one when it finishes.";
+const VERBOSE_HELP = "Include every stage and its response text in the result JSON.";
 
 export interface CliStatus {
   code: number;
@@ -52,6 +55,7 @@ export function createProgram(status: CliStatus): Command {
             priorSessionId: optionalText(options.prior),
             maxAttempts: null,
             maxDispatches: null,
+            ...outputFlags(options),
           });
         }
         const ceiling = dispatchCeiling(options);
@@ -63,6 +67,7 @@ export function createProgram(status: CliStatus): Command {
           priorSessionId: optionalText(options.prior),
           maxAttempts: attemptsOf(options),
           maxDispatches: ceiling,
+          ...outputFlags(options),
         });
       }),
     );
@@ -90,6 +95,7 @@ export function createProgram(status: CliStatus): Command {
             priorSessionId: optionalText(options.prior),
             maxAttempts: null,
             maxDispatches: null,
+            ...outputFlags(options),
           });
         }
         const ceiling = dispatchCeiling(options);
@@ -100,6 +106,7 @@ export function createProgram(status: CliStatus): Command {
           priorSessionId: optionalText(options.prior),
           maxAttempts: attemptsOf(options),
           maxDispatches: ceiling,
+          ...outputFlags(options),
         });
       }),
     );
@@ -111,6 +118,8 @@ export function createProgram(status: CliStatus): Command {
     .option("--workflow <workflow>", "Workflow id or path. Creates a session and dispatches its next stage once.")
     .option("--task <task>", "Task recorded on the new session. Required with --workflow.")
     .option("--prior <session>", PRIOR_HELP)
+    .option("--progress", PROGRESS_HELP)
+    .option("--verbose", VERBOSE_HELP)
     .addHelpText("after", exitText(STAGE_EXITS))
     .action((session: string | undefined, options: OptionValues) =>
       settle(status, () => {
@@ -138,6 +147,7 @@ export function createProgram(status: CliStatus): Command {
           priorSessionId: optionalText(options.prior),
           maxAttempts: null,
           maxDispatches: null,
+          ...outputFlags(options),
         });
       }),
     );
@@ -263,7 +273,11 @@ export function createProgram(status: CliStatus): Command {
     .command("sessions")
     .description("List sessions, print one snapshot, or follow its events.")
     .argument("[session]", "Session to inspect. Omit to list.")
-    .option("--json", "List: a JSON array. Snapshot: one object. Follow: a snapshot object, then JSON lines. With --cursor, only JSON lines.")
+    .option("--json", "List: a JSON array without the task. --latest: one object, or null. Snapshot: one object without the task. Follow: a snapshot object, then JSON lines. With --cursor, only JSON lines.")
+    .option("--workflow <id>", "List sessions for this workflow id.")
+    .option("--status <status>", "List sessions with this status: active, completed, blocked, or cancelled.")
+    .option("--limit <n>", "List the newest n sessions. At least 1. Cannot be combined with --latest.")
+    .option("--latest", "Print the newest matching session. Cannot be combined with --limit.")
     .option("--follow", "Print the snapshot, then follow events until a signal. With --cursor, skip the snapshot.")
     .option("--execution <execution>", "Limit followed events and --until to this execution.")
     .option("--cursor <offset>", "Byte offset in events.jsonl for tools that resume a follow. Requires --follow. 0 replays the whole log.")
@@ -277,7 +291,7 @@ export function createProgram(status: CliStatus): Command {
         "Exit 1 when --exit-when-done and the session is blocked.",
         "Exit 130 when --exit-when-done and the session is cancelled, or the follow is cancelled.",
         "Exit 2 on a configuration error.",
-      ])}Examples:\n  migent sessions\n  migent sessions <session>\n  migent sessions <session> --follow\n`,
+      ])}Examples:\n  migent sessions\n  migent sessions --latest --json\n  migent sessions <session>\n  migent sessions <session> --follow\n`,
     )
     .action((session: string | undefined, options: OptionValues) =>
       settle(status, () =>
@@ -288,6 +302,10 @@ export function createProgram(status: CliStatus): Command {
           until: options.until === true,
           cursor: options.cursor === undefined ? undefined : String(options.cursor),
           exitWhenDone: options.exitWhenDone === true,
+          workflow: typeof options.workflow === "string" ? options.workflow : null,
+          status: typeof options.status === "string" ? options.status : null,
+          limit: options.limit === undefined ? null : String(options.limit),
+          latest: options.latest === true,
         }),
       ),
     );
@@ -452,7 +470,13 @@ function addDispatchOptions(command: Command, onceDescription: string): void {
       "--max-dispatches <count>",
       `Stage dispatches allowed in this command. Default: ${DEFAULT_MAX_DISPATCHES}. Pass --unlimited-dispatches to remove the ceiling.`,
     )
-    .option("--unlimited-dispatches", "Remove the dispatch ceiling for this command.");
+    .option("--unlimited-dispatches", "Remove the dispatch ceiling for this command.")
+    .option("--progress", PROGRESS_HELP)
+    .option("--verbose", VERBOSE_HELP);
+}
+
+function outputFlags(options: OptionValues): { verbose: boolean; itemProgress: boolean } {
+  return { verbose: options.verbose === true, itemProgress: options.progress === true };
 }
 
 function showHelpWhenBare(status: CliStatus, command: Command): void {

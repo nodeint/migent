@@ -282,6 +282,7 @@ function renderWorkflow(preset: string): string {
     "    max_revisions: 3\n" +
     "    instructions:\n" +
     "      - Analyze the task and write an implementation plan.\n" +
+    "      - When revising, edit the existing plan.md in place. Do not replace the whole file.\n" +
     "    produces:\n" +
     "      artifact: plan.md\n" +
     "  - id: review-plan\n" +
@@ -290,6 +291,7 @@ function renderWorkflow(preset: string): string {
     "      - plan\n" +
     "    instructions:\n" +
     "      - Review the plan for correctness, missing risks, and unnecessary scope.\n" +
+    "      - Report every gap of the same kind in one response.\n" +
     "    decision:\n" +
     "      values:\n" +
     "        - approved\n" +

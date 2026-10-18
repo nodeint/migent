@@ -40,7 +40,8 @@ function writeWatchSession(
 
 async function runExecute(workspace: string, argv: string[], adapter: ScriptedAdapter): Promise<[number, Row[]]> {
   cliHooks.runner = new AgentToolRunner({ fake: adapter }, 10);
-  const captured = await capture(() => main(argv, workspace));
+  const command = argv.includes("--verbose") ? argv : [...argv, "--verbose"];
+  const captured = await capture(() => main(command, workspace));
   const payload = JSON.parse(captured.stdout) as Row & { stages: Row[] };
   const summary = {
     session_id: payload.session_id,
@@ -158,6 +159,92 @@ test("lists sorted rows and skips invalid status json", async () => {
     const rows = JSON.parse(jsonOut.stdout) as Array<Record<string, string>>;
     expect(rows.map((row) => row.session)).toEqual(["newer", "older"]);
     expect(rows[1]?.decision).toBe("approved");
+    expect(rows[0]).not.toHaveProperty("task");
+    expect(rows[1]?.outputs).toBe("plan");
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("session filters select the newest match and reject bad flags", async () => {
+  const workspace = mkdtempSync(path.join(tmpdir(), "migent-cli-"));
+  try {
+    const runs = path.join(workspace, ".migent", "sessions");
+    mkdirSync(runs, { recursive: true });
+    writeFileSync(path.join(workspace, ".migent", "config.yaml"), "schema_version: 1\n", "utf8");
+    for (const [name, payload] of [
+      [
+        "older",
+        {
+          updated_at: "2026-09-19T00:00:00+00:00",
+          workflow_id: "plan",
+          status: "completed",
+          latest_execution_id: "0001",
+          latest_decision: "approved",
+          outputs: { plan: {} },
+          task: "old task",
+        },
+      ],
+      [
+        "newer",
+        {
+          updated_at: "2026-09-20T00:00:00+00:00",
+          workflow_id: "plan-implement",
+          status: "active",
+          task: "new task",
+        },
+      ],
+    ] as const) {
+      const directory = path.join(runs, name);
+      mkdirSync(directory, { recursive: true });
+      writeFileSync(path.join(directory, "status.json"), JSON.stringify(payload), "utf8");
+    }
+    const matched = await capture(() =>
+      main(["sessions", "--workflow", "plan", "--status", "completed", "--json"], workspace),
+    );
+    expect(matched.value).toBe(0);
+    expect(JSON.parse(matched.stdout)).toEqual([
+      {
+        session: "older",
+        workflow: "plan",
+        status: "completed",
+        execution: "0001",
+        decision: "approved",
+        outputs: "plan",
+      },
+    ]);
+    const latest = await capture(() => main(["sessions", "--latest", "--json"], workspace));
+    expect(JSON.parse(latest.stdout)).toMatchObject({ session: "newer", workflow: "plan-implement", status: "active" });
+    expect(JSON.parse(latest.stdout)).not.toHaveProperty("task");
+    const missing = await capture(() => main(["sessions", "--workflow", "missing", "--latest", "--json"], workspace));
+    expect(missing.value).toBe(0);
+    expect(missing.stdout).toBe("null\n");
+    const human = await capture(() => main(["sessions", "--latest"], workspace));
+    expect(human.stdout).toContain("new task");
+    expect(human.stdout).not.toContain("old task");
+    const empty = await capture(() => main(["sessions", "--status", "cancelled"], workspace));
+    expect(empty.value).toBe(0);
+    expect(empty.stdout).toBe("No sessions.\n");
+    const limited = await capture(() => main(["sessions", "--limit", "1", "--json"], workspace));
+    expect(JSON.parse(limited.stdout)).toEqual([
+      expect.objectContaining({ session: "newer" }),
+    ]);
+
+    const combined = await capture(() => main(["sessions", "--latest", "--limit", "1"], workspace));
+    expect(combined.value).toBe(2);
+    expect(combined.stderr).toContain("--latest cannot be combined with --limit.");
+    const badStatus = await capture(() => main(["sessions", "--status", "paused"], workspace));
+    expect(badStatus.value).toBe(2);
+    expect(badStatus.stderr).toContain("--status must be active, completed, blocked, or cancelled.");
+    const badLimit = await capture(() => main(["sessions", "--limit", "0"], workspace));
+    expect(badLimit.value).toBe(2);
+    expect(badLimit.stderr).toContain("--limit must be an integer >= 1.");
+    const blankWorkflow = await capture(() => main(["sessions", "--workflow", " "], workspace));
+    expect(blankWorkflow.value).toBe(2);
+    expect(blankWorkflow.stderr).toContain("--workflow is empty.");
+    const withSession = await capture(() => main(["sessions", "newer", "--latest"], workspace));
+    expect(withSession.value).toBe(2);
+    expect(withSession.stderr).toContain("List filters cannot be combined with a session.");
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }

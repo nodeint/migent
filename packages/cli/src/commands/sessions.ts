@@ -1,14 +1,32 @@
 import { listSessionRows, ConfigurationError } from "@nodeint/migent-kernel";
 import { printError, printSessions } from "../display.js";
-import { sessionFields } from "../session-row.js";
+import { SESSION_COLUMN, sessionFields } from "../session-row.js";
 import { optionalText } from "../text.js";
 import { followSession } from "./watch.js";
 
-export function listSessions(workspace: string, options: { asJson?: boolean } = {}): number {
-  const rows = listSessionRows(workspace);
+const SESSION_STATUSES = new Set(["active", "completed", "blocked", "cancelled"]);
+
+export interface SessionListOptions {
+  asJson?: boolean;
+  workflow?: string | null;
+  status?: string | null;
+  limit?: number | null;
+  latest?: boolean;
+}
+
+export function listSessions(workspace: string, options: SessionListOptions = {}): number {
+  const rows = selectSessionRows(listSessionRows(workspace), options);
+  if (options.latest) {
+    const row = rows[0];
+    if (options.asJson) {
+      process.stdout.write(`${JSON.stringify(row === undefined ? null : sessionJson(row))}\n`);
+      return 0;
+    }
+    printSessions(row === undefined ? [] : [row]);
+    return 0;
+  }
   if (options.asJson) {
-    const payload = rows.map((row) => sessionFields(row));
-    process.stdout.write(`${JSON.stringify(payload)}\n`);
+    process.stdout.write(`${JSON.stringify(rows.map((row) => sessionJson(row)))}\n`);
     return 0;
   }
   printSessions(rows);
@@ -25,10 +43,19 @@ export async function runSessions(
     until: boolean;
     cursor: string | undefined;
     exitWhenDone: boolean;
+    workflow: string | null;
+    status: string | null;
+    limit: string | null;
+    latest: boolean;
   },
 ): Promise<number> {
+  const selection = parseListSelection(options);
   const sessionId = optionalText(session);
-  if (sessionId === null) return listOnly(workspace, options);
+  if (sessionId !== null && hasListFilter(selection)) {
+    printError("List filters cannot be combined with a session.");
+    return 2;
+  }
+  if (sessionId === null) return listOnly(workspace, options, selection);
   if (options.until && !options.follow) {
     printError("--until requires --follow.");
     return 2;
@@ -66,6 +93,7 @@ function listOnly(
     cursor: string | undefined;
     exitWhenDone: boolean;
   },
+  selection: SessionListOptions,
 ): number {
   if (options.follow) {
     printError("--follow requires a session.");
@@ -87,7 +115,59 @@ function listOnly(
     printError("--execution requires a session.");
     return 2;
   }
-  return listSessions(workspace, { asJson: options.asJson });
+  return listSessions(workspace, { ...selection, asJson: options.asJson });
+}
+
+function selectSessionRows(rows: readonly string[][], options: SessionListOptions): string[][] {
+  let selected = [...rows];
+  if (options.workflow != null) {
+    selected = selected.filter((row) => row[SESSION_COLUMN.workflow] === options.workflow);
+  }
+  if (options.status != null) {
+    selected = selected.filter((row) => row[SESSION_COLUMN.status] === options.status);
+  }
+  const limit = options.latest ? 1 : (options.limit ?? null);
+  if (limit !== null) return selected.slice(0, limit);
+  return selected;
+}
+
+function sessionJson(row: readonly string[]): Omit<ReturnType<typeof sessionFields>, "task"> {
+  const fields = sessionFields(row);
+  return {
+    session: fields.session,
+    workflow: fields.workflow,
+    status: fields.status,
+    execution: fields.execution,
+    decision: fields.decision,
+    outputs: fields.outputs,
+  };
+}
+
+function hasListFilter(selection: SessionListOptions): boolean {
+  return selection.latest === true || selection.workflow != null || selection.status != null || selection.limit != null;
+}
+
+function parseListSelection(options: {
+  workflow: string | null;
+  status: string | null;
+  limit: string | null;
+  latest: boolean;
+}): SessionListOptions {
+  const workflow = optionalText(options.workflow);
+  if (options.workflow !== null && workflow === null) throw new ConfigurationError("--workflow is empty.");
+  const status = optionalText(options.status);
+  if (options.status !== null && status === null) throw new ConfigurationError("--status is empty.");
+  if (status !== null && !SESSION_STATUSES.has(status)) {
+    throw new ConfigurationError("--status must be active, completed, blocked, or cancelled.");
+  }
+  let limit: number | null = null;
+  if (options.limit !== null) {
+    if (!/^[0-9]+$/.test(options.limit)) throw new ConfigurationError("--limit must be an integer >= 1.");
+    limit = Number(options.limit);
+    if (limit < 1) throw new ConfigurationError("--limit must be an integer >= 1.");
+  }
+  if (options.latest && limit !== null) throw new ConfigurationError("--latest cannot be combined with --limit.");
+  return { workflow, status, limit, latest: options.latest };
 }
 
 function parseCursor(raw: string | undefined): number | null {

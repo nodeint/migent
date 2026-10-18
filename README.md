@@ -118,14 +118,19 @@ From the project or any subdirectory:
 migent start plan --task "Plan the account settings redesign"
 ```
 
-Migent runs each eligible stage until the workflow completes or stops. Progress
-goes to stderr; stdout is a single JSON result. Then inspect or resume:
+Migent runs each eligible stage until the workflow completes or stops. Stdout
+is one JSON result with the session id, status, stop reason, decision, and
+output paths. Stderr prints one line when a stage starts and one when it
+finishes. Then inspect or resume:
 
 ```bash
 migent sessions
+migent sessions --latest --json
 migent sessions <session-id> --follow
 migent continue <session-id>
 ```
+
+`sessions --json` and a JSON snapshot omit the task text.
 
 ### Next
 

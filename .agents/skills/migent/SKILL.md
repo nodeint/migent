@@ -29,7 +29,11 @@ name defined in `.migent/config.yaml`. Each run is a session.
 - Treat `.migent/sessions/` as generated, resumable state. Do not edit its
   files directly.
 - Preserve the user's task wording when passing `--task`.
-- Stdout carries the result; stderr carries progress and notices.
+- Stdout carries the result: `session_id`, `session_status`, `stop_reason`,
+  `latest_decision`, and `outputs`. Stderr carries stage boundaries and errors.
+- This skill is already in the prompt. Do not open its file again.
+- Do not read the documents named in `--task`. The stage agent reads them.
+  Still read `.migent/config.yaml` and the workflow file before starting.
 
 ## Set up
 
@@ -49,12 +53,23 @@ create (default `implement`). `--skill` installs this skill at
   file name). Runs until the session stops.
 - Start and dispatch one stage only: add `--once`.
 - If the workflow's `requires` block names a prerequisite workflow and
-  decision, find a completed session of that workflow with that decision in
-  `migent sessions --json` and pass `--prior <session-id>`. `continue` accepts
-  `--prior` too.
+  decision, find it with
+  `migent sessions --workflow <workflow-id> --status completed --json`
+  and pass `--prior <session-id>`. `continue` accepts `--prior` too.
 - Resume an active session: `migent continue <session-id>`. This resets
   revision counts. `migent continue <session-id> --once` advances one stage
   and does not reset them.
+- Read the JSON result on stdout. Do not pass `--verbose` or `--progress`.
+  `--verbose` inlines every stage response. `--progress` prints each tool call.
+- Exit 1, 3, and 6 also include `latest_execution_id` and `response_path`,
+  relative to `.migent/sessions/<session-id>/`. Read that file when you must
+  fix the execution.
+- Stderr is not the outcome. Do not read the command log while a run is healthy.
+- When `start` or `continue` is in the background, wait for that command's
+  completion notice. Do not add a watcher that only waits for the same exit.
+- To check a run without waiting on the command, use
+  `migent sessions <session-id> --json` once.
+- Do not run `sessions --follow`, `watch`, or `--cursor`.
 
 Limits, accepted by `start` and `continue`:
 
@@ -71,9 +86,9 @@ The result object on stdout includes `stop_reason`. Read the exit code first.
 | Exit | Meaning | `stop_reason` | Session | What to do |
 | --- | --- | --- | --- | --- |
 | 0 | Completed (with `--once`: stage complete) | | completed or advancing | Report outputs. |
-| 1 | Blocked (with `--once`: stage not complete) | | see snapshot | Inspect the latest execution, fix the cause. |
+| 1 | Blocked (with `--once`: stage not complete) | | see snapshot | Read `response_path` and fix the cause. |
 | 2 | Configuration error | | unchanged | Run `migent doctor --json`, fix config. |
-| 3 | `--attempts` spent | `retry_exhausted` | active | Inspect the failing execution, fix it, then `continue` (add `--attempts` for a higher total). |
+| 3 | `--attempts` spent | `retry_exhausted` | active | Read `response_path`, fix the cause, then `continue` (add `--attempts` for a higher total). |
 | 4 | A route would exceed `max_revisions` | `revisions_exhausted` | active | Review why the stage keeps being revised; `continue` (without `--once`) resets counts for another batch. |
 | 5 | `--max-dispatches` spent | `dispatch_limit` | active | `continue` the same session if more stages are appropriate. |
 | 130 | Cancelled | | see snapshot | Ask the user before resuming. |
@@ -85,14 +100,15 @@ session was created under the earlier definition.
 
 ## Inspect sessions
 
-- List: `migent sessions` or `migent sessions --json`.
-- Snapshot, including `stop_reason` and executions:
-  `migent sessions <session-id> --json`.
-- Follow events: `migent sessions <session-id> --follow`. This runs until
-  signalled, so add `--exit-when-done` (exits 0 completed, 1 blocked, 130
-  cancelled) or `--execution <id> --until`.
-- To poll without replaying, use `--follow --json --cursor <offset>`
-  (byte offset in `events.jsonl`; `0` replays everything).
+- Newest match: `migent sessions --latest --json`. Add `--workflow <id>` and
+  `--status active|completed|blocked|cancelled` to narrow it. `--limit <n>`
+  returns the newest n rows. Do not combine `--latest` with `--limit`, or
+  these flags with a session id.
+- `--latest --json` is one object, or `null` when nothing matches. A list is
+  a JSON array. Snapshot: `migent sessions <session-id> --json` has the
+  status, latest execution, decision, and outputs. JSON omits the task text.
+- `sessions --follow` streams the event trace for a person at a terminal.
+  Do not use it, `watch`, or `--cursor` to coordinate a run.
 
 Report the session ID, status, stop reason, decisions, and published outputs
 that matter to the user. Published output paths are relative to

@@ -116,17 +116,20 @@ be published.
 
 ```bash
 migent sessions
+migent sessions --latest --json
 migent sessions <session-id>
 migent sessions <session-id> --follow
 migent continue <session-id>
 migent continue <session-id> --once
 ```
 
-`sessions` lists recorded runs. `sessions <session-id>` prints a snapshot.
-`--follow` follows execution events until a signal, or until the session
-stops when `--exit-when-done` is set. `continue` resumes an active workflow
-session from its recorded state and resets revision counts. `continue --once`
-advances one stage and does not reset them.
+`sessions` lists recorded runs, newest first. `--workflow`, `--status`, and
+`--limit` narrow that list. `--latest` prints the newest match. `sessions
+<session-id>` prints a snapshot. `--json` omits the task text from the list
+and the snapshot. `--follow` follows execution events until a signal, or until
+the session stops when `--exit-when-done` is set. `continue` resumes an active
+workflow session from its recorded state and resets revision counts.
+`continue --once` advances one stage and does not reset them.
 
 ## Artifact dependency versus provider-session resume
 
