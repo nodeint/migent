@@ -45,7 +45,8 @@ export async function executeWorkflow(workspace: string, options: ExecuteWorkflo
   if (
     result.stopReason === "retry_exhausted" ||
     result.stopReason === "revisions_exhausted" ||
-    result.stopReason === "dispatch_limit"
+    result.stopReason === "dispatch_limit" ||
+    result.stopReason === "verify_exhausted"
   ) {
     process.stderr.write(`Resume with: migent continue ${result.sessionId}\n`);
   }

@@ -1,4 +1,4 @@
-import { type ChildProcess, spawn } from "node:child_process";
+import { type ChildProcess, type StdioOptions, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import type { Readable } from "node:stream";
 import { constants as osConstants } from "node:os";
@@ -39,6 +39,21 @@ function takeCancellation(): CancellationRequested | null {
   const error = pendingCancellation;
   pendingCancellation = null;
   return error;
+}
+
+export function cancellationSignal(): {
+  throwIfCancelled(): void;
+  onCancel(waiter: () => void): () => void;
+} {
+  return {
+    throwIfCancelled,
+    onCancel(waiter) {
+      cancelWaiters.add(waiter);
+      return () => {
+        cancelWaiters.delete(waiter);
+      };
+    },
+  };
 }
 
 function throwIfCancelled(): void {
@@ -225,7 +240,7 @@ function createLineQueue(stream: Readable | null): {
   };
 }
 
-function waitForExit(
+export function waitForExit(
   child: ChildProcess,
   timeoutMs: number,
 ): Promise<boolean | "cancel"> {
@@ -252,7 +267,7 @@ function waitForExit(
   });
 }
 
-function childStatus(child: ChildProcess): number | null {
+export function childStatus(child: ChildProcess): number | null {
   if (typeof child.exitCode === "number") return child.exitCode;
   if (child.signalCode) {
     const signal = osConstants.signals[child.signalCode];
@@ -261,14 +276,19 @@ function childStatus(child: ChildProcess): number | null {
   return null;
 }
 
-function startWrapper(spec: CommandSpec, cwd: string, endpoint: string): ChildProcess {
+export function startWrapper(
+  spec: CommandSpec,
+  cwd: string,
+  endpoint: string,
+  stdio: StdioOptions = [spec.stdin != null ? "pipe" : "inherit", "pipe", "inherit", "ipc"],
+): ChildProcess {
   const argv = wrapperArgv(spec.argv, { endpoint, graceSec: TERMINATION_GRACE_SEC });
   const child = spawn(argv[0] ?? "", argv.slice(1), {
     cwd,
     // POSIX: a new process group, so the whole provider tree can be signalled at once.
     // Windows: `taskkill /T` follows the tree instead, and detaching would open a new console.
     detached: process.platform !== "win32",
-    stdio: [spec.stdin != null ? "pipe" : "inherit", "pipe", "inherit", "ipc"],
+    stdio,
     windowsHide: true,
   });
   child.on("error", () => undefined);
@@ -276,7 +296,7 @@ function startWrapper(spec: CommandSpec, cwd: string, endpoint: string): ChildPr
 }
 
 /** Resolves true once the wrapper's endpoint is listening, false if it exits first. */
-function waitForReady(child: ChildProcess): Promise<boolean> {
+export function waitForReady(child: ChildProcess): Promise<boolean> {
   return new Promise((resolve) => {
     const finish = (ready: boolean) => {
       child.off("message", onMessage);

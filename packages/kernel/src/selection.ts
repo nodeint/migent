@@ -97,9 +97,32 @@ export function latestCompleteByStage(
   return latest;
 }
 
+export const VERIFY_EXHAUSTED = "verify_exhausted";
+
 export function failedStageCount(snapshots: readonly ExecutionSnapshot[], stageId: string): number {
-  return snapshots.filter((snapshot) => snapshot.stageId === stageId && snapshot.status === "failed")
-    .length;
+  return snapshots.filter(
+    (snapshot) =>
+      snapshot.stageId === stageId &&
+      snapshot.status === "failed" &&
+      snapshot.failureReason !== VERIFY_EXHAUSTED,
+  ).length;
+}
+
+/** The latest execution when it is a verify-exhausted failure of `stageId`. */
+export function verifyExhaustedExecution(
+  snapshots: readonly ExecutionSnapshot[],
+  stageId: string,
+): ExecutionSnapshot | null {
+  const latest = latestSnapshot(snapshots);
+  if (
+    latest !== null &&
+    latest.stageId === stageId &&
+    latest.status === "failed" &&
+    latest.failureReason === VERIFY_EXHAUSTED
+  ) {
+    return latest;
+  }
+  return null;
 }
 
 /**

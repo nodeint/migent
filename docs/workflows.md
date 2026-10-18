@@ -47,6 +47,45 @@ execution's `response.md` in the destination prompt. On a return to a stage,
 the prompt also references that stage's latest artifact when one exists.
 Decision stages do not need to declare an artifact to pass feedback.
 
+## Verify commands
+
+A stage that edits code can declare `verify` commands. Migent runs them after
+the model reports `status: complete`, in the same execution. The exit codes
+decide the result.
+
+```yaml
+- id: implement
+  role: developer
+  verify:
+    - pnpm gate
+    - pnpm test --filter ./plugins/...
+  max_verify: 3        # default 3
+  verify_timeout: 900  # seconds for the whole list; default none
+```
+
+- Each item is one shell line run as `/bin/sh -c <item>` in the workspace,
+  without a login profile. Commands that need `nvm` or similar must set it up
+  themselves. Verify supports POSIX shells only.
+- Commands run in order. The first failure stops the run and skips the rest.
+- On a red run the model receives the report with the tail of the failing
+  command and continues in the same provider conversation. The execution stays
+  `running` and records no outcome until verify passes.
+- A `blocked` response runs no verify command.
+- A passing run writes `artifacts/verify.md`. Dependent stages list it in
+  their prompt. Do not name a stage artifact `verify.md`.
+- After `max_verify` red runs the execution fails with
+  `failure_reason: verify_exhausted`. The loop stops with stop reason
+  `verify_exhausted` and exit code 6. The session stays active and
+  `--attempts` is not consumed.
+- `migent continue <session-id>` resumes the same provider conversation with
+  the last report and a fresh `max_verify` budget. It keeps the provider, model,
+  and options of the exhausted execution. If config changed them, the resume is
+  refused with exit code 2. To use a different model, start a new session.
+- Put `verify` on the stage that edits code. A stage that both decides and
+  edits carries it itself. A stage with `verify` must be on every path to
+  `complete`: the completion stage must be that stage or depend on it. Otherwise
+  the workflow does not load and `migent doctor` reports it.
+
 ## Revision limits
 
 Put `max_revisions` on a stage that a route can revisit:

@@ -190,3 +190,21 @@ function writeStageProject(workspace: string): void {
   writeFileSync(path.join(workspace, ".migent", "config.yaml"), STAGE_CONFIG, "utf8");
   writeFileSync(path.join(workflows, "plan-implement.yaml"), STAGE_WORKFLOW, "utf8");
 }
+
+test("reports a verify stage that is not on every path to complete", () => {
+  const workspace = tempDir("migent-doctor-");
+  const workflows = path.join(workspace, ".migent", "workflows");
+  mkdirSync(workflows, { recursive: true });
+  writeFileSync(path.join(workspace, ".migent", "config.yaml"), STAGE_CONFIG, "utf8");
+  writeFileSync(
+    path.join(workflows, "skip.yaml"),
+    "id: skip\nstages:\n  - id: a\n    role: developer\n    verify: x\n  - id: b\n    role: developer\ncompletion:\n  stage: b\n",
+    "utf8",
+  );
+  const [_config, report] = diagnose(workspace, {
+    adapters: defaultAdapters(),
+    which: whichFound(new Set(["codex", "grok"])),
+  });
+  expect(report.ok).toBe(false);
+  expect(report.problems.join("\n")).toContain("stages.a.verify is not on every path to complete");
+});

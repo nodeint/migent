@@ -3,7 +3,7 @@ import path from "node:path";
 import type { ExecutionSnapshot } from "./outputs.js";
 import { isRecord } from "./record.js";
 import { latestCompleteByStage } from "./selection.js";
-import type { WorkflowDocument } from "./workflow.js";
+import { VERIFY_ARTIFACT, type WorkflowDocument } from "./workflow.js";
 
 export function buildStagePrompt(input: {
   workflow: WorkflowDocument;
@@ -25,6 +25,16 @@ export function buildStagePrompt(input: {
     const lines = ["Constraints:", ...input.workflow.constraints.map((item) => `- ${item}`)];
     sections.push(lines.join("\n"));
   }
+  if (stage.verify.length > 0) {
+    const lines = [
+      "Verify commands:",
+      "Migent runs these commands in the workspace, in order, after you report `status: complete`.",
+      "The first failure stops the run. The stage completes only when every command exits 0.",
+      "When a command fails, you receive the report and continue on this stage.",
+      ...stage.verify.map((item) => `- ${item}`),
+    ];
+    sections.push(lines.join("\n"));
+  }
   const upstream = upstreamArtifactLines(input.workflow, stage.dependsOn, input.snapshots);
   if (upstream.length > 0) {
     sections.push(`Upstream artifacts on this session:\n${upstream.join("\n")}`);
@@ -43,6 +53,19 @@ export function buildStagePrompt(input: {
   return sections.join("\n\n");
 }
 
+export function buildVerifyRepairPrompt(
+  report: string,
+  red: number,
+  maxVerify: number,
+  artifactPath: string | null,
+): string {
+  const lines = [`Verify failed (${red} of ${maxVerify} red runs). Fix the cause, then report again.`];
+  if (artifactPath !== null) {
+    lines.push(`The stage artifact is at ${artifactPath}. Update it if your fix changes it.`);
+  }
+  return `${lines.join("\n")}\n\n${report}`;
+}
+
 function upstreamArtifactLines(
   workflow: WorkflowDocument,
   dependsOn: readonly string[],
@@ -52,11 +75,17 @@ function upstreamArtifactLines(
   const lines: string[] = [];
   for (const depId of dependsOn) {
     const dep = workflow.stages[depId];
-    if (dep === undefined || !dep.artifact) continue;
+    if (dep === undefined) continue;
     const snapshot = complete[depId];
     if (snapshot === undefined) continue;
-    const artifactPath = resolvePath(path.join(snapshot.artifactDirectory, dep.artifact));
-    lines.push(`- ${depId}: ${artifactPath}`);
+    if (dep.artifact) {
+      const artifactPath = resolvePath(path.join(snapshot.artifactDirectory, dep.artifact));
+      lines.push(`- ${depId}: ${artifactPath}`);
+    }
+    if (dep.verify.length > 0) {
+      const reportPath = resolvePath(path.join(snapshot.artifactDirectory, VERIFY_ARTIFACT));
+      lines.push(`- ${depId} verify: ${reportPath}`);
+    }
   }
   return lines;
 }

@@ -58,26 +58,12 @@ Use it to decide what to build and in which order.
 - The operator must then re-run every check by hand, so a passed session proves nothing.
 - A deterministic check is the only thing that makes the review loop safe to leave unattended.
 
-**Proposal.**
-
-```yaml
-- id: verify
-  run: pnpm gate && pnpm test --filter ./plugins/...
-  depends_on: [implement]
-  routes:
-    pass: review-work
-    fail: implement
-```
-
-- A `run` stage executes in the session workspace and routes on exit code.
-- Its stdout and stderr tail, for example the last 200 lines, become an artifact.
-- The destination stage prompt references that artifact, as it references `response.md` today.
-- The stage supports `timeout` and counts toward `max_revisions` like any routed stage.
+**Proposal.** Implemented as `verify` on a role stage instead of a command stage. See "Verify commands" in `docs/workflows.md`.
 
 **Acceptance.**
 
-- A failing command routes back to `implement` with the log in the prompt.
-- A session cannot reach `complete` through a path that skips a declared `run` stage.
+- A red verify command sends its log to the same stage as a repair turn, up to `max_verify` (see "Verify commands" in `docs/workflows.md`).
+- A stage with `verify` must be on every path to `complete`, and a decision is not published until verify passes.
 
 **Workaround without it.** The operator runs the checks after each session and starts a new session on failure.
 

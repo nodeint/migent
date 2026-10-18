@@ -9,11 +9,21 @@ import {
   type StageDispatchResult,
 } from "./dispatch.js";
 import { isRecord } from "./record.js";
-import { buildStagePrompt } from "./prompt.js";
+import { buildStagePrompt, buildVerifyRepairPrompt } from "./prompt.js";
 import { log } from "./runtime.js";
-import { failedStageCount, nextStage, revisionStop, NextStage, NextStageError, Stop } from "./selection.js";
+import {
+  VERIFY_EXHAUSTED,
+  failedStageCount,
+  nextStage,
+  revisionStop,
+  verifyExhaustedExecution,
+  NextStage,
+  NextStageError,
+  Stop,
+} from "./selection.js";
 import { bindPriorSessionId, createWorkflowSession, resolvePriorSessionId } from "./session-records.js";
 import { SessionStore } from "./session-store.js";
+import { readFileSync } from "node:fs";
 import { loadNamedWorkflow, type WorkflowDocument } from "./workflow.js";
 import type { ExecutionSnapshot } from "./outputs.js";
 
@@ -26,6 +36,7 @@ const EXECUTE_EXIT_CODES: Record<string, number> = {
   retry_exhausted: 3,
   revisions_exhausted: 4,
   dispatch_limit: 5,
+  verify_exhausted: 6,
   stage: 0,
 };
 
@@ -213,6 +224,7 @@ async function runExecuteOnce(
   );
   status = store.readSessionStatus(sessionId);
   const after = text(status.status);
+  if (stage.failure_reason === VERIFY_EXHAUSTED) return executeFinal(status, VERIFY_EXHAUSTED, [stage]);
   const stopReason = TERMINAL_SESSION_STATUSES.has(after) ? after : "stage";
   const result = executeFinal(status, stopReason, [stage]);
   if (stopReason === "stage" && stage.outcome_status !== "complete") result.code = 1;
@@ -248,18 +260,20 @@ async function runExecuteLoop(
       return executeFinal(status, "dispatch_limit", stages);
     }
     dispatched += 1;
-    stages.push(
-      await dispatchExecuteStage(
-        workspace,
-        workflow,
-        workflowId,
-        sessionId,
-        selected.stageId,
-        status,
-        snapshots,
-        runner,
-      ),
+    const dispatchedStage = await dispatchExecuteStage(
+      workspace,
+      workflow,
+      workflowId,
+      sessionId,
+      selected.stageId,
+      status,
+      snapshots,
+      runner,
     );
+    stages.push(dispatchedStage);
+    if (dispatchedStage.failure_reason === VERIFY_EXHAUSTED) {
+      return executeFinal(store.readSessionStatus(sessionId), VERIFY_EXHAUSTED, stages);
+    }
   }
 }
 
@@ -280,15 +294,25 @@ async function dispatchExecuteStage(
       .join(", ") || "default";
   log(`stage ${stageId} · ${target.provider}/${target.model} (${optionLabel}).`);
   const priorSessionId = storedPriorSessionId(status);
-  const prompt = buildStagePrompt({
-    workflow,
-    stageId,
-    task: text(status.task),
-    snapshots,
-    workspace,
-    priorSessionId,
-    priorOutputs: priorSessionOutputs(workspace, priorSessionId),
-  });
+  const exhausted = verifyExhaustedExecution(snapshots, stageId);
+  const stageSpec = workflow.stages[stageId];
+  const prompt =
+    exhausted?.verifyReport && stageSpec !== undefined
+      ? buildVerifyRepairPrompt(
+          readFileSync(exhausted.verifyReport, "utf8"),
+          stageSpec.maxVerify,
+          stageSpec.maxVerify,
+          null,
+        )
+      : buildStagePrompt({
+          workflow,
+          stageId,
+          task: text(status.task),
+          snapshots,
+          workspace,
+          priorSessionId,
+          priorOutputs: priorSessionOutputs(workspace, priorSessionId),
+        });
   const request: StageDispatchRequest = {
     workflowId,
     stageId,

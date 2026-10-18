@@ -53,6 +53,9 @@ function stage(input: {
     modelName: input.modelName ?? null,
     options: input.options ?? {},
     maxRevisions: null,
+    verify: [],
+    maxVerify: 3,
+    verifyTimeoutSec: null,
     routes: {},
   };
 }

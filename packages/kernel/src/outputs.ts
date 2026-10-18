@@ -21,6 +21,8 @@ export interface ExecutionSnapshot {
   outcomeStatus: string | null;
   artifactDirectory: string;
   outcomeDecision: string | null;
+  failureReason?: string | null;
+  verifyReport?: string | null;
 }
 
 export interface PublishedOutput {

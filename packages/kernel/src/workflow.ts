@@ -5,6 +5,8 @@ import { ConfigurationError } from "./errors.js";
 import { isRecord, pyRepr } from "./record.js";
 import { parseYamlDocument } from "./yaml.js";
 
+export const VERIFY_ARTIFACT = "verify.md";
+
 const optionKey = /^[A-Za-z][A-Za-z0-9_.-]*$/;
 
 export interface StageSpec {
@@ -19,6 +21,9 @@ export interface StageSpec {
   options: Record<string, string>;
   maxRevisions: number | null;
   routes: Record<string, string>;
+  verify: string[];
+  maxVerify: number;
+  verifyTimeoutSec: number | null;
 }
 
 export interface WorkflowOutput {
@@ -64,6 +69,9 @@ const stageSpecSchema = z.object({
   options: z.record(z.string(), z.string()),
   maxRevisions: z.number().int().nonnegative().nullable(),
   routes: z.record(z.string(), z.string()),
+  verify: z.array(z.string()),
+  maxVerify: z.number().int().min(1),
+  verifyTimeoutSec: z.number().int().min(1).nullable(),
 });
 
 const workflowOutputSchema = z.object({
@@ -160,6 +168,7 @@ export function loadWorkflowDocument(filePath: string): WorkflowDocument {
     isRecord(completionRaw) && Object.keys(stages).length > 0
       ? parseCompletion(completionRaw, stages)
       : null;
+  validateVerifyPaths(stages, completion);
   return workflowDocumentSchema.parse({
     id: workflowId,
     stages,
@@ -310,10 +319,17 @@ function parseStages(raw: unknown): Record<string, StageSpec> {
     if (Object.hasOwn(stages, stageId)) throw new ConfigurationError(`Duplicate stage id: ${stageId}`);
     const role = requiredString(item.role, `stages.${stageId}.role`);
     const dependsOn = stageDependsOn(item, stageId);
+    const verify = stageVerify(item, stageId);
+    const artifact = stageArtifact(item, stageId);
+    if (verify.length > 0 && artifact === VERIFY_ARTIFACT) {
+      throw new ConfigurationError(
+        `stages.${stageId}.produces.artifact cannot be ${VERIFY_ARTIFACT} on a stage with verify.`,
+      );
+    }
     stages[stageId] = stageSpecSchema.parse({
       id: stageId,
       role,
-      artifact: stageArtifact(item, stageId),
+      artifact,
       decisionValues: stageDecisionValues(item, stageId),
       dependsOn,
       resumeFrom: stageResumeFrom(item, stageId, dependsOn),
@@ -322,6 +338,9 @@ function parseStages(raw: unknown): Record<string, StageSpec> {
       options: stageOptions(item, stageId),
       maxRevisions: stageMaxRevisions(item, stageId),
       routes: {},
+      verify,
+      maxVerify: stageMaxVerify(item, stageId, verify),
+      verifyTimeoutSec: stageVerifyTimeout(item, stageId, verify),
     });
     items.push(item);
   }
@@ -542,6 +561,80 @@ function stageMaxRevisions(stage: Record<string, unknown>, stageId: string): num
   if (typeof raw === "string" && /^\d+$/.test(raw.trim())) return Number(raw.trim());
   if (typeof raw === "number" && Number.isInteger(raw) && raw >= 0) return raw;
   throw new ConfigurationError(`${field} must be a non-negative integer.`);
+}
+
+function stageVerify(stage: Record<string, unknown>, stageId: string): string[] {
+  if (!Object.hasOwn(stage, "verify") || stage.verify == null) return [];
+  const field = `stages.${stageId}.verify`;
+  const raw = Array.isArray(stage.verify) ? stage.verify : [stage.verify];
+  if (raw.length === 0) throw new ConfigurationError(`${field} must not be empty.`);
+  return raw.map((entry) => {
+    if (typeof entry !== "string" || entry.trim() === "") {
+      throw new ConfigurationError(`Missing or invalid ${field} item.`);
+    }
+    const command = entry.trim();
+    if (/[\r\n]/.test(command)) {
+      throw new ConfigurationError(`${field} items must be one shell line.`);
+    }
+    return command;
+  });
+}
+
+function stageMaxVerify(stage: Record<string, unknown>, stageId: string, verify: string[]): number {
+  if (!Object.hasOwn(stage, "max_verify") || stage.max_verify == null) return 3;
+  const field = `stages.${stageId}.max_verify`;
+  if (verify.length === 0) throw new ConfigurationError(`${field} requires verify.`);
+  return positiveInteger(stage.max_verify, field);
+}
+
+function stageVerifyTimeout(
+  stage: Record<string, unknown>,
+  stageId: string,
+  verify: string[],
+): number | null {
+  if (!Object.hasOwn(stage, "verify_timeout") || stage.verify_timeout == null) return null;
+  const field = `stages.${stageId}.verify_timeout`;
+  if (verify.length === 0) throw new ConfigurationError(`${field} requires verify.`);
+  return positiveInteger(stage.verify_timeout, field);
+}
+
+function positiveInteger(raw: unknown, field: string): number {
+  if (typeof raw === "string" && /^\d+$/.test(raw.trim())) raw = Number(raw.trim());
+  if (typeof raw === "number" && Number.isInteger(raw) && raw >= 1) return raw;
+  throw new ConfigurationError(`${field} must be an integer of at least 1.`);
+}
+
+function validateVerifyPaths(
+  stages: Record<string, StageSpec>,
+  completion: WorkflowCompletion | null,
+): void {
+  const points = new Set<string>();
+  if (completion !== null) points.add(completion.stage);
+  for (const stage of Object.values(stages)) {
+    if (Object.values(stage.routes).includes("complete")) points.add(stage.id);
+  }
+  if (points.size === 0) return;
+  for (const stage of Object.values(stages)) {
+    if (stage.verify.length === 0) continue;
+    for (const point of points) {
+      if (point === stage.id || dependencyClosure(stages, point).has(stage.id)) continue;
+      throw new ConfigurationError(
+        `stages.${stage.id}.verify is not on every path to complete: ${point} does not depend on ${stage.id}.`,
+      );
+    }
+  }
+}
+
+function dependencyClosure(stages: Record<string, StageSpec>, stageId: string): Set<string> {
+  const seen = new Set<string>();
+  const pending = [...(stages[stageId]?.dependsOn ?? [])];
+  while (pending.length > 0) {
+    const next = pending.pop()!;
+    if (seen.has(next)) continue;
+    seen.add(next);
+    pending.push(...(stages[next]?.dependsOn ?? []));
+  }
+  return seen;
 }
 
 function stageOptions(stage: Record<string, unknown>, stageId: string): Record<string, string> {

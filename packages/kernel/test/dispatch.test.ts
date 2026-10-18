@@ -38,6 +38,9 @@ function stage(id: string, role: string, extra: Partial<StageSpec> = {}): StageS
     modelName: null,
     options: {},
     maxRevisions: null,
+    verify: [],
+    maxVerify: 3,
+    verifyTimeoutSec: null,
     routes: {},
     ...extra,
   };

@@ -3,7 +3,7 @@ import { resolveStageTarget } from "./config.js";
 import { ConfigurationError } from "./errors.js";
 import { isRecord } from "./record.js";
 import { bindPriorSessionId, createWorkflowSession } from "./session-records.js";
-import { stageDispatchError } from "./selection.js";
+import { stageDispatchError, verifyExhaustedExecution } from "./selection.js";
 import { stringOptions, SessionStore } from "./session-store.js";
 import { loadNamedWorkflow, type WorkflowDocument } from "./workflow.js";
 
@@ -32,6 +32,7 @@ export class StageDispatchResult {
     readonly agentId = "",
     readonly options: Record<string, string> = {},
     readonly artifactDirectory = "",
+    readonly failureReason = "",
   ) {}
 
   toJson(): Record<string, unknown> {
@@ -41,6 +42,7 @@ export class StageDispatchResult {
       session_id: this.sessionId,
       execution_id: this.executionId,
       artifact_directory: this.artifactDirectory,
+      failure_reason: this.failureReason,
       outcome_status: this.outcomeStatus,
       outcome_decision: this.outcomeDecision,
       session_status: this.sessionStatus,
@@ -69,7 +71,13 @@ export async function dispatchNamedStage(
     bindPriorSessionId(workspace, sessionId, request.priorSessionId);
   }
   assertStageDispatchable(workspace, workflow, sessionId, request.stageId);
-  const resumeExecutionId = resolveResumeExecution(workspace, workflow, sessionId, request.stageId);
+  const exhausted = verifyExhaustedExecution(
+    new SessionStore(workspace).executionSnapshots(sessionId),
+    request.stageId,
+  );
+  const resumeExecutionId =
+    exhausted?.executionId ??
+    resolveResumeExecution(workspace, workflow, sessionId, request.stageId);
   const result = await (runner ?? new AgentToolRunner()).run({
     provider: target.provider,
     model: target.model,
@@ -130,5 +138,6 @@ function resultFromRun(result: RunResult, sessionId: string): StageDispatchResul
     result.agent_id || "",
     isRecord(result.options) ? stringOptions(result.options) : {},
     result.artifact_directory || "",
+    result.failure_reason || "",
   );
 }

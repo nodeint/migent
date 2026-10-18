@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   appendFileSync,
+  copyFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -13,6 +14,7 @@ import { ConfigurationError } from "./errors.js";
 import { STATUS_PROVIDER_EVENTS } from "./event-kinds.js";
 import {
   missingCompletionOutputNames,
+  nonemptyArtifact,
   publishOutputFiles,
   runnableViolation,
   selectSourceExecution,
@@ -45,7 +47,12 @@ import {
 } from "./runtime.js";
 import { withFileLockSync } from "./file-lock.js";
 import type { StageOutcome } from "./stage-outcome.js";
-import { loadNamedWorkflow, loadWorkflowDocument, type WorkflowDocument } from "./workflow.js";
+import {
+  VERIFY_ARTIFACT,
+  loadNamedWorkflow,
+  loadWorkflowDocument,
+  type WorkflowDocument,
+} from "./workflow.js";
 
 const RUNNING_STATUS_KEYS = [
   "workflow_id",
@@ -256,15 +263,87 @@ export class SessionStore {
     error: string | null = null,
     outcome: StageOutcome | null = null,
     locked = false,
+    extra: Record<string, unknown> | null = null,
   ): void {
     const filePath = path.join(context.directory, "execution.json");
     if (locked) {
-      this.saveExecutionUnlocked(context, record, status, error, outcome);
+      this.saveExecutionUnlocked(context, record, status, error, outcome, extra);
       return;
     }
     this.withExecutionLock(filePath, () => {
-      this.saveExecutionUnlocked(context, record, status, error, outcome);
+      this.saveExecutionUnlocked(context, record, status, error, outcome, extra);
     });
+  }
+
+  /** Merge fields into a running execution without touching status.json or events. */
+  saveExecutionProgress(
+    context: ExecutionContext,
+    record: AgentSessionRecord,
+    fields: Record<string, unknown>,
+  ): void {
+    const filePath = path.join(context.directory, "execution.json");
+    this.withExecutionLock(filePath, () => {
+      const metadata = readJsonObject(filePath);
+      if (metadata.status !== "running") {
+        throw new Error(`Execution ${context.executionId} is not running.`);
+      }
+      Object.assign(metadata, fields);
+      metadata.agent_id = record.agentId;
+      writeJson(filePath, metadata);
+    });
+  }
+
+  clearProcessEndpoint(context: ExecutionContext): void {
+    const filePath = path.join(context.directory, "execution.json");
+    this.withExecutionLock(filePath, () => {
+      const metadata = readJsonObject(filePath);
+      metadata.provider_endpoint = null;
+      metadata.provider_pid = null;
+      writeJson(filePath, metadata);
+    });
+  }
+
+  turnDirectory(context: ExecutionContext, turn: number): string {
+    return path.join(context.directory, "turns", String(turn).padStart(2, "0"));
+  }
+
+  saveTurnResponse(context: ExecutionContext, turn: number, text: string): void {
+    this.writeTurnFile(context, turn, "response.md", text);
+  }
+
+  saveTurnOutcome(context: ExecutionContext, turn: number, outcome: StageOutcome): void {
+    this.writeTurnFile(context, turn, "outcome.json", `${JSON.stringify(outcome.toJson(), null, 2)}\n`);
+  }
+
+  saveTurnVerify(context: ExecutionContext, turn: number, report: string): string {
+    this.writeTurnFile(context, turn, "verify.md", report);
+    return path.posix.join("turns", String(turn).padStart(2, "0"), "verify.md");
+  }
+
+  private writeTurnFile(context: ExecutionContext, turn: number, name: string, text: string): void {
+    const directory = this.turnDirectory(context, turn);
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(path.join(directory, name), text, "utf8");
+  }
+
+  /** Copy the passing turn's report next to the stage artifact. */
+  publishVerifyReport(context: ExecutionContext, turn: number): void {
+    mkdirSync(context.artifactDirectory, { recursive: true });
+    copyFileSync(
+      path.join(this.turnDirectory(context, turn), "verify.md"),
+      path.join(context.artifactDirectory, VERIFY_ARTIFACT),
+    );
+  }
+
+  /**
+   * Carry the stage artifact of a verify-exhausted execution into a new one, so a repair
+   * turn that only fixes code still finds it.
+   */
+  carryVerifyArtifact(previousArtifactDirectory: string, context: ExecutionContext, name: string): void {
+    const source = path.join(previousArtifactDirectory, name);
+    if (name === VERIFY_ARTIFACT || !nonemptyArtifact(source)) return;
+    mkdirSync(context.artifactDirectory, { recursive: true });
+    copyFileSync(source, path.join(context.artifactDirectory, name));
   }
 
   saveProcessMetadata(context: ExecutionContext, info: ProcessStartInfo): void {
@@ -387,6 +466,7 @@ export class SessionStore {
     status: string,
     error: string | null,
     outcome: StageOutcome | null,
+    extra: Record<string, unknown> | null = null,
   ): void {
     const filePath = path.join(context.directory, "execution.json");
     const metadata = readJsonObject(filePath);
@@ -409,6 +489,7 @@ export class SessionStore {
     metadata.completed_at = status === "running" ? null : utcNow();
     if (error !== null) metadata.error = error;
     if (outcome !== null) metadata.outcome = outcome.toJson();
+    if (extra !== null) Object.assign(metadata, extra);
     writeJson(filePath, metadata);
     const stageId = typeof metadata.stage_id === "string" ? metadata.stage_id : "";
     const sessionStatus = sessionStatusAfterExecution(
@@ -765,6 +846,8 @@ export class SessionStore {
         outcomeStatus,
         artifactDirectory: context.artifactDirectory,
         outcomeDecision,
+        failureReason: typeof metadata.failure_reason === "string" ? metadata.failure_reason : null,
+        verifyReport: verifyReportPath(context.directory, metadata.verify),
       });
     }
     return snapshots;
@@ -773,6 +856,13 @@ export class SessionStore {
   private appendEvent(sessionDirectory: string, event: Record<string, unknown>): void {
     appendFileSync(path.join(sessionDirectory, "events.jsonl"), `${JSON.stringify(event)}\n`, "utf8");
   }
+}
+
+function verifyReportPath(directory: string, verify: unknown): string | null {
+  if (!isRecord(verify) || typeof verify.last_report !== "string" || verify.last_report === "") {
+    return null;
+  }
+  return path.join(directory, verify.last_report);
 }
 
 function publishedJson(

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -7,6 +7,9 @@ import {
   type NewSession,
 } from "./adapter.js";
 import { CancellationRequested, CommandExecutor, DEFAULT_TIMEOUT_SEC } from "./command-executor.js";
+import { buildVerifyRepairPrompt } from "./prompt.js";
+import { VERIFY_EXHAUSTED } from "./selection.js";
+import { VerifyRunner, formatVerifyReport, type VerifyRunResult } from "./verify-runner.js";
 import { ConfigurationError } from "./errors.js";
 import { nonemptyArtifact } from "./outputs.js";
 import { isRecord } from "./record.js";
@@ -31,6 +34,7 @@ export interface RunResult {
   outcome_decision: string;
   session_status: string;
   response: string;
+  failure_reason: string;
 }
 
 export interface RunRequest {
@@ -49,11 +53,14 @@ export interface RunRequest {
 export class AgentToolRunner {
   readonly adapters: Record<string, AgentAdapter>;
   readonly executor: CommandExecutor;
+  readonly verifyRunner: VerifyRunner;
 
   constructor(
     adapters?: Record<string, AgentAdapter>,
     timeoutSec: number | null = DEFAULT_TIMEOUT_SEC,
+    verifyRunner: VerifyRunner = new VerifyRunner(),
   ) {
+    this.verifyRunner = verifyRunner;
     this.adapters = adapters ?? defaultAdapters();
     this.executor = new CommandExecutor(timeoutSec);
   }
@@ -116,6 +123,10 @@ export class AgentToolRunner {
     const decisionValues = stage?.decisionValues ?? [];
     if (sessionId !== null) turnPrompt = addStageOutcomeContract(turnPrompt, decisionValues);
     const artifactName = stage?.artifact ?? null;
+    const verifyCommands = stage?.verify ?? [];
+    if (request.resumeExecutionId && verifyCommands.length > 0 && artifactName) {
+      this.carryExhaustedArtifact(store, context, request.resumeExecutionId, artifactName);
+    }
     turnPrompt = addArtifactContext(turnPrompt, context.artifactDirectory, artifactName);
     store.savePrompt(context, turnPrompt);
     eventReporter.emit(
@@ -124,23 +135,7 @@ export class AgentToolRunner {
       Object.keys(profile).length > 0 ? { options: profile } : null,
     );
 
-    let responseText: string;
-    let parsedProviderId: string | null;
-    let invokeError: string | null;
-    try {
-      [responseText, parsedProviderId, invokeError] = await this.runTurn(
-        adapter,
-        request.model,
-        workspacePath,
-        turnPrompt,
-        agentId,
-        newSession,
-        resolvedOptions,
-        eventReporter,
-        store,
-        context,
-      );
-    } catch (error) {
+    const markCancelled = (error: unknown): never => {
       if (error instanceof CancellationRequested) {
         eventReporter.emit("provider.cancelled", "cancellation requested");
         record.status = "cancelled";
@@ -149,42 +144,201 @@ export class AgentToolRunner {
         log(`Execution ${context.executionId} marked cancelled.`);
       }
       throw error;
-    }
+    };
 
-    eventReporter.emit(
-      invokeError === null ? "provider.turn_completed" : "provider.turn_failed",
-      invokeError === null ? "completed" : invokeError,
-    );
-    record.agentId = parsedProviderId || record.agentId;
-    record.model = request.model;
-    record.options = profile;
-    record.workspace = workspacePath;
-    let outcome: StageOutcome | null = null;
-    if (invokeError === null) {
+    const maxVerify = stage?.maxVerify ?? 0;
+    let turn = 1;
+    let red = 0;
+    let verifyRuns = 0;
+    let lastReport: string | null = null;
+    let lastResult: "pass" | "fail" | null = null;
+    let currentPrompt = turnPrompt;
+    let currentAgentId = agentId;
+    let currentSession = newSession;
+    let responseText: string;
+    let outcome: StageOutcome | null;
+    let failureReason = "";
+    const extraFields = (reason: string | null = null): Record<string, unknown> | null => {
+      if (verifyCommands.length === 0) return null;
+      const fields: Record<string, unknown> = { turns: turn };
+      if (lastResult !== null && lastReport !== null) {
+        fields.verify = {
+          runs: verifyRuns,
+          red,
+          max_verify: maxVerify,
+          last_result: lastResult,
+          last_report: lastReport,
+        };
+      }
+      if (reason !== null) fields.failure_reason = reason;
+      return fields;
+    };
+    while (true) {
+      let parsedProviderId: string | null;
+      let invokeError: string | null;
       try {
-        outcome = parseStageOutcome(responseText, sessionId !== null, decisionValues);
+        [responseText, parsedProviderId, invokeError] = await this.runTurn(
+          adapter,
+          request.model,
+          workspacePath,
+          currentPrompt,
+          currentAgentId,
+          currentSession,
+          resolvedOptions,
+          eventReporter,
+          store,
+          context,
+        );
       } catch (error) {
-        if (!(error instanceof Error)) throw error;
-        invokeError = error.message;
+        return markCancelled(error);
       }
-    }
-    if (invokeError === null && outcome?.status === "complete" && artifactName) {
-      const artifactPath = path.join(context.artifactDirectory, artifactName);
-      if (!nonemptyArtifact(artifactPath)) {
-        invokeError = `Stage artifact missing or empty: ${artifactName}.`;
+
+      eventReporter.emit(
+        invokeError === null ? "provider.turn_completed" : "provider.turn_failed",
+        invokeError === null ? "completed" : invokeError,
+      );
+      record.agentId = parsedProviderId || record.agentId;
+      record.model = request.model;
+      record.options = profile;
+      record.workspace = workspacePath;
+      outcome = null;
+      if (invokeError === null) {
+        try {
+          outcome = parseStageOutcome(responseText, sessionId !== null, decisionValues);
+        } catch (error) {
+          if (!(error instanceof Error)) throw error;
+          invokeError = error.message;
+        }
       }
-    }
-    if (invokeError === null && outcome !== null) {
-      const missing = store.missingCompletionOutputs(context, outcome);
-      if (missing.length > 0) {
-        invokeError = `Completion outputs missing or empty: ${missing.join(", ")}.`;
+      if (invokeError === null && outcome?.status === "complete" && artifactName) {
+        const artifactPath = path.join(context.artifactDirectory, artifactName);
+        if (!nonemptyArtifact(artifactPath)) {
+          invokeError = `Stage artifact missing or empty: ${artifactName}.`;
+        }
       }
+      if (invokeError === null && outcome !== null) {
+        const missing = store.missingCompletionOutputs(context, outcome);
+        if (missing.length > 0) {
+          invokeError = `Completion outputs missing or empty: ${missing.join(", ")}.`;
+        }
+      }
+      const needsVerify =
+        verifyCommands.length > 0 && invokeError === null && outcome?.status === "complete";
+      record.status = needsVerify ? "running" : invokeError === null ? "completed" : "failed";
+      record.history.push({ role: "assistant", content: responseText });
+      store.save(record, context);
+      store.saveResponse(context, responseText);
+      if (verifyCommands.length > 0) {
+        store.saveTurnResponse(context, turn, responseText);
+        if (outcome?.status === "complete") store.saveTurnOutcome(context, turn, outcome);
+      }
+      if (!needsVerify || outcome === null) {
+        store.saveExecution(context, record, record.status, invokeError, outcome, false, extraFields());
+        break;
+      }
+
+      store.clearProcessEndpoint(context);
+      eventReporter.emit("verify.started", `${verifyCommands.length} command(s)`, {
+        turn,
+        commands: verifyCommands,
+      });
+      let result: VerifyRunResult;
+      try {
+        result = await this.verifyRunner.run({
+          commands: verifyCommands,
+          workspace: workspacePath,
+          executionDirectory: context.directory,
+          turnDirectory: store.turnDirectory(context, turn),
+          timeoutSec: stage?.verifyTimeoutSec ?? null,
+          onStart: (info) => {
+            store.saveProcessMetadata(context, info);
+          },
+          onEnd: () => {
+            store.clearProcessEndpoint(context);
+          },
+          onHeartbeat: (command, elapsed) => {
+            eventReporter.emit("verify.heartbeat", `${command} running for ${elapsed}s`, {
+              turn,
+              command,
+              elapsed_seconds: elapsed,
+            });
+          },
+        });
+      } catch (error) {
+        return markCancelled(error);
+      }
+      verifyRuns += 1;
+      const redRun = result.passed ? red : red + 1;
+      lastReport = store.saveTurnVerify(
+        context,
+        turn,
+        formatVerifyReport(result, {
+          run: verifyRuns,
+          red: redRun,
+          maxVerify,
+          timeoutSec: stage?.verifyTimeoutSec ?? null,
+        }),
+      );
+      lastResult = result.passed ? "pass" : "fail";
+      if (result.infraError !== null) {
+        record.status = "failed";
+        store.save(record, context);
+        store.saveExecution(context, record, "failed", result.infraError, null, false, extraFields());
+        break;
+      }
+      if (result.passed) {
+        eventReporter.emit("verify.passed", "all commands passed", { turn, report: lastReport });
+        record.status = "completed";
+        store.save(record, context);
+        store.saveExecution(context, record, "completed", null, outcome, false, extraFields());
+        store.publishVerifyReport(context, turn);
+        break;
+      }
+      red += 1;
+      const failed = result.commands.find((item) => item.status === "fail" || item.status === "timed_out");
+      eventReporter.emit("verify.failed", `${failed?.command ?? "verify"} failed`, {
+        turn,
+        red,
+        max_verify: maxVerify,
+        command: failed?.command ?? null,
+        status: failed?.status ?? null,
+        exit_code: failed?.exitCode ?? null,
+        report: lastReport,
+      });
+      if (red >= maxVerify) {
+        failureReason = VERIFY_EXHAUSTED;
+        record.status = "failed";
+        store.save(record, context);
+        store.saveExecution(
+          context,
+          record,
+          "failed",
+          `Verify failed ${red} times.`,
+          null,
+          false,
+          extraFields(failureReason),
+        );
+        outcome = null;
+        break;
+      }
+      store.saveExecutionProgress(context, record, extraFields() ?? {});
+      const report = readFileSync(path.join(context.directory, lastReport), "utf8");
+      const repair = buildVerifyRepairPrompt(
+        report,
+        red,
+        maxVerify,
+        artifactName ? path.join(context.artifactDirectory, artifactName) : null,
+      );
+      record.history.push({ role: "user", content: repair });
+      store.save(record, context);
+      turn += 1;
+      currentAgentId = record.agentId;
+      currentSession = null;
+      currentPrompt = currentAgentId
+        ? repair
+        : flattenHistory(record.history as Array<{ role: string; content: string }>);
+      currentPrompt = addStageOutcomeContract(currentPrompt, decisionValues);
     }
-    record.status = invokeError === null ? "completed" : "failed";
-    record.history.push({ role: "assistant", content: responseText });
-    store.save(record, context);
-    store.saveResponse(context, responseText);
-    store.saveExecution(context, record, record.status, invokeError, outcome);
     const sessionStatus = store.readSessionStatus(context.sessionId);
     return {
       agent_id: record.agentId || "",
@@ -196,7 +350,21 @@ export class AgentToolRunner {
       outcome_decision: outcome?.decision ?? "",
       session_status: typeof sessionStatus.status === "string" ? sessionStatus.status : "",
       response: responseText,
+      failure_reason: failureReason,
     };
+  }
+
+  private carryExhaustedArtifact(
+    store: SessionStore,
+    context: ExecutionContext,
+    resumeExecutionId: string,
+    artifactName: string,
+  ): void {
+    const previous = store
+      .executionSnapshots(context.sessionId)
+      .find((snapshot) => snapshot.executionId === resumeExecutionId);
+    if (previous === undefined || previous.failureReason !== VERIFY_EXHAUSTED) return;
+    store.carryVerifyArtifact(previous.artifactDirectory, context, artifactName);
   }
 
   private async runTurn(

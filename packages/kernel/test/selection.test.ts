@@ -2,6 +2,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 import {
+  failedStageCount,
+  verifyExhaustedExecution,
   loadWorkflowDocument,
   nextStage,
   NextStage,
@@ -33,6 +35,9 @@ function stage(id: string, role: string, extra: Partial<StageSpec> = {}): StageS
     modelName: null,
     options: {},
     maxRevisions: null,
+    verify: [],
+    maxVerify: 3,
+    verifyTimeoutSec: null,
     routes: {},
     ...extra,
   };
@@ -260,4 +265,12 @@ test("allows the stage selected by the latest route", () => {
       snapshot("review-work", 2, { decision: "approved" }),
     ]),
   ).toBeNull();
+});
+
+test("failedStageCount ignores verify_exhausted executions", () => {
+  const exhausted = { ...snapshot("a", 3, { status: "failed", outcomeStatus: null }), failureReason: "verify_exhausted" };
+  const plain = snapshot("a", 2, { status: "failed", outcomeStatus: null });
+  expect(failedStageCount([exhausted, plain], "a")).toBe(1);
+  expect(verifyExhaustedExecution([plain, exhausted], "a")).toBe(exhausted);
+  expect(verifyExhaustedExecution([exhausted, snapshot("a", 4, { status: "failed", outcomeStatus: null })], "a")).toBeNull();
 });

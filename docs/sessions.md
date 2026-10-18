@@ -50,6 +50,10 @@ Each execution directory contains:
 
 - `execution.json`: execution identity, order, stage and attempt, provider and
   model, lifecycle status, timestamps, and the parsed stage outcome.
+- `turns/NN/`: written only for stages with `verify`. It holds `response.md`,
+  `outcome.json` for a complete turn, `verify.md`, and `commands/MM.log`.
+  `execution.json` also records `turns`, `verify` (`runs`, `red`, `max_verify`,
+  `last_result`, `last_report`), and `failure_reason` (`verify_exhausted`).
 - `conversation.json`: provider conversation checkpoint used when resuming a
   provider session. It stores the provider and model, native agent ID, options
   setting, lifecycle status, and fallback message history. This is separate
