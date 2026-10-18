@@ -5,20 +5,35 @@ Run commands from the configured project or any of its subdirectories.
 ## Workflow commands
 
 ```bash
-# Create a session and run until it stops.
+# Create a session and run until it stops. --task is one line and is stored in task.md.
 migent start <workflow> --task "<task>"
 
+# Create a prepared session, write a longer task, then start it.
+migent prepare <some-id> --workflow <workflow>
+migent start --session <some-id>
+
 # Resume an active session and run until it stops.
-# This resets revision counts.
+# This resets revision counts. A prepared session is not resumed here.
 migent continue <session-id>
 
 # Dispatch exactly one eligible stage. This does not reset revision counts.
 migent start <workflow> --task "<task>" --once
+migent start --session <some-id> --once
 migent continue <session-id> --once
 ```
 
 `<workflow>` is the workflow id. A path to a workflow file is also accepted.
 The id comes from the file's `id` field, or from the file name when `id` is omitted.
+
+`--task` is one line. Migent writes it to `.migent/sessions/<session-id>/task.md`.
+A longer task uses `prepare`. `<some-id>` is a lowercase slug such as `wave-3`:
+letters, digits, and single hyphens. The command creates the session with
+status `prepared` and prints `session_id`, `status`, and `task_path` on stdout.
+Write that file, and any companion files in the same directory, then
+`migent start --session <some-id>`. `continue` rejects a prepared session.
+`start --session` accepts only a prepared session. Stage prompts name `task.md`
+and the session directory. They do not include the task text. After the first
+dispatch, a change to `task.md` stops the next dispatch.
 
 `start` and `continue` default to three failed execution attempts per stage and
 20 stage dispatches per command. Configure those guards with:
@@ -227,7 +242,7 @@ migent sessions <session-id> --follow --exit-when-done
 ```
 
 `sessions` lists recorded runs, newest first. `--workflow` and `--status`
-select rows before `--limit`. `--status` is `active`, `completed`, `blocked`,
+select rows before `--limit`. `--status` is `active`, `prepared`, `completed`, `blocked`,
 or `cancelled`. `--latest` prints the newest match. These flags cannot be
 combined with a session id, and `--latest` cannot be combined with `--limit`.
 An empty list exits 0.

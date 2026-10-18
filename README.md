@@ -118,6 +118,14 @@ From the project or any subdirectory:
 migent start plan --task "Plan the account settings redesign"
 ```
 
+`--task` is one line and is stored in the session as `task.md`. For a longer
+task, create the session first, write the file, then start it:
+
+```bash
+migent prepare wave-3 --workflow plan
+migent start --session wave-3
+```
+
 Migent runs each eligible stage until the workflow completes or stops. Stdout
 is one JSON result with the session id, status, stop reason, decision, and
 output paths. Stderr prints one line when a stage starts and one when it

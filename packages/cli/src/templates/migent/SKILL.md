@@ -26,14 +26,17 @@ name defined in `.migent/config.yaml`. Each run is a session.
 - You have no terminal for prompts. Pass `--no-input` (or set
   `MIGENT_NO_INPUT=1`) to `init`, `config model`, and `config role`, and give
   every value as a flag.
-- Treat `.migent/sessions/` as generated, resumable state. Do not edit its
-  files directly.
-- Preserve the user's task wording when passing `--task`.
+- Treat `.migent/sessions/` as generated, resumable state. Do not edit
+  `manifest.yaml`, `status.json`, `events.jsonl`, or files under
+  `executions/`. In a prepared session, write `task.md` and files next to
+  it before the first stage. Do not change `task.md` after that stage starts.
+- Preserve the user's task wording. Pass a one-line task in `--task`. Write
+  a longer task into `task.md` unchanged.
 - Stdout carries the result: `session_id`, `session_status`, `stop_reason`,
   `latest_decision`, and `outputs`. Stderr carries stage boundaries and errors.
 - This skill is already in the prompt. Do not open its file again.
-- Do not read the documents named in `--task`. The stage agent reads them.
-  Still read `.migent/config.yaml` and the workflow file before starting.
+- Do not read `task.md` or the documents it names. The stage agent reads
+  them. Still read `.migent/config.yaml` and the workflow file before starting.
 
 ## Set up
 
@@ -48,9 +51,15 @@ create (default `implement`). `--skill` installs this skill at
 
 ## Run workflows
 
-- Start: `migent start <workflow> --task "<task>"`. `<workflow>` is a
-  workflow id, or a path to a workflow file (the `id` field defaults to the
-  file name). Runs until the session stops.
+- Start a one-line task: `migent start <workflow> --task "<task>"`.
+  `<workflow>` is a workflow id, or a path to a workflow file (the `id`
+  field defaults to the file name). The sentence is stored in `task.md`.
+  `--task` must be one line. Runs until the session stops.
+- Start a longer task: `migent prepare <some-id> --workflow <workflow>`.
+  `<some-id>` is a lowercase slug such as `wave-3` (letters, digits, and
+  single hyphens). Write `.migent/sessions/<some-id>/task.md`, then
+  `migent start --session <some-id>`. `continue` does not start a prepared
+  session.
 - Start and dispatch one stage only: add `--once`.
 - If the workflow's `requires` block names a prerequisite workflow and
   decision, find it with
@@ -101,7 +110,7 @@ session was created under the earlier definition.
 ## Inspect sessions
 
 - Newest match: `migent sessions --latest --json`. Add `--workflow <id>` and
-  `--status active|completed|blocked|cancelled` to narrow it. `--limit <n>`
+  `--status active|prepared|completed|blocked|cancelled` to narrow it. `--limit <n>`
   returns the newest n rows. Do not combine `--latest` with `--limit`, or
   these flags with a session id.
 - `--latest --json` is one object, or `null` when nothing matches. A list is

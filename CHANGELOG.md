@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Added
+
+- `prepare <some-id> --workflow <workflow>` creates a session with status `prepared` and a caller-chosen id such as `wave-3`. Write `task.md` in that session, then `migent start --session <some-id>`. `sessions <session-id>` prints that session before the first stage.
+- Stage prompts name `task.md` and the session directory. `start --task` accepts one line and stores it in `task.md`. The first dispatch records a hash of that file. A later change stops the next dispatch. Each execution keeps a copy.
+
 ### Changed
 
 - `sessions --workflow`, `--status`, and `--limit` filter the newest-first list. `--latest` prints one session, or `null` when nothing matches. JSON list rows and JSON snapshots omit the task text. The human list and snapshot still print it.

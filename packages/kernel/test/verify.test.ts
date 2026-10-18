@@ -296,13 +296,12 @@ test("prompt lists verify commands and dependency pass table", () => {
   const file = path.join(dir, "w.yaml");
   writeFileSync(file, workflowText("pnpm gate"), "utf8");
   const workflow = loadWorkflowDocument(file);
-  const prompt = buildStagePrompt({ workflow, stageId: "implement", task: "t", snapshots: [], workspace: dir });
+  const prompt = buildStagePrompt({ workflow, stageId: "implement", snapshots: [], workspace: dir });
   expect(prompt).toContain("Verify commands:");
   expect(prompt).toContain("- pnpm gate");
   const dependent = buildStagePrompt({
     workflow,
     stageId: "review",
-    task: "t",
     workspace: dir,
     snapshots: [
       {

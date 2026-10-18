@@ -330,11 +330,21 @@ export class AgentToolRunner {
       }
       store.saveExecutionProgress(context, record, extraFields() ?? {});
       const report = readFileSync(path.join(context.directory, lastReport), "utf8");
+      const sessionDirectory = path.dirname(path.dirname(context.directory));
+      const taskFile = path.join(sessionDirectory, "task.md");
+      let taskPointer: string | null = null;
+      try {
+        if (statSync(taskFile).isFile()) taskPointer = taskFile;
+      } catch {
+        taskPointer = null;
+      }
       const repair = buildVerifyRepairPrompt(
         report,
         red,
         maxVerify,
         artifactName ? path.join(context.artifactDirectory, artifactName) : null,
+        taskPointer,
+        taskPointer === null ? null : sessionDirectory,
       );
       record.history.push({ role: "user", content: repair });
       store.save(record, context);

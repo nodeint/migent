@@ -20,12 +20,15 @@ export interface ExecuteWorkflowOptions {
   runner?: AgentToolRunner | null;
   verbose?: boolean;
   itemProgress?: boolean;
+  startPrepared?: boolean;
 }
 
 export async function executeWorkflow(workspace: string, options: ExecuteWorkflowOptions): Promise<number> {
   requireCurrentSchema(workspace);
   const once = options.action === "stage";
-  const creating = options.action === "start" || (once && text(options.sessionId) === null);
+  const startPrepared = options.startPrepared === true;
+  const sessionId = text(options.sessionId);
+  const creating = !startPrepared && (options.action === "start" || (once && sessionId === null));
   const maxAttempts = options.maxAttempts === undefined ? 3 : options.maxAttempts;
   const maxDispatches = options.maxDispatches === undefined ? DEFAULT_MAX_DISPATCHES : options.maxDispatches;
   const runner = options.runner ?? cliHooks.runner ?? new AgentToolRunner(adapterMap());
@@ -35,8 +38,9 @@ export async function executeWorkflow(workspace: string, options: ExecuteWorkflo
     {
       workflowId: creating ? (options.workflowId ?? null) : null,
       task: creating ? (options.task ?? null) : null,
-      sessionId: creating ? null : (options.sessionId ?? null),
+      sessionId: creating ? null : sessionId,
       priorSessionId: options.priorSessionId ?? null,
+      startPrepared,
       maxAttempts: once ? null : maxAttempts,
       maxDispatches: once ? null : maxDispatches,
       once,

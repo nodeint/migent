@@ -68,6 +68,7 @@ const RUNNING_STATUS_KEYS = [
   "outputs",
   "workspace_id",
   "revision_baselines",
+  "task_sha256",
 ] as const;
 
 const SETTLED_STATUS_KEYS = [
@@ -83,6 +84,7 @@ const SETTLED_STATUS_KEYS = [
   "outputs",
   "workspace_id",
   "revision_baselines",
+  "task_sha256",
 ] as const;
 
 export function stringOptions(value: unknown): Record<string, string> {
@@ -684,6 +686,7 @@ export class SessionStore {
       if (Object.hasOwn(previousStatus, "revision_baselines")) {
         preserved.revision_baselines = previousStatus.revision_baselines;
       }
+      if (Object.hasOwn(previousStatus, "task_sha256")) preserved.task_sha256 = previousStatus.task_sha256;
       return preserved;
     }
     return pick(previousStatus, SETTLED_STATUS_KEYS);
@@ -712,6 +715,8 @@ export class SessionStore {
     );
     if (existsSync(directory)) throw new Error(`Execution already exists: ${directory}`);
     mkdirSync(directory, { recursive: true });
+    const taskSource = path.join(this.sessionsDirectory, resolvedSession, "task.md");
+    if (existsSync(taskSource)) copyFileSync(taskSource, path.join(directory, "task.md"));
     const context = new ExecutionContext(resolvedSession, executionId, directory);
     mkdirSync(context.artifactDirectory);
     this.createSessionFiles(context);

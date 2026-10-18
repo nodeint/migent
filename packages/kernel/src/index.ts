@@ -103,6 +103,8 @@ export {
   allocateSessionId,
   sessionSlug,
   createWorkflowSession,
+  createPreparedSession,
+  activatePreparedSession,
   createAgentSession,
   requireAgentSession,
   resolvePriorSessionId,
@@ -126,6 +128,7 @@ export {
 } from "./dispatch.js";
 export type { StageDispatchRequest } from "./dispatch.js";
 export { DEFAULT_MAX_DISPATCHES, executeNamedWorkflow } from "./execute.js";
+export { relativeTaskPath } from "./task-file.js";
 export type { ExecuteRequest, ExecuteResult } from "./execute.js";
 export { killProcessTree, wrapperEndpoint } from "./process-wrapper.js";
 export {

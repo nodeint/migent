@@ -4,6 +4,7 @@ import { dispatchAgent } from "./commands/agent.js";
 import { runConfigModel, runConfigRole, runConfigShow } from "./commands/config.js";
 import { runDoctor } from "./commands/doctor.js";
 import { executeWorkflow } from "./commands/execute.js";
+import { prepareWorkflowSession } from "./commands/prepare.js";
 import { runInit } from "./commands/init.js";
 import { runSessions } from "./commands/sessions.js";
 import { parsePort, runServiceStart, runServiceStatus, runServiceStop } from "./commands/service.js";
@@ -13,7 +14,7 @@ import { runRegister, runRemove, runWorkspaceList } from "./commands/workspace-r
 import { printError } from "./display.js";
 import { LOOP_EXITS, STAGE_EXITS } from "./exits.js";
 import { runMigrate } from "./migrate.js";
-import { optionalText, text } from "./text.js";
+import { optionalText, rawText, text } from "./text.js";
 import { PACKAGE_VERSION } from "./version.js";
 import { findWorkspace, invocationCwdPath } from "./workspace.js";
 
@@ -38,38 +39,75 @@ export function createProgram(status: CliStatus): Command {
 
   const start = program
     .command("start")
-    .description("Create a session and continue until it stops.")
-    .argument("<workflow>", "Workflow id, or a path to a workflow file.")
-    .requiredOption("--task <task>", "Task recorded on the new session.");
+    .description("Create a session and continue until it stops, or start a prepared session.")
+    .argument("[workflow]", "Workflow id, or a path to a workflow file. Omit with --session.")
+    .option("--task <task>", "One-line task for a new session. Stored in task.md.")
+    .option("--session <session>", "Prepared session to start. Omit --task and the workflow.");
   addDispatchOptions(start, "Dispatch the next eligible stage once.");
   start
-    .addHelpText("after", `${exitText(LOOP_EXITS)}With --once:\n${exitText(STAGE_EXITS)}`)
-    .action((workflow: string, options: OptionValues) =>
+    .addHelpText(
+      "after",
+      `${exitText(LOOP_EXITS)}With --once:\n${exitText(STAGE_EXITS)}Examples:\n  migent start <workflow> --task "<one line>"\n  migent start --session <some-id>\n`,
+    )
+    .action((workflow: string | undefined, options: OptionValues) =>
       settle(status, () => {
         if (rejectOnce(options)) return 2;
-        if (options.once === true) {
+        const sessionId = optionalText(options.session);
+        const task = rawText(options.task);
+        const workflowId = text(workflow);
+        const prepared = sessionId !== null;
+        if (prepared && (workflowId !== null || task !== null)) {
+          printError("Pass a workflow and --task, or --session, not both.");
+          return 2;
+        }
+        if (!prepared && (workflowId === null || task === null)) {
+          printError("Pass a workflow and --task, or --session.");
+          return 2;
+        }
+        const once = options.once === true;
+        if (!once) {
+          const ceiling = dispatchCeiling(options);
+          if (typeof ceiling === "string") return 2;
           return executeWorkflow(findWorkspace(invocationCwdPath()), {
-            action: "stage",
-            workflowId: workflow,
-            task: String(options.task),
+            action: "start",
+            workflowId: prepared ? null : workflowId,
+            task: prepared ? null : task,
+            sessionId: prepared ? sessionId : null,
+            startPrepared: prepared,
             priorSessionId: optionalText(options.prior),
-            maxAttempts: null,
-            maxDispatches: null,
+            maxAttempts: attemptsOf(options),
+            maxDispatches: ceiling,
             ...outputFlags(options),
           });
         }
-        const ceiling = dispatchCeiling(options);
-        if (typeof ceiling === "string") return 2;
         return executeWorkflow(findWorkspace(invocationCwdPath()), {
-          action: "start",
-          workflowId: workflow,
-          task: String(options.task),
+          action: "stage",
+          workflowId: prepared ? null : workflowId,
+          task: prepared ? null : task,
+          sessionId: prepared ? sessionId : null,
+          startPrepared: prepared,
           priorSessionId: optionalText(options.prior),
-          maxAttempts: attemptsOf(options),
-          maxDispatches: ceiling,
+          maxAttempts: null,
+          maxDispatches: null,
           ...outputFlags(options),
         });
       }),
+    );
+
+  program
+    .command("prepare")
+    .description("Create a prepared session and exit. Write task.md, then start --session.")
+    .argument("<id>", "Session id: a lowercase slug such as wave-3.")
+    .requiredOption("--workflow <workflow>", "Workflow id, or a path to a workflow file.")
+    .option("--prior <session>", PRIOR_HELP)
+    .addHelpText(
+      "after",
+      `${exitText(["Exit 0 when the session is prepared.", "Exit 2 on a configuration error."])}Examples:\n  migent prepare wave-3 --workflow plan\n`,
+    )
+    .action((id: string, options: OptionValues) =>
+      settle(status, () =>
+        prepareWorkflowSession(findWorkspace(invocationCwdPath()), id, String(options.workflow), optionalText(options.prior)),
+      ),
     );
 
   const continueCommand = program
@@ -125,7 +163,7 @@ export function createProgram(status: CliStatus): Command {
       settle(status, () => {
         const sessionId = text(session);
         const workflow = optionalText(options.workflow);
-        const task = optionalText(options.task);
+        const task = rawText(options.task);
         const replacement =
           sessionId !== null
             ? "continue SESSION --once"
@@ -275,7 +313,7 @@ export function createProgram(status: CliStatus): Command {
     .argument("[session]", "Session to inspect. Omit to list.")
     .option("--json", "List: a JSON array without the task. --latest: one object, or null. Snapshot: one object without the task. Follow: a snapshot object, then JSON lines. With --cursor, only JSON lines.")
     .option("--workflow <id>", "List sessions for this workflow id.")
-    .option("--status <status>", "List sessions with this status: active, completed, blocked, or cancelled.")
+    .option("--status <status>", "List sessions with this status: active, prepared, completed, blocked, or cancelled.")
     .option("--limit <n>", "List the newest n sessions. At least 1. Cannot be combined with --latest.")
     .option("--latest", "Print the newest matching session. Cannot be combined with --limit.")
     .option("--follow", "Print the snapshot, then follow events until a signal. With --cursor, skip the snapshot.")

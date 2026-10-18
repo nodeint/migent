@@ -8,15 +8,19 @@ import { VERIFY_ARTIFACT, type WorkflowDocument } from "./workflow.js";
 export function buildStagePrompt(input: {
   workflow: WorkflowDocument;
   stageId: string;
-  task: string;
   snapshots: readonly ExecutionSnapshot[];
   workspace: string;
+  taskFile?: string | null;
+  sessionDirectory?: string | null;
   priorSessionId?: string | null;
   priorOutputs?: Readonly<Record<string, unknown>> | null;
 }): string {
   const stage = input.workflow.stages[input.stageId];
   if (stage === undefined) throw new Error(`Stage is not declared: ${input.stageId}.`);
-  const sections = [`Task: ${input.task}`, `Stage: ${stage.id} (role: ${stage.role})`];
+  const sessionDirectory =
+    input.sessionDirectory ?? path.join(input.workspace, ".migent", "sessions", "session");
+  const taskFile = input.taskFile ?? path.join(sessionDirectory, "task.md");
+  const sections = [taskLocationSection(taskFile, sessionDirectory), `Stage: ${stage.id} (role: ${stage.role})`];
   if (stage.instructions.length > 0) {
     const lines = ["Instructions:", ...stage.instructions.map((item) => `- ${item}`)];
     sections.push(lines.join("\n"));
@@ -58,12 +62,23 @@ export function buildVerifyRepairPrompt(
   red: number,
   maxVerify: number,
   artifactPath: string | null,
+  taskFile?: string | null,
+  sessionDirectory?: string | null,
 ): string {
-  const lines = [`Verify failed (${red} of ${maxVerify} red runs). Fix the cause, then report again.`];
+  const lines: string[] = [];
+  if (taskFile && sessionDirectory) lines.push(taskLocationSection(taskFile, sessionDirectory));
+  lines.push(`Verify failed (${red} of ${maxVerify} red runs). Fix the cause, then report again.`);
   if (artifactPath !== null) {
     lines.push(`The stage artifact is at ${artifactPath}. Update it if your fix changes it.`);
   }
   return `${lines.join("\n")}\n\n${report}`;
+}
+
+function taskLocationSection(taskFile: string, sessionDirectory: string): string {
+  return [
+    `Read the task from \`${resolvePath(taskFile)}\`.`,
+    `Session files are in \`${resolvePath(sessionDirectory)}\`.`,
+  ].join("\n");
 }
 
 function upstreamArtifactLines(

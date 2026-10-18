@@ -15,6 +15,7 @@ Each run has its own directory, named by its session ID:
 .migent/sessions/<session-id>/
 ├── manifest.yaml
 ├── status.json
+├── task.md                               # task body; written before the first stage
 ├── events.jsonl
 ├── outputs/                              # present after outputs are published
 │   └── <output-name>
@@ -23,6 +24,7 @@ Each run has its own directory, named by its session ID:
         ├── execution.json
         ├── conversation.json             # provider conversation checkpoint
         ├── prompt.md
+        ├── task.md                       # copy of the session task at dispatch
         ├── response.md                   # present after a response is saved
         └── artifacts/
             └── <stage artifact files>
@@ -30,14 +32,21 @@ Each run has its own directory, named by its session ID:
 
 The session-level files have distinct purposes:
 
-- `manifest.yaml` identifies the session, workflow, task, creation time, and
+- `manifest.yaml` identifies the session, workflow, task label, creation time, and
   terminal status. An ad hoc agent session also records its role; a workflow
   with `requires` records its prerequisite as `prior_session_id`.
+- `task.md` is the task body. A one-line `start --task` writes that sentence
+  here. A prepared session leaves the file for you to write, along with any
+  other files that belong next to it. Stage prompts name this path and the
+  session directory. They do not include the task text. The first dispatch
+  records a hash of `task.md`. A later change stops the next dispatch.
 - `status.json` is the current, machine-readable session snapshot. It includes
   the latest execution and stage state, and records decisions, blockers, and
   published outputs when applicable. `sessions` reads this file.
 - `events.jsonl` is the append-only event stream. Each line is one JSON object.
-  `sessions <session-id> --follow --cursor` uses byte offsets into this file.
+  A prepared session starts with an empty file, so `sessions <session-id>` can
+  print the snapshot before the first stage. `sessions <session-id> --follow --cursor`
+  uses byte offsets into this file.
   `--cursor` is an option for tools that resume a follow.
 - `executions/` contains one record for every stage attempt. A completed,
   failed, or cancelled execution record is immutable. Execution directory names
@@ -59,14 +68,16 @@ Each execution directory contains:
   setting, lifecycle status, and fallback message history. This is separate
   from the Migent session-level `status.json`.
 - `prompt.md` and `response.md`: the exact prompt sent for the attempt and the
-  response saved from the provider.
+  response saved from the provider. `task.md` in this directory is a copy of
+  the session task at the moment the execution was created.
 - `artifacts/`: files written by that stage. These are per-attempt working
   artifacts; only explicitly configured completion outputs are copied to the
   session-level `outputs/` directory.
 
-These files are Migent's resumable local state, not a user-authored storage
-format. Prefer the CLI commands below for inspection and automation instead of
-editing session files directly.
+These files are Migent's resumable local state. Before the first stage of a
+prepared session, write `task.md` and files next to it. Do not edit
+`manifest.yaml`, `status.json`, `events.jsonl`, or `executions/` by hand.
+Prefer the CLI commands below for inspection and automation.
 
 Older executions may contain the former name `session.json`. Migent still
 reads that file when resuming, but all new checkpoints are written as
@@ -129,7 +140,9 @@ migent continue <session-id> --once
 and the snapshot. `--follow` follows execution events until a signal, or until
 the session stops when `--exit-when-done` is set. `continue` resumes an active
 workflow session from its recorded state and resets revision counts.
-`continue --once` advances one stage and does not reset them.
+`continue --once` advances one stage and does not reset them. A session
+with status `prepared` is not resumed by `continue`. Write `task.md`, then
+run `migent start --session <session-id>`.
 
 ## Artifact dependency versus provider-session resume
 

@@ -63,7 +63,9 @@ export async function followSession(
   const exitWhenDone = options.exitWhenDone === true;
   const sessionDirectory = path.join(workspace, ".migent", "sessions", sessionId);
   const eventsPath = path.join(sessionDirectory, "events.jsonl");
-  if (!isFile(eventsPath)) throw new ConfigurationError(`No events found for session: ${sessionId}`);
+  if (!isFile(eventsPath) && !(once && isFile(path.join(sessionDirectory, "status.json")))) {
+    throw new ConfigurationError(`No events found for session: ${sessionId}`);
+  }
   new SessionStore(workspace).reapOrphanedExecutions(sessionId, "ignore");
   let executionPath: string | null = null;
   if (executionId !== null) {

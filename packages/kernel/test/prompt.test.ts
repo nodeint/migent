@@ -106,7 +106,6 @@ test("populated prompt matches the template snapshot", () => {
   const prompt = buildStagePrompt({
     workflow,
     stageId: "implement",
-    task: "Do work",
     snapshots: [snapshot("plan", 1, upstream)],
     workspace,
     priorSessionId: "prior-1",
@@ -118,7 +117,7 @@ test("populated prompt matches the template snapshot", () => {
   );
   expect(prompt).toBe(
     [
-      "Task: Do work",
+      `Read the task from \`${resolved(path.join(workspace, ".migent", "sessions", "session", "task.md"))}\`.\nSession files are in \`${resolved(path.join(workspace, ".migent", "sessions", "session"))}\`.`,
       "Stage: implement (role: developer)",
       "Instructions:\n- Implement production code only.\n- Do not add or modify test code.",
       "Constraints:\n- Do not write implementation code.\n- Do not infer decisions from review prose.",
@@ -133,7 +132,6 @@ test("plan includes artifact sentence and constraints", () => {
   const prompt = buildStagePrompt({
     workflow: workflowFile("plan"),
     stageId: "plan",
-    task: "Write a plan",
     snapshots: [],
     workspace: "/tmp",
   });
@@ -149,7 +147,6 @@ test("review omits artifact sentence", () => {
   const prompt = buildStagePrompt({
     workflow: workflowFile("plan"),
     stageId: "review-plan",
-    task: "Write a plan",
     snapshots: [snapshot("plan", 1, planDir)],
     workspace: root,
   });
@@ -167,7 +164,6 @@ test("review uses the latest plan attempt after revise", () => {
   const prompt = buildStagePrompt({
     workflow: workflowFile("plan"),
     stageId: "review-plan",
-    task: "Write a plan",
     snapshots: [
       snapshot("plan", 1, first),
       snapshot("review-plan", 2, root, { decision: "revise" }),
@@ -191,7 +187,6 @@ test("write tests uses latest successful implement artifact", () => {
   const prompt = buildStagePrompt({
     workflow: workflowFile("plan-implement"),
     stageId: "write-tests",
-    task: "Do work",
     snapshots: [
       snapshot("implement", 1, failed, { status: "failed", outcomeStatus: null }),
       snapshot("implement", 2, ok),
@@ -220,7 +215,6 @@ test("revision references latest review and previous artifact", () => {
   const prompt = buildStagePrompt({
     workflow: workflowFile("plan"),
     stageId: "plan",
-    task: "Write a plan",
     snapshots: [
       snapshot("plan", 1, plan),
       snapshot("review-plan", 2, path.join(review, "artifacts"), { decision: "revise" }),
@@ -243,7 +237,6 @@ test("revision retry keeps the review that requested it", () => {
   const prompt = buildStagePrompt({
     workflow: workflowFile("plan"),
     stageId: "plan",
-    task: "Write a plan",
     snapshots: [
       snapshot("plan", 1, path.join(workspace, "plan-1")),
       snapshot("review-plan", 2, path.join(oldReview, "artifacts"), { decision: "revise" }),
@@ -266,7 +259,6 @@ test("routed stage requires its decision response", () => {
     buildStagePrompt({
       workflow: workflowFile("plan"),
       stageId: "plan",
-      task: "Write a plan",
       snapshots: [
         snapshot("plan", 1, path.join(workspace, "plan-1")),
         snapshot("review-plan", 2, path.join(workspace, "review", "artifacts"), {
@@ -283,7 +275,6 @@ test("includes prior session published outputs", () => {
   const prompt = buildStagePrompt({
     workflow: workflowFile("plan-implement"),
     stageId: "implement",
-    task: "Do work",
     snapshots: [],
     workspace,
     priorSessionId: "prior-1",
@@ -299,7 +290,6 @@ test("rejects an undeclared stage", () => {
     buildStagePrompt({
       workflow: workflowFile("plan"),
       stageId: "missing",
-      task: "Write a plan",
       snapshots: [],
       workspace: "/tmp",
     }),

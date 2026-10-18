@@ -21,7 +21,8 @@ import {
   NextStageError,
   Stop,
 } from "./selection.js";
-import { bindPriorSessionId, createWorkflowSession, resolvePriorSessionId } from "./session-records.js";
+import { activatePreparedSession, bindPriorSessionId, createWorkflowSession, resolvePriorSessionId } from "./session-records.js";
+import { freezeSessionTask } from "./task-file.js";
 import { SessionStore } from "./session-store.js";
 import { readFileSync } from "node:fs";
 import { loadNamedWorkflow, type WorkflowDocument } from "./workflow.js";
@@ -52,6 +53,7 @@ export interface ExecuteRequest {
   maxDispatches?: number | null;
   once?: boolean;
   resetRevisions?: boolean;
+  startPrepared?: boolean;
 }
 
 export interface ExecuteResult {
@@ -88,7 +90,20 @@ export async function executeNamedWorkflow(
   if (sessionId) {
     const bound = bindExecuteRun(workspace, sessionId, request.workflowId, request.priorSessionId);
     workflowId = bound.workflowId;
-    const sessionStatus = typeof bound.status.status === "string" ? bound.status.status : "";
+    let sessionStatus = typeof bound.status.status === "string" ? bound.status.status : "";
+    if (request.startPrepared) {
+      if (sessionStatus !== "prepared") {
+        const hint =
+          sessionStatus === "active"
+            ? `Session ${sessionId} is active. Resume with: migent continue ${sessionId}`
+            : `Session ${sessionId} is ${sessionStatus || "unknown"}. migent start --session only starts a prepared session.`;
+        throw new ConfigurationError(hint);
+      }
+      activatePreparedSession(workspace, sessionId);
+      sessionStatus = "active";
+    } else if (sessionStatus === "prepared") {
+      throw new ConfigurationError(`Session ${sessionId} is prepared. Run: migent start --session ${sessionId}`);
+    }
     if (TERMINAL_SESSION_STATUSES.has(sessionStatus)) {
       return executeFinal(bound.status, sessionStatus, []);
     }
@@ -298,6 +313,7 @@ async function dispatchExecuteStage(
       .join(", ") || "default";
   log(`stage ${stageId} · ${target.provider}/${target.model} (${optionLabel}).`);
   const priorSessionId = storedPriorSessionId(status);
+  const frozen = freezeSessionTask(workspace, sessionId);
   const exhausted = verifyExhaustedExecution(snapshots, stageId);
   const stageSpec = workflow.stages[stageId];
   const prompt =
@@ -307,11 +323,14 @@ async function dispatchExecuteStage(
           stageSpec.maxVerify,
           stageSpec.maxVerify,
           null,
+          frozen.taskFile,
+          frozen.sessionDirectory,
         )
       : buildStagePrompt({
           workflow,
           stageId,
-          task: text(status.task),
+          taskFile: frozen.taskFile,
+          sessionDirectory: frozen.sessionDirectory,
           snapshots,
           workspace,
           priorSessionId,

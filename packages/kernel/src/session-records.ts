@@ -5,6 +5,7 @@ import { pyRepr, isRecord } from "./record.js";
 import { readStatusFile } from "./query.js";
 import { isUnicodeAlnum, utcNow } from "./runtime.js";
 import { SessionStore } from "./session-store.js";
+import { assertManualSessionId, assertSingleLineTask, requireTaskBody, writeTaskFile, taskFilePath } from "./task-file.js";
 import { loadNamedWorkflow, type WorkflowDocument } from "./workflow.js";
 
 function sessionWorkflowPath(workspace: string, workflow: WorkflowDocument): string {
@@ -61,6 +62,7 @@ export function createWorkflowSession(
   const workflow = loadNamedWorkflow(workspace, workflowId);
   const resolvedId = workflow.id;
   const resolvedPrior = resolvePriorSessionId(workspace, workflow, priorSessionId);
+  assertSingleLineTask(task);
   const taskSummary = task.trim();
   if (!taskSummary) throw new ConfigurationError("Task summary must not be empty.");
   const timestamp = utcStamp();
@@ -92,7 +94,61 @@ export function createWorkflowSession(
   };
   if (resolvedPrior) statusPayload.prior_session_id = resolvedPrior;
   writeJson(path.join(sessionDirectory, "status.json"), statusPayload);
+  writeTaskFile(taskFilePath(workspace, sessionId), taskSummary);
   return sessionId;
+}
+
+export function createPreparedSession(
+  workspace: string,
+  sessionId: string,
+  workflowId: string,
+  priorSessionId?: string | null,
+): string {
+  const id = sessionId.trim();
+  assertManualSessionId(id);
+  const workflow = loadNamedWorkflow(workspace, workflowId);
+  const resolvedId = workflow.id;
+  const resolvedPrior = resolvePriorSessionId(workspace, workflow, priorSessionId);
+  const sessionDirectory = path.join(workspace, ".migent", "sessions", id);
+  if (exists(sessionDirectory)) throw new ConfigurationError(`Session already exists: ${id}.`);
+  mkdirSync(sessionDirectory, { recursive: true });
+  const createdAt = utcNow();
+  const workflowRelativePath = sessionWorkflowPath(workspace, workflow);
+  const manifestLines = [
+    `session_id: ${id}`,
+    `workflow_id: ${resolvedId}`,
+    `workflow_path: ${workflowRelativePath}`,
+    `task: ${JSON.stringify(id)}`,
+    `created_at: ${createdAt}`,
+    "status: prepared",
+  ];
+  if (resolvedPrior) manifestLines.splice(manifestLines.length - 1, 0, `prior_session_id: ${resolvedPrior}`);
+  writeFileSync(path.join(sessionDirectory, "manifest.yaml"), `${manifestLines.join("\n")}\n`, "utf8");
+  const statusPayload: Record<string, unknown> = {
+    session_id: id,
+    workflow_id: resolvedId,
+    workflow_path: workflowRelativePath,
+    task: id,
+    status: "prepared",
+    created_at: createdAt,
+    updated_at: createdAt,
+  };
+  if (resolvedPrior) statusPayload.prior_session_id = resolvedPrior;
+  writeJson(path.join(sessionDirectory, "status.json"), statusPayload);
+  writeFileSync(path.join(sessionDirectory, "events.jsonl"), "", "utf8");
+  return id;
+}
+
+export function activatePreparedSession(workspace: string, sessionId: string): void {
+  requireTaskBody(workspace, sessionId);
+  const sessionDirectory = path.join(workspace, ".migent", "sessions", sessionId);
+  const statusPath = path.join(sessionDirectory, "status.json");
+  const status = JSON.parse(readFileSync(statusPath, "utf8")) as unknown;
+  if (!isRecord(status)) throw new ConfigurationError(`Session not found: ${sessionId}.`);
+  status.status = "active";
+  status.updated_at = utcNow();
+  writeJson(statusPath, status);
+  replaceManifestStatus(sessionDirectory, "running");
 }
 
 export function createAgentSession(workspace: string, role: string, task: string): string {
@@ -200,6 +256,19 @@ function pyLiteral(value: unknown): string {
   if (typeof value === "boolean") return value ? "True" : "False";
   if (typeof value === "number" && Number.isFinite(value)) return String(value);
   return "None";
+}
+
+function replaceManifestStatus(sessionDirectory: string, status: string): void {
+  const manifestPath = path.join(sessionDirectory, "manifest.yaml");
+  try {
+    if (!statSync(manifestPath).isFile()) return;
+  } catch {
+    return;
+  }
+  const text = readFileSync(manifestPath, "utf8");
+  const pattern = /^status: \S+\s*$/m;
+  if (!pattern.test(text)) return;
+  writeFileSync(manifestPath, text.replace(pattern, `status: ${status}`), "utf8");
 }
 
 function utcStamp(): string {
