@@ -15,6 +15,10 @@ name defined in `.migent/config.yaml`. Each run is a session.
   `.migent/config.yaml`.
 - Read `.migent/config.yaml` and the relevant file under
   `.migent/workflows/` before changing or running a workflow.
+- Before writing `.migent/config.yaml` or a file under `.migent/workflows/`,
+  read `.agents/skills/migent/references/schema-config.yaml` and
+  `.agents/skills/migent/references/schema-workflow.yaml`. They list every
+  accepted key. A key absent from those files is ignored.
 - Run `migent doctor --json` after editing configuration or workflows. If it
   reports an outdated schema, run `migent migrate --yes`. Pass `--json` on
   `config model` and `config role` writes too. The object includes the doctor

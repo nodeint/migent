@@ -1,7 +1,8 @@
 # Providers and model configuration
 
 Models describe execution. Roles describe intent. Both are declared in
-`.migent/config.yaml`:
+`.migent/config.yaml`. The Migent skill lists every accepted key in
+`.agents/skills/migent/references/schema-config.yaml`.
 
 ```yaml
 schema_version: 1

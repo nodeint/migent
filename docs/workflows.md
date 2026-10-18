@@ -1,8 +1,9 @@
 # Writing workflows
 
 A workflow is a set of stages connected by dependencies and explicit decision
-routes. Definitions live in `.migent/workflows/` as YAML files. `id` is
-optional. When it is omitted, the id is the file name without `.yaml`. When
+routes. Definitions live in `.migent/workflows/` as YAML files. The Migent skill
+lists every accepted key in `.agents/skills/migent/references/schema-workflow.yaml`.
+`id` is optional. When it is omitted, the id is the file name without `.yaml`. When
 `id` is set, that value is the workflow name used by `migent start`,
 `requires`, and sessions. Two files with the same id are an error. A path to
 a workflow file also selects that file.

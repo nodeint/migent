@@ -25,7 +25,9 @@ test("install writes a managed skill", () => {
       template_version: number;
       content_sha256: string;
     };
-    expect(content).toContain("name: migent");
+    expect(content).toContain("references/schema-config.yaml");
+    expect(readFileSync(path.join(skillDirectory, "references", "schema-config.yaml"), "utf8")).toContain("schema_version:");
+    expect(readFileSync(path.join(skillDirectory, "references", "schema-workflow.yaml"), "utf8")).toContain("stages:");
     expect(state.template_version).toBe(1);
     expect(state.content_sha256).toHaveLength(64);
   } finally {
@@ -67,6 +69,7 @@ test("update replaces an older managed template", () => {
   try {
     expect(installSkill(workspace)).toBe(0);
     const skillDirectory = path.join(workspace, ".agents", "skills", "migent");
+    rmSync(path.join(skillDirectory, "references"), { recursive: true, force: true });
     const skill = path.join(skillDirectory, "SKILL.md");
     const oldContent = "---\nname: migent\ndescription: Old template.\n---\n";
     writeFileSync(skill, oldContent, "utf8");
@@ -83,6 +86,44 @@ test("update replaces an older managed template", () => {
     const updated = readFileSync(skill, "utf8");
     expect(updated).toContain("name: migent");
     expect(updated).not.toContain("Old template");
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("update refuses a locally changed reference", () => {
+  const workspace = workspaceOf();
+  try {
+    expect(installSkill(workspace)).toBe(0);
+    const reference = path.join(workspace, ".agents", "skills", "migent", "references", "schema-config.yaml");
+    writeFileSync(reference, "custom: true\n", "utf8");
+    expect(updateSkill(workspace)).toBe(1);
+    expect(readFileSync(reference, "utf8")).toBe("custom: true\n");
+    expect(updateSkill(workspace, { force: true })).toBe(0);
+    expect(readFileSync(reference, "utf8")).toContain("schema_version:");
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("update adds references to a skill hashed as SKILL.md only", () => {
+  const workspace = workspaceOf();
+  try {
+    expect(installSkill(workspace)).toBe(0);
+    const skillDirectory = path.join(workspace, ".agents", "skills", "migent");
+    rmSync(path.join(skillDirectory, "references"), { recursive: true, force: true });
+    const skill = readFileSync(path.join(skillDirectory, "SKILL.md"), "utf8");
+    writeFileSync(
+      path.join(skillDirectory, ".migent-template.json"),
+      JSON.stringify({
+        schema_version: 1,
+        template_version: 1,
+        content_sha256: createHash("sha256").update(skill, "utf8").digest("hex"),
+      }),
+      "utf8",
+    );
+    expect(updateSkill(workspace)).toBe(0);
+    expect(readFileSync(path.join(skillDirectory, "references", "schema-workflow.yaml"), "utf8")).toContain("stages:");
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }

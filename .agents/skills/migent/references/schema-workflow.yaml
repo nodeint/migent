@@ -1,0 +1,65 @@
+# A missing schema_version is 0. Commands refuse the file while it is older than this Migent.
+schema_version: 1
+
+# When id is omitted, the id is the file name without .yaml.
+id: reference
+
+constraints:
+  - Stay within the task.
+
+# requires.workflow names another file in .migent/workflows.
+# requires.decision must match that workflow's completion decision.
+requires:
+  workflow: plan
+  decision: approved
+
+stages:
+  - id: draft
+    role: planner
+    # model is a name under models in config.yaml, not a provider model id.
+    model: planner
+    # Options merge in order: model, then role, then stage.
+    # Only keys the adapter marks overridable are stored on the provider session.
+    options:
+      reasoning-effort: high
+    depends_on: []
+    # max_revisions is allowed only when a route returns to this stage.
+    max_revisions: 2
+    instructions:
+      - Write the draft.
+    produces:
+      artifact: draft.md
+
+  - id: review
+    role: reviewer
+    depends_on:
+      - draft
+    # resume_from must be one entry in depends_on. It continues that stage's provider session.
+    session:
+      resume_from: draft
+    instructions:
+      - Review the draft.
+    # verify runs after status complete and must sit on every path to complete.
+    # A stage artifact cannot be named verify.md.
+    verify:
+      - pnpm test
+    # max_verify defaults to 3. verify_timeout is seconds for the whole list. Both require verify.
+    max_verify: 3
+    verify_timeout: 900
+    # Route keys must match decision.values. A destination is a stage id or complete.
+    decision:
+      values:
+        - approved
+        - revise
+      routes:
+        approved: complete
+        revise: draft
+
+# An output artifact must match produces.artifact on from_stage.
+completion:
+  stage: review
+  decision: approved
+  outputs:
+    - name: draft
+      from_stage: draft
+      artifact: draft.md

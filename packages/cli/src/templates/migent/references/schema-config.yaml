@@ -1,0 +1,31 @@
+# A missing schema_version is 0. Commands refuse the file while it is older than this Migent.
+schema_version: 1
+
+# models.<name>.model is the provider model id.
+# roles.<name>.default_model and a stage model are this name.
+# Options merge in order: model, then role, then stage.
+# Only keys the adapter marks overridable are stored on the provider session.
+models:
+  planner:
+    provider: grok
+    model: grok-4.7
+    # grok accepts reasoning-effort (overridable), max_turns, tools, disallowed_tools,
+    # permission_mode (default, acceptEdits, auto, dontAsk, bypassPermissions, plan),
+    # rules, allow, deny, and sandbox.
+    # agy accepts effort (low, medium, high, xhigh, max; overridable), mode (accept-edits, auto, plan),
+    # agent, sandbox (true or false), and skip_permissions (true or false).
+    # claude accepts effort (low, medium, high, xhigh, max; overridable), permission_mode
+    # (acceptEdits, auto, bypassPermissions, manual, dontAsk, plan), tools, allowed_tools,
+    # disallowed_tools, max_budget_usd, fallback_model, and append_system_prompt.
+    # codex accepts model_reasoning_effort (overridable). Any other key of letters, digits,
+    # dots, underscores, and hyphens is passed through as codex exec -c.
+    options:
+      reasoning-effort: high
+
+roles:
+  planner:
+    default_model: planner
+    options:
+      reasoning-effort: medium
+  reviewer:
+    default_model: planner
