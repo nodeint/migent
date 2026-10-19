@@ -1,10 +1,14 @@
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
-import { writeFileAtomic, writeJsonAtomic } from "./atomic-file.js";
+import { writeFileAtomic } from "./atomic-file.js";
 import { ConfigurationError } from "./errors.js";
-import { pyRepr, isRecord } from "./record.js";
+import { pyRepr } from "./record.js";
 import { corruptStatusMessage, readStatusFileState } from "./query.js";
 import { isUnicodeAlnum, utcNow } from "./runtime.js";
+import { appendLifecycleEvent } from "./session-events.js";
+import { commitFoldedStatus, readSessionManifest } from "./session-fold.js";
+import { SessionLock, sessionLockHeldLocally } from "./session-lock.js";
 import { SessionStore } from "./session-store.js";
 import { assertManualSessionId, assertSingleLineTask, requireTaskBody, writeTaskFile, taskFilePath } from "./task-file.js";
 import { loadNamedWorkflow, type WorkflowDocument } from "./workflow.js";
@@ -69,6 +73,17 @@ export function sessionSlug(value: string, limit: number): string {
   return slug.slice(0, limit).replace(/-+$/u, "");
 }
 
+/** The caller may already hold this lock. A second acquire fails as this process. */
+function withSessionLock<T>(sessionDirectory: string, fn: () => T): T {
+  if (sessionLockHeldLocally(sessionDirectory)) return fn();
+  const lock = SessionLock.acquire(sessionDirectory);
+  try {
+    return fn();
+  } finally {
+    lock.release();
+  }
+}
+
 export function createWorkflowSession(
   workspace: string,
   workflowId: string,
@@ -96,19 +111,18 @@ export function createWorkflowSession(
     "status: running",
   ];
   if (resolvedPrior) manifestLines.splice(manifestLines.length - 1, 0, `prior_session_id: ${resolvedPrior}`);
-  writeFileAtomic(path.join(sessionDirectory, "manifest.yaml"), `${manifestLines.join("\n")}\n`);
-  const statusPayload: Record<string, unknown> = {
-    session_id: sessionId,
-    workflow_id: resolvedId,
-    workflow_path: workflowRelativePath,
-    task: taskSummary,
-    status: "active",
-    created_at: createdAt,
-    updated_at: createdAt,
-  };
-  if (resolvedPrior) statusPayload.prior_session_id = resolvedPrior;
-  writeJsonAtomic(path.join(sessionDirectory, "status.json"), statusPayload);
-  writeTaskFile(taskFilePath(workspace, sessionId), taskSummary);
+  withSessionLock(sessionDirectory, () => {
+    writeFileAtomic(path.join(sessionDirectory, "manifest.yaml"), `${manifestLines.join("\n")}\n`);
+    writeTaskFile(taskFilePath(workspace, sessionId), taskSummary);
+    appendSessionCreated(sessionDirectory, createdAt, {
+      workflow_id: resolvedId,
+      workflow_path: workflowRelativePath,
+      hash: workflowSourceHash(workflow),
+      task: taskSummary,
+      prior_session_id: resolvedPrior,
+    });
+    commitFoldedStatus(workspace, sessionDirectory);
+  });
   return sessionId;
 }
 
@@ -144,19 +158,17 @@ export function createPreparedSession(
     "status: prepared",
   ];
   if (resolvedPrior) manifestLines.splice(manifestLines.length - 1, 0, `prior_session_id: ${resolvedPrior}`);
-  writeFileAtomic(path.join(sessionDirectory, "manifest.yaml"), `${manifestLines.join("\n")}\n`);
-  const statusPayload: Record<string, unknown> = {
-    session_id: id,
-    workflow_id: resolvedId,
-    workflow_path: workflowRelativePath,
-    task: id,
-    status: "prepared",
-    created_at: createdAt,
-    updated_at: createdAt,
-  };
-  if (resolvedPrior) statusPayload.prior_session_id = resolvedPrior;
-  writeJsonAtomic(path.join(sessionDirectory, "status.json"), statusPayload);
-  writeFileAtomic(path.join(sessionDirectory, "events.jsonl"), "");
+  withSessionLock(sessionDirectory, () => {
+    writeFileAtomic(path.join(sessionDirectory, "manifest.yaml"), `${manifestLines.join("\n")}\n`);
+    appendSessionCreated(sessionDirectory, createdAt, {
+      workflow_id: resolvedId,
+      workflow_path: workflowRelativePath,
+      hash: workflowSourceHash(workflow),
+      task: id,
+      prior_session_id: resolvedPrior,
+    });
+    commitFoldedStatus(workspace, sessionDirectory);
+  });
   return id;
 }
 
@@ -167,11 +179,15 @@ export function activatePreparedSession(workspace: string, sessionId: string): v
   const read = readStatusFileState(statusPath);
   if (read.state === "corrupt") throw new ConfigurationError(corruptStatusMessage(statusPath));
   if (read.state === "missing") throw new ConfigurationError(`Session not found: ${sessionId}.`);
-  const status = read.status;
-  status.status = "active";
-  status.updated_at = utcNow();
-  writeJsonAtomic(statusPath, status);
-  replaceManifestStatus(sessionDirectory, "running");
+  withSessionLock(sessionDirectory, () => {
+    appendLifecycleEvent(sessionDirectory, {
+      event: "session.activated",
+      timestamp: utcNow(),
+      data: { from: "prepared" },
+    });
+    commitFoldedStatus(workspace, sessionDirectory);
+    replaceManifestStatus(sessionDirectory, "running");
+  });
 }
 
 export function createAgentSession(workspace: string, role: string, task: string): string {
@@ -182,24 +198,24 @@ export function createAgentSession(workspace: string, role: string, task: string
   const sessionsDirectory = path.join(workspace, ".migent", "sessions");
   const [sessionId, sessionDirectory] = createSessionDirectory(sessionsDirectory, sessionIdBase);
   const createdAt = utcNow();
-  writeFileAtomic(
-    path.join(sessionDirectory, "manifest.yaml"),
-    `${[
-      `session_id: ${sessionId}`,
-      "workflow_id: agent",
-      `role: ${role}`,
-      `task: ${JSON.stringify(taskSummary)}`,
-      `created_at: ${createdAt}`,
-      "status: running",
-    ].join("\n")}\n`);
-  writeJsonAtomic(path.join(sessionDirectory, "status.json"), {
-    session_id: sessionId,
-    workflow_id: "agent",
-    role,
-    task: taskSummary,
-    status: "active",
-    created_at: createdAt,
-    updated_at: createdAt,
+  withSessionLock(sessionDirectory, () => {
+    writeFileAtomic(
+      path.join(sessionDirectory, "manifest.yaml"),
+      `${[
+        `session_id: ${sessionId}`,
+        "workflow_id: agent",
+        `role: ${role}`,
+        `task: ${JSON.stringify(taskSummary)}`,
+        `created_at: ${createdAt}`,
+        "status: running",
+      ].join("\n")}\n`,
+    );
+    appendSessionCreated(sessionDirectory, createdAt, {
+      workflow_id: "agent",
+      role,
+      task: taskSummary,
+    });
+    commitFoldedStatus(workspace, sessionDirectory);
   });
   return sessionId;
 }
@@ -209,15 +225,16 @@ export function requireAgentSession(workspace: string, sessionId: string): void 
   if (!exists(sessionDirectory) || !isDirectory(sessionDirectory)) {
     throw new ConfigurationError(`Session not found: ${sessionId}.`);
   }
-  let status: unknown;
-  try {
-    status = JSON.parse(readFileSync(path.join(sessionDirectory, "status.json"), "utf8"));
-  } catch {
-    throw new ConfigurationError(`Session ${sessionId} was not created by agent.`);
+  const statusPath = path.join(sessionDirectory, "status.json");
+  const manifest = readSessionManifest(sessionDirectory);
+  const read = readStatusFileState(statusPath);
+  if (read.state === "corrupt") {
+    if (manifest.workflowId === "agent") return;
+    throw new ConfigurationError(corruptStatusMessage(statusPath));
   }
-  if (!isRecord(status) || status.workflow_id !== "agent") {
-    throw new ConfigurationError(`Session ${sessionId} was not created by agent.`);
-  }
+  if (read.state === "ok" && read.status.workflow_id === "agent") return;
+  if (manifest.workflowId === "agent" && read.state === "missing") return;
+  throw new ConfigurationError(`Session ${sessionId} was not created by agent.`);
 }
 
 export function resolvePriorSessionId(
@@ -268,6 +285,27 @@ export function bindPriorSessionId(
   if (stored !== priorSessionId) {
     const shown = stored === undefined || stored === null ? "None" : String(stored);
     throw new ConfigurationError(`--prior ${priorSessionId} does not match session ${shown}.`);
+  }
+}
+
+function appendSessionCreated(sessionDirectory: string, timestamp: string, data: Record<string, unknown>): void {
+  const body: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (value !== undefined && value !== null && value !== "") body[key] = value;
+  }
+  appendLifecycleEvent(sessionDirectory, {
+    event: "session.created",
+    timestamp,
+    data: body,
+  });
+}
+
+function workflowSourceHash(workflow: WorkflowDocument): string | null {
+  if (!workflow.source) return null;
+  try {
+    return createHash("sha256").update(readFileSync(workflow.source)).digest("hex");
+  } catch {
+    return null;
   }
 }
 

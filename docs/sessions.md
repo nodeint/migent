@@ -23,6 +23,7 @@ Each run has its own directory, named by its session ID:
 └── executions/
     └── <order>-<stage-id>--attempt-<n>/
         ├── execution.json
+        ├── stream.jsonl                  # provider item traces and provider heartbeats
         ├── conversation.json             # provider conversation checkpoint
         ├── prompt.md
         ├── task.md                       # copy of the session task at dispatch
@@ -44,11 +45,15 @@ The session-level files have distinct purposes:
 - `status.json` is the current, machine-readable session snapshot. It includes
   the latest execution and stage state, and records decisions, blockers, and
   published outputs when applicable. `session show` reads this file.
-- `events.jsonl` is the append-only event stream. Each line is one JSON object.
-  A prepared session starts with an empty file, so `session show <session-id>` can
-  print the snapshot before the first stage. `session follow <session-id> --cursor`
-  uses byte offsets into this file.
-  `--cursor` is an option for tools that resume a follow.
+- `events.jsonl` is the append-only session log. Each line is one JSON object
+  with `v`, `seq`, `event`, `timestamp`, and `data`. Lines written by an older
+  Migent have no `v` and are read as version 1. `seq` increases by one for each
+  complete line in this file and in every `stream.jsonl`. `session show` can
+  print a prepared session before the first stage. `session follow --cursor`
+  is a byte offset into this file. Stream lines are matched by timestamp.
+- `executions/<id>/stream.jsonl` holds `provider.item_*` and `provider.heartbeat`
+  for that execution. Other provider events, including `verify.heartbeat`, stay
+  in `events.jsonl`.
 - `executions/` contains one record for every stage attempt. A completed,
   failed, or cancelled execution record is immutable. Execution directory names
   are ordered, for example `0002-review--attempt-01`.
@@ -133,6 +138,7 @@ migent session show <session-id>
 migent session follow <session-id>
 migent session continue <session-id>
 migent session continue <session-id> --once
+migent session repair <session-id>
 ```
 
 `session list` lists recorded runs, newest first. `--workflow`, `--status`, and
@@ -144,6 +150,16 @@ resumes an active workflow session from its recorded state and resets revision
 counts. `session continue --once` advances one stage and does not reset them.
 A session with status `prepared` is not resumed by `session continue`. Write
 `task.md`, then run `migent session run --session <session-id> --workflow <workflow>`.
+
+`session repair <session-id>` rebuilds `status.json` from the session directory
+and takes the session lock. `session continue` does the same rebuild before it
+dispatches. Neither command replaces a parsed `status.json` when that would drop
+`workflow_id`, `task_sha256`, or output provenance. When a v1 `status.json` is
+destroyed, the task hash and output provenance cannot be recovered.
+`session repair <session-id> --accept-task` is the only way past that file. It
+stores the hash of the current `task.md`, keeps any provenance map that still
+parsed, and adds a path-only row for an `outputs/` file the map does not name.
+It does not leave `task_sha256` empty. `session continue` does not accept the flag.
 
 ## Artifact dependency versus provider-session resume
 

@@ -8,8 +8,10 @@ import {
   statSync,
 } from "node:fs";
 import path from "node:path";
-import { appendLineSynced, writeFileAtomic, writeJsonAtomic } from "./atomic-file.js";
+import { writeFileAtomic, writeJsonAtomic } from "./atomic-file.js";
 import { ConfigurationError } from "./errors.js";
+import { appendLifecycleEvent, appendRecordedEvent, reservedExecutionOrders, reservedStageAttempts, sessionChangeReason, skipsStatusWrite } from "./session-events.js";
+import { commitFoldedStatus } from "./session-fold.js";
 import { assertSessionLockHeld } from "./session-lock.js";
 import { corruptStatusMessage, readStatusFileState } from "./query.js";
 import { STATUS_PROVIDER_EVENTS } from "./event-kinds.js";
@@ -54,39 +56,6 @@ import {
   loadWorkflowDocument,
   type WorkflowDocument,
 } from "./workflow.js";
-
-const RUNNING_STATUS_KEYS = [
-  "workflow_id",
-  "workflow_path",
-  "role",
-  "task",
-  "created_at",
-  "prior_session_id",
-  "latest_provider_event",
-  "latest_decision",
-  "latest_stage_id",
-  "current_stage",
-  "outputs",
-  "workspace_id",
-  "revision_baselines",
-  "task_sha256",
-] as const;
-
-const SETTLED_STATUS_KEYS = [
-  "workflow_id",
-  "workflow_path",
-  "role",
-  "task",
-  "created_at",
-  "prior_session_id",
-  "latest_provider_event",
-  "latest_decision",
-  "latest_stage_id",
-  "outputs",
-  "workspace_id",
-  "revision_baselines",
-  "task_sha256",
-] as const;
 
 export function stringOptions(value: unknown): Record<string, string> {
   if (!isRecord(value)) return {};
@@ -366,21 +335,10 @@ export class SessionStore {
 
   recordProviderEvent(context: ExecutionContext, event: Record<string, unknown>): void {
     const sessionDirectory = path.dirname(path.dirname(context.directory));
-    this.appendEvent(sessionDirectory, event);
-    if (!STATUS_PROVIDER_EVENTS.has(String(event.event))) return;
-    const status = this.readSessionStatusAt(sessionDirectory);
-    const timestamp = typeof event.timestamp === "string" ? event.timestamp : utcNow();
-    status.latest_provider_event = event;
-    status.current_stage = {
-      execution_id: context.executionId,
-      stage_id: event.stage_id,
-      provider: event.provider,
-      event: event.event,
-      summary: event.summary ?? null,
-      updated_at: timestamp,
-    };
-    status.updated_at = timestamp;
-    writeJsonAtomic(path.join(sessionDirectory, "status.json"), status);
+    appendRecordedEvent(sessionDirectory, event);
+    const name = String(event.event);
+    if (!STATUS_PROVIDER_EVENTS.has(name) || skipsStatusWrite(name)) return;
+    commitFoldedStatus(this.workspace, sessionDirectory);
   }
 
   executionContext(sessionId: string, executionId: string): ExecutionContext | null {
@@ -415,16 +373,18 @@ export class SessionStore {
   resetRevisionCounts(sessionId: string, snapshots: readonly ExecutionSnapshot[]): void {
     const sessionDirectory = path.join(this.sessionsDirectory, sessionId);
     assertSessionLockHeld(sessionDirectory);
-    const status = this.readSessionStatusAt(sessionDirectory);
     const counts: Record<string, number> = {};
     for (const snapshot of snapshots) {
       if (snapshot.status === "completed" && snapshot.outcomeStatus === "complete") {
         counts[snapshot.stageId] = (counts[snapshot.stageId] ?? 0) + 1;
       }
     }
-    status.revision_baselines = counts;
-    status.updated_at = utcNow();
-    writeJsonAtomic(path.join(sessionDirectory, "status.json"), status);
+    appendLifecycleEvent(sessionDirectory, {
+      event: "revisions.reset",
+      timestamp: utcNow(),
+      data: { baselines: counts },
+    });
+    commitFoldedStatus(this.workspace, sessionDirectory);
   }
 
   executionSnapshots(sessionId: string): ExecutionSnapshot[] {
@@ -489,58 +449,76 @@ export class SessionStore {
       status === "running"
         ? {}
         : this.publishedOutputs(context, status, outcome, previousStatus, workflow, metadata);
+    const timestamp = utcNow();
     metadata.status = status;
     metadata.agent_id = record.agentId;
-    metadata.completed_at = status === "running" ? null : utcNow();
+    metadata.completed_at = status === "running" ? null : timestamp;
     if (error !== null) metadata.error = error;
     if (outcome !== null) metadata.outcome = outcome.toJson();
     if (extra !== null) Object.assign(metadata, extra);
     writeJsonAtomic(filePath, metadata);
     const stageId = typeof metadata.stage_id === "string" ? metadata.stage_id : "";
-    const sessionStatus = sessionStatusAfterExecution(
-      status,
-      outcome,
-      previousStatus,
-      workflow,
-      stageId,
-    );
-    const outputs: Record<string, unknown> = {};
-    if (isRecord(previousStatus.outputs)) Object.assign(outputs, previousStatus.outputs);
-    Object.assign(outputs, published);
-    const payload: Record<string, unknown> = {
-      ...this.providerStatusFields(previousStatus, context, status),
-      session_id: context.sessionId,
-      status: sessionStatus,
-      latest_execution_id: context.executionId,
-      latest_execution_status: status,
-      latest_stage_id: stageId,
-      updated_at: utcNow(),
-      ...this.terminalSessionDetails(context, outcome, sessionStatus),
-    };
-    let decision: string | null = null;
-    if (outcome?.decision) decision = outcome.decision;
-    else if (typeof previousStatus.latest_decision === "string" && previousStatus.latest_decision) {
-      decision = previousStatus.latest_decision;
-    }
-    if (decision) payload.latest_decision = decision;
-    if (Object.keys(outputs).length > 0) payload.outputs = outputs;
-    this.appendEvent(sessionDirectory, {
+    const sessionStatus = sessionStatusAfterExecution(status, outcome, previousStatus, workflow, stageId);
+    const failureReason = typeof metadata.failure_reason === "string" ? metadata.failure_reason : null;
+    const storedError = typeof metadata.error === "string" ? metadata.error : null;
+    appendLifecycleEvent(sessionDirectory, {
       event: `execution.${status}`,
-      execution_id: context.executionId,
-      stage_id: metadata.stage_id,
-      timestamp: utcNow(),
+      timestamp,
+      executionId: context.executionId,
+      stageId,
+      data: {
+        outcome: outcome ? outcome.toJson() : null,
+        failure_reason: failureReason,
+        error: storedError,
+        session_status: sessionStatus,
+      },
     });
     if (outcome !== null) {
-      this.appendEvent(sessionDirectory, {
+      const outcomeJson = outcome.toJson();
+      appendLifecycleEvent(sessionDirectory, {
         event: `stage.${outcome.status}`,
-        execution_id: context.executionId,
-        stage_id: metadata.stage_id,
-        timestamp: utcNow(),
-        ...outcome.toJson(),
+        timestamp,
+        executionId: context.executionId,
+        stageId,
+        outcomeTopLevel: outcomeJson,
+        data: { outcome: outcomeJson },
       });
     }
-    writeJsonAtomic(path.join(sessionDirectory, "status.json"), payload);
-    if (sessionStatus !== "active") this.markSessionTerminal(context, sessionStatus, outcome);
+    if (Object.keys(published).length > 0) {
+      appendLifecycleEvent(sessionDirectory, {
+        event: "outputs.published",
+        timestamp,
+        executionId: context.executionId,
+        stageId,
+        data: {
+          outputs: Object.entries(published).map(([name, row]) => ({
+            name,
+            path: row.path,
+            source_execution_id: row.source_execution_id,
+            published_by_execution_id: row.published_by_execution_id,
+          })),
+        },
+      });
+    }
+    const previousSessionStatus = typeof previousStatus.status === "string" ? previousStatus.status : "";
+    if (sessionStatus !== previousSessionStatus) {
+      const reason = sessionChangeReason(sessionStatus, outcome, storedError);
+      const data: Record<string, unknown> = { from: previousSessionStatus || null };
+      if (reason !== null) data.reason = reason;
+      if (outcome !== null) data.outcome = outcome.toJson();
+      appendLifecycleEvent(sessionDirectory, {
+        event: `session.${sessionStatus}`,
+        timestamp,
+        executionId: context.executionId,
+        stageId,
+        outcomeTopLevel: outcome ? outcome.toJson() : null,
+        data,
+      });
+      if (sessionStatus === "completed" || sessionStatus === "blocked" || sessionStatus === "cancelled") {
+        this.rewriteManifestStatus(sessionDirectory, sessionStatus);
+      }
+    }
+    commitFoldedStatus(this.workspace, sessionDirectory);
   }
 
   private reapExecution(context: ExecutionContext, onLiveOwner: string): void {
@@ -598,26 +576,6 @@ export class SessionStore {
     if (message) throw new Error(message);
   }
 
-  private terminalSessionDetails(
-    context: ExecutionContext,
-    outcome: StageOutcome | null,
-    sessionStatus: string,
-  ): Record<string, string> {
-    if (sessionStatus === "blocked") {
-      const details: Record<string, string> = {
-        terminal_execution_id: context.executionId,
-        blocked_by_execution_id: context.executionId,
-        blocked_by_stage_id: this.stageId(context),
-      };
-      if (outcome?.blocker) details.blocker = outcome.blocker;
-      return details;
-    }
-    if (sessionStatus === "cancelled" || sessionStatus === "completed") {
-      return { terminal_execution_id: context.executionId };
-    }
-    return {};
-  }
-
   private rewriteManifestStatus(sessionDirectory: string, status: string): void {
     const manifestPath = path.join(sessionDirectory, "manifest.yaml");
     try {
@@ -654,47 +612,11 @@ export class SessionStore {
     }
   }
 
-  private markSessionTerminal(
-    context: ExecutionContext,
-    status: string,
-    outcome: StageOutcome | null,
-  ): void {
-    const sessionDirectory = path.dirname(path.dirname(context.directory));
-    this.rewriteManifestStatus(sessionDirectory, status);
-    this.appendEvent(sessionDirectory, {
-      event: `session.${status}`,
-      execution_id: context.executionId,
-      stage_id: this.stageId(context),
-      timestamp: utcNow(),
-      ...(outcome ? outcome.toJson() : {}),
-    });
-  }
-
   private readSessionStatusAt(sessionDirectory: string): Record<string, unknown> {
     const statusPath = path.join(sessionDirectory, "status.json");
     const read = readStatusFileState(statusPath);
     if (read.state === "corrupt") throw new ConfigurationError(corruptStatusMessage(statusPath));
     return read.status;
-  }
-
-  private providerStatusFields(
-    previousStatus: Record<string, unknown>,
-    context: ExecutionContext,
-    status: string,
-  ): Record<string, unknown> {
-    if (status === "running") return pick(previousStatus, RUNNING_STATUS_KEYS);
-    const currentStage = previousStatus.current_stage;
-    if (isRecord(currentStage) && currentStage.execution_id !== context.executionId) {
-      const preserved: Record<string, unknown> = { current_stage: currentStage };
-      if (isRecord(previousStatus.outputs)) preserved.outputs = previousStatus.outputs;
-      if (Object.hasOwn(previousStatus, "workspace_id")) preserved.workspace_id = previousStatus.workspace_id;
-      if (Object.hasOwn(previousStatus, "revision_baselines")) {
-        preserved.revision_baselines = previousStatus.revision_baselines;
-      }
-      if (Object.hasOwn(previousStatus, "task_sha256")) preserved.task_sha256 = previousStatus.task_sha256;
-      return preserved;
-    }
-    return pick(previousStatus, SETTLED_STATUS_KEYS);
   }
 
   private createExecution(
@@ -734,6 +656,8 @@ export class SessionStore {
     mkdirSync(context.artifactDirectory);
     this.createSessionFiles(context);
     writeFileAtomic(path.join(directory, "prompt.md"), prompt);
+    const createdAt = utcNow();
+    const sessionDirectory = path.dirname(path.dirname(directory));
     writeJsonAtomic(path.join(directory, "execution.json"), {
       session_id: resolvedSession,
       execution_id: executionId,
@@ -747,15 +671,23 @@ export class SessionStore {
       resumes_execution_id: resumesExecutionId,
       status: "running",
       schema_version: EXECUTION_SCHEMA_VERSION,
-      created_at: utcNow(),
+      created_at: createdAt,
       artifact_directory: "artifacts",
     });
-    this.appendEvent(path.dirname(path.dirname(directory)), {
+    appendLifecycleEvent(sessionDirectory, {
       event: "execution.started",
-      execution_id: executionId,
-      stage_id: stageId,
-      timestamp: utcNow(),
+      timestamp: createdAt,
+      executionId,
+      stageId,
+      data: {
+        execution_order: order,
+        stage_attempt: attempt,
+        provider,
+        model,
+        resumes_execution_id: resumesExecutionId,
+      },
     });
+    commitFoldedStatus(this.workspace, sessionDirectory);
     return context;
   }
 
@@ -763,20 +695,23 @@ export class SessionStore {
     const sessionDirectory = path.dirname(path.dirname(context.directory));
     const manifestPath = path.join(sessionDirectory, "manifest.yaml");
     if (existsSync(manifestPath)) return;
+    const createdAt = utcNow();
     writeFileAtomic(
       manifestPath,
-      `${[`session_id: ${context.sessionId}`, `created_at: ${utcNow()}`, "status: running"].join("\n")}\n`);
-    writeJsonAtomic(path.join(sessionDirectory, "status.json"), {
-      session_id: context.sessionId,
-      status: "active",
-      latest_execution_id: context.executionId,
-      latest_execution_status: "running",
-      updated_at: utcNow(),
+      `${[`session_id: ${context.sessionId}`, `created_at: ${createdAt}`, "status: running"].join("\n")}\n`);
+    appendLifecycleEvent(sessionDirectory, {
+      event: "session.created",
+      timestamp: createdAt,
+      data: {},
     });
   }
 
   private nextExecutionOrder(sessionId: string): number {
-    const orders = this.executionContexts(sessionId).map((context) => this.executionSortKey(context)[0]);
+    const sessionDirectory = path.join(this.sessionsDirectory, sessionId);
+    const orders = [
+      ...this.executionContexts(sessionId).map((context) => this.executionSortKey(context)[0]),
+      ...reservedExecutionOrders(sessionDirectory),
+    ];
     return Math.max(0, ...orders) + 1;
   }
 
@@ -785,6 +720,16 @@ export class SessionStore {
     for (const context of this.executionContexts(sessionId)) {
       const metadata = readJsonObject(path.join(context.directory, "execution.json"));
       if (metadata.stage_id === stageId) attempts.push(asInt(metadata.stage_attempt));
+    }
+    let safe = stageId;
+    try {
+      safe = safeComponent(stageId);
+    } catch {
+      safe = stageId;
+    }
+    const sessionDirectory = path.join(this.sessionsDirectory, sessionId);
+    for (const slot of reservedStageAttempts(sessionDirectory)) {
+      if (slot.stageId === stageId || slot.stageId === safe) attempts.push(slot.attempt);
     }
     return Math.max(0, ...attempts) + 1;
   }
@@ -868,11 +813,6 @@ export class SessionStore {
     }
     return snapshots;
   }
-
-  private appendEvent(sessionDirectory: string, event: Record<string, unknown>): void {
-    assertSessionLockHeld(sessionDirectory);
-    appendLineSynced(path.join(sessionDirectory, "events.jsonl"), JSON.stringify(event));
-  }
 }
 
 function verifyReportPath(directory: string, verify: unknown): string | null {
@@ -894,14 +834,6 @@ function publishedJson(
     };
   }
   return outputs;
-}
-
-function pick(source: Record<string, unknown>, keys: readonly string[]): Record<string, unknown> {
-  const picked: Record<string, unknown> = {};
-  for (const key of keys) {
-    if (Object.hasOwn(source, key)) picked[key] = source[key];
-  }
-  return picked;
 }
 
 function nonempty(value: unknown): string | null {

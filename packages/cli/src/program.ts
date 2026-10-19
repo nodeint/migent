@@ -5,6 +5,7 @@ import { runConfigModel, runConfigRole, runConfigShow } from "./commands/config.
 import { runDoctor } from "./commands/doctor.js";
 import { executeWorkflow } from "./commands/execute.js";
 import { prepareWorkflowSession } from "./commands/prepare.js";
+import { repairWorkflowSession } from "./commands/repair.js";
 import { runInit } from "./commands/init.js";
 import { runSessions } from "./commands/sessions.js";
 import { parsePort, runServiceStart, runServiceStatus, runServiceStop } from "./commands/service.js";
@@ -292,6 +293,24 @@ function registerSessionCommand(program: Command, status: CliStatus): void {
     .action((id: string, options: OptionValues) => settle(status, () => continueSession(id, options)));
 
   session
+    .command("repair")
+    .description("Rebuild status.json from the session directory.")
+    .argument("<session>", "Session to repair.")
+    .option("--accept-task", "Store the hash of the current task.md when status.json does not parse.")
+    .addHelpText(
+      "after",
+      `${exitText([
+        "Exit 0 after status.json is rebuilt.",
+        "Exit 2 when the session cannot be repaired, or another process holds the session lock.",
+      ])}Examples:\n  migent session repair <session>\n  migent session repair <session> --accept-task\n`,
+    )
+    .action((id: string, options: OptionValues) =>
+      settle(status, () =>
+        repairWorkflowSession(findWorkspace(invocationCwdPath()), id, options.acceptTask === true),
+      ),
+    );
+
+  session
     .command("list")
     .description("List sessions, newest first.")
     .option("--json", "Print a JSON array without the task. With --latest, print one object, or null.")
@@ -352,7 +371,10 @@ function registerSessionCommand(program: Command, status: CliStatus): void {
     .argument("<session>", "Session to follow.")
     .option("--json", "Print a snapshot object, then JSON lines. With --cursor, only JSON lines.")
     .option("--execution <execution>", "Limit followed events and --until to this execution.")
-    .option("--cursor <offset>", "Byte offset in events.jsonl. 0 replays the whole log. Skips the snapshot.")
+    .option(
+      "--cursor <offset>",
+      "Byte offset in events.jsonl. 0 replays the whole log and every execution stream. Any other offset replays events from that byte, and stream lines whose timestamp is at or after the first event there. Skips the snapshot.",
+    )
     .option("--until", "Exit when --execution reaches completed, failed, or cancelled. Requires --execution.")
     .option("--exit-when-done", "Exit when the session is completed (0), blocked (1), or cancelled (130).")
     .addHelpText(

@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { closeSync, fsyncSync, openSync, renameSync, rmSync, writeSync } from "node:fs";
+import { closeSync, fstatSync, fsyncSync, openSync, readSync, renameSync, rmSync, writeSync } from "node:fs";
 import path from "node:path";
 
 const RENAME_RETRIES = 5;
@@ -69,13 +69,41 @@ export function writeJsonAtomic(destination: string, value: unknown): void {
   writeFileAtomic(destination, JSON.stringify(value, null, 2));
 }
 
-/** Append one complete line in a single write, then fsync. */
+/** Append one complete line in a single write, then fsync. A torn tail stays its own skipped line. */
 export function appendLineSynced(filePath: string, line: string): void {
-  const fd = openSync(filePath, "a");
+  const fd = openSync(filePath, "a+");
   try {
+    separateTornTail(fd);
     writeSync(fd, line.endsWith("\n") ? line : `${line}\n`);
     fsyncSync(fd);
   } finally {
     closeSync(fd);
   }
+}
+
+/** Close a torn tail so a later reader counts it as its own line. A missing file stays missing. */
+export function sealTornTail(filePath: string): void {
+  let fd: number;
+  try {
+    fd = openSync(filePath, "r+");
+  } catch {
+    return;
+  }
+  try {
+    if (!separateTornTail(fd)) return;
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+}
+
+function separateTornTail(fd: number): boolean {
+  const size = fstatSync(fd).size;
+  if (size === 0) return false;
+  const last = Buffer.alloc(1);
+  readSync(fd, last, 0, 1, size - 1);
+  if (last[0] === 0x0a) return false;
+  // `r+` leaves the offset at the start. Write the separator at the end.
+  writeSync(fd, "\n", size);
+  return true;
 }

@@ -108,59 +108,59 @@ Phases A, B, C in order. Phase A is independent and should merge first. Phase B 
 ## Phase B: Event log as source of truth
 
 ### B1. Event envelope v2
-- [ ] Each line in `events.jsonl` keeps today's top-level keys and adds `v` and `seq`:
+- [x] Each line in `events.jsonl` keeps today's top-level keys and adds `v` and `seq`:
   ```json
   {"v":2,"seq":17,"event":"execution.completed","timestamp":"…","execution_id":"0003-…","stage_id":"implement","data":{}}
   ```
-- [ ] `event`, `timestamp`, `stage_id`, `execution_id` and `summary` keep their names and meaning, so `printWatchEvent` (`display.ts:113-119`) and `follow --json` consumers are unchanged. Event names do not change (`execution.running`, `execution.completed`, `stage.complete`, `session.completed`, and so on; `verify.test.ts:115` asserts `execution.running`).
-- [ ] New payload goes in `data`. The outcome also goes in `data`. On `stage.*` and `session.*` events, which spread it today (`session-store.ts:531-537`, `660-665`), it is also copied at the top level, before the envelope keys so it cannot overwrite them. `execution.*` events do not carry it at the top level, as today.
-- [ ] `seq` is assigned under the session lock and increases by one per line.
-- [ ] Lines without `v` are read as v1. The fold ignores a trailing partial line.
+- [x] `event`, `timestamp`, `stage_id`, `execution_id` and `summary` keep their names and meaning, so `printWatchEvent` (`display.ts:113-119`) and `follow --json` consumers are unchanged. Event names do not change (`execution.running`, `execution.completed`, `stage.complete`, `session.completed`, and so on; `verify.test.ts:115` asserts `execution.running`).
+- [x] New payload goes in `data`. The outcome also goes in `data`. On `stage.*` and `session.*` events, which spread it today (`session-store.ts:531-537`, `660-665`), it is also copied at the top level, before the envelope keys so it cannot overwrite them. `execution.*` events do not carry it at the top level, as today.
+- [x] `seq` is assigned under the session lock and increases by one per line.
+- [x] Lines without `v` are read as v1. The fold ignores a trailing partial line.
 
 ### B2. Lifecycle events carry the full state change
-- [ ] `session.created` with workflow ID, path, hash, task label, `prior_session_id` and role.
-- [ ] `session.activated` for prepared sessions.
-- [ ] `task.frozen` with `sha256`.
-- [ ] `execution.started` with order, attempt, provider, model and `resumes_execution_id`.
-- [ ] `execution.<status>` with outcome, `failure_reason` and error in `data`.
-- [ ] `revisions.reset` with the baselines.
-- [ ] `outputs.published` with name, path, source execution and publishing execution.
-- [ ] `session.<status>` with `from` and reason in `data`.
+- [x] `session.created` with workflow ID, path, hash, task label, `prior_session_id` and role.
+- [x] `session.activated` for prepared sessions.
+- [x] `task.frozen` with `sha256`.
+- [x] `execution.started` with order, attempt, provider, model and `resumes_execution_id`.
+- [x] `execution.<status>` with outcome, `failure_reason` and error in `data`.
+- [x] `revisions.reset` with the baselines.
+- [x] `outputs.published` with name, path, source execution and publishing execution.
+- [x] `session.<status>` with `from` and reason in `data`.
 
 ### B3. Provider stream per execution
-- [ ] Move only `provider.item_*` and `provider.heartbeat` to `executions/<id>/stream.jsonl`.
-- [ ] Keep every other event in `events.jsonl`, including `provider.stage_started`, `provider.turn_completed`, `provider.turn_failed`, `provider.cancelled`, `provider.error`, `provider.warning` and all `verify.*` events.
-- [ ] Heartbeats never rewrite `status.json`. `provider.heartbeat` moves to the stream. `verify.heartbeat` stays in `events.jsonl` (`event-kinds.ts`, `verify-runner.ts:137`), but it is appended without a fold or status write.
-- [ ] `session follow` merges `events.jsonl` with every execution's `stream.jsonl` in timestamp order:
+- [x] Move only `provider.item_*` and `provider.heartbeat` to `executions/<id>/stream.jsonl`.
+- [x] Keep every other event in `events.jsonl`, including `provider.stage_started`, `provider.turn_completed`, `provider.turn_failed`, `provider.cancelled`, `provider.error`, `provider.warning` and all `verify.*` events.
+- [x] Heartbeats never rewrite `status.json`. `provider.heartbeat` moves to the stream. `verify.heartbeat` stays in `events.jsonl` (`event-kinds.ts`, `verify-runner.ts:137`), but it is appended without a fold or status write.
+- [x] `session follow` merges `events.jsonl` with every execution's `stream.jsonl` in timestamp order:
   - no `--cursor`: print the snapshot, then tail `events.jsonl` and every stream from their current end, as today;
   - `--cursor 0`: replay all of `events.jsonl` merged with every stream, matching today's "0 replays the whole log" (`program.ts:355`);
   - any other `--cursor N`: replay `events.jsonl` from byte `N`, and stream lines whose timestamp is at or after the first complete event at or after byte `N`. When no complete event exists at or after `N` (a cursor at end of file), replay no old stream lines and tail every stream from its end.
-- [ ] On each poll, `follow` opens any `stream.jsonl` created after it started and reads it from offset 0, so stages that start later are shown.
-- [ ] Every merged line goes through `emitWatchEvent`, so `--execution` keeps filtering by `execution_id` (`watch.ts:129`).
-- [ ] `--cursor` stays a byte offset into `events.jsonl`. Update `docs/cli.md`, the changelog, `integration/execute.test.ts` and `packages/cli/test/dx.test.ts` to state that stream lines are matched by timestamp.
+- [x] On each poll, `follow` opens any `stream.jsonl` created after it started and reads it from offset 0, so stages that start later are shown.
+- [x] Every merged line goes through `emitWatchEvent`, so `--execution` keeps filtering by `execution_id` (`watch.ts:129`).
+- [x] `--cursor` stays a byte offset into `events.jsonl`. Update `docs/cli.md`, the changelog, `integration/execute.test.ts` and `packages/cli/test/dx.test.ts` to state that stream lines are matched by timestamp.
 
 ### B4. Fold and repair
-- [ ] Add a pure `foldStatus(inputs) → status`.
-- [ ] For schema 2 sessions, the inputs are `manifest.yaml` and `events.jsonl`. Before folding, reconcile in both directions:
+- [x] Add a pure `foldStatus(inputs) → status`.
+- [x] For schema 2 sessions, the inputs are `manifest.yaml` and `events.jsonl`. Before folding, reconcile in both directions:
   - for every `execution.json` with no matching `execution.started` or terminal event, build the missing events from that file and append them (synced);
   - an `execution.started` whose `execution.json` is absent is ignored by the fold, and its id is reserved so allocation never reuses it.
-- [ ] For v1 sessions, the inputs are `manifest.yaml` (identity), every `execution.json`, `task.md`, `outputs/`, and every field that still parses in the old `status.json`:
+- [x] For v1 sessions, the inputs are `manifest.yaml` (identity), every `execution.json`, `task.md`, `outputs/`, and every field that still parses in the old `status.json`:
   - keep `task_sha256`, `revision_baselines` and `outputs` from the old file when they exist;
   - derive the session status from the executions, not from the manifest. The manifest says `running` where `status.json` says `active` (`session-records.ts:82` and `:91`), and copying it would make `runnableViolation` reject the session. Manifest `prepared` maps to `prepared`. Manifest `running` with no terminal execution maps to `active`;
   - use `outputs/` only to report that files exist. Never invent `source_execution_id` or `published_by_execution_id`.
-- [ ] `repair` and `continue` refuse to replace `status.json` when:
+- [x] `repair` and `continue` refuse to replace `status.json` when:
   - the fold has no `workflow_id`;
   - the old `status.json` does not parse, because the hash can then not be kept, even when `outputs/` is empty;
   - a parsed `status.json` has a `task_sha256` or an `outputs` entry that the fold would drop.
   
-  The error names the missing fields and points to `repair --accept-task`. That flag is the only way past an unparseable `status.json`.
-- [ ] A file in `outputs/` that the kept map does not name is not a refusal. `publishOutputFiles` copies the file before its provenance is recorded (`outputs.ts:181-188`, called at `session-store.ts:485-488`, status written at `:524`), so a kill there leaves such a file. `repair` and `continue` keep the map and add a path-only row for that file.
-- [ ] Every write path appends the event, then writes `status.json` from the fold.
-- [ ] Remove `RUNNING_STATUS_KEYS`, `SETTLED_STATUS_KEYS` and `providerStatusFields`.
-- [ ] Add `migent session repair <id>` to rebuild `status.json`. It takes the session lock.
-- [ ] `session show` prints drift between `status.json` and the fold on stderr, for schema 2 sessions only. The stdout snapshot object (`query.ts:59-72`) does not change. `doctor` does not compare folds, because `diagnose` has three fixed checks and a failure exits 1 for `config --json` too (`doctor.ts:45-62`, `commands/doctor.ts:16`, `commands/config.ts:467-471`).
-- [ ] Document the limit: when a v1 `status.json` is destroyed, the task hash and output provenance cannot be recovered. `repair --accept-task` is the only way past that. It stores the hash of the current `task.md` and appends `task.frozen`. It keeps any provenance map that parsed, and adds path-only rows only for files in `outputs/` that the map lacks. It never leaves `task_sha256` empty. `continue` does not accept the flag.
-- [ ] Tests: for every workflow fixture, the fold equals the written `status.json` after each step. A kill between an event and its file, in either order, is repaired by `continue`. A v1 fixture repaired from a partial `status.json` keeps its identity, hash and outputs. A v1 fixture with a destroyed `status.json` is refused by `continue` and `repair`, and is accepted by `repair --accept-task` with a stored hash.
+  The error names the missing fields. It points to `repair --accept-task` only when `status.json` does not parse. That flag is the only way past an unparseable `status.json`.
+- [x] A file in `outputs/` that the kept map does not name is not a refusal. `publishOutputFiles` copies the file before its provenance is recorded (`outputs.ts:181-188`, called at `session-store.ts:485-488`, status written at `:524`), so a kill there leaves such a file. `repair` and `continue` keep the map and add a path-only row for that file.
+- [x] Every write path appends the event, then writes `status.json` from the fold.
+- [x] Remove `RUNNING_STATUS_KEYS`, `SETTLED_STATUS_KEYS` and `providerStatusFields`.
+- [x] Add `migent session repair <id>` to rebuild `status.json`. It takes the session lock.
+- [x] `session show` prints drift between `status.json` and the fold on stderr, for schema 2 sessions only. The stdout snapshot object (`query.ts:59-72`) does not change. `doctor` does not compare folds, because `diagnose` has three fixed checks and a failure exits 1 for `config --json` too (`doctor.ts:45-62`, `commands/doctor.ts:16`, `commands/config.ts:467-471`).
+- [x] Document the limit: when a v1 `status.json` is destroyed, the task hash and output provenance cannot be recovered. `repair --accept-task` is the only way past that. It stores the hash of the current `task.md` and appends `task.frozen`. It keeps any provenance map that parsed, and adds path-only rows only for files in `outputs/` that the map lacks. It never leaves `task_sha256` empty. `continue` does not accept the flag.
+- [x] Tests: for every workflow fixture, the fold equals the written `status.json` after each step. A kill between an event and its file, in either order, is repaired by `continue`. A v1 fixture repaired from a partial `status.json` keeps its identity, hash and outputs. A v1 fixture with a destroyed `status.json` is refused by `continue` and `repair`, and is accepted by `repair --accept-task` with a stored hash.
 
 ---
 

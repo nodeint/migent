@@ -420,8 +420,18 @@ test("execute session id on terminal sessions does not dispatch", async () => {
     const cancelledId = String(doneObjects.at(-1)?.session_id);
     const statusPath = path.join(completedWorkspace, ".migent", "sessions", cancelledId, "status.json");
     const status = JSON.parse(readFileSync(statusPath, "utf8")) as Record<string, unknown>;
-    status.status = "cancelled";
-    writeFileSync(statusPath, JSON.stringify(status), "utf8");
+    const executionPath = path.join(
+      completedWorkspace,
+      ".migent",
+      "sessions",
+      cancelledId,
+      "executions",
+      String(status.latest_execution_id),
+      "execution.json",
+    );
+    const execution = JSON.parse(readFileSync(executionPath, "utf8")) as Record<string, unknown>;
+    execution.status = "cancelled";
+    writeFileSync(executionPath, JSON.stringify(execution), "utf8");
     const unused2 = new ScriptedAdapter(["status: complete\n\nnope"], ["# x\n"]);
     const [code4, objects4] = await runExecute(completedWorkspace, ["session", "continue", cancelledId], unused2);
     expect(code4).toBe(130);

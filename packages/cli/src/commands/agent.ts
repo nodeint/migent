@@ -9,6 +9,8 @@ import {
   log,
   prependRoleInstructions,
   requireAgentSession,
+  isSessionLockLost,
+  repairSessionUnlocked,
   SessionLock,
   resolveRoleTarget,
   SessionStore,
@@ -57,6 +59,12 @@ export async function dispatchAgent(
   }
   try {
     return await runLocked();
+  } catch (error) {
+    if (isSessionLockLost(error)) {
+      printError(error.message);
+      return 2;
+    }
+    throw error;
   } finally {
     lock.release();
   }
@@ -64,6 +72,7 @@ export async function dispatchAgent(
   async function runLocked(): Promise<number> {
     let resumeExecutionId: string | null = null;
     if (!createdSession) {
+      repairSessionUnlocked(workspace, resolvedSessionId);
       const previous = new SessionStore(workspace).latestExecution(resolvedSessionId);
       if (previous !== null) resumeExecutionId = previous.executionId;
     }

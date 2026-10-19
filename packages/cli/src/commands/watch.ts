@@ -1,4 +1,4 @@
-import { openSync, readSync, closeSync } from "node:fs";
+import { openSync, readFileSync, readSync, closeSync, statSync } from "node:fs";
 import path from "node:path";
 import {
   CancellationRequested,
@@ -9,10 +9,18 @@ import {
   log,
   readStatusFileState,
   readExecutionFile,
+  statusDriftMessage,
   watchSnapshot,
 } from "@nodeint/migent-kernel";
 import { printNotice, printWatchEvent, printWatchSnapshot } from "../display.js";
 import { EXIT_BLOCKED, EXIT_CANCELLED, EXIT_OK } from "../exits.js";
+import {
+  compareFollowLines,
+  includeStreamLine,
+  listStreamFiles,
+  streamFollowStart,
+  type FollowLine,
+} from "../follow-log.js";
 import { isFile } from "../fs-utils.js";
 import { bindCancellationSignals, delay, throwIfCliCancelled } from "../signals.js";
 
@@ -67,33 +75,36 @@ export async function followSession(
     if (!isFile(resolved)) throw new ConfigurationError(`No execution found: ${executionId}`);
   }
   if (once) {
+    const drift = statusDriftMessage(workspace, sessionId);
+    if (drift) printNotice(drift);
     printSnapshot(sessionDirectory, executionId, jsonLines);
     return 0;
   }
-  let followCursor = cursor;
-  if (followCursor === null) {
-    const snapshot = printSnapshot(sessionDirectory, executionId, jsonLines);
-    followCursor = Number(snapshot.events_cursor ?? 0);
+  const tailOnly = cursor === null;
+  let followCursor = cursor ?? 0;
+  let streamOffsets: Map<string, number> | null = null;
+  if (cursor === null) {
+    // Snapshot and the notice can block. Capture offsets first so lines written then are still tailed.
+    streamOffsets = new Map(listStreamFiles(sessionDirectory).map((stream) => [stream, fileSize(stream)]));
+    followCursor = fileSize(eventsPath);
+    printSnapshot(sessionDirectory, executionId, jsonLines, followCursor);
   }
   printNotice(`Watching session ${sessionId}.`);
   const unbind = bindCancellationSignals();
-  const fd = openSync(eventsPath, "r");
+  const logs = openFollowLogs(sessionDirectory, eventsPath, followCursor, tailOnly, streamOffsets);
   try {
-    let position = followCursor;
-    let pending = "";
     for (;;) {
       throwIfCliCancelled();
-      const read = readCompleteLines(fd, position, pending);
-      position = read.position;
-      pending = read.pending;
-      for (const line of read.lines) emitWatchEvent(line, executionId, jsonLines);
-      if (read.lines.length > 0) continue;
+      discoverStreams(sessionDirectory, logs);
+      const batch = readBatch(logs);
+      for (const item of batch) emitWatchEvent(item.line, executionId, jsonLines);
+      if (batch.length > 0) continue;
       if (untilTerminal) {
         if (executionPath === null) throw new ConfigurationError("--until requires --execution.");
         const record = readExecutionFile(executionPath);
         if (record !== null && TERMINAL_EXECUTION_STATUSES.has(String(record.status))) {
-          const drained = readCompleteLines(fd, position, pending);
-          for (const line of drained.lines) emitWatchEvent(line, executionId, jsonLines);
+          const drained = readBatch(logs);
+          for (const item of drained) emitWatchEvent(item.line, executionId, jsonLines);
           return untilTerminalExitCode(record);
         }
       }
@@ -101,8 +112,8 @@ export async function followSession(
         const status = String(watchSnapshot(sessionDirectory, null).status ?? "");
         const done = SESSION_DONE_EXITS[status];
         if (done !== undefined) {
-          const drained = readCompleteLines(fd, position, pending);
-          for (const line of drained.lines) emitWatchEvent(line, executionId, jsonLines);
+          const drained = readBatch(logs);
+          for (const item of drained) emitWatchEvent(item.line, executionId, jsonLines);
           return done;
         }
       }
@@ -115,13 +126,19 @@ export async function followSession(
     }
     throw error;
   } finally {
-    closeSync(fd);
+    for (const log of logs) closeSync(log.fd);
     unbind();
   }
 }
 
-function printSnapshot(sessionDirectory: string, executionId: string | null, jsonLines: boolean): Record<string, unknown> {
+function printSnapshot(
+  sessionDirectory: string,
+  executionId: string | null,
+  jsonLines: boolean,
+  eventsCursor?: number,
+): Record<string, unknown> {
   const snapshot = watchSnapshot(sessionDirectory, executionId);
+  if (eventsCursor !== undefined) snapshot.events_cursor = eventsCursor;
   if (jsonLines) process.stdout.write(`${JSON.stringify(snapshotJson(snapshot))}\n`);
   else printWatchSnapshot(snapshot);
   return snapshot;
@@ -156,6 +173,80 @@ function untilTerminalExitCode(record: Record<string, unknown>): number {
     return 1;
   }
   return 1;
+}
+
+interface OpenLog {
+  path: string;
+  fd: number;
+  offset: number;
+  pending: string;
+  minTimestampMs: number | null;
+  source: "events" | "stream";
+}
+
+function openFollowLogs(
+  sessionDirectory: string,
+  eventsPath: string,
+  cursor: number,
+  tailOnly: boolean,
+  streamOffsets: ReadonlyMap<string, number> | null,
+): OpenLog[] {
+  const eventsText = !tailOnly && cursor > 0 ? readText(eventsPath) : "";
+  const logs: OpenLog[] = [openLog(eventsPath, cursor, null, "events")];
+  for (const stream of listStreamFiles(sessionDirectory)) {
+    const start = tailOnly
+      ? { offset: tailOffset(stream, streamOffsets), minTimestampMs: null }
+      : streamFollowStart(cursor, eventsText, fileSize(stream));
+    logs.push(openLog(stream, start.offset, start.minTimestampMs, "stream"));
+  }
+  return logs;
+}
+
+function tailOffset(stream: string, streamOffsets: ReadonlyMap<string, number> | null): number {
+  if (streamOffsets === null) return fileSize(stream);
+  return streamOffsets.get(stream) ?? 0;
+}
+
+function discoverStreams(sessionDirectory: string, logs: OpenLog[]): void {
+  const known = new Set(logs.map((log) => log.path));
+  for (const stream of listStreamFiles(sessionDirectory)) {
+    if (known.has(stream)) continue;
+    logs.push(openLog(stream, 0, null, "stream"));
+  }
+}
+
+function readBatch(logs: OpenLog[]): FollowLine[] {
+  const batch: FollowLine[] = [];
+  for (const log of logs) {
+    const read = readCompleteLines(log.fd, log.offset, log.pending);
+    log.offset = read.position;
+    log.pending = read.pending;
+    // A later poll can finish a torn line that is older than the cursor anchor.
+    const lines = read.lines.filter((line) => includeStreamLine(line, log.minTimestampMs));
+    for (const line of lines) batch.push({ line, source: log.source, path: log.path });
+  }
+  batch.sort(compareFollowLines);
+  return batch;
+}
+
+function openLog(filePath: string, offset: number, minTimestampMs: number | null, source: "events" | "stream"): OpenLog {
+  return { path: filePath, fd: openSync(filePath, "r"), offset, pending: "", minTimestampMs, source };
+}
+
+function fileSize(filePath: string): number {
+  try {
+    return statSync(filePath).size;
+  } catch {
+    return 0;
+  }
+}
+
+function readText(filePath: string): string {
+  try {
+    return readFileSync(filePath, "utf8");
+  } catch {
+    return "";
+  }
 }
 
 function readCompleteLines(

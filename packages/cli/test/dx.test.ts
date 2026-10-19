@@ -100,12 +100,20 @@ test("start keeps tool traces out of the coordinator result", async () => {
     expect(started.stderr).not.toContain("command started");
     expect(started.stderr).not.toContain("command completed");
     expect(started.stderr).not.toContain("running for 30s");
-    const events = readFileSync(
-      path.join(workspace, ".migent", "sessions", payload.session_id, "events.jsonl"),
+    const sessionDirectory = path.join(workspace, ".migent", "sessions", payload.session_id);
+    const events = readFileSync(path.join(sessionDirectory, "events.jsonl"), "utf8");
+    expect(events).not.toContain("provider.item_started");
+    expect(events).not.toContain("provider.heartbeat");
+    const status = JSON.parse(readFileSync(path.join(sessionDirectory, "status.json"), "utf8")) as {
+      latest_execution_id?: string;
+    };
+    const stream = readFileSync(
+      path.join(sessionDirectory, "executions", String(status.latest_execution_id), "stream.jsonl"),
       "utf8",
     );
-    expect(events).toContain("provider.item_started");
-    expect(events).toContain("provider.item_completed");
+    expect(stream).toContain("provider.item_started");
+    expect(stream).toContain("provider.item_completed");
+    expect(stream).toContain("provider.heartbeat");
 
     cliHooks.runner = new AgentToolRunner(
       { fake: new ItemAdapter(["status: complete\ndecision: revise\n\nUNIQUE_REVIEW"], [null]) },

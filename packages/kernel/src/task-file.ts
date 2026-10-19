@@ -1,10 +1,12 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { writeFileAtomic, writeJsonAtomic } from "./atomic-file.js";
+import { writeFileAtomic } from "./atomic-file.js";
 import { ConfigurationError } from "./errors.js";
 import { corruptStatusMessage, readStatusFileState } from "./query.js";
 import { MIGENT_DIRNAME, SESSIONS_DIRNAME, utcNow } from "./runtime.js";
+import { appendLifecycleEvent } from "./session-events.js";
+import { commitFoldedStatus } from "./session-fold.js";
 
 export const TASK_FILENAME = "task.md";
 
@@ -81,9 +83,12 @@ export function freezeSessionTask(
   }
   const hash = createHash("sha256").update(text, "utf8").digest("hex");
   if (storedHash === "") {
-    status.task_sha256 = hash;
-    status.updated_at = utcNow();
-    writeJsonAtomic(statusPath, status);
+    appendLifecycleEvent(sessionDirectory, {
+      event: "task.frozen",
+      timestamp: utcNow(),
+      data: { sha256: hash },
+    });
+    commitFoldedStatus(workspace, sessionDirectory);
   } else if (storedHash !== hash) {
     throw new ConfigurationError(`Session ${sessionId} task.md changed after the first stage was dispatched.`);
   }

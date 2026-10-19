@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, test, vi } from "vitest";
 import * as fs from "node:fs";
-import { appendLineSynced, isAtomicTempName, writeFileAtomic } from "../src/atomic-file.js";
+import { appendLineSynced, isAtomicTempName, sealTornTail, writeFileAtomic } from "../src/atomic-file.js";
 import { readStatusFileState } from "../src/query.js";
 import { ConfigurationError } from "../src/errors.js";
 import { freezeSessionTask } from "../src/task-file.js";
@@ -51,6 +51,33 @@ test("appendLineSynced writes whole lines", () => {
     appendLineSynced(file, '{"a":1}');
     appendLineSynced(file, '{"b":2}\n');
     expect(readFileSync(file, "utf8")).toBe('{"a":1}\n{"b":2}\n');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("appendLineSynced keeps a torn tail on its own line", () => {
+  const dir = temp();
+  try {
+    const file = path.join(dir, "events.jsonl");
+    writeFileSync(file, '{"a":1}\n{"torn"', "utf8");
+    appendLineSynced(file, '{"b":2}');
+    expect(readFileSync(file, "utf8")).toBe('{"a":1}\n{"torn"\n{"b":2}\n');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("sealTornTail closes the tail without rewriting the line", () => {
+  const dir = temp();
+  try {
+    const file = path.join(dir, "events.jsonl");
+    writeFileSync(file, '{"a":1}', "utf8");
+    sealTornTail(file);
+    expect(readFileSync(file, "utf8")).toBe('{"a":1}\n');
+    sealTornTail(file);
+    expect(readFileSync(file, "utf8")).toBe('{"a":1}\n');
+    expect(sealTornTail(path.join(dir, "missing.jsonl"))).toBeUndefined();
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

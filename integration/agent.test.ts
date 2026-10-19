@@ -22,8 +22,8 @@ test("agent writes a session record", async () => {
   try {
     writeWorkspace(workspace, GROK_CONFIG, {});
     const [code, objects, stderr] = await runMain(workspace, [
-      "agent",
-      "start",
+      "session",
+      "run",
       "--role",
       "planner",
       "--task",
@@ -51,8 +51,8 @@ test("continue resumes the grok agent", async () => {
     writeWorkspace(workspace, GROK_CONFIG, {});
     installScript(workspace, [{ text: COMPLETE }, { text: COMPLETE }]);
     const [code, objects, stderr] = await runMain(workspace, [
-      "agent",
-      "start",
+      "session",
+      "run",
       "--role",
       "planner",
       "--task",
@@ -64,8 +64,9 @@ test("continue resumes the grok agent", async () => {
     expect(code, stderr).toBe(0);
     const sessionId = String(objects[0]?.session_id);
     const [continuedCode, continued, continuedStderr] = await runMain(workspace, [
-      "agent",
-      "continue",
+      "session",
+      "run",
+      "--session",
       sessionId,
       "--role",
       "planner",
@@ -97,8 +98,8 @@ test("continue resumes the codex thread", async () => {
     writeWorkspace(workspace, CODEX_CONFIG, {});
     installScript(workspace, [{ text: COMPLETE }, { text: COMPLETE }]);
     const [code, objects, stderr] = await runMain(workspace, [
-      "agent",
-      "start",
+      "session",
+      "run",
       "--role",
       "writer",
       "--prompt",
@@ -108,8 +109,9 @@ test("continue resumes the codex thread", async () => {
     expect(code, stderr).toBe(0);
     const sessionId = String(objects[0]?.session_id);
     const [continuedCode, continued, continuedStderr] = await runMain(workspace, [
-      "agent",
-      "continue",
+      "session",
+      "run",
+      "--session",
       sessionId,
       "--role",
       "writer",
@@ -135,8 +137,8 @@ test("a different option does not resume", async () => {
     writeWorkspace(workspace, GROK_CONFIG, {});
     installScript(workspace, [{ text: COMPLETE }, { text: COMPLETE }]);
     const [code, objects, stderr] = await runMain(workspace, [
-      "agent",
-      "start",
+      "session",
+      "run",
       "--role",
       "planner",
       "--prompt",
@@ -145,8 +147,9 @@ test("a different option does not resume", async () => {
     ]);
     expect(code, stderr).toBe(0);
     const [continuedCode, , continuedStderr] = await runMain(workspace, [
-      "agent",
-      "continue",
+      "session",
+      "run",
+      "--session",
       String(objects[0]?.session_id),
       "--role",
       "planner",

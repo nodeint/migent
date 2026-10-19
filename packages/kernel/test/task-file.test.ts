@@ -3,6 +3,7 @@ import path from "node:path";
 import { expect, test } from "vitest";
 import { ConfigurationError, createPreparedSession, createWorkflowSession } from "../src/index.ts";
 import { activatePreparedSession } from "../src/session-records.ts";
+import { SessionLock } from "../src/session-lock.ts";
 import { freezeSessionTask } from "../src/task-file.ts";
 import { tempDir } from "./support.ts";
 
@@ -45,10 +46,13 @@ test("prepare stores a chosen id and waits for task.md", () => {
   const sessionId = createPreparedSession(workspace, "wave-3", "solo");
   expect(sessionId).toBe("wave-3");
   const directory = path.join(workspace, ".migent", "sessions", "wave-3");
+  expect(existsSync(path.join(directory, "session.lock"))).toBe(false);
   expect(readFileSync(path.join(directory, "manifest.yaml"), "utf8")).toContain("status: prepared");
   const status = JSON.parse(readFileSync(path.join(directory, "status.json"), "utf8")) as { status: string; task: string };
   expect(status).toMatchObject({ status: "prepared", task: "wave-3" });
-  expect(readFileSync(path.join(directory, "events.jsonl"), "utf8")).toBe("");
+  const events = readFileSync(path.join(directory, "events.jsonl"), "utf8");
+  expect(events).toContain("\"event\":\"session.created\"");
+  expect(events).toContain("\"v\":2");
   expect(() => createPreparedSession(workspace, "wave-3", "solo")).toThrow(/already exists/);
   expect(() => activatePreparedSession(workspace, "wave-3")).toThrow(/no task.md/);
   writeFileSync(path.join(directory, "task.md"), "   \n", "utf8");
@@ -58,6 +62,24 @@ test("prepare stores a chosen id and waits for task.md", () => {
   const active = JSON.parse(readFileSync(path.join(directory, "status.json"), "utf8")) as { status: string };
   expect(active.status).toBe("active");
   expect(readFileSync(path.join(directory, "manifest.yaml"), "utf8")).toContain("status: running");
+  expect(existsSync(path.join(directory, "session.lock"))).toBe(false);
+});
+
+test("activate keeps a lock the caller already holds", () => {
+  const workspace = workspaceWithWorkflow();
+  createPreparedSession(workspace, "wave-4", "solo");
+  const directory = path.join(workspace, ".migent", "sessions", "wave-4");
+  writeFileSync(path.join(directory, "task.md"), "Migrate wave 4.\n", "utf8");
+  const lock = SessionLock.acquire(directory);
+  try {
+    activatePreparedSession(workspace, "wave-4");
+    lock.assertHeld();
+  } finally {
+    lock.release();
+  }
+  expect(existsSync(path.join(directory, "session.lock"))).toBe(false);
+  const active = JSON.parse(readFileSync(path.join(directory, "status.json"), "utf8")) as { status: string };
+  expect(active.status).toBe("active");
 });
 
 test("the first dispatch freezes task.md and a later edit fails", () => {

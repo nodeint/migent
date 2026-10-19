@@ -23,6 +23,11 @@ interface LockInfo {
   nonce: string;
 }
 
+/** A holder lost the lock after another process took it over. */
+export function isSessionLockLost(error: unknown): error is Error {
+  return error instanceof Error && error.message.includes("lock was taken by another process");
+}
+
 export class SessionLockHeldError extends Error {
   constructor(message: string) {
     super(message);
@@ -35,6 +40,11 @@ const held = new Map<string, SessionLock>();
 /** Throw when this process holds the session lock but another process has taken it over. */
 export function assertSessionLockHeld(sessionDirectory: string): void {
   held.get(path.resolve(sessionDirectory))?.assertHeld();
+}
+
+/** True when this process already holds the lock. A second acquire would fail as our own pid. */
+export function sessionLockHeldLocally(sessionDirectory: string): boolean {
+  return held.has(path.resolve(sessionDirectory));
 }
 
 /**

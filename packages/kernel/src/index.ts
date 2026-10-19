@@ -51,7 +51,29 @@ export type {
   WorkflowOutput,
   WorkflowRequires,
 } from "./workflow.js";
-export { SessionLock, SessionLockHeldError, assertSessionLockHeld } from "./session-lock.js";
+export { SessionLock, SessionLockHeldError, assertSessionLockHeld, isSessionLockLost } from "./session-lock.js";
+export { repairSession, repairSessionUnlocked } from "./session-repair.js";
+export type { RepairOptions } from "./session-repair.js";
+export {
+  commitFoldedStatus,
+  foldStatus,
+  readFoldedStatus,
+  readSessionManifest,
+  sessionSchemaVersion,
+  statusDriftMessage,
+} from "./session-fold.js";
+export type { FoldExecution, FoldInputs, SessionManifest } from "./session-fold.js";
+export {
+  EVENT_VERSION,
+  appendLifecycleEvent,
+  appendRecordedEvent,
+  eventRecord,
+  executionIdsStartedInLog,
+  isProviderStreamEvent,
+  parseExecutionId,
+  readParsedEvents,
+  skipsStatusWrite,
+} from "./session-events.js";
 export {
   appendLineSynced,
   writeFileAtomic,

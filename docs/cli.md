@@ -77,7 +77,9 @@ A workflow run's stdout is one JSON result: `session_id`, `session_status`, `sto
 `--verbose` adds `stages`, including each stage's response text. Stderr is the
 session id, one line when a stage starts, one line when it finishes, provider
 errors, and the resume hint. `--progress` also prints each tool call once,
-when it finishes. Other item traces stay in `events.jsonl`. Nothing switches
+when it finishes. Item traces and provider heartbeats are appended to
+`executions/<id>/stream.jsonl`. `session follow` merges that file with
+`events.jsonl` in timestamp order. Nothing switches
 format because a terminal is attached. `--json` selects machine output where a
 command has a human form. Run `migent <command> --help` for stop reasons and
 exit codes.
@@ -252,6 +254,8 @@ migent session show <session-id>
 migent session show <session-id> --json
 migent session follow <session-id>
 migent session follow <session-id> --exit-when-done
+migent session repair <session-id>
+migent session repair <session-id> --accept-task
 ```
 
 `session list` lists recorded runs, newest first. `--workflow` and `--status`
@@ -260,9 +264,17 @@ select rows before `--limit`. `--status` is `active`, `prepared`, `completed`,
 cannot be combined with `--limit`. An empty list exits 0.
 
 `session show <session-id>` prints one snapshot and exits 0, including when the
-session is blocked. `session follow` prints that snapshot and then follows
-events until a signal. `--cursor` is for tools that resume a follow. It skips
-the snapshot. `--json` is an array for a list, one object for `--latest`
+session is blocked. For a schema 2 session it also prints, on stderr, any drift
+between `status.json` and the fold of the session files. `session follow` prints
+that snapshot and then follows events until a signal. It merges `events.jsonl`
+with each execution's `stream.jsonl` in timestamp order. Item traces and
+provider heartbeats are the lines in the stream. `--cursor` is a byte offset
+into `events.jsonl` and skips the snapshot. `0` replays the whole log and every
+stream. Any other offset replays `events.jsonl` from that byte, and stream lines
+whose timestamp is at or after the first complete event at or after that byte.
+A cursor at the end of the file tails every stream from its end. A stream
+created after follow starts is read from the beginning. `--json` is an array
+for a list, one object for `--latest`
 (`null` when nothing matches), one object for a snapshot, and a snapshot
 object followed by JSON lines while following. With `--cursor`, follow prints
 only JSON lines. JSON list rows and the JSON snapshot omit `task`. The human

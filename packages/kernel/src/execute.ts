@@ -21,9 +21,10 @@ import {
   NextStageError,
   Stop,
 } from "./selection.js";
+import { repairSessionUnlocked } from "./session-repair.js";
 import { activatePreparedSession, bindPriorSessionId, createWorkflowSession, resolvePriorSessionId } from "./session-records.js";
 import { freezeSessionTask } from "./task-file.js";
-import { SessionLock, SessionLockHeldError } from "./session-lock.js";
+import { isSessionLockLost, SessionLock, SessionLockHeldError } from "./session-lock.js";
 import { SessionStore } from "./session-store.js";
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -78,7 +79,7 @@ export async function executeNamedWorkflow(
   try {
     return await executeLocked(workspace, request, held, runner);
   } catch (error) {
-    if (!(error instanceof SessionLockHeldError)) throw error;
+    if (!(error instanceof SessionLockHeldError) && !isSessionLockLost(error)) throw error;
     // Same shape as any other plain Error in the run: stderr message, exit 2.
     process.stderr.write(`migent: ${error.message}\n`);
     return {
@@ -119,6 +120,7 @@ async function executeLocked(
   let workflowId: string;
   if (sessionId) {
     held.lock = SessionLock.acquire(path.join(workspace, ".migent", "sessions", sessionId));
+    repairSessionUnlocked(workspace, sessionId);
     const bound = bindExecuteRun(workspace, sessionId, request.workflowId, request.priorSessionId);
     workflowId = bound.workflowId;
     let sessionStatus = typeof bound.status.status === "string" ? bound.status.status : "";
