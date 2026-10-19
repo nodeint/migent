@@ -65,43 +65,43 @@ Phases A, B, C in order. Phase A is independent and should merge first. Phase B 
 ## Phase A: Data safety
 
 ### A1. Atomic writes and synced appends
-- [ ] Add `writeFileAtomic(path, data)`: write a temp file in the same directory, `fsync`, `rename`. On Windows, retry `rename` on `EPERM` and `EBUSY` with a short backoff.
-- [ ] Use it for `status.json`, `execution.json`, `conversation.json`, `manifest.yaml`, `task.md`, `prompt.md` and `response.md`, and in `createSessionFiles`. Add the fsync to `atomicCopy`.
-- [ ] Add `appendLineSynced(path, line)`: one write of a complete line, then `fsync`.
-- [ ] Order of writes:
+- [x] Add `writeFileAtomic(path, data)`: write a temp file in the same directory, `fsync`, `rename`. On Windows, retry `rename` on `EPERM` and `EBUSY` with a short backoff.
+- [x] Use it for `status.json`, `execution.json`, `conversation.json`, `manifest.yaml`, `task.md`, `prompt.md` and `response.md`, and in `createSessionFiles`. Add the fsync to `atomicCopy`.
+- [x] Add `appendLineSynced(path, line)`: one write of a complete line, then `fsync`.
+- [x] Order of writes:
   - `createExecution`: write and fsync `execution.json` first, then append `execution.started` built from that file. `executionContexts` skips a directory with no `execution.json` (`session-store.ts:788`), so an event written first would point at an execution that allocation cannot see.
   - `saveExecutionUnlocked`: write `execution.json`, then append `execution.*`, `stage.*` and `session.*`, then write `status.json` (today at `session-store.ts:524`, before `markSessionTerminal` at `:540`).
   - `markSessionTerminal` keeps only the manifest update.
-- [ ] Remove the duplicate `writeJson` in `session-records.ts` and the inline write in `task-file.ts`.
-- [ ] Tests: a write interrupted before `rename` leaves the old file intact. Readers ignore leftover temp files.
+- [x] Remove the duplicate `writeJson` in `session-records.ts` and the inline write in `task-file.ts`.
+- [x] Tests: a write interrupted before `rename` leaves the old file intact. Readers ignore leftover temp files.
 
 ### A2. Session lock
-- [ ] Hold `sessions/<id>/session.lock` for every writer of a session: `session run`, `session continue`, and `session run --role --session`. Take it before activate, revision reset, task freeze, reap and `createExecution`.
-- [ ] Implement it as a file created with `wx` that holds `pid`, `host`, `started_at`, `heartbeat_at` and a random `nonce` the holder keeps in memory. Do not reuse `withFileLockSync`.
-- [ ] Refresh `heartbeat_at` every 10 s with an atomic replace (A1), so a reader never parses a torn file. Treat a lock as stale after 30 s without a heartbeat. On the same host, also treat it as stale when the pid is gone. Do not trust the pid alone, because pids are reused (`CONTRIBUTING.md:71-74`).
-- [ ] Every refresh writes the same `nonce` the holder stored.
-- [ ] Take over a stale lock in this order: read the file and remember its `nonce` and `heartbeat_at`; read it again; `unlink` only when the second read shows the same `nonce` and the same stale `heartbeat_at`; then create a new file with `wx`. If either value changed, the lock is held. `EEXIST` on the `wx` means another process won, and the lock counts as held.
-- [ ] A race between the second read and `unlink` is still possible. It needs a holder that missed three refreshes and then refreshed within that window. The nonce check below makes that case fail safe: the old holder stops before its next write.
-- [ ] The refresh is a timer on the event loop. `withFileLockSync` and `probeEndpointSync` can block it (see Resolved questions). The holder checks that the lock file still has its `nonce` after every `withFileLockSync` call and before every session write.
-- [ ] When the nonce check fails, the holder stops writing and exits with the lock error.
-- [ ] `session follow` reaps only when it can take the session lock. At start it tries the lock once. If it gets the lock, it reaps as today and releases the lock before tailing. If the lock is held, it tails read-only. A live holder keeps today's wait. An owner that died with no live lock holder is failed at follow start, as today.
-- [ ] `show` and `list` never write.
-- [ ] Error when the lock is held: `Session <id> is being run by pid <n> on <host>.` Throw a plain `Error`, so the workflow path keeps today's JSON output and exit 2.
-- [ ] Keep `reapOrphanedExecutions` for provider-process cleanup. It runs under the lock.
-- [ ] Tests: two `continue` calls on an idle session, where exactly one runs. Two resumes of one agent session. Takeover of a stale lock. A holder whose lock was taken stops.
+- [x] Hold `sessions/<id>/session.lock` for every writer of a session: `session run`, `session continue`, and `session run --role --session`. Take it before activate, revision reset, task freeze, reap and `createExecution`.
+- [x] Implement it as a file created with `wx` that holds `pid`, `host`, `started_at`, `heartbeat_at` and a random `nonce` the holder keeps in memory. Do not reuse `withFileLockSync`.
+- [x] Refresh `heartbeat_at` every 10 s with an atomic replace (A1), so a reader never parses a torn file. Treat a lock as stale after 30 s without a heartbeat. On the same host, also treat it as stale when the pid is gone. Do not trust the pid alone, because pids are reused (`CONTRIBUTING.md:71-74`).
+- [x] Every refresh writes the same `nonce` the holder stored.
+- [x] Take over a stale lock in this order: read the file and remember its `nonce` and `heartbeat_at`; read it again; `unlink` only when the second read shows the same `nonce` and the same stale `heartbeat_at`; then create a new file with `wx`. If either value changed, the lock is held. `EEXIST` on the `wx` means another process won, and the lock counts as held.
+- [x] A race between the second read and `unlink` is still possible. It needs a holder that missed three refreshes and then refreshed within that window. The nonce check below makes that case fail safe: the old holder stops before its next write.
+- [x] The refresh is a timer on the event loop. `withFileLockSync` and `probeEndpointSync` can block it (see Resolved questions). The holder checks that the lock file still has its `nonce` after every `withFileLockSync` call and before every session write.
+- [x] When the nonce check fails, the holder stops writing and exits with the lock error.
+- [x] `session follow` reaps only when it can take the session lock. At start it tries the lock once. If it gets the lock, it reaps as today and releases the lock before tailing. If the lock is held, it tails read-only. A live holder keeps today's wait. An owner that died with no live lock holder is failed at follow start, as today.
+- [x] `show` and `list` never write.
+- [x] Error when the lock is held: `Session <id> is being run by pid <n> on <host>.` Throw a plain `Error`, so the workflow path keeps today's JSON output and exit 2.
+- [x] Keep `reapOrphanedExecutions` for provider-process cleanup. It runs under the lock.
+- [x] Tests: two `continue` calls on an idle session, where exactly one runs. Two resumes of one agent session. Takeover of a stale lock. A holder whose lock was taken stops.
 
 ### A3. Safe ID allocation
-- [ ] In `createWorkflowSession`, `createPreparedSession` and `createAgentSession`, create the session directory with a non-recursive `mkdirSync` (parents created first). On `EEXIST`, pick the next id and retry. A prepared session with a manual id fails on `EEXIST`, as it does today.
-- [ ] Allocate execution order and attempt while holding the session lock. Create the execution directory non-recursively, so `EEXIST` is an error.
-- [ ] Tests: concurrent session creation with the same task never shares a directory. Execution allocation under contention never produces duplicate IDs.
+- [x] In `createWorkflowSession`, `createPreparedSession` and `createAgentSession`, create the session directory with a non-recursive `mkdirSync` (parents created first). On `EEXIST`, pick the next id and retry. A prepared session with a manual id fails on `EEXIST`, as it does today.
+- [x] Allocate execution order and attempt while holding the session lock. Create the execution directory non-recursively, so `EEXIST` is an error.
+- [x] Tests: concurrent session creation with the same task never shares a directory. Execution allocation under contention never produces duplicate IDs.
 
 ### A4. Corrupt status files
-- [ ] Leave `readStatusFile` as it is, because it is a public kernel export. Add a reader that reports `missing`, `corrupt` or `ok`.
-- [ ] `session list` uses the new reader and shows a corrupt session with status `corrupt`. Add `corrupt` to the `--status` allowlist (`commands/sessions.ts:7`, `program.ts:299`) and its help text.
-- [ ] `session show` exits 2 and names the corrupt file. `--prior` reports a corrupt `status.json` instead of "not found".
-- [ ] `freezeSessionTask` and `activatePreparedSession` fail on a corrupt `status.json` instead of overwriting it.
-- [ ] Until B4, `continue` on a corrupt session keeps failing. The error names the corrupt file.
-- [ ] Tests: a truncated `status.json` lists as `corrupt`, `show` reports it, and freeze does not overwrite it.
+- [x] Leave `readStatusFile` as it is, because it is a public kernel export. Add a reader that reports `missing`, `corrupt` or `ok`.
+- [x] `session list` uses the new reader and shows a corrupt session with status `corrupt`. Add `corrupt` to the `--status` allowlist (`commands/sessions.ts:7`, `program.ts:299`) and its help text.
+- [x] `session show` exits 2 and names the corrupt file. `--prior` reports a corrupt `status.json` instead of "not found".
+- [x] `freezeSessionTask` and `activatePreparedSession` fail on a corrupt `status.json` instead of overwriting it.
+- [x] Until B4, `continue` on a corrupt session keeps failing. The error names the corrupt file.
+- [x] Tests: a truncated `status.json` lists as `corrupt`, `show` reports it, and freeze does not overwrite it.
 
 ---
 

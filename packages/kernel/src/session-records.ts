@@ -1,8 +1,9 @@
-import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
+import { writeFileAtomic, writeJsonAtomic } from "./atomic-file.js";
 import { ConfigurationError } from "./errors.js";
 import { pyRepr, isRecord } from "./record.js";
-import { readStatusFile } from "./query.js";
+import { corruptStatusMessage, readStatusFileState } from "./query.js";
 import { isUnicodeAlnum, utcNow } from "./runtime.js";
 import { SessionStore } from "./session-store.js";
 import { assertManualSessionId, assertSingleLineTask, requireTaskBody, writeTaskFile, taskFilePath } from "./task-file.js";
@@ -25,6 +26,21 @@ function realPath(target: string): string {
     return realpathSync(target);
   } catch {
     return path.resolve(target);
+  }
+}
+
+/** Create a fresh session directory. The id gets a numeric suffix until a non-recursive mkdir wins. */
+export function createSessionDirectory(sessionsDirectory: string, sessionIdBase: string): [string, string] {
+  mkdirSync(sessionsDirectory, { recursive: true });
+  for (let suffix = 1; ; suffix += 1) {
+    const sessionId = suffix === 1 ? sessionIdBase : `${sessionIdBase}--${String(suffix).padStart(2, "0")}`;
+    const sessionDirectory = path.join(sessionsDirectory, sessionId);
+    try {
+      mkdirSync(sessionDirectory);
+      return [sessionId, sessionDirectory];
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
   }
 }
 
@@ -68,9 +84,7 @@ export function createWorkflowSession(
   const timestamp = utcStamp();
   const sessionIdBase = `${timestamp}--${sessionSlug(resolvedId, 36)}--${sessionSlug(taskSummary, 48)}`;
   const sessionsDirectory = path.join(workspace, ".migent", "sessions");
-  const sessionId = allocateSessionId(sessionsDirectory, sessionIdBase);
-  const sessionDirectory = path.join(sessionsDirectory, sessionId);
-  mkdirSync(sessionDirectory, { recursive: true });
+  const [sessionId, sessionDirectory] = createSessionDirectory(sessionsDirectory, sessionIdBase);
   const createdAt = utcNow();
   const workflowRelativePath = sessionWorkflowPath(workspace, workflow);
   const manifestLines = [
@@ -82,7 +96,7 @@ export function createWorkflowSession(
     "status: running",
   ];
   if (resolvedPrior) manifestLines.splice(manifestLines.length - 1, 0, `prior_session_id: ${resolvedPrior}`);
-  writeFileSync(path.join(sessionDirectory, "manifest.yaml"), `${manifestLines.join("\n")}\n`, "utf8");
+  writeFileAtomic(path.join(sessionDirectory, "manifest.yaml"), `${manifestLines.join("\n")}\n`);
   const statusPayload: Record<string, unknown> = {
     session_id: sessionId,
     workflow_id: resolvedId,
@@ -93,7 +107,7 @@ export function createWorkflowSession(
     updated_at: createdAt,
   };
   if (resolvedPrior) statusPayload.prior_session_id = resolvedPrior;
-  writeJson(path.join(sessionDirectory, "status.json"), statusPayload);
+  writeJsonAtomic(path.join(sessionDirectory, "status.json"), statusPayload);
   writeTaskFile(taskFilePath(workspace, sessionId), taskSummary);
   return sessionId;
 }
@@ -110,8 +124,15 @@ export function createPreparedSession(
   const resolvedId = workflow.id;
   const resolvedPrior = resolvePriorSessionId(workspace, workflow, priorSessionId);
   const sessionDirectory = path.join(workspace, ".migent", "sessions", id);
-  if (exists(sessionDirectory)) throw new ConfigurationError(`Session already exists: ${id}.`);
-  mkdirSync(sessionDirectory, { recursive: true });
+  mkdirSync(path.dirname(sessionDirectory), { recursive: true });
+  try {
+    mkdirSync(sessionDirectory);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      throw new ConfigurationError(`Session already exists: ${id}.`);
+    }
+    throw error;
+  }
   const createdAt = utcNow();
   const workflowRelativePath = sessionWorkflowPath(workspace, workflow);
   const manifestLines = [
@@ -123,7 +144,7 @@ export function createPreparedSession(
     "status: prepared",
   ];
   if (resolvedPrior) manifestLines.splice(manifestLines.length - 1, 0, `prior_session_id: ${resolvedPrior}`);
-  writeFileSync(path.join(sessionDirectory, "manifest.yaml"), `${manifestLines.join("\n")}\n`, "utf8");
+  writeFileAtomic(path.join(sessionDirectory, "manifest.yaml"), `${manifestLines.join("\n")}\n`);
   const statusPayload: Record<string, unknown> = {
     session_id: id,
     workflow_id: resolvedId,
@@ -134,8 +155,8 @@ export function createPreparedSession(
     updated_at: createdAt,
   };
   if (resolvedPrior) statusPayload.prior_session_id = resolvedPrior;
-  writeJson(path.join(sessionDirectory, "status.json"), statusPayload);
-  writeFileSync(path.join(sessionDirectory, "events.jsonl"), "", "utf8");
+  writeJsonAtomic(path.join(sessionDirectory, "status.json"), statusPayload);
+  writeFileAtomic(path.join(sessionDirectory, "events.jsonl"), "");
   return id;
 }
 
@@ -143,11 +164,13 @@ export function activatePreparedSession(workspace: string, sessionId: string): v
   requireTaskBody(workspace, sessionId);
   const sessionDirectory = path.join(workspace, ".migent", "sessions", sessionId);
   const statusPath = path.join(sessionDirectory, "status.json");
-  const status = JSON.parse(readFileSync(statusPath, "utf8")) as unknown;
-  if (!isRecord(status)) throw new ConfigurationError(`Session not found: ${sessionId}.`);
+  const read = readStatusFileState(statusPath);
+  if (read.state === "corrupt") throw new ConfigurationError(corruptStatusMessage(statusPath));
+  if (read.state === "missing") throw new ConfigurationError(`Session not found: ${sessionId}.`);
+  const status = read.status;
   status.status = "active";
   status.updated_at = utcNow();
-  writeJson(statusPath, status);
+  writeJsonAtomic(statusPath, status);
   replaceManifestStatus(sessionDirectory, "running");
 }
 
@@ -157,11 +180,9 @@ export function createAgentSession(workspace: string, role: string, task: string
   const timestamp = utcStamp();
   const sessionIdBase = `${timestamp}--agent--${sessionSlug(taskSummary, 48)}`;
   const sessionsDirectory = path.join(workspace, ".migent", "sessions");
-  const sessionId = allocateSessionId(sessionsDirectory, sessionIdBase);
-  const sessionDirectory = path.join(sessionsDirectory, sessionId);
-  mkdirSync(sessionDirectory, { recursive: true });
+  const [sessionId, sessionDirectory] = createSessionDirectory(sessionsDirectory, sessionIdBase);
   const createdAt = utcNow();
-  writeFileSync(
+  writeFileAtomic(
     path.join(sessionDirectory, "manifest.yaml"),
     `${[
       `session_id: ${sessionId}`,
@@ -170,10 +191,8 @@ export function createAgentSession(workspace: string, role: string, task: string
       `task: ${JSON.stringify(taskSummary)}`,
       `created_at: ${createdAt}`,
       "status: running",
-    ].join("\n")}\n`,
-    "utf8",
-  );
-  writeJson(path.join(sessionDirectory, "status.json"), {
+    ].join("\n")}\n`);
+  writeJsonAtomic(path.join(sessionDirectory, "status.json"), {
     session_id: sessionId,
     workflow_id: "agent",
     role,
@@ -215,9 +234,10 @@ export function resolvePriorSessionId(
       `Workflow ${workflow.id} requires completed ${workflow.requires.workflow} (${workflow.requires.decision}); pass --prior.`,
     );
   }
-  const status = readStatusFile(
-    path.join(workspace, ".migent", "sessions", priorSessionId, "status.json"),
-  );
+  const priorStatusPath = path.join(workspace, ".migent", "sessions", priorSessionId, "status.json");
+  const priorRead = readStatusFileState(priorStatusPath);
+  if (priorRead.state === "corrupt") throw new ConfigurationError(corruptStatusMessage(priorStatusPath));
+  const status = priorRead.status;
   if (Object.keys(status).length === 0) {
     throw new ConfigurationError(`Required session not found: ${priorSessionId}.`);
   }
@@ -268,7 +288,7 @@ function replaceManifestStatus(sessionDirectory: string, status: string): void {
   const text = readFileSync(manifestPath, "utf8");
   const pattern = /^status: \S+\s*$/m;
   if (!pattern.test(text)) return;
-  writeFileSync(manifestPath, text.replace(pattern, `status: ${status}`), "utf8");
+  writeFileAtomic(manifestPath, text.replace(pattern, `status: ${status}`));
 }
 
 function utcStamp(): string {
@@ -276,10 +296,6 @@ function utcStamp(): string {
   const [date, time] = iso.split("T");
   const [hh, mm, ss] = (time ?? "").split(":");
   return `${(date ?? "").replaceAll("-", "")}-${hh ?? ""}${mm ?? ""}${(ss ?? "").slice(0, 2)}`;
-}
-
-function writeJson(filePath: string, value: unknown): void {
-  writeFileSync(filePath, JSON.stringify(value, null, 2), "utf8");
 }
 
 function exists(filePath: string): boolean {

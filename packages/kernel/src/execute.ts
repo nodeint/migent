@@ -23,6 +23,7 @@ import {
 } from "./selection.js";
 import { activatePreparedSession, bindPriorSessionId, createWorkflowSession, resolvePriorSessionId } from "./session-records.js";
 import { freezeSessionTask } from "./task-file.js";
+import { SessionLock, SessionLockHeldError } from "./session-lock.js";
 import { SessionStore } from "./session-store.js";
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -73,6 +74,34 @@ export async function executeNamedWorkflow(
   request: ExecuteRequest,
   runner?: AgentToolRunner,
 ): Promise<ExecuteResult> {
+  const held: { lock: SessionLock | null } = { lock: null };
+  try {
+    return await executeLocked(workspace, request, held, runner);
+  } catch (error) {
+    if (!(error instanceof SessionLockHeldError)) throw error;
+    // Same shape as any other plain Error in the run: stderr message, exit 2.
+    process.stderr.write(`migent: ${error.message}\n`);
+    return {
+      code: 2,
+      status: "",
+      stopReason: "configuration",
+      sessionId: request.sessionId ?? "",
+      latestDecision: null,
+      latestExecutionId: null,
+      outputs: {},
+      stages: [],
+    };
+  } finally {
+    held.lock?.release();
+  }
+}
+
+async function executeLocked(
+  workspace: string,
+  request: ExecuteRequest,
+  held: { lock: SessionLock | null },
+  runner?: AgentToolRunner,
+): Promise<ExecuteResult> {
   const stageId = request.stageId ?? null;
   const once = request.once ?? false;
   const maxAttempts = request.maxAttempts === undefined ? 3 : request.maxAttempts;
@@ -89,6 +118,7 @@ export async function executeNamedWorkflow(
   let workflow: WorkflowDocument | null = null;
   let workflowId: string;
   if (sessionId) {
+    held.lock = SessionLock.acquire(path.join(workspace, ".migent", "sessions", sessionId));
     const bound = bindExecuteRun(workspace, sessionId, request.workflowId, request.priorSessionId);
     workflowId = bound.workflowId;
     let sessionStatus = typeof bound.status.status === "string" ? bound.status.status : "";
@@ -118,6 +148,7 @@ export async function executeNamedWorkflow(
     resolvePriorSessionId(workspace, workflow, request.priorSessionId);
     if (stageId !== null) requireEligibleStage(workflow, [], "active", stageId);
     sessionId = createWorkflowSession(workspace, workflowId, request.task, request.priorSessionId);
+    held.lock = SessionLock.acquire(path.join(workspace, ".migent", "sessions", sessionId));
     log(`session_id: ${sessionId}`);
   }
   if (workflow === null) workflow = loadNamedWorkflow(workspace, workflowId);

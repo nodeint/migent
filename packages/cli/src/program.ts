@@ -296,7 +296,7 @@ function registerSessionCommand(program: Command, status: CliStatus): void {
     .description("List sessions, newest first.")
     .option("--json", "Print a JSON array without the task. With --latest, print one object, or null.")
     .option("--workflow <id>", "List sessions for this workflow id.")
-    .option("--status <status>", "List sessions with this status: active, prepared, completed, blocked, or cancelled.")
+    .option("--status <status>", "List sessions with this status: active, prepared, completed, blocked, cancelled, or corrupt.")
     .option("--limit <n>", "List the newest n sessions. At least 1. Cannot be combined with --latest.")
     .option("--latest", "Print the newest matching session. Cannot be combined with --limit.")
     .addHelpText(

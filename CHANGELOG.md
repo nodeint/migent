@@ -10,6 +10,10 @@
 
 ### Changed
 
+- Session files (`status.json`, `execution.json`, `manifest.yaml`, `task.md`, `prompt.md`, `response.md`) are written to a temp file, synced, and renamed, so a kill no longer leaves a truncated file. Event lines are synced when appended. A save writes its events before `status.json`.
+- One process writes a session at a time. `session run --session`, `session continue` and `session run --role --session` hold `session.lock` in the session directory. A second writer exits 2 with `Session <id> is being run by pid <n> on <host>.` A lock is stale after 30 s without a heartbeat, or when its pid is gone on the same host. A holder whose lock was taken stops before its next write. `session follow` reaps a dead owner only when it can take the lock.
+- Session and execution directories are created with a non-recursive `mkdir`, so two processes never share an id.
+- `session list` shows a session whose `status.json` does not parse with status `corrupt` instead of dropping it. `--status corrupt` selects them. `session show`, `session follow`, `session continue` and `--prior` name the corrupt file and exit 2. Task freeze and prepared-session activation no longer overwrite it.
 - Session commands live under `migent session`. `session run --workflow <workflow>` runs that workflow. Omit `--workflow` and pass `--role` to run one role. `session list`, `session show`, and `session follow` inspect sessions. `session continue` resumes a workflow session.
 - `session list --workflow`, `--status`, and `--limit` filter the newest-first list. `--latest` prints one session, or `null` when nothing matches. JSON list rows and JSON snapshots omit the task text. The human list and snapshot still print it.
 - `init --preset plan` tells the planner to edit the existing plan in place when revising, and tells the reviewer to report every gap of the same kind in one response.

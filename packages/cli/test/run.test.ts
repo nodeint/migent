@@ -108,7 +108,7 @@ test("until terminal reads execution json not session status", async () => {
   }
 });
 
-test("lists sorted rows and skips invalid status json", async () => {
+test("lists sorted rows and marks invalid status json corrupt", async () => {
   const workspace = mkdtempSync(path.join(tmpdir(), "migent-cli-"));
   try {
     const runs = path.join(workspace, ".migent", "sessions");
@@ -142,7 +142,8 @@ test("lists sorted rows and skips invalid status json", async () => {
     const broken = path.join(runs, "broken");
     mkdirSync(broken);
     writeFileSync(path.join(broken, "status.json"), "{", "utf8");
-    expect(listSessionRows(workspace).map((row) => row[1])).toEqual(["newer", "older"]);
+    expect(listSessionRows(workspace).map((row) => row[1])).toEqual(["newer", "older", "broken"]);
+    expect(listSessionRows(workspace).at(-1)?.[3]).toBe("corrupt");
     const text = await capture(() => listSessions(workspace));
     expect(text.value).toBe(0);
     expect(text.stdout.indexOf("newer")).toBeLessThan(text.stdout.indexOf("older"));
@@ -153,11 +154,11 @@ test("lists sorted rows and skips invalid status json", async () => {
     expect(text.stdout).toContain("0001");
     expect(text.stdout).toContain("approved");
     expect(text.stdout).toContain("old task");
-    expect(text.stdout).not.toContain("broken");
+    expect(text.stdout).toContain("corrupt");
     const jsonOut = await capture(() => listSessions(workspace, { asJson: true }));
     expect(jsonOut.value).toBe(0);
     const rows = JSON.parse(jsonOut.stdout) as Array<Record<string, string>>;
-    expect(rows.map((row) => row.session)).toEqual(["newer", "older"]);
+    expect(rows.map((row) => row.session)).toEqual(["newer", "older", "broken"]);
     expect(rows[1]?.decision).toBe("approved");
     expect(rows[0]).not.toHaveProperty("task");
     expect(rows[1]?.outputs).toBe("plan");
@@ -235,7 +236,7 @@ test("session filters select the newest match and reject bad flags", async () =>
     expect(combined.stderr).toContain("--latest cannot be combined with --limit.");
     const badStatus = await capture(() => main(["session", "list", "--status", "paused"], workspace));
     expect(badStatus.value).toBe(2);
-    expect(badStatus.stderr).toContain("--status must be active, prepared, completed, blocked, or cancelled.");
+    expect(badStatus.stderr).toContain("--status must be active, prepared, completed, blocked, cancelled, or corrupt.");
     const badLimit = await capture(() => main(["session", "list", "--limit", "0"], workspace));
     expect(badLimit.value).toBe(2);
     expect(badLimit.stderr).toContain("--limit must be an integer >= 1.");

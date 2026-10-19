@@ -3,11 +3,11 @@ import {
   copyFileSync,
   mkdirSync,
   readFileSync,
-  renameSync,
   rmSync,
   statSync,
 } from "node:fs";
 import path from "node:path";
+import { fsyncPath, renameWithRetry } from "./atomic-file.js";
 import { StageOutcome } from "./stage-outcome.js";
 import type { WorkflowDocument } from "./workflow.js";
 
@@ -197,7 +197,8 @@ export function atomicCopy(source: string, destination: string): void {
   );
   try {
     copyFileSync(source, tmp);
-    renameSync(tmp, destination);
+    fsyncPath(tmp);
+    renameWithRetry(tmp, destination);
   } catch (error) {
     try {
       rmSync(tmp, { force: true });

@@ -3,8 +3,11 @@ import path from "node:path";
 import {
   CancellationRequested,
   ConfigurationError,
+  corruptStatusMessage,
+  SessionLock,
   SessionStore,
   log,
+  readStatusFileState,
   readExecutionFile,
   watchSnapshot,
 } from "@nodeint/migent-kernel";
@@ -41,10 +44,22 @@ export async function followSession(
   const exitWhenDone = options.exitWhenDone === true;
   const sessionDirectory = path.join(workspace, ".migent", "sessions", sessionId);
   const eventsPath = path.join(sessionDirectory, "events.jsonl");
+  const statusPath = path.join(sessionDirectory, "status.json");
+  if (readStatusFileState(statusPath).state === "corrupt") {
+    throw new ConfigurationError(corruptStatusMessage(statusPath));
+  }
   if (!isFile(eventsPath) && !(once && isFile(path.join(sessionDirectory, "status.json")))) {
     throw new ConfigurationError(`No events found for session: ${sessionId}`);
   }
-  new SessionStore(workspace).reapOrphanedExecutions(sessionId, "ignore");
+  // Reaping writes, so it needs the session lock. A live holder keeps the session; follow then tails read-only.
+  const reapLock = SessionLock.tryAcquire(sessionDirectory);
+  if (reapLock !== null) {
+    try {
+      new SessionStore(workspace).reapOrphanedExecutions(sessionId, "ignore");
+    } finally {
+      reapLock.release();
+    }
+  }
   let executionPath: string | null = null;
   if (executionId !== null) {
     const resolved = path.join(sessionDirectory, "executions", executionId, "execution.json");

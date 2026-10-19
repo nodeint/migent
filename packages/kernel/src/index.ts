@@ -51,6 +51,12 @@ export type {
   WorkflowOutput,
   WorkflowRequires,
 } from "./workflow.js";
+export { SessionLock, SessionLockHeldError, assertSessionLockHeld } from "./session-lock.js";
+export {
+  appendLineSynced,
+  writeFileAtomic,
+  writeJsonAtomic,
+} from "./atomic-file.js";
 export {
   atomicCopy,
   isCompletionDecision,
@@ -93,7 +99,15 @@ export {
   safeComponent,
 } from "./runtime.js";
 export { STATUS_PROVIDER_EVENTS } from "./event-kinds.js";
-export { readStatusFile, readExecutionFile, watchSnapshot, listSessionRows } from "./query.js";
+export {
+  corruptStatusMessage,
+  listSessionRows,
+  readExecutionFile,
+  readStatusFile,
+  readStatusFileState,
+  watchSnapshot,
+} from "./query.js";
+export type { StatusFileState } from "./query.js";
 export {
   providerErrorMessage,
   classifyProviderError,

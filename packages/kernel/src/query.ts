@@ -18,6 +18,32 @@ export function readStatusFile(filePath: string): Record<string, unknown> {
   }
 }
 
+export type StatusFileState =
+  | { state: "missing"; status: Record<string, never> }
+  | { state: "corrupt"; status: Record<string, never> }
+  | { state: "ok"; status: Record<string, unknown> };
+
+/** Like readStatusFile, but tells a missing file from one that exists and does not parse. */
+export function readStatusFileState(filePath: string): StatusFileState {
+  let text: string;
+  try {
+    text = readFileSync(filePath, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { state: "missing", status: {} };
+    return { state: "corrupt", status: {} };
+  }
+  try {
+    const payload = JSON.parse(text) as unknown;
+    return isRecord(payload) ? { state: "ok", status: payload } : { state: "corrupt", status: {} };
+  } catch {
+    return { state: "corrupt", status: {} };
+  }
+}
+
+export function corruptStatusMessage(filePath: string): string {
+  return `Session status file is corrupt: ${filePath}.`;
+}
+
 export function readExecutionFile(filePath: string): Record<string, unknown> | null {
   let text: string;
   try {
@@ -90,7 +116,12 @@ export function listSessionRows(workspace: string): string[][] {
     } catch {
       continue;
     }
-    const status = readStatusFile(statusPath);
+    const read = readStatusFileState(statusPath);
+    if (read.state === "corrupt") {
+      rows.push(["", entry.name, "legacy/unknown", "corrupt", "not started", "--", "none", ""]);
+      continue;
+    }
+    const status = read.status;
     if (Object.keys(status).length === 0) continue;
     const outputs = status.outputs;
     const outputLabel =

@@ -17,6 +17,7 @@ Each run has its own directory, named by its session ID:
 ├── status.json
 ├── task.md                               # task body; written before the first stage
 ├── events.jsonl
+├── session.lock                          # present only while a process is running the session
 ├── outputs/                              # present after outputs are published
 │   └── <output-name>
 └── executions/

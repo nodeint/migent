@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { writeFileAtomic, writeJsonAtomic } from "./atomic-file.js";
 import { ConfigurationError } from "./errors.js";
-import { isRecord } from "./record.js";
+import { corruptStatusMessage, readStatusFileState } from "./query.js";
 import { MIGENT_DIRNAME, SESSIONS_DIRNAME, utcNow } from "./runtime.js";
 
 export const TASK_FILENAME = "task.md";
@@ -40,7 +41,7 @@ export function relativeTaskPath(sessionId: string): string {
 
 export function writeTaskFile(filePath: string, task: string): void {
   const body = task.endsWith("\n") ? task : `${task}\n`;
-  writeFileSync(filePath, body, "utf8");
+  writeFileAtomic(filePath, body);
 }
 
 /** Materialize a missing task.md, then reject a body that differs from the first dispatch. */
@@ -82,7 +83,7 @@ export function freezeSessionTask(
   if (storedHash === "") {
     status.task_sha256 = hash;
     status.updated_at = utcNow();
-    writeFileSync(statusPath, JSON.stringify(status, null, 2), "utf8");
+    writeJsonAtomic(statusPath, status);
   } else if (storedHash !== hash) {
     throw new ConfigurationError(`Session ${sessionId} task.md changed after the first stage was dispatched.`);
   }
@@ -109,11 +110,7 @@ function preparedRunHint(sessionId: string, status: Record<string, unknown>): st
 }
 
 function readStatus(filePath: string): Record<string, unknown> {
-  try {
-    const parsed = JSON.parse(readFileSync(filePath, "utf8")) as unknown;
-    if (isRecord(parsed)) return parsed;
-  } catch {
-    // A missing or unreadable status is handled by the caller as an empty record.
-  }
-  return {};
+  const read = readStatusFileState(filePath);
+  if (read.state === "corrupt") throw new ConfigurationError(corruptStatusMessage(filePath));
+  return read.status;
 }

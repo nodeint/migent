@@ -1,16 +1,17 @@
 import { randomUUID } from "node:crypto";
 import {
-  appendFileSync,
   copyFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
   readdirSync,
   statSync,
-  writeFileSync,
 } from "node:fs";
 import path from "node:path";
+import { appendLineSynced, writeFileAtomic, writeJsonAtomic } from "./atomic-file.js";
 import { ConfigurationError } from "./errors.js";
+import { assertSessionLockHeld } from "./session-lock.js";
+import { corruptStatusMessage, readStatusFileState } from "./query.js";
 import { STATUS_PROVIDER_EVENTS } from "./event-kinds.js";
 import {
   missingCompletionOutputNames,
@@ -255,7 +256,7 @@ export class SessionStore {
   }
 
   save(record: AgentSessionRecord, context: ExecutionContext): void {
-    writeJson(context.conversationPath, record.toJson());
+    writeJsonAtomic(context.conversationPath, record.toJson());
   }
 
   saveExecution(
@@ -291,7 +292,7 @@ export class SessionStore {
       }
       Object.assign(metadata, fields);
       metadata.agent_id = record.agentId;
-      writeJson(filePath, metadata);
+      writeJsonAtomic(filePath, metadata);
     });
   }
 
@@ -301,7 +302,7 @@ export class SessionStore {
       const metadata = readJsonObject(filePath);
       metadata.provider_endpoint = null;
       metadata.provider_pid = null;
-      writeJson(filePath, metadata);
+      writeJsonAtomic(filePath, metadata);
     });
   }
 
@@ -325,7 +326,7 @@ export class SessionStore {
   private writeTurnFile(context: ExecutionContext, turn: number, name: string, text: string): void {
     const directory = this.turnDirectory(context, turn);
     mkdirSync(directory, { recursive: true });
-    writeFileSync(path.join(directory, name), text, "utf8");
+    writeFileAtomic(path.join(directory, name), text);
   }
 
   /** Copy the passing turn's report next to the stage artifact. */
@@ -353,7 +354,7 @@ export class SessionStore {
     this.withExecutionLock(filePath, () => {
       const metadata = readJsonObject(filePath);
       Object.assign(metadata, processMetadataPayload(info));
-      writeJson(filePath, metadata);
+      writeJsonAtomic(filePath, metadata);
     });
   }
 
@@ -379,7 +380,7 @@ export class SessionStore {
       updated_at: timestamp,
     };
     status.updated_at = timestamp;
-    writeJson(path.join(sessionDirectory, "status.json"), status);
+    writeJsonAtomic(path.join(sessionDirectory, "status.json"), status);
   }
 
   executionContext(sessionId: string, executionId: string): ExecutionContext | null {
@@ -413,6 +414,7 @@ export class SessionStore {
 
   resetRevisionCounts(sessionId: string, snapshots: readonly ExecutionSnapshot[]): void {
     const sessionDirectory = path.join(this.sessionsDirectory, sessionId);
+    assertSessionLockHeld(sessionDirectory);
     const status = this.readSessionStatusAt(sessionDirectory);
     const counts: Record<string, number> = {};
     for (const snapshot of snapshots) {
@@ -422,7 +424,7 @@ export class SessionStore {
     }
     status.revision_baselines = counts;
     status.updated_at = utcNow();
-    writeJson(path.join(sessionDirectory, "status.json"), status);
+    writeJsonAtomic(path.join(sessionDirectory, "status.json"), status);
   }
 
   executionSnapshots(sessionId: string): ExecutionSnapshot[] {
@@ -455,11 +457,11 @@ export class SessionStore {
   }
 
   savePrompt(context: ExecutionContext, prompt: string): void {
-    writeFileSync(path.join(context.directory, "prompt.md"), prompt, "utf8");
+    writeFileAtomic(path.join(context.directory, "prompt.md"), prompt);
   }
 
   saveResponse(context: ExecutionContext, responseText: string): void {
-    writeFileSync(path.join(context.directory, "response.md"), responseText, "utf8");
+    writeFileAtomic(path.join(context.directory, "response.md"), responseText);
   }
 
   private saveExecutionUnlocked(
@@ -477,6 +479,7 @@ export class SessionStore {
       throw new Error(`Execution ${context.executionId} is immutable after it ended.`);
     }
     const sessionDirectory = path.dirname(path.dirname(context.directory));
+    assertSessionLockHeld(sessionDirectory);
     const previousStatus = this.readSessionStatusAt(sessionDirectory);
     const workflow = this.loadWorkflow(previousStatus);
     if (status === "running" && previousStatus.status === "completed") {
@@ -492,7 +495,7 @@ export class SessionStore {
     if (error !== null) metadata.error = error;
     if (outcome !== null) metadata.outcome = outcome.toJson();
     if (extra !== null) Object.assign(metadata, extra);
-    writeJson(filePath, metadata);
+    writeJsonAtomic(filePath, metadata);
     const stageId = typeof metadata.stage_id === "string" ? metadata.stage_id : "";
     const sessionStatus = sessionStatusAfterExecution(
       status,
@@ -521,7 +524,6 @@ export class SessionStore {
     }
     if (decision) payload.latest_decision = decision;
     if (Object.keys(outputs).length > 0) payload.outputs = outputs;
-    writeJson(path.join(sessionDirectory, "status.json"), payload);
     this.appendEvent(sessionDirectory, {
       event: `execution.${status}`,
       execution_id: context.executionId,
@@ -537,6 +539,7 @@ export class SessionStore {
         ...outcome.toJson(),
       });
     }
+    writeJsonAtomic(path.join(sessionDirectory, "status.json"), payload);
     if (sessionStatus !== "active") this.markSessionTerminal(context, sessionStatus, outcome);
   }
 
@@ -587,9 +590,10 @@ export class SessionStore {
   private ensureSessionIsRunnable(sessionId: string | null): void {
     if (sessionId === null) return;
     const statusPath = path.join(this.sessionsDirectory, sessionId, "status.json");
-    if (!existsSync(statusPath)) return;
-    const status = JSON.parse(readFileSync(statusPath, "utf8")) as unknown;
-    if (!isRecord(status)) return;
+    const read = readStatusFileState(statusPath);
+    if (read.state === "corrupt") throw new ConfigurationError(corruptStatusMessage(statusPath));
+    if (read.state === "missing") return;
+    const status = read.status;
     const message = runnableViolation(sessionId, status);
     if (message) throw new Error(message);
   }
@@ -624,7 +628,7 @@ export class SessionStore {
     const text = readFileSync(manifestPath, "utf8");
     const pattern = /^status: \S+\s*$/m;
     if (!pattern.test(text)) return;
-    writeFileSync(manifestPath, text.replace(pattern, `status: ${status}`), "utf8");
+    writeFileAtomic(manifestPath, text.replace(pattern, `status: ${status}`));
   }
 
   private loadWorkflow(previousStatus: Record<string, unknown>): WorkflowDocument | null {
@@ -668,8 +672,9 @@ export class SessionStore {
 
   private readSessionStatusAt(sessionDirectory: string): Record<string, unknown> {
     const statusPath = path.join(sessionDirectory, "status.json");
-    if (!existsSync(statusPath)) return {};
-    return readJsonObject(statusPath);
+    const read = readStatusFileState(statusPath);
+    if (read.state === "corrupt") throw new ConfigurationError(corruptStatusMessage(statusPath));
+    return read.status;
   }
 
   private providerStatusFields(
@@ -713,15 +718,23 @@ export class SessionStore {
       EXECUTIONS_DIRNAME,
       executionId,
     );
-    if (existsSync(directory)) throw new Error(`Execution already exists: ${directory}`);
-    mkdirSync(directory, { recursive: true });
+    assertSessionLockHeld(path.join(this.sessionsDirectory, resolvedSession));
+    mkdirSync(path.dirname(directory), { recursive: true });
+    try {
+      mkdirSync(directory);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+        throw new Error(`Execution already exists: ${directory}`);
+      }
+      throw error;
+    }
     const taskSource = path.join(this.sessionsDirectory, resolvedSession, "task.md");
     if (existsSync(taskSource)) copyFileSync(taskSource, path.join(directory, "task.md"));
     const context = new ExecutionContext(resolvedSession, executionId, directory);
     mkdirSync(context.artifactDirectory);
     this.createSessionFiles(context);
-    writeFileSync(path.join(directory, "prompt.md"), prompt, "utf8");
-    writeJson(path.join(directory, "execution.json"), {
+    writeFileAtomic(path.join(directory, "prompt.md"), prompt);
+    writeJsonAtomic(path.join(directory, "execution.json"), {
       session_id: resolvedSession,
       execution_id: executionId,
       execution_order: order,
@@ -750,12 +763,10 @@ export class SessionStore {
     const sessionDirectory = path.dirname(path.dirname(context.directory));
     const manifestPath = path.join(sessionDirectory, "manifest.yaml");
     if (existsSync(manifestPath)) return;
-    writeFileSync(
+    writeFileAtomic(
       manifestPath,
-      `${[`session_id: ${context.sessionId}`, `created_at: ${utcNow()}`, "status: running"].join("\n")}\n`,
-      "utf8",
-    );
-    writeJson(path.join(sessionDirectory, "status.json"), {
+      `${[`session_id: ${context.sessionId}`, `created_at: ${utcNow()}`, "status: running"].join("\n")}\n`);
+    writeJsonAtomic(path.join(sessionDirectory, "status.json"), {
       session_id: context.sessionId,
       status: "active",
       latest_execution_id: context.executionId,
@@ -859,7 +870,8 @@ export class SessionStore {
   }
 
   private appendEvent(sessionDirectory: string, event: Record<string, unknown>): void {
-    appendFileSync(path.join(sessionDirectory, "events.jsonl"), `${JSON.stringify(event)}\n`, "utf8");
+    assertSessionLockHeld(sessionDirectory);
+    appendLineSynced(path.join(sessionDirectory, "events.jsonl"), JSON.stringify(event));
   }
 }
 
@@ -906,10 +918,6 @@ function readJsonObject(filePath: string): Record<string, unknown> {
   const value = JSON.parse(readFileSync(filePath, "utf8")) as unknown;
   if (!isRecord(value)) throw new Error(`Expected a JSON object: ${filePath}`);
   return value;
-}
-
-function writeJson(filePath: string, value: unknown): void {
-  writeFileSync(filePath, JSON.stringify(value, null, 2), "utf8");
 }
 
 function isFile(filePath: string): boolean {

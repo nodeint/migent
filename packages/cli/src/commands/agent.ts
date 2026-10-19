@@ -9,6 +9,7 @@ import {
   log,
   prependRoleInstructions,
   requireAgentSession,
+  SessionLock,
   resolveRoleTarget,
   SessionStore,
 } from "@nodeint/migent-kernel";
@@ -44,54 +45,72 @@ export async function dispatchAgent(
   });
   const [resolvedSessionId, createdSession] = resolveSession(workspace, args.sessionId ?? null, args.role, args.task ?? null);
   if (createdSession) log(`session_id: ${resolvedSessionId}`);
-  let resumeExecutionId: string | null = null;
-  if (!createdSession) {
-    const previous = new SessionStore(workspace).latestExecution(resolvedSessionId);
-    if (previous !== null) resumeExecutionId = previous.executionId;
-  }
-  const optionLabel =
-    Object.entries(target.options)
-      .map(([key, value]) => `${key}: ${value}`)
-      .join(", ") || "default";
-  printNotice(`agent ${args.role} · ${target.provider}/${target.model} (${optionLabel}).`);
-  const unbind = bindCancellationSignals();
-  let result: Awaited<ReturnType<AgentToolRunner["run"]>>;
+  let lock: SessionLock;
   try {
-    const runner = args.runner ?? cliHooks.runner ?? new AgentToolRunner(adapterMap());
-    result = await runner.run({
-      provider: target.provider,
-      model: target.model,
-      options: { ...target.options },
-      prompt: prependRoleInstructions(
-        loadRoleInstructions(loadYamlMapping(path.join(workspace, ".migent", "config.yaml")), args.role),
-        resolvePrompt({
-          prompt: args.prompt ?? null,
-          promptFile: args.promptFile ?? null,
-          promptStdin: args.promptStdin ?? false,
-        }),
-      ),
-      workspace,
-      sessionId: resolvedSessionId,
-      resumeExecutionId,
-      stageId: args.role,
-    });
+    lock = SessionLock.acquire(path.join(workspace, ".migent", "sessions", resolvedSessionId));
   } catch (error) {
-    if (error instanceof CancellationRequested) {
-      log(error.message);
-      return 130;
-    }
-    if (error instanceof ConfigurationError) throw error;
     if (error instanceof Error) {
       printError(error.message);
       return 2;
     }
     throw error;
-  } finally {
-    unbind();
   }
-  if (args.asJson) process.stdout.write(`${JSON.stringify(result)}\n`);
-  else printAgent({ ...result }, args.role, target.provider, target.model);
-  return result.outcome_status === "complete" ? 0 : 1;
+  try {
+    return await runLocked();
+  } finally {
+    lock.release();
+  }
+
+  async function runLocked(): Promise<number> {
+    let resumeExecutionId: string | null = null;
+    if (!createdSession) {
+      const previous = new SessionStore(workspace).latestExecution(resolvedSessionId);
+      if (previous !== null) resumeExecutionId = previous.executionId;
+    }
+    const optionLabel =
+      Object.entries(target.options)
+        .map(([key, value]) => `${key}: ${value}`)
+        .join(", ") || "default";
+    printNotice(`agent ${args.role} · ${target.provider}/${target.model} (${optionLabel}).`);
+    const unbind = bindCancellationSignals();
+    let result: Awaited<ReturnType<AgentToolRunner["run"]>>;
+    try {
+      const runner = args.runner ?? cliHooks.runner ?? new AgentToolRunner(adapterMap());
+      result = await runner.run({
+        provider: target.provider,
+        model: target.model,
+        options: { ...target.options },
+        prompt: prependRoleInstructions(
+          loadRoleInstructions(loadYamlMapping(path.join(workspace, ".migent", "config.yaml")), args.role),
+          resolvePrompt({
+            prompt: args.prompt ?? null,
+            promptFile: args.promptFile ?? null,
+            promptStdin: args.promptStdin ?? false,
+          }),
+        ),
+        workspace,
+        sessionId: resolvedSessionId,
+        resumeExecutionId,
+        stageId: args.role,
+      });
+    } catch (error) {
+      if (error instanceof CancellationRequested) {
+        log(error.message);
+        return 130;
+      }
+      if (error instanceof ConfigurationError) throw error;
+      if (error instanceof Error) {
+        printError(error.message);
+        return 2;
+      }
+      throw error;
+    } finally {
+      unbind();
+    }
+    if (args.asJson) process.stdout.write(`${JSON.stringify(result)}\n`);
+    else printAgent({ ...result }, args.role, target.provider, target.model);
+    return result.outcome_status === "complete" ? 0 : 1;
+  }
 }
 
 function resolveSession(
