@@ -1,9 +1,13 @@
+import path from "node:path";
 import {
   AgentToolRunner,
   CancellationRequested,
   ConfigurationError,
   createAgentSession,
+  loadRoleInstructions,
+  loadYamlMapping,
   log,
+  prependRoleInstructions,
   requireAgentSession,
   resolveRoleTarget,
   SessionStore,
@@ -58,11 +62,14 @@ export async function dispatchAgent(
       provider: target.provider,
       model: target.model,
       options: { ...target.options },
-      prompt: resolvePrompt({
-        prompt: args.prompt ?? null,
-        promptFile: args.promptFile ?? null,
-        promptStdin: args.promptStdin ?? false,
-      }),
+      prompt: prependRoleInstructions(
+        loadRoleInstructions(loadYamlMapping(path.join(workspace, ".migent", "config.yaml")), args.role),
+        resolvePrompt({
+          prompt: args.prompt ?? null,
+          promptFile: args.promptFile ?? null,
+          promptStdin: args.promptStdin ?? false,
+        }),
+      ),
       workspace,
       sessionId: resolvedSessionId,
       resumeExecutionId,

@@ -74,6 +74,7 @@ when `--workflow` is omitted.
   This resets revision counts. `migent session continue <session-id> --once`
   advances one stage and does not reset them.
 - Run one role: `migent session run --role <role> --prompt "<prompt>"`.
+  `roles.<role>.instructions` in config, when set, is prepended to that prompt.
   Use `--file <path>` or `--stdin` for a long prompt. `--task` labels a new
   role session and cannot be combined with `--session <session-id>`, which
   continues an earlier role session. `--provider`/`--model` (together) and
@@ -149,3 +150,5 @@ guessing.
   a name from `models`, not a provider model id.
 - Override one role without touching the shared name:
   `migent config role <role> --provider <provider> --model <model-id> --no-input --json`.
+- `roles.<name>.instructions` is an optional list of strings. A stage prompt
+  includes it before that stage's instructions. A role run prepends it to the prompt.

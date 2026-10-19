@@ -3,6 +3,7 @@ import path from "node:path";
 import { expect, test } from "vitest";
 import {
   ConfigurationError,
+  loadRoleInstructions,
   loadYamlMapping,
   resolveRoleTarget,
   resolveStageTarget,
@@ -108,6 +109,40 @@ test("preserves model options and role options", () => {
     temperature: "0.2",
   });
   expect(roles.reviewer.options.model_reasoning_effort).toBe("medium");
+});
+
+test("loads role instructions and rejects a non-list", () => {
+  const config = loadYamlMapping(
+    writeConfig(
+      STAGE_CONFIG.replace(
+        "  developer:\n    default_model: grok\n",
+        "  developer:\n    default_model: grok\n    instructions:\n      - Write production code.\n      - Leave tests to the reviewer.\n",
+      ),
+    ),
+  );
+  expect(loadRoleInstructions(config, "developer")).toEqual([
+    "Write production code.",
+    "Leave tests to the reviewer.",
+  ]);
+  expect(loadRoleInstructions(config, "reviewer")).toEqual([]);
+  const bad = loadYamlMapping(
+    writeConfig(
+      "models:\n  grok:\n    provider: grok\n    model: grok-4\n" +
+        "roles:\n  developer:\n    default_model: grok\n    instructions: nope\n",
+    ),
+  );
+  expect(() => loadRoleInstructions(bad, "developer")).toThrow(
+    /roles\.developer\.instructions must be a list\./,
+  );
+  const blank = loadYamlMapping(
+    writeConfig(
+      "models:\n  grok:\n    provider: grok\n    model: grok-4\n" +
+        "roles:\n  developer:\n    default_model: grok\n    instructions:\n      - \" \"\n",
+    ),
+  );
+  expect(() => loadRoleInstructions(blank, "developer")).toThrow(
+    /Missing or invalid roles\.developer\.instructions\[0\]\./,
+  );
 });
 
 test("rejects a non-scalar model option", () => {

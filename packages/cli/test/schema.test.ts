@@ -6,6 +6,7 @@ import { GrokAdapter } from "@nodeint/migent-adapters";
 import {
   documentVersion,
   loadModelTarget,
+  loadRoleInstructions,
   loadWorkflowDocument,
   loadYamlMapping,
   resolveRoleTarget,
@@ -18,6 +19,7 @@ const CONFIG_PARSER = fileURLToPath(new URL("../../kernel/src/config.ts", import
 
 const CONFIG_KEYS = [
   "default_model",
+  "instructions",
   "model",
   "models",
   "options",
@@ -79,6 +81,8 @@ test("config reference parses and names every key the config parser reads", () =
       model: "grok-4.7",
       options: { "reasoning-effort": "high" },
     });
+    expect(loadRoleInstructions(config, "planner")).toEqual(["Break the task into a reviewable plan."]);
+    expect(loadRoleInstructions(config, "reviewer")).toEqual([]);
     new GrokAdapter().validateOptions({ "reasoning-effort": "high" });
     new GrokAdapter().validateOptions({ "reasoning-effort": "medium" });
     expect(parserKeys(readFileSync(CONFIG_PARSER, "utf8"), "config")).toEqual(CONFIG_KEYS);
@@ -135,7 +139,7 @@ function parserKeys(source: string, kind: "config" | "workflow"): string[] {
   if (kind === "config") {
     for (const match of source.matchAll(/\bconfig\.(models|roles)\b/g)) keys.add(match[1] ?? "");
     for (const match of source.matchAll(/\bmodelConfig\.(provider|model|options)\b/g)) keys.add(match[1] ?? "");
-    for (const match of source.matchAll(/\brole\.(default_model|options)\b/g)) keys.add(match[1] ?? "");
+    for (const match of source.matchAll(/\brole\.(default_model|options|instructions)\b/g)) keys.add(match[1] ?? "");
   } else {
     for (const match of source.matchAll(/(?:requiredString|stringItems|filename)\(\w+\.(\w+)/g)) keys.add(match[1] ?? "");
     for (const match of source.matchAll(/optionalStageString\(\w+, "([^"]+)"/g)) keys.add(match[1] ?? "");

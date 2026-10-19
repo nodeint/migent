@@ -3,6 +3,7 @@ import {
   ConfigEditError,
   assignRoles,
   inspectConfig,
+  loadRoleInstructions,
   loadYamlMapping,
   patchConfigText,
   placeRoleModel,
@@ -203,6 +204,22 @@ roles:
   const change = assignRoles(config(text), ["reviewer"], "shared");
   expect(change.orphanedModels).toEqual(["review"]);
   expect(mapping(change.config.models)).toHaveProperty("review");
+});
+
+test("patch keeps role instructions when the model changes", () => {
+  const text = SHARED.replace(
+    "  developer:\n    default_model: shared\n",
+    "  developer:\n    default_model: shared\n    instructions:\n      - Write production code.\n",
+  );
+  const change = assignRoles(config(text), ["developer"], "other");
+  const patched = patchConfigText(text, change.config);
+  const parsed = loadYamlMapping(writeConfig(patched));
+  expect(loadRoleInstructions(parsed, "developer")).toEqual(["Write production code."]);
+  expect(mapping(mapping(parsed.roles).developer).default_model).toBe("other");
+  const view = inspectConfig(parsed);
+  expect(view.roles.find((role) => role.role === "developer")?.instructions).toEqual([
+    "Write production code.",
+  ]);
 });
 
 test("patch preserves comments and sibling options", () => {

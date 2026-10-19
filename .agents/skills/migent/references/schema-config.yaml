@@ -25,6 +25,10 @@ models:
 roles:
   planner:
     default_model: planner
+    # Included in every prompt for this role, before stage instructions.
+    # A role run prepends the same list to the prompt.
+    instructions:
+      - Break the task into a reviewable plan.
     options:
       reasoning-effort: medium
   reviewer:

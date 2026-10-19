@@ -1,6 +1,6 @@
 import { AgentToolRunner } from "./agent-runner.js";
 import { CancellationRequested, raiseCancellation } from "./command-executor.js";
-import { resolveStageTarget } from "./config.js";
+import { loadRoleInstructions, loadYamlMapping, resolveStageTarget } from "./config.js";
 import { ConfigurationError } from "./errors.js";
 import {
   assertStageDispatchable,
@@ -25,6 +25,7 @@ import { activatePreparedSession, bindPriorSessionId, createWorkflowSession, res
 import { freezeSessionTask } from "./task-file.js";
 import { SessionStore } from "./session-store.js";
 import { readFileSync } from "node:fs";
+import path from "node:path";
 import { loadNamedWorkflow, type WorkflowDocument } from "./workflow.js";
 import type { ExecutionSnapshot } from "./outputs.js";
 
@@ -318,8 +319,13 @@ async function dispatchExecuteStage(
   const frozen = freezeSessionTask(workspace, sessionId);
   const exhausted = verifyExhaustedExecution(snapshots, stageId);
   const stageSpec = workflow.stages[stageId];
+  if (stageSpec === undefined) throw new ConfigurationError(`Stage not found: ${stageId}`);
+  const roleInstructions = loadRoleInstructions(
+    loadYamlMapping(path.join(workspace, ".migent", "config.yaml")),
+    stageSpec.role,
+  );
   const prompt =
-    exhausted?.verifyReport && stageSpec !== undefined
+    exhausted?.verifyReport
       ? buildVerifyRepairPrompt(
           readFileSync(exhausted.verifyReport, "utf8"),
           stageSpec.maxVerify,
@@ -337,6 +343,7 @@ async function dispatchExecuteStage(
           workspace,
           priorSessionId,
           priorOutputs: priorSessionOutputs(workspace, priorSessionId),
+          roleInstructions,
         });
   const request: StageDispatchRequest = {
     workflowId,

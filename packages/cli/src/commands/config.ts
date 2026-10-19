@@ -713,6 +713,7 @@ function roleJson(role: RoleView): Record<string, unknown> {
     provider: role.provider,
     model: role.model,
     options: { ...role.options },
+    instructions: [...role.instructions],
     shared_with: [...role.sharedWith],
     stages: role.stages.map((stage) => ({
       workflow: stage.workflow,

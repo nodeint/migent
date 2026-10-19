@@ -3,6 +3,7 @@ export { CodexAdapter, GrokAdapter, defaultAdapters } from "./adapter.js";
 export {
   documentVersion,
   loadModelTarget,
+  loadRoleInstructions,
   loadYamlMapping,
   resolveRoleTarget,
   resolveStageSpec,
@@ -62,7 +63,7 @@ export {
   shouldPublishOutputs,
 } from "./outputs.js";
 export type { ExecutionSnapshot, PublishedOutput } from "./outputs.js";
-export { buildStagePrompt } from "./prompt.js";
+export { buildStagePrompt, prependRoleInstructions } from "./prompt.js";
 export {
   failedStageCount,
   latestCompleteByStage,

@@ -5,6 +5,7 @@ import { expect, test } from "vitest";
 import {
   buildStagePrompt,
   loadWorkflowDocument,
+  prependRoleInstructions,
   type ExecutionSnapshot,
   type StageSpec,
   type WorkflowDocument,
@@ -125,6 +126,27 @@ test("populated prompt matches the template snapshot", () => {
       `Required prior workflow result:\n- session: prior-1\n- outputs: ${priorPath}`,
       "Write the file artifact as `implementation-result.md` in the execution artifacts directory.",
     ].join("\n\n"),
+  );
+});
+
+test("role instructions precede stage instructions", () => {
+  const prompt = buildStagePrompt({
+    workflow: workflowFile("plan-implement"),
+    stageId: "implement",
+    snapshots: [],
+    workspace: "/tmp",
+    roleInstructions: ["Stay inside the task.", "Do not write code."],
+  });
+  const roleAt = prompt.indexOf("Role instructions:\n- Stay inside the task.\n- Do not write code.");
+  const stageAt = prompt.indexOf("Instructions:\n- Implement production code only.");
+  expect(roleAt).toBeGreaterThan(prompt.indexOf("Stage: implement (role: developer)"));
+  expect(stageAt).toBeGreaterThan(roleAt);
+});
+
+test("prependRoleInstructions puts the role list ahead of the prompt", () => {
+  expect(prependRoleInstructions([], "Review the latest changes")).toBe("Review the latest changes");
+  expect(prependRoleInstructions(["Judge the change.", "Name the risks."], "Review the latest changes")).toBe(
+    "Role instructions:\n- Judge the change.\n- Name the risks.\n\nReview the latest changes",
   );
 });
 

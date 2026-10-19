@@ -44,6 +44,25 @@ test("rejects an unsupported provider without checking its command", () => {
   expect(providers.items).toEqual(["codex  /bin/codex"]);
 });
 
+test("rejects role instructions that are not a list", () => {
+  const workspace = tempDir("migent-doctor-");
+  writeStageProject(workspace);
+  const configPath = path.join(workspace, ".migent", "config.yaml");
+  writeFileSync(
+    configPath,
+    readFileSync(configPath, "utf8").replace(
+      "  developer:\n    default_model: grok\n",
+      "  developer:\n    default_model: grok\n    instructions: nope\n",
+    ),
+  );
+  const [config] = diagnose(workspace, {
+    adapters: defaultAdapters(),
+    which: whichFound(new Set(["codex", "grok"])),
+  });
+  expect(config.ok).toBe(false);
+  expect(config.problems).toContain("roles.developer.instructions must be a list.");
+});
+
 test("reports a missing provider command", () => {
   const workspace = tempDir("migent-doctor-");
   writeStageProject(workspace);

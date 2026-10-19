@@ -16,7 +16,14 @@ models:
 roles:
   developer:
     default_model: implementation
+    instructions:
+      - Implement the change described in the task.
+      - Leave unrelated files unchanged.
 ```
+
+`roles.<name>.instructions` is an optional list of strings. Migent includes
+that list in every prompt for the role, before the stage's own `instructions`.
+`migent session run --role` prepends the same list to the prompt.
 
 Use model identifiers and option values supported by the installed provider
 CLI.

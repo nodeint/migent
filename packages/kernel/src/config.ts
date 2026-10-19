@@ -151,6 +151,13 @@ function resolveRoleCascade(
   return stageTarget(target.provider, target.model, mergeOptions(target.options, roleOptions, args?.options));
 }
 
+/** Absent or null instructions are an empty list. A non-list is a configuration error. */
+export function loadRoleInstructions(config: Record<string, unknown>, roleKey: string): string[] {
+  const roles = mapping(config.roles, "roles");
+  const role = mapping(roles[roleKey], `roles.${roleKey}`);
+  return stringItems(role.instructions, `roles.${roleKey}.instructions`);
+}
+
 function mapping(value: unknown, field: string): Record<string, unknown> {
   if (!isRecord(value)) throw new ConfigurationError(`Missing or invalid ${field}.`);
   const parsed = mappingSchema.safeParse(value);
@@ -163,6 +170,12 @@ function requiredString(value: unknown, field: string): string {
     throw new ConfigurationError(`Missing or invalid ${field}.`);
   }
   return value.trim();
+}
+
+function stringItems(raw: unknown, field: string): string[] {
+  if (raw == null) return [];
+  if (!Array.isArray(raw)) throw new ConfigurationError(`${field} must be a list.`);
+  return raw.map((item, index) => requiredString(item, `${field}[${index}]`));
 }
 
 function readOptions(value: unknown, field: string): Record<string, string> {

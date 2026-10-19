@@ -1,4 +1,4 @@
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { AgentToolRunner } from "@nodeint/migent-kernel";
 import { expect, test } from "vitest";
@@ -60,7 +60,16 @@ test("session run requires a workflow or a role", async () => {
 
 test("session run --workflow dispatches one stage", async () => {
   const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
-  cliHooks.runner = new AgentToolRunner({ fake: new ScriptedAdapter(["status: complete\n\nplanned"], ["# Plan\n"]) }, 10);
+  const configPath = path.join(workspace, ".migent", "config.yaml");
+  writeFileSync(
+    configPath,
+    readFileSync(configPath, "utf8").replace(
+      "  planner:\n    default_model: fake-model\n",
+      "  planner:\n    default_model: fake-model\n    instructions:\n      - Stay inside the task.\n",
+    ),
+  );
+  const adapter = new ScriptedAdapter(["status: complete\n\nplanned"], ["# Plan\n"]);
+  cliHooks.runner = new AgentToolRunner({ fake: adapter }, 10);
   try {
     const captured = await capture(() =>
       main(["session", "run", "--workflow", "plan", "--task", "Write a plan", "--once"], workspace),
@@ -70,6 +79,10 @@ test("session run --workflow dispatches one stage", async () => {
     const payload = JSON.parse(captured.stdout) as { session_id: string; session_status: string };
     expect(payload.session_id).toContain("plan");
     expect(payload.session_status).toBe("active");
+    const prompt = adapter.calls[0]?.prompt ?? "";
+    const roleAt = prompt.indexOf("Role instructions:\n- Stay inside the task.");
+    expect(roleAt).toBeGreaterThan(prompt.indexOf("Stage: plan (role: planner)"));
+    expect(prompt.indexOf("Constraints:")).toBeGreaterThan(roleAt);
 
     const listed = await capture(() => main(["session", "list", "--latest", "--json"], workspace));
     expect(listed.value).toBe(0);
@@ -86,6 +99,14 @@ test("session run --workflow dispatches one stage", async () => {
 
 test("session run without --workflow runs one role", async () => {
   const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
+  const configPath = path.join(workspace, ".migent", "config.yaml");
+  writeFileSync(
+    configPath,
+    readFileSync(configPath, "utf8").replace(
+      "  reviewer:\n    default_model: fake-model\n",
+      "  reviewer:\n    default_model: fake-model\n    instructions:\n      - Judge the change.\n",
+    ),
+  );
   const adapter = new ScriptedAdapter(["status: complete\n\ndone", "status: complete\n\nagain"]);
   try {
     cliHooks.runner = new AgentToolRunner({ fake: adapter }, 10);
@@ -95,6 +116,9 @@ test("session run without --workflow runs one role", async () => {
     expect(captured.value).toBe(0);
     const payload = JSON.parse(captured.stdout) as { outcome_status: string; session_id: string };
     expect(payload.outcome_status).toBe("complete");
+    expect(adapter.calls[0]?.prompt).toContain(
+      "Role instructions:\n- Judge the change.\n\nReview the latest changes",
+    );
 
     cliHooks.runner = new AgentToolRunner({ fake: adapter }, 10);
     const again = await capture(() =>
@@ -105,6 +129,9 @@ test("session run without --workflow runs one role", async () => {
     );
     expect(again.value).toBe(0);
     expect(JSON.parse(again.stdout)).toMatchObject({ session_id: payload.session_id, outcome_status: "complete" });
+    expect(adapter.calls[1]?.prompt).toContain(
+      "Role instructions:\n- Judge the change.\n\nSummarize the risks",
+    );
   } finally {
     cliHooks.runner = null;
     removeWorkspace(workspace);

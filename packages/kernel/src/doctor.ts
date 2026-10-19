@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { ProviderAdapter } from "./adapter.js";
 import {
   loadModelTarget,
+  loadRoleInstructions,
   loadYamlMapping,
   resolveRoleTarget,
   resolveStageSpec,
@@ -129,6 +130,7 @@ function checkConfig(
     let resolved;
     try {
       resolved = resolveRoleTarget(workspace, roleKey);
+      loadRoleInstructions(config, roleKey);
     } catch (error) {
       if (!(error instanceof ConfigurationError)) throw error;
       add(problems, error.message);

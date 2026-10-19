@@ -23,8 +23,9 @@ may produce one named file artifact:
     artifact: plan.md
 ```
 
-Workflow-level `constraints` and stage `instructions` are included in the
-provider prompt.
+Workflow-level `constraints`, the role's `instructions` from
+`.migent/config.yaml`, and stage `instructions` are included in the provider
+prompt. Role instructions come before stage instructions.
 
 ## Decisions and routes
 

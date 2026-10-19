@@ -14,6 +14,7 @@ export function buildStagePrompt(input: {
   sessionDirectory?: string | null;
   priorSessionId?: string | null;
   priorOutputs?: Readonly<Record<string, unknown>> | null;
+  roleInstructions?: readonly string[] | null;
 }): string {
   const stage = input.workflow.stages[input.stageId];
   if (stage === undefined) throw new Error(`Stage is not declared: ${input.stageId}.`);
@@ -21,6 +22,8 @@ export function buildStagePrompt(input: {
     input.sessionDirectory ?? path.join(input.workspace, ".migent", "sessions", "session");
   const taskFile = input.taskFile ?? path.join(sessionDirectory, "task.md");
   const sections = [taskLocationSection(taskFile, sessionDirectory), `Stage: ${stage.id} (role: ${stage.role})`];
+  const roleSection = bulletSection("Role instructions:", input.roleInstructions);
+  if (roleSection !== null) sections.push(roleSection);
   if (stage.instructions.length > 0) {
     const lines = ["Instructions:", ...stage.instructions.map((item) => `- ${item}`)];
     sections.push(lines.join("\n"));
@@ -55,6 +58,18 @@ export function buildStagePrompt(input: {
     );
   }
   return sections.join("\n\n");
+}
+
+export function prependRoleInstructions(instructions: readonly string[], prompt: string): string {
+  const section = bulletSection("Role instructions:", instructions);
+  if (section === null) return prompt;
+  if (prompt === "") return section;
+  return `${section}\n\n${prompt}`;
+}
+
+function bulletSection(heading: string, items: readonly string[] | null | undefined): string | null {
+  if (items == null || items.length === 0) return null;
+  return [heading, ...items.map((item) => `- ${item}`)].join("\n");
 }
 
 export function buildVerifyRepairPrompt(

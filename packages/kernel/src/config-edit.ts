@@ -1,4 +1,4 @@
-import { loadModelTarget, resolveStageSpec } from "./config.js";
+import { loadModelTarget, loadRoleInstructions, resolveStageSpec } from "./config.js";
 import { ConfigurationError } from "./errors.js";
 import { isRecord } from "./record.js";
 import type { StageSpec, WorkflowDocument } from "./workflow.js";
@@ -37,6 +37,7 @@ export interface RoleView {
   provider: string;
   model: string;
   options: Record<string, string>;
+  instructions: readonly string[];
   sharedWith: readonly string[];
   stages: readonly StageRef[];
 }
@@ -114,6 +115,7 @@ export function inspectConfig(
       provider: target.provider,
       model: target.model,
       options: roleOptionMap(role),
+      instructions: loadRoleInstructions(config, name),
       sharedWith: shared,
       stages: roleStages(workflows, name),
     });
@@ -627,11 +629,22 @@ function parseLevel(lines: string[], start: number, end: number, indent: number,
       childEnd = laterIndex + 1;
     }
     const children =
-      value.trim() === "" ? parseLevel(lines, lineIndex + 1, childEnd, indent + unit, unit) : [];
+      value.trim() === "" && !isSequence(lines, lineIndex + 1, childEnd, indent + unit)
+        ? parseLevel(lines, lineIndex + 1, childEnd, indent + unit, unit)
+        : [];
     blocks.push({ key, indent, line: lineIndex, end: childEnd, value, children });
     index = childEnd;
   }
   return blocks;
+}
+
+function isSequence(lines: string[], start: number, end: number, indent: number): boolean {
+  const found = nextContent(lines, start, end);
+  if (found === null) return false;
+  const [lineIndex, lineIndent] = found;
+  if (lineIndent !== indent) return false;
+  const [code] = splitComment(lines[lineIndex] ?? "");
+  return code.trimStart().startsWith("-");
 }
 
 function nextContent(lines: string[], start: number, end: number): [number, number] | null {

@@ -4,6 +4,7 @@
 
 ### Added
 
+- `roles.<name>.instructions` is an optional list of strings. A stage prompt includes it before that stage's instructions. A role run prepends it to the prompt. `config role --json` includes the list.
 - `session prepare <some-id> --workflow <workflow>` creates a session with status `prepared` and a caller-chosen id such as `wave-3`. Write `task.md` in that session, then `migent session run --session <some-id> --workflow <workflow>`. `session show <session-id>` prints that session before the first stage.
 - Stage prompts name `task.md` and the session directory. `session run --task` accepts one line and stores it in `task.md`. The first dispatch records a hash of that file. A later change stops the next dispatch. Each execution keeps a copy.
 
