@@ -162,8 +162,9 @@ A workflow connects stages through dependencies and explicit decision routes.
 - A **session** records executions, events, decisions, and artifacts so work can
   be inspected or resumed.
 
-Use `depends_on` to give a stage upstream artifacts. Use `session.resume_from`
-when the stage must also continue a provider's prior conversational session.
+Use `depends_on` to give a stage upstream artifacts. A route back continues
+that stage's provider agent. Use `session.resume_from` when a stage must
+continue a different stage's provider session.
 
 ## Current scope
 

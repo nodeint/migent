@@ -96,6 +96,7 @@ export {
   failedStageCount,
   latestCompleteByStage,
   nextStage,
+  revisionResumeExecution,
   revisionStop,
   stageDispatchError,
   verifyExhaustedExecution,

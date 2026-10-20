@@ -287,14 +287,46 @@ test("execute reruns plan then review after revise", async () => {
         "status: complete\n\nplanned v1",
         "status: complete\ndecision: revise\n\nneeds work",
         "status: complete\n\nplanned v2",
+        "status: complete\ndecision: revise\n\nstill open",
+        "status: complete\n\nplanned v3",
         "status: complete\ndecision: approved\n\nok",
       ],
-      ["# Plan v1\n", null, "# Plan v2\n", null],
+      ["# Plan v1\n", null, "# Plan v2\n", null, "# Plan v3\n", null],
     );
     const [code, objects] = await runExecute(workspace, ["session", "run", "--workflow", "plan", "--task", "Write a plan"], adapter);
     expect(code).toBe(0);
-    expect(objects.slice(0, -1).map((item) => item.outcome_decision)).toEqual(["", "revise", "", "approved"]);
+    expect(objects.slice(0, -1).map((item) => item.outcome_decision)).toEqual([
+      "",
+      "revise",
+      "",
+      "revise",
+      "",
+      "approved",
+    ]);
     expect(objects.at(-1)?.stop_reason).toBe("completed");
+    const sessionId = String(objects.at(-1)?.session_id);
+    const resumed = (executionId: unknown) =>
+      JSON.parse(
+        readFileSync(
+          path.join(workspace, ".migent", "sessions", sessionId, "executions", String(executionId), "execution.json"),
+          "utf8",
+        ),
+      ) as { resumes_execution_id?: string | null };
+    expect(resumed(objects[2]?.execution_id).resumes_execution_id).toBe(objects[0]?.execution_id);
+    expect(resumed(objects[4]?.execution_id).resumes_execution_id).toBe(objects[2]?.execution_id);
+    expect(resumed(objects[1]?.execution_id).resumes_execution_id).toBeNull();
+    expect(resumed(objects[3]?.execution_id).resumes_execution_id).toBeNull();
+    expect(resumed(objects[5]?.execution_id).resumes_execution_id).toBeNull();
+    expect(adapter.calls.map((call) => call.agent_id)).toEqual([
+      null,
+      null,
+      "native-session-1",
+      null,
+      "native-session-1",
+      null,
+    ]);
+    expect(adapter.calls[2]?.prompt).toContain("Decision that routed to this stage");
+    expect(adapter.calls[2]?.prompt).toContain("Previous plan artifact");
   } finally {
     removeWorkspace(workspace);
   }

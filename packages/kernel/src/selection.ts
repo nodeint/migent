@@ -126,6 +126,37 @@ export function verifyExhaustedExecution(
 }
 
 /**
+ * Provider session to continue when a decision routes back to a stage that
+ * already ran. The latest execution of that stage holds the agent. A stage
+ * that runs again only because a dependency is newer is not resumed here.
+ */
+export function revisionResumeExecution(
+  workflow: WorkflowDocument,
+  snapshots: readonly ExecutionSnapshot[],
+  stageId: string,
+): string | null {
+  const own = snapshots.filter((snapshot) => snapshot.stageId === stageId);
+  if (own.length === 0) return null;
+  let latestOwn = own[0]!;
+  let latestCompleteOwn: ExecutionSnapshot | null = null;
+  for (const snapshot of own) {
+    if (snapshot.executionOrder > latestOwn.executionOrder) latestOwn = snapshot;
+    if (snapshot.status !== "completed" || snapshot.outcomeStatus !== "complete") continue;
+    if (latestCompleteOwn === null || snapshot.executionOrder > latestCompleteOwn.executionOrder) {
+      latestCompleteOwn = snapshot;
+    }
+  }
+  if (latestCompleteOwn === null) return null;
+  const route = latestRouteTo(workflow, snapshots, stageId);
+  if (route === null) return null;
+  const routedBack =
+    route.executionId === latestCompleteOwn.executionId ||
+    route.executionOrder > latestCompleteOwn.executionOrder;
+  if (!routedBack) return null;
+  return latestOwn.executionId;
+}
+
+/**
  * True when another routed visit would pass the stage's maxRevisions.
  * The first successful visit is free. A failed retry of the visit already
  * started does not count. A baseline is the successful visits at the last continue.
@@ -218,6 +249,23 @@ function hasLaterRouteTo(
     if (router.routes[decision] === stageId) return true;
   }
   return false;
+}
+
+function latestRouteTo(
+  workflow: WorkflowDocument,
+  snapshots: readonly ExecutionSnapshot[],
+  stageId: string,
+): ExecutionSnapshot | null {
+  let best: ExecutionSnapshot | null = null;
+  for (const snapshot of snapshots) {
+    if (snapshot.status !== "completed" || snapshot.outcomeStatus !== "complete") continue;
+    const source = workflow.stages[snapshot.stageId];
+    if (source === undefined) continue;
+    const decision = (snapshot.outcomeDecision ?? "").toLowerCase();
+    if (source.routes[decision] !== stageId) continue;
+    if (best === null || snapshot.executionOrder > best.executionOrder) best = snapshot;
+  }
+  return best;
 }
 
 function latestSnapshot(snapshots: readonly ExecutionSnapshot[]): ExecutionSnapshot | null {

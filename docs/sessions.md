@@ -186,6 +186,13 @@ The resumed stage therefore receives both the declared upstream context and the
 provider's conversation history. `resume_from` must name one of the stage's
 dependencies.
 
+A decision that routes back to a stage continues that stage's own provider
+agent. The new execution is the next turn: its prompt points at the routing
+stage's response and the previous artifact. The stage that made the decision
+still starts a new agent. A failed retry of the revised visit continues the
+same agent. `resume_from` applies on the first visit, and on a later visit
+that was not routed back.
+
 ## Reusable workflow boundaries
 
 One workflow can require an approved run of another. This lets teams separate

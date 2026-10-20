@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 import {
   failedStageCount,
+  revisionResumeExecution,
   verifyExhaustedExecution,
   loadWorkflowDocument,
   nextStage,
@@ -265,6 +266,41 @@ test("allows the stage selected by the latest route", () => {
       snapshot("review-work", 2, { decision: "approved" }),
     ]),
   ).toBeNull();
+});
+
+test("revise resumes the previous visit of the routed stage", () => {
+  const workflow = workflowFile("plan");
+  const first = [snapshot("plan", 1), snapshot("review-plan", 2, { decision: "revise" })];
+  expect(revisionResumeExecution(workflow, first, "plan")).toBe("0001-plan");
+  expect(revisionResumeExecution(workflow, first, "review-plan")).toBeNull();
+  const revised = [...first, snapshot("plan", 3)];
+  expect(revisionResumeExecution(workflow, revised, "plan")).toBeNull();
+  expect(revisionResumeExecution(workflow, revised, "review-plan")).toBeNull();
+  const secondRevise = [...revised, snapshot("review-plan", 4, { decision: "revise" })];
+  expect(revisionResumeExecution(workflow, secondRevise, "plan")).toBe("0003-plan");
+  const failedRetry = [
+    ...first,
+    snapshot("plan", 3, { status: "failed", outcomeStatus: null }),
+  ];
+  expect(revisionResumeExecution(workflow, failedRetry, "plan")).toBe("0003-plan");
+  expect(revisionResumeExecution(workflow, [snapshot("plan", 1, { status: "failed", outcomeStatus: null })], "plan")).toBeNull();
+});
+
+test("a stage that routes to itself resumes its own agent", () => {
+  const workflow: WorkflowDocument = {
+    id: "self",
+    stages: {
+      plan: stage("plan", "planner", { routes: { revise: "plan" } }),
+    },
+    completion: null,
+    requires: null,
+    constraints: [],
+    source: null,
+  };
+  const first = [snapshot("plan", 1, { decision: "revise" })];
+  expect(revisionResumeExecution(workflow, first, "plan")).toBe("0001-plan");
+  const retried = [...first, snapshot("plan", 2)];
+  expect(revisionResumeExecution(workflow, retried, "plan")).toBeNull();
 });
 
 test("failedStageCount ignores verify_exhausted executions", () => {
