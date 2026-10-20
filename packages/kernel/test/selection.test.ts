@@ -10,6 +10,7 @@ import {
   loadWorkflowDocument,
   nextStage,
   readyStages,
+  runnableNow,
   NextStage,
   NextStageError,
   revisionStop,
@@ -503,6 +504,74 @@ test("a stage keeps the agent from its latest execution", () => {
   expect(stageAgentExecution(reviewed, "plan")).toBe("0003-plan");
   expect(stageAgentExecution(reviewed, "review-plan")).toBe("0004-review-plan");
   expect(stageAgentExecution(reviewed, "absent")).toBeNull();
+});
+
+function bareWorkflow(stages: Record<string, StageSpec>, schemaVersion = 2): WorkflowDocument {
+  return {
+    id: "sched",
+    schemaVersion,
+    stages,
+    completion: null,
+    requires: null,
+    constraints: [],
+    source: null,
+  };
+}
+
+test("runnableNow suspends a downstream stage while its upstream is ready", () => {
+  const workflow = bareWorkflow({
+    a: stage("a", "developer"),
+    b: stage("b", "developer", { dependsOn: ["a"] }),
+  });
+  expect(runnableNow(workflow, ["b", "a"], [], 2)).toEqual(["a"]);
+});
+
+test("runnableNow runs a resume_from stage only alone", () => {
+  const followFirst = bareWorkflow({
+    follow: stage("follow", "developer", { dependsOn: ["draft"], resumeFrom: "draft" }),
+    other: stage("other", "developer"),
+    draft: stage("draft", "developer"),
+  });
+  expect(runnableNow(followFirst, ["follow", "other"], [], 2)).toEqual(["follow"]);
+  expect(runnableNow(followFirst, ["follow"], ["other"], 2)).toEqual([]);
+  const otherFirst = bareWorkflow({
+    other: stage("other", "developer"),
+    follow: stage("follow", "developer", { dependsOn: ["draft"], resumeFrom: "draft" }),
+    draft: stage("draft", "developer"),
+  });
+  expect(runnableNow(otherFirst, ["follow", "other"], [], 2)).toEqual(["other"]);
+  const revisited = bareWorkflow({
+    follow: stage("follow", "developer", { dependsOn: ["draft"], resumeFrom: "draft" }),
+    review: stage("review", "reviewer", { decisionValues: ["revise"], routes: { revise: "follow" } }),
+    other: stage("other", "developer"),
+    draft: stage("draft", "developer"),
+  });
+  const routedBack = [snapshot("follow", 1), snapshot("review", 2, { decision: "revise" })];
+  expect(runnableNow(revisited, ["follow", "other"], [], 2, routedBack)).toEqual(["follow", "other"]);
+});
+
+test("runnableNow does not start a stage twice", () => {
+  const workflow = bareWorkflow({
+    a: stage("a", "developer"),
+    b: stage("b", "developer"),
+  });
+  expect(runnableNow(workflow, ["a", "a", "b"], [], 2)).toEqual(["a", "b"]);
+  expect(runnableNow(workflow, ["b", "a"], ["a"], 2)).toEqual(["b"]);
+  expect(runnableNow(workflow, ["a", "b"], ["a"], 1)).toEqual([]);
+});
+
+test("stageDispatchError rejects a stage when one of two routers decides fail", () => {
+  const workflow = bareWorkflow({
+    left: stage("left", "reviewer", { decisionValues: ["ok", "fail"], routes: { ok: "join", fail: "left" } }),
+    right: stage("right", "reviewer", { decisionValues: ["ok", "fail"], routes: { ok: "join", fail: "right" } }),
+    join: stage("join", "developer"),
+  });
+  const error = stageDispatchError(workflow, "join", [
+    snapshot("left", 1, { decision: "fail" }),
+    snapshot("right", 2, { decision: "ok" }),
+  ]);
+  expect(error).toContain("not routed by left");
+  expect(error).toContain("'fail'");
 });
 
 test("failedStageCount ignores verify_exhausted executions", () => {

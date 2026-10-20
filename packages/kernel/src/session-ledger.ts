@@ -7,8 +7,9 @@ import {
   shouldPublishOutputs,
   type ExecutionSnapshot,
 } from "./outputs.js";
+import { isRecord } from "./record.js";
 import { sessionChangeReason } from "./session-events.js";
-import { version2GraphQuiet } from "./selection.js";
+import { readyOutsideStoppedBranches, version2GraphQuiet } from "./selection.js";
 import { StageOutcome } from "./stage-outcome.js";
 import { isWorkflowV2, type WorkflowDocument } from "./workflow.js";
 
@@ -84,7 +85,17 @@ export function sessionStatusFromExecutions(
       workflow,
       execution.stageId,
     );
-    if (status === "blocked") return "blocked";
+    if (status === "blocked") {
+      // A blocked stage must not freeze the session while another branch can still start.
+      // Cancelled executions are not a startable branch; they stay cancelled.
+      if (workflow !== null && isWorkflowV2(workflow)) {
+        const snapshots = snapshotsFromStatus(executions);
+        if (readyOutsideStoppedBranches(workflow, snapshots, "active", revisionBaselinesFrom(previousStatus)).length > 0) {
+          return "active";
+        }
+      }
+      return "blocked";
+    }
     if (status === "cancelled") cancelled = true;
     else if (status === "completed") completed = true;
   }
@@ -323,6 +334,16 @@ function publishedOutputs(
     source_execution_id: output.sourceExecutionId,
     published_by_execution_id: output.publishedByExecutionId,
   }));
+}
+
+function revisionBaselinesFrom(previousStatus: Readonly<Record<string, unknown>>): Record<string, number> | null {
+  const raw = previousStatus.revision_baselines;
+  if (!isRecord(raw)) return null;
+  const baselines: Record<string, number> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (typeof value === "number") baselines[key] = value;
+  }
+  return baselines;
 }
 
 function snapshotsFromStatus(executions: readonly StatusExecution[]): ExecutionSnapshot[] {

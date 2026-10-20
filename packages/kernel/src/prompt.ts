@@ -3,7 +3,7 @@ import path from "node:path";
 import type { ExecutionSnapshot } from "./outputs.js";
 import { isRecord } from "./record.js";
 import { latestCompleteByStage, relevantRouterSnapshots } from "./selection.js";
-import { isWorkflowV2, VERIFY_ARTIFACT, type WorkflowDocument } from "./workflow.js";
+import { isWorkflowV2, routeListsStage, VERIFY_ARTIFACT, type WorkflowDocument } from "./workflow.js";
 
 export function buildStagePrompt(input: {
   workflow: WorkflowDocument;
@@ -162,7 +162,7 @@ function routedResultLines(
     if (snapshot.executionOrder <= previousOrder) return false;
     const source = workflow.stages[snapshot.stageId];
     if (source === undefined) return false;
-    return source.routes[(snapshot.outcomeDecision ?? "").toLowerCase()] === stageId;
+    return routeListsStage(source.routes[(snapshot.outcomeDecision ?? "").toLowerCase()], stageId);
   });
   if (routed.length === 0) return [];
   let decision = routed[0]!;

@@ -319,8 +319,8 @@ outputs:
   expect(document.outputs).toEqual([{ name: "plan", fromStage: "plan", artifact: "plan.md" }]);
 });
 
-test("version 2 refuses a list route", () => {
-  const flow = writeFlow(`\
+test("version 2 loads a list route and refuses an empty list", () => {
+  const document = loadWorkflowDocument(writeFlow(`\
 schema_version: 2
 id: plan
 stages:
@@ -337,9 +337,23 @@ stages:
       routes:
         approved:
           - plan
+`));
+  expect(document.stages.review?.routes.approved).toEqual(["plan"]);
+  const empty = writeFlow(`\
+schema_version: 2
+id: plan
+stages:
+  - id: review
+    role: reviewer
+    depends_on: []
+    decision:
+      values:
+        - approved
+      routes:
+        approved: []
 `);
-  expect(() => loadWorkflowDocument(flow)).toThrow(
-    /stages\.review\.decision\.routes\.approved is a list, which is not supported yet\./,
+  expect(() => loadWorkflowDocument(empty)).toThrow(
+    /stages\.review\.decision\.routes\.approved must be a non-empty list\./,
   );
 });
 
@@ -363,16 +377,20 @@ stages:
   );
 });
 
-test("version 2 refuses concurrency greater than 1 and loads 1", () => {
+test("version 2 loads concurrency above 1 and refuses a non-positive value", () => {
+  const document = loadWorkflowDocument(
+    writeFlow("schema_version: 2\nid: plan\nconcurrency: 2\nstages:\n  - id: plan\n    role: planner\n"),
+  );
+  expect(document.concurrency).toBe(2);
   expect(() =>
     loadWorkflowDocument(
-      writeFlow("schema_version: 2\nid: plan\nconcurrency: 2\nstages:\n  - id: plan\n    role: planner\n"),
+      writeFlow("schema_version: 2\nid: plan\nconcurrency: 0\nstages:\n  - id: plan\n    role: planner\n"),
     ),
-  ).toThrow(/concurrency greater than 1 is not supported yet\./);
-  const document = loadWorkflowDocument(
+  ).toThrow(/concurrency must be a positive integer\./);
+  const one = loadWorkflowDocument(
     writeFlow("schema_version: 2\nid: plan\nconcurrency: 1\nstages:\n  - id: plan\n    role: planner\n"),
   );
-  expect(document.concurrency).toBe(1);
+  expect(one.concurrency).toBe(1);
 });
 
 test("version 1 still loads completion and a string route", () => {

@@ -4,6 +4,7 @@
 
 ### Added
 
+- A version 2 workflow may set `concurrency` and route one decision to a list of stages. Independent branches run together up to that limit, in declaration order. A branch that blocks or exhausts verify, retries, or revisions stops; the others keep running. The session completes when nothing is running and nothing else can start. `status.json` lists `running_stages` and `blocked_by_execution_ids`. `latest_decision` is still the decision of the highest-order execution.
 - A workflow session pins its workflow, role instructions, and resolved stage targets in `workflow.frozen.yaml`. Later edits warn on stderr and do not change that session. `session continue --refresh-workflow` and `session run --session --refresh-workflow` adopt the current workflow, models, and role instructions.
 - New sessions write `schema_version: 2` on an identity-only `manifest.yaml`. Status lives in `status.json`. A v1 manifest still has its status line and is still updated.
 - `session repair <session>` rebuilds `status.json` from the session directory. It takes the session lock. `--accept-task` is the only way past a v1 `status.json` that does not parse: it stores the hash of the current `task.md`. `session continue` repairs without that flag and refuses when the task hash or output provenance would be lost.

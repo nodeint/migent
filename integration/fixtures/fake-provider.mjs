@@ -28,27 +28,70 @@ function withCursorLock(cursor, fn) {
   }
 }
 
-function takeStep() {
+function promptStage(prompt) {
+  const match = /^Stage: (\S+)/m.exec(prompt);
+  return match ? match[1] : "";
+}
+
+function takeStep(prompt) {
   const script = process.env.MIGENT_FAKE_SCRIPT;
   if (!script) return {};
   const steps = JSON.parse(readFileSync(script, "utf8"));
   if (!Array.isArray(steps)) return { text: "script must be a list", exit: 9 };
   const cursor = process.env.MIGENT_FAKE_CURSOR;
   mkdirSync(path.dirname(cursor), { recursive: true });
+  const stage = promptStage(prompt);
+  const staged = steps.some((step) => step && typeof step === "object" && typeof step.stage === "string");
+  if (!staged) {
+    return withCursorLock(cursor, () => {
+      const raw = existsSync(cursor) ? readFileSync(cursor, "ascii").trim() : "";
+      const index = Number.parseInt(raw || "0", 10);
+      const step = steps[index];
+      writeFileSync(cursor, String(index + 1), "ascii");
+      return step && typeof step === "object" ? step : { text: "script exhausted", exit: 9 };
+    });
+  }
   return withCursorLock(cursor, () => {
     const raw = existsSync(cursor) ? readFileSync(cursor, "ascii").trim() : "";
-    const index = Number.parseInt(raw || "0", 10);
-    const step = steps[index];
-    writeFileSync(cursor, String(index + 1), "ascii");
+    const used = new Set(raw.startsWith("s:") ? raw.slice(2).split(",").filter(Boolean) : []);
+    let chosenIndex = steps.findIndex((step, index) => !used.has(String(index)) && step && step.stage === stage);
+    if (chosenIndex < 0) {
+      chosenIndex = steps.findIndex(
+        (step, index) => !used.has(String(index)) && step && typeof step === "object" && step.stage == null,
+      );
+    }
+    if (chosenIndex < 0) return { text: "script exhausted", exit: 9 };
+    used.add(String(chosenIndex));
+    writeFileSync(cursor, `s:${[...used].join(",")}`, "ascii");
+    const step = steps[chosenIndex];
     return step && typeof step === "object" ? step : { text: "script exhausted", exit: 9 };
   });
 }
 
-function recordInvocation() {
+function markSeen(stage) {
+  const cursor = process.env.MIGENT_FAKE_CURSOR;
+  if (!cursor || !stage) return;
+  writeFileSync(`${cursor}.seen.${stage}`, "1");
+}
+
+function waitForStage(stage) {
+  const cursor = process.env.MIGENT_FAKE_CURSOR;
+  const seen = `${cursor}.seen.${stage}`;
+  const deadline = Date.now() + 20_000;
+  while (!existsSync(seen)) {
+    if (Date.now() > deadline) {
+      process.stderr.write(`timed out waiting for ${stage}\n`);
+      process.exit(9);
+    }
+    sleepMs(20);
+  }
+}
+
+function recordInvocation(extra) {
   const log = process.env.MIGENT_FAKE_LOG;
   if (!log) return;
   mkdirSync(path.dirname(log), { recursive: true });
-  appendFileSync(log, `${JSON.stringify({ provider, argv: [provider, ...args] })}\n`, "utf8");
+  appendFileSync(log, `${JSON.stringify({ provider, argv: [provider, ...args], ...extra })}\n`, "utf8");
 }
 
 function responseText(prompt, step) {
@@ -86,8 +129,7 @@ function emit(event) {
   process.stdout.write(`${JSON.stringify(event)}\n`);
 }
 
-function codex(step) {
-  const prompt = readFileSync(0, "utf8");
+function codex(prompt, step) {
   writeArtifact(prompt, step);
   const exitCode = Number(step.exit || 0);
   if (exitCode) process.exit(exitCode);
@@ -100,9 +142,7 @@ function codex(step) {
   emit({ type: "item.completed", item: { type: "agent_message", text: stdoutText } });
 }
 
-function grok(step) {
-  const promptFile = argAfter("--prompt-file");
-  const prompt = promptFile === undefined ? "" : readFileSync(promptFile, "utf8");
+function grok(prompt, step) {
   writeArtifact(prompt, step);
   const exitCode = Number(step.exit || 0);
   if (exitCode) process.exit(exitCode);
@@ -120,10 +160,21 @@ function grok(step) {
   emit({ type: "end", sessionId: "fake-grok-session" });
 }
 
-const step = takeStep();
-recordInvocation();
-if (provider === "codex") codex(step);
-else if (provider === "grok") grok(step);
+const startedAt = Date.now();
+const prompt = provider === "codex"
+  ? readFileSync(0, "utf8")
+  : (() => {
+      const promptFile = argAfter("--prompt-file");
+      return promptFile === undefined ? "" : readFileSync(promptFile, "utf8");
+    })();
+const step = takeStep(prompt);
+const stage = promptStage(prompt);
+markSeen(stage);
+if (typeof step.wait_stage === "string" && step.wait_stage) waitForStage(step.wait_stage);
+if (typeof step.delay_ms === "number" && step.delay_ms > 0) sleepMs(step.delay_ms);
+recordInvocation({ started_at: startedAt, ended_at: Date.now(), stage });
+if (provider === "codex") codex(prompt, step);
+else if (provider === "grok") grok(prompt, step);
 else {
   process.stderr.write(`unknown fake provider: ${provider}\n`);
   process.exit(2);

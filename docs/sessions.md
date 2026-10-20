@@ -55,6 +55,14 @@ The session-level files have distinct purposes:
 - `status.json` is the current, machine-readable session snapshot. It includes
   the latest execution and stage state, and records decisions, blockers, and
   published outputs when applicable. `session show` reads this file.
+  `running_stages` lists each running execution in execution order. Each entry
+  has `execution_id`, `stage_id`, `provider`, `event`, `summary`, and
+  `updated_at`. The field is absent when nothing is running.
+  `blocked_by_execution_id` is the first blocked execution.
+  `blocked_by_execution_ids` lists every blocked execution.
+  `latest_decision` is the decision of the highest-order execution. It is not
+  the session outcome: a later stage with no decision leaves the earlier
+  decision in place, and an approved sibling does not clear a blocked stage.
 - `events.jsonl` is the append-only session log. Each line is one JSON object
   with `v`, `seq`, `event`, `timestamp`, and `data`. Lines written by an older
   Migent have no `v` and are read as version 1. `seq` increases by one for each
@@ -68,9 +76,11 @@ The session-level files have distinct purposes:
   failed execution record is immutable. `session continue` reopens a cancelled
   execution in place; the cancelled event stays in the log. Execution directory
   names are ordered, for example `0002-review--attempt-01`.
-- `outputs/` contains the artifacts selected by the workflow's `completion`
-  block. It is created only when the workflow reaches its configured completion
-  condition and all selected artifacts are non-empty.
+- `outputs/` contains the artifacts named by the workflow. A version 2 workflow
+  copies top-level `outputs` when the run is quiet and every artifact resolves.
+  A version 1 workflow still copies `completion.outputs` when the completion
+  stage makes its decision. The directory is created only then, and only when
+  every selected artifact is non-empty.
 
 Each execution directory contains:
 
@@ -91,7 +101,7 @@ Each execution directory contains:
   `task.md` in this directory is a copy of the session task at the moment the
   execution was created.
 - `artifacts/`: files written by that stage. These are per-attempt working
-  artifacts; only explicitly configured completion outputs are copied to the
+  artifacts; only explicitly configured outputs are copied to the
   session-level `outputs/` directory.
 
 These files are Migent's resumable local state. Before the first stage of a
@@ -105,20 +115,19 @@ reads that file when resuming, but all new checkpoints are written as
 
 ## Published outputs
 
-A completion output is copied from a successful stage artifact to
-`outputs/<output-name>`. For example:
+A published output is copied from a successful stage artifact to
+`outputs/<output-name>`. A version 2 workflow names those artifacts at the
+top level and publishes them once, when the session completes:
 
 ```yaml
-completion:
-  stage: review-plan
-  decision: approved
-  outputs:
-    - name: plan
-      from_stage: plan
-      artifact: plan.md
+outputs:
+  - name: plan
+    from_stage: plan
+    artifact: plan.md
 ```
 
-publishes:
+A version 1 workflow still uses `completion.outputs` and publishes when the
+completion stage makes its decision. Either form publishes:
 
 ```text
 .migent/sessions/<session-id>/outputs/plan
@@ -140,8 +149,9 @@ file:
 ```
 
 `source_execution_id` identifies the attempt that produced the artifact.
-`published_by_execution_id` identifies the completion attempt that caused it to
-be published.
+`published_by_execution_id` identifies the execution that published it: the
+completion stage on a version 1 workflow, or the execution that made the run
+quiet on a version 2 workflow.
 
 ## Inspect and resume
 
@@ -224,8 +234,11 @@ reusable processes—for example, plan approval from implementation:
 id: implement
 requires:
   workflow: plan
-  decision: approved
 ```
+
+`requires` has no decision. The prior session must be `completed`. A declining
+decision that must not satisfy `requires` blocks, or routes to a stage that
+does not end the branch.
 
 Start it with the completed prerequisite session:
 

@@ -99,6 +99,7 @@ export {
   latestCompleteByStage,
   nextStage,
   readyStages,
+  runnableNow,
   revisionResumeExecution,
   revisionStop,
   stageAgentExecution,

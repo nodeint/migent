@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "vitest";
 import {
@@ -411,6 +411,354 @@ test("codex last message overrides stdout", async () => {
     expect(stage.outcome_status).toBe("complete");
     expect(stage.agent_id).toBe(CODEX_THREAD);
     expect(readFileSync(path.join(String(stage.artifact_directory), "note.md"), "utf8")).toBe("# noted\n");
+  } finally {
+    removeWorkspace(workspace);
+  }
+}, 30_000);
+
+const BRANCH_CONFIG = `\
+schema_version: 2
+models:
+  grok-model:
+    provider: grok
+    model: grok-test
+roles:
+  developer:
+    default_model: grok-model
+  reviewer:
+    default_model: grok-model
+  writer:
+    default_model: grok-model
+`;
+
+const BRANCH_WORKFLOW = `\
+schema_version: 2
+id: implement
+concurrency: 2
+stages:
+  - id: implement
+    role: developer
+    depends_on: []
+    produces:
+      artifact: implementation.md
+  - id: review
+    role: reviewer
+    depends_on: [implement]
+    decision:
+      values: [approved, revise]
+      routes:
+        approved: [test, docs]
+        revise: implement
+  - id: test
+    role: developer
+    depends_on: [review]
+  - id: docs
+    role: writer
+    depends_on: [review]
+  - id: review-test
+    role: reviewer
+    depends_on: [test]
+    decision:
+      values: [approved, revise]
+      routes:
+        approved: complete
+        revise: test
+  - id: review-docs
+    role: reviewer
+    depends_on: [docs]
+    decision:
+      values: [approved, revise]
+      routes:
+        approved: complete
+        revise: docs
+outputs:
+  - name: implementation
+    from_stage: implement
+    artifact: implementation.md
+`;
+
+function implementStep(text: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
+  return { stage: "implement", text, artifact: "# implementation\n", ...extra };
+}
+
+function stageStep(stage: string, text: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
+  return { stage, text, ...extra };
+}
+
+function invocationsFor(root: string, stage: string): Array<Record<string, unknown>> {
+  return providerInvocations(root).filter((item) => item.stage === stage);
+}
+
+function eventCount(workspace: string, sessionId: string, name: string): number {
+  const text = readFileSync(path.join(workspace, ".migent", "sessions", sessionId, "events.jsonl"), "utf8");
+  return text.split("\n").filter((line) => line.includes(`"event":"${name}"`)).length;
+}
+
+test("test and docs overlap and review-test starts while docs runs", async () => {
+  const workspace = tempWorkspace();
+  try {
+    writeWorkspace(workspace, BRANCH_CONFIG, { implement: BRANCH_WORKFLOW });
+    installScript(workspace, [
+      implementStep(COMPLETE),
+      stageStep("review", APPROVED),
+      stageStep("test", COMPLETE, { delay_ms: 800 }),
+      stageStep("docs", COMPLETE, { delay_ms: 2000 }),
+      stageStep("review-test", APPROVED),
+      stageStep("review-docs", APPROVED),
+    ]);
+    const [code, objects, stderr] = await runMain(workspace, [
+      "session",
+      "run",
+      "--workflow",
+      "implement",
+      "--task",
+      "Ship the change",
+    ]);
+    expect(code, stderr).toBe(0);
+    const testRun = invocationsFor(workspace, "test")[0];
+    const docsRun = invocationsFor(workspace, "docs")[0];
+    const reviewTest = invocationsFor(workspace, "review-test")[0];
+    expect(testRun).toBeDefined();
+    expect(docsRun).toBeDefined();
+    expect(reviewTest).toBeDefined();
+    expect(Number(testRun?.started_at)).toBeLessThan(Number(docsRun?.ended_at));
+    expect(Number(docsRun?.started_at)).toBeLessThan(Number(testRun?.ended_at));
+    expect(Number(reviewTest?.started_at)).toBeLessThan(Number(docsRun?.ended_at));
+    expect(objects[0]?.stop_reason).toBe("completed");
+  } finally {
+    removeWorkspace(workspace);
+  }
+}, 30_000);
+
+test("review-test revise reruns test while the docs branch continues", async () => {
+  const workspace = tempWorkspace();
+  try {
+    writeWorkspace(workspace, BRANCH_CONFIG, { implement: BRANCH_WORKFLOW });
+    installScript(workspace, [
+      implementStep(COMPLETE),
+      stageStep("review", APPROVED),
+      stageStep("test", COMPLETE, { delay_ms: 30 }),
+      stageStep("test", COMPLETE),
+      stageStep("docs", COMPLETE, { delay_ms: 3000 }),
+      stageStep("review-test", REVISE),
+      stageStep("review-test", APPROVED),
+      stageStep("review-docs", APPROVED),
+    ]);
+    const [code, , stderr] = await runMain(workspace, [
+      "session",
+      "run",
+      "--workflow",
+      "implement",
+      "--task",
+      "Ship the change",
+    ]);
+    expect(code, stderr).toBe(0);
+    const tests = invocationsFor(workspace, "test");
+    const docsRun = invocationsFor(workspace, "docs")[0];
+    expect(tests).toHaveLength(2);
+    expect(Number(tests[1]?.started_at)).toBeLessThan(Number(docsRun?.ended_at));
+    expect(executionRecords(workspace).filter((record) => record.stage_id === "docs")).toHaveLength(1);
+  } finally {
+    removeWorkspace(workspace);
+  }
+}, 30_000);
+
+test("the session completes only after both reviews approve and publishes once", async () => {
+  const workspace = tempWorkspace();
+  try {
+    writeWorkspace(workspace, BRANCH_CONFIG, { implement: BRANCH_WORKFLOW });
+    installScript(workspace, [
+      implementStep(COMPLETE),
+      stageStep("review", APPROVED),
+      stageStep("test", COMPLETE),
+      stageStep("docs", COMPLETE),
+      stageStep("review-test", APPROVED),
+      stageStep("review-docs", APPROVED),
+    ]);
+    const [code, objects, stderr] = await runMain(workspace, [
+      "session",
+      "run",
+      "--workflow",
+      "implement",
+      "--task",
+      "Ship the change",
+    ]);
+    expect(code, stderr).toBe(0);
+    const sessionId = String(objects[0]?.session_id);
+    expect(objects[0]?.stop_reason).toBe("completed");
+    expect(objects[0]?.outputs).toMatchObject({ implementation: { path: "outputs/implementation" } });
+    expect(eventCount(workspace, sessionId, "outputs.published")).toBe(1);
+    expect(eventCount(workspace, sessionId, "session.completed")).toBe(1);
+    expect(readFileSync(path.join(workspace, ".migent", "sessions", sessionId, "outputs", "implementation"), "utf8")).toBe(
+      "# implementation\n",
+    );
+  } finally {
+    removeWorkspace(workspace);
+  }
+}, 30_000);
+
+test("a blocked docs branch lets the test branch finish and continue runs only docs", async () => {
+  const workspace = tempWorkspace();
+  try {
+    writeWorkspace(workspace, BRANCH_CONFIG, { implement: BRANCH_WORKFLOW });
+    installScript(workspace, [
+      implementStep(COMPLETE),
+      stageStep("review", APPROVED),
+      stageStep("test", COMPLETE),
+      stageStep("review-test", APPROVED),
+      stageStep("docs", BLOCKED, { delay_ms: 1500 }),
+      stageStep("docs", COMPLETE),
+    ]);
+    const [code, objects, stderr] = await runMain(workspace, [
+      "session",
+      "run",
+      "--workflow",
+      "implement",
+      "--task",
+      "Ship the change",
+    ]);
+    expect(code, stderr).toBe(1);
+    const sessionId = String(objects[0]?.session_id);
+    expect(objects[0]?.stop_reason).toBe("blocked");
+    expect(objects[0]?.outputs).toEqual({});
+    expect(sessionStatus(workspace, sessionId).status).toBe("blocked");
+    expect(existsSync(path.join(workspace, ".migent", "sessions", sessionId, "outputs", "implementation"))).toBe(false);
+    const before = executionRecords(workspace, sessionId);
+    expect(
+      before.some((record) => {
+        const outcome = record.outcome;
+        return (
+          record.stage_id === "review-test" &&
+          typeof outcome === "object" &&
+          outcome !== null &&
+          !Array.isArray(outcome) &&
+          (outcome as { decision?: unknown }).decision === "approved"
+        );
+      }),
+    ).toBe(true);
+    const [continued, , continuedStderr] = await runMain(workspace, [
+      "session",
+      "continue",
+      sessionId,
+      "--max-dispatches",
+      "1",
+    ]);
+    expect(continued, continuedStderr).toBe(5);
+    const after = executionRecords(workspace, sessionId);
+    expect(after).toHaveLength(before.length + 1);
+    expect(after.at(-1)?.stage_id).toBe("docs");
+    expect(after.filter((record) => record.stage_id === "test")).toHaveLength(1);
+    expect(after.filter((record) => record.stage_id === "review-test")).toHaveLength(1);
+  } finally {
+    removeWorkspace(workspace);
+  }
+}, 30_000);
+
+test("review-test stays suspended while implement reruns and the session does not complete early", async () => {
+  const workspace = tempWorkspace();
+  try {
+    const workflow = BRANCH_WORKFLOW.replace(
+      `      routes:
+        approved: [test, docs]
+        revise: implement`,
+      `      routes:
+        approved: [test, docs]
+        revise: review`,
+    ).replace("        revise: docs", "        revise: implement");
+    writeWorkspace(workspace, BRANCH_CONFIG, { implement: workflow });
+    installScript(workspace, [
+      implementStep(COMPLETE),
+      implementStep(COMPLETE),
+      stageStep("review", APPROVED),
+      stageStep("review", APPROVED),
+      stageStep("test", COMPLETE, { wait_stage: "review-docs", delay_ms: 800 }),
+      stageStep("test", COMPLETE),
+      stageStep("docs", COMPLETE, { delay_ms: 20 }),
+      stageStep("docs", COMPLETE),
+      stageStep("review-docs", REVISE, { delay_ms: 80 }),
+      stageStep("review-docs", APPROVED),
+      stageStep("review-test", APPROVED),
+    ]);
+    const [code, objects, stderr] = await runMain(workspace, [
+      "session",
+      "run",
+      "--workflow",
+      "implement",
+      "--task",
+      "Ship the change",
+    ]);
+    expect(code, stderr).toBe(0);
+    const sessionId = String(objects[0]?.session_id);
+    const records = executionRecords(workspace, sessionId);
+    const implementations = records.filter((record) => record.stage_id === "implement");
+    const reviewTests = records.filter((record) => record.stage_id === "review-test");
+    expect(implementations).toHaveLength(2);
+    expect(reviewTests).toHaveLength(1);
+    expect(Number(reviewTests[0]?.execution_order)).toBeGreaterThan(Number(implementations[1]?.execution_order));
+    expect(eventCount(workspace, sessionId, "session.completed")).toBe(1);
+    expect(objects[0]?.stop_reason).toBe("completed");
+  } finally {
+    removeWorkspace(workspace);
+  }
+}, 30_000);
+
+test("--stage accepts the second ready stage and continue with two ready stages does not throw", async () => {
+  const stageWorkspace = tempWorkspace();
+  try {
+    writeWorkspace(stageWorkspace, BRANCH_CONFIG, { implement: BRANCH_WORKFLOW });
+    installScript(stageWorkspace, [
+      implementStep(COMPLETE),
+      stageStep("review", APPROVED),
+      stageStep("docs", COMPLETE),
+    ]);
+    const [code, objects, stderr] = await runMain(stageWorkspace, [
+      "session",
+      "run",
+      "--workflow",
+      "implement",
+      "--task",
+      "Ship the change",
+      "--max-dispatches",
+      "2",
+    ]);
+    expect(code, stderr).toBe(5);
+    const sessionId = String(objects[0]?.session_id);
+    const [staged, , stagedStderr] = await runMain(stageWorkspace, ["session", "continue", sessionId, "--stage", "docs"]);
+    expect(staged, stagedStderr).toBe(0);
+    const records = executionRecords(stageWorkspace, sessionId);
+    expect(records.filter((record) => record.stage_id === "docs")).toHaveLength(1);
+    expect(records.filter((record) => record.stage_id === "test")).toHaveLength(0);
+  } finally {
+    removeWorkspace(stageWorkspace);
+  }
+
+  const workspace = tempWorkspace();
+  try {
+    writeWorkspace(workspace, BRANCH_CONFIG, { implement: BRANCH_WORKFLOW });
+    installScript(workspace, [
+      implementStep(COMPLETE),
+      stageStep("review", APPROVED),
+      stageStep("test", COMPLETE),
+      stageStep("docs", COMPLETE),
+      stageStep("review-test", APPROVED),
+      stageStep("review-docs", APPROVED),
+    ]);
+    const [started, startedObjects, startedStderr] = await runMain(workspace, [
+      "session",
+      "run",
+      "--workflow",
+      "implement",
+      "--task",
+      "Ship the change",
+      "--max-dispatches",
+      "2",
+    ]);
+    expect(started, startedStderr).toBe(5);
+    const sessionId = String(startedObjects[0]?.session_id);
+    const [continued, continuedObjects, continuedStderr] = await runMain(workspace, ["session", "continue", sessionId]);
+    expect(continued, continuedStderr).toBe(0);
+    expect(continuedStderr).not.toContain("ambiguous");
+    expect(continuedObjects[0]?.stop_reason).toBe("completed");
   } finally {
     removeWorkspace(workspace);
   }

@@ -20,7 +20,7 @@ export interface StageSpec {
   modelName: string | null;
   options: Record<string, string>;
   maxRevisions: number | null;
-  routes: Record<string, string>;
+  routes: Record<string, string | string[]>;
   verify: string[];
   maxVerify: number;
   verifyTimeoutSec: number | null;
@@ -79,7 +79,7 @@ const stageSpecSchema = z.object({
   modelName: z.string().nullable(),
   options: z.record(z.string(), z.string()),
   maxRevisions: z.number().int().nonnegative().nullable(),
-  routes: z.record(z.string(), z.string()),
+  routes: z.record(z.string(), z.union([z.string(), z.array(z.string()).min(1)])),
   verify: z.array(z.string()),
   maxVerify: z.number().int().min(1),
   verifyTimeoutSec: z.number().int().min(1).nullable(),
@@ -342,7 +342,6 @@ function parseConcurrency(data: Record<string, unknown>): number {
   if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
     throw new ConfigurationError("concurrency must be a positive integer.");
   }
-  if (value > 1) throw new ConfigurationError("concurrency greater than 1 is not supported yet.");
   return value;
 }
 
@@ -467,7 +466,7 @@ function stageRoutes(
   values: readonly string[],
   stages: Record<string, StageSpec>,
   version2 = false,
-): Record<string, string> {
+): Record<string, string | string[]> {
   if (values.length === 0) return {};
   const decision = stage.decision;
   if (!isRecord(decision)) return {};
@@ -475,12 +474,12 @@ function stageRoutes(
   if (!isRecord(routes) || Object.keys(routes).length === 0) {
     throw new ConfigurationError(`stages.${stageId}.decision.routes must be a mapping.`);
   }
-  const parsed: Record<string, string> = {};
+  const parsed: Record<string, string | string[]> = {};
   for (const [rawKey, rawTarget] of Object.entries(routes)) {
     const key = requiredString(rawKey, `stages.${stageId}.decision.routes`).toLowerCase();
     const field = `stages.${stageId}.decision.routes.${key}`;
     const target = routeTarget(rawTarget, field, stages, version2);
-    if (target !== "complete" && !Object.hasOwn(stages, target)) {
+    if (typeof target === "string" && target !== "complete" && !Object.hasOwn(stages, target)) {
       throw new ConfigurationError(`${field} is not a declared stage: ${target}`);
     }
     if (Object.hasOwn(parsed, key)) {
@@ -503,7 +502,7 @@ function routeTarget(
   field: string,
   stages: Record<string, StageSpec>,
   version2: boolean,
-): string {
+): string | string[] {
   if (!Array.isArray(raw)) return requiredString(raw, field);
   // A list is a fan-out route. Reporting it as a bad string would hide that.
   if (!version2) return requiredString(raw, field);
@@ -515,14 +514,27 @@ function routeTarget(
       throw new ConfigurationError(`${field} is not a declared stage: ${target}`);
     }
   }
-  throw new ConfigurationError(`${field} is a list, which is not supported yet.`);
+  return targets;
+}
+
+/** A route value is one stage id, `complete`, or a list of stage ids. */
+export function routeTargets(target: string | readonly string[] | undefined): readonly string[] {
+  if (typeof target === "string") return [target];
+  if (Array.isArray(target)) return target;
+  return [];
+}
+
+export function routeListsStage(target: string | readonly string[] | undefined, stageId: string): boolean {
+  return routeTargets(target).includes(stageId);
 }
 
 function validateStageGraph(stages: Record<string, StageSpec>): void {
   const targets = new Set<string>();
   for (const stage of Object.values(stages)) {
-    for (const target of Object.values(stage.routes)) {
-      if (target !== "complete") targets.add(target);
+    for (const value of Object.values(stage.routes)) {
+      for (const target of routeTargets(value)) {
+        if (target !== "complete") targets.add(target);
+      }
     }
   }
   for (const stage of Object.values(stages)) {
@@ -689,7 +701,7 @@ function validateVerifyPaths(
   const points = new Set<string>();
   if (!version2 && completion !== null) points.add(completion.stage);
   for (const stage of Object.values(stages)) {
-    if (Object.values(stage.routes).includes("complete")) points.add(stage.id);
+    if (Object.values(stage.routes).some((value) => routeTargets(value).includes("complete"))) points.add(stage.id);
     if (version2 && isLeafStage(stages, stage)) points.add(stage.id);
   }
   if (points.size === 0) return;
@@ -709,7 +721,7 @@ function isLeafStage(stages: Record<string, StageSpec>, stage: StageSpec): boole
   return !Object.values(stages).some((other) => other.dependsOn.includes(stage.id));
 }
 
-function dependencyClosure(stages: Record<string, StageSpec>, stageId: string): Set<string> {
+export function dependencyClosure(stages: Record<string, StageSpec>, stageId: string): Set<string> {
   const seen = new Set<string>();
   const pending = [...(stages[stageId]?.dependsOn ?? [])];
   while (pending.length > 0) {

@@ -49,12 +49,26 @@ A decision stage declares every accepted value and its destination:
       revise: plan
 ```
 
-A destination is another declared stage or `complete`. Route keys must exactly
-match the declared decision values.
+A destination is another declared stage, `complete`, or a non-empty list of
+stage ids. `complete` is never in a list. Route keys must exactly match the
+declared decision values. Every stage in a list is routed by that decision.
 When a decision routes to another stage, Migent includes the decision
 execution's `response.md` in the destination prompt. On a return to a stage,
 the prompt also references that stage's latest artifact when one exists.
 Decision stages do not need to declare an artifact to pass feedback.
+
+A route is not an ordering edge. A stage with incoming routers is routed when
+every router that completed since this stage last completed lists it on the
+chosen decision. `depends_on` is the join: a stage that depends on two routed
+branches waits until both have completed and both latest decisions list it.
+Authors who need a routed stage to wait for its router keep that router in
+`depends_on`.
+
+```yaml
+routes:
+  approved: [test, docs]
+  revise: implement
+```
 
 ## Verify commands
 
@@ -91,9 +105,11 @@ decide the result.
   and options of the exhausted execution. If config changed them, the resume is
   refused with exit code 2. To use a different model, start a new session.
 - Put `verify` on the stage that edits code. A stage that both decides and
-  edits carries it itself. A stage with `verify` must be on every path to
-  `complete`: the completion stage must be that stage or depend on it. Otherwise
-  the workflow does not load and `migent doctor` reports it.
+  edits carries it itself. A stage with `verify` must sit on every path that
+  ends a branch: each route to `complete`, and each stage with no dependents
+  and no routes, must be that stage or depend on it. Otherwise the workflow
+  does not load and `migent doctor` reports it. Migent does not serialize
+  stages that run `verify` at the same time.
 
 ## Revision limits
 
@@ -125,19 +141,58 @@ to three more revisions in the same session. Each later `session continue` reset
 count again. `migent session continue <session-id> --once` dispatches one stage and
 does not reset the count.
 
+## Concurrency
+
+`concurrency` is a positive integer. Missing means 1. It is frozen with the
+workflow. There is no CLI flag.
+
+The scheduler walks ready stages in declaration order. A ready stage whose
+dependency closure contains another ready stage waits. A stage does not start
+while a running stage is in its dependency closure, or while it is in a
+running stage's closure. A running downstream stage is not cancelled. A stage
+with `session.resume_from` starts only when nothing else is running, and
+nothing starts after it in that turn. A stage that continues its own agent on
+a later visit is not under that rule. The walk stops at `concurrency`.
+
+When more stages are ready than `concurrency` allows, declaration order is
+the schedule. `--once` dispatches the first stage that walk would start.
+`--stage` accepts any ready stage. `session continue` resets revision counts
+whenever any stage can start. `session continue --once` does not.
+
+Migent does not serialize stages that edit the same files. That is the
+workflow author's concern.
+
+A branch stops when its latest execution is blocked, or when verify, retries,
+or revisions are exhausted. Other branches keep starting. The run ends when
+nothing is running and nothing can start. The exit code and `stop_reason`
+take the first reason in this order: `blocked`, `verify_exhausted`,
+`retry_exhausted`, `revisions_exhausted`. A route to `complete` ends that
+branch only. A stage with no dependents and no routes ends its branch.
+Version 1 workflows stay one stage at a time and still complete on the
+completion stage.
+
 ## Completion outputs
 
-`completion` defines the terminal stage and publishes selected artifacts:
+A version 2 workflow publishes top-level `outputs` when the run is quiet:
+nothing is running, nothing is ready or waiting on a ready or running stage,
+no stage is blocked or exhausted, at least one execution completed, and every
+output resolves. Each output is the latest complete artifact of `from_stage`.
+A missing artifact exits 2, leaves the session active, and publishes nothing.
+`session continue` reruns the producer.
 
 ```yaml
-completion:
-  stage: review-plan
-  decision: approved
-  outputs:
-    - name: plan
-      from_stage: plan
-      artifact: plan.md
+outputs:
+  - name: implementation
+    from_stage: implement
+    artifact: implementation.md
 ```
+
+A version 1 workflow still completes when its `completion` stage makes the
+configured decision, and still publishes `completion.outputs` then.
+
+`requires` names another workflow. It requires a prior session whose status
+is `completed`. It has no decision. A declining decision that must not satisfy
+`requires` blocks, or routes to a stage that does not end the branch.
 
 ## Stage protocol
 
@@ -168,46 +223,52 @@ of them in the `decision` header.
 
 ## Complete example
 
-`.migent/workflows/plan.yaml` for a plan that is reviewed and sent back for
-revision:
+`review` approves into `test` and `docs` at the same time. `review-test` can
+start while `docs` is still running. The session completes when both reviews
+approve and nothing else can start.
 
 ```yaml
-schema_version: 1
-id: plan
-constraints:
-  - Do not write implementation code.
-
+schema_version: 2
+id: implement
+concurrency: 2
 stages:
-  - id: plan
-    role: planner
+  - id: implement
+    role: developer
     depends_on: []
-    max_revisions: 3
-    instructions:
-      - Analyze the task and write an implementation plan.
-      - When revising, edit the existing plan.md in place. Do not replace the whole file.
     produces:
-      artifact: plan.md
-
-  - id: review-plan
+      artifact: implementation.md
+  - id: review
     role: reviewer
-    depends_on: [plan]
-    instructions:
-      - Review the plan for correctness, missing risks, and unnecessary scope.
-      - Report every gap of the same kind in one response.
+    depends_on: [implement]
+    decision:
+      values: [approved, revise]
+      routes:
+        approved: [test, docs]
+        revise: implement
+  - id: test
+    role: developer
+    depends_on: [review]
+  - id: docs
+    role: writer
+    depends_on: [review]
+  - id: review-test
+    role: reviewer
+    depends_on: [test]
     decision:
       values: [approved, revise]
       routes:
         approved: complete
-        revise: plan
-
-completion:
-  stage: review-plan
-  decision: approved
-  outputs:
-    - name: plan
-      from_stage: plan
-      artifact: plan.md
+        revise: test
+  - id: review-docs
+    role: reviewer
+    depends_on: [docs]
+    decision:
+      values: [approved, revise]
+      routes:
+        approved: complete
+        revise: docs
+outputs:
+  - name: implementation
+    from_stage: implement
+    artifact: implementation.md
 ```
-
-`migent init --preset plan` writes the same stages. Its file omits
-`constraints` and uses block lists for `depends_on` and `decision.values`.

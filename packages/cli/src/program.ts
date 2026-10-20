@@ -406,6 +406,10 @@ function registerSessionCommand(program: Command, status: CliStatus): void {
 }
 
 function runSessionCommand(options: OptionValues): number | Promise<number> {
+  if (options.stage !== undefined && optionalText(options.stage) === null) {
+    printError("--stage is empty.");
+    return 2;
+  }
   const workflowProvided = options.workflow !== undefined;
   const workflowId = optionalText(options.workflow);
   if (workflowProvided && workflowId === null) {
@@ -462,6 +466,7 @@ function roleFlagsPresent(options: OptionValues): boolean {
 function workflowFlagsPresent(options: OptionValues): boolean {
   return (
     options.once === true ||
+    options.stage !== undefined ||
     options.prior !== undefined ||
     options.attempts !== undefined ||
     options.maxDispatches !== undefined ||
@@ -484,7 +489,8 @@ function runWorkflowCommand(args: {
   const workflowId = args.workflowId;
   const task = args.prepared ? null : args.task;
   const sessionId = args.prepared ? args.sessionId : null;
-  if (!args.once) {
+  const stageId = optionalText(args.options.stage);
+  if (!args.once && stageId === null) {
     const ceiling = dispatchCeiling(args.options);
     if (typeof ceiling === "string") return 2;
     return executeWorkflow(findWorkspace(invocationCwdPath()), {
@@ -505,6 +511,7 @@ function runWorkflowCommand(args: {
     workflowId,
     task,
     sessionId,
+    stageId,
     startPrepared: args.prepared,
     priorSessionId: optionalText(args.options.prior),
     maxAttempts: null,
@@ -515,11 +522,17 @@ function runWorkflowCommand(args: {
 }
 
 function continueSession(session: string, options: OptionValues): number | Promise<number> {
+  if (options.stage !== undefined && optionalText(options.stage) === null) {
+    printError("--stage is empty.");
+    return 2;
+  }
   if (rejectOnce(options)) return 2;
-  if (options.once === true) {
+  const stageId = optionalText(options.stage);
+  if (options.once === true || stageId !== null) {
     return executeWorkflow(findWorkspace(invocationCwdPath()), {
       action: "stage",
       sessionId: session,
+      stageId,
       priorSessionId: optionalText(options.prior),
       maxAttempts: null,
       maxDispatches: null,
@@ -543,6 +556,7 @@ function continueSession(session: string, options: OptionValues): number | Promi
 function addDispatchOptions(command: Command, onceDescription: string): void {
   command
     .option("--once", onceDescription)
+    .option("--stage <stage>", "Dispatch this ready stage once. It does not have to be the first ready stage.")
     .option("--prior <session>", PRIOR_HELP)
     .option("--attempts <count>", "Failed executions allowed for one stage. Default: 3.")
     .option(
@@ -626,17 +640,18 @@ async function runAgent(options: OptionValues, sessionId: string | null): Promis
 }
 
 function rejectOnce(options: OptionValues): boolean {
-  if (options.once !== true) return false;
+  if (options.once !== true && options.stage === undefined) return false;
+  const flag = options.once === true ? "--once" : "--stage";
   if (options.attempts !== undefined) {
-    printError("--once cannot be combined with --attempts.");
+    printError(`${flag} cannot be combined with --attempts.`);
     return true;
   }
   if (options.maxDispatches !== undefined) {
-    printError("--once cannot be combined with --max-dispatches.");
+    printError(`${flag} cannot be combined with --max-dispatches.`);
     return true;
   }
   if (options.unlimitedDispatches === true) {
-    printError("--once cannot be combined with --unlimited-dispatches.");
+    printError(`${flag} cannot be combined with --unlimited-dispatches.`);
     return true;
   }
   return false;

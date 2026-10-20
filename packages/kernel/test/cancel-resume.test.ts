@@ -293,6 +293,93 @@ completion:
   expect(result.stages.map((stage) => stage.execution_id)).toContain(reviewId);
 }, 30_000);
 
+class HangManyAdapter extends ScriptedAdapter {
+  private hung = 0;
+
+  constructor(
+    private readonly pidFiles: string[],
+    responses: string[],
+  ) {
+    super(responses);
+  }
+
+  override buildCommand(input: BuildCommandInput): CommandSpec {
+    if (this.hung < this.pidFiles.length) {
+      const pidFile = this.pidFiles[this.hung]!;
+      this.hung += 1;
+      this.calls.push({
+        model: input.model,
+        workspace: input.workspace,
+        prompt: input.prompt,
+        agentId: input.agentId,
+        newAgentId: input.newAgentId,
+        promptFile: input.promptFile,
+        options: { ...input.options },
+      });
+      const code = `require("fs").writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setInterval(() => {}, 1000);`;
+      return { argv: [process.execPath, "-e", code] };
+    }
+    return super.buildCommand(input);
+  }
+}
+
+test("one SIGINT cancels two runners before the lock is released and continue resumes both", async () => {
+  const root = tempDir("migent-cancel-two-");
+  const pidA = path.join(root, "a");
+  const pidB = path.join(root, "b");
+  const { workspace, sessionId } = setup(`\
+schema_version: 2
+id: wf
+concurrency: 2
+stages:
+  - id: a
+    role: developer
+    depends_on: []
+  - id: b
+    role: developer
+    depends_on: []
+`);
+  const adapter = new HangManyAdapter([pidA, pidB], [OK, OK]);
+  const runner = new AgentToolRunner({ fake: adapter }, 10);
+  let signaled = false;
+  const timer = setInterval(() => {
+    if (signaled || !existsSync(pidA) || !existsSync(pidB)) return;
+    if (readFileSync(pidA, "utf8").trim() === "" || readFileSync(pidB, "utf8").trim() === "") return;
+    signaled = true;
+    clearInterval(timer);
+    process.kill(process.pid, "SIGINT");
+  }, 20);
+  const original = SessionLock.prototype.release;
+  let releasedAfterCancel = false;
+  SessionLock.prototype.release = function release(this: SessionLock) {
+    const records = executionIds(workspace, sessionId).map((id) => execution(workspace, sessionId, id));
+    releasedAfterCancel = records.length === 2 && records.every((record) => record.status === "cancelled");
+    return original.call(this);
+  };
+  try {
+    const first = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId }, runner);
+    expect(signaled).toBe(true);
+    expect(releasedAfterCancel).toBe(true);
+    expect(first.stopReason).toBe("cancelled");
+    expect(first.status).toBe("cancelled");
+    const ids = executionIds(workspace, sessionId);
+    expect(ids).toHaveLength(2);
+
+    const second = await executeNamedWorkflow(
+      workspace,
+      { workflowId: "wf", sessionId, resetRevisions: true },
+      runner,
+    );
+    expect(second.code).toBe(0);
+    expect(second.stopReason).toBe("completed");
+    expect(executionIds(workspace, sessionId).sort()).toEqual([...ids].sort());
+    for (const id of ids) expect(execution(workspace, sessionId, id).status).toBe("completed");
+  } finally {
+    clearInterval(timer);
+    SessionLock.prototype.release = original;
+  }
+}, 30_000);
+
 function execution(workspace: string, sessionId: string, executionId: string): Record<string, unknown> {
   const file = path.join(workspace, ".migent", "sessions", sessionId, "executions", executionId, "execution.json");
   return JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;

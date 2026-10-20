@@ -1,6 +1,12 @@
 import { missingWorkflowOutputNames, type ExecutionSnapshot } from "./outputs.js";
 import { pyRepr } from "./record.js";
-import { isWorkflowV2, type StageSpec, type WorkflowDocument } from "./workflow.js";
+import {
+  dependencyClosure,
+  isWorkflowV2,
+  routeListsStage,
+  type StageSpec,
+  type WorkflowDocument,
+} from "./workflow.js";
 
 const terminalSessionStatuses = new Set(["blocked", "cancelled", "completed"]);
 
@@ -168,8 +174,7 @@ export function stageDispatchError(
     if (current.executionOrder > best.executionOrder) router = item;
   }
   const decision = (latestComplete[router.id]!.outcomeDecision ?? "").toLowerCase();
-  const target = router.routes[decision];
-  if (target !== stageId) {
+  if (!routeListsStage(router.routes[decision], stageId)) {
     return `Stage ${stageId} is not routed by ${router.id} decision ${pyRepr(decision)}.`;
   }
   return null;
@@ -317,8 +322,8 @@ function nextVersion2Stage(
       if (target === undefined) {
         return new NextStageError(`stage ${stage.id} decision ${pyRepr(decision)} is not a valid route.`);
       }
-      // complete ends this branch. Another ready stage can still run.
-      if (target !== "complete") {
+      // A list starts each listed stage from the ready set. complete ends this branch only.
+      if (typeof target === "string" && target !== "complete") {
         const error = stageDispatchError(workflow, target, snapshots);
         if (error !== null) {
           // A quiet graph with a missing output still reruns the producer.
@@ -347,7 +352,7 @@ function version2RouteError(
     const snapshot = latestComplete[router.id];
     if (snapshot === undefined || snapshot.executionOrder <= since) continue;
     const decision = (snapshot.outcomeDecision ?? "").toLowerCase();
-    if (router.routes[decision] !== stageId) {
+    if (!routeListsStage(router.routes[decision], stageId)) {
       return `Stage ${stageId} is not routed by ${router.id} decision ${pyRepr(decision)}.`;
     }
   }
@@ -362,7 +367,7 @@ function routedNextStage(
 ): NextStageResult {
   const decision = (latest.outcomeDecision ?? "").toLowerCase();
   const target = stage.routes[decision];
-  if (target === undefined) {
+  if (typeof target !== "string") {
     return new NextStageError(
       `stage ${stage.id} decision ${pyRepr(decision)} is not a valid route.`,
     );
@@ -421,7 +426,7 @@ function hasLaterRouteTo(
     const snapshot = complete[router.id];
     if (snapshot === undefined || snapshot.executionOrder <= completeOrder) continue;
     const decision = (snapshot.outcomeDecision ?? "").toLowerCase();
-    if (router.routes[decision] === stageId) return true;
+    if (routeListsStage(router.routes[decision], stageId)) return true;
   }
   return false;
 }
@@ -448,7 +453,7 @@ function routersCompletedSince(
     const snapshot = complete[router.id];
     if (snapshot === undefined || snapshot.executionOrder <= since) continue;
     const decision = (snapshot.outcomeDecision ?? "").toLowerCase();
-    if (router.routes[decision] !== stageId) return null;
+    if (!routeListsStage(router.routes[decision], stageId)) return null;
     relevant.push(snapshot);
   }
   relevant.sort((left, right) => left.executionOrder - right.executionOrder);
@@ -471,7 +476,7 @@ function latestRouteTo(
     const source = workflow.stages[snapshot.stageId];
     if (source === undefined) continue;
     const decision = (snapshot.outcomeDecision ?? "").toLowerCase();
-    if (source.routes[decision] !== stageId) continue;
+    if (!routeListsStage(source.routes[decision], stageId)) continue;
     if (best === null || snapshot.executionOrder > best.executionOrder) best = snapshot;
   }
   return best;
@@ -517,6 +522,225 @@ function latestSnapshot(snapshots: readonly ExecutionSnapshot[]): ExecutionSnaps
 
 function incomingRouters(workflow: WorkflowDocument, stageId: string): StageSpec[] {
   return Object.values(workflow.stages).filter((stage) =>
-    Object.values(stage.routes).includes(stageId),
+    Object.values(stage.routes).some((target) => routeListsStage(target, stageId)),
   );
+}
+
+/**
+ * Stages to start this turn, in declaration order.
+ * `ready` and `running` are stage ids. A route is not an ordering edge.
+ */
+export function runnableNow(
+  workflow: WorkflowDocument,
+  ready: readonly string[],
+  running: readonly string[],
+  concurrency: number,
+  snapshots: readonly ExecutionSnapshot[] = [],
+): string[] {
+  if (concurrency < 1) return [];
+  const ordered = declarationOrder(workflow, ready);
+  const suspended = suspendedReady(workflow, ordered);
+  const working = new Set(running);
+  if (working.size >= concurrency) return [];
+  const started: string[] = [];
+  for (const stageId of ordered) {
+    if (working.size >= concurrency) break;
+    if (!workflow.stages[stageId] || working.has(stageId) || suspended.has(stageId)) continue;
+    if (overlapsWorking(workflow, stageId, working)) continue;
+    if (mustRunAlone(workflow, stageId, snapshots)) {
+      // Borrowed agent. Skip it while anything else is in this turn; do not block the rest.
+      if (working.size > 0) continue;
+      started.push(stageId);
+      break;
+    }
+    started.push(stageId);
+    working.add(stageId);
+  }
+  return started;
+}
+
+/** Ready stages that are not on a branch already stopped by block, verify, or retries. */
+export function readyOutsideStoppedBranches(
+  workflow: WorkflowDocument,
+  snapshots: readonly ExecutionSnapshot[],
+  sessionStatus: string,
+  revisionBaselines?: Readonly<Record<string, number>> | null,
+  maxAttempts = 3,
+  resumes?: readonly BlockResume[] | null,
+): string[] {
+  const stopped = stoppedStageIds(workflow, snapshots, sessionStatus, maxAttempts, resumes);
+  return readyStages(workflow, snapshots, sessionStatus, revisionBaselines, maxAttempts, resumes).filter(
+    (stageId) => !onStoppedBranch(workflow, stageId, stopped),
+  );
+}
+
+/** What the pool may start. Verify repair and missing outputs are included once per command. */
+export function schedulableStageIds(
+  workflow: WorkflowDocument,
+  snapshots: readonly ExecutionSnapshot[],
+  sessionStatus: string,
+  revisionBaselines: Readonly<Record<string, number>> | null | undefined,
+  maxAttempts: number,
+  resumes: readonly BlockResume[] | null | undefined,
+  verifyTried: ReadonlySet<string>,
+): string[] {
+  const stopped = stoppedStageIds(workflow, snapshots, sessionStatus, maxAttempts, resumes);
+  const ready = readyOutsideStoppedBranches(
+    workflow,
+    snapshots,
+    sessionStatus,
+    revisionBaselines,
+    maxAttempts,
+    resumes,
+  );
+  const extra: string[] = [];
+  for (const stageId of Object.keys(workflow.stages)) {
+    if (verifyTried.has(stageId) || verifyExhaustedExecution(snapshots, stageId) === null) continue;
+    if (ancestorStopped(workflow, stageId, stopped)) continue;
+    extra.push(stageId);
+  }
+  return declarationOrder(workflow, [
+    ...ready,
+    ...extra,
+    ...missingOutputProducers(workflow, snapshots, sessionStatus),
+  ]);
+}
+
+/** Stop reason once nothing is running and nothing was started. `no eligible stage` means the graph is stuck. */
+export function version2IdleReason(
+  workflow: WorkflowDocument,
+  snapshots: readonly ExecutionSnapshot[],
+  sessionStatus: string,
+  revisionBaselines?: Readonly<Record<string, number>> | null,
+  maxAttempts = 3,
+  resumes?: readonly BlockResume[] | null,
+): string {
+  if (version2GraphQuiet(workflow, snapshots, sessionStatus)) {
+    if (missingWorkflowOutputNames(workflow, snapshots).length > 0) return "outputs_missing";
+    return "completed";
+  }
+  for (const stageId of Object.keys(workflow.stages)) {
+    const latest = latestStageSnapshot(snapshots, stageId);
+    if (latest !== null && latest.outcomeStatus === "blocked" && !blockResumed(sessionStatus, latest.executionId, resumes)) {
+      return "blocked";
+    }
+  }
+  for (const stageId of Object.keys(workflow.stages)) {
+    const latest = latestStageSnapshot(snapshots, stageId);
+    if (latest !== null && latest.status === "failed" && latest.failureReason === VERIFY_EXHAUSTED) {
+      return "verify_exhausted";
+    }
+  }
+  if (maxAttempts > 0) {
+    for (const stageId of Object.keys(workflow.stages)) {
+      const latest = latestStageSnapshot(snapshots, stageId);
+      if (latest?.status === "failed" && failedStageCount(snapshots, stageId) >= maxAttempts) return "retry_exhausted";
+    }
+  }
+  for (const stageId of Object.keys(workflow.stages)) {
+    if (!revisionStop(workflow, snapshots, stageId, revisionBaselines)) continue;
+    if (stageStillDue(workflow, snapshots, stageId)) return "revisions_exhausted";
+  }
+  return "no eligible stage";
+}
+
+function stageStillDue(
+  workflow: WorkflowDocument,
+  snapshots: readonly ExecutionSnapshot[],
+  stageId: string,
+): boolean {
+  if (stageDispatchError(workflow, stageId, snapshots) !== null) return false;
+  const complete = latestCompleteByStage(snapshots);
+  const snapshot = complete[stageId];
+  if (snapshot === undefined) return true;
+  if (hasLaterRouteTo(workflow, complete, stageId, snapshot.executionOrder)) return true;
+  const stage = workflow.stages[stageId];
+  return stage !== undefined && hasNewerDependency(complete, stage, snapshot.executionOrder);
+}
+
+function stoppedStageIds(
+  workflow: WorkflowDocument,
+  snapshots: readonly ExecutionSnapshot[],
+  sessionStatus: string,
+  maxAttempts: number,
+  resumes: readonly BlockResume[] | null | undefined,
+): Set<string> {
+  const stopped = new Set<string>();
+  for (const stageId of Object.keys(workflow.stages)) {
+    const latest = latestStageSnapshot(snapshots, stageId);
+    if (latest === null) continue;
+    if (latest.outcomeStatus === "blocked" && !blockResumed(sessionStatus, latest.executionId, resumes)) {
+      stopped.add(stageId);
+    }
+    if (latest.status === "failed" && latest.failureReason === VERIFY_EXHAUSTED) stopped.add(stageId);
+    if (maxAttempts > 0 && latest.status === "failed" && failedStageCount(snapshots, stageId) >= maxAttempts) {
+      stopped.add(stageId);
+    }
+  }
+  return stopped;
+}
+
+function onStoppedBranch(workflow: WorkflowDocument, stageId: string, stopped: ReadonlySet<string>): boolean {
+  return stopped.has(stageId) || ancestorStopped(workflow, stageId, stopped);
+}
+
+function ancestorStopped(workflow: WorkflowDocument, stageId: string, stopped: ReadonlySet<string>): boolean {
+  for (const dep of dependencyClosure(workflow.stages, stageId)) {
+    if (stopped.has(dep)) return true;
+  }
+  return false;
+}
+
+function declarationOrder(workflow: WorkflowDocument, ids: readonly string[]): string[] {
+  const wanted = new Set(ids);
+  const ordered: string[] = [];
+  for (const stageId of Object.keys(workflow.stages)) {
+    if (wanted.has(stageId)) ordered.push(stageId);
+  }
+  return ordered;
+}
+
+/** Greatest fixed point. A suspended stage does not keep its upstream suspended. */
+function suspendedReady(workflow: WorkflowDocument, ready: readonly string[]): Set<string> {
+  const readySet = new Set(ready);
+  let suspended = new Set<string>();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const next = new Set(suspended);
+    for (const stageId of ready) {
+      if (next.has(stageId)) continue;
+      for (const other of dependencyClosure(workflow.stages, stageId)) {
+        if (readySet.has(other) && !suspended.has(other)) {
+          next.add(stageId);
+          changed = true;
+          break;
+        }
+      }
+    }
+    suspended = next;
+  }
+  return suspended;
+}
+
+function overlapsWorking(workflow: WorkflowDocument, stageId: string, working: ReadonlySet<string>): boolean {
+  const closure = dependencyClosure(workflow.stages, stageId);
+  for (const other of working) {
+    if (other === stageId) continue;
+    if (closure.has(other) || dependencyClosure(workflow.stages, other).has(stageId)) return true;
+  }
+  return false;
+}
+
+function mustRunAlone(
+  workflow: WorkflowDocument,
+  stageId: string,
+  snapshots: readonly ExecutionSnapshot[],
+): boolean {
+  const stage = workflow.stages[stageId];
+  if (!stage?.resumeFrom) return false;
+  // Verify repair and a route back continue this stage's own agent.
+  if (verifyExhaustedExecution(snapshots, stageId) !== null) return false;
+  if (revisionResumeExecution(workflow, snapshots, stageId) !== null) return false;
+  return true;
 }

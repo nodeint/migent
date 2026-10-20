@@ -17,6 +17,7 @@ export interface ExecuteWorkflowOptions {
   priorSessionId?: string | null;
   maxAttempts?: number | null;
   maxDispatches?: number | null;
+  stageId?: string | null;
   runner?: AgentToolRunner | null;
   verbose?: boolean;
   itemProgress?: boolean;
@@ -44,6 +45,7 @@ export async function executeWorkflow(workspace: string, options: ExecuteWorkflo
       startPrepared,
       maxAttempts: once ? null : maxAttempts,
       maxDispatches: once ? null : maxDispatches,
+      stageId: options.stageId ?? null,
       once,
       resetRevisions: options.action === "continue",
       refreshWorkflow: options.refreshWorkflow === true,
