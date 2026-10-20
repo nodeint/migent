@@ -7,7 +7,7 @@ import {
   type ExecutionSnapshot,
 } from "./outputs.js";
 import { sessionChangeReason } from "./session-events.js";
-import type { StageOutcome } from "./stage-outcome.js";
+import { StageOutcome } from "./stage-outcome.js";
 import type { WorkflowDocument } from "./workflow.js";
 
 export interface LedgerOutput {
@@ -30,7 +30,16 @@ export interface PlannedExecutionSave {
   manifestStatus: string | null;
 }
 
-/** Session status for one save. Schema 2 stores this on the execution event and trusts it. */
+/** One execution, as the per-stage reduction sees it. */
+export interface StatusExecution {
+  executionId: string;
+  stageId: string;
+  executionOrder: number;
+  status: string;
+  outcome: StageOutcome | null;
+}
+
+/** Session status for one execution. The session status is the reduction over each stage's latest. */
 export function sessionStatusForExecution(
   executionStatus: string,
   outcome: StageOutcome | null,
@@ -41,9 +50,83 @@ export function sessionStatusForExecution(
   return sessionStatusAfterExecution(executionStatus, outcome, previousStatus, workflow, stageId);
 }
 
+/** Latest execution of each stage. A higher order wins; an equal order keeps the later id. */
+export function latestPerStage(executions: readonly StatusExecution[]): StatusExecution[] {
+  const byStage = new Map<string, StatusExecution>();
+  for (const execution of executions) {
+    const current = byStage.get(execution.stageId);
+    if (current === undefined || laterStatusExecution(execution, current)) byStage.set(execution.stageId, execution);
+  }
+  return [...byStage.values()];
+}
+
+/**
+ * Decision 8 for version 1. Older executions of a stage are ignored.
+ * Any running latest execution wins, then blocked, cancelled, and completion.
+ */
+export function sessionStatusFromExecutions(
+  executions: readonly StatusExecution[],
+  previousStatus: Readonly<Record<string, unknown>>,
+  workflow: WorkflowDocument | null,
+): string {
+  const latest = latestPerStage(executions);
+  if (latest.some((execution) => execution.status === "running")) return "active";
+  let cancelled = false;
+  let completed = false;
+  for (const execution of latest) {
+    const status = sessionStatusForExecution(
+      execution.status,
+      execution.outcome,
+      previousStatus,
+      workflow,
+      execution.stageId,
+    );
+    if (status === "blocked") return "blocked";
+    if (status === "cancelled") cancelled = true;
+    else if (status === "completed") completed = true;
+  }
+  if (cancelled) return "cancelled";
+  if (completed) return "completed";
+  return "active";
+}
+
+/** Latest blocked execution of each stage, lowest execution order first. */
+export function blockedExecutions(
+  executions: readonly StatusExecution[],
+  previousStatus: Readonly<Record<string, unknown>>,
+  workflow: WorkflowDocument | null,
+): StatusExecution[] {
+  return latestPerStage(executions)
+    .filter((execution) => execution.status !== "running")
+    .filter(
+      (execution) =>
+        sessionStatusForExecution(
+          execution.status,
+          execution.outcome,
+          previousStatus,
+          workflow,
+          execution.stageId,
+        ) === "blocked",
+    )
+    .sort(compareStatusExecutions);
+}
+
+export function statusExecutionsFromSnapshots(snapshots: readonly ExecutionSnapshot[]): StatusExecution[] {
+  return snapshots.map((snapshot) => ({
+    executionId: snapshot.executionId,
+    stageId: snapshot.stageId,
+    executionOrder: snapshot.executionOrder,
+    status: snapshot.status,
+    outcome:
+      snapshot.outcomeStatus === null
+        ? null
+        : new StageOutcome(snapshot.outcomeStatus, null, snapshot.outcomeDecision),
+  }));
+}
+
 /**
  * Publish, when this save publishes, and describe the events and manifest line.
- * Call before `execution.json` is written. Sources are executions ordered strictly below this one.
+ * The snapshot list includes this save. Output sources stay executions ordered strictly below it.
  */
 export function planExecutionSave(input: {
   executionStatus: string;
@@ -59,12 +142,10 @@ export function planExecutionSave(input: {
   manifestStatus: string | null;
   snapshots: readonly ExecutionSnapshot[];
 }): PlannedExecutionSave {
-  const sessionStatus = sessionStatusForExecution(
-    input.executionStatus,
-    input.outcome,
+  const sessionStatus = sessionStatusFromExecutions(
+    statusExecutionsFromSnapshots(input.snapshots),
     input.previousStatus,
     input.workflow,
-    input.stageId,
   );
   const outputs = publishForSave(input);
   const previousSessionStatus = typeof input.previousStatus.status === "string" ? input.previousStatus.status : "";
@@ -115,23 +196,40 @@ export function applyTerminalFields(
   sessionStatus: string,
   source: { executionId: string; stageId: string; blocker: string | null } | null,
   reason: string | null,
+  blocked: readonly { executionId: string; stageId: string; blocker: string | null }[] = [],
 ): void {
   delete status.terminal_execution_id;
   delete status.blocked_by_execution_id;
+  delete status.blocked_by_execution_ids;
   delete status.blocked_by_stage_id;
   delete status.blocker;
   if (sessionStatus !== "blocked" && sessionStatus !== "completed" && sessionStatus !== "cancelled") return;
-  if (source === null) {
+  const rows = blocked.length > 0 ? blocked : source ? [source] : [];
+  if (rows.length === 0) {
     if (sessionStatus === "blocked" && reason) status.blocker = reason;
     return;
   }
-  status.terminal_execution_id = source.executionId;
+  const first = rows[0]!;
+  status.terminal_execution_id = source?.executionId ?? first.executionId;
   if (sessionStatus === "blocked") {
-    status.blocked_by_execution_id = source.executionId;
-    status.blocked_by_stage_id = source.stageId;
-    if (source.blocker) status.blocker = source.blocker;
-    else if (reason) status.blocker = reason;
+    status.blocked_by_execution_id = first.executionId;
+    status.blocked_by_execution_ids = rows.map((row) => row.executionId);
+    status.blocked_by_stage_id = first.stageId;
+    const blocker = first.blocker || source?.blocker || reason;
+    if (blocker) status.blocker = blocker;
   }
+}
+
+function laterStatusExecution(candidate: StatusExecution, current: StatusExecution): boolean {
+  if (candidate.executionOrder !== current.executionOrder) return candidate.executionOrder > current.executionOrder;
+  return candidate.executionId > current.executionId;
+}
+
+function compareStatusExecutions(left: StatusExecution, right: StatusExecution): number {
+  if (left.executionOrder !== right.executionOrder) return left.executionOrder - right.executionOrder;
+  if (left.executionId < right.executionId) return -1;
+  if (left.executionId > right.executionId) return 1;
+  return 0;
 }
 
 function publishForSave(input: {

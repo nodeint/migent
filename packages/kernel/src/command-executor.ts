@@ -26,19 +26,18 @@ export class CancellationRequested extends Error {
   }
 }
 
-let pendingCancellation: CancellationRequested | null = null;
+// Stays set so every in-flight command observes the same signal.
+let cancelled: CancellationRequested | null = null;
 const cancelWaiters = new Set<() => void>();
 
 export function raiseCancellation(signalNumber: number): void {
-  pendingCancellation = new CancellationRequested(signalNumber);
+  cancelled = new CancellationRequested(signalNumber);
   for (const waiter of cancelWaiters) waiter();
-  throw pendingCancellation;
+  throw cancelled;
 }
 
-function takeCancellation(): CancellationRequested | null {
-  const error = pendingCancellation;
-  pendingCancellation = null;
-  return error;
+export function resetCancellation(): void {
+  cancelled = null;
 }
 
 export function cancellationSignal(): {
@@ -57,8 +56,7 @@ export function cancellationSignal(): {
 }
 
 function throwIfCancelled(): void {
-  const error = takeCancellation();
-  if (error) throw error;
+  if (cancelled) throw cancelled;
 }
 
 export class CommandExecutor {

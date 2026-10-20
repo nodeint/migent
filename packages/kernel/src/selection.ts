@@ -41,11 +41,40 @@ export function nextStage(
     }
   }
   const candidates = candidateStageIds(workflow, snapshots);
-  if (candidates.length === 0) return new NextStageError("no eligible stage");
-  if (candidates.length > 1) {
-    return new NextStageError(`ambiguous next stage: ${candidates.join(", ")}`);
+  const ready = readyStages(workflow, snapshots, sessionStatus);
+  // Blocked continue, verify-exhausted repair, and exhausted retries are not ready,
+  // but this wrapper still returns them so the loop can resume or stop as it does today.
+  const selected = sameStageIds(ready, candidates) ? ready : candidates;
+  if (selected.length === 0) return new NextStageError("no eligible stage");
+  if (selected.length > 1) {
+    return new NextStageError(`ambiguous next stage: ${selected.join(", ")}`);
   }
-  return new NextStage(candidates[0]!);
+  return new NextStage(selected[0]!);
+}
+
+/** Stage ids that may run now, in declaration order. */
+export function readyStages(
+  workflow: WorkflowDocument,
+  snapshots: readonly ExecutionSnapshot[],
+  sessionStatus: string,
+  revisionBaselines?: Readonly<Record<string, number>> | null,
+  maxAttempts = 3,
+): string[] {
+  void sessionStatus;
+  return candidateStageIds(workflow, snapshots).filter((stageId) => {
+    const latest = latestStageSnapshot(snapshots, stageId);
+    if (latest !== null) {
+      if (latest.status === "running" || latest.outcomeStatus === "blocked") return false;
+      if (latest.status === "failed" && latest.failureReason === VERIFY_EXHAUSTED) return false;
+    }
+    if (maxAttempts > 0 && failedStageCount(snapshots, stageId) >= maxAttempts) return false;
+    if (revisionStop(workflow, snapshots, stageId, revisionBaselines)) return false;
+    return true;
+  });
+}
+
+function sameStageIds(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((id, index) => id === right[index]);
 }
 
 export function stageDispatchError(
@@ -108,18 +137,13 @@ export function failedStageCount(snapshots: readonly ExecutionSnapshot[], stageI
   ).length;
 }
 
-/** The latest execution when it is a verify-exhausted failure of `stageId`. */
+/** The stage's latest execution when that execution is a verify-exhausted failure. */
 export function verifyExhaustedExecution(
   snapshots: readonly ExecutionSnapshot[],
   stageId: string,
 ): ExecutionSnapshot | null {
-  const latest = latestSnapshot(snapshots);
-  if (
-    latest !== null &&
-    latest.stageId === stageId &&
-    latest.status === "failed" &&
-    latest.failureReason === VERIFY_EXHAUSTED
-  ) {
+  const latest = latestStageSnapshot(snapshots, stageId);
+  if (latest !== null && latest.status === "failed" && latest.failureReason === VERIFY_EXHAUSTED) {
     return latest;
   }
   return null;
@@ -202,8 +226,8 @@ export function revisionStop(
 ): boolean {
   const stage = workflow.stages[stageId];
   if (stage === undefined || stage.maxRevisions === null) return false;
-  const latest = latestSnapshot(snapshots);
-  if (latest !== null && latest.stageId === stageId && latest.status === "failed") return false;
+  const latest = latestStageSnapshot(snapshots, stageId);
+  if (latest !== null && latest.status === "failed") return false;
   const completed = snapshots.filter(
     (snapshot) =>
       snapshot.stageId === stageId &&
@@ -299,6 +323,18 @@ function latestRouteTo(
     if (best === null || snapshot.executionOrder > best.executionOrder) best = snapshot;
   }
   return best;
+}
+
+function latestStageSnapshot(
+  snapshots: readonly ExecutionSnapshot[],
+  stageId: string,
+): ExecutionSnapshot | null {
+  let latest: ExecutionSnapshot | null = null;
+  for (const snapshot of snapshots) {
+    if (snapshot.stageId !== stageId) continue;
+    if (latest === null || snapshot.executionOrder > latest.executionOrder) latest = snapshot;
+  }
+  return latest;
 }
 
 function latestSnapshot(snapshots: readonly ExecutionSnapshot[]): ExecutionSnapshot | null {

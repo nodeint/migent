@@ -94,6 +94,7 @@ export function watchSnapshot(
     outcome,
     updated_at: status.updated_at ?? null,
     outputs,
+    running_stages: Array.isArray(status.running_stages) ? status.running_stages.filter(isRecord) : [],
     events_cursor: cursor,
   };
 }

@@ -63,6 +63,7 @@ export async function dispatchNamedStage(
   request: StageDispatchRequest,
   runner?: AgentToolRunner,
   resolved?: { workflow: WorkflowDocument; target: StageTarget } | null,
+  onExecution?: (executionId: string) => void,
 ): Promise<StageDispatchResult> {
   let loaded = resolved ?? loadDispatchTarget(workspace, request);
   let workflow = loaded.workflow;
@@ -98,6 +99,7 @@ export async function dispatchNamedStage(
     stageId: request.stageId,
     stageAttempt: request.stageAttempt,
     executionOrder: request.executionOrder,
+    onExecution,
   });
   return resultFromRun(result, sessionId);
 }

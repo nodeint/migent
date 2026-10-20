@@ -8,6 +8,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@nodeint/migent-adapters": path.join(root, "packages/adapters/src/index.ts"),
+      "@nodeint/migent-kernel": path.join(root, "packages/kernel/src/index.ts"),
     },
   },
   test: {

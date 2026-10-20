@@ -2,7 +2,8 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import path from "node:path";
 import { expect, test } from "vitest";
 import type { BuildCommandInput } from "../src/adapter.ts";
-import { AgentToolRunner, SessionStore, createWorkflowSession, executeNamedWorkflow, raiseCancellation } from "../src/index.ts";
+import { AgentToolRunner, SessionLock, SessionStore, createWorkflowSession, executeNamedWorkflow, raiseCancellation } from "../src/index.ts";
+import { clearInFlightExecution, noteInFlightExecution } from "../src/session-store.ts";
 import type { CommandSpec } from "../src/command-executor.ts";
 import { ScriptedAdapter, tempDir } from "./support.ts";
 
@@ -166,3 +167,65 @@ completion:
   expect(adapter.calls).toHaveLength(1);
   expect(new SessionStore(workspace).readSessionStatus(sessionId).status).toBe("completed");
 }, 30_000);
+
+test("continue reopens every cancelled execution", () => {
+  const { workspace, sessionId } = setup(`\
+id: wf
+stages:
+  - id: implement
+    role: developer
+  - id: review
+    role: developer
+completion:
+  stage: review
+`);
+  const store = new SessionStore(workspace);
+  const lock = SessionLock.acquire(path.join(workspace, ".migent", "sessions", sessionId));
+  let noted: string | null = null;
+  try {
+    const [implementRecord, , implement] = store.loadOrCreate(
+      "fake",
+      "m1",
+      {},
+      workspace,
+      sessionId,
+      "implement",
+      null,
+      null,
+      "go",
+    );
+    noted = implement.executionId;
+    noteInFlightExecution(sessionId, implement.executionId);
+    const [reviewRecord, , review] = store.loadOrCreate(
+      "fake",
+      "m1",
+      {},
+      workspace,
+      sessionId,
+      "review",
+      null,
+      null,
+      "review",
+    );
+    clearInFlightExecution(sessionId, implement.executionId);
+    noted = null;
+    store.save(implementRecord, implement);
+    store.save(reviewRecord, review);
+    store.saveExecution(implement, implementRecord, "cancelled");
+    store.saveExecution(review, reviewRecord, "cancelled");
+    expect(store.readSessionStatus(sessionId).status).toBe("cancelled");
+    const reopened = store.reopenCancelledExecutions(sessionId);
+    expect(reopened.map((item) => item.executionId)).toEqual([implement.executionId, review.executionId]);
+    expect(execution(workspace, sessionId, implement.executionId).status).toBe("running");
+    expect(execution(workspace, sessionId, review.executionId).status).toBe("running");
+    expect(store.readSessionStatus(sessionId).status).toBe("active");
+  } finally {
+    if (noted) clearInFlightExecution(sessionId, noted);
+    lock.release();
+  }
+});
+
+function execution(workspace: string, sessionId: string, executionId: string): Record<string, unknown> {
+  const file = path.join(workspace, ".migent", "sessions", sessionId, "executions", executionId, "execution.json");
+  return JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+}

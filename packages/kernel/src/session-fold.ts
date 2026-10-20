@@ -4,10 +4,12 @@ import { isAtomicTempName, writeJsonAtomic } from "./atomic-file.js";
 import { ConfigurationError } from "./errors.js";
 import {
   applyTerminalFields,
+  blockedExecutions,
   decisionOfOutcome,
   latestDecision,
   recordLatestDecision,
-  sessionStatusForExecution,
+  sessionStatusFromExecutions,
+  type StatusExecution,
 } from "./session-ledger.js";
 import { readStatusFileState, type StatusFileState } from "./query.js";
 import { isRecord } from "./record.js";
@@ -161,19 +163,15 @@ function foldV1(inputs: FoldInputs): Record<string, unknown> {
   const status: Record<string, unknown> = inputs.previousStatus ? cloneRecord(inputs.previousStatus) : {};
   applyManifestIdentity(status, inputs.manifest);
   if (inputs.executions.length === 0) status.status = manifestStatusToSession(inputs.manifest.manifestStatus);
+  const noted = new Map<string, RunningStage>();
   let updatedAt = textOr(status.updated_at) ?? inputs.manifest.createdAt;
   for (const event of inputs.events) {
     if (event.v < 2) continue;
     if (event.event === "workflow.refreshed") continue;
-    if (applySharedEvent(status, event)) updatedAt = later(updatedAt, event.timestamp);
+    if (applySharedEvent(status, event, noted)) updatedAt = later(updatedAt, event.timestamp);
   }
-  const latest = latestExecution(inputs.executions);
-  if (latest !== null) {
-    applyExecutionSnapshot(status, latest, inputs);
-    updatedAt = later(updatedAt, latest.completedAt ?? latest.createdAt);
-    publishCurrentStage(status, latest.executionId, latest.status === "running");
-    updatedAt = applyBlockedResume(status, inputs.events, latest.executionId, updatedAt);
-  }
+  updatedAt = publishExecutionStatus(status, inputs, updatedAt);
+  publishRunningStages(status, noted, inputs.executions);
   if (updatedAt) status.updated_at = updatedAt;
   return status;
 }
@@ -189,24 +187,38 @@ interface SeenExecution {
 function foldSchema2(inputs: FoldInputs): Record<string, unknown> {
   const status = initialStatus(inputs.manifest, inputs.schemaVersion);
   const seen = new Map<string, SeenExecution>();
+  const noted = new Map<string, RunningStage>();
   let updatedAt = inputs.manifest.createdAt;
   for (const event of inputs.events) {
     if (event.event === "workflow.refreshed") continue;
     if (event.executionId && !inputs.presentExecutionIds.has(event.executionId) && isExecutionScoped(event.event)) {
       continue;
     }
-    const applied = applySharedEvent(status, event) || applySchema2Execution(status, event, seen);
+    const applied = applySharedEvent(status, event, noted) || applySchema2Execution(status, event, seen);
     if (applied) updatedAt = later(updatedAt, event.timestamp);
   }
   // Reconcile appends missing events at the end of the file. Latest is the highest order, not the last line.
   publishLatestExecution(status, seen);
-  const latestId = textOr(status.latest_execution_id);
-  if (latestId) updatedAt = applyBlockedResume(status, inputs.events, latestId, updatedAt);
+  updatedAt = publishExecutionStatus(status, inputs, updatedAt);
+  publishRunningStages(status, noted, inputs.executions);
   if (updatedAt) status.updated_at = updatedAt;
   return status;
 }
 
-function applySharedEvent(status: Record<string, unknown>, event: ParsedEvent): boolean {
+interface RunningStage {
+  execution_id: string | null;
+  stage_id: string | null;
+  provider: unknown;
+  event: string;
+  summary: string | null;
+  updated_at: string | null;
+}
+
+function applySharedEvent(
+  status: Record<string, unknown>,
+  event: ParsedEvent,
+  noted: Map<string, RunningStage>,
+): boolean {
   if (event.event === "workflow.refreshed") return false;
   if (event.event === "session.created") {
     if (event.data.prepared === true) {
@@ -235,14 +247,16 @@ function applySharedEvent(status: Record<string, unknown>, event: ParsedEvent): 
   if (event.event.startsWith("provider.") || event.event.startsWith("verify.")) {
     if (skipsStatusWrite(event.event)) return false;
     status.latest_provider_event = event.raw;
-    status.current_stage = {
-      execution_id: event.executionId,
-      stage_id: event.stageId,
-      provider: event.raw.provider ?? null,
-      event: event.event,
-      summary: event.summary,
-      updated_at: event.timestamp,
-    };
+    if (event.executionId) {
+      noted.set(event.executionId, {
+        execution_id: event.executionId,
+        stage_id: event.stageId,
+        provider: event.raw.provider ?? null,
+        event: event.event,
+        summary: event.summary,
+        updated_at: event.timestamp,
+      });
+    }
     return true;
   }
   return false;
@@ -320,27 +334,74 @@ function publishLatestExecution(status: Record<string, unknown>, seen: ReadonlyM
     status,
     latestDecision([...seen.values()].map((row) => ({ order: row.order, outcome: row.outcome }))),
   );
-  if (latest.sessionStatus) {
-    status.status = latest.sessionStatus;
-    applyTerminalFields(status, latest.sessionStatus, {
-      executionId: latestId,
-      stageId: latest.stageId,
-      blocker: textOr(latest.outcome?.blocker),
-    }, null);
-  } else if (latest.status === "running") {
-    status.status = "active";
-    applyTerminalFields(status, "active", null, null);
-  }
-  publishCurrentStage(status, latestId, latest.status === "running");
 }
 
-function publishCurrentStage(status: Record<string, unknown>, executionId: string, running: boolean): void {
-  if (!running) {
-    delete status.current_stage;
-    return;
+function publishRunningStages(
+  status: Record<string, unknown>,
+  noted: ReadonlyMap<string, RunningStage>,
+  executions: readonly FoldExecution[],
+): void {
+  delete status.current_stage;
+  delete status.running_stages;
+  const rows = executions
+    .filter((execution) => execution.status === "running" && noted.has(execution.executionId))
+    .sort((left, right) => {
+      if (left.executionOrder !== right.executionOrder) return left.executionOrder - right.executionOrder;
+      if (left.executionId < right.executionId) return -1;
+      if (left.executionId > right.executionId) return 1;
+      return 0;
+    })
+    .map((execution) => noted.get(execution.executionId)!);
+  if (rows.length > 0) status.running_stages = rows;
+}
+
+/** Session status is the latest execution of each stage, not the highest-order row's stored status. */
+function publishExecutionStatus(
+  status: Record<string, unknown>,
+  inputs: FoldInputs,
+  updatedAt: string | null,
+): string | null {
+  const latest = latestExecution(inputs.executions);
+  if (latest === null) return updatedAt;
+  const rows = statusExecutionsFromFolds(inputs.executions);
+  const sessionStatus = sessionStatusFromExecutions(rows, status, inputs.workflow);
+  status.status = sessionStatus;
+  if (inputs.schemaVersion < 2) {
+    noteLatest(status, latest.executionId, latest.status, latest.stageId);
+    recordLatestDecision(status, decisionOfOutcome(latest.outcome));
   }
-  const stage = status.current_stage;
-  if (!isRecord(stage) || stage.execution_id !== executionId) delete status.current_stage;
+  const blocked = blockedExecutions(rows, status, inputs.workflow).map((row) => ({
+    executionId: row.executionId,
+    stageId: row.stageId,
+    blocker: textOr(inputs.executions.find((execution) => execution.executionId === row.executionId)?.outcome?.blocker),
+  }));
+  applyTerminalFields(
+    status,
+    sessionStatus,
+    {
+      executionId: latest.executionId,
+      stageId: latest.stageId,
+      blocker: textOr(latest.outcome?.blocker),
+    },
+    null,
+    blocked,
+  );
+  return applyBlockedResume(
+    status,
+    inputs.events,
+    blocked.map((row) => row.executionId),
+    later(updatedAt, latest.completedAt ?? latest.createdAt),
+  );
+}
+
+function statusExecutionsFromFolds(executions: readonly FoldExecution[]): StatusExecution[] {
+  return executions.map((execution) => ({
+    executionId: execution.executionId,
+    stageId: execution.stageId,
+    executionOrder: execution.executionOrder,
+    status: execution.status,
+    outcome: toStageOutcome(execution.outcome),
+  }));
 }
 
 function eventExecutionOrder(event: ParsedEvent): number {
@@ -348,46 +409,33 @@ function eventExecutionOrder(event: ParsedEvent): number {
   return Math.max(asInt(event.data.execution_order), fromId);
 }
 
-function applyExecutionSnapshot(status: Record<string, unknown>, latest: FoldExecution, inputs: FoldInputs): void {
-  const sessionStatus = sessionStatusForExecution(
-    latest.status,
-    toStageOutcome(latest.outcome),
-    status,
-    inputs.workflow,
-    latest.stageId,
-  );
-  status.status = sessionStatus;
-  status.latest_execution_id = latest.executionId;
-  status.latest_execution_status = latest.status;
-  status.latest_stage_id = latest.stageId;
-  recordLatestDecision(status, decisionOfOutcome(latest.outcome));
-  applyTerminalFields(status, sessionStatus, {
-    executionId: latest.executionId,
-    stageId: latest.stageId,
-    blocker: textOr(latest.outcome?.blocker),
-  }, null);
-}
-
 /**
- * `session.active` with `data.from: blocked` reopens the session after that execution.
- * The execution outcome stays blocked. A later execution is unaffected.
+ * `session.active` with `data.from: blocked` reopens the session.
+ * Every stage whose latest execution is blocked needs that event. One blocked stage still resumes.
  */
 function applyBlockedResume(
   status: Record<string, unknown>,
   events: readonly ParsedEvent[],
-  executionId: string,
+  blockedIds: readonly string[],
   updatedAt: string | null,
 ): string | null {
-  let resume: ParsedEvent | null = null;
-  for (const event of events) {
-    if (event.event !== "session.active" || event.executionId !== executionId) continue;
-    if (event.data.from !== "blocked") continue;
-    resume = event;
+  if (status.status !== "blocked" || blockedIds.length === 0) return updatedAt;
+  const resumes: ParsedEvent[] = [];
+  for (const executionId of blockedIds) {
+    let resume: ParsedEvent | null = null;
+    for (const event of events) {
+      if (event.event !== "session.active" || event.executionId !== executionId) continue;
+      if (event.data.from !== "blocked") continue;
+      resume = event;
+    }
+    if (resume === null) return updatedAt;
+    resumes.push(resume);
   }
-  if (resume === null || status.status !== "blocked") return updatedAt;
   status.status = "active";
   applyTerminalFields(status, "active", null, null);
-  return later(updatedAt, resume.timestamp);
+  let next = updatedAt;
+  for (const resume of resumes) next = later(next, resume.timestamp);
+  return next;
 }
 
 function noteLatest(status: Record<string, unknown>, executionId: string, executionStatus: string, stageId: string): void {

@@ -23,7 +23,7 @@ import {
   shouldPublishOutputs,
   type ExecutionSnapshot,
 } from "./outputs.js";
-import { planExecutionSave } from "./session-ledger.js";
+import { blockedExecutions, planExecutionSave, statusExecutionsFromSnapshots } from "./session-ledger.js";
 import {
   REAP_ALREADY_EXITED,
   REAP_STILL_RUNNING,
@@ -153,6 +153,29 @@ export class ExecutionContext {
   get artifactDirectory(): string {
     return path.join(this.directory, "artifacts");
   }
+}
+
+// loadOrCreate builds its own SessionStore, so the execute loop's instance cannot see this set.
+const inFlightBySession = new Map<string, Set<string>>();
+
+export function noteInFlightExecution(sessionId: string, executionId: string): void {
+  let ids = inFlightBySession.get(sessionId);
+  if (ids === undefined) {
+    ids = new Set();
+    inFlightBySession.set(sessionId, ids);
+  }
+  ids.add(executionId);
+}
+
+export function clearInFlightExecution(sessionId: string, executionId: string): void {
+  const ids = inFlightBySession.get(sessionId);
+  if (ids === undefined) return;
+  ids.delete(executionId);
+  if (ids.size === 0) inFlightBySession.delete(sessionId);
+}
+
+export function clearInFlightExecutions(sessionId: string): void {
+  inFlightBySession.delete(sessionId);
 }
 
 export class SessionStore {
@@ -325,8 +348,10 @@ export class SessionStore {
     });
   }
 
-  reapOrphanedExecutions(sessionId: string, onLiveOwner: string): void {
+  reapOrphanedExecutions(sessionId: string, onLiveOwner: string, inFlight?: ReadonlySet<string>): void {
+    const skip = inFlight ?? inFlightBySession.get(sessionId);
     for (const context of this.executionContexts(sessionId)) {
+      if (skip?.has(context.executionId)) continue;
       this.reapExecution(context, onLiveOwner);
     }
   }
@@ -368,96 +393,121 @@ export class SessionStore {
     return this.readSessionStatusAt(path.join(this.sessionsDirectory, sessionId));
   }
 
-  /** Record that continue is running the blocked stage again. The caller holds the session lock. */
-  resumeBlockedSession(sessionId: string): { executionId: string; stageId: string } {
+  /** Record that continue is running every blocked stage again. The caller holds the session lock. */
+  resumeBlockedSession(sessionId: string): { executionId: string; stageId: string }[] {
     const sessionDirectory = path.join(this.sessionsDirectory, sessionId);
     assertSessionLockHeld(sessionDirectory);
     const status = this.readSessionStatus(sessionId);
     if (status.status !== "blocked") {
       throw new ConfigurationError(`Session ${sessionId} is ${String(status.status)}, not blocked.`);
     }
-    const executionId = textField(status.blocked_by_execution_id) ?? textField(status.latest_execution_id);
-    const stageId = textField(status.blocked_by_stage_id) ?? textField(status.latest_stage_id) ?? "";
-    if (!executionId) throw new ConfigurationError(`Session ${sessionId} is blocked without an execution.`);
-    const blocker = textField(status.blocker);
-    const data: Record<string, unknown> = { from: "blocked" };
-    if (blocker) data.blocker = blocker;
-    appendLifecycleEvent(sessionDirectory, {
-      event: "session.active",
-      timestamp: utcNow(),
-      executionId,
-      stageId: stageId || null,
-      data,
-    });
+    const workflow = this.loadWorkflow(status);
+    const blocked = blockedExecutions(statusExecutionsFromSnapshots(this.snapshotList(sessionId)), status, workflow);
+    const targets = blocked.map((row) => ({
+      executionId: row.executionId,
+      stageId: row.stageId,
+      blocker: this.executionBlocker(sessionId, row.executionId),
+    }));
+    if (targets.length === 0) {
+      const executionId = textField(status.blocked_by_execution_id) ?? textField(status.latest_execution_id);
+      const stageId = textField(status.blocked_by_stage_id) ?? textField(status.latest_stage_id) ?? "";
+      if (!executionId) throw new ConfigurationError(`Session ${sessionId} is blocked without an execution.`);
+      targets.push({ executionId, stageId, blocker: textField(status.blocker) });
+    }
+    const timestamp = utcNow();
+    for (const target of targets) {
+      const data: Record<string, unknown> = { from: "blocked" };
+      const blocker = target.blocker ?? (targets.length === 1 ? textField(status.blocker) : null);
+      if (blocker) data.blocker = blocker;
+      appendLifecycleEvent(sessionDirectory, {
+        event: "session.active",
+        timestamp,
+        executionId: target.executionId,
+        stageId: target.stageId || null,
+        data,
+      });
+    }
     this.rewriteManifestStatus(sessionDirectory, "running");
     const folded = commitFoldedStatus(this.workspace, sessionDirectory);
     if (folded.status !== "active") {
       throw new ConfigurationError(`Session ${sessionId} stayed ${String(folded.status)} after resume.`);
     }
-    return { executionId, stageId };
+    return targets.map((target) => ({ executionId: target.executionId, stageId: target.stageId }));
   }
 
   /**
-   * Reopen the latest cancelled execution in place. The caller holds the session lock.
-   * The execution id and stage attempt stay the same.
+   * Reopen every cancelled execution in place. The caller holds the session lock.
+   * Execution ids and stage attempts stay the same.
    */
-  reopenCancelledExecution(sessionId: string): { executionId: string; stageId: string } {
+  reopenCancelledExecutions(sessionId: string): { executionId: string; stageId: string }[] {
     const sessionDirectory = path.join(this.sessionsDirectory, sessionId);
     assertSessionLockHeld(sessionDirectory);
     const status = this.readSessionStatus(sessionId);
     if (status.status !== "cancelled") {
       throw new ConfigurationError(`Session ${sessionId} is ${String(status.status)}, not cancelled.`);
     }
-    const context = this.latestExecution(sessionId);
-    if (context === null) {
+    const cancelled = this.executionContexts(sessionId)
+      .map((context) => {
+        const metadata = readJsonObject(path.join(context.directory, "execution.json"));
+        return { context, metadata, order: asInt(metadata.execution_order) };
+      })
+      .filter((item) => item.metadata.status === "cancelled")
+      .sort((left, right) => {
+        if (left.order !== right.order) return left.order - right.order;
+        if (left.context.executionId < right.context.executionId) return -1;
+        if (left.context.executionId > right.context.executionId) return 1;
+        return 0;
+      });
+    if (cancelled.length === 0) {
       throw new ConfigurationError(`Session ${sessionId} is cancelled without an execution.`);
     }
-    const filePath = path.join(context.directory, "execution.json");
-    const metadata = readJsonObject(filePath);
-    if (metadata.status !== "cancelled") {
-      throw new ConfigurationError(
-        `Execution ${context.executionId} is ${String(metadata.status)}, not cancelled.`,
-      );
+    for (const item of cancelled) {
+      if (!existsSync(item.context.conversationReadPath)) {
+        throw new ConfigurationError(`Execution ${item.context.executionId} has no conversation to resume.`);
+      }
     }
-    if (!existsSync(context.conversationReadPath)) {
-      throw new ConfigurationError(`Execution ${context.executionId} has no conversation to resume.`);
-    }
-    metadata.status = "running";
-    metadata.completed_at = null;
-    writeJsonAtomic(filePath, metadata);
-    const provider = typeof metadata.provider === "string" ? metadata.provider : "";
-    const model = typeof metadata.model === "string" ? metadata.model : "";
-    const raw = JSON.parse(readFileSync(context.conversationReadPath, "utf8")) as unknown;
-    const record = AgentSessionRecord.fromJson(raw, provider, model, this.workspace);
-    record.status = "running";
-    this.save(record, context);
-    const stageId = typeof metadata.stage_id === "string" ? metadata.stage_id : "";
+    const reopened: { executionId: string; stageId: string }[] = [];
     const timestamp = utcNow();
-    appendLifecycleEvent(sessionDirectory, {
-      event: "execution.running",
-      timestamp,
-      executionId: context.executionId,
-      stageId: stageId || null,
-      data: {
-        outcome: null,
-        failure_reason: null,
-        error: null,
-        session_status: "active",
-      },
-    });
-    appendLifecycleEvent(sessionDirectory, {
-      event: "session.active",
-      timestamp,
-      executionId: context.executionId,
-      stageId: stageId || null,
-      data: { from: "cancelled" },
-    });
+    for (const item of cancelled) {
+      const metadata = item.metadata;
+      const context = item.context;
+      metadata.status = "running";
+      metadata.completed_at = null;
+      writeJsonAtomic(path.join(context.directory, "execution.json"), metadata);
+      const provider = typeof metadata.provider === "string" ? metadata.provider : "";
+      const model = typeof metadata.model === "string" ? metadata.model : "";
+      const raw = JSON.parse(readFileSync(context.conversationReadPath, "utf8")) as unknown;
+      const record = AgentSessionRecord.fromJson(raw, provider, model, this.workspace);
+      record.status = "running";
+      this.save(record, context);
+      const stageId = typeof metadata.stage_id === "string" ? metadata.stage_id : "";
+      appendLifecycleEvent(sessionDirectory, {
+        event: "execution.running",
+        timestamp,
+        executionId: context.executionId,
+        stageId: stageId || null,
+        data: {
+          outcome: null,
+          failure_reason: null,
+          error: null,
+          session_status: "active",
+        },
+      });
+      appendLifecycleEvent(sessionDirectory, {
+        event: "session.active",
+        timestamp,
+        executionId: context.executionId,
+        stageId: stageId || null,
+        data: { from: "cancelled" },
+      });
+      reopened.push({ executionId: context.executionId, stageId });
+    }
     this.rewriteManifestStatus(sessionDirectory, "running");
     const folded = commitFoldedStatus(this.workspace, sessionDirectory);
     if (folded.status !== "active") {
       throw new ConfigurationError(`Session ${sessionId} stayed ${String(folded.status)} after resume.`);
     }
-    return { executionId: context.executionId, stageId };
+    return reopened;
   }
 
   resetRevisionCounts(sessionId: string, snapshots: readonly ExecutionSnapshot[]): void {
@@ -543,6 +593,7 @@ export class SessionStore {
     if (outcome !== null) metadata.outcome = outcome.toJson();
     if (extra !== null) Object.assign(metadata, extra);
     const storedError = typeof metadata.error === "string" ? metadata.error : null;
+    const failureReason = typeof metadata.failure_reason === "string" ? metadata.failure_reason : null;
     const plan = planExecutionSave({
       executionStatus: status,
       outcome,
@@ -555,10 +606,18 @@ export class SessionStore {
       workflow,
       schemaVersion: manifest.schemaVersion,
       manifestStatus: manifest.manifestStatus,
-      snapshots: this.snapshotList(context.sessionId),
+      snapshots: snapshotsIncludingSave(this.snapshotList(context.sessionId), {
+        executionId: context.executionId,
+        stageId,
+        executionOrder,
+        status,
+        outcomeStatus: outcome?.status ?? null,
+        artifactDirectory: context.artifactDirectory,
+        outcomeDecision: outcome?.decision || null,
+        failureReason,
+      }),
     });
     writeJsonAtomic(filePath, metadata);
-    const failureReason = typeof metadata.failure_reason === "string" ? metadata.failure_reason : null;
     appendLifecycleEvent(sessionDirectory, {
       event: `execution.${status}`,
       timestamp,
@@ -824,6 +883,14 @@ export class SessionStore {
     return Math.max(0, ...attempts) + 1;
   }
 
+  private executionBlocker(sessionId: string, executionId: string): string | null {
+    const context = this.executionContext(sessionId, executionId);
+    if (context === null) return null;
+    const outcome = readJsonObject(path.join(context.directory, "execution.json")).outcome;
+    if (!isRecord(outcome)) return null;
+    return textField(outcome.blocker);
+  }
+
   private executionContexts(sessionId: string): ExecutionContext[] {
     const directory = path.join(this.sessionsDirectory, sessionId, EXECUTIONS_DIRNAME);
     if (!existsSync(directory)) return [];
@@ -867,6 +934,15 @@ export class SessionStore {
     }
     return snapshots;
   }
+}
+
+function snapshotsIncludingSave(
+  snapshots: readonly ExecutionSnapshot[],
+  saved: ExecutionSnapshot,
+): ExecutionSnapshot[] {
+  const included = snapshots.filter((snapshot) => snapshot.executionId !== saved.executionId);
+  included.push(saved);
+  return included;
 }
 
 function textField(value: unknown): string | null {

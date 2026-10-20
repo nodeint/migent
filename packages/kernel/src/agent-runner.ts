@@ -49,6 +49,8 @@ export interface RunRequest {
   stageAttempt?: number | null;
   executionOrder?: number | null;
   options?: Record<string, string> | null;
+  /** Called as soon as the execution id exists, before the first await. */
+  onExecution?: (executionId: string) => void;
 }
 
 export class AgentToolRunner {
@@ -99,6 +101,7 @@ export class AgentToolRunner {
       request.prompt,
       request.resumeExecutionId ?? null,
     );
+    request.onExecution?.(context.executionId);
     if (!isNew) {
       validateSessionProfile(
         record.provider,

@@ -8,7 +8,7 @@ import { readFoldedStatus, statusDriftMessage } from "../src/session-fold.ts";
 import { appendLifecycleEvent, readParsedEvents } from "../src/session-events.ts";
 import { repairSession } from "../src/session-repair.ts";
 import { createAgentSession, createWorkflowSession } from "../src/session-records.ts";
-import { SessionStore } from "../src/session-store.ts";
+import { clearInFlightExecution, noteInFlightExecution, SessionStore } from "../src/session-store.ts";
 import { StageOutcome } from "../src/stage-outcome.ts";
 import { freezeSessionTask } from "../src/task-file.ts";
 import { tempDir, writeSessionConfig } from "./support.ts";
@@ -133,6 +133,7 @@ test("the fold matches status.json after each session write", () => {
   store.saveExecution(planContext, planRecord, "completed", null, new StageOutcome("complete"));
   const planned = expectFold(workspace, sessionId);
   expect(planned.status).toBe("active");
+  expect(planned.running_stages).toBeUndefined();
   expect(planned.current_stage).toBeUndefined();
 
   const [reviewRecord, , reviewContext] = store.loadOrCreate(
@@ -388,10 +389,12 @@ test("a new running execution does not keep the previous current stage", () => {
   const started = readStatus(workspace, sessionId);
   expect(started.latest_execution_id).toBe(next.executionId);
   expect(started.latest_execution_status).toBe("running");
+  expect(started.running_stages).toBeUndefined();
   expect(started.current_stage).toBeUndefined();
   markSchema2(workspace, sessionId);
   const folded = readFoldedStatus(workspace, directory);
   expect(folded.latest_execution_id).toBe(next.executionId);
+  expect(folded.running_stages).toBeUndefined();
   expect(folded.current_stage).toBeUndefined();
   appendLifecycleEvent(directory, {
     event: "provider.stage_started",
@@ -401,11 +404,14 @@ test("a new running execution does not keep the previous current stage", () => {
     summary: "new",
   });
   const refreshed = repairSession(workspace, sessionId);
-  expect(refreshed.current_stage).toMatchObject({
-    execution_id: next.executionId,
-    stage_id: "review-plan",
-    event: "provider.stage_started",
-  });
+  expect(refreshed.running_stages).toEqual([
+    expect.objectContaining({
+      execution_id: next.executionId,
+      stage_id: "review-plan",
+      event: "provider.stage_started",
+    }),
+  ]);
+  expect(refreshed.current_stage).toBeUndefined();
   expectFold(workspace, sessionId);
 });
 
@@ -767,4 +773,156 @@ test("a schema 2 fold keeps an earlier decision while a later execution has none
   expect(folded.latest_execution_status).toBe("running");
   expect(folded.latest_decision).toBe("revise");
   expect(folded.status).toBe("active");
+});
+
+test("a blocked stage stays blocked when a later sibling completes", () => {
+  const workspace = workspaceWithPlan();
+  const sessionId = createWorkflowSession(workspace, "plan", "Write a plan");
+  const store = new SessionStore(workspace);
+  let noted: string | null = null;
+  try {
+    const [planRecord, , plan] = store.loadOrCreate(
+      "fake",
+      "model",
+      {},
+      workspace,
+      sessionId,
+      "plan",
+      null,
+      null,
+      "plan",
+    );
+    // The first save would block the session, and loadOrCreate refuses a blocked session.
+    noted = plan.executionId;
+    noteInFlightExecution(sessionId, plan.executionId);
+    const [reviewRecord, , review] = store.loadOrCreate(
+      "fake",
+      "model",
+      {},
+      workspace,
+      sessionId,
+      "review-plan",
+      null,
+      null,
+      "review",
+    );
+    clearInFlightExecution(sessionId, plan.executionId);
+    noted = null;
+    store.saveExecution(plan, planRecord, "completed", null, new StageOutcome("blocked", "plan gate"));
+    store.saveExecution(review, reviewRecord, "completed", null, new StageOutcome("complete", null, "approved"));
+    const status = expectFold(workspace, sessionId);
+    expect(status.status).toBe("blocked");
+    expect(status.latest_execution_id).toBe(review.executionId);
+    expect(status.latest_decision).toBe("approved");
+    expect(status.blocked_by_execution_id).toBe(plan.executionId);
+    expect(status.blocked_by_execution_ids).toEqual([plan.executionId]);
+  } finally {
+    if (noted) clearInFlightExecution(sessionId, noted);
+  }
+});
+
+test("a later complete execution of a blocked stage leaves a non-completion stage active", () => {
+  const workspace = workspaceWithPlan();
+  const sessionId = createWorkflowSession(workspace, "plan", "Write a plan");
+  const store = new SessionStore(workspace);
+  let noted: string | null = null;
+  try {
+    const [blockedRecord, , blocked] = store.loadOrCreate(
+      "fake",
+      "model",
+      {},
+      workspace,
+      sessionId,
+      "plan",
+      null,
+      null,
+      "plan",
+    );
+    noted = blocked.executionId;
+    noteInFlightExecution(sessionId, blocked.executionId);
+    const [doneRecord, , done] = store.loadOrCreate(
+      "fake",
+      "model",
+      {},
+      workspace,
+      sessionId,
+      "plan",
+      null,
+      null,
+      "again",
+    );
+    clearInFlightExecution(sessionId, blocked.executionId);
+    noted = null;
+    store.saveExecution(blocked, blockedRecord, "completed", null, new StageOutcome("blocked", "plan gate"));
+    store.saveExecution(done, doneRecord, "completed", null, new StageOutcome("complete"));
+    const status = expectFold(workspace, sessionId);
+    expect(status.status).toBe("active");
+    expect(status.latest_execution_id).toBe(done.executionId);
+    expect(status.blocked_by_execution_id).toBeUndefined();
+    expect(status.blocked_by_execution_ids).toBeUndefined();
+  } finally {
+    if (noted) clearInFlightExecution(sessionId, noted);
+  }
+});
+
+test("repair of two terminal executions appends the blocked session status", () => {
+  const workspace = workspaceWithPlan();
+  const sessionId = createWorkflowSession(workspace, "plan", "Write a plan");
+  const store = new SessionStore(workspace);
+  let noted: string | null = null;
+  try {
+    const [planRecord, , plan] = store.loadOrCreate(
+      "fake",
+      "model",
+      {},
+      workspace,
+      sessionId,
+      "plan",
+      null,
+      null,
+      "plan",
+    );
+    noted = plan.executionId;
+    noteInFlightExecution(sessionId, plan.executionId);
+    const [reviewRecord, , review] = store.loadOrCreate(
+      "fake",
+      "model",
+      {},
+      workspace,
+      sessionId,
+      "review-plan",
+      null,
+      null,
+      "review",
+    );
+    clearInFlightExecution(sessionId, plan.executionId);
+    noted = null;
+    store.saveExecution(plan, planRecord, "completed", null, new StageOutcome("blocked", "plan gate"));
+    store.saveExecution(review, reviewRecord, "completed", null, new StageOutcome("complete", null, "approved"));
+    const directory = sessionDirectory(workspace, sessionId);
+    const kept = eventsText(workspace, sessionId)
+      .split("\n")
+      .filter(
+        (line) => line === "" || !line.includes(review.executionId) || !line.includes('"event":"execution.completed"'),
+      );
+    writeFileSync(
+      path.join(directory, "events.jsonl"),
+      kept.join("\n").endsWith("\n") ? kept.join("\n") : `${kept.join("\n")}\n`,
+      "utf8",
+    );
+    repairSession(workspace, sessionId);
+    const repaired = eventsText(workspace, sessionId)
+      .split("\n")
+      .find((line) => line.includes(review.executionId) && line.includes('"event":"execution.completed"'));
+    expect(repaired).toBeDefined();
+    const parsed = JSON.parse(repaired ?? "{}") as { data?: { session_status?: string } };
+    expect(parsed.data?.session_status).toBe("blocked");
+    const text = eventsText(workspace, sessionId);
+    expect(text).not.toContain('"event":"session.completed"');
+    expect(text).not.toContain('"event":"session.active"');
+    const status = expectFold(workspace, sessionId);
+    expect(status.status).toBe("blocked");
+  } finally {
+    if (noted) clearInFlightExecution(sessionId, noted);
+  }
 });

@@ -3,14 +3,18 @@ import path from "node:path";
 import { expect, test } from "vitest";
 import {
   AgentToolRunner,
+  SessionLock,
   SessionStore,
+  StageOutcome,
   VerifyRunner,
   createWorkflowSession,
   executeNamedWorkflow,
   raiseCancellation,
+  resetCancellation,
   loadWorkflowDocument,
   buildStagePrompt,
 } from "../src/index.ts";
+import { clearInFlightExecution, clearInFlightExecutions, noteInFlightExecution } from "../src/session-store.ts";
 import { ScriptedAdapter, tempDir } from "./support.ts";
 
 const CONFIG = `\
@@ -303,6 +307,76 @@ test("reaper cannot fail an execution between verify commands", async () => {
   expect(execution(workspace, sessionId, result.execution_id).status).toBe("completed");
 });
 
+test("reap skips an in-flight sibling", () => {
+  const { workspace, sessionId } = setup(workflowText(`node -e "process.exit(0)"`));
+  const store = new SessionStore(workspace);
+  const [, , sibling] = store.loadOrCreate("fake", "m1", {}, workspace, sessionId, "implement", null, null, "go");
+  try {
+    expect(() => store.reapOrphanedExecutions(sessionId, "raise", new Set([sibling.executionId]))).not.toThrow();
+    noteInFlightExecution(sessionId, sibling.executionId);
+    expect(() => store.reapOrphanedExecutions(sessionId, "raise")).not.toThrow();
+    expect(() =>
+      new SessionStore(workspace).loadOrCreate("fake", "m1", {}, workspace, sessionId, "review", null, null, "next"),
+    ).not.toThrow();
+    clearInFlightExecution(sessionId, sibling.executionId);
+    expect(() => store.reapOrphanedExecutions(sessionId, "raise")).toThrow(/running|unverified|still/i);
+    expect(execution(workspace, sessionId, sibling.executionId).status).toBe("running");
+  } finally {
+    clearInFlightExecutions(sessionId);
+  }
+});
+
+test("resume reopens every blocked stage", () => {
+  const { workspace, sessionId } = setup(workflowText(`node -e "process.exit(0)"`));
+  const store = new SessionStore(workspace);
+  const lock = SessionLock.acquire(path.join(workspace, ".migent", "sessions", sessionId));
+  let noted: string | null = null;
+  try {
+    const [implementRecord, , implement] = store.loadOrCreate(
+      "fake",
+      "m1",
+      {},
+      workspace,
+      sessionId,
+      "implement",
+      null,
+      null,
+      "go",
+    );
+    // Saving the first outcome blocks the session before the sibling exists.
+    noted = implement.executionId;
+    noteInFlightExecution(sessionId, implement.executionId);
+    const [reviewRecord, , review] = store.loadOrCreate(
+      "fake",
+      "m1",
+      {},
+      workspace,
+      sessionId,
+      "review",
+      null,
+      null,
+      "review",
+    );
+    clearInFlightExecution(sessionId, implement.executionId);
+    noted = null;
+    store.saveExecution(implement, implementRecord, "completed", null, new StageOutcome("blocked", "implement gate"));
+    store.saveExecution(review, reviewRecord, "completed", null, new StageOutcome("blocked", "review gate"));
+    const blocked = store.readSessionStatus(sessionId);
+    expect(blocked.status).toBe("blocked");
+    expect(blocked.blocked_by_execution_id).toBe(implement.executionId);
+    expect(blocked.blocked_by_execution_ids).toEqual([implement.executionId, review.executionId]);
+    const resumed = store.resumeBlockedSession(sessionId);
+    expect(resumed.map((item) => item.executionId)).toEqual([implement.executionId, review.executionId]);
+    const status = store.readSessionStatus(sessionId);
+    expect(status.status).toBe("active");
+    expect(status.blocked_by_execution_id).toBeUndefined();
+    expect(status.blocked_by_execution_ids).toBeUndefined();
+  } finally {
+    if (noted) clearInFlightExecution(sessionId, noted);
+    lock.release();
+  }
+});
+
 test("VerifyRunner: first failure skips the rest, tail is bounded, heartbeat fires", async () => {
   const workspace = tempDir("migent-vr-");
   const turnDirectory = path.join(workspace, "turns", "01");
@@ -531,14 +605,19 @@ test("cancellation during a verify command marks the execution cancelled and kil
       // The waiters were woken; the throw is for signal handlers.
     }
   }, 100);
-  await expect(runStage(runner, workspace, sessionId)).rejects.toThrow(/signal 15/);
-  clearInterval(timer);
-  const executionsDirectory = path.join(workspace, ".migent", "sessions", sessionId, "executions");
-  const [id] = readdirSync(executionsDirectory);
-  expect(execution(workspace, sessionId, id!).status).toBe("cancelled");
-  const pid = Number(readFileSync(pidFile, "utf8").trim());
-  await new Promise((resolve) => setTimeout(resolve, 300));
-  expect(() => process.kill(pid, 0)).toThrow();
+  try {
+    await expect(runStage(runner, workspace, sessionId)).rejects.toThrow(/signal 15/);
+    const executionsDirectory = path.join(workspace, ".migent", "sessions", sessionId, "executions");
+    const [id] = readdirSync(executionsDirectory);
+    expect(execution(workspace, sessionId, id!).status).toBe("cancelled");
+    const pid = Number(readFileSync(pidFile, "utf8").trim());
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(() => process.kill(pid, 0)).toThrow();
+  } finally {
+    clearInterval(timer);
+    // runStage does not go through executeNamedWorkflow, which clears the sticky flag.
+    resetCancellation();
+  }
 }, 30_000);
 
 test("an infra failure counts toward --attempts and is not verify_exhausted", async () => {

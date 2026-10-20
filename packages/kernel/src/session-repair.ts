@@ -4,6 +4,7 @@ import path from "node:path";
 import { writeJsonAtomic } from "./atomic-file.js";
 import { ConfigurationError } from "./errors.js";
 import { sessionStatusAfterExecution } from "./outputs.js";
+import { sessionStatusFromExecutions } from "./session-ledger.js";
 import { isRecord } from "./record.js";
 import { utcNow } from "./runtime.js";
 import {
@@ -113,14 +114,25 @@ function parsedFromDraft(draft: EventDraft): ParsedEvent {
 function reconcileDrafts(inputs: FoldInputs): EventDraft[] {
   const drafts: EventDraft[] = [];
   const executions = [...inputs.executions].sort(compareExecutions);
-  let sessionStatus = manifestSessionStatus(inputs.manifest.manifestStatus);
+  const fromStatus = manifestSessionStatus(inputs.manifest.manifestStatus);
   const cursor: Record<string, unknown> = {
     workflow_id: inputs.manifest.workflowId,
-    status: sessionStatus,
+    status: fromStatus,
   };
+  const rows = executions.map((execution) => ({
+    executionId: execution.executionId,
+    stageId: execution.stageId,
+    executionOrder: execution.executionOrder,
+    status: execution.status,
+    outcome: stageOutcome(execution),
+  }));
+  const finalStatus = sessionStatusFromExecutions(rows, cursor, inputs.workflow);
   const planned = (name: string, executionId: string) =>
     hasEvent(inputs.events, name, executionId) ||
     drafts.some((draft) => draft.event === name && draft.executionId === executionId);
+  const sessionPlanned = (name: string) =>
+    inputs.events.some((event) => event.event === name) || drafts.some((draft) => draft.event === name);
+  let attachedSession = false;
   for (const execution of executions) {
     if (!planned("execution.started", execution.executionId)) {
       drafts.push({
@@ -139,7 +151,7 @@ function reconcileDrafts(inputs: FoldInputs): EventDraft[] {
     }
     if (!isTerminalExecution(execution.status)) continue;
     const outcome = stageOutcome(execution);
-    const nextStatus = sessionStatusAfterExecution(
+    const ownStatus = sessionStatusAfterExecution(
       execution.status,
       outcome,
       cursor,
@@ -156,26 +168,31 @@ function reconcileDrafts(inputs: FoldInputs): EventDraft[] {
           outcome: outcome ? outcome.toJson() : null,
           failure_reason: execution.failureReason,
           error: execution.error,
-          session_status: nextStatus,
+          session_status: finalStatus,
         },
       });
     }
-    if (nextStatus !== "active" && !planned(`session.${nextStatus}`, execution.executionId)) {
-      const reason = sessionChangeReason(nextStatus, outcome, execution.error);
-      const data: Record<string, unknown> = { from: sessionStatus || null };
+    // One session event for the whole reduction. A later sibling must not clear a blocked stage.
+    if (
+      finalStatus !== "active" &&
+      ownStatus === finalStatus &&
+      !attachedSession &&
+      !sessionPlanned(`session.${finalStatus}`)
+    ) {
+      const reason = sessionChangeReason(finalStatus, outcome, execution.error);
+      const data: Record<string, unknown> = { from: fromStatus || null };
       if (reason !== null) data.reason = reason;
       if (outcome !== null) data.outcome = outcome.toJson();
       drafts.push({
-        event: `session.${nextStatus}`,
+        event: `session.${finalStatus}`,
         timestamp: execution.completedAt ?? execution.createdAt ?? utcNow(),
         executionId: execution.executionId,
         stageId: execution.stageId,
         outcomeTopLevel: outcome ? outcome.toJson() : null,
         data,
       });
+      attachedSession = true;
     }
-    sessionStatus = nextStatus;
-    cursor.status = nextStatus;
   }
   return drafts;
 }

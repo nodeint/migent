@@ -96,6 +96,7 @@ export {
   failedStageCount,
   latestCompleteByStage,
   nextStage,
+  readyStages,
   revisionResumeExecution,
   revisionStop,
   stageAgentExecution,
@@ -184,6 +185,7 @@ export {
   PROGRESS_INTERVAL_SEC,
   TERMINATION_GRACE_SEC,
   raiseCancellation,
+  resetCancellation,
   stopProcessGroup,
 } from "./command-executor.js";
 export type { CommandSpec } from "./command-executor.js";

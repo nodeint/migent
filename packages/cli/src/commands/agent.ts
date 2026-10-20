@@ -92,9 +92,21 @@ export async function dispatchAgent(
     try {
       const runner = args.runner ?? cliHooks.runner ?? new AgentToolRunner(adapterMap());
       if (resumeCancelled) {
-        const reopened = new SessionStore(workspace).reopenCancelledExecution(resolvedSessionId);
-        log(`session ${resolvedSessionId} was cancelled during ${reopened.executionId}. Resuming that execution.`);
-        result = await runner.continueCancelled(workspace, resolvedSessionId, reopened.executionId);
+        const reopened = new SessionStore(workspace).reopenCancelledExecutions(resolvedSessionId);
+        for (const item of reopened) {
+          log(`session ${resolvedSessionId} was cancelled during ${item.executionId}. Resuming that execution.`);
+        }
+        const settled = await Promise.allSettled(
+          reopened.map((item) => runner.continueCancelled(workspace, resolvedSessionId, item.executionId)),
+        );
+        const rejected = settled.find((item) => item.status === "rejected");
+        if (rejected && rejected.status === "rejected") throw rejected.reason;
+        const continued = settled.flatMap((item) => (item.status === "fulfilled" ? [item.value] : []));
+        const selected = continued.at(-1);
+        if (selected === undefined) {
+          throw new ConfigurationError(`Session ${resolvedSessionId} is cancelled without an execution.`);
+        }
+        result = selected;
       } else {
         result = await runner.run({
           provider: target.provider,

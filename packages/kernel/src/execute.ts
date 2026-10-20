@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { AgentToolRunner, type RunResult } from "./agent-runner.js";
 import { writeFileAtomic } from "./atomic-file.js";
-import { CancellationRequested, raiseCancellation } from "./command-executor.js";
+import { CancellationRequested, raiseCancellation, resetCancellation } from "./command-executor.js";
 import { loadRoleInstructions, loadYamlMapping, resolveStageTarget } from "./config.js";
 import { ConfigurationError } from "./errors.js";
 import {
@@ -40,7 +40,12 @@ import { repairSessionUnlocked } from "./session-repair.js";
 import { activatePreparedSession, bindPriorSessionId, createWorkflowSession, resolvePriorSessionId } from "./session-records.js";
 import { freezeSessionTask } from "./task-file.js";
 import { isSessionLockLost, SessionLock, SessionLockHeldError } from "./session-lock.js";
-import { SessionStore } from "./session-store.js";
+import {
+  clearInFlightExecution,
+  clearInFlightExecutions,
+  noteInFlightExecution,
+  SessionStore,
+} from "./session-store.js";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { loadNamedWorkflow, type WorkflowDocument } from "./workflow.js";
@@ -91,7 +96,7 @@ export async function executeNamedWorkflow(
   request: ExecuteRequest,
   runner?: AgentToolRunner,
 ): Promise<ExecuteResult> {
-  const held: { lock: SessionLock | null } = { lock: null };
+  const held: { lock: SessionLock | null; sessionId: string | null } = { lock: null, sessionId: null };
   try {
     return await executeLocked(workspace, request, held, runner);
   } catch (error) {
@@ -109,14 +114,16 @@ export async function executeNamedWorkflow(
       stages: [],
     };
   } finally {
+    if (held.sessionId) clearInFlightExecutions(held.sessionId);
     held.lock?.release();
+    resetCancellation();
   }
 }
 
 async function executeLocked(
   workspace: string,
   request: ExecuteRequest,
-  held: { lock: SessionLock | null },
+  held: { lock: SessionLock | null; sessionId: string | null },
   runner?: AgentToolRunner,
 ): Promise<ExecuteResult> {
   const stageId = request.stageId ?? null;
@@ -136,6 +143,7 @@ async function executeLocked(
   let workflowId: string;
   let resumeCancelled = false;
   if (sessionId) {
+    held.sessionId = sessionId;
     held.lock = SessionLock.acquire(path.join(workspace, ".migent", "sessions", sessionId));
     repairSessionUnlocked(workspace, sessionId);
     if (request.refreshWorkflow) refreshSessionWorkflow(workspace, sessionId, request.startPrepared === true);
@@ -165,8 +173,10 @@ async function executeLocked(
     if (sessionStatus === "blocked") {
       const resumed = store.resumeBlockedSession(sessionId);
       sessionStatus = "active";
-      const stageLabel = resumed.stageId || "its stage";
-      log(`session ${sessionId} was blocked by ${resumed.executionId}. Resuming ${stageLabel}.`);
+      for (const item of resumed) {
+        const stageLabel = item.stageId || "its stage";
+        log(`session ${sessionId} was blocked by ${item.executionId}. Resuming ${stageLabel}.`);
+      }
     }
     if (sessionStatus === "cancelled") {
       resumeCancelled = true;
@@ -184,6 +194,7 @@ async function executeLocked(
     resolvePriorSessionId(workspace, workflow, request.priorSessionId);
     if (stageId !== null) requireEligibleStage(workflow, [], "active", stageId);
     sessionId = createWorkflowSession(workspace, workflowId, request.task, request.priorSessionId);
+    held.sessionId = sessionId;
     held.lock = SessionLock.acquire(path.join(workspace, ".migent", "sessions", sessionId));
     log(`session_id: ${sessionId}`);
   }
@@ -206,37 +217,54 @@ async function executeLocked(
     try {
       raiseCancellation(2);
     } catch {
-      // The pending flag is what the command loop observes.
+      // The flag stays set; the command loop observes it.
     }
   };
   const onSigterm = () => {
     try {
       raiseCancellation(15);
     } catch {
-      // The pending flag is what the command loop observes.
+      // The flag stays set; the command loop observes it.
     }
   };
   process.on("SIGINT", onSigint);
   process.on("SIGTERM", onSigterm);
+  const tasks = new Map<string, Promise<unknown>>();
   try {
     const activeRunner = runner ?? new AgentToolRunner();
     if (resumeCancelled) {
-      const reopened = store.reopenCancelledExecution(sessionId);
-      log(`session ${sessionId} was cancelled during ${reopened.executionId}. Resuming that execution.`);
-      const continued = await activeRunner.continueCancelled(workspace, sessionId, reopened.executionId);
-      const outcome = continued.outcome_status || (continued.failure_reason ? "failed" : "finished");
-      const decision = continued.outcome_decision ? ` decision=${continued.outcome_decision}` : "";
-      log(`stage ${reopened.stageId || "stage"} · ${outcome}${decision}.`);
-      const stageJson = runResultJson(continued);
+      const reopened = store.reopenCancelledExecutions(sessionId);
+      for (const item of reopened) {
+        log(`session ${sessionId} was cancelled during ${item.executionId}. Resuming that execution.`);
+      }
+      const settled = await Promise.allSettled(
+        reopened.map((item) =>
+          startTracked(sessionId, item.executionId, tasks, () =>
+            activeRunner.continueCancelled(workspace, sessionId, item.executionId),
+          ),
+        ),
+      );
+      const rejected = settled.find((item) => item.status === "rejected");
+      if (rejected && rejected.status === "rejected") throw rejected.reason;
+      const continued = settled.flatMap((item) => (item.status === "fulfilled" ? [item.value] : []));
+      const stageJsons: Array<Record<string, unknown>> = [];
+      for (let index = 0; index < reopened.length; index += 1) {
+        const item = reopened[index]!;
+        const result = continued[index]!;
+        const outcome = result.outcome_status || (result.failure_reason ? "failed" : "finished");
+        const decision = result.outcome_decision ? ` decision=${result.outcome_decision}` : "";
+        log(`stage ${item.stageId || "stage"} · ${outcome}${decision}.`);
+        stageJsons.push(runResultJson(result));
+      }
       const status = store.readSessionStatus(sessionId);
       const after = text(status.status);
-      if (continued.failure_reason === VERIFY_EXHAUSTED) {
-        return executeFinal(status, VERIFY_EXHAUSTED, [stageJson]);
+      if (continued.some((item) => item.failure_reason === VERIFY_EXHAUSTED)) {
+        return executeFinal(status, VERIFY_EXHAUSTED, stageJsons);
       }
       if (once || stageId !== null || TERMINAL_SESSION_STATUSES.has(after)) {
         const stopReason = TERMINAL_SESSION_STATUSES.has(after) ? after : "stage";
-        const result = executeFinal(status, stopReason, [stageJson]);
-        if (stopReason === "stage" && continued.outcome_status !== "complete") result.code = 1;
+        const result = executeFinal(status, stopReason, stageJsons);
+        if (stopReason === "stage" && continued.some((item) => item.outcome_status !== "complete")) result.code = 1;
         return result;
       }
       const rest = await runExecuteLoop(
@@ -248,12 +276,22 @@ async function executeLocked(
         maxAttempts,
         maxDispatches,
         activeRunner,
+        tasks,
       );
-      rest.stages = [stageJson, ...rest.stages];
+      rest.stages = [...stageJsons, ...rest.stages];
       return rest;
     }
     if (once || stageId !== null) {
-      return await runExecuteOnce(workspace, store, workflow, workflowId, sessionId, stageId, activeRunner);
+      return await runExecuteOnce(
+        workspace,
+        store,
+        workflow,
+        workflowId,
+        sessionId,
+        stageId,
+        activeRunner,
+        tasks,
+      );
     }
     return await runExecuteLoop(
       workspace,
@@ -264,9 +302,11 @@ async function executeLocked(
       maxAttempts,
       maxDispatches,
       activeRunner,
+      tasks,
     );
   } catch (error) {
     if (error instanceof CancellationRequested) {
+      await Promise.allSettled([...tasks.values()]);
       log(error.message);
       return executeFinal(store.readSessionStatus(sessionId), "cancelled", []);
     }
@@ -325,6 +365,7 @@ async function runExecuteOnce(
   sessionId: string,
   stageId: string | null,
   runner: AgentToolRunner,
+  tasks: Map<string, Promise<unknown>>,
 ): Promise<ExecuteResult> {
   store.reapOrphanedExecutions(sessionId, "raise");
   const snapshots = store.executionSnapshots(sessionId);
@@ -340,15 +381,18 @@ async function runExecuteOnce(
     return executeFinal(status, "revisions_exhausted", []);
   }
   assertStageDispatchable(workspace, workflow, sessionId, selected.stageId);
-  const stage = await dispatchExecuteStage(
-    workspace,
-    workflow,
-    workflowId,
-    sessionId,
-    selected.stageId,
-    status,
-    snapshots,
-    runner,
+  const stage = await trackDispatch(sessionId, tasks, (note) =>
+    dispatchExecuteStage(
+      workspace,
+      workflow,
+      workflowId,
+      sessionId,
+      selected.stageId,
+      status,
+      snapshots,
+      runner,
+      note,
+    ),
   );
   status = store.readSessionStatus(sessionId);
   const after = text(status.status);
@@ -368,6 +412,7 @@ async function runExecuteLoop(
   maxAttempts: number | null,
   maxDispatches: number | null,
   runner: AgentToolRunner,
+  tasks: Map<string, Promise<unknown>>,
 ): Promise<ExecuteResult> {
   const stages: Array<Record<string, unknown>> = [];
   let dispatched = 0;
@@ -388,15 +433,18 @@ async function runExecuteLoop(
       return executeFinal(status, "dispatch_limit", stages);
     }
     dispatched += 1;
-    const dispatchedStage = await dispatchExecuteStage(
-      workspace,
-      workflow,
-      workflowId,
-      sessionId,
-      selected.stageId,
-      status,
-      snapshots,
-      runner,
+    const dispatchedStage = await trackDispatch(sessionId, tasks, (note) =>
+      dispatchExecuteStage(
+        workspace,
+        workflow,
+        workflowId,
+        sessionId,
+        selected.stageId,
+        status,
+        snapshots,
+        runner,
+        note,
+      ),
     );
     stages.push(dispatchedStage);
     if (dispatchedStage.failure_reason === VERIFY_EXHAUSTED) {
@@ -414,6 +462,7 @@ async function dispatchExecuteStage(
   status: Record<string, unknown>,
   snapshots: readonly ExecutionSnapshot[],
   runner: AgentToolRunner,
+  onExecution?: (executionId: string) => void,
 ): Promise<Record<string, unknown>> {
   const sessionDirectory = path.join(workspace, ".migent", "sessions", sessionId);
   const freeze = readWorkflowFreeze(sessionDirectory);
@@ -460,7 +509,13 @@ async function dispatchExecuteStage(
     prompt,
     sessionId,
   };
-  const result: StageDispatchResult = await dispatchNamedStage(workspace, request, runner, { workflow, target });
+  const result: StageDispatchResult = await dispatchNamedStage(
+    workspace,
+    request,
+    runner,
+    { workflow, target },
+    onExecution,
+  );
   const outcome = result.outcomeStatus || (result.failureReason ? "failed" : "finished");
   const decision = result.outcomeDecision ? ` decision=${result.outcomeDecision}` : "";
   log(`stage ${stageId} · ${outcome}${decision}.`);
@@ -601,6 +656,65 @@ function optionalText(value: unknown): string | null {
 
 function text(value: unknown): string {
   return typeof value === "string" ? value : "";
+}
+
+function trackDispatch(
+  sessionId: string,
+  tasks: Map<string, Promise<unknown>>,
+  run: (note: (executionId: string) => void) => Promise<Record<string, unknown>>,
+): Promise<Record<string, unknown>> {
+  let executionId: string | null = null;
+  let resolveTask: (value: Record<string, unknown>) => void = () => {};
+  let rejectTask: (error: unknown) => void = () => {};
+  const task = new Promise<Record<string, unknown>>((resolve, reject) => {
+    resolveTask = resolve;
+    rejectTask = reject;
+  });
+  void (async () => {
+    try {
+      resolveTask(
+        await run((id) => {
+          executionId = id;
+          noteInFlightExecution(sessionId, id);
+          tasks.set(id, task);
+        }),
+      );
+    } catch (error) {
+      rejectTask(error);
+    }
+  })();
+  return task.finally(() => {
+    if (executionId === null) return;
+    tasks.delete(executionId);
+    clearInFlightExecution(sessionId, executionId);
+  });
+}
+
+function startTracked<T>(
+  sessionId: string,
+  executionId: string,
+  tasks: Map<string, Promise<unknown>>,
+  start: () => Promise<T>,
+): Promise<T> {
+  noteInFlightExecution(sessionId, executionId);
+  let resolveTask: (value: T) => void = () => {};
+  let rejectTask: (error: unknown) => void = () => {};
+  const task = new Promise<T>((resolve, reject) => {
+    resolveTask = resolve;
+    rejectTask = reject;
+  });
+  tasks.set(executionId, task);
+  void (async () => {
+    try {
+      resolveTask(await start());
+    } catch (error) {
+      rejectTask(error);
+    }
+  })();
+  return task.finally(() => {
+    tasks.delete(executionId);
+    clearInFlightExecution(sessionId, executionId);
+  });
 }
 
 function hasErrorCode(error: Error): boolean {

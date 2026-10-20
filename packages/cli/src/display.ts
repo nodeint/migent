@@ -88,14 +88,24 @@ export function printWatchSnapshot(snapshot: Record<string, unknown>): void {
     lines.push(["workflow", snapshot.workflow_id]);
   }
   if (typeof snapshot.task === "string" && snapshot.task) lines.push(["task", snapshot.task]);
-  const executionId = snapshot.execution_id;
-  const executionStatus = snapshot.execution_status ?? snapshot.latest_execution_status;
-  if (typeof executionId === "string" && executionId) {
-    const value =
-      typeof executionStatus === "string" && executionStatus
-        ? `${executionId} · ${executionStatus}`
-        : executionId;
-    lines.push(["execution", value]);
+  const running = Array.isArray(snapshot.running_stages) ? snapshot.running_stages.filter(isRecord) : [];
+  if (running.length > 0) {
+    for (const stage of running) {
+      const stageId = typeof stage.stage_id === "string" && stage.stage_id ? stage.stage_id : "stage";
+      const executionId = typeof stage.execution_id === "string" ? stage.execution_id : "";
+      const summary = typeof stage.summary === "string" && stage.summary ? ` · ${stage.summary}` : "";
+      lines.push(["running", `${stageId} · ${executionId}${summary}`]);
+    }
+  } else {
+    const executionId = snapshot.execution_id;
+    const executionStatus = snapshot.execution_status ?? snapshot.latest_execution_status;
+    if (typeof executionId === "string" && executionId) {
+      const value =
+        typeof executionStatus === "string" && executionStatus
+          ? `${executionId} · ${executionStatus}`
+          : executionId;
+      lines.push(["execution", value]);
+    }
   }
   const outcome = snapshot.outcome;
   if (isRecord(outcome) && typeof outcome.status === "string") {

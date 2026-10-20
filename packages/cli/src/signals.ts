@@ -1,4 +1,4 @@
-import { CancellationRequested, raiseCancellation } from "@nodeint/migent-kernel";
+import { CancellationRequested, raiseCancellation, resetCancellation } from "@nodeint/migent-kernel";
 
 let pending: CancellationRequested | null = null;
 const waiters = new Set<() => void>();
@@ -22,6 +22,7 @@ export function bindCancellationSignals(): () => void {
     process.off("SIGINT", onSigint);
     process.off("SIGTERM", onSigterm);
     pending = null;
+    resetCancellation();
   };
 }
 

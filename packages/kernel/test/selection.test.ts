@@ -9,6 +9,7 @@ import {
   verifyExhaustedExecution,
   loadWorkflowDocument,
   nextStage,
+  readyStages,
   NextStage,
   NextStageError,
   revisionStop,
@@ -208,6 +209,25 @@ test("revision stop counts successful returns per stage", () => {
   expect(revisionStop(workflow, retry, "plan")).toBe(false);
   expect(revisionStop(workflow, [snapshot("write-tests", 1)], "write-tests")).toBe(true);
   expect(revisionStop(workflow, [], "write-tests")).toBe(false);
+});
+
+test("readyStages omits a running stage and keeps declaration order", () => {
+  const workflow: WorkflowDocument = {
+    id: "two",
+    stages: {
+      a: stage("a", "developer"),
+      b: stage("b", "developer"),
+    },
+    completion: null,
+    requires: null,
+    constraints: [],
+    source: null,
+  };
+  const running = [snapshot("a", 1, { status: "running", outcomeStatus: null })];
+  expect(readyStages(workflow, running, "active")).toEqual(["b"]);
+  expect(readyStages(workflow, [], "active")).toEqual(["a", "b"]);
+  const blocked = [snapshot("a", 1, { status: "completed", outcomeStatus: "blocked" })];
+  expect(readyStages(workflow, blocked, "active")).toEqual(["b"]);
 });
 
 test("two roots are ambiguous", () => {
