@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { AgentToolRunner, type RunResult } from "./agent-runner.js";
-import { writeFileAtomic } from "./atomic-file.js";
+import { writeFileAtomic, writeJsonAtomic } from "./atomic-file.js";
 import { CancellationRequested, cancellationSignal, raiseCancellation, resetCancellation } from "./command-executor.js";
 import { loadRoleInstructions, loadYamlMapping, resolveStageTarget } from "./config.js";
 import { ConfigurationError, OutputsMissing } from "./errors.js";
@@ -482,7 +482,6 @@ async function runExecuteLoop(
   runner: AgentToolRunner,
   tasks: Map<string, Promise<unknown>>,
 ): Promise<ExecuteResult> {
-  // Version 1 stays one stage at a time, including the ambiguous-root error.
   if (isWorkflowV2(workflow)) {
     return runVersion2Pool(
       workspace,
@@ -550,16 +549,28 @@ async function runVersion2Pool(
   let dispatched = 0;
   const attempts = maxAttempts ?? 0;
   const verifyTried = new Set<string>();
-  const inflight = new Set<Promise<unknown>>();
+  const flights: Array<{ promise: Promise<void>; settled: boolean }> = [];
+  const errors: unknown[] = [];
   const concurrency = workflow.concurrency ?? 1;
+  const observe = async (): Promise<void> => {
+    const error = errors[0];
+    if (error !== undefined) {
+      await Promise.allSettled(flights.map((flight) => flight.promise));
+      throw error;
+    }
+    for (let index = flights.length - 1; index >= 0; index -= 1) {
+      if (flights[index]!.settled) flights.splice(index, 1);
+    }
+  };
   while (true) {
     cancellationSignal().throwIfCancelled();
+    await observe();
     store.reapOrphanedExecutions(sessionId, "raise");
     const snapshots = store.executionSnapshots(sessionId);
     const status = store.readSessionStatus(sessionId);
     const sessionStatus = text(status.status);
     if (sessionStatus === "cancelled") {
-      await Promise.allSettled([...inflight]);
+      await Promise.allSettled(flights.map((flight) => flight.promise));
       return executeFinal(status, "cancelled", []);
     }
     const baselines = revisionBaselines(status);
@@ -577,9 +588,23 @@ async function runVersion2Pool(
     const ceiling = maxDispatches === null ? Number.POSITIVE_INFINITY : maxDispatches;
     const room = ceiling - dispatched;
     if (room > 0) {
-      const slots = Math.min(concurrency, room);
-      for (const stageId of runnableNow(workflow, schedulable, running, slots, snapshots)) {
-        const promise = trackDispatch(sessionId, tasks, (note) =>
+      // room limits new starts. The working set already contains whatever is running.
+      const cap = Math.min(concurrency, running.length + room);
+      const starting = runnableNow(workflow, schedulable, running, cap, snapshots);
+      if (sessionStatus === "blocked" && starting.length > 0) {
+        // The fold will not stay active for a failed latest, so a spent --attempts still ends blocked.
+        // loadOrCreate refuses a blocked session, and this sibling is still under the command's cap.
+        status.status = "active";
+        delete status.blocked_by_execution_id;
+        delete status.blocked_by_execution_ids;
+        delete status.blocked_by_stage_id;
+        delete status.blocker;
+        delete status.terminal_execution_id;
+        writeJsonAtomic(path.join(workspace, ".migent", "sessions", sessionId, "status.json"), status);
+      }
+      for (const stageId of starting) {
+        const flight = { promise: Promise.resolve(), settled: false };
+        flight.promise = trackDispatch(sessionId, tasks, (note) =>
           dispatchExecuteStage(
             workspace,
             workflow,
@@ -591,22 +616,24 @@ async function runVersion2Pool(
             runner,
             note,
           ),
-        ).then((stage) => {
-          stages.push(stage);
-          if (stage.failure_reason === VERIFY_EXHAUSTED) verifyTried.add(stageId);
-          return stage;
-        });
-        inflight.add(promise);
-        // The delete chain must not surface the dispatch rejection a second time.
-        void promise.finally(() => inflight.delete(promise)).catch(() => undefined);
+        )
+          .then((stage) => {
+            stages.push(stage);
+            if (stage.failure_reason === VERIFY_EXHAUSTED) verifyTried.add(stageId);
+          })
+          .catch((error: unknown) => {
+            errors.push(error);
+          })
+          .finally(() => {
+            flight.settled = true;
+          });
+        flights.push(flight);
         dispatched += 1;
       }
     }
     if (dispatched >= ceiling) {
-      const settled = await Promise.allSettled([...inflight]);
-      inflight.clear();
-      const rejected = settled.find((item) => item.status === "rejected");
-      if (rejected && rejected.status === "rejected") throw rejected.reason;
+      await Promise.allSettled(flights.map((flight) => flight.promise));
+      await observe();
       const endStatus = store.readSessionStatus(sessionId);
       const endSnapshots = store.executionSnapshots(sessionId);
       const endSession = text(endStatus.status);
@@ -626,18 +653,12 @@ async function runVersion2Pool(
       if (reason === "no eligible stage") return executeFinal(endStatus, "dispatch_limit", stages);
       return executeFinal(endStatus, reason, stages);
     }
-    if (inflight.size === 0) {
+    if (flights.length === 0) {
       const reason = version2IdleReason(workflow, snapshots, sessionStatus, baselines, attempts, resumes);
       if (reason === "no eligible stage") throw new ConfigurationError("no eligible stage");
       return executeFinal(status, reason, stages);
     }
-    try {
-      await Promise.race([...inflight]);
-    } catch (error) {
-      // The lock stays held until every runner has stopped writing.
-      await Promise.allSettled([...inflight]);
-      throw error;
-    }
+    await Promise.race(flights.map((flight) => flight.promise));
   }
 }
 

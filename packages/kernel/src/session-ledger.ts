@@ -86,13 +86,20 @@ export function sessionStatusFromExecutions(
       execution.stageId,
     );
     if (status === "blocked") {
-      // A blocked stage must not freeze the session while another branch can still start.
-      // Cancelled executions are not a startable branch; they stay cancelled.
       if (workflow !== null && isWorkflowV2(workflow)) {
         const snapshots = snapshotsFromStatus(executions);
-        if (readyOutsideStoppedBranches(workflow, snapshots, "active", revisionBaselinesFrom(previousStatus)).length > 0) {
-          return "active";
-        }
+        const startable = readyOutsideStoppedBranches(
+          workflow,
+          snapshots,
+          "active",
+          revisionBaselinesFrom(previousStatus),
+        ).filter((stageId) => {
+          const row = latest.find((execution) => execution.stageId === stageId);
+          // Continue reopens a cancelled execution. A failed latest is not proof the pool can start it:
+          // the attempt cap may already be spent, and the default cap of 3 would hide that.
+          return row === undefined || (row.status !== "cancelled" && row.status !== "failed");
+        });
+        if (startable.length > 0) return "active";
       }
       return "blocked";
     }

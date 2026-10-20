@@ -112,6 +112,8 @@ export function readyStages(
     const latest = latestStageSnapshot(snapshots, stageId);
     if (latest !== null) {
       if (latest.status === "running") return false;
+      // Continue reopens this execution. A new dispatch would leave the cancelled one behind.
+      if (latest.status === "cancelled") return false;
       // Snapshots keep the blocked outcome after continue. The resume event is the signal.
       if (latest.outcomeStatus === "blocked" && !blockResumed(sessionStatus, latest.executionId, resumes)) {
         return false;
@@ -526,10 +528,6 @@ function incomingRouters(workflow: WorkflowDocument, stageId: string): StageSpec
   );
 }
 
-/**
- * Stages to start this turn, in declaration order.
- * `ready` and `running` are stage ids. A route is not an ordering edge.
- */
 export function runnableNow(
   workflow: WorkflowDocument,
   ready: readonly string[],
@@ -637,25 +635,10 @@ export function version2IdleReason(
       if (latest?.status === "failed" && failedStageCount(snapshots, stageId) >= maxAttempts) return "retry_exhausted";
     }
   }
-  for (const stageId of Object.keys(workflow.stages)) {
-    if (!revisionStop(workflow, snapshots, stageId, revisionBaselines)) continue;
-    if (stageStillDue(workflow, snapshots, stageId)) return "revisions_exhausted";
+  for (const stageId of candidateStageIds(workflow, snapshots)) {
+    if (revisionStop(workflow, snapshots, stageId, revisionBaselines)) return "revisions_exhausted";
   }
   return "no eligible stage";
-}
-
-function stageStillDue(
-  workflow: WorkflowDocument,
-  snapshots: readonly ExecutionSnapshot[],
-  stageId: string,
-): boolean {
-  if (stageDispatchError(workflow, stageId, snapshots) !== null) return false;
-  const complete = latestCompleteByStage(snapshots);
-  const snapshot = complete[stageId];
-  if (snapshot === undefined) return true;
-  if (hasLaterRouteTo(workflow, complete, stageId, snapshot.executionOrder)) return true;
-  const stage = workflow.stages[stageId];
-  return stage !== undefined && hasNewerDependency(complete, stage, snapshot.executionOrder);
 }
 
 function stoppedStageIds(
@@ -700,25 +683,15 @@ function declarationOrder(workflow: WorkflowDocument, ids: readonly string[]): s
   return ordered;
 }
 
-/** Greatest fixed point. A suspended stage does not keep its upstream suspended. */
 function suspendedReady(workflow: WorkflowDocument, ready: readonly string[]): Set<string> {
   const readySet = new Set(ready);
-  let suspended = new Set<string>();
-  let changed = true;
-  while (changed) {
-    changed = false;
-    const next = new Set(suspended);
-    for (const stageId of ready) {
-      if (next.has(stageId)) continue;
-      for (const other of dependencyClosure(workflow.stages, stageId)) {
-        if (readySet.has(other) && !suspended.has(other)) {
-          next.add(stageId);
-          changed = true;
-          break;
-        }
-      }
+  const suspended = new Set<string>();
+  for (const stageId of ready) {
+    for (const other of dependencyClosure(workflow.stages, stageId)) {
+      if (!readySet.has(other)) continue;
+      suspended.add(stageId);
+      break;
     }
-    suspended = next;
   }
   return suspended;
 }
