@@ -11,6 +11,7 @@ import {
   patchConfigText,
   patchWorkflowText,
 } from "../src/index.ts";
+import { parseWorkflowMapping } from "../src/workflow.ts";
 import { parseYamlDocument } from "../src/yaml.ts";
 import { writeConfig } from "./support.ts";
 
@@ -469,5 +470,78 @@ completion:
     new ConfigurationError(
       "stages.review.decision.routes.revise routes to complete, but completion.decision is approved.",
     ),
+  );
+});
+
+test("folded, flow, and quoted requires.decision migrate to version 2", () => {
+  const folded = `\
+schema_version: 1
+id: check
+requires:
+  workflow: plan
+  decision: >
+    approved
+stages:
+  - id: draft
+    role: planner
+`;
+  const flow = `\
+schema_version: 1
+id: check
+requires: { workflow: plan, decision: approved }
+stages:
+  - id: draft
+    role: planner
+`;
+  const quoted = `\
+schema_version: 1
+id: check
+requires:
+  workflow: plan
+  "decision": approved
+stages:
+  - id: draft
+    role: planner
+`;
+  for (const original of [folded, flow, quoted]) {
+    const updated = mapping(parseYamlDocument(original));
+    migrateWorkflow(updated, { models: {}, roles: {} });
+    const text = patchWorkflowText(original, updated);
+    const parsed = mapping(parseYamlDocument(text));
+    const document = parseWorkflowMapping(parsed, "check.yaml");
+    expect(document.requires).toEqual({ workflow: "plan", decision: null });
+    expect(document.completion).toBeNull();
+    expect(parsed).not.toHaveProperty("completion");
+    const requires = mapping(parsed.requires);
+    expect(requires.workflow).toBe("plan");
+    expect(requires).not.toHaveProperty("decision");
+  }
+});
+
+test("a version 2 patch that still has completion or requires.decision is refused", () => {
+  const completion = `\
+schema_version: 1
+id: check
+completion:
+  stage: draft
+stages:
+  - id: draft
+    role: planner
+`;
+  const keptCompletion = mapping(parseYamlDocument(completion));
+  keptCompletion.schema_version = 2;
+  expect(() => patchWorkflowText(completion, keptCompletion)).toThrow(
+    new ConfigurationError("migration left completion in the workflow."),
+  );
+  const decision = `\
+schema_version: 2
+id: check
+requires: { workflow: plan, decision: approved }
+stages:
+  - id: draft
+    role: planner
+`;
+  expect(() => patchWorkflowText(decision, mapping(parseYamlDocument(decision)))).toThrow(
+    new ConfigurationError("migration left requires.decision in the workflow."),
   );
 });

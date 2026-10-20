@@ -9,6 +9,7 @@ import {
   executeNamedWorkflow,
   migrateWorkflow,
   patchWorkflowText,
+  repairSession,
 } from "../src/index.ts";
 import { parseYamlDocument } from "../src/yaml.ts";
 import { PLAN_REVIEW_WORKFLOW, ScriptedAdapter, tempDir } from "./support.ts";
@@ -158,4 +159,31 @@ test("a missing output at quiescence exits 2 and continue reruns the producer", 
   expect(second.stopReason).toBe("completed");
   expect(second.status).toBe("completed");
   expect(readFileSync(outputFile(workspace, sessionId, "plan"), "utf8")).toBe("# plan again\n");
+});
+
+test("repair records session.completed when a version 2 graph becomes quiet", async () => {
+  const workspace = workspaceFor("two", `schema_version: 2\n${TWO}`);
+  const sessionId = createWorkflowSession(workspace, "two", "Run both");
+  const result = await executeNamedWorkflow(
+    workspace,
+    { workflowId: "two", sessionId },
+    new AgentToolRunner({ fake: new ScriptedAdapter([DONE, DONE]) }, 10),
+  );
+  expect(result.stopReason).toBe("completed");
+  const eventsPath = path.join(workspace, ".migent", "sessions", sessionId, "events.jsonl");
+  const stripped = readFileSync(eventsPath, "utf8")
+    .split("\n")
+    .filter((line) => !line.includes('"event":"session.completed"'))
+    .join("\n");
+  const rewritten = stripped.endsWith("\n") || stripped === "" ? stripped : `${stripped}\n`;
+  expect(rewritten).not.toContain('"event":"session.completed"');
+  writeFileSync(eventsPath, rewritten, "utf8");
+  repairSession(workspace, sessionId);
+  const completed = readFileSync(eventsPath, "utf8")
+    .split("\n")
+    .filter((line) => line.includes('"event":"session.completed"'))
+    .map((line) => JSON.parse(line) as { execution_id?: string; stage_id?: string });
+  const quiet = new SessionStore(workspace).executionSnapshots(sessionId).find((item) => item.stageId === "b");
+  expect(completed).toHaveLength(1);
+  expect(completed[0]).toMatchObject({ execution_id: quiet?.executionId, stage_id: "b" });
 });

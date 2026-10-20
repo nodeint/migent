@@ -320,7 +320,12 @@ function nextVersion2Stage(
       // complete ends this branch. Another ready stage can still run.
       if (target !== "complete") {
         const error = stageDispatchError(workflow, target, snapshots);
-        if (error !== null) return new NextStageError(error);
+        if (error !== null) {
+          // A quiet graph with a missing output still reruns the producer.
+          const producers = missingOutputProducers(workflow, snapshots, sessionStatus);
+          if (producers.length > 0) return new NextStage(producers[0]!);
+          return new NextStageError(error);
+        }
         return new NextStage(target);
       }
     }

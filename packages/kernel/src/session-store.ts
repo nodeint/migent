@@ -18,14 +18,12 @@ import { corruptStatusMessage, readStatusFileState } from "./query.js";
 import { STATUS_PROVIDER_EVENTS } from "./event-kinds.js";
 import {
   missingCompletionOutputNames,
-  missingWorkflowOutputNames,
   nonemptyArtifact,
   runnableViolation,
   shouldPublishOutputs,
   type ExecutionSnapshot,
 } from "./outputs.js";
 import { blockedExecutions, planExecutionSave, statusExecutionsFromSnapshots } from "./session-ledger.js";
-import { version2GraphQuiet } from "./selection.js";
 import {
   REAP_ALREADY_EXITED,
   REAP_STILL_RUNNING,
@@ -52,7 +50,6 @@ import { withFileLockSync } from "./file-lock.js";
 import type { StageOutcome } from "./stage-outcome.js";
 import {
   VERIFY_ARTIFACT,
-  isWorkflowV2,
   loadNamedWorkflow,
   loadWorkflowDocument,
   type WorkflowDocument,
@@ -539,22 +536,6 @@ export class SessionStore {
     const previousStatus = this.readSessionStatusAt(sessionDirectory);
     const workflow = this.loadWorkflow(previousStatus);
     if (workflow === null) return [];
-    if (isWorkflowV2(workflow)) {
-      if (outcome === null || outcome.status !== "complete") return [];
-      const metadata = readJsonObject(path.join(context.directory, "execution.json"));
-      const sessionStatus = typeof previousStatus.status === "string" ? previousStatus.status : "active";
-      const snapshots = snapshotsIncludingSave(this.snapshotList(context.sessionId), {
-        executionId: context.executionId,
-        stageId: this.stageId(context),
-        executionOrder: asInt(metadata.execution_order),
-        status: "completed",
-        outcomeStatus: outcome.status,
-        artifactDirectory: context.artifactDirectory,
-        outcomeDecision: outcome.decision || null,
-      });
-      if (!version2GraphQuiet(workflow, snapshots, sessionStatus)) return [];
-      return missingWorkflowOutputNames(workflow, snapshots);
-    }
     const workflowId = previousStatus.workflow_id;
     if (
       !shouldPublishOutputs({

@@ -4,8 +4,9 @@ import path from "node:path";
 import { writeJsonAtomic } from "./atomic-file.js";
 import { ConfigurationError } from "./errors.js";
 import { sessionStatusAfterExecution } from "./outputs.js";
-import { sessionStatusFromExecutions } from "./session-ledger.js";
+import { sessionStatusFromExecutions, type StatusExecution } from "./session-ledger.js";
 import { isRecord } from "./record.js";
+import { isWorkflowV2 } from "./workflow.js";
 import { utcNow } from "./runtime.js";
 import {
   appendLifecycleEvent,
@@ -129,6 +130,8 @@ function reconcileDrafts(inputs: FoldInputs): EventDraft[] {
     failureReason: execution.failureReason,
   }));
   const finalStatus = sessionStatusFromExecutions(rows, cursor, inputs.workflow);
+  const completingId =
+    finalStatus === "completed" ? version2CompletingExecution(rows, cursor, inputs.workflow) : null;
   const planned = (name: string, executionId: string) =>
     hasEvent(inputs.events, name, executionId) ||
     drafts.some((draft) => draft.event === name && draft.executionId === executionId);
@@ -175,9 +178,11 @@ function reconcileDrafts(inputs: FoldInputs): EventDraft[] {
       });
     }
     // One session event for the whole reduction. A later sibling must not clear a blocked stage.
+    // Version 2 has no completion decision, so the quiet execution owns session.completed.
+    const completesSession = execution.executionId === completingId;
     if (
       finalStatus !== "active" &&
-      ownStatus === finalStatus &&
+      (ownStatus === finalStatus || completesSession) &&
       !attachedSession &&
       !sessionPlanned(`session.${finalStatus}`)
     ) {
@@ -272,6 +277,20 @@ export function repairRefusalMessage(sessionId: string, reasons: readonly string
     `${lead} When a v1 status.json is destroyed, the task hash and output provenance cannot be recovered. ` +
     `Run: migent session repair ${sessionId} --accept-task`
   );
+}
+
+function version2CompletingExecution(
+  rows: readonly StatusExecution[],
+  cursor: Readonly<Record<string, unknown>>,
+  workflow: FoldInputs["workflow"],
+): string | null {
+  if (!isWorkflowV2(workflow)) return null;
+  for (let index = 0; index < rows.length; index += 1) {
+    if (sessionStatusFromExecutions(rows.slice(0, index + 1), cursor, workflow) === "completed") {
+      return rows[index]!.executionId;
+    }
+  }
+  return null;
 }
 
 function hasEvent(events: FoldInputs["events"], name: string, executionId: string): boolean {

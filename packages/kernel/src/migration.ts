@@ -6,12 +6,12 @@ A missing schema_version is version 0. Writes stay on the text patchers.
 */
 import { stringify } from "yaml";
 import { ConfigEditError, yamlScalar } from "./config-edit.js";
-import { documentVersion } from "./config.js";
 import { ConfigurationError } from "./errors.js";
-import { isRecord } from "./record.js";
+import { documentVersion, isRecord } from "./record.js";
+import { SCHEMA_VERSION, parseWorkflowMapping } from "./workflow.js";
 import { parseYamlDocument } from "./yaml.js";
 
-export const SCHEMA_VERSION = 2;
+export { SCHEMA_VERSION };
 
 const SCHEMA_VERSION_FIELD = "schema_version";
 
@@ -70,7 +70,24 @@ export function patchWorkflowText(original: string, updated: Readonly<Record<str
   insertSchemaVersion(lines, updated, edits);
   syncChangedStages(lines, current, updated, edits);
   syncDocumentShape(lines, current, updated, edits);
-  return applyEdits(original, lines, edits);
+  const text = applyEdits(original, lines, edits);
+  assertMigratedWorkflow(text, updated);
+  return text;
+}
+
+/** Version 2 must load, and must not keep completion or requires.decision. */
+function assertMigratedWorkflow(text: string, updated: Readonly<Record<string, unknown>>): void {
+  if (documentVersion(updated) < SCHEMA_VERSION) return;
+  const parsed = parseYamlDocument(text);
+  if (!isRecord(parsed)) throw new ConfigEditError("Workflow must be a mapping.");
+  if (Object.hasOwn(parsed, "completion")) {
+    throw new ConfigurationError("migration left completion in the workflow.");
+  }
+  const requires = parsed.requires;
+  if (isRecord(requires) && Object.hasOwn(requires, "decision")) {
+    throw new ConfigurationError("migration left requires.decision in the workflow.");
+  }
+  parseWorkflowMapping(parsed, "migrated workflow");
 }
 
 /** Version 2 has no completion block and no requires.decision. */
@@ -570,7 +587,7 @@ function mappingKey(line: string): [string | null, string, string] {
   else if (text === "-") return [null, "", comment];
   const colon = text.indexOf(":");
   if (colon < 0) return [null, "", comment];
-  const key = text.slice(0, colon).trim();
+  const key = unquote(text.slice(0, colon).trim());
   if (key === "") return [null, "", comment];
   return [key, text.slice(colon + 1).trim(), comment];
 }
@@ -634,8 +651,16 @@ function syncDocumentShape(
     const previous = before[key];
     const next = after[key];
     if (!isRecord(previous) || !isRecord(next)) continue;
-    for (const nested of Object.keys(previous)) {
-      if (Object.hasOwn(next, nested)) continue;
+    const removed = Object.keys(previous).filter((nested) => !Object.hasOwn(next, nested));
+    if (removed.length === 0) continue;
+    const header = lineInfo(lines[span.start] ?? "");
+    const flow = header !== null && (header.rest.startsWith("{") || header.rest.startsWith("["));
+    // A flow value has no nested key line. Rewrite the parent from the migrated mapping.
+    if (flow || removed.some((nested) => nestedKeySpan(lines, span, nested) === null)) {
+      edits.push([span.start, span.end, renderTopLevel(key, next)]);
+      continue;
+    }
+    for (const nested of removed) {
       const range = nestedKeySpan(lines, span, nested);
       if (range !== null) edits.push([range[0], range[1], []]);
     }
@@ -666,16 +691,30 @@ function nestedKeySpan(lines: string[], parent: LineSpan, key: string): [number,
   for (let index = parent.start + 1; index < parent.end; index += 1) {
     const item = lineInfo(lines[index] ?? "");
     if (item === null || item.key !== key || item.indent !== childIndent) continue;
-    if (item.rest !== "") return [index, index + 1];
-    let end = index + 1;
-    for (let nested = index + 1; nested < parent.end; nested += 1) {
-      const next = lineInfo(lines[nested] ?? "");
-      if (next !== null && next.indent <= item.indent) break;
-      end = nested + 1;
-    }
-    return [index, end];
+    return [index, nestedValueEnd(lines, parent.end, index, item)];
   }
   return null;
+}
+
+function nestedValueEnd(lines: string[], parentEnd: number, index: number, item: LineInfo): number {
+  let end = index + 1;
+  let opened = isBlockHeader(item.rest);
+  for (let nested = index + 1; nested < parentEnd; nested += 1) {
+    const next = lineInfo(lines[nested] ?? "");
+    if (next === null) {
+      if (!opened) break;
+      end = nested + 1;
+      continue;
+    }
+    if (next.indent <= item.indent) break;
+    opened = true;
+    end = nested + 1;
+  }
+  return end;
+}
+
+function isBlockHeader(rest: string): boolean {
+  return /^[|>](?:[+-][1-9]?|[1-9][+-]?)?$/.test(rest);
 }
 
 function renderTopLevel(key: string, value: unknown): string[] {

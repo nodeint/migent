@@ -50,7 +50,12 @@ function stage(id: string, role: string, extra: Partial<StageSpec> = {}): StageS
 function snapshot(
   stageId: string,
   order: number,
-  extra: { decision?: string | null; status?: string; outcomeStatus?: string | null } = {},
+  extra: {
+    decision?: string | null;
+    status?: string;
+    outcomeStatus?: string | null;
+    artifactDirectory?: string;
+  } = {},
 ): ExecutionSnapshot {
   return {
     executionId: `${String(order).padStart(4, "0")}-${stageId}`,
@@ -58,7 +63,7 @@ function snapshot(
     executionOrder: order,
     status: extra.status ?? "completed",
     outcomeStatus: extra.outcomeStatus === undefined ? "complete" : extra.outcomeStatus,
-    artifactDirectory: "/tmp",
+    artifactDirectory: extra.artifactDirectory ?? "/tmp",
     outcomeDecision: extra.decision === undefined ? null : extra.decision,
   };
 }
@@ -266,6 +271,63 @@ test("version 2 runs roots in declaration order", () => {
   };
   expectResult(nextStage(workflow, [], "active"), new NextStage("a"));
   expectResult(nextStage(workflow, [snapshot("a", 1)], "active"), new NextStage("b"));
+});
+
+test("version 2 reruns a missing producer when the latest route is not dispatchable", () => {
+  const workflow: WorkflowDocument = {
+    id: "plan",
+    schemaVersion: 2,
+    stages: {
+      draft: stage("draft", "planner", { artifact: "plan.md" }),
+      review: stage("review", "reviewer", {
+        dependsOn: ["draft"],
+        decisionValues: ["approved"],
+        routes: { approved: "missing" },
+      }),
+    },
+    completion: null,
+    requires: null,
+    constraints: [],
+    source: null,
+    outputs: [{ name: "plan", fromStage: "draft", artifact: "plan.md" }],
+  };
+  const snapshots = [
+    snapshot("draft", 1, { artifactDirectory: "/no/such/migent-output" }),
+    snapshot("review", 2, { decision: "approved", artifactDirectory: "/no/such/migent-output" }),
+  ];
+  expectResult(nextStage(workflow, snapshots, "active"), new NextStage("draft"));
+});
+
+test("version 2 keeps a bad route when no output is missing", () => {
+  const workflow: WorkflowDocument = {
+    id: "plan",
+    schemaVersion: 2,
+    stages: {
+      draft: stage("draft", "planner"),
+      review: stage("review", "reviewer", {
+        dependsOn: ["draft"],
+        decisionValues: ["approved"],
+        routes: { approved: "missing" },
+      }),
+      tail: stage("tail", "developer"),
+    },
+    completion: null,
+    requires: null,
+    constraints: [],
+    source: null,
+    outputs: [{ name: "plan", fromStage: "draft", artifact: "plan.md" }],
+  };
+  const ran = [
+    snapshot("draft", 1, { artifactDirectory: "/no/such/migent-output" }),
+    snapshot("review", 2, { decision: "approved", artifactDirectory: "/no/such/migent-output" }),
+  ];
+  const settled = {
+    ...workflow,
+    stages: { draft: workflow.stages.draft!, review: workflow.stages.review! },
+    outputs: [] as WorkflowDocument["outputs"],
+  };
+  expectResult(nextStage(settled, ran, "active"), new NextStageError("Stage is not declared: missing."));
+  expectResult(nextStage(workflow, ran, "active"), new NextStageError("Stage is not declared: missing."));
 });
 
 test("version 2 route to complete leaves another root ready", () => {

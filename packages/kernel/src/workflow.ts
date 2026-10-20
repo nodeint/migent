@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { ConfigurationError } from "./errors.js";
-import { isRecord, pyRepr } from "./record.js";
+import { documentVersion, isRecord, pyRepr } from "./record.js";
 import { parseYamlDocument } from "./yaml.js";
 
 export const VERIFY_ARTIFACT = "verify.md";
@@ -56,8 +56,8 @@ export interface WorkflowDocument {
   outputs?: WorkflowOutput[];
 }
 
-/** config.ts imports this module, so the parser cannot import SCHEMA_VERSION. */
-const WORKFLOW_SCHEMA_VERSION = 2;
+/** Accepted workflow and config document version. */
+export const SCHEMA_VERSION = 2;
 
 export function isWorkflowV2(workflow: WorkflowDocument | null | undefined): boolean {
   return (workflow?.schemaVersion ?? 1) >= 2;
@@ -181,10 +181,10 @@ export function loadWorkflowDocument(filePath: string): WorkflowDocument {
 /** Parse a workflow mapping. `source` is stored on the document and is not read from `data`. */
 export function parseWorkflowMapping(data: Record<string, unknown>, source: string): WorkflowDocument {
   const workflowId = documentId(data, source);
-  const schemaVersion = mappingSchemaVersion(data);
-  if (schemaVersion > WORKFLOW_SCHEMA_VERSION) {
+  const schemaVersion = documentVersion(data);
+  if (schemaVersion > SCHEMA_VERSION) {
     throw new ConfigurationError(
-      `workflow schema_version ${schemaVersion} is newer than this Migent (${WORKFLOW_SCHEMA_VERSION}).`,
+      `workflow schema_version ${schemaVersion} is newer than this Migent (${SCHEMA_VERSION}).`,
     );
   }
   const version2 = schemaVersion >= 2;
@@ -332,23 +332,6 @@ function resolveWorkflowPath(workspace: string, reference: string): string | nul
     if (isFile(named)) return named;
   }
   return null;
-}
-
-function mappingSchemaVersion(data: Record<string, unknown>): number {
-  if (!Object.hasOwn(data, "schema_version") || data.schema_version == null) return 0;
-  const raw = data.schema_version;
-  if (typeof raw === "boolean" || (typeof raw !== "number" && typeof raw !== "string")) {
-    throw new ConfigurationError("schema_version must be a non-negative integer.");
-  }
-  if (typeof raw === "string") {
-    const text = raw.trim();
-    if (!/^\d+$/.test(text)) throw new ConfigurationError("schema_version must be a non-negative integer.");
-    return Number(text);
-  }
-  if (!Number.isInteger(raw) || raw < 0) {
-    throw new ConfigurationError("schema_version must be a non-negative integer.");
-  }
-  return raw;
 }
 
 function parseConcurrency(data: Record<string, unknown>): number {
@@ -643,40 +626,7 @@ function parseCompletion(
     throw new ConfigurationError(`completion.stage is not a declared stage: ${stageId}`);
   }
   const decision = raw.decision == null ? null : requiredString(raw.decision, "completion.decision");
-  let outputsRaw: unknown = raw.outputs == null || raw.outputs === false ? [] : raw.outputs;
-  if (isRecord(outputsRaw) && Object.keys(outputsRaw).length === 0) outputsRaw = [];
-  if (!Array.isArray(outputsRaw)) {
-    throw new ConfigurationError("completion.outputs must be a list.");
-  }
-  const outputs: WorkflowOutput[] = [];
-  const seen = new Set<string>();
-  for (const item of outputsRaw) {
-    if (!isRecord(item)) {
-      throw new ConfigurationError("completion.outputs item must be a mapping.");
-    }
-    const name = filename(item.name, "completion.outputs.name");
-    const fromStage = requiredString(item.from_stage, "completion.outputs.from_stage");
-    const artifact = filename(item.artifact, "completion.outputs.artifact");
-    if (seen.has(name)) throw new ConfigurationError(`Duplicate completion output name: ${name}`);
-    if (!Object.hasOwn(stages, fromStage)) {
-      throw new ConfigurationError(
-        `completion.outputs.from_stage is not a declared stage: ${fromStage}`,
-      );
-    }
-    const source = stages[fromStage]!;
-    if (source.artifact === null) {
-      throw new ConfigurationError(
-        `completion output ${pyRepr(name)} references stage ${fromStage} which does not produce an artifact.`,
-      );
-    }
-    if (source.artifact !== artifact) {
-      throw new ConfigurationError(
-        `completion output ${pyRepr(name)} artifact ${pyRepr(artifact)} does not match stages.${fromStage}.produces.artifact ${pyRepr(source.artifact)}.`,
-      );
-    }
-    seen.add(name);
-    outputs.push(workflowOutputSchema.parse({ name, fromStage, artifact }));
-  }
+  const outputs = parseOutputItems(raw.outputs ?? [], stages, "completion.outputs");
   return workflowCompletionSchema.parse({ stage: stageId, decision, outputs });
 }
 

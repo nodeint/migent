@@ -6,6 +6,8 @@ import { isRecord } from "./record.js";
 import { loadNamedWorkflow, readOptionMap, type StageSpec } from "./workflow.js";
 import { parseYamlDocument } from "./yaml.js";
 
+export { documentVersion } from "./record.js";
+
 export interface StageTarget {
   provider: string;
   model: string;
@@ -110,26 +112,6 @@ export function loadModelTarget(config: Record<string, unknown>, modelName: stri
     requiredString(modelConfig.model, `models.${modelName}.model`),
     readOptions(modelConfig.options, `models.${modelName}.options`),
   );
-}
-
-/** A missing schema_version is 0. This does not rewrite the document. */
-export function documentVersion(document: Record<string, unknown>): number {
-  if (!Object.hasOwn(document, "schema_version") || document.schema_version == null) return 0;
-  const raw = document.schema_version;
-  if (typeof raw === "boolean" || (typeof raw !== "number" && typeof raw !== "string")) {
-    throw new ConfigurationError("schema_version must be a non-negative integer.");
-  }
-  if (typeof raw === "string") {
-    const text = raw.trim();
-    if (!/^\d+$/.test(text)) {
-      throw new ConfigurationError("schema_version must be a non-negative integer.");
-    }
-    return Number(text);
-  }
-  if (!Number.isInteger(raw) || raw < 0) {
-    throw new ConfigurationError("schema_version must be a non-negative integer.");
-  }
-  return raw;
 }
 
 function resolveRoleCascade(

@@ -16,6 +16,7 @@ import { expect, test } from "vitest";
 const TEMPLATES = fileURLToPath(new URL("../src/templates/migent/references/", import.meta.url));
 const WORKFLOW_PARSER = fileURLToPath(new URL("../../kernel/src/workflow.ts", import.meta.url));
 const CONFIG_PARSER = fileURLToPath(new URL("../../kernel/src/config.ts", import.meta.url));
+const RECORD_PARSER = fileURLToPath(new URL("../../kernel/src/record.ts", import.meta.url));
 
 const CONFIG_KEYS = [
   "default_model",
@@ -86,7 +87,8 @@ test("config reference parses and names every key the config parser reads", () =
     expect(loadRoleInstructions(config, "reviewer")).toEqual([]);
     new GrokAdapter().validateOptions({ "reasoning-effort": "high" });
     new GrokAdapter().validateOptions({ "reasoning-effort": "medium" });
-    expect(parserKeys(readFileSync(CONFIG_PARSER, "utf8"), "config")).toEqual(CONFIG_KEYS);
+    const configParser = `${readFileSync(CONFIG_PARSER, "utf8")}\n${readFileSync(RECORD_PARSER, "utf8")}`;
+    expect(parserKeys(configParser, "config")).toEqual(CONFIG_KEYS);
     expect(yamlKeys(text)).toEqual([...CONFIG_KEYS, "planner", "reasoning-effort", "reviewer"].sort());
   } finally {
     rmSync(workspace, { recursive: true, force: true });

@@ -66,10 +66,7 @@ export function latestPerStage(executions: readonly StatusExecution[]): StatusEx
   return [...byStage.values()];
 }
 
-/**
- * Decision 8 for version 1. Older executions of a stage are ignored.
- * Any running latest execution wins, then blocked, cancelled, and completion.
- */
+/** Version 1 reduces each stage; version 2 replaces that completion arm with quiescence. */
 export function sessionStatusFromExecutions(
   executions: readonly StatusExecution[],
   previousStatus: Readonly<Record<string, unknown>>,
