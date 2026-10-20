@@ -454,7 +454,9 @@ export class SessionStore {
     const selected = latestPerStage ? latestExecutionPerStage(rows) : rows;
     const cancelled = selected
       .filter((item) => item.metadata.status === "cancelled")
-      .sort((left, right) => compareExecutionRows(left, right));
+      .sort((left, right) =>
+        compareSortKey([left.order, left.context.executionId], [right.order, right.context.executionId]),
+      );
     if (cancelled.length === 0) {
       if (latestPerStage) return [];
       throw new ConfigurationError(`Session ${sessionId} is cancelled without an execution.`);
@@ -941,19 +943,14 @@ function latestExecutionPerStage<
   for (const row of rows) {
     const stageId = typeof row.metadata.stage_id === "string" ? row.metadata.stage_id : "";
     const current = byStage.get(stageId);
-    if (current === undefined || compareExecutionRows(row, current) > 0) byStage.set(stageId, row);
+    if (
+      current === undefined ||
+      compareSortKey([row.order, row.context.executionId], [current.order, current.context.executionId]) > 0
+    ) {
+      byStage.set(stageId, row);
+    }
   }
   return [...byStage.values()];
-}
-
-function compareExecutionRows(
-  left: { context: { executionId: string }; order: number },
-  right: { context: { executionId: string }; order: number },
-): number {
-  if (left.order !== right.order) return left.order - right.order;
-  if (left.context.executionId < right.context.executionId) return -1;
-  if (left.context.executionId > right.context.executionId) return 1;
-  return 0;
 }
 
 function snapshotsIncludingSave(
