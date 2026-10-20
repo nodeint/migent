@@ -91,7 +91,7 @@ export {
   shouldPublishOutputs,
 } from "./outputs.js";
 export type { ExecutionSnapshot, PublishedOutput } from "./outputs.js";
-export { buildStagePrompt, prependRoleInstructions } from "./prompt.js";
+export { buildStagePrompt, buildStageResumePrompt, prependRoleInstructions } from "./prompt.js";
 export {
   failedStageCount,
   latestCompleteByStage,
@@ -99,6 +99,7 @@ export {
   revisionResumeExecution,
   revisionStop,
   stageAgentExecution,
+  stagePromptAlreadyDelivered,
   stageDispatchError,
   verifyExhaustedExecution,
   NextStage,

@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 import {
   buildStagePrompt,
+  buildStageResumePrompt,
   loadWorkflowDocument,
   prependRoleInstructions,
   type ExecutionSnapshot,
@@ -246,6 +247,43 @@ test("revision references latest review and previous artifact", () => {
   expect(prompt).toContain(resolved(path.join(review, "response.md")));
   expect(prompt).toContain(resolved(path.join(plan, "plan.md")));
   expect(prompt).toContain("Read this response and use its decision and feedback");
+});
+
+test("a later visit sends only the continuation", () => {
+  const workspace = tempDir("migent-prompt-");
+  const plan = path.join(workspace, "plan-1", "artifacts");
+  const review = path.join(workspace, "review-1");
+  mkdirSync(plan, { recursive: true });
+  mkdirSync(review);
+  writeFileSync(path.join(plan, "plan.md"), "initial plan", "utf8");
+  writeFileSync(path.join(review, "response.md"), "status: complete\ndecision: revise\n", "utf8");
+  const snapshots = [
+    snapshot("plan", 1, plan),
+    snapshot("review-plan", 2, path.join(review, "artifacts"), { decision: "revise" }),
+  ];
+  const prompt = buildStageResumePrompt({
+    workflow: workflowFile("plan"),
+    stageId: "plan",
+    snapshots,
+    workspace,
+  });
+  expect(prompt.startsWith("Continue this stage.")).toBe(true);
+  expect(prompt).toContain(resolved(path.join(review, "response.md")));
+  expect(prompt).toContain("Previous plan artifact");
+  expect(prompt).not.toContain("Do not write implementation code.");
+  expect(prompt).not.toContain("Read the task from");
+  expect(prompt).not.toContain("Stage: plan");
+});
+
+test("a later visit with no new notes is only the continuation line", () => {
+  const workspace = tempDir("migent-prompt-");
+  const prompt = buildStageResumePrompt({
+    workflow: workflowFile("plan"),
+    stageId: "plan",
+    snapshots: [snapshot("plan", 1, path.join(workspace, "plan-1"), { status: "failed", outcomeStatus: null })],
+    workspace,
+  });
+  expect(prompt).toBe("Continue this stage.");
 });
 
 test("revision retry keeps the review that requested it", () => {

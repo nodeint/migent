@@ -143,6 +143,22 @@ export function stageAgentExecution(
 }
 
 /**
+ * True when this dispatch continues an execution that already received this
+ * stage's prompt. A `resume_from` visit joins the dependency's agent until a
+ * route comes back, so that visit still needs the full stage prompt.
+ */
+export function stagePromptAlreadyDelivered(
+  workflow: WorkflowDocument,
+  snapshots: readonly ExecutionSnapshot[],
+  stageId: string,
+): boolean {
+  const stage = workflow.stages[stageId];
+  if (stage === undefined) return false;
+  if (stage.resumeFrom) return revisionResumeExecution(workflow, snapshots, stageId) !== null;
+  return stageAgentExecution(snapshots, stageId) !== null;
+}
+
+/**
  * Provider session to continue when a `resume_from` stage is routed back to
  * itself. The latest execution of that stage holds the agent. A visit that
  * was not routed back resolves `resume_from` instead.

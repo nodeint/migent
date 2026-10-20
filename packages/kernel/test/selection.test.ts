@@ -5,6 +5,7 @@ import {
   failedStageCount,
   revisionResumeExecution,
   stageAgentExecution,
+  stagePromptAlreadyDelivered,
   verifyExhaustedExecution,
   loadWorkflowDocument,
   nextStage,
@@ -285,6 +286,38 @@ test("revise resumes the previous visit of the routed stage", () => {
   ];
   expect(revisionResumeExecution(workflow, failedRetry, "plan")).toBe("0003-plan");
   expect(revisionResumeExecution(workflow, [snapshot("plan", 1, { status: "failed", outcomeStatus: null })], "plan")).toBeNull();
+});
+
+test("resume_from keeps the full prompt until a route returns", () => {
+  const workflow: WorkflowDocument = {
+    id: "resume",
+    stages: {
+      draft: stage("draft", "developer"),
+      review: stage("review", "reviewer", {
+        dependsOn: ["draft"],
+        resumeFrom: "draft",
+        routes: { revise: "draft", approved: "recheck" },
+      }),
+      recheck: stage("recheck", "reviewer", {
+        dependsOn: ["review"],
+        routes: { again: "review" },
+      }),
+    },
+    completion: null,
+    requires: null,
+    constraints: [],
+    source: null,
+  };
+  const opened = [snapshot("draft", 1), snapshot("review", 2, { decision: "revise" })];
+  expect(stagePromptAlreadyDelivered(workflow, opened, "review")).toBe(false);
+  expect(stagePromptAlreadyDelivered(workflow, opened, "draft")).toBe(true);
+  const returned = [
+    snapshot("draft", 1),
+    snapshot("review", 2, { decision: "approved" }),
+    snapshot("recheck", 3, { decision: "again" }),
+  ];
+  expect(stagePromptAlreadyDelivered(workflow, returned, "review")).toBe(true);
+  expect(stagePromptAlreadyDelivered(workflow, [], "draft")).toBe(false);
 });
 
 test("a stage that routes to itself resumes its own agent", () => {

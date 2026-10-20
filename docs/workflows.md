@@ -25,7 +25,14 @@ may produce one named file artifact:
 
 Workflow-level `constraints`, the role's `instructions` from
 `.migent/config.yaml`, and stage `instructions` are included in the provider
-prompt. Role instructions come before stage instructions.
+prompt on the first execution of a stage. Role instructions come before stage
+instructions. A later execution that continues the same stage's provider agent
+sends only what changed: upstream artifact paths, a route back to this stage,
+or a blocked attempt. It does not repeat the task path, role instructions,
+stage instructions, constraints, or verify commands. A `session.resume_from`
+visit that continues the named dependency's agent receives the full stage
+prompt again. That includes the first visit and any later visit that was not
+routed back to this stage.
 
 ## Decisions and routes
 
@@ -111,7 +118,8 @@ The review after the third revision still runs. Migent stops only when its
 decision would exceed the configured limit. Each later visit continues that
 stage's provider agent. A route back's prompt points at the routing stage's
 response and the previous artifact. A stage with `session.resume_from`
-continues the named stage's agent instead.
+continues the named stage's agent instead, and that visit receives the full
+stage prompt unless a route has returned to this stage.
 Run `migent session continue <session-id>` to reset the revision count and allow up
 to three more revisions in the same session. Each later `session continue` resets the
 count again. `migent session continue <session-id> --once` dispatches one stage and

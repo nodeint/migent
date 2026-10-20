@@ -85,8 +85,11 @@ Each execution directory contains:
   setting, lifecycle status, and fallback message history. This is separate
   from the Migent session-level `status.json`.
 - `prompt.md` and `response.md`: the exact prompt sent for the attempt and the
-  response saved from the provider. `task.md` in this directory is a copy of
-  the session task at the moment the execution was created.
+  response saved from the provider. A later attempt that continues the same
+  stage's provider agent records the continuation prompt. An attempt that
+  continues a `session.resume_from` dependency records the full stage prompt.
+  `task.md` in this directory is a copy of the session task at the moment the
+  execution was created.
 - `artifacts/`: files written by that stage. These are per-attempt working
   artifacts; only explicitly configured completion outputs are copied to the
   session-level `outputs/` directory.

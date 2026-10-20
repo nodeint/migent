@@ -11,7 +11,7 @@ import {
   type StageDispatchResult,
 } from "./dispatch.js";
 import { isRecord } from "./record.js";
-import { buildStagePrompt, buildVerifyRepairPrompt } from "./prompt.js";
+import { buildStagePrompt, buildStageResumePrompt, buildVerifyRepairPrompt } from "./prompt.js";
 import { log, utcNow } from "./runtime.js";
 import { appendLifecycleEvent } from "./session-events.js";
 import { commitFoldedStatus } from "./session-fold.js";
@@ -30,6 +30,7 @@ import {
   failedStageCount,
   nextStage,
   revisionStop,
+  stagePromptAlreadyDelivered,
   verifyExhaustedExecution,
   NextStage,
   NextStageError,
@@ -430,27 +431,29 @@ async function dispatchExecuteStage(
   const roleInstructions = freeze
     ? frozenRoleInstructions(freeze, stageSpec.role)
     : loadRoleInstructions(loadYamlMapping(path.join(workspace, ".migent", "config.yaml")), stageSpec.role);
-  const prompt =
-    exhausted?.verifyReport
-      ? buildVerifyRepairPrompt(
-          readFileSync(exhausted.verifyReport, "utf8"),
-          stageSpec.maxVerify,
-          stageSpec.maxVerify,
-          null,
-          frozen.taskFile,
-          frozen.sessionDirectory,
-        )
-      : buildStagePrompt({
-          workflow,
-          stageId,
-          taskFile: frozen.taskFile,
-          sessionDirectory: frozen.sessionDirectory,
-          snapshots,
-          workspace,
-          priorSessionId,
-          priorOutputs: priorSessionOutputs(workspace, priorSessionId),
-          roleInstructions,
-        });
+  const promptInput = {
+    workflow,
+    stageId,
+    taskFile: frozen.taskFile,
+    sessionDirectory: frozen.sessionDirectory,
+    snapshots,
+    workspace,
+    priorSessionId,
+    priorOutputs: priorSessionOutputs(workspace, priorSessionId),
+    roleInstructions,
+  };
+  const prompt = exhausted?.verifyReport
+    ? buildVerifyRepairPrompt(
+        readFileSync(exhausted.verifyReport, "utf8"),
+        stageSpec.maxVerify,
+        stageSpec.maxVerify,
+        null,
+        frozen.taskFile,
+        frozen.sessionDirectory,
+      )
+    : stagePromptAlreadyDelivered(workflow, snapshots, stageId)
+      ? buildStageResumePrompt(promptInput)
+      : buildStagePrompt(promptInput);
   const request: StageDispatchRequest = {
     workflowId,
     stageId,

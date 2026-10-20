@@ -383,6 +383,9 @@ test("prompt lists verify commands and dependency pass table", () => {
   const workflow = loadWorkflowDocument(file);
   const prompt = buildStagePrompt({ workflow, stageId: "implement", snapshots: [], workspace: dir });
   expect(prompt).toContain("Verify commands:");
+  expect(prompt).toContain("These commands must exit 0 before you report `status: complete`.");
+  expect(prompt).not.toContain("after you report `status: complete`");
+  expect(prompt).not.toContain("The first failure stops the run.");
   expect(prompt).toContain("- pnpm gate");
   const dependent = buildStagePrompt({
     workflow,
@@ -603,4 +606,67 @@ test("a repair turn without an agent id receives the flattened history", async (
   expect(adapter.calls[1]?.agentId).toBeNull();
   expect(repair).toContain("done");
   expect(repair).toContain("Verify failed (1 of 3 red runs)");
+});
+
+test("resume_from sends the stage prompt again when it rejoins the dependency", async () => {
+  const workspace = tempDir("migent-resume-");
+  mkdirSync(path.join(workspace, ".migent", "workflows"), { recursive: true });
+  writeFileSync(path.join(workspace, ".migent", "config.yaml"), CONFIG, "utf8");
+  writeFileSync(
+    path.join(workspace, ".migent", "workflows", "wf.yaml"),
+    `\
+id: wf
+stages:
+  - id: draft
+    role: developer
+    instructions:
+      - Write the draft.
+    produces:
+      artifact: draft.md
+  - id: review
+    role: developer
+    depends_on: [draft]
+    session:
+      resume_from: draft
+    instructions:
+      - Review the draft.
+    decision:
+      values: [approved, revise]
+      routes:
+        approved: complete
+        revise: draft
+completion:
+  stage: review
+  decision: approved
+`,
+    "utf8",
+  );
+  const sessionId = createWorkflowSession(workspace, "wf", "task");
+  const adapter = new ScriptedAdapter(
+    [
+      "status: complete\n\ndraft",
+      "status: complete\ndecision: revise\n\nagain",
+      "status: complete\n\ndraft v2",
+      "status: complete\ndecision: approved\n\nok",
+    ],
+    ["# draft\n", null, "# draft v2\n", null],
+  );
+  const result = await executeNamedWorkflow(
+    workspace,
+    { workflowId: "wf", sessionId },
+    new AgentToolRunner({ fake: adapter }, 10),
+  );
+  expect(result.stopReason).toBe("completed");
+  expect(adapter.calls[1]?.prompt).toContain("Review the draft.");
+  expect(adapter.calls[1]?.agentId).toBe("native-session-1");
+  expect(adapter.calls[2]?.prompt).toContain("Continue this stage.");
+  expect(adapter.calls[2]?.prompt).not.toContain("Write the draft.");
+  const rejoined = adapter.calls[3]?.prompt ?? "";
+  expect(rejoined).toContain("Stage: review (role: developer)");
+  expect(rejoined).toContain("Review the draft.");
+  expect(rejoined).not.toContain("Continue this stage.");
+  const snapshots = new SessionStore(workspace).executionSnapshots(sessionId);
+  expect(execution(workspace, sessionId, snapshots[3]!.executionId).resumes_execution_id).toBe(
+    snapshots[2]?.executionId,
+  );
 });

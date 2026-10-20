@@ -327,6 +327,8 @@ test("execute reruns plan then review after revise", async () => {
     ]);
     expect(adapter.calls[2]?.prompt).toContain("Decision that routed to this stage");
     expect(adapter.calls[2]?.prompt).toContain("Previous plan artifact");
+    expect(adapter.calls[2]?.prompt).not.toContain("Do not write implementation code.");
+    expect(adapter.calls[0]?.prompt).toContain("Do not write implementation code.");
   } finally {
     removeWorkspace(workspace);
   }

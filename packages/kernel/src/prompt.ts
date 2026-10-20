@@ -35,14 +35,47 @@ export function buildStagePrompt(input: {
   if (stage.verify.length > 0) {
     const lines = [
       "Verify commands:",
-      "Migent runs these commands in the workspace, in order, after you report `status: complete`.",
-      "The first failure stops the run. The stage completes only when every command exits 0.",
-      "When a command fails, you receive the report and continue on this stage.",
+      "These commands must exit 0 before you report `status: complete`.",
+      "Run them in the workspace, in order. When a command fails, fix the cause and run it again.",
+      "Report `status: complete` only after every command passes.",
       ...stage.verify.map((item) => `- ${item}`),
     ];
     sections.push(lines.join("\n"));
   }
-  const upstream = upstreamArtifactLines(input.workflow, stage.dependsOn, input.snapshots);
+  sections.push(...stageContinuationSections(input, stage.dependsOn));
+  const prior = priorResultLines(input.workspace, input.priorSessionId, input.priorOutputs);
+  if (prior.length > 0) sections.push(`Required prior workflow result:\n${prior.join("\n")}`);
+  if (stage.artifact) {
+    sections.push(
+      `Write the file artifact as \`${stage.artifact}\` in the execution artifacts directory.`,
+    );
+  }
+  return sections.join("\n\n");
+}
+
+/** Later visit of a stage. The provider conversation already has the stage prompt. */
+export function buildStageResumePrompt(input: {
+  workflow: WorkflowDocument;
+  stageId: string;
+  snapshots: readonly ExecutionSnapshot[];
+  workspace: string;
+}): string {
+  const stage = input.workflow.stages[input.stageId];
+  if (stage === undefined) throw new Error(`Stage is not declared: ${input.stageId}.`);
+  return ["Continue this stage.", ...stageContinuationSections(input, stage.dependsOn)].join("\n\n");
+}
+
+function stageContinuationSections(
+  input: {
+    workflow: WorkflowDocument;
+    stageId: string;
+    snapshots: readonly ExecutionSnapshot[];
+    workspace: string;
+  },
+  dependsOn: readonly string[],
+): string[] {
+  const sections: string[] = [];
+  const upstream = upstreamArtifactLines(input.workflow, dependsOn, input.snapshots);
   if (upstream.length > 0) {
     sections.push(`Upstream artifacts on this session:\n${upstream.join("\n")}`);
   }
@@ -50,16 +83,9 @@ export function buildStagePrompt(input: {
   if (routed.length > 0) {
     sections.push(`Decision that routed to this stage:\n${routed.join("\n")}`);
   }
-  const prior = priorResultLines(input.workspace, input.priorSessionId, input.priorOutputs);
-  if (prior.length > 0) sections.push(`Required prior workflow result:\n${prior.join("\n")}`);
   const blocked = previousBlockedAttempt(input.stageId, input.snapshots);
   if (blocked !== null) sections.push(blocked);
-  if (stage.artifact) {
-    sections.push(
-      `Write the file artifact as \`${stage.artifact}\` in the execution artifacts directory.`,
-    );
-  }
-  return sections.join("\n\n");
+  return sections;
 }
 
 export function prependRoleInstructions(instructions: readonly string[], prompt: string): string {
