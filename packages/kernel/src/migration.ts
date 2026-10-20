@@ -698,23 +698,13 @@ function nestedKeySpan(lines: string[], parent: LineSpan, key: string): [number,
 
 function nestedValueEnd(lines: string[], parentEnd: number, index: number, item: LineInfo): number {
   let end = index + 1;
-  let opened = isBlockHeader(item.rest);
   for (let nested = index + 1; nested < parentEnd; nested += 1) {
     const next = lineInfo(lines[nested] ?? "");
-    if (next === null) {
-      if (!opened) break;
-      end = nested + 1;
-      continue;
-    }
-    if (next.indent <= item.indent) break;
-    opened = true;
+    // A blank or comment line stays in the value. The next sibling key ends it.
+    if (next !== null && next.key !== null && next.indent <= item.indent) break;
     end = nested + 1;
   }
   return end;
-}
-
-function isBlockHeader(rest: string): boolean {
-  return /^[|>](?:[+-][1-9]?|[1-9][+-]?)?$/.test(rest);
 }
 
 function renderTopLevel(key: string, value: unknown): string[] {

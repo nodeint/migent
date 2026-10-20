@@ -518,6 +518,71 @@ stages:
   }
 });
 
+test("a blank or comment inside requires.decision is removed with that key", () => {
+  const empty = `\
+schema_version: 1
+id: check
+requires:
+  workflow: plan
+  decision:
+
+    approved
+stages:
+  - id: draft
+    role: planner
+`;
+  const plain = `\
+schema_version: 1
+id: check
+requires:
+  workflow: plan
+  decision: approved
+
+    still
+stages:
+  - id: draft
+    role: planner
+`;
+  const noted = `\
+schema_version: 1
+id: check
+requires:
+  workflow: plan
+  decision: # note
+
+    approved
+stages:
+  - id: draft
+    role: planner
+`;
+  const nested = `\
+schema_version: 1
+id: check
+requires:
+  workflow: plan
+  decision:
+
+    approved: yes
+    note: still
+stages:
+  - id: draft
+    role: planner
+`;
+  for (const original of [empty, plain, noted, nested]) {
+    const updated = mapping(parseYamlDocument(original));
+    migrateWorkflow(updated, { models: {}, roles: {} });
+    const text = patchWorkflowText(original, updated);
+    const parsed = mapping(parseYamlDocument(text));
+    const document = parseWorkflowMapping(parsed, "check.yaml");
+    expect(document.requires).toEqual({ workflow: "plan", decision: null });
+    const requires = mapping(parsed.requires);
+    expect(requires.workflow).toBe("plan");
+    expect(requires).not.toHaveProperty("decision");
+    expect(requires).not.toHaveProperty("approved");
+    expect(requires).not.toHaveProperty("note");
+  }
+});
+
 test("a version 2 patch that still has completion or requires.decision is refused", () => {
   const completion = `\
 schema_version: 1
