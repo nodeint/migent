@@ -1,0 +1,6 @@
+{"event":"init","conversation_id":"e58226d5-9496-4af8-8a01-d92364b77d70","init":{"model":"gemini-3.8-flash-low","cwd":"/workspace","permission_mode":"request-review"}}
+{"event":"step_update","step_update":{"conversation_id":"e58226d5-9496-4af8-8a01-d92364b77d70","step_index":2,"state":"DONE","step_type":"user_input"}}
+{"event":"step_update","step_update":{"conversation_id":"e58226d5-9496-4af8-8a01-d92364b77d70","step_index":3,"state":"DONE","step_type":"system_message","duration_seconds":0.000907}}
+{"event":"step_update","step_update":{"conversation_id":"e58226d5-9496-4af8-8a01-d92364b77d70","step_index":4,"state":"ACTIVE","step_type":"agent_response","text_delta":"two"}}
+{"event":"step_update","step_update":{"conversation_id":"e58226d5-9496-4af8-8a01-d92364b77d70","step_index":4,"state":"DONE","step_type":"agent_response","text_delta":"\n","duration_seconds":2.203048,"usage":{"input_tokens":6881,"output_tokens":1,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":6882}}}
+{"event":"result","result":{"conversation_id":"e58226d5-9496-4af8-8a01-d92364b77d70","status":"SUCCESS","response":"two\n","duration_seconds":10.940575,"num_turns":2,"usage":{"input_tokens":13554,"output_tokens":2,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":13556}}}
