@@ -399,6 +399,69 @@ export class SessionStore {
     return { executionId, stageId };
   }
 
+  /**
+   * Reopen the latest cancelled execution in place. The caller holds the session lock.
+   * The execution id and stage attempt stay the same.
+   */
+  reopenCancelledExecution(sessionId: string): { executionId: string; stageId: string } {
+    const sessionDirectory = path.join(this.sessionsDirectory, sessionId);
+    assertSessionLockHeld(sessionDirectory);
+    const status = this.readSessionStatus(sessionId);
+    if (status.status !== "cancelled") {
+      throw new ConfigurationError(`Session ${sessionId} is ${String(status.status)}, not cancelled.`);
+    }
+    const context = this.latestExecution(sessionId);
+    if (context === null) {
+      throw new ConfigurationError(`Session ${sessionId} is cancelled without an execution.`);
+    }
+    const filePath = path.join(context.directory, "execution.json");
+    const metadata = readJsonObject(filePath);
+    if (metadata.status !== "cancelled") {
+      throw new ConfigurationError(
+        `Execution ${context.executionId} is ${String(metadata.status)}, not cancelled.`,
+      );
+    }
+    if (!existsSync(context.conversationReadPath)) {
+      throw new ConfigurationError(`Execution ${context.executionId} has no conversation to resume.`);
+    }
+    metadata.status = "running";
+    metadata.completed_at = null;
+    writeJsonAtomic(filePath, metadata);
+    const provider = typeof metadata.provider === "string" ? metadata.provider : "";
+    const model = typeof metadata.model === "string" ? metadata.model : "";
+    const raw = JSON.parse(readFileSync(context.conversationReadPath, "utf8")) as unknown;
+    const record = AgentSessionRecord.fromJson(raw, provider, model, this.workspace);
+    record.status = "running";
+    this.save(record, context);
+    const stageId = typeof metadata.stage_id === "string" ? metadata.stage_id : "";
+    const timestamp = utcNow();
+    appendLifecycleEvent(sessionDirectory, {
+      event: "execution.running",
+      timestamp,
+      executionId: context.executionId,
+      stageId: stageId || null,
+      data: {
+        outcome: null,
+        failure_reason: null,
+        error: null,
+        session_status: "active",
+      },
+    });
+    appendLifecycleEvent(sessionDirectory, {
+      event: "session.active",
+      timestamp,
+      executionId: context.executionId,
+      stageId: stageId || null,
+      data: { from: "cancelled" },
+    });
+    this.rewriteManifestStatus(sessionDirectory, "running");
+    const folded = commitFoldedStatus(this.workspace, sessionDirectory);
+    if (folded.status !== "active") {
+      throw new ConfigurationError(`Session ${sessionId} stayed ${String(folded.status)} after resume.`);
+    }
+    return { executionId: context.executionId, stageId };
+  }
+
   resetRevisionCounts(sessionId: string, snapshots: readonly ExecutionSnapshot[]): void {
     const sessionDirectory = path.join(this.sessionsDirectory, sessionId);
     assertSessionLockHeld(sessionDirectory);

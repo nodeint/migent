@@ -72,7 +72,9 @@ when `--workflow` is omitted.
   and pass `--prior <session-id>`. `session continue` accepts `--prior` too.
 - Resume an active workflow session: `migent session continue <session-id>`.
   This resets revision counts. `migent session continue <session-id> --once`
-  advances one stage and does not reset them.
+  advances one stage and does not reset them. A cancelled session is resumed
+  the same way, on the same execution: a cut-off provider turn is sent again,
+  and a cut-off verify runs again. Ask the user before resuming a cancellation.
 - Run one role: `migent session run --role <role> --prompt "<prompt>"`.
   `roles.<role>.instructions` in config, when set, is prepended to that prompt.
   Use `--file <path>` or `--stdin` for a long prompt. `--task` labels a new
@@ -113,7 +115,7 @@ A workflow result on stdout includes `stop_reason`. Read the exit code first.
 | 3 | `--attempts` spent | `retry_exhausted` | active | Read `response_path`, fix the cause, then `session continue` (add `--attempts` for a higher total). |
 | 4 | A route would exceed `max_revisions` | `revisions_exhausted` | active | Review why the stage keeps being revised; `session continue` (without `--once`) resets counts for another batch. |
 | 5 | `--max-dispatches` spent | `dispatch_limit` | active | `session continue` the same session if more stages are appropriate. |
-| 130 | Cancelled | | see snapshot | Ask the user before resuming. |
+| 130 | Cancelled | | see snapshot | Ask the user before resuming. `session continue` resumes that same execution. |
 
 A stopped active session is resumable; do not describe it as completed. A
 blocked session is resumed the same way: `session continue` runs that stage

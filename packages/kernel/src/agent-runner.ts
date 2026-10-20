@@ -20,8 +20,8 @@ import {
   log,
 } from "./runtime.js";
 import { ProviderEventReporter } from "./provider-events.js";
-import { AgentSessionRecord, SessionStore, type ExecutionContext } from "./session-store.js";
-import { parseStageOutcome, type StageOutcome } from "./stage-outcome.js";
+import { AgentSessionRecord, SessionStore, stringOptions, type ExecutionContext } from "./session-store.js";
+import { parseStageOutcome, StageOutcome } from "./stage-outcome.js";
 import { loadNamedWorkflow, loadStage, type StageSpec } from "./workflow.js";
 
 export interface RunResult {
@@ -142,6 +142,191 @@ export class AgentToolRunner {
       Object.keys(profile).length > 0 ? { options: profile } : null,
     );
 
+    return this.driveTurns({
+      adapter,
+      model: request.model,
+      workspacePath,
+      resolvedOptions,
+      profile,
+      store,
+      context,
+      record,
+      eventReporter,
+      sessionId,
+      stage,
+      decisionValues,
+      artifactName,
+      verifyCommands,
+      maxVerify: stage?.maxVerify ?? 0,
+      verifyTimeoutSec: stage?.verifyTimeoutSec ?? null,
+      turn: 1,
+      red: 0,
+      verifyRuns: 0,
+      lastReport: null,
+      lastResult: null,
+      currentPrompt: turnPrompt,
+      currentAgentId: agentId,
+      currentSession: newSession,
+      pendingVerify: null,
+    });
+  }
+
+  /** Finish a cancelled execution that has been reopened in place. Does not create an attempt. */
+  async continueCancelled(workspace: string, sessionId: string, executionId: string): Promise<RunResult> {
+    const workspacePath = resolveWorkspace(workspace);
+    const store = new SessionStore(workspacePath);
+    const context = store.executionContext(sessionId, executionId);
+    if (context === null) throw new Error(`Execution ${executionId} was not found in session ${sessionId}.`);
+    const metadata = JSON.parse(readFileSync(path.join(context.directory, "execution.json"), "utf8")) as unknown;
+    if (!isRecord(metadata)) throw new Error(`Execution ${executionId} is unreadable.`);
+    if (metadata.status !== "running") {
+      throw new Error(`Execution ${executionId} is ${String(metadata.status)}, not running.`);
+    }
+    const providerKey = typeof metadata.provider === "string" ? metadata.provider.toLowerCase() : "";
+    const model = typeof metadata.model === "string" ? metadata.model : "";
+    const adapter = this.adapters[providerKey];
+    if (adapter === undefined) {
+      const supported = Object.keys(this.adapters).sort().join(", ");
+      throw new Error(`Unsupported CLI provider: ${String(metadata.provider)}. Supported: ${supported}`);
+    }
+    const resolvedOptions = stringOptions(metadata.options);
+    adapter.validateOptions(resolvedOptions);
+    const profile = profileOptions(adapter, resolvedOptions);
+    const record = AgentSessionRecord.fromJson(
+      JSON.parse(readFileSync(context.conversationReadPath, "utf8")) as unknown,
+      providerKey,
+      model,
+      workspacePath,
+    );
+    record.status = "running";
+    store.save(record, context);
+    const stageId = typeof metadata.stage_id === "string" ? metadata.stage_id : "agent";
+    const stage = loadRunStage(store, sessionId, stageId);
+    const decisionValues = stage?.decisionValues ?? [];
+    const artifactName = stage?.artifact ?? null;
+    const verifyCommands = stage?.verify ?? [];
+    const eventReporter = new ProviderEventReporter(store, context, providerKey, model, this.itemProgress);
+    const progress = verifyProgress(metadata);
+    const assistants = record.history.filter((item) => item.role === "assistant").length;
+    const last = record.history.at(-1);
+    const lastRole = last && typeof last.role === "string" ? last.role : "";
+    if (last === undefined || lastRole !== "assistant") {
+      if (lastRole !== "user" || typeof last?.content !== "string" || last.content === "") {
+        throw new ConfigurationError(`Execution ${executionId} has no prompt to resume.`);
+      }
+      const agentId = record.agentId;
+      // The first turn is sent as prompt.md, contract included. A later repair turn
+      // stores only the repair text, and the loop adds the contract again before sending.
+      let currentPrompt: string;
+      if (assistants === 0) {
+        try {
+          currentPrompt = readFileSync(path.join(context.directory, "prompt.md"), "utf8");
+        } catch {
+          throw new ConfigurationError(`Execution ${executionId} has no prompt to resume.`);
+        }
+      } else {
+        currentPrompt = agentId
+          ? last.content
+          : flattenHistory(record.history as Array<{ role: string; content: string }>);
+        currentPrompt = addStageOutcomeContract(currentPrompt, decisionValues);
+      }
+      return this.driveTurns({
+        adapter,
+        model,
+        workspacePath,
+        resolvedOptions,
+        profile,
+        store,
+        context,
+        record,
+        eventReporter,
+        sessionId,
+        stage,
+        decisionValues,
+        artifactName,
+        verifyCommands,
+        maxVerify: stage?.maxVerify ?? 0,
+        verifyTimeoutSec: stage?.verifyTimeoutSec ?? null,
+        turn: Math.max(1, assistants + 1),
+        red: progress.red,
+        verifyRuns: progress.runs,
+        lastReport: progress.lastReport,
+        lastResult: progress.lastResult,
+        currentPrompt,
+        currentAgentId: agentId,
+        currentSession: null,
+        pendingVerify: null,
+      });
+    }
+    const turn = Math.max(1, assistants);
+    const responseText = savedResponse(context, last);
+    let outcome: StageOutcome | null = null;
+    let invokeError: string | null = null;
+    try {
+      outcome = savedOutcome(store, context, turn, responseText, sessionId !== null, decisionValues);
+    } catch (error) {
+      if (!(error instanceof Error)) throw error;
+      invokeError = error.message;
+    }
+    return this.driveTurns({
+      adapter,
+      model,
+      workspacePath,
+      resolvedOptions,
+      profile,
+      store,
+      context,
+      record,
+      eventReporter,
+      sessionId,
+      stage,
+      decisionValues,
+      artifactName,
+      verifyCommands,
+      maxVerify: stage?.maxVerify ?? 0,
+      verifyTimeoutSec: stage?.verifyTimeoutSec ?? null,
+      turn,
+      red: progress.red,
+      verifyRuns: progress.runs,
+      lastReport: progress.lastReport,
+      lastResult: progress.lastResult,
+      currentPrompt: "",
+      currentAgentId: record.agentId,
+      currentSession: null,
+      pendingVerify: { responseText, outcome, invokeError },
+    });
+  }
+
+  private async driveTurns(state: TurnDrive): Promise<RunResult> {
+    const {
+      adapter,
+      model,
+      workspacePath,
+      resolvedOptions,
+      profile,
+      store,
+      context,
+      record,
+      eventReporter,
+      sessionId,
+      stage,
+      decisionValues,
+      artifactName,
+      verifyCommands,
+    } = state;
+    const maxVerify = state.maxVerify;
+    let turn = state.turn;
+    let red = state.red;
+    let verifyRuns = state.verifyRuns;
+    let lastReport = state.lastReport;
+    let lastResult = state.lastResult;
+    let currentPrompt = state.currentPrompt;
+    let currentAgentId = state.currentAgentId;
+    let currentSession = state.currentSession;
+    let pendingVerify = state.pendingVerify;
+    let responseText = pendingVerify?.responseText ?? "";
+    let outcome: StageOutcome | null = pendingVerify?.outcome ?? null;
+    let failureReason = "";
     const markCancelled = (error: unknown): never => {
       if (error instanceof CancellationRequested) {
         eventReporter.emit("provider.cancelled", "cancellation requested");
@@ -152,19 +337,6 @@ export class AgentToolRunner {
       }
       throw error;
     };
-
-    const maxVerify = stage?.maxVerify ?? 0;
-    let turn = 1;
-    let red = 0;
-    let verifyRuns = 0;
-    let lastReport: string | null = null;
-    let lastResult: "pass" | "fail" | null = null;
-    let currentPrompt = turnPrompt;
-    let currentAgentId = agentId;
-    let currentSession = newSession;
-    let responseText: string;
-    let outcome: StageOutcome | null;
-    let failureReason = "";
     const extraFields = (reason: string | null = null): Record<string, unknown> | null => {
       if (verifyCommands.length === 0) return null;
       const fields: Record<string, unknown> = { turns: turn };
@@ -181,65 +353,78 @@ export class AgentToolRunner {
       return fields;
     };
     while (true) {
-      let parsedProviderId: string | null;
-      let invokeError: string | null;
-      try {
-        [responseText, parsedProviderId, invokeError] = await this.runTurn(
-          adapter,
-          request.model,
-          workspacePath,
-          currentPrompt,
-          currentAgentId,
-          currentSession,
-          resolvedOptions,
-          eventReporter,
-          store,
-          context,
-        );
-      } catch (error) {
-        return markCancelled(error);
-      }
-
-      eventReporter.emit(
-        invokeError === null ? "provider.turn_completed" : "provider.turn_failed",
-        invokeError === null ? "completed" : invokeError,
-      );
-      record.agentId = parsedProviderId || record.agentId;
-      record.model = request.model;
-      record.options = profile;
-      record.workspace = workspacePath;
-      outcome = null;
-      if (invokeError === null) {
+      let invokeError: string | null = null;
+      if (pendingVerify) {
+        responseText = pendingVerify.responseText;
+        outcome = pendingVerify.outcome;
+        invokeError = pendingVerify.invokeError;
+        pendingVerify = null;
+      } else {
+        let parsedProviderId: string | null;
         try {
-          outcome = parseStageOutcome(responseText, sessionId !== null, decisionValues);
+          [responseText, parsedProviderId, invokeError] = await this.runTurn(
+            adapter,
+            model,
+            workspacePath,
+            currentPrompt,
+            currentAgentId,
+            currentSession,
+            resolvedOptions,
+            eventReporter,
+            store,
+            context,
+          );
         } catch (error) {
-          if (!(error instanceof Error)) throw error;
-          invokeError = error.message;
+          return markCancelled(error);
+        }
+
+        eventReporter.emit(
+          invokeError === null ? "provider.turn_completed" : "provider.turn_failed",
+          invokeError === null ? "completed" : invokeError,
+        );
+        record.agentId = parsedProviderId || record.agentId;
+        record.model = model;
+        record.options = profile;
+        record.workspace = workspacePath;
+        outcome = null;
+        if (invokeError === null) {
+          try {
+            outcome = parseStageOutcome(responseText, sessionId !== null, decisionValues);
+          } catch (error) {
+            if (!(error instanceof Error)) throw error;
+            invokeError = error.message;
+          }
+        }
+        if (invokeError === null && outcome?.status === "complete" && artifactName) {
+          const artifactPath = path.join(context.artifactDirectory, artifactName);
+          if (!nonemptyArtifact(artifactPath)) {
+            invokeError = `Stage artifact missing or empty: ${artifactName}.`;
+          }
+        }
+        if (invokeError === null && outcome !== null) {
+          const missing = store.missingCompletionOutputs(context, outcome);
+          if (missing.length > 0) {
+            invokeError = `Completion outputs missing or empty: ${missing.join(", ")}.`;
+          }
+        }
+        const needsVerify =
+          verifyCommands.length > 0 && invokeError === null && outcome?.status === "complete";
+        record.status = needsVerify ? "running" : invokeError === null ? "completed" : "failed";
+        record.history.push({ role: "assistant", content: responseText });
+        store.save(record, context);
+        store.saveResponse(context, responseText);
+        if (verifyCommands.length > 0) {
+          store.saveTurnResponse(context, turn, responseText);
+          if (outcome?.status === "complete") store.saveTurnOutcome(context, turn, outcome);
+        }
+        if (!needsVerify || outcome === null) {
+          store.saveExecution(context, record, record.status, invokeError, outcome, false, extraFields());
+          break;
         }
       }
-      if (invokeError === null && outcome?.status === "complete" && artifactName) {
-        const artifactPath = path.join(context.artifactDirectory, artifactName);
-        if (!nonemptyArtifact(artifactPath)) {
-          invokeError = `Stage artifact missing or empty: ${artifactName}.`;
-        }
-      }
-      if (invokeError === null && outcome !== null) {
-        const missing = store.missingCompletionOutputs(context, outcome);
-        if (missing.length > 0) {
-          invokeError = `Completion outputs missing or empty: ${missing.join(", ")}.`;
-        }
-      }
-      const needsVerify =
-        verifyCommands.length > 0 && invokeError === null && outcome?.status === "complete";
-      record.status = needsVerify ? "running" : invokeError === null ? "completed" : "failed";
-      record.history.push({ role: "assistant", content: responseText });
-      store.save(record, context);
-      store.saveResponse(context, responseText);
-      if (verifyCommands.length > 0) {
-        store.saveTurnResponse(context, turn, responseText);
-        if (outcome?.status === "complete") store.saveTurnOutcome(context, turn, outcome);
-      }
-      if (!needsVerify || outcome === null) {
+      if (invokeError !== null || outcome === null || outcome.status !== "complete" || verifyCommands.length === 0) {
+        record.status = invokeError === null && outcome !== null ? "completed" : "failed";
+        store.save(record, context);
         store.saveExecution(context, record, record.status, invokeError, outcome, false, extraFields());
         break;
       }
@@ -522,4 +707,87 @@ function isMissingPath(error: unknown): boolean {
     "code" in error &&
     (error as { code?: unknown }).code === "ENOENT"
   );
+}
+
+interface PendingVerify {
+  responseText: string;
+  outcome: StageOutcome | null;
+  invokeError: string | null;
+}
+
+interface TurnDrive {
+  adapter: AgentAdapter;
+  model: string;
+  workspacePath: string;
+  resolvedOptions: Record<string, string>;
+  profile: Record<string, string>;
+  store: SessionStore;
+  context: ExecutionContext;
+  record: AgentSessionRecord;
+  eventReporter: ProviderEventReporter;
+  sessionId: string | null;
+  stage: StageSpec | null;
+  decisionValues: string[];
+  artifactName: string | null;
+  verifyCommands: string[];
+  maxVerify: number;
+  verifyTimeoutSec: number | null;
+  turn: number;
+  red: number;
+  verifyRuns: number;
+  lastReport: string | null;
+  lastResult: "pass" | "fail" | null;
+  currentPrompt: string;
+  currentAgentId: string | null;
+  currentSession: NewSession | null;
+  pendingVerify: PendingVerify | null;
+}
+
+function verifyProgress(metadata: Record<string, unknown>): {
+  red: number;
+  runs: number;
+  lastReport: string | null;
+  lastResult: "pass" | "fail" | null;
+} {
+  const verify = isRecord(metadata.verify) ? metadata.verify : null;
+  const lastResult = verify?.last_result === "pass" || verify?.last_result === "fail" ? verify.last_result : null;
+  return {
+    red: typeof verify?.red === "number" ? verify.red : 0,
+    runs: typeof verify?.runs === "number" ? verify.runs : 0,
+    lastReport: typeof verify?.last_report === "string" ? verify.last_report : null,
+    lastResult,
+  };
+}
+
+function savedResponse(context: ExecutionContext, last: Record<string, string>): string {
+  try {
+    return readFileSync(path.join(context.directory, "response.md"), "utf8");
+  } catch {
+    return typeof last.content === "string" ? last.content : "";
+  }
+}
+
+function savedOutcome(
+  store: SessionStore,
+  context: ExecutionContext,
+  turn: number,
+  responseText: string,
+  required: boolean,
+  decisionValues: readonly string[],
+): StageOutcome | null {
+  try {
+    const raw = JSON.parse(
+      readFileSync(path.join(store.turnDirectory(context, turn), "outcome.json"), "utf8"),
+    ) as unknown;
+    if (isRecord(raw) && typeof raw.status === "string" && raw.status) {
+      return new StageOutcome(
+        raw.status,
+        typeof raw.blocker === "string" && raw.blocker ? raw.blocker : null,
+        typeof raw.decision === "string" && raw.decision ? raw.decision : null,
+      );
+    }
+  } catch {
+    // The saved response is the fallback.
+  }
+  return parseStageOutcome(responseText, required, decisionValues);
 }

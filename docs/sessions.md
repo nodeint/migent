@@ -54,9 +54,10 @@ The session-level files have distinct purposes:
 - `executions/<id>/stream.jsonl` holds `provider.item_*` and `provider.heartbeat`
   for that execution. Other provider events, including `verify.heartbeat`, stay
   in `events.jsonl`.
-- `executions/` contains one record for every stage attempt. A completed,
-  failed, or cancelled execution record is immutable. Execution directory names
-  are ordered, for example `0002-review--attempt-01`.
+- `executions/` contains one record for every stage attempt. A completed or
+  failed execution record is immutable. `session continue` reopens a cancelled
+  execution in place; the cancelled event stays in the log. Execution directory
+  names are ordered, for example `0002-review--attempt-01`.
 - `outputs/` contains the artifacts selected by the workflow's `completion`
   block. It is created only when the workflow reaches its configured completion
   condition and all selected artifacts are non-empty.
@@ -149,7 +150,9 @@ until the session stops when `--exit-when-done` is set. `session continue`
 resumes an active workflow session from its recorded state and resets revision
 counts. A blocked session is resumed the same way: continue dispatches that
 stage again, and the new prompt includes the blocker and the previous response.
-`completed` and `cancelled` sessions stay stopped. `session continue --once`
+A cancelled session is resumed on that same execution. A provider turn that was
+cut off is sent again. When the reply was already saved, verify runs again.
+`completed` sessions stay stopped. `session continue --once`
 advances one stage and does not reset revision counts.
 
 A session with status `prepared` is not resumed by `session continue`. Write

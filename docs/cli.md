@@ -71,7 +71,9 @@ ceiling. Do not combine `--once` with `--attempts`, `--max-dispatches`, or
 the workflow. `session continue` resets the session's revision counts before
 dispatching. `session continue --once` does not. On a blocked session, both
 forms dispatch that stage again. The new prompt includes the blocker and the
-previous response. `completed` and `cancelled` sessions stay stopped. The
+previous response. A cancelled session is resumed on that same execution: a
+provider turn that was cut off is sent again, and a verify that was cut off
+runs again. `completed` sessions stay stopped. The
 existing session history and artifacts remain available to later stages.
 
 A workflow run's stdout is one JSON result: `session_id`, `session_status`, `stop_reason`,

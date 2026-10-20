@@ -1,4 +1,4 @@
-import { AgentToolRunner } from "./agent-runner.js";
+import { AgentToolRunner, type RunResult } from "./agent-runner.js";
 import { CancellationRequested, raiseCancellation } from "./command-executor.js";
 import { loadRoleInstructions, loadYamlMapping, resolveStageTarget } from "./config.js";
 import { ConfigurationError } from "./errors.js";
@@ -118,6 +118,7 @@ async function executeLocked(
   let sessionId = request.sessionId ?? null;
   let workflow: WorkflowDocument | null = null;
   let workflowId: string;
+  let resumeCancelled = false;
   if (sessionId) {
     held.lock = SessionLock.acquire(path.join(workspace, ".migent", "sessions", sessionId));
     repairSessionUnlocked(workspace, sessionId);
@@ -145,7 +146,9 @@ async function executeLocked(
       const stageLabel = resumed.stageId || "its stage";
       log(`session ${sessionId} was blocked by ${resumed.executionId}. Resuming ${stageLabel}.`);
     }
-    if (TERMINAL_SESSION_STATUSES.has(sessionStatus)) {
+    if (sessionStatus === "cancelled") {
+      resumeCancelled = true;
+    } else if (TERMINAL_SESSION_STATUSES.has(sessionStatus)) {
       return executeFinal(bound.status, sessionStatus, []);
     }
   } else {
@@ -164,8 +167,13 @@ async function executeLocked(
     store.reapOrphanedExecutions(sessionId, "raise");
     const snapshots = store.executionSnapshots(sessionId);
     const status = store.readSessionStatus(sessionId);
-    const selected = selectedStage(workflow, snapshots, text(status.status));
-    if (selected instanceof NextStage) store.resetRevisionCounts(sessionId, snapshots);
+    const current = text(status.status);
+    if (current === "cancelled") {
+      store.resetRevisionCounts(sessionId, snapshots);
+    } else {
+      const selected = selectedStage(workflow, snapshots, current);
+      if (selected instanceof NextStage) store.resetRevisionCounts(sessionId, snapshots);
+    }
   }
   const onSigint = () => {
     try {
@@ -185,6 +193,38 @@ async function executeLocked(
   process.on("SIGTERM", onSigterm);
   try {
     const activeRunner = runner ?? new AgentToolRunner();
+    if (resumeCancelled) {
+      const reopened = store.reopenCancelledExecution(sessionId);
+      log(`session ${sessionId} was cancelled during ${reopened.executionId}. Resuming that execution.`);
+      const continued = await activeRunner.continueCancelled(workspace, sessionId, reopened.executionId);
+      const outcome = continued.outcome_status || (continued.failure_reason ? "failed" : "finished");
+      const decision = continued.outcome_decision ? ` decision=${continued.outcome_decision}` : "";
+      log(`stage ${reopened.stageId || "stage"} · ${outcome}${decision}.`);
+      const stageJson = runResultJson(continued);
+      const status = store.readSessionStatus(sessionId);
+      const after = text(status.status);
+      if (continued.failure_reason === VERIFY_EXHAUSTED) {
+        return executeFinal(status, VERIFY_EXHAUSTED, [stageJson]);
+      }
+      if (once || stageId !== null || TERMINAL_SESSION_STATUSES.has(after)) {
+        const stopReason = TERMINAL_SESSION_STATUSES.has(after) ? after : "stage";
+        const result = executeFinal(status, stopReason, [stageJson]);
+        if (stopReason === "stage" && continued.outcome_status !== "complete") result.code = 1;
+        return result;
+      }
+      const rest = await runExecuteLoop(
+        workspace,
+        store,
+        workflow,
+        workflowId,
+        sessionId,
+        maxAttempts,
+        maxDispatches,
+        activeRunner,
+      );
+      rest.stages = [stageJson, ...rest.stages];
+      return rest;
+    }
     if (once || stageId !== null) {
       return await runExecuteOnce(workspace, store, workflow, workflowId, sessionId, stageId, activeRunner);
     }
@@ -448,6 +488,21 @@ function revisionBaselines(status: Record<string, unknown>): Record<string, numb
     if (typeof value === "number") baselines[key] = value;
   }
   return baselines;
+}
+
+function runResultJson(result: RunResult): Record<string, unknown> {
+  return {
+    agent_id: result.agent_id,
+    options: { ...result.options },
+    session_id: result.session_id,
+    execution_id: result.execution_id,
+    artifact_directory: result.artifact_directory,
+    failure_reason: result.failure_reason,
+    outcome_status: result.outcome_status,
+    outcome_decision: result.outcome_decision,
+    session_status: result.session_status,
+    response: result.response,
+  };
 }
 
 function executeFinal(

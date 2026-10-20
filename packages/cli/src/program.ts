@@ -232,7 +232,7 @@ const ROLE_EXITS = [
   "Exit 0 when the outcome is complete.",
   "Exit 1 when the outcome is not complete.",
   "Exit 2 on a configuration error.",
-  "Exit 130 when cancelled.",
+  "Exit 130 when cancelled. A later run of this session resumes that execution.",
 ];
 
 const RUN_SPLIT = "Pass --workflow for a workflow run, or --role for an agent run.";

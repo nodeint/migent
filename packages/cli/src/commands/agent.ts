@@ -71,10 +71,16 @@ export async function dispatchAgent(
 
   async function runLocked(): Promise<number> {
     let resumeExecutionId: string | null = null;
+    let resumeCancelled = false;
     if (!createdSession) {
       repairSessionUnlocked(workspace, resolvedSessionId);
-      const previous = new SessionStore(workspace).latestExecution(resolvedSessionId);
-      if (previous !== null) resumeExecutionId = previous.executionId;
+      const store = new SessionStore(workspace);
+      if (store.readSessionStatus(resolvedSessionId).status === "cancelled") {
+        resumeCancelled = true;
+      } else {
+        const previous = store.latestExecution(resolvedSessionId);
+        if (previous !== null) resumeExecutionId = previous.executionId;
+      }
     }
     const optionLabel =
       Object.entries(target.options)
@@ -85,23 +91,29 @@ export async function dispatchAgent(
     let result: Awaited<ReturnType<AgentToolRunner["run"]>>;
     try {
       const runner = args.runner ?? cliHooks.runner ?? new AgentToolRunner(adapterMap());
-      result = await runner.run({
-        provider: target.provider,
-        model: target.model,
-        options: { ...target.options },
-        prompt: prependRoleInstructions(
-          loadRoleInstructions(loadYamlMapping(path.join(workspace, ".migent", "config.yaml")), args.role),
-          resolvePrompt({
-            prompt: args.prompt ?? null,
-            promptFile: args.promptFile ?? null,
-            promptStdin: args.promptStdin ?? false,
-          }),
-        ),
-        workspace,
-        sessionId: resolvedSessionId,
-        resumeExecutionId,
-        stageId: args.role,
-      });
+      if (resumeCancelled) {
+        const reopened = new SessionStore(workspace).reopenCancelledExecution(resolvedSessionId);
+        log(`session ${resolvedSessionId} was cancelled during ${reopened.executionId}. Resuming that execution.`);
+        result = await runner.continueCancelled(workspace, resolvedSessionId, reopened.executionId);
+      } else {
+        result = await runner.run({
+          provider: target.provider,
+          model: target.model,
+          options: { ...target.options },
+          prompt: prependRoleInstructions(
+            loadRoleInstructions(loadYamlMapping(path.join(workspace, ".migent", "config.yaml")), args.role),
+            resolvePrompt({
+              prompt: args.prompt ?? null,
+              promptFile: args.promptFile ?? null,
+              promptStdin: args.promptStdin ?? false,
+            }),
+          ),
+          workspace,
+          sessionId: resolvedSessionId,
+          resumeExecutionId,
+          stageId: args.role,
+        });
+      }
     } catch (error) {
       if (error instanceof CancellationRequested) {
         log(error.message);

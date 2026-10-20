@@ -398,7 +398,7 @@ test("execute requires prior session then completes plan implement", async () =>
   }
 });
 
-test("continue redispatches a blocked session and leaves completed or cancelled sessions stopped", async () => {
+test("continue redispatches a blocked session, leaves completed sessions stopped, and finalizes a cancelled execution in place", async () => {
   const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
   try {
     const blockedAdapter = new ScriptedAdapter(
@@ -464,11 +464,14 @@ test("continue redispatches a blocked session and leaves completed or cancelled 
     const execution = JSON.parse(readFileSync(executionPath, "utf8")) as Record<string, unknown>;
     execution.status = "cancelled";
     writeFileSync(executionPath, JSON.stringify(execution), "utf8");
+    const before = executions(completedWorkspace, cancelledId);
     const unused2 = new ScriptedAdapter(["status: complete\n\nnope"], ["# x\n"]);
     const [code4, objects4] = await runExecute(completedWorkspace, ["session", "continue", cancelledId], unused2);
-    expect(code4).toBe(130);
-    expect(objects4.at(-1)?.stop_reason).toBe("cancelled");
+    expect(code4).toBe(0);
+    expect(objects4.at(-1)?.stop_reason).toBe("completed");
+    expect(objects4[0]?.execution_id).toBe(status.latest_execution_id);
     expect(unused2.calls).toEqual([]);
+    expect(executions(completedWorkspace, cancelledId)).toEqual(before);
   } finally {
     removeWorkspace(completedWorkspace);
   }
