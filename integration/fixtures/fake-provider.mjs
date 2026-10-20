@@ -1,7 +1,7 @@
 // Fake codex and grok CLIs for integration tests. bin/<name> (POSIX) and bin/<name>.cmd
 // (Windows) run this file with the provider name first, so tests go through the same PATH
 // lookup and spawn path as the real CLIs.
-import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 const [provider, ...args] = process.argv.slice(2);
@@ -33,6 +33,43 @@ function promptStage(prompt) {
   return match ? match[1] : "";
 }
 
+// A later visit is only "Continue this stage." Several of those prompts match, so claim one
+// running execution inside the cursor lock. The lowest order is claimed first.
+function continuationMatches(prompt) {
+  const cwd = argAfter("--cwd") || process.cwd();
+  const sessions = path.join(cwd, ".migent", "sessions");
+  if (!existsSync(sessions)) return [];
+  const matches = [];
+  for (const session of readdirSync(sessions)) {
+    const executions = path.join(sessions, session, "executions");
+    if (!existsSync(executions)) continue;
+    for (const id of readdirSync(executions)) {
+      const directory = path.join(executions, id);
+      let meta;
+      try {
+        meta = JSON.parse(readFileSync(path.join(directory, "execution.json"), "utf8"));
+      } catch {
+        continue;
+      }
+      if (!meta || meta.status !== "running" || typeof meta.stage_id !== "string") continue;
+      let saved = "";
+      try {
+        saved = readFileSync(path.join(directory, "prompt.md"), "utf8");
+      } catch {
+        continue;
+      }
+      if (saved !== prompt) continue;
+      matches.push({
+        stage: meta.stage_id,
+        order: Number(meta.execution_order) || 0,
+        id: typeof meta.execution_id === "string" ? meta.execution_id : id,
+      });
+    }
+  }
+  matches.sort((left, right) => left.order - right.order || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
+  return matches;
+}
+
 function takeStep(prompt) {
   const script = process.env.MIGENT_FAKE_SCRIPT;
   if (!script) return {};
@@ -40,7 +77,6 @@ function takeStep(prompt) {
   if (!Array.isArray(steps)) return { text: "script must be a list", exit: 9 };
   const cursor = process.env.MIGENT_FAKE_CURSOR;
   mkdirSync(path.dirname(cursor), { recursive: true });
-  const stage = promptStage(prompt);
   const staged = steps.some((step) => step && typeof step === "object" && typeof step.stage === "string");
   if (!staged) {
     return withCursorLock(cursor, () => {
@@ -54,16 +90,28 @@ function takeStep(prompt) {
   return withCursorLock(cursor, () => {
     const raw = existsSync(cursor) ? readFileSync(cursor, "ascii").trim() : "";
     const used = new Set(raw.startsWith("s:") ? raw.slice(2).split(",").filter(Boolean) : []);
-    let chosenIndex = steps.findIndex((step, index) => !used.has(String(index)) && step && step.stage === stage);
-    if (chosenIndex < 0) {
-      chosenIndex = steps.findIndex(
-        (step, index) => !used.has(String(index)) && step && typeof step === "object" && step.stage == null,
+    const named = promptStage(prompt);
+    const candidates = named
+      ? [{ stage: named, id: "" }]
+      : continuationMatches(prompt).filter((match) => !existsSync(`${cursor}.claim.${match.id}`));
+    for (const candidate of candidates) {
+      const chosenIndex = steps.findIndex(
+        (step, index) => !used.has(String(index)) && step && step.stage === candidate.stage,
       );
+      if (chosenIndex < 0) continue;
+      if (!named) writeFileSync(`${cursor}.claim.${candidate.id}`, candidate.stage);
+      used.add(String(chosenIndex));
+      writeFileSync(cursor, `s:${[...used].join(",")}`, "ascii");
+      const step = steps[chosenIndex];
+      return step && typeof step === "object" ? step : { text: "script exhausted", exit: 9 };
     }
-    if (chosenIndex < 0) return { text: "script exhausted", exit: 9 };
-    used.add(String(chosenIndex));
+    const openIndex = steps.findIndex(
+      (step, index) => !used.has(String(index)) && step && typeof step === "object" && step.stage == null,
+    );
+    if (openIndex < 0) return { text: "script exhausted", exit: 9 };
+    used.add(String(openIndex));
     writeFileSync(cursor, `s:${[...used].join(",")}`, "ascii");
-    const step = steps[chosenIndex];
+    const step = steps[openIndex];
     return step && typeof step === "object" ? step : { text: "script exhausted", exit: 9 };
   });
 }
@@ -168,7 +216,7 @@ const prompt = provider === "codex"
       return promptFile === undefined ? "" : readFileSync(promptFile, "utf8");
     })();
 const step = takeStep(prompt);
-const stage = promptStage(prompt);
+const stage = promptStage(prompt) || (typeof step.stage === "string" ? step.stage : "");
 markSeen(stage);
 if (typeof step.wait_stage === "string" && step.wait_stage) waitForStage(step.wait_stage);
 if (typeof step.delay_ms === "number" && step.delay_ms > 0) sleepMs(step.delay_ms);
