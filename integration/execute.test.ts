@@ -118,13 +118,14 @@ test("revise publishes the later plan", async () => {
   }
 }, 30_000);
 
-test("blocked review is not dispatched again", async () => {
+test("continue redispatches a blocked review", async () => {
   const workspace = tempWorkspace();
   try {
     writeWorkspace(workspace, GROK_CONFIG, { plan: PLAN_REVIEW });
     installScript(workspace, [
       { text: COMPLETE, artifact: "# plan\n" },
       { text: BLOCKED },
+      { text: APPROVED },
     ]);
     const [code, objects, stderr] = await runMain(workspace, ["session", "run", "--workflow", "plan", "--task", "Write a plan"]);
     expect(code, stderr).toBe(1);
@@ -133,16 +134,18 @@ test("blocked review is not dispatched again", async () => {
     expect(result.session_status).toBe("blocked");
     expect(sessionStatus(workspace, String(result.session_id)).status).toBe("blocked");
     expect(providerInvocations(workspace)).toHaveLength(2);
-    for (const argv of [
-      ["session", "continue", String(result.session_id), "--verbose"],
-      ["session", "continue", String(result.session_id), "--once", "--verbose"],
-    ]) {
-      const [stoppedCode, stopped, stoppedStderr] = await runMain(workspace, argv);
-      expect(stoppedCode, stoppedStderr).toBe(1);
-      expect(stopped[0]?.stop_reason).toBe("blocked");
-      expect(stopped[0]?.stages).toEqual([]);
-    }
-    expect(providerInvocations(workspace)).toHaveLength(2);
+    const sessionId = String(result.session_id);
+    const [resumedCode, resumed, resumedStderr] = await runMain(workspace, ["session", "continue", sessionId, "--once", "--verbose"]);
+    expect(resumedCode, resumedStderr).toBe(0);
+    expect(resumed[0]?.session_status).toBe("completed");
+    expect(providerInvocations(workspace)).toHaveLength(3);
+    const stages = asRecords(resumed[0]?.stages);
+    const response = String(stages[0]?.response ?? "");
+    expect(response).toContain("decision: approved");
+    const [againCode, again, againStderr] = await runMain(workspace, ["session", "continue", sessionId]);
+    expect(againCode, againStderr).toBe(0);
+    expect(again[0]?.stop_reason).toBe("completed");
+    expect(providerInvocations(workspace)).toHaveLength(3);
   } finally {
     removeWorkspace(workspace);
   }

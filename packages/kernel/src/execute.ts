@@ -139,6 +139,12 @@ async function executeLocked(
         `Session ${sessionId} is prepared. Run: ${preparedRunHint(sessionId, bound.status)}`,
       );
     }
+    if (sessionStatus === "blocked") {
+      const resumed = store.resumeBlockedSession(sessionId);
+      sessionStatus = "active";
+      const stageLabel = resumed.stageId || "its stage";
+      log(`session ${sessionId} was blocked by ${resumed.executionId}. Resuming ${stageLabel}.`);
+    }
     if (TERMINAL_SESSION_STATUSES.has(sessionStatus)) {
       return executeFinal(bound.status, sessionStatus, []);
     }

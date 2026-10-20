@@ -147,7 +147,11 @@ migent session repair <session-id>
 and the snapshot. `session follow` follows execution events until a signal, or
 until the session stops when `--exit-when-done` is set. `session continue`
 resumes an active workflow session from its recorded state and resets revision
-counts. `session continue --once` advances one stage and does not reset them.
+counts. A blocked session is resumed the same way: continue dispatches that
+stage again, and the new prompt includes the blocker and the previous response.
+`completed` and `cancelled` sessions stay stopped. `session continue --once`
+advances one stage and does not reset revision counts.
+
 A session with status `prepared` is not resumed by `session continue`. Write
 `task.md`, then run `migent session run --session <session-id> --workflow <workflow>`.
 

@@ -1,4 +1,4 @@
-import { realpathSync, statSync } from "node:fs";
+import { readFileSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import type { ExecutionSnapshot } from "./outputs.js";
 import { isRecord } from "./record.js";
@@ -52,6 +52,8 @@ export function buildStagePrompt(input: {
   }
   const prior = priorResultLines(input.workspace, input.priorSessionId, input.priorOutputs);
   if (prior.length > 0) sections.push(`Required prior workflow result:\n${prior.join("\n")}`);
+  const blocked = previousBlockedAttempt(input.stageId, input.snapshots);
+  if (blocked !== null) sections.push(blocked);
   if (stage.artifact) {
     sections.push(
       `Write the file artifact as \`${stage.artifact}\` in the execution artifacts directory.`,
@@ -152,6 +154,35 @@ function routedResultLines(
     if (isFile(artifact)) lines.push(`- Previous ${stageId} artifact: ${artifact}`);
   }
   return lines;
+}
+
+function previousBlockedAttempt(stageId: string, snapshots: readonly ExecutionSnapshot[]): string | null {
+  let latest: ExecutionSnapshot | null = null;
+  for (const snapshot of snapshots) {
+    if (snapshot.stageId !== stageId) continue;
+    if (latest === null || snapshot.executionOrder > latest.executionOrder) latest = snapshot;
+  }
+  if (latest === null || latest.status !== "completed" || latest.outcomeStatus !== "blocked") return null;
+  const executionDirectory = path.dirname(latest.artifactDirectory);
+  const lines = ["Previous attempt of this stage:", `- execution: ${latest.executionId}`];
+  const blocker = readOutcomeBlocker(path.join(executionDirectory, "execution.json"));
+  if (blocker) lines.push(`- blocker: ${blocker}`);
+  const responsePath = path.join(executionDirectory, "response.md");
+  if (isFile(responsePath)) lines.push(`- response: ${resolvePath(responsePath)}`);
+  lines.push("That attempt ended blocked. The blocker was handled outside this session. Continue this stage.");
+  return lines.join("\n");
+}
+
+function readOutcomeBlocker(filePath: string): string | null {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(filePath, "utf8")) as unknown;
+  } catch {
+    return null;
+  }
+  if (!isRecord(raw) || !isRecord(raw.outcome)) return null;
+  const blocker = raw.outcome.blocker;
+  return typeof blocker === "string" && blocker ? blocker : null;
 }
 
 function priorResultLines(

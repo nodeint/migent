@@ -12,6 +12,7 @@
 
 ### Changed
 
+- `session continue` on a blocked session dispatches that stage again. The new prompt includes the blocker and the previous response. `completed` and `cancelled` sessions stay stopped.
 - `provider.item_*` and `provider.heartbeat` are appended to `executions/<id>/stream.jsonl`. Other events, including `verify.heartbeat`, stay in `events.jsonl`. Heartbeats do not rewrite `status.json`. `session follow` merges `events.jsonl` with every execution stream in timestamp order. `--cursor` remains a byte offset into `events.jsonl`. `0` replays the whole log and every stream. Any other offset replays events from that byte, and stream lines whose timestamp is at or after the first event there.
 - Session files (`status.json`, `execution.json`, `manifest.yaml`, `task.md`, `prompt.md`, `response.md`) are written to a temp file, synced, and renamed, so a kill no longer leaves a truncated file. Event lines are synced when appended. A save writes its events before `status.json`.
 - One process writes a session at a time. `session run --session`, `session continue` and `session run --role --session` hold `session.lock` in the session directory. A second writer exits 2 with `Session <id> is being run by pid <n> on <host>.` A lock is stale after 30 s without a heartbeat, or when its pid is gone on the same host. A holder whose lock was taken stops before its next write. `session follow` reaps a dead owner only when it can take the lock.

@@ -370,6 +370,35 @@ export class SessionStore {
     return this.readSessionStatusAt(path.join(this.sessionsDirectory, sessionId));
   }
 
+  /** Record that continue is running the blocked stage again. The caller holds the session lock. */
+  resumeBlockedSession(sessionId: string): { executionId: string; stageId: string } {
+    const sessionDirectory = path.join(this.sessionsDirectory, sessionId);
+    assertSessionLockHeld(sessionDirectory);
+    const status = this.readSessionStatus(sessionId);
+    if (status.status !== "blocked") {
+      throw new ConfigurationError(`Session ${sessionId} is ${String(status.status)}, not blocked.`);
+    }
+    const executionId = textField(status.blocked_by_execution_id) ?? textField(status.latest_execution_id);
+    const stageId = textField(status.blocked_by_stage_id) ?? textField(status.latest_stage_id) ?? "";
+    if (!executionId) throw new ConfigurationError(`Session ${sessionId} is blocked without an execution.`);
+    const blocker = textField(status.blocker);
+    const data: Record<string, unknown> = { from: "blocked" };
+    if (blocker) data.blocker = blocker;
+    appendLifecycleEvent(sessionDirectory, {
+      event: "session.active",
+      timestamp: utcNow(),
+      executionId,
+      stageId: stageId || null,
+      data,
+    });
+    this.rewriteManifestStatus(sessionDirectory, "running");
+    const folded = commitFoldedStatus(this.workspace, sessionDirectory);
+    if (folded.status !== "active") {
+      throw new ConfigurationError(`Session ${sessionId} stayed ${String(folded.status)} after resume.`);
+    }
+    return { executionId, stageId };
+  }
+
   resetRevisionCounts(sessionId: string, snapshots: readonly ExecutionSnapshot[]): void {
     const sessionDirectory = path.join(this.sessionsDirectory, sessionId);
     assertSessionLockHeld(sessionDirectory);
@@ -813,6 +842,10 @@ export class SessionStore {
     }
     return snapshots;
   }
+}
+
+function textField(value: unknown): string | null {
+  return typeof value === "string" && value ? value : null;
 }
 
 function verifyReportPath(directory: string, verify: unknown): string | null {

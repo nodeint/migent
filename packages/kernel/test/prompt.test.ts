@@ -307,6 +307,48 @@ test("includes prior session published outputs", () => {
   expect(prompt).toContain(resolved(expected));
 });
 
+test("a blocked attempt is named in the next prompt", () => {
+  const root = tempDir("migent-prompt-");
+  const artifacts = path.join(root, "exec", "artifacts");
+  mkdirSync(artifacts, { recursive: true });
+  const executionDirectory = path.dirname(artifacts);
+  writeFileSync(
+    path.join(executionDirectory, "execution.json"),
+    JSON.stringify({ outcome: { status: "blocked", blocker: "gate clones" } }),
+    "utf8",
+  );
+  writeFileSync(path.join(executionDirectory, "response.md"), "status: blocked\nblocker: gate clones\n", "utf8");
+  const prompt = buildStagePrompt({
+    workflow: workflowFile("plan-implement"),
+    stageId: "implement",
+    snapshots: [snapshot("implement", 1, artifacts, { outcomeStatus: "blocked" })],
+    workspace: root,
+  });
+  expect(prompt).toContain("Previous attempt of this stage:");
+  expect(prompt).toContain("- execution: 0001-implement");
+  expect(prompt).toContain("- blocker: gate clones");
+  expect(prompt).toContain(resolved(path.join(executionDirectory, "response.md")));
+  expect(prompt).toContain("handled outside this session");
+});
+
+test("a later complete attempt drops the blocked note", () => {
+  const root = tempDir("migent-prompt-");
+  const blocked = path.join(root, "blocked", "artifacts");
+  const done = path.join(root, "done", "artifacts");
+  mkdirSync(blocked, { recursive: true });
+  mkdirSync(done, { recursive: true });
+  const prompt = buildStagePrompt({
+    workflow: workflowFile("plan-implement"),
+    stageId: "implement",
+    snapshots: [
+      snapshot("implement", 1, blocked, { outcomeStatus: "blocked" }),
+      snapshot("implement", 2, done),
+    ],
+    workspace: root,
+  });
+  expect(prompt).not.toContain("Previous attempt of this stage:");
+});
+
 test("rejects an undeclared stage", () => {
   expect(() =>
     buildStagePrompt({

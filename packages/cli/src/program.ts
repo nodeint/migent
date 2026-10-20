@@ -279,7 +279,7 @@ function registerSessionCommand(program: Command, status: CliStatus): void {
 
   const continueCommand = session
     .command("continue")
-    .description("Resume a workflow session until it stops. Resets revision counts. --once dispatches one stage and does not reset them.")
+    .description("Resume an active or blocked workflow session until it stops. Resets revision counts. --once dispatches one stage and does not reset them.")
     .argument("<session>", "Session to resume.");
   addDispatchOptions(
     continueCommand,

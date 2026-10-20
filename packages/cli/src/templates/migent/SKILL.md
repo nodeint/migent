@@ -108,15 +108,17 @@ A workflow result on stdout includes `stop_reason`. Read the exit code first.
 | Exit | Meaning | `stop_reason` | Session | What to do |
 | --- | --- | --- | --- | --- |
 | 0 | Completed (with `--once`: stage complete) | | completed or advancing | Report outputs. |
-| 1 | Blocked (with `--once`: stage not complete) | | see snapshot | Read `response_path` and fix the cause. |
+| 1 | Blocked (with `--once`: stage not complete) | `blocked`, or `stage` with `--once` | blocked, or active with `--once` | When `stop_reason` is `blocked`, read `response_path`, fix the cause, then `session continue`. That runs the blocked stage again and includes the blocker in its prompt. When `stop_reason` is `stage`, `session continue` keeps going. |
 | 2 | Configuration error | | unchanged | Run `migent doctor --json`, fix config. |
 | 3 | `--attempts` spent | `retry_exhausted` | active | Read `response_path`, fix the cause, then `session continue` (add `--attempts` for a higher total). |
 | 4 | A route would exceed `max_revisions` | `revisions_exhausted` | active | Review why the stage keeps being revised; `session continue` (without `--once`) resets counts for another batch. |
 | 5 | `--max-dispatches` spent | `dispatch_limit` | active | `session continue` the same session if more stages are appropriate. |
 | 130 | Cancelled | | see snapshot | Ask the user before resuming. |
 
-A stopped active session is resumable; do not describe it as completed. Do
-not start a replacement session to reset limits. If you change a workflow or
+A stopped active session is resumable; do not describe it as completed. A
+blocked session is resumed the same way: `session continue` runs that stage
+again. Do not start a replacement session to reset limits or to get past
+`blocked`. If you change a workflow or
 config while a session is active, run `migent doctor --json` and tell the user the
 session was created under the earlier definition.
 

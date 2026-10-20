@@ -128,6 +128,93 @@ test("blocked runs no verify command", async () => {
   expect(result.session_status).toBe("blocked");
 });
 
+const BLOCKED = "status: blocked\nblocker: gate clones\n\nstopped";
+
+test("continue redispatches a blocked stage and names the blocker", async () => {
+  const { workspace, sessionId } = setup(workflowText(`node -e "process.exit(0)"`));
+  const adapter = new ScriptedAdapter([BLOCKED, OK, OK], [null, "# notes\n", null]);
+  const runner = new AgentToolRunner({ fake: adapter }, 10);
+  const first = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId, maxAttempts: 3 }, runner);
+  expect(first.stopReason).toBe("blocked");
+  expect(first.code).toBe(1);
+  expect(new SessionStore(workspace).executionSnapshots(sessionId)).toHaveLength(1);
+
+  const second = await executeNamedWorkflow(
+    workspace,
+    { workflowId: "wf", sessionId, maxAttempts: 3, resetRevisions: true },
+    runner,
+  );
+  expect(second.code).toBe(0);
+  expect(second.status).toBe("completed");
+  const snapshots = new SessionStore(workspace).executionSnapshots(sessionId);
+  expect(snapshots.map((item) => item.stageId)).toEqual(["implement", "implement", "review"]);
+  expect(snapshots[1]?.outcomeStatus).toBe("complete");
+  expect(second.latestExecutionId).not.toBe(first.latestExecutionId);
+  expect(adapter.calls[1]?.prompt).toContain("gate clones");
+  expect(adapter.calls[1]?.prompt).toContain("handled outside this session");
+  const events = readFileSync(path.join(workspace, ".migent", "sessions", sessionId, "events.jsonl"), "utf8");
+  expect(events).toContain('"event":"session.active"');
+  expect(events).toContain('"from":"blocked"');
+  const status = new SessionStore(workspace).readSessionStatus(sessionId);
+  expect(status.blocker).toBeUndefined();
+  expect(status.blocked_by_execution_id).toBeUndefined();
+});
+
+test("continue once redispatches only the blocked stage", async () => {
+  const { workspace, sessionId } = setup(workflowText(`node -e "process.exit(0)"`));
+  const adapter = new ScriptedAdapter([BLOCKED, OK], [null, "# notes\n"]);
+  const runner = new AgentToolRunner({ fake: adapter }, 10);
+  const first = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId, maxAttempts: 3 }, runner);
+  expect(first.stopReason).toBe("blocked");
+
+  const second = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId, once: true }, runner);
+  expect(second.code).toBe(0);
+  expect(second.status).toBe("active");
+  expect(second.stopReason).toBe("stage");
+  const snapshots = new SessionStore(workspace).executionSnapshots(sessionId);
+  expect(snapshots).toHaveLength(2);
+  expect(snapshots[1]?.stageId).toBe("implement");
+  expect(snapshots[1]?.outcomeStatus).toBe("complete");
+  expect(adapter.calls[1]?.prompt).toContain("gate clones");
+});
+
+test("a blocked retry stops again without dispatching the next stage", async () => {
+  const { workspace, sessionId } = setup(workflowText(`node -e "process.exit(0)"`));
+  const adapter = new ScriptedAdapter([BLOCKED, BLOCKED], [null, null]);
+  const runner = new AgentToolRunner({ fake: adapter }, 10);
+  const first = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId, maxAttempts: 3 }, runner);
+  const second = await executeNamedWorkflow(
+    workspace,
+    { workflowId: "wf", sessionId, maxAttempts: 3, resetRevisions: true },
+    runner,
+  );
+  expect(second.stopReason).toBe("blocked");
+  expect(second.code).toBe(1);
+  expect(second.latestExecutionId).not.toBe(first.latestExecutionId);
+  const snapshots = new SessionStore(workspace).executionSnapshots(sessionId);
+  expect(snapshots).toHaveLength(2);
+  expect(snapshots.every((item) => item.stageId === "implement")).toBe(true);
+  expect(adapter.calls).toHaveLength(2);
+});
+
+test("continue redispatches a blocked schema 2 session", async () => {
+  const { workspace, sessionId } = setup(workflowText(`node -e "process.exit(0)"`));
+  const adapter = new ScriptedAdapter([BLOCKED, OK], [null, "# notes\n"]);
+  const runner = new AgentToolRunner({ fake: adapter }, 10);
+  const first = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId, maxAttempts: 3 }, runner);
+  expect(first.stopReason).toBe("blocked");
+  const manifestPath = path.join(workspace, ".migent", "sessions", sessionId, "manifest.yaml");
+  writeFileSync(
+    manifestPath,
+    readFileSync(manifestPath, "utf8").replace("status: blocked\n", "status: blocked\nschema_version: 2\n"),
+    "utf8",
+  );
+  const second = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId, once: true }, runner);
+  expect(second.status).toBe("active");
+  expect(second.latestExecutionId).not.toBe(first.latestExecutionId);
+  expect(adapter.calls[1]?.prompt).toContain("gate clones");
+});
+
 test("exhausted verify stops with exit 6 and continue resumes without --attempts", async () => {
   const { workspace, sessionId } = setup(workflowText(`echo bad; exit 1`, "    max_verify: 2\n"));
   const adapter = new ScriptedAdapter([OK, OK, OK, OK], ["# n\n", null, null, null]);

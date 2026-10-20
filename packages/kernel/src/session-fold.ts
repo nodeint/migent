@@ -164,6 +164,7 @@ function foldV1(inputs: FoldInputs): Record<string, unknown> {
     applyExecutionSnapshot(status, latest, inputs);
     updatedAt = later(updatedAt, latest.completedAt ?? latest.createdAt);
     publishCurrentStage(status, latest.executionId, latest.status === "running");
+    updatedAt = applyBlockedResume(status, inputs.events, latest.executionId, updatedAt);
   }
   if (updatedAt) status.updated_at = updatedAt;
   return status;
@@ -190,6 +191,8 @@ function foldSchema2(inputs: FoldInputs): Record<string, unknown> {
   }
   // Reconcile appends missing events at the end of the file. Latest is the highest order, not the last line.
   publishLatestExecution(status, seen);
+  const latestId = textOr(status.latest_execution_id);
+  if (latestId) updatedAt = applyBlockedResume(status, inputs.events, latestId, updatedAt);
   if (updatedAt) status.updated_at = updatedAt;
   return status;
 }
@@ -356,6 +359,28 @@ function applyExecutionSnapshot(status: Record<string, unknown>, latest: FoldExe
     stageId: latest.stageId,
     blocker: textOr(latest.outcome?.blocker),
   }, null);
+}
+
+/**
+ * `session.active` with `data.from: blocked` reopens the session after that execution.
+ * The execution outcome stays blocked. A later execution is unaffected.
+ */
+function applyBlockedResume(
+  status: Record<string, unknown>,
+  events: readonly ParsedEvent[],
+  executionId: string,
+  updatedAt: string | null,
+): string | null {
+  let resume: ParsedEvent | null = null;
+  for (const event of events) {
+    if (event.event !== "session.active" || event.executionId !== executionId) continue;
+    if (event.data.from !== "blocked") continue;
+    resume = event;
+  }
+  if (resume === null || status.status !== "blocked") return updatedAt;
+  status.status = "active";
+  applyTerminal(status, "active", null, null);
+  return later(updatedAt, resume.timestamp);
 }
 
 function applyTerminal(

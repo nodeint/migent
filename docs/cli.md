@@ -12,8 +12,9 @@ migent session run --workflow <workflow> --task "<task>"
 migent session prepare <some-id> --workflow <workflow>
 migent session run --session <some-id> --workflow <workflow>
 
-# Resume an active workflow session and run until it stops.
+# Resume an active or blocked workflow session and run until it stops.
 # This resets revision counts. A prepared session is not resumed here.
+# A blocked session runs that stage again. The new prompt includes the blocker.
 migent session continue <session-id>
 
 # Dispatch exactly one eligible stage. This does not reset revision counts.
@@ -68,8 +69,10 @@ additional retry count. `--once` dispatches only once and has no dispatch
 ceiling. Do not combine `--once` with `--attempts`, `--max-dispatches`, or
 `--unlimited-dispatches`. Revision limits are defined by `max_revisions` in
 the workflow. `session continue` resets the session's revision counts before
-dispatching. `session continue --once` does not. The existing session history
-and artifacts remain available to later stages.
+dispatching. `session continue --once` does not. On a blocked session, both
+forms dispatch that stage again. The new prompt includes the blocker and the
+previous response. `completed` and `cancelled` sessions stay stopped. The
+existing session history and artifacts remain available to later stages.
 
 A workflow run's stdout is one JSON result: `session_id`, `session_status`, `stop_reason`,
 `latest_decision`, and `outputs`. Exit 1, 3, and 6 also include

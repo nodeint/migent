@@ -147,6 +147,11 @@ status: blocked
 blocker: The required API schema is missing.
 ```
 
+`migent session continue <session-id>` runs that stage again after the blocker
+is fixed. The new attempt's prompt includes the blocker text and the previous
+response. The earlier execution stays blocked. `completed` and `cancelled`
+sessions are not resumed.
+
 If the stage declares `decision.values`, a completed response must include one
 of them in the `decision` header.
 

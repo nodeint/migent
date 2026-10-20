@@ -9,7 +9,7 @@ export const EXIT_CANCELLED = 130;
 
 export const LOOP_EXITS = [
   `Exit ${EXIT_OK} when the session is completed.`,
-  `Exit ${EXIT_BLOCKED} when the session is blocked.`,
+  `Exit ${EXIT_BLOCKED} when the session is blocked. session continue runs that stage again.`,
   `Exit ${EXIT_CONFIG} on a configuration error.`,
   `Exit ${EXIT_ATTEMPTS} when --attempts is spent. The session stays active.`,
   `Exit ${EXIT_REVISIONS} when a route would exceed max_revisions. The session stays active.`,

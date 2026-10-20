@@ -366,7 +366,7 @@ test("execute requires prior session then completes plan implement", async () =>
   }
 });
 
-test("execute session id on terminal sessions does not dispatch", async () => {
+test("continue redispatches a blocked session and leaves completed or cancelled sessions stopped", async () => {
   const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
   try {
     const blockedAdapter = new ScriptedAdapter(
@@ -378,18 +378,18 @@ test("execute session id on terminal sessions does not dispatch", async () => {
     expect(objects.at(-1)?.stop_reason).toBe("blocked");
     const sessionId = String(objects.at(-1)?.session_id);
     const before = executions(workspace, sessionId);
+    const retry = new ScriptedAdapter(["status: complete\ndecision: approved\n\nok"], [null]);
+    const [code2, objects2] = await runExecute(workspace, ["session", "continue", sessionId, "--once"], retry);
+    expect(code2).toBe(0);
+    expect(objects2.at(-1)?.session_status).toBe("completed");
+    expect(retry.calls).toHaveLength(1);
+    expect(retry.calls[0]?.prompt).toContain("missing design");
+    expect(executions(workspace, sessionId).length).toBe(before.length + 1);
     const idle = new ScriptedAdapter(["status: complete\ndecision: approved\n\nok"], [null]);
-    const [code2, objects2] = await runExecute(workspace, ["session", "continue", sessionId], idle);
-    expect(code2).toBe(1);
-    expect(objects2).toHaveLength(1);
+    const [code3, objects3] = await runExecute(workspace, ["session", "continue", sessionId], idle);
+    expect(code3).toBe(0);
+    expect(objects3.at(-1)?.stop_reason).toBe("completed");
     expect(idle.calls).toEqual([]);
-    expect(executions(workspace, sessionId)).toEqual(before);
-    const blockedAgain = new ScriptedAdapter(["status: complete\ndecision: approved\n\nok"], [null]);
-    const [stageCode, stageObjects] = await runExecute(workspace, ["session", "continue", sessionId, "--once"], blockedAgain);
-    expect(stageCode).toBe(1);
-    expect(stageObjects.at(-1)?.stop_reason).toBe("blocked");
-    expect(blockedAgain.calls).toEqual([]);
-    expect(executions(workspace, sessionId)).toEqual(before);
   } finally {
     removeWorkspace(workspace);
   }
