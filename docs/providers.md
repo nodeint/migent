@@ -114,3 +114,21 @@ those keys, and a stage `options` map overrides them for that turn.
 Migent currently includes adapters for the headless `agy`, `claude`, `codex`,
 and `grok` CLIs. Those CLIs own authentication, tool use, and agent execution;
 Migent owns selection, prompts, routing, and persistence.
+
+## Usage
+
+Each adapter selects the usage events from one process and stores them on the
+turn. Metrics ask that same adapter to normalize the capture when they are
+read. A cumulative provider subtracts the previous capture for the same
+provider agent. A per-process provider reports the process as printed.
+
+| Provider | What it prints | Tokens | Cost |
+| --- | --- | --- | --- |
+| claude | last `result` event | per process | `total_cost_usd`, cumulative per conversation. This is a client estimate, not a bill. |
+| codex | each `turn.completed` | cumulative per thread. `input_tokens` includes cache reads, and metrics subtract them. | none |
+| grok | `end`, or the last `usage` event when `end` is absent | per process | `total_cost_usd` on `end`, per process. A `usage` event has no cost. |
+| agy | `result.usage` and each `DONE` step that has `usage` | step usage is per process. `result.usage` is cumulative per conversation. | none. Cache reads were not observable. |
+
+`input_tokens` in metrics excludes cache reads. `reasoning_tokens` is reported
+beside `output_tokens` and is not added to it. A field that is missing, not a
+finite number, or a negative delta is null.

@@ -1,4 +1,12 @@
-export type { ProviderAdapter, ProviderOption, NewSession, BuildCommandInput, AgentAdapter } from "./adapter.js";
+export type {
+  ProviderAdapter,
+  ProviderOption,
+  NewSession,
+  BuildCommandInput,
+  AgentAdapter,
+  UsageCapture,
+  TurnUsage,
+} from "./adapter.js";
 export { CodexAdapter, GrokAdapter, defaultAdapters } from "./adapter.js";
 export {
   documentVersion,
@@ -137,6 +145,7 @@ export {
   watchSnapshot,
 } from "./query.js";
 export type { StatusFileState } from "./query.js";
+export { sessionMetrics, listSessionMetrics } from "./metrics.js";
 export {
   providerErrorMessage,
   classifyProviderError,

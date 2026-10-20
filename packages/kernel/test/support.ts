@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { AgentAdapter, BuildCommandInput, ProviderAdapter } from "../src/adapter.ts";
+import type { AgentAdapter, BuildCommandInput, ProviderAdapter, TurnUsage, UsageCapture } from "../src/adapter.ts";
 import type { CommandSpec } from "../src/command-executor.ts";
 import { createWorkflowSession } from "../src/session-records.ts";
 
@@ -146,6 +146,10 @@ export interface AdapterCall {
 export class FakeAdapter implements AgentAdapter {
   readonly command = "fake";
   readonly calls: AdapterCall[] = [];
+  captureUsage?: (stdout: string) => UsageCapture | null;
+  normalizeUsage?: (current: UsageCapture, previous: UsageCapture | null) => TurnUsage;
+  versionCommand?: () => string[];
+  parseVersion?: (stdout: string) => string | null;
 
   providerOptions() {
     return [{ name: "effort", prompt: true, allowDefault: true, overridable: true }];

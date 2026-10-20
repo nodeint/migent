@@ -4,6 +4,8 @@ import type {
   BuildCommandInput,
   NewSession,
   ProviderOption,
+  TurnUsage,
+  UsageCapture,
 } from "@nodeint/migent-kernel";
 import type { CommandSpec } from "@nodeint/migent-kernel";
 import { ModelCatalog } from "./catalog.js";
@@ -322,4 +324,103 @@ export class AgyAdapter implements AgentAdapter {
     }
     return null;
   }
+
+  captureUsage(stdout: string): UsageCapture | null {
+    let result: Record<string, unknown> | null = null;
+    const steps: Record<string, unknown>[] = [];
+    for (const rawLine of stdout.split(/\r\n|\n|\r/)) {
+      const payload = parseJsonObject(rawLine);
+      if (payload === null) continue;
+      if (payload.event === "result" && isRecord(payload.result)) result = payload.result;
+      if (payload.event !== "step_update" || !isRecord(payload.step_update)) continue;
+      const step = payload.step_update;
+      const state = step.state;
+      if (typeof state === "string" && state.toUpperCase() === "DONE" && isRecord(step.usage)) steps.push(step.usage);
+    }
+    if (result === null && steps.length === 0) return null;
+    const capture: UsageCapture = { steps };
+    if (result) capture.result = picked(result, ["usage", "num_turns", "duration_seconds"]);
+    return capture;
+  }
+
+  normalizeUsage(current: UsageCapture, previous: UsageCapture | null): TurnUsage {
+    const steps = Array.isArray(current.steps) ? current.steps : [];
+    if (steps.length > 0) return sumAgySteps(steps);
+    return agyDelta(resultUsage(current), previous === null ? null : resultUsage(previous), previous === null);
+  }
+
+  versionCommand(): string[] {
+    return [this.command, "--version"];
+  }
+
+  parseVersion(stdout: string): string | null {
+    return versionLine(stdout);
+  }
+}
+
+const AGY_FIELDS = ["input_tokens", "output_tokens", "thinking_tokens", "cache_read_tokens"] as const;
+
+function picked(source: Record<string, unknown>, keys: readonly string[]): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const key of keys) {
+    if (Object.hasOwn(source, key)) out[key] = source[key];
+  }
+  return out;
+}
+
+function finite(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+function versionLine(stdout: string): string | null {
+  const line = (stdout.split(/\r\n|\n|\r/, 1)[0] ?? "").trim();
+  return line === "" ? null : line;
+}
+
+function resultUsage(capture: UsageCapture | null): Record<string, unknown> | null {
+  if (capture === null || !isRecord(capture.result)) return null;
+  return isRecord(capture.result.usage) ? capture.result.usage : null;
+}
+
+function sumAgySteps(steps: unknown[]): TurnUsage {
+  const sums = { input_tokens: 0, output_tokens: 0, thinking_tokens: 0, cache_read_tokens: 0 };
+  const missing = { input_tokens: false, output_tokens: false, thinking_tokens: false, cache_read_tokens: false };
+  for (const step of steps) {
+    const usage = isRecord(step) ? step : null;
+    for (const field of AGY_FIELDS) {
+      const value = finite(usage?.[field]);
+      if (value === null) missing[field] = true;
+      else sums[field] += value;
+    }
+  }
+  return {
+    input_tokens: missing.input_tokens ? null : sums.input_tokens,
+    output_tokens: missing.output_tokens ? null : sums.output_tokens,
+    reasoning_tokens: missing.thinking_tokens ? null : sums.thinking_tokens,
+    cache_read_tokens: missing.cache_read_tokens ? null : sums.cache_read_tokens,
+    cache_write_tokens: null,
+    cost_usd: null,
+  };
+}
+
+function agyDelta(
+  current: Record<string, unknown> | null,
+  previous: Record<string, unknown> | null,
+  previousIsZero: boolean,
+): TurnUsage {
+  const delta = (key: (typeof AGY_FIELDS)[number]): number | null => {
+    const currentValue = finite(current?.[key]);
+    const previousValue = previousIsZero ? 0 : finite(previous?.[key]);
+    if (currentValue === null || previousValue === null) return null;
+    const value = currentValue - previousValue;
+    return value < 0 ? null : value;
+  };
+  return {
+    input_tokens: delta("input_tokens"),
+    output_tokens: delta("output_tokens"),
+    reasoning_tokens: delta("thinking_tokens"),
+    cache_read_tokens: delta("cache_read_tokens"),
+    cache_write_tokens: null,
+    cost_usd: null,
+  };
 }

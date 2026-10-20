@@ -1,5 +1,8 @@
-import { listSessionRows, ConfigurationError } from "@nodeint/migent-kernel";
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { listSessionMetrics, listSessionRows, sessionMetrics, ConfigurationError } from "@nodeint/migent-kernel";
 import { printError, printSessions } from "../display.js";
+import { adapterMap } from "../provider.js";
 import { SESSION_COLUMN, sessionFields } from "../session-row.js";
 import { optionalText } from "../text.js";
 import { followSession } from "./watch.js";
@@ -30,6 +33,40 @@ export function listSessions(workspace: string, options: SessionListOptions = {}
     return 0;
   }
   printSessions(rows);
+  return 0;
+}
+
+export function runSessionMetrics(
+  workspace: string,
+  session: string | undefined,
+  options: { asJson: boolean; workflow: string | null; status: string | null; limit: string | null },
+): number {
+  if (!options.asJson) {
+    printError("session metrics requires --json.");
+    return 2;
+  }
+  const selection = parseListSelection({ ...options, latest: false });
+  const sessionId = optionalText(session);
+  if (sessionId !== null && hasListFilter(selection)) {
+    printError("List filters cannot be combined with a session.");
+    return 2;
+  }
+  const adapters = adapterMap();
+  if (sessionId === null) {
+    const rows = listSessionMetrics(workspace, adapters, {
+      workflow: selection.workflow ?? null,
+      status: selection.status ?? null,
+      limit: selection.limit ?? null,
+    });
+    for (const row of rows) process.stdout.write(`${JSON.stringify(row)}\n`);
+    return 0;
+  }
+  const eventsPath = path.join(workspace, ".migent", "sessions", sessionId, "events.jsonl");
+  if (!existsSync(eventsPath)) {
+    printError(`No events found for session: ${sessionId}`);
+    return 2;
+  }
+  process.stdout.write(`${JSON.stringify(sessionMetrics(workspace, sessionId, adapters))}\n`);
   return 0;
 }
 

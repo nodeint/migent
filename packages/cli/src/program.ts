@@ -7,7 +7,7 @@ import { executeWorkflow } from "./commands/execute.js";
 import { prepareWorkflowSession } from "./commands/prepare.js";
 import { repairWorkflowSession } from "./commands/repair.js";
 import { runInit } from "./commands/init.js";
-import { runSessions } from "./commands/sessions.js";
+import { runSessionMetrics, runSessions } from "./commands/sessions.js";
 import { parsePort, runServiceStart, runServiceStatus, runServiceStop } from "./commands/service.js";
 import { installSkill, updateSkill } from "./commands/skill.js";
 import { runRegister, runRemove, runWorkspaceList } from "./commands/workspace-registry.js";
@@ -361,6 +361,32 @@ function registerSessionCommand(program: Command, status: CliStatus): void {
           status: null,
           limit: null,
           latest: false,
+        }),
+      ),
+    );
+
+  session
+    .command("metrics")
+    .description("Print derived usage, time, and revision counts.")
+    .argument("[session]", "Session to measure. Omit to list sessions.")
+    .option("--json", "Print one JSON object, or one object per line for a list.")
+    .option("--workflow <id>", "With a list, keep sessions for this workflow.")
+    .option("--status <status>", "With a list, keep sessions in this status.")
+    .option("--limit <n>", "With a list, keep the newest n sessions.")
+    .addHelpText(
+      "after",
+      `${exitText([
+        "Exit 0 after one session object, or one object per line. An empty list prints nothing.",
+        "Exit 2 when --json is missing, the session has no events.jsonl, or a list flag is invalid.",
+      ])}Examples:\n  migent session metrics <session> --json\n  migent session metrics --json --workflow <id> --status completed --limit 10\n`,
+    )
+    .action((id: string | undefined, options: OptionValues) =>
+      settle(status, () =>
+        runSessionMetrics(findWorkspace(invocationCwdPath()), id, {
+          asJson: options.json === true,
+          workflow: typeof options.workflow === "string" ? options.workflow : null,
+          status: typeof options.status === "string" ? options.status : null,
+          limit: options.limit === undefined ? null : String(options.limit),
         }),
       ),
     );

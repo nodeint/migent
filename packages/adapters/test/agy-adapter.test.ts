@@ -1,6 +1,12 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { parseStageOutcome } from "@nodeint/migent-kernel";
 import { expect, test } from "vitest";
 import { AgyAdapter, providerCommands } from "../src/index.ts";
+
+function usageFixture(name: string): string {
+  return readFileSync(fileURLToPath(new URL(`./fixtures/usage/${name}`, import.meta.url)), "utf8");
+}
 
 function stream(...events: Record<string, unknown>[]): string {
   return events.map((event) => JSON.stringify(event)).join("\n");
@@ -210,4 +216,43 @@ test("maps a prompt onto a stream-json agy command", () => {
   });
   expect(resumed.argv).not.toContain("--dangerously-skip-permissions");
   expect(resumed.argv.slice(-3)).toEqual(["--sandbox", "--conversation", "conv-1"]);
+});
+
+test("normalizes agy usage from the resume fixtures", () => {
+  const adapter = new AgyAdapter();
+  const captures = [1, 2, 3].map((turn) => adapter.captureUsage(usageFixture(`agy-resume-${turn}.jsonl`)));
+  const first = adapter.normalizeUsage(captures[0]!, null);
+  const second = adapter.normalizeUsage(captures[1]!, captures[0]!);
+  const third = adapter.normalizeUsage(captures[2]!, captures[1]!);
+  expect([first.input_tokens, second.input_tokens, third.input_tokens]).toEqual([6673, 6881, 7089]);
+  expect(first.cost_usd).toBeNull();
+  expect(first.cache_write_tokens).toBeNull();
+  const steps = captures[0]?.steps;
+  expect(Array.isArray(steps)).toBe(true);
+  expect((steps as unknown[]).length).toBe(1);
+  expect(adapter.captureUsage('{"event":"status"}\n')).toBeNull();
+  const preferred = adapter.normalizeUsage(
+    {
+      result: { usage: { input_tokens: 999, output_tokens: 9, thinking_tokens: 0, cache_read_tokens: 0 } },
+      steps: [{ input_tokens: 10, output_tokens: 1, thinking_tokens: 2, cache_read_tokens: 3 }],
+    },
+    null,
+  );
+  expect(preferred.input_tokens).toBe(10);
+  expect(preferred.reasoning_tokens).toBe(2);
+  const delta = adapter.normalizeUsage(
+    { result: { usage: { input_tokens: 30, output_tokens: 4, thinking_tokens: 1, cache_read_tokens: 0 } }, steps: [] },
+    { result: { usage: { input_tokens: 10, output_tokens: 1, thinking_tokens: 0, cache_read_tokens: 0 } }, steps: [] },
+  );
+  expect(delta.input_tokens).toBe(20);
+  expect(delta.output_tokens).toBe(3);
+  const broken = adapter.normalizeUsage(
+    { steps: [{ input_tokens: 1, output_tokens: 1, thinking_tokens: 0, cache_read_tokens: 0 }, { input_tokens: "x" }] },
+    null,
+  );
+  expect(broken.input_tokens).toBeNull();
+  expect(broken.output_tokens).toBeNull();
+  expect(adapter.versionCommand()).toEqual(["agy", "--version"]);
+  expect(adapter.parseVersion("codex-cli 0.163.0\n")).toBe("codex-cli 0.163.0");
+  expect(adapter.parseVersion("")).toBeNull();
 });

@@ -271,6 +271,8 @@ migent session list --latest --json
 migent session list --workflow <id> --status completed --json
 migent session show <session-id>
 migent session show <session-id> --json
+migent session metrics <session-id> --json
+migent session metrics --json --workflow <id> --status completed --limit 10
 migent session follow <session-id>
 migent session follow <session-id> --exit-when-done
 migent session repair <session-id>
@@ -281,6 +283,14 @@ migent session repair <session-id> --accept-task
 select rows before `--limit`. `--status` is `active`, `prepared`, `completed`,
 `blocked`, or `cancelled`. `--latest` prints the newest match. `--latest`
 cannot be combined with `--limit`. An empty list exits 0.
+
+`session metrics` prints derived usage, time, and revision counts. Pass a
+session id for one JSON object. Omit it for one object per line, newest first.
+`--workflow`, `--status`, and `--limit` match `session list`, including
+`--status corrupt`. `--json` is required: without it the command exits 2 with
+`session metrics requires --json.` A session that has no `events.jsonl` exits 2
+with `No events found for session: <id>`. An empty list prints nothing and
+exits 0. The command does not take the session lock.
 
 `session show <session-id>` prints one snapshot and exits 0, including when the
 session is blocked. For a schema 2 session it also prints, on stderr, any drift

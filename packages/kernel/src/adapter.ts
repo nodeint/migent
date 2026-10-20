@@ -29,6 +29,18 @@ export interface BuildCommandInput {
   options: Readonly<Record<string, string>>;
 }
 
+/** Provider-shaped JSON selected from one process's stdout. Stored verbatim. */
+export type UsageCapture = Record<string, unknown>;
+
+export interface TurnUsage {
+  input_tokens: number | null;
+  output_tokens: number | null;
+  reasoning_tokens: number | null;
+  cache_read_tokens: number | null;
+  cache_write_tokens: number | null;
+  cost_usd: number | null;
+}
+
 /** Provider CLI surface used by the workflow runner. Not the adapters package. */
 export interface AgentAdapter extends ProviderAdapter {
   providerOptions?(): readonly ProviderOption[];
@@ -37,6 +49,10 @@ export interface AgentAdapter extends ProviderAdapter {
   buildCommand(input: BuildCommandInput): CommandSpec;
   parseResponse(stdout: string, lastMessageFile: string): [string, string | null];
   parseProgressEvent?(line: string): Record<string, unknown> | null;
+  captureUsage?(stdout: string): UsageCapture | null;
+  normalizeUsage?(current: UsageCapture, previous: UsageCapture | null): TurnUsage;
+  versionCommand?(): string[];
+  parseVersion?(stdout: string): string | null;
 }
 
 const grokOptionNames = new Set([

@@ -5,8 +5,10 @@ import {
   defaultAdapters,
   type AgentAdapter,
   type NewSession,
+  type UsageCapture,
 } from "./adapter.js";
 import { CancellationRequested, CommandExecutor, DEFAULT_TIMEOUT_SEC } from "./command-executor.js";
+import { spawnProviderSync } from "./provider-spawn.js";
 import { buildVerifyRepairPrompt } from "./prompt.js";
 import { VERIFY_EXHAUSTED } from "./selection.js";
 import { VerifyRunner, formatVerifyReport, type VerifyRunResult } from "./verify-runner.js";
@@ -58,6 +60,7 @@ export class AgentToolRunner {
   readonly executor: CommandExecutor;
   readonly verifyRunner: VerifyRunner;
   itemProgress = false;
+  private readonly cliVersions = new Map<string, string | null>();
 
   constructor(
     adapters?: Record<string, AgentAdapter>,
@@ -140,11 +143,12 @@ export class AgentToolRunner {
     }
     turnPrompt = addArtifactContext(turnPrompt, context.artifactDirectory, artifactName);
     store.savePrompt(context, turnPrompt);
-    eventReporter.emit(
-      "provider.stage_started",
-      `${providerKey}/${request.model}`,
-      Object.keys(profile).length > 0 ? { options: profile } : null,
-    );
+    const started: Record<string, unknown> = {
+      cli_version: this.cachedCliVersion(adapter, providerKey, workspacePath),
+      ...readGitFacts(workspacePath),
+    };
+    if (Object.keys(profile).length > 0) started.options = profile;
+    eventReporter.emit("provider.stage_started", `${providerKey}/${request.model}`, started);
 
     return this.driveTurns({
       adapter,
@@ -365,8 +369,10 @@ export class AgentToolRunner {
         pendingVerify = null;
       } else {
         let parsedProviderId: string | null;
+        let argv: string[] = [];
+        let usage: UsageCapture | null = null;
         try {
-          [responseText, parsedProviderId, invokeError] = await this.runTurn(
+          [responseText, parsedProviderId, invokeError, argv, usage] = await this.runTurn(
             adapter,
             model,
             workspacePath,
@@ -382,11 +388,18 @@ export class AgentToolRunner {
           return markCancelled(error);
         }
 
+        record.agentId = parsedProviderId || record.agentId;
+        const turnDetails: Record<string, unknown> = {
+          turn,
+          agent_id: record.agentId,
+          argv,
+        };
+        if (usage !== null) turnDetails.usage = usage;
         eventReporter.emit(
           invokeError === null ? "provider.turn_completed" : "provider.turn_failed",
           invokeError === null ? "completed" : invokeError,
+          turnDetails,
         );
-        record.agentId = parsedProviderId || record.agentId;
         record.model = model;
         record.options = profile;
         record.workspace = workspacePath;
@@ -573,6 +586,13 @@ export class AgentToolRunner {
     store.carryVerifyArtifact(previous.artifactDirectory, context, artifactName);
   }
 
+  private cachedCliVersion(adapter: AgentAdapter, providerKey: string, workspace: string): string | null {
+    if (this.cliVersions.has(providerKey)) return this.cliVersions.get(providerKey) ?? null;
+    const version = readCliVersion(adapter, workspace);
+    this.cliVersions.set(providerKey, version);
+    return version;
+  }
+
   private async runTurn(
     adapter: AgentAdapter,
     model: string,
@@ -584,7 +604,7 @@ export class AgentToolRunner {
     eventReporter: ProviderEventReporter,
     store: SessionStore,
     context: ExecutionContext,
-  ): Promise<[string, string | null, string | null]> {
+  ): Promise<[string, string | null, string | null, string[], UsageCapture | null]> {
     const tmp = mkdtempSync(path.join(tmpdir(), "migent_"));
     try {
       const promptFile = path.join(tmp, "prompt.txt");
@@ -622,7 +642,16 @@ export class AgentToolRunner {
         },
       );
       const [responseText, parsedProviderId] = adapter.parseResponse(stdout, lastMessageFile);
-      return [responseText || invokeError || "", parsedProviderId, invokeError];
+      let usage: UsageCapture | null = null;
+      if (adapter.captureUsage) {
+        try {
+          const captured = adapter.captureUsage(stdout);
+          usage = isRecord(captured) ? captured : null;
+        } catch {
+          usage = null;
+        }
+      }
+      return [responseText || invokeError || "", parsedProviderId, invokeError, spec.argv, usage];
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -800,4 +829,35 @@ function savedOutcome(
     // The saved response is the fallback.
   }
   return parseStageOutcome(responseText, required, decisionValues);
+}
+
+function readCliVersion(adapter: AgentAdapter, workspace: string): string | null {
+  if (!adapter.versionCommand) return null;
+  const argv = adapter.versionCommand();
+  const command = argv[0];
+  if (command === undefined) return null;
+  const result = spawnProviderSync(command, argv.slice(1), {
+    encoding: "utf8",
+    timeout: 10_000,
+    cwd: workspace,
+  });
+  if (result.error || result.status !== 0 || !adapter.parseVersion) return null;
+  return adapter.parseVersion(result.stdout ?? "");
+}
+
+function readGitFacts(workspace: string): { git_head: string | null; git_dirty: boolean | null } {
+  const head = gitOutput(workspace, ["rev-parse", "HEAD"]);
+  const porcelain = gitOutput(workspace, ["status", "--porcelain"]);
+  if (head === null || porcelain === null || head.trim() === "") return { git_head: null, git_dirty: null };
+  return { git_head: head.trim(), git_dirty: porcelain.trim() !== "" };
+}
+
+function gitOutput(workspace: string, args: string[]): string | null {
+  const result = spawnProviderSync("git", args, {
+    encoding: "utf8",
+    timeout: 10_000,
+    cwd: workspace,
+  });
+  if (result.error || result.status !== 0) return null;
+  return result.stdout;
 }

@@ -132,6 +132,11 @@ session was created under the earlier definition.
 - `--latest --json` is one object, or `null` when nothing matches. A list is
   a JSON array. Snapshot: `migent session show <session-id> --json` has the
   status, latest execution, decision, and outputs. JSON omits the task text.
+- Compare runs with `migent session metrics --json`. One session is one
+  object. Several sessions are one object per line, newest first.
+  `--workflow`, `--status`, and `--limit` match `session list`. Read
+  `usage_missing` and `uncaptured_turns` before comparing totals.
+  `stage_attempt` is not a retry count.
 - `session follow` streams the event trace for a person at a terminal.
   Do not use it or `--cursor` to coordinate a run.
 

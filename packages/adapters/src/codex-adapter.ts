@@ -4,6 +4,8 @@ import type {
   BuildCommandInput,
   NewSession,
   ProviderOption,
+  TurnUsage,
+  UsageCapture,
 } from "@nodeint/migent-kernel";
 import type { CommandSpec } from "@nodeint/migent-kernel";
 import { ModelCatalog } from "./catalog.js";
@@ -258,4 +260,81 @@ export class CodexAdapter implements AgentAdapter {
     if (eventType === "error") return classifyProviderError(providerErrorMessage(payload));
     return null;
   }
+
+  captureUsage(stdout: string): UsageCapture | null {
+    const turnCompleted: Record<string, unknown>[] = [];
+    for (const rawLine of stdout.split(/\r\n|\n|\r/)) {
+      const line = rawLine.trim();
+      if (!line) continue;
+      let event: unknown;
+      try {
+        event = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (!isRecord(event) || event.type !== "turn.completed" || !isRecord(event.usage)) continue;
+      turnCompleted.push(event.usage);
+    }
+    if (turnCompleted.length === 0) return null;
+    return { turn_completed: turnCompleted };
+  }
+
+  normalizeUsage(current: UsageCapture, previous: UsageCapture | null): TurnUsage {
+    const usage = lastUsage(current);
+    const baseline = previous === null ? null : lastUsage(previous);
+    const inputDelta = codexDelta(usage, baseline, "input_tokens", previous === null);
+    const cachedDelta = codexDelta(usage, baseline, "cached_input_tokens", previous === null);
+    const cachedKnown = usage !== null && finite(usage.cached_input_tokens) !== null;
+    let input: number | null = null;
+    if (cachedKnown && inputDelta !== null && cachedDelta !== null) {
+      const value = inputDelta - cachedDelta;
+      input = value < 0 ? null : value;
+    }
+    return {
+      input_tokens: input,
+      output_tokens: codexDelta(usage, baseline, "output_tokens", previous === null),
+      reasoning_tokens: codexDelta(usage, baseline, "reasoning_output_tokens", previous === null),
+      cache_read_tokens: cachedDelta,
+      cache_write_tokens: codexDelta(usage, baseline, "cache_write_input_tokens", previous === null),
+      cost_usd: null,
+    };
+  }
+
+  versionCommand(): string[] {
+    return [this.command, "--version"];
+  }
+
+  parseVersion(stdout: string): string | null {
+    return versionLine(stdout);
+  }
+}
+
+function lastUsage(capture: UsageCapture | null): Record<string, unknown> | null {
+  if (capture === null) return null;
+  const list = capture.turn_completed;
+  if (!Array.isArray(list) || list.length === 0) return null;
+  const last = list[list.length - 1];
+  return isRecord(last) ? last : null;
+}
+
+function codexDelta(
+  current: Record<string, unknown> | null,
+  previous: Record<string, unknown> | null,
+  key: string,
+  previousIsZero: boolean,
+): number | null {
+  const currentValue = finite(current?.[key]);
+  const previousValue = previousIsZero ? 0 : finite(previous?.[key]);
+  if (currentValue === null || previousValue === null) return null;
+  const delta = currentValue - previousValue;
+  return delta < 0 ? null : delta;
+}
+
+function finite(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+function versionLine(stdout: string): string | null {
+  const line = (stdout.split(/\r\n|\n|\r/, 1)[0] ?? "").trim();
+  return line === "" ? null : line;
 }

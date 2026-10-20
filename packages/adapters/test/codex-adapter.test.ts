@@ -1,5 +1,11 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 import { CodexAdapter, providerCommands } from "../src/index.ts";
+
+function usageFixture(name: string): string {
+  return readFileSync(fileURLToPath(new URL(`./fixtures/usage/${name}`, import.meta.url)), "utf8");
+}
 
 test("reads listed models and their effort from the codex catalog", () => {
   const catalog = new CodexAdapter().parseModelCatalog(
@@ -55,4 +61,32 @@ test("maps options onto codex config overrides", () => {
   const overrides = spec.argv.flatMap((arg, index) => (arg === "-c" ? [spec.argv[index + 1]] : []));
   expect(overrides).toEqual(['model_reasoning_effort="medium"', "temperature=0.2"]);
   expect(spec.stdin).toBe("prompt");
+});
+
+test("normalizes codex usage from the resume fixtures", () => {
+  const adapter = new CodexAdapter();
+  const captures = [1, 2, 3].map((turn) => adapter.captureUsage(usageFixture(`codex-resume-${turn}.jsonl`)));
+  expect(Array.isArray(captures[0]?.turn_completed)).toBe(true);
+  const first = adapter.normalizeUsage(captures[0]!, null);
+  const second = adapter.normalizeUsage(captures[1]!, captures[0]!);
+  const third = adapter.normalizeUsage(captures[2]!, captures[1]!);
+  expect([first.input_tokens, second.input_tokens, third.input_tokens]).toEqual([14302, 241, 260]);
+  expect([first.output_tokens, second.output_tokens, third.output_tokens]).toEqual([5, 5, 5]);
+  expect([first.cache_read_tokens, second.cache_read_tokens, third.cache_read_tokens]).toEqual([0, 14080, 14080]);
+  expect(first.cost_usd).toBeNull();
+  expect(adapter.captureUsage('{"type":"thread.started"}\n')).toBeNull();
+  const regressed = adapter.normalizeUsage(
+    { turn_completed: [{ input_tokens: 3, cached_input_tokens: 0, output_tokens: 1, reasoning_output_tokens: 0, cache_write_input_tokens: 0 }] },
+    { turn_completed: [{ input_tokens: 10, cached_input_tokens: 0, output_tokens: 1, reasoning_output_tokens: 0, cache_write_input_tokens: 0 }] },
+  );
+  expect(regressed.input_tokens).toBeNull();
+  const missingCache = adapter.normalizeUsage({ turn_completed: [{ input_tokens: 10, output_tokens: 2 }] }, null);
+  expect(missingCache.input_tokens).toBeNull();
+  expect(missingCache.output_tokens).toBe(2);
+  const negative = adapter.normalizeUsage({ turn_completed: [{ input_tokens: -1, cached_input_tokens: 0, output_tokens: "5" }] }, null);
+  expect(negative.input_tokens).toBeNull();
+  expect(negative.output_tokens).toBeNull();
+  expect(adapter.versionCommand()).toEqual(["codex", "--version"]);
+  expect(adapter.parseVersion("codex-cli 0.163.0\n")).toBe("codex-cli 0.163.0");
+  expect(adapter.parseVersion("")).toBeNull();
 });

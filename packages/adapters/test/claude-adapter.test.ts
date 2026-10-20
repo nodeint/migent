@@ -1,6 +1,12 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { parseStageOutcome } from "@nodeint/migent-kernel";
 import { expect, test } from "vitest";
 import { ClaudeAdapter, providerCommands } from "../src/index.ts";
+
+function usageFixture(name: string): string {
+  return readFileSync(fileURLToPath(new URL(`./fixtures/usage/${name}`, import.meta.url)), "utf8");
+}
 
 function stream(...events: Record<string, unknown>[]): string {
   return events.map((event) => JSON.stringify(event)).join("\n");
@@ -168,4 +174,33 @@ test("maps options onto claude flags", () => {
     options: { permission_mode: "acceptEdits" },
   });
   expect(resumed.argv.slice(-4)).toEqual(["--permission-mode", "acceptEdits", "--resume", "sess-1"]);
+});
+
+test("normalizes claude usage from the resume fixtures", () => {
+  const adapter = new ClaudeAdapter();
+  const captures = [1, 2, 3].map((turn) => adapter.captureUsage(usageFixture(`claude-resume-${turn}.jsonl`)));
+  expect(captures[0]?.result).toMatchObject({ total_cost_usd: 0.0439477, usage: { output_tokens: 3, input_tokens: 2 } });
+  expect(captures[1]?.result).toMatchObject({ total_cost_usd: 0.07983470000000001 });
+  expect(captures[2]?.result).toMatchObject({ total_cost_usd: 0.08419960000000001 });
+  const first = adapter.normalizeUsage(captures[0]!, null);
+  const second = adapter.normalizeUsage(captures[1]!, captures[0]!);
+  const third = adapter.normalizeUsage(captures[2]!, captures[1]!);
+  expect([first.output_tokens, second.output_tokens, third.output_tokens]).toEqual([3, 3, 3]);
+  expect([first.input_tokens, second.input_tokens, third.input_tokens]).toEqual([2, 2, 2]);
+  expect(first.reasoning_tokens).toBe(0);
+  expect(first.cost_usd).toBeCloseTo(0.0439, 4);
+  expect(second.cost_usd).toBeCloseTo(0.0359, 4);
+  expect(third.cost_usd).toBeCloseTo(0.0044, 4);
+  expect(adapter.captureUsage('{"type":"assistant"}\n')).toBeNull();
+  const bad = adapter.normalizeUsage(
+    { result: { usage: { input_tokens: "3", output_tokens: -1, cache_read_input_tokens: 2 }, total_cost_usd: -4 } },
+    null,
+  );
+  expect(bad.input_tokens).toBeNull();
+  expect(bad.output_tokens).toBeNull();
+  expect(bad.cache_read_tokens).toBe(2);
+  expect(bad.cost_usd).toBeNull();
+  expect(adapter.versionCommand()).toEqual(["claude", "--version"]);
+  expect(adapter.parseVersion("codex-cli 0.163.0\n")).toBe("codex-cli 0.163.0");
+  expect(adapter.parseVersion("")).toBeNull();
 });

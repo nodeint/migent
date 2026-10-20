@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "vitest";
@@ -399,4 +400,182 @@ test("prose approval without a decision header fails the execution", async () =>
   expect(String(execution.error)).toContain("decision:");
   expect(status.status).toBe("active");
   expect(existsSync(path.join(sessionDirectory, "outputs"))).toBe(false);
+});
+
+function sessionEvents(workspace: string, sessionId: string): Array<Record<string, unknown>> {
+  const text = readFileSync(path.join(workspace, ".migent", "sessions", sessionId, "events.jsonl"), "utf8");
+  return text
+    .split("\n")
+    .filter((line) => line !== "")
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+
+function turnEvents(workspace: string, sessionId: string): Array<Record<string, unknown>> {
+  return sessionEvents(workspace, sessionId).filter((event) => {
+    if (event.event === "provider.turn_completed") return true;
+    if (event.event !== "provider.turn_failed") return false;
+    const details = event.details;
+    return typeof details === "object" && details !== null && typeof (details as { turn?: unknown }).turn === "number";
+  });
+}
+
+test("a captured turn records usage, turn, agent id, and argv", async () => {
+  const adapter = new FakeAdapter();
+  adapter.captureUsage = () => ({ result: { total_cost_usd: 1 } });
+  const runner = new AgentToolRunner({ fake: adapter }, 10);
+  const tmp = tempDir("migent-runner-");
+  const result = await runner.run({ provider: "fake", model: "m1", prompt: "measure", workspace: tmp });
+  const details = turnEvents(tmp, result.session_id)[0]?.details as Record<string, unknown>;
+  expect(details.usage).toEqual({ result: { total_cost_usd: 1 } });
+  expect(details.turn).toBe(1);
+  expect(details.agent_id).toBe("native-session-1");
+  expect(Array.isArray(details.argv)).toBe(true);
+  expect((details.argv as string[])[0]).toBe(process.execPath);
+});
+
+test("a turn without captureUsage omits usage", async () => {
+  const runner = new AgentToolRunner({ fake: new FakeAdapter() }, 10);
+  const tmp = tempDir("migent-runner-");
+  const result = await runner.run({ provider: "fake", model: "m1", prompt: "plain", workspace: tmp });
+  const details = turnEvents(tmp, result.session_id)[0]?.details as Record<string, unknown>;
+  expect(details).not.toHaveProperty("usage");
+  expect(details.turn).toBe(1);
+  expect(details.agent_id).toBe("native-session-1");
+});
+
+test("a throwing captureUsage still completes the execution", async () => {
+  const adapter = new FakeAdapter();
+  adapter.captureUsage = () => {
+    throw new Error("usage failed");
+  };
+  const runner = new AgentToolRunner({ fake: adapter }, 10);
+  const tmp = tempDir("migent-runner-");
+  const result = await runner.run({ provider: "fake", model: "m1", prompt: "plain", workspace: tmp });
+  const execution = readJson(executionFile(tmp, result.session_id, result.execution_id));
+  expect(execution.status).toBe("completed");
+  const details = turnEvents(tmp, result.session_id)[0]?.details as Record<string, unknown>;
+  expect(details).not.toHaveProperty("usage");
+});
+
+test("two red verify runs write three numbered turns", async () => {
+  const workspace = tempDir("migent-runner-verify-");
+  const script = path.join(workspace, "gate.cjs");
+  const count = path.join(workspace, "gate.count");
+  writeFileSync(
+    script,
+    `const fs=require("fs");const f=${JSON.stringify(count)};const n=fs.existsSync(f)?Number(fs.readFileSync(f,"utf8")):0;fs.writeFileSync(f,String(n+1));if(n<2)process.exit(1);`,
+  );
+  const command = `"${process.execPath}" "${script}"`;
+  mkdirSync(path.join(workspace, ".migent", "workflows"), { recursive: true });
+  writeSessionConfig(workspace);
+  writeFileSync(
+    path.join(workspace, ".migent", "workflows", "wf.yaml"),
+    `id: wf
+stages:
+  - id: implement
+    role: developer
+    produces:
+      artifact: notes.md
+    verify:
+      - ${JSON.stringify(command)}
+  - id: review
+    role: developer
+    depends_on: [implement]
+completion:
+  stage: review
+`,
+    "utf8",
+  );
+  const sessionId = createWorkflowSession(workspace, "wf", "task");
+  const runner = new AgentToolRunner(
+    { fake: new ScriptedAdapter(["status: complete\n\ndone", "status: complete\n\ndone", "status: complete\n\ndone"], ["# notes\n", null, null]) },
+    10,
+  );
+  await runner.run({ provider: "fake", model: "m1", prompt: "go", workspace, sessionId, stageId: "implement" });
+  const turns = turnEvents(workspace, sessionId).map((event) => (event.details as { turn: number }).turn);
+  expect(turns).toEqual([1, 2, 3]);
+});
+
+test("progress turn_failed and the runner turn_failed are both recorded", async () => {
+  const adapter = new FakeAdapter();
+  adapter.buildCommand = () => ({
+    argv: [
+      process.execPath,
+      "-e",
+      "process.stdout.write(process.argv[1] + \"\\n\"); process.exit(1)",
+      JSON.stringify({ type: "fail" }),
+    ],
+  });
+  adapter.parseResponse = () => ["status: complete\n\ndone", "native-session-1"];
+  adapter.parseProgressEvent = () => ({ event: "provider.turn_failed", summary: "boom" });
+  const runner = new AgentToolRunner({ fake: adapter }, 10);
+  const tmp = tempDir("migent-runner-");
+  const result = await runner.run({ provider: "fake", model: "m1", prompt: "fail", workspace: tmp });
+  const failed = sessionEvents(tmp, result.session_id).filter((event) => event.event === "provider.turn_failed");
+  expect(failed).toHaveLength(2);
+  expect(failed.filter((event) => {
+    const details = event.details;
+    return typeof details === "object" && details !== null && typeof (details as { turn?: unknown }).turn === "number";
+  })).toHaveLength(1);
+});
+
+test("stage_started records git head and dirty state", async () => {
+  const repo = tempDir("migent-runner-git-");
+  execFileSync("git", ["init", "-b", "main"], { cwd: repo, stdio: "ignore" });
+  mkdirSync(path.join(repo, ".migent"), { recursive: true });
+  writeFileSync(path.join(repo, ".migent", ".gitignore"), "sessions/\n");
+  execFileSync("git", ["add", ".migent/.gitignore"], { cwd: repo, stdio: "ignore" });
+  execFileSync(
+    "git",
+    ["-c", "user.email=test@example.com", "-c", "user.name=Test", "-c", "commit.gpgsign=false", "commit", "-m", "ignore sessions"],
+    { cwd: repo, stdio: "ignore" },
+  );
+  const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8" }).trim();
+  const runner = new AgentToolRunner({ fake: new FakeAdapter() }, 10);
+  const first = await runner.run({ provider: "fake", model: "m1", prompt: "one", workspace: repo });
+  const clean = sessionEvents(repo, first.session_id).find((event) => event.event === "provider.stage_started");
+  expect(clean?.details).toMatchObject({ git_head: head, git_dirty: false });
+  writeFileSync(path.join(repo, "untracked.txt"), "x\n");
+  await runner.run({
+    provider: "fake",
+    model: "m1",
+    prompt: "two",
+    workspace: repo,
+    sessionId: first.session_id,
+  });
+  const dirty = sessionEvents(repo, first.session_id).filter((event) => event.event === "provider.stage_started");
+  expect(dirty[1]?.details).toMatchObject({ git_head: head, git_dirty: true });
+
+  const outside = tempDir("migent-runner-nogit-");
+  const bare = await new AgentToolRunner({ fake: new FakeAdapter() }, 10).run({
+    provider: "fake",
+    model: "m1",
+    prompt: "three",
+    workspace: outside,
+  });
+  const none = sessionEvents(outside, bare.session_id).find((event) => event.event === "provider.stage_started");
+  expect(none?.details).toMatchObject({ git_head: null, git_dirty: null });
+});
+
+test("the version command runs once for two executions", async () => {
+  const tmp = tempDir("migent-runner-version-");
+  const hits = path.join(tmp, "hits.txt");
+  const adapter = new FakeAdapter();
+  adapter.versionCommand = () => [
+    process.execPath,
+    "-e",
+    `require("fs").appendFileSync(${JSON.stringify(hits)}, "1\\n"); process.stdout.write("2.1.304\\n");`,
+  ];
+  adapter.parseVersion = (stdout: string) => {
+    const line = stdout.trim();
+    return line === "" ? null : line;
+  };
+  const runner = new AgentToolRunner({ fake: adapter }, 10);
+  const first = await runner.run({ provider: "fake", model: "m1", prompt: "one", workspace: tmp });
+  await runner.run({ provider: "fake", model: "m1", prompt: "two", workspace: tmp, sessionId: first.session_id });
+  const versions = sessionEvents(tmp, first.session_id)
+    .filter((event) => event.event === "provider.stage_started")
+    .map((event) => (event.details as { cli_version?: unknown }).cli_version);
+  expect(versions).toEqual(["2.1.304", "2.1.304"]);
+  expect(readFileSync(hits, "utf8")).toBe("1\n");
 });

@@ -6,6 +6,14 @@ import path from "node:path";
 
 const [provider, ...args] = process.argv.slice(2);
 
+// `provider.stage_started` runs `<cli> --version` once per provider. That probe is not a turn:
+// consuming a scripted step or appending the invocation log shifts every later assertion.
+if (args.length === 1 && args[0] === "--version") {
+  const versions = { grok: "grok 1.0.62", codex: "codex-cli 0.163.0" };
+  process.stdout.write(`${versions[provider] ?? provider}\n`);
+  process.exit(0);
+}
+
 function sleepMs(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }

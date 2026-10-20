@@ -1,6 +1,12 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { parseStageOutcome } from "@nodeint/migent-kernel";
 import { expect, test } from "vitest";
 import { GrokAdapter, providerCommands } from "../src/index.ts";
+
+function usageFixture(name: string): string {
+  return readFileSync(fileURLToPath(new URL(`./fixtures/usage/${name}`, import.meta.url)), "utf8");
+}
 
 function stream(...events: Record<string, unknown>[]): string {
   return events.map((event) => JSON.stringify(event)).join("\n");
@@ -150,4 +156,31 @@ test("maps options onto grok flags", () => {
     "--max-turns",
     "4",
   ]);
+});
+
+test("normalizes grok usage from the resume fixtures", () => {
+  const adapter = new GrokAdapter();
+  const captures = [1, 2, 3].map((turn) => adapter.captureUsage(usageFixture(`grok-resume-${turn}.jsonl`)));
+  expect(captures[0]).toHaveProperty("end");
+  expect(captures[0]).not.toHaveProperty("usage_event");
+  const usages = captures.map((capture) => adapter.normalizeUsage(capture!, null));
+  expect(usages.map((usage) => usage.input_tokens)).toEqual([7750, 240, 159]);
+  expect(usages[0]?.cost_usd).toBeCloseTo(0.00705, 5);
+  expect(usages[1]?.cost_usd).toBeCloseTo(0.00325, 5);
+  expect(usages[2]?.cost_usd).toBeCloseTo(0.00322, 5);
+  expect(adapter.captureUsage('{"type":"text","data":"hi"}\n')).toBeNull();
+  const streamed = adapter.captureUsage(
+    `${JSON.stringify({ type: "usage", usage: { input_tokens: 5, output_tokens: "1", reasoning_tokens: -3, cache_read_input_tokens: 2, cache_creation_input_tokens: 0 } })}\n`,
+  );
+  expect(streamed).toEqual({
+    usage_event: { input_tokens: 5, output_tokens: "1", reasoning_tokens: -3, cache_read_input_tokens: 2, cache_creation_input_tokens: 0 },
+  });
+  const partial = adapter.normalizeUsage(streamed!, null);
+  expect(partial.cost_usd).toBeNull();
+  expect(partial.input_tokens).toBe(5);
+  expect(partial.output_tokens).toBeNull();
+  expect(partial.reasoning_tokens).toBeNull();
+  expect(adapter.versionCommand()).toEqual(["grok", "--version"]);
+  expect(adapter.parseVersion("codex-cli 0.163.0\n")).toBe("codex-cli 0.163.0");
+  expect(adapter.parseVersion("")).toBeNull();
 });

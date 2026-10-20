@@ -4,6 +4,8 @@ import type {
   BuildCommandInput,
   NewSession,
   ProviderOption,
+  TurnUsage,
+  UsageCapture,
 } from "@nodeint/migent-kernel";
 import type { CommandSpec } from "@nodeint/migent-kernel";
 import { ModelCatalog } from "./catalog.js";
@@ -373,4 +375,58 @@ export class GrokAdapter implements AgentAdapter {
     if (typeof toolCallId === "string") return this.toolCalls[toolCallId] ?? {};
     return {};
   }
+
+  captureUsage(stdout: string): UsageCapture | null {
+    let end: Record<string, unknown> | null = null;
+    let usageEvent: Record<string, unknown> | null = null;
+    for (const rawLine of stdout.split(/\r\n|\n|\r/)) {
+      const payload = parseJsonObject(rawLine);
+      if (payload === null) continue;
+      if (payload.type === "end") end = payload;
+      else if (payload.type === "usage" && isRecord(payload.usage)) usageEvent = payload.usage;
+    }
+    if (end) return { end: picked(end, ["usage", "total_cost_usd", "num_turns"]) };
+    if (usageEvent) return { usage_event: usageEvent };
+    return null;
+  }
+
+  normalizeUsage(current: UsageCapture): TurnUsage {
+    const body = isRecord(current.end)
+      ? { usage: isRecord(current.end.usage) ? current.end.usage : null, cost: finite(current.end.total_cost_usd) }
+      : { usage: isRecord(current.usage_event) ? current.usage_event : null, cost: null };
+    const usage = body.usage;
+    return {
+      input_tokens: finite(usage?.input_tokens),
+      output_tokens: finite(usage?.output_tokens),
+      reasoning_tokens: finite(usage?.reasoning_tokens),
+      cache_read_tokens: finite(usage?.cache_read_input_tokens),
+      cache_write_tokens: finite(usage?.cache_creation_input_tokens),
+      cost_usd: body.cost,
+    };
+  }
+
+  versionCommand(): string[] {
+    return [this.command, "--version"];
+  }
+
+  parseVersion(stdout: string): string | null {
+    return versionLine(stdout);
+  }
+}
+
+function picked(source: Record<string, unknown>, keys: readonly string[]): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const key of keys) {
+    if (Object.hasOwn(source, key)) out[key] = source[key];
+  }
+  return out;
+}
+
+function finite(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+function versionLine(stdout: string): string | null {
+  const line = (stdout.split(/\r\n|\n|\r/, 1)[0] ?? "").trim();
+  return line === "" ? null : line;
 }
