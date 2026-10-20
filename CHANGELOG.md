@@ -4,6 +4,8 @@
 
 ### Added
 
+- A workflow session pins its workflow, role instructions, and resolved stage targets in `workflow.frozen.yaml`. Later edits warn on stderr and do not change that session. `session continue --refresh-workflow` and `session run --session --refresh-workflow` adopt the current workflow, models, and role instructions.
+- New sessions write `schema_version: 2` on an identity-only `manifest.yaml`. Status lives in `status.json`. A v1 manifest still has its status line and is still updated.
 - `session repair <session>` rebuilds `status.json` from the session directory. It takes the session lock. `--accept-task` is the only way past a v1 `status.json` that does not parse: it stores the hash of the current `task.md`. `session continue` repairs without that flag and refuses when the task hash or output provenance would be lost.
 - Each new event line has `v` and `seq`. Lifecycle changes (`session.created`, `session.activated`, `task.frozen`, `execution.started`, `execution.<status>`, `revisions.reset`, `outputs.published`, `session.<status>`) are recorded before `status.json` is written from that log.
 - `roles.<name>.instructions` is an optional list of strings. A stage prompt includes it before that stage's instructions. A role run prepends it to the prompt. `config role --json` includes the list.

@@ -203,12 +203,6 @@ test("continue redispatches a blocked schema 2 session", async () => {
   const runner = new AgentToolRunner({ fake: adapter }, 10);
   const first = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId, maxAttempts: 3 }, runner);
   expect(first.stopReason).toBe("blocked");
-  const manifestPath = path.join(workspace, ".migent", "sessions", sessionId, "manifest.yaml");
-  writeFileSync(
-    manifestPath,
-    readFileSync(manifestPath, "utf8").replace("status: blocked\n", "status: blocked\nschema_version: 2\n"),
-    "utf8",
-  );
   const second = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId, once: true }, runner);
   expect(second.status).toBe("active");
   expect(second.latestExecutionId).not.toBe(first.latestExecutionId);

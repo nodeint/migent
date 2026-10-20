@@ -21,6 +21,7 @@ export interface ExecuteWorkflowOptions {
   verbose?: boolean;
   itemProgress?: boolean;
   startPrepared?: boolean;
+  refreshWorkflow?: boolean;
 }
 
 export async function executeWorkflow(workspace: string, options: ExecuteWorkflowOptions): Promise<number> {
@@ -45,6 +46,7 @@ export async function executeWorkflow(workspace: string, options: ExecuteWorkflo
       maxDispatches: once ? null : maxDispatches,
       once,
       resetRevisions: options.action === "continue",
+      refreshWorkflow: options.refreshWorkflow === true,
     },
     runner,
   );

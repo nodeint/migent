@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { AgentToolRunner } from "@nodeint/migent-kernel";
 import { expect, test } from "vitest";
@@ -53,9 +53,29 @@ test("session run requires a workflow or a role", async () => {
   expect(once.value).toBe(2);
   expect(once.stderr).toContain(SPLIT);
 
+  const refresh = await capture(() =>
+    main(["session", "run", "--role", "reviewer", "--prompt", "x", "--refresh-workflow"]),
+  );
+  expect(refresh.value).toBe(2);
+  expect(refresh.stderr).toContain(SPLIT);
+
   const empty = await capture(() => main(["session", "run", "--workflow", " "]));
   expect(empty.value).toBe(2);
   expect(empty.stderr).toContain("--workflow is empty.");
+});
+
+test("session run --refresh-workflow requires an existing session", async () => {
+  const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
+  try {
+    const captured = await capture(() =>
+      main(["session", "run", "--workflow", "plan", "--task", "Write a plan", "--refresh-workflow"], workspace),
+    );
+    expect(captured.value).toBe(2);
+    expect(captured.stderr).toContain("--refresh-workflow requires an existing session.");
+    expect(existsSync(path.join(workspace, ".migent", "sessions"))).toBe(false);
+  } finally {
+    removeWorkspace(workspace);
+  }
 });
 
 test("session run --workflow dispatches one stage", async () => {

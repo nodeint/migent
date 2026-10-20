@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import { writeFileAtomic } from "./atomic-file.js";
@@ -7,6 +6,7 @@ import { pyRepr } from "./record.js";
 import { corruptStatusMessage, readStatusFileState } from "./query.js";
 import { isUnicodeAlnum, utcNow } from "./runtime.js";
 import { appendLifecycleEvent } from "./session-events.js";
+import { writeWorkflowFreeze } from "./session-freeze.js";
 import { commitFoldedStatus, readSessionManifest } from "./session-fold.js";
 import { SessionLock, sessionLockHeldLocally } from "./session-lock.js";
 import { SessionStore } from "./session-store.js";
@@ -108,16 +108,17 @@ export function createWorkflowSession(
     `workflow_path: ${workflowRelativePath}`,
     `task: ${JSON.stringify(taskSummary)}`,
     `created_at: ${createdAt}`,
-    "status: running",
   ];
-  if (resolvedPrior) manifestLines.splice(manifestLines.length - 1, 0, `prior_session_id: ${resolvedPrior}`);
+  if (resolvedPrior) manifestLines.push(`prior_session_id: ${resolvedPrior}`);
+  manifestLines.push("schema_version: 2");
   withSessionLock(sessionDirectory, () => {
     writeFileAtomic(path.join(sessionDirectory, "manifest.yaml"), `${manifestLines.join("\n")}\n`);
     writeTaskFile(taskFilePath(workspace, sessionId), taskSummary);
+    const frozen = writeWorkflowFreeze(sessionDirectory, workspace, workflow);
     appendSessionCreated(sessionDirectory, createdAt, {
       workflow_id: resolvedId,
       workflow_path: workflowRelativePath,
-      hash: workflowSourceHash(workflow),
+      hash: frozen.hash,
       task: taskSummary,
       prior_session_id: resolvedPrior,
     });
@@ -155,17 +156,19 @@ export function createPreparedSession(
     `workflow_path: ${workflowRelativePath}`,
     `task: ${JSON.stringify(id)}`,
     `created_at: ${createdAt}`,
-    "status: prepared",
   ];
-  if (resolvedPrior) manifestLines.splice(manifestLines.length - 1, 0, `prior_session_id: ${resolvedPrior}`);
+  if (resolvedPrior) manifestLines.push(`prior_session_id: ${resolvedPrior}`);
+  manifestLines.push("schema_version: 2");
   withSessionLock(sessionDirectory, () => {
     writeFileAtomic(path.join(sessionDirectory, "manifest.yaml"), `${manifestLines.join("\n")}\n`);
+    const frozen = writeWorkflowFreeze(sessionDirectory, workspace, workflow);
     appendSessionCreated(sessionDirectory, createdAt, {
       workflow_id: resolvedId,
       workflow_path: workflowRelativePath,
-      hash: workflowSourceHash(workflow),
+      hash: frozen.hash,
       task: id,
       prior_session_id: resolvedPrior,
+      prepared: true,
     });
     commitFoldedStatus(workspace, sessionDirectory);
   });
@@ -207,7 +210,7 @@ export function createAgentSession(workspace: string, role: string, task: string
         `role: ${role}`,
         `task: ${JSON.stringify(taskSummary)}`,
         `created_at: ${createdAt}`,
-        "status: running",
+        "schema_version: 2",
       ].join("\n")}\n`,
     );
     appendSessionCreated(sessionDirectory, createdAt, {
@@ -300,15 +303,6 @@ function appendSessionCreated(sessionDirectory: string, timestamp: string, data:
   });
 }
 
-function workflowSourceHash(workflow: WorkflowDocument): string | null {
-  if (!workflow.source) return null;
-  try {
-    return createHash("sha256").update(readFileSync(workflow.source)).digest("hex");
-  } catch {
-    return null;
-  }
-}
-
 function pyLiteral(value: unknown): string {
   if (typeof value === "string") return pyRepr(value);
   if (typeof value === "boolean") return value ? "True" : "False";
@@ -317,6 +311,7 @@ function pyLiteral(value: unknown): string {
 }
 
 function replaceManifestStatus(sessionDirectory: string, status: string): void {
+  if (readSessionManifest(sessionDirectory).schemaVersion >= 2) return;
   const manifestPath = path.join(sessionDirectory, "manifest.yaml");
   try {
     if (!statSync(manifestPath).isFile()) return;

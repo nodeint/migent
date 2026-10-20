@@ -10,22 +10,20 @@ import {
 import path from "node:path";
 import { writeFileAtomic, writeJsonAtomic } from "./atomic-file.js";
 import { ConfigurationError } from "./errors.js";
-import { appendLifecycleEvent, appendRecordedEvent, reservedExecutionOrders, reservedStageAttempts, sessionChangeReason, skipsStatusWrite } from "./session-events.js";
-import { commitFoldedStatus } from "./session-fold.js";
+import { appendLifecycleEvent, appendRecordedEvent, reservedExecutionOrders, reservedStageAttempts, skipsStatusWrite } from "./session-events.js";
+import { commitFoldedStatus, readSessionManifest } from "./session-fold.js";
+import { loadFrozenWorkflow } from "./session-freeze.js";
 import { assertSessionLockHeld } from "./session-lock.js";
 import { corruptStatusMessage, readStatusFileState } from "./query.js";
 import { STATUS_PROVIDER_EVENTS } from "./event-kinds.js";
 import {
   missingCompletionOutputNames,
   nonemptyArtifact,
-  publishOutputFiles,
   runnableViolation,
-  selectSourceExecution,
-  sessionStatusAfterExecution,
   shouldPublishOutputs,
   type ExecutionSnapshot,
-  type PublishedOutput,
 } from "./outputs.js";
+import { planExecutionSave } from "./session-ledger.js";
 import {
   REAP_ALREADY_EXITED,
   REAP_STILL_RUNNING,
@@ -534,13 +532,9 @@ export class SessionStore {
     assertSessionLockHeld(sessionDirectory);
     const previousStatus = this.readSessionStatusAt(sessionDirectory);
     const workflow = this.loadWorkflow(previousStatus);
-    if (status === "running" && previousStatus.status === "completed") {
-      this.rewriteManifestStatus(sessionDirectory, "running");
-    }
-    const published =
-      status === "running"
-        ? {}
-        : this.publishedOutputs(context, status, outcome, previousStatus, workflow, metadata);
+    const manifest = readSessionManifest(sessionDirectory);
+    const stageId = typeof metadata.stage_id === "string" ? metadata.stage_id : "";
+    const executionOrder = asInt(metadata.execution_order);
     const timestamp = utcNow();
     metadata.status = status;
     metadata.agent_id = record.agentId;
@@ -548,11 +542,23 @@ export class SessionStore {
     if (error !== null) metadata.error = error;
     if (outcome !== null) metadata.outcome = outcome.toJson();
     if (extra !== null) Object.assign(metadata, extra);
-    writeJsonAtomic(filePath, metadata);
-    const stageId = typeof metadata.stage_id === "string" ? metadata.stage_id : "";
-    const sessionStatus = sessionStatusAfterExecution(status, outcome, previousStatus, workflow, stageId);
-    const failureReason = typeof metadata.failure_reason === "string" ? metadata.failure_reason : null;
     const storedError = typeof metadata.error === "string" ? metadata.error : null;
+    const plan = planExecutionSave({
+      executionStatus: status,
+      outcome,
+      storedError,
+      stageId,
+      executionOrder,
+      executionId: context.executionId,
+      sessionDirectory,
+      previousStatus,
+      workflow,
+      schemaVersion: manifest.schemaVersion,
+      manifestStatus: manifest.manifestStatus,
+      snapshots: this.snapshotList(context.sessionId),
+    });
+    writeJsonAtomic(filePath, metadata);
+    const failureReason = typeof metadata.failure_reason === "string" ? metadata.failure_reason : null;
     appendLifecycleEvent(sessionDirectory, {
       event: `execution.${status}`,
       timestamp,
@@ -562,7 +568,7 @@ export class SessionStore {
         outcome: outcome ? outcome.toJson() : null,
         failure_reason: failureReason,
         error: storedError,
-        session_status: sessionStatus,
+        session_status: plan.sessionStatus,
       },
     });
     if (outcome !== null) {
@@ -576,40 +582,26 @@ export class SessionStore {
         data: { outcome: outcomeJson },
       });
     }
-    if (Object.keys(published).length > 0) {
+    if (plan.outputs.length > 0) {
       appendLifecycleEvent(sessionDirectory, {
         event: "outputs.published",
         timestamp,
         executionId: context.executionId,
         stageId,
-        data: {
-          outputs: Object.entries(published).map(([name, row]) => ({
-            name,
-            path: row.path,
-            source_execution_id: row.source_execution_id,
-            published_by_execution_id: row.published_by_execution_id,
-          })),
-        },
+        data: { outputs: plan.outputs },
       });
     }
-    const previousSessionStatus = typeof previousStatus.status === "string" ? previousStatus.status : "";
-    if (sessionStatus !== previousSessionStatus) {
-      const reason = sessionChangeReason(sessionStatus, outcome, storedError);
-      const data: Record<string, unknown> = { from: previousSessionStatus || null };
-      if (reason !== null) data.reason = reason;
-      if (outcome !== null) data.outcome = outcome.toJson();
+    if (plan.sessionEvent !== null) {
       appendLifecycleEvent(sessionDirectory, {
-        event: `session.${sessionStatus}`,
+        event: `session.${plan.sessionStatus}`,
         timestamp,
         executionId: context.executionId,
         stageId,
-        outcomeTopLevel: outcome ? outcome.toJson() : null,
-        data,
+        outcomeTopLevel: plan.sessionEvent.outcomeTopLevel,
+        data: plan.sessionEvent.data,
       });
-      if (sessionStatus === "completed" || sessionStatus === "blocked" || sessionStatus === "cancelled") {
-        this.rewriteManifestStatus(sessionDirectory, sessionStatus);
-      }
     }
+    if (plan.manifestStatus !== null) this.rewriteManifestStatus(sessionDirectory, plan.manifestStatus);
     commitFoldedStatus(this.workspace, sessionDirectory);
   }
 
@@ -669,6 +661,7 @@ export class SessionStore {
   }
 
   private rewriteManifestStatus(sessionDirectory: string, status: string): void {
+    if (readSessionManifest(sessionDirectory).schemaVersion >= 2) return;
     const manifestPath = path.join(sessionDirectory, "manifest.yaml");
     try {
       if (!statSync(manifestPath).isFile()) return;
@@ -683,6 +676,11 @@ export class SessionStore {
 
   private loadWorkflow(previousStatus: Record<string, unknown>): WorkflowDocument | null {
     if (previousStatus.workflow_id === "agent") return null;
+    const sessionId = previousStatus.session_id;
+    if (typeof sessionId === "string" && sessionId !== "") {
+      const frozen = loadFrozenWorkflow(path.join(this.sessionsDirectory, sessionId));
+      if (frozen) return frozen;
+    }
     const workflowPath = previousStatus.workflow_path;
     if (typeof workflowPath === "string" && workflowPath) {
       const filePath = path.isAbsolute(workflowPath) ? workflowPath : path.join(this.workspace, workflowPath);
@@ -844,42 +842,6 @@ export class SessionStore {
     return [asInt(metadata.execution_order), context.executionId];
   }
 
-  private publishedOutputs(
-    context: ExecutionContext,
-    status: string,
-    outcome: StageOutcome | null,
-    previousStatus: Record<string, unknown>,
-    workflow: WorkflowDocument | null,
-    metadata: Record<string, unknown>,
-  ): Record<string, Record<string, string>> {
-    if (workflow === null) return {};
-    const sessionDirectory = path.dirname(path.dirname(context.directory));
-    const stageId = typeof metadata.stage_id === "string" ? metadata.stage_id : "";
-    const workflowId = previousStatus.workflow_id;
-    if (
-      !shouldPublishOutputs({
-        workflowId: typeof workflowId === "string" ? workflowId : null,
-        executionStatus: status,
-        outcome,
-        workflow,
-        stageId,
-      })
-    ) {
-      return {};
-    }
-    const completion = workflow.completion;
-    if (completion === null) return {};
-    const beforeOrder = asInt(metadata.execution_order);
-    const snapshots = this.snapshotList(context.sessionId);
-    const sources: Record<string, readonly [string, string]> = {};
-    for (const output of completion.outputs) {
-      const source = selectSourceExecution(snapshots, output.fromStage, beforeOrder);
-      if (source === null) continue;
-      sources[output.name] = [path.join(source.artifactDirectory, output.artifact), source.executionId];
-    }
-    return publishedJson(publishOutputFiles(sessionDirectory, sources, context.executionId));
-  }
-
   private snapshotList(sessionId: string): ExecutionSnapshot[] {
     const snapshots: ExecutionSnapshot[] = [];
     for (const context of this.executionContexts(sessionId)) {
@@ -916,20 +878,6 @@ function verifyReportPath(directory: string, verify: unknown): string | null {
     return null;
   }
   return path.join(directory, verify.last_report);
-}
-
-function publishedJson(
-  recorded: Record<string, PublishedOutput>,
-): Record<string, Record<string, string>> {
-  const outputs: Record<string, Record<string, string>> = {};
-  for (const [name, output] of Object.entries(recorded)) {
-    outputs[name] = {
-      path: output.path,
-      source_execution_id: output.sourceExecutionId,
-      published_by_execution_id: output.publishedByExecutionId,
-    };
-  }
-  return outputs;
 }
 
 function nonempty(value: unknown): string | null {

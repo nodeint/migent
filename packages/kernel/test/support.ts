@@ -47,6 +47,25 @@ export function whichFound(found: ReadonlySet<string>): (command: string) => str
   return (command) => (found.has(command) ? `/bin/${command}` : null);
 }
 
+export const SESSION_CONFIG = `\
+models:
+  grok:
+    provider: grok
+    model: grok-4
+roles:
+  planner:
+    default_model: grok
+  reviewer:
+    default_model: grok
+  developer:
+    default_model: grok
+`;
+
+export function writeSessionConfig(workspace: string): void {
+  mkdirSync(path.join(workspace, ".migent"), { recursive: true });
+  writeFileSync(path.join(workspace, ".migent", "config.yaml"), SESSION_CONFIG, "utf8");
+}
+
 export const STAGE_CONFIG = `\
 models:
   grok:
@@ -251,6 +270,7 @@ export function writePlanReviewSession(): [string, string] {
   const workflows = path.join(workspace, ".migent", "workflows");
   mkdirSync(workflows, { recursive: true });
   writeFileSync(path.join(workflows, "plan.yaml"), PLAN_REVIEW_WORKFLOW, "utf8");
+  writeSessionConfig(workspace);
   return [workspace, createWorkflowSession(workspace, "plan", "Write a plan")];
 }
 

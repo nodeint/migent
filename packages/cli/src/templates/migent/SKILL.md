@@ -121,8 +121,11 @@ A stopped active session is resumable; do not describe it as completed. A
 blocked session is resumed the same way: `session continue` runs that stage
 again. Do not start a replacement session to reset limits or to get past
 `blocked`. If you change a workflow or
-config while a session is active, run `migent doctor --json` and tell the user the
-session was created under the earlier definition.
+config while a session is active, that session keeps the workflow, models, and
+role instructions it started with. Run `migent doctor --json` and tell the user.
+`migent session continue <session-id> --refresh-workflow` adopts the current
+workflow, models, and role instructions. `session run --session <id> --workflow <workflow> --refresh-workflow`
+does the same when starting a prepared session.
 
 ## Inspect sessions
 

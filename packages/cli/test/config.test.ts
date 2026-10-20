@@ -199,6 +199,23 @@ test("migrate asks before writing and yes skips the question", async () => {
   }
 });
 
+test("migrate does not modify a session directory", async () => {
+  const workspace = tempDir();
+  try {
+    project(workspace);
+    const sessionDir = path.join(workspace, ".migent", "sessions", "kept");
+    mkdirSync(sessionDir, { recursive: true });
+    const marker = path.join(sessionDir, "manifest.yaml");
+    const body = "session_id: kept\nstatus: running\n";
+    writeFileSync(marker, body, "utf8");
+    const captured = await capture(() => runMigrate(workspace, { assumeYes: true }));
+    expect(captured.value).toBe(0);
+    expect(readFileSync(marker, "utf8")).toBe(body);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
 test("lists models as json", async () => {
   const workspace = tempDir();
   try {

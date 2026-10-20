@@ -1,7 +1,9 @@
+import path from "node:path";
 import { AgentToolRunner, type RunResult } from "./agent-runner.js";
-import { resolveStageTarget } from "./config.js";
+import { resolveStageTarget, type StageTarget } from "./config.js";
 import { ConfigurationError } from "./errors.js";
 import { isRecord } from "./record.js";
+import { frozenStageTarget, readWorkflowFreeze } from "./session-freeze.js";
 import { bindPriorSessionId, createWorkflowSession } from "./session-records.js";
 import { revisionResumeExecution, stageDispatchError, verifyExhaustedExecution } from "./selection.js";
 import { stringOptions, SessionStore } from "./session-store.js";
@@ -55,18 +57,20 @@ export async function dispatchNamedStage(
   workspace: string,
   request: StageDispatchRequest,
   runner?: AgentToolRunner,
+  resolved?: { workflow: WorkflowDocument; target: StageTarget } | null,
 ): Promise<StageDispatchResult> {
-  const workflow = loadNamedWorkflow(workspace, request.workflowId);
-  const workflowId = workflow.id;
-  const target = resolveStageTarget(workspace, workflowId, request.stageId, {
-    provider: request.provider,
-    model: request.model,
-    options: request.options,
-  });
+  let loaded = resolved ?? loadDispatchTarget(workspace, request);
+  let workflow = loaded.workflow;
+  let target = loaded.target;
   let sessionId = request.sessionId ?? null;
   if (sessionId === null) {
     if (!request.task) throw new ConfigurationError("The first workflow stage requires --task.");
-    sessionId = createWorkflowSession(workspace, workflowId, request.task, request.priorSessionId);
+    sessionId = createWorkflowSession(workspace, workflow.id, request.task, request.priorSessionId);
+    if (!resolved) {
+      loaded = loadDispatchTarget(workspace, { ...request, sessionId });
+      workflow = loaded.workflow;
+      target = loaded.target;
+    }
   } else {
     bindPriorSessionId(workspace, sessionId, request.priorSessionId);
   }
@@ -124,6 +128,25 @@ export function resolveResumeExecution(
     );
   }
   return latest.executionId;
+}
+
+function loadDispatchTarget(
+  workspace: string,
+  request: StageDispatchRequest,
+): { workflow: WorkflowDocument; target: StageTarget } {
+  const sessionId = request.sessionId ?? null;
+  const override = { provider: request.provider, model: request.model, options: request.options };
+  if (sessionId) {
+    const freeze = readWorkflowFreeze(path.join(workspace, ".migent", "sessions", sessionId));
+    if (freeze) {
+      return { workflow: freeze.workflow, target: frozenStageTarget(freeze, request.stageId, override) };
+    }
+  }
+  const workflow = loadNamedWorkflow(workspace, request.workflowId);
+  return {
+    workflow,
+    target: resolveStageTarget(workspace, workflow.id, request.stageId, override),
+  };
 }
 
 function resultFromRun(result: RunResult, sessionId: string): StageDispatchResult {

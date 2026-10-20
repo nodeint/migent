@@ -2,7 +2,13 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { isAtomicTempName, writeJsonAtomic } from "./atomic-file.js";
 import { ConfigurationError } from "./errors.js";
-import { sessionStatusAfterExecution } from "./outputs.js";
+import {
+  applyTerminalFields,
+  decisionOfOutcome,
+  latestDecision,
+  recordLatestDecision,
+  sessionStatusForExecution,
+} from "./session-ledger.js";
 import { readStatusFileState, type StatusFileState } from "./query.js";
 import { isRecord } from "./record.js";
 import { EXECUTIONS_DIRNAME } from "./runtime.js";
@@ -12,6 +18,7 @@ import {
   skipsStatusWrite,
   type ParsedEvent,
 } from "./session-events.js";
+import { loadFrozenWorkflow } from "./session-freeze.js";
 import { StageOutcome } from "./stage-outcome.js";
 import { loadNamedWorkflow, loadWorkflowDocument, type WorkflowDocument } from "./workflow.js";
 import { parseYamlDocument } from "./yaml.js";
@@ -142,7 +149,7 @@ export function loadFoldInputs(workspace: string, sessionDirectory: string): Fol
     presentExecutionIds: new Set(executions.map((execution) => execution.executionId)),
     previousStatus,
     outputFiles: listOutputFiles(sessionDirectory),
-    workflow: loadSessionWorkflow(workspace, identity),
+    workflow: loadSessionWorkflow(workspace, sessionDirectory, identity),
   };
 }
 
@@ -157,6 +164,7 @@ function foldV1(inputs: FoldInputs): Record<string, unknown> {
   let updatedAt = textOr(status.updated_at) ?? inputs.manifest.createdAt;
   for (const event of inputs.events) {
     if (event.v < 2) continue;
+    if (event.event === "workflow.refreshed") continue;
     if (applySharedEvent(status, event)) updatedAt = later(updatedAt, event.timestamp);
   }
   const latest = latestExecution(inputs.executions);
@@ -179,10 +187,11 @@ interface SeenExecution {
 }
 
 function foldSchema2(inputs: FoldInputs): Record<string, unknown> {
-  const status = initialStatus(inputs.manifest);
+  const status = initialStatus(inputs.manifest, inputs.schemaVersion);
   const seen = new Map<string, SeenExecution>();
   let updatedAt = inputs.manifest.createdAt;
   for (const event of inputs.events) {
+    if (event.event === "workflow.refreshed") continue;
     if (event.executionId && !inputs.presentExecutionIds.has(event.executionId) && isExecutionScoped(event.event)) {
       continue;
     }
@@ -198,6 +207,14 @@ function foldSchema2(inputs: FoldInputs): Record<string, unknown> {
 }
 
 function applySharedEvent(status: Record<string, unknown>, event: ParsedEvent): boolean {
+  if (event.event === "workflow.refreshed") return false;
+  if (event.event === "session.created") {
+    if (event.data.prepared === true) {
+      status.status = "prepared";
+      return true;
+    }
+    return false;
+  }
   if (event.event === "task.frozen") {
     const hash = textOr(event.data.sha256);
     if (hash) status.task_sha256 = hash;
@@ -236,10 +253,11 @@ function applySchema2Execution(
   event: ParsedEvent,
   seen: Map<string, SeenExecution>,
 ): boolean {
+  if (event.event === "workflow.refreshed") return false;
   if (!event.executionId) {
     if (event.event.startsWith("session.") && event.event !== "session.created" && event.event !== "session.activated") {
       status.status = event.event.slice("session.".length);
-      applyTerminal(status, event.event.slice("session.".length), null, textOr(event.data.reason));
+      applyTerminalFields(status, event.event.slice("session.".length), null, textOr(event.data.reason));
       return true;
     }
     return false;
@@ -298,18 +316,20 @@ function publishLatestExecution(status: Record<string, unknown>, seen: ReadonlyM
   const latest = seen.get(latestId);
   if (!latest) return;
   noteLatest(status, latestId, latest.status, latest.stageId);
-  const decision = decisionFromSeen(seen);
-  if (decision) status.latest_decision = decision;
+  recordLatestDecision(
+    status,
+    latestDecision([...seen.values()].map((row) => ({ order: row.order, outcome: row.outcome }))),
+  );
   if (latest.sessionStatus) {
     status.status = latest.sessionStatus;
-    applyTerminal(status, latest.sessionStatus, {
+    applyTerminalFields(status, latest.sessionStatus, {
       executionId: latestId,
       stageId: latest.stageId,
       blocker: textOr(latest.outcome?.blocker),
     }, null);
   } else if (latest.status === "running") {
     status.status = "active";
-    applyTerminal(status, "active", null, null);
+    applyTerminalFields(status, "active", null, null);
   }
   publishCurrentStage(status, latestId, latest.status === "running");
 }
@@ -323,25 +343,13 @@ function publishCurrentStage(status: Record<string, unknown>, executionId: strin
   if (!isRecord(stage) || stage.execution_id !== executionId) delete status.current_stage;
 }
 
-function decisionFromSeen(seen: ReadonlyMap<string, SeenExecution>): string | null {
-  let bestOrder = -1;
-  let decision: string | null = null;
-  for (const row of seen.values()) {
-    const found = decisionOf(row.outcome);
-    if (found === null || row.order < bestOrder) continue;
-    bestOrder = row.order;
-    decision = found;
-  }
-  return decision;
-}
-
 function eventExecutionOrder(event: ParsedEvent): number {
   const fromId = event.executionId ? (parseExecutionId(event.executionId)?.order ?? 0) : 0;
   return Math.max(asInt(event.data.execution_order), fromId);
 }
 
 function applyExecutionSnapshot(status: Record<string, unknown>, latest: FoldExecution, inputs: FoldInputs): void {
-  const sessionStatus = sessionStatusAfterExecution(
+  const sessionStatus = sessionStatusForExecution(
     latest.status,
     toStageOutcome(latest.outcome),
     status,
@@ -352,9 +360,8 @@ function applyExecutionSnapshot(status: Record<string, unknown>, latest: FoldExe
   status.latest_execution_id = latest.executionId;
   status.latest_execution_status = latest.status;
   status.latest_stage_id = latest.stageId;
-  const decision = decisionOf(latest.outcome);
-  if (decision) status.latest_decision = decision;
-  applyTerminal(status, sessionStatus, {
+  recordLatestDecision(status, decisionOfOutcome(latest.outcome));
+  applyTerminalFields(status, sessionStatus, {
     executionId: latest.executionId,
     stageId: latest.stageId,
     blocker: textOr(latest.outcome?.blocker),
@@ -379,32 +386,8 @@ function applyBlockedResume(
   }
   if (resume === null || status.status !== "blocked") return updatedAt;
   status.status = "active";
-  applyTerminal(status, "active", null, null);
+  applyTerminalFields(status, "active", null, null);
   return later(updatedAt, resume.timestamp);
-}
-
-function applyTerminal(
-  status: Record<string, unknown>,
-  sessionStatus: string,
-  source: { executionId: string; stageId: string; blocker: string | null } | null,
-  reason: string | null,
-): void {
-  delete status.terminal_execution_id;
-  delete status.blocked_by_execution_id;
-  delete status.blocked_by_stage_id;
-  delete status.blocker;
-  if (sessionStatus !== "blocked" && sessionStatus !== "completed" && sessionStatus !== "cancelled") return;
-  if (source === null) {
-    if (sessionStatus === "blocked" && reason) status.blocker = reason;
-    return;
-  }
-  status.terminal_execution_id = source.executionId;
-  if (sessionStatus === "blocked") {
-    status.blocked_by_execution_id = source.executionId;
-    status.blocked_by_stage_id = source.stageId;
-    if (source.blocker) status.blocker = source.blocker;
-    else if (reason) status.blocker = reason;
-  }
 }
 
 function noteLatest(status: Record<string, unknown>, executionId: string, executionStatus: string, stageId: string): void {
@@ -461,10 +444,10 @@ function addPathOnlyOutputs(status: Record<string, unknown>, outputFiles: readon
   if (Object.keys(outputs).length > 0) status.outputs = outputs;
 }
 
-function initialStatus(manifest: SessionManifest): Record<string, unknown> {
+function initialStatus(manifest: SessionManifest, schemaVersion: number): Record<string, unknown> {
   const status: Record<string, unknown> = {
     session_id: manifest.sessionId,
-    status: manifestStatusToSession(manifest.manifestStatus),
+    status: schemaVersion >= 2 ? "active" : manifestStatusToSession(manifest.manifestStatus),
   };
   applyManifestIdentity(status, manifest);
   if (manifest.createdAt) status.updated_at = manifest.createdAt;
@@ -596,8 +579,14 @@ function listOutputFiles(sessionDirectory: string): string[] {
   return names;
 }
 
-function loadSessionWorkflow(workspace: string, status: Record<string, unknown>): WorkflowDocument | null {
+function loadSessionWorkflow(
+  workspace: string,
+  sessionDirectory: string,
+  status: Record<string, unknown>,
+): WorkflowDocument | null {
   if (status.workflow_id === "agent") return null;
+  const frozen = loadFrozenWorkflow(sessionDirectory);
+  if (frozen) return frozen;
   const workflowPath = status.workflow_path;
   if (typeof workflowPath === "string" && workflowPath) {
     const filePath = path.isAbsolute(workflowPath) ? workflowPath : path.join(workspace, workflowPath);

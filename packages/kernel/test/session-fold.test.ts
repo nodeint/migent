@@ -11,7 +11,7 @@ import { createAgentSession, createWorkflowSession } from "../src/session-record
 import { SessionStore } from "../src/session-store.ts";
 import { StageOutcome } from "../src/stage-outcome.ts";
 import { freezeSessionTask } from "../src/task-file.ts";
-import { tempDir } from "./support.ts";
+import { tempDir, writeSessionConfig } from "./support.ts";
 
 const PLAN = readFileSync(
   path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "workflows", "plan.yaml"),
@@ -23,6 +23,7 @@ function workspaceWithPlan(): string {
   const workflows = path.join(workspace, ".migent", "workflows");
   mkdirSync(workflows, { recursive: true });
   writeFileSync(path.join(workflows, "plan.yaml"), PLAN, "utf8");
+  writeSessionConfig(workspace);
   return workspace;
 }
 
@@ -229,6 +230,7 @@ test("continue repairs a status.json that missed its event, and refuses a destro
   expect(kept.outputs).toMatchObject(intact.outputs as Record<string, unknown>);
   expect(kept.workflow_id).toBe("plan");
 
+  markSchema1(workspace, sessionId);
   writeFileSync(path.join(directory, "status.json"), "{", "utf8");
   await expect(executeNamedWorkflow(workspace, { sessionId })).rejects.toThrow(/--accept-task/);
   expect(() => repairSession(workspace, sessionId)).toThrow(ConfigurationError);
@@ -244,8 +246,7 @@ test("a schema 2 repair rebuilds missing execution events and ignores a forged s
   const workspace = workspaceWithPlan();
   const sessionId = createWorkflowSession(workspace, "plan", "Write a plan");
   const directory = sessionDirectory(workspace, sessionId);
-  const manifestPath = path.join(directory, "manifest.yaml");
-  writeFileSync(manifestPath, readFileSync(manifestPath, "utf8").replace("status: running\n", "status: running\nschema_version: 2\n"), "utf8");
+  markSchema2(workspace, sessionId);
   const store = new SessionStore(workspace);
   const [record, , context] = store.loadOrCreate("fake", "model", {}, workspace, sessionId, "plan", null, null, "plan");
   store.saveExecution(context, record, "completed", null, new StageOutcome("complete"));
@@ -353,6 +354,7 @@ test("junk files in outputs are not recorded", () => {
 test("a v1 show does not report fold drift", () => {
   const workspace = workspaceWithPlan();
   const sessionId = createWorkflowSession(workspace, "plan", "Write a plan");
+  markSchema1(workspace, sessionId);
   const status = readStatus(workspace, sessionId);
   status.task = "changed by hand";
   writeFileSync(path.join(sessionDirectory(workspace, sessionId), "status.json"), JSON.stringify(status), "utf8");
@@ -377,6 +379,7 @@ test("repair refuses a parsed hash the fold would replace", () => {
 test("an execution file without its started event is still visible to a v1 fold", () => {
   const workspace = workspaceWithPlan();
   const sessionId = createWorkflowSession(workspace, "plan", "Write a plan");
+  markSchema1(workspace, sessionId);
   const store = new SessionStore(workspace);
   const [record, , context] = store.loadOrCreate("fake", "model", {}, workspace, sessionId, "plan", null, null, "plan");
   store.saveExecution(context, record, "failed", "boom", null);
@@ -394,11 +397,16 @@ test("an execution file without its started event is still visible to a v1 fold"
 
 function markSchema2(workspace: string, sessionId: string): void {
   const manifestPath = path.join(sessionDirectory(workspace, sessionId), "manifest.yaml");
-  writeFileSync(
-    manifestPath,
-    readFileSync(manifestPath, "utf8").replace("status: running\n", "status: running\nschema_version: 2\n"),
-    "utf8",
-  );
+  const text = readFileSync(manifestPath, "utf8");
+  if (/^schema_version:/m.test(text)) return;
+  writeFileSync(manifestPath, `${text.replace(/\n$/, "")}\nschema_version: 2\n`, "utf8");
+}
+
+function markSchema1(workspace: string, sessionId: string): void {
+  const manifestPath = path.join(sessionDirectory(workspace, sessionId), "manifest.yaml");
+  const stripped = readFileSync(manifestPath, "utf8").replace(/\nschema_version:.*(?:\n|$)/, "\n");
+  const text = /^status:/m.test(stripped) ? stripped : `${stripped.replace(/\n$/, "")}\nstatus: running\n`;
+  writeFileSync(manifestPath, text.endsWith("\n") ? text : `${text}\n`, "utf8");
 }
 
 test("a schema 2 fold keeps a finished execution when its started event is appended later", () => {

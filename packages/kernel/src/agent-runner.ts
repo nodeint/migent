@@ -20,6 +20,7 @@ import {
   log,
 } from "./runtime.js";
 import { ProviderEventReporter } from "./provider-events.js";
+import { loadFrozenWorkflow } from "./session-freeze.js";
 import { AgentSessionRecord, SessionStore, stringOptions, type ExecutionContext } from "./session-store.js";
 import { parseStageOutcome, StageOutcome } from "./stage-outcome.js";
 import { loadNamedWorkflow, loadStage, type StageSpec } from "./workflow.js";
@@ -628,6 +629,8 @@ export class AgentToolRunner {
 function loadRunStage(store: SessionStore, sessionId: string, stageId: string): StageSpec | null {
   const sessionStatus = store.readSessionStatus(sessionId);
   if (sessionStatus.workflow_id === "agent") return null;
+  const frozen = loadFrozenWorkflow(path.join(store.sessionsDirectory, sessionId));
+  if (frozen) return frozen.stages[stageId] ?? null;
   const workflowPath = sessionStatus.workflow_path;
   if (typeof workflowPath === "string") {
     const stage = loadStage(store.workspace, workflowPath, stageId);

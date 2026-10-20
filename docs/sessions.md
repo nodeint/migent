@@ -14,6 +14,7 @@ Each run has its own directory, named by its session ID:
 ```text
 .migent/sessions/<session-id>/
 ├── manifest.yaml
+├── workflow.frozen.yaml                  # pinned workflow, roles, and stage targets
 ├── status.json
 ├── task.md                               # task body; written before the first stage
 ├── events.jsonl
@@ -34,9 +35,18 @@ Each run has its own directory, named by its session ID:
 
 The session-level files have distinct purposes:
 
-- `manifest.yaml` identifies the session, workflow, task label, creation time, and
-  terminal status. An ad hoc agent session also records its role; a workflow
-  with `requires` records its prerequisite as `prior_session_id`.
+- `manifest.yaml` on a schema 2 session is identity only: `session_id`, the
+  workflow id and path, the task label, `created_at`, an optional
+  `prior_session_id` or `role`, and `schema_version`. It has no status line.
+  Status lives in `status.json`. A v1 manifest still has a `status` line, and
+  that line is still updated. An ad hoc agent session records its role; a
+  workflow with `requires` records its prerequisite as `prior_session_id`.
+- `workflow.frozen.yaml` pins the workflow, role instructions, and resolved
+  stage targets when a workflow session is created. `session continue` and
+  `session run --session` keep using that copy when the live files change, and
+  warn on stderr. `--refresh-workflow` replaces it. A missing file means the
+  session uses the live workflow and config. Repair does not rebuild it.
+  Agent sessions do not have this file.
 - `task.md` is the task body. A one-line `session run --workflow --task` writes
   that sentence here. A prepared session leaves the file for you to write, along with any
   other files that belong next to it. Stage prompts name this path and the
@@ -167,6 +177,8 @@ destroyed, the task hash and output provenance cannot be recovered.
 stores the hash of the current `task.md`, keeps any provenance map that still
 parsed, and adds a path-only row for an `outputs/` file the map does not name.
 It does not leave `task_sha256` empty. `session continue` does not accept the flag.
+Repair does not rebuild a missing `workflow.frozen.yaml`. Without that file the
+session uses the live workflow and config.
 
 ## Artifact dependency versus provider-session resume
 

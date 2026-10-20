@@ -161,7 +161,12 @@ export function loadWorkflowDocument(filePath: string): WorkflowDocument {
   }
   const data = parseYamlDocument(text);
   if (!isRecord(data)) throw new ConfigurationError(`Workflow must be a mapping: ${filePath}`);
-  const workflowId = documentId(data, filePath);
+  return parseWorkflowMapping(data, filePath);
+}
+
+/** Parse a workflow mapping. `source` is stored on the document and is not read from `data`. */
+export function parseWorkflowMapping(data: Record<string, unknown>, source: string): WorkflowDocument {
+  const workflowId = documentId(data, source);
   const stages = parseStages(data.stages);
   const completionRaw = data.completion;
   const completion =
@@ -175,7 +180,7 @@ export function loadWorkflowDocument(filePath: string): WorkflowDocument {
     completion,
     requires: parseRequires(data.requires),
     constraints: stringItems(data.constraints, "constraints"),
-    source: filePath,
+    source,
   });
 }
 

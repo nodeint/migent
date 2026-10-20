@@ -10,6 +10,7 @@ import {
   repoWorkflowText,
   tempDir,
   writePlanReviewSession,
+  writeSessionConfig,
 } from "./support.ts";
 
 function executionFile(workspace: string, sessionId: string, executionId: string): string {
@@ -283,6 +284,7 @@ test("refuses another execution on a completed named workflow session", async ()
   const workflows = path.join(workspace, ".migent", "workflows");
   mkdirSync(workflows, { recursive: true });
   writeFileSync(path.join(workflows, "plan.yaml"), repoWorkflowText("plan"), "utf8");
+  writeSessionConfig(workspace);
   const sessionId = createWorkflowSession(workspace, "plan", "Write a plan");
   const statusPath = path.join(workspace, ".migent", "sessions", sessionId, "status.json");
   const status = readJson(statusPath);

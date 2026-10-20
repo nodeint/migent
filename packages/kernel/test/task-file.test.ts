@@ -5,7 +5,7 @@ import { ConfigurationError, createPreparedSession, createWorkflowSession } from
 import { activatePreparedSession } from "../src/session-records.ts";
 import { SessionLock } from "../src/session-lock.ts";
 import { freezeSessionTask } from "../src/task-file.ts";
-import { tempDir } from "./support.ts";
+import { tempDir, writeSessionConfig } from "./support.ts";
 
 const WORKFLOW = "schema_version: 1\nid: solo\nstages:\n  - id: work\n    role: developer\n";
 
@@ -14,6 +14,7 @@ function workspaceWithWorkflow(): string {
   const workflows = path.join(workspace, ".migent", "workflows");
   mkdirSync(workflows, { recursive: true });
   writeFileSync(path.join(workflows, "solo.yaml"), WORKFLOW, "utf8");
+  writeSessionConfig(workspace);
   return workspace;
 }
 
@@ -47,7 +48,9 @@ test("prepare stores a chosen id and waits for task.md", () => {
   expect(sessionId).toBe("wave-3");
   const directory = path.join(workspace, ".migent", "sessions", "wave-3");
   expect(existsSync(path.join(directory, "session.lock"))).toBe(false);
-  expect(readFileSync(path.join(directory, "manifest.yaml"), "utf8")).toContain("status: prepared");
+  const createdManifest = readFileSync(path.join(directory, "manifest.yaml"), "utf8");
+  expect(createdManifest).toContain("schema_version: 2");
+  expect(createdManifest).not.toContain("status:");
   const status = JSON.parse(readFileSync(path.join(directory, "status.json"), "utf8")) as { status: string; task: string };
   expect(status).toMatchObject({ status: "prepared", task: "wave-3" });
   const events = readFileSync(path.join(directory, "events.jsonl"), "utf8");
@@ -61,7 +64,7 @@ test("prepare stores a chosen id and waits for task.md", () => {
   activatePreparedSession(workspace, "wave-3");
   const active = JSON.parse(readFileSync(path.join(directory, "status.json"), "utf8")) as { status: string };
   expect(active.status).toBe("active");
-  expect(readFileSync(path.join(directory, "manifest.yaml"), "utf8")).toContain("status: running");
+  expect(readFileSync(path.join(directory, "manifest.yaml"), "utf8")).toBe(createdManifest);
   expect(existsSync(path.join(directory, "session.lock"))).toBe(false);
 });
 

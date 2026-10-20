@@ -467,7 +467,8 @@ function workflowFlagsPresent(options: OptionValues): boolean {
     options.maxDispatches !== undefined ||
     options.unlimitedDispatches === true ||
     options.progress === true ||
-    options.verbose === true
+    options.verbose === true ||
+    options.refreshWorkflow === true
   );
 }
 
@@ -495,6 +496,7 @@ function runWorkflowCommand(args: {
       priorSessionId: optionalText(args.options.prior),
       maxAttempts: attemptsOf(args.options),
       maxDispatches: ceiling,
+      refreshWorkflow: args.options.refreshWorkflow === true,
       ...outputFlags(args.options),
     });
   }
@@ -507,6 +509,7 @@ function runWorkflowCommand(args: {
     priorSessionId: optionalText(args.options.prior),
     maxAttempts: null,
     maxDispatches: null,
+    refreshWorkflow: args.options.refreshWorkflow === true,
     ...outputFlags(args.options),
   });
 }
@@ -520,6 +523,7 @@ function continueSession(session: string, options: OptionValues): number | Promi
       priorSessionId: optionalText(options.prior),
       maxAttempts: null,
       maxDispatches: null,
+      refreshWorkflow: options.refreshWorkflow === true,
       ...outputFlags(options),
     });
   }
@@ -531,6 +535,7 @@ function continueSession(session: string, options: OptionValues): number | Promi
     priorSessionId: optionalText(options.prior),
     maxAttempts: attemptsOf(options),
     maxDispatches: ceiling,
+    refreshWorkflow: options.refreshWorkflow === true,
     ...outputFlags(options),
   });
 }
@@ -546,7 +551,11 @@ function addDispatchOptions(command: Command, onceDescription: string): void {
     )
     .option("--unlimited-dispatches", "Remove the dispatch ceiling for this command.")
     .option("--progress", PROGRESS_HELP)
-    .option("--verbose", VERBOSE_HELP);
+    .option("--verbose", VERBOSE_HELP)
+    .option(
+      "--refresh-workflow",
+      "Use the current workflow, models, and role instructions for this session. Requires an existing session that has a frozen workflow.",
+    );
 }
 
 function outputFlags(options: OptionValues): { verbose: boolean; itemProgress: boolean } {

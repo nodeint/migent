@@ -1,4 +1,6 @@
+import { createHash } from "node:crypto";
 import { AgentToolRunner, type RunResult } from "./agent-runner.js";
+import { writeFileAtomic } from "./atomic-file.js";
 import { CancellationRequested, raiseCancellation } from "./command-executor.js";
 import { loadRoleInstructions, loadYamlMapping, resolveStageTarget } from "./config.js";
 import { ConfigurationError } from "./errors.js";
@@ -10,7 +12,19 @@ import {
 } from "./dispatch.js";
 import { isRecord } from "./record.js";
 import { buildStagePrompt, buildVerifyRepairPrompt } from "./prompt.js";
-import { log } from "./runtime.js";
+import { log, utcNow } from "./runtime.js";
+import { appendLifecycleEvent } from "./session-events.js";
+import { commitFoldedStatus } from "./session-fold.js";
+import {
+  WORKFLOW_FREEZE_FILE,
+  frozenRoleInstructions,
+  frozenStageTarget,
+  loadFrozenWorkflow,
+  readWorkflowFreeze,
+  requireLiveWorkflow,
+  warnIfFrozenDrift,
+  writeWorkflowFreeze,
+} from "./session-freeze.js";
 import {
   VERIFY_EXHAUSTED,
   failedStageCount,
@@ -57,6 +71,7 @@ export interface ExecuteRequest {
   once?: boolean;
   resetRevisions?: boolean;
   startPrepared?: boolean;
+  refreshWorkflow?: boolean;
 }
 
 export interface ExecuteResult {
@@ -122,8 +137,14 @@ async function executeLocked(
   if (sessionId) {
     held.lock = SessionLock.acquire(path.join(workspace, ".migent", "sessions", sessionId));
     repairSessionUnlocked(workspace, sessionId);
+    if (request.refreshWorkflow) refreshSessionWorkflow(workspace, sessionId, request.startPrepared === true);
     const bound = bindExecuteRun(workspace, sessionId, request.workflowId, request.priorSessionId);
     workflowId = bound.workflowId;
+    if (!request.refreshWorkflow) {
+      const workflowPath = typeof bound.status.workflow_path === "string" ? bound.status.workflow_path : null;
+      const storedWorkflow = typeof bound.status.workflow_id === "string" ? bound.status.workflow_id : null;
+      warnIfFrozenDrift(workspace, sessionId, workflowPath, storedWorkflow);
+    }
     let sessionStatus = typeof bound.status.status === "string" ? bound.status.status : "";
     if (request.startPrepared) {
       if (sessionStatus !== "prepared") {
@@ -152,6 +173,9 @@ async function executeLocked(
       return executeFinal(bound.status, sessionStatus, []);
     }
   } else {
+    if (request.refreshWorkflow) {
+      throw new ConfigurationError("--refresh-workflow requires an existing session.");
+    }
     if (!request.workflowId) throw new ConfigurationError("Creating a session requires a workflow.");
     if (!request.task) throw new ConfigurationError("Creating a session requires --task.");
     workflow = loadNamedWorkflow(workspace, request.workflowId);
@@ -162,7 +186,9 @@ async function executeLocked(
     held.lock = SessionLock.acquire(path.join(workspace, ".migent", "sessions", sessionId));
     log(`session_id: ${sessionId}`);
   }
-  if (workflow === null) workflow = loadNamedWorkflow(workspace, workflowId);
+  const frozenDocument = loadFrozenWorkflow(path.join(workspace, ".migent", "sessions", sessionId));
+  if (frozenDocument) workflow = frozenDocument;
+  else if (workflow === null) workflow = loadNamedWorkflow(workspace, workflowId);
   if (request.resetRevisions) {
     store.reapOrphanedExecutions(sessionId, "raise");
     const snapshots = store.executionSnapshots(sessionId);
@@ -388,7 +414,9 @@ async function dispatchExecuteStage(
   snapshots: readonly ExecutionSnapshot[],
   runner: AgentToolRunner,
 ): Promise<Record<string, unknown>> {
-  const target = resolveStageTarget(workspace, workflowId, stageId);
+  const sessionDirectory = path.join(workspace, ".migent", "sessions", sessionId);
+  const freeze = readWorkflowFreeze(sessionDirectory);
+  const target = freeze ? frozenStageTarget(freeze, stageId) : resolveStageTarget(workspace, workflowId, stageId);
   const optionLabel =
     Object.entries(target.options)
       .map(([key, value]) => `${key}: ${value}`)
@@ -399,10 +427,9 @@ async function dispatchExecuteStage(
   const exhausted = verifyExhaustedExecution(snapshots, stageId);
   const stageSpec = workflow.stages[stageId];
   if (stageSpec === undefined) throw new ConfigurationError(`Stage not found: ${stageId}`);
-  const roleInstructions = loadRoleInstructions(
-    loadYamlMapping(path.join(workspace, ".migent", "config.yaml")),
-    stageSpec.role,
-  );
+  const roleInstructions = freeze
+    ? frozenRoleInstructions(freeze, stageSpec.role)
+    : loadRoleInstructions(loadYamlMapping(path.join(workspace, ".migent", "config.yaml")), stageSpec.role);
   const prompt =
     exhausted?.verifyReport
       ? buildVerifyRepairPrompt(
@@ -430,7 +457,7 @@ async function dispatchExecuteStage(
     prompt,
     sessionId,
   };
-  const result: StageDispatchResult = await dispatchNamedStage(workspace, request, runner);
+  const result: StageDispatchResult = await dispatchNamedStage(workspace, request, runner, { workflow, target });
   const outcome = result.outcomeStatus || (result.failureReason ? "failed" : "finished");
   const decision = result.outcomeDecision ? ` decision=${result.outcomeDecision}` : "";
   log(`stage ${stageId} · ${outcome}${decision}.`);
@@ -459,6 +486,49 @@ function bindExecuteRun(
   }
   bindPriorSessionId(workspace, sessionId, priorSessionId);
   return { workflowId: storedWorkflow, status };
+}
+
+function refreshSessionWorkflow(workspace: string, sessionId: string, startPrepared: boolean): void {
+  const sessionDirectory = path.join(workspace, ".migent", "sessions", sessionId);
+  const freeze = readWorkflowFreeze(sessionDirectory);
+  if (freeze === null) throw new ConfigurationError(`Session ${sessionId} has no frozen workflow.`);
+  const status = new SessionStore(workspace).readSessionStatus(sessionId);
+  const sessionStatus = typeof status.status === "string" ? status.status : "";
+  if (sessionStatus === "completed" || sessionStatus === "cancelled") {
+    throw new ConfigurationError(`Session ${sessionId} is ${sessionStatus}.`);
+  }
+  if (!startPrepared && sessionStatus === "prepared") {
+    throw new ConfigurationError(`Session ${sessionId} is prepared. Run: ${preparedRunHint(sessionId, status)}`);
+  }
+  if (startPrepared && sessionStatus !== "prepared") {
+    const hint =
+      sessionStatus === "active"
+        ? `Session ${sessionId} is active. Resume with: migent session continue ${sessionId}`
+        : `Session ${sessionId} is ${sessionStatus || "unknown"}. migent session run --session --workflow only starts a prepared session.`;
+    throw new ConfigurationError(hint);
+  }
+  const workflowPath = typeof status.workflow_path === "string" ? status.workflow_path : null;
+  const workflowId = typeof status.workflow_id === "string" ? status.workflow_id : null;
+  const live = requireLiveWorkflow(workspace, workflowPath, workflowId);
+  const freezePath = path.join(sessionDirectory, WORKFLOW_FREEZE_FILE);
+  const previousText = readFileSync(freezePath, "utf8");
+  const previousHash = createHash("sha256").update(previousText).digest("hex");
+  const written = writeWorkflowFreeze(sessionDirectory, workspace, live);
+  try {
+    appendLifecycleEvent(sessionDirectory, {
+      event: "workflow.refreshed",
+      timestamp: utcNow(),
+      data: {
+        hash: written.hash,
+        previous_hash: previousHash,
+        source_sha256: written.sourceSha256,
+      },
+    });
+    commitFoldedStatus(workspace, sessionDirectory);
+  } catch (error) {
+    writeFileAtomic(freezePath, previousText);
+    throw error;
+  }
 }
 
 function preparedRunHint(sessionId: string, status: Record<string, unknown>): string {

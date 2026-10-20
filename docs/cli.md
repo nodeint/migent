@@ -17,6 +17,10 @@ migent session run --session <some-id> --workflow <workflow>
 # A blocked session runs that stage again. The new prompt includes the blocker.
 migent session continue <session-id>
 
+# Adopt the current workflow, models, and role instructions for an existing session.
+migent session continue <session-id> --refresh-workflow
+migent session run --session <some-id> --workflow <workflow> --refresh-workflow
+
 # Dispatch exactly one eligible stage. This does not reset revision counts.
 migent session run --workflow <workflow> --task "<task>" --once
 migent session run --session <some-id> --workflow <workflow> --once
@@ -33,8 +37,8 @@ The id comes from the file's `id` field, or from the file name when `id` is omit
 one role when `--workflow` is omitted. Passing `--workflow` together with
 `--role`, a prompt, `--provider`, `--model`, `--option`, or `--json` is an error.
 Passing `--once`, `--prior`, `--attempts`, `--max-dispatches`,
-`--unlimited-dispatches`, `--progress`, or `--verbose` without `--workflow` is
-an error.
+`--unlimited-dispatches`, `--progress`, `--verbose`, or `--refresh-workflow`
+without `--workflow` is an error.
 
 `--task` is one line on a workflow run. Migent writes it to
 `.migent/sessions/<session-id>/task.md`. A longer task uses `session prepare`.
@@ -75,6 +79,16 @@ previous response. A cancelled session is resumed on that same execution: a
 provider turn that was cut off is sent again, and a verify that was cut off
 runs again. `completed` sessions stay stopped. The
 existing session history and artifacts remain available to later stages.
+
+A workflow session keeps the workflow, models, and role instructions from when
+it was created, in `workflow.frozen.yaml`. An edit to those files does not
+change that session. `session continue` and `session run --session` warn on
+stderr and keep the frozen copy. `--refresh-workflow` adopts the current
+workflow, models, and role instructions, then resumes. It requires an existing
+session that has a frozen workflow. A creating run, a session without that
+file, and a completed or cancelled session exit 2. It does not start a prepared
+session: `session continue` still rejects one, and `session run --session` is
+still the command that starts it.
 
 A workflow run's stdout is one JSON result: `session_id`, `session_status`, `stop_reason`,
 `latest_decision`, and `outputs`. Exit 1, 3, and 6 also include
