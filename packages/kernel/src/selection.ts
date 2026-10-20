@@ -42,8 +42,8 @@ export function nextStage(
   }
   const candidates = candidateStageIds(workflow, snapshots);
   const ready = readyStages(workflow, snapshots, sessionStatus);
-  // Blocked continue, verify-exhausted repair, and exhausted retries are not ready,
-  // but this wrapper still returns them so the loop can resume or stop as it does today.
+  // Blocked continue, verify-exhausted repair, and exhausted retries are not ready
+  // until the caller passes their resume events. This wrapper still returns them.
   const selected = sameStageIds(ready, candidates) ? ready : candidates;
   if (selected.length === 0) return new NextStageError("no eligible stage");
   if (selected.length > 1) {
@@ -59,18 +59,39 @@ export function readyStages(
   sessionStatus: string,
   revisionBaselines?: Readonly<Record<string, number>> | null,
   maxAttempts = 3,
+  resumes?: readonly BlockResume[] | null,
 ): string[] {
-  void sessionStatus;
   return candidateStageIds(workflow, snapshots).filter((stageId) => {
     const latest = latestStageSnapshot(snapshots, stageId);
     if (latest !== null) {
-      if (latest.status === "running" || latest.outcomeStatus === "blocked") return false;
+      if (latest.status === "running") return false;
+      // Snapshots keep the blocked outcome after continue. The resume event is the signal.
+      if (latest.outcomeStatus === "blocked" && !blockResumed(sessionStatus, latest.executionId, resumes)) {
+        return false;
+      }
       if (latest.status === "failed" && latest.failureReason === VERIFY_EXHAUSTED) return false;
     }
     if (maxAttempts > 0 && failedStageCount(snapshots, stageId) >= maxAttempts) return false;
     if (revisionStop(workflow, snapshots, stageId, revisionBaselines)) return false;
     return true;
   });
+}
+
+interface BlockResume {
+  event: string;
+  executionId?: string | null;
+  data?: { from?: unknown };
+}
+
+function blockResumed(
+  sessionStatus: string,
+  executionId: string,
+  resumes: readonly BlockResume[] | null | undefined,
+): boolean {
+  if (sessionStatus !== "active" || resumes == null) return false;
+  return resumes.some(
+    (event) => event.event === "session.active" && event.executionId === executionId && event.data?.from === "blocked",
+  );
 }
 
 function sameStageIds(left: readonly string[], right: readonly string[]): boolean {

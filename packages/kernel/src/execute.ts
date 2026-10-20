@@ -142,6 +142,7 @@ async function executeLocked(
   let workflow: WorkflowDocument | null = null;
   let workflowId: string;
   let resumeCancelled = false;
+  let reopenLatestCancelled = false;
   if (sessionId) {
     held.sessionId = sessionId;
     held.lock = SessionLock.acquire(path.join(workspace, ".migent", "sessions", sessionId));
@@ -177,10 +178,13 @@ async function executeLocked(
         const stageLabel = item.stageId || "its stage";
         log(`session ${sessionId} was blocked by ${item.executionId}. Resuming ${stageLabel}.`);
       }
+      // Decision 8 hides a cancelled sibling. Reopen that stage in place before new work.
+      resumeCancelled = true;
+      reopenLatestCancelled = true;
     }
     if (sessionStatus === "cancelled") {
       resumeCancelled = true;
-    } else if (TERMINAL_SESSION_STATUSES.has(sessionStatus)) {
+    } else if (!reopenLatestCancelled && TERMINAL_SESSION_STATUSES.has(sessionStatus)) {
       return executeFinal(bound.status, sessionStatus, []);
     }
   } else {
@@ -232,78 +236,75 @@ async function executeLocked(
   const tasks = new Map<string, Promise<unknown>>();
   try {
     const activeRunner = runner ?? new AgentToolRunner();
+    const stageJsons: Array<Record<string, unknown>> = [];
     if (resumeCancelled) {
-      const reopened = store.reopenCancelledExecutions(sessionId);
-      for (const item of reopened) {
-        log(`session ${sessionId} was cancelled during ${item.executionId}. Resuming that execution.`);
-      }
-      const settled = await Promise.allSettled(
-        reopened.map((item) =>
-          startTracked(sessionId, item.executionId, tasks, () =>
-            activeRunner.continueCancelled(workspace, sessionId, item.executionId),
+      const reopened = store.reopenCancelledExecutions(sessionId, reopenLatestCancelled);
+      if (!reopenLatestCancelled || reopened.length > 0) {
+        for (const item of reopened) {
+          log(`session ${sessionId} was cancelled during ${item.executionId}. Resuming that execution.`);
+        }
+        const settled = await Promise.allSettled(
+          reopened.map((item) =>
+            startTracked(sessionId, item.executionId, tasks, () =>
+              activeRunner.continueCancelled(workspace, sessionId, item.executionId),
+            ),
           ),
-        ),
-      );
-      const rejected = settled.find((item) => item.status === "rejected");
-      if (rejected && rejected.status === "rejected") throw rejected.reason;
-      const continued = settled.flatMap((item) => (item.status === "fulfilled" ? [item.value] : []));
-      const stageJsons: Array<Record<string, unknown>> = [];
-      for (let index = 0; index < reopened.length; index += 1) {
-        const item = reopened[index]!;
-        const result = continued[index]!;
-        const outcome = result.outcome_status || (result.failure_reason ? "failed" : "finished");
-        const decision = result.outcome_decision ? ` decision=${result.outcome_decision}` : "";
-        log(`stage ${item.stageId || "stage"} · ${outcome}${decision}.`);
-        stageJsons.push(runResultJson(result));
+        );
+        const rejected = settled.find((item) => item.status === "rejected");
+        if (rejected && rejected.status === "rejected") throw rejected.reason;
+        const continued = settled.flatMap((item) => (item.status === "fulfilled" ? [item.value] : []));
+        for (let index = 0; index < reopened.length; index += 1) {
+          const item = reopened[index]!;
+          const result = continued[index]!;
+          const outcome = result.outcome_status || (result.failure_reason ? "failed" : "finished");
+          const decision = result.outcome_decision ? ` decision=${result.outcome_decision}` : "";
+          log(`stage ${item.stageId || "stage"} · ${outcome}${decision}.`);
+          stageJsons.push(runResultJson(result));
+        }
+        const status = store.readSessionStatus(sessionId);
+        const after = text(status.status);
+        if (continued.some((item) => item.failure_reason === VERIFY_EXHAUSTED)) {
+          return executeFinal(status, VERIFY_EXHAUSTED, stageJsons);
+        }
+        // A cancelled session stops here for one stage. A blocked sibling still needs dispatch.
+        if (!reopenLatestCancelled && (once || stageId !== null || TERMINAL_SESSION_STATUSES.has(after))) {
+          const stopReason = TERMINAL_SESSION_STATUSES.has(after) ? after : "stage";
+          const result = executeFinal(status, stopReason, stageJsons);
+          if (stopReason === "stage" && continued.some((item) => item.outcome_status !== "complete")) result.code = 1;
+          return result;
+        }
+        if (!reopenLatestCancelled) {
+          const rest = await runExecuteLoop(
+            workspace,
+            store,
+            workflow,
+            workflowId,
+            sessionId,
+            maxAttempts,
+            maxDispatches,
+            activeRunner,
+            tasks,
+          );
+          rest.stages = [...stageJsons, ...rest.stages];
+          return rest;
+        }
       }
-      const status = store.readSessionStatus(sessionId);
-      const after = text(status.status);
-      if (continued.some((item) => item.failure_reason === VERIFY_EXHAUSTED)) {
-        return executeFinal(status, VERIFY_EXHAUSTED, stageJsons);
-      }
-      if (once || stageId !== null || TERMINAL_SESSION_STATUSES.has(after)) {
-        const stopReason = TERMINAL_SESSION_STATUSES.has(after) ? after : "stage";
-        const result = executeFinal(status, stopReason, stageJsons);
-        if (stopReason === "stage" && continued.some((item) => item.outcome_status !== "complete")) result.code = 1;
-        return result;
-      }
-      const rest = await runExecuteLoop(
-        workspace,
-        store,
-        workflow,
-        workflowId,
-        sessionId,
-        maxAttempts,
-        maxDispatches,
-        activeRunner,
-        tasks,
-      );
-      rest.stages = [...stageJsons, ...rest.stages];
-      return rest;
     }
-    if (once || stageId !== null) {
-      return await runExecuteOnce(
-        workspace,
-        store,
-        workflow,
-        workflowId,
-        sessionId,
-        stageId,
-        activeRunner,
-        tasks,
-      );
-    }
-    return await runExecuteLoop(
-      workspace,
-      store,
-      workflow,
-      workflowId,
-      sessionId,
-      maxAttempts,
-      maxDispatches,
-      activeRunner,
-      tasks,
-    );
+    const continued = once || stageId !== null
+      ? await runExecuteOnce(workspace, store, workflow, workflowId, sessionId, stageId, activeRunner, tasks)
+      : await runExecuteLoop(
+          workspace,
+          store,
+          workflow,
+          workflowId,
+          sessionId,
+          maxAttempts,
+          maxDispatches,
+          activeRunner,
+          tasks,
+        );
+    if (stageJsons.length > 0) continued.stages = [...stageJsons, ...continued.stages];
+    return continued;
   } catch (error) {
     if (error instanceof CancellationRequested) {
       await Promise.allSettled([...tasks.values()]);
@@ -697,24 +698,15 @@ function startTracked<T>(
   start: () => Promise<T>,
 ): Promise<T> {
   noteInFlightExecution(sessionId, executionId);
-  let resolveTask: (value: T) => void = () => {};
-  let rejectTask: (error: unknown) => void = () => {};
-  const task = new Promise<T>((resolve, reject) => {
-    resolveTask = resolve;
-    rejectTask = reject;
-  });
+  // Resolve first so every id is noted before any resume can reap.
+  const task = Promise.resolve()
+    .then(start)
+    .finally(() => {
+      tasks.delete(executionId);
+      clearInFlightExecution(sessionId, executionId);
+    });
   tasks.set(executionId, task);
-  void (async () => {
-    try {
-      resolveTask(await start());
-    } catch (error) {
-      rejectTask(error);
-    }
-  })();
-  return task.finally(() => {
-    tasks.delete(executionId);
-    clearInFlightExecution(sessionId, executionId);
-  });
+  return task;
 }
 
 function hasErrorCode(error: Error): boolean {

@@ -228,6 +228,10 @@ test("readyStages omits a running stage and keeps declaration order", () => {
   expect(readyStages(workflow, [], "active")).toEqual(["a", "b"]);
   const blocked = [snapshot("a", 1, { status: "completed", outcomeStatus: "blocked" })];
   expect(readyStages(workflow, blocked, "active")).toEqual(["b"]);
+  const executionId = blocked[0]!.executionId;
+  const resumed = [{ event: "session.active", executionId, data: { from: "blocked" } }];
+  expect(readyStages(workflow, blocked, "active", null, 3, resumed)).toEqual(["a", "b"]);
+  expect(readyStages(workflow, blocked, "blocked", null, 3, resumed)).toEqual(["b"]);
 });
 
 test("two roots are ambiguous", () => {

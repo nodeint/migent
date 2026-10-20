@@ -88,7 +88,8 @@ export async function dispatchAgent(
         .join(", ") || "default";
     printNotice(`agent ${args.role} · ${target.provider}/${target.model} (${optionLabel}).`);
     const unbind = bindCancellationSignals();
-    let result: Awaited<ReturnType<AgentToolRunner["run"]>>;
+    let result: Awaited<ReturnType<AgentToolRunner["run"]>> | undefined;
+    let resumedMany: Array<Awaited<ReturnType<AgentToolRunner["run"]>>> | null = null;
     try {
       const runner = args.runner ?? cliHooks.runner ?? new AgentToolRunner(adapterMap());
       if (resumeCancelled) {
@@ -102,11 +103,11 @@ export async function dispatchAgent(
         const rejected = settled.find((item) => item.status === "rejected");
         if (rejected && rejected.status === "rejected") throw rejected.reason;
         const continued = settled.flatMap((item) => (item.status === "fulfilled" ? [item.value] : []));
-        const selected = continued.at(-1);
-        if (selected === undefined) {
+        if (continued.length === 0) {
           throw new ConfigurationError(`Session ${resolvedSessionId} is cancelled without an execution.`);
         }
-        result = selected;
+        if (continued.length === 1) result = continued[0];
+        else resumedMany = continued;
       } else {
         result = await runner.run({
           provider: target.provider,
@@ -140,6 +141,15 @@ export async function dispatchAgent(
     } finally {
       unbind();
     }
+    if (resumedMany !== null) {
+      if (args.asJson) process.stdout.write(`${JSON.stringify(resumedMany)}\n`);
+      else {
+        for (const item of resumedMany) printAgent({ ...item }, args.role, target.provider, target.model);
+      }
+      if (resumedMany.some((item) => item.failure_reason === "verify_exhausted")) return 6;
+      return resumedMany.every((item) => item.outcome_status === "complete") ? 0 : 1;
+    }
+    if (result === undefined) throw new Error("Agent run produced no result.");
     if (args.asJson) process.stdout.write(`${JSON.stringify(result)}\n`);
     else printAgent({ ...result }, args.role, target.provider, target.model);
     return result.outcome_status === "complete" ? 0 : 1;

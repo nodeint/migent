@@ -181,7 +181,6 @@ interface SeenExecution {
   stageId: string;
   status: string;
   outcome: Record<string, unknown> | null;
-  sessionStatus: string | null;
 }
 
 function foldSchema2(inputs: FoldInputs): Record<string, unknown> {
@@ -289,7 +288,6 @@ function applySchema2Execution(
       stageId: event.stageId ?? current?.stageId ?? "",
       status: "running",
       outcome: null,
-      sessionStatus: current?.sessionStatus ?? null,
     });
     return true;
   }
@@ -300,14 +298,11 @@ function applySchema2Execution(
       stageId: event.stageId ?? "",
       status: executionStatus,
       outcome: null,
-      sessionStatus: null,
     };
     current.status = executionStatus;
     current.outcome = isRecord(event.data.outcome) ? event.data.outcome : null;
     current.order = Math.max(current.order, eventExecutionOrder(event));
     if (event.stageId) current.stageId = event.stageId;
-    const sessionStatus = textOr(event.data.session_status);
-    if (sessionStatus) current.sessionStatus = sessionStatus;
     seen.set(event.executionId, current);
     return true;
   }
@@ -315,12 +310,7 @@ function applySchema2Execution(
     const outcome = outcomeRecord(event);
     return decisionOf(outcome) !== null;
   }
-  if (event.event.startsWith("session.") && event.event !== "session.created") {
-    const sessionStatus = event.event.slice("session.".length);
-    const current = seen.get(event.executionId);
-    if (current) current.sessionStatus = sessionStatus;
-    return true;
-  }
+  if (event.event.startsWith("session.") && event.event !== "session.created") return true;
   return false;
 }
 

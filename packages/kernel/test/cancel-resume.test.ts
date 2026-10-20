@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import path from "node:path";
 import { expect, test } from "vitest";
 import type { BuildCommandInput } from "../src/adapter.ts";
-import { AgentToolRunner, SessionLock, SessionStore, createWorkflowSession, executeNamedWorkflow, raiseCancellation } from "../src/index.ts";
+import { AgentToolRunner, SessionLock, SessionStore, StageOutcome, createWorkflowSession, executeNamedWorkflow, raiseCancellation } from "../src/index.ts";
 import { clearInFlightExecution, noteInFlightExecution } from "../src/session-store.ts";
 import type { CommandSpec } from "../src/command-executor.ts";
 import { ScriptedAdapter, tempDir } from "./support.ts";
@@ -224,6 +224,74 @@ completion:
     lock.release();
   }
 });
+
+test("continue reopens a cancelled stage while a blocked stage stays resumed", async () => {
+  const { workspace, sessionId } = setup(`\
+id: wf
+stages:
+  - id: implement
+    role: developer
+  - id: review
+    role: developer
+completion:
+  stage: review
+`);
+  const store = new SessionStore(workspace);
+  const lock = SessionLock.acquire(path.join(workspace, ".migent", "sessions", sessionId));
+  let noted: string | null = null;
+  let reviewId = "";
+  try {
+    const [implementRecord, , implement] = store.loadOrCreate(
+      "fake",
+      "m1",
+      {},
+      workspace,
+      sessionId,
+      "implement",
+      null,
+      null,
+      "go",
+    );
+    noted = implement.executionId;
+    noteInFlightExecution(sessionId, implement.executionId);
+    const [reviewRecord, , review] = store.loadOrCreate(
+      "fake",
+      "m1",
+      {},
+      workspace,
+      sessionId,
+      "review",
+      null,
+      null,
+      "review",
+    );
+    clearInFlightExecution(sessionId, implement.executionId);
+    noted = null;
+    reviewId = review.executionId;
+    reviewRecord.history.push({ role: "user", content: "review" });
+    store.save(implementRecord, implement);
+    store.save(reviewRecord, review);
+    store.saveExecution(implement, implementRecord, "completed", null, new StageOutcome("blocked", "implement gate"));
+    store.saveExecution(review, reviewRecord, "cancelled");
+    expect(store.readSessionStatus(sessionId).status).toBe("blocked");
+  } finally {
+    if (noted) clearInFlightExecution(sessionId, noted);
+    lock.release();
+  }
+  const adapter = new ScriptedAdapter([OK, OK]);
+  const result = await executeNamedWorkflow(
+    workspace,
+    { workflowId: "wf", sessionId },
+    new AgentToolRunner({ fake: adapter }, 10),
+  );
+  expect(result.stopReason).toBe("completed");
+  expect(result.code).toBe(0);
+  expect(execution(workspace, sessionId, reviewId).status).toBe("completed");
+  const ids = executionIds(workspace, sessionId);
+  expect(ids).toContain(reviewId);
+  expect(ids.filter((id) => id.includes("implement"))).toHaveLength(2);
+  expect(result.stages.map((stage) => stage.execution_id)).toContain(reviewId);
+}, 30_000);
 
 function execution(workspace: string, sessionId: string, executionId: string): Record<string, unknown> {
   const file = path.join(workspace, ".migent", "sessions", sessionId, "executions", executionId, "execution.json");

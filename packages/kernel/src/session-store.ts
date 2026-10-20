@@ -403,17 +403,14 @@ export class SessionStore {
     }
     const workflow = this.loadWorkflow(status);
     const blocked = blockedExecutions(statusExecutionsFromSnapshots(this.snapshotList(sessionId)), status, workflow);
+    if (blocked.length === 0) {
+      throw new ConfigurationError(`Session ${sessionId} is blocked without an execution.`);
+    }
     const targets = blocked.map((row) => ({
       executionId: row.executionId,
       stageId: row.stageId,
       blocker: this.executionBlocker(sessionId, row.executionId),
     }));
-    if (targets.length === 0) {
-      const executionId = textField(status.blocked_by_execution_id) ?? textField(status.latest_execution_id);
-      const stageId = textField(status.blocked_by_stage_id) ?? textField(status.latest_stage_id) ?? "";
-      if (!executionId) throw new ConfigurationError(`Session ${sessionId} is blocked without an execution.`);
-      targets.push({ executionId, stageId, blocker: textField(status.blocker) });
-    }
     const timestamp = utcNow();
     for (const target of targets) {
       const data: Record<string, unknown> = { from: "blocked" };
@@ -439,26 +436,27 @@ export class SessionStore {
    * Reopen every cancelled execution in place. The caller holds the session lock.
    * Execution ids and stage attempts stay the same.
    */
-  reopenCancelledExecutions(sessionId: string): { executionId: string; stageId: string }[] {
+  reopenCancelledExecutions(
+    sessionId: string,
+    latestPerStage = false,
+  ): { executionId: string; stageId: string }[] {
     const sessionDirectory = path.join(this.sessionsDirectory, sessionId);
     assertSessionLockHeld(sessionDirectory);
     const status = this.readSessionStatus(sessionId);
-    if (status.status !== "cancelled") {
+    // A blocked session is not cancelled. Continue still reopens each stage's latest cancelled execution.
+    if (!latestPerStage && status.status !== "cancelled") {
       throw new ConfigurationError(`Session ${sessionId} is ${String(status.status)}, not cancelled.`);
     }
-    const cancelled = this.executionContexts(sessionId)
-      .map((context) => {
-        const metadata = readJsonObject(path.join(context.directory, "execution.json"));
-        return { context, metadata, order: asInt(metadata.execution_order) };
-      })
+    const rows = this.executionContexts(sessionId).map((context) => {
+      const metadata = readJsonObject(path.join(context.directory, "execution.json"));
+      return { context, metadata, order: asInt(metadata.execution_order) };
+    });
+    const selected = latestPerStage ? latestExecutionPerStage(rows) : rows;
+    const cancelled = selected
       .filter((item) => item.metadata.status === "cancelled")
-      .sort((left, right) => {
-        if (left.order !== right.order) return left.order - right.order;
-        if (left.context.executionId < right.context.executionId) return -1;
-        if (left.context.executionId > right.context.executionId) return 1;
-        return 0;
-      });
+      .sort((left, right) => compareExecutionRows(left, right));
     if (cancelled.length === 0) {
+      if (latestPerStage) return [];
       throw new ConfigurationError(`Session ${sessionId} is cancelled without an execution.`);
     }
     for (const item of cancelled) {
@@ -934,6 +932,28 @@ export class SessionStore {
     }
     return snapshots;
   }
+}
+
+function latestExecutionPerStage<
+  T extends { context: { executionId: string }; metadata: Record<string, unknown>; order: number },
+>(rows: readonly T[]): T[] {
+  const byStage = new Map<string, T>();
+  for (const row of rows) {
+    const stageId = typeof row.metadata.stage_id === "string" ? row.metadata.stage_id : "";
+    const current = byStage.get(stageId);
+    if (current === undefined || compareExecutionRows(row, current) > 0) byStage.set(stageId, row);
+  }
+  return [...byStage.values()];
+}
+
+function compareExecutionRows(
+  left: { context: { executionId: string }; order: number },
+  right: { context: { executionId: string }; order: number },
+): number {
+  if (left.order !== right.order) return left.order - right.order;
+  if (left.context.executionId < right.context.executionId) return -1;
+  if (left.context.executionId > right.context.executionId) return 1;
+  return 0;
 }
 
 function snapshotsIncludingSave(
