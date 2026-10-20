@@ -1,25 +1,31 @@
 schema_version: 1
 id: plan
+constraints:
+  - Do not write implementation code.
+  - Do not edit repository files. Write only the stage artifact.
+  - Only the decision header routes this workflow. Review prose is feedback, not a route.
 stages:
   - id: plan
     role: planner
     depends_on: []
     max_revisions: 3
     instructions:
-      - Analyze the task and write an implementation plan.
-      - When revising, edit the existing plan.md in place. Do not replace the whole file.
+      - Read task.md and the code it depends on, then write plan.md in this execution's artifacts directory.
+      - Write the plan in English. Include scope and paths, current behavior with path:line evidence, decisions the task already fixed, ordered tasks, tests to add or run, and what is out of scope.
+      - Each task names the file to change and the behavior to add or keep. Do not mark a task done unless it is already merged.
+      - When a review routes back, start from the previous plan.md and write the updated file in this execution's artifacts directory. Address every review point and keep the sections the review did not reject.
     produces:
       artifact: plan.md
   - id: review-plan
     role: reviewer
     depends_on:
       - plan
-    # Stage options override the model. models.grok uses xhigh; this review uses high.
     options:
       reasoning-effort: high
     instructions:
-      - Review the plan for correctness, missing risks, and unnecessary scope.
-      - Report every gap of the same kind in one response.
+      - Read plan.md and open the code behind each path:line claim.
+      - Check correctness, missing risks, unnecessary scope, and any step an implementer would have to guess.
+      - Approve only when the plan can be implemented as written. Otherwise decide revise and list each required edit once.
     decision:
       values:
         - approved

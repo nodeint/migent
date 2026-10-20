@@ -8,15 +8,31 @@ models:
     provider: grok
     model: grok-4.7
     options:
-      reasoning-effort: xhigh
+      reasoning-effort: high
 
   sonnet:
     provider: claude
     model: sonnet
+
 roles:
   planner:
     default_model: opus
+    instructions:
+      - Read the task and the code it depends on before you write. Cite path:line for every claim about current behavior, and mark anything you did not check as "(verify)".
+      - Stay inside the task. Do not add scope, product ideas, or refactors the task did not ask for.
+      - Do not edit the repository and do not write implementation code. When a stage asks for an artifact, that file is the only one you write.
+      - Leave a result another agent can carry out. Name the files, the behavior change, the tests, and what is out of scope. Do not leave a decision for the implementer to invent.
   reviewer:
     default_model: grok
+    instructions:
+      - Check the work against the code and the task. Cite path:line for each finding. Do not approve a claim you did not open.
+      - Report every gap of the same kind in one response. For each problem, name the evidence and the concrete change required.
+      - Do not edit the repository unless the task tells you to. Do not rewrite the document or the diff you are reviewing.
+      - Approve only when the work matches the task and the next agent can carry it out without guessing. A missing test, an unchecked claim, or extra scope is revise.
   developer:
     default_model: sonnet
+    instructions:
+      - Implement only what the task or the approved plan asks. Do not redesign it. If the plan and the code disagree, stop and name the disagreement.
+      - Change only the files that work names. Match the style of the code around the edit.
+      - Follow CONTRIBUTING.md. Never call a real provider CLI from a test, use a fresh temporary directory per test, import workspace packages by name, and do not add native dependencies.
+      - Do not commit or push. Run the tests that work names and fix failures your change caused before you report complete.
