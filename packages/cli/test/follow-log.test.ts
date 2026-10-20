@@ -1,5 +1,6 @@
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import os from "node:os";
 import path from "node:path";
 import { expect, test } from "vitest";
 import { followSession } from "../src/commands/watch.ts";
@@ -336,5 +337,118 @@ test("session follow keeps the stream timestamp floor after a torn line is close
     expect(project(followed.stdout).map((event) => event.summary)).toEqual(["later-event", "new-stream"]);
   } finally {
     rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+function deadOwnerSession(workspace: string): { sessionDirectory: string; executionPath: string } {
+  const sessionDirectory = path.join(workspace, ".migent", "sessions", "run-1");
+  const executionDirectory = path.join(sessionDirectory, "executions", EXECUTION);
+  mkdirSync(executionDirectory, { recursive: true });
+  writeFileSync(
+    path.join(sessionDirectory, "manifest.yaml"),
+    [
+      "session_id: run-1",
+      "workflow_id: agent",
+      "role: reviewer",
+      "task: \"review\"",
+      "created_at: 2026-10-19T00:00:00Z",
+      "schema_version: 2",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  writeFileSync(
+    path.join(sessionDirectory, "events.jsonl"),
+    line({
+      v: 2,
+      seq: 1,
+      event: "session.created",
+      timestamp: "2026-10-19T00:00:00Z",
+      data: { workflow_id: "agent", role: "reviewer", task: "review" },
+    }) +
+      line({
+        v: 2,
+        seq: 2,
+        event: "execution.started",
+        timestamp: "2026-10-19T00:00:01Z",
+        execution_id: EXECUTION,
+        stage_id: "reviewer",
+        data: { execution_order: 1, stage_attempt: 1, provider: "fake", model: "m1" },
+      }),
+    "utf8",
+  );
+  const executionPath = path.join(executionDirectory, "execution.json");
+  writeFileSync(
+    executionPath,
+    JSON.stringify({
+      session_id: "run-1",
+      execution_id: EXECUTION,
+      execution_order: 1,
+      stage_id: "reviewer",
+      stage_attempt: 1,
+      provider: "fake",
+      model: "m1",
+      options: {},
+      status: "running",
+      schema_version: 1,
+      created_at: "2026-10-19T00:00:01Z",
+      hostname: os.hostname(),
+      owner_pid: 2 ** 30,
+    }),
+    "utf8",
+  );
+  writeFileSync(
+    path.join(sessionDirectory, "status.json"),
+    JSON.stringify({ session_id: "run-1", workflow_id: "agent", status: "active", role: "reviewer" }),
+    "utf8",
+  );
+  return { sessionDirectory, executionPath };
+}
+
+test("follow until ends after a dead owner and waits while the lock is held", async () => {
+  const workspace = mkdtempSync(path.join(tmpdir(), "migent-follow-dead-"));
+  try {
+    const { executionPath } = deadOwnerSession(workspace);
+    const ended = await capture(() =>
+      followSession(workspace, "run-1", {
+        untilTerminal: true,
+        executionId: EXECUTION,
+      }),
+    );
+    expect(ended.value).toBe(1);
+    expect(JSON.parse(readFileSync(executionPath, "utf8")).status).toBe("failed");
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+
+  const held = mkdtempSync(path.join(tmpdir(), "migent-follow-held-"));
+  try {
+    const { sessionDirectory, executionPath } = deadOwnerSession(held);
+    writeFileSync(
+      path.join(sessionDirectory, "session.lock"),
+      JSON.stringify({
+        pid: 4242,
+        host: "other-host",
+        started_at: new Date().toISOString(),
+        heartbeat_at: new Date().toISOString(),
+        nonce: "holder",
+      }),
+    );
+    const followed = await capture(async () => {
+      const pending = followSession(held, "run-1", {
+        untilTerminal: true,
+        executionId: EXECUTION,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      expect(JSON.parse(readFileSync(executionPath, "utf8")).status).toBe("running");
+      const record = JSON.parse(readFileSync(executionPath, "utf8")) as Record<string, unknown>;
+      record.status = "completed";
+      record.outcome = { status: "complete" };
+      writeFileSync(executionPath, JSON.stringify(record), "utf8");
+      return pending;
+    });
+    expect(followed.value).toBe(0);
+  } finally {
+    rmSync(held, { recursive: true, force: true });
   }
 });

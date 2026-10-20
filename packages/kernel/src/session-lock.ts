@@ -203,11 +203,19 @@ function pidAlive(pid: number): boolean {
   }
 }
 
+/** Null in production. A test changes the lock between the two stale reads. */
+let betweenStaleReads: (() => void) | null = null;
+
+export function setBetweenStaleLockReads(observe: (() => void) | null): void {
+  betweenStaleReads = observe;
+}
+
 /** Remove a stale lock only when two reads agree on its nonce and heartbeat. */
 function takeOverStale(lockPath: string, staleMs: number): boolean {
   const first = snapshot(lockPath);
   if (first === null) return true;
   if (!isStale(first, staleMs)) return false;
+  betweenStaleReads?.();
   const second = snapshot(lockPath);
   if (second === null) return true;
   if (second.nonce !== first.nonce || second.heartbeat !== first.heartbeat) return false;

@@ -169,43 +169,43 @@ Phases A, B, C in order. Phase A is independent and should merge first. Phase B 
 Implementation plan: [session-store-phase-c.md](session-store-phase-c.md). Line numbers below are from the draft this phase started from. The implementation plan cites the current code.
 
 ### C1. Frozen workflow and config
-- [ ] On workflow session create, write `workflow.frozen.yaml`: the resolved workflow, the role instructions it uses, and each stage's resolved provider, model and options. Record its `sha256` in `session.created`.
-- [ ] Every load for that session uses the frozen copy: `session-store.ts:loadWorkflow`, `agent-runner.ts:loadRunStage`, `execute.ts`, `dispatch.ts:dispatchNamedStage`, and the role-instruction read at `execute.ts:323`.
-- [ ] `resolveStageTarget` loads the live workflow itself (`config.ts:61`) and is called with a workflow id (`execute.ts:312`, `dispatch.ts:61`). Add a variant that takes the frozen document and the frozen stage target, and use it for session dispatch. The id-based form stays for commands outside a session.
-- [ ] Agent (role) sessions have no workflow and are not frozen.
-- [ ] `continue` warns when the workflow file, a stage's resolved model, or role instructions differ from the frozen copy, and uses the frozen copy. `--refresh-workflow` adopts the current definition and appends `workflow.refreshed`.
-- [ ] Sessions with no frozen file keep the live loaders.
-- [ ] Tests: editing the workflow, or `config model`, during a session changes neither its routing nor its model. `--refresh-workflow` does.
+- [x] On workflow session create, write `workflow.frozen.yaml`: the resolved workflow, the role instructions it uses, and each stage's resolved provider, model and options. Record its `sha256` in `session.created`.
+- [x] Every load for that session uses the frozen copy: `session-store.ts:loadWorkflow`, `agent-runner.ts:loadRunStage`, `execute.ts`, `dispatch.ts:dispatchNamedStage`, and the role-instruction read at `execute.ts:323`.
+- [x] `resolveStageTarget` loads the live workflow itself (`config.ts:61`) and is called with a workflow id (`execute.ts:312`, `dispatch.ts:61`). Add a variant that takes the frozen document and the frozen stage target, and use it for session dispatch. The id-based form stays for commands outside a session.
+- [x] Agent (role) sessions have no workflow and are not frozen.
+- [x] `continue` warns when the workflow file, a stage's resolved model, or role instructions differ from the frozen copy, and uses the frozen copy. `--refresh-workflow` adopts the current definition and appends `workflow.refreshed`.
+- [x] Sessions with no frozen file keep the live loaders.
+- [x] Tests: editing the workflow, or `config model`, during a session changes neither its routing nor its model. `--refresh-workflow` does.
 
 ### C2. One source of truth for session status
-- [ ] For schema 2 sessions, `manifest.yaml` holds identity only and is never rewritten. It has no `status` line.
-- [ ] v1 manifests keep being updated as today.
-- [ ] Session status for schema 2 lives only in `status.json`.
-- [ ] Update `docs/sessions.md` and `packages/kernel/test/task-file.test.ts:60` in the same PR.
+- [x] For schema 2 sessions, `manifest.yaml` holds identity only and is never rewritten. It has no `status` line.
+- [x] v1 manifests keep being updated as today.
+- [x] Session status for schema 2 lives only in `status.json`.
+- [x] Update `docs/sessions.md` and `packages/kernel/test/task-file.test.ts:60` in the same PR.
 
 ### C3. Store and ledger
-- [ ] Move session status computation (`sessionStatusAfterExecution`, terminal fields, `latest_decision`) and output publishing out of `saveExecutionUnlocked` into a new `session-ledger.ts`.
-- [ ] `SessionStore` keeps locking, atomic writes, appends, reads, the fold and the immutability check.
-- [ ] No behavior change. The existing tests pass unchanged.
+- [x] Move session status computation (`sessionStatusAfterExecution`, terminal fields, `latest_decision`) and output publishing out of `saveExecutionUnlocked` into a new `session-ledger.ts`.
+- [x] `SessionStore` keeps locking, atomic writes, appends, reads, the fold and the immutability check.
+- [x] No behavior change. The existing tests pass unchanged.
 
 ### C4. Schema version
-- [ ] New sessions write `schema_version: 2` in `manifest.yaml`.
-- [ ] Read it with a session-specific helper where a missing version means 1. Do not reuse `documentVersion` in `config.ts`, which maps a missing version to 0. `migent migrate` does not touch sessions.
+- [x] New sessions write `schema_version: 2` in `manifest.yaml`.
+- [x] Read it with a session-specific helper where a missing version means 1. Do not reuse `documentVersion` in `config.ts`, which maps a missing version to 0. `migent migrate` does not touch sessions.
 
 ---
 
 ## Required tests
 
-- [ ] **Crash injection.** Kill the process between each pair of writes in the A1 order: `execution.json` then `execution.started`; `execution.json` then the lifecycle events; the lifecycle events then `status.json`; an output copy then `status.json`. After `repair` or `continue`, the session is consistent and no execution is lost.
-- [ ] **Concurrent writers.** Two `continue` calls on an idle session, and two resumes of one agent session. Exactly one runs, and no execution IDs are duplicated.
-- [ ] **Lock loss.** A holder blocked longer than the stale limit, whose lock was taken over, stops at its next nonce check without writing. A waiter does not unlink a lock whose nonce or heartbeat changed between its two reads.
-- [ ] **Event without file.** A crash after a directory is created and before `execution.json` is written leaves no event. A forged `execution.started` with no file is ignored by the fold and its id is not reused.
-- [ ] **Follow after a dead owner.** With no live lock holder, `follow --exit-when-done` and `follow --until` end after the owner dies. With a live holder, they wait as today.
-- [ ] **Fold equality.** The fold equals the written `status.json` for every workflow fixture.
-- [ ] **Corrupt file.** A truncated `status.json` lists as `corrupt`, freeze does not overwrite it, and `repair` rebuilds it.
-- [ ] **Compatibility.** Fixtures copied from real v1 sessions work with `show`, `list`, `follow`, `continue` and `repair`.
-- [ ] **Follow output.** For one fixture session, `follow` and `follow --json` print the same sequence before and after B3, compared on `event`, `timestamp`, `stage_id`, `execution_id` and `summary` (B1 adds `v`, `seq` and `data`). Cover no cursor, `--cursor 0`, a cursor in the middle of the log, a cursor at end of file, a stage that starts after follow does, and `--execution`.
-- [ ] **Frozen definition.** A session keeps its workflow, model and role instructions after the files change, and prints a warning.
+- [x] **Crash injection.** Kill the process between each pair of writes in the A1 order: `execution.json` then `execution.started`; `execution.json` then the lifecycle events; the lifecycle events then `status.json`; an output copy then `status.json`. After `repair` or `continue`, the session is consistent and no execution is lost.
+- [x] **Concurrent writers.** Two `continue` calls on an idle session, and two resumes of one agent session. Exactly one runs, and no execution IDs are duplicated.
+- [x] **Lock loss.** A holder blocked longer than the stale limit, whose lock was taken over, stops at its next nonce check without writing. A waiter does not unlink a lock whose nonce or heartbeat changed between its two reads.
+- [x] **Event without file.** A crash after a directory is created and before `execution.json` is written leaves no event. A forged `execution.started` with no file is ignored by the fold and its id is not reused.
+- [x] **Follow after a dead owner.** With no live lock holder, `follow --until` ends after the owner dies because that execution is failed. With a live holder, `--until` waits because the execution stays running. `follow --exit-when-done` ends when the stored session status is completed, blocked, or cancelled.
+- [x] **Fold equality.** The fold equals the written `status.json` for every workflow fixture.
+- [x] **Corrupt file.** A truncated `status.json` lists as `corrupt`, freeze does not overwrite it, and `repair` rebuilds it.
+- [x] **Compatibility.** Fixtures copied from real v1 sessions work with `show`, `list`, `follow`, `continue` and `repair`.
+- [x] **Follow output.** For one fixture session, `follow` and `follow --json` print the same sequence before and after B3, compared on `event`, `timestamp`, `stage_id`, `execution_id` and `summary` (B1 adds `v`, `seq` and `data`). Cover no cursor, `--cursor 0`, a cursor in the middle of the log, a cursor at end of file, a stage that starts after follow does, and `--execution`.
+- [x] **Frozen definition.** A session keeps its workflow, model and role instructions after the files change, and prints a warning.
 
 ## Pull requests
 

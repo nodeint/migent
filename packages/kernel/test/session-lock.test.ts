@@ -7,9 +7,11 @@ import {
   SessionLock,
   SessionStore,
   assertSessionLockHeld,
+  createAgentSession,
   createWorkflowSession,
   executeNamedWorkflow,
 } from "../src/index.ts";
+import { setBetweenStaleLockReads } from "../src/session-lock.ts";
 import { createSessionDirectory, createPreparedSession } from "../src/session-records.ts";
 import { ScriptedAdapter, tempDir } from "./support.ts";
 
@@ -58,6 +60,21 @@ test("a lock with no heartbeat for the stale limit is taken over", () => {
   const lock = SessionLock.tryAcquire(dir);
   expect(lock).not.toBeNull();
   lock?.release();
+});
+
+test("a waiter does not unlink a lock whose nonce changed between the two reads", () => {
+  const dir = sessionDir();
+  const stale = new Date(Date.now() - 60_000).toISOString();
+  foreignLock(dir, { heartbeat_at: stale, nonce: "first" });
+  setBetweenStaleLockReads(() => {
+    foreignLock(dir, { heartbeat_at: new Date().toISOString(), nonce: "second" });
+  });
+  try {
+    expect(SessionLock.tryAcquire(dir)).toBeNull();
+    expect(JSON.parse(readFileSync(path.join(dir, "session.lock"), "utf8")).nonce).toBe("second");
+  } finally {
+    setBetweenStaleLockReads(null);
+  }
 });
 
 test("a lock whose pid is gone on this host is taken over", () => {
@@ -129,6 +146,31 @@ test("a finished run releases the session lock", async () => {
   );
   expect(result.code).toBe(0);
   expect(existsSync(path.join(workspace, ".migent", "sessions", sessionId, "session.lock"))).toBe(false);
+});
+
+test("a second resume of one agent session does not run", async () => {
+  const workspace = tempDir("migent-agent-lock-");
+  const sessionId = createAgentSession(workspace, "reviewer", "review the plan");
+  const dir = path.join(workspace, ".migent", "sessions", sessionId);
+  const adapter = new ScriptedAdapter(["status: complete\n\ndone"]);
+  const lock = SessionLock.acquire(dir, { heartbeatMs: 3_600_000 });
+  const pending = new AgentToolRunner({ fake: adapter }, 10).run({
+    provider: "fake",
+    model: "m1",
+    prompt: "review",
+    workspace,
+    sessionId,
+    stageId: "reviewer",
+  });
+  expect(() => SessionLock.acquire(dir)).toThrow(/being run by pid/);
+  try {
+    const result = await pending;
+    expect(result.outcome_status).toBe("complete");
+    expect(adapter.calls).toHaveLength(1);
+    expect(new SessionStore(workspace).executionSnapshots(sessionId)).toHaveLength(1);
+  } finally {
+    lock.release();
+  }
 });
 
 test("a writer that lost the lock cannot save", () => {
