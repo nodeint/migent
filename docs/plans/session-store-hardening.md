@@ -166,6 +166,8 @@ Phases A, B, C in order. Phase A is independent and should merge first. Phase B 
 
 ## Phase C: Freezing and structure
 
+Implementation plan: [session-store-phase-c.md](session-store-phase-c.md). Line numbers below are from the draft this phase started from. The implementation plan cites the current code.
+
 ### C1. Frozen workflow and config
 - [ ] On workflow session create, write `workflow.frozen.yaml`: the resolved workflow, the role instructions it uses, and each stage's resolved provider, model and options. Record its `sha256` in `session.created`.
 - [ ] Every load for that session uses the frozen copy: `session-store.ts:loadWorkflow`, `agent-runner.ts:loadRunStage`, `execute.ts`, `dispatch.ts:dispatchNamedStage`, and the role-instruction read at `execute.ts:323`.
