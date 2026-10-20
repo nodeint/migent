@@ -5,7 +5,12 @@ import { ConfigurationError } from "./errors.js";
 import { isRecord } from "./record.js";
 import { frozenStageTarget, readWorkflowFreeze } from "./session-freeze.js";
 import { bindPriorSessionId, createWorkflowSession } from "./session-records.js";
-import { revisionResumeExecution, stageDispatchError, verifyExhaustedExecution } from "./selection.js";
+import {
+  revisionResumeExecution,
+  stageAgentExecution,
+  stageDispatchError,
+  verifyExhaustedExecution,
+} from "./selection.js";
 import { stringOptions, SessionStore } from "./session-store.js";
 import { loadNamedWorkflow, type WorkflowDocument } from "./workflow.js";
 
@@ -76,11 +81,12 @@ export async function dispatchNamedStage(
   }
   assertStageDispatchable(workspace, workflow, sessionId, request.stageId);
   const snapshots = new SessionStore(workspace).executionSnapshots(sessionId);
-  const exhausted = verifyExhaustedExecution(snapshots, request.stageId);
-  const resumeExecutionId =
-    exhausted?.executionId ??
-    revisionResumeExecution(workflow, snapshots, request.stageId) ??
-    resolveResumeExecution(workspace, workflow, sessionId, request.stageId);
+  const stage = workflow.stages[request.stageId];
+  const resumeExecutionId = stage?.resumeFrom
+    ? (verifyExhaustedExecution(snapshots, request.stageId)?.executionId ??
+      revisionResumeExecution(workflow, snapshots, request.stageId) ??
+      resolveResumeExecution(workspace, workflow, sessionId, request.stageId))
+    : stageAgentExecution(snapshots, request.stageId);
   const result = await (runner ?? new AgentToolRunner()).run({
     provider: target.provider,
     model: target.model,

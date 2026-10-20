@@ -108,9 +108,10 @@ plan -> review -> revise  # refused; session remains active
 ```
 
 The review after the third revision still runs. Migent stops only when its
-decision would exceed the configured limit. Each route back continues the
-provider agent from the previous visit of that stage. The reviewing stage
-starts a new agent and reads the new artifact.
+decision would exceed the configured limit. Each later visit continues that
+stage's provider agent. A route back's prompt points at the routing stage's
+response and the previous artifact. A stage with `session.resume_from`
+continues the named stage's agent instead.
 Run `migent session continue <session-id>` to reset the revision count and allow up
 to three more revisions in the same session. Each later `session continue` resets the
 count again. `migent session continue <session-id> --once` dispatches one stage and

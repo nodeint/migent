@@ -4,6 +4,7 @@ import { expect, test } from "vitest";
 import {
   failedStageCount,
   revisionResumeExecution,
+  stageAgentExecution,
   verifyExhaustedExecution,
   loadWorkflowDocument,
   nextStage,
@@ -301,6 +302,20 @@ test("a stage that routes to itself resumes its own agent", () => {
   expect(revisionResumeExecution(workflow, first, "plan")).toBe("0001-plan");
   const retried = [...first, snapshot("plan", 2)];
   expect(revisionResumeExecution(workflow, retried, "plan")).toBeNull();
+});
+
+test("a stage keeps the agent from its latest execution", () => {
+  const failed = [snapshot("plan", 1, { status: "failed", outcomeStatus: null })];
+  expect(stageAgentExecution(failed, "plan")).toBe("0001-plan");
+  const reviewed = [
+    snapshot("plan", 1),
+    snapshot("review-plan", 2, { decision: "revise" }),
+    snapshot("plan", 3),
+    snapshot("review-plan", 4, { decision: "revise" }),
+  ];
+  expect(stageAgentExecution(reviewed, "plan")).toBe("0003-plan");
+  expect(stageAgentExecution(reviewed, "review-plan")).toBe("0004-review-plan");
+  expect(stageAgentExecution(reviewed, "absent")).toBeNull();
 });
 
 test("failedStageCount ignores verify_exhausted executions", () => {

@@ -315,15 +315,15 @@ test("execute reruns plan then review after revise", async () => {
     expect(resumed(objects[2]?.execution_id).resumes_execution_id).toBe(objects[0]?.execution_id);
     expect(resumed(objects[4]?.execution_id).resumes_execution_id).toBe(objects[2]?.execution_id);
     expect(resumed(objects[1]?.execution_id).resumes_execution_id).toBeNull();
-    expect(resumed(objects[3]?.execution_id).resumes_execution_id).toBeNull();
-    expect(resumed(objects[5]?.execution_id).resumes_execution_id).toBeNull();
+    expect(resumed(objects[3]?.execution_id).resumes_execution_id).toBe(objects[1]?.execution_id);
+    expect(resumed(objects[5]?.execution_id).resumes_execution_id).toBe(objects[3]?.execution_id);
     expect(adapter.calls.map((call) => call.agent_id)).toEqual([
       null,
       null,
       "native-session-1",
-      null,
       "native-session-1",
-      null,
+      "native-session-1",
+      "native-session-1",
     ]);
     expect(adapter.calls[2]?.prompt).toContain("Decision that routed to this stage");
     expect(adapter.calls[2]?.prompt).toContain("Previous plan artifact");

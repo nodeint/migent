@@ -126,9 +126,26 @@ export function verifyExhaustedExecution(
 }
 
 /**
- * Provider session to continue when a decision routes back to a stage that
- * already ran. The latest execution of that stage holds the agent. A stage
- * that runs again only because a dependency is newer is not resumed here.
+ * Execution that holds a stage's provider agent. Any later visit continues it.
+ * A stage that has not run yet has no agent. `resume_from` does not use this:
+ * that stage continues the named dependency's agent instead.
+ */
+export function stageAgentExecution(
+  snapshots: readonly ExecutionSnapshot[],
+  stageId: string,
+): string | null {
+  let latest: ExecutionSnapshot | null = null;
+  for (const snapshot of snapshots) {
+    if (snapshot.stageId !== stageId) continue;
+    if (latest === null || snapshot.executionOrder > latest.executionOrder) latest = snapshot;
+  }
+  return latest?.executionId ?? null;
+}
+
+/**
+ * Provider session to continue when a `resume_from` stage is routed back to
+ * itself. The latest execution of that stage holds the agent. A visit that
+ * was not routed back resolves `resume_from` instead.
  */
 export function revisionResumeExecution(
   workflow: WorkflowDocument,

@@ -201,12 +201,16 @@ The resumed stage therefore receives both the declared upstream context and the
 provider's conversation history. `resume_from` must name one of the stage's
 dependencies.
 
-A decision that routes back to a stage continues that stage's own provider
-agent. The new execution is the next turn: its prompt points at the routing
-stage's response and the previous artifact. The stage that made the decision
-still starts a new agent. A failed retry of the revised visit continues the
-same agent. `resume_from` applies on the first visit, and on a later visit
-that was not routed back.
+A stage keeps one provider agent for every visit. The next execution continues
+that agent when the stage runs again, including a failed attempt, a blocked
+result, a verify repair, a route back, and a newer dependency. A route back's
+prompt points at the routing stage's response and the previous artifact.
+
+`session.resume_from` is the exception. The stage continues the named
+dependency's provider agent instead of keeping its own. That applies on the
+first visit, and on a later visit that was not routed back. A verify repair
+and a failed retry of a routed visit continue the execution already in
+progress.
 
 ## Reusable workflow boundaries
 

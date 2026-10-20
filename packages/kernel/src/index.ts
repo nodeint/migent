@@ -98,6 +98,7 @@ export {
   nextStage,
   revisionResumeExecution,
   revisionStop,
+  stageAgentExecution,
   stageDispatchError,
   verifyExhaustedExecution,
   NextStage,

@@ -150,6 +150,10 @@ test("continue redispatches a blocked stage and names the blocker", async () => 
   expect(snapshots.map((item) => item.stageId)).toEqual(["implement", "implement", "review"]);
   expect(snapshots[1]?.outcomeStatus).toBe("complete");
   expect(second.latestExecutionId).not.toBe(first.latestExecutionId);
+  expect(adapter.calls[1]?.agentId).toBe("native-session-1");
+  expect(execution(workspace, sessionId, snapshots[1]!.executionId).resumes_execution_id).toBe(
+    snapshots[0]?.executionId,
+  );
   expect(adapter.calls[1]?.prompt).toContain("gate clones");
   expect(adapter.calls[1]?.prompt).toContain("handled outside this session");
   const events = readFileSync(path.join(workspace, ".migent", "sessions", sessionId, "events.jsonl"), "utf8");
@@ -541,8 +545,46 @@ test("an infra failure counts toward --attempts and is not verify_exhausted", as
   const result = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId, maxAttempts: 2 }, runner);
   expect(result.stopReason).not.toBe("verify_exhausted");
   expect(adapter.calls).toHaveLength(2);
+  expect(adapter.calls[1]?.agentId).toBe("native-session-1");
   const snapshots = new SessionStore(workspace).executionSnapshots(sessionId);
   expect(snapshots.every((item) => item.failureReason !== "verify_exhausted")).toBe(true);
+  expect(execution(workspace, sessionId, snapshots[1]!.executionId).resumes_execution_id).toBe(
+    snapshots[0]?.executionId,
+  );
+});
+
+test("a provider failure retries the same stage agent", async () => {
+  const { workspace, sessionId } = setup(workflowText(`node -e "process.exit(0)"`));
+  class ExitOnceAdapter extends ScriptedAdapter {
+    private failures: number;
+
+    constructor(failures: number, responses: string[], artifacts: Array<string | null>) {
+      super(responses, artifacts);
+      this.failures = failures;
+    }
+
+    override buildCommand(input: Parameters<ScriptedAdapter["buildCommand"]>[0]) {
+      const spec = super.buildCommand(input);
+      if (this.failures <= 0) return spec;
+      this.failures -= 1;
+      return { argv: [process.execPath, "-e", "process.exit(1)"] };
+    }
+  }
+  const adapter = new ExitOnceAdapter(
+    1,
+    ["status: complete\n\nignored", OK, "status: complete\n\nreviewed"],
+    [null, "# n\n", null],
+  );
+  const runner = new AgentToolRunner({ fake: adapter }, 10);
+  const result = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId, maxAttempts: 2 }, runner);
+  expect(result.stopReason).toBe("completed");
+  expect(adapter.calls[0]?.agentId).toBeNull();
+  expect(adapter.calls[1]?.agentId).toBe("native-session-1");
+  const snapshots = new SessionStore(workspace).executionSnapshots(sessionId);
+  expect(snapshots[0]?.status).toBe("failed");
+  expect(execution(workspace, sessionId, snapshots[1]!.executionId).resumes_execution_id).toBe(
+    snapshots[0]?.executionId,
+  );
 });
 
 test("a repair turn without an agent id receives the flattened history", async () => {
