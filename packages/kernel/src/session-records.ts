@@ -11,7 +11,7 @@ import { commitFoldedStatus, readSessionManifest } from "./session-fold.js";
 import { SessionLock, sessionLockHeldLocally } from "./session-lock.js";
 import { SessionStore } from "./session-store.js";
 import { assertManualSessionId, assertSingleLineTask, requireTaskBody, writeTaskFile, taskFilePath } from "./task-file.js";
-import { loadNamedWorkflow, type WorkflowDocument } from "./workflow.js";
+import { isWorkflowV2, loadNamedWorkflow, type WorkflowDocument } from "./workflow.js";
 
 function sessionWorkflowPath(workspace: string, workflow: WorkflowDocument): string {
   const source = workflow.source;
@@ -250,9 +250,10 @@ export function resolvePriorSessionId(
     return null;
   }
   if (!priorSessionId) {
-    throw new ConfigurationError(
-      `Workflow ${workflow.id} requires completed ${workflow.requires.workflow} (${workflow.requires.decision}); pass --prior.`,
-    );
+    const required = isWorkflowV2(workflow)
+      ? `completed ${workflow.requires.workflow}`
+      : `completed ${workflow.requires.workflow} (${workflow.requires.decision})`;
+    throw new ConfigurationError(`Workflow ${workflow.id} requires ${required}; pass --prior.`);
   }
   const priorStatusPath = path.join(workspace, ".migent", "sessions", priorSessionId, "status.json");
   const priorRead = readStatusFileState(priorStatusPath);
@@ -269,10 +270,13 @@ export function resolvePriorSessionId(
   if (status.status !== "completed") {
     throw new ConfigurationError(`--prior ${priorSessionId} is ${String(status.status)}, not completed.`);
   }
+  if (isWorkflowV2(workflow)) return priorSessionId;
   const decision = status.latest_decision;
-  if (decision !== workflow.requires.decision) {
+  const requiredDecision = workflow.requires.decision;
+  if (decision !== requiredDecision) {
+    const expected = requiredDecision === null ? "None" : pyRepr(requiredDecision);
     throw new ConfigurationError(
-      `--prior ${priorSessionId} decision is ${pyLiteral(decision)}, not ${pyRepr(workflow.requires.decision)}.`,
+      `--prior ${priorSessionId} decision is ${pyLiteral(decision)}, not ${expected}.`,
     );
   }
   return priorSessionId;

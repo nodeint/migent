@@ -4,13 +4,14 @@ Adapters supply the model, role, and stage rewrite for each version step.
 This module walks those steps and writes the resulting schema_version.
 A missing schema_version is version 0. Writes stay on the text patchers.
 */
+import { stringify } from "yaml";
 import { ConfigEditError, yamlScalar } from "./config-edit.js";
 import { documentVersion } from "./config.js";
 import { ConfigurationError } from "./errors.js";
 import { isRecord } from "./record.js";
 import { parseYamlDocument } from "./yaml.js";
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 const SCHEMA_VERSION_FIELD = "schema_version";
 
@@ -53,10 +54,11 @@ export function migrateWorkflow(
   const before = deepCopyRecord(workflow);
   while (version < current) {
     migrateStages(workflow, config, adapters, version);
+    if (version === 1) liftWorkflowCompletion(workflow);
     version += 1;
   }
   workflow[SCHEMA_VERSION_FIELD] = current;
-  return stageNotes(before, workflow);
+  return workflowNotes(before, workflow);
 }
 
 export function patchWorkflowText(original: string, updated: Readonly<Record<string, unknown>>): string {
@@ -67,7 +69,66 @@ export function patchWorkflowText(original: string, updated: Readonly<Record<str
   const edits: Edit[] = [];
   insertSchemaVersion(lines, updated, edits);
   syncChangedStages(lines, current, updated, edits);
+  syncDocumentShape(lines, current, updated, edits);
   return applyEdits(original, lines, edits);
+}
+
+/** Version 2 has no completion block and no requires.decision. */
+function liftWorkflowCompletion(workflow: Record<string, unknown>): void {
+  const completion = workflow.completion;
+  if (isRecord(completion)) {
+    refuseForeignCompleteRoutes(workflow, completion);
+    const outputs = completion.outputs;
+    const emptyOutputs =
+      outputs == null || outputs === false || (isRecord(outputs) && Object.keys(outputs).length === 0);
+    if (!emptyOutputs) workflow.outputs = deepCopy(outputs);
+    delete workflow.completion;
+  } else if (Object.hasOwn(workflow, "completion")) {
+    delete workflow.completion;
+  }
+  const requires = workflow.requires;
+  if (!isRecord(requires)) return;
+  delete requires.decision;
+  if (Object.keys(requires).length === 0) delete workflow.requires;
+}
+
+function refuseForeignCompleteRoutes(
+  workflow: Record<string, unknown>,
+  completion: Record<string, unknown>,
+): void {
+  const completionStage = typeof completion.stage === "string" ? completion.stage.trim() : "";
+  const completionDecision =
+    typeof completion.decision === "string" && completion.decision.trim() !== ""
+      ? completion.decision.trim().toLowerCase()
+      : null;
+  const stages = workflow.stages;
+  if (!Array.isArray(stages)) return;
+  for (const stage of stages) {
+    if (!isRecord(stage)) continue;
+    const stageId = typeof stage.id === "string" ? stage.id.trim() : "";
+    const decision = stage.decision;
+    if (!isRecord(decision) || !isRecord(decision.routes)) continue;
+    for (const [rawKey, rawTarget] of Object.entries(decision.routes)) {
+      const routeKey = rawKey.trim().toLowerCase();
+      if (!routeListsComplete(rawTarget)) continue;
+      if (stageId !== completionStage) {
+        throw new ConfigurationError(
+          `stages.${stageId}.decision.routes.${routeKey} routes to complete, but completion.stage is ${completionStage || "missing"}.`,
+        );
+      }
+      if (completionDecision !== null && routeKey !== completionDecision) {
+        throw new ConfigurationError(
+          `stages.${stageId}.decision.routes.${routeKey} routes to complete, but completion.decision is ${completionDecision}.`,
+        );
+      }
+    }
+  }
+}
+
+function routeListsComplete(target: unknown): boolean {
+  if (typeof target === "string") return target.trim() === "complete";
+  if (!Array.isArray(target)) return false;
+  return target.some((item) => typeof item === "string" && item.trim() === "complete");
 }
 
 function requireCurrent(version: number, current: number, label: string): number {
@@ -180,6 +241,22 @@ function documentNotes(
   const notes = [`${SCHEMA_VERSION_FIELD} -> ${String(after[SCHEMA_VERSION_FIELD])}`];
   notes.push(...namedNotes(before[modelsKey], after[modelsKey], "models"));
   notes.push(...namedNotes(before[rolesKey], after[rolesKey], "roles"));
+  return notes;
+}
+
+function workflowNotes(before: Readonly<Record<string, unknown>>, after: Readonly<Record<string, unknown>>): string[] {
+  const notes = stageNotes(before, after);
+  if (Object.hasOwn(before, "completion") && !Object.hasOwn(after, "completion")) notes.push("completion removed");
+  if (!Object.hasOwn(before, "outputs") && Object.hasOwn(after, "outputs")) notes.push("completion.outputs -> outputs");
+  const beforeRequires = isRecord(before.requires) ? before.requires : null;
+  const afterRequires = isRecord(after.requires) ? after.requires : null;
+  if (
+    beforeRequires !== null &&
+    Object.hasOwn(beforeRequires, "decision") &&
+    (afterRequires === null || !Object.hasOwn(afterRequires, "decision"))
+  ) {
+    notes.push("requires.decision removed");
+  }
   return notes;
 }
 
@@ -528,6 +605,82 @@ function unquote(value: string): string {
     return value.slice(1, -1);
   }
   return value;
+}
+
+interface LineSpan {
+  start: number;
+  end: number;
+}
+
+function syncDocumentShape(
+  lines: string[],
+  before: Readonly<Record<string, unknown>>,
+  after: Readonly<Record<string, unknown>>,
+  edits: Edit[],
+): void {
+  const spans = topLevelSpans(lines);
+  for (const [key, span] of spans) {
+    if (key === "stages") continue;
+    if (!Object.hasOwn(after, key)) edits.push([span.start, span.end, []]);
+  }
+  for (const key of Object.keys(after)) {
+    if (key === SCHEMA_VERSION_FIELD || key === "stages") continue;
+    if (spans.has(key) || Object.hasOwn(before, key)) continue;
+    const rendered = renderTopLevel(key, after[key]);
+    if (rendered.length > 0) edits.push([lines.length, lines.length, rendered]);
+  }
+  for (const [key, span] of spans) {
+    if (key === "stages" || !Object.hasOwn(after, key)) continue;
+    const previous = before[key];
+    const next = after[key];
+    if (!isRecord(previous) || !isRecord(next)) continue;
+    for (const nested of Object.keys(previous)) {
+      if (Object.hasOwn(next, nested)) continue;
+      const range = nestedKeySpan(lines, span, nested);
+      if (range !== null) edits.push([range[0], range[1], []]);
+    }
+  }
+}
+
+function topLevelSpans(lines: string[]): Map<string, LineSpan> {
+  const spans = new Map<string, LineSpan>();
+  let current: { key: string; start: number } | null = null;
+  for (let index = 0; index < lines.length; index += 1) {
+    const item = lineInfo(lines[index] ?? "");
+    if (item === null || item.indent !== 0 || item.key === null) continue;
+    if (current !== null && !spans.has(current.key)) spans.set(current.key, { start: current.start, end: index });
+    current = { key: item.key, start: index };
+  }
+  if (current !== null && !spans.has(current.key)) spans.set(current.key, { start: current.start, end: lines.length });
+  return spans;
+}
+
+function nestedKeySpan(lines: string[], parent: LineSpan, key: string): [number, number] | null {
+  let childIndent: number | null = null;
+  for (let index = parent.start + 1; index < parent.end; index += 1) {
+    const item = lineInfo(lines[index] ?? "");
+    if (item === null || item.key === null) continue;
+    if (childIndent === null || item.indent < childIndent) childIndent = item.indent;
+  }
+  if (childIndent === null) return null;
+  for (let index = parent.start + 1; index < parent.end; index += 1) {
+    const item = lineInfo(lines[index] ?? "");
+    if (item === null || item.key !== key || item.indent !== childIndent) continue;
+    if (item.rest !== "") return [index, index + 1];
+    let end = index + 1;
+    for (let nested = index + 1; nested < parent.end; nested += 1) {
+      const next = lineInfo(lines[nested] ?? "");
+      if (next !== null && next.indent <= item.indent) break;
+      end = nested + 1;
+    }
+    return [index, end];
+  }
+  return null;
+}
+
+function renderTopLevel(key: string, value: unknown): string[] {
+  if (value == null) return [];
+  return splitLines(stringify({ [key]: value }, { lineWidth: 0 }));
 }
 
 function applyEdits(original: string, lines: string[], edits: Edit[]): string {

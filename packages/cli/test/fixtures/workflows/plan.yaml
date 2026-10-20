@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 id: plan
 description: Write and approve a plan before implementation.
 stages:
@@ -19,13 +19,10 @@ stages:
       routes:
         approved: complete
         revise: plan
-completion:
-  stage: review-plan
-  decision: approved
-  outputs:
-    - name: plan
-      from_stage: plan
-      artifact: plan.md
+outputs:
+  - name: plan
+    from_stage: plan
+    artifact: plan.md
 constraints:
   - Do not write implementation code.
   - Do not infer decisions from review prose.

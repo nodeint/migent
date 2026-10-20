@@ -40,7 +40,7 @@ export interface WorkflowCompletion {
 
 export interface WorkflowRequires {
   workflow: string;
-  decision: string;
+  decision: string | null;
 }
 
 export interface WorkflowDocument {
@@ -50,6 +50,17 @@ export interface WorkflowDocument {
   requires: WorkflowRequires | null;
   constraints: string[];
   source: string | null;
+  /** Missing on hand-built documents means version 1 behavior. */
+  schemaVersion?: number;
+  concurrency?: number;
+  outputs?: WorkflowOutput[];
+}
+
+/** config.ts imports this module, so the parser cannot import SCHEMA_VERSION. */
+const WORKFLOW_SCHEMA_VERSION = 2;
+
+export function isWorkflowV2(workflow: WorkflowDocument | null | undefined): boolean {
+  return (workflow?.schemaVersion ?? 1) >= 2;
 }
 
 export interface WorkflowCatalog {
@@ -88,7 +99,7 @@ const workflowCompletionSchema = z.object({
 
 const workflowRequiresSchema = z.object({
   workflow: z.string(),
-  decision: z.string(),
+  decision: z.string().nullable(),
 });
 
 const workflowDocumentSchema = z.object({
@@ -98,6 +109,9 @@ const workflowDocumentSchema = z.object({
   requires: workflowRequiresSchema.nullable(),
   constraints: z.array(z.string()),
   source: z.string().nullable(),
+  schemaVersion: z.number().int().nonnegative().optional(),
+  concurrency: z.number().int().positive().optional(),
+  outputs: z.array(workflowOutputSchema).optional(),
 });
 
 export function workflowsDirectory(workspace: string): string {
@@ -167,20 +181,34 @@ export function loadWorkflowDocument(filePath: string): WorkflowDocument {
 /** Parse a workflow mapping. `source` is stored on the document and is not read from `data`. */
 export function parseWorkflowMapping(data: Record<string, unknown>, source: string): WorkflowDocument {
   const workflowId = documentId(data, source);
-  const stages = parseStages(data.stages);
-  const completionRaw = data.completion;
+  const schemaVersion = mappingSchemaVersion(data);
+  if (schemaVersion > WORKFLOW_SCHEMA_VERSION) {
+    throw new ConfigurationError(
+      `workflow schema_version ${schemaVersion} is newer than this Migent (${WORKFLOW_SCHEMA_VERSION}).`,
+    );
+  }
+  const version2 = schemaVersion >= 2;
+  if (version2 && Object.hasOwn(data, "completion") && data.completion != null) {
+    throw new ConfigurationError("schema_version 2 does not allow completion. Run `migent migrate`.");
+  }
+  const stages = parseStages(data.stages, version2);
   const completion =
-    isRecord(completionRaw) && Object.keys(stages).length > 0
-      ? parseCompletion(completionRaw, stages)
+    !version2 && isRecord(data.completion) && Object.keys(stages).length > 0
+      ? parseCompletion(data.completion, stages)
       : null;
-  validateVerifyPaths(stages, completion);
+  const outputs = version2 ? parseTopLevelOutputs(data.outputs, stages) : undefined;
+  const concurrency = version2 ? parseConcurrency(data) : undefined;
+  validateVerifyPaths(stages, completion, version2);
   return workflowDocumentSchema.parse({
     id: workflowId,
     stages,
     completion,
-    requires: parseRequires(data.requires),
+    requires: parseRequires(data.requires, version2),
     constraints: stringItems(data.constraints, "constraints"),
     source,
+    schemaVersion,
+    ...(concurrency === undefined ? {} : { concurrency }),
+    ...(outputs === undefined ? {} : { outputs }),
   });
 }
 
@@ -275,8 +303,9 @@ function checkRequires(
     }
     return;
   }
+  if ((documents[workflowId]?.schemaVersion ?? 1) >= 2) return;
   const decision = required.completion === null ? null : required.completion.decision;
-  if (decision === null || decision.toLowerCase() !== requires.decision) {
+  if (requires.decision === null || decision === null || decision.toLowerCase() !== requires.decision) {
     const actual = decision === null ? "no decision" : decision;
     problems.push(
       `${workflowId}: requires ${requires.workflow} to complete with ${requires.decision}, but it completes with ${actual}.`,
@@ -305,6 +334,35 @@ function resolveWorkflowPath(workspace: string, reference: string): string | nul
   return null;
 }
 
+function mappingSchemaVersion(data: Record<string, unknown>): number {
+  if (!Object.hasOwn(data, "schema_version") || data.schema_version == null) return 0;
+  const raw = data.schema_version;
+  if (typeof raw === "boolean" || (typeof raw !== "number" && typeof raw !== "string")) {
+    throw new ConfigurationError("schema_version must be a non-negative integer.");
+  }
+  if (typeof raw === "string") {
+    const text = raw.trim();
+    if (!/^\d+$/.test(text)) throw new ConfigurationError("schema_version must be a non-negative integer.");
+    return Number(text);
+  }
+  if (!Number.isInteger(raw) || raw < 0) {
+    throw new ConfigurationError("schema_version must be a non-negative integer.");
+  }
+  return raw;
+}
+
+function parseConcurrency(data: Record<string, unknown>): number {
+  if (!Object.hasOwn(data, "concurrency") || data.concurrency == null) return 1;
+  const raw = data.concurrency;
+  let value = raw;
+  if (typeof value === "string" && /^\d+$/.test(value.trim())) value = Number(value.trim());
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
+    throw new ConfigurationError("concurrency must be a positive integer.");
+  }
+  if (value > 1) throw new ConfigurationError("concurrency greater than 1 is not supported yet.");
+  return value;
+}
+
 function documentId(data: Record<string, unknown>, filePath: string): string {
   if (!Object.hasOwn(data, "id") || data.id == null) {
     const stem = path.parse(filePath).name.trim();
@@ -314,7 +372,7 @@ function documentId(data: Record<string, unknown>, filePath: string): string {
   return requiredString(data.id, "id");
 }
 
-function parseStages(raw: unknown): Record<string, StageSpec> {
+function parseStages(raw: unknown, version2 = false): Record<string, StageSpec> {
   if (!Array.isArray(raw) || raw.length === 0) return {};
   const stages: Record<string, StageSpec> = {};
   const items: Record<string, unknown>[] = [];
@@ -352,19 +410,22 @@ function parseStages(raw: unknown): Record<string, StageSpec> {
   for (const item of items) {
     const stageId = requiredString(item.id, "stages.id");
     const stage = stages[stageId]!;
-    stage.routes = stageRoutes(item, stageId, stage.decisionValues, stages);
+    stage.routes = stageRoutes(item, stageId, stage.decisionValues, stages, version2);
   }
   validateStageGraph(stages);
   return stages;
 }
 
-function parseRequires(raw: unknown): WorkflowRequires | null {
+function parseRequires(raw: unknown, version2 = false): WorkflowRequires | null {
   if (raw == null) return null;
   if (isRecord(raw) && Object.keys(raw).length === 0) return null;
   if (!isRecord(raw)) throw new ConfigurationError("requires must be a mapping.");
+  if (version2 && Object.hasOwn(raw, "decision") && raw.decision != null) {
+    throw new ConfigurationError("requires.decision is not allowed in schema_version 2.");
+  }
   return workflowRequiresSchema.parse({
     workflow: requiredString(raw.workflow, "requires.workflow"),
-    decision: requiredString(raw.decision, "requires.decision").toLowerCase(),
+    decision: version2 ? null : requiredString(raw.decision, "requires.decision").toLowerCase(),
   });
 }
 
@@ -422,6 +483,7 @@ function stageRoutes(
   stageId: string,
   values: readonly string[],
   stages: Record<string, StageSpec>,
+  version2 = false,
 ): Record<string, string> {
   if (values.length === 0) return {};
   const decision = stage.decision;
@@ -433,11 +495,10 @@ function stageRoutes(
   const parsed: Record<string, string> = {};
   for (const [rawKey, rawTarget] of Object.entries(routes)) {
     const key = requiredString(rawKey, `stages.${stageId}.decision.routes`).toLowerCase();
-    const target = requiredString(rawTarget, `stages.${stageId}.decision.routes.${key}`);
+    const field = `stages.${stageId}.decision.routes.${key}`;
+    const target = routeTarget(rawTarget, field, stages, version2);
     if (target !== "complete" && !Object.hasOwn(stages, target)) {
-      throw new ConfigurationError(
-        `stages.${stageId}.decision.routes.${key} is not a declared stage: ${target}`,
-      );
+      throw new ConfigurationError(`${field} is not a declared stage: ${target}`);
     }
     if (Object.hasOwn(parsed, key)) {
       throw new ConfigurationError(`Duplicate route on stages.${stageId}: ${key}`);
@@ -452,6 +513,26 @@ function stageRoutes(
     );
   }
   return parsed;
+}
+
+function routeTarget(
+  raw: unknown,
+  field: string,
+  stages: Record<string, StageSpec>,
+  version2: boolean,
+): string {
+  if (!Array.isArray(raw)) return requiredString(raw, field);
+  // A list is a fan-out route. Reporting it as a bad string would hide that.
+  if (!version2) return requiredString(raw, field);
+  if (raw.length === 0) throw new ConfigurationError(`${field} must be a non-empty list.`);
+  const targets = raw.map((item, index) => requiredString(item, `${field}[${index}]`));
+  if (targets.includes("complete")) throw new ConfigurationError(`${field} cannot list complete.`);
+  for (const target of targets) {
+    if (!Object.hasOwn(stages, target)) {
+      throw new ConfigurationError(`${field} is not a declared stage: ${target}`);
+    }
+  }
+  throw new ConfigurationError(`${field} is a list, which is not supported yet.`);
 }
 
 function validateStageGraph(stages: Record<string, StageSpec>): void {
@@ -510,6 +591,47 @@ function stageArtifact(stage: Record<string, unknown>, stageId: string): string 
   }
   if (!Object.hasOwn(produces, "artifact") || produces.artifact == null) return null;
   return filename(produces.artifact, `stages.${stageId}.produces.artifact`);
+}
+
+function parseTopLevelOutputs(raw: unknown, stages: Record<string, StageSpec>): WorkflowOutput[] {
+  if (raw == null) return [];
+  return parseOutputItems(raw, stages, "outputs");
+}
+
+function parseOutputItems(
+  raw: unknown,
+  stages: Record<string, StageSpec>,
+  field: string,
+): WorkflowOutput[] {
+  let outputsRaw: unknown = raw === false ? [] : raw;
+  if (isRecord(outputsRaw) && Object.keys(outputsRaw).length === 0) outputsRaw = [];
+  if (!Array.isArray(outputsRaw)) throw new ConfigurationError(`${field} must be a list.`);
+  const outputs: WorkflowOutput[] = [];
+  const seen = new Set<string>();
+  for (const item of outputsRaw) {
+    if (!isRecord(item)) throw new ConfigurationError(`${field} item must be a mapping.`);
+    const name = filename(item.name, `${field}.name`);
+    const fromStage = requiredString(item.from_stage, `${field}.from_stage`);
+    const artifact = filename(item.artifact, `${field}.artifact`);
+    if (seen.has(name)) throw new ConfigurationError(`Duplicate ${field} name: ${name}`);
+    if (!Object.hasOwn(stages, fromStage)) {
+      throw new ConfigurationError(`${field}.from_stage is not a declared stage: ${fromStage}`);
+    }
+    const source = stages[fromStage]!;
+    if (source.artifact === null) {
+      throw new ConfigurationError(
+        `${field} ${pyRepr(name)} references stage ${fromStage} which does not produce an artifact.`,
+      );
+    }
+    if (source.artifact !== artifact) {
+      throw new ConfigurationError(
+        `${field} ${pyRepr(name)} artifact ${pyRepr(artifact)} does not match stages.${fromStage}.produces.artifact ${pyRepr(source.artifact)}.`,
+      );
+    }
+    seen.add(name);
+    outputs.push(workflowOutputSchema.parse({ name, fromStage, artifact }));
+  }
+  return outputs;
 }
 
 function parseCompletion(
@@ -612,11 +734,13 @@ function positiveInteger(raw: unknown, field: string): number {
 function validateVerifyPaths(
   stages: Record<string, StageSpec>,
   completion: WorkflowCompletion | null,
+  version2 = false,
 ): void {
   const points = new Set<string>();
-  if (completion !== null) points.add(completion.stage);
+  if (!version2 && completion !== null) points.add(completion.stage);
   for (const stage of Object.values(stages)) {
     if (Object.values(stage.routes).includes("complete")) points.add(stage.id);
+    if (version2 && isLeafStage(stages, stage)) points.add(stage.id);
   }
   if (points.size === 0) return;
   for (const stage of Object.values(stages)) {
@@ -628,6 +752,11 @@ function validateVerifyPaths(
       );
     }
   }
+}
+
+function isLeafStage(stages: Record<string, StageSpec>, stage: StageSpec): boolean {
+  if (Object.keys(stage.routes).length > 0) return false;
+  return !Object.values(stages).some((other) => other.dependsOn.includes(stage.id));
 }
 
 function dependencyClosure(stages: Record<string, StageSpec>, stageId: string): Set<string> {

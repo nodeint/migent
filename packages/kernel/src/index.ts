@@ -34,8 +34,9 @@ export type {
 } from "./config-edit.js";
 export { diagnose, doctor, whichSync } from "./doctor.js";
 export type { Check, DiagnoseOptions } from "./doctor.js";
-export { ConfigurationError } from "./errors.js";
+export { ConfigurationError, OutputsMissing } from "./errors.js";
 export {
+  isWorkflowV2,
   loadNamedWorkflow,
   loadStage,
   loadWorkflowCatalog,
@@ -83,6 +84,7 @@ export {
   atomicCopy,
   isCompletionDecision,
   missingCompletionOutputNames,
+  missingWorkflowOutputNames,
   nonemptyArtifact,
   publishOutputFiles,
   runnableViolation,

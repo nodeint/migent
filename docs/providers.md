@@ -5,7 +5,7 @@ Models describe execution. Roles describe intent. Both are declared in
 `.agents/skills/migent/references/schema-config.yaml`.
 
 ```yaml
-schema_version: 1
+schema_version: 2
 models:
   implementation:
     provider: codex
@@ -32,7 +32,7 @@ Roles can point at different providers. A planner on Codex and a reviewer on
 Grok:
 
 ```yaml
-schema_version: 1
+schema_version: 2
 models:
   planner-model:
     provider: codex

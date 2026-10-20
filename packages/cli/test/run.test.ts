@@ -335,7 +335,10 @@ test("execute reruns plan then review after revise", async () => {
 });
 
 test("execute requires prior session then completes plan implement", async () => {
-  const requiring = `requires:\n  workflow: plan\n  decision: approved\n${repoWorkflowText("plan-implement")}`;
+  const requiring = repoWorkflowText("plan-implement").replace(
+    "schema_version: 2\n",
+    "schema_version: 2\nrequires:\n  workflow: plan\n",
+  );
   const workspace = writeFakeWorkflowWorkspace({
     plan: repoWorkflowText("plan"),
     "plan-implement": requiring,
@@ -624,7 +627,7 @@ test("stage rejects a dispatch ceiling", async () => {
 
 test("stage id resumes the declared source session", async () => {
   const workflow = `\
-schema_version: 1
+schema_version: 2
 id: resume-sample
 stages:
   - id: draft
@@ -677,7 +680,7 @@ stages:
 });
 
 const REVISION_LOOP = `\
-schema_version: 1
+schema_version: 2
 id: loop
 stages:
   - id: plan
@@ -699,7 +702,7 @@ stages:
 `;
 
 const OPEN_LOOP = `\
-schema_version: 1
+schema_version: 2
 id: loop
 stages:
   - id: plan

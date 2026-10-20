@@ -1,6 +1,6 @@
-import type { ExecutionSnapshot } from "./outputs.js";
+import { missingWorkflowOutputNames, type ExecutionSnapshot } from "./outputs.js";
 import { pyRepr } from "./record.js";
-import type { StageSpec, WorkflowDocument } from "./workflow.js";
+import { isWorkflowV2, type StageSpec, type WorkflowDocument } from "./workflow.js";
 
 const terminalSessionStatuses = new Set(["blocked", "cancelled", "completed"]);
 
@@ -30,6 +30,7 @@ export function nextStage(
   if (terminalSessionStatuses.has(sessionStatus)) return new Stop(sessionStatus);
   const latest = latestSnapshot(snapshots);
   if (latest !== null && latest.status === "failed") return new NextStage(latest.stageId);
+  if (isWorkflowV2(workflow)) return nextVersion2Stage(workflow, snapshots, sessionStatus, latest);
   if (
     latest !== null &&
     latest.status === "completed" &&
@@ -40,16 +41,56 @@ export function nextStage(
       return routedNextStage(workflow, snapshots, stage, latest);
     }
   }
-  const candidates = candidateStageIds(workflow, snapshots);
-  const ready = readyStages(workflow, snapshots, sessionStatus);
-  // Blocked continue, verify-exhausted repair, and exhausted retries are not ready
-  // until the caller passes their resume events. This wrapper still returns them.
-  const selected = sameStageIds(ready, candidates) ? ready : candidates;
+  const selected = sequentialCandidates(workflow, snapshots, sessionStatus);
   if (selected.length === 0) return new NextStageError("no eligible stage");
   if (selected.length > 1) {
     return new NextStageError(`ambiguous next stage: ${selected.join(", ")}`);
   }
   return new NextStage(selected[0]!);
+}
+
+/** Same stage list nextStage uses once a route has been followed. */
+export function sequentialCandidates(
+  workflow: WorkflowDocument,
+  snapshots: readonly ExecutionSnapshot[],
+  sessionStatus: string,
+): string[] {
+  const candidates = candidateStageIds(workflow, snapshots);
+  const ready = readyStages(workflow, snapshots, sessionStatus);
+  // Blocked continue, verify-exhausted repair, and exhausted retries are not ready
+  // until the caller passes their resume events. nextStage still returns them.
+  return sameStageIds(ready, candidates) ? ready : candidates;
+}
+
+/**
+ * Nothing is running, failed, blocked, or cancelled, and no stage can start.
+ * Missing outputs do not make the graph busy; the caller checks those separately.
+ */
+export function version2GraphQuiet(
+  workflow: WorkflowDocument,
+  snapshots: readonly ExecutionSnapshot[],
+  sessionStatus: string,
+): boolean {
+  if (!snapshots.some((snapshot) => snapshot.status === "completed" && snapshot.outcomeStatus === "complete")) {
+    return false;
+  }
+  if (hasBlockingLatest(snapshots)) return false;
+  return sequentialCandidates(workflow, snapshots, sessionStatus).length === 0;
+}
+
+export function missingOutputProducers(
+  workflow: WorkflowDocument,
+  snapshots: readonly ExecutionSnapshot[],
+  sessionStatus: string,
+): string[] {
+  if (!isWorkflowV2(workflow) || !version2GraphQuiet(workflow, snapshots, sessionStatus)) return [];
+  const missing = new Set(missingWorkflowOutputNames(workflow, snapshots));
+  const producers: string[] = [];
+  for (const output of workflow.outputs ?? []) {
+    if (!missing.has(output.name) || producers.includes(output.fromStage)) continue;
+    producers.push(output.fromStage);
+  }
+  return producers;
 }
 
 /** Stage ids that may run now, in declaration order. */
@@ -114,6 +155,7 @@ export function stageDispatchError(
   }
   const incoming = incomingRouters(workflow, stageId);
   if (incoming.length === 0) return null;
+  if (isWorkflowV2(workflow)) return version2RouteError(workflow, stageId, latestComplete);
   const completedIncoming = incoming.filter((router) => latestComplete[router.id] !== undefined);
   if (completedIncoming.length === 0) {
     if (stage.dependsOn.length > 0) return `Stage ${stageId} is waiting for a routing decision.`;
@@ -261,6 +303,52 @@ export function revisionStop(
   return completed - baseline >= stage.maxRevisions;
 }
 
+function nextVersion2Stage(
+  workflow: WorkflowDocument,
+  snapshots: readonly ExecutionSnapshot[],
+  sessionStatus: string,
+  latest: ExecutionSnapshot | null,
+): NextStageResult {
+  if (latest !== null && latest.status === "completed" && latest.outcomeStatus === "complete") {
+    const stage = workflow.stages[latest.stageId];
+    if (stage !== undefined && Object.keys(stage.routes).length > 0) {
+      const decision = (latest.outcomeDecision ?? "").toLowerCase();
+      const target = stage.routes[decision];
+      if (target === undefined) {
+        return new NextStageError(`stage ${stage.id} decision ${pyRepr(decision)} is not a valid route.`);
+      }
+      // complete ends this branch. Another ready stage can still run.
+      if (target !== "complete") {
+        const error = stageDispatchError(workflow, target, snapshots);
+        if (error !== null) return new NextStageError(error);
+        return new NextStage(target);
+      }
+    }
+  }
+  const selected = sequentialCandidates(workflow, snapshots, sessionStatus);
+  if (selected.length > 0) return new NextStage(selected[0]!);
+  const producers = missingOutputProducers(workflow, snapshots, sessionStatus);
+  if (producers.length > 0) return new NextStage(producers[0]!);
+  return new NextStageError("no eligible stage");
+}
+
+function version2RouteError(
+  workflow: WorkflowDocument,
+  stageId: string,
+  latestComplete: Readonly<Record<string, ExecutionSnapshot>>,
+): string | null {
+  const since = latestComplete[stageId]?.executionOrder ?? -1;
+  for (const router of incomingRouters(workflow, stageId)) {
+    const snapshot = latestComplete[router.id];
+    if (snapshot === undefined || snapshot.executionOrder <= since) continue;
+    const decision = (snapshot.outcomeDecision ?? "").toLowerCase();
+    if (router.routes[decision] !== stageId) {
+      return `Stage ${stageId} is not routed by ${router.id} decision ${pyRepr(decision)}.`;
+    }
+  }
+  return null;
+}
+
 function routedNextStage(
   workflow: WorkflowDocument,
   snapshots: readonly ExecutionSnapshot[],
@@ -320,6 +408,10 @@ function hasLaterRouteTo(
   stageId: string,
   completeOrder: number,
 ): boolean {
+  if (isWorkflowV2(workflow)) {
+    const relevant = routersCompletedSince(workflow, complete, stageId, completeOrder);
+    return relevant !== null && relevant.length > 0;
+  }
   for (const router of incomingRouters(workflow, stageId)) {
     const snapshot = complete[router.id];
     if (snapshot === undefined || snapshot.executionOrder <= completeOrder) continue;
@@ -329,11 +421,45 @@ function hasLaterRouteTo(
   return false;
 }
 
+/** Null when a router that finished since `since` does not list the stage. */
+export function relevantRouterSnapshots(
+  workflow: WorkflowDocument,
+  snapshots: readonly ExecutionSnapshot[],
+  stageId: string,
+): ExecutionSnapshot[] | null {
+  const complete = latestCompleteByStage(snapshots);
+  const since = complete[stageId]?.executionOrder ?? -1;
+  return routersCompletedSince(workflow, complete, stageId, since);
+}
+
+function routersCompletedSince(
+  workflow: WorkflowDocument,
+  complete: Readonly<Record<string, ExecutionSnapshot>>,
+  stageId: string,
+  since: number,
+): ExecutionSnapshot[] | null {
+  const relevant: ExecutionSnapshot[] = [];
+  for (const router of incomingRouters(workflow, stageId)) {
+    const snapshot = complete[router.id];
+    if (snapshot === undefined || snapshot.executionOrder <= since) continue;
+    const decision = (snapshot.outcomeDecision ?? "").toLowerCase();
+    if (router.routes[decision] !== stageId) return null;
+    relevant.push(snapshot);
+  }
+  relevant.sort((left, right) => left.executionOrder - right.executionOrder);
+  return relevant;
+}
+
 function latestRouteTo(
   workflow: WorkflowDocument,
   snapshots: readonly ExecutionSnapshot[],
   stageId: string,
 ): ExecutionSnapshot | null {
+  if (isWorkflowV2(workflow)) {
+    const relevant = relevantRouterSnapshots(workflow, snapshots, stageId);
+    if (relevant === null || relevant.length === 0) return null;
+    return relevant[relevant.length - 1]!;
+  }
   let best: ExecutionSnapshot | null = null;
   for (const snapshot of snapshots) {
     if (snapshot.status !== "completed" || snapshot.outcomeStatus !== "complete") continue;
@@ -344,6 +470,25 @@ function latestRouteTo(
     if (best === null || snapshot.executionOrder > best.executionOrder) best = snapshot;
   }
   return best;
+}
+
+function hasBlockingLatest(snapshots: readonly ExecutionSnapshot[]): boolean {
+  const latest = new Map<string, ExecutionSnapshot>();
+  for (const snapshot of snapshots) {
+    const current = latest.get(snapshot.stageId);
+    if (
+      current === undefined ||
+      snapshot.executionOrder > current.executionOrder ||
+      (snapshot.executionOrder === current.executionOrder && snapshot.executionId > current.executionId)
+    ) {
+      latest.set(snapshot.stageId, snapshot);
+    }
+  }
+  for (const snapshot of latest.values()) {
+    if (snapshot.status === "failed" || snapshot.status === "cancelled" || snapshot.status === "running") return true;
+    if (snapshot.outcomeStatus === "blocked") return true;
+  }
+  return false;
 }
 
 function latestStageSnapshot(

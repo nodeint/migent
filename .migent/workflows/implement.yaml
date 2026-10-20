@@ -1,8 +1,7 @@
-schema_version: 1
+schema_version: 2
 id: implement
 requires:
   workflow: plan
-  decision: approved
 constraints:
   - Implement the approved plan. Do not redesign it.
   - Do not commit or push.
@@ -34,10 +33,7 @@ stages:
       routes:
         approved: complete
         revise: implement
-completion:
-  stage: review-work
-  decision: approved
-  outputs:
-    - name: implementation
-      from_stage: implement
-      artifact: implementation.md
+outputs:
+  - name: implementation
+    from_stage: implement
+    artifact: implementation.md

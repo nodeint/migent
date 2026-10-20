@@ -2,8 +2,8 @@ import { readFileSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import type { ExecutionSnapshot } from "./outputs.js";
 import { isRecord } from "./record.js";
-import { latestCompleteByStage } from "./selection.js";
-import { VERIFY_ARTIFACT, type WorkflowDocument } from "./workflow.js";
+import { latestCompleteByStage, relevantRouterSnapshots } from "./selection.js";
+import { isWorkflowV2, VERIFY_ARTIFACT, type WorkflowDocument } from "./workflow.js";
 
 export function buildStagePrompt(input: {
   workflow: WorkflowDocument;
@@ -153,6 +153,7 @@ function routedResultLines(
   stageId: string,
   snapshots: readonly ExecutionSnapshot[],
 ): string[] {
+  if (isWorkflowV2(workflow)) return version2RoutedLines(workflow, stageId, snapshots);
   const complete = latestCompleteByStage(snapshots);
   const previous = complete[stageId];
   const previousOrder = previous ? previous.executionOrder : 0;
@@ -176,6 +177,29 @@ function routedResultLines(
   ];
   const stage = workflow.stages[stageId]!;
   if (previous && stage.artifact) {
+    const artifact = resolvePath(path.join(previous.artifactDirectory, stage.artifact));
+    if (isFile(artifact)) lines.push(`- Previous ${stageId} artifact: ${artifact}`);
+  }
+  return lines;
+}
+
+function version2RoutedLines(
+  workflow: WorkflowDocument,
+  stageId: string,
+  snapshots: readonly ExecutionSnapshot[],
+): string[] {
+  const routed = relevantRouterSnapshots(workflow, snapshots, stageId);
+  if (routed === null || routed.length === 0) return [];
+  const lines: string[] = [];
+  for (const decision of routed) {
+    const response = resolvePath(path.join(path.dirname(decision.artifactDirectory), "response.md"));
+    if (!isFile(response)) throw new Error(`Routed stage response is missing: ${response}`);
+    lines.push(`- ${decision.stageId} (${decision.outcomeDecision}): ${response}`);
+  }
+  lines.push("Read this response and use its decision and feedback when working on this stage.");
+  const previous = latestCompleteByStage(snapshots)[stageId];
+  const stage = workflow.stages[stageId];
+  if (previous && stage?.artifact) {
     const artifact = resolvePath(path.join(previous.artifactDirectory, stage.artifact));
     if (isFile(artifact)) lines.push(`- Previous ${stageId} artifact: ${artifact}`);
   }

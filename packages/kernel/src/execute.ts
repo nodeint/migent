@@ -3,7 +3,7 @@ import { AgentToolRunner, type RunResult } from "./agent-runner.js";
 import { writeFileAtomic } from "./atomic-file.js";
 import { CancellationRequested, raiseCancellation, resetCancellation } from "./command-executor.js";
 import { loadRoleInstructions, loadYamlMapping, resolveStageTarget } from "./config.js";
-import { ConfigurationError } from "./errors.js";
+import { ConfigurationError, OutputsMissing } from "./errors.js";
 import {
   assertStageDispatchable,
   dispatchNamedStage,
@@ -310,6 +310,10 @@ async function executeLocked(
       await Promise.allSettled([...tasks.values()]);
       log(error.message);
       return executeFinal(store.readSessionStatus(sessionId), "cancelled", []);
+    }
+    if (error instanceof OutputsMissing) {
+      process.stderr.write(`migent: ${error.message}\n`);
+      return executeFinal(store.readSessionStatus(sessionId), "outputs_missing", []);
     }
     // ConfigurationError stays an exception. Callers map it to exit 2, matching Python.
     if (error instanceof ConfigurationError) throw error;

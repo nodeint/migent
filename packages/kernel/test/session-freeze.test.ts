@@ -1,11 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "vitest";
-import { ConfigurationError, executeNamedWorkflow } from "../src/index.ts";
+import { ConfigurationError, executeNamedWorkflow, loadNamedWorkflow } from "../src/index.ts";
 import { AgentToolRunner } from "../src/agent-runner.ts";
 import { readFoldedStatus } from "../src/session-fold.ts";
 import { createAgentSession, createPreparedSession, createWorkflowSession } from "../src/session-records.ts";
-import { WORKFLOW_FREEZE_FILE } from "../src/session-freeze.ts";
+import { WORKFLOW_FREEZE_FILE, loadFrozenWorkflow } from "../src/session-freeze.ts";
 import { SessionStore } from "../src/session-store.ts";
 import { ScriptedAdapter, tempDir } from "./support.ts";
 
@@ -227,6 +227,50 @@ test("refresh names a completed session and leaves the freeze in place", async (
     executeNamedWorkflow(workspace, { sessionId: finished.sessionId, refreshWorkflow: true }),
   ).rejects.toThrow(`Session ${finished.sessionId} is completed.`);
   expect(readFileSync(freezePath, "utf8")).toBe(freeze);
+});
+
+const VERSION2 = `\
+schema_version: 2
+id: flow
+concurrency: 1
+stages:
+  - id: draft
+    role: developer
+    depends_on: []
+    produces:
+      artifact: draft.md
+  - id: review
+    role: reviewer
+    depends_on:
+      - draft
+    decision:
+      values:
+        - approved
+        - revise
+      routes:
+        approved: complete
+        revise: draft
+outputs:
+  - name: draft
+    from_stage: draft
+    artifact: draft.md
+`;
+
+test("a version 2 workflow round-trips through the freeze", () => {
+  const workspace = tempDir("migent-freeze-v2-");
+  mkdirSync(path.join(workspace, ".migent", "workflows"), { recursive: true });
+  writeFileSync(path.join(workspace, ".migent", "workflows", "flow.yaml"), VERSION2, "utf8");
+  writeFileSync(path.join(workspace, ".migent", "config.yaml"), FROZEN_CONFIG, "utf8");
+  const sessionId = createWorkflowSession(workspace, "flow", "Write the notes");
+  const frozen = loadFrozenWorkflow(sessionDirectory(workspace, sessionId));
+  const live = loadNamedWorkflow(workspace, "flow");
+  expect(frozen?.schemaVersion).toBe(2);
+  expect(frozen?.concurrency).toBe(live.concurrency);
+  expect(frozen?.outputs).toEqual(live.outputs);
+  expect(frozen?.completion).toBeNull();
+  expect(frozen?.requires).toBeNull();
+  expect(frozen?.stages.review?.routes).toEqual({ approved: "complete", revise: "draft" });
+  expect(frozen?.stages.draft?.instructions).toEqual(live.stages.draft?.instructions);
 });
 
 test("refresh does not start a prepared session", async () => {

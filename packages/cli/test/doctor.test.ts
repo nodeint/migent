@@ -15,7 +15,7 @@ function writeProject(workspace: string): void {
   const workflows = path.join(workspace, ".migent", "workflows");
   mkdirSync(workflows, { recursive: true });
   const config = `\
-schema_version: 1
+schema_version: 2
 models:
   planner-model:
     provider: codex
@@ -78,7 +78,7 @@ test("doctor stops when the schema is outdated", async () => {
   try {
     writeProject(workspace);
     const configPath = path.join(workspace, ".migent", "config.yaml");
-    const original = readFileSync(configPath, "utf8").replace("schema_version: 1\n", "");
+    const original = readFileSync(configPath, "utf8").replace("schema_version: 2\n", "");
     writeFileSync(configPath, original, "utf8");
     const captured = await capture(() => main(["doctor"], workspace));
     expect(captured.value).toBe(2);

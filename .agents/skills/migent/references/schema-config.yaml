@@ -1,5 +1,5 @@
 # A missing schema_version is 0. Commands refuse the file while it is older than this Migent.
-schema_version: 1
+schema_version: 2
 
 # models.<name>.model is the provider model id.
 # roles.<name>.default_model and a stage model are this name.

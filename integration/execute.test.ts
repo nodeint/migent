@@ -65,7 +65,7 @@ test("stage runs through the codex adapter", async () => {
     const stage = asRecords(result.stages)[0] ?? {};
     expect(stage.agent_id).toBe(CODEX_THREAD);
     expect(stage.outcome_status).toBe("complete");
-    expect(result.stop_reason).toBe("stage");
+    expect(result.stop_reason).toBe("completed");
     const artifact = path.join(String(stage.artifact_directory), "note.md");
     expect(readFileSync(artifact, "utf8").trim().length).toBeGreaterThan(0);
   } finally {

@@ -51,6 +51,7 @@ export interface FoldExecution {
   failureReason: string | null;
   createdAt: string | null;
   completedAt: string | null;
+  artifactDirectory?: string;
 }
 
 export interface FoldInputs {
@@ -391,6 +392,8 @@ function statusExecutionsFromFolds(executions: readonly FoldExecution[]): Status
     executionOrder: execution.executionOrder,
     status: execution.status,
     outcome: toStageOutcome(execution.outcome),
+    artifactDirectory: execution.artifactDirectory,
+    failureReason: execution.failureReason,
   }));
 }
 
@@ -569,12 +572,16 @@ export function readExecutions(sessionDirectory: string): FoldExecution[] {
       throw new ConfigurationError(`Execution file is corrupt: ${filePath}.`);
     }
     if (!isRecord(parsed)) throw new ConfigurationError(`Execution file is corrupt: ${filePath}.`);
-    executions.push(executionFromRecord(entry.name, parsed));
+    executions.push(executionFromRecord(sessionDirectory, entry.name, parsed));
   }
   return executions;
 }
 
-function executionFromRecord(executionId: string, metadata: Record<string, unknown>): FoldExecution {
+function executionFromRecord(
+  sessionDirectory: string,
+  executionId: string,
+  metadata: Record<string, unknown>,
+): FoldExecution {
   const outcome = isRecord(metadata.outcome) ? metadata.outcome : null;
   return {
     executionId,
@@ -590,6 +597,7 @@ function executionFromRecord(executionId: string, metadata: Record<string, unkno
     failureReason: textOr(metadata.failure_reason),
     createdAt: textOr(metadata.created_at),
     completedAt: textOr(metadata.completed_at),
+    artifactDirectory: path.join(sessionDirectory, EXECUTIONS_DIRNAME, executionId, "artifacts"),
   };
 }
 

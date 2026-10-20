@@ -242,7 +242,7 @@ function renderConfig(preset: string, primary: ModelChoice): string {
   let roles: Array<[string, string]>;
   if (preset === "implement") roles = [["developer", "default"]];
   else roles = [["planner", "default"], ["reviewer", "default"]];
-  const lines = ["schema_version: 1", "models:"];
+  const lines = ["schema_version: 2", "models:"];
   for (const [name, choice] of models) {
     lines.push(`  ${name}:`, `    provider: ${yamlScalar(choice.provider)}`, `    model: ${yamlScalar(choice.model)}`);
     const entries = Object.entries(choice.options);
@@ -259,7 +259,7 @@ function renderConfig(preset: string, primary: ModelChoice): string {
 function renderWorkflow(preset: string): string {
   if (preset === "implement") {
     return (
-      "schema_version: 1\n" +
+      "schema_version: 2\n" +
       "id: implement\n" +
       "stages:\n" +
       "  - id: implement\n" +
@@ -267,13 +267,11 @@ function renderWorkflow(preset: string): string {
       "    depends_on: []\n" +
       "    instructions:\n" +
       "      - Implement the requested change.\n" +
-      "      - Verify the result with relevant checks or tests.\n" +
-      "completion:\n" +
-      "  stage: implement\n"
+      "      - Verify the result with relevant checks or tests.\n"
     );
   }
   return (
-    "schema_version: 1\n" +
+    "schema_version: 2\n" +
     "id: plan\n" +
     "stages:\n" +
     "  - id: plan\n" +
@@ -299,13 +297,10 @@ function renderWorkflow(preset: string): string {
     "      routes:\n" +
     "        approved: complete\n" +
     "        revise: plan\n" +
-    "completion:\n" +
-    "  stage: review-plan\n" +
-    "  decision: approved\n" +
-    "  outputs:\n" +
-    "    - name: plan\n" +
-    "      from_stage: plan\n" +
-    "      artifact: plan.md\n"
+    "outputs:\n" +
+    "  - name: plan\n" +
+    "    from_stage: plan\n" +
+    "    artifact: plan.md\n"
   );
 }
 

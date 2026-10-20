@@ -9,7 +9,7 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { writeFileAtomic, writeJsonAtomic } from "./atomic-file.js";
-import { ConfigurationError } from "./errors.js";
+import { ConfigurationError, OutputsMissing } from "./errors.js";
 import { appendLifecycleEvent, appendRecordedEvent, reservedExecutionOrders, reservedStageAttempts, skipsStatusWrite } from "./session-events.js";
 import { commitFoldedStatus, readSessionManifest } from "./session-fold.js";
 import { loadFrozenWorkflow } from "./session-freeze.js";
@@ -18,12 +18,14 @@ import { corruptStatusMessage, readStatusFileState } from "./query.js";
 import { STATUS_PROVIDER_EVENTS } from "./event-kinds.js";
 import {
   missingCompletionOutputNames,
+  missingWorkflowOutputNames,
   nonemptyArtifact,
   runnableViolation,
   shouldPublishOutputs,
   type ExecutionSnapshot,
 } from "./outputs.js";
 import { blockedExecutions, planExecutionSave, statusExecutionsFromSnapshots } from "./session-ledger.js";
+import { version2GraphQuiet } from "./selection.js";
 import {
   REAP_ALREADY_EXITED,
   REAP_STILL_RUNNING,
@@ -50,6 +52,7 @@ import { withFileLockSync } from "./file-lock.js";
 import type { StageOutcome } from "./stage-outcome.js";
 import {
   VERIFY_ARTIFACT,
+  isWorkflowV2,
   loadNamedWorkflow,
   loadWorkflowDocument,
   type WorkflowDocument,
@@ -536,6 +539,22 @@ export class SessionStore {
     const previousStatus = this.readSessionStatusAt(sessionDirectory);
     const workflow = this.loadWorkflow(previousStatus);
     if (workflow === null) return [];
+    if (isWorkflowV2(workflow)) {
+      if (outcome === null || outcome.status !== "complete") return [];
+      const metadata = readJsonObject(path.join(context.directory, "execution.json"));
+      const sessionStatus = typeof previousStatus.status === "string" ? previousStatus.status : "active";
+      const snapshots = snapshotsIncludingSave(this.snapshotList(context.sessionId), {
+        executionId: context.executionId,
+        stageId: this.stageId(context),
+        executionOrder: asInt(metadata.execution_order),
+        status: "completed",
+        outcomeStatus: outcome.status,
+        artifactDirectory: context.artifactDirectory,
+        outcomeDecision: outcome.decision || null,
+      });
+      if (!version2GraphQuiet(workflow, snapshots, sessionStatus)) return [];
+      return missingWorkflowOutputNames(workflow, snapshots);
+    }
     const workflowId = previousStatus.workflow_id;
     if (
       !shouldPublishOutputs({
@@ -662,6 +681,7 @@ export class SessionStore {
     }
     if (plan.manifestStatus !== null) this.rewriteManifestStatus(sessionDirectory, plan.manifestStatus);
     commitFoldedStatus(this.workspace, sessionDirectory);
+    if (plan.outputsMissing.length > 0) throw new OutputsMissing(plan.outputsMissing);
   }
 
   private reapExecution(context: ExecutionContext, onLiveOwner: string): void {

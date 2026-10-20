@@ -280,3 +280,134 @@ test("rejects an empty stage model", () => {
   writeFileSync(flow, 'id: broken\nstages:\n  - id: a\n    role: r\n    model: ""\n', "utf8");
   expect(() => loadWorkflowDocument(flow)).toThrow(/Missing or invalid stages\.a\.model\./);
 });
+
+function writeFlow(body: string): string {
+  const dir = tempDir("migent-flow-");
+  const flow = path.join(dir, "flow.yaml");
+  writeFileSync(flow, body, "utf8");
+  return flow;
+}
+
+test("version 2 loads a string route and top-level outputs", () => {
+  const document = loadWorkflowDocument(writeFlow(`\
+schema_version: 2
+id: plan
+stages:
+  - id: plan
+    role: planner
+    depends_on: []
+    produces:
+      artifact: plan.md
+  - id: review
+    role: reviewer
+    depends_on:
+      - plan
+    decision:
+      values:
+        - approved
+      routes:
+        approved: complete
+outputs:
+  - name: plan
+    from_stage: plan
+    artifact: plan.md
+`));
+  expect(document.schemaVersion).toBe(2);
+  expect(document.concurrency).toBe(1);
+  expect(document.completion).toBeNull();
+  expect(document.stages.review?.routes.approved).toBe("complete");
+  expect(document.outputs).toEqual([{ name: "plan", fromStage: "plan", artifact: "plan.md" }]);
+});
+
+test("version 2 refuses a list route", () => {
+  const flow = writeFlow(`\
+schema_version: 2
+id: plan
+stages:
+  - id: plan
+    role: planner
+    depends_on: []
+  - id: review
+    role: reviewer
+    depends_on:
+      - plan
+    decision:
+      values:
+        - approved
+      routes:
+        approved:
+          - plan
+`);
+  expect(() => loadWorkflowDocument(flow)).toThrow(
+    /stages\.review\.decision\.routes\.approved is a list, which is not supported yet\./,
+  );
+});
+
+test("version 2 refuses complete inside a list route", () => {
+  const flow = writeFlow(`\
+schema_version: 2
+id: plan
+stages:
+  - id: review
+    role: reviewer
+    depends_on: []
+    decision:
+      values:
+        - approved
+      routes:
+        approved:
+          - complete
+`);
+  expect(() => loadWorkflowDocument(flow)).toThrow(
+    /stages\.review\.decision\.routes\.approved cannot list complete\./,
+  );
+});
+
+test("version 2 refuses concurrency greater than 1 and loads 1", () => {
+  expect(() =>
+    loadWorkflowDocument(
+      writeFlow("schema_version: 2\nid: plan\nconcurrency: 2\nstages:\n  - id: plan\n    role: planner\n"),
+    ),
+  ).toThrow(/concurrency greater than 1 is not supported yet\./);
+  const document = loadWorkflowDocument(
+    writeFlow("schema_version: 2\nid: plan\nconcurrency: 1\nstages:\n  - id: plan\n    role: planner\n"),
+  );
+  expect(document.concurrency).toBe(1);
+});
+
+test("version 1 still loads completion and a string route", () => {
+  const document = loadWorkflowDocument(writeFlow(`\
+schema_version: 1
+id: plan
+stages:
+  - id: plan
+    role: planner
+    depends_on: []
+    produces:
+      artifact: plan.md
+  - id: review
+    role: reviewer
+    depends_on:
+      - plan
+    decision:
+      values:
+        - approved
+      routes:
+        approved: complete
+completion:
+  stage: review
+  decision: approved
+  outputs:
+    - name: plan
+      from_stage: plan
+      artifact: plan.md
+`));
+  expect(document.schemaVersion).toBe(1);
+  expect(document.concurrency).toBeUndefined();
+  expect(document.outputs).toBeUndefined();
+  expect(document.completion).toEqual({
+    stage: "review",
+    decision: "approved",
+    outputs: [{ name: "plan", fromStage: "plan", artifact: "plan.md" }],
+  });
+});

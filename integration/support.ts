@@ -10,7 +10,7 @@ export const GROK_SESSION = "fake-grok-session";
 export const CODEX_THREAD = "fake-codex-thread";
 
 export const GROK_CONFIG = `\
-schema_version: 1
+schema_version: 2
 models:
   grok-model:
     provider: grok
@@ -25,7 +25,7 @@ roles:
 `;
 
 export const CODEX_CONFIG = `\
-schema_version: 1
+schema_version: 2
 models:
   codex-model:
     provider: codex
@@ -38,7 +38,7 @@ roles:
 `;
 
 export const PLAN_REVIEW = `\
-schema_version: 1
+schema_version: 2
 id: plan
 description: Write and approve a plan before implementation.
 stages:
@@ -59,17 +59,14 @@ stages:
       routes:
         approved: complete
         revise: plan
-completion:
-  stage: review-plan
-  decision: approved
-  outputs:
-    - name: plan
-      from_stage: plan
-      artifact: plan.md
+outputs:
+  - name: plan
+    from_stage: plan
+    artifact: plan.md
 `;
 
 export const DRAFT_NOTE = `\
-schema_version: 1
+schema_version: 2
 id: draft-note
 stages:
   - id: draft
@@ -80,7 +77,7 @@ stages:
 `;
 
 export const SOLO = `\
-schema_version: 1
+schema_version: 2
 id: solo
 stages:
   - id: write
@@ -88,8 +85,6 @@ stages:
     depends_on: []
     produces:
       artifact: note.md
-completion:
-  stage: write
 `;
 
 export const FAKE_SCRIPT = ".migent-fake.json";
@@ -105,7 +100,7 @@ const FAKE_ENV = ["MIGENT_FAKE_OUTCOME", "MIGENT_FAKE_SCRIPT", "MIGENT_FAKE_CURS
 
 export function resumedNotes(role: string): string {
   return `\
-schema_version: 1
+schema_version: 2
 id: notes
 stages:
   - id: draft
@@ -121,12 +116,10 @@ stages:
       - draft
     produces:
       artifact: follow.md
-completion:
-  stage: follow
-  outputs:
-    - name: draft
-      from_stage: draft
-      artifact: draft.md
+outputs:
+  - name: draft
+    from_stage: draft
+    artifact: draft.md
 `;
 }
 

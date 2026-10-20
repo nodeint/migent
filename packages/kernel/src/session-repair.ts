@@ -125,6 +125,8 @@ function reconcileDrafts(inputs: FoldInputs): EventDraft[] {
     executionOrder: execution.executionOrder,
     status: execution.status,
     outcome: stageOutcome(execution),
+    artifactDirectory: execution.artifactDirectory,
+    failureReason: execution.failureReason,
   }));
   const finalStatus = sessionStatusFromExecutions(rows, cursor, inputs.workflow);
   const planned = (name: string, executionId: string) =>

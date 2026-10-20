@@ -144,6 +144,33 @@ test("requires a completed matching prior session", () => {
   expect(resolvePriorSessionId(workspace, workflow, "prior")).toBe("prior");
 });
 
+test("version 2 requires a completed prior session", () => {
+  const workflow: WorkflowDocument = {
+    ...gateWorkflow(),
+    schemaVersion: 2,
+    requires: { workflow: "plan", decision: null },
+  };
+  const workspace = tempDir("migent-prior-v2-");
+  expect(() => resolvePriorSessionId(workspace, workflow, null)).toThrow(
+    /Workflow plan-implement requires completed plan; pass --prior/,
+  );
+  const sessionDirectory = path.join(workspace, ".migent", "sessions", "prior");
+  mkdirSync(sessionDirectory, { recursive: true });
+  const statusPath = path.join(sessionDirectory, "status.json");
+  writeFileSync(
+    statusPath,
+    JSON.stringify({ workflow_id: "plan", status: "active", latest_decision: "approved" }),
+    "utf8",
+  );
+  expect(() => resolvePriorSessionId(workspace, workflow, "prior")).toThrow(/is active, not completed/);
+  writeFileSync(
+    statusPath,
+    JSON.stringify({ workflow_id: "plan", status: "completed", latest_decision: "revise" }),
+    "utf8",
+  );
+  expect(resolvePriorSessionId(workspace, workflow, "prior")).toBe("prior");
+});
+
 test("resume from selects the source stage session", () => {
   const workspace = tempDir("migent-resume-");
   const execution = path.join(

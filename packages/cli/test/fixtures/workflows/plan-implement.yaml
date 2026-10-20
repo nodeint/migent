@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 id: plan-implement
 description: Implement and review production code, then write and review tests.
 
@@ -64,13 +64,10 @@ stages:
         approved: complete
         revise: write-tests
 
-completion:
-  stage: review-tests
-  decision: approved
-  outputs:
-    - name: implementation-result
-      from_stage: implement
-      artifact: implementation-result.md
-    - name: test-result
-      from_stage: write-tests
-      artifact: test-result.md
+outputs:
+  - name: implementation-result
+    from_stage: implement
+    artifact: implementation-result.md
+  - name: test-result
+    from_stage: write-tests
+    artifact: test-result.md

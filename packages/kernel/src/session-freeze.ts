@@ -14,6 +14,7 @@ import { ConfigurationError } from "./errors.js";
 import { isRecord } from "./record.js";
 import { log } from "./runtime.js";
 import {
+  isWorkflowV2,
   loadNamedWorkflow,
   loadWorkflowDocument,
   parseWorkflowMapping,
@@ -243,6 +244,7 @@ function sameList(left: readonly string[], right: readonly string[]): boolean {
 }
 
 function workflowMapping(workflow: WorkflowDocument): Record<string, unknown> {
+  if (isWorkflowV2(workflow)) return version2WorkflowMapping(workflow);
   return {
     schema_version: 1,
     id: workflow.id,
@@ -254,6 +256,26 @@ function workflowMapping(workflow: WorkflowDocument): Record<string, unknown> {
         ? null
         : { workflow: workflow.requires.workflow, decision: workflow.requires.decision },
   };
+}
+
+function version2WorkflowMapping(workflow: WorkflowDocument): Record<string, unknown> {
+  const mapped: Record<string, unknown> = {
+    schema_version: workflow.schemaVersion ?? 2,
+    id: workflow.id,
+    concurrency: workflow.concurrency ?? 1,
+    constraints: workflow.constraints,
+    stages: Object.values(workflow.stages).map(stageMapping),
+    requires: workflow.requires === null ? null : { workflow: workflow.requires.workflow },
+  };
+  const outputs = workflow.outputs ?? [];
+  if (outputs.length > 0) {
+    mapped.outputs = outputs.map((output) => ({
+      name: output.name,
+      from_stage: output.fromStage,
+      artifact: output.artifact,
+    }));
+  }
+  return mapped;
 }
 
 function stageMapping(stage: StageSpec): Record<string, unknown> {

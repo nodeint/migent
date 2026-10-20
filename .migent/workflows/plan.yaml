@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 id: plan
 constraints:
   - Do not write implementation code.
@@ -33,10 +33,7 @@ stages:
       routes:
         approved: complete
         revise: plan
-completion:
-  stage: review-plan
-  decision: approved
-  outputs:
-    - name: plan
-      from_stage: plan
-      artifact: plan.md
+outputs:
+  - name: plan
+    from_stage: plan
+    artifact: plan.md

@@ -1,5 +1,6 @@
 # A missing schema_version is 0. Commands refuse the file while it is older than this Migent.
-schema_version: 1
+schema_version: 2
+concurrency: 1
 
 # When id is omitted, the id is the file name without .yaml.
 id: reference
@@ -8,10 +9,8 @@ constraints:
   - Stay within the task.
 
 # requires.workflow names another file in .migent/workflows.
-# requires.decision must match that workflow's completion decision.
 requires:
   workflow: plan
-  decision: approved
 
 stages:
   - id: draft
@@ -56,10 +55,7 @@ stages:
         revise: draft
 
 # An output artifact must match produces.artifact on from_stage.
-completion:
-  stage: review
-  decision: approved
-  outputs:
-    - name: draft
-      from_stage: draft
-      artifact: draft.md
+outputs:
+  - name: draft
+    from_stage: draft
+    artifact: draft.md

@@ -85,8 +85,8 @@ test("writes one provider and the implement workflow", async () => {
     const workflow = readFileSync(path.join(workspace, ".migent", "workflows", "implement.yaml"), "utf8");
     const gitignore = readFileSync(path.join(workspace, ".migent", ".gitignore"), "utf8");
     expect(captured.value).toBe(0);
-    expect(config).toContain("schema_version: 1");
-    expect(workflow).toContain("schema_version: 1");
+    expect(config).toContain("schema_version: 2");
+    expect(workflow).toContain("schema_version: 2");
     expect(config).toContain("provider: codex");
     expect(config).toContain("model: gpt-5");
     expect(config).not.toContain("options");
@@ -161,12 +161,15 @@ test("reports an existing valid project without changing it", async () => {
 test("repo plan review uses a lower reasoning effort than the model default", () => {
   const document = loadWorkflowDocument(fileURLToPath(new URL("../../../.migent/workflows/plan.yaml", import.meta.url)));
   expect(document.stages.plan?.instructions).toEqual([
-    "Analyze the task and write an implementation plan.",
-    "When revising, edit the existing plan.md in place. Do not replace the whole file.",
+    "Read task.md and the code it depends on, then write plan.md in this execution's artifacts directory.",
+    "Write the plan in English. Include scope and paths, current behavior with path:line evidence, decisions the task already fixed, ordered tasks, tests to add or run, and what is out of scope.",
+    "Each task names the file to change and the behavior to add or keep. Do not mark a task done unless it is already merged.",
+    "When a review routes back, start from the previous plan.md and write the updated file in this execution's artifacts directory. Address every review point and keep the sections the review did not reject.",
   ]);
   expect(document.stages["review-plan"]?.instructions).toEqual([
-    "Review the plan for correctness, missing risks, and unnecessary scope.",
-    "Report every gap of the same kind in one response.",
+    "Read plan.md and open the code behind each path:line claim.",
+    "Check correctness, missing risks, unnecessary scope, and any step an implementer would have to guess.",
+    "Approve only when the plan can be implemented as written. Otherwise decide revise and list each required edit once.",
   ]);
   expect(document.stages.plan?.options).toEqual({});
   expect(document.stages["review-plan"]?.options).toEqual({ "reasoning-effort": "high" });

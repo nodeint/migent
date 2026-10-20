@@ -23,7 +23,7 @@ import { ProviderEventReporter } from "./provider-events.js";
 import { loadFrozenWorkflow } from "./session-freeze.js";
 import { AgentSessionRecord, SessionStore, stringOptions, type ExecutionContext } from "./session-store.js";
 import { parseStageOutcome, StageOutcome } from "./stage-outcome.js";
-import { loadNamedWorkflow, loadStage, type StageSpec } from "./workflow.js";
+import { isWorkflowV2, loadNamedWorkflow, loadStage, type StageSpec } from "./workflow.js";
 
 export interface RunResult {
   agent_id: string;
@@ -405,7 +405,7 @@ export class AgentToolRunner {
             invokeError = `Stage artifact missing or empty: ${artifactName}.`;
           }
         }
-        if (invokeError === null && outcome !== null) {
+        if (invokeError === null && outcome !== null && !isWorkflowV2(frozenDocument(context))) {
           const missing = store.missingCompletionOutputs(context, outcome);
           if (missing.length > 0) {
             invokeError = `Completion outputs missing or empty: ${missing.join(", ")}.`;
@@ -763,6 +763,10 @@ function verifyProgress(metadata: Record<string, unknown>): {
     lastReport: typeof verify?.last_report === "string" ? verify.last_report : null,
     lastResult,
   };
+}
+
+function frozenDocument(context: ExecutionContext) {
+  return loadFrozenWorkflow(path.dirname(path.dirname(context.directory)));
 }
 
 function savedResponse(context: ExecutionContext, last: Record<string, string>): string {

@@ -1,5 +1,6 @@
 import path from "node:path";
 import {
+  missingWorkflowOutputNames,
   publishOutputFiles,
   selectSourceExecution,
   sessionStatusAfterExecution,
@@ -7,8 +8,9 @@ import {
   type ExecutionSnapshot,
 } from "./outputs.js";
 import { sessionChangeReason } from "./session-events.js";
+import { version2GraphQuiet } from "./selection.js";
 import { StageOutcome } from "./stage-outcome.js";
-import type { WorkflowDocument } from "./workflow.js";
+import { isWorkflowV2, type WorkflowDocument } from "./workflow.js";
 
 export interface LedgerOutput {
   name: string;
@@ -28,6 +30,8 @@ export interface PlannedExecutionSave {
   sessionEvent: LedgerSessionEvent | null;
   /** v1 manifest line to write. Null leaves the file untouched. */
   manifestStatus: string | null;
+  /** Version 2 names that are missing when this save would otherwise complete the session. */
+  outputsMissing: string[];
 }
 
 /** One execution, as the per-stage reduction sees it. */
@@ -37,6 +41,8 @@ export interface StatusExecution {
   executionOrder: number;
   status: string;
   outcome: StageOutcome | null;
+  artifactDirectory?: string;
+  failureReason?: string | null;
 }
 
 /** Session status for one execution. The session status is the reduction over each stage's latest. */
@@ -86,6 +92,14 @@ export function sessionStatusFromExecutions(
     else if (status === "completed") completed = true;
   }
   if (cancelled) return "cancelled";
+  if (workflow !== null && isWorkflowV2(workflow)) {
+    const snapshots = snapshotsFromStatus(executions);
+    const sessionStatus = typeof previousStatus.status === "string" ? previousStatus.status : "active";
+    // Quiescence, not one stage's decision. A missing output keeps the session active.
+    if (!version2GraphQuiet(workflow, snapshots, sessionStatus)) return "active";
+    if (missingWorkflowOutputNames(workflow, snapshots).length > 0) return "active";
+    return "completed";
+  }
   if (completed) return "completed";
   return "active";
 }
@@ -121,12 +135,14 @@ export function statusExecutionsFromSnapshots(snapshots: readonly ExecutionSnaps
       snapshot.outcomeStatus === null
         ? null
         : new StageOutcome(snapshot.outcomeStatus, null, snapshot.outcomeDecision),
+    artifactDirectory: snapshot.artifactDirectory,
+    failureReason: snapshot.failureReason ?? null,
   }));
 }
 
 /**
  * Publish, when this save publishes, and describe the events and manifest line.
- * The snapshot list includes this save. Output sources stay executions ordered strictly below it.
+ * The snapshot list includes this save. Version 1 output sources stay executions ordered strictly below it.
  */
 export function planExecutionSave(input: {
   executionStatus: string;
@@ -147,11 +163,12 @@ export function planExecutionSave(input: {
     input.previousStatus,
     input.workflow,
   );
-  const outputs = publishForSave(input);
+  const published = publishForSave(input);
   const previousSessionStatus = typeof input.previousStatus.status === "string" ? input.previousStatus.status : "";
   return {
     sessionStatus,
-    outputs,
+    outputs: published.outputs,
+    outputsMissing: published.outputsMissing,
     sessionEvent:
       sessionStatus === previousSessionStatus
         ? null
@@ -242,8 +259,9 @@ function publishForSave(input: {
   previousStatus: Record<string, unknown>;
   workflow: WorkflowDocument | null;
   snapshots: readonly ExecutionSnapshot[];
-}): LedgerOutput[] {
-  if (input.executionStatus === "running" || input.workflow === null) return [];
+}): { outputs: LedgerOutput[]; outputsMissing: string[] } {
+  if (input.executionStatus === "running" || input.workflow === null) return { outputs: [], outputsMissing: [] };
+  if (isWorkflowV2(input.workflow)) return publishVersion2({ ...input, workflow: input.workflow });
   const workflowId = input.previousStatus.workflow_id;
   if (
     !shouldPublishOutputs({
@@ -254,24 +272,73 @@ function publishForSave(input: {
       stageId: input.stageId,
     })
   ) {
-    return [];
+    return { outputs: [], outputsMissing: [] };
   }
   const completion = input.workflow.completion;
-  if (completion === null) return [];
+  if (completion === null) return { outputs: [], outputsMissing: [] };
   const sources: Record<string, readonly [string, string]> = {};
   for (const output of completion.outputs) {
     const source = selectSourceExecution(input.snapshots, output.fromStage, input.executionOrder);
     if (source === null) continue;
     sources[output.name] = [path.join(source.artifactDirectory, output.artifact), source.executionId];
   }
-  return Object.entries(publishOutputFiles(input.sessionDirectory, sources, input.executionId)).map(
-    ([name, output]) => ({
-      name,
-      path: output.path,
-      source_execution_id: output.sourceExecutionId,
-      published_by_execution_id: output.publishedByExecutionId,
-    }),
-  );
+  return { outputs: publishedOutputs(input.sessionDirectory, sources, input.executionId), outputsMissing: [] };
+}
+
+function publishVersion2(input: {
+  executionStatus: string;
+  outcome: StageOutcome | null;
+  executionId: string;
+  sessionDirectory: string;
+  previousStatus: Record<string, unknown>;
+  workflow: WorkflowDocument;
+  snapshots: readonly ExecutionSnapshot[];
+}): { outputs: LedgerOutput[]; outputsMissing: string[] } {
+  if (input.executionStatus !== "completed" || input.outcome === null || input.outcome.status !== "complete") {
+    return { outputs: [], outputsMissing: [] };
+  }
+  const sessionStatus = typeof input.previousStatus.status === "string" ? input.previousStatus.status : "active";
+  if (!version2GraphQuiet(input.workflow, input.snapshots, sessionStatus)) {
+    return { outputs: [], outputsMissing: [] };
+  }
+  const missing = missingWorkflowOutputNames(input.workflow, input.snapshots);
+  if (missing.length > 0) return { outputs: [], outputsMissing: missing };
+  const sources: Record<string, readonly [string, string]> = {};
+  for (const output of input.workflow.outputs ?? []) {
+    const source = selectSourceExecution(input.snapshots, output.fromStage, Number.POSITIVE_INFINITY);
+    if (source === null) continue;
+    sources[output.name] = [path.join(source.artifactDirectory, output.artifact), source.executionId];
+  }
+  return {
+    outputs: publishedOutputs(input.sessionDirectory, sources, input.executionId),
+    outputsMissing: [],
+  };
+}
+
+function publishedOutputs(
+  sessionDirectory: string,
+  sources: Readonly<Record<string, readonly [string, string]>>,
+  executionId: string,
+): LedgerOutput[] {
+  return Object.entries(publishOutputFiles(sessionDirectory, sources, executionId)).map(([name, output]) => ({
+    name,
+    path: output.path,
+    source_execution_id: output.sourceExecutionId,
+    published_by_execution_id: output.publishedByExecutionId,
+  }));
+}
+
+function snapshotsFromStatus(executions: readonly StatusExecution[]): ExecutionSnapshot[] {
+  return executions.map((execution) => ({
+    executionId: execution.executionId,
+    stageId: execution.stageId,
+    executionOrder: execution.executionOrder,
+    status: execution.status,
+    outcomeStatus: execution.outcome?.status ?? null,
+    artifactDirectory: execution.artifactDirectory ?? "",
+    outcomeDecision: execution.outcome?.decision || null,
+    failureReason: execution.failureReason ?? null,
+  }));
 }
 
 function sessionEventFor(

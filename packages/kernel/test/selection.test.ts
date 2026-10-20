@@ -251,6 +251,74 @@ test("two roots are ambiguous", () => {
   expect(result).toMatchObject({ message: "ambiguous next stage: a, b" });
 });
 
+test("version 2 runs roots in declaration order", () => {
+  const workflow: WorkflowDocument = {
+    id: "two",
+    schemaVersion: 2,
+    stages: {
+      a: stage("a", "developer"),
+      b: stage("b", "developer"),
+    },
+    completion: null,
+    requires: null,
+    constraints: [],
+    source: null,
+  };
+  expectResult(nextStage(workflow, [], "active"), new NextStage("a"));
+  expectResult(nextStage(workflow, [snapshot("a", 1)], "active"), new NextStage("b"));
+});
+
+test("version 2 route to complete leaves another root ready", () => {
+  const workflow: WorkflowDocument = {
+    id: "two",
+    schemaVersion: 2,
+    stages: {
+      a: stage("a", "developer", { decisionValues: ["done"], routes: { done: "complete" } }),
+      b: stage("b", "developer"),
+    },
+    completion: null,
+    requires: null,
+    constraints: [],
+    source: null,
+  };
+  expectResult(nextStage(workflow, [snapshot("a", 1, { decision: "done" })], "active"), new NextStage("b"));
+});
+
+test("version 2 requires every router that finished since the stage", () => {
+  const workflow: WorkflowDocument = {
+    id: "fan",
+    schemaVersion: 2,
+    stages: {
+      left: stage("left", "reviewer", {
+        decisionValues: ["yes", "no"],
+        routes: { yes: "join", no: "left" },
+      }),
+      right: stage("right", "reviewer", {
+        decisionValues: ["yes", "no"],
+        routes: { yes: "join", no: "right" },
+      }),
+      join: stage("join", "developer"),
+    },
+    completion: null,
+    requires: null,
+    constraints: [],
+    source: null,
+  };
+  expect(stageDispatchError(workflow, "join", [snapshot("left", 1, { decision: "yes" })])).toBeNull();
+  expect(
+    stageDispatchError(workflow, "join", [
+      snapshot("left", 1, { decision: "no" }),
+      snapshot("right", 2, { decision: "yes" }),
+    ]),
+  ).toContain("not routed by left");
+  expect(
+    stageDispatchError(workflow, "join", [
+      snapshot("left", 1, { decision: "yes" }),
+      snapshot("right", 2, { decision: "yes" }),
+    ]),
+  ).toBeNull();
+});
+
 function gateWorkflow(): WorkflowDocument {
   return {
     id: "plan-implement",

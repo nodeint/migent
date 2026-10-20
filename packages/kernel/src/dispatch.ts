@@ -6,6 +6,7 @@ import { isRecord } from "./record.js";
 import { frozenStageTarget, readWorkflowFreeze } from "./session-freeze.js";
 import { bindPriorSessionId, createWorkflowSession } from "./session-records.js";
 import {
+  missingOutputProducers,
   revisionResumeExecution,
   stageAgentExecution,
   stageDispatchError,
@@ -110,7 +111,12 @@ export function assertStageDispatchable(
   sessionId: string,
   stageId: string,
 ): void {
-  const snapshots = new SessionStore(workspace).executionSnapshots(sessionId);
+  const store = new SessionStore(workspace);
+  const snapshots = store.executionSnapshots(sessionId);
+  const status = store.readSessionStatus(sessionId);
+  const sessionStatus = typeof status.status === "string" ? status.status : "active";
+  // continue reruns a producer whose artifact is missing after the branch ended.
+  if (missingOutputProducers(workflow, snapshots, sessionStatus).includes(stageId)) return;
   const error = stageDispatchError(workflow, stageId, snapshots);
   if (error) throw new ConfigurationError(error);
 }

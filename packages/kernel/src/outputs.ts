@@ -139,6 +139,21 @@ export function selectSourceExecution(
   return selected;
 }
 
+/** Latest complete execution of from_stage, including the execution being saved. */
+export function missingWorkflowOutputNames(
+  workflow: WorkflowDocument,
+  snapshots: readonly ExecutionSnapshot[],
+): string[] {
+  const missing: string[] = [];
+  for (const output of workflow.outputs ?? []) {
+    const source = selectSourceExecution(snapshots, output.fromStage, Number.POSITIVE_INFINITY);
+    if (source === null || !nonemptyArtifact(path.join(source.artifactDirectory, output.artifact))) {
+      missing.push(output.name);
+    }
+  }
+  return missing;
+}
+
 export function missingCompletionOutputNames(input: {
   workflow: WorkflowDocument;
   snapshots: readonly ExecutionSnapshot[];
