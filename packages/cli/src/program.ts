@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { Command, type OptionValues } from "commander";
-import { ConfigurationError, DEFAULT_MAX_DISPATCHES } from "@nodeint/migent-kernel";
-import { dispatchAgent } from "./commands/agent.js";
+import { ConfigurationError, DEFAULT_MAX_DISPATCHES, requireAgentSession } from "@nodeint/migent-kernel";
+import { continueAgent, dispatchAgent } from "./commands/agent.js";
 import { runConfigModel, runConfigRole, runConfigShow } from "./commands/config.js";
 import { runDoctor } from "./commands/doctor.js";
 import { executeWorkflow } from "./commands/execute.js";
@@ -230,10 +230,11 @@ export function createProgram(status: CliStatus): Command {
 }
 
 const ROLE_EXITS = [
-  "Exit 0 when the outcome is complete.",
+  "Exit 0 when the outcome is complete, or the role session is already completed.",
   "Exit 1 when the outcome is not complete.",
   "Exit 2 on a configuration error.",
-  "Exit 130 when cancelled. A later run of this session resumes that execution.",
+  "Exit 6 when a cancelled role session reopened more than one execution and one exhausted verify.",
+  "Exit 130 when cancelled. session continue resumes that execution.",
 ];
 
 const RUN_SPLIT = "Pass --workflow for a workflow run, or --role for an agent run.";
@@ -280,7 +281,7 @@ function registerSessionCommand(program: Command, status: CliStatus): void {
 
   const continueCommand = session
     .command("continue")
-    .description("Resume an active or blocked workflow session until it stops. Resets revision counts. --once dispatches one stage and does not reset them.")
+    .description("Resume a stopped workflow or role session. A workflow session runs until it stops and resets revision counts. --once dispatches one workflow stage and does not reset them.")
     .argument("<session>", "Session to resume.");
   addDispatchOptions(
     continueCommand,
@@ -291,7 +292,7 @@ function registerSessionCommand(program: Command, status: CliStatus): void {
     .option("--reply-file <file>", "Read the blocked stage's reply from this file.")
     .addHelpText(
       "after",
-      `${exitText(LOOP_EXITS)}With --once:\n${exitText(STAGE_EXITS)}Examples:\n  migent session continue <session> --once\n  migent session continue <session> --reply "<reply>"\n  migent session continue <session> --stage plan --reply-file answer.md\n`,
+      `Workflow session:\n${exitText(LOOP_EXITS)}With --once:\n${exitText(STAGE_EXITS)}Role session:\n${exitText(ROLE_EXITS)}Examples:\n  migent session continue <session>\n  migent session continue <session> --once\n  migent session continue <session> --reply "<reply>"\n  migent session continue <session> --stage plan --reply-file answer.md\n`,
     )
     .action((id: string, options: OptionValues) => settle(status, () => continueSession(id, options)));
 
@@ -552,6 +553,8 @@ function continueSession(session: string, options: OptionValues): number | Promi
     printError("--stage is empty.");
     return 2;
   }
+  const workspace = findWorkspace(invocationCwdPath());
+  if (isAgentSession(workspace, session)) return continueRoleSession(workspace, session, options);
   if (rejectOnce(options)) return 2;
   const reply = readReply(options);
   if (reply === "invalid") return 2;
@@ -581,6 +584,38 @@ function continueSession(session: string, options: OptionValues): number | Promi
     reply,
     ...outputFlags(options),
   });
+}
+
+function isAgentSession(workspace: string, sessionId: string): boolean {
+  try {
+    requireAgentSession(workspace, sessionId);
+    return true;
+  } catch (error) {
+    if (!(error instanceof ConfigurationError)) throw error;
+    if (error.message === `Session not found: ${sessionId}.`) return false;
+    if (error.message === `Session ${sessionId} was not created by agent.`) return false;
+    if (error.message.startsWith("Session status file is corrupt:")) return false;
+    throw error;
+  }
+}
+
+function continueRoleSession(workspace: string, sessionId: string, options: OptionValues): number | Promise<number> {
+  const flags: string[] = [];
+  if (options.once === true) flags.push("--once");
+  if (options.stage !== undefined) flags.push("--stage");
+  if (options.prior !== undefined) flags.push("--prior");
+  if (options.maxDispatches !== undefined) flags.push("--max-dispatches");
+  if (options.unlimitedDispatches === true) flags.push("--unlimited-dispatches");
+  if (options.progress === true) flags.push("--progress");
+  if (options.verbose === true) flags.push("--verbose");
+  if (options.refreshWorkflow === true) flags.push("--refresh-workflow");
+  if (flags.length > 0) {
+    printError(`Session ${sessionId} is a role session. Omit ${flags.join(", ")}.`);
+    return 2;
+  }
+  const reply = readReply(options);
+  if (reply === "invalid") return 2;
+  return continueAgent(workspace, { sessionId, reply });
 }
 
 function readReply(options: OptionValues): string | null | "invalid" {

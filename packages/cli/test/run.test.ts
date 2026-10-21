@@ -929,7 +929,7 @@ test("help subcommand prints flags declared on that subcommand", async () => {
   expect(captured.stdout).toContain("Usage: migent session continue");
   expect(captured.stdout).toContain("--max-dispatches");
   expect(captured.stdout).toContain("--once");
-  expect(captured.stdout).toContain("does not reset");
+  expect(captured.stdout.replace(/\s+/g, " ")).toContain("does not reset");
   expect(captured.stdout).toContain("migent session continue <session> --once");
 });
 

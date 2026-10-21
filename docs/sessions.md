@@ -185,10 +185,13 @@ the blocker and the previous response.
 body instead. `--reply-file <path>` reads it from a file. When more than one
 stage is blocked, `--stage` selects the stage. The other blocked stages stay
 blocked.
-A cancelled session is resumed on that same execution. A cancelled role
-execution sends a cut-off provider turn again, or reruns verify when the reply
-was already saved. A cancelled stage with no role reruns its verify list in
-place and does not open a provider.
+A cancelled session is resumed on that same execution. `session continue`
+does this for a role session too. A cancelled role execution sends a cut-off
+provider turn again, or reruns verify when the reply was already saved. A
+cancelled stage with no role reruns its verify list in place and does not open
+a provider. An active role session sends its last prompt again. `--reply` on
+a role session is the next user turn. A completed role session stays stopped
+unless `--reply` is set.
 `completed` sessions stay stopped. `session continue --once`
 advances one stage and does not reset revision counts.
 

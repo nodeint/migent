@@ -130,7 +130,9 @@ Migent runs each eligible stage until the workflow completes or stops. Omit
 `--workflow` and pass `--role` to run one role instead. A workflow run prints
 one JSON result with the session id, status, stop reason, decision, and output
 paths. A role run prints a table unless `--json`. Stderr prints one line when
-a stage starts and one when it finishes. Then inspect or resume:
+a stage starts and one when it finishes. If the session stops before it is
+completed, stderr ends with `migent session continue <session-id>`. The same
+command resumes a role session. Then inspect or resume:
 
 ```bash
 migent session list

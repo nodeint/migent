@@ -26,10 +26,10 @@ The other stages stay blocked.
 
 ## Cancelled session (exit 130)
 
-Ask the user first. Then `session continue <session-id>` resumes the same
-execution. A cancelled role execution sends a cut-off provider turn again, or
-reruns verify when the reply was already saved. A cancelled stage with no
-role reruns its verify list in place and does not open a provider.
+Ask the user first. `session continue <session-id>` resumes that same
+execution. A cut-off verify runs again. A cancelled stage with no role
+reruns its verify list in place and does not open a provider. Role status
+and `--reply` are in the skill's Resume section.
 
 ## Limits
 

@@ -12,10 +12,15 @@ migent session run --workflow <workflow> --task "<task>"
 migent session prepare <some-id> --workflow <workflow>
 migent session run --session <some-id> --workflow <workflow>
 
-# Resume an active or blocked workflow session and run until it stops.
-# This resets revision counts. A prepared session is not resumed here.
-# A blocked session runs that stage again. The new prompt includes the blocker.
+# Resume a stopped workflow or role session.
+# A workflow session runs until it stops and resets revision counts.
+# A prepared session is not resumed here.
+# A blocked workflow stage runs again. The new prompt includes the blocker.
 # --reply replaces that prompt body with the reply.
+# A role session uses the same command. A cancelled role execution resumes in
+# place. A blocked role session runs again. An active role session sends its
+# last prompt again. --reply is that role's next user turn. A completed role
+# session stays stopped unless --reply is set.
 migent session continue <session-id>
 migent session continue <session-id> --reply "<reply>"
 migent session continue <session-id> --stage <stage> --reply-file <path>
@@ -60,6 +65,10 @@ combined with `--session`. Pass one of `--prompt`, `--file`, or `--stdin`.
 `--provider` and `--model` are passed together. `--json` prints one result
 object. Without `--json` the result is a table. Exit 0 means the outcome is
 complete. Exit 1 means it is not. Exit 130 means the run was cancelled.
+A stopped role session prints `migent session continue <session-id>` on
+stderr. That command resumes it. `session run --role --session` still sends
+a new prompt. Workflow-only flags such as `--once` and `--stage` are rejected
+on a role session.
 Exit 6 is only for a cancelled role session that reopened more than one
 execution and one of them exhausted verify. A single role result uses 0, 1,
 and 130.
@@ -115,8 +124,17 @@ A workflow run's stdout is one JSON result: `session_id`, `session_status`, `sto
 Exit 7 is a stage that ran `verify` with no role. It includes
 `latest_execution_id` and `verify_path`, and no `response_path`.
 `--verbose` adds `stages`, including each stage's response text. Stderr is the
-session id, one line when a stage starts, one line when it finishes, provider
-errors, and the resume hint. `--progress` also prints each tool call once,
+session id, one line when a stage starts, one line when it finishes, and provider
+errors. When a workflow or role session stops before it is completed, including blocked,
+cancelled, and `--once` while later workflow stages remain, stderr ends with:
+
+```text
+Resume with:
+migent session continue <session-id>
+```
+
+The second line is the command. A completed session does not print it.
+`--progress` also prints each tool call once,
 when it finishes. Item traces and provider heartbeats are appended to
 `executions/<id>/stream.jsonl`. `session follow` merges that file with
 `events.jsonl` in timestamp order. Nothing switches

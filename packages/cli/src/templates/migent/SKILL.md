@@ -95,14 +95,19 @@ A stopped session that is not `completed` is resumable. Do not call it done.
 migent session continue <session-id>
 ```
 
-Resumes until the session stops; a blocked stage runs again. To pass the user's
-answer to a blocked stage:
+Same command for a workflow session and a role session. Read `session_status`, then use one row.
 
-```
-migent session continue <session-id> --reply "<reply>"
-```
+| Kind | When | What to run |
+| --- | --- | --- |
+| Workflow | Not `completed`, including a blocker already fixed in the workspace | The command above. Runs until the session stops and resets revision counts. A blocked stage runs again. |
+| Workflow | The user answered a blocked stage | Add `--reply "<reply>"`. That text is the whole prompt body. |
+| Workflow | One stage, then stop | Add `--once`. Revision counts stay. |
+| Role | `cancelled` | The command above. The cut-off turn resumes in the same execution. Omit `--reply`. |
+| Role | `active` | The command above. The last prompt is sent again. |
+| Role | `blocked` | Add `--reply "<reply>"`. That is the next user turn. With no reply, the agent is only told to continue. |
+| Role | `completed` | Leave it stopped. Add `--reply` only to give a new turn. |
 
-`--reply-file <path>` takes a longer reply. `--once` advances one stage.
+`--reply-file <path>` is a longer reply. Pass only one of `--reply` and `--reply-file`. Do not pass `--once` or `--stage` on a role session.
 
 ## Check a session
 

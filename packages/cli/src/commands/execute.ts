@@ -4,6 +4,7 @@ import {
   executeNamedWorkflow,
   type ExecuteResult,
 } from "@nodeint/migent-kernel";
+import { printResumeCommand } from "../display.js";
 import { cliHooks } from "../hooks.js";
 import { requireCurrentSchema } from "../migrate.js";
 import { adapterMap } from "../provider.js";
@@ -54,17 +55,14 @@ export async function executeWorkflow(workspace: string, options: ExecuteWorkflo
     runner,
   );
   printResult(result, options.verbose === true);
-  if (
-    result.stopReason === "stage_failed" ||
-    result.stopReason === "quota" ||
-    result.stopReason === "revisions_exhausted" ||
-    result.stopReason === "dispatch_limit" ||
-    result.stopReason === "verify_exhausted" ||
-    result.stopReason === "verify_failed"
-  ) {
-    process.stderr.write(`Resume with: migent session continue ${result.sessionId}\n`);
-  }
+  printResumeHint(result);
   return result.code;
+}
+
+function printResumeHint(result: ExecuteResult): void {
+  if (result.sessionId === "" || result.status === "completed" || result.stopReason === "completed") return;
+  if (result.stopReason === "configuration") return;
+  printResumeCommand(result.sessionId);
 }
 
 const INSPECT_EXIT_CODES = new Set([1, 3, 6, 8]);

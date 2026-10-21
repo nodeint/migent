@@ -14,7 +14,7 @@ migent session run --role <role> --prompt "<prompt>"
 | --- | --- |
 | `--file <path>`, `--stdin` | Supply a long prompt. |
 | `--task` | Labels a new role session. Cannot be combined with `--session`. |
-| `--session <session-id>` | Continues an earlier role session. |
+| `--session <session-id>` | Sends a new prompt to an earlier role session. `session continue <session-id>` resumes a stopped role session. |
 | `--provider`, `--model` | Override the role for this turn. Pass together. |
 | `--option KEY=VALUE` | Override a provider option for this turn. |
 | `--json` | Print one result object (the role result, with `outcome_status`; not the workflow result). |

@@ -4,6 +4,8 @@
 
 ### Changed
 
+- A workflow run that stops before the session is completed prints the resume command on stderr: `migent session continue <session-id>`. That includes blocked, cancelled, a failed or exhausted stage, and `--once` while later stages remain. A completed session does not print it.
+- `session continue <session-id>` also resumes a role session. A cancelled role execution resumes in place. A blocked role session runs again. An active role session sends its last prompt again. `--reply` is the next user turn. A completed role session stays stopped unless `--reply` is set. A stopped role run prints the same command.
 - A failed provider stage stops the branch. `session continue` runs that stage again. Exit 3 is `stage_failed`. `--once` and `--stage` that hit a provider quota exit 8 and do not wait. A quota with a reset time waits in the owning process, then dispatches that stage. Cancelling during the wait is exit 130 and does not sleep until the old `retry_at` on the next continue. `--attempts` and `retry_exhausted` are gone. A single role result uses exits 0, 1, and 130. Exit 6 stays the path that reopened more than one role execution.
 - A completed workflow session writes `metrics.json`. `session metrics --json` prints that file and lists only sessions that have it. A session without the file exits 2. Later adapter changes do not change that file. An agent session has no metrics file.
 

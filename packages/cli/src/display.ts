@@ -23,6 +23,10 @@ export function printNotice(message: string): void {
   process.stderr.write(`${prefix}${message}\n`);
 }
 
+export function printResumeCommand(sessionId: string): void {
+  process.stderr.write(`Resume with:\nmigent session continue ${sessionId}\n`);
+}
+
 export function printCreated(paths: readonly string[], nextCommand: string): void {
   process.stdout.write("Created:\n");
   for (const filePath of paths) process.stdout.write(`  ${filePath}\n`);

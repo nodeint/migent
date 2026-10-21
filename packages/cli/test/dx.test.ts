@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { AgentToolRunner, type BuildCommandInput, type CommandSpec } from "@nodeint/migent-kernel";
+import { AgentToolRunner, raiseCancellation, type BuildCommandInput, type CommandSpec } from "@nodeint/migent-kernel";
 import { expect, test } from "vitest";
 import { cliHooks } from "../src/hooks.ts";
 import { main } from "../src/index.ts";
@@ -151,7 +151,7 @@ test("continue --once does not reset revision counts", async () => {
     const payload = JSON.parse(started.stdout) as { session_id: string; stop_reason: string };
     expect(started.value).toBe(4);
     expect(payload.stop_reason).toBe("revisions_exhausted");
-    expect(started.stderr).toContain(`Resume with: migent session continue ${payload.session_id}`);
+    expect(resumeCommand(started.stderr)).toBe(`migent session continue ${payload.session_id}`);
     expect(started.stdout.trim().split("\n")).toHaveLength(1);
 
     cliHooks.runner = new AgentToolRunner({ fake: new ScriptedAdapter(["status: complete\n\nshould not run"], [null]) }, 10);
@@ -176,6 +176,99 @@ test("--once rejects attempt and dispatch flags from the raw options", async () 
       expect(captured.stderr).toContain("--once cannot be combined");
       expect(captured.stdout).toBe("");
     }
+  } finally {
+    removeWorkspace(workspace);
+  }
+});
+
+function resumeCommand(stderr: string): string | undefined {
+  const lines = stderr.trimEnd().split("\n");
+  const label = lines.lastIndexOf("Resume with:");
+  if (label === -1) return undefined;
+  return lines[label + 1];
+}
+
+test("a stopped session prints the continue command", async () => {
+  const blockedWorkspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
+  try {
+    cliHooks.runner = new AgentToolRunner(
+      {
+        fake: new ScriptedAdapter(
+          ["status: complete\n\nplanned", "status: blocked\nblocker: missing design\n\nnope"],
+          ["# Plan\n", null],
+        ),
+      },
+      10,
+    );
+    const blocked = await capture(() => main(["session", "run", "--workflow", "plan", "--task", "Write a plan"], blockedWorkspace));
+    const blockedPayload = JSON.parse(blocked.stdout) as { session_id: string; stop_reason: string };
+    expect(blocked.value).toBe(1);
+    expect(blockedPayload.stop_reason).toBe("blocked");
+    expect(resumeCommand(blocked.stderr)).toBe(`migent session continue ${blockedPayload.session_id}`);
+    expect(blocked.stdout).not.toContain("migent session continue");
+  } finally {
+    removeWorkspace(blockedWorkspace);
+  }
+
+  const onceWorkspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
+  try {
+    cliHooks.runner = new AgentToolRunner(
+      { fake: new ScriptedAdapter(["status: complete\n\nplanned"], ["# Plan\n"]) },
+      10,
+    );
+    const once = await capture(() =>
+      main(["session", "run", "--workflow", "plan", "--task", "Write a plan", "--once"], onceWorkspace),
+    );
+    const oncePayload = JSON.parse(once.stdout) as { session_id: string; stop_reason: string; session_status: string };
+    expect(once.value).toBe(0);
+    expect(oncePayload.stop_reason).toBe("stage");
+    expect(oncePayload.session_status).toBe("active");
+    expect(resumeCommand(once.stderr)).toBe(`migent session continue ${oncePayload.session_id}`);
+  } finally {
+    removeWorkspace(onceWorkspace);
+  }
+
+  const doneWorkspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
+  try {
+    cliHooks.runner = new AgentToolRunner(
+      {
+        fake: new ScriptedAdapter(
+          ["status: complete\n\nplanned", "status: complete\ndecision: approved\n\nok"],
+          ["# Plan\n", null],
+        ),
+      },
+      10,
+    );
+    const done = await capture(() => main(["session", "run", "--workflow", "plan", "--task", "Write a plan"], doneWorkspace));
+    const donePayload = JSON.parse(done.stdout) as { stop_reason: string };
+    expect(done.value).toBe(0);
+    expect(donePayload.stop_reason).toBe("completed");
+    expect(done.stderr).not.toContain("Resume with:");
+    expect(done.stderr).not.toContain("migent session continue");
+  } finally {
+    removeWorkspace(doneWorkspace);
+  }
+});
+
+class CancelOnCommand extends ScriptedAdapter {
+  override buildCommand(input: BuildCommandInput): CommandSpec {
+    super.buildCommand(input);
+    raiseCancellation(2);
+    return { argv: [process.execPath, "-e", "process.exit(0)"] };
+  }
+}
+
+test("a cancelled session prints the continue command", async () => {
+  const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
+  try {
+    cliHooks.runner = new AgentToolRunner({ fake: new CancelOnCommand([], []) }, 10);
+    const cancelled = await capture(() => main(["session", "run", "--workflow", "plan", "--task", "Write a plan"], workspace));
+    const payload = JSON.parse(cancelled.stdout) as { session_id: string; stop_reason: string; session_status: string };
+    expect(cancelled.value).toBe(130);
+    expect(payload.stop_reason).toBe("cancelled");
+    expect(payload.session_status).toBe("cancelled");
+    expect(resumeCommand(cancelled.stderr)).toBe(`migent session continue ${payload.session_id}`);
+    expect(cancelled.stdout.trim().split("\n")).toHaveLength(1);
   } finally {
     removeWorkspace(workspace);
   }
