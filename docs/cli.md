@@ -15,7 +15,10 @@ migent session run --session <some-id> --workflow <workflow>
 # Resume an active or blocked workflow session and run until it stops.
 # This resets revision counts. A prepared session is not resumed here.
 # A blocked session runs that stage again. The new prompt includes the blocker.
+# --reply replaces that prompt body with the reply.
 migent session continue <session-id>
+migent session continue <session-id> --reply "<reply>"
+migent session continue <session-id> --stage <stage> --reply-file <path>
 
 # Adopt the current workflow, models, and role instructions for an existing session.
 migent session continue <session-id> --refresh-workflow
@@ -75,7 +78,14 @@ ceiling. Do not combine `--once` with `--attempts`, `--max-dispatches`, or
 the workflow. `session continue` resets the session's revision counts before
 dispatching. `session continue --once` does not. On a blocked session, both
 forms dispatch that stage again. The new prompt includes the blocker and the
-previous response. A cancelled session is resumed on that same execution: a
+previous response. `--reply "<text>"` or `--reply-file <path>` sends that
+reply on the new execution instead. The prompt body is the reply. The response
+contract is still appended, and so is the new artifact directory when the stage
+has an artifact. The reply does not repeat the blocker. `--reply` and
+`--reply-file` are mutually exclusive. The session must be blocked. When more
+than one stage is blocked, `--stage` names the one that receives the reply.
+Only that stage is resumed. The others stay blocked. A later stage in the same
+command does not receive the reply. A cancelled session is resumed on that same execution: a
 provider turn that was cut off is sent again, and a verify that was cut off
 runs again. `completed` sessions stay stopped. The
 existing session history and artifacts remain available to later stages.

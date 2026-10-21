@@ -72,9 +72,14 @@ when `--workflow` is omitted.
   and pass `--prior <session-id>`. `session continue` accepts `--prior` too.
 - Resume an active workflow session: `migent session continue <session-id>`.
   This resets revision counts. `migent session continue <session-id> --once`
-  advances one stage and does not reset them. A cancelled session is resumed
-  the same way, on the same execution: a cut-off provider turn is sent again,
-  and a cut-off verify runs again. Ask the user before resuming a cancellation.
+  advances one stage and does not reset them. A blocked session runs that stage
+  again. `migent session continue <session-id> --reply "<reply>"` sends the
+  reply as the new execution's prompt body. Use `--reply-file <path>` for a
+  longer reply. When more than one stage is blocked, pass `--stage`. Without
+  `--reply`, the prompt includes the blocker and the previous response.
+  A cancelled session is resumed the same way, on the same execution: a cut-off
+  provider turn is sent again, and a cut-off verify runs again. Ask the user
+  before resuming a cancellation.
 - Run one role: `migent session run --role <role> --prompt "<prompt>"`.
   `roles.<role>.instructions` in config, when set, is prepended to that prompt.
   Use `--file <path>` or `--stdin` for a long prompt. `--task` labels a new
@@ -110,7 +115,7 @@ A workflow result on stdout includes `stop_reason`. Read the exit code first.
 | Exit | Meaning | `stop_reason` | Session | What to do |
 | --- | --- | --- | --- | --- |
 | 0 | Completed (with `--once`: stage complete) | | completed or advancing | Report outputs. |
-| 1 | Blocked (with `--once`: stage not complete) | `blocked`, or `stage` with `--once` | blocked, or active with `--once` | When `stop_reason` is `blocked`, read `response_path`, fix the cause, then `session continue`. That runs the blocked stage again and includes the blocker in its prompt. When `stop_reason` is `stage`, `session continue` keeps going. |
+| 1 | Blocked (with `--once`: stage not complete) | `blocked`, or `stage` with `--once` | blocked, or active with `--once` | When `stop_reason` is `blocked`, read `response_path`. Pass the user's words with `session continue --reply`, or `session continue` without `--reply` after the blocker is fixed in the workspace. When `stop_reason` is `stage`, `session continue` keeps going. |
 | 2 | Configuration error | | unchanged | Run `migent doctor --json`, fix config. |
 | 3 | `--attempts` spent | `retry_exhausted` | active | Read `response_path`, fix the cause, then `session continue` (add `--attempts` for a higher total). |
 | 4 | A route would exceed `max_revisions` | `revisions_exhausted` | active | Review why the stage keeps being revised; `session continue` (without `--once`) resets counts for another batch. |

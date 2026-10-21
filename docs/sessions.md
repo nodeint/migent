@@ -173,6 +173,10 @@ until the session stops when `--exit-when-done` is set. `session continue`
 resumes an active workflow session from its recorded state and resets revision
 counts. A blocked session is resumed the same way: continue dispatches that
 stage again, and the new prompt includes the blocker and the previous response.
+`session continue <session-id> --reply "<reply>"` uses the reply as that prompt
+body instead. `--reply-file <path>` reads it from a file. When more than one
+stage is blocked, `--stage` selects the stage. The other blocked stages stay
+blocked.
 A cancelled session is resumed on that same execution. A provider turn that was
 cut off is sent again. When the reply was already saved, verify runs again.
 `completed` sessions stay stopped. `session continue --once`

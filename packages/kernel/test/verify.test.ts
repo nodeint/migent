@@ -3,6 +3,7 @@ import path from "node:path";
 import { expect, test } from "vitest";
 import {
   AgentToolRunner,
+  ConfigurationError,
   SessionLock,
   SessionStore,
   StageOutcome,
@@ -166,6 +167,295 @@ test("continue redispatches a blocked stage and names the blocker", async () => 
   const status = new SessionStore(workspace).readSessionStatus(sessionId);
   expect(status.blocker).toBeUndefined();
   expect(status.blocked_by_execution_id).toBeUndefined();
+});
+
+test("continue with a reply sends only that reply to the blocked stage", async () => {
+  const { workspace, sessionId } = setup(workflowText(`node -e "process.exit(0)"`));
+  const adapter = new ScriptedAdapter([BLOCKED, OK, OK], [null, "# notes\n", null]);
+  const runner = new AgentToolRunner({ fake: adapter }, 10);
+  const first = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId, maxAttempts: 3 }, runner);
+  expect(first.stopReason).toBe("blocked");
+
+  const reply = "use docs/api.yaml";
+  const second = await executeNamedWorkflow(
+    workspace,
+    { workflowId: "wf", sessionId, maxAttempts: 3, resetRevisions: true, reply },
+    runner,
+  );
+  expect(second.code).toBe(0);
+  expect(second.status).toBe("completed");
+  const snapshots = new SessionStore(workspace).executionSnapshots(sessionId);
+  expect(snapshots.map((item) => item.stageId)).toEqual(["implement", "implement", "review"]);
+  const resumed = snapshots[1]!;
+  expect(execution(workspace, sessionId, resumed.executionId).resumes_execution_id).toBe(snapshots[0]?.executionId);
+  const sent = adapter.calls[1]?.prompt ?? "";
+  expect(sent.startsWith(`Reply:\n${reply}\n`)).toBe(true);
+  expect(sent).toContain("Workflow stage response contract:");
+  expect(sent).toContain("Migent artifact directory:");
+  expect(sent).not.toContain("gate clones");
+  expect(sent).not.toContain("handled outside this session");
+  expect(sent).not.toContain("Previous attempt of this stage:");
+  expect(adapter.calls[1]?.agentId).toBe("native-session-1");
+  expect(adapter.calls[2]?.prompt ?? "").not.toContain(reply);
+});
+
+test("reply is rejected unless the session is blocked", async () => {
+  const { workspace, sessionId } = setup(workflowText(`node -e "process.exit(0)"`));
+  await expect(
+    executeNamedWorkflow(workspace, { workflowId: "wf", sessionId, reply: "   " }, new AgentToolRunner({ fake: new ScriptedAdapter([]) }, 10)),
+  ).rejects.toThrow(ConfigurationError);
+  await expect(
+    executeNamedWorkflow(workspace, { workflowId: "wf", sessionId, reply: "   " }, new AgentToolRunner({ fake: new ScriptedAdapter([]) }, 10)),
+  ).rejects.toThrow(/--reply is empty/);
+  expect(new SessionStore(workspace).executionSnapshots(sessionId)).toHaveLength(0);
+  expect(new SessionStore(workspace).readSessionStatus(sessionId).status).toBe("active");
+});
+
+test("reply to one of two blocked stages leaves the other blocked", async () => {
+  const workflow = `\
+schema_version: 2
+concurrency: 2
+id: wf
+stages:
+  - id: a
+    role: developer
+  - id: b
+    role: developer
+`;
+  const { workspace, sessionId } = setup(workflow);
+  const adapter = new ScriptedAdapter([BLOCKED, BLOCKED, OK]);
+  const runner = new AgentToolRunner({ fake: adapter }, 10);
+  const first = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId }, runner);
+  expect(first.stopReason).toBe("blocked");
+  const store = new SessionStore(workspace);
+  expect(store.blockedStages(sessionId).map((item) => item.stageId)).toEqual(["a", "b"]);
+
+  await expect(
+    executeNamedWorkflow(workspace, { workflowId: "wf", sessionId, reply: "answer a" }, runner),
+  ).rejects.toThrow(/--reply needs --stage when more than one stage is blocked: a, b/);
+  expect(store.readSessionStatus(sessionId).status).toBe("blocked");
+  expect(store.executionSnapshots(sessionId)).toHaveLength(2);
+
+  await expect(
+    executeNamedWorkflow(workspace, { workflowId: "wf", sessionId, stageId: "missing", reply: "answer" }, runner),
+  ).rejects.toThrow(/Stage missing is not blocked/);
+  expect(store.readSessionStatus(sessionId).status).toBe("blocked");
+
+  const second = await executeNamedWorkflow(
+    workspace,
+    { workflowId: "wf", sessionId, stageId: "b", reply: "answer b" },
+    runner,
+  );
+  expect(second.stopReason).toBe("blocked");
+  expect(second.code).toBe(1);
+  const snapshots = store.executionSnapshots(sessionId);
+  expect(snapshots.filter((item) => item.stageId === "a")).toHaveLength(1);
+  const bRuns = snapshots.filter((item) => item.stageId === "b");
+  expect(bRuns).toHaveLength(2);
+  expect(bRuns[1]?.outcomeStatus).toBe("complete");
+  expect(execution(workspace, sessionId, bRuns[1]!.executionId).resumes_execution_id).toBe(bRuns[0]?.executionId);
+  const sent = adapter.calls.find((call) => call.prompt.startsWith("Reply:\n"));
+  expect(sent?.prompt.startsWith("Reply:\nanswer b\n")).toBe(true);
+  expect(sent?.prompt).toContain("Workflow stage response contract:");
+  expect(sent?.prompt).not.toContain("gate clones");
+  expect(sent?.agentId).toBe("native-session-1");
+  expect(store.readSessionStatus(sessionId).status).toBe("blocked");
+  expect(store.blockedStages(sessionId).map((item) => item.stageId)).toEqual(["a"]);
+  const events = readFileSync(path.join(workspace, ".migent", "sessions", sessionId, "events.jsonl"), "utf8");
+  const resumes = events.split("\n").filter((line) => line.includes('"from":"blocked"'));
+  expect(resumes).toHaveLength(1);
+  expect(resumes[0]).toContain(bRuns[0]?.executionId);
+});
+
+test("a reply is sent before a cancelled sibling is reopened", async () => {
+  const { workspace, sessionId } = setup(`\
+id: wf
+stages:
+  - id: implement
+    role: developer
+  - id: review
+    role: developer
+    depends_on: [implement]
+    max_verify: 1
+    verify:
+      - node -e "process.exit(1)"
+completion:
+  stage: review
+`);
+  const store = new SessionStore(workspace);
+  const lock = SessionLock.acquire(path.join(workspace, ".migent", "sessions", sessionId));
+  let noted: string | null = null;
+  let reviewId = "";
+  try {
+    const [implementRecord, , implement] = store.loadOrCreate(
+      "fake",
+      "m1",
+      {},
+      workspace,
+      sessionId,
+      "implement",
+      null,
+      null,
+      "go",
+    );
+    noted = implement.executionId;
+    noteInFlightExecution(sessionId, implement.executionId);
+    const [reviewRecord, , review] = store.loadOrCreate(
+      "fake",
+      "m1",
+      {},
+      workspace,
+      sessionId,
+      "review",
+      null,
+      null,
+      "review",
+    );
+    clearInFlightExecution(sessionId, implement.executionId);
+    noted = null;
+    reviewId = review.executionId;
+    reviewRecord.history.push({ role: "assistant", content: "status: complete\n\ndone" });
+    implementRecord.agentId = "native-session-1";
+    store.save(implementRecord, implement);
+    store.save(reviewRecord, review);
+    store.saveExecution(implement, implementRecord, "completed", null, new StageOutcome("blocked", "implement gate"));
+    store.saveExecution(review, reviewRecord, "cancelled");
+    expect(store.readSessionStatus(sessionId).status).toBe("blocked");
+  } finally {
+    if (noted) clearInFlightExecution(sessionId, noted);
+    lock.release();
+  }
+  const adapter = new ScriptedAdapter([OK]);
+  const result = await executeNamedWorkflow(
+    workspace,
+    { workflowId: "wf", sessionId, reply: "use the schema" },
+    new AgentToolRunner({ fake: adapter }, 10),
+  );
+  expect(result.stopReason).toBe("verify_exhausted");
+  expect(result.code).toBe(6);
+  const sent = adapter.calls.find((call) => call.prompt.startsWith("Reply:\n"));
+  expect(sent?.prompt.startsWith("Reply:\nuse the schema\n")).toBe(true);
+  expect(sent?.prompt).not.toContain("implement gate");
+  expect(execution(workspace, sessionId, reviewId).status).toBe("failed");
+  const implementRuns = new SessionStore(workspace)
+    .executionSnapshots(sessionId)
+    .filter((item) => item.stageId === "implement");
+  expect(implementRuns).toHaveLength(2);
+  expect(implementRuns[1]?.outcomeStatus).toBe("complete");
+});
+
+test("a reply is sent while another blocked stage and a cancelled sibling remain", async () => {
+  const { workspace, sessionId } = setup(`\
+schema_version: 2
+concurrency: 2
+id: wf
+stages:
+  - id: a
+    role: developer
+  - id: b
+    role: developer
+  - id: c
+    role: developer
+`);
+  const store = new SessionStore(workspace);
+  const lock = SessionLock.acquire(path.join(workspace, ".migent", "sessions", sessionId));
+  const noted: string[] = [];
+  let cancelledId = "";
+  try {
+    const created = ["a", "b", "c"].map((stageId) => {
+      const [record, , context] = store.loadOrCreate(
+        "fake",
+        "m1",
+        {},
+        workspace,
+        sessionId,
+        stageId,
+        null,
+        null,
+        stageId,
+      );
+      noted.push(context.executionId);
+      noteInFlightExecution(sessionId, context.executionId);
+      return { stageId, record, context };
+    });
+    for (const id of noted) clearInFlightExecution(sessionId, id);
+    noted.length = 0;
+    const cancelled = created[2]!;
+    cancelledId = cancelled.context.executionId;
+    cancelled.record.agentId = "native-session-1";
+    cancelled.record.history.push({ role: "user", content: "c" });
+    created[1]!.record.agentId = "native-session-1";
+    store.save(created[1]!.record, created[1]!.context);
+    store.save(cancelled.record, cancelled.context);
+    store.saveExecution(created[0]!.context, created[0]!.record, "completed", null, new StageOutcome("blocked", "a gate"));
+    store.saveExecution(created[1]!.context, created[1]!.record, "completed", null, new StageOutcome("blocked", "b gate"));
+    store.saveExecution(cancelled.context, cancelled.record, "cancelled");
+    expect(store.readSessionStatus(sessionId).status).toBe("blocked");
+  } finally {
+    for (const id of noted) clearInFlightExecution(sessionId, id);
+    lock.release();
+  }
+  const adapter = new ScriptedAdapter([OK, OK]);
+  const result = await executeNamedWorkflow(
+    workspace,
+    { workflowId: "wf", sessionId, stageId: "b", reply: "answer b" },
+    new AgentToolRunner({ fake: adapter }, 10),
+  );
+  expect(result.stopReason).toBe("blocked");
+  const sent = adapter.calls.find((call) => call.prompt.startsWith("Reply:\n"));
+  expect(sent?.prompt.startsWith("Reply:\nanswer b\n")).toBe(true);
+  expect(sent?.prompt).not.toContain("b gate");
+  const snapshots = store.executionSnapshots(sessionId);
+  expect(snapshots.filter((item) => item.stageId === "a")).toHaveLength(1);
+  expect(snapshots.filter((item) => item.stageId === "b")).toHaveLength(2);
+  expect(execution(workspace, sessionId, cancelledId).status).toBe("completed");
+  expect(store.blockedStages(sessionId).map((item) => item.stageId)).toEqual(["a"]);
+});
+
+test("a reply that exhausts verify stops instead of repairing", async () => {
+  const workflow = `\
+schema_version: 2
+id: wf
+stages:
+  - id: implement
+    role: developer
+    max_verify: 1
+    verify:
+      - node -e "process.exit(1)"
+`;
+  const { workspace, sessionId } = setup(workflow);
+  const adapter = new ScriptedAdapter([BLOCKED, OK]);
+  const runner = new AgentToolRunner({ fake: adapter }, 10);
+  const first = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId }, runner);
+  expect(first.stopReason).toBe("blocked");
+  const second = await executeNamedWorkflow(
+    workspace,
+    { workflowId: "wf", sessionId, reply: "ship it" },
+    runner,
+  );
+  expect(second.stopReason).toBe("verify_exhausted");
+  expect(second.code).toBe(6);
+  expect(adapter.calls).toHaveLength(2);
+  expect(adapter.calls[1]?.prompt.startsWith("Reply:\nship it\n")).toBe(true);
+  expect(new SessionStore(workspace).executionSnapshots(sessionId)).toHaveLength(2);
+});
+
+test("a reply counts toward the dispatch ceiling", async () => {
+  const { workspace, sessionId } = setup(workflowText(`node -e "process.exit(0)"`));
+  const adapter = new ScriptedAdapter([BLOCKED, OK, OK], [null, "# notes\n", null]);
+  const runner = new AgentToolRunner({ fake: adapter }, 10);
+  const first = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId, maxAttempts: 3 }, runner);
+  expect(first.stopReason).toBe("blocked");
+  const second = await executeNamedWorkflow(
+    workspace,
+    { workflowId: "wf", sessionId, maxAttempts: 3, maxDispatches: 1, reply: "use docs/api.yaml" },
+    runner,
+  );
+  expect(second.stopReason).toBe("dispatch_limit");
+  expect(second.code).toBe(5);
+  const snapshots = new SessionStore(workspace).executionSnapshots(sessionId);
+  expect(snapshots.map((item) => item.stageId)).toEqual(["implement", "implement"]);
+  expect(adapter.calls[1]?.prompt.startsWith("Reply:\nuse docs/api.yaml\n")).toBe(true);
 });
 
 test("continue once redispatches only the blocked stage", async () => {

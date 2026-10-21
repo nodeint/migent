@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 import {
   buildStagePrompt,
+  buildStageReplyPrompt,
   buildStageResumePrompt,
   loadWorkflowDocument,
   prependRoleInstructions,
@@ -367,6 +368,10 @@ test("a blocked attempt is named in the next prompt", () => {
   expect(prompt).toContain("- blocker: gate clones");
   expect(prompt).toContain(resolved(path.join(executionDirectory, "response.md")));
   expect(prompt).toContain("handled outside this session");
+});
+
+test("a stage reply is only the reply text", () => {
+  expect(buildStageReplyPrompt("use docs/api.yaml")).toBe("Reply:\nuse docs/api.yaml");
 });
 
 test("a later complete attempt drops the blocked note", () => {

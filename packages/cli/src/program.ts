@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { Command, type OptionValues } from "commander";
 import { ConfigurationError, DEFAULT_MAX_DISPATCHES } from "@nodeint/migent-kernel";
 import { dispatchAgent } from "./commands/agent.js";
@@ -286,9 +287,11 @@ function registerSessionCommand(program: Command, status: CliStatus): void {
     "Dispatch the next eligible stage once and do not reset revision counts. Without --once, continue resets them.",
   );
   continueCommand
+    .option("--reply <text>", "Reply for the blocked stage. The new execution prompt body is this text.")
+    .option("--reply-file <file>", "Read the blocked stage's reply from this file.")
     .addHelpText(
       "after",
-      `${exitText(LOOP_EXITS)}With --once:\n${exitText(STAGE_EXITS)}Examples:\n  migent session continue <session> --once\n`,
+      `${exitText(LOOP_EXITS)}With --once:\n${exitText(STAGE_EXITS)}Examples:\n  migent session continue <session> --once\n  migent session continue <session> --reply "<reply>"\n  migent session continue <session> --stage plan --reply-file answer.md\n`,
     )
     .action((id: string, options: OptionValues) => settle(status, () => continueSession(id, options)));
 
@@ -553,6 +556,8 @@ function continueSession(session: string, options: OptionValues): number | Promi
     return 2;
   }
   if (rejectOnce(options)) return 2;
+  const reply = readReply(options);
+  if (reply === "invalid") return 2;
   const stageId = optionalText(options.stage);
   if (options.once === true || stageId !== null) {
     return executeWorkflow(findWorkspace(invocationCwdPath()), {
@@ -563,6 +568,7 @@ function continueSession(session: string, options: OptionValues): number | Promi
       maxAttempts: null,
       maxDispatches: null,
       refreshWorkflow: options.refreshWorkflow === true,
+      reply,
       ...outputFlags(options),
     });
   }
@@ -575,8 +581,45 @@ function continueSession(session: string, options: OptionValues): number | Promi
     maxAttempts: attemptsOf(options),
     maxDispatches: ceiling,
     refreshWorkflow: options.refreshWorkflow === true,
+    reply,
     ...outputFlags(options),
   });
+}
+
+function readReply(options: OptionValues): string | null | "invalid" {
+  const hasReply = options.reply !== undefined;
+  const hasFile = options.replyFile !== undefined;
+  if (!hasReply && !hasFile) return null;
+  if (hasReply && hasFile) {
+    printError("Pass only one of --reply or --reply-file.");
+    return "invalid";
+  }
+  if (hasFile) {
+    const file = optionalText(options.replyFile);
+    if (file === null) {
+      printError("--reply-file is empty.");
+      return "invalid";
+    }
+    let text: string;
+    try {
+      text = readFileSync(file, "utf8");
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      printError(`Unable to read reply file: ${file} (${reason})`);
+      return "invalid";
+    }
+    if (text.trim() === "") {
+      printError("--reply is empty.");
+      return "invalid";
+    }
+    return text;
+  }
+  const reply = rawText(options.reply);
+  if (reply === null || reply.trim() === "") {
+    printError("--reply is empty.");
+    return "invalid";
+  }
+  return reply;
 }
 
 function addDispatchOptions(command: Command, onceDescription: string): void {

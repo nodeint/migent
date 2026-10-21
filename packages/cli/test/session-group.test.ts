@@ -36,6 +36,25 @@ test("session run help shows both modes", async () => {
   expect(captured.stdout).toContain("Without --workflow:");
 });
 
+test("session continue help shows reply", async () => {
+  const captured = await capture(() => main(["session", "continue", "--help"]));
+  expect(captured.value).toBe(0);
+  expect(captured.stdout).toContain("--reply");
+  expect(captured.stdout).toContain("--reply-file");
+  expect(captured.stdout).toContain('migent session continue <session> --reply "<reply>"');
+});
+
+test("session continue rejects an empty or double reply", async () => {
+  const empty = await capture(() => main(["session", "continue", "wave-3", "--reply", "   "]));
+  expect(empty.value).toBe(2);
+  expect(empty.stderr).toContain("--reply is empty.");
+  const both = await capture(() =>
+    main(["session", "continue", "wave-3", "--reply", "answer", "--reply-file", "answer.md"]),
+  );
+  expect(both.value).toBe(2);
+  expect(both.stderr).toContain("Pass only one of --reply or --reply-file.");
+});
+
 test("session run requires a workflow or a role", async () => {
   const neither = await capture(() => main(["session", "run"]));
   expect(neither.value).toBe(2);

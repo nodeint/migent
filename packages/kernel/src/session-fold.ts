@@ -403,8 +403,8 @@ function eventExecutionOrder(event: ParsedEvent): number {
 }
 
 /**
- * `session.active` with `data.from: blocked` reopens the session.
- * Every stage whose latest execution is blocked needs that event. One blocked stage still resumes.
+ * `session.active` with `data.from: blocked` reopens that execution.
+ * One such event makes the session runnable. A blocked execution without one stays unready.
  */
 function applyBlockedResume(
   status: Record<string, unknown>,
@@ -421,9 +421,9 @@ function applyBlockedResume(
       if (event.data.from !== "blocked") continue;
       resume = event;
     }
-    if (resume === null) return updatedAt;
-    resumes.push(resume);
+    if (resume !== null) resumes.push(resume);
   }
+  if (resumes.length === 0) return updatedAt;
   status.status = "active";
   applyTerminalFields(status, "active", null, null);
   let next = updatedAt;

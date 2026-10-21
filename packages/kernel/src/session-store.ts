@@ -393,24 +393,35 @@ export class SessionStore {
     return this.readSessionStatusAt(path.join(this.sessionsDirectory, sessionId));
   }
 
-  /** Record that continue is running every blocked stage again. The caller holds the session lock. */
-  resumeBlockedSession(sessionId: string): { executionId: string; stageId: string }[] {
+  /** Latest blocked execution of each stage, in resume order. */
+  blockedStages(sessionId: string): { executionId: string; stageId: string }[] {
+    return this.blockedStageRows(sessionId).map((row) => ({
+      executionId: row.executionId,
+      stageId: row.stageId,
+    }));
+  }
+
+  /**
+   * Record that continue is running blocked stages again. The caller holds the session lock.
+   * `stageId` resumes that stage only. Other blocked stages stay blocked.
+   */
+  resumeBlockedSession(sessionId: string, stageId: string | null = null): { executionId: string; stageId: string }[] {
     const sessionDirectory = path.join(this.sessionsDirectory, sessionId);
     assertSessionLockHeld(sessionDirectory);
     const status = this.readSessionStatus(sessionId);
     if (status.status !== "blocked") {
       throw new ConfigurationError(`Session ${sessionId} is ${String(status.status)}, not blocked.`);
     }
-    const workflow = this.loadWorkflow(status);
-    const blocked = blockedExecutions(statusExecutionsFromSnapshots(this.snapshotList(sessionId)), status, workflow);
+    const blocked = this.blockedStageRows(sessionId);
     if (blocked.length === 0) {
       throw new ConfigurationError(`Session ${sessionId} is blocked without an execution.`);
     }
-    const targets = blocked.map((row) => ({
-      executionId: row.executionId,
-      stageId: row.stageId,
-      blocker: this.executionBlocker(sessionId, row.executionId),
-    }));
+    const targets =
+      stageId === null ? blocked : blocked.filter((row) => row.stageId === stageId);
+    if (stageId !== null && targets.length === 0) {
+      const names = blocked.map((row) => row.stageId).join(", ");
+      throw new ConfigurationError(`Stage ${stageId} is not blocked. Blocked stages: ${names}.`);
+    }
     const timestamp = utcNow();
     for (const target of targets) {
       const data: Record<string, unknown> = { from: "blocked" };
@@ -430,6 +441,22 @@ export class SessionStore {
       throw new ConfigurationError(`Session ${sessionId} stayed ${String(folded.status)} after resume.`);
     }
     return targets.map((target) => ({ executionId: target.executionId, stageId: target.stageId }));
+  }
+
+  private blockedStageRows(
+    sessionId: string,
+  ): { executionId: string; stageId: string; blocker: string | null }[] {
+    const status = this.readSessionStatus(sessionId);
+    const workflow = this.loadWorkflow(status);
+    return blockedExecutions(
+      statusExecutionsFromSnapshots(this.snapshotList(sessionId)),
+      status,
+      workflow,
+    ).map((row) => ({
+      executionId: row.executionId,
+      stageId: row.stageId,
+      blocker: this.executionBlocker(sessionId, row.executionId),
+    }));
   }
 
   /**

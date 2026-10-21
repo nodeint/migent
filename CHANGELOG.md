@@ -4,6 +4,7 @@
 
 ### Added
 
+- `session continue --reply` and `--reply-file` send a reply to a blocked stage. The new execution resumes that stage's provider agent. The prompt body is the reply. Without `--reply`, a blocked continue still includes the blocker and the previous response. When more than one stage is blocked, `--stage` selects the stage and the others stay blocked.
 - `session metrics --json` prints derived per-execution and per-session usage, time, and revision counts. Provider turns record `details.usage`, `details.argv`, `details.turn`, and `details.agent_id`. `provider.stage_started` records `cli_version`, `git_head`, and `git_dirty`. Usage is normalized when the metrics are read.
 - A version 2 workflow may set `concurrency` and route one decision to a list of stages. Independent branches run together up to that limit, in declaration order. A branch that blocks or exhausts verify, retries, or revisions stops; the others keep running. The session completes when nothing is running and nothing else can start. `status.json` lists `running_stages` and `blocked_by_execution_ids`. `latest_decision` is still the decision of the highest-order execution.
 - A workflow session pins its workflow, role instructions, and resolved stage targets in `workflow.frozen.yaml`. Later edits warn on stderr and do not change that session. `session continue --refresh-workflow` and `session run --session --refresh-workflow` adopt the current workflow, models, and role instructions.

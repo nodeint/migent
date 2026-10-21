@@ -101,7 +101,7 @@ export {
   shouldPublishOutputs,
 } from "./outputs.js";
 export type { ExecutionSnapshot, PublishedOutput } from "./outputs.js";
-export { buildStagePrompt, buildStageResumePrompt, prependRoleInstructions } from "./prompt.js";
+export { buildStagePrompt, buildStageReplyPrompt, buildStageResumePrompt, prependRoleInstructions } from "./prompt.js";
 export {
   failedStageCount,
   latestCompleteByStage,

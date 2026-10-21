@@ -11,7 +11,7 @@ import {
   type StageDispatchResult,
 } from "./dispatch.js";
 import { isRecord } from "./record.js";
-import { buildStagePrompt, buildStageResumePrompt, buildVerifyRepairPrompt } from "./prompt.js";
+import { buildStagePrompt, buildStageReplyPrompt, buildStageResumePrompt, buildVerifyRepairPrompt } from "./prompt.js";
 import { log, utcNow } from "./runtime.js";
 import { appendLifecycleEvent, readParsedEvents } from "./session-events.js";
 import { commitFoldedStatus } from "./session-fold.js";
@@ -82,6 +82,13 @@ export interface ExecuteRequest {
   resetRevisions?: boolean;
   startPrepared?: boolean;
   refreshWorkflow?: boolean;
+  /** Reply for one blocked stage. The new execution's prompt body is this text. */
+  reply?: string | null;
+}
+
+interface PendingStageReply {
+  stageId: string;
+  text: string | null;
 }
 
 export interface ExecuteResult {
@@ -147,6 +154,8 @@ async function executeLocked(
   let workflowId: string;
   let resumeCancelled = false;
   let reopenLatestCancelled = false;
+  let stageReply: PendingStageReply | null = null;
+  const replyText = typeof request.reply === "string" ? request.reply : null;
   if (sessionId) {
     held.sessionId = sessionId;
     held.lock = SessionLock.acquire(path.join(workspace, ".migent", "sessions", sessionId));
@@ -160,6 +169,14 @@ async function executeLocked(
       warnIfFrozenDrift(workspace, sessionId, workflowPath, storedWorkflow);
     }
     let sessionStatus = typeof bound.status.status === "string" ? bound.status.status : "";
+    if (replyText !== null && replyText.trim() === "") {
+      throw new ConfigurationError("--reply is empty.");
+    }
+    if (replyText !== null && sessionStatus !== "blocked") {
+      throw new ConfigurationError(
+        `--reply requires a blocked session. Session ${sessionId} is ${sessionStatus || "unknown"}.`,
+      );
+    }
     if (request.startPrepared) {
       if (sessionStatus !== "prepared") {
         const hint =
@@ -176,11 +193,31 @@ async function executeLocked(
       );
     }
     if (sessionStatus === "blocked") {
-      const resumed = store.resumeBlockedSession(sessionId);
+      const blocked = store.blockedStages(sessionId);
+      if (replyText !== null) {
+        if (blocked.length > 1 && stageId === null) {
+          const names = blocked.map((item) => item.stageId).join(", ");
+          throw new ConfigurationError(`--reply needs --stage when more than one stage is blocked: ${names}.`);
+        }
+        const target = stageId ?? blocked[0]?.stageId ?? "";
+        if (!blocked.some((item) => item.stageId === target)) {
+          throw new ConfigurationError(
+            blocked.length === 0
+              ? `Session ${sessionId} is blocked without an execution.`
+              : `Stage ${target} is not blocked. Blocked stages: ${blocked.map((item) => item.stageId).join(", ")}.`,
+          );
+        }
+        stageReply = { stageId: target, text: replyText };
+      }
+      const resumed = store.resumeBlockedSession(
+        sessionId,
+        stageReply !== null && blocked.length > 1 ? stageReply.stageId : null,
+      );
       sessionStatus = "active";
       for (const item of resumed) {
         const stageLabel = item.stageId || "its stage";
-        log(`session ${sessionId} was blocked by ${item.executionId}. Resuming ${stageLabel}.`);
+        const withReply = stageReply?.stageId === item.stageId ? " with a reply" : "";
+        log(`session ${sessionId} was blocked by ${item.executionId}. Resuming ${stageLabel}${withReply}.`);
       }
       // Decision 8 hides a cancelled sibling. Reopen that stage in place before new work.
       resumeCancelled = true;
@@ -192,6 +229,7 @@ async function executeLocked(
       return executeFinal(bound.status, sessionStatus, []);
     }
   } else {
+    if (replyText !== null) throw new ConfigurationError("--reply requires a blocked session.");
     if (request.refreshWorkflow) {
       throw new ConfigurationError("--refresh-workflow requires an existing session.");
     }
@@ -255,6 +293,28 @@ async function executeLocked(
   try {
     const activeRunner = runner ?? new AgentToolRunner();
     const stageJsons: Array<Record<string, unknown>> = [];
+    if (stageReply !== null) {
+      // Send the reply before a cancelled sibling can end the command or fold the session blocked.
+      const replySnapshots = store.executionSnapshots(sessionId);
+      const replyStatus = store.readSessionStatus(sessionId);
+      assertStageDispatchable(workspace, workflow, sessionId, stageReply.stageId);
+      stageJsons.push(
+        await trackDispatch(sessionId, tasks, (note) =>
+          dispatchExecuteStage(
+            workspace,
+            workflow,
+            workflowId,
+            sessionId,
+            stageReply.stageId,
+            replyStatus,
+            replySnapshots,
+            activeRunner,
+            note,
+            stageReply,
+          ),
+        ),
+      );
+    }
     if (resumeCancelled) {
       const reopened = store.reopenCancelledExecutions(sessionId, reopenLatestCancelled);
       if (!reopenLatestCancelled || reopened.length > 0) {
@@ -302,14 +362,43 @@ async function executeLocked(
             maxDispatches,
             activeRunner,
             tasks,
+            stageReply,
+            stageReply !== null && stageReply.text === null ? 1 : 0,
+            stageJsons[0]?.failure_reason === VERIFY_EXHAUSTED && stageReply !== null ? [stageReply.stageId] : [],
           );
           rest.stages = [...stageJsons, ...rest.stages];
           return rest;
         }
       }
     }
+    const replySent = stageReply !== null && stageReply.text === null;
+    const replyResult = replySent ? stageJsons[0] : undefined;
+    const replyExhausted = replyResult?.failure_reason === VERIFY_EXHAUSTED;
+    if (replyExhausted && (!isWorkflowV2(workflow) || once || stageId !== null)) {
+      return executeFinal(store.readSessionStatus(sessionId), VERIFY_EXHAUSTED, stageJsons);
+    }
+    if (replySent && (once || stageId !== null)) {
+      const status = store.readSessionStatus(sessionId);
+      const after = text(status.status);
+      const stopReason = TERMINAL_SESSION_STATUSES.has(after) ? after : "stage";
+      const result = executeFinal(status, stopReason, stageJsons);
+      if (stopReason === "stage" && stageJsons.some((item) => item.outcome_status !== "complete")) result.code = 1;
+      return result;
+    }
+    const replyDispatches = replySent ? 1 : 0;
+    const replyVerifyTried = replyExhausted && stageReply !== null ? [stageReply.stageId] : [];
     const continued = once || stageId !== null
-      ? await runExecuteOnce(workspace, store, workflow, workflowId, sessionId, stageId, activeRunner, tasks)
+      ? await runExecuteOnce(
+          workspace,
+          store,
+          workflow,
+          workflowId,
+          sessionId,
+          stageId,
+          activeRunner,
+          tasks,
+          stageReply,
+        )
       : await runExecuteLoop(
           workspace,
           store,
@@ -320,6 +409,9 @@ async function executeLocked(
           maxDispatches,
           activeRunner,
           tasks,
+          stageReply,
+          replyDispatches,
+          replyVerifyTried,
         );
     if (stageJsons.length > 0) continued.stages = [...stageJsons, ...continued.stages];
     return continued;
@@ -395,6 +487,7 @@ async function runExecuteOnce(
   stageId: string | null,
   runner: AgentToolRunner,
   tasks: Map<string, Promise<unknown>>,
+  reply: PendingStageReply | null,
 ): Promise<ExecuteResult> {
   store.reapOrphanedExecutions(sessionId, "raise");
   const snapshots = store.executionSnapshots(sessionId);
@@ -407,7 +500,18 @@ async function runExecuteOnce(
   if (typeof chosen !== "string") return chosen;
   assertStageDispatchable(workspace, workflow, sessionId, chosen);
   const stage = await trackDispatch(sessionId, tasks, (note) =>
-    dispatchExecuteStage(workspace, workflow, workflowId, sessionId, chosen, status, snapshots, runner, note),
+    dispatchExecuteStage(
+      workspace,
+      workflow,
+      workflowId,
+      sessionId,
+      chosen,
+      status,
+      snapshots,
+      runner,
+      note,
+      reply,
+    ),
   );
   status = store.readSessionStatus(sessionId);
   const after = text(status.status);
@@ -481,6 +585,9 @@ async function runExecuteLoop(
   maxDispatches: number | null,
   runner: AgentToolRunner,
   tasks: Map<string, Promise<unknown>>,
+  reply: PendingStageReply | null,
+  alreadyDispatched = 0,
+  verifyTriedSeed: readonly string[] = [],
 ): Promise<ExecuteResult> {
   if (isWorkflowV2(workflow)) {
     return runVersion2Pool(
@@ -493,10 +600,13 @@ async function runExecuteLoop(
       maxDispatches,
       runner,
       tasks,
+      reply,
+      alreadyDispatched,
+      verifyTriedSeed,
     );
   }
   const stages: Array<Record<string, unknown>> = [];
-  let dispatched = 0;
+  let dispatched = alreadyDispatched;
   const attempts = maxAttempts ?? 0;
   while (true) {
     store.reapOrphanedExecutions(sessionId, "raise");
@@ -525,6 +635,7 @@ async function runExecuteLoop(
         snapshots,
         runner,
         note,
+        reply,
       ),
     );
     stages.push(dispatchedStage);
@@ -544,11 +655,14 @@ async function runVersion2Pool(
   maxDispatches: number | null,
   runner: AgentToolRunner,
   tasks: Map<string, Promise<unknown>>,
+  reply: PendingStageReply | null,
+  alreadyDispatched = 0,
+  verifyTriedSeed: readonly string[] = [],
 ): Promise<ExecuteResult> {
   const stages: Array<Record<string, unknown>> = [];
-  let dispatched = 0;
+  let dispatched = alreadyDispatched;
   const attempts = maxAttempts ?? 0;
-  const verifyTried = new Set<string>();
+  const verifyTried = new Set<string>(verifyTriedSeed);
   const flights: Array<{ promise: Promise<void>; settled: boolean }> = [];
   const errors: unknown[] = [];
   const concurrency = workflow.concurrency ?? 1;
@@ -615,6 +729,7 @@ async function runVersion2Pool(
             snapshots,
             runner,
             note,
+            reply,
           ),
         )
           .then((stage) => {
@@ -688,6 +803,7 @@ async function dispatchExecuteStage(
   snapshots: readonly ExecutionSnapshot[],
   runner: AgentToolRunner,
   onExecution?: (executionId: string) => void,
+  reply: PendingStageReply | null = null,
 ): Promise<Record<string, unknown>> {
   const sessionDirectory = path.join(workspace, ".migent", "sessions", sessionId);
   const freeze = readWorkflowFreeze(sessionDirectory);
@@ -716,18 +832,22 @@ async function dispatchExecuteStage(
     priorOutputs: priorSessionOutputs(workspace, priorSessionId),
     roleInstructions,
   };
-  const prompt = exhausted?.verifyReport
-    ? buildVerifyRepairPrompt(
-        readFileSync(exhausted.verifyReport, "utf8"),
-        stageSpec.maxVerify,
-        stageSpec.maxVerify,
-        null,
-        frozen.taskFile,
-        frozen.sessionDirectory,
-      )
-    : stagePromptAlreadyDelivered(workflow, snapshots, stageId)
-      ? buildStageResumePrompt(promptInput)
-      : buildStagePrompt(promptInput);
+  const stageReply = takeStageReply(reply, stageId);
+  const prompt =
+    stageReply !== null
+      ? buildStageReplyPrompt(stageReply)
+      : exhausted?.verifyReport
+        ? buildVerifyRepairPrompt(
+            readFileSync(exhausted.verifyReport, "utf8"),
+            stageSpec.maxVerify,
+            stageSpec.maxVerify,
+            null,
+            frozen.taskFile,
+            frozen.sessionDirectory,
+          )
+        : stagePromptAlreadyDelivered(workflow, snapshots, stageId)
+          ? buildStageResumePrompt(promptInput)
+          : buildStagePrompt(promptInput);
   const request: StageDispatchRequest = {
     workflowId,
     stageId,
@@ -745,6 +865,13 @@ async function dispatchExecuteStage(
   const decision = result.outcomeDecision ? ` decision=${result.outcomeDecision}` : "";
   log(`stage ${stageId} · ${outcome}${decision}.`);
   return result.toJson();
+}
+
+function takeStageReply(reply: PendingStageReply | null, stageId: string): string | null {
+  if (reply === null || reply.stageId !== stageId || reply.text === null) return null;
+  const text = reply.text;
+  reply.text = null;
+  return text;
 }
 
 function bindExecuteRun(
