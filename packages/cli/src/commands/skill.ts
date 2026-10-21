@@ -8,7 +8,14 @@ import { isDirectory, isFile } from "../fs-utils.js";
 const SKILL_RELATIVE = path.join(".agents", "skills", "migent");
 const STATE_FILENAME = ".migent-template.json";
 const TEMPLATE_VERSION = 1;
-const MANAGED = ["SKILL.md", "references/schema-config.yaml", "references/schema-workflow.yaml"] as const;
+const MANAGED = [
+  "SKILL.md",
+  "references/schema-config.yaml",
+  "references/schema-workflow.yaml",
+  "references/sessions.md",
+  "references/inspect.md",
+  "references/config.md",
+] as const;
 
 export function installSkill(workspace: string): number {
   const skillDirectory = path.join(workspace, SKILL_RELATIVE);
