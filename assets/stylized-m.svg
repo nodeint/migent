@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 600" width="940" height="600">
+  <title>Stylized lowercase m logo</title>
+  <defs>
+    <linearGradient id="blue-gradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#D946EF"/>
+      <stop offset="100%" stop-color="#7C3AED"/>
+    </linearGradient>
+  </defs>
+  <g fill="url(#blue-gradient)">
+    <path d="M99 273
+      C99 164 185 75 293 75
+      C400 75 486 160 486 270
+      C502 268 520 269 537 270
+      C644 270 730 355 730 465
+      C730 518 699 559 658 559
+      C616 559 585 525 585 480
+      L585 459
+      C585 433 565 414 537 414
+      C509 414 488 434 488 461
+      L488 480
+      C488 525 457 559 415 559
+      C373 559 341 525 341 480
+      L341 269
+      C341 241 321 220 293 220
+      C265 220 244 241 244 269
+      L244 480
+      C244 525 213 559 172 559
+      C130 559 99 525 99 480
+      Z"/>
+    <circle cx="832" cy="485" r="73"/>
+  </g>
+</svg>
