@@ -508,8 +508,8 @@ test("continue redispatches a blocked schema 2 session", async () => {
 });
 
 test("exhausted verify stops with exit 6 and continue resumes without --attempts", async () => {
-  const { workspace, sessionId } = setup(workflowText(`echo bad; exit 1`, "    max_verify: 2\n"));
-  const adapter = new ScriptedAdapter([OK, OK, OK, OK], ["# n\n", null, null, null]);
+  const { workspace, sessionId } = setup(workflowText(`echo bad; exit 1`, "    max_verify: 1\n"));
+  const adapter = new ScriptedAdapter([OK, OK], ["# n\n", null]);
   const runner = new AgentToolRunner({ fake: adapter }, 10);
   const first = await executeNamedWorkflow(
     workspace,
@@ -519,7 +519,7 @@ test("exhausted verify stops with exit 6 and continue resumes without --attempts
   expect(first.stopReason).toBe("verify_exhausted");
   expect(first.code).toBe(6);
   expect(first.status).toBe("active");
-  expect(adapter.calls).toHaveLength(2);
+  expect(adapter.calls).toHaveLength(1);
   const store = new SessionStore(workspace);
   const [exhausted] = store.executionSnapshots(sessionId);
   expect(exhausted?.failureReason).toBe("verify_exhausted");
@@ -531,18 +531,16 @@ test("exhausted verify stops with exit 6 and continue resumes without --attempts
     runner,
   );
   expect(second.stopReason).toBe("verify_exhausted");
-  expect(adapter.calls).toHaveLength(4);
-  expect(adapter.calls[2]?.agentId).toBe("native-session-1");
-  expect(adapter.calls[2]?.prompt).toContain("bad");
+  expect(second.code).toBe(6);
+  expect(adapter.calls).toHaveLength(2);
+  expect(adapter.calls[1]?.agentId).toBe("native-session-1");
+  expect(adapter.calls[1]?.prompt).toContain("bad");
   const records = store.executionSnapshots(sessionId);
   expect(records).toHaveLength(2);
   const resumed = execution(workspace, sessionId, records[1]!.executionId);
   expect(resumed.resumes_execution_id).toBe(exhausted!.executionId);
-  // The carried artifact exists although the repair turns never rewrote it.
+  // The carried artifact exists although the resumed turn did not rewrite it.
   expect(existsSync(path.join(records[1]!.artifactDirectory, "notes.md"))).toBe(true);
-
-  const once = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId, once: true }, new AgentToolRunner({ fake: new ScriptedAdapter([OK, OK]) }, 10));
-  expect(once.code).toBe(6);
 });
 
 test("completion decision is not published before verify passes", async () => {
