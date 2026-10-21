@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.5
+
 ### Added
 
 - `session continue --reply` and `--reply-file` send a reply to a blocked stage. The new execution resumes that stage's provider agent. The prompt body is the reply. Without `--reply`, a blocked continue still includes the blocker and the previous response. When more than one stage is blocked, `--stage` selects the stage and the others stay blocked.
@@ -14,11 +16,15 @@
 - `roles.<name>.instructions` is an optional list of strings. A stage prompt includes it before that stage's instructions. A role run prepends it to the prompt. `config role --json` includes the list.
 - `session prepare <some-id> --workflow <workflow>` creates a session with status `prepared` and a caller-chosen id such as `wave-3`. Write `task.md` in that session, then `migent session run --session <some-id> --workflow <workflow>`. `session show <session-id>` prints that session before the first stage.
 - Stage prompts name `task.md` and the session directory. `session run --task` accepts one line and stores it in `task.md`. The first dispatch records a hash of that file. A later change stops the next dispatch. Each execution keeps a copy.
+- A stage may set `verify`. After the model reports `status: complete`, Migent runs those commands in the same execution, in order, and stops at the first failure. A red command sends the report back to that provider agent. The execution stays running and records no outcome until verify passes. A passing run writes `artifacts/verify.md`. After `max_verify` red runs (default 3) the execution fails with `failure_reason: verify_exhausted`. The loop stops with stop reason `verify_exhausted` and exit 6. The session stays active and `--attempts` is not consumed. `session continue` resumes that provider conversation with the last report and a fresh `max_verify` budget, and keeps the provider, model, and options of the exhausted execution.
+- The `agy` adapter runs the Antigravity CLI. Headless runs use stream-json, model ids come from `agy models`, and a later turn resumes with `--conversation`.
+- The installed skill lists every accepted config key in `references/schema-config.yaml` and every accepted workflow key in `references/schema-workflow.yaml`.
 
 ### Changed
 
 - `session continue` on a blocked session dispatches that stage again. The new prompt includes the blocker and the previous response. `completed` sessions stay stopped.
 - `session continue` on a cancelled session resumes that same execution. The execution id and stage attempt stay the same. A provider turn that was cut off is sent again. A verify that was cut off runs again. A role run on a cancelled session does the same and does not send the new prompt.
+- A later visit that a decision routes back to a stage resumes that stage's provider agent. The prompt sends only what changed: upstream artifact paths, the route back, or a blocked attempt. It does not repeat the task path, role instructions, stage instructions, constraints, or verify commands. The reviewing stage still starts a new agent.
 - `provider.item_*` and `provider.heartbeat` are appended to `executions/<id>/stream.jsonl`. Other events, including `verify.heartbeat`, stay in `events.jsonl`. Heartbeats do not rewrite `status.json`. `session follow` merges `events.jsonl` with every execution stream in timestamp order. `--cursor` remains a byte offset into `events.jsonl`. `0` replays the whole log and every stream. Any other offset replays events from that byte, and stream lines whose timestamp is at or after the first event there.
 - Session files (`status.json`, `execution.json`, `manifest.yaml`, `task.md`, `prompt.md`, `response.md`) are written to a temp file, synced, and renamed, so a kill no longer leaves a truncated file. Event lines are synced when appended. A save writes its events before `status.json`.
 - One process writes a session at a time. `session run --session`, `session continue` and `session run --role --session` hold `session.lock` in the session directory. A second writer exits 2 with `Session <id> is being run by pid <n> on <host>.` A lock is stale after 30 s without a heartbeat, or when its pid is gone on the same host. A holder whose lock was taken stops before its next write. `session follow` reaps a dead owner only when it can take the lock.

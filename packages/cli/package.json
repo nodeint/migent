@@ -1,6 +1,6 @@
 {
   "name": "@nodeint/migent",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Compose AI coding agents into repeatable engineering workflows.",
   "keywords": [
     "ai",
