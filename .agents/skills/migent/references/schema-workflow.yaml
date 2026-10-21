@@ -45,7 +45,7 @@ stages:
     # max_verify defaults to 3. verify_timeout is seconds for the whole list. Both require verify.
     max_verify: 3
     verify_timeout: 900
-    # Route keys must match decision.values. A destination is a stage id or complete.
+    # Route keys must match decision.values. A destination is a stage id, complete, or a non-empty list of stage ids.
     decision:
       values:
         - approved
