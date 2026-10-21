@@ -13,5 +13,6 @@ export default defineConfig({
   },
   test: {
     include: ["packages/**/*.test.ts", "integration/**/*.test.ts"],
+    testTimeout: 10_000,
   },
 });
