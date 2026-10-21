@@ -5,6 +5,7 @@ export const EXIT_ATTEMPTS = 3;
 export const EXIT_REVISIONS = 4;
 export const EXIT_DISPATCHES = 5;
 export const EXIT_VERIFY = 6;
+export const EXIT_VERIFY_FAILED = 7;
 export const EXIT_CANCELLED = 130;
 
 export const LOOP_EXITS = [
@@ -15,6 +16,7 @@ export const LOOP_EXITS = [
   `Exit ${EXIT_REVISIONS} when a route would exceed max_revisions. The session stays active.`,
   `Exit ${EXIT_DISPATCHES} when --max-dispatches is spent. The session stays active.`,
   `Exit ${EXIT_VERIFY} when verify fails max_verify times. The session stays active.`,
+  `Exit ${EXIT_VERIFY_FAILED} when a stage with no role fails verify. The session stays active.`,
   `Exit ${EXIT_CANCELLED} when cancelled. session continue resumes that execution.`,
 ];
 
@@ -24,5 +26,6 @@ export const STAGE_EXITS = [
   `Exit ${EXIT_CONFIG} on a configuration error.`,
   `Exit ${EXIT_REVISIONS} when a route would exceed max_revisions. The session stays active.`,
   `Exit ${EXIT_VERIFY} when verify fails max_verify times. The session stays active.`,
+  `Exit ${EXIT_VERIFY_FAILED} when a stage with no role fails verify. The session stays active.`,
   `Exit ${EXIT_CANCELLED} when cancelled. session continue resumes that execution.`,
 ];

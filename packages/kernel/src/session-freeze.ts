@@ -14,6 +14,7 @@ import { ConfigurationError } from "./errors.js";
 import { isRecord } from "./record.js";
 import { log } from "./runtime.js";
 import {
+  isRoleStage,
   isWorkflowV2,
   loadNamedWorkflow,
   loadWorkflowDocument,
@@ -48,6 +49,7 @@ export function writeWorkflowFreeze(
   for (const role of roleNames(workflow)) roles[role] = loadRoleInstructions(config, role);
   const targets: Record<string, StageTarget> = {};
   for (const stage of Object.values(workflow.stages)) {
+    if (!isRoleStage(stage)) continue;
     const target = resolveStageSpec(config, stage);
     targets[stage.id] = { provider: target.provider, model: target.model, options: { ...target.options } };
   }
@@ -217,6 +219,7 @@ export function warnIfFrozenDrift(
 }
 
 function liveTarget(config: Record<string, unknown>, stage: StageSpec): StageTarget | null {
+  if (!isRoleStage(stage)) return null;
   try {
     return resolveStageSpec(config, stage);
   } catch (error) {
@@ -281,9 +284,10 @@ function version2WorkflowMapping(workflow: WorkflowDocument): Record<string, unk
 function stageMapping(stage: StageSpec): Record<string, unknown> {
   const mapped: Record<string, unknown> = {
     id: stage.id,
-    role: stage.role,
     depends_on: stage.dependsOn,
   };
+  if (isRoleStage(stage)) mapped.role = stage.role;
+  if (stage.description !== null) mapped.description = stage.description;
   if (stage.instructions.length > 0) mapped.instructions = stage.instructions;
   if (stage.artifact !== null) mapped.produces = { artifact: stage.artifact };
   if (stage.decisionValues.length > 0) mapped.decision = { values: stage.decisionValues, routes: stage.routes };
@@ -293,7 +297,7 @@ function stageMapping(stage: StageSpec): Record<string, unknown> {
   if (stage.resumeFrom !== null) mapped.session = { resume_from: stage.resumeFrom };
   if (stage.verify.length > 0) {
     mapped.verify = stage.verify;
-    if (stage.maxVerify !== 3) mapped.max_verify = stage.maxVerify;
+    if (isRoleStage(stage) && stage.maxVerify !== 3) mapped.max_verify = stage.maxVerify;
     if (stage.verifyTimeoutSec !== null) mapped.verify_timeout = stage.verifyTimeoutSec;
   }
   return mapped;
@@ -314,7 +318,8 @@ function completionMapping(completion: WorkflowCompletion): Record<string, unkno
 function roleNames(workflow: WorkflowDocument): string[] {
   const names: string[] = [];
   for (const stage of Object.values(workflow.stages)) {
-    if (!names.includes(stage.role)) names.push(stage.role);
+    if (!isRoleStage(stage) || names.includes(stage.role)) continue;
+    names.push(stage.role);
   }
   return names;
 }

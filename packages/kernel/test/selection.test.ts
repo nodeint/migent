@@ -18,9 +18,11 @@ import {
   Stop,
   type ExecutionSnapshot,
   type NextStageResult,
-  type StageSpec,
+  type RoleStageSpec,
   type WorkflowDocument,
+  type VerifyOnlyStageSpec,
 } from "../src/index.ts";
+import { schedulableStageIds, version2IdleReason } from "../src/selection.ts";
 
 const fixtures = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "workflows");
 
@@ -28,8 +30,10 @@ function workflowFile(workflowId: string): WorkflowDocument {
   return loadWorkflowDocument(path.join(fixtures, `${workflowId}.yaml`));
 }
 
-function stage(id: string, role: string, extra: Partial<StageSpec> = {}): StageSpec {
+function stage(id: string, role: string, extra: Partial<RoleStageSpec> = {}): RoleStageSpec {
   return {
+    kind: "role",
+    description: null,
     id,
     role,
     artifact: null,
@@ -45,6 +49,8 @@ function stage(id: string, role: string, extra: Partial<StageSpec> = {}): StageS
     verifyTimeoutSec: null,
     routes: {},
     ...extra,
+    kind: "role",
+    role,
   };
 }
 
@@ -506,7 +512,7 @@ test("a stage keeps the agent from its latest execution", () => {
   expect(stageAgentExecution(reviewed, "absent")).toBeNull();
 });
 
-function bareWorkflow(stages: Record<string, StageSpec>, schemaVersion = 2): WorkflowDocument {
+function bareWorkflow(stages: Record<string, RoleStageSpec>, schemaVersion = 2): WorkflowDocument {
   return {
     id: "sched",
     schemaVersion,
@@ -572,6 +578,41 @@ test("stageDispatchError rejects a stage when one of two routers decides fail", 
   ]);
   expect(error).toContain("not routed by left");
   expect(error).toContain("'fail'");
+});
+
+test("verify_failed keeps dependents stopped and is schedulable once", () => {
+  const prepare: VerifyOnlyStageSpec = {
+    kind: "verify",
+    id: "prepare",
+    role: null,
+    description: null,
+    artifact: null,
+    decisionValues: [],
+    dependsOn: [],
+    resumeFrom: null,
+    instructions: [],
+    modelName: null,
+    options: {},
+    maxRevisions: null,
+    routes: {},
+    verify: ["pnpm test"],
+    maxVerify: 0,
+    verifyTimeoutSec: null,
+  };
+  const workflow = bareWorkflow({
+    implement: stage("implement", "developer", { dependsOn: ["prepare"] }),
+  });
+  workflow.stages.prepare = prepare;
+  const failed = {
+    ...snapshot("prepare", 1, { status: "failed", outcomeStatus: null }),
+    failureReason: "verify_failed",
+  };
+  expect(readyStages(workflow, [failed], "active")).toEqual([]);
+  expect(schedulableStageIds(workflow, [failed], "active", null, 3, null, new Set())).toEqual(["prepare"]);
+  expect(schedulableStageIds(workflow, [failed], "active", null, 3, null, new Set(), new Set(["prepare"]))).toEqual([]);
+  expect(version2IdleReason(workflow, [failed], "active")).toBe("verify_failed");
+  expect(failedStageCount([failed], "prepare")).toBe(0);
+  expect(failedStageCount([failed], "implement")).toBe(0);
 });
 
 test("failedStageCount ignores verify_exhausted executions", () => {

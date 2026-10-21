@@ -9,7 +9,7 @@ import {
   placeRoleModel,
   setRoleOptions,
   upsertModel,
-  type StageSpec,
+  type RoleStageSpec,
   type WorkflowDocument,
 } from "../src/index.ts";
 import { writeConfig } from "./support.ts";
@@ -42,8 +42,10 @@ function stage(input: {
   role: string;
   modelName?: string | null;
   options?: Record<string, string>;
-}): StageSpec {
+}): RoleStageSpec {
   return {
+    kind: "role",
+    description: null,
     id: input.id,
     role: input.role,
     artifact: null,

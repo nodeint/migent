@@ -15,6 +15,7 @@ import {
   matchingModelName,
   patchConfigText,
   placeRoleModel,
+  isRoleStage,
   resolveStageSpec,
   setRoleOptions,
   upsertModel,
@@ -509,6 +510,7 @@ function validateChange(
   }
   for (const document of workflows) {
     for (const stage of Object.values(document.stages)) {
+      if (!isRoleStage(stage)) continue;
       let beforeTarget: StageTarget;
       let afterTarget: StageTarget;
       try {

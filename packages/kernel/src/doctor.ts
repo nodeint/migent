@@ -11,7 +11,7 @@ import {
 } from "./config.js";
 import { ConfigurationError } from "./errors.js";
 import { isRecord } from "./record.js";
-import { loadWorkflowCatalog, type WorkflowDocument } from "./workflow.js";
+import { isRoleStage, loadWorkflowCatalog, type WorkflowDocument } from "./workflow.js";
 
 const require = createRequire(import.meta.url);
 const whichModule = require("which") as {
@@ -181,6 +181,7 @@ function checkStageBindings(
   problems: string[],
 ): void {
   for (const stage of Object.values(document.stages)) {
+    if (!isRoleStage(stage)) continue;
     let target;
     try {
       target = resolveStageSpec(config, stage);

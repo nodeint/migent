@@ -429,3 +429,67 @@ completion:
     outputs: [{ name: "plan", fromStage: "plan", artifact: "plan.md" }],
   });
 });
+
+test("a stage with verify and no role is verify-only", () => {
+  const dir = tempDir("migent-flow-");
+  const flow = path.join(dir, "flow.yaml");
+  writeFileSync(
+    flow,
+    `\
+schema_version: 2
+id: gate
+stages:
+  - id: prepare
+    description: Check the tree is green.
+    verify:
+      - pnpm test
+    verify_timeout: 30
+    depends_on: []
+  - id: implement
+    role: developer
+    depends_on: [prepare]
+`,
+    "utf8",
+  );
+  const document = loadWorkflowDocument(flow);
+  expect(document.stages.prepare).toMatchObject({
+    kind: "verify",
+    role: null,
+    description: "Check the tree is green.",
+    verify: ["pnpm test"],
+    maxVerify: 0,
+    verifyTimeoutSec: 30,
+  });
+  expect(document.stages.implement).toMatchObject({ kind: "role", role: "developer", description: null });
+});
+
+test("verify-only stages reject a missing list and role-only keys", () => {
+  const dir = tempDir("migent-flow-");
+  const flow = path.join(dir, "flow.yaml");
+  writeFileSync(flow, "schema_version: 2\nid: gate\nstages:\n  - id: prepare\n", "utf8");
+  expect(() => loadWorkflowDocument(flow)).toThrow(/stages\.prepare\.role is required/);
+  writeFileSync(
+    flow,
+    "schema_version: 2\nid: gate\nstages:\n  - id: prepare\n    verify: [pnpm test]\n    max_verify: 2\n",
+    "utf8",
+  );
+  expect(() => loadWorkflowDocument(flow)).toThrow(/stages\.prepare\.max_verify requires a role/);
+  writeFileSync(
+    flow,
+    "id: gate\nstages:\n  - id: prepare\n    verify: [pnpm test]\n",
+    "utf8",
+  );
+  expect(() => loadWorkflowDocument(flow)).toThrow(/stages\.prepare\.role is required/);
+  writeFileSync(
+    flow,
+    "schema_version: 2\nid: gate\nstages:\n  - id: prepare\n    role: developer\n    description: \"\"\n",
+    "utf8",
+  );
+  expect(() => loadWorkflowDocument(flow)).toThrow(/stages\.prepare\.description/);
+  writeFileSync(
+    flow,
+    "schema_version: 2\nid: gate\nstages:\n  - id: prepare\n    role: developer\n    description: \"one\\ntwo\"\n",
+    "utf8",
+  );
+  expect(() => loadWorkflowDocument(flow)).toThrow(/description must be one line/);
+});

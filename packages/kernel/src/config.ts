@@ -3,7 +3,7 @@ import path from "node:path";
 import { z } from "zod";
 import { ConfigurationError } from "./errors.js";
 import { isRecord } from "./record.js";
-import { loadNamedWorkflow, readOptionMap, type StageSpec } from "./workflow.js";
+import { isRoleStage, loadNamedWorkflow, readOptionMap, type RoleStageSpec } from "./workflow.js";
 import { parseYamlDocument } from "./yaml.js";
 
 export { documentVersion } from "./record.js";
@@ -63,13 +63,14 @@ export function resolveStageTarget(
   const workflow = loadNamedWorkflow(workspace, workflowId);
   const stage = workflow.stages[stageId];
   if (stage === undefined) throw new ConfigurationError(`Stage not found: ${stageId}`);
+  if (!isRoleStage(stage)) throw new ConfigurationError(`Stage ${stageId} has no role.`);
   const config = loadYamlMapping(path.join(workspace, ".migent", "config.yaml"));
   return resolveStageSpec(config, stage, options);
 }
 
 export function resolveStageSpec(
   config: Record<string, unknown>,
-  stage: StageSpec,
+  stage: RoleStageSpec,
   options?: Record<string, string> | null,
 ): StageTarget {
   const modelField =

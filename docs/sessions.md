@@ -85,21 +85,27 @@ The session-level files have distinct purposes:
 Each execution directory contains:
 
 - `execution.json`: execution identity, order, stage and attempt, provider and
-  model, lifecycle status, timestamps, and the parsed stage outcome.
-- `turns/NN/`: written only for stages with `verify`. It holds `response.md`,
-  `outcome.json` for a complete turn, `verify.md`, and `commands/MM.log`.
-  `execution.json` also records `turns`, `verify` (`runs`, `red`, `max_verify`,
-  `last_result`, `last_report`), and `failure_reason` (`verify_exhausted`).
+  model, lifecycle status, timestamps, and the parsed stage outcome. A stage
+  with no role records `kind: verify`, and `provider` and `model` are null.
+- `turns/NN/`: written when a stage runs `verify`. A role stage holds
+  `response.md`, `outcome.json` for a complete turn, `verify.md`, and
+  `commands/MM.log`. A stage with no role writes `turns/01/verify.md` and
+  `turns/01/commands/MM.log` and does not write a model response.
+  `execution.json` for a role stage also records `turns`, `verify` (`runs`,
+  `red`, `max_verify`, `last_result`, `last_report`), and `failure_reason`
+  (`verify_exhausted`). A stage with no role records `failure_reason:
+  verify_failed` when the list fails.
 - `conversation.json`: provider conversation checkpoint used when resuming a
   provider session. It stores the provider and model, native agent ID, options
-  setting, lifecycle status, and fallback message history. This is separate
-  from the Migent session-level `status.json`.
+  setting, lifecycle status, and fallback message history. A stage with no
+  role does not write this file. This is separate from the Migent
+  session-level `status.json`.
 - `prompt.md` and `response.md`: the exact prompt sent for the attempt and the
-  response saved from the provider. A later attempt that continues the same
-  stage's provider agent records the continuation prompt. An attempt that
-  continues a `session.resume_from` dependency records the full stage prompt.
-  `task.md` in this directory is a copy of the session task at the moment the
-  execution was created.
+  response saved from the provider. A stage with no role writes neither file.
+  A later attempt that continues the same stage's provider agent records the
+  continuation prompt. An attempt that continues a `session.resume_from`
+  dependency records the full stage prompt. `task.md` in this directory is a
+  copy of the session task at the moment the execution was created.
 - `artifacts/`: files written by that stage. These are per-attempt working
   artifacts; only explicitly configured outputs are copied to the
   session-level `outputs/` directory.
@@ -171,14 +177,18 @@ migent session repair <session-id>
 and the snapshot. `session follow` follows execution events until a signal, or
 until the session stops when `--exit-when-done` is set. `session continue`
 resumes an active workflow session from its recorded state and resets revision
-counts. A blocked session is resumed the same way: continue dispatches that
-stage again, and the new prompt includes the blocker and the previous response.
+counts. A stage that failed `verify` with no role runs that list again in a
+new execution and does not open a provider. A blocked session is resumed the
+same way: continue dispatches that stage again, and the new prompt includes
+the blocker and the previous response.
 `session continue <session-id> --reply "<reply>"` uses the reply as that prompt
 body instead. `--reply-file <path>` reads it from a file. When more than one
 stage is blocked, `--stage` selects the stage. The other blocked stages stay
 blocked.
-A cancelled session is resumed on that same execution. A provider turn that was
-cut off is sent again. When the reply was already saved, verify runs again.
+A cancelled session is resumed on that same execution. A cancelled role
+execution sends a cut-off provider turn again, or reruns verify when the reply
+was already saved. A cancelled stage with no role reruns its verify list in
+place and does not open a provider.
 `completed` sessions stay stopped. `session continue --once`
 advances one stage and does not reset revision counts.
 

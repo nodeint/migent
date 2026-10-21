@@ -15,7 +15,7 @@ import {
   Stop,
   type ExecutionSnapshot,
   type NextStageResult,
-  type StageSpec,
+  type RoleStageSpec,
   type WorkflowDocument,
 } from "../src/index.ts";
 import { tempDir } from "./support.ts";
@@ -26,8 +26,10 @@ function workflowFile(workflowId: string): WorkflowDocument {
   return loadWorkflowDocument(path.join(fixtures, `${workflowId}.yaml`));
 }
 
-function stage(id: string, role: string, extra: Partial<StageSpec> = {}): StageSpec {
+function stage(id: string, role: string, extra: Partial<RoleStageSpec> = {}): RoleStageSpec {
   return {
+    kind: "role",
+    description: null,
     id,
     role,
     artifact: null,
@@ -43,6 +45,8 @@ function stage(id: string, role: string, extra: Partial<StageSpec> = {}): StageS
     verifyTimeoutSec: null,
     routes: {},
     ...extra,
+    kind: "role",
+    role,
   };
 }
 

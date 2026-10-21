@@ -72,6 +72,29 @@ routes:
 
 ## Verify commands
 
+A stage can omit `role` when it declares `verify`. Migent then runs that list and
+does not start an agent. `description` is an optional one-line label on any
+stage. It is printed on the stage's start line and is not part of the provider
+prompt.
+
+```yaml
+- id: prepare
+  description: Check the tree is green before implementation starts.
+  verify:
+    - pnpm build
+    - pnpm test
+  verify_timeout: 1800
+  depends_on: []
+```
+
+All exits 0 complete the stage and publish `artifacts/verify.md`. The first
+non-zero exit, a timeout, or a failure to start the shell fails the stage with
+`failure_reason: verify_failed`. Dependents do not start. The session stays
+active and the command exits 7. `session continue` runs the list again in a
+new execution and does not open a provider. `max_verify` is rejected on a
+stage with no role, because there is no model to repair. A stage that has a
+role keeps the repair loop below.
+
 A stage that edits code can declare `verify` commands. Migent runs them after
 the model reports `status: complete`, in the same execution. The exit codes
 decide the result.
@@ -165,7 +188,7 @@ workflow author's concern.
 A branch stops when its latest execution is blocked, or when verify, retries,
 or revisions are exhausted. Other branches keep starting. The run ends when
 nothing is running and nothing can start. The exit code and `stop_reason`
-take the first reason in this order: `blocked`, `verify_exhausted`,
+take the first reason in this order: `blocked`, `verify_failed`, `verify_exhausted`,
 `retry_exhausted`, `revisions_exhausted`. A route to `complete` ends that
 branch only. A stage with no dependents and no routes ends its branch.
 Version 1 workflows stay one stage at a time and still complete on the

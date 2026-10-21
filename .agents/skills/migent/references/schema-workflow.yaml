@@ -13,7 +13,16 @@ requires:
   workflow: plan
 
 stages:
+  - id: prepare
+    description: Check the tree before the draft.
+    # No role: Migent runs verify and does not start an agent.
+    verify:
+      - pnpm build
+    verify_timeout: 1800
+    depends_on: []
+
   - id: draft
+    description: Write the draft.
     role: planner
     # model is a name under models in config.yaml, not a provider model id.
     model: planner
@@ -21,7 +30,8 @@ stages:
     # Only keys the adapter marks overridable are stored on the provider session.
     options:
       reasoning-effort: high
-    depends_on: []
+    depends_on:
+      - prepare
     # max_revisions is allowed only when a route returns to this stage.
     max_revisions: 2
     instructions:

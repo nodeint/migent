@@ -1,7 +1,7 @@
 import { loadModelTarget, loadRoleInstructions, resolveStageSpec } from "./config.js";
 import { ConfigurationError } from "./errors.js";
 import { isRecord } from "./record.js";
-import type { StageSpec, WorkflowDocument } from "./workflow.js";
+import { isRoleStage, type RoleStageSpec, type WorkflowDocument } from "./workflow.js";
 import { parseYamlDocument } from "./yaml.js";
 
 const NAME = /^[A-Za-z][A-Za-z0-9._-]*$/;
@@ -305,6 +305,7 @@ export function describeChange(
   const stagesUnchanged: StageShield[] = [];
   for (const document of workflows) {
     for (const stage of Object.values(document.stages)) {
+      if (!isRoleStage(stage)) continue;
       const beforeTarget = resolvedStage(before, stage);
       const afterTarget = resolvedStage(afterCopy, stage);
       if (!resolvedEqual(beforeTarget, afterTarget)) {
@@ -726,6 +727,7 @@ function stagesUsing(
   const found: StageRef[] = [];
   for (const document of workflows) {
     for (const stage of Object.values(document.stages)) {
+      if (!isRoleStage(stage)) continue;
       let key: unknown = stage.modelName;
       if (key === null) {
         const role = roles[stage.role];
@@ -743,7 +745,7 @@ function roleStages(workflows: readonly WorkflowDocument[], role: string): Stage
   const found: StageRef[] = [];
   for (const document of workflows) {
     for (const stage of Object.values(document.stages)) {
-      if (stage.role !== role) continue;
+      if (!isRoleStage(stage) || stage.role !== role) continue;
       found.push({
         workflow: document.id,
         stage: stage.id,
@@ -756,7 +758,7 @@ function roleStages(workflows: readonly WorkflowDocument[], role: string): Stage
 }
 
 function shields(
-  stage: StageSpec,
+  stage: RoleStageSpec,
   beforeRoles: Record<string, unknown>,
   afterRoles: Record<string, unknown>,
   beforeModels: Record<string, unknown>,
@@ -778,7 +780,7 @@ function shields(
 }
 
 function modelOptionsChanged(
-  stage: StageSpec,
+  stage: RoleStageSpec,
   afterBinding: Binding,
   beforeModels: Record<string, unknown>,
   afterModels: Record<string, unknown>,
@@ -832,7 +834,7 @@ function resolvedRole(config: Record<string, unknown>, role: string): ResolvedTa
   }
 }
 
-function resolvedStage(config: Record<string, unknown>, stage: StageSpec): ResolvedTarget | null {
+function resolvedStage(config: Record<string, unknown>, stage: RoleStageSpec): ResolvedTarget | null {
   try {
     const target = resolveStageSpec(config, stage);
     return [target.provider, target.model, sortedItems(target.options)];

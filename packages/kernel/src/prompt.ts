@@ -3,7 +3,7 @@ import path from "node:path";
 import type { ExecutionSnapshot } from "./outputs.js";
 import { isRecord } from "./record.js";
 import { latestCompleteByStage, relevantRouterSnapshots } from "./selection.js";
-import { isWorkflowV2, routeListsStage, VERIFY_ARTIFACT, type WorkflowDocument } from "./workflow.js";
+import { isRoleStage, isWorkflowV2, routeListsStage, VERIFY_ARTIFACT, type WorkflowDocument } from "./workflow.js";
 
 export function buildStagePrompt(input: {
   workflow: WorkflowDocument;
@@ -18,6 +18,7 @@ export function buildStagePrompt(input: {
 }): string {
   const stage = input.workflow.stages[input.stageId];
   if (stage === undefined) throw new Error(`Stage is not declared: ${input.stageId}.`);
+  if (!isRoleStage(stage)) throw new Error(`Stage ${stage.id} has no role.`);
   const sessionDirectory =
     input.sessionDirectory ?? path.join(input.workspace, ".migent", "sessions", "session");
   const taskFile = input.taskFile ?? path.join(sessionDirectory, "task.md");

@@ -103,6 +103,8 @@ still the command that starts it.
 A workflow run's stdout is one JSON result: `session_id`, `session_status`, `stop_reason`,
 `latest_decision`, and `outputs`. Exit 1, 3, and 6 also include
 `latest_execution_id` and `response_path` (relative to the session directory).
+Exit 7 is a stage that ran `verify` with no role. It includes
+`latest_execution_id` and `verify_path`, and no `response_path`.
 `--verbose` adds `stages`, including each stage's response text. Stderr is the
 session id, one line when a stage starts, one line when it finishes, provider
 errors, and the resume hint. `--progress` also prints each tool call once,

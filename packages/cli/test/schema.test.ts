@@ -35,6 +35,7 @@ const WORKFLOW_KEYS = [
   "constraints",
   "decision",
   "depends_on",
+  "description",
   "from_stage",
   "id",
   "instructions",
@@ -105,11 +106,21 @@ test("workflow reference parses and names every key the workflow parser reads", 
   expect(document.id).toBe("reference");
   expect(document.constraints).toEqual(["Stay within the task."]);
   expect(document.requires).toEqual({ workflow: "plan", decision: null });
+  expect(document.stages.prepare).toMatchObject({
+    kind: "verify",
+    role: null,
+    description: "Check the tree before the draft.",
+    verify: ["pnpm build"],
+    verifyTimeoutSec: 1800,
+    dependsOn: [],
+  });
   expect(document.stages.draft).toMatchObject({
+    kind: "role",
     role: "planner",
+    description: "Write the draft.",
     modelName: "planner",
     options: { "reasoning-effort": "high" },
-    dependsOn: [],
+    dependsOn: ["prepare"],
     maxRevisions: 2,
     instructions: ["Write the draft."],
     artifact: "draft.md",

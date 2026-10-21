@@ -9,9 +9,9 @@ export const VERIFY_ARTIFACT = "verify.md";
 
 const optionKey = /^[A-Za-z][A-Za-z0-9_.-]*$/;
 
-export interface StageSpec {
+interface StageFields {
   id: string;
-  role: string;
+  description: string | null;
   artifact: string | null;
   decisionValues: string[];
   dependsOn: string[];
@@ -24,6 +24,24 @@ export interface StageSpec {
   verify: string[];
   maxVerify: number;
   verifyTimeoutSec: number | null;
+}
+
+export interface RoleStageSpec extends StageFields {
+  kind: "role";
+  role: string;
+}
+
+export interface VerifyOnlyStageSpec extends StageFields {
+  kind: "verify";
+  role: null;
+  verify: string[];
+  maxVerify: 0;
+}
+
+export type StageSpec = RoleStageSpec | VerifyOnlyStageSpec;
+
+export function isRoleStage(stage: StageSpec): stage is RoleStageSpec {
+  return stage.kind === "role";
 }
 
 export interface WorkflowOutput {
@@ -68,9 +86,9 @@ export interface WorkflowCatalog {
   problems: string[];
 }
 
-const stageSpecSchema = z.object({
+const stageFieldSchema = {
   id: z.string(),
-  role: z.string(),
+  description: z.string().nullable(),
   artifact: z.string().nullable(),
   decisionValues: z.array(z.string()),
   dependsOn: z.array(z.string()),
@@ -81,9 +99,24 @@ const stageSpecSchema = z.object({
   maxRevisions: z.number().int().nonnegative().nullable(),
   routes: z.record(z.string(), z.union([z.string(), z.array(z.string()).min(1)])),
   verify: z.array(z.string()),
-  maxVerify: z.number().int().min(1),
   verifyTimeoutSec: z.number().int().min(1).nullable(),
-});
+};
+
+const stageSpecSchema = z.discriminatedUnion("kind", [
+  z.object({
+    ...stageFieldSchema,
+    kind: z.literal("role"),
+    role: z.string(),
+    maxVerify: z.number().int().min(1),
+  }),
+  z.object({
+    ...stageFieldSchema,
+    kind: z.literal("verify"),
+    role: z.null(),
+    verify: z.array(z.string()).min(1),
+    maxVerify: z.literal(0),
+  }),
+]);
 
 const workflowOutputSchema = z.object({
   name: z.string(),
@@ -362,9 +395,36 @@ function parseStages(raw: unknown, version2 = false): Record<string, StageSpec> 
     if (!isRecord(item)) throw new ConfigurationError("Workflow stage must be a mapping.");
     const stageId = requiredString(item.id, "stages.id");
     if (Object.hasOwn(stages, stageId)) throw new ConfigurationError(`Duplicate stage id: ${stageId}`);
-    const role = requiredString(item.role, `stages.${stageId}.role`);
+    const description = stageDescription(item, stageId);
     const dependsOn = stageDependsOn(item, stageId);
     const verify = stageVerify(item, stageId);
+    if (!stageHasRole(item)) {
+      if (!version2 || verify.length === 0) {
+        throw new ConfigurationError(`stages.${stageId}.role is required.`);
+      }
+      rejectRoleOnlyKeys(item, stageId);
+      stages[stageId] = stageSpecSchema.parse({
+        kind: "verify",
+        id: stageId,
+        description,
+        role: null,
+        artifact: null,
+        decisionValues: [],
+        dependsOn,
+        resumeFrom: null,
+        instructions: [],
+        modelName: null,
+        options: {},
+        maxRevisions: null,
+        routes: {},
+        verify,
+        maxVerify: 0,
+        verifyTimeoutSec: stageVerifyTimeout(item, stageId, verify),
+      });
+      items.push(item);
+      continue;
+    }
+    const role = requiredString(item.role, `stages.${stageId}.role`);
     const artifact = stageArtifact(item, stageId);
     if (verify.length > 0 && artifact === VERIFY_ARTIFACT) {
       throw new ConfigurationError(
@@ -372,7 +432,9 @@ function parseStages(raw: unknown, version2 = false): Record<string, StageSpec> 
       );
     }
     stages[stageId] = stageSpecSchema.parse({
+      kind: "role",
       id: stageId,
+      description,
       role,
       artifact,
       decisionValues: stageDecisionValues(item, stageId),
@@ -550,7 +612,43 @@ function validateStageGraph(stages: Record<string, StageSpec>): void {
         `stages.${stage.id}.max_revisions requires a route back to ${stage.id}.`,
       );
     }
+    if (stage.resumeFrom !== null && !isRoleStage(stages[stage.resumeFrom]!)) {
+      throw new ConfigurationError(
+        `stages.${stage.id}.session.resume_from must name a role stage: ${stage.resumeFrom}.`,
+      );
+    }
   }
+}
+
+const ROLE_ONLY_KEYS = [
+  "instructions",
+  "model",
+  "options",
+  "session",
+  "produces",
+  "decision",
+  "max_revisions",
+  "max_verify",
+] as const;
+
+function stageHasRole(stage: Record<string, unknown>): boolean {
+  return Object.hasOwn(stage, "role") && stage.role != null;
+}
+
+function rejectRoleOnlyKeys(stage: Record<string, unknown>, stageId: string): void {
+  for (const key of ROLE_ONLY_KEYS) {
+    if (Object.hasOwn(stage, key) && stage[key] != null) {
+      throw new ConfigurationError(`stages.${stageId}.${key} requires a role.`);
+    }
+  }
+}
+
+function stageDescription(stage: Record<string, unknown>, stageId: string): string | null {
+  const description = optionalStageString(stage, "description", stageId);
+  if (description !== null && /[\r\n]/.test(description)) {
+    throw new ConfigurationError(`stages.${stageId}.description must be one line.`);
+  }
+  return description;
 }
 
 function stageDecisionValues(stage: Record<string, unknown>, stageId: string): string[] {

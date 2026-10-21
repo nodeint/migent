@@ -6,7 +6,7 @@ description: Set up Migent in a project, or configure, run, inspect, and resume 
 # Migent
 
 Migent runs a project's multi-stage agent workflows from the `migent` CLI.
-A workflow is a set of stages; each stage runs a role; a role uses a model name
+A workflow is a set of stages. A stage runs a role, or runs `verify` alone when `role` is omitted. A role uses a model name
 defined in `.migent/config.yaml`. Each run is a session, stored under
 `.migent/sessions/<session-id>/`.
 
@@ -62,7 +62,8 @@ Dispatch only one stage: add `--once`.
 stdout is a JSON object: `session_id`, `session_status`, `stop_reason`,
 `latest_decision`, `outputs`. Exit 1, 3, and 6 also give `latest_execution_id`
 and `response_path`, relative to `.migent/sessions/<session-id>/`; read that
-file to see why it stopped.
+file to see why it stopped. Exit 7 gives `latest_execution_id` and
+`verify_path` for a stage that ran `verify` with no role.
 
 - stderr is not the outcome. Do not read the command log while a run is healthy.
 - Do not pass `--verbose` or `--progress`. Do not use `session follow`.
@@ -82,6 +83,7 @@ Read the exit code first, then `stop_reason`.
 | 4 | A route would exceed `max_revisions` | `revisions_exhausted` | Review why the stage keeps being revised, then `session continue` for another batch. |
 | 5 | `--max-dispatches` spent | `dispatch_limit` | `session continue` if more stages are appropriate. |
 | 6 | A stage's `verify` stayed red | `verify_exhausted` | Read `response_path`, fix the cause, `session continue`. |
+| 7 | A stage with no role failed `verify` | `verify_failed` | Read `verify_path`, fix the tree, `session continue`. That reruns the commands and does not open a provider. |
 | 130 | Cancelled | | Ask the user before resuming. |
 
 A stopped session that is not `completed` is resumable. Do not call it done.

@@ -27,6 +27,7 @@ import {
 } from "./session-freeze.js";
 import {
   VERIFY_EXHAUSTED,
+  VERIFY_FAILED,
   failedStageCount,
   nextStage,
   readyStages,
@@ -52,7 +53,8 @@ import {
 } from "./session-store.js";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { isWorkflowV2, loadNamedWorkflow, type WorkflowDocument } from "./workflow.js";
+import { isRoleStage, isWorkflowV2, loadNamedWorkflow, type WorkflowDocument } from "./workflow.js";
+import { runVerifyOnlyStage } from "./verify-only.js";
 import type { ExecutionSnapshot } from "./outputs.js";
 
 export const DEFAULT_MAX_DISPATCHES = 20;
@@ -65,6 +67,7 @@ const EXECUTE_EXIT_CODES: Record<string, number> = {
   revisions_exhausted: 4,
   dispatch_limit: 5,
   verify_exhausted: 6,
+  verify_failed: 7,
   stage: 0,
 };
 
@@ -324,7 +327,16 @@ async function executeLocked(
         const settled = await Promise.allSettled(
           reopened.map((item) =>
             startTracked(sessionId, item.executionId, tasks, () =>
-              activeRunner.continueCancelled(workspace, sessionId, item.executionId),
+              verifyOnlyExecution(workspace, sessionId, item.executionId)
+                ? runVerifyOnlyStage({
+                    workspace,
+                    sessionId,
+                    stage: verifyOnlyStage(workflow, item.stageId),
+                    verifyRunner: activeRunner.verifyRunner,
+                    adapters: activeRunner.adapters,
+                    executionId: item.executionId,
+                  })
+                : activeRunner.continueCancelled(workspace, sessionId, item.executionId),
             ),
           ),
         );
@@ -334,13 +346,19 @@ async function executeLocked(
         for (let index = 0; index < reopened.length; index += 1) {
           const item = reopened[index]!;
           const result = continued[index]!;
-          const outcome = result.outcome_status || (result.failure_reason ? "failed" : "finished");
+          const outcome =
+            result.failure_reason === VERIFY_FAILED
+              ? "verify_failed"
+              : result.outcome_status || (result.failure_reason ? "failed" : "finished");
           const decision = result.outcome_decision ? ` decision=${result.outcome_decision}` : "";
           log(`stage ${item.stageId || "stage"} · ${outcome}${decision}.`);
           stageJsons.push(runResultJson(result));
         }
         const status = store.readSessionStatus(sessionId);
         const after = text(status.status);
+        if (continued.some((item) => item.failure_reason === VERIFY_FAILED)) {
+          return executeFinal(status, VERIFY_FAILED, stageJsons);
+        }
         if (continued.some((item) => item.failure_reason === VERIFY_EXHAUSTED)) {
           return executeFinal(status, VERIFY_EXHAUSTED, stageJsons);
         }
@@ -365,6 +383,9 @@ async function executeLocked(
             stageReply,
             stageReply !== null && stageReply.text === null ? 1 : 0,
             stageJsons[0]?.failure_reason === VERIFY_EXHAUSTED && stageReply !== null ? [stageReply.stageId] : [],
+            reopened
+              .filter((item, index) => continued[index]?.failure_reason === VERIFY_FAILED)
+              .map((item) => item.stageId),
           );
           rest.stages = [...stageJsons, ...rest.stages];
           return rest;
@@ -515,6 +536,7 @@ async function runExecuteOnce(
   );
   status = store.readSessionStatus(sessionId);
   const after = text(status.status);
+  if (stage.failure_reason === VERIFY_FAILED) return executeFinal(status, VERIFY_FAILED, [stage]);
   if (stage.failure_reason === VERIFY_EXHAUSTED) return executeFinal(status, VERIFY_EXHAUSTED, [stage]);
   const stopReason = TERMINAL_SESSION_STATUSES.has(after) ? after : "stage";
   const result = executeFinal(status, stopReason, [stage]);
@@ -554,7 +576,7 @@ function version2OnceStage(
   const schedulable = schedulableStageIds(workflow, snapshots, sessionStatus, baselines, 3, resumes, new Set());
   const running = runningStageIds(snapshots);
   if (stageId !== null) {
-    if (!ready.includes(stageId)) {
+    if (!schedulable.includes(stageId)) {
       const first = runnableNow(workflow, schedulable, running, workflow.concurrency ?? 1, snapshots)[0] ?? ready[0] ?? "";
       throw new ConfigurationError(`Stage ${stageId} is not the eligible stage ${first}.`);
     }
@@ -588,6 +610,7 @@ async function runExecuteLoop(
   reply: PendingStageReply | null,
   alreadyDispatched = 0,
   verifyTriedSeed: readonly string[] = [],
+  verifyOnlyTriedSeed: readonly string[] = [],
 ): Promise<ExecuteResult> {
   if (isWorkflowV2(workflow)) {
     return runVersion2Pool(
@@ -603,6 +626,7 @@ async function runExecuteLoop(
       reply,
       alreadyDispatched,
       verifyTriedSeed,
+      verifyOnlyTriedSeed,
     );
   }
   const stages: Array<Record<string, unknown>> = [];
@@ -639,6 +663,9 @@ async function runExecuteLoop(
       ),
     );
     stages.push(dispatchedStage);
+    if (dispatchedStage.failure_reason === VERIFY_FAILED) {
+      return executeFinal(store.readSessionStatus(sessionId), VERIFY_FAILED, stages);
+    }
     if (dispatchedStage.failure_reason === VERIFY_EXHAUSTED) {
       return executeFinal(store.readSessionStatus(sessionId), VERIFY_EXHAUSTED, stages);
     }
@@ -658,11 +685,13 @@ async function runVersion2Pool(
   reply: PendingStageReply | null,
   alreadyDispatched = 0,
   verifyTriedSeed: readonly string[] = [],
+  verifyOnlyTriedSeed: readonly string[] = [],
 ): Promise<ExecuteResult> {
   const stages: Array<Record<string, unknown>> = [];
   let dispatched = alreadyDispatched;
   const attempts = maxAttempts ?? 0;
   const verifyTried = new Set<string>(verifyTriedSeed);
+  const verifyOnlyTried = new Set<string>(verifyOnlyTriedSeed);
   const flights: Array<{ promise: Promise<void>; settled: boolean }> = [];
   const errors: unknown[] = [];
   const concurrency = workflow.concurrency ?? 1;
@@ -697,6 +726,7 @@ async function runVersion2Pool(
       attempts,
       resumes,
       verifyTried,
+      verifyOnlyTried,
     );
     const running = runningStageIds(snapshots);
     const ceiling = maxDispatches === null ? Number.POSITIVE_INFINITY : maxDispatches;
@@ -735,6 +765,7 @@ async function runVersion2Pool(
           .then((stage) => {
             stages.push(stage);
             if (stage.failure_reason === VERIFY_EXHAUSTED) verifyTried.add(stageId);
+            if (stage.failure_reason === VERIFY_FAILED) verifyOnlyTried.add(stageId);
           })
           .catch((error: unknown) => {
             errors.push(error);
@@ -762,6 +793,7 @@ async function runVersion2Pool(
         attempts,
         endResumes,
         verifyTried,
+        verifyOnlyTried,
       );
       if (remaining.length > 0) return executeFinal(endStatus, "dispatch_limit", stages);
       const reason = version2IdleReason(workflow, endSnapshots, endSession, endBaselines, attempts, endResumes);
@@ -793,6 +825,27 @@ function blockResumes(workspace: string, sessionId: string) {
   }));
 }
 
+function verifyOnlyExecution(workspace: string, sessionId: string, executionId: string): boolean {
+  const context = new SessionStore(workspace).executionContext(sessionId, executionId);
+  if (context === null) return false;
+  const metadata = JSON.parse(readFileSync(path.join(context.directory, "execution.json"), "utf8")) as unknown;
+  return isRecord(metadata) && metadata.kind === "verify";
+}
+
+function verifyOnlyStage(workflow: WorkflowDocument, stageId: string) {
+  const stage = workflow.stages[stageId];
+  if (stage === undefined || isRoleStage(stage)) {
+    throw new ConfigurationError(`Stage ${stageId} has no verify-only runner.`);
+  }
+  return stage;
+}
+
+function roleStartLine(stageId: string, provider: string, model: string, optionLabel: string, description: string | null): string {
+  const detail = `${provider}/${model} (${optionLabel})`;
+  if (description === null) return `stage ${stageId} · ${detail}.`;
+  return `stage ${stageId} · ${detail} — ${description}.`;
+}
+
 async function dispatchExecuteStage(
   workspace: string,
   workflow: WorkflowDocument,
@@ -805,6 +858,21 @@ async function dispatchExecuteStage(
   onExecution?: (executionId: string) => void,
   reply: PendingStageReply | null = null,
 ): Promise<Record<string, unknown>> {
+  const stageSpec = workflow.stages[stageId];
+  if (stageSpec === undefined) throw new ConfigurationError(`Stage not found: ${stageId}`);
+  if (!isRoleStage(stageSpec)) {
+    const result = await runVerifyOnlyStage({
+      workspace,
+      sessionId,
+      stage: stageSpec,
+      verifyRunner: runner.verifyRunner,
+      adapters: runner.adapters,
+      onExecution,
+    });
+    const outcome = result.failure_reason === VERIFY_FAILED ? "verify_failed" : "complete";
+    log(`stage ${stageId} · ${outcome}.`);
+    return { ...result };
+  }
   const sessionDirectory = path.join(workspace, ".migent", "sessions", sessionId);
   const freeze = readWorkflowFreeze(sessionDirectory);
   const target = freeze ? frozenStageTarget(freeze, stageId) : resolveStageTarget(workspace, workflowId, stageId);
@@ -812,12 +880,10 @@ async function dispatchExecuteStage(
     Object.entries(target.options)
       .map(([key, value]) => `${key}: ${value}`)
       .join(", ") || "default";
-  log(`stage ${stageId} · ${target.provider}/${target.model} (${optionLabel}).`);
+  log(roleStartLine(stageId, target.provider, target.model, optionLabel, stageSpec.description));
   const priorSessionId = storedPriorSessionId(status);
   const frozen = freezeSessionTask(workspace, sessionId);
   const exhausted = verifyExhaustedExecution(snapshots, stageId);
-  const stageSpec = workflow.stages[stageId];
-  if (stageSpec === undefined) throw new ConfigurationError(`Stage not found: ${stageId}`);
   const roleInstructions = freeze
     ? frozenRoleInstructions(freeze, stageSpec.role)
     : loadRoleInstructions(loadYamlMapping(path.join(workspace, ".migent", "config.yaml")), stageSpec.role);

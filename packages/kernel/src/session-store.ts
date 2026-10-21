@@ -5,6 +5,7 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  rmSync,
   statSync,
 } from "node:fs";
 import path from "node:path";
@@ -253,6 +254,16 @@ export class SessionStore {
     return [AgentSessionRecord.fromJson(raw, provider, model, workspace), false, context];
   }
 
+  /** Start a verify-only execution. It has no prompt and no provider conversation. */
+  openVerifyExecution(sessionId: string, stageId: string): ExecutionContext {
+    this.ensureSessionIsRunnable(sessionId);
+    return this.createExecution("", "", {}, sessionId, stageId, null, null, "", null, "verify");
+  }
+
+  clearVerifyTurn(context: ExecutionContext): void {
+    rmSync(this.turnDirectory(context, 1), { recursive: true, force: true });
+  }
+
   save(record: AgentSessionRecord, context: ExecutionContext): void {
     writeJsonAtomic(context.conversationPath, record.toJson());
   }
@@ -497,6 +508,7 @@ export class SessionStore {
       throw new ConfigurationError(`Session ${sessionId} is cancelled without an execution.`);
     }
     for (const item of cancelled) {
+      if (item.metadata.kind === "verify") continue;
       if (!existsSync(item.context.conversationReadPath)) {
         throw new ConfigurationError(`Execution ${item.context.executionId} has no conversation to resume.`);
       }
@@ -509,12 +521,14 @@ export class SessionStore {
       metadata.status = "running";
       metadata.completed_at = null;
       writeJsonAtomic(path.join(context.directory, "execution.json"), metadata);
-      const provider = typeof metadata.provider === "string" ? metadata.provider : "";
-      const model = typeof metadata.model === "string" ? metadata.model : "";
-      const raw = JSON.parse(readFileSync(context.conversationReadPath, "utf8")) as unknown;
-      const record = AgentSessionRecord.fromJson(raw, provider, model, this.workspace);
-      record.status = "running";
-      this.save(record, context);
+      if (metadata.kind !== "verify") {
+        const provider = typeof metadata.provider === "string" ? metadata.provider : "";
+        const model = typeof metadata.model === "string" ? metadata.model : "";
+        const raw = JSON.parse(readFileSync(context.conversationReadPath, "utf8")) as unknown;
+        const record = AgentSessionRecord.fromJson(raw, provider, model, this.workspace);
+        record.status = "running";
+        this.save(record, context);
+      }
       const stageId = typeof metadata.stage_id === "string" ? metadata.stage_id : "";
       appendLifecycleEvent(sessionDirectory, {
         event: "execution.running",
@@ -743,7 +757,8 @@ export class SessionStore {
       record.status = "failed";
       this.save(record, context);
     }
-    this.saveExecution(context, record, "failed", error, null, locked);
+    const extra = metadata.kind === "verify" ? { failure_reason: "verify_failed" } : null;
+    this.saveExecution(context, record, "failed", error, null, locked, extra);
   }
 
   private withExecutionLock<T>(filePath: string, fn: () => T): T {
@@ -821,6 +836,7 @@ export class SessionStore {
     executionOrder: number | null,
     prompt: string,
     resumesExecutionId: string | null = null,
+    kind: "verify" | null = null,
   ): ExecutionContext {
     const resolvedSession = sessionId ?? `session_${randomUUID().replaceAll("-", "")}`;
     const order = executionOrder ? executionOrder : this.nextExecutionOrder(resolvedSession);
@@ -847,7 +863,8 @@ export class SessionStore {
     const context = new ExecutionContext(resolvedSession, executionId, directory);
     mkdirSync(context.artifactDirectory);
     this.createSessionFiles(context);
-    writeFileAtomic(path.join(directory, "prompt.md"), prompt);
+    const verifyOnly = kind === "verify";
+    if (!verifyOnly) writeFileAtomic(path.join(directory, "prompt.md"), prompt);
     const createdAt = utcNow();
     const sessionDirectory = path.dirname(path.dirname(directory));
     writeJsonAtomic(path.join(directory, "execution.json"), {
@@ -856,8 +873,9 @@ export class SessionStore {
       execution_order: order,
       stage_id: stageId,
       stage_attempt: attempt,
-      provider,
-      model,
+      ...(verifyOnly ? { kind: "verify" } : {}),
+      provider: verifyOnly ? null : provider,
+      model: verifyOnly ? null : model,
       options: { ...(options ?? {}) },
       agent_id: null,
       resumes_execution_id: resumesExecutionId,

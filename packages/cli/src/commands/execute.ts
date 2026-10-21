@@ -59,7 +59,8 @@ export async function executeWorkflow(workspace: string, options: ExecuteWorkflo
     result.stopReason === "retry_exhausted" ||
     result.stopReason === "revisions_exhausted" ||
     result.stopReason === "dispatch_limit" ||
-    result.stopReason === "verify_exhausted"
+    result.stopReason === "verify_exhausted" ||
+    result.stopReason === "verify_failed"
   ) {
     process.stderr.write(`Resume with: migent session continue ${result.sessionId}\n`);
   }
@@ -79,6 +80,10 @@ function printResult(result: ExecuteResult, verbose: boolean): void {
   if (INSPECT_EXIT_CODES.has(result.code) && result.latestExecutionId) {
     payload.latest_execution_id = result.latestExecutionId;
     payload.response_path = `executions/${result.latestExecutionId}/response.md`;
+  }
+  if (result.code === 7 && result.latestExecutionId) {
+    payload.latest_execution_id = result.latestExecutionId;
+    payload.verify_path = `executions/${result.latestExecutionId}/turns/01/verify.md`;
   }
   if (verbose) payload.stages = result.stages;
   process.stdout.write(`${JSON.stringify(payload)}\n`);

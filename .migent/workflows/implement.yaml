@@ -7,9 +7,17 @@ constraints:
   - Do not commit or push.
   - Do not edit files the plan does not name.
 stages:
+  - id: prepare
+    description: Check the tree is green before implementation starts.
+    verify:
+      - pnpm build
+      - pnpm test
+    verify_timeout: 1800
+    depends_on: []
   - id: implement
     role: developer
-    depends_on: []
+    depends_on:
+      - prepare
     max_revisions: 3
     instructions:
       - Read task.md and the prior session output named plan, then implement that plan.
