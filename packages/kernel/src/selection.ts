@@ -29,13 +29,23 @@ export function nextStage(
   workflow: WorkflowDocument,
   snapshots: readonly ExecutionSnapshot[],
   sessionStatus: string,
+  resumes?: readonly BlockResume[] | null,
 ): NextStageResult {
   if (snapshots.some((snapshot) => snapshot.status === "running")) {
     return new NextStageError("an execution is still running");
   }
   if (terminalSessionStatuses.has(sessionStatus)) return new Stop(sessionStatus);
   const latest = latestSnapshot(snapshots);
-  if (latest !== null && latest.status === "failed") return new NextStage(latest.stageId);
+  if (latest !== null && latest.status === "failed") {
+    if (
+      latest.failureReason !== VERIFY_EXHAUSTED &&
+      latest.failureReason !== VERIFY_FAILED &&
+      !failedResumed(sessionStatus, latest.executionId, resumes)
+    ) {
+      return new Stop("stage_failed");
+    }
+    return new NextStage(latest.stageId);
+  }
   if (isWorkflowV2(workflow)) return nextVersion2Stage(workflow, snapshots, sessionStatus, latest);
   if (
     latest !== null &&
@@ -63,8 +73,7 @@ export function sequentialCandidates(
 ): string[] {
   const candidates = candidateStageIds(workflow, snapshots);
   const ready = readyStages(workflow, snapshots, sessionStatus);
-  // Blocked continue, verify-exhausted repair, and exhausted retries are not ready
-  // until the caller passes their resume events. nextStage still returns them.
+  // A failed stage stays stopped until continue writes `from: failed` for that execution.
   return sameStageIds(ready, candidates) ? ready : candidates;
 }
 
@@ -105,7 +114,6 @@ export function readyStages(
   snapshots: readonly ExecutionSnapshot[],
   sessionStatus: string,
   revisionBaselines?: Readonly<Record<string, number>> | null,
-  maxAttempts = 3,
   resumes?: readonly BlockResume[] | null,
 ): string[] {
   return candidateStageIds(workflow, snapshots).filter((stageId) => {
@@ -118,14 +126,11 @@ export function readyStages(
       if (latest.outcomeStatus === "blocked" && !blockResumed(sessionStatus, latest.executionId, resumes)) {
         return false;
       }
-      if (
-        latest.status === "failed" &&
-        (latest.failureReason === VERIFY_EXHAUSTED || latest.failureReason === VERIFY_FAILED)
-      ) {
-        return false;
+      if (latest.status === "failed") {
+        if (latest.failureReason === VERIFY_EXHAUSTED || latest.failureReason === VERIFY_FAILED) return false;
+        if (!failedResumed(sessionStatus, latest.executionId, resumes)) return false;
       }
     }
-    if (maxAttempts > 0 && failedStageCount(snapshots, stageId) >= maxAttempts) return false;
     if (revisionStop(workflow, snapshots, stageId, revisionBaselines)) return false;
     return true;
   });
@@ -145,6 +150,17 @@ function blockResumed(
   if (sessionStatus !== "active" || resumes == null) return false;
   return resumes.some(
     (event) => event.event === "session.active" && event.executionId === executionId && event.data?.from === "blocked",
+  );
+}
+
+function failedResumed(
+  sessionStatus: string,
+  executionId: string,
+  resumes: readonly BlockResume[] | null | undefined,
+): boolean {
+  if (sessionStatus !== "active" || resumes == null) return false;
+  return resumes.some(
+    (event) => event.event === "session.active" && event.executionId === executionId && event.data?.from === "failed",
   );
 }
 
@@ -582,11 +598,10 @@ export function readyOutsideStoppedBranches(
   snapshots: readonly ExecutionSnapshot[],
   sessionStatus: string,
   revisionBaselines?: Readonly<Record<string, number>> | null,
-  maxAttempts = 3,
   resumes?: readonly BlockResume[] | null,
 ): string[] {
-  const stopped = stoppedStageIds(workflow, snapshots, sessionStatus, maxAttempts, resumes);
-  return readyStages(workflow, snapshots, sessionStatus, revisionBaselines, maxAttempts, resumes).filter(
+  const stopped = stoppedStageIds(workflow, snapshots, sessionStatus, resumes);
+  return readyStages(workflow, snapshots, sessionStatus, revisionBaselines, resumes).filter(
     (stageId) => !onStoppedBranch(workflow, stageId, stopped),
   );
 }
@@ -597,18 +612,16 @@ export function schedulableStageIds(
   snapshots: readonly ExecutionSnapshot[],
   sessionStatus: string,
   revisionBaselines: Readonly<Record<string, number>> | null | undefined,
-  maxAttempts: number,
   resumes: readonly BlockResume[] | null | undefined,
   verifyTried: ReadonlySet<string>,
   verifyOnlyTried: ReadonlySet<string> = new Set(),
 ): string[] {
-  const stopped = stoppedStageIds(workflow, snapshots, sessionStatus, maxAttempts, resumes);
+  const stopped = stoppedStageIds(workflow, snapshots, sessionStatus, resumes);
   const ready = readyOutsideStoppedBranches(
     workflow,
     snapshots,
     sessionStatus,
     revisionBaselines,
-    maxAttempts,
     resumes,
   );
   const extra: string[] = [];
@@ -632,7 +645,6 @@ export function version2IdleReason(
   snapshots: readonly ExecutionSnapshot[],
   sessionStatus: string,
   revisionBaselines?: Readonly<Record<string, number>> | null,
-  maxAttempts = 3,
   resumes?: readonly BlockResume[] | null,
 ): string {
   if (version2GraphQuiet(workflow, snapshots, sessionStatus)) {
@@ -657,10 +669,15 @@ export function version2IdleReason(
       return "verify_exhausted";
     }
   }
-  if (maxAttempts > 0) {
-    for (const stageId of Object.keys(workflow.stages)) {
-      const latest = latestStageSnapshot(snapshots, stageId);
-      if (latest?.status === "failed" && failedStageCount(snapshots, stageId) >= maxAttempts) return "retry_exhausted";
+  for (const stageId of Object.keys(workflow.stages)) {
+    const latest = latestStageSnapshot(snapshots, stageId);
+    if (
+      latest?.status === "failed" &&
+      latest.failureReason !== VERIFY_FAILED &&
+      latest.failureReason !== VERIFY_EXHAUSTED &&
+      !failedResumed(sessionStatus, latest.executionId, resumes)
+    ) {
+      return "stage_failed";
     }
   }
   for (const stageId of candidateStageIds(workflow, snapshots)) {
@@ -673,7 +690,6 @@ function stoppedStageIds(
   workflow: WorkflowDocument,
   snapshots: readonly ExecutionSnapshot[],
   sessionStatus: string,
-  maxAttempts: number,
   resumes: readonly BlockResume[] | null | undefined,
 ): Set<string> {
   const stopped = new Set<string>();
@@ -685,7 +701,12 @@ function stoppedStageIds(
     }
     if (latest.status === "failed" && latest.failureReason === VERIFY_EXHAUSTED) stopped.add(stageId);
     if (latest.status === "failed" && latest.failureReason === VERIFY_FAILED) stopped.add(stageId);
-    if (maxAttempts > 0 && latest.status === "failed" && failedStageCount(snapshots, stageId) >= maxAttempts) {
+    if (
+      latest.status === "failed" &&
+      latest.failureReason !== VERIFY_EXHAUSTED &&
+      latest.failureReason !== VERIFY_FAILED &&
+      !failedResumed(sessionStatus, latest.executionId, resumes)
+    ) {
       stopped.add(stageId);
     }
   }

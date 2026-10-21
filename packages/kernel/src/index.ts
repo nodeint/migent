@@ -4,6 +4,9 @@ export type {
   NewSession,
   BuildCommandInput,
   AgentAdapter,
+  FailureClassification,
+  ProviderClassification,
+  QuotaClassification,
   UsageCapture,
   TurnUsage,
 } from "./adapter.js";
@@ -211,8 +214,9 @@ export {
   raiseCancellation,
   resetCancellation,
   stopProcessGroup,
+  waitUntil,
 } from "./command-executor.js";
-export type { CommandSpec } from "./command-executor.js";
+export type { CommandSpec, WaitHandle, WaitHooks } from "./command-executor.js";
 export {
   ENDPOINT_ALIVE,
   ENDPOINT_GONE,

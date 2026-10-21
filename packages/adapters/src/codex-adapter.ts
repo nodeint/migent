@@ -232,6 +232,12 @@ export class CodexAdapter implements AgentAdapter {
     return [lastText !== null ? lastText : stdout.trim(), agentId];
   }
 
+  classifyFailure(stdout: string, exitCode: number) {
+    if (exitCode === 0) return null;
+    const [text] = this.parseResponse(stdout, "/migent-no-such-last-message");
+    return { kind: "provider" as const, message: text.trim() || `CLI exited with code ${exitCode}.` };
+  }
+
   parseProgressEvent(line: string): Record<string, unknown> | null {
     let payload: unknown;
     try {

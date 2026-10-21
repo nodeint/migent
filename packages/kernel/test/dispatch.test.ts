@@ -277,13 +277,14 @@ test("plan implement walk", () => {
   }
 });
 
-test("failed latest retries that stage", () => {
+test("failed latest stays stopped until continue marks that execution", () => {
+  const failed = [snapshot("plan", 1), snapshot("review-plan", 2, { status: "failed", outcomeStatus: null })];
+  const workflow = workflowFile("plan");
+  expectResult(nextStage(workflow, failed, "active"), new Stop("stage_failed"));
   expectResult(
-    nextStage(
-      workflowFile("plan"),
-      [snapshot("plan", 1), snapshot("review-plan", 2, { status: "failed", outcomeStatus: null })],
-      "active",
-    ),
+    nextStage(workflow, failed, "active", [
+      { event: "session.active", executionId: failed[1]!.executionId, data: { from: "failed" } },
+    ]),
     new NextStage("review-plan"),
   );
 });

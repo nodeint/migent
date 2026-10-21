@@ -40,6 +40,75 @@ export function resetCancellation(): void {
   cancelled = null;
 }
 
+export interface WaitHooks {
+  now?: () => number;
+  sleep?: (ms: number) => Promise<void>;
+}
+
+export interface WaitHandle {
+  promise: Promise<"reached" | "replaced">;
+  replace(retryAt: string): void;
+}
+
+/** Sleep in slices until `retryAt`, or until `replace` moves the instant. */
+export function waitUntil(retryAt: string, hooks: WaitHooks = {}): WaitHandle {
+  const now = hooks.now ?? Date.now;
+  const sleep = hooks.sleep ?? defaultWaitSleep;
+  let current = retryAt;
+  let replaced = false;
+  let wake: (() => void) | null = null;
+  const promise = (async (): Promise<"reached" | "replaced"> => {
+    while (!replaced) {
+      cancellationSignal().throwIfCancelled();
+      const target = Date.parse(current);
+      if (!Number.isFinite(target) || now() >= target) return "reached";
+      const delay = Math.min(PROGRESS_INTERVAL_SEC * 1000, Math.max(0, target - now()));
+      await new Promise<void>((resolve, reject) => {
+        let settled = false;
+        const finish = (error?: unknown) => {
+          if (settled) return;
+          settled = true;
+          unbind();
+          wake = null;
+          if (error) reject(error);
+          else resolve();
+        };
+        const unbind = cancellationSignal().onCancel(() => {
+          try {
+            cancellationSignal().throwIfCancelled();
+            finish();
+          } catch (error) {
+            finish(error);
+          }
+        });
+        wake = () => finish();
+        sleep(delay).then(
+          () => finish(),
+          (error: unknown) => finish(error),
+        );
+      });
+    }
+    return "replaced";
+  })();
+  return {
+    promise,
+    replace(next: string) {
+      current = next;
+      replaced = true;
+      const pending = wake;
+      wake = null;
+      pending?.();
+    },
+  };
+}
+
+function defaultWaitSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    timer.unref();
+  });
+}
+
 export function cancellationSignal(): {
   throwIfCancelled(): void;
   onCancel(waiter: () => void): () => void;
@@ -77,12 +146,12 @@ export class CommandExecutor {
     onOutput?: ((line: string) => void) | null,
     onHeartbeat?: ((elapsedSec: number) => void) | null,
     onStart?: ((info: ProcessStartInfo) => void) | null,
-  ): Promise<[string, string | null]> {
+  ): Promise<[string, string | null, number | null]> {
     let child: ChildProcess | null = null;
     try {
       assertArgumentsPassable(spec.argv[0] ?? "", spec.argv.slice(1));
     } catch (error) {
-      if (error instanceof UnpassableArgument) return ["", error.message];
+      if (error instanceof UnpassableArgument) return ["", error.message, null];
       throw error;
     }
     try {
@@ -92,18 +161,18 @@ export class CommandExecutor {
       throwIfCancelled();
       if (!ready) {
         if (childStatus(child) === 127) {
-          return ["", `CLI executable not found: ${spec.argv[0] ?? "command"}`];
+          return ["", `CLI executable not found: ${spec.argv[0] ?? "command"}`, null];
         }
         await stopProcessGroup(child);
-        return ["", "Provider process wrapper did not start."];
+        return ["", "Provider process wrapper did not start.", null];
       }
       if (onStart && child.pid !== undefined) onStart(collectProcessStartInfo(child.pid, endpoint));
       child.send({ type: WRAPPER_START });
-      const [stdout, error] = await this.wait(child, spec, onOutput, onHeartbeat);
+      const [stdout, error, exitCode] = await this.wait(child, spec, onOutput, onHeartbeat);
       if (error !== null && childStatus(child) === 127) {
-        return [stdout, `CLI executable not found: ${spec.argv[0] ?? "command"}`];
+        return [stdout, `CLI executable not found: ${spec.argv[0] ?? "command"}`, null];
       }
-      return [stdout, error];
+      return [stdout, error, exitCode];
     } catch (error) {
       if (error instanceof CancellationRequested) {
         log("Cancellation requested; stopping the sub-agent group.");
@@ -119,7 +188,7 @@ export class CommandExecutor {
     spec: CommandSpec,
     onOutput?: ((line: string) => void) | null,
     onHeartbeat?: ((elapsedSec: number) => void) | null,
-  ): Promise<[string, string | null]> {
+  ): Promise<[string, string | null, number | null]> {
     const startedAt = Date.now();
     const queue = createLineQueue(child.stdout ?? null);
     if (spec.stdin != null && child.stdin) {
@@ -161,13 +230,14 @@ export class CommandExecutor {
     if (child.stdout) child.stdout.destroy();
     const stdout = stdoutChunks.join("").trim();
     const status = childStatus(child);
-    if (status === 0) return [stdout, null];
-    return [stdout, `CLI exited with code ${status}.`];
+    if (status === 0) return [stdout, null, 0];
+    if (status === null) return [stdout, "CLI exited with code null.", null];
+    return [stdout, `CLI exited with code ${status}.`, status];
   }
 
-  private async timeout(child: ChildProcess): Promise<[string, string]> {
+  private async timeout(child: ChildProcess): Promise<[string, string, null]> {
     await stopProcessGroup(child);
-    return ["", `Sub-agent timed out after ${this.timeoutSec}s.`];
+    return ["", `Sub-agent timed out after ${this.timeoutSec}s.`, null];
   }
 }
 

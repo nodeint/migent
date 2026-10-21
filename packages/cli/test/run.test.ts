@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { AgentToolRunner, ConfigurationError, DEFAULT_MAX_DISPATCHES, listSessionRows } from "@nodeint/migent-kernel";
+import { AgentToolRunner, DEFAULT_MAX_DISPATCHES, listSessionRows } from "@nodeint/migent-kernel";
 import { expect, test } from "vitest";
 import { executeWorkflow } from "../src/commands/execute.ts";
 import { listSessions } from "../src/commands/sessions.ts";
@@ -482,17 +482,17 @@ test("continue redispatches a blocked session, leaves completed sessions stopped
   }
 });
 
-test("retry budget keeps session active and stage can continue", async () => {
+test("a failed stage stays active and continue --once dispatches it once", async () => {
   const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
   try {
     const adapter = new ScriptedAdapter(["status: complete\n\nplanned", "not a header"], ["# Plan\n", null]);
     const [code, objects] = await runExecute(
       workspace,
-      ["session", "run", "--workflow", "plan", "--task", "Write a plan", "--attempts", "1"],
+      ["session", "run", "--workflow", "plan", "--task", "Write a plan"],
       adapter,
     );
     expect(code).toBe(3);
-    expect(objects.at(-1)?.stop_reason).toBe("retry_exhausted");
+    expect(objects.at(-1)?.stop_reason).toBe("stage_failed");
     expect(objects.at(-1)?.session_status).toBe("active");
     const sessionId = String(objects.at(-1)?.session_id);
     const [stageCode, stageObjects] = await runExecute(
@@ -509,36 +509,22 @@ test("retry budget keeps session active and stage can continue", async () => {
   }
 });
 
-test("retry budget is retained across execute invocations", async () => {
+test("continue dispatches a failed stage once", async () => {
   const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
   try {
     const [code, objects] = await runExecute(
       workspace,
-      ["session", "run", "--workflow", "plan", "--task", "Write a plan", "--attempts", "1"],
+      ["session", "run", "--workflow", "plan", "--task", "Write a plan"],
       new ScriptedAdapter(["status: complete\n\nplanned", "not a header"], ["# Plan\n", null]),
     );
     expect(code).toBe(3);
+    expect(objects.at(-1)?.stop_reason).toBe("stage_failed");
     const sessionId = String(objects.at(-1)?.session_id);
     const second = new ScriptedAdapter(["status: complete\ndecision: approved\n\nok"], [null]);
-    const [code2, objects2] = await runExecute(workspace, ["session", "continue", sessionId, "--attempts", "1"], second);
-    expect(code2).toBe(3);
-    expect(objects2.at(-1)?.stop_reason).toBe("retry_exhausted");
-    expect(objects2.at(-1)?.session_status).toBe("active");
-    expect(second.calls).toEqual([]);
-  } finally {
-    removeWorkspace(workspace);
-  }
-});
-
-test("rejects a non positive max attempts", async () => {
-  const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
-  try {
-    await expect(
-      executeWorkflow(workspace, { action: "start", workflowId: "plan", task: "Write a plan", maxAttempts: 0 }),
-    ).rejects.toThrow(/--attempts/);
-    await expect(
-      executeWorkflow(workspace, { action: "start", workflowId: "plan", task: "Write a plan", maxAttempts: 0 }),
-    ).rejects.toBeInstanceOf(ConfigurationError);
+    const [code2, objects2] = await runExecute(workspace, ["session", "continue", sessionId], second);
+    expect(code2).toBe(0);
+    expect(objects2.at(-1)?.stop_reason).toBe("completed");
+    expect(second.calls).toHaveLength(1);
   } finally {
     removeWorkspace(workspace);
   }
@@ -607,14 +593,6 @@ test("stage id follows eligibility after the first stage", async () => {
   } finally {
     removeWorkspace(workspace);
   }
-});
-
-test("stage id rejects max attempts", async () => {
-  const captured = await capture(() =>
-    main(["session", "run", "--workflow", "plan", "--task", "Write a plan", "--once", "--attempts", "1"]),
-  );
-  expect(captured.value).toBe(2);
-  expect(captured.stderr).toContain("--attempts");
 });
 
 test("stage rejects a dispatch ceiling", async () => {
@@ -936,7 +914,7 @@ test("help prints command usage without a workspace", async () => {
     expect(captured.stdout).toContain("Exit 3");
     expect(captured.stdout).toContain("Exit 4");
     expect(captured.stdout).toContain("Exit 5");
-    expect(captured.stdout).toContain("--attempts");
+    expect(captured.stdout).toContain("Exit 8");
     expect(captured.stdout).toContain("--max-dispatches");
     expect(captured.stdout).toContain("--unlimited-dispatches");
     expect(captured.stdout).toContain("--once");
@@ -949,7 +927,6 @@ test("help subcommand prints flags declared on that subcommand", async () => {
   const captured = await capture(() => main(["session", "continue", "--help"]));
   expect(captured.value).toBe(0);
   expect(captured.stdout).toContain("Usage: migent session continue");
-  expect(captured.stdout).toContain("--attempts");
   expect(captured.stdout).toContain("--max-dispatches");
   expect(captured.stdout).toContain("--once");
   expect(captured.stdout).toContain("does not reset");

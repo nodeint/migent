@@ -168,7 +168,6 @@ test("--once rejects attempt and dispatch flags from the raw options", async () 
   const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
   try {
     for (const argv of [
-      ["session", "run", "--workflow", "plan", "--task", "Write a plan", "--once", "--attempts", "1"],
       ["session", "continue", "session", "--once", "--max-dispatches", "2"],
       ["session", "run", "--workflow", "plan", "--task", "Write a plan", "--once", "--unlimited-dispatches"],
     ]) {

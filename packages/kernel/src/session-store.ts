@@ -462,6 +462,35 @@ export class SessionStore {
     return targets.map((target) => ({ executionId: target.executionId, stageId: target.stageId }));
   }
 
+  /**
+   * Append `session.active` with `data.from: failed` for each failed non-verify stage.
+   * Does not rewrite the manifest or commit the fold. The session need not be active.
+   */
+  markFailedResumes(sessionId: string, stageId: string | null = null): void {
+    const sessionDirectory = path.join(this.sessionsDirectory, sessionId);
+    assertSessionLockHeld(sessionDirectory);
+    const latest = new Map<string, ExecutionSnapshot>();
+    for (const snapshot of this.executionSnapshots(sessionId)) {
+      const current = latest.get(snapshot.stageId);
+      if (current === undefined || snapshot.executionOrder > current.executionOrder) {
+        latest.set(snapshot.stageId, snapshot);
+      }
+    }
+    const timestamp = utcNow();
+    for (const snapshot of latest.values()) {
+      if (stageId !== null && snapshot.stageId !== stageId) continue;
+      if (snapshot.status !== "failed") continue;
+      if (snapshot.failureReason === "verify_exhausted" || snapshot.failureReason === "verify_failed") continue;
+      appendLifecycleEvent(sessionDirectory, {
+        event: "session.active",
+        timestamp,
+        executionId: snapshot.executionId,
+        stageId: snapshot.stageId || null,
+        data: { from: "failed" },
+      });
+    }
+  }
+
   private blockedStageRows(
     sessionId: string,
   ): { executionId: string; stageId: string; blocker: string | null }[] {

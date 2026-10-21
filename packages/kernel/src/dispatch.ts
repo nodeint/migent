@@ -41,6 +41,9 @@ export class StageDispatchResult {
     readonly options: Record<string, string> = {},
     readonly artifactDirectory = "",
     readonly failureReason = "",
+    readonly failureKind = "",
+    readonly resetAt = "",
+    readonly provider = "",
   ) {}
 
   toJson(): Record<string, unknown> {
@@ -51,6 +54,9 @@ export class StageDispatchResult {
       execution_id: this.executionId,
       artifact_directory: this.artifactDirectory,
       failure_reason: this.failureReason,
+      failure_kind: this.failureKind,
+      reset_at: this.resetAt,
+      provider: this.provider,
       outcome_status: this.outcomeStatus,
       outcome_decision: this.outcomeDecision,
       session_status: this.sessionStatus,
@@ -175,5 +181,8 @@ function resultFromRun(result: RunResult, sessionId: string): StageDispatchResul
     isRecord(result.options) ? stringOptions(result.options) : {},
     result.artifact_directory || "",
     result.failure_reason || "",
+    result.failure_kind || "",
+    result.reset_at || "",
+    result.provider || "",
   );
 }

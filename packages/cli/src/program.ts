@@ -497,7 +497,6 @@ function workflowFlagsPresent(options: OptionValues): boolean {
     options.once === true ||
     options.stage !== undefined ||
     options.prior !== undefined ||
-    options.attempts !== undefined ||
     options.maxDispatches !== undefined ||
     options.unlimitedDispatches === true ||
     options.progress === true ||
@@ -529,7 +528,6 @@ function runWorkflowCommand(args: {
       sessionId,
       startPrepared: args.prepared,
       priorSessionId: optionalText(args.options.prior),
-      maxAttempts: attemptsOf(args.options),
       maxDispatches: ceiling,
       refreshWorkflow: args.options.refreshWorkflow === true,
       ...outputFlags(args.options),
@@ -543,7 +541,6 @@ function runWorkflowCommand(args: {
     stageId,
     startPrepared: args.prepared,
     priorSessionId: optionalText(args.options.prior),
-    maxAttempts: null,
     maxDispatches: null,
     refreshWorkflow: args.options.refreshWorkflow === true,
     ...outputFlags(args.options),
@@ -565,8 +562,8 @@ function continueSession(session: string, options: OptionValues): number | Promi
       sessionId: session,
       stageId,
       priorSessionId: optionalText(options.prior),
-      maxAttempts: null,
       maxDispatches: null,
+      continueFailed: true,
       refreshWorkflow: options.refreshWorkflow === true,
       reply,
       ...outputFlags(options),
@@ -578,8 +575,8 @@ function continueSession(session: string, options: OptionValues): number | Promi
     action: "continue",
     sessionId: session,
     priorSessionId: optionalText(options.prior),
-    maxAttempts: attemptsOf(options),
     maxDispatches: ceiling,
+    continueFailed: true,
     refreshWorkflow: options.refreshWorkflow === true,
     reply,
     ...outputFlags(options),
@@ -627,7 +624,6 @@ function addDispatchOptions(command: Command, onceDescription: string): void {
     .option("--once", onceDescription)
     .option("--stage <stage>", "Dispatch this ready stage once. It does not have to be the first ready stage.")
     .option("--prior <session>", PRIOR_HELP)
-    .option("--attempts <count>", "Failed executions allowed for one stage. Default: 3.")
     .option(
       "--max-dispatches <count>",
       `Stage dispatches allowed in this command. Default: ${DEFAULT_MAX_DISPATCHES}. Pass --unlimited-dispatches to remove the ceiling.`,
@@ -711,10 +707,6 @@ async function runAgent(options: OptionValues, sessionId: string | null): Promis
 function rejectOnce(options: OptionValues): boolean {
   if (options.once !== true && options.stage === undefined) return false;
   const flag = options.once === true ? "--once" : "--stage";
-  if (options.attempts !== undefined) {
-    printError(`${flag} cannot be combined with --attempts.`);
-    return true;
-  }
   if (options.maxDispatches !== undefined) {
     printError(`${flag} cannot be combined with --max-dispatches.`);
     return true;
@@ -736,12 +728,6 @@ function dispatchCeiling(options: OptionValues): number | null | "error" {
   if (unlimited) return null;
   if (maxDispatches === null) return DEFAULT_MAX_DISPATCHES;
   return integerFlag(maxDispatches, "--max-dispatches");
-}
-
-function attemptsOf(options: OptionValues): number {
-  const raw = optionalText(options.attempts);
-  if (raw === null) return 3;
-  return integerFlag(raw, "--attempts");
 }
 
 function integerFlag(raw: string, flag: string): number {

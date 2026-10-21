@@ -4,6 +4,7 @@ import path from "node:path";
 import {
   defaultAdapters,
   type AgentAdapter,
+  type FailureClassification,
   type NewSession,
   type UsageCapture,
 } from "./adapter.js";
@@ -38,6 +39,11 @@ export interface RunResult {
   session_status: string;
   response: string;
   failure_reason: string;
+  /** `quota`, `provider`, or empty when the turn was not a provider failure. */
+  failure_kind: string;
+  /** UTC ISO instant for a quota failure. Empty otherwise. */
+  reset_at: string;
+  provider: string;
 }
 
 export interface RunRequest {
@@ -335,6 +341,7 @@ export class AgentToolRunner {
     let responseText = pendingVerify?.responseText ?? "";
     let outcome: StageOutcome | null = pendingVerify?.outcome ?? null;
     let failureReason = "";
+    let classification: FailureClassification | null = null;
     const markCancelled = (error: unknown): never => {
       if (error instanceof CancellationRequested) {
         eventReporter.emit("provider.cancelled", "cancellation requested");
@@ -360,6 +367,11 @@ export class AgentToolRunner {
       if (reason !== null) fields.failure_reason = reason;
       return fields;
     };
+    const outcomeFields = (): Record<string, unknown> | null => {
+      if (classification?.kind !== "quota") return extraFields();
+      failureReason = "quota";
+      return { ...(extraFields() ?? {}), failure_reason: "quota", retry_at: classification.resetAt };
+    };
     while (true) {
       let invokeError: string | null = null;
       if (pendingVerify) {
@@ -372,7 +384,7 @@ export class AgentToolRunner {
         let argv: string[] = [];
         let usage: UsageCapture | null = null;
         try {
-          [responseText, parsedProviderId, invokeError, argv, usage] = await this.runTurn(
+          [responseText, parsedProviderId, invokeError, argv, usage, classification] = await this.runTurn(
             adapter,
             model,
             workspacePath,
@@ -435,14 +447,14 @@ export class AgentToolRunner {
           if (outcome?.status === "complete") store.saveTurnOutcome(context, turn, outcome);
         }
         if (!needsVerify || outcome === null) {
-          store.saveExecution(context, record, record.status, invokeError, outcome, false, extraFields());
+          store.saveExecution(context, record, record.status, invokeError, outcome, false, outcomeFields());
           break;
         }
       }
       if (invokeError !== null || outcome === null || outcome.status !== "complete" || verifyCommands.length === 0) {
         record.status = invokeError === null && outcome !== null ? "completed" : "failed";
         store.save(record, context);
-        store.saveExecution(context, record, record.status, invokeError, outcome, false, extraFields());
+        store.saveExecution(context, record, record.status, invokeError, outcome, false, outcomeFields());
         break;
       }
 
@@ -570,6 +582,9 @@ export class AgentToolRunner {
       session_status: typeof sessionStatus.status === "string" ? sessionStatus.status : "",
       response: responseText,
       failure_reason: failureReason,
+      failure_kind: classification?.kind ?? "",
+      reset_at: classification?.kind === "quota" && classification.resetAt ? classification.resetAt : "",
+      provider: eventReporter.provider,
     };
   }
 
@@ -604,7 +619,7 @@ export class AgentToolRunner {
     eventReporter: ProviderEventReporter,
     store: SessionStore,
     context: ExecutionContext,
-  ): Promise<[string, string | null, string | null, string[], UsageCapture | null]> {
+  ): Promise<[string, string | null, string | null, string[], UsageCapture | null, FailureClassification | null]> {
     const tmp = mkdtempSync(path.join(tmpdir(), "migent_"));
     try {
       const promptFile = path.join(tmp, "prompt.txt");
@@ -620,7 +635,7 @@ export class AgentToolRunner {
         lastMessageFile,
         options,
       });
-      const [stdout, invokeError] = await this.executor.run(
+      const [stdout, executorError, exitCode] = await this.executor.run(
         spec,
         workspace,
         (line) => {
@@ -642,6 +657,9 @@ export class AgentToolRunner {
         },
       );
       const [responseText, parsedProviderId] = adapter.parseResponse(stdout, lastMessageFile);
+      const classification = classifyFinishedProcess(adapter, stdout, exitCode, executorError);
+      let invokeError = executorError;
+      if (exitCode === 0 && classification !== null) invokeError = classification.message;
       let usage: UsageCapture | null = null;
       if (adapter.captureUsage) {
         try {
@@ -651,11 +669,23 @@ export class AgentToolRunner {
           usage = null;
         }
       }
-      return [responseText || invokeError || "", parsedProviderId, invokeError, spec.argv, usage];
+      return [responseText || invokeError || "", parsedProviderId, invokeError, spec.argv, usage, classification];
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
   }
+}
+
+function classifyFinishedProcess(
+  adapter: AgentAdapter,
+  stdout: string,
+  exitCode: number | null,
+  executorError: string | null,
+): FailureClassification | null {
+  if (exitCode === null) return { kind: "provider", message: executorError ?? "" };
+  if (adapter.classifyFailure) return adapter.classifyFailure(stdout, exitCode);
+  if (exitCode !== 0) return { kind: "provider", message: `CLI exited with code ${exitCode}.` };
+  return null;
 }
 
 function loadRunStage(store: SessionStore, sessionId: string, stageId: string): StageSpec | null {

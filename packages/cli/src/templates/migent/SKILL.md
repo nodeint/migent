@@ -60,7 +60,7 @@ Dispatch only one stage: add `--once`.
 ### Read the result
 
 stdout is a JSON object: `session_id`, `session_status`, `stop_reason`,
-`latest_decision`, `outputs`. Exit 1, 3, and 6 also give `latest_execution_id`
+`latest_decision`, `outputs`. Exit 1, 3, 6, and 8 also give `latest_execution_id`
 and `response_path`, relative to `.migent/sessions/<session-id>/`; read that
 file to see why it stopped. Exit 7 gives `latest_execution_id` and
 `verify_path` for a stage that ran `verify` with no role.
@@ -79,12 +79,13 @@ Read the exit code first, then `stop_reason`.
 | 0 | Completed (with `--once`: stage complete) | | Report outputs. |
 | 1 | Blocked (with `--once`: stage not complete) | `blocked` (`stage` with `--once`) | If `blocked`: read `response_path`, then resume with the user's answer (below), or plain `session continue` once the blocker is fixed in the workspace. If `stage`: `session continue` keeps going. |
 | 2 | Configuration error | | Run `migent doctor --json`, fix config. |
-| 3 | `--attempts` spent | `retry_exhausted` | Read `response_path`, fix the cause, `session continue` (`--attempts <n>` sets a higher total). |
+| 3 | A stage failed and the command did not wait | `stage_failed` | Read `response_path`, fix the cause, `session continue`. Continue runs the stage and does not sleep until an old `retry_at`. |
 | 4 | A route would exceed `max_revisions` | `revisions_exhausted` | Review why the stage keeps being revised, then `session continue` for another batch. |
 | 5 | `--max-dispatches` spent | `dispatch_limit` | `session continue` if more stages are appropriate. |
 | 6 | A stage's `verify` stayed red | `verify_exhausted` | Read `response_path`, fix the cause, `session continue`. |
 | 7 | A stage with no role failed `verify` | `verify_failed` | Read `verify_path`, fix the tree, `session continue`. That reruns the commands and does not open a provider. |
-| 130 | Cancelled | | Ask the user before resuming. |
+| 8 | `--once` or `--stage` hit a provider quota and did not wait | `quota` | Read `response_path`. `session continue` runs the stage and does not sleep until the recorded `retry_at`. | 
+| 130 | Cancelled, including a wait that was disarmed | | Ask the user before resuming. Continue does not sleep until an old `retry_at`. |
 
 A stopped session that is not `completed` is resumable. Do not call it done.
 

@@ -79,11 +79,11 @@ test("invalid stdout fails the execution", async () => {
     writeWorkspace(workspace, GROK_CONFIG, { solo: SOLO });
     const [code, objects, stderr] = await runMain(
       workspace,
-      ["session", "run", "--workflow", "solo", "--task", "Write", "--attempts", "1"],
+      ["session", "run", "--workflow", "solo", "--task", "Write"],
       "invalid",
     );
     expect(code, stderr).toBe(3);
-    expect(objects[0]?.stop_reason).toBe("retry_exhausted");
+    expect(objects[0]?.stop_reason).toBe("stage_failed");
     expect(executionStatuses(workspace)).toEqual(["failed"]);
   } finally {
     removeWorkspace(workspace);
@@ -151,7 +151,7 @@ test("continue redispatches a blocked review", async () => {
   }
 }, 30_000);
 
-test("a bad response is retried and the workflow completes", async () => {
+test("a bad response fails the stage", async () => {
   const workspace = tempWorkspace();
   try {
     writeWorkspace(workspace, GROK_CONFIG, { plan: PLAN_REVIEW });
@@ -167,17 +167,14 @@ test("a bad response is retried and the workflow completes", async () => {
       "plan",
       "--task",
       "Write a plan",
-      "--attempts",
-      "2",
     ]);
-    expect(code, stderr).toBe(0);
+    expect(code, stderr).toBe(3);
     const result = objects[0] ?? {};
-    expect(result.stop_reason).toBe("completed");
+    expect(result.stop_reason).toBe("stage_failed");
     const records = executionRecords(workspace, String(result.session_id));
-    expect(records.map((record) => record.status)).toEqual(["failed", "completed", "completed"]);
+    expect(records.map((record) => record.status)).toEqual(["failed"]);
     expect(records[0]?.stage_id).toBe("plan");
-    expect(records[1]?.stage_id).toBe("plan");
-    expect(providerInvocations(workspace)).toHaveLength(3);
+    expect(providerInvocations(workspace)).toHaveLength(1);
   } finally {
     removeWorkspace(workspace);
   }
@@ -188,9 +185,9 @@ test("provider exit exhausts the attempt", async () => {
   try {
     writeWorkspace(workspace, GROK_CONFIG, { solo: SOLO });
     installScript(workspace, [{ exit: 1 }]);
-    const [code, objects, stderr] = await runMain(workspace, ["session", "run", "--workflow", "solo", "--task", "Write", "--attempts", "1"]);
+    const [code, objects, stderr] = await runMain(workspace, ["session", "run", "--workflow", "solo", "--task", "Write"]);
     expect(code, stderr).toBe(3);
-    expect(objects[0]?.stop_reason).toBe("retry_exhausted");
+    expect(objects[0]?.stop_reason).toBe("stage_failed");
     expect(objects[0]?.session_status).toBe("active");
     const records = executionRecords(workspace, String(objects[0]?.session_id));
     expect(records[0]?.status).toBe("failed");
@@ -205,9 +202,9 @@ test("provider error event fails the stage", async () => {
   try {
     writeWorkspace(workspace, GROK_CONFIG, { solo: SOLO });
     installScript(workspace, [{ events: "error", message: "quota exceeded" }]);
-    const [code, objects, stderr] = await runMain(workspace, ["session", "run", "--workflow", "solo", "--task", "Write", "--attempts", "1"]);
+    const [code, objects, stderr] = await runMain(workspace, ["session", "run", "--workflow", "solo", "--task", "Write"]);
     expect(code, stderr).toBe(3);
-    expect(objects[0]?.stop_reason).toBe("retry_exhausted");
+    expect(objects[0]?.stop_reason).toBe("stage_failed");
     const records = executionRecords(workspace, String(objects[0]?.session_id));
     expect(records[0]?.status).toBe("failed");
     expect(providerInvocations(workspace)).toHaveLength(1);
@@ -221,7 +218,7 @@ test("complete without the artifact fails the stage", async () => {
   try {
     writeWorkspace(workspace, GROK_CONFIG, { solo: SOLO });
     installScript(workspace, [{ text: COMPLETE, skip_artifact: true }]);
-    const [code, objects, stderr] = await runMain(workspace, ["session", "run", "--workflow", "solo", "--task", "Write", "--attempts", "1"]);
+    const [code, objects, stderr] = await runMain(workspace, ["session", "run", "--workflow", "solo", "--task", "Write"]);
     expect(code, stderr).toBe(3);
     const records = executionRecords(workspace, String(objects[0]?.session_id));
     expect(records[0]?.status).toBe("failed");

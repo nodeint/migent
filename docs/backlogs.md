@@ -201,7 +201,7 @@ deny_commands:
 **Problem.**
 
 - `DEFAULT_TIMEOUT_SEC` is `null` (`packages/kernel/src/command-executor.ts:10`).
-- The only brakes are `--max-dispatches`, 20 by default, and `--attempts`, 3 by default.
+- The only brake is `--max-dispatches`, 20 by default. A failed stage stays stopped until `session continue`.
 - Neither current workflow sets `max_revisions`.
 
 **Why it is needed.**

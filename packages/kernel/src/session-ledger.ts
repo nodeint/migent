@@ -95,8 +95,7 @@ export function sessionStatusFromExecutions(
           revisionBaselinesFrom(previousStatus),
         ).filter((stageId) => {
           const row = latest.find((execution) => execution.stageId === stageId);
-          // Continue reopens a cancelled execution. A failed latest is not proof the pool can start it:
-          // the attempt cap may already be spent, and the default cap of 3 would hide that.
+          // A failed stage stays stopped until continue writes `from: failed` for that execution.
           return row === undefined || (row.status !== "cancelled" && row.status !== "failed");
         });
         if (startable.length > 0) return "active";

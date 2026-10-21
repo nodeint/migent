@@ -161,13 +161,15 @@ test("plan implement walk", () => {
   }
 });
 
-test("failed latest retries that stage", () => {
+test("failed latest stays stopped until continue marks that execution", () => {
+  const failed = [snapshot("plan", 1), snapshot("review-plan", 2, { status: "failed", outcomeStatus: null })];
+  const workflow = workflowFile("plan");
+  expectResult(nextStage(workflow, failed, "active"), new Stop("stage_failed"));
+  const executionId = failed[1]!.executionId;
   expectResult(
-    nextStage(
-      workflowFile("plan"),
-      [snapshot("plan", 1), snapshot("review-plan", 2, { status: "failed", outcomeStatus: null })],
-      "active",
-    ),
+    nextStage(workflow, failed, "active", [
+      { event: "session.active", executionId, data: { from: "failed" } },
+    ]),
     new NextStage("review-plan"),
   );
 });
@@ -242,8 +244,15 @@ test("readyStages omits a running stage and keeps declaration order", () => {
   expect(readyStages(workflow, blocked, "active")).toEqual(["b"]);
   const executionId = blocked[0]!.executionId;
   const resumed = [{ event: "session.active", executionId, data: { from: "blocked" } }];
-  expect(readyStages(workflow, blocked, "active", null, 3, resumed)).toEqual(["a", "b"]);
-  expect(readyStages(workflow, blocked, "blocked", null, 3, resumed)).toEqual(["b"]);
+  expect(readyStages(workflow, blocked, "active", null, resumed)).toEqual(["a", "b"]);
+  expect(readyStages(workflow, blocked, "blocked", null, resumed)).toEqual(["b"]);
+  const failed = [snapshot("a", 1, { status: "failed", outcomeStatus: null })];
+  expect(readyStages(workflow, failed, "active")).toEqual(["b"]);
+  expect(
+    readyStages(workflow, failed, "active", null, [
+      { event: "session.active", executionId: failed[0]!.executionId, data: { from: "failed" } },
+    ]),
+  ).toEqual(["a", "b"]);
 });
 
 test("two roots are ambiguous", () => {
@@ -608,8 +617,8 @@ test("verify_failed keeps dependents stopped and is schedulable once", () => {
     failureReason: "verify_failed",
   };
   expect(readyStages(workflow, [failed], "active")).toEqual([]);
-  expect(schedulableStageIds(workflow, [failed], "active", null, 3, null, new Set())).toEqual(["prepare"]);
-  expect(schedulableStageIds(workflow, [failed], "active", null, 3, null, new Set(), new Set(["prepare"]))).toEqual([]);
+  expect(schedulableStageIds(workflow, [failed], "active", null, null, new Set())).toEqual(["prepare"]);
+  expect(schedulableStageIds(workflow, [failed], "active", null, null, new Set(), new Set(["prepare"]))).toEqual([]);
   expect(version2IdleReason(workflow, [failed], "active")).toBe("verify_failed");
   expect(failedStageCount([failed], "prepare")).toBe(0);
   expect(failedStageCount([failed], "implement")).toBe(0);

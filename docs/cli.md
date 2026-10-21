@@ -39,7 +39,7 @@ The id comes from the file's `id` field, or from the file name when `id` is omit
 `session run` uses the workflow engine when `--workflow` is present. It runs
 one role when `--workflow` is omitted. Passing `--workflow` together with
 `--role`, a prompt, `--provider`, `--model`, `--option`, or `--json` is an error.
-Passing `--once`, `--prior`, `--attempts`, `--max-dispatches`,
+Passing `--once`, `--prior`, `--max-dispatches`,
 `--unlimited-dispatches`, `--progress`, `--verbose`, or `--refresh-workflow`
 without `--workflow` is an error.
 
@@ -59,22 +59,31 @@ On a role run, `--task` is only a label for a new session and cannot be
 combined with `--session`. Pass one of `--prompt`, `--file`, or `--stdin`.
 `--provider` and `--model` are passed together. `--json` prints one result
 object. Without `--json` the result is a table. Exit 0 means the outcome is
-complete. Exit 1 means it is not.
+complete. Exit 1 means it is not. Exit 130 means the run was cancelled.
+Exit 6 is only for a cancelled role session that reopened more than one
+execution and one of them exhausted verify. A single role result uses 0, 1,
+and 130.
 
-Workflow `session run` and `session continue` default to three failed execution
-attempts per stage and 20 stage dispatches per command. Configure those guards
-with:
+A failed stage stays stopped. `session continue` runs that stage again and
+does not sleep until an old `retry_at`. Exit 3 is `stage_failed`: the command
+stopped on that failure and did not wait. Exit 8 is `quota` for `--once` and
+`--stage`: the provider named a reset time and the command did not wait.
+Cancelling during a wait is exit 130. That disarms the timer. The quota
+execution stays `failed`, and the session stays `active` when nothing else
+was in flight. The next `session continue` runs the stage and does not sleep
+until the recorded `retry_at`.
+
+Workflow `session run` and `session continue` default to 20 stage dispatches
+per command. Configure that guard with:
 
 ```bash
-migent session continue <session-id> --attempts 5
 migent session continue <session-id> --max-dispatches 50
 migent session continue <session-id> --unlimited-dispatches
 ```
 
-`--attempts N` is the total failed-execution allowance for one stage, not an
-additional retry count. `--once` dispatches only once and has no dispatch
-ceiling. Do not combine `--once` with `--attempts`, `--max-dispatches`, or
-`--unlimited-dispatches`. Revision limits are defined by `max_revisions` in
+`--once` dispatches only once and has no dispatch ceiling. Do not combine
+`--once` with `--max-dispatches` or `--unlimited-dispatches`. Revision limits
+are defined by `max_revisions` in
 the workflow. `session continue` resets the session's revision counts before
 dispatching. `session continue --once` does not. On a blocked session, both
 forms dispatch that stage again. The new prompt includes the blocker and the

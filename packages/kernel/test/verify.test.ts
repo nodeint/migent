@@ -139,14 +139,14 @@ test("continue redispatches a blocked stage and names the blocker", async () => 
   const { workspace, sessionId } = setup(workflowText(`node -e "process.exit(0)"`));
   const adapter = new ScriptedAdapter([BLOCKED, OK, OK], [null, "# notes\n", null]);
   const runner = new AgentToolRunner({ fake: adapter }, 10);
-  const first = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId, maxAttempts: 3 }, runner);
+  const first = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId }, runner);
   expect(first.stopReason).toBe("blocked");
   expect(first.code).toBe(1);
   expect(new SessionStore(workspace).executionSnapshots(sessionId)).toHaveLength(1);
 
   const second = await executeNamedWorkflow(
     workspace,
-    { workflowId: "wf", sessionId, maxAttempts: 3, resetRevisions: true },
+    { workflowId: "wf", sessionId, resetRevisions: true },
     runner,
   );
   expect(second.code).toBe(0);
@@ -173,13 +173,13 @@ test("continue with a reply sends only that reply to the blocked stage", async (
   const { workspace, sessionId } = setup(workflowText(`node -e "process.exit(0)"`));
   const adapter = new ScriptedAdapter([BLOCKED, OK, OK], [null, "# notes\n", null]);
   const runner = new AgentToolRunner({ fake: adapter }, 10);
-  const first = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId, maxAttempts: 3 }, runner);
+  const first = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId }, runner);
   expect(first.stopReason).toBe("blocked");
 
   const reply = "use docs/api.yaml";
   const second = await executeNamedWorkflow(
     workspace,
-    { workflowId: "wf", sessionId, maxAttempts: 3, resetRevisions: true, reply },
+    { workflowId: "wf", sessionId, resetRevisions: true, reply },
     runner,
   );
   expect(second.code).toBe(0);
@@ -444,11 +444,11 @@ test("a reply counts toward the dispatch ceiling", async () => {
   const { workspace, sessionId } = setup(workflowText(`node -e "process.exit(0)"`));
   const adapter = new ScriptedAdapter([BLOCKED, OK, OK], [null, "# notes\n", null]);
   const runner = new AgentToolRunner({ fake: adapter }, 10);
-  const first = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId, maxAttempts: 3 }, runner);
+  const first = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId }, runner);
   expect(first.stopReason).toBe("blocked");
   const second = await executeNamedWorkflow(
     workspace,
-    { workflowId: "wf", sessionId, maxAttempts: 3, maxDispatches: 1, reply: "use docs/api.yaml" },
+    { workflowId: "wf", sessionId, maxDispatches: 1, reply: "use docs/api.yaml" },
     runner,
   );
   expect(second.stopReason).toBe("dispatch_limit");
@@ -462,7 +462,7 @@ test("continue once redispatches only the blocked stage", async () => {
   const { workspace, sessionId } = setup(workflowText(`node -e "process.exit(0)"`));
   const adapter = new ScriptedAdapter([BLOCKED, OK], [null, "# notes\n"]);
   const runner = new AgentToolRunner({ fake: adapter }, 10);
-  const first = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId, maxAttempts: 3 }, runner);
+  const first = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId }, runner);
   expect(first.stopReason).toBe("blocked");
 
   const second = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId, once: true }, runner);
@@ -480,10 +480,10 @@ test("a blocked retry stops again without dispatching the next stage", async () 
   const { workspace, sessionId } = setup(workflowText(`node -e "process.exit(0)"`));
   const adapter = new ScriptedAdapter([BLOCKED, BLOCKED], [null, null]);
   const runner = new AgentToolRunner({ fake: adapter }, 10);
-  const first = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId, maxAttempts: 3 }, runner);
+  const first = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId }, runner);
   const second = await executeNamedWorkflow(
     workspace,
-    { workflowId: "wf", sessionId, maxAttempts: 3, resetRevisions: true },
+    { workflowId: "wf", sessionId, resetRevisions: true },
     runner,
   );
   expect(second.stopReason).toBe("blocked");
@@ -499,7 +499,7 @@ test("continue redispatches a blocked schema 2 session", async () => {
   const { workspace, sessionId } = setup(workflowText(`node -e "process.exit(0)"`));
   const adapter = new ScriptedAdapter([BLOCKED, OK], [null, "# notes\n"]);
   const runner = new AgentToolRunner({ fake: adapter }, 10);
-  const first = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId, maxAttempts: 3 }, runner);
+  const first = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId }, runner);
   expect(first.stopReason).toBe("blocked");
   const second = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId, once: true }, runner);
   expect(second.status).toBe("active");
@@ -513,7 +513,7 @@ test("exhausted verify stops with exit 6 and continue resumes without --attempts
   const runner = new AgentToolRunner({ fake: adapter }, 10);
   const first = await executeNamedWorkflow(
     workspace,
-    { workflowId: "wf", sessionId, maxAttempts: 1 },
+    { workflowId: "wf", sessionId },
     runner,
   );
   expect(first.stopReason).toBe("verify_exhausted");
@@ -527,7 +527,7 @@ test("exhausted verify stops with exit 6 and continue resumes without --attempts
 
   const second = await executeNamedWorkflow(
     workspace,
-    { workflowId: "wf", sessionId, maxAttempts: 1, resetRevisions: true },
+    { workflowId: "wf", sessionId, resetRevisions: true },
     runner,
   );
   expect(second.stopReason).toBe("verify_exhausted");
@@ -872,9 +872,9 @@ test("continue carries the artifact and completes once verify passes", async () 
   const { workspace, sessionId } = setup(workflowText(command, "    max_verify: 2\n"));
   const adapter = new ScriptedAdapter([OK, OK, OK, OK], ["# kept\n", null, null, null]);
   const runner = new AgentToolRunner({ fake: adapter }, 10);
-  const first = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId, maxAttempts: 1 }, runner);
+  const first = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId }, runner);
   expect(first.stopReason).toBe("verify_exhausted");
-  await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId, maxAttempts: 1, resetRevisions: true }, runner);
+  await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId, resetRevisions: true }, runner);
   const store = new SessionStore(workspace);
   const [, resumed] = store.executionSnapshots(sessionId);
   expect(resumed?.status).toBe("completed");
@@ -910,19 +910,17 @@ test("cancellation during a verify command marks the execution cancelled and kil
   }
 }, 30_000);
 
-test("an infra failure counts toward --attempts and is not verify_exhausted", async () => {
+test("an infra failure stops the stage and is not verify_exhausted", async () => {
   const { workspace, sessionId } = setup(workflowText("exit 0"));
   const adapter = new ScriptedAdapter([OK, OK, OK], ["# n\n", "# n\n", "# n\n"]);
   const runner = new AgentToolRunner({ fake: adapter }, 10, new VerifyRunner(1, "/nonexistent/sh"));
-  const result = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId, maxAttempts: 2 }, runner);
+  const result = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId }, runner);
+  expect(result.stopReason).toBe("stage_failed");
   expect(result.stopReason).not.toBe("verify_exhausted");
-  expect(adapter.calls).toHaveLength(2);
-  expect(adapter.calls[1]?.agentId).toBe("native-session-1");
+  expect(adapter.calls).toHaveLength(1);
   const snapshots = new SessionStore(workspace).executionSnapshots(sessionId);
+  expect(snapshots).toHaveLength(1);
   expect(snapshots.every((item) => item.failureReason !== "verify_exhausted")).toBe(true);
-  expect(execution(workspace, sessionId, snapshots[1]!.executionId).resumes_execution_id).toBe(
-    snapshots[0]?.executionId,
-  );
 });
 
 test("a provider failure retries the same stage agent", async () => {
@@ -948,12 +946,20 @@ test("a provider failure retries the same stage agent", async () => {
     [null, "# n\n", null],
   );
   const runner = new AgentToolRunner({ fake: adapter }, 10);
-  const result = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId, maxAttempts: 2 }, runner);
-  expect(result.stopReason).toBe("completed");
+  const result = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId }, runner);
+  expect(result.stopReason).toBe("stage_failed");
+  expect(adapter.calls).toHaveLength(1);
   expect(adapter.calls[0]?.agentId).toBeNull();
+  const failed = new SessionStore(workspace).executionSnapshots(sessionId);
+  expect(failed[0]?.status).toBe("failed");
+  const continued = await executeNamedWorkflow(
+    workspace,
+    { workflowId: "wf", sessionId, continueFailed: true },
+    runner,
+  );
+  expect(continued.stopReason).toBe("completed");
   expect(adapter.calls[1]?.agentId).toBe("native-session-1");
   const snapshots = new SessionStore(workspace).executionSnapshots(sessionId);
-  expect(snapshots[0]?.status).toBe("failed");
   expect(execution(workspace, sessionId, snapshots[1]!.executionId).resumes_execution_id).toBe(
     snapshots[0]?.executionId,
   );

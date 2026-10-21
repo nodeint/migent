@@ -261,6 +261,51 @@ export class ClaudeAdapter implements AgentAdapter {
     return [stdout.trim(), null];
   }
 
+  classifyFailure(stdout: string, exitCode: number) {
+    let quota: { resetAt: string | null; window: string | null } | null = null;
+    let human: string | null = null;
+    let providerMessage: string | null = null;
+    let sawError = false;
+    for (const rawLine of stdout.split(/\r\n|\n|\r/)) {
+      const payload = parseJsonObject(rawLine);
+      if (payload === null) continue;
+      if (payload.type === "rate_limit_event" && isRecord(payload.rate_limit_info)) {
+        const info = payload.rate_limit_info;
+        if (info.status === "rejected") {
+          const window = typeof info.rateLimitType === "string" ? info.rateLimitType : null;
+          const resetsAt = info.resetsAt;
+          quota = {
+            resetAt:
+              typeof resetsAt === "number" && Number.isFinite(resetsAt)
+                ? new Date(resetsAt * 1000).toISOString()
+                : null,
+            window,
+          };
+        }
+      }
+      if (payload.type === "assistant" && payload.parent_tool_use_id == null) {
+        const text = assistantText(payload).trim();
+        if (text) human = text;
+      }
+      if (payload.type === "result" && payload.is_error === true) {
+        sawError = true;
+        providerMessage = resultError(payload);
+      }
+    }
+    if (quota !== null) {
+      return {
+        kind: "quota" as const,
+        message: human || providerMessage || "quota",
+        resetAt: quota.resetAt,
+        window: quota.window,
+      };
+    }
+    if (exitCode !== 0 || sawError) {
+      return { kind: "provider" as const, message: providerMessage || `CLI exited with code ${exitCode}.` };
+    }
+    return null;
+  }
+
   parseProgressEvent(line: string): Record<string, unknown> | null {
     const payload = parseJsonObject(line);
     if (payload === null) return null;

@@ -15,8 +15,8 @@ export interface ExecuteWorkflowOptions {
   task?: string | null;
   sessionId?: string | null;
   priorSessionId?: string | null;
-  maxAttempts?: number | null;
   maxDispatches?: number | null;
+  continueFailed?: boolean;
   stageId?: string | null;
   runner?: AgentToolRunner | null;
   verbose?: boolean;
@@ -32,7 +32,6 @@ export async function executeWorkflow(workspace: string, options: ExecuteWorkflo
   const startPrepared = options.startPrepared === true;
   const sessionId = text(options.sessionId);
   const creating = !startPrepared && (options.action === "start" || (once && sessionId === null));
-  const maxAttempts = options.maxAttempts === undefined ? 3 : options.maxAttempts;
   const maxDispatches = options.maxDispatches === undefined ? DEFAULT_MAX_DISPATCHES : options.maxDispatches;
   const runner = options.runner ?? cliHooks.runner ?? new AgentToolRunner(adapterMap());
   runner.itemProgress = options.itemProgress === true;
@@ -44,8 +43,8 @@ export async function executeWorkflow(workspace: string, options: ExecuteWorkflo
       sessionId: creating ? null : sessionId,
       priorSessionId: options.priorSessionId ?? null,
       startPrepared,
-      maxAttempts: once ? null : maxAttempts,
       maxDispatches: once ? null : maxDispatches,
+      continueFailed: options.continueFailed === true,
       stageId: options.stageId ?? null,
       once,
       resetRevisions: options.action === "continue",
@@ -56,7 +55,8 @@ export async function executeWorkflow(workspace: string, options: ExecuteWorkflo
   );
   printResult(result, options.verbose === true);
   if (
-    result.stopReason === "retry_exhausted" ||
+    result.stopReason === "stage_failed" ||
+    result.stopReason === "quota" ||
     result.stopReason === "revisions_exhausted" ||
     result.stopReason === "dispatch_limit" ||
     result.stopReason === "verify_exhausted" ||
@@ -67,7 +67,7 @@ export async function executeWorkflow(workspace: string, options: ExecuteWorkflo
   return result.code;
 }
 
-const INSPECT_EXIT_CODES = new Set([1, 3, 6]);
+const INSPECT_EXIT_CODES = new Set([1, 3, 6, 8]);
 
 function printResult(result: ExecuteResult, verbose: boolean): void {
   const payload: Record<string, unknown> = {

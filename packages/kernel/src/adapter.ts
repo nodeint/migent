@@ -41,6 +41,22 @@ export interface TurnUsage {
   cost_usd: number | null;
 }
 
+export interface QuotaClassification {
+  kind: "quota";
+  message: string;
+  /** UTC ISO instant, or null when the provider did not name one. */
+  resetAt: string | null;
+  window: string | null;
+}
+
+export interface ProviderClassification {
+  kind: "provider";
+  message: string;
+}
+
+/** `null` means this finished process is not a provider failure. */
+export type FailureClassification = QuotaClassification | ProviderClassification;
+
 /** Provider CLI surface used by the workflow runner. Not the adapters package. */
 export interface AgentAdapter extends ProviderAdapter {
   providerOptions?(): readonly ProviderOption[];
@@ -48,6 +64,8 @@ export interface AgentAdapter extends ProviderAdapter {
   createNewSession?(): NewSession;
   buildCommand(input: BuildCommandInput): CommandSpec;
   parseResponse(stdout: string, lastMessageFile: string): [string, string | null];
+  /** Classify one finished process. Absent means the runner uses its fallback. */
+  classifyFailure?(stdout: string, exitCode: number): FailureClassification | null;
   parseProgressEvent?(line: string): Record<string, unknown> | null;
   captureUsage?(stdout: string): UsageCapture | null;
   normalizeUsage?(current: UsageCapture, previous: UsageCapture | null): TurnUsage;

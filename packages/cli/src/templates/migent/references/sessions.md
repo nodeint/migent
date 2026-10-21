@@ -37,9 +37,14 @@ Accepted by workflow `session run` and by `session continue`.
 
 | Flag | Meaning |
 | --- | --- |
-| `--attempts <n>` | Failed executions allowed for one stage (default 3). On `session continue` it sets a new total, not extra retries. |
 | `--max-dispatches <n>` | Stage dispatches allowed in this command (default 20). |
 | `--unlimited-dispatches` | Removes the dispatch ceiling. Use only if the user agrees. |
+
+A failed stage stays stopped until `session continue`. That command runs the
+stage and does not sleep until an old `retry_at`. Exit 3 is `stage_failed`.
+Exit 8 is `quota` for `--once` and `--stage`, which do not wait. Exit 130
+during a wait disarms the timer. A single role result uses 0, 1, and 130.
+Exit 6 remains only the path that reopened more than one role execution.
 
 ## `--once` and revision counts
 

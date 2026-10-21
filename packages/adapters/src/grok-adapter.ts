@@ -338,6 +338,12 @@ export class GrokAdapter implements AgentAdapter {
     return [stdout.trim(), null];
   }
 
+  classifyFailure(stdout: string, exitCode: number) {
+    if (exitCode === 0) return null;
+    const [text] = this.parseResponse(stdout, "");
+    return { kind: "provider" as const, message: text.trim() || `CLI exited with code ${exitCode}.` };
+  }
+
   parseProgressEvent(line: string): Record<string, unknown> | null {
     const payload = parseJsonObject(line);
     if (payload === null) return null;

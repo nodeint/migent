@@ -7,6 +7,7 @@ const CONTROL_PLANE_WARNING_MARKERS = ["failed to refresh available models"];
 
 const STDERR_EVENTS = new Set([
   "provider.turn_failed",
+  "provider.quota",
   "provider.error",
   "provider.warning",
   "provider.cancelled",

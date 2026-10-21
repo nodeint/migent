@@ -121,8 +121,8 @@ decide the result.
   their prompt. Do not name a stage artifact `verify.md`.
 - After `max_verify` red runs the execution fails with
   `failure_reason: verify_exhausted`. The loop stops with stop reason
-  `verify_exhausted` and exit code 6. The session stays active and
-  `--attempts` is not consumed.
+  `verify_exhausted` and exit code 6. The session stays active. A verify
+  failure does not arm a provider wait.
 - `migent session continue <session-id>` resumes the same provider conversation with
   the last report and a fresh `max_verify` budget. It keeps the provider, model,
   and options of the exhausted execution. If config changed them, the resume is
@@ -185,11 +185,13 @@ whenever any stage can start. `session continue --once` does not.
 Migent does not serialize stages that edit the same files. That is the
 workflow author's concern.
 
-A branch stops when its latest execution is blocked, or when verify, retries,
-or revisions are exhausted. Other branches keep starting. The run ends when
-nothing is running and nothing can start. The exit code and `stop_reason`
-take the first reason in this order: `blocked`, `verify_failed`, `verify_exhausted`,
-`retry_exhausted`, `revisions_exhausted`. A route to `complete` ends that
+A branch stops when its latest execution is blocked, or when verify or
+revisions are exhausted, or when a stage fails and continue has not marked
+that execution. Other branches keep starting. A provider quota with a reset
+time parks that provider until the instant, and other providers may start.
+The run ends when nothing is running and nothing can start. The exit code and
+`stop_reason` take the first reason in this order: `blocked`, `verify_failed`,
+`verify_exhausted`, `stage_failed`, `revisions_exhausted`. A route to `complete` ends that
 branch only. A stage with no dependents and no routes ends its branch.
 Version 1 workflows stay one stage at a time and still complete on the
 completion stage.
