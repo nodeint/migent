@@ -39,7 +39,7 @@ test("plan review publishes the plan", async () => {
     expect(stages.map((item) => item.agent_id)).toEqual([GROK_SESSION, GROK_SESSION]);
     expect(result.stop_reason).toBe("completed");
     expect(result.session_status).toBe("completed");
-    const published = path.join(workspace, ".migent", "sessions", String(result.session_id), "outputs", "plan");
+    const published = path.join(workspace, ".migent", "sessions", String(result.session_id), "outputs", "plan.md");
     expect(readFileSync(published, "utf8").trim().length).toBeGreaterThan(0);
   } finally {
     removeWorkspace(workspace);
@@ -105,7 +105,7 @@ test("revise publishes the later plan", async () => {
     const result = objects[0] ?? {};
     expect(asRecords(result.stages).map((item) => item.outcome_decision)).toEqual(["", "revise", "", "approved"]);
     expect(result.stop_reason).toBe("completed");
-    const published = path.join(workspace, ".migent", "sessions", String(result.session_id), "outputs", "plan");
+    const published = path.join(workspace, ".migent", "sessions", String(result.session_id), "outputs", "plan.md");
     expect(readFileSync(published, "utf8")).toBe("# v2\n");
     const invocations = providerInvocations(workspace).length;
     const [againCode, again, againStderr] = await runMain(workspace, ["session", "continue", String(result.session_id), "--verbose"]);
@@ -253,7 +253,7 @@ test("continue finishes the stage left by stage", async () => {
     expect(finishedCode, finishedStderr).toBe(0);
     expect(finished[0]?.session_id).toBe(started.session_id);
     expect(finished[0]?.stop_reason).toBe("completed");
-    const published = path.join(workspace, ".migent", "sessions", String(started.session_id), "outputs", "plan");
+    const published = path.join(workspace, ".migent", "sessions", String(started.session_id), "outputs", "plan.md");
     expect(readFileSync(published, "utf8")).toBe("# plan\n");
   } finally {
     removeWorkspace(workspace);
@@ -314,7 +314,7 @@ test("grok resume from passes the agent id", async () => {
     expect(records[1]?.resumes_execution_id).toBe(records[0]?.execution_id);
     expect(records[1]?.agent_id).toBe(GROK_SESSION);
     const sessionDir = path.join(workspace, ".migent", "sessions", sessionId);
-    expect(readFileSync(path.join(sessionDir, "outputs", "draft"), "utf8")).toBe("# draft\n");
+    expect(readFileSync(path.join(sessionDir, "outputs", "draft.md"), "utf8")).toBe("# draft\n");
     const followArtifact = path.join(
       sessionDir,
       "executions",
@@ -583,12 +583,15 @@ test("the session completes only after both reviews approve and publishes once",
     expect(code, stderr).toBe(0);
     const sessionId = String(objects[0]?.session_id);
     expect(objects[0]?.stop_reason).toBe("completed");
-    expect(objects[0]?.outputs).toMatchObject({ implementation: { path: "outputs/implementation" } });
+    expect(objects[0]?.outputs).toMatchObject({ implementation: { path: "outputs/implementation.md" } });
     expect(eventCount(workspace, sessionId, "outputs.published")).toBe(1);
     expect(eventCount(workspace, sessionId, "session.completed")).toBe(1);
-    expect(readFileSync(path.join(workspace, ".migent", "sessions", sessionId, "outputs", "implementation"), "utf8")).toBe(
+    expect(readFileSync(path.join(workspace, ".migent", "sessions", sessionId, "outputs", "implementation.md"), "utf8")).toBe(
       "# implementation\n",
     );
+    const artifactLines = stderr.split("\n").filter((line) => line.startsWith("[migent] artifact: "));
+    expect(artifactLines).toEqual([expect.stringMatching(/\[migent\] artifact: \/.*\/outputs\/implementation\.md$/)]);
+    expect(readFileSync(artifactLines[0]?.slice("[migent] artifact: ".length) ?? "", "utf8")).toBe("# implementation\n");
   } finally {
     removeWorkspace(workspace);
   }
@@ -619,7 +622,7 @@ test("a blocked docs branch lets the test branch finish and continue runs only d
     expect(objects[0]?.stop_reason).toBe("blocked");
     expect(objects[0]?.outputs).toEqual({});
     expect(sessionStatus(workspace, sessionId).status).toBe("blocked");
-    expect(existsSync(path.join(workspace, ".migent", "sessions", sessionId, "outputs", "implementation"))).toBe(false);
+    expect(existsSync(path.join(workspace, ".migent", "sessions", sessionId, "outputs", "implementation.md"))).toBe(false);
     const before = executionRecords(workspace, sessionId);
     expect(
       before.some((record) => {

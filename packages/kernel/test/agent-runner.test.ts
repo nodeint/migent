@@ -335,7 +335,7 @@ test("approved completion publishes the reviewed artifact and the session status
   });
   const sessionDirectory = path.join(workspace, ".migent", "sessions", sessionId);
   const status = readJson(path.join(sessionDirectory, "status.json"));
-  expect(readFileSync(path.join(sessionDirectory, "outputs", "plan"), "utf8")).toBe("# Plan v1\n");
+  expect(readFileSync(path.join(sessionDirectory, "outputs", "plan.md"), "utf8")).toBe("# Plan v1\n");
   expect(status.status).toBe("completed");
   expect(review.session_status).toBe("completed");
 });

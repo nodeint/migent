@@ -140,6 +140,8 @@ export {
   addStageOutcomeContract,
   flattenHistory,
   isUnicodeAlnum,
+  formatClock,
+  formatDuration,
   logProgress,
   safeComponent,
 } from "./runtime.js";

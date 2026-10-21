@@ -853,7 +853,7 @@ async function runOutputs(verify: string) {
   const runner = new AgentToolRunner({ fake: adapter }, 10);
   await runStage(runner, workspace, sessionId, { stageId: "plan" });
   const result = await runStage(runner, workspace, sessionId);
-  const published = path.join(workspace, ".migent", "sessions", sessionId, "outputs", "plan");
+  const published = path.join(workspace, ".migent", "sessions", sessionId, "outputs", "plan.md");
   return { result, published };
 }
 

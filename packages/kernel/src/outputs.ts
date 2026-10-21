@@ -193,10 +193,11 @@ export function publishOutputFiles(
   const recorded: Record<string, PublishedOutput> = {};
   for (const [name, [sourcePath, sourceExecutionId]] of Object.entries(sources)) {
     if (!nonemptyArtifact(sourcePath)) continue;
-    const destination = path.join(sessionDirectory, "outputs", name);
+    const fileName = path.basename(sourcePath);
+    const destination = path.join(sessionDirectory, "outputs", fileName);
     atomicCopy(sourcePath, destination);
     recorded[name] = {
-      path: `outputs/${name}`,
+      path: `outputs/${fileName}`,
       sourceExecutionId,
       publishedByExecutionId,
     };

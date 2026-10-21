@@ -35,7 +35,9 @@ test("a v1 session works with show, list, follow, continue, and repair", async (
     cliHooks.runner = new AgentToolRunner({ fake: new ScriptedAdapter(["status: complete\n\ndone"], ["# Plan\n"]) }, 10);
     const continued = await capture(() => main(["session", "continue", sessionId, "--once"], workspace));
     expect(continued.value).toBe(0);
-    expect(JSON.parse(continued.stdout)).toMatchObject({ session_id: sessionId, session_status: "active" });
+    expect(continued.stdout).toBe("");
+    const statusAfter = JSON.parse(readFileSync(path.join(directory, "status.json"), "utf8")) as { status?: string };
+    expect(statusAfter.status).toBe("active");
 
     const repaired = await capture(() => main(["session", "repair", sessionId], workspace));
     expect(repaired.value).toBe(0);

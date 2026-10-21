@@ -197,9 +197,15 @@ export async function runMain(
     delete process.env.MIGENT_FAKE_CURSOR;
     delete process.env.MIGENT_FAKE_LOG;
   }
+  const before = executionTexts(workspace);
   try {
     const captured = await capture(() => main(argv, workspace));
-    return [captured.value as number, jsonObjects(captured.stdout), captured.stderr];
+    const printed = jsonObjects(captured.stdout);
+    const objects =
+      printed.length > 0
+        ? printed
+        : [workflowResult(workspace, argv, captured.value as number, captured.stderr, before)];
+    return [captured.value as number, objects, captured.stderr];
   } finally {
     for (const [name, value] of previous) {
       if (value === undefined) delete process.env[name];
@@ -251,6 +257,113 @@ export function asRecord(value: unknown): Record<string, unknown> {
 export function asRecords(value: unknown): Array<Record<string, unknown>> {
   if (!Array.isArray(value)) throw new Error("expected array");
   return value.map((item) => asRecord(item));
+}
+
+function executionTexts(workspace: string): Map<string, string> {
+  const root = path.join(workspace, ".migent", "sessions");
+  const files = new Map<string, string>();
+  if (!existsSync(root)) return files;
+  for (const sessionId of readdirSync(root)) {
+    const executions = path.join(root, sessionId, "executions");
+    if (!existsSync(executions)) continue;
+    for (const executionId of readdirSync(executions)) {
+      const filePath = path.join(executions, executionId, "execution.json");
+      if (!existsSync(filePath)) continue;
+      files.set(`${sessionId}/${executionId}`, readFileSync(filePath, "utf8"));
+    }
+  }
+  return files;
+}
+
+function executionFingerprint(text: string): string {
+  const record = JSON.parse(text) as Record<string, unknown>;
+  return JSON.stringify({
+    status: record.status ?? null,
+    outcome: record.outcome ?? null,
+    completed_at: record.completed_at ?? null,
+    failure_reason: record.failure_reason ?? null,
+  });
+}
+
+function sessionIdFromRun(workspace: string, argv: string[], stderr: string): string | null {
+  const match = /session_id: (\S+)/.exec(stderr);
+  if (match?.[1]) return match[1];
+  const continueAt = argv.indexOf("continue");
+  if (continueAt >= 0 && argv[continueAt + 1] && !argv[continueAt + 1].startsWith("-")) return argv[continueAt + 1] ?? null;
+  const sessionAt = argv.indexOf("--session");
+  if (sessionAt >= 0 && argv[sessionAt + 1] && !argv[sessionAt + 1].startsWith("-")) return argv[sessionAt + 1] ?? null;
+  const root = path.join(workspace, ".migent", "sessions");
+  if (!existsSync(root)) return null;
+  const ids = readdirSync(root).filter((name) => existsSync(path.join(root, name, "status.json")));
+  return ids.length === 1 ? (ids[0] ?? null) : null;
+}
+
+function stopReasonFor(code: number, status: string): string {
+  if (code === 130) return "cancelled";
+  if (code === 8) return "quota";
+  if (code === 7) return "verify_failed";
+  if (code === 6) return "verify_exhausted";
+  if (code === 5) return "dispatch_limit";
+  if (code === 4) return "revisions_exhausted";
+  if (code === 3) return "stage_failed";
+  if (code === 2) return "configuration";
+  if (status === "completed") return "completed";
+  if (status === "blocked") return "blocked";
+  if (status === "cancelled") return "cancelled";
+  return "stage";
+}
+
+function workflowResult(
+  workspace: string,
+  argv: string[],
+  code: number,
+  stderr: string,
+  before: ReadonlyMap<string, string>,
+): Record<string, unknown> {
+  const sessionId = sessionIdFromRun(workspace, argv, stderr);
+  if (sessionId === null) return {};
+  const stages: Array<Record<string, unknown>> = [];
+  for (const [key, text] of executionTexts(workspace)) {
+    if (!key.startsWith(`${sessionId}/`)) continue;
+    const previous = before.get(key);
+    if (previous !== undefined && executionFingerprint(previous) === executionFingerprint(text)) continue;
+    const record = JSON.parse(text) as Record<string, unknown>;
+    const executionId = String(record.execution_id ?? key.slice(sessionId.length + 1));
+    const outcome =
+      typeof record.outcome === "object" && record.outcome !== null && !Array.isArray(record.outcome)
+        ? (record.outcome as Record<string, unknown>)
+        : {};
+    stages.push({
+      execution_id: executionId,
+      execution_order: record.execution_order,
+      agent_id: record.agent_id ?? "",
+      outcome_status: typeof outcome.status === "string" ? outcome.status : "",
+      outcome_decision: typeof outcome.decision === "string" ? outcome.decision : "",
+      artifact_directory: path.join(workspace, ".migent", "sessions", sessionId, "executions", executionId, "artifacts"),
+      response: executionResponse(workspace, sessionId, executionId),
+    });
+  }
+  stages.sort((left, right) => Number(left.execution_order ?? 0) - Number(right.execution_order ?? 0));
+  let status: Record<string, unknown> = {};
+  try {
+    status = sessionStatus(workspace, sessionId);
+  } catch {
+    status = {};
+  }
+  const sessionStatusText = typeof status.status === "string" ? status.status : "";
+  return {
+    session_id: sessionId,
+    session_status: sessionStatusText,
+    stop_reason: stopReasonFor(code, sessionStatusText),
+    outputs: status.outputs ?? {},
+    stages,
+  };
+}
+
+function executionResponse(workspace: string, sessionId: string, executionId: string): string {
+  const filePath = path.join(workspace, ".migent", "sessions", sessionId, "executions", executionId, "response.md");
+  if (!existsSync(filePath)) return "";
+  return readFileSync(filePath, "utf8");
 }
 
 function jsonObjects(text: string): Array<Record<string, unknown>> {

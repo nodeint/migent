@@ -9,13 +9,28 @@ export function log(message: string): void {
   process.stderr.write(`[migent] ${message}\n`);
 }
 
+/** Local time, `HH:MM:SS`. */
+export function formatClock(date = new Date()): string {
+  const hh = String(date.getHours()).padStart(2, "0");
+  const mm = String(date.getMinutes()).padStart(2, "0");
+  const ss = String(date.getSeconds()).padStart(2, "0");
+  return `${hh}:${mm}:${ss}`;
+}
+
+/** Whole seconds, as `12s`, `3m 4s`, or `1h 2m 3s`. */
+export function formatDuration(milliseconds: number): string {
+  const total = Math.max(0, Math.round(milliseconds / 1000));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
+}
+
 /** Local time, matching `datetime.now().astimezone().strftime("%H:%M:%S")`. */
 export function logProgress(message: string): void {
-  const now = new Date();
-  const hh = String(now.getHours()).padStart(2, "0");
-  const mm = String(now.getMinutes()).padStart(2, "0");
-  const ss = String(now.getSeconds()).padStart(2, "0");
-  process.stderr.write(`[${hh}:${mm}:${ss}] ${message}\n`);
+  process.stderr.write(`[${formatClock()}] ${message}\n`);
 }
 
 /** Python `datetime.now(timezone.utc).isoformat()` uses `+00:00`. */

@@ -20,8 +20,8 @@ import {
 import { isRecord } from "./record.js";
 import { buildStagePrompt, buildStageReplyPrompt, buildStageResumePrompt, buildVerifyRepairPrompt } from "./prompt.js";
 import { ProviderEventReporter } from "./provider-events.js";
-import { log, utcNow } from "./runtime.js";
-import { appendLifecycleEvent, readParsedEvents } from "./session-events.js";
+import { formatClock, formatDuration, log, utcNow } from "./runtime.js";
+import { appendLifecycleEvent, parseExecutionId, readParsedEvents } from "./session-events.js";
 import { commitFoldedStatus } from "./session-fold.js";
 import {
   WORKFLOW_FREEZE_FILE,
@@ -365,8 +365,16 @@ async function executeLocked(
             result.failure_reason === VERIFY_FAILED
               ? "verify_failed"
               : result.outcome_status || (result.failure_reason ? "failed" : "finished");
-          const decision = result.outcome_decision ? ` decision=${result.outcome_decision}` : "";
-          log(`stage ${item.stageId || "stage"} · ${outcome}${decision}.`);
+          log(
+            stageFinishLine(
+              workspace,
+              sessionId,
+              item.stageId || "stage",
+              item.executionId,
+              outcome,
+              result.outcome_decision || "",
+            ),
+          );
           stageJsons.push(runResultJson(result));
         }
         const status = store.readSessionStatus(sessionId);
@@ -1070,10 +1078,76 @@ function verifyOnlyStage(workflow: WorkflowDocument, stageId: string) {
   return stage;
 }
 
-function roleStartLine(stageId: string, provider: string, model: string, optionLabel: string, description: string | null): string {
-  const detail = `${provider}/${model} (${optionLabel})`;
-  if (description === null) return `stage ${stageId} · ${detail}.`;
-  return `stage ${stageId} · ${detail} — ${description}.`;
+function roleStartLine(
+  stageId: string,
+  provider: string,
+  model: string,
+  optionLabel: string,
+  description: string | null,
+  attempt: number | null,
+): string {
+  const parts = [`stage ${stageId}`];
+  if (attempt !== null) parts.push(`attempt ${attempt}`);
+  parts.push(formatClock(), `${provider}/${model} (${optionLabel})`);
+  const base = parts.join(" · ");
+  if (description === null) return `${base}.`;
+  return `${base} — ${description}.`;
+}
+
+function stageFinishLine(
+  workspace: string,
+  sessionId: string,
+  stageId: string,
+  executionId: string,
+  outcome: string,
+  decision: string,
+): string {
+  const parts = [`stage ${stageId}`];
+  const attempt = parseExecutionId(executionId)?.attempt;
+  if (attempt !== undefined) parts.push(`attempt ${attempt}`);
+  const duration = stageDurationLabel(workspace, sessionId, executionId);
+  if (duration !== null) parts.push(duration);
+  const tail = decision ? `${outcome} decision=${decision}` : outcome;
+  return `${parts.join(" · ")} · ${tail}.`;
+}
+
+function stageDurationLabel(workspace: string, sessionId: string, executionId: string): string | null {
+  if (executionId === "") return null;
+  const filePath = path.join(
+    workspace,
+    ".migent",
+    "sessions",
+    sessionId,
+    "executions",
+    executionId,
+    "execution.json",
+  );
+  const elapsed = elapsedMs(readExecutionTimes(filePath));
+  return elapsed === null ? null : formatDuration(elapsed);
+}
+
+function readExecutionTimes(filePath: string): { started: number | null; finished: number | null } {
+  try {
+    const metadata = JSON.parse(readFileSync(filePath, "utf8")) as unknown;
+    if (!isRecord(metadata)) return { started: null, finished: null };
+    return {
+      started: parsedTime(metadata.created_at),
+      finished: parsedTime(metadata.completed_at),
+    };
+  } catch {
+    return { started: null, finished: null };
+  }
+}
+
+function elapsedMs(times: { started: number | null; finished: number | null }): number | null {
+  if (times.started === null) return null;
+  return (times.finished ?? Date.now()) - times.started;
+}
+
+function parsedTime(value: unknown): number | null {
+  if (typeof value !== "string" || value === "") return null;
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? null : parsed;
 }
 
 async function dispatchExecuteStage(
@@ -1100,7 +1174,7 @@ async function dispatchExecuteStage(
       onExecution,
     });
     const outcome = result.failure_reason === VERIFY_FAILED ? "verify_failed" : "complete";
-    log(`stage ${stageId} · ${outcome}.`);
+    log(stageFinishLine(workspace, sessionId, stageId, result.execution_id, outcome, ""));
     return { ...result };
   }
   const sessionDirectory = path.join(workspace, ".migent", "sessions", sessionId);
@@ -1110,7 +1184,6 @@ async function dispatchExecuteStage(
     Object.entries(target.options)
       .map(([key, value]) => `${key}: ${value}`)
       .join(", ") || "default";
-  log(roleStartLine(stageId, target.provider, target.model, optionLabel, stageSpec.description));
   const priorSessionId = storedPriorSessionId(status);
   const frozen = freezeSessionTask(workspace, sessionId);
   const exhausted = verifyExhaustedExecution(snapshots, stageId);
@@ -1150,16 +1223,30 @@ async function dispatchExecuteStage(
     prompt,
     sessionId,
   };
+  let loggedStart = false;
   const result: StageDispatchResult = await dispatchNamedStage(
     workspace,
     request,
     runner,
     { workflow, target },
-    onExecution,
+    (executionId) => {
+      onExecution?.(executionId);
+      if (loggedStart) return;
+      loggedStart = true;
+      log(
+        roleStartLine(
+          stageId,
+          target.provider,
+          target.model,
+          optionLabel,
+          stageSpec.description,
+          parseExecutionId(executionId)?.attempt ?? null,
+        ),
+      );
+    },
   );
   const outcome = result.outcomeStatus || (result.failureReason ? "failed" : "finished");
-  const decision = result.outcomeDecision ? ` decision=${result.outcomeDecision}` : "";
-  log(`stage ${stageId} · ${outcome}${decision}.`);
+  log(stageFinishLine(workspace, sessionId, stageId, result.executionId, outcome, result.outcomeDecision));
   return result.toJson();
 }
 

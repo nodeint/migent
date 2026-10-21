@@ -13,14 +13,15 @@ async function runOnce(
 ): Promise<{ code: number; sessionId: string; executionId: string }> {
   cliHooks.runner = new AgentToolRunner({ fake: adapter }, 10);
   const captured = await capture(() => main(argv, workspace));
-  const payload = JSON.parse(captured.stdout) as {
-    session_id?: string;
-    stages?: Array<{ execution_id?: string }>;
-  };
+  const sessionMatch = /session_id: (\S+)/.exec(captured.stderr);
+  const sessionFlag = argv.indexOf("--session");
+  const sessionId = sessionMatch?.[1] ?? (sessionFlag >= 0 ? argv[sessionFlag + 1] : "") ?? "";
+  const executions = path.join(workspace, ".migent", "sessions", sessionId, "executions");
+  const executionId = existsSync(executions) ? (readdirSync(executions)[0] ?? "") : "";
   return {
     code: captured.value as number,
-    sessionId: String(payload.session_id),
-    executionId: String(payload.stages?.[0]?.execution_id),
+    sessionId,
+    executionId,
   };
 }
 

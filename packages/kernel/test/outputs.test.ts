@@ -100,9 +100,9 @@ test("approve publishes the reviewed plan artifact", () => {
     { plan: [source, "0001-plan"] },
     "0002-review",
   );
-  expect(readFileSync(path.join(sessionDirectory, "outputs", "plan"), "utf8")).toBe("# Plan v1\n");
+  expect(readFileSync(path.join(sessionDirectory, "outputs", "plan.md"), "utf8")).toBe("# Plan v1\n");
   expect(recorded.plan).toEqual({
-    path: "outputs/plan",
+    path: "outputs/plan.md",
     sourceExecutionId: "0001-plan",
     publishedByExecutionId: "0002-review",
   });

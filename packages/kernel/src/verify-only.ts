@@ -2,7 +2,8 @@ import type { RunResult } from "./agent-runner.js";
 import { AgentSessionRecord, SessionStore, type ExecutionContext } from "./session-store.js";
 import { CancellationRequested } from "./command-executor.js";
 import { ProviderEventReporter } from "./provider-events.js";
-import { log } from "./runtime.js";
+import { formatClock, log } from "./runtime.js";
+import { parseExecutionId } from "./session-events.js";
 import { VERIFY_FAILED } from "./selection.js";
 import { StageOutcome } from "./stage-outcome.js";
 import { VerifyRunner, formatVerifyReport, type VerifyRunResult } from "./verify-runner.js";
@@ -23,7 +24,7 @@ export async function runVerifyOnlyStage(input: {
   const store = new SessionStore(input.workspace, undefined, input.adapters);
   const context = openContext(store, input.sessionId, input.stage.id, input.executionId ?? null);
   input.onExecution?.(context.executionId);
-  if (input.executionId == null) log(startLine(input.stage));
+  if (input.executionId == null) log(startLine(input.stage, parseExecutionId(context.executionId)?.attempt ?? null));
   const reporter = new ProviderEventReporter(store, context, "", "", false);
   reporter.emit("verify.started", `${input.stage.verify.length} command(s)`, {
     turn: VERIFY_TURN,
@@ -105,10 +106,14 @@ function openContext(
   return context;
 }
 
-function startLine(stage: VerifyOnlyStageSpec): string {
+function startLine(stage: VerifyOnlyStageSpec, attempt: number | null): string {
   const detail = `verify (${stage.verify.length} command${stage.verify.length === 1 ? "" : "s"})`;
-  if (stage.description === null) return `stage ${stage.id} · ${detail}.`;
-  return `stage ${stage.id} · ${detail} — ${stage.description}.`;
+  const parts = [`stage ${stage.id}`];
+  if (attempt !== null) parts.push(`attempt ${attempt}`);
+  parts.push(formatClock(), detail);
+  const base = parts.join(" · ");
+  if (stage.description === null) return `${base}.`;
+  return `${base} — ${stage.description}.`;
 }
 
 function executionJson(

@@ -153,7 +153,7 @@ test("the fold matches status.json after each session write", () => {
   expect(published.status).toBe("completed");
   expect(published.outputs).toMatchObject({
     plan: {
-      path: "outputs/plan",
+      path: "outputs/plan.md",
       source_execution_id: planContext.executionId,
       published_by_execution_id: reviewContext.executionId,
     },

@@ -478,8 +478,12 @@ function mergePublished(status: Record<string, unknown>, raw: unknown): void {
 function addPathOnlyOutputs(status: Record<string, unknown>, outputFiles: readonly string[]): void {
   if (outputFiles.length === 0) return;
   const outputs = isRecord(status.outputs) ? cloneRecord(status.outputs) : {};
+  const recorded = new Set<string>();
+  for (const value of Object.values(outputs)) {
+    if (isRecord(value) && typeof value.path === "string" && value.path !== "") recorded.add(path.basename(value.path));
+  }
   for (const name of outputFiles) {
-    if (Object.hasOwn(outputs, name)) continue;
+    if (Object.hasOwn(outputs, name) || recorded.has(name)) continue;
     outputs[name] = { path: `outputs/${name}` };
   }
   if (Object.keys(outputs).length > 0) status.outputs = outputs;

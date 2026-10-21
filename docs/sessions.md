@@ -122,8 +122,9 @@ reads that file when resuming, but all new checkpoints are written as
 ## Published outputs
 
 A published output is copied from a successful stage artifact to
-`outputs/<output-name>`. A version 2 workflow names those artifacts at the
-top level and publishes them once, when the session completes:
+`outputs/<artifact-file>`, keeping the artifact name and its suffix. A version 2
+workflow names those artifacts at the top level and publishes them once, when
+the session completes:
 
 ```yaml
 outputs:
@@ -136,7 +137,7 @@ A version 1 workflow still uses `completion.outputs` and publishes when the
 completion stage makes its decision. Either form publishes:
 
 ```text
-.migent/sessions/<session-id>/outputs/plan
+.migent/sessions/<session-id>/outputs/plan.md
 ```
 
 `status.json` records both the relative path and provenance of the published
@@ -146,7 +147,7 @@ file:
 {
   "outputs": {
     "plan": {
-      "path": "outputs/plan",
+      "path": "outputs/plan.md",
       "source_execution_id": "0001-plan--attempt-01",
       "published_by_execution_id": "0002-review-plan--attempt-01"
     }

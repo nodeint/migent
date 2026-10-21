@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { AgentToolRunner, DEFAULT_MAX_DISPATCHES, listSessionRows } from "@nodeint/migent-kernel";
@@ -38,18 +38,93 @@ function writeWatchSession(
   writeFileSync(path.join(sessionDirectory, "status.json"), JSON.stringify(status), "utf8");
 }
 
+function executionTexts(workspace: string, sessionId: string): Map<string, string> {
+  const directory = path.join(workspace, ".migent", "sessions", sessionId, "executions");
+  const files = new Map<string, string>();
+  if (!existsSync(directory)) return files;
+  for (const executionId of readdirSync(directory)) {
+    const filePath = path.join(directory, executionId, "execution.json");
+    if (!existsSync(filePath)) continue;
+    files.set(executionId, readFileSync(filePath, "utf8"));
+  }
+  return files;
+}
+
+function executionFingerprint(text: string): string {
+  const record = JSON.parse(text) as Record<string, unknown>;
+  return JSON.stringify({
+    status: record.status ?? null,
+    outcome: record.outcome ?? null,
+    completed_at: record.completed_at ?? null,
+    failure_reason: record.failure_reason ?? null,
+  });
+}
+
+function sessionIdFromOutput(stderr: string, argv: string[]): string | null {
+  const match = /session_id: (\S+)/.exec(stderr);
+  if (match?.[1]) return match[1];
+  const continueAt = argv.indexOf("continue");
+  if (continueAt >= 0) {
+    const id = argv[continueAt + 1];
+    if (id && !id.startsWith("-")) return id;
+  }
+  const sessionAt = argv.indexOf("--session");
+  if (sessionAt >= 0) {
+    const id = argv[sessionAt + 1];
+    if (id && !id.startsWith("-")) return id;
+  }
+  return null;
+}
+
+function stopReasonFor(code: number, status: string): string {
+  if (code === 130) return "cancelled";
+  if (code === 8) return "quota";
+  if (code === 7) return "verify_failed";
+  if (code === 6) return "verify_exhausted";
+  if (code === 5) return "dispatch_limit";
+  if (code === 4) return "revisions_exhausted";
+  if (code === 3) return "stage_failed";
+  if (code === 2) return "configuration";
+  if (status === "completed") return "completed";
+  if (status === "blocked") return "blocked";
+  if (status === "cancelled") return "cancelled";
+  return "stage";
+}
+
 async function runExecute(workspace: string, argv: string[], adapter: ScriptedAdapter): Promise<[number, Row[]]> {
+  const hinted = sessionIdFromOutput("", argv);
+  const before = hinted === null ? new Map<string, string>() : executionTexts(workspace, hinted);
   cliHooks.runner = new AgentToolRunner({ fake: adapter }, 10);
-  const command = argv.includes("--verbose") ? argv : [...argv, "--verbose"];
-  const captured = await capture(() => main(command, workspace));
-  const payload = JSON.parse(captured.stdout) as Row & { stages: Row[] };
+  const captured = await capture(() => main(argv, workspace));
+  const sessionId = sessionIdFromOutput(captured.stderr, argv);
+  if (sessionId === null) throw new Error(captured.stderr);
+  const stages: Row[] = [];
+  for (const [executionId, text] of executionTexts(workspace, sessionId)) {
+    const previous = before.get(executionId);
+    if (previous !== undefined && executionFingerprint(previous) === executionFingerprint(text)) continue;
+    const record = JSON.parse(text) as Record<string, unknown>;
+    const outcome =
+      typeof record.outcome === "object" && record.outcome !== null && !Array.isArray(record.outcome)
+        ? (record.outcome as Record<string, unknown>)
+        : {};
+    stages.push({
+      execution_id: executionId,
+      execution_order: record.execution_order,
+      outcome_status: typeof outcome.status === "string" ? outcome.status : "",
+      outcome_decision: typeof outcome.decision === "string" ? outcome.decision : "",
+    });
+  }
+  stages.sort((left, right) => Number(left.execution_order ?? 0) - Number(right.execution_order ?? 0));
+  const status = JSON.parse(
+    readFileSync(path.join(workspace, ".migent", "sessions", sessionId, "status.json"), "utf8"),
+  ) as Record<string, unknown>;
   const summary = {
-    session_id: payload.session_id,
-    session_status: payload.session_status,
-    stop_reason: payload.stop_reason,
-    outputs: payload.outputs,
+    session_id: sessionId,
+    session_status: status.status,
+    stop_reason: stopReasonFor(captured.value as number, typeof status.status === "string" ? status.status : ""),
+    outputs: status.outputs ?? {},
   };
-  return [captured.value as number, [...payload.stages, summary]];
+  return [captured.value as number, [...stages, summary]];
 }
 
 function executions(workspace: string, sessionId: string): string[] {
@@ -271,7 +346,7 @@ test("execute completes plan review and publishes plan", async () => {
       "sessions",
       String(objects.at(-1)?.session_id),
       "outputs",
-      "plan",
+      "plan.md",
     );
     expect(readFileSync(published, "utf8").trim().length).toBeGreaterThan(0);
   } finally {

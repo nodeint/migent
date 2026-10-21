@@ -23,7 +23,8 @@ const PRIOR_HELP =
   "Completed session with the workflow id and decision named in requires. Checked before outputs are injected.";
 const PROGRESS_HELP =
   "Print each tool call when it finishes. The default prints one line when a stage starts and one when it finishes.";
-const VERBOSE_HELP = "Include every stage and its response text in the result JSON.";
+const VERBOSE_HELP =
+  "Accepted for compatibility. Stage lines already include the attempt and the time. The response stays in the execution directory.";
 
 export interface CliStatus {
   code: number;
@@ -256,7 +257,7 @@ function registerSessionCommand(program: Command, status: CliStatus): void {
     .option("--prompt <prompt>", "Prompt text for a role run.")
     .option("--file <file>", "Read the role prompt from this file.")
     .option("--stdin", "Read the role prompt from stdin.")
-    .option("--json", "Print the role result as one JSON object. A workflow run is already JSON.")
+    .option("--json", "Print the role result as one JSON object.")
     .addHelpText(
       "after",
       `With --workflow:\n${exitText(LOOP_EXITS)}With --workflow and --once:\n${exitText(STAGE_EXITS)}Without --workflow:\n${exitText(ROLE_EXITS)}Examples:\n  migent session run --workflow plan --task "<one line>"\n  migent session run --session wave-3 --workflow plan\n  migent session run --role reviewer --prompt "<prompt>"\n`,
@@ -672,8 +673,8 @@ function addDispatchOptions(command: Command, onceDescription: string): void {
     );
 }
 
-function outputFlags(options: OptionValues): { verbose: boolean; itemProgress: boolean } {
-  return { verbose: options.verbose === true, itemProgress: options.progress === true };
+function outputFlags(options: OptionValues): { itemProgress: boolean } {
+  return { itemProgress: options.progress === true };
 }
 
 function showHelpWhenBare(status: CliStatus, command: Command): void {

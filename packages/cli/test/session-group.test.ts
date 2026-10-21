@@ -115,10 +115,15 @@ test("session run --workflow dispatches one stage", async () => {
       main(["session", "run", "--workflow", "plan", "--task", "Write a plan", "--once"], workspace),
     );
     expect(captured.value).toBe(0);
+    expect(captured.stdout).toBe("");
     expect(captured.stderr).not.toContain("deprecated");
-    const payload = JSON.parse(captured.stdout) as { session_id: string; session_status: string };
-    expect(payload.session_id).toContain("plan");
-    expect(payload.session_status).toBe("active");
+    const sessionMatch = /session_id: (\S+)/.exec(captured.stderr);
+    const sessionId = sessionMatch?.[1] ?? "";
+    expect(sessionId).toContain("plan");
+    const status = JSON.parse(
+      readFileSync(path.join(workspace, ".migent", "sessions", sessionId, "status.json"), "utf8"),
+    ) as { status?: string };
+    expect(status.status).toBe("active");
     const prompt = adapter.calls[0]?.prompt ?? "";
     const roleAt = prompt.indexOf("Role instructions:\n- Stay inside the task.");
     expect(roleAt).toBeGreaterThan(prompt.indexOf("Stage: plan (role: planner)"));
@@ -126,11 +131,11 @@ test("session run --workflow dispatches one stage", async () => {
 
     const listed = await capture(() => main(["session", "list", "--latest", "--json"], workspace));
     expect(listed.value).toBe(0);
-    expect(JSON.parse(listed.stdout)).toMatchObject({ session: payload.session_id, workflow: "plan", status: "active" });
+    expect(JSON.parse(listed.stdout)).toMatchObject({ session: sessionId, workflow: "plan", status: "active" });
 
-    const shown = await capture(() => main(["session", "show", payload.session_id, "--json"], workspace));
+    const shown = await capture(() => main(["session", "show", sessionId, "--json"], workspace));
     expect(shown.value).toBe(0);
-    expect(JSON.parse(shown.stdout)).toMatchObject({ session_id: payload.session_id, status: "active" });
+    expect(JSON.parse(shown.stdout)).toMatchObject({ session_id: sessionId, status: "active" });
   } finally {
     cliHooks.runner = null;
     removeWorkspace(workspace);
@@ -210,7 +215,8 @@ test("session prepare starts through session run --workflow", async () => {
       main(["session", "run", "--session", "wave-3", "--workflow", "plan", "--once"], workspace),
     );
     expect(started.value).toBe(0);
-    expect(JSON.parse(started.stdout)).toMatchObject({ session_id: "wave-3" });
+    expect(started.stdout).toBe("");
+    expect(started.stderr).toMatch(/stage plan · attempt 1 ·/);
   } finally {
     cliHooks.runner = null;
     removeWorkspace(workspace);

@@ -110,8 +110,8 @@ test("a migrated plan workflow publishes the same output as version 1", async ()
   expect(second.code).toBe(0);
   expect(second.stopReason).toBe("completed");
   expect(second.status).toBe("completed");
-  const left = readFileSync(outputFile(version1, first.sessionId, "plan"));
-  const right = readFileSync(outputFile(version2, second.sessionId, "plan"));
+  const left = readFileSync(outputFile(version1, first.sessionId, "plan.md"));
+  const right = readFileSync(outputFile(version2, second.sessionId, "plan.md"));
   expect(right.equals(left)).toBe(true);
   expect(right.toString("utf8")).toBe("# plan\n");
 });
@@ -150,7 +150,7 @@ test("a missing output at quiescence exits 2 and continue reruns the producer", 
   expect(first.stopReason).toBe("outputs_missing");
   expect(first.status).toBe("active");
   expect(first.outputs).toEqual({});
-  expect(existsSync(outputFile(workspace, sessionId, "plan"))).toBe(false);
+  expect(existsSync(outputFile(workspace, sessionId, "plan.md"))).toBe(false);
   const store = new SessionStore(workspace);
   expect(store.readSessionStatus(sessionId).status).toBe("active");
 
@@ -158,7 +158,7 @@ test("a missing output at quiescence exits 2 and continue reruns the producer", 
   expect(second.code).toBe(0);
   expect(second.stopReason).toBe("completed");
   expect(second.status).toBe("completed");
-  expect(readFileSync(outputFile(workspace, sessionId, "plan"), "utf8")).toBe("# plan again\n");
+  expect(readFileSync(outputFile(workspace, sessionId, "plan.md"), "utf8")).toBe("# plan again\n");
 });
 
 test("repair records session.completed when a version 2 graph becomes quiet", async () => {
