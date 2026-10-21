@@ -89,7 +89,7 @@ export class AgentToolRunner {
     const resolvedOptions = { ...(request.options ?? {}) };
     adapter.validateOptions(resolvedOptions);
     const profile = profileOptions(adapter, resolvedOptions);
-    const store = new SessionStore(workspacePath);
+    const store = new SessionStore(workspacePath, undefined, this.adapters);
     const sessionId = request.sessionId ?? null;
     const stageId = request.stageId ?? "agent";
     const [record, isNew, context] = store.loadOrCreate(
@@ -182,7 +182,7 @@ export class AgentToolRunner {
   /** Finish a cancelled execution that has been reopened in place. Does not create an attempt. */
   async continueCancelled(workspace: string, sessionId: string, executionId: string): Promise<RunResult> {
     const workspacePath = resolveWorkspace(workspace);
-    const store = new SessionStore(workspacePath);
+    const store = new SessionStore(workspacePath, undefined, this.adapters);
     const context = store.executionContext(sessionId, executionId);
     if (context === null) throw new Error(`Execution ${executionId} was not found in session ${sessionId}.`);
     const metadata = JSON.parse(readFileSync(path.join(context.directory, "execution.json"), "utf8")) as unknown;

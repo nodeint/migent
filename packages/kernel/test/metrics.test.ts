@@ -1,9 +1,18 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "vitest";
-import { listSessionMetrics, sessionMetrics } from "../src/index.ts";
+import {
+  AgentToolRunner,
+  createAgentSession,
+  executeNamedWorkflow,
+  listSealedMetrics,
+  listSessionMetrics,
+  readSealedMetrics,
+  sealedMetricsPath,
+  sessionMetrics,
+} from "../src/index.ts";
 import type { TurnUsage, UsageCapture } from "../src/adapter.ts";
-import { FakeAdapter, tempDir } from "./support.ts";
+import { FakeAdapter, ScriptedAdapter, tempDir } from "./support.ts";
 
 const PLAN = `\
 id: plan
@@ -468,4 +477,87 @@ test("corrupt sessions are a short row and a directory without status is skipped
   expect(listed.some((row) => row.session_id === "nostatus")).toBe(false);
   const filtered = listSessionMetrics(workspace, {}, { workflow: "agent", status: "completed", limit: 1 });
   expect(filtered.map((row) => row.session_id)).toEqual(["newer"]);
+});
+
+const SEAL_CONFIG = `\
+models:
+  fake:
+    provider: fake
+    model: m1
+roles:
+  developer:
+    default_model: fake
+`;
+
+test("a completed session seals metrics and later normalization leaves the file", async () => {
+  const workspace = tempDir("migent-metrics-seal-");
+  mkdirSync(path.join(workspace, ".migent", "workflows"), { recursive: true });
+  writeFileSync(path.join(workspace, ".migent", "config.yaml"), SEAL_CONFIG, "utf8");
+  writeFileSync(path.join(workspace, ".migent", "workflows", "once.yaml"), ONCE, "utf8");
+  const adapter = new ScriptedAdapter(["status: complete\n\ndone"], ["# notes\n"]);
+  adapter.captureUsage = () => ({ total: 4 });
+  adapter.normalizeUsage = () => ({ ...blank(), input_tokens: 4 });
+  const result = await executeNamedWorkflow(
+    workspace,
+    { workflowId: "once", task: "write notes" },
+    new AgentToolRunner({ fake: adapter }, 10),
+  );
+  expect(result.status).toBe("completed");
+  const file = sealedMetricsPath(workspace, result.sessionId);
+  const sealed = JSON.parse(readFileSync(file, "utf8")) as {
+    status: string;
+    totals: { usage: TurnUsage };
+  };
+  expect(sealed.status).toBe("completed");
+  expect(sealed.totals.usage.input_tokens).toBe(4);
+  expect(readSealedMetrics(workspace, result.sessionId)).toEqual({ state: "ok", metrics: sealed });
+
+  adapter.normalizeUsage = () => ({ ...blank(), input_tokens: 99 });
+  const derived = sessionMetrics(workspace, result.sessionId, { fake: adapter });
+  expect((derived.totals as { usage: TurnUsage }).usage.input_tokens).toBe(99);
+  expect(JSON.parse(readFileSync(file, "utf8"))).toEqual(sealed);
+  expect(listSealedMetrics(workspace, { workflow: "once", status: "completed", limit: null })).toEqual([sealed]);
+});
+
+test("an agent session does not seal metrics", async () => {
+  const workspace = tempDir("migent-metrics-agent-");
+  const sessionId = createAgentSession(workspace, "reviewer", "review the plan");
+  const result = await new AgentToolRunner({ fake: new FakeAdapter() }, 10).run({
+    provider: "fake",
+    model: "m1",
+    prompt: "review",
+    workspace,
+    sessionId,
+    stageId: "reviewer",
+  });
+  expect(result.session_status).toBe("completed");
+  expect(existsSync(sealedMetricsPath(workspace, sessionId))).toBe(false);
+});
+
+test("a blocked session has no sealed metrics and is omitted from the list", async () => {
+  const workspace = tempDir("migent-metrics-blocked-");
+  mkdirSync(path.join(workspace, ".migent", "workflows"), { recursive: true });
+  writeFileSync(path.join(workspace, ".migent", "config.yaml"), SEAL_CONFIG, "utf8");
+  writeFileSync(path.join(workspace, ".migent", "workflows", "once.yaml"), ONCE, "utf8");
+  const result = await executeNamedWorkflow(
+    workspace,
+    { workflowId: "once", task: "write notes" },
+    new AgentToolRunner({ fake: new ScriptedAdapter(["status: blocked\nblocker: gate"]) }, 10),
+  );
+  expect(result.status).toBe("blocked");
+  expect(existsSync(sealedMetricsPath(workspace, result.sessionId))).toBe(false);
+  expect(readSealedMetrics(workspace, result.sessionId)).toEqual({ state: "missing" });
+  expect(listSealedMetrics(workspace, { workflow: null, status: null, limit: null })).toEqual([]);
+});
+
+test("a corrupt metrics file is reported and left in place", () => {
+  const workspace = tempDir("migent-metrics-corrupt-");
+  const sessions = path.join(workspace, ".migent", "sessions", "kept");
+  mkdirSync(sessions, { recursive: true });
+  writeFileSync(path.join(sessions, "status.json"), JSON.stringify({ workflow_id: "once", status: "completed", updated_at: at(1) }));
+  const file = path.join(sessions, "metrics.json");
+  writeFileSync(file, "not-json");
+  expect(readSealedMetrics(workspace, "kept")).toEqual({ state: "corrupt" });
+  expect(readFileSync(file, "utf8")).toBe("not-json");
+  expect(listSealedMetrics(workspace, { workflow: null, status: null, limit: null })).toEqual([]);
 });

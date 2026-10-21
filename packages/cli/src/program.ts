@@ -370,8 +370,8 @@ function registerSessionCommand(program: Command, status: CliStatus): void {
 
   session
     .command("metrics")
-    .description("Print derived usage, time, and revision counts.")
-    .argument("[session]", "Session to measure. Omit to list sessions.")
+    .description("Print usage, time, and revision counts recorded for a completed workflow session.")
+    .argument("[session]", "Workflow session to read. Omit to list sessions that have metrics.")
     .option("--json", "Print one JSON object, or one object per line for a list.")
     .option("--workflow <id>", "With a list, keep sessions for this workflow.")
     .option("--status <status>", "With a list, keep sessions in this status.")
@@ -380,7 +380,7 @@ function registerSessionCommand(program: Command, status: CliStatus): void {
       "after",
       `${exitText([
         "Exit 0 after one session object, or one object per line. An empty list prints nothing.",
-        "Exit 2 when --json is missing, the session has no events.jsonl, or a list flag is invalid.",
+        "Exit 2 when --json is missing, the session has no metrics.json, that file is corrupt, or a list flag is invalid.",
       ])}Examples:\n  migent session metrics <session> --json\n  migent session metrics --json --workflow <id> --status completed --limit 10\n`,
     )
     .action((id: string | undefined, options: OptionValues) =>

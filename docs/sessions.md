@@ -205,12 +205,17 @@ migent session metrics --json
 migent session metrics --json --workflow <id> --status completed --limit 10
 ```
 
-`session metrics` reads a session and prints derived counts. It does not take
-the session lock and does not change files. One session is one JSON object. A
-list is one object per line, newest first, with the same `--workflow`,
-`--status`, and `--limit` filters as `session list`. `--json` is required.
-A session with no `events.jsonl` exits 2. An empty list prints nothing and
-exits 0.
+`session metrics` prints `metrics.json`, written when a workflow session
+becomes `completed`. The command reads that file. It does not take the session lock
+and does not change files. One session is one JSON object. A list is
+one object per line, newest first, and includes only sessions that have the
+file. `--workflow`, `--status`, and `--limit` filter those rows. `--json` is
+required. A session with no `metrics.json` exits 2 with
+`No metrics for session: <id>. Metrics are recorded when a workflow session completes.`
+A file that is not a JSON object exits 2 with
+`metrics.json for session <id> is not valid JSON.` and stays in place. An
+empty list prints nothing and exits 0. A session that is not `completed` has
+no file and does not appear.
 
 ```json
 {
@@ -320,9 +325,11 @@ agent session. `task_sha256` and `prior_session_id` come from `status.json`.
 An agent session uses the manifest role. `stage_attempt` counts every execution
 of a stage, including a route back. It is not a retry count.
 
-Usage is stored raw on the runner's turn event and normalized when metrics are
-read. The previous capture is the latest earlier one in the same session with
-the same provider and the same provider agent id. A cumulative provider
+Usage is stored raw on the runner's turn event. When a workflow session
+becomes `completed`, Migent normalizes those captures and writes `metrics.json`. A
+later change to an adapter does not change that file. The previous capture is
+the latest earlier one in the same session with the same provider and the same
+provider agent id. A cumulative provider
 subtracts it. A per-process provider ignores it. A conversation can span
 executions, because a verify repair and a route back resume the same agent.
 
@@ -353,8 +360,9 @@ loads. `routed_from` is the latest earlier completed execution whose decision
 routes to this stage, when no completed execution of this stage sits between
 them. A failed retry of that visit keeps the same `routed_from`.
 
-Sessions recorded before usage captures still produce a row. Their usage fields
-are null and `usage_missing` equals `turns`.
+A turn with no capture still counts. Its usage fields are null and
+`usage_missing` includes it. A session completed before `metrics.json` existed
+has no metrics. The command does not build them.
 
 ## Artifact dependency versus provider-session resume
 

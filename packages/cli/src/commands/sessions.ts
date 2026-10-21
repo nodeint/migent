@@ -1,8 +1,5 @@
-import { existsSync } from "node:fs";
-import path from "node:path";
-import { listSessionMetrics, listSessionRows, sessionMetrics, ConfigurationError } from "@nodeint/migent-kernel";
+import { listSealedMetrics, listSessionRows, readSealedMetrics, ConfigurationError } from "@nodeint/migent-kernel";
 import { printError, printSessions } from "../display.js";
-import { adapterMap } from "../provider.js";
 import { SESSION_COLUMN, sessionFields } from "../session-row.js";
 import { optionalText } from "../text.js";
 import { followSession } from "./watch.js";
@@ -51,9 +48,8 @@ export function runSessionMetrics(
     printError("List filters cannot be combined with a session.");
     return 2;
   }
-  const adapters = adapterMap();
   if (sessionId === null) {
-    const rows = listSessionMetrics(workspace, adapters, {
+    const rows = listSealedMetrics(workspace, {
       workflow: selection.workflow ?? null,
       status: selection.status ?? null,
       limit: selection.limit ?? null,
@@ -61,12 +57,16 @@ export function runSessionMetrics(
     for (const row of rows) process.stdout.write(`${JSON.stringify(row)}\n`);
     return 0;
   }
-  const eventsPath = path.join(workspace, ".migent", "sessions", sessionId, "events.jsonl");
-  if (!existsSync(eventsPath)) {
-    printError(`No events found for session: ${sessionId}`);
+  const sealed = readSealedMetrics(workspace, sessionId);
+  if (sealed.state === "missing") {
+    printError(`No metrics for session: ${sessionId}. Metrics are recorded when a workflow session completes.`);
     return 2;
   }
-  process.stdout.write(`${JSON.stringify(sessionMetrics(workspace, sessionId, adapters))}\n`);
+  if (sealed.state === "corrupt") {
+    printError(`metrics.json for session ${sessionId} is not valid JSON.`);
+    return 2;
+  }
+  process.stdout.write(`${JSON.stringify(sealed.metrics)}\n`);
   return 0;
 }
 

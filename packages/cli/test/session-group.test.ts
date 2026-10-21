@@ -224,7 +224,13 @@ test("removed session aliases are unknown commands", async () => {
   }
 });
 
-function writeMetricsSession(workspace: string, sessionId: string, workflow: string, updatedAt: string): void {
+function writeMetricsSession(
+  workspace: string,
+  sessionId: string,
+  workflow: string,
+  updatedAt: string,
+  metrics: Record<string, unknown> | null = { session_id: sessionId, workflow_id: workflow, status: "completed" },
+): void {
   const directory = path.join(workspace, ".migent", "sessions", sessionId);
   mkdirSync(directory, { recursive: true });
   writeFileSync(
@@ -235,15 +241,26 @@ function writeMetricsSession(workspace: string, sessionId: string, workflow: str
     path.join(directory, "events.jsonl"),
     `${JSON.stringify({ v: 2, seq: 1, event: "session.created", timestamp: updatedAt, data: {} })}\n`,
   );
+  if (metrics !== null) writeFileSync(path.join(directory, "metrics.json"), JSON.stringify(metrics));
 }
 
 test("session metrics prints one object", async () => {
   const workspace = writeFakeWorkflowWorkspace({ plan: "id: plan\n" });
   try {
-    writeMetricsSession(workspace, "wave-3", "plan", "2026-10-20T00:00:01.000+00:00");
+    writeMetricsSession(workspace, "wave-3", "plan", "2026-10-20T00:00:01.000+00:00", {
+      session_id: "wave-3",
+      workflow_id: "plan",
+      status: "completed",
+      totals: { usage: { input_tokens: 4 } },
+    });
     const captured = await capture(() => main(["session", "metrics", "wave-3", "--json"], workspace));
     expect(captured.value).toBe(0);
-    expect(JSON.parse(captured.stdout)).toMatchObject({ session_id: "wave-3", workflow_id: "plan" });
+    expect(JSON.parse(captured.stdout)).toEqual({
+      session_id: "wave-3",
+      workflow_id: "plan",
+      status: "completed",
+      totals: { usage: { input_tokens: 4 } },
+    });
   } finally {
     removeWorkspace(workspace);
   }
@@ -255,6 +272,7 @@ test("session metrics lists sessions as JSON lines", async () => {
     writeMetricsSession(workspace, "older", "plan", "2026-10-20T00:00:01.000+00:00");
     writeMetricsSession(workspace, "newer", "plan", "2026-10-20T00:00:02.000+00:00");
     writeMetricsSession(workspace, "other", "implement", "2026-10-20T00:00:03.000+00:00");
+    writeMetricsSession(workspace, "open", "plan", "2026-10-20T00:00:04.000+00:00", null);
     const captured = await capture(() =>
       main(["session", "metrics", "--json", "--workflow", "plan"], workspace),
     );
@@ -280,12 +298,35 @@ test("session metrics requires --json", async () => {
   }
 });
 
-test("session metrics rejects an unknown session", async () => {
+test("session metrics rejects a session with no sealed file", async () => {
   const workspace = writeFakeWorkflowWorkspace({ plan: "id: plan\n" });
   try {
-    const captured = await capture(() => main(["session", "metrics", "missing", "--json"], workspace));
+    writeMetricsSession(workspace, "open", "plan", "2026-10-20T00:00:01.000+00:00", null);
+    const missing = await capture(() => main(["session", "metrics", "missing", "--json"], workspace));
+    expect(missing.value).toBe(2);
+    expect(missing.stderr).toContain(
+      "No metrics for session: missing. Metrics are recorded when a workflow session completes.",
+    );
+    const open = await capture(() => main(["session", "metrics", "open", "--json"], workspace));
+    expect(open.value).toBe(2);
+    expect(open.stderr).toContain(
+      "No metrics for session: open. Metrics are recorded when a workflow session completes.",
+    );
+  } finally {
+    removeWorkspace(workspace);
+  }
+});
+
+test("session metrics leaves a corrupt sealed file in place", async () => {
+  const workspace = writeFakeWorkflowWorkspace({ plan: "id: plan\n" });
+  try {
+    writeMetricsSession(workspace, "wave-3", "plan", "2026-10-20T00:00:01.000+00:00", null);
+    const file = path.join(workspace, ".migent", "sessions", "wave-3", "metrics.json");
+    writeFileSync(file, "not-json");
+    const captured = await capture(() => main(["session", "metrics", "wave-3", "--json"], workspace));
     expect(captured.value).toBe(2);
-    expect(captured.stderr).toContain("No events found for session: missing");
+    expect(captured.stderr).toContain("metrics.json for session wave-3 is not valid JSON.");
+    expect(readFileSync(file, "utf8")).toBe("not-json");
   } finally {
     removeWorkspace(workspace);
   }

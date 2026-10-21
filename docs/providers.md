@@ -118,9 +118,11 @@ Migent owns selection, prompts, routing, and persistence.
 ## Usage
 
 Each adapter selects the usage events from one process and stores them on the
-turn. Metrics ask that same adapter to normalize the capture when they are
-read. A cumulative provider subtracts the previous capture for the same
-provider agent. A per-process provider reports the process as printed.
+turn. When a workflow session becomes `completed`, Migent asks that same adapter to
+normalize the capture and writes `metrics.json`. A later change to the adapter
+does not change that file. A cumulative provider subtracts the previous capture
+for the same provider agent. A per-process provider reports the process as
+printed.
 
 | Provider | What it prints | Tokens | Cost |
 | --- | --- | --- | --- |

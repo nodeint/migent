@@ -20,8 +20,9 @@ migent session list --workflow <id> --status completed --limit 5 --json
 migent session metrics --json
 ```
 
-- One session prints one object. Several print one object per line, newest
-  first. `--workflow`, `--status`, and `--limit` match `session list`.
+- One session prints its `metrics.json`. Several print one object per
+  line, newest first. Only a completed session has this file. `--workflow`,
+  `--status`, and `--limit` filter those rows.
 - Read `usage_missing` and `uncaptured_turns` before comparing totals.
 - `stage_attempt` is not a retry count.
 

@@ -25,7 +25,7 @@ This skill is already in the prompt. Do not open its file again.
   `MIGENT_NO_INPUT=1`) to `init`, `config model`, and `config role`, and give
   every value as a flag.
 - Do not edit generated session state: `manifest.yaml`, `status.json`,
-  `events.jsonl`, or anything under `executions/`.
+  `events.jsonl`, `metrics.json`, or anything under `executions/`.
 - Keep the user's task wording. Do not read `task.md` or the documents it
   names; the stage agent does.
 - Never start a replacement session to reset limits or get past `blocked`.

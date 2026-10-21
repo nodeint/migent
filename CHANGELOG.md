@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- A completed workflow session writes `metrics.json`. `session metrics --json` prints that file and lists only sessions that have it. A session without the file exits 2. Later adapter changes do not change that file. An agent session has no metrics file.
+
 ## 0.1.5
 
 ### Added

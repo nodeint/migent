@@ -8,8 +8,10 @@ import {
   statSync,
 } from "node:fs";
 import path from "node:path";
+import type { AgentAdapter } from "./adapter.js";
 import { writeFileAtomic, writeJsonAtomic } from "./atomic-file.js";
 import { ConfigurationError, OutputsMissing } from "./errors.js";
+import { sealSessionMetrics } from "./metrics.js";
 import { appendLifecycleEvent, appendRecordedEvent, reservedExecutionOrders, reservedStageAttempts, skipsStatusWrite } from "./session-events.js";
 import { commitFoldedStatus, readSessionManifest } from "./session-fold.js";
 import { loadFrozenWorkflow } from "./session-freeze.js";
@@ -182,11 +184,17 @@ export class SessionStore {
   readonly workspace: string;
   readonly sessionsDirectory: string;
   readonly processInspector: ProcessInspector;
+  readonly metricsAdapters: Record<string, AgentAdapter> | null;
 
-  constructor(workspace: string, processInspector?: ProcessInspector) {
+  constructor(
+    workspace: string,
+    processInspector?: ProcessInspector,
+    metricsAdapters?: Record<string, AgentAdapter>,
+  ) {
     this.workspace = workspace;
     this.sessionsDirectory = path.join(workspace, MIGENT_DIRNAME, SESSIONS_DIRNAME);
     this.processInspector = processInspector ?? new SystemProcessInspector();
+    this.metricsAdapters = metricsAdapters ?? null;
   }
 
   loadOrCreate(
@@ -689,6 +697,13 @@ export class SessionStore {
     }
     if (plan.manifestStatus !== null) this.rewriteManifestStatus(sessionDirectory, plan.manifestStatus);
     commitFoldedStatus(this.workspace, sessionDirectory);
+    if (
+      plan.sessionStatus === "completed" &&
+      previousStatus.workflow_id !== "agent" &&
+      this.metricsAdapters !== null
+    ) {
+      sealSessionMetrics(this.workspace, context.sessionId, this.metricsAdapters);
+    }
     if (plan.outputsMissing.length > 0) throw new OutputsMissing(plan.outputsMissing);
   }
 

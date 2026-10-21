@@ -294,13 +294,17 @@ select rows before `--limit`. `--status` is `active`, `prepared`, `completed`,
 `blocked`, or `cancelled`. `--latest` prints the newest match. `--latest`
 cannot be combined with `--limit`. An empty list exits 0.
 
-`session metrics` prints derived usage, time, and revision counts. Pass a
-session id for one JSON object. Omit it for one object per line, newest first.
-`--workflow`, `--status`, and `--limit` match `session list`, including
-`--status corrupt`. `--json` is required: without it the command exits 2 with
-`session metrics requires --json.` A session that has no `events.jsonl` exits 2
-with `No events found for session: <id>`. An empty list prints nothing and
-exits 0. The command does not take the session lock.
+`session metrics` prints `metrics.json`, written when a workflow session
+becomes `completed`. Pass a session id for one JSON object. Omit it for one object per
+line, newest first. Only sessions with that file appear. `--workflow`,
+`--status`, and `--limit` filter those rows. `--json` is required: without it
+the command exits 2 with `session metrics requires --json.` A session with no
+`metrics.json` exits 2 with
+`No metrics for session: <id>. Metrics are recorded when a workflow session completes.`
+A file that is not a JSON object exits 2 with
+`metrics.json for session <id> is not valid JSON.` and stays in place. An
+empty list prints nothing and exits 0. The command does
+not take the session lock.
 
 `session show <session-id>` prints one snapshot and exits 0, including when the
 session is blocked. For a schema 2 session it also prints, on stderr, any drift

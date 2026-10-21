@@ -145,7 +145,14 @@ export {
   watchSnapshot,
 } from "./query.js";
 export type { StatusFileState } from "./query.js";
-export { sessionMetrics, listSessionMetrics } from "./metrics.js";
+export {
+  listSealedMetrics,
+  listSessionMetrics,
+  readSealedMetrics,
+  sealSessionMetrics,
+  sealedMetricsPath,
+  sessionMetrics,
+} from "./metrics.js";
 export {
   providerErrorMessage,
   classifyProviderError,
