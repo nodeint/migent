@@ -19,7 +19,8 @@ export function tempPathFor(destination: string): string {
 }
 
 export function fsyncPath(filePath: string): void {
-  const fd = openSync(filePath, "r");
+  // Windows FlushFileBuffers rejects a read-only handle with EPERM.
+  const fd = openSync(filePath, "r+");
   try {
     fsyncSync(fd);
   } finally {

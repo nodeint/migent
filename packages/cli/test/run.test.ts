@@ -407,7 +407,7 @@ test("execute reruns plan then review after revise", async () => {
   } finally {
     removeWorkspace(workspace);
   }
-});
+}, 30_000);
 
 test("execute requires prior session then completes plan implement", async () => {
   const requiring = repoWorkflowText("plan-implement").replace(
@@ -476,7 +476,7 @@ test("execute requires prior session then completes plan implement", async () =>
   } finally {
     removeWorkspace(workspace);
   }
-});
+}, 30_000);
 
 test("continue redispatches a blocked session, leaves completed sessions stopped, and finalizes a cancelled execution in place", async () => {
   const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });

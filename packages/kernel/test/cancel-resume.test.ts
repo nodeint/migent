@@ -347,7 +347,9 @@ stages:
     if (readFileSync(pidA, "utf8").trim() === "" || readFileSync(pidB, "utf8").trim() === "") return;
     signaled = true;
     clearInterval(timer);
-    process.kill(process.pid, "SIGINT");
+    // Windows terminates the process on process.kill(pid, "SIGINT") instead of emitting the signal.
+    if (process.platform === "win32") process.emit("SIGINT");
+    else process.kill(process.pid, "SIGINT");
   }, 20);
   const original = SessionLock.prototype.release;
   let releasedAfterCancel = false;

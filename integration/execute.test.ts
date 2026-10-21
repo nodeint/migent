@@ -590,7 +590,9 @@ test("the session completes only after both reviews approve and publishes once",
       "# implementation\n",
     );
     const artifactLines = stderr.split("\n").filter((line) => line.startsWith("[migent] artifact: "));
-    expect(artifactLines).toEqual([expect.stringMatching(/\[migent\] artifact: \/.*\/outputs\/implementation\.md$/)]);
+    expect(artifactLines).toEqual([
+      expect.stringMatching(/\[migent\] artifact: .*[/\\]outputs[/\\]implementation\.md$/),
+    ]);
     expect(readFileSync(artifactLines[0]?.slice("[migent] artifact: ".length) ?? "", "utf8")).toBe("# implementation\n");
   } finally {
     removeWorkspace(workspace);

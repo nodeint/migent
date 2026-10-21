@@ -267,7 +267,7 @@ test("a stopped session prints the continue command", async () => {
     const artifacts = artifactPathsFrom(done.stderr);
     expect(artifacts).toHaveLength(1);
     expect(path.isAbsolute(artifacts[0] ?? "")).toBe(true);
-    expect(artifacts[0]).toMatch(/\/outputs\/plan\.md$/);
+    expect(artifacts[0]).toMatch(/[/\\]outputs[/\\]plan\.md$/);
     expect(readFileSync(artifacts[0] ?? "", "utf8")).toBe("# Plan\n");
     expect(done.stderr).not.toContain("artifacts:");
     expect(done.stderr).not.toContain("planned");

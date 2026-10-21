@@ -1,6 +1,7 @@
 import type { ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { accessSync, constants as fsConstants, mkdirSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import {
   CancellationRequested,
@@ -50,11 +51,32 @@ export interface VerifyRunInput {
   onHeartbeat?: (command: string, elapsedSec: number) => void;
 }
 
+const require = createRequire(import.meta.url);
+const whichSync = (
+  require("which") as { sync(command: string, options?: { nothrow?: boolean }): string | null }
+).sync;
+
+/** `/bin/sh` when it exists. On Windows, the `sh` on PATH (Git for Windows). */
+export function defaultVerifyShell(): string {
+  const posix = "/bin/sh";
+  try {
+    accessSync(posix, fsConstants.X_OK);
+    return posix;
+  } catch {
+    // Missing here is normal on Windows.
+  }
+  if (process.platform === "win32") {
+    const found = whichSync("sh", { nothrow: true });
+    if (found) return found;
+  }
+  return posix;
+}
+
 export class VerifyRunner {
   readonly progressIntervalSec: number;
   readonly shell: string;
 
-  constructor(progressIntervalSec = PROGRESS_INTERVAL_SEC, shell = "/bin/sh") {
+  constructor(progressIntervalSec = PROGRESS_INTERVAL_SEC, shell = defaultVerifyShell()) {
     this.progressIntervalSec = progressIntervalSec;
     this.shell = shell;
   }
