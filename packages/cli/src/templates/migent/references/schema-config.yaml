@@ -25,6 +25,12 @@ models:
     options:
       reasoning-effort: high
 
+  coder:
+    provider: byteplus
+    # byteplus has no CLI of its own, so client is required and names the CLI that runs it.
+    client: opencode
+    model: coding-plan/deepseek-v4-pro
+
 roles:
   planner:
     default_model: planner

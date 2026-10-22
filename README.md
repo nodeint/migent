@@ -118,6 +118,8 @@ Decouple **what** a stage does from **which model** executes it. Migent drives t
 | **Google Antigravity** | `agy` | Deep repository analysis, plan generation & review |
 | **OpenAI Codex** | `codex` | Fast, focused implementation & unit test authoring |
 | **xAI Grok** | `grok` | Independent logic review & edge case discovery |
+| **OpenCode** | `opencode` | Multi-vendor models behind one CLI, for any role |
+| **BytePlus ModelArk** | none (set `client` per model) | BytePlus models run through another installed CLI, e.g. `opencode` |
 
 Switch models anytime in `.migent/config.yaml` without touching your workflow logic.
 
