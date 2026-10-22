@@ -25,7 +25,7 @@ import { printAgent, printError, printNotice, printResumeCommand } from "../disp
 import { cliHooks } from "../hooks.js";
 import { requireCurrentSchema } from "../migrate.js";
 import { bindCancellationSignals } from "../signals.js";
-import { adapterMap, parseOptions } from "../provider.js";
+import { providerMap, parseOptions } from "../provider.js";
 import { resolvePrompt } from "../workspace.js";
 
 export async function dispatchAgent(
@@ -98,7 +98,7 @@ export async function dispatchAgent(
     let result: Awaited<ReturnType<AgentToolRunner["run"]>> | undefined;
     let resumedMany: Array<Awaited<ReturnType<AgentToolRunner["run"]>>> | null = null;
     try {
-      const runner = args.runner ?? cliHooks.runner ?? new AgentToolRunner(adapterMap());
+      const runner = args.runner ?? cliHooks.runner ?? new AgentToolRunner(providerMap());
       const waitedUntil = new Map<string, string>();
       const rerun = (prompt: string, resumeId: string) =>
         runner.run({
@@ -254,7 +254,7 @@ export async function continueAgent(
     printNotice(`agent ${role} · ${profile.provider}/${profile.model} (${optionLabel}).`);
     const unbind = bindCancellationSignals();
     try {
-      const runner = args.runner ?? cliHooks.runner ?? new AgentToolRunner(adapterMap());
+      const runner = args.runner ?? cliHooks.runner ?? new AgentToolRunner(providerMap());
       if (sessionStatus === "cancelled") {
         return await runCancelledRole(
           workspace,

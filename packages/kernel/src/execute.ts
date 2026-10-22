@@ -348,7 +348,7 @@ async function executeLocked(
                     sessionId,
                     stage: verifyOnlyStage(workflow, item.stageId),
                     verifyRunner: activeRunner.verifyRunner,
-                    adapters: activeRunner.adapters,
+                    providers: activeRunner.providers,
                     executionId: item.executionId,
                   })
                 : activeRunner.continueCancelled(workspace, sessionId, item.executionId),
@@ -1173,7 +1173,7 @@ async function dispatchExecuteStage(
       sessionId,
       stage: stageSpec,
       verifyRunner: runner.verifyRunner,
-      adapters: runner.adapters,
+      providers: runner.providers,
       onExecution,
     });
     const outcome = result.failure_reason === VERIFY_FAILED ? "verify_failed" : "complete";

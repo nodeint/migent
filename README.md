@@ -74,7 +74,7 @@ migent session metrics <session-id> --json
 | :--- | :--- |
 | **Manual handoffs:** Copying plans and pasting stack traces across conversations. | **Automated handoffs:** Upstream artifacts and diffs pass automatically into downstream stages. |
 | **Single-agent bottleneck:** One model handles planning, coding, and review, accumulating context bloat. | **Specialized roles:** Multi-agent pipeline with dedicated models per role (e.g., Planner $\rightarrow$ Coder $\rightarrow$ Reviewer). |
-| **Vendor lock-in & wrappers:** Restricted to one provider or requiring custom API adapters. | **Native CLI execution:** Drives your installed agent CLIs (`agy`, `claude`, `codex`, `grok`) directly in your workspace. |
+| **Vendor lock-in & wrappers:** Restricted to one provider or requiring custom API providers. | **Native CLI execution:** Drives your installed agent CLIs (`agy`, `claude`, `codex`, `grok`) directly in your workspace. |
 | **Blind trust:** Agents claim "all tests pass" without actually running project commands. | **Verification gates:** Real local checks (`pnpm test`, `pytest`, `cargo test`) must succeed before advancing. |
 | **Fragile one-off prompts:** Team members execute tasks with inconsistent, ad-hoc instructions. | **Process as code:** Workflows live in Git (`.migent/workflows/`), making best practices versioned and repeatable. |
 | **No execution visibility:** No record of how long tasks took, why checks failed, or how many retries occurred. | **Telemetry & Metrics:** Append-only event logs, live streaming, and full JSON metrics for duration, retries, and token cost. |
@@ -211,7 +211,7 @@ outputs:
 # Setup & Health
 migent init --preset plan           # Initialize starter configuration
 migent doctor                      # Validate configuration, schemas, and CLI availability
-migent provider list               # List registered provider adapters and their available models
+migent provider list               # List registered provider providers and their available models
 migent skill install               # Install the Migent Skill for coding agents (.agents/skills/migent/)
 
 # Execution

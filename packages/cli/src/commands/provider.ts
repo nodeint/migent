@@ -1,8 +1,8 @@
-import { whichSync, type AgentAdapter, type ProviderOption } from "@nodeint/migent-kernel";
+import { whichSync, type Provider, type ProviderOption } from "@nodeint/migent-kernel";
 import { printProviders, type ProviderRow } from "../display.js";
 import { cliHooks } from "../hooks.js";
 import {
-  adapterMap,
+  providerMap,
   loadCatalog,
   runProviderCommand,
   type RunCommand,
@@ -23,8 +23,8 @@ function mapProviderOption(opt: ProviderOption): {
   };
 }
 
-function getProviderOptions(adapter: AgentAdapter): ReturnType<typeof mapProviderOption>[] {
-  const candidate = adapter as Partial<{ providerOptions: () => readonly ProviderOption[] }>;
+function getProviderOptions(provider: Provider): ReturnType<typeof mapProviderOption>[] {
+  const candidate = provider as Partial<{ providerOptions: () => readonly ProviderOption[] }>;
   if (typeof candidate.providerOptions === "function") {
     return candidate.providerOptions().map(mapProviderOption);
   }
@@ -32,26 +32,26 @@ function getProviderOptions(adapter: AgentAdapter): ReturnType<typeof mapProvide
 }
 
 export async function collectProviders(
-  adapters: Record<string, AgentAdapter>,
+  providers: Record<string, Provider>,
   which: Which,
   runCommand: RunCommand,
 ): Promise<ProviderRow[]> {
-  const names = Object.keys(adapters).sort();
+  const names = Object.keys(providers).sort();
   const rows: ProviderRow[] = [];
 
   for (const name of names) {
-    const adapter = adapters[name];
-    const path = which(adapter.command);
-    const options = getProviderOptions(adapter);
+    const provider = providers[name];
+    const path = which(provider.command);
+    const options = getProviderOptions(provider);
     const problems: string[] = [];
     let models: string[] = [];
     let default_model: string | null = null;
 
     if (path === null) {
-      problems.push(`${adapter.command} is not on PATH.`);
+      problems.push(`${provider.command} is not on PATH.`);
     } else {
       try {
-        const catalog = await loadCatalog(adapter, which, runCommand);
+        const catalog = await loadCatalog(provider, which, runCommand);
         models = [...catalog.ids];
         default_model = catalog.defaultId;
       } catch (error) {
@@ -62,7 +62,7 @@ export async function collectProviders(
 
     rows.push({
       name,
-      command: adapter.command,
+      command: provider.command,
       path,
       available: path !== null,
       models,
@@ -87,15 +87,15 @@ function providerPayload(rows: readonly ProviderRow[]): {
 
 export async function runProviderList(options: {
   asJson?: boolean;
-  adapters?: Record<string, AgentAdapter> | null;
+  providers?: Record<string, Provider> | null;
   which?: Which | null;
   runCommand?: RunCommand | null;
 } = {}): Promise<number> {
-  const adapters = options.adapters ?? adapterMap();
+  const providers = options.providers ?? providerMap();
   const which = options.which ?? cliHooks.which ?? whichSync;
   const runCommand = options.runCommand ?? cliHooks.runCommand ?? runProviderCommand;
 
-  const rows = await collectProviders(adapters, which, runCommand);
+  const rows = await collectProviders(providers, which, runCommand);
 
   if (options.asJson) {
     process.stdout.write(`${JSON.stringify(providerPayload(rows))}\n`);

@@ -59,7 +59,7 @@ uses `default` and, when the reviewer has a second model, `review`.
 
 ## Options
 
-Each adapter names its own options and lists the values for the selected
+Each provider names its own options and lists the values for the selected
 model. `migent init` and `migent config` ask for options marked as
 prompts. Leaving one unset keeps the provider default.
 
@@ -80,7 +80,7 @@ prompts. Leaving one unset keeps the provider default.
   prompted for or overridable. Other keys are rejected.
 
 A role or stage `options` map overrides the same keys on the model. Only
-options the adapter marks as overridable are part of the provider session.
+options the provider marks as overridable are part of the provider session.
 
 ## Schema version
 
@@ -92,7 +92,7 @@ writes without asking.
 
 The kernel walks one version at a time. A file at version 1 that is moving to
 version 3 runs the version 1 function, then the version 2 function. Each
-adapter defines those functions itself, separately for a model entry, a role,
+provider defines those functions itself, separately for a model entry, a role,
 and a workflow stage. Grok version 0 moves `thinking` to `reasoning-effort`.
 Codex version 0 moves `thinking` to `model_reasoning_effort`. A project's own
 `version` field is left as it is.
@@ -114,15 +114,15 @@ stages:
 Model options provide the base configuration. A role `options` map overrides
 those keys, and a stage `options` map overrides them for that turn.
 
-Migent currently includes adapters for the headless `agy`, `claude`, `codex`,
+Migent currently includes providers for the headless `agy`, `claude`, `codex`,
 `grok`, and `opencode` CLIs. Those CLIs own authentication, tool use, and agent execution;
 Migent owns selection, prompts, routing, and persistence.
 
 ## Usage
 
-Each adapter selects the usage events from one process and stores them on the
-turn. When a workflow session becomes `completed`, Migent asks that same adapter to
-normalize the capture and writes `metrics.json`. A later change to the adapter
+Each provider selects the usage events from one process and stores them on the
+turn. When a workflow session becomes `completed`, Migent asks that same provider to
+normalize the capture and writes `metrics.json`. A later change to the provider
 does not change that file. A cumulative provider subtracts the previous capture
 for the same provider agent. A per-process provider reports the process as
 printed.

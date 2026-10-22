@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { GrokAdapter } from "@nodeint/migent-adapters";
+import { GrokProvider } from "@nodeint/migent-adapters";
 import {
   documentVersion,
   loadModelTarget,
@@ -86,8 +86,8 @@ test("config reference parses and names every key the config parser reads", () =
     });
     expect(loadRoleInstructions(config, "planner")).toEqual(["Break the task into a reviewable plan."]);
     expect(loadRoleInstructions(config, "reviewer")).toEqual([]);
-    new GrokAdapter().validateOptions({ "reasoning-effort": "high" });
-    new GrokAdapter().validateOptions({ "reasoning-effort": "medium" });
+    new GrokProvider().validateOptions({ "reasoning-effort": "high" });
+    new GrokProvider().validateOptions({ "reasoning-effort": "medium" });
     const configParser = `${readFileSync(CONFIG_PARSER, "utf8")}\n${readFileSync(RECORD_PARSER, "utf8")}`;
     expect(parserKeys(configParser, "config")).toEqual(CONFIG_KEYS);
     expect(yamlKeys(text)).toEqual([...CONFIG_KEYS, "planner", "reasoning-effort", "reviewer"].sort());

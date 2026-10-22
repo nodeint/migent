@@ -14,7 +14,7 @@ behavior is documented in [README.md](README.md) and [docs/](docs/).
 | Path | npm package | Role |
 |---|---|---|
 | `packages/kernel` | `@nodeint/migent-kernel` | Workflow engine, config, session store, libc bindings |
-| `packages/adapters` | `@nodeint/migent-adapters` | Antigravity, Claude, Codex, Grok, and OpenCode adapters |
+| `packages/adapters` | `@nodeint/migent-adapters` | Antigravity, Claude, Codex, Grok, and OpenCode providers |
 | `packages/registry` | `@nodeint/migent-registry` | Machine-local workspace registry service |
 | `packages/cli` | `@nodeint/migent` | The `migent` command |
 | `integration/` | — | End-to-end tests against fake provider binaries |

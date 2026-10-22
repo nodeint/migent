@@ -5,7 +5,7 @@ import { expect, test } from "vitest";
 import { followSession } from "../src/commands/watch.ts";
 import { cliHooks } from "../src/hooks.ts";
 import { main } from "../src/index.ts";
-import { ScriptedAdapter, capture, removeWorkspace, repoWorkflowText, writeFakeWorkflowWorkspace } from "./support.ts";
+import { ScriptedProvider, capture, removeWorkspace, repoWorkflowText, writeFakeWorkflowWorkspace } from "./support.ts";
 
 test("a v1 session works with show, list, follow, continue, and repair", async () => {
   const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
@@ -32,7 +32,7 @@ test("a v1 session works with show, list, follow, continue, and repair", async (
     expect(followed.value).toBe(0);
     expect(followed.stdout).toContain(sessionId);
 
-    cliHooks.runner = new AgentToolRunner({ fake: new ScriptedAdapter(["status: complete\n\ndone"], ["# Plan\n"]) }, 10);
+    cliHooks.runner = new AgentToolRunner({ fake: new ScriptedProvider(["status: complete\n\ndone"], ["# Plan\n"]) }, 10);
     const continued = await capture(() => main(["session", "continue", sessionId, "--once"], workspace));
     expect(continued.value).toBe(0);
     expect(continued.stdout).toBe("");

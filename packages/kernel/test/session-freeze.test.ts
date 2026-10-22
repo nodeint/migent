@@ -7,7 +7,7 @@ import { readFoldedStatus } from "../src/session-fold.ts";
 import { createAgentSession, createPreparedSession, createWorkflowSession } from "../src/session-records.ts";
 import { WORKFLOW_FREEZE_FILE, loadFrozenWorkflow } from "../src/session-freeze.ts";
 import { SessionStore } from "../src/session-store.ts";
-import { ScriptedAdapter, tempDir } from "./support.ts";
+import { ScriptedProvider, tempDir } from "./support.ts";
 
 const ORIGINAL = `\
 id: flow
@@ -122,15 +122,15 @@ test("an edited workflow still dispatches the frozen stage, model, and role", as
   const directory = sessionDirectory(workspace, sessionId);
   expect(readFoldedStatus(workspace, directory)).toEqual(readStatus(workspace, sessionId));
   editLiveFiles(workspace);
-  const adapter = new ScriptedAdapter(["status: complete\n\ndone"]);
+  const provider = new ScriptedProvider(["status: complete\n\ndone"]);
   const captured = await captureStderr(() =>
-    executeNamedWorkflow(workspace, { sessionId, once: true }, new AgentToolRunner({ fake: adapter }, 10)),
+    executeNamedWorkflow(workspace, { sessionId, once: true }, new AgentToolRunner({ fake: provider }, 10)),
   );
   expect(captured.value.code).toBe(0);
   expect(new SessionStore(workspace).executionSnapshots(sessionId)[0]?.stageId).toBe("draft");
-  expect(adapter.calls[0]?.model).toBe("frozen-model");
-  expect(adapter.calls[0]?.prompt).toContain("FROZEN_ROLE_LINE");
-  expect(adapter.calls[0]?.prompt).not.toContain("LIVE_ROLE_LINE");
+  expect(provider.calls[0]?.model).toBe("frozen-model");
+  expect(provider.calls[0]?.prompt).toContain("FROZEN_ROLE_LINE");
+  expect(provider.calls[0]?.prompt).not.toContain("LIVE_ROLE_LINE");
   expect(captured.stderr).toContain(
     `[migent] session ${sessionId} is using its frozen workflow. The workflow file differs.`,
   );
@@ -166,18 +166,18 @@ test("refresh adopts the edited route and does not change status by itself", asy
   expect(refreshed?.data?.source_sha256).toMatch(/^[a-f0-9]{64}$/);
   expect(refreshed?.data?.hash).not.toBe(refreshed?.data?.previous_hash);
 
-  const adapter = new ScriptedAdapter(["status: complete\n\ndone"]);
+  const provider = new ScriptedProvider(["status: complete\n\ndone"]);
   const captured = await captureStderr(() =>
     executeNamedWorkflow(
       workspace,
       { sessionId, once: true, refreshWorkflow: true },
-      new AgentToolRunner({ fake: adapter }, 10),
+      new AgentToolRunner({ fake: provider }, 10),
     ),
   );
   expect(captured.stderr).not.toContain("is using its frozen workflow");
   expect(new SessionStore(workspace).executionSnapshots(sessionId)[0]?.stageId).toBe("intake");
-  expect(adapter.calls[0]?.model).toBe("live-model");
-  expect(adapter.calls[0]?.prompt).toContain("LIVE_ROLE_LINE");
+  expect(provider.calls[0]?.model).toBe("live-model");
+  expect(provider.calls[0]?.prompt).toContain("LIVE_ROLE_LINE");
   expect(readFoldedStatus(workspace, directory)).toEqual(readStatus(workspace, sessionId));
 });
 
@@ -186,15 +186,15 @@ test("a session without a freeze follows the live workflow and refuses refresh",
   const sessionId = createWorkflowSession(workspace, "flow", "Write the notes");
   markSchema1(workspace, sessionId);
   editLiveFiles(workspace);
-  const adapter = new ScriptedAdapter(["status: complete\n\ndone"]);
+  const provider = new ScriptedProvider(["status: complete\n\ndone"]);
   const result = await executeNamedWorkflow(
     workspace,
     { sessionId, once: true },
-    new AgentToolRunner({ fake: adapter }, 10),
+    new AgentToolRunner({ fake: provider }, 10),
   );
   expect(result.code).toBe(0);
   expect(new SessionStore(workspace).executionSnapshots(sessionId)[0]?.stageId).toBe("intake");
-  expect(adapter.calls[0]?.model).toBe("live-model");
+  expect(provider.calls[0]?.model).toBe("live-model");
   await expect(
     executeNamedWorkflow(workspace, { sessionId, refreshWorkflow: true, once: true }),
   ).rejects.toThrow(`Session ${sessionId} has no frozen workflow.`);
@@ -214,11 +214,11 @@ test("refresh while creating a session is rejected before a session exists", asy
 
 test("refresh names a completed session and leaves the freeze in place", async () => {
   const workspace = workspaceWithFlow();
-  const adapter = new ScriptedAdapter(["status: complete\n\ndraft", "status: complete\n\nreview"]);
+  const provider = new ScriptedProvider(["status: complete\n\ndraft", "status: complete\n\nreview"]);
   const finished = await executeNamedWorkflow(
     workspace,
     { workflowId: "flow", task: "Write the notes" },
-    new AgentToolRunner({ fake: adapter }, 10),
+    new AgentToolRunner({ fake: provider }, 10),
   );
   expect(finished.status).toBe("completed");
   const freezePath = path.join(sessionDirectory(workspace, finished.sessionId), WORKFLOW_FREEZE_FILE);

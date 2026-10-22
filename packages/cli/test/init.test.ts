@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ModelCatalog } from "@nodeint/migent-adapters";
-import type { AgentAdapter } from "@nodeint/migent-kernel";
+import type { Provider } from "@nodeint/migent-kernel";
 import { expect, test } from "vitest";
 import { runInit, type Prompter } from "../src/commands/init.ts";
 import { main } from "../src/index.ts";
@@ -36,7 +36,7 @@ class ScriptedPrompt implements Prompter {
     this.answers = [...answers];
   }
 
-  selectProvider(rows: ReadonlyArray<readonly [string, string | null, AgentAdapter]>): string {
+  selectProvider(rows: ReadonlyArray<readonly [string, string | null, Provider]>): string {
     const raw = this.answers[this.index++] ?? "";
     return raw === "" ? (rows[0]?.[0] ?? "") : raw;
   }

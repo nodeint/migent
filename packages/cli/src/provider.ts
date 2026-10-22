@@ -1,7 +1,7 @@
-import { ModelCatalog, defaultAdapters } from "@nodeint/migent-adapters";
-import { spawnProviderSync, type AgentAdapter, type ProviderOption } from "@nodeint/migent-kernel";
+import { ModelCatalog, defaultProviders } from "@nodeint/migent-adapters";
+import { spawnProviderSync, type Provider, type ProviderOption } from "@nodeint/migent-kernel";
 
-export interface CatalogAdapter extends AgentAdapter {
+export interface CatalogProvider extends Provider {
   modelCatalogCommand(): string[];
   /** Written to the catalog command's stdin when the CLI reads its request there. */
   modelCatalogInput?(): string;
@@ -16,33 +16,33 @@ export type RunCommand = (argv: string[], input?: string) => string | Promise<st
 
 export class ProviderCommandFailed extends Error {}
 
-export function adapterMap(): Record<string, AgentAdapter> {
-  return defaultAdapters();
+export function providerMap(): Record<string, Provider> {
+  return defaultProviders();
 }
 
-export function asCatalog(adapter: AgentAdapter): CatalogAdapter {
-  const candidate = adapter as Partial<CatalogAdapter>;
+export function asCatalog(provider: Provider): CatalogProvider {
+  const candidate = provider as Partial<CatalogProvider>;
   if (typeof candidate.modelCatalogCommand !== "function" || typeof candidate.parseModelCatalog !== "function") {
-    throw new ProviderCommandFailed(`${adapter.command} does not list models.`);
+    throw new ProviderCommandFailed(`${provider.command} does not list models.`);
   }
-  return candidate as CatalogAdapter;
+  return candidate as CatalogProvider;
 }
 
-export function requireAdapter(adapters: Record<string, AgentAdapter>, provider: string): AgentAdapter {
-  const adapter = adapters[provider];
-  if (adapter === undefined) {
-    const supported = Object.keys(adapters).sort().join(", ");
+export function requireProvider(providers: Record<string, Provider>, provider: string): Provider {
+  const impl = providers[provider];
+  if (impl === undefined) {
+    const supported = Object.keys(providers).sort().join(", ");
     throw new ProviderCommandFailed(`Unknown provider: ${provider}. Supported: ${supported}.`);
   }
-  return adapter;
+  return impl;
 }
 
 export function detected(
-  adapters: Record<string, AgentAdapter>,
+  providers: Record<string, Provider>,
   which: Which,
-): Array<[string, string | null, AgentAdapter]> {
-  const rows = Object.entries(adapters).map(
-    ([name, adapter]) => [name, which(adapter.command), adapter] as [string, string | null, AgentAdapter],
+): Array<[string, string | null, Provider]> {
+  const rows = Object.entries(providers).map(
+    ([name, provider]) => [name, which(provider.command), provider] as [string, string | null, Provider],
   );
   rows.sort((left, right) => {
     const leftMissing = left[1] === null ? 1 : 0;
@@ -56,26 +56,26 @@ export function detected(
 }
 
 export async function loadCatalog(
-  adapter: AgentAdapter,
+  provider: Provider,
   which: Which,
   runCommand: RunCommand,
 ): Promise<ModelCatalog> {
-  if (which(adapter.command) === null) {
+  if (which(provider.command) === null) {
     throw new ProviderCommandFailed(
-      `${adapter.command} is not on PATH, so its models could not be listed.`,
+      `${provider.command} is not on PATH, so its models could not be listed.`,
     );
   }
-  const catalogAdapter = asCatalog(adapter);
+  const catalogProvider = asCatalog(provider);
   let stdout: string;
   try {
-    stdout = await runCommand(catalogAdapter.modelCatalogCommand(), catalogAdapter.modelCatalogInput?.());
+    stdout = await runCommand(catalogProvider.modelCatalogCommand(), catalogProvider.modelCatalogInput?.());
   } catch (error) {
     if (error instanceof ProviderCommandFailed) throw error;
     const reason = error instanceof Error ? error.message : String(error);
-    throw new ProviderCommandFailed(`Could not list ${adapter.command} models: ${reason}`);
+    throw new ProviderCommandFailed(`Could not list ${provider.command} models: ${reason}`);
   }
-  const catalog = catalogAdapter.parseModelCatalog(stdout);
-  if (catalog.ids.length === 0) throw new ProviderCommandFailed(`${adapter.command} returned no models.`);
+  const catalog = catalogProvider.parseModelCatalog(stdout);
+  if (catalog.ids.length === 0) throw new ProviderCommandFailed(`${provider.command} returned no models.`);
   return catalog;
 }
 
@@ -99,7 +99,7 @@ export function parseOptions(pairs: readonly string[]): Record<string, string> {
 }
 
 export async function loadOptionValues(
-  adapter: AgentAdapter,
+  provider: Provider,
   name: string,
   model: string,
   catalog: ModelCatalog,
@@ -108,12 +108,12 @@ export async function loadOptionValues(
 ): Promise<readonly string[] | null> {
   const found = catalog.valuesFor(model, name);
   if (found !== null) return found;
-  const catalogAdapter = asCatalog(adapter);
-  const argv = catalogAdapter.optionValuesCommand(name, model);
+  const catalogProvider = asCatalog(provider);
+  const argv = catalogProvider.optionValuesCommand(name, model);
   if (argv === null) return null;
-  if (which(adapter.command) === null) {
+  if (which(provider.command) === null) {
     throw new ProviderCommandFailed(
-      `${adapter.command} is not on PATH, so its ${name} values could not be listed.`,
+      `${provider.command} is not on PATH, so its ${name} values could not be listed.`,
     );
   }
   let text: string;
@@ -123,14 +123,14 @@ export async function loadOptionValues(
     if (error instanceof ProviderCommandFailed) text = error.message;
     else {
       const reason = error instanceof Error ? error.message : String(error);
-      throw new ProviderCommandFailed(`Could not list ${adapter.command} ${name} values for ${model}: ${reason}`);
+      throw new ProviderCommandFailed(`Could not list ${provider.command} ${name} values for ${model}: ${reason}`);
     }
   }
-  return catalogAdapter.parseOptionValues(name, text, model);
+  return catalogProvider.parseOptionValues(name, text, model);
 }
 
 export async function acceptedOptions(
-  adapter: AgentAdapter,
+  provider: Provider,
   model: string,
   catalog: ModelCatalog,
   which: Which,
@@ -138,10 +138,10 @@ export async function acceptedOptions(
   options: Readonly<Record<string, string>>,
 ): Promise<Record<string, string>> {
   if (Object.keys(options).length === 0) return {};
-  adapter.validateOptions(options);
+  provider.validateOptions(options);
   const stored: Record<string, string> = {};
   for (const [name, value] of Object.entries(options)) {
-    const values = await loadOptionValues(adapter, name, model, catalog, which, runCommand);
+    const values = await loadOptionValues(provider, name, model, catalog, which, runCommand);
     if (values === null) {
       stored[name] = value;
       continue;

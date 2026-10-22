@@ -2,7 +2,7 @@ import { diagnose, whichSync, type Check } from "@nodeint/migent-kernel";
 import { printDoctor } from "../display.js";
 import { cliHooks } from "../hooks.js";
 import { requireCurrentSchema } from "../migrate.js";
-import { adapterMap, type Which } from "../provider.js";
+import { providerMap, type Which } from "../provider.js";
 
 export async function runDoctor(
   workspace: string,
@@ -10,7 +10,7 @@ export async function runDoctor(
 ): Promise<number> {
   requireCurrentSchema(workspace);
   const which = options.which ?? cliHooks.which ?? whichSync;
-  const checks = diagnose(workspace, { adapters: adapterMap(), which });
+  const checks = diagnose(workspace, { providers: providerMap(), which });
   if (options.asJson) process.stdout.write(`${JSON.stringify(payload(checks))}\n`);
   else printDoctor(checks);
   return checks.every((check) => check.ok) ? 0 : 1;

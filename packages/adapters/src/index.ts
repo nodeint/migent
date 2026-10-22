@@ -1,36 +1,36 @@
-import { KERNEL_PLACEHOLDER, type AgentAdapter } from "@nodeint/migent-kernel";
-import { AgyAdapter } from "./agy-adapter.js";
-import { ClaudeAdapter } from "./claude-adapter.js";
-import { CodexAdapter } from "./codex-adapter.js";
-import { GrokAdapter } from "./grok-adapter.js";
-import { OpencodeAdapter } from "./opencode-adapter.js";
+import { KERNEL_PLACEHOLDER, type Provider } from "@nodeint/migent-kernel";
+import { AgyProvider } from "./providers/agy-provider.js";
+import { ClaudeProvider } from "./providers/claude-provider.js";
+import { CodexProvider } from "./providers/codex-provider.js";
+import { GrokProvider } from "./providers/grok-provider.js";
+import { OpencodeProvider } from "./providers/opencode-provider.js";
 
-export const ADAPTERS_PLACEHOLDER = `adapters:${KERNEL_PLACEHOLDER}`;
+export const ADAPTERS_PLACEHOLDER = `providers:${KERNEL_PLACEHOLDER}`;
 
 export { ModelCatalog } from "./catalog.js";
 export { AgyClient } from "./clients/agy-client.js";
-export { AgyAdapter } from "./agy-adapter.js";
+export { AgyProvider } from "./providers/agy-provider.js";
 export { ClaudeCodeClient } from "./clients/claude-code-client.js";
-export { ClaudeAdapter } from "./claude-adapter.js";
+export { ClaudeProvider } from "./providers/claude-provider.js";
 export { CodexClient } from "./clients/codex-client.js";
-export { CodexAdapter } from "./codex-adapter.js";
+export { CodexProvider } from "./providers/codex-provider.js";
 export { GrokClient } from "./clients/grok-client.js";
-export { GrokAdapter } from "./grok-adapter.js";
+export { GrokProvider } from "./providers/grok-provider.js";
 export { OpencodeClient } from "./clients/opencode-client.js";
-export { OpencodeAdapter } from "./opencode-adapter.js";
+export { OpencodeProvider } from "./providers/opencode-provider.js";
 
-export function defaultAdapters(): Record<string, AgentAdapter> {
+export function defaultProviders(): Record<string, Provider> {
   return {
-    agy: new AgyAdapter(),
-    claude: new ClaudeAdapter(),
-    codex: new CodexAdapter(),
-    grok: new GrokAdapter(),
-    opencode: new OpencodeAdapter(),
+    agy: new AgyProvider(),
+    claude: new ClaudeProvider(),
+    codex: new CodexProvider(),
+    grok: new GrokProvider(),
+    opencode: new OpencodeProvider(),
   };
 }
 
 export function providerCommands(): Record<string, string> {
   return Object.fromEntries(
-    Object.entries(defaultAdapters()).map(([name, adapter]) => [name, adapter.command]),
+    Object.entries(defaultProviders()).map(([name, provider]) => [name, provider.command]),
   );
 }

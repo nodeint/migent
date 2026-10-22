@@ -2,16 +2,16 @@ import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "vitest";
 import { main } from "../src/index.ts";
-import { ScriptedAdapter, capture, removeWorkspace, repoWorkflowText, writeFakeWorkflowWorkspace } from "./support.ts";
+import { ScriptedProvider, capture, removeWorkspace, repoWorkflowText, writeFakeWorkflowWorkspace } from "./support.ts";
 import { AgentToolRunner } from "@nodeint/migent-kernel";
 import { cliHooks } from "../src/hooks.ts";
 
 async function runOnce(
   workspace: string,
   argv: string[],
-  adapter: ScriptedAdapter,
+  provider: ScriptedProvider,
 ): Promise<{ code: number; sessionId: string; executionId: string }> {
-  cliHooks.runner = new AgentToolRunner({ fake: adapter }, 10);
+  cliHooks.runner = new AgentToolRunner({ fake: provider }, 10);
   const captured = await capture(() => main(argv, workspace));
   const sessionMatch = /session_id: (\S+)/.exec(captured.stderr);
   const sessionFlag = argv.indexOf("--session");
@@ -78,7 +78,7 @@ test("prepare writes a chosen session and start runs task.md", async () => {
     const started = await runOnce(
       workspace,
       ["session", "run", "--session", sessionId, "--workflow", "plan", "--once", "--verbose"],
-      new ScriptedAdapter(["status: complete\n\nplanned"], ["# Plan\n"]),
+      new ScriptedProvider(["status: complete\n\nplanned"], ["# Plan\n"]),
     );
     expect(started.code).toBe(0);
     expect(started.sessionId).toBe(sessionId);
@@ -125,7 +125,7 @@ test("start --task stores one line and rejects a newline", async () => {
     const started = await runOnce(
       workspace,
       ["session", "run", "--workflow", "plan", "--task", "Write a plan", "--once", "--verbose"],
-      new ScriptedAdapter(["status: complete\n\nplanned"], ["# Plan\n"]),
+      new ScriptedProvider(["status: complete\n\nplanned"], ["# Plan\n"]),
     );
     expect(started.code).toBe(0);
     const sessionDirectory = path.join(workspace, ".migent", "sessions", started.sessionId);

@@ -11,7 +11,7 @@ import {
 import { printResumeCommand } from "../display.js";
 import { cliHooks } from "../hooks.js";
 import { requireCurrentSchema } from "../migrate.js";
-import { adapterMap } from "../provider.js";
+import { providerMap } from "../provider.js";
 import { text } from "../text.js";
 
 export interface ExecuteWorkflowOptions {
@@ -37,7 +37,7 @@ export async function executeWorkflow(workspace: string, options: ExecuteWorkflo
   const sessionId = text(options.sessionId);
   const creating = !startPrepared && (options.action === "start" || (once && sessionId === null));
   const maxDispatches = options.maxDispatches === undefined ? DEFAULT_MAX_DISPATCHES : options.maxDispatches;
-  const runner = options.runner ?? cliHooks.runner ?? new AgentToolRunner(adapterMap());
+  const runner = options.runner ?? cliHooks.runner ?? new AgentToolRunner(providerMap());
   runner.itemProgress = options.itemProgress === true;
   const result = await executeNamedWorkflow(
     workspace,

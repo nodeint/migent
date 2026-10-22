@@ -212,7 +212,7 @@ version 0.
 
 `migrate` prints the pending changes and asks before it writes. `--yes` writes
 without asking, for a caller that has no terminal. Declining leaves the files
-unchanged. The upgrade still runs one version at a time. Each adapter defines
+unchanged. The upgrade still runs one version at a time. Each provider defines
 its own function for a model, a role, and a stage at that version.
 
 In a terminal, `config model` or `config role` with no arguments opens a list.
@@ -283,9 +283,9 @@ migent provider list
 migent provider list --json
 ```
 
-`provider list` reports every registered provider adapter (agy, claude, codex,
+`provider list` reports every registered provider provider (agy, claude, codex,
 grok, opencode), whether its CLI is on `PATH`, the model ids that CLI reports,
-and the provider options the adapter exposes. It works without `.migent/config.yaml`.
+and the provider options the provider exposes. It works without `.migent/config.yaml`.
 
 Model ids come from running each provider's model-listing command: `codex debug models`,
 `grok models`, `opencode models`, and `agy models`. Claude has no listing command, so

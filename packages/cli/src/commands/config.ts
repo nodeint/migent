@@ -20,7 +20,7 @@ import {
   setRoleOptions,
   upsertModel,
   whichSync,
-  type AgentAdapter,
+  type Provider,
   type ConfigChange,
   type ConfigView,
   type ModelView,
@@ -34,14 +34,14 @@ import { cliHooks } from "../hooks.js";
 import { requireCurrentSchema } from "../migrate.js";
 import {
   acceptedOptions,
-  adapterMap,
+  providerMap,
   asCatalog,
   detected,
   knownModel,
   loadCatalog,
   loadOptionValues,
   parseOptions,
-  requireAdapter,
+  requireProvider,
   runProviderCommand,
   type RunCommand,
   type Which,
@@ -74,7 +74,7 @@ export async function runConfigModel(
     clearOptions?: readonly string[];
     asJson?: boolean;
     interactive?: boolean;
-    adapters?: Record<string, AgentAdapter> | null;
+    providers?: Record<string, Provider> | null;
     which?: Which | null;
     prompter?: ConfigPrompter | null;
     runCommand?: RunCommand | null;
@@ -83,7 +83,7 @@ export async function runConfigModel(
   try {
     return await runModel(workspace, {
       ...options,
-      adapters: options.adapters ?? adapterMap(),
+      providers: options.providers ?? providerMap(),
       which: options.which ?? cliHooks.which ?? whichSync,
       prompter: options.prompter ?? new ClackConfigPrompter(),
       runCommand: options.runCommand ?? runProviderCommand,
@@ -109,7 +109,7 @@ export async function runConfigRole(
     clearOptions?: readonly string[];
     asJson?: boolean;
     interactive?: boolean;
-    adapters?: Record<string, AgentAdapter> | null;
+    providers?: Record<string, Provider> | null;
     which?: Which | null;
     prompter?: ConfigPrompter | null;
     runCommand?: RunCommand | null;
@@ -118,7 +118,7 @@ export async function runConfigRole(
   try {
     return await runRole(workspace, {
       ...options,
-      adapters: options.adapters ?? adapterMap(),
+      providers: options.providers ?? providerMap(),
       which: options.which ?? cliHooks.which ?? whichSync,
       prompter: options.prompter ?? new ClackConfigPrompter(),
       runCommand: options.runCommand ?? runProviderCommand,
@@ -143,7 +143,7 @@ async function runModel(
     clearOptions?: readonly string[];
     asJson?: boolean;
     interactive?: boolean;
-    adapters: Record<string, AgentAdapter>;
+    providers: Record<string, Provider>;
     which: Which;
     prompter: ConfigPrompter;
     runCommand: RunCommand;
@@ -162,7 +162,7 @@ async function runModel(
   const mutating = provider !== null || optionUpdates !== UNSET;
   if (key === null && !mutating) {
     if (interactive) {
-      return interactiveModels(workspace, config, workflows, view, args.adapters, args.which, args.prompter, args.runCommand, asJson);
+      return interactiveModels(workspace, config, workflows, view, args.providers, args.which, args.prompter, args.runCommand, asJson);
     }
     emitView(view, asJson, true, false);
     return 0;
@@ -170,20 +170,20 @@ async function runModel(
   if (key === null) throw new ConfigEditError("Pass a name.");
   if (!mutating) {
     if (interactive) {
-      return editModel(workspace, config, workflows, view, key, args.adapters, args.which, args.prompter, args.runCommand, asJson);
+      return editModel(workspace, config, workflows, view, key, args.providers, args.which, args.prompter, args.runCommand, asJson);
     }
     emitModels(selectedModels(view, [key]), asJson);
     return 0;
   }
   let catalog: ModelCatalog | null = null;
   if (provider !== null && model !== null) {
-    [provider, model, catalog] = await catalogModel(args.adapters, args.which, args.runCommand, provider, model);
+    [provider, model, catalog] = await catalogModel(args.providers, args.which, args.runCommand, provider, model);
   }
   if (optionUpdates !== UNSET) {
     const currentProvider = provider ?? modelProvider(config, key);
     const currentModel = model ?? loadModelTarget(config, key).model;
     optionUpdates = await checkedOptions(
-      args.adapters,
+      args.providers,
       args.which,
       args.runCommand,
       currentProvider,
@@ -198,7 +198,7 @@ async function runModel(
     ...(optionUpdates === UNSET ? {} : { options: optionUpdates }),
     workflows,
   });
-  validateChange(config, change.config, workflows, args.adapters);
+  validateChange(config, change.config, workflows, args.providers);
   return await commit(workspace, change, { asJson, which: args.which });
 }
 
@@ -213,7 +213,7 @@ async function runRole(
     clearOptions?: readonly string[];
     asJson?: boolean;
     interactive?: boolean;
-    adapters: Record<string, AgentAdapter>;
+    providers: Record<string, Provider>;
     which: Which;
     prompter: ConfigPrompter;
     runCommand: RunCommand;
@@ -236,7 +236,7 @@ async function runRole(
   const mutating = modelName !== null || provider !== null || optionUpdates !== UNSET;
   if (roles.length === 0 && !mutating) {
     if (interactive) {
-      return interactiveRoles(workspace, config, workflows, view, args.adapters, args.which, args.prompter, args.runCommand, asJson);
+      return interactiveRoles(workspace, config, workflows, view, args.providers, args.which, args.prompter, args.runCommand, asJson);
     }
     emitView(view, asJson, false, true);
     return 0;
@@ -248,7 +248,7 @@ async function runRole(
   if (!mutating) {
     if (interactive && roles.length === 1) {
       knownRole(view, roles[0] ?? "");
-      return pointRole(workspace, config, workflows, view, roles[0] ?? "", args.adapters, args.which, args.prompter, args.runCommand, asJson);
+      return pointRole(workspace, config, workflows, view, roles[0] ?? "", args.providers, args.which, args.prompter, args.runCommand, asJson);
     }
     emitRoles(selectedRoles(view, roles), asJson);
     return 0;
@@ -256,9 +256,9 @@ async function runRole(
   let change: ConfigChange;
   if (provider !== null && model !== null) {
     let catalog: ModelCatalog;
-    [provider, model, catalog] = await catalogModel(args.adapters, args.which, args.runCommand, provider, model);
+    [provider, model, catalog] = await catalogModel(args.providers, args.which, args.runCommand, provider, model);
     if (optionUpdates !== UNSET) {
-      optionUpdates = await checkedOptions(args.adapters, args.which, args.runCommand, provider, model, optionUpdates, catalog);
+      optionUpdates = await checkedOptions(args.providers, args.which, args.runCommand, provider, model, optionUpdates, catalog);
     }
     change = placeRoleModel(config, roles[0] ?? "", {
       provider,
@@ -271,7 +271,7 @@ async function runRole(
     if (optionUpdates !== UNSET) {
       const target = loadModelTarget(change.config, modelName);
       optionUpdates = await checkedOptions(
-        args.adapters,
+        args.providers,
         args.which,
         args.runCommand,
         target.provider,
@@ -285,7 +285,7 @@ async function runRole(
     const target = roleModel(config, roles[0] ?? "");
     if (optionUpdates === UNSET) throw new ConfigEditError("Pass a role.");
     optionUpdates = await checkedOptions(
-      args.adapters,
+      args.providers,
       args.which,
       args.runCommand,
       target.provider,
@@ -294,7 +294,7 @@ async function runRole(
     );
     change = setRoleOptions(config, roles[0] ?? "", optionUpdates, { workflows });
   }
-  validateChange(config, change.config, workflows, args.adapters);
+  validateChange(config, change.config, workflows, args.providers);
   return await commit(workspace, change, { asJson, which: args.which });
 }
 
@@ -303,7 +303,7 @@ async function interactiveModels(
   config: Record<string, unknown>,
   workflows: readonly WorkflowDocument[],
   view: ConfigView,
-  adapters: Record<string, AgentAdapter>,
+  providers: Record<string, Provider>,
   which: Which,
   prompter: ConfigPrompter,
   runCommand: RunCommand,
@@ -312,8 +312,8 @@ async function interactiveModels(
   const choices = view.models.map((model) => [modelLabel(model), model.key] as const);
   choices.push(["New model", NEW]);
   const selected = await prompter.select("Model", choices, view.models[0]?.key ?? NEW);
-  if (selected === NEW) return addModel(workspace, config, workflows, null, adapters, which, prompter, runCommand, asJson);
-  return editModel(workspace, config, workflows, view, selected, adapters, which, prompter, runCommand, asJson);
+  if (selected === NEW) return addModel(workspace, config, workflows, null, providers, which, prompter, runCommand, asJson);
+  return editModel(workspace, config, workflows, view, selected, providers, which, prompter, runCommand, asJson);
 }
 
 async function editModel(
@@ -322,7 +322,7 @@ async function editModel(
   workflows: readonly WorkflowDocument[],
   view: ConfigView,
   key: string,
-  adapters: Record<string, AgentAdapter>,
+  providers: Record<string, Provider>,
   which: Which,
   prompter: ConfigPrompter,
   runCommand: RunCommand,
@@ -330,17 +330,17 @@ async function editModel(
 ): Promise<number> {
   const current = selectedModels(view, [key])[0];
   if (current === undefined) throw new ConfigEditError(`Unknown name: ${key}.`);
-  const provider = await selectProvider(prompter, adapters, which, "Provider", current.provider);
-  const adapter = requireAdapter(adapters, provider);
-  const catalog = await loadCatalog(adapter, which, runCommand);
+  const provider = await selectProvider(prompter, providers, which, "Provider", current.provider);
+  const impl = requireProvider(providers, provider);
+  const catalog = await loadCatalog(impl, which, runCommand);
   const initial = catalog.ids.includes(current.model) ? current.model : (catalog.defaultId ?? undefined);
   let modelId = knownModel(
     await prompter.select("Model", catalog.ids.map((item) => [item, item] as const), initial),
     catalog,
   );
-  const stored = await promptedOptions(prompter, adapter, modelId, catalog, which, runCommand, current.options);
+  const stored = await promptedOptions(prompter, impl, modelId, catalog, which, runCommand, current.options);
   const change = upsertModel(config, key, { provider, model: modelId, options: stored, workflows });
-  validateChange(config, change.config, workflows, adapters);
+  validateChange(config, change.config, workflows, providers);
   return confirmAndCommit(workspace, change, prompter, asJson, which);
 }
 
@@ -349,20 +349,20 @@ async function addModel(
   config: Record<string, unknown>,
   workflows: readonly WorkflowDocument[],
   role: string | null,
-  adapters: Record<string, AgentAdapter>,
+  providers: Record<string, Provider>,
   which: Which,
   prompter: ConfigPrompter,
   runCommand: RunCommand,
   asJson: boolean,
 ): Promise<number> {
-  const provider = await selectProvider(prompter, adapters, which, "Provider", null);
-  const adapter = requireAdapter(adapters, provider);
-  const catalog = await loadCatalog(adapter, which, runCommand);
+  const provider = await selectProvider(prompter, providers, which, "Provider", null);
+  const impl = requireProvider(providers, provider);
+  const catalog = await loadCatalog(impl, which, runCommand);
   const modelId = knownModel(
     await prompter.select("Model", catalog.ids.map((item) => [item, item] as const), catalog.defaultId),
     catalog,
   );
-  const options = await promptedOptions(prompter, adapter, modelId, catalog, which, runCommand, {});
+  const options = await promptedOptions(prompter, impl, modelId, catalog, which, runCommand, {});
   const present = presentOptions(options);
   const existing = matchingModelName(config, { provider, model: modelId, options: present });
   let change: ConfigChange;
@@ -385,7 +385,7 @@ async function addModel(
       change = describeChange(config, assigned.config, workflows);
     }
   }
-  validateChange(config, change.config, workflows, adapters);
+  validateChange(config, change.config, workflows, providers);
   return confirmAndCommit(workspace, change, prompter, asJson, which);
 }
 
@@ -394,7 +394,7 @@ async function interactiveRoles(
   config: Record<string, unknown>,
   workflows: readonly WorkflowDocument[],
   view: ConfigView,
-  adapters: Record<string, AgentAdapter>,
+  providers: Record<string, Provider>,
   which: Which,
   prompter: ConfigPrompter,
   runCommand: RunCommand,
@@ -407,9 +407,9 @@ async function interactiveRoles(
     const name = (await prompter.text("Role name")).trim();
     if (name === "") throw new ConfigEditError("Role name is required.");
     if (view.roles.some((role) => role.role === name)) throw new ConfigEditError(`Role ${name} already exists.`);
-    return pointRole(workspace, config, workflows, view, name, adapters, which, prompter, runCommand, asJson);
+    return pointRole(workspace, config, workflows, view, name, providers, which, prompter, runCommand, asJson);
   }
-  return pointRole(workspace, config, workflows, view, selected, adapters, which, prompter, runCommand, asJson);
+  return pointRole(workspace, config, workflows, view, selected, providers, which, prompter, runCommand, asJson);
 }
 
 async function pointRole(
@@ -418,7 +418,7 @@ async function pointRole(
   workflows: readonly WorkflowDocument[],
   view: ConfigView,
   role: string,
-  adapters: Record<string, AgentAdapter>,
+  providers: Record<string, Provider>,
   which: Which,
   prompter: ConfigPrompter,
   runCommand: RunCommand,
@@ -429,10 +429,10 @@ async function pointRole(
   choices.push(["New model", NEW]);
   const selected = await prompter.select("Model", choices, current?.modelName ?? NEW);
   if (selected === NEW) {
-    return addModel(workspace, config, workflows, role, adapters, which, prompter, runCommand, asJson);
+    return addModel(workspace, config, workflows, role, providers, which, prompter, runCommand, asJson);
   }
   const change = assignRoles(config, [role], selected, { workflows });
-  validateChange(config, change.config, workflows, adapters);
+  validateChange(config, change.config, workflows, providers);
   return confirmAndCommit(workspace, change, prompter, asJson, which);
 }
 
@@ -466,7 +466,7 @@ async function commit(
   }
   writeFileSync(filePath, updated, "utf8");
   if (args.asJson) {
-    const checks = diagnose(workspace, { adapters: adapterMap(), which: args.which });
+    const checks = diagnose(workspace, { providers: providerMap(), which: args.which });
     const doctor = doctorPayload(checks);
     process.stdout.write(`${JSON.stringify(changePayload(change, true, doctor))}\n`);
     return doctor.ok ? 0 : 1;
@@ -479,7 +479,7 @@ function validateChange(
   before: Record<string, unknown>,
   after: Record<string, unknown>,
   workflows: readonly WorkflowDocument[],
-  adapters: Record<string, AgentAdapter>,
+  providers: Record<string, Provider>,
 ): void {
   const beforeModels = isRecord(before.models) ? before.models : {};
   const afterModels = isRecord(after.models) ? after.models : {};
@@ -491,7 +491,7 @@ function validateChange(
   }
   for (const key of changed) {
     const target = loadModelTarget(after, key);
-    requireAdapter(adapters, target.provider).validateOptions(target.options);
+    requireProvider(providers, target.provider).validateOptions(target.options);
   }
   const beforeRoles = isRecord(before.roles) ? before.roles : {};
   const afterRoles = isRecord(after.roles) ? after.roles : {};
@@ -506,7 +506,7 @@ function validateChange(
         if (typeof value === "string" && value.trim() !== "") options[optionName] = value.trim();
       }
     }
-    requireAdapter(adapters, target.provider).validateOptions(options);
+    requireProvider(providers, target.provider).validateOptions(options);
   }
   for (const document of workflows) {
     for (const stage of Object.values(document.stages)) {
@@ -521,25 +521,25 @@ function validateChange(
         throw error;
       }
       if (sameTarget(beforeTarget, afterTarget)) continue;
-      requireAdapter(adapters, afterTarget.provider).validateOptions(afterTarget.options);
+      requireProvider(providers, afterTarget.provider).validateOptions(afterTarget.options);
     }
   }
 }
 
 async function catalogModel(
-  adapters: Record<string, AgentAdapter>,
+  providers: Record<string, Provider>,
   which: Which,
   runCommand: RunCommand,
   provider: string,
   model: string,
 ): Promise<[string, string, ModelCatalog]> {
-  const adapter = requireAdapter(adapters, provider);
-  const catalog = await loadCatalog(adapter, which, runCommand);
+  const impl = requireProvider(providers, provider);
+  const catalog = await loadCatalog(impl, which, runCommand);
   return [provider, knownModel(model, catalog), catalog];
 }
 
 async function checkedOptions(
-  adapters: Record<string, AgentAdapter>,
+  providers: Record<string, Provider>,
   which: Which,
   runCommand: RunCommand,
   provider: string,
@@ -547,21 +547,21 @@ async function checkedOptions(
   updates: Record<string, string | null>,
   catalog: ModelCatalog | null = null,
 ): Promise<Record<string, string | null>> {
-  const adapter = requireAdapter(adapters, provider);
-  const resolved = catalog ?? (await loadCatalog(adapter, which, runCommand));
+  const impl = requireProvider(providers, provider);
+  const resolved = catalog ?? (await loadCatalog(impl, which, runCommand));
   const present: Record<string, string> = {};
   for (const [key, value] of Object.entries(updates)) {
     if (value !== null) present[key] = value;
   }
   if (Object.keys(present).length > 0) {
-    await acceptedOptions(adapter, model, resolved, which, runCommand, present);
+    await acceptedOptions(impl, model, resolved, which, runCommand, present);
   }
   return { ...updates };
 }
 
 async function promptedOptions(
   prompter: ConfigPrompter,
-  adapter: AgentAdapter,
+  provider: Provider,
   model: string,
   catalog: ModelCatalog,
   which: Which,
@@ -569,10 +569,10 @@ async function promptedOptions(
   current: Readonly<Record<string, string>>,
 ): Promise<Record<string, string | null>> {
   const stored: Record<string, string | null> = {};
-  const catalogAdapter = asCatalog(adapter);
-  for (const spec of catalogAdapter.providerOptions()) {
+  const catalogProvider = asCatalog(provider);
+  for (const spec of catalogProvider.providerOptions()) {
     if (!spec.prompt) continue;
-    const values = await loadOptionValues(adapter, spec.name, model, catalog, which, runCommand);
+    const values = await loadOptionValues(provider, spec.name, model, catalog, which, runCommand);
     if (values === null || values.length === 0) continue;
     const choices: Array<readonly [string, string]> = values.map((value) => [value, value] as const);
     if (spec.allowDefault) choices.unshift(["provider default", ""]);
@@ -598,12 +598,12 @@ function optionUpdatesOf(options: readonly string[], clearOptions: readonly stri
 
 async function selectProvider(
   prompter: ConfigPrompter,
-  adapters: Record<string, AgentAdapter>,
+  providers: Record<string, Provider>,
   which: Which,
   message: string,
   defaultValue: string | null,
 ): Promise<string> {
-  const rows = detected(adapters, which);
+  const rows = detected(providers, which);
   if (rows.length === 0) throw new ConfigurationError("No providers are available.");
   const names = new Set(rows.map(([name]) => name));
   return prompter.select(

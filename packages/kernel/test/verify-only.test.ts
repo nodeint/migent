@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "vitest";
 import { AgentToolRunner, executeNamedWorkflow, loadWorkflowDocument } from "../src/index.ts";
-import { ScriptedAdapter, tempDir } from "./support.ts";
+import { ScriptedProvider, tempDir } from "./support.ts";
 
 const CONFIG = `\
 models:
@@ -52,12 +52,12 @@ function execution(workspace: string, sessionId: string, executionId: string): R
 
 test("a passing verify-only stage publishes verify.md and then starts the role stage", async () => {
   const { workspace } = setup([`node -e "process.exit(0)"`]);
-  const adapter = new ScriptedAdapter([OK], ["# notes\n"]);
-  const runner = new AgentToolRunner({ fake: adapter }, 10);
+  const provider = new ScriptedProvider([OK], ["# notes\n"]);
+  const runner = new AgentToolRunner({ fake: provider }, 10);
   const result = await executeNamedWorkflow(workspace, { workflowId: "wf", task: "go" }, runner);
   expect(result.code).toBe(0);
   expect(result.status).toBe("completed");
-  expect(adapter.calls).toHaveLength(1);
+  expect(provider.calls).toHaveLength(1);
   const session = result.sessionId;
   const executions = path.join(workspace, ".migent", "sessions", session, "executions");
   const names = readFileSync(path.join(executions, "0001-prepare--attempt-01", "execution.json"), "utf8");
@@ -67,7 +67,7 @@ test("a passing verify-only stage publishes verify.md and then starts the role s
   expect(prepare.status).toBe("completed");
   expect(existsSync(path.join(executions, "0001-prepare--attempt-01", "prompt.md"))).toBe(false);
   expect(existsSync(path.join(executions, "0001-prepare--attempt-01", "artifacts", "verify.md"))).toBe(true);
-  expect(adapter.calls[0]?.prompt).toContain("prepare verify:");
+  expect(provider.calls[0]?.prompt).toContain("prepare verify:");
   const document = loadWorkflowDocument(path.join(workspace, ".migent", "workflows", "wf.yaml"));
   expect(document.stages.prepare?.kind).toBe("verify");
 });
@@ -78,13 +78,13 @@ test("a red verify-only stage exits 7 and does not start the role stage", async 
     `node -e "console.error('red'); process.exit(1)"`,
     `node -e "process.exit(2)"`,
   ]);
-  const adapter = new ScriptedAdapter([OK], ["# notes\n"]);
-  const runner = new AgentToolRunner({ fake: adapter }, 10);
+  const provider = new ScriptedProvider([OK], ["# notes\n"]);
+  const runner = new AgentToolRunner({ fake: provider }, 10);
   const result = await executeNamedWorkflow(workspace, { workflowId: "wf", task: "go" }, runner);
   expect(result.code).toBe(7);
   expect(result.stopReason).toBe("verify_failed");
   expect(result.status).toBe("active");
-  expect(adapter.calls).toHaveLength(0);
+  expect(provider.calls).toHaveLength(0);
   const record = execution(workspace, result.sessionId, "0001-prepare--attempt-01");
   expect(record.failure_reason).toBe("verify_failed");
   expect(record.status).toBe("failed");
@@ -135,14 +135,14 @@ outputs:
 `,
     "utf8",
   );
-  const adapter = new ScriptedAdapter([OK], ["# notes\n"]);
-  const runner = new AgentToolRunner({ fake: adapter }, 10);
+  const provider = new ScriptedProvider([OK], ["# notes\n"]);
+  const runner = new AgentToolRunner({ fake: provider }, 10);
   const failed = await executeNamedWorkflow(workspace, { workflowId: "wf", task: "go" }, runner);
   expect(failed.code).toBe(7);
-  expect(adapter.calls).toHaveLength(0);
+  expect(provider.calls).toHaveLength(0);
   const continued = await executeNamedWorkflow(workspace, { sessionId: failed.sessionId, resetRevisions: true }, runner);
   expect(continued.code).toBe(0);
-  expect(adapter.calls).toHaveLength(1);
+  expect(provider.calls).toHaveLength(1);
   expect(existsSync(path.join(workspace, ".migent", "sessions", failed.sessionId, "executions", "0002-prepare--attempt-02"))).toBe(
     true,
   );

@@ -10,12 +10,12 @@ import {
   patchConfigText,
   patchWorkflowText,
   workflowsDirectory,
-  type MigrationAdapter,
+  type MigrationProvider,
   ConfigurationError,
 } from "@nodeint/migent-kernel";
 import { printError, printNotice } from "./display.js";
 import { isDirectory, isFile } from "./fs-utils.js";
-import { adapterMap } from "./provider.js";
+import { providerMap } from "./provider.js";
 
 function versionList(entries: ReadonlyArray<[string, number]>): string {
   const width = Math.max(...entries.map(([label]) => label.length));
@@ -54,11 +54,11 @@ export async function runMigrate(
   options: {
     assumeYes?: boolean;
     confirm?: ((message: string) => boolean | Promise<boolean>) | null;
-    adapters?: Record<string, MigrationAdapter> | null;
+    providers?: Record<string, MigrationProvider> | null;
   } = {},
 ): Promise<number> {
-  const adapters = options.adapters ?? migrationAdapters();
-  const rewrites = pendingRewrites(workspace, adapters);
+  const providers = options.providers ?? migrationProviders();
+  const rewrites = pendingRewrites(workspace, providers);
   if (rewrites.length === 0) {
     process.stdout.write("Schema is current.\n");
     return 0;
@@ -74,12 +74,12 @@ export async function runMigrate(
   return 0;
 }
 
-export function migrationAdapters(
-  adapters: Record<string, unknown> = adapterMap(),
-): Record<string, MigrationAdapter> {
-  const mapped: Record<string, MigrationAdapter> = {};
-  for (const [name, adapter] of Object.entries(adapters)) {
-    const candidate = adapter as Partial<MigrationAdapter>;
+export function migrationProviders(
+  providers: Record<string, unknown> = providerMap(),
+): Record<string, MigrationProvider> {
+  const mapped: Record<string, MigrationProvider> = {};
+  for (const [name, provider] of Object.entries(providers)) {
+    const candidate = provider as Partial<MigrationProvider>;
     mapped[name] = {
       modelMigrations: candidate.modelMigrations ?? {},
       roleMigrations: candidate.roleMigrations ?? {},
@@ -108,14 +108,14 @@ async function accepted(confirm: ((message: string) => boolean | Promise<boolean
   return true;
 }
 
-function pendingRewrites(workspace: string, adapters: Record<string, MigrationAdapter>): Rewrite[] {
+function pendingRewrites(workspace: string, providers: Record<string, MigrationProvider>): Rewrite[] {
   const configPath = path.join(workspace, ".migent", "config.yaml");
   if (!isFile(configPath)) return [];
-  const [config, configRewrite] = configRewriteOf(configPath, adapters);
+  const [config, configRewrite] = configRewriteOf(configPath, providers);
   if (config === null) return [];
   const rewrites: Rewrite[] = [];
   if (configRewrite !== null) rewrites.push(configRewrite);
-  rewrites.push(...workflowRewrites(workspace, config, adapters));
+  rewrites.push(...workflowRewrites(workspace, config, providers));
   return rewrites;
 }
 
@@ -142,7 +142,7 @@ function storedVersion(filePath: string): number | null {
 
 function configRewriteOf(
   filePath: string,
-  adapters: Record<string, MigrationAdapter>,
+  providers: Record<string, MigrationProvider>,
 ): [Record<string, unknown> | null, Rewrite | null] {
   const original = readFileSync(filePath, "utf8");
   let parsed: Record<string, unknown>;
@@ -154,7 +154,7 @@ function configRewriteOf(
   const updated = structuredClone(parsed);
   let notes: string[];
   try {
-    notes = migrateConfig(updated, adapters);
+    notes = migrateConfig(updated, providers);
   } catch (error) {
     if (error instanceof ConfigurationError) throw error;
     return [null, null];
@@ -171,7 +171,7 @@ function configRewriteOf(
 function workflowRewrites(
   workspace: string,
   config: Record<string, unknown>,
-  adapters: Record<string, MigrationAdapter>,
+  providers: Record<string, MigrationProvider>,
 ): Rewrite[] {
   const directory = workflowsDirectory(workspace);
   if (!isDirectory(directory)) return [];
@@ -189,7 +189,7 @@ function workflowRewrites(
     const updated = structuredClone(parsed);
     let changed: string[];
     try {
-      changed = migrateWorkflow(updated, config, adapters);
+      changed = migrateWorkflow(updated, config, providers);
     } catch (error) {
       if (error instanceof ConfigurationError) throw error;
       continue;

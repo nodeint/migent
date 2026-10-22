@@ -346,7 +346,7 @@ of a stage, including a route back. It is not a retry count.
 
 Usage is stored raw on the runner's turn event. When a workflow session
 becomes `completed`, Migent normalizes those captures and writes `metrics.json`. A
-later change to an adapter does not change that file. The previous capture is
+later change to an provider does not change that file. The previous capture is
 the latest earlier one in the same session with the same provider and the same
 provider agent id. A cumulative provider
 subtracts it. A per-process provider ignores it. A conversation can span

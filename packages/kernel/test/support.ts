@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { AgentAdapter, BuildCommandInput, ProviderAdapter, TurnUsage, UsageCapture } from "../src/adapter.ts";
+import type { Provider, BuildCommandInput, ProviderInfo, TurnUsage, UsageCapture } from "../src/provider-contract.ts";
 import type { CommandSpec } from "../src/command-executor.ts";
 import { createWorkflowSession } from "../src/session-records.ts";
 
@@ -20,7 +20,7 @@ const grokOptions = new Set([
   "sandbox",
 ]);
 
-export function defaultAdapters(): Record<string, ProviderAdapter> {
+export function defaultProviders(): Record<string, ProviderInfo> {
   return {
     codex: {
       command: "codex",
@@ -133,7 +133,7 @@ export function writeRoleWorkspace(): string {
   return workspace;
 }
 
-export interface AdapterCall {
+export interface ProviderCall {
   model: string;
   workspace: string;
   prompt: string;
@@ -143,9 +143,9 @@ export interface AdapterCall {
   options: Record<string, string>;
 }
 
-export class FakeAdapter implements AgentAdapter {
+export class FakeProvider implements Provider {
   readonly command = "fake";
-  readonly calls: AdapterCall[] = [];
+  readonly calls: ProviderCall[] = [];
   captureUsage?: (stdout: string) => UsageCapture | null;
   normalizeUsage?: (current: UsageCapture, previous: UsageCapture | null) => TurnUsage;
   versionCommand?: () => string[];
@@ -183,19 +183,19 @@ export class FakeAdapter implements AgentAdapter {
   }
 }
 
-export class BlockedAdapter extends FakeAdapter {
+export class BlockedProvider extends FakeProvider {
   override parseResponse(): [string, string | null] {
     return ["status: blocked\nblocker: missing approved design", "native-session-1"];
   }
 }
 
-export class MissingOutcomeAdapter extends FakeAdapter {
+export class MissingOutcomeProvider extends FakeProvider {
   override parseResponse(): [string, string | null] {
     return ["implementation report without a status header", "native-session-1"];
   }
 }
 
-export class ScriptedAdapter extends FakeAdapter {
+export class ScriptedProvider extends FakeProvider {
   private responses: string[];
   private artifacts: Array<string | null>;
 
@@ -212,7 +212,7 @@ export class ScriptedAdapter extends FakeAdapter {
       if (body !== null && prompt !== undefined) writePromptArtifact(prompt, body);
     }
     const response = this.responses.shift();
-    if (response === undefined) throw new Error("scripted adapter has no response left");
+    if (response === undefined) throw new Error("scripted provider has no response left");
     return [response, "native-session-1"];
   }
 }

@@ -4,7 +4,7 @@ import { AgentToolRunner, raiseCancellation, type BuildCommandInput, type Comman
 import { expect, test } from "vitest";
 import { cliHooks } from "../src/hooks.ts";
 import { main } from "../src/index.ts";
-import { ScriptedAdapter, capture, removeWorkspace, repoWorkflowText, writeFakeWorkflowWorkspace } from "./support.ts";
+import { ScriptedProvider, capture, removeWorkspace, repoWorkflowText, writeFakeWorkflowWorkspace } from "./support.ts";
 
 const SPLIT = "Pass --workflow for a workflow run, or --role for an agent run.";
 
@@ -108,8 +108,8 @@ test("session run --workflow dispatches one stage", async () => {
       "  planner:\n    default_model: fake-model\n    instructions:\n      - Stay inside the task.\n",
     ),
   );
-  const adapter = new ScriptedAdapter(["status: complete\n\nplanned"], ["# Plan\n"]);
-  cliHooks.runner = new AgentToolRunner({ fake: adapter }, 10);
+  const provider = new ScriptedProvider(["status: complete\n\nplanned"], ["# Plan\n"]);
+  cliHooks.runner = new AgentToolRunner({ fake: provider }, 10);
   try {
     const captured = await capture(() =>
       main(["session", "run", "--workflow", "plan", "--task", "Write a plan", "--once"], workspace),
@@ -125,7 +125,7 @@ test("session run --workflow dispatches one stage", async () => {
     ) as { status?: string; title?: string };
     expect(status.status).toBe("active");
     expect(status.title).toBe("Write a plan");
-    const prompt = adapter.calls[0]?.prompt ?? "";
+    const prompt = provider.calls[0]?.prompt ?? "";
     const roleAt = prompt.indexOf("Role instructions:\n- Stay inside the task.");
     expect(roleAt).toBeGreaterThan(prompt.indexOf("Stage: plan (role: planner)"));
     expect(prompt.indexOf("Constraints:")).toBeGreaterThan(roleAt);
@@ -158,20 +158,20 @@ test("session run without --workflow runs one role", async () => {
       "  reviewer:\n    default_model: fake-model\n    instructions:\n      - Judge the change.\n",
     ),
   );
-  const adapter = new ScriptedAdapter(["status: complete\n\ndone", "status: complete\n\nagain"]);
+  const provider = new ScriptedProvider(["status: complete\n\ndone", "status: complete\n\nagain"]);
   try {
-    cliHooks.runner = new AgentToolRunner({ fake: adapter }, 10);
+    cliHooks.runner = new AgentToolRunner({ fake: provider }, 10);
     const captured = await capture(() =>
       main(["session", "run", "--role", "reviewer", "--prompt", "Review the latest changes", "--json"], workspace),
     );
     expect(captured.value).toBe(0);
     const payload = JSON.parse(captured.stdout) as { outcome_status: string; session_id: string };
     expect(payload.outcome_status).toBe("complete");
-    expect(adapter.calls[0]?.prompt).toContain(
+    expect(provider.calls[0]?.prompt).toContain(
       "Role instructions:\n- Judge the change.\n\nReview the latest changes",
     );
 
-    cliHooks.runner = new AgentToolRunner({ fake: adapter }, 10);
+    cliHooks.runner = new AgentToolRunner({ fake: provider }, 10);
     const again = await capture(() =>
       main(
         ["session", "run", "--role", "reviewer", "--session", payload.session_id, "--prompt", "Summarize the risks", "--json"],
@@ -180,7 +180,7 @@ test("session run without --workflow runs one role", async () => {
     );
     expect(again.value).toBe(0);
     expect(JSON.parse(again.stdout)).toMatchObject({ session_id: payload.session_id, outcome_status: "complete" });
-    expect(adapter.calls[1]?.prompt).toContain(
+    expect(provider.calls[1]?.prompt).toContain(
       "Role instructions:\n- Judge the change.\n\nSummarize the risks",
     );
   } finally {
@@ -219,7 +219,7 @@ test("session prepare starts through session run --workflow", async () => {
     expect(mismatch.value).toBe(2);
     expect(mismatch.stderr).toContain("does not match");
 
-    cliHooks.runner = new AgentToolRunner({ fake: new ScriptedAdapter(["status: complete\n\nplanned"], ["# Plan\n"]) }, 10);
+    cliHooks.runner = new AgentToolRunner({ fake: new ScriptedProvider(["status: complete\n\nplanned"], ["# Plan\n"]) }, 10);
     const started = await capture(() =>
       main(["session", "run", "--session", sessionId, "--workflow", "plan", "--once"], workspace),
     );
@@ -310,7 +310,7 @@ function resumeCommand(stderr: string): string | undefined {
   return lines[label + 1];
 }
 
-class CancelOnCommand extends ScriptedAdapter {
+class CancelOnCommand extends ScriptedProvider {
   override buildCommand(input: BuildCommandInput): CommandSpec {
     super.buildCommand(input);
     raiseCancellation(2);
@@ -321,7 +321,7 @@ class CancelOnCommand extends ScriptedAdapter {
 test("session continue retries an active role session with its last prompt", async () => {
   const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
   try {
-    cliHooks.runner = new AgentToolRunner({ fake: new ScriptedAdapter(["not a status header"]) }, 10);
+    cliHooks.runner = new AgentToolRunner({ fake: new ScriptedProvider(["not a status header"]) }, 10);
     const failed = await capture(() =>
       main(["session", "run", "--role", "reviewer", "--prompt", "Review the change", "--json"], workspace),
     );
@@ -329,7 +329,7 @@ test("session continue retries an active role session with its last prompt", asy
     expect(failed.value).toBe(1);
     expect(resumeCommand(failed.stderr)).toBe(`migent session continue ${payload.session_id}`);
 
-    const retried = new ScriptedAdapter(["status: complete\n\ndone"]);
+    const retried = new ScriptedProvider(["status: complete\n\ndone"]);
     cliHooks.runner = new AgentToolRunner({ fake: retried }, 10);
     const resumed = await capture(() => main(["session", "continue", payload.session_id], workspace));
     expect(resumed.value).toBe(0);
@@ -344,7 +344,7 @@ test("session continue resumes a role session with the same command", async () =
   const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
   try {
     cliHooks.runner = new AgentToolRunner(
-      { fake: new ScriptedAdapter(["status: blocked\nblocker: missing design\n\nneed a decision"]) },
+      { fake: new ScriptedProvider(["status: blocked\nblocker: missing design\n\nneed a decision"]) },
       10,
     );
     const blocked = await capture(() =>
@@ -355,7 +355,7 @@ test("session continue resumes a role session with the same command", async () =
     expect(blockedPayload.outcome_status).toBe("blocked");
     expect(resumeCommand(blocked.stderr)).toBe(`migent session continue ${blockedPayload.session_id}`);
 
-    const continued = new ScriptedAdapter(["status: complete\n\ndone"]);
+    const continued = new ScriptedProvider(["status: complete\n\ndone"]);
     cliHooks.runner = new AgentToolRunner({ fake: continued }, 10);
     const resumed = await capture(() => main(["session", "continue", blockedPayload.session_id], workspace));
     expect(resumed.value).toBe(0);
@@ -387,21 +387,21 @@ test("session continue resumes a cancelled role session and leaves a completed o
     const sessionId = resumeCommand(cancelled.stderr)?.slice("migent session continue ".length);
     expect(sessionId).toBeTruthy();
 
-    const resumedAdapter = new ScriptedAdapter(["status: complete\n\ndone"]);
-    cliHooks.runner = new AgentToolRunner({ fake: resumedAdapter }, 10);
+    const resumedProvider = new ScriptedProvider(["status: complete\n\ndone"]);
+    cliHooks.runner = new AgentToolRunner({ fake: resumedProvider }, 10);
     const resumed = await capture(() => main(["session", "continue", String(sessionId)], workspace));
     expect(resumed.value).toBe(0);
-    expect(resumedAdapter.calls[0]?.prompt).toContain("Review the saved turn");
+    expect(resumedProvider.calls[0]?.prompt).toContain("Review the saved turn");
     expect(resumed.stderr).not.toContain("Resume with:");
 
-    const idle = new ScriptedAdapter(["status: complete\n\nshould not run"]);
+    const idle = new ScriptedProvider(["status: complete\n\nshould not run"]);
     cliHooks.runner = new AgentToolRunner({ fake: idle }, 10);
     const again = await capture(() => main(["session", "continue", String(sessionId)], workspace));
     expect(again.value).toBe(0);
     expect(again.stderr).toContain(`Session ${sessionId} is completed.`);
     expect(idle.calls).toEqual([]);
 
-    const replied = new ScriptedAdapter(["status: complete\n\nnext"]);
+    const replied = new ScriptedProvider(["status: complete\n\nnext"]);
     cliHooks.runner = new AgentToolRunner({ fake: replied }, 10);
     const next = await capture(() =>
       main(["session", "continue", String(sessionId), "--reply", "Look at the risks"], workspace),

@@ -1,4 +1,4 @@
-import type { BuildCommandInput, ProviderOption, TurnUsage, UsageCapture } from "./adapter.js";
+import type { BuildCommandInput, ProviderOption, TurnUsage, UsageCapture } from "./provider-contract.js";
 import type { CommandSpec } from "./command-executor.js";
 
 /** What a client extracted from a failed run, before any provider policy. */

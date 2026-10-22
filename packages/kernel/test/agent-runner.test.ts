@@ -2,12 +2,12 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "vitest";
-import { AgentToolRunner, AgentSessionRecord, GrokAdapter, createAgentSession, createWorkflowSession } from "../src/index.ts";
+import { AgentToolRunner, AgentSessionRecord, GrokProvider, createAgentSession, createWorkflowSession } from "../src/index.ts";
 import {
-  BlockedAdapter,
-  FakeAdapter,
-  MissingOutcomeAdapter,
-  ScriptedAdapter,
+  BlockedProvider,
+  FakeProvider,
+  MissingOutcomeProvider,
+  ScriptedProvider,
   repoWorkflowText,
   tempDir,
   writePlanReviewSession,
@@ -42,8 +42,8 @@ test("reads legacy native session id as agent id", () => {
 });
 
 test("resume reuses agent id on a new execution", async () => {
-  const adapter = new FakeAdapter();
-  const runner = new AgentToolRunner({ fake: adapter }, 10);
+  const provider = new FakeProvider();
+  const runner = new AgentToolRunner({ fake: provider }, 10);
   const tmp = tempDir("migent-runner-");
   const first = await runner.run({ provider: "fake", model: "m1", prompt: "first prompt", workspace: tmp });
   const second = await runner.run({
@@ -57,12 +57,12 @@ test("resume reuses agent id on a new execution", async () => {
   const execution = readJson(executionFile(tmp, second.session_id, second.execution_id));
   expect(second.session_id).toBe(first.session_id);
   expect(second.execution_id).not.toBe(first.execution_id);
-  expect(adapter.calls[1]?.agentId).toBe("native-session-1");
+  expect(provider.calls[1]?.agentId).toBe("native-session-1");
   expect(execution.resumes_execution_id).toBe(first.execution_id);
 });
 
 test("writes conversation checkpoint", async () => {
-  const runner = new AgentToolRunner({ fake: new FakeAdapter() }, 10);
+  const runner = new AgentToolRunner({ fake: new FakeProvider() }, 10);
   const tmp = tempDir("migent-runner-");
   const result = await runner.run({ provider: "fake", model: "m1", prompt: "first prompt", workspace: tmp });
   const executionDirectory = path.dirname(executionFile(tmp, result.session_id, result.execution_id));
@@ -71,8 +71,8 @@ test("writes conversation checkpoint", async () => {
 });
 
 test("resumes from legacy session checkpoint", async () => {
-  const adapter = new FakeAdapter();
-  const runner = new AgentToolRunner({ fake: adapter }, 10);
+  const provider = new FakeProvider();
+  const runner = new AgentToolRunner({ fake: provider }, 10);
   const tmp = tempDir("migent-runner-");
   const first = await runner.run({ provider: "fake", model: "m1", prompt: "first prompt", workspace: tmp });
   const executionDirectory = path.dirname(executionFile(tmp, first.session_id, first.execution_id));
@@ -85,11 +85,11 @@ test("resumes from legacy session checkpoint", async () => {
     sessionId: first.session_id,
     resumeExecutionId: first.execution_id,
   });
-  expect(adapter.calls[1]?.agentId).toBe("native-session-1");
+  expect(provider.calls[1]?.agentId).toBe("native-session-1");
 });
 
 test("rejects a resume execution from another session", async () => {
-  const runner = new AgentToolRunner({ fake: new FakeAdapter() }, 10);
+  const runner = new AgentToolRunner({ fake: new FakeProvider() }, 10);
   const tmp = tempDir("migent-runner-");
   const first = await runner.run({
     provider: "fake",
@@ -111,7 +111,7 @@ test("rejects a resume execution from another session", async () => {
 });
 
 test("rejects an option change when resuming", async () => {
-  const runner = new AgentToolRunner({ fake: new FakeAdapter() }, 10);
+  const runner = new AgentToolRunner({ fake: new FakeProvider() }, 10);
   const tmp = tempDir("migent-runner-");
   const first = await runner.run({
     provider: "fake",
@@ -134,7 +134,7 @@ test("rejects an option change when resuming", async () => {
 });
 
 test("records loop executions without overwriting attempts", async () => {
-  const runner = new AgentToolRunner({ fake: new FakeAdapter() }, 10);
+  const runner = new AgentToolRunner({ fake: new FakeProvider() }, 10);
   const workspace = tempDir("migent-runner-");
   const first = await runner.run({
     provider: "fake",
@@ -160,7 +160,7 @@ test("records loop executions without overwriting attempts", async () => {
 });
 
 test("blocks a session after a blocked stage outcome", async () => {
-  const runner = new AgentToolRunner({ fake: new BlockedAdapter() }, 10);
+  const runner = new AgentToolRunner({ fake: new BlockedProvider() }, 10);
   const workspace = tempDir("migent-runner-");
   const result = await runner.run({
     provider: "fake",
@@ -189,7 +189,7 @@ test("blocks a session after a blocked stage outcome", async () => {
 
 test("fails a workflow session without a stage status", async () => {
   const workspace = tempDir("migent-runner-");
-  const result = await new AgentToolRunner({ fake: new MissingOutcomeAdapter() }, 10).run({
+  const result = await new AgentToolRunner({ fake: new MissingOutcomeProvider() }, 10).run({
     provider: "fake",
     model: "m1",
     prompt: "implement",
@@ -204,7 +204,7 @@ test("fails a workflow session without a stage status", async () => {
   expect(String(execution.error)).toContain("must start with");
   expect(status.status).toBe("active");
   expect(status).not.toHaveProperty("terminal_execution_id");
-  const retry = await new AgentToolRunner({ fake: new FakeAdapter() }, 10).run({
+  const retry = await new AgentToolRunner({ fake: new FakeProvider() }, 10).run({
     provider: "fake",
     model: "m1",
     prompt: "implement",
@@ -219,7 +219,7 @@ test("fails a workflow session without a stage status", async () => {
 });
 
 test("rejects provider options before creating a session", async () => {
-  const runner = new AgentToolRunner({ grok: new GrokAdapter() }, 10);
+  const runner = new AgentToolRunner({ grok: new GrokProvider() }, 10);
   const tmp = tempDir("migent-runner-");
   await expect(
     runner.run({
@@ -233,17 +233,17 @@ test("rejects provider options before creating a session", async () => {
   expect(existsSync(path.join(tmp, ".migent"))).toBe(false);
 });
 
-test("constructs the default adapter registry", async () => {
-  const { defaultAdapters } = await import("../src/index.ts");
-  const first = defaultAdapters();
-  const second = defaultAdapters();
-  expect(new Set(Object.keys(new AgentToolRunner().adapters))).toEqual(new Set(["codex", "grok"]));
+test("constructs the default provider registry", async () => {
+  const { defaultProviders } = await import("../src/index.ts");
+  const first = defaultProviders();
+  const second = defaultProviders();
+  expect(new Set(Object.keys(new AgentToolRunner().providers))).toEqual(new Set(["codex", "grok"]));
   expect(new Set(Object.keys(first))).toEqual(new Set(["codex", "grok"]));
   expect(first).not.toBe(second);
   expect(first.codex).not.toBe(second.codex);
   const tmp = tempDir("migent-runner-");
   await expect(
-    new AgentToolRunner({ fake: new FakeAdapter() }, 10).run({
+    new AgentToolRunner({ fake: new FakeProvider() }, 10).run({
       provider: "missing",
       model: "m1",
       prompt: "prompt",
@@ -253,7 +253,7 @@ test("constructs the default adapter registry", async () => {
 });
 
 test("allows another execution on a completed agent session", async () => {
-  const runner = new AgentToolRunner({ fake: new FakeAdapter() }, 10);
+  const runner = new AgentToolRunner({ fake: new FakeProvider() }, 10);
   const workspace = tempDir("migent-runner-");
   const sessionId = createAgentSession(workspace, "reviewer", "review the plan");
   const first = await runner.run({
@@ -280,7 +280,7 @@ test("allows another execution on a completed agent session", async () => {
 });
 
 test("refuses another execution on a completed named workflow session", async () => {
-  const runner = new AgentToolRunner({ fake: new FakeAdapter() }, 10);
+  const runner = new AgentToolRunner({ fake: new FakeProvider() }, 10);
   const workspace = tempDir("migent-runner-");
   const workflows = path.join(workspace, ".migent", "workflows");
   mkdirSync(workflows, { recursive: true });
@@ -310,7 +310,7 @@ test("approved completion publishes the reviewed artifact and the session status
   const [workspace, sessionId] = writePlanReviewSession();
   const runner = new AgentToolRunner(
     {
-      fake: new ScriptedAdapter(
+      fake: new ScriptedProvider(
         ["status: complete\n\nplanned", "status: complete\ndecision: approved\n\nlooks good"],
         ["# Plan v1\n", null],
       ),
@@ -345,7 +345,7 @@ test("missing or whitespace-only artifact fails that stage", async () => {
     const [workspace, sessionId] = writePlanReviewSession();
     const result = await new AgentToolRunner(
       {
-        fake: new ScriptedAdapter(["status: complete\n\nplanned"], body === null ? null : [body]),
+        fake: new ScriptedProvider(["status: complete\n\nplanned"], body === null ? null : [body]),
       },
       10,
     ).run({
@@ -370,7 +370,7 @@ test("prose approval without a decision header fails the execution", async () =>
   const [workspace, sessionId] = writePlanReviewSession();
   const runner = new AgentToolRunner(
     {
-      fake: new ScriptedAdapter(
+      fake: new ScriptedProvider(
         ["status: complete\n\nplanned", "status: complete\n\nApproved."],
         ["# Plan v1\n", null],
       ),
@@ -420,9 +420,9 @@ function turnEvents(workspace: string, sessionId: string): Array<Record<string, 
 }
 
 test("a captured turn records usage, turn, agent id, and argv", async () => {
-  const adapter = new FakeAdapter();
-  adapter.captureUsage = () => ({ result: { total_cost_usd: 1 } });
-  const runner = new AgentToolRunner({ fake: adapter }, 10);
+  const provider = new FakeProvider();
+  provider.captureUsage = () => ({ result: { total_cost_usd: 1 } });
+  const runner = new AgentToolRunner({ fake: provider }, 10);
   const tmp = tempDir("migent-runner-");
   const result = await runner.run({ provider: "fake", model: "m1", prompt: "measure", workspace: tmp });
   const details = turnEvents(tmp, result.session_id)[0]?.details as Record<string, unknown>;
@@ -434,7 +434,7 @@ test("a captured turn records usage, turn, agent id, and argv", async () => {
 });
 
 test("a turn without captureUsage omits usage", async () => {
-  const runner = new AgentToolRunner({ fake: new FakeAdapter() }, 10);
+  const runner = new AgentToolRunner({ fake: new FakeProvider() }, 10);
   const tmp = tempDir("migent-runner-");
   const result = await runner.run({ provider: "fake", model: "m1", prompt: "plain", workspace: tmp });
   const details = turnEvents(tmp, result.session_id)[0]?.details as Record<string, unknown>;
@@ -444,11 +444,11 @@ test("a turn without captureUsage omits usage", async () => {
 });
 
 test("a throwing captureUsage still completes the execution", async () => {
-  const adapter = new FakeAdapter();
-  adapter.captureUsage = () => {
+  const provider = new FakeProvider();
+  provider.captureUsage = () => {
     throw new Error("usage failed");
   };
-  const runner = new AgentToolRunner({ fake: adapter }, 10);
+  const runner = new AgentToolRunner({ fake: provider }, 10);
   const tmp = tempDir("migent-runner-");
   const result = await runner.run({ provider: "fake", model: "m1", prompt: "plain", workspace: tmp });
   const execution = readJson(executionFile(tmp, result.session_id, result.execution_id));
@@ -488,7 +488,7 @@ completion:
   );
   const sessionId = createWorkflowSession(workspace, "wf", "task");
   const runner = new AgentToolRunner(
-    { fake: new ScriptedAdapter(["status: complete\n\ndone", "status: complete\n\ndone", "status: complete\n\ndone"], ["# notes\n", null, null]) },
+    { fake: new ScriptedProvider(["status: complete\n\ndone", "status: complete\n\ndone", "status: complete\n\ndone"], ["# notes\n", null, null]) },
     10,
   );
   await runner.run({ provider: "fake", model: "m1", prompt: "go", workspace, sessionId, stageId: "implement" });
@@ -497,8 +497,8 @@ completion:
 });
 
 test("progress turn_failed and the runner turn_failed are both recorded", async () => {
-  const adapter = new FakeAdapter();
-  adapter.buildCommand = () => ({
+  const provider = new FakeProvider();
+  provider.buildCommand = () => ({
     argv: [
       process.execPath,
       "-e",
@@ -506,9 +506,9 @@ test("progress turn_failed and the runner turn_failed are both recorded", async 
       JSON.stringify({ type: "fail" }),
     ],
   });
-  adapter.parseResponse = () => ["status: complete\n\ndone", "native-session-1"];
-  adapter.parseProgressEvent = () => ({ event: "provider.turn_failed", summary: "boom" });
-  const runner = new AgentToolRunner({ fake: adapter }, 10);
+  provider.parseResponse = () => ["status: complete\n\ndone", "native-session-1"];
+  provider.parseProgressEvent = () => ({ event: "provider.turn_failed", summary: "boom" });
+  const runner = new AgentToolRunner({ fake: provider }, 10);
   const tmp = tempDir("migent-runner-");
   const result = await runner.run({ provider: "fake", model: "m1", prompt: "fail", workspace: tmp });
   const failed = sessionEvents(tmp, result.session_id).filter((event) => event.event === "provider.turn_failed");
@@ -531,7 +531,7 @@ test("stage_started records git head and dirty state", async () => {
     { cwd: repo, stdio: "ignore" },
   );
   const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8" }).trim();
-  const runner = new AgentToolRunner({ fake: new FakeAdapter() }, 10);
+  const runner = new AgentToolRunner({ fake: new FakeProvider() }, 10);
   const first = await runner.run({ provider: "fake", model: "m1", prompt: "one", workspace: repo });
   const clean = sessionEvents(repo, first.session_id).find((event) => event.event === "provider.stage_started");
   expect(clean?.details).toMatchObject({ git_head: head, git_dirty: false });
@@ -547,7 +547,7 @@ test("stage_started records git head and dirty state", async () => {
   expect(dirty[1]?.details).toMatchObject({ git_head: head, git_dirty: true });
 
   const outside = tempDir("migent-runner-nogit-");
-  const bare = await new AgentToolRunner({ fake: new FakeAdapter() }, 10).run({
+  const bare = await new AgentToolRunner({ fake: new FakeProvider() }, 10).run({
     provider: "fake",
     model: "m1",
     prompt: "three",
@@ -560,17 +560,17 @@ test("stage_started records git head and dirty state", async () => {
 test("the version command runs once for two executions", async () => {
   const tmp = tempDir("migent-runner-version-");
   const hits = path.join(tmp, "hits.txt");
-  const adapter = new FakeAdapter();
-  adapter.versionCommand = () => [
+  const provider = new FakeProvider();
+  provider.versionCommand = () => [
     process.execPath,
     "-e",
     `require("fs").appendFileSync(${JSON.stringify(hits)}, "1\\n"); process.stdout.write("2.1.304\\n");`,
   ];
-  adapter.parseVersion = (stdout: string) => {
+  provider.parseVersion = (stdout: string) => {
     const line = stdout.trim();
     return line === "" ? null : line;
   };
-  const runner = new AgentToolRunner({ fake: adapter }, 10);
+  const runner = new AgentToolRunner({ fake: provider }, 10);
   const first = await runner.run({ provider: "fake", model: "m1", prompt: "one", workspace: tmp });
   await runner.run({ provider: "fake", model: "m1", prompt: "two", workspace: tmp, sessionId: first.session_id });
   const versions = sessionEvents(tmp, first.session_id)

@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
 import type { BuildCommandInput, CliClient, NewSession } from "@nodeint/migent-kernel";
 import type { CommandSpec } from "@nodeint/migent-kernel";
-import { ClientAdapter } from "./client-adapter.js";
-import { ClaudeCodeClient } from "./clients/claude-code-client.js";
+import { ClientProvider } from "./client-provider.js";
+import { ClaudeCodeClient } from "../clients/claude-code-client.js";
 
 const DEFAULT_PERMISSION_MODE = "bypassPermissions";
 
-export class ClaudeAdapter extends ClientAdapter {
+export class ClaudeProvider extends ClientProvider {
   readonly displayName = "Claude";
 
   constructor(client: CliClient = new ClaudeCodeClient()) {

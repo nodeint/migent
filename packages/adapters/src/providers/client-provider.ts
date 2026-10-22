@@ -1,5 +1,5 @@
 import type {
-  AgentAdapter,
+  Provider,
   BuildCommandInput,
   CliClient,
   FailureClassification,
@@ -9,8 +9,8 @@ import type {
   UsageCapture,
 } from "@nodeint/migent-kernel";
 import type { CommandSpec } from "@nodeint/migent-kernel";
-import { ModelCatalog } from "./catalog.js";
-import { isRecord } from "./clients/json.js";
+import { ModelCatalog } from "../catalog.js";
+import { isRecord } from "../clients/json.js";
 
 type MigrationBody = Record<string, unknown>;
 export type Migration = (entry: MigrationBody) => void;
@@ -44,11 +44,11 @@ export function moveThinkingTo(option: string): Migration {
 }
 
 /**
- * What every adapter shares: delegate to the CLI client, then apply migent's
+ * What every provider shares: delegate to the CLI client, then apply migent's
  * own policy (usage deltas, failure kinds, defaults). A subclass adds only its
  * policy; anything that reads the CLI's output belongs in the client.
  */
-export abstract class ClientAdapter implements AgentAdapter {
+export abstract class ClientProvider implements Provider {
   abstract readonly displayName: string;
   private parseEvent: (line: string) => Record<string, unknown> | null;
 

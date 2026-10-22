@@ -7,7 +7,7 @@ import { cliHooks } from "../src/hooks.ts";
 import { main } from "../src/index.ts";
 import { capture } from "./support.ts";
 
-// Fake model outputs per adapter's parseModelCatalog expected format
+// Fake model outputs per provider's parseModelCatalog expected format
 
 // codex: JSON with models array containing slug
 function fakeCodexOutput(models: string[]): string {
@@ -84,7 +84,7 @@ function createFakeRunCommand(calledCommands: CommandCall[]): (argv: string[]) =
   };
 }
 
-test("provider list lists every adapter from a cwd with no .migent/", async () => {
+test("provider list lists every provider from a cwd with no .migent/", async () => {
   const workspace = createTempDir();
   const calledCommands: CommandCall[] = [];
   try {
@@ -295,7 +295,7 @@ test("text mode contains provider names, paths, model ids, and 'not found'", asy
   }
 });
 
-test("runCommand only receives each adapter's modelCatalogCommand argv", async () => {
+test("runCommand only receives each provider's modelCatalogCommand argv", async () => {
   const workspace = createTempDir();
   const calledCommands: CommandCall[] = [];
   try {

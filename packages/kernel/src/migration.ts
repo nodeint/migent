@@ -1,6 +1,6 @@
 /** Upgrade config and workflow documents from the version they record.
 
-Adapters supply the model, role, and stage rewrite for each version step.
+Providers supply the model, role, and stage rewrite for each version step.
 This module walks those steps and writes the resulting schema_version.
 A missing schema_version is version 0. Writes stay on the text patchers.
 */
@@ -17,8 +17,8 @@ const SCHEMA_VERSION_FIELD = "schema_version";
 
 export type MigrationFn = (entry: Record<string, unknown>) => void;
 
-/** Adapter migration tables. Keys are the version being left. */
-export interface MigrationAdapter {
+/** Provider migration tables. Keys are the version being left. */
+export interface MigrationProvider {
   readonly modelMigrations: Readonly<Record<number, MigrationFn>>;
   readonly roleMigrations: Readonly<Record<number, MigrationFn>>;
   readonly stageMigrations: Readonly<Record<number, MigrationFn>>;
@@ -28,15 +28,15 @@ type Edit = [number, number, string[]];
 
 export function migrateConfig(
   config: Record<string, unknown>,
-  adapters: Readonly<Record<string, MigrationAdapter>>,
+  providers: Readonly<Record<string, MigrationProvider>>,
   current = SCHEMA_VERSION,
 ): string[] {
   let version = requireCurrent(documentVersion(config), current, "config");
   if (version === current) return [];
   const before = deepCopyRecord(config);
   while (version < current) {
-    migrateModels(config, adapters, version);
-    migrateRoles(config, adapters, version);
+    migrateModels(config, providers, version);
+    migrateRoles(config, providers, version);
     version += 1;
   }
   config[SCHEMA_VERSION_FIELD] = current;
@@ -46,14 +46,14 @@ export function migrateConfig(
 export function migrateWorkflow(
   workflow: Record<string, unknown>,
   config: Readonly<Record<string, unknown>>,
-  adapters: Readonly<Record<string, MigrationAdapter>>,
+  providers: Readonly<Record<string, MigrationProvider>>,
   current = SCHEMA_VERSION,
 ): string[] {
   let version = requireCurrent(documentVersion(workflow), current, "workflow");
   if (version === current) return [];
   const before = deepCopyRecord(workflow);
   while (version < current) {
-    migrateStages(workflow, config, adapters, version);
+    migrateStages(workflow, config, providers, version);
     if (version === 1) liftWorkflowCompletion(workflow);
     version += 1;
   }
@@ -159,7 +159,7 @@ function requireCurrent(version: number, current: number, label: string): number
 
 function migrateModels(
   config: Record<string, unknown>,
-  adapters: Readonly<Record<string, MigrationAdapter>>,
+  providers: Readonly<Record<string, MigrationProvider>>,
   version: number,
 ): void {
   const models = config.models;
@@ -168,15 +168,15 @@ function migrateModels(
     if (!isRecord(body)) continue;
     const provider = providerName(body.provider);
     if (provider === null) continue;
-    const adapter = adapters[provider];
-    if (adapter === undefined) continue;
-    applyStep(adapter.modelMigrations, body, version);
+    const impl = providers[provider];
+    if (impl === undefined) continue;
+    applyStep(impl.modelMigrations, body, version);
   }
 }
 
 function migrateRoles(
   config: Record<string, unknown>,
-  adapters: Readonly<Record<string, MigrationAdapter>>,
+  providers: Readonly<Record<string, MigrationProvider>>,
   version: number,
 ): void {
   const roles = config.roles;
@@ -185,16 +185,16 @@ function migrateRoles(
     if (!isRecord(body)) continue;
     const provider = roleProvider(config, body);
     if (provider === null) continue;
-    const adapter = adapters[provider];
-    if (adapter === undefined) continue;
-    applyStep(adapter.roleMigrations, body, version);
+    const impl = providers[provider];
+    if (impl === undefined) continue;
+    applyStep(impl.roleMigrations, body, version);
   }
 }
 
 function migrateStages(
   workflow: Record<string, unknown>,
   config: Readonly<Record<string, unknown>>,
-  adapters: Readonly<Record<string, MigrationAdapter>>,
+  providers: Readonly<Record<string, MigrationProvider>>,
   version: number,
 ): void {
   const stages = workflow.stages;
@@ -203,9 +203,9 @@ function migrateStages(
     if (!isRecord(stage)) continue;
     const provider = stageProvider(config, stage);
     if (provider === null) continue;
-    const adapter = adapters[provider];
-    if (adapter === undefined) continue;
-    applyStep(adapter.stageMigrations, stage, version);
+    const impl = providers[provider];
+    if (impl === undefined) continue;
+    applyStep(impl.stageMigrations, stage, version);
   }
 }
 

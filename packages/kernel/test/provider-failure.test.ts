@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "vitest";
-import { ClaudeAdapter } from "../../adapters/src/claude-adapter.ts";
+import { ClaudeProvider } from "../../adapters/src/providers/claude-provider.ts";
 import {
   AgentToolRunner,
   type FailureClassification,
@@ -13,7 +13,7 @@ import {
   sessionMetrics,
   waitUntil,
 } from "../src/index.ts";
-import { ScriptedAdapter, tempDir } from "./support.ts";
+import { ScriptedProvider, tempDir } from "./support.ts";
 
 const CONFIG = `\
 models:
@@ -34,7 +34,7 @@ const FUTURE = "2099-01-01T00:00:00.000Z";
 const PAST = "2000-01-01T00:00:00.000Z";
 const LATER = "2099-06-01T00:00:00.000Z";
 
-class ClassifiedAdapter extends ScriptedAdapter {
+class ClassifiedProvider extends ScriptedProvider {
   private readonly kinds: Array<FailureClassification | null>;
 
   constructor(responses: string[], kinds: Array<FailureClassification | null>) {
@@ -118,18 +118,18 @@ test("waitUntil reaches, replaces, and cancels", async () => {
 
 test("a provider failure does not wait, and continue dispatches once", async () => {
   const workspace = workspaceFor(SOLO);
-  const adapter = new ClassifiedAdapter(
+  const provider = new ClassifiedProvider(
     ["status: complete\n\nnope", "status: complete\n\nagain"],
     [{ kind: "provider", message: "cli failed" }, { kind: "provider", message: "again" }],
   );
   let slept = 0;
   const hooks = { now: () => Date.parse(PAST), sleep: async () => { slept += 1; } };
-  const runner = new AgentToolRunner({ alpha: adapter }, 10);
+  const runner = new AgentToolRunner({ alpha: provider }, 10);
   const first = await executeNamedWorkflow(workspace, { workflowId: "wf", task: "Write", waitHooks: hooks }, runner);
   expect(first.stopReason).toBe("stage_failed");
   expect(first.code).toBe(3);
   expect(slept).toBe(0);
-  expect(adapter.calls).toHaveLength(1);
+  expect(provider.calls).toHaveLength(1);
   const sessionId = first.sessionId;
   const events = readFileSync(path.join(workspace, ".migent", "sessions", sessionId, "events.jsonl"), "utf8");
   const second = await executeNamedWorkflow(
@@ -137,7 +137,7 @@ test("a provider failure does not wait, and continue dispatches once", async () 
     { workflowId: "wf", sessionId, continueFailed: true, waitHooks: hooks },
     runner,
   );
-  expect(adapter.calls).toHaveLength(2);
+  expect(provider.calls).toHaveLength(2);
   expect(second.stopReason).toBe("stage_failed");
   expect(second.code).toBe(3);
   const continued = readFileSync(path.join(workspace, ".migent", "sessions", sessionId, "events.jsonl"), "utf8");
@@ -147,8 +147,8 @@ test("a provider failure does not wait, and continue dispatches once", async () 
 
 test("a stage with no verify persists quota fields", async () => {
   const workspace = workspaceFor(SOLO);
-  const adapter = new ClassifiedAdapter(["status: complete\n\nlimited"], [quota(FUTURE)]);
-  const runner = new AgentToolRunner({ alpha: adapter }, 10);
+  const provider = new ClassifiedProvider(["status: complete\n\nlimited"], [quota(FUTURE)]);
+  const runner = new AgentToolRunner({ alpha: provider }, 10);
   const result = await executeNamedWorkflow(
     workspace,
     { workflowId: "wf", task: "Write", once: true, waitHooks: { sleep: async () => { throw new Error("waited"); } } },
@@ -165,7 +165,7 @@ test("a stage with no verify persists quota fields", async () => {
 
 test("a past quota dispatches once and a repeat that is not later stops", async () => {
   const workspace = workspaceFor(SOLO);
-  const adapter = new ClassifiedAdapter(
+  const provider = new ClassifiedProvider(
     ["status: complete\n\nfirst", "status: complete\n\nsecond"],
     [quota(PAST), quota(PAST)],
   );
@@ -178,10 +178,10 @@ test("a past quota dispatches once and a repeat that is not later stops", async 
       maxDispatches: 5,
       waitHooks: { now: () => Date.parse("2020-01-01T00:00:00.000Z"), sleep: async () => { slept += 1; } },
     },
-    new AgentToolRunner({ alpha: adapter }, 10),
+    new AgentToolRunner({ alpha: provider }, 10),
   );
   expect(slept).toBe(0);
-  expect(adapter.calls).toHaveLength(2);
+  expect(provider.calls).toHaveLength(2);
   expect(result.stopReason).toBe("stage_failed");
   expect(result.code).toBe(3);
 });
@@ -191,7 +191,7 @@ test("an empty reset stops with stage_failed", async () => {
   const result = await executeNamedWorkflow(
     workspace,
     { workflowId: "wf", task: "Write", waitHooks: { sleep: async () => { throw new Error("waited"); } } },
-    new AgentToolRunner({ alpha: new ClassifiedAdapter(["status: complete\n\nx"], [quota(null)]) }, 10),
+    new AgentToolRunner({ alpha: new ClassifiedProvider(["status: complete\n\nx"], [quota(null)]) }, 10),
   );
   expect(result.stopReason).toBe("stage_failed");
   expect(result.code).toBe(3);
@@ -208,7 +208,7 @@ test("quota at the dispatch ceiling does not wait", async () => {
       maxDispatches: 1,
       waitHooks: { now: () => Date.parse(PAST), sleep: async () => { slept += 1; } },
     },
-    new AgentToolRunner({ alpha: new ClassifiedAdapter(["status: complete\n\nx"], [quota(FUTURE)]) }, 10),
+    new AgentToolRunner({ alpha: new ClassifiedProvider(["status: complete\n\nx"], [quota(FUTURE)]) }, 10),
   );
   expect(result.stopReason).toBe("dispatch_limit");
   expect(result.code).toBe(5);
@@ -217,8 +217,8 @@ test("quota at the dispatch ceiling does not wait", async () => {
 
 test("--once on quota exits 8 and a non-continue --once on the failure does not call the agent", async () => {
   const workspace = workspaceFor(SOLO);
-  const adapter = new ClassifiedAdapter(["status: complete\n\nx", "status: complete\n\ny"], [quota(FUTURE), null]);
-  const runner = new AgentToolRunner({ alpha: adapter }, 10);
+  const provider = new ClassifiedProvider(["status: complete\n\nx", "status: complete\n\ny"], [quota(FUTURE), null]);
+  const runner = new AgentToolRunner({ alpha: provider }, 10);
   const first = await executeNamedWorkflow(
     workspace,
     { workflowId: "wf", task: "Write", once: true, waitHooks: { sleep: async () => { throw new Error("waited"); } } },
@@ -234,20 +234,20 @@ test("--once on quota exits 8 and a non-continue --once on the failure does not 
   );
   expect(skipped.code).toBe(3);
   expect(skipped.stopReason).toBe("stage_failed");
-  expect(adapter.calls).toHaveLength(1);
+  expect(provider.calls).toHaveLength(1);
   const continued = await executeNamedWorkflow(
     workspace,
     { workflowId: "wf", sessionId, once: true, continueFailed: true, waitHooks: { sleep: async () => { throw new Error("waited"); } } },
     runner,
   );
-  expect(adapter.calls).toHaveLength(2);
+  expect(provider.calls).toHaveLength(2);
   expect(continued.code).toBe(0);
 });
 
 test("the parked provider waits and another provider can start", async () => {
   const workspace = workspaceFor(PAIR);
-  const alpha = new ClassifiedAdapter(["status: complete\n\na", "status: complete\n\na2"], [quota(FUTURE), null]);
-  const beta = new ClassifiedAdapter(["status: complete\n\nb"], [null]);
+  const alpha = new ClassifiedProvider(["status: complete\n\na", "status: complete\n\na2"], [quota(FUTURE), null]);
+  const beta = new ClassifiedProvider(["status: complete\n\nb"], [null]);
   let now = Date.parse(PAST);
   let sawBetaDuringWait = false;
   const result = await executeNamedWorkflow(
@@ -283,7 +283,7 @@ test("provider.quota names the execution and a zero capture is not uncaptured", 
     return true;
   }) as typeof process.stderr.write;
   try {
-    const adapter = new ClassifiedAdapter(["status: complete\n\nlimited", "status: complete\n\ndone"], [quota(FUTURE), null]);
+    const provider = new ClassifiedProvider(["status: complete\n\nlimited", "status: complete\n\ndone"], [quota(FUTURE), null]);
     let now = Date.parse(PAST);
     const result = await executeNamedWorkflow(
       workspace,
@@ -297,13 +297,13 @@ test("provider.quota names the execution and a zero capture is not uncaptured", 
           },
         },
       },
-      new AgentToolRunner({ alpha: adapter }, 10),
+      new AgentToolRunner({ alpha: provider }, 10),
     );
     const events = readFileSync(path.join(workspace, ".migent", "sessions", result.sessionId, "events.jsonl"), "utf8");
     expect(events).toContain("provider.quota");
     expect(events).toContain(FUTURE);
     expect(lines.join("")).toContain(FUTURE);
-    const metrics = sessionMetrics(workspace, result.sessionId, { alpha: adapter });
+    const metrics = sessionMetrics(workspace, result.sessionId, { alpha: provider });
     const executions = metrics.executions as Array<{ uncaptured_turns: number }>;
     expect(executions[0]?.uncaptured_turns).toBe(0);
   } finally {
@@ -313,8 +313,8 @@ test("provider.quota names the execution and a zero capture is not uncaptured", 
 
 test("a provider timeout stops with stage_failed and does not wait", async () => {
   const workspace = workspaceFor(SOLO);
-  class HangAdapter extends ScriptedAdapter {
-    override buildCommand(input: Parameters<ScriptedAdapter["buildCommand"]>[0]) {
+  class HangProvider extends ScriptedProvider {
+    override buildCommand(input: Parameters<ScriptedProvider["buildCommand"]>[0]) {
       super.buildCommand(input);
       return { argv: [process.execPath, "-e", "setTimeout(() => {}, 30000)"] };
     }
@@ -323,7 +323,7 @@ test("a provider timeout stops with stage_failed and does not wait", async () =>
   const result = await executeNamedWorkflow(
     workspace,
     { workflowId: "wf", task: "Write", waitHooks: { sleep: async () => { slept += 1; } } },
-    new AgentToolRunner({ alpha: new HangAdapter(["status: complete\n\nunused"]) }, 1),
+    new AgentToolRunner({ alpha: new HangProvider(["status: complete\n\nunused"]) }, 1),
   );
   expect(result.stopReason).toBe("stage_failed");
   expect(result.code).toBe(3);
@@ -333,7 +333,7 @@ test("a provider timeout stops with stage_failed and does not wait", async () =>
 test("an exit-0 claude is_error result fails the execution", async () => {
   const workspace = workspaceFor(SOLO);
   const fixture = '{"type":"result","is_error":true,"subtype":"success","result":"claude failed closed","session_id":"sess-1"}\n';
-  class ExitZeroClaude extends ClaudeAdapter {
+  class ExitZeroClaude extends ClaudeProvider {
     override buildCommand() {
       return { argv: [process.execPath, "-e", "process.stdout.write(process.argv[1])", fixture] };
     }
@@ -361,7 +361,7 @@ test("cancel during a wait leaves the session active and the execution failed", 
         },
       },
     },
-    new AgentToolRunner({ alpha: new ClassifiedAdapter(["status: complete\n\nx"], [quota(FUTURE)]) }, 10),
+    new AgentToolRunner({ alpha: new ClassifiedProvider(["status: complete\n\nx"], [quota(FUTURE)]) }, 10),
   );
   expect(result.code).toBe(130);
   expect(result.status).toBe("active");
@@ -377,7 +377,7 @@ test("cancel during a wait leaves the session active and the execution failed", 
       continueFailed: true,
       waitHooks: { sleep: async () => { throw new Error("waited"); } },
     },
-    new AgentToolRunner({ alpha: new ClassifiedAdapter(["status: complete\n\nok"], [null]) }, 10),
+    new AgentToolRunner({ alpha: new ClassifiedProvider(["status: complete\n\nok"], [null]) }, 10),
   );
   expect(continued.stopReason).toBe("completed");
 });

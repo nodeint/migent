@@ -1,15 +1,15 @@
 export type {
-  ProviderAdapter,
+  ProviderInfo,
   ProviderOption,
   NewSession,
   BuildCommandInput,
-  AgentAdapter,
+  Provider,
   FailureClassification,
   ProviderClassification,
   QuotaClassification,
   UsageCapture,
   TurnUsage,
-} from "./adapter.js";
+} from "./provider-contract.js";
 export type {
   CliClient,
   CliModelCatalog,
@@ -17,7 +17,7 @@ export type {
   CliUsage,
   RawFailure,
 } from "./cli-client.js";
-export { CodexAdapter, GrokAdapter, defaultAdapters } from "./adapter.js";
+export { CodexProvider, GrokProvider, defaultProviders } from "./provider-contract.js";
 export {
   documentVersion,
   loadModelTarget,
@@ -41,7 +41,7 @@ export {
   yamlScalar,
 } from "./config-edit.js";
 export { SCHEMA_VERSION, migrateConfig, migrateWorkflow, patchWorkflowText } from "./migration.js";
-export type { MigrationAdapter, MigrationFn } from "./migration.js";
+export type { MigrationProvider, MigrationFn } from "./migration.js";
 export type {
   ConfigChange,
   ConfigView,

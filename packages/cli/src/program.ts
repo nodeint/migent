@@ -151,7 +151,7 @@ export function createProgram(status: CliStatus): Command {
       settle(status, () => runDoctor(findWorkspace(invocationCwdPath()), { asJson: options.json === true })),
     );
 
-  const provider = program.command("provider").description("List registered provider adapters and their models.");
+  const provider = program.command("provider").description("List registered provider providers and their models.");
   provider
     .command("list")
     .description("List each registered provider, whether its CLI is on PATH, and the models it reports.")

@@ -2,13 +2,13 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "vitest";
 import { diagnose } from "../src/index.ts";
-import { defaultAdapters, STAGE_CONFIG, STAGE_WORKFLOW, tempDir, whichFound } from "./support.ts";
+import { defaultProviders, STAGE_CONFIG, STAGE_WORKFLOW, tempDir, whichFound } from "./support.ts";
 
 test("reports roles, workflows, and provider paths", () => {
   const workspace = tempDir("migent-doctor-");
   writeStageProject(workspace);
   const [config, workflows, providers] = diagnose(workspace, {
-    adapters: defaultAdapters(),
+    providers: defaultProviders(),
     which: whichFound(new Set(["codex", "grok"])),
   });
   expect(config.ok).toBe(true);
@@ -34,7 +34,7 @@ test("rejects an unsupported provider without checking its command", () => {
     "utf8",
   );
   const [config, _workflows, providers] = diagnose(workspace, {
-    adapters: defaultAdapters(),
+    providers: defaultProviders(),
     which,
   });
   expect(config.ok).toBe(false);
@@ -56,7 +56,7 @@ test("rejects role instructions that are not a list", () => {
     ),
   );
   const [config] = diagnose(workspace, {
-    adapters: defaultAdapters(),
+    providers: defaultProviders(),
     which: whichFound(new Set(["codex", "grok"])),
   });
   expect(config.ok).toBe(false);
@@ -67,7 +67,7 @@ test("reports a missing provider command", () => {
   const workspace = tempDir("migent-doctor-");
   writeStageProject(workspace);
   const [_config, _workflows, providers] = diagnose(workspace, {
-    adapters: defaultAdapters(),
+    providers: defaultProviders(),
     which: whichFound(new Set(["codex"])),
   });
   expect(providers.ok).toBe(false);
@@ -103,7 +103,7 @@ test("reports a workflow role and a requires mismatch", () => {
   );
   writeFileSync(path.join(workflowsDir, "notes.txt"), "ignore", "utf8");
   const [config, workflows] = diagnose(workspace, {
-    adapters: defaultAdapters(),
+    providers: defaultProviders(),
     which: whichFound(new Set(["codex", "grok"])),
   });
   expect(config.ok).toBe(true);
@@ -126,7 +126,7 @@ test("accepts a file whose id differs from its name", () => {
     "utf8",
   );
   const [_config, workflows] = diagnose(workspace, {
-    adapters: defaultAdapters(),
+    providers: defaultProviders(),
     which: whichFound(new Set(["codex", "grok"])),
   });
   expect(workflows.ok).toBe(true);
@@ -141,7 +141,7 @@ test("reports invalid config and an unreadable workflow together", () => {
   writeFileSync(path.join(workspace, ".migent", "config.yaml"), "- not-a-map\n", "utf8");
   writeFileSync(path.join(workflows, "broken.yaml"), "stages: [\n", "utf8");
   const [config, workflowCheck, providers] = diagnose(workspace, {
-    adapters: defaultAdapters(),
+    providers: defaultProviders(),
     which: whichFound(new Set(["grok"])),
   });
   expect(config.ok).toBe(false);
@@ -152,7 +152,7 @@ test("reports invalid config and an unreadable workflow together", () => {
   expect(providers.problems).toEqual(["No providers could be resolved from config."]);
 });
 
-test("reports an option the adapter rejects", () => {
+test("reports an option the provider rejects", () => {
   const workspace = tempDir("migent-doctor-");
   writeStageProject(workspace);
   const configPath = path.join(workspace, ".migent", "config.yaml");
@@ -165,7 +165,7 @@ test("reports an option the adapter rejects", () => {
     "utf8",
   );
   const [config, workflows] = diagnose(workspace, {
-    adapters: defaultAdapters(),
+    providers: defaultProviders(),
     which: whichFound(new Set(["codex", "grok"])),
   });
   expect(config.ok).toBe(false);
@@ -184,7 +184,7 @@ test("does not reject an unlisted effort value", () => {
     "utf8",
   );
   const [config, workflows] = diagnose(workspace, {
-    adapters: defaultAdapters(),
+    providers: defaultProviders(),
     which: whichFound(new Set(["codex", "grok"])),
   });
   expect(config.ok).toBe(true);
@@ -196,7 +196,7 @@ test("reports a missing workflows directory", () => {
   mkdirSync(path.join(workspace, ".migent"));
   writeFileSync(path.join(workspace, ".migent", "config.yaml"), STAGE_CONFIG, "utf8");
   const [_config, workflows] = diagnose(workspace, {
-    adapters: defaultAdapters(),
+    providers: defaultProviders(),
     which: whichFound(new Set(["codex", "grok"])),
   });
   expect(workflows.ok).toBe(false);
@@ -221,7 +221,7 @@ test("reports a verify stage that is not on every path to complete", () => {
     "utf8",
   );
   const [_config, report] = diagnose(workspace, {
-    adapters: defaultAdapters(),
+    providers: defaultProviders(),
     which: whichFound(new Set(["codex", "grok"])),
   });
   expect(report.ok).toBe(false);

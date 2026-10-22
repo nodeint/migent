@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { isAtomicTempName, writeJsonAtomic } from "./atomic-file.js";
-import type { AgentAdapter, TurnUsage, UsageCapture } from "./adapter.js";
+import type { Provider, TurnUsage, UsageCapture } from "./provider-contract.js";
 import { ConfigurationError } from "./errors.js";
 import { listSessionRows, readStatusFileState } from "./query.js";
 import { isRecord } from "./record.js";
@@ -55,7 +55,7 @@ interface NormalizedTurn {
 export function sessionMetrics(
   workspace: string,
   sessionId: string,
-  adapters: Record<string, AgentAdapter>,
+  providers: Record<string, Provider>,
 ): Record<string, unknown> {
   const sessionDirectory = path.join(workspace, MIGENT_DIRNAME, SESSIONS_DIRNAME, sessionId);
   if (sessionIsCorrupt(sessionDirectory)) return { session_id: sessionId, status: "corrupt" };
@@ -68,12 +68,12 @@ export function sessionMetrics(
     status.workflow_id === "agent"
       ? (typeof status.role === "string" ? status.role : manifestRole(sessionDirectory))
       : null;
-  return sessionObject(sessionId, status, workflow, executions, events, adapters, agentRole);
+  return sessionObject(sessionId, status, workflow, executions, events, providers, agentRole);
 }
 
 export function listSessionMetrics(
   workspace: string,
-  adapters: Record<string, AgentAdapter>,
+  providers: Record<string, Provider>,
   filters: { workflow: string | null; status: string | null; limit: number | null },
 ): Record<string, unknown>[] {
   let rows = listSessionRows(workspace);
@@ -81,7 +81,7 @@ export function listSessionMetrics(
   if (filters.workflow != null) rows = rows.filter((row) => row[2] === filters.workflow);
   if (filters.status != null) rows = rows.filter((row) => row[3] === filters.status);
   if (filters.limit != null) rows = rows.slice(0, filters.limit);
-  return rows.map((row) => sessionMetrics(workspace, row[1] ?? "", adapters));
+  return rows.map((row) => sessionMetrics(workspace, row[1] ?? "", providers));
 }
 
 export function sealedMetricsPath(workspace: string, sessionId: string): string {
@@ -113,10 +113,10 @@ export function readSealedMetrics(
 export function sealSessionMetrics(
   workspace: string,
   sessionId: string,
-  adapters: Record<string, AgentAdapter>,
+  providers: Record<string, Provider>,
 ): void {
   if (readSealedMetrics(workspace, sessionId).state !== "missing") return;
-  const metrics = sessionMetrics(workspace, sessionId, adapters);
+  const metrics = sessionMetrics(workspace, sessionId, providers);
   if (metrics.status !== "completed") return;
   writeJsonAtomic(sealedMetricsPath(workspace, sessionId), metrics);
 }
@@ -267,11 +267,11 @@ function sessionObject(
   workflow: WorkflowDocument | null,
   executions: ExecutionRow[],
   events: ParsedEvent[],
-  adapters: Record<string, AgentAdapter>,
+  providers: Record<string, Provider>,
   agentRole: string | null,
 ): Record<string, unknown> {
   const known = new Set(executions.map((execution) => execution.id));
-  const turns = normalizeTurns(events, executions, adapters).filter((turn) => known.has(turn.executionId));
+  const turns = normalizeTurns(events, executions, providers).filter((turn) => known.has(turn.executionId));
   const cancelled = countByExecution(events, "provider.cancelled", known);
   const revisionTargets = revisionMap(executions, workflow);
   const routed = routedFrom(executions, workflow);
@@ -434,23 +434,23 @@ function isRunnerTurn(event: ParsedEvent): boolean {
 function normalizeTurns(
   events: ParsedEvent[],
   executions: ExecutionRow[],
-  adapters: Record<string, AgentAdapter>,
+  providers: Record<string, Provider>,
 ): NormalizedTurn[] {
-  const providers = new Map(executions.map((execution) => [execution.id, execution.provider]));
+  const providerByExecution = new Map(executions.map((execution) => [execution.id, execution.provider]));
   const previous = new Map<string, UsageCapture>();
   const turns: NormalizedTurn[] = [];
   for (const event of events) {
     if (!isRunnerTurn(event) || event.executionId === null) continue;
     const details = detailsOf(event);
-    const provider = text(event.raw.provider) ?? providers.get(event.executionId) ?? "";
+    const provider = text(event.raw.provider) ?? providerByExecution.get(event.executionId) ?? "";
     const agentId = typeof details.agent_id === "string" ? details.agent_id : null;
     const key = JSON.stringify([provider, agentId]);
     const capture = isRecord(details.usage) ? details.usage : null;
-    const adapter = adapters[provider.toLowerCase()];
+    const impl = providers[provider.toLowerCase()];
     let usage = blankUsage();
-    if (capture !== null && adapter?.normalizeUsage) {
+    if (capture !== null && impl?.normalizeUsage) {
       try {
-        usage = coerceUsage(adapter.normalizeUsage(capture, previous.get(key) ?? null));
+        usage = coerceUsage(impl.normalizeUsage(capture, previous.get(key) ?? null));
       } catch {
         usage = blankUsage();
       }

@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { CodexAdapter, GrokAdapter } from "@nodeint/migent-adapters";
+import { CodexProvider, GrokProvider } from "@nodeint/migent-adapters";
 import {
   ConfigurationError,
   SCHEMA_VERSION,
@@ -65,7 +65,7 @@ completion:
   stage: review
 `;
 
-class StepAdapter {
+class StepProvider {
   readonly models: string[] = [];
   readonly roles: string[] = [];
   readonly stages: string[] = [];
@@ -86,7 +86,7 @@ class StepAdapter {
   };
 }
 
-class ChainAdapter {
+class ChainProvider {
   readonly trace: Array<[string, number]> = [];
   readonly modelMigrations: Record<number, (body: Record<string, unknown>) => void>;
   readonly roleMigrations: Record<number, (body: Record<string, unknown>) => void>;
@@ -114,8 +114,8 @@ class ChainAdapter {
   }
 }
 
-function adapters(): { grok: GrokAdapter; codex: CodexAdapter } {
-  return { grok: new GrokAdapter(), codex: new CodexAdapter() };
+function providers(): { grok: GrokProvider; codex: CodexProvider } {
+  return { grok: new GrokProvider(), codex: new CodexProvider() };
 }
 
 function mapping(value: unknown): Record<string, unknown> {
@@ -127,8 +127,8 @@ function mapping(value: unknown): Record<string, unknown> {
 
 test("version steps follow each model's provider", () => {
   const config = loadYamlMapping(writeConfig(LEGACY));
-  const grok = new StepAdapter();
-  const codex = new StepAdapter();
+  const grok = new StepProvider();
+  const codex = new StepProvider();
   const notes = migrateConfig(config, { grok, codex });
   expect(notes[0]).toBe("schema_version -> 2");
   expect(grok.models).toEqual(["grok-4.6"]);
@@ -150,7 +150,7 @@ test("version steps follow each model's provider", () => {
 
 test("current version is left alone", () => {
   const config = { schema_version: "2", models: {}, roles: {} };
-  const grok = new StepAdapter();
+  const grok = new StepProvider();
   expect(migrateConfig(config, { grok })).toEqual([]);
   expect(grok.models).toEqual([]);
   expect(documentVersion(config)).toBe(SCHEMA_VERSION);
@@ -175,7 +175,7 @@ test("newer version is rejected", () => {
 
 test("thinking moves to the provider option and keeps the file", () => {
   const config = loadYamlMapping(writeConfig(LEGACY));
-  const notes = migrateConfig(config, adapters());
+  const notes = migrateConfig(config, providers());
   expect(notes).toContain("models.grok.options.thinking -> reasoning-effort");
   expect(notes).toContain("models.gpt-terra.options.thinking -> model_reasoning_effort");
   expect(notes).toContain("roles.planner.thinking -> options.reasoning-effort");
@@ -200,9 +200,9 @@ test("thinking moves to the provider option and keeps the file", () => {
 
 test("workflow stage keeps instructions and records its version", () => {
   const config = loadYamlMapping(writeConfig(LEGACY));
-  migrateConfig(config, adapters());
+  migrateConfig(config, providers());
   const parsed = mapping(parseYamlDocument(WORKFLOW));
-  const notes = migrateWorkflow(parsed, config, adapters());
+  const notes = migrateWorkflow(parsed, config, providers());
   expect(notes).toContain("stages.plan.thinking -> options.reasoning-effort");
   expect(notes).toContain("stages.review.options.thinking -> model_reasoning_effort");
   const rewritten = patchWorkflowText(WORKFLOW, parsed);
@@ -217,25 +217,25 @@ test("workflow stage keeps instructions and records its version", () => {
 });
 
 test("an upgrade runs each version and skips versions already passed", () => {
-  const adapter = new ChainAdapter();
+  const provider = new ChainProvider();
   const config = {
     schema_version: 1,
     models: { m: { provider: "grok", model: "x" } },
     roles: { dev: { default_model: "m" } },
   };
-  migrateConfig(config, { grok: adapter }, 3);
-  expect(adapter.trace.filter((item) => item[0] === "model")).toEqual([
+  migrateConfig(config, { grok: provider }, 3);
+  expect(provider.trace.filter((item) => item[0] === "model")).toEqual([
     ["model", 1],
     ["model", 2],
   ]);
-  expect(adapter.trace.filter((item) => item[0] === "role")).toEqual([
+  expect(provider.trace.filter((item) => item[0] === "role")).toEqual([
     ["role", 1],
     ["role", 2],
   ]);
   expect(config.schema_version).toBe(3);
   const workflow = { schema_version: 1, stages: [{ id: "plan", role: "dev" }] };
-  migrateWorkflow(workflow, config, { grok: adapter }, 3);
-  expect(adapter.trace.filter((item) => item[0] === "stage")).toEqual([
+  migrateWorkflow(workflow, config, { grok: provider }, 3);
+  expect(provider.trace.filter((item) => item[0] === "stage")).toEqual([
     ["stage", 1],
     ["stage", 2],
   ]);
@@ -247,7 +247,7 @@ test("an existing option wins over thinking", () => {
     options: { thinking: "medium", "reasoning-effort": "low" },
     thinking: "high",
   };
-  const step = new GrokAdapter().modelMigrations[0];
+  const step = new GrokProvider().modelMigrations[0];
   if (step === undefined) throw new Error("missing grok model migration 0");
   step(body);
   expect(body).toEqual({ options: { "reasoning-effort": "low" } });

@@ -3,12 +3,12 @@ import path from "node:path";
 import { AgentToolRunner, type FailureClassification, type RunResult, resetCancellation, raiseCancellation } from "@nodeint/migent-kernel";
 import { expect, test } from "vitest";
 import { dispatchAgent } from "../src/commands/agent.ts";
-import { ScriptedAdapter, removeWorkspace, repoWorkflowText, writeFakeWorkflowWorkspace } from "./support.ts";
+import { ScriptedProvider, removeWorkspace, repoWorkflowText, writeFakeWorkflowWorkspace } from "./support.ts";
 
 const FUTURE = "2099-01-01T00:00:00.000Z";
 const PAST = "2000-01-01T00:00:00.000Z";
 
-class ClassifiedAdapter extends ScriptedAdapter {
+class ClassifiedProvider extends ScriptedProvider {
   private readonly kinds: Array<FailureClassification | null>;
 
   constructor(responses: string[], kinds: Array<FailureClassification | null>) {
@@ -30,13 +30,13 @@ function workspace(): string {
   return writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
 }
 
-function runner(adapter: ClassifiedAdapter) {
-  return new AgentToolRunner({ fake: adapter }, 10);
+function runner(provider: ClassifiedProvider) {
+  return new AgentToolRunner({ fake: provider }, 10);
 }
 
 test("a role quota waits and reruns with the original prompt", async () => {
   const root = workspace();
-  const adapter = new ClassifiedAdapter(
+  const provider = new ClassifiedProvider(
     ["status: complete\n\nlimited", "status: complete\n\ndone"],
     [quota(FUTURE), null],
   );
@@ -45,7 +45,7 @@ test("a role quota waits and reruns with the original prompt", async () => {
     const code = await dispatchAgent(root, {
       role: "reviewer",
       prompt: "Review the latest changes",
-      runner: runner(adapter),
+      runner: runner(provider),
       waitHooks: {
         now: () => now.value,
         sleep: async () => {
@@ -54,9 +54,9 @@ test("a role quota waits and reruns with the original prompt", async () => {
       },
     });
     expect(code).toBe(0);
-    expect(adapter.calls).toHaveLength(2);
-    expect(adapter.calls[1]?.prompt).toBe(adapter.calls[0]?.prompt);
-    expect(adapter.calls[1]?.prompt).toContain("Review the latest changes");
+    expect(provider.calls).toHaveLength(2);
+    expect(provider.calls[1]?.prompt).toBe(provider.calls[0]?.prompt);
+    expect(provider.calls[1]?.prompt).toContain("Review the latest changes");
     const sessionId = readSessionId(root);
     const executions = readdirSync(path.join(root, ".migent", "sessions", sessionId, "executions")).sort();
     const second = JSON.parse(
@@ -71,7 +71,7 @@ test("a role quota waits and reruns with the original prompt", async () => {
 
 test("a role quota that is not later returns 1 without another call", async () => {
   const root = workspace();
-  const adapter = new ClassifiedAdapter(
+  const provider = new ClassifiedProvider(
     ["status: complete\n\nfirst", "status: complete\n\nsecond", "status: complete\n\nthird"],
     [quota(FUTURE), quota(FUTURE), null],
   );
@@ -80,7 +80,7 @@ test("a role quota that is not later returns 1 without another call", async () =
     const code = await dispatchAgent(root, {
       role: "reviewer",
       prompt: "Review",
-      runner: new AgentToolRunner({ fake: adapter }, 10),
+      runner: new AgentToolRunner({ fake: provider }, 10),
       waitHooks: {
         now: () => now.value,
         sleep: async () => {
@@ -89,7 +89,7 @@ test("a role quota that is not later returns 1 without another call", async () =
       },
     });
     expect(code).toBe(1);
-    expect(adapter.calls).toHaveLength(2);
+    expect(provider.calls).toHaveLength(2);
   } finally {
     resetCancellation();
     removeWorkspace(root);
@@ -99,7 +99,7 @@ test("a role quota that is not later returns 1 without another call", async () =
 test("a role quota without reset_at and a provider failure return 1", async () => {
   const root = workspace();
   try {
-    const missing = new ClassifiedAdapter(["status: complete\n\nx"], [quota(null)]);
+    const missing = new ClassifiedProvider(["status: complete\n\nx"], [quota(null)]);
     expect(
       await dispatchAgent(root, {
         role: "reviewer",
@@ -109,7 +109,7 @@ test("a role quota without reset_at and a provider failure return 1", async () =
       }),
     ).toBe(1);
     expect(missing.calls).toHaveLength(1);
-    const provider = new ClassifiedAdapter(["status: complete\n\nx"], [{ kind: "provider", message: "down" }]);
+    const provider = new ClassifiedProvider(["status: complete\n\nx"], [{ kind: "provider", message: "down" }]);
     expect(
       await dispatchAgent(root, {
         role: "reviewer",
@@ -126,12 +126,12 @@ test("a role quota without reset_at and a provider failure return 1", async () =
 
 test("cancel during a role wait returns 130", async () => {
   const root = workspace();
-  const adapter = new ClassifiedAdapter(["status: complete\n\nx"], [quota(FUTURE)]);
+  const provider = new ClassifiedProvider(["status: complete\n\nx"], [quota(FUTURE)]);
   try {
     const code = await dispatchAgent(root, {
       role: "reviewer",
       prompt: "Review",
-      runner: new AgentToolRunner({ fake: adapter }, 10),
+      runner: new AgentToolRunner({ fake: provider }, 10),
       waitHooks: {
         now: () => Date.parse(PAST),
         sleep: async () => {
@@ -140,7 +140,7 @@ test("cancel during a role wait returns 130", async () => {
       },
     });
     expect(code).toBe(130);
-    expect(adapter.calls).toHaveLength(1);
+    expect(provider.calls).toHaveLength(1);
   } finally {
     resetCancellation();
     removeWorkspace(root);
@@ -176,13 +176,13 @@ test("a single verify-exhausted role result returns 1", async () => {
 
 test("a cancelled role quota reruns with the last user prompt", async () => {
   const root = workspace();
-  class HangAdapter extends ScriptedAdapter {
-    override buildCommand(input: Parameters<ScriptedAdapter["buildCommand"]>[0]) {
+  class HangProvider extends ScriptedProvider {
+    override buildCommand(input: Parameters<ScriptedProvider["buildCommand"]>[0]) {
       super.buildCommand(input);
       return { argv: [process.execPath, "-e", "setTimeout(() => {}, 30000)"] };
     }
   }
-  const hanging = new HangAdapter(["status: complete\n\nunused"]);
+  const hanging = new HangProvider(["status: complete\n\nunused"]);
   const timer = setTimeout(() => {
     try {
       raiseCancellation(15);
@@ -198,7 +198,7 @@ test("a cancelled role quota reruns with the last user prompt", async () => {
     });
     expect(cancelled).toBe(130);
     resetCancellation();
-    const adapter = new ClassifiedAdapter(
+    const provider = new ClassifiedProvider(
       ["status: complete\n\nlimited", "status: complete\n\ndone"],
       [quota(FUTURE), null],
     );
@@ -207,7 +207,7 @@ test("a cancelled role quota reruns with the last user prompt", async () => {
       role: "reviewer",
       prompt: "this prompt must not be read",
       promptFile: null,
-      runner: new AgentToolRunner({ fake: adapter }, 10),
+      runner: new AgentToolRunner({ fake: provider }, 10),
       waitHooks: {
         now: () => now.value,
         sleep: async () => {
@@ -217,8 +217,8 @@ test("a cancelled role quota reruns with the last user prompt", async () => {
       sessionId: readSessionId(root),
     });
     expect(code).toBe(0);
-    expect(adapter.calls[1]?.prompt).toContain("Review the saved turn");
-    expect(adapter.calls[1]?.prompt).not.toContain("this prompt must not be read");
+    expect(provider.calls[1]?.prompt).toContain("Review the saved turn");
+    expect(provider.calls[1]?.prompt).not.toContain("this prompt must not be read");
   } finally {
     clearTimeout(timer);
     resetCancellation();

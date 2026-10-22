@@ -13,7 +13,7 @@ import {
 } from "../src/index.ts";
 import { setBetweenStaleLockReads } from "../src/session-lock.ts";
 import { createSessionDirectory, createPreparedSession } from "../src/session-records.ts";
-import { ScriptedAdapter, tempDir } from "./support.ts";
+import { ScriptedProvider, tempDir } from "./support.ts";
 
 function sessionDir(): string {
   const dir = path.join(tempDir("migent-lock-"), "s1");
@@ -125,24 +125,24 @@ test("continue on a session another process is running exits 2 and runs nothing"
   const { workspace, sessionId } = setup();
   const dir = path.join(workspace, ".migent", "sessions", sessionId);
   foreignLock(dir);
-  const adapter = new ScriptedAdapter(["status: complete\n\ndone"]);
+  const provider = new ScriptedProvider(["status: complete\n\ndone"]);
   const result = await executeNamedWorkflow(
     workspace,
     { workflowId: "wf", sessionId },
-    new AgentToolRunner({ fake: adapter }, 10),
+    new AgentToolRunner({ fake: provider }, 10),
   );
   expect(result.code).toBe(2);
-  expect(adapter.calls).toHaveLength(0);
+  expect(provider.calls).toHaveLength(0);
   expect(new SessionStore(workspace).executionSnapshots(sessionId)).toHaveLength(0);
 });
 
 test("a finished run releases the session lock", async () => {
   const { workspace, sessionId } = setup();
-  const adapter = new ScriptedAdapter(["status: complete\n\ndone"]);
+  const provider = new ScriptedProvider(["status: complete\n\ndone"]);
   const result = await executeNamedWorkflow(
     workspace,
     { workflowId: "wf", sessionId },
-    new AgentToolRunner({ fake: adapter }, 10),
+    new AgentToolRunner({ fake: provider }, 10),
   );
   expect(result.code).toBe(0);
   expect(existsSync(path.join(workspace, ".migent", "sessions", sessionId, "session.lock"))).toBe(false);
@@ -152,9 +152,9 @@ test("a second resume of one agent session does not run", async () => {
   const workspace = tempDir("migent-agent-lock-");
   const sessionId = createAgentSession(workspace, "reviewer", "review the plan");
   const dir = path.join(workspace, ".migent", "sessions", sessionId);
-  const adapter = new ScriptedAdapter(["status: complete\n\ndone"]);
+  const provider = new ScriptedProvider(["status: complete\n\ndone"]);
   const lock = SessionLock.acquire(dir, { heartbeatMs: 3_600_000 });
-  const pending = new AgentToolRunner({ fake: adapter }, 10).run({
+  const pending = new AgentToolRunner({ fake: provider }, 10).run({
     provider: "fake",
     model: "m1",
     prompt: "review",
@@ -166,7 +166,7 @@ test("a second resume of one agent session does not run", async () => {
   try {
     const result = await pending;
     expect(result.outcome_status).toBe("complete");
-    expect(adapter.calls).toHaveLength(1);
+    expect(provider.calls).toHaveLength(1);
     expect(new SessionStore(workspace).executionSnapshots(sessionId)).toHaveLength(1);
   } finally {
     lock.release();

@@ -4,7 +4,7 @@ schema_version: 2
 # models.<name>.model is the provider model id.
 # roles.<name>.default_model and a stage model are this name.
 # Options merge in order: model, then role, then stage.
-# Only keys the adapter marks overridable are stored on the provider session.
+# Only keys the provider marks overridable are stored on the provider session.
 models:
   planner:
     provider: grok

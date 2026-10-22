@@ -2,12 +2,12 @@ import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
-  defaultAdapters,
-  type AgentAdapter,
+  defaultProviders,
+  type Provider,
   type FailureClassification,
   type NewSession,
   type UsageCapture,
-} from "./adapter.js";
+} from "./provider-contract.js";
 import { CancellationRequested, CommandExecutor, DEFAULT_TIMEOUT_SEC } from "./command-executor.js";
 import { spawnProviderSync } from "./provider-spawn.js";
 import { buildVerifyRepairPrompt } from "./prompt.js";
@@ -64,19 +64,19 @@ export interface RunRequest {
 }
 
 export class AgentToolRunner {
-  readonly adapters: Record<string, AgentAdapter>;
+  readonly providers: Record<string, Provider>;
   readonly executor: CommandExecutor;
   readonly verifyRunner: VerifyRunner;
   itemProgress = false;
   private readonly cliVersions = new Map<string, string | null>();
 
   constructor(
-    adapters?: Record<string, AgentAdapter>,
+    providers?: Record<string, Provider>,
     timeoutSec: number | null = DEFAULT_TIMEOUT_SEC,
     verifyRunner: VerifyRunner = new VerifyRunner(),
   ) {
     this.verifyRunner = verifyRunner;
-    this.adapters = adapters ?? defaultAdapters();
+    this.providers = providers ?? defaultProviders();
     this.executor = new CommandExecutor(timeoutSec);
   }
 
@@ -89,15 +89,15 @@ export class AgentToolRunner {
       throw new Error("Execution order must be at least 1.");
     }
     const providerKey = request.provider.toLowerCase();
-    const adapter = this.adapters[providerKey];
-    if (adapter === undefined) {
-      const supported = Object.keys(this.adapters).sort().join(", ");
+    const provider = this.providers[providerKey];
+    if (provider === undefined) {
+      const supported = Object.keys(this.providers).sort().join(", ");
       throw new Error(`Unsupported CLI provider: ${request.provider}. Supported: ${supported}`);
     }
     const resolvedOptions = { ...(request.options ?? {}) };
-    adapter.validateOptions(resolvedOptions);
-    const profile = profileOptions(adapter, resolvedOptions);
-    const store = new SessionStore(workspacePath, undefined, this.adapters);
+    provider.validateOptions(resolvedOptions);
+    const profile = profileOptions(provider, resolvedOptions);
+    const store = new SessionStore(workspacePath, undefined, this.providers);
     const sessionId = request.sessionId ?? null;
     const stageId = request.stageId ?? "agent";
     const [record, isNew, context] = store.loadOrCreate(
@@ -123,7 +123,7 @@ export class AgentToolRunner {
         profile,
       );
     }
-    const newSession = isNew ? (adapter.createNewSession?.() ?? { agentId: null }) : null;
+    const newSession = isNew ? (provider.createNewSession?.() ?? { agentId: null }) : null;
     if (newSession?.agentId) record.agentId = newSession.agentId;
     record.history.push({ role: "user", content: request.prompt });
     record.status = "running";
@@ -152,14 +152,14 @@ export class AgentToolRunner {
     turnPrompt = addArtifactContext(turnPrompt, context.artifactDirectory, artifactName);
     store.savePrompt(context, turnPrompt);
     const started: Record<string, unknown> = {
-      cli_version: this.cachedCliVersion(adapter, providerKey, workspacePath),
+      cli_version: this.cachedCliVersion(provider, providerKey, workspacePath),
       ...readGitFacts(workspacePath),
     };
     if (Object.keys(profile).length > 0) started.options = profile;
     eventReporter.emit("provider.stage_started", `${providerKey}/${request.model}`, started);
 
     return this.driveTurns({
-      adapter,
+      provider,
       model: request.model,
       workspacePath,
       resolvedOptions,
@@ -190,7 +190,7 @@ export class AgentToolRunner {
   /** Finish a cancelled execution that has been reopened in place. Does not create an attempt. */
   async continueCancelled(workspace: string, sessionId: string, executionId: string): Promise<RunResult> {
     const workspacePath = resolveWorkspace(workspace);
-    const store = new SessionStore(workspacePath, undefined, this.adapters);
+    const store = new SessionStore(workspacePath, undefined, this.providers);
     const context = store.executionContext(sessionId, executionId);
     if (context === null) throw new Error(`Execution ${executionId} was not found in session ${sessionId}.`);
     const metadata = JSON.parse(readFileSync(path.join(context.directory, "execution.json"), "utf8")) as unknown;
@@ -200,14 +200,14 @@ export class AgentToolRunner {
     }
     const providerKey = typeof metadata.provider === "string" ? metadata.provider.toLowerCase() : "";
     const model = typeof metadata.model === "string" ? metadata.model : "";
-    const adapter = this.adapters[providerKey];
-    if (adapter === undefined) {
-      const supported = Object.keys(this.adapters).sort().join(", ");
+    const provider = this.providers[providerKey];
+    if (provider === undefined) {
+      const supported = Object.keys(this.providers).sort().join(", ");
       throw new Error(`Unsupported CLI provider: ${String(metadata.provider)}. Supported: ${supported}`);
     }
     const resolvedOptions = stringOptions(metadata.options);
-    adapter.validateOptions(resolvedOptions);
-    const profile = profileOptions(adapter, resolvedOptions);
+    provider.validateOptions(resolvedOptions);
+    const profile = profileOptions(provider, resolvedOptions);
     const record = AgentSessionRecord.fromJson(
       JSON.parse(readFileSync(context.conversationReadPath, "utf8")) as unknown,
       providerKey,
@@ -247,7 +247,7 @@ export class AgentToolRunner {
         currentPrompt = addStageOutcomeContract(currentPrompt, decisionValues);
       }
       return this.driveTurns({
-        adapter,
+        provider,
         model,
         workspacePath,
         resolvedOptions,
@@ -285,7 +285,7 @@ export class AgentToolRunner {
       invokeError = error.message;
     }
     return this.driveTurns({
-      adapter,
+      provider,
       model,
       workspacePath,
       resolvedOptions,
@@ -315,7 +315,7 @@ export class AgentToolRunner {
 
   private async driveTurns(state: TurnDrive): Promise<RunResult> {
     const {
-      adapter,
+      provider,
       model,
       workspacePath,
       resolvedOptions,
@@ -387,7 +387,7 @@ export class AgentToolRunner {
         let usage: UsageCapture | null = null;
         try {
           [responseText, parsedProviderId, invokeError, argv, usage, classification] = await this.runTurn(
-            adapter,
+            provider,
             model,
             workspacePath,
             currentPrompt,
@@ -604,15 +604,15 @@ export class AgentToolRunner {
     store.carryVerifyArtifact(previous.artifactDirectory, context, artifactName);
   }
 
-  private cachedCliVersion(adapter: AgentAdapter, providerKey: string, workspace: string): string | null {
+  private cachedCliVersion(provider: Provider, providerKey: string, workspace: string): string | null {
     if (this.cliVersions.has(providerKey)) return this.cliVersions.get(providerKey) ?? null;
-    const version = readCliVersion(adapter, workspace);
+    const version = readCliVersion(provider, workspace);
     this.cliVersions.set(providerKey, version);
     return version;
   }
 
   private async runTurn(
-    adapter: AgentAdapter,
+    provider: Provider,
     model: string,
     workspace: string,
     prompt: string,
@@ -628,7 +628,7 @@ export class AgentToolRunner {
       const promptFile = path.join(tmp, "prompt.txt");
       const lastMessageFile = path.join(tmp, "last_message.txt");
       writeFileSync(promptFile, prompt, "utf8");
-      const spec = adapter.buildCommand({
+      const spec = provider.buildCommand({
         model,
         workspace,
         prompt,
@@ -642,7 +642,7 @@ export class AgentToolRunner {
         spec,
         workspace,
         (line) => {
-          const event = adapter.parseProgressEvent?.(line);
+          const event = provider.parseProgressEvent?.(line);
           if (!isRecord(event) || typeof event.event !== "string") return;
           eventReporter.emit(
             event.event,
@@ -659,14 +659,14 @@ export class AgentToolRunner {
           store.saveProcessMetadata(context, info);
         },
       );
-      const [responseText, parsedProviderId] = adapter.parseResponse(stdout, lastMessageFile);
-      const classification = classifyFinishedProcess(adapter, stdout, exitCode, executorError);
+      const [responseText, parsedProviderId] = provider.parseResponse(stdout, lastMessageFile);
+      const classification = classifyFinishedProcess(provider, stdout, exitCode, executorError);
       let invokeError = executorError;
       if (exitCode === 0 && classification !== null) invokeError = classification.message;
       let usage: UsageCapture | null = null;
-      if (adapter.captureUsage) {
+      if (provider.captureUsage) {
         try {
-          const captured = adapter.captureUsage(stdout);
+          const captured = provider.captureUsage(stdout);
           usage = isRecord(captured) ? captured : null;
         } catch {
           usage = null;
@@ -680,13 +680,13 @@ export class AgentToolRunner {
 }
 
 function classifyFinishedProcess(
-  adapter: AgentAdapter,
+  provider: Provider,
   stdout: string,
   exitCode: number | null,
   executorError: string | null,
 ): FailureClassification | null {
   if (exitCode === null) return { kind: "provider", message: executorError ?? "" };
-  if (adapter.classifyFailure) return adapter.classifyFailure(stdout, exitCode);
+  if (provider.classifyFailure) return provider.classifyFailure(stdout, exitCode);
   if (exitCode !== 0) return { kind: "provider", message: `CLI exited with code ${exitCode}.` };
   return null;
 }
@@ -711,10 +711,10 @@ function loadRunStage(store: SessionStore, sessionId: string, stageId: string): 
   }
 }
 
-function profileOptions(adapter: AgentAdapter, options: Record<string, string>): Record<string, string> {
-  if (adapter.profileOptions) return { ...adapter.profileOptions(options) };
+function profileOptions(provider: Provider, options: Record<string, string>): Record<string, string> {
+  if (provider.profileOptions) return { ...provider.profileOptions(options) };
   const names = new Set(
-    (adapter.providerOptions?.() ?? []).filter((item) => item.overridable).map((item) => item.name),
+    (provider.providerOptions?.() ?? []).filter((item) => item.overridable).map((item) => item.name),
   );
   const profile: Record<string, string> = {};
   for (const [key, value] of Object.entries(options)) {
@@ -784,7 +784,7 @@ interface PendingVerify {
 }
 
 interface TurnDrive {
-  adapter: AgentAdapter;
+  provider: Provider;
   model: string;
   workspacePath: string;
   resolvedOptions: Record<string, string>;
@@ -864,9 +864,9 @@ function savedOutcome(
   return parseStageOutcome(responseText, required, decisionValues);
 }
 
-function readCliVersion(adapter: AgentAdapter, workspace: string): string | null {
-  if (!adapter.versionCommand) return null;
-  const argv = adapter.versionCommand();
+function readCliVersion(provider: Provider, workspace: string): string | null {
+  if (!provider.versionCommand) return null;
+  const argv = provider.versionCommand();
   const command = argv[0];
   if (command === undefined) return null;
   const result = spawnProviderSync(command, argv.slice(1), {
@@ -874,8 +874,8 @@ function readCliVersion(adapter: AgentAdapter, workspace: string): string | null
     timeout: 10_000,
     cwd: workspace,
   });
-  if (result.error || result.status !== 0 || !adapter.parseVersion) return null;
-  return adapter.parseVersion(result.stdout ?? "");
+  if (result.error || result.status !== 0 || !provider.parseVersion) return null;
+  return provider.parseVersion(result.stdout ?? "");
 }
 
 function readGitFacts(workspace: string): { git_head: string | null; git_dirty: boolean | null } {

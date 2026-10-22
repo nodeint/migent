@@ -7,7 +7,7 @@ import {
   diagnose,
   whichSync,
   yamlScalar,
-  type AgentAdapter,
+  type Provider,
   type ProviderOption,
 } from "@nodeint/migent-kernel";
 import { PromptCancelled } from "../errors.js";
@@ -23,14 +23,14 @@ import { runDoctor } from "./doctor.js";
 import { installSkill } from "./skill.js";
 import {
   acceptedOptions,
-  adapterMap,
+  providerMap,
   asCatalog,
   detected,
   knownModel,
   loadCatalog,
   loadOptionValues,
   parseOptions,
-  requireAdapter,
+  requireProvider,
   runProviderCommand,
   type RunCommand,
   type Which,
@@ -46,7 +46,7 @@ export interface ModelChoice {
 
 export interface Prompter {
   selectProvider(
-    rows: ReadonlyArray<readonly [string, string | null, AgentAdapter]>,
+    rows: ReadonlyArray<readonly [string, string | null, Provider]>,
     message: string,
   ): string | Promise<string>;
   selectModel(provider: string, catalog: ModelCatalog, message: string): string | Promise<string>;
@@ -64,7 +64,7 @@ export async function runInit(
     presetExplicit?: boolean;
     skill?: boolean;
     interactive?: boolean;
-    adapters?: Record<string, AgentAdapter> | null;
+    providers?: Record<string, Provider> | null;
     which?: Which | null;
     prompter?: Prompter | null;
     runCommand?: RunCommand | null;
@@ -75,7 +75,7 @@ export async function runInit(
   const preset = options.preset ?? "implement";
   const skill = options.skill === true;
   const interactive = options.interactive ?? false;
-  const chosen = options.adapters ?? adapterMap();
+  const chosen = options.providers ?? providerMap();
   const resolve = options.which ?? cliHooks.which ?? whichSync;
   const prompt = options.prompter ?? new ClackPrompter();
   const execute = options.runCommand ?? runProviderCommand;
@@ -147,17 +147,17 @@ export async function runInit(
 
 function writeDoctorProblems(
   workspace: string,
-  adapters: Record<string, AgentAdapter>,
+  providers: Record<string, Provider>,
   which: Which,
 ): void {
-  const problems = diagnose(workspace, { adapters, which }).flatMap((check) => check.problems);
+  const problems = diagnose(workspace, { providers, which }).flatMap((check) => check.problems);
   if (problems.length === 0) return;
   process.stderr.write("Doctor reported problems:\n");
   for (const problem of problems) process.stderr.write(`${problem}\n`);
 }
 
 async function choices(
-  adapters: Record<string, AgentAdapter>,
+  providers: Record<string, Provider>,
   which: Which,
   prompt: Prompter,
   args: {
@@ -171,19 +171,19 @@ async function choices(
   let model = args.model;
   let stored: Record<string, string>;
   if (provider === null) {
-    const rows = detected(adapters, which);
+    const rows = detected(providers, which);
     provider = await prompt.selectProvider(rows, "Default provider");
-    const adapter = adapters[provider];
-    if (adapter === undefined) throw new ConfigurationError(`Unknown provider: ${provider}.`);
-    const catalog = await loadCatalog(adapter, which, args.runCommand);
+    const impl = providers[provider];
+    if (impl === undefined) throw new ConfigurationError(`Unknown provider: ${provider}.`);
+    const catalog = await loadCatalog(impl, which, args.runCommand);
     model = await prompt.selectModel(provider, catalog, "Model");
-    stored = await promptOptions(adapter, model, catalog, which, args.runCommand, prompt);
+    stored = await promptOptions(impl, model, catalog, which, args.runCommand, prompt);
   } else {
-    const adapter = requireAdapter(adapters, provider);
+    const impl = requireProvider(providers, provider);
     if (model === null) throw new ConfigurationError("Model is required.");
-    const catalog = await loadCatalog(adapter, which, args.runCommand);
+    const catalog = await loadCatalog(impl, which, args.runCommand);
     model = knownModel(model, catalog);
-    stored = await acceptedOptions(adapter, model, catalog, which, args.runCommand, args.options);
+    stored = await acceptedOptions(impl, model, catalog, which, args.runCommand, args.options);
   }
   if (model.trim() === "") throw new ConfigurationError("Model is required.");
   const primary = { provider, model: model.trim(), options: stored };
@@ -192,7 +192,7 @@ async function choices(
 
 function classify(
   workspace: string,
-  adapters: Record<string, AgentAdapter>,
+  providers: Record<string, Provider>,
   which: Which,
 ): { state: "create" | "ready" | "conflict"; conflicts: string[] } {
   const root = path.join(workspace, ".migent");
@@ -215,7 +215,7 @@ function classify(
     ? readdirSync(workflows).filter((name) => name.endsWith(".yaml") && isFile(path.join(workflows, name)))
     : [];
   if (isFile(config) && yamlFiles.length > 0) {
-    const checks = diagnose(workspace, { adapters, which });
+    const checks = diagnose(workspace, { providers, which });
     const byName = new Map(checks.map((check) => [check.name, check]));
     if (byName.get("config")?.ok && byName.get("workflows")?.ok) return { state: "ready", conflicts: [] };
   }
@@ -305,7 +305,7 @@ function renderWorkflow(preset: string): string {
 }
 
 async function promptOptions(
-  adapter: AgentAdapter,
+  provider: Provider,
   model: string,
   catalog: ModelCatalog,
   which: Which,
@@ -313,9 +313,9 @@ async function promptOptions(
   prompt: Prompter,
 ): Promise<Record<string, string>> {
   const stored: Record<string, string> = {};
-  for (const spec of providerOptions(adapter)) {
+  for (const spec of providerOptions(provider)) {
     if (!spec.prompt) continue;
-    const values = await loadOptionValues(adapter, spec.name, model, catalog, which, runCommand);
+    const values = await loadOptionValues(provider, spec.name, model, catalog, which, runCommand);
     if (values === null || values.length === 0) continue;
     const picked = await prompt.selectOption(spec.name, values, spec.allowDefault ?? false);
     if (picked) stored[spec.name] = picked;
@@ -323,13 +323,13 @@ async function promptOptions(
   return stored;
 }
 
-function providerOptions(adapter: AgentAdapter): readonly ProviderOption[] {
-  return asCatalog(adapter).providerOptions();
+function providerOptions(provider: Provider): readonly ProviderOption[] {
+  return asCatalog(provider).providerOptions();
 }
 
 class ClackPrompter implements Prompter {
   async selectProvider(
-    rows: ReadonlyArray<readonly [string, string | null, AgentAdapter]>,
+    rows: ReadonlyArray<readonly [string, string | null, Provider]>,
     message: string,
   ): Promise<string> {
     if (rows.length === 0) throw new ConfigurationError("No providers are available.");

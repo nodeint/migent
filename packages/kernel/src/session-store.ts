@@ -9,7 +9,7 @@ import {
   statSync,
 } from "node:fs";
 import path from "node:path";
-import type { AgentAdapter } from "./adapter.js";
+import type { Provider } from "./provider-contract.js";
 import { writeFileAtomic, writeJsonAtomic } from "./atomic-file.js";
 import { ConfigurationError, OutputsMissing } from "./errors.js";
 import { sealSessionMetrics } from "./metrics.js";
@@ -185,17 +185,17 @@ export class SessionStore {
   readonly workspace: string;
   readonly sessionsDirectory: string;
   readonly processInspector: ProcessInspector;
-  readonly metricsAdapters: Record<string, AgentAdapter> | null;
+  readonly metricsProviders: Record<string, Provider> | null;
 
   constructor(
     workspace: string,
     processInspector?: ProcessInspector,
-    metricsAdapters?: Record<string, AgentAdapter>,
+    metricsProviders?: Record<string, Provider>,
   ) {
     this.workspace = workspace;
     this.sessionsDirectory = path.join(workspace, MIGENT_DIRNAME, SESSIONS_DIRNAME);
     this.processInspector = processInspector ?? new SystemProcessInspector();
-    this.metricsAdapters = metricsAdapters ?? null;
+    this.metricsProviders = metricsProviders ?? null;
   }
 
   loadOrCreate(
@@ -743,9 +743,9 @@ export class SessionStore {
     if (
       plan.sessionStatus === "completed" &&
       previousStatus.workflow_id !== "agent" &&
-      this.metricsAdapters !== null
+      this.metricsProviders !== null
     ) {
-      sealSessionMetrics(this.workspace, context.sessionId, this.metricsAdapters);
+      sealSessionMetrics(this.workspace, context.sessionId, this.metricsProviders);
     }
     if (plan.outputsMissing.length > 0) throw new OutputsMissing(plan.outputsMissing);
   }

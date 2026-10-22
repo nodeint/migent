@@ -1,7 +1,7 @@
 import type { CommandSpec } from "./command-executor.js";
 
 /** Methods doctor and config resolution call. Migrations are out of scope. */
-export interface ProviderAdapter {
+export interface ProviderInfo {
   readonly command: string;
   validateOptions(options: Readonly<Record<string, string>>): void;
 }
@@ -57,8 +57,8 @@ export interface ProviderClassification {
 /** `null` means this finished process is not a provider failure. */
 export type FailureClassification = QuotaClassification | ProviderClassification;
 
-/** Provider CLI surface used by the workflow runner. Not the adapters package. */
-export interface AgentAdapter extends ProviderAdapter {
+/** Provider CLI surface used by the workflow runner. Not the providers package. */
+export interface Provider extends ProviderInfo {
   providerOptions?(): readonly ProviderOption[];
   profileOptions?(options: Readonly<Record<string, string>>): Record<string, string>;
   createNewSession?(): NewSession;
@@ -85,7 +85,7 @@ const grokOptionNames = new Set([
   "sandbox",
 ]);
 
-export class CodexAdapter implements AgentAdapter {
+export class CodexProvider implements Provider {
   readonly command = "codex";
 
   validateOptions(options: Readonly<Record<string, string>>): void {
@@ -100,15 +100,15 @@ export class CodexAdapter implements AgentAdapter {
   }
 
   buildCommand(): CommandSpec {
-    throw new Error("codex adapter is not available in the kernel.");
+    throw new Error("codex provider is not available in the kernel.");
   }
 
   parseResponse(): [string, string | null] {
-    throw new Error("codex adapter is not available in the kernel.");
+    throw new Error("codex provider is not available in the kernel.");
   }
 }
 
-export class GrokAdapter implements AgentAdapter {
+export class GrokProvider implements Provider {
   readonly command = "grok";
 
   validateOptions(options: Readonly<Record<string, string>>): void {
@@ -133,14 +133,14 @@ export class GrokAdapter implements AgentAdapter {
   }
 
   buildCommand(): CommandSpec {
-    throw new Error("grok adapter is not available in the kernel.");
+    throw new Error("grok provider is not available in the kernel.");
   }
 
   parseResponse(): [string, string | null] {
-    throw new Error("grok adapter is not available in the kernel.");
+    throw new Error("grok provider is not available in the kernel.");
   }
 }
 
-export function defaultAdapters(): Record<string, AgentAdapter> {
-  return { codex: new CodexAdapter(), grok: new GrokAdapter() };
+export function defaultProviders(): Record<string, Provider> {
+  return { codex: new CodexProvider(), grok: new GrokProvider() };
 }

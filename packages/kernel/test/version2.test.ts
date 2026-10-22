@@ -12,7 +12,7 @@ import {
   repairSession,
 } from "../src/index.ts";
 import { parseYamlDocument } from "../src/yaml.ts";
-import { PLAN_REVIEW_WORKFLOW, ScriptedAdapter, tempDir } from "./support.ts";
+import { PLAN_REVIEW_WORKFLOW, ScriptedProvider, tempDir } from "./support.ts";
 
 const CONFIG = `\
 models:
@@ -42,7 +42,7 @@ stages:
     depends_on: []
 `;
 
-class DropPlanAdapter extends ScriptedAdapter {
+class DropPlanProvider extends ScriptedProvider {
   private drops: number;
 
   constructor(responses: string[], artifacts: Array<string | null>, drops: number) {
@@ -98,12 +98,12 @@ test("a migrated plan workflow publishes the same output as version 1", async ()
   const first = await executeNamedWorkflow(
     version1,
     { workflowId: "plan", task: "Write a plan" },
-    new AgentToolRunner({ fake: new ScriptedAdapter(responses, artifacts) }, 10),
+    new AgentToolRunner({ fake: new ScriptedProvider(responses, artifacts) }, 10),
   );
   const second = await executeNamedWorkflow(
     version2,
     { workflowId: "plan", task: "Write a plan" },
-    new AgentToolRunner({ fake: new ScriptedAdapter([...responses], [...artifacts]) }, 10),
+    new AgentToolRunner({ fake: new ScriptedProvider([...responses], [...artifacts]) }, 10),
   );
   expect(first.code).toBe(0);
   expect(first.stopReason).toBe("completed");
@@ -122,7 +122,7 @@ test("version 2 two roots run in declaration order", async () => {
   const result = await executeNamedWorkflow(
     workspace,
     { workflowId: "two", sessionId },
-    new AgentToolRunner({ fake: new ScriptedAdapter([DONE, DONE]) }, 10),
+    new AgentToolRunner({ fake: new ScriptedProvider([DONE, DONE]) }, 10),
   );
   expect(result.code).toBe(0);
   expect(result.stopReason).toBe("completed");
@@ -131,7 +131,7 @@ test("version 2 two roots run in declaration order", async () => {
 
 test("version 1 two roots are still ambiguous", async () => {
   const workspace = workspaceFor("two", TWO);
-  const runner = new AgentToolRunner({ fake: new ScriptedAdapter([DONE, DONE]) }, 10);
+  const runner = new AgentToolRunner({ fake: new ScriptedProvider([DONE, DONE]) }, 10);
   await expect(executeNamedWorkflow(workspace, { workflowId: "two", task: "Run both" }, runner)).rejects.toThrow(
     ConfigurationError,
   );
@@ -143,8 +143,8 @@ test("version 1 two roots are still ambiguous", async () => {
 test("a missing output at quiescence exits 2 and continue reruns the producer", async () => {
   const workspace = workspaceFor("plan", migratedPlan());
   const sessionId = createWorkflowSession(workspace, "plan", "Write a plan");
-  const adapter = new DropPlanAdapter([DONE, APPROVED, DONE, APPROVED], ["# plan\n", null, "# plan again\n", null], 1);
-  const runner = new AgentToolRunner({ fake: adapter }, 10);
+  const provider = new DropPlanProvider([DONE, APPROVED, DONE, APPROVED], ["# plan\n", null, "# plan again\n", null], 1);
+  const runner = new AgentToolRunner({ fake: provider }, 10);
   const first = await executeNamedWorkflow(workspace, { workflowId: "plan", sessionId }, runner);
   expect(first.code).toBe(2);
   expect(first.stopReason).toBe("outputs_missing");
@@ -167,7 +167,7 @@ test("repair records session.completed when a version 2 graph becomes quiet", as
   const result = await executeNamedWorkflow(
     workspace,
     { workflowId: "two", sessionId },
-    new AgentToolRunner({ fake: new ScriptedAdapter([DONE, DONE]) }, 10),
+    new AgentToolRunner({ fake: new ScriptedProvider([DONE, DONE]) }, 10),
   );
   expect(result.stopReason).toBe("completed");
   const eventsPath = path.join(workspace, ".migent", "sessions", sessionId, "events.jsonl");

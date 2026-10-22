@@ -1,8 +1,8 @@
 import type { CliClient } from "@nodeint/migent-kernel";
-import { ClientAdapter } from "./client-adapter.js";
-import { AgyClient } from "./clients/agy-client.js";
+import { ClientProvider } from "./client-provider.js";
+import { AgyClient } from "../clients/agy-client.js";
 
-export class AgyAdapter extends ClientAdapter {
+export class AgyProvider extends ClientProvider {
   readonly displayName = "Antigravity";
 
   constructor(client: CliClient = new AgyClient()) {

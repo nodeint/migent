@@ -11,8 +11,8 @@ import {
   sealedMetricsPath,
   sessionMetrics,
 } from "../src/index.ts";
-import type { TurnUsage, UsageCapture } from "../src/adapter.ts";
-import { FakeAdapter, ScriptedAdapter, tempDir } from "./support.ts";
+import type { TurnUsage, UsageCapture } from "../src/provider-contract.ts";
+import { FakeProvider, ScriptedProvider, tempDir } from "./support.ts";
 
 const PLAN = `\
 id: plan
@@ -218,7 +218,7 @@ test("counts a revision and keeps routed_from across a failed retry", () => {
       event(2, "revisions.reset", null),
     ],
   );
-  const metrics = sessionMetrics(workspace, sessionId, { fake: new FakeAdapter() });
+  const metrics = sessionMetrics(workspace, sessionId, { fake: new FakeProvider() });
   const stages = metrics.stages as Record<string, Record<string, unknown>>;
   const executions = metrics.executions as Array<Record<string, unknown>>;
   expect(Object.keys(stages)).toEqual(["plan", "review"]);
@@ -283,8 +283,8 @@ test("verify red then red then pass", () => {
 
 test("a cumulative provider deltas across executions that share an agent", () => {
   const workspace = tempDir("migent-metrics-");
-  const adapter = new FakeAdapter();
-  adapter.normalizeUsage = cumulative;
+  const provider = new FakeProvider();
+  provider.normalizeUsage = cumulative;
   writeSession(
     workspace,
     "cost",
@@ -295,7 +295,7 @@ test("a cumulative provider deltas across executions that share an agent", () =>
     ],
     [turn(1, "0001", { total: 100 }), turn(2, "0002", { total: 140 })],
   );
-  const metrics = sessionMetrics(workspace, "cost", { fake: adapter });
+  const metrics = sessionMetrics(workspace, "cost", { fake: provider });
   const executions = metrics.executions as Array<Record<string, unknown>>;
   expect((executions[0]?.usage as TurnUsage).input_tokens).toBe(100);
   expect((executions[1]?.usage as TurnUsage).input_tokens).toBe(40);
@@ -305,8 +305,8 @@ test("a cumulative provider deltas across executions that share an agent", () =>
 
 test("a cancelled turn's spend is in the next delta", () => {
   const workspace = tempDir("migent-metrics-");
-  const adapter = new FakeAdapter();
-  adapter.normalizeUsage = cumulative;
+  const provider = new FakeProvider();
+  provider.normalizeUsage = cumulative;
   writeSession(
     workspace,
     "cancel",
@@ -321,7 +321,7 @@ test("a cancelled turn's spend is in the next delta", () => {
       turn(3, "0002", { total: 180 }),
     ],
   );
-  const metrics = sessionMetrics(workspace, "cancel", { fake: adapter });
+  const metrics = sessionMetrics(workspace, "cancel", { fake: provider });
   const executions = metrics.executions as Array<Record<string, unknown>>;
   const totals = metrics.totals as Record<string, unknown>;
   expect((executions[1]?.usage as TurnUsage).input_tokens).toBe(80);
@@ -332,9 +332,9 @@ test("a cancelled turn's spend is in the next delta", () => {
 
 test("cost totals keep the known sum and count the gap", () => {
   const workspace = tempDir("migent-metrics-");
-  const priced = new FakeAdapter();
+  const priced = new FakeProvider();
   priced.normalizeUsage = () => ({ ...blank(), input_tokens: 10, cost_usd: 1.5 });
-  const free = new FakeAdapter();
+  const free = new FakeProvider();
   free.normalizeUsage = () => ({ ...blank(), input_tokens: 4 });
   writeSession(
     workspace,
@@ -368,7 +368,7 @@ test("a progress turn_failed does not count as a turn", () => {
       turn(2, "0001", null),
     ],
   );
-  const totals = sessionMetrics(workspace, "dup", { fake: new FakeAdapter() }).totals as Record<string, unknown>;
+  const totals = sessionMetrics(workspace, "dup", { fake: new FakeProvider() }).totals as Record<string, unknown>;
   expect(totals.turns).toBe(1);
   expect(totals.uncaptured_turns).toBe(1);
 });
@@ -388,7 +388,7 @@ test("a session recorded before usage captures still has a row", () => {
     [{ id: "0001", order: 1, stage: "implement", status: "completed", createdAt: at(0), completedAt: at(10) }],
     [event(1, "provider.turn_completed", "0001")],
   );
-  const metrics = sessionMetrics(workspace, "old", { fake: new FakeAdapter() });
+  const metrics = sessionMetrics(workspace, "old", { fake: new FakeProvider() });
   const totals = metrics.totals as { turns: number; wall_seconds: number; usage: TurnUsage; usage_missing: Record<string, number> };
   expect(totals.turns).toBe(1);
   expect(totals.wall_seconds).toBe(10);
@@ -494,13 +494,13 @@ test("a completed session seals metrics and later normalization leaves the file"
   mkdirSync(path.join(workspace, ".migent", "workflows"), { recursive: true });
   writeFileSync(path.join(workspace, ".migent", "config.yaml"), SEAL_CONFIG, "utf8");
   writeFileSync(path.join(workspace, ".migent", "workflows", "once.yaml"), ONCE, "utf8");
-  const adapter = new ScriptedAdapter(["status: complete\n\ndone"], ["# notes\n"]);
-  adapter.captureUsage = () => ({ total: 4 });
-  adapter.normalizeUsage = () => ({ ...blank(), input_tokens: 4 });
+  const provider = new ScriptedProvider(["status: complete\n\ndone"], ["# notes\n"]);
+  provider.captureUsage = () => ({ total: 4 });
+  provider.normalizeUsage = () => ({ ...blank(), input_tokens: 4 });
   const result = await executeNamedWorkflow(
     workspace,
     { workflowId: "once", task: "write notes" },
-    new AgentToolRunner({ fake: adapter }, 10),
+    new AgentToolRunner({ fake: provider }, 10),
   );
   expect(result.status).toBe("completed");
   const file = sealedMetricsPath(workspace, result.sessionId);
@@ -512,8 +512,8 @@ test("a completed session seals metrics and later normalization leaves the file"
   expect(sealed.totals.usage.input_tokens).toBe(4);
   expect(readSealedMetrics(workspace, result.sessionId)).toEqual({ state: "ok", metrics: sealed });
 
-  adapter.normalizeUsage = () => ({ ...blank(), input_tokens: 99 });
-  const derived = sessionMetrics(workspace, result.sessionId, { fake: adapter });
+  provider.normalizeUsage = () => ({ ...blank(), input_tokens: 99 });
+  const derived = sessionMetrics(workspace, result.sessionId, { fake: provider });
   expect((derived.totals as { usage: TurnUsage }).usage.input_tokens).toBe(99);
   expect(JSON.parse(readFileSync(file, "utf8"))).toEqual(sealed);
   expect(listSealedMetrics(workspace, { workflow: "once", status: "completed", limit: null })).toEqual([sealed]);
@@ -522,7 +522,7 @@ test("a completed session seals metrics and later normalization leaves the file"
 test("an agent session does not seal metrics", async () => {
   const workspace = tempDir("migent-metrics-agent-");
   const sessionId = createAgentSession(workspace, "reviewer", "review the plan");
-  const result = await new AgentToolRunner({ fake: new FakeAdapter() }, 10).run({
+  const result = await new AgentToolRunner({ fake: new FakeProvider() }, 10).run({
     provider: "fake",
     model: "m1",
     prompt: "review",
@@ -542,7 +542,7 @@ test("a blocked session has no sealed metrics and is omitted from the list", asy
   const result = await executeNamedWorkflow(
     workspace,
     { workflowId: "once", task: "write notes" },
-    new AgentToolRunner({ fake: new ScriptedAdapter(["status: blocked\nblocker: gate"]) }, 10),
+    new AgentToolRunner({ fake: new ScriptedProvider(["status: blocked\nblocker: gate"]) }, 10),
   );
   expect(result.status).toBe("blocked");
   expect(existsSync(sealedMetricsPath(workspace, result.sessionId))).toBe(false);

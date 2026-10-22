@@ -1,11 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "vitest";
-import type { BuildCommandInput } from "../src/adapter.ts";
+import type { BuildCommandInput } from "../src/provider-contract.ts";
 import { AgentToolRunner, SessionLock, SessionStore, StageOutcome, createWorkflowSession, executeNamedWorkflow, raiseCancellation } from "../src/index.ts";
 import { clearInFlightExecution, noteInFlightExecution } from "../src/session-store.ts";
 import type { CommandSpec } from "../src/command-executor.ts";
-import { ScriptedAdapter, tempDir } from "./support.ts";
+import { ScriptedProvider, tempDir } from "./support.ts";
 
 const CONFIG = `\
 models:
@@ -31,7 +31,7 @@ function executionIds(workspace: string, sessionId: string): string[] {
   return readdirSync(path.join(workspace, ".migent", "sessions", sessionId, "executions"));
 }
 
-class HangFirstAdapter extends ScriptedAdapter {
+class HangFirstProvider extends ScriptedProvider {
   private hung = false;
 
   constructor(
@@ -72,8 +72,8 @@ stages:
 completion:
   stage: implement
 `);
-  const adapter = new HangFirstAdapter(pidFile, [OK]);
-  const runner = new AgentToolRunner({ fake: adapter }, 10);
+  const provider = new HangFirstProvider(pidFile, [OK]);
+  const runner = new AgentToolRunner({ fake: provider }, 10);
   const timer = setInterval(() => {
     if (!existsSync(pidFile) || readFileSync(pidFile, "utf8").trim() === "") return;
     clearInterval(timer);
@@ -87,7 +87,7 @@ completion:
   clearInterval(timer);
   expect(first.stopReason).toBe("cancelled");
   expect(first.status).toBe("cancelled");
-  expect(adapter.calls).toHaveLength(1);
+  expect(provider.calls).toHaveLength(1);
   const executionId = executionIds(workspace, sessionId)[0];
   expect(executionId).toBeTruthy();
 
@@ -100,8 +100,8 @@ completion:
   expect(second.stopReason).toBe("completed");
   expect(second.latestExecutionId).toBe(executionId);
   expect(executionIds(workspace, sessionId)).toEqual([executionId]);
-  expect(adapter.calls).toHaveLength(2);
-  expect(adapter.calls[1]?.prompt).toContain(adapter.calls[0]?.prompt ?? "missing");
+  expect(provider.calls).toHaveLength(2);
+  expect(provider.calls[1]?.prompt).toContain(provider.calls[0]?.prompt ?? "missing");
   const conversation = JSON.parse(
     readFileSync(
       path.join(workspace, ".migent", "sessions", sessionId, "executions", executionId!, "conversation.json"),
@@ -137,8 +137,8 @@ stages:
 completion:
   stage: implement
 `);
-  const adapter = new ScriptedAdapter([OK], ["# notes\n"]);
-  const runner = new AgentToolRunner({ fake: adapter }, 10);
+  const provider = new ScriptedProvider([OK], ["# notes\n"]);
+  const runner = new AgentToolRunner({ fake: provider }, 10);
   const timer = setInterval(() => {
     if (!existsSync(pidFile) || readFileSync(pidFile, "utf8").trim() === "") return;
     clearInterval(timer);
@@ -151,7 +151,7 @@ completion:
   const first = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId }, runner);
   clearInterval(timer);
   expect(first.stopReason).toBe("cancelled");
-  expect(adapter.calls).toHaveLength(1);
+  expect(provider.calls).toHaveLength(1);
   const executionId = executionIds(workspace, sessionId)[0];
   writeFileSync(marker, "1", "utf8");
 
@@ -164,7 +164,7 @@ completion:
   expect(second.stopReason).toBe("completed");
   expect(second.latestExecutionId).toBe(executionId);
   expect(executionIds(workspace, sessionId)).toEqual([executionId]);
-  expect(adapter.calls).toHaveLength(1);
+  expect(provider.calls).toHaveLength(1);
   expect(new SessionStore(workspace).readSessionStatus(sessionId).status).toBe("completed");
 }, 30_000);
 
@@ -278,11 +278,11 @@ completion:
     if (noted) clearInFlightExecution(sessionId, noted);
     lock.release();
   }
-  const adapter = new ScriptedAdapter([OK, OK]);
+  const provider = new ScriptedProvider([OK, OK]);
   const result = await executeNamedWorkflow(
     workspace,
     { workflowId: "wf", sessionId },
-    new AgentToolRunner({ fake: adapter }, 10),
+    new AgentToolRunner({ fake: provider }, 10),
   );
   expect(result.stopReason).toBe("completed");
   expect(result.code).toBe(0);
@@ -293,7 +293,7 @@ completion:
   expect(result.stages.map((stage) => stage.execution_id)).toContain(reviewId);
 }, 30_000);
 
-class HangManyAdapter extends ScriptedAdapter {
+class HangManyProvider extends ScriptedProvider {
   private hung = 0;
 
   constructor(
@@ -339,8 +339,8 @@ stages:
     role: developer
     depends_on: []
 `);
-  const adapter = new HangManyAdapter([pidA, pidB], [OK, OK]);
-  const runner = new AgentToolRunner({ fake: adapter }, 10);
+  const provider = new HangManyProvider([pidA, pidB], [OK, OK]);
+  const runner = new AgentToolRunner({ fake: provider }, 10);
   let signaled = false;
   const timer = setInterval(() => {
     if (signaled || !existsSync(pidA) || !existsSync(pidB)) return;

@@ -5,7 +5,7 @@ import { AgentToolRunner, raiseCancellation, type BuildCommandInput, type Comman
 import { expect, test } from "vitest";
 import { cliHooks } from "../src/hooks.ts";
 import { main } from "../src/index.ts";
-import { ScriptedAdapter, capture, removeWorkspace, repoWorkflowText, writeFakeWorkflowWorkspace } from "./support.ts";
+import { ScriptedProvider, capture, removeWorkspace, repoWorkflowText, writeFakeWorkflowWorkspace } from "./support.ts";
 
 function writeWatchSession(workspace: string, status: string): void {
   const root = path.join(workspace, ".migent");
@@ -57,7 +57,7 @@ test("start --once and continue --once match a single stage", async () => {
   const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
   try {
     cliHooks.runner = new AgentToolRunner(
-      { fake: new ScriptedAdapter(["status: complete\n\nplanned", "status: complete\ndecision: approved\n\nshould not run"], ["# Plan\n", null]) },
+      { fake: new ScriptedProvider(["status: complete\n\nplanned", "status: complete\ndecision: approved\n\nshould not run"], ["# Plan\n", null]) },
       10,
     );
     const started = await capture(() => main(["session", "run", "--workflow", "plan", "--task", "Write a plan", "--once"], workspace));
@@ -70,7 +70,7 @@ test("start --once and continue --once match a single stage", async () => {
     const sessionId = sessionIdFrom(started.stderr);
 
     cliHooks.runner = new AgentToolRunner(
-      { fake: new ScriptedAdapter(["status: complete\ndecision: revise\n\nneeds work", "status: complete\n\nshould not run"], [null, "# Plan\n"]) },
+      { fake: new ScriptedProvider(["status: complete\ndecision: revise\n\nneeds work", "status: complete\n\nshould not run"], [null, "# Plan\n"]) },
       10,
     );
     const continued = await capture(() => main(["session", "continue", sessionId, "--once", "--verbose"], workspace));
@@ -86,7 +86,7 @@ test("start --once and continue --once match a single stage", async () => {
   }
 });
 
-class ItemAdapter extends ScriptedAdapter {
+class ItemProvider extends ScriptedProvider {
   override buildCommand(input: BuildCommandInput): CommandSpec {
     super.buildCommand(input);
     return { argv: [process.execPath, "-e", "console.log('ITEM_START');console.log('ITEM_DONE');console.log('HEARTBEAT')"] };
@@ -104,7 +104,7 @@ test("start keeps tool traces out of the coordinator result", async () => {
   const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
   try {
     cliHooks.runner = new AgentToolRunner(
-      { fake: new ItemAdapter(["status: complete\n\nUNIQUE_PLAN_BODY"], ["# Plan\n"]) },
+      { fake: new ItemProvider(["status: complete\n\nUNIQUE_PLAN_BODY"], ["# Plan\n"]) },
       10,
     );
     const started = await capture(() => main(["session", "run", "--workflow", "plan", "--task", "Write a plan", "--once"], workspace));
@@ -131,7 +131,7 @@ test("start keeps tool traces out of the coordinator result", async () => {
     expect(stream).toContain("provider.heartbeat");
 
     cliHooks.runner = new AgentToolRunner(
-      { fake: new ItemAdapter(["status: complete\ndecision: revise\n\nUNIQUE_REVIEW"], [null]) },
+      { fake: new ItemProvider(["status: complete\ndecision: revise\n\nUNIQUE_REVIEW"], [null]) },
       10,
     );
     const verbose = await capture(() =>
@@ -161,7 +161,7 @@ test("continue --once does not reset revision counts", async () => {
   try {
     cliHooks.runner = new AgentToolRunner(
       {
-        fake: new ScriptedAdapter(
+        fake: new ScriptedProvider(
           ["status: complete\n\nplanned", "status: complete\ndecision: revise\n\nrevise"],
           ["# Plan\n", null],
         ),
@@ -174,7 +174,7 @@ test("continue --once does not reset revision counts", async () => {
     const sessionId = sessionIdFrom(started.stderr);
     expect(resumeCommand(started.stderr)).toBe(`migent session continue ${sessionId}`);
 
-    cliHooks.runner = new AgentToolRunner({ fake: new ScriptedAdapter(["status: complete\n\nshould not run"], [null]) }, 10);
+    cliHooks.runner = new AgentToolRunner({ fake: new ScriptedProvider(["status: complete\n\nshould not run"], [null]) }, 10);
     const once = await capture(() => main(["session", "continue", sessionId, "--once"], workspace));
     expect(once.value).toBe(4);
     expect(once.stdout).toBe("");
@@ -212,7 +212,7 @@ test("a stopped session prints the continue command", async () => {
   try {
     cliHooks.runner = new AgentToolRunner(
       {
-        fake: new ScriptedAdapter(
+        fake: new ScriptedProvider(
           ["status: complete\n\nplanned", "status: blocked\nblocker: missing design\n\nnope"],
           ["# Plan\n", null],
         ),
@@ -235,7 +235,7 @@ test("a stopped session prints the continue command", async () => {
   const onceWorkspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
   try {
     cliHooks.runner = new AgentToolRunner(
-      { fake: new ScriptedAdapter(["status: complete\n\nplanned"], ["# Plan\n"]) },
+      { fake: new ScriptedProvider(["status: complete\n\nplanned"], ["# Plan\n"]) },
       10,
     );
     const once = await capture(() =>
@@ -253,7 +253,7 @@ test("a stopped session prints the continue command", async () => {
   try {
     cliHooks.runner = new AgentToolRunner(
       {
-        fake: new ScriptedAdapter(
+        fake: new ScriptedProvider(
           ["status: complete\n\nplanned", "status: complete\ndecision: approved\n\nok"],
           ["# Plan\n", null],
         ),
@@ -278,7 +278,7 @@ test("a stopped session prints the continue command", async () => {
   }
 });
 
-class CancelOnCommand extends ScriptedAdapter {
+class CancelOnCommand extends ScriptedProvider {
   override buildCommand(input: BuildCommandInput): CommandSpec {
     super.buildCommand(input);
     raiseCancellation(2);

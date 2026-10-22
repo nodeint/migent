@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parseStageOutcome } from "@nodeint/migent-kernel";
 import { expect, test } from "vitest";
-import { ClaudeAdapter, providerCommands } from "../src/index.ts";
+import { ClaudeProvider, providerCommands } from "../src/index.ts";
 
 function usageFixture(name: string): string {
   return readFileSync(fileURLToPath(new URL(`./fixtures/usage/${name}`, import.meta.url)), "utf8");
@@ -31,7 +31,7 @@ const toolResult = {
 };
 
 test("reads the final result and session id from stream-json", () => {
-  const [text, sessionId] = new ClaudeAdapter().parseResponse(
+  const [text, sessionId] = new ClaudeProvider().parseResponse(
     stream(
       { type: "system", subtype: "init", session_id: "sess-1" },
       toolUse,
@@ -58,7 +58,7 @@ test("reads the final result and session id from stream-json", () => {
 });
 
 test("falls back to the last assistant text without a result", () => {
-  const [text, sessionId] = new ClaudeAdapter().parseResponse(
+  const [text, sessionId] = new ClaudeProvider().parseResponse(
     stream(
       { type: "system", subtype: "init", session_id: "sess-2" },
       {
@@ -75,7 +75,7 @@ test("falls back to the last assistant text without a result", () => {
 });
 
 test("reports a failed result", () => {
-  const adapter = new ClaudeAdapter();
+  const provider = new ClaudeProvider();
   const failed = {
     type: "result",
     subtype: "error_during_execution",
@@ -83,33 +83,33 @@ test("reports a failed result", () => {
     errors: ["API overloaded"],
     session_id: "sess-3",
   };
-  expect(adapter.parseResponse(stream(failed), "/tmp/unused")).toEqual([
+  expect(provider.parseResponse(stream(failed), "/tmp/unused")).toEqual([
     "API overloaded",
     "sess-3",
   ]);
-  expect(adapter.parseProgressEvent(JSON.stringify(failed))).toEqual({
+  expect(provider.parseProgressEvent(JSON.stringify(failed))).toEqual({
     event: "provider.turn_failed",
     summary: "API overloaded",
   });
 });
 
 test("reports tool progress", () => {
-  const adapter = new ClaudeAdapter();
-  expect(adapter.parseProgressEvent(JSON.stringify(toolUse))).toEqual({
+  const provider = new ClaudeProvider();
+  expect(provider.parseProgressEvent(JSON.stringify(toolUse))).toEqual({
     event: "provider.item_started",
     summary: "command started: echo hi",
     details: { item_type: "Bash" },
   });
-  expect(adapter.parseProgressEvent(JSON.stringify(toolResult))).toEqual({
+  expect(provider.parseProgressEvent(JSON.stringify(toolResult))).toEqual({
     event: "provider.item_completed",
     summary: "command completed: echo hi",
     details: { item_type: "Bash" },
   });
-  expect(adapter.parseProgressEvent("not json")).toBeNull();
+  expect(provider.parseProgressEvent("not json")).toBeNull();
 });
 
 test("lists models and effort levels from the initialize response", () => {
-  const adapter = new ClaudeAdapter();
+  const provider = new ClaudeProvider();
   const response = JSON.stringify({
     type: "control_response",
     response: {
@@ -124,33 +124,33 @@ test("lists models and effort levels from the initialize response", () => {
       },
     },
   });
-  const catalog = adapter.parseModelCatalog(`${response}\n`);
+  const catalog = provider.parseModelCatalog(`${response}\n`);
   expect(catalog.ids).toEqual(["opus", "claude-opus-5-5", "claude-haiku-4-5-20251001"]);
   expect(catalog.valuesFor("opus", "effort")).toEqual(["low", "max"]);
   expect(catalog.valuesFor("claude-opus-5-5", "effort")).toEqual(["low", "max"]);
   expect(catalog.valuesFor("claude-haiku-4-5-20251001", "effort")).toBeNull();
-  expect(adapter.modelCatalogCommand()).toContain("--input-format");
-  expect(JSON.parse(adapter.modelCatalogInput())).toMatchObject({ request: { subtype: "initialize" } });
-  expect(() => adapter.parseModelCatalog("command not found")).toThrow(/command not found/);
+  expect(provider.modelCatalogCommand()).toContain("--input-format");
+  expect(JSON.parse(provider.modelCatalogInput())).toMatchObject({ request: { subtype: "initialize" } });
+  expect(() => provider.parseModelCatalog("command not found")).toThrow(/command not found/);
 });
 
 test("rejects an unknown option", () => {
-  const adapter = new ClaudeAdapter();
-  expect(() => adapter.validateOptions({ temperature: "0.2" })).toThrow(
+  const provider = new ClaudeProvider();
+  expect(() => provider.validateOptions({ temperature: "0.2" })).toThrow(
     /temperature is not a claude option/,
   );
-  expect(() => adapter.validateOptions({ permission_mode: "yolo" })).toThrow(
+  expect(() => provider.validateOptions({ permission_mode: "yolo" })).toThrow(
     /permission_mode must be one of/,
   );
-  expect(() => adapter.validateOptions({ max_budget_usd: "-1" })).toThrow(/max_budget_usd/);
-  adapter.validateOptions({ effort: "high", max_budget_usd: "2.5" });
+  expect(() => provider.validateOptions({ max_budget_usd: "-1" })).toThrow(/max_budget_usd/);
+  provider.validateOptions({ effort: "high", max_budget_usd: "2.5" });
 });
 
 test("maps options onto claude flags", () => {
-  const adapter = new ClaudeAdapter();
-  const newSession = adapter.createNewSession();
+  const provider = new ClaudeProvider();
+  const newSession = provider.createNewSession();
   expect(newSession.agentId).toMatch(/^[0-9a-f-]{36}$/);
-  const spec = adapter.buildCommand({
+  const spec = provider.buildCommand({
     model: "opus",
     workspace: "/work",
     prompt: "prompt",
@@ -160,7 +160,7 @@ test("maps options onto claude flags", () => {
     lastMessageFile: "/tmp/last.txt",
     options: { effort: "high", allowed_tools: "Bash Edit" },
   });
-  expect(providerCommands().claude).toBe(adapter.command);
+  expect(providerCommands().claude).toBe(provider.command);
   expect(spec.argv).toEqual([
     "claude",
     "-p",
@@ -179,7 +179,7 @@ test("maps options onto claude flags", () => {
     "11111111-2222-3333-4444-555555555555",
   ]);
   expect(spec.stdin).toBe("prompt");
-  const resumed = adapter.buildCommand({
+  const resumed = provider.buildCommand({
     model: "opus",
     workspace: "/work",
     prompt: "again",
@@ -193,22 +193,22 @@ test("maps options onto claude flags", () => {
 });
 
 test("normalizes claude usage from the resume fixtures", () => {
-  const adapter = new ClaudeAdapter();
-  const captures = [1, 2, 3].map((turn) => adapter.captureUsage(usageFixture(`claude-resume-${turn}.jsonl`)));
+  const provider = new ClaudeProvider();
+  const captures = [1, 2, 3].map((turn) => provider.captureUsage(usageFixture(`claude-resume-${turn}.jsonl`)));
   expect(captures[0]?.result).toMatchObject({ total_cost_usd: 0.0439477, usage: { output_tokens: 3, input_tokens: 2 } });
   expect(captures[1]?.result).toMatchObject({ total_cost_usd: 0.07983470000000001 });
   expect(captures[2]?.result).toMatchObject({ total_cost_usd: 0.08419960000000001 });
-  const first = adapter.normalizeUsage(captures[0]!, null);
-  const second = adapter.normalizeUsage(captures[1]!, captures[0]!);
-  const third = adapter.normalizeUsage(captures[2]!, captures[1]!);
+  const first = provider.normalizeUsage(captures[0]!, null);
+  const second = provider.normalizeUsage(captures[1]!, captures[0]!);
+  const third = provider.normalizeUsage(captures[2]!, captures[1]!);
   expect([first.output_tokens, second.output_tokens, third.output_tokens]).toEqual([3, 3, 3]);
   expect([first.input_tokens, second.input_tokens, third.input_tokens]).toEqual([2, 2, 2]);
   expect(first.reasoning_tokens).toBe(0);
   expect(first.cost_usd).toBeCloseTo(0.0439, 4);
   expect(second.cost_usd).toBeCloseTo(0.0359, 4);
   expect(third.cost_usd).toBeCloseTo(0.0044, 4);
-  expect(adapter.captureUsage('{"type":"assistant"}\n')).toBeNull();
-  const bad = adapter.normalizeUsage(
+  expect(provider.captureUsage('{"type":"assistant"}\n')).toBeNull();
+  const bad = provider.normalizeUsage(
     { result: { usage: { input_tokens: "3", output_tokens: -1, cache_read_input_tokens: 2 }, total_cost_usd: -4 } },
     null,
   );
@@ -216,7 +216,7 @@ test("normalizes claude usage from the resume fixtures", () => {
   expect(bad.output_tokens).toBeNull();
   expect(bad.cache_read_tokens).toBe(2);
   expect(bad.cost_usd).toBeNull();
-  expect(adapter.versionCommand()).toEqual(["claude", "--version"]);
-  expect(adapter.parseVersion("codex-cli 0.163.0\n")).toBe("codex-cli 0.163.0");
-  expect(adapter.parseVersion("")).toBeNull();
+  expect(provider.versionCommand()).toEqual(["claude", "--version"]);
+  expect(provider.parseVersion("codex-cli 0.163.0\n")).toBe("codex-cli 0.163.0");
+  expect(provider.parseVersion("")).toBeNull();
 });

@@ -1,8 +1,8 @@
 import type { CliClient } from "@nodeint/migent-kernel";
-import { ClientAdapter } from "./client-adapter.js";
-import { OpencodeClient } from "./clients/opencode-client.js";
+import { ClientProvider } from "./client-provider.js";
+import { OpencodeClient } from "../clients/opencode-client.js";
 
-export class OpencodeAdapter extends ClientAdapter {
+export class OpencodeProvider extends ClientProvider {
   readonly displayName = "OpenCode";
 
   constructor(client: CliClient = new OpencodeClient()) {

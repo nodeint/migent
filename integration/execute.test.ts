@@ -46,7 +46,7 @@ test("plan review publishes the plan", async () => {
   }
 }, 30_000);
 
-test("stage runs through the codex adapter", async () => {
+test("stage runs through the codex provider", async () => {
   const workspace = tempWorkspace();
   try {
     writeWorkspace(workspace, CODEX_CONFIG, { "draft-note": DRAFT_NOTE });

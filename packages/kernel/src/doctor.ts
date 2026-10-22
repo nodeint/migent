@@ -1,7 +1,7 @@
 import { createRequire } from "node:module";
 import path from "node:path";
 import { z } from "zod";
-import type { ProviderAdapter } from "./adapter.js";
+import type { ProviderInfo } from "./provider-contract.js";
 import {
   loadModelTarget,
   loadRoleInstructions,
@@ -33,7 +33,7 @@ const checkSchema = z.object({
 });
 
 export interface DiagnoseOptions {
-  adapters: Readonly<Record<string, ProviderAdapter>>;
+  providers: Readonly<Record<string, ProviderInfo>>;
   which?: (command: string) => string | null;
 }
 
@@ -47,10 +47,10 @@ export function diagnose(
   options: DiagnoseOptions,
 ): [Check, Check, Check] {
   const which = options.which ?? whichSync;
-  const configResult = checkConfig(workspace, options.adapters);
+  const configResult = checkConfig(workspace, options.providers);
   const workflowCheck = checkWorkflows(
     workspace,
-    options.adapters,
+    options.providers,
     configResult.problems,
     configResult.config,
   );
@@ -66,7 +66,7 @@ export const doctor = diagnose;
 
 function checkConfig(
   workspace: string,
-  adapters: Readonly<Record<string, ProviderAdapter>>,
+  providers: Readonly<Record<string, ProviderInfo>>,
 ): {
   check: Check;
   executableByProvider: Record<string, string>;
@@ -114,15 +114,15 @@ function checkConfig(
       add(problems, error.message);
       continue;
     }
-    const adapter = adapters[target.provider];
-    if (adapter === undefined) {
+    const provider = providers[target.provider];
+    if (provider === undefined) {
       add(problems, `models.${modelName}.provider is not supported: ${target.provider}`);
       continue;
     }
     if (!Object.hasOwn(executableByProvider, target.provider)) {
-      executableByProvider[target.provider] = adapter.command;
+      executableByProvider[target.provider] = provider.command;
     }
-    rejectOptions(problems, `models.${modelName}.options`, adapter, target.options);
+    rejectOptions(problems, `models.${modelName}.options`, provider, target.options);
   }
 
   const roleNames: string[] = [];
@@ -136,9 +136,9 @@ function checkConfig(
       add(problems, error.message);
       continue;
     }
-    const roleAdapter = adapters[resolved.provider];
-    if (roleAdapter !== undefined) {
-      rejectOptions(problems, `roles.${roleKey}`, roleAdapter, resolved.options);
+    const roleProvider = providers[resolved.provider];
+    if (roleProvider !== undefined) {
+      rejectOptions(problems, `roles.${roleKey}`, roleProvider, resolved.options);
     }
     roleNames.push(roleKey);
   }
@@ -156,7 +156,7 @@ function checkConfig(
 
 function checkWorkflows(
   workspace: string,
-  adapters: Readonly<Record<string, ProviderAdapter>>,
+  providers: Readonly<Record<string, ProviderInfo>>,
   configProblems: readonly string[],
   config: Record<string, unknown> | null,
 ): Check {
@@ -165,7 +165,7 @@ function checkWorkflows(
   const known = new Set(configProblems);
   if (config !== null) {
     for (const document of Object.values(catalog.documents)) {
-      checkStageBindings(config, document, adapters, known, problems);
+      checkStageBindings(config, document, providers, known, problems);
     }
   }
   const items = Object.keys(catalog.documents).filter((workflowId) => !workflowFailed(workflowId, problems));
@@ -176,7 +176,7 @@ function checkWorkflows(
 function checkStageBindings(
   config: Record<string, unknown>,
   document: WorkflowDocument,
-  adapters: Readonly<Record<string, ProviderAdapter>>,
+  providers: Readonly<Record<string, ProviderInfo>>,
   known: ReadonlySet<string>,
   problems: string[],
 ): void {
@@ -191,10 +191,10 @@ function checkStageBindings(
       add(problems, `${document.id}.${stage.id}: ${error.message}`);
       continue;
     }
-    const adapter = adapters[target.provider];
-    if (adapter === undefined) continue;
+    const provider = providers[target.provider];
+    if (provider === undefined) continue;
     try {
-      adapter.validateOptions(target.options);
+      provider.validateOptions(target.options);
     } catch (error) {
       if (!(error instanceof Error)) throw error;
       if ([...known].some((problem) => problem.includes(error.message))) continue;
@@ -206,11 +206,11 @@ function checkStageBindings(
 function rejectOptions(
   problems: string[],
   label: string,
-  adapter: ProviderAdapter,
+  provider: ProviderInfo,
   options: Readonly<Record<string, string>>,
 ): void {
   try {
-    adapter.validateOptions(options);
+    provider.validateOptions(options);
   } catch (error) {
     if (!(error instanceof Error)) throw error;
     add(problems, `${label}: ${error.message}`);

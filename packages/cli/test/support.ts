@@ -2,9 +2,9 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { AgentAdapter, BuildCommandInput, CommandSpec } from "@nodeint/migent-kernel";
+import type { Provider, BuildCommandInput, CommandSpec } from "@nodeint/migent-kernel";
 
-export interface AdapterCall {
+export interface ProviderCall {
   model: string;
   workspace: string;
   prompt: string;
@@ -14,9 +14,9 @@ export interface AdapterCall {
   options: Record<string, string>;
 }
 
-export class FakeAdapter implements AgentAdapter {
+export class FakeProvider implements Provider {
   readonly command = "fake";
-  readonly calls: AdapterCall[] = [];
+  readonly calls: ProviderCall[] = [];
 
   validateOptions(_options: Readonly<Record<string, string>>): void {}
 
@@ -39,7 +39,7 @@ export class FakeAdapter implements AgentAdapter {
   }
 }
 
-export class ScriptedAdapter extends FakeAdapter {
+export class ScriptedProvider extends FakeProvider {
   private responses: string[];
   private artifacts: Array<string | null>;
 
@@ -56,7 +56,7 @@ export class ScriptedAdapter extends FakeAdapter {
       if (body !== null && prompt) writePromptArtifact(prompt, body);
     }
     const response = this.responses.shift();
-    if (response === undefined) throw new Error("ScriptedAdapter has no response left.");
+    if (response === undefined) throw new Error("ScriptedProvider has no response left.");
     return [response, "native-session-1"];
   }
 }

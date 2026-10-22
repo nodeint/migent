@@ -16,12 +16,12 @@ export async function runVerifyOnlyStage(input: {
   sessionId: string;
   stage: VerifyOnlyStageSpec;
   verifyRunner: VerifyRunner;
-  adapters?: ConstructorParameters<typeof SessionStore>[2];
+  providers?: ConstructorParameters<typeof SessionStore>[2];
   /** Reuse a cancelled execution that has already been reopened. */
   executionId?: string | null;
   onExecution?: (executionId: string) => void;
 }): Promise<RunResult> {
-  const store = new SessionStore(input.workspace, undefined, input.adapters);
+  const store = new SessionStore(input.workspace, undefined, input.providers);
   const context = openContext(store, input.sessionId, input.stage.id, input.executionId ?? null);
   input.onExecution?.(context.executionId);
   if (input.executionId == null) log(startLine(input.stage, parseExecutionId(context.executionId)?.attempt ?? null));

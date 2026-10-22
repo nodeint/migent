@@ -16,7 +16,7 @@ import {
   buildStagePrompt,
 } from "../src/index.ts";
 import { clearInFlightExecution, clearInFlightExecutions, noteInFlightExecution } from "../src/session-store.ts";
-import { ScriptedAdapter, tempDir } from "./support.ts";
+import { ScriptedProvider, tempDir } from "./support.ts";
 
 const CONFIG = `\
 models:
@@ -88,7 +88,7 @@ const OK = "status: complete\n\ndone";
 
 test("passing verify completes one execution and writes verify.md", async () => {
   const { workspace, sessionId } = setup(workflowText(`node -e "process.exit(0)"`));
-  const runner = new AgentToolRunner({ fake: new ScriptedAdapter([OK], ["# notes\n"]) }, 10);
+  const runner = new AgentToolRunner({ fake: new ScriptedProvider([OK], ["# notes\n"]) }, 10);
   const result = await runStage(runner, workspace, sessionId);
   const record = execution(workspace, sessionId, result.execution_id);
   expect(record.status).toBe("completed");
@@ -101,17 +101,17 @@ test("red verify repairs in the same execution", async () => {
   const workspace0 = tempDir("migent-verify-c-");
   const command = counterScript(workspace0, "c", 1);
   const { workspace, sessionId } = setup(workflowText(command));
-  const adapter = new ScriptedAdapter([OK, OK], ["# notes\n", null]);
-  const runner = new AgentToolRunner({ fake: adapter }, 10);
+  const provider = new ScriptedProvider([OK, OK], ["# notes\n", null]);
+  const runner = new AgentToolRunner({ fake: provider }, 10);
   const result = await runStage(runner, workspace, sessionId);
   const record = execution(workspace, sessionId, result.execution_id);
   expect(record.status).toBe("completed");
   expect(record.turns).toBe(2);
   expect((record.verify as Record<string, unknown>).red).toBe(1);
-  expect(adapter.calls).toHaveLength(2);
-  expect(adapter.calls[1]?.newAgentId).toBeNull();
-  expect(adapter.calls[1]?.prompt).toContain("Verify failed (1 of 3 red runs)");
-  expect(adapter.calls[1]?.prompt).toContain("boom 1");
+  expect(provider.calls).toHaveLength(2);
+  expect(provider.calls[1]?.newAgentId).toBeNull();
+  expect(provider.calls[1]?.prompt).toContain("Verify failed (1 of 3 red runs)");
+  expect(provider.calls[1]?.prompt).toContain("boom 1");
   expect(existsSync(path.join(result.artifact_directory, "verify.md"))).toBe(true);
   const events = readFileSync(
     path.join(workspace, ".migent", "sessions", sessionId, "events.jsonl"),
@@ -125,7 +125,7 @@ test("red verify repairs in the same execution", async () => {
 test("blocked runs no verify command", async () => {
   const { workspace, sessionId } = setup(workflowText(`touch ran.flag`));
   const runner = new AgentToolRunner(
-    { fake: new ScriptedAdapter(["status: blocked\nblocker: nope"]) },
+    { fake: new ScriptedProvider(["status: blocked\nblocker: nope"]) },
     10,
   );
   const result = await runStage(runner, workspace, sessionId);
@@ -137,8 +137,8 @@ const BLOCKED = "status: blocked\nblocker: gate clones\n\nstopped";
 
 test("continue redispatches a blocked stage and names the blocker", async () => {
   const { workspace, sessionId } = setup(workflowText(`node -e "process.exit(0)"`));
-  const adapter = new ScriptedAdapter([BLOCKED, OK, OK], [null, "# notes\n", null]);
-  const runner = new AgentToolRunner({ fake: adapter }, 10);
+  const provider = new ScriptedProvider([BLOCKED, OK, OK], [null, "# notes\n", null]);
+  const runner = new AgentToolRunner({ fake: provider }, 10);
   const first = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId }, runner);
   expect(first.stopReason).toBe("blocked");
   expect(first.code).toBe(1);
@@ -155,12 +155,12 @@ test("continue redispatches a blocked stage and names the blocker", async () => 
   expect(snapshots.map((item) => item.stageId)).toEqual(["implement", "implement", "review"]);
   expect(snapshots[1]?.outcomeStatus).toBe("complete");
   expect(second.latestExecutionId).not.toBe(first.latestExecutionId);
-  expect(adapter.calls[1]?.agentId).toBe("native-session-1");
+  expect(provider.calls[1]?.agentId).toBe("native-session-1");
   expect(execution(workspace, sessionId, snapshots[1]!.executionId).resumes_execution_id).toBe(
     snapshots[0]?.executionId,
   );
-  expect(adapter.calls[1]?.prompt).toContain("gate clones");
-  expect(adapter.calls[1]?.prompt).toContain("handled outside this session");
+  expect(provider.calls[1]?.prompt).toContain("gate clones");
+  expect(provider.calls[1]?.prompt).toContain("handled outside this session");
   const events = readFileSync(path.join(workspace, ".migent", "sessions", sessionId, "events.jsonl"), "utf8");
   expect(events).toContain('"event":"session.active"');
   expect(events).toContain('"from":"blocked"');
@@ -171,8 +171,8 @@ test("continue redispatches a blocked stage and names the blocker", async () => 
 
 test("continue with a reply sends only that reply to the blocked stage", async () => {
   const { workspace, sessionId } = setup(workflowText(`node -e "process.exit(0)"`));
-  const adapter = new ScriptedAdapter([BLOCKED, OK, OK], [null, "# notes\n", null]);
-  const runner = new AgentToolRunner({ fake: adapter }, 10);
+  const provider = new ScriptedProvider([BLOCKED, OK, OK], [null, "# notes\n", null]);
+  const runner = new AgentToolRunner({ fake: provider }, 10);
   const first = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId }, runner);
   expect(first.stopReason).toBe("blocked");
 
@@ -188,24 +188,24 @@ test("continue with a reply sends only that reply to the blocked stage", async (
   expect(snapshots.map((item) => item.stageId)).toEqual(["implement", "implement", "review"]);
   const resumed = snapshots[1]!;
   expect(execution(workspace, sessionId, resumed.executionId).resumes_execution_id).toBe(snapshots[0]?.executionId);
-  const sent = adapter.calls[1]?.prompt ?? "";
+  const sent = provider.calls[1]?.prompt ?? "";
   expect(sent.startsWith(`Reply:\n${reply}\n`)).toBe(true);
   expect(sent).toContain("Workflow stage response contract:");
   expect(sent).toContain("Migent artifact directory:");
   expect(sent).not.toContain("gate clones");
   expect(sent).not.toContain("handled outside this session");
   expect(sent).not.toContain("Previous attempt of this stage:");
-  expect(adapter.calls[1]?.agentId).toBe("native-session-1");
-  expect(adapter.calls[2]?.prompt ?? "").not.toContain(reply);
+  expect(provider.calls[1]?.agentId).toBe("native-session-1");
+  expect(provider.calls[2]?.prompt ?? "").not.toContain(reply);
 });
 
 test("reply is rejected unless the session is blocked", async () => {
   const { workspace, sessionId } = setup(workflowText(`node -e "process.exit(0)"`));
   await expect(
-    executeNamedWorkflow(workspace, { workflowId: "wf", sessionId, reply: "   " }, new AgentToolRunner({ fake: new ScriptedAdapter([]) }, 10)),
+    executeNamedWorkflow(workspace, { workflowId: "wf", sessionId, reply: "   " }, new AgentToolRunner({ fake: new ScriptedProvider([]) }, 10)),
   ).rejects.toThrow(ConfigurationError);
   await expect(
-    executeNamedWorkflow(workspace, { workflowId: "wf", sessionId, reply: "   " }, new AgentToolRunner({ fake: new ScriptedAdapter([]) }, 10)),
+    executeNamedWorkflow(workspace, { workflowId: "wf", sessionId, reply: "   " }, new AgentToolRunner({ fake: new ScriptedProvider([]) }, 10)),
   ).rejects.toThrow(/--reply is empty/);
   expect(new SessionStore(workspace).executionSnapshots(sessionId)).toHaveLength(0);
   expect(new SessionStore(workspace).readSessionStatus(sessionId).status).toBe("active");
@@ -223,8 +223,8 @@ stages:
     role: developer
 `;
   const { workspace, sessionId } = setup(workflow);
-  const adapter = new ScriptedAdapter([BLOCKED, BLOCKED, OK]);
-  const runner = new AgentToolRunner({ fake: adapter }, 10);
+  const provider = new ScriptedProvider([BLOCKED, BLOCKED, OK]);
+  const runner = new AgentToolRunner({ fake: provider }, 10);
   const first = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId }, runner);
   expect(first.stopReason).toBe("blocked");
   const store = new SessionStore(workspace);
@@ -254,7 +254,7 @@ stages:
   expect(bRuns).toHaveLength(2);
   expect(bRuns[1]?.outcomeStatus).toBe("complete");
   expect(execution(workspace, sessionId, bRuns[1]!.executionId).resumes_execution_id).toBe(bRuns[0]?.executionId);
-  const sent = adapter.calls.find((call) => call.prompt.startsWith("Reply:\n"));
+  const sent = provider.calls.find((call) => call.prompt.startsWith("Reply:\n"));
   expect(sent?.prompt.startsWith("Reply:\nanswer b\n")).toBe(true);
   expect(sent?.prompt).toContain("Workflow stage response contract:");
   expect(sent?.prompt).not.toContain("gate clones");
@@ -325,15 +325,15 @@ completion:
     if (noted) clearInFlightExecution(sessionId, noted);
     lock.release();
   }
-  const adapter = new ScriptedAdapter([OK]);
+  const provider = new ScriptedProvider([OK]);
   const result = await executeNamedWorkflow(
     workspace,
     { workflowId: "wf", sessionId, reply: "use the schema" },
-    new AgentToolRunner({ fake: adapter }, 10),
+    new AgentToolRunner({ fake: provider }, 10),
   );
   expect(result.stopReason).toBe("verify_exhausted");
   expect(result.code).toBe(6);
-  const sent = adapter.calls.find((call) => call.prompt.startsWith("Reply:\n"));
+  const sent = provider.calls.find((call) => call.prompt.startsWith("Reply:\n"));
   expect(sent?.prompt.startsWith("Reply:\nuse the schema\n")).toBe(true);
   expect(sent?.prompt).not.toContain("implement gate");
   expect(execution(workspace, sessionId, reviewId).status).toBe("failed");
@@ -395,14 +395,14 @@ stages:
     for (const id of noted) clearInFlightExecution(sessionId, id);
     lock.release();
   }
-  const adapter = new ScriptedAdapter([OK, OK]);
+  const provider = new ScriptedProvider([OK, OK]);
   const result = await executeNamedWorkflow(
     workspace,
     { workflowId: "wf", sessionId, stageId: "b", reply: "answer b" },
-    new AgentToolRunner({ fake: adapter }, 10),
+    new AgentToolRunner({ fake: provider }, 10),
   );
   expect(result.stopReason).toBe("blocked");
-  const sent = adapter.calls.find((call) => call.prompt.startsWith("Reply:\n"));
+  const sent = provider.calls.find((call) => call.prompt.startsWith("Reply:\n"));
   expect(sent?.prompt.startsWith("Reply:\nanswer b\n")).toBe(true);
   expect(sent?.prompt).not.toContain("b gate");
   const snapshots = store.executionSnapshots(sessionId);
@@ -424,8 +424,8 @@ stages:
       - node -e "process.exit(1)"
 `;
   const { workspace, sessionId } = setup(workflow);
-  const adapter = new ScriptedAdapter([BLOCKED, OK]);
-  const runner = new AgentToolRunner({ fake: adapter }, 10);
+  const provider = new ScriptedProvider([BLOCKED, OK]);
+  const runner = new AgentToolRunner({ fake: provider }, 10);
   const first = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId }, runner);
   expect(first.stopReason).toBe("blocked");
   const second = await executeNamedWorkflow(
@@ -435,15 +435,15 @@ stages:
   );
   expect(second.stopReason).toBe("verify_exhausted");
   expect(second.code).toBe(6);
-  expect(adapter.calls).toHaveLength(2);
-  expect(adapter.calls[1]?.prompt.startsWith("Reply:\nship it\n")).toBe(true);
+  expect(provider.calls).toHaveLength(2);
+  expect(provider.calls[1]?.prompt.startsWith("Reply:\nship it\n")).toBe(true);
   expect(new SessionStore(workspace).executionSnapshots(sessionId)).toHaveLength(2);
 });
 
 test("a reply counts toward the dispatch ceiling", async () => {
   const { workspace, sessionId } = setup(workflowText(`node -e "process.exit(0)"`));
-  const adapter = new ScriptedAdapter([BLOCKED, OK, OK], [null, "# notes\n", null]);
-  const runner = new AgentToolRunner({ fake: adapter }, 10);
+  const provider = new ScriptedProvider([BLOCKED, OK, OK], [null, "# notes\n", null]);
+  const runner = new AgentToolRunner({ fake: provider }, 10);
   const first = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId }, runner);
   expect(first.stopReason).toBe("blocked");
   const second = await executeNamedWorkflow(
@@ -455,13 +455,13 @@ test("a reply counts toward the dispatch ceiling", async () => {
   expect(second.code).toBe(5);
   const snapshots = new SessionStore(workspace).executionSnapshots(sessionId);
   expect(snapshots.map((item) => item.stageId)).toEqual(["implement", "implement"]);
-  expect(adapter.calls[1]?.prompt.startsWith("Reply:\nuse docs/api.yaml\n")).toBe(true);
+  expect(provider.calls[1]?.prompt.startsWith("Reply:\nuse docs/api.yaml\n")).toBe(true);
 });
 
 test("continue once redispatches only the blocked stage", async () => {
   const { workspace, sessionId } = setup(workflowText(`node -e "process.exit(0)"`));
-  const adapter = new ScriptedAdapter([BLOCKED, OK], [null, "# notes\n"]);
-  const runner = new AgentToolRunner({ fake: adapter }, 10);
+  const provider = new ScriptedProvider([BLOCKED, OK], [null, "# notes\n"]);
+  const runner = new AgentToolRunner({ fake: provider }, 10);
   const first = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId }, runner);
   expect(first.stopReason).toBe("blocked");
 
@@ -473,13 +473,13 @@ test("continue once redispatches only the blocked stage", async () => {
   expect(snapshots).toHaveLength(2);
   expect(snapshots[1]?.stageId).toBe("implement");
   expect(snapshots[1]?.outcomeStatus).toBe("complete");
-  expect(adapter.calls[1]?.prompt).toContain("gate clones");
+  expect(provider.calls[1]?.prompt).toContain("gate clones");
 });
 
 test("a blocked retry stops again without dispatching the next stage", async () => {
   const { workspace, sessionId } = setup(workflowText(`node -e "process.exit(0)"`));
-  const adapter = new ScriptedAdapter([BLOCKED, BLOCKED], [null, null]);
-  const runner = new AgentToolRunner({ fake: adapter }, 10);
+  const provider = new ScriptedProvider([BLOCKED, BLOCKED], [null, null]);
+  const runner = new AgentToolRunner({ fake: provider }, 10);
   const first = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId }, runner);
   const second = await executeNamedWorkflow(
     workspace,
@@ -492,25 +492,25 @@ test("a blocked retry stops again without dispatching the next stage", async () 
   const snapshots = new SessionStore(workspace).executionSnapshots(sessionId);
   expect(snapshots).toHaveLength(2);
   expect(snapshots.every((item) => item.stageId === "implement")).toBe(true);
-  expect(adapter.calls).toHaveLength(2);
+  expect(provider.calls).toHaveLength(2);
 });
 
 test("continue redispatches a blocked schema 2 session", async () => {
   const { workspace, sessionId } = setup(workflowText(`node -e "process.exit(0)"`));
-  const adapter = new ScriptedAdapter([BLOCKED, OK], [null, "# notes\n"]);
-  const runner = new AgentToolRunner({ fake: adapter }, 10);
+  const provider = new ScriptedProvider([BLOCKED, OK], [null, "# notes\n"]);
+  const runner = new AgentToolRunner({ fake: provider }, 10);
   const first = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId }, runner);
   expect(first.stopReason).toBe("blocked");
   const second = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId, once: true }, runner);
   expect(second.status).toBe("active");
   expect(second.latestExecutionId).not.toBe(first.latestExecutionId);
-  expect(adapter.calls[1]?.prompt).toContain("gate clones");
+  expect(provider.calls[1]?.prompt).toContain("gate clones");
 });
 
 test("exhausted verify stops with exit 6 and continue resumes without --attempts", async () => {
   const { workspace, sessionId } = setup(workflowText(`echo bad; exit 1`, "    max_verify: 1\n"));
-  const adapter = new ScriptedAdapter([OK, OK], ["# n\n", null]);
-  const runner = new AgentToolRunner({ fake: adapter }, 10);
+  const provider = new ScriptedProvider([OK, OK], ["# n\n", null]);
+  const runner = new AgentToolRunner({ fake: provider }, 10);
   const first = await executeNamedWorkflow(
     workspace,
     { workflowId: "wf", sessionId },
@@ -519,7 +519,7 @@ test("exhausted verify stops with exit 6 and continue resumes without --attempts
   expect(first.stopReason).toBe("verify_exhausted");
   expect(first.code).toBe(6);
   expect(first.status).toBe("active");
-  expect(adapter.calls).toHaveLength(1);
+  expect(provider.calls).toHaveLength(1);
   const store = new SessionStore(workspace);
   const [exhausted] = store.executionSnapshots(sessionId);
   expect(exhausted?.failureReason).toBe("verify_exhausted");
@@ -532,9 +532,9 @@ test("exhausted verify stops with exit 6 and continue resumes without --attempts
   );
   expect(second.stopReason).toBe("verify_exhausted");
   expect(second.code).toBe(6);
-  expect(adapter.calls).toHaveLength(2);
-  expect(adapter.calls[1]?.agentId).toBe("native-session-1");
-  expect(adapter.calls[1]?.prompt).toContain("bad");
+  expect(provider.calls).toHaveLength(2);
+  expect(provider.calls[1]?.agentId).toBe("native-session-1");
+  expect(provider.calls[1]?.prompt).toContain("bad");
   const records = store.executionSnapshots(sessionId);
   expect(records).toHaveLength(2);
   const resumed = execution(workspace, sessionId, records[1]!.executionId);
@@ -562,7 +562,7 @@ completion:
 `;
   const { workspace, sessionId } = setup(workflow);
   const runner = new AgentToolRunner(
-    { fake: new ScriptedAdapter(["status: complete\ndecision: approved\n\nok"]) },
+    { fake: new ScriptedProvider(["status: complete\ndecision: approved\n\nok"]) },
     10,
   );
   const result = await runStage(runner, workspace, sessionId);
@@ -589,7 +589,7 @@ test("reaper cannot fail an execution between verify commands", async () => {
         }
       },
     });
-  const runner = new AgentToolRunner({ fake: new ScriptedAdapter([OK], ["# n\n"]) }, 10, verifyRunner);
+  const runner = new AgentToolRunner({ fake: new ScriptedProvider([OK], ["# n\n"]) }, 10, verifyRunner);
   const result = await runStage(runner, workspace, sessionId);
   expect(raised).toMatch(/running|unverified|still/i);
   expect(execution(workspace, sessionId, result.execution_id).status).toBe("completed");
@@ -795,20 +795,20 @@ test("VerifyRunner: onEnd runs after a non-zero exit and an unspawnable shell is
 
 test("passing verify lets the session move on to the next stage", async () => {
   const { workspace, sessionId } = setup(workflowText(`node -e "process.exit(0)"`));
-  const adapter = new ScriptedAdapter([OK, OK], ["# n\n", null]);
+  const provider = new ScriptedProvider([OK, OK], ["# n\n", null]);
   const result = await executeNamedWorkflow(
     workspace,
     { workflowId: "wf", sessionId },
-    new AgentToolRunner({ fake: adapter }, 10),
+    new AgentToolRunner({ fake: provider }, 10),
   );
-  expect(adapter.calls).toHaveLength(2);
+  expect(provider.calls).toHaveLength(2);
   expect(result.status).toBe("completed");
 });
 
 test("the execution is running while the first verify command executes", async () => {
   const probe = `cat .migent/sessions/*/executions/*/execution.json | grep -Eq '"status": *"running"'`;
   const { workspace, sessionId } = setup(workflowText(probe));
-  const runner = new AgentToolRunner({ fake: new ScriptedAdapter([OK], ["# n\n"]) }, 10);
+  const runner = new AgentToolRunner({ fake: new ScriptedProvider([OK], ["# n\n"]) }, 10);
   const result = await runStage(runner, workspace, sessionId);
   const record = execution(workspace, sessionId, result.execution_id);
   expect(record.status).toBe("completed");
@@ -847,8 +847,8 @@ completion:
 
 async function runOutputs(verify: string) {
   const { workspace, sessionId } = setup(outputsWorkflow(verify));
-  const adapter = new ScriptedAdapter([OK, "status: complete\ndecision: approved\n\nok"], ["# plan\n", "# n\n"]);
-  const runner = new AgentToolRunner({ fake: adapter }, 10);
+  const provider = new ScriptedProvider([OK, "status: complete\ndecision: approved\n\nok"], ["# plan\n", "# n\n"]);
+  const runner = new AgentToolRunner({ fake: provider }, 10);
   await runStage(runner, workspace, sessionId, { stageId: "plan" });
   const result = await runStage(runner, workspace, sessionId);
   const published = path.join(workspace, ".migent", "sessions", sessionId, "outputs", "plan.md");
@@ -868,8 +868,8 @@ test("continue carries the artifact and completes once verify passes", async () 
   const workspace0 = tempDir("migent-verify-c-");
   const command = counterScript(workspace0, "c", 2);
   const { workspace, sessionId } = setup(workflowText(command, "    max_verify: 2\n"));
-  const adapter = new ScriptedAdapter([OK, OK, OK, OK], ["# kept\n", null, null, null]);
-  const runner = new AgentToolRunner({ fake: adapter }, 10);
+  const provider = new ScriptedProvider([OK, OK, OK, OK], ["# kept\n", null, null, null]);
+  const runner = new AgentToolRunner({ fake: provider }, 10);
   const first = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId }, runner);
   expect(first.stopReason).toBe("verify_exhausted");
   await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId, resetRevisions: true }, runner);
@@ -883,7 +883,7 @@ test("cancellation during a verify command marks the execution cancelled and kil
   const workspace0 = tempDir("migent-verify-p-");
   const pidFile = path.join(workspace0, "pid");
   const { workspace, sessionId } = setup(workflowText(`echo $$ > "${pidFile}"; exec sleep 30`));
-  const runner = new AgentToolRunner({ fake: new ScriptedAdapter([OK], ["# n\n"]) }, 10);
+  const runner = new AgentToolRunner({ fake: new ScriptedProvider([OK], ["# n\n"]) }, 10);
   const timer = setInterval(() => {
     if (!existsSync(pidFile) || readFileSync(pidFile, "utf8").trim() === "") return;
     clearInterval(timer);
@@ -910,12 +910,12 @@ test("cancellation during a verify command marks the execution cancelled and kil
 
 test("an infra failure stops the stage and is not verify_exhausted", async () => {
   const { workspace, sessionId } = setup(workflowText("exit 0"));
-  const adapter = new ScriptedAdapter([OK, OK, OK], ["# n\n", "# n\n", "# n\n"]);
-  const runner = new AgentToolRunner({ fake: adapter }, 10, new VerifyRunner(1, "/nonexistent/sh"));
+  const provider = new ScriptedProvider([OK, OK, OK], ["# n\n", "# n\n", "# n\n"]);
+  const runner = new AgentToolRunner({ fake: provider }, 10, new VerifyRunner(1, "/nonexistent/sh"));
   const result = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId }, runner);
   expect(result.stopReason).toBe("stage_failed");
   expect(result.stopReason).not.toBe("verify_exhausted");
-  expect(adapter.calls).toHaveLength(1);
+  expect(provider.calls).toHaveLength(1);
   const snapshots = new SessionStore(workspace).executionSnapshots(sessionId);
   expect(snapshots).toHaveLength(1);
   expect(snapshots.every((item) => item.failureReason !== "verify_exhausted")).toBe(true);
@@ -923,7 +923,7 @@ test("an infra failure stops the stage and is not verify_exhausted", async () =>
 
 test("a provider failure retries the same stage agent", async () => {
   const { workspace, sessionId } = setup(workflowText(`node -e "process.exit(0)"`));
-  class ExitOnceAdapter extends ScriptedAdapter {
+  class ExitOnceProvider extends ScriptedProvider {
     private failures: number;
 
     constructor(failures: number, responses: string[], artifacts: Array<string | null>) {
@@ -931,23 +931,23 @@ test("a provider failure retries the same stage agent", async () => {
       this.failures = failures;
     }
 
-    override buildCommand(input: Parameters<ScriptedAdapter["buildCommand"]>[0]) {
+    override buildCommand(input: Parameters<ScriptedProvider["buildCommand"]>[0]) {
       const spec = super.buildCommand(input);
       if (this.failures <= 0) return spec;
       this.failures -= 1;
       return { argv: [process.execPath, "-e", "process.exit(1)"] };
     }
   }
-  const adapter = new ExitOnceAdapter(
+  const provider = new ExitOnceProvider(
     1,
     ["status: complete\n\nignored", OK, "status: complete\n\nreviewed"],
     [null, "# n\n", null],
   );
-  const runner = new AgentToolRunner({ fake: adapter }, 10);
+  const runner = new AgentToolRunner({ fake: provider }, 10);
   const result = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId }, runner);
   expect(result.stopReason).toBe("stage_failed");
-  expect(adapter.calls).toHaveLength(1);
-  expect(adapter.calls[0]?.agentId).toBeNull();
+  expect(provider.calls).toHaveLength(1);
+  expect(provider.calls[0]?.agentId).toBeNull();
   const failed = new SessionStore(workspace).executionSnapshots(sessionId);
   expect(failed[0]?.status).toBe("failed");
   const continued = await executeNamedWorkflow(
@@ -956,7 +956,7 @@ test("a provider failure retries the same stage agent", async () => {
     runner,
   );
   expect(continued.stopReason).toBe("completed");
-  expect(adapter.calls[1]?.agentId).toBe("native-session-1");
+  expect(provider.calls[1]?.agentId).toBe("native-session-1");
   const snapshots = new SessionStore(workspace).executionSnapshots(sessionId);
   expect(execution(workspace, sessionId, snapshots[1]!.executionId).resumes_execution_id).toBe(
     snapshots[0]?.executionId,
@@ -967,16 +967,16 @@ test("a repair turn without an agent id receives the flattened history", async (
   const workspace0 = tempDir("migent-verify-c-");
   const command = counterScript(workspace0, "c", 1);
   const { workspace, sessionId } = setup(workflowText(command));
-  class NoIdAdapter extends ScriptedAdapter {
+  class NoIdProvider extends ScriptedProvider {
     override parseResponse(): [string, string | null] {
       return [super.parseResponse()[0], null];
     }
   }
-  const adapter = new NoIdAdapter([OK, OK], ["# n\n", null]);
-  const result = await runStage(new AgentToolRunner({ fake: adapter }, 10), workspace, sessionId);
+  const provider = new NoIdProvider([OK, OK], ["# n\n", null]);
+  const result = await runStage(new AgentToolRunner({ fake: provider }, 10), workspace, sessionId);
   expect(execution(workspace, sessionId, result.execution_id).status).toBe("completed");
-  const repair = adapter.calls[1]?.prompt ?? "";
-  expect(adapter.calls[1]?.agentId).toBeNull();
+  const repair = provider.calls[1]?.prompt ?? "";
+  expect(provider.calls[1]?.agentId).toBeNull();
   expect(repair).toContain("done");
   expect(repair).toContain("Verify failed (1 of 3 red runs)");
 });
@@ -1015,7 +1015,7 @@ completion:
     "utf8",
   );
   const sessionId = createWorkflowSession(workspace, "wf", "task");
-  const adapter = new ScriptedAdapter(
+  const provider = new ScriptedProvider(
     [
       "status: complete\n\ndraft",
       "status: complete\ndecision: revise\n\nagain",
@@ -1027,14 +1027,14 @@ completion:
   const result = await executeNamedWorkflow(
     workspace,
     { workflowId: "wf", sessionId },
-    new AgentToolRunner({ fake: adapter }, 10),
+    new AgentToolRunner({ fake: provider }, 10),
   );
   expect(result.stopReason).toBe("completed");
-  expect(adapter.calls[1]?.prompt).toContain("Review the draft.");
-  expect(adapter.calls[1]?.agentId).toBe("native-session-1");
-  expect(adapter.calls[2]?.prompt).toContain("Continue this stage.");
-  expect(adapter.calls[2]?.prompt).not.toContain("Write the draft.");
-  const rejoined = adapter.calls[3]?.prompt ?? "";
+  expect(provider.calls[1]?.prompt).toContain("Review the draft.");
+  expect(provider.calls[1]?.agentId).toBe("native-session-1");
+  expect(provider.calls[2]?.prompt).toContain("Continue this stage.");
+  expect(provider.calls[2]?.prompt).not.toContain("Write the draft.");
+  const rejoined = provider.calls[3]?.prompt ?? "";
   expect(rejoined).toContain("Stage: review (role: developer)");
   expect(rejoined).toContain("Review the draft.");
   expect(rejoined).not.toContain("Continue this stage.");
