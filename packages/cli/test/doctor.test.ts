@@ -82,7 +82,7 @@ test("doctor stops when the schema is outdated", async () => {
     writeFileSync(configPath, original, "utf8");
     const captured = await capture(() => main(["doctor"], workspace));
     expect(captured.value).toBe(2);
-    expect(captured.stderr).toContain("Schema is outdated. Run `migent migrate` to update.");
+    expect(captured.stderr).toContain("Run `migent migrate` to update.");
     expect(readFileSync(configPath, "utf8")).toBe(original);
   } finally {
     rmSync(workspace, { recursive: true, force: true });

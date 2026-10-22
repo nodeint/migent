@@ -160,7 +160,7 @@ roles:
       }),
     );
     expect(captured.value).toBe(2);
-    expect(captured.stderr).toContain("Schema is outdated. Run `migent migrate` to update.");
+    expect(captured.stderr).toContain("Run `migent migrate` to update.");
     expect(readFileSync(configPath, "utf8")).toBe(legacy);
     const migrated = await capture(() => runMigrate(workspace, { assumeYes: true }));
     const config = loadYamlMapping(configPath);

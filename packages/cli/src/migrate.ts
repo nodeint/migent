@@ -17,7 +17,10 @@ import { printError, printNotice } from "./display.js";
 import { isDirectory, isFile } from "./fs-utils.js";
 import { adapterMap } from "./provider.js";
 
-const OUTDATED = "Schema is outdated. Run `migent migrate` to update.";
+function versionList(entries: ReadonlyArray<[string, number]>): string {
+  const width = Math.max(...entries.map(([label]) => label.length));
+  return entries.map(([label, version]) => `  ${label.padEnd(width)}  v${version}`).join("\n");
+}
 
 interface Rewrite {
   path: string;
@@ -26,19 +29,24 @@ interface Rewrite {
 }
 
 export function requireCurrentSchema(workspace: string): void {
-  const newer: string[] = [];
-  let outdated = false;
+  const newer: Array<[string, number]> = [];
+  const older: Array<[string, number]> = [];
   for (const [label, filePath] of schemaFiles(workspace)) {
     const version = storedVersion(filePath);
     if (version === null || version === SCHEMA_VERSION) continue;
-    if (version > SCHEMA_VERSION) {
-      newer.push(`${label} schema_version ${version} is newer than this Migent (${SCHEMA_VERSION}).`);
-      continue;
-    }
-    outdated = true;
+    (version > SCHEMA_VERSION ? newer : older).push([label, version]);
   }
-  if (outdated) throw new ConfigurationError(OUTDATED);
-  if (newer.length > 0) throw new ConfigurationError(newer.join(" "));
+  if (older.length > 0) {
+    throw new ConfigurationError(
+      `Schema is outdated (this Migent uses v${SCHEMA_VERSION}).\n${versionList(older)}\n\n` +
+        "Run `migent migrate` to update.",
+    );
+  }
+  if (newer.length > 0) {
+    throw new ConfigurationError(
+      `Schema is newer than this Migent supports (v${SCHEMA_VERSION}).\n${versionList(newer)}`,
+    );
+  }
 }
 
 export async function runMigrate(
