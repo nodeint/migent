@@ -63,8 +63,10 @@ export function printSessions(rows: readonly string[][]): void {
   }
   for (const row of rows) {
     const fields = sessionFields(row);
+    const identity =
+      fields.title !== "" && fields.title !== fields.session ? `${fields.title}  ${fields.session}` : fields.session;
     process.stdout.write(
-      `${fields.session}  ${fields.workflow}  ${fields.status}  ${fields.execution}  ${fields.decision}  ${fields.outputs}  ${fields.task}\n`,
+      `${identity}  ${fields.workflow}  ${fields.status}  ${fields.execution}  ${fields.decision}  ${fields.outputs}  ${fields.task}\n`,
     );
   }
 }
@@ -88,6 +90,10 @@ export function printWatchSnapshot(snapshot: Record<string, unknown>): void {
     ["session_id", String(snapshot.session_id ?? "--")],
     ["status", String(snapshot.status ?? "unknown")],
   ];
+  const title = snapshot.title;
+  if (typeof title === "string" && title !== "" && title !== lines[0]?.[1]) {
+    lines.splice(1, 0, ["title", title]);
+  }
   if (typeof snapshot.workflow_id === "string" && snapshot.workflow_id) {
     lines.push(["workflow", snapshot.workflow_id]);
   }

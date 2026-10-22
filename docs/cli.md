@@ -9,8 +9,9 @@ Run commands from the configured project or any of its subdirectories.
 migent session run --workflow <workflow> --task "<task>"
 
 # Create a prepared session, write a longer task, then start it.
-migent session prepare <some-id> --workflow <workflow>
-migent session run --session <some-id> --workflow <workflow>
+# <title> is a display label, such as "some task title". The printed session_id is a UUID.
+migent session prepare "<title>" --workflow <workflow>
+migent session run --session <session-id> --workflow <workflow>
 
 # Resume a stopped workflow or role session.
 # A workflow session runs until it stops and resets revision counts.
@@ -27,11 +28,11 @@ migent session continue <session-id> --stage <stage> --reply-file <path>
 
 # Adopt the current workflow, models, and role instructions for an existing session.
 migent session continue <session-id> --refresh-workflow
-migent session run --session <some-id> --workflow <workflow> --refresh-workflow
+migent session run --session <session-id> --workflow <workflow> --refresh-workflow
 
 # Dispatch exactly one eligible stage. This does not reset revision counts.
 migent session run --workflow <workflow> --task "<task>" --once
-migent session run --session <some-id> --workflow <workflow> --once
+migent session run --session <session-id> --workflow <workflow> --once
 migent session continue <session-id> --once
 
 # Run one role. Omit --workflow.
@@ -49,18 +50,21 @@ Passing `--once`, `--prior`, `--max-dispatches`,
 without `--workflow` is an error.
 
 `--task` is one line on a workflow run. Migent writes it to
-`.migent/sessions/<session-id>/task.md`. A longer task uses `session prepare`.
-`<some-id>` is a lowercase slug such as `wave-3`: letters, digits, and single
-hyphens. The command creates the session with status `prepared` and prints
-`session_id`, `status`, and `task_path` on stdout. Write that file, and any
-companion files in the same directory, then
-`migent session run --session <some-id> --workflow <workflow>`. The workflow
+`.migent/sessions/<session-id>/task.md`. The session id is a UUID. The session
+title is that line. A longer task uses `session prepare`.
+`<title>` is the display label, such as `some task title`. Spaces and capitals
+stay. It must be one non-empty line. The command creates the session with status
+`prepared` and prints `session_id`, `title`, `status`, and `task_path` on stdout.
+Write that file, and any companion files in the same directory, then
+`migent session run --session <session-id> --workflow <workflow>`. The workflow
 must be the one stored on the session. `session continue` rejects a prepared
 session. `session run --session --workflow` accepts only a prepared session. Stage prompts
 name `task.md` and the session directory. They do not include the task text.
 After the first dispatch, a change to `task.md` stops the next dispatch.
+The title stays the text from `prepare`.
 
-On a role run, `--task` is only a label for a new session and cannot be
+On a role run, `--task` is the label for a new session and is stored as the title.
+The session id is a UUID. `--task` cannot be
 combined with `--session`. Pass one of `--prompt`, `--file`, or `--stdin`.
 `--provider` and `--model` are passed together. `--json` prints one result
 object. Without `--json` the result is a table. Exit 0 means the outcome is
@@ -321,7 +325,8 @@ migent session repair <session-id>
 migent session repair <session-id> --accept-task
 ```
 
-`session list` lists recorded runs, newest first. `--workflow` and `--status`
+`session list` lists recorded runs, newest first. A row with a title prints that
+title before the session id. A row without one prints the id. `--workflow` and `--status`
 select rows before `--limit`. `--status` is `active`, `prepared`, `completed`,
 `blocked`, or `cancelled`. `--latest` prints the newest match. `--latest`
 cannot be combined with `--limit`. An empty list exits 0.
@@ -352,8 +357,10 @@ created after follow starts is read from the beginning. `--json` is an array
 for a list, one object for `--latest`
 (`null` when nothing matches), one object for a snapshot, and a snapshot
 object followed by JSON lines while following. With `--cursor`, follow prints
-only JSON lines. JSON list rows and the JSON snapshot omit `task`. The human
-list and snapshot still print it. `--exit-when-done` is opt-in and exits when
+only JSON lines. JSON list rows include `title` and omit `task`. The JSON snapshot
+includes `title` when the session has one, and omits `task`. The human
+list and snapshot still print the task. The human list prints the title when it
+differs from the session id. `--exit-when-done` is opt-in and exits when
 the session status is completed (0), blocked (1), or cancelled (130).
 
 A role run prints its new session id on stderr as soon as the session exists.

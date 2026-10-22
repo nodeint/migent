@@ -9,7 +9,11 @@ Do not commit this directory. Commit `.migent/config.yaml` and
 
 ## On-disk layout
 
-Each run has its own directory, named by its session ID:
+Each run has its own directory, named by its session ID. A new session id is a
+UUID. `manifest.yaml` also records `title`. A workflow or role session sets
+`title` to its one-line task. `session prepare` sets `title` to the text you
+pass. The title is for display, so spaces and capitals stay. A session written by an older Migent has no `title`. List and
+show use `session_id` for that session.
 
 ```text
 .migent/sessions/<session-id>/
@@ -35,9 +39,10 @@ Each run has its own directory, named by its session ID:
 
 The session-level files have distinct purposes:
 
-- `manifest.yaml` on a schema 2 session is identity only: `session_id`, the
-  workflow id and path, the task label, `created_at`, an optional
-  `prior_session_id` or `role`, and `schema_version`. It has no status line.
+- `manifest.yaml` on a schema 2 session is identity only: `session_id`, an
+  optional `title`, the workflow id and path, the task label, `created_at`, an
+  optional `prior_session_id` or `role`, and `schema_version`. A prepared session
+  has a title and no task label. The task body is `task.md`. The manifest has no status line.
   Status lives in `status.json`. A v1 manifest still has a `status` line, and
   that line is still updated. An ad hoc agent session records its role; a
   workflow with `requires` records its prerequisite as `prior_session_id`.

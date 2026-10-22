@@ -10,21 +10,17 @@ import { commitFoldedStatus } from "./session-fold.js";
 
 export const TASK_FILENAME = "task.md";
 
-const MANUAL_SESSION_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const MANUAL_SESSION_ID_LIMIT = 64;
-
-export function assertManualSessionId(sessionId: string): void {
-  if (!MANUAL_SESSION_ID.test(sessionId) || sessionId.length > MANUAL_SESSION_ID_LIMIT) {
-    throw new ConfigurationError(
-      "Session id must be a lowercase slug such as wave-3: letters, digits, and single hyphens, at most 64 characters.",
-    );
+export function assertSessionTitle(title: string): void {
+  if (title.includes("\n") || title.includes("\r")) {
+    throw new ConfigurationError("Session title must be one line.");
   }
+  if (title.trim() === "") throw new ConfigurationError("Session title must not be empty.");
 }
 
 export function assertSingleLineTask(task: string): void {
   if (task.includes("\n") || task.includes("\r")) {
     throw new ConfigurationError(
-      "Task must be one line. For a longer task, run migent session prepare <some-id> --workflow <workflow> and write task.md.",
+      "Task must be one line. For a longer task, run migent session prepare <title> --workflow <workflow> and write task.md.",
     );
   }
 }
@@ -67,7 +63,8 @@ export function freezeSessionTask(
       throw new ConfigurationError(`Session ${sessionId} is missing task.md.`);
     }
     const fallback = typeof status.task === "string" ? status.task : "";
-    // A prepared session stores its id as the task label. That label is not a body.
+    // A prepared session has no task label. An empty label is not a body.
+    // A label equal to the session id is the placeholder written by an older Migent.
     if (fallback.trim() === "" || fallback === sessionId) {
       throw new ConfigurationError(
         `Session ${sessionId} has no task.md. Write ${relativeTaskPath(sessionId)} before starting.`,

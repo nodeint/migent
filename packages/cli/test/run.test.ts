@@ -282,6 +282,7 @@ test("session filters select the newest match and reject bad flags", async () =>
     expect(JSON.parse(matched.stdout)).toEqual([
       {
         session: "older",
+        title: "older",
         workflow: "plan",
         status: "completed",
         execution: "0001",

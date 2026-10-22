@@ -41,18 +41,18 @@ One-line task. The command runs until the session stops:
 migent session run --workflow <workflow> --task "<task>"
 ```
 
-Longer task. `<some-id>` is a lowercase slug such as `wave-3`:
+Longer task. `<title>` is a display label such as `some task title`. The command prints a UUID `session_id`:
 
 ```
-migent session prepare <some-id> --workflow <workflow>
+migent session prepare "<title>" --workflow <workflow>
 ```
 
-Write the task, unchanged, to `.migent/sessions/<some-id>/task.md` (plus any
-files next to it). Do not edit `task.md` once the first stage has started.
+Write the task, unchanged, to the printed `task_path` (plus any files next to it).
+Do not edit `task.md` once the first stage has started.
 Then:
 
 ```
-migent session run --session <some-id> --workflow <workflow>
+migent session run --session <session-id> --workflow <workflow>
 ```
 
 Dispatch only one stage: add `--once`.
@@ -122,7 +122,8 @@ migent session list --latest --json
 ```
 
 `show` gives status, latest execution, decision, and outputs. `list --latest`
-is the newest session, or `null`. Report the session ID, status, stop reason,
+is the newest session, or `null`. Both include `title` when the session has one.
+Report the session ID, title, status, stop reason,
 decisions, and the outputs that matter. Output paths are relative to
 `.migent/sessions/<session-id>/`; use the paths Migent reports.
 

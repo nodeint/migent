@@ -27,6 +27,7 @@ import { parseYamlDocument } from "./yaml.js";
 
 export interface SessionManifest {
   sessionId: string;
+  title: string | null;
   workflowId: string | null;
   workflowPath: string | null;
   role: string | null;
@@ -99,6 +100,7 @@ export function readSessionManifest(sessionDirectory: string): SessionManifest {
   if (!isRecord(parsed)) throw new ConfigurationError(`Session manifest is corrupt: ${manifestPath}.`);
   return {
     sessionId: textOr(parsed.session_id) ?? path.basename(sessionDirectory),
+    title: textOr(parsed.title),
     workflowId: textOr(parsed.workflow_id),
     workflowPath: textOr(parsed.workflow_path),
     role: textOr(parsed.role),
@@ -501,6 +503,7 @@ function initialStatus(manifest: SessionManifest, schemaVersion: number): Record
 
 function applyManifestIdentity(status: Record<string, unknown>, manifest: SessionManifest): void {
   status.session_id = manifest.sessionId || status.session_id;
+  if (manifest.title) status.title = manifest.title;
   if (manifest.workflowId) status.workflow_id = manifest.workflowId;
   if (manifest.workflowPath) status.workflow_path = manifest.workflowPath;
   if (manifest.role) status.role = manifest.role;
@@ -676,6 +679,7 @@ function statusIdentity(manifest: SessionManifest, previous: Record<string, unkn
 function emptyManifest(sessionId: string): SessionManifest {
   return {
     sessionId,
+    title: null,
     workflowId: null,
     workflowPath: null,
     role: null,

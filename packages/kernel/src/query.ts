@@ -82,7 +82,7 @@ export function watchSnapshot(
   let outcome: unknown = null;
   if (execution && isRecord(execution.outcome)) outcome = execution.outcome;
   const outputs = isRecord(status.outputs) ? status.outputs : {};
-  return {
+  const snapshot: Record<string, unknown> = {
     session_id: status.session_id || path.basename(sessionDirectory),
     status: status.status || "unknown",
     workflow_id: status.workflow_id ?? null,
@@ -97,6 +97,8 @@ export function watchSnapshot(
     running_stages: Array.isArray(status.running_stages) ? status.running_stages.filter(isRecord) : [],
     events_cursor: cursor,
   };
+  if (typeof status.title === "string" && status.title !== "") snapshot.title = status.title;
+  return snapshot;
 }
 
 export function listSessionRows(workspace: string): string[][] {
@@ -119,7 +121,7 @@ export function listSessionRows(workspace: string): string[][] {
     }
     const read = readStatusFileState(statusPath);
     if (read.state === "corrupt") {
-      rows.push(["", entry.name, "legacy/unknown", "corrupt", "not started", "--", "none", ""]);
+      rows.push(["", entry.name, "legacy/unknown", "corrupt", "not started", "--", "none", "", entry.name]);
       continue;
     }
     const status = read.status;
@@ -136,6 +138,7 @@ export function listSessionRows(workspace: string): string[][] {
       status.latest_decision ? text(status.latest_decision) : "--",
       outputLabel,
       text(status.task, ""),
+      text(status.title, entry.name),
     ]);
   }
   rows.sort((left, right) => {

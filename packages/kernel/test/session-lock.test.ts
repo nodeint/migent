@@ -194,7 +194,7 @@ test("session creation with one task never shares a directory", () => {
   expect(ids.size).toBe(5);
 });
 
-test("createSessionDirectory skips an existing id and a prepared id collision fails", () => {
+test("createSessionDirectory skips an existing id and a prepared title can repeat", () => {
   const sessions = path.join(tempDir("migent-alloc-"), "sessions");
   const [first] = createSessionDirectory(sessions, "base");
   const [second] = createSessionDirectory(sessions, "base");
@@ -203,8 +203,10 @@ test("createSessionDirectory skips an existing id and a prepared id collision fa
   mkdirSync(path.join(workspace, ".migent", "workflows"), { recursive: true });
   writeFileSync(path.join(workspace, ".migent", "config.yaml"), CONFIG);
   writeFileSync(path.join(workspace, ".migent", "workflows", "wf.yaml"), WORKFLOW);
-  createPreparedSession(workspace, "wave-1", "wf");
-  expect(() => createPreparedSession(workspace, "wave-1", "wf")).toThrow(/already exists/);
+  const prepared = createPreparedSession(workspace, "wave-1", "wf");
+  const repeated = createPreparedSession(workspace, "wave-1", "wf");
+  expect(prepared).not.toBe(repeated);
+  expect(prepared).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
 });
 
 test("an execution directory that exists is an error, never shared", () => {

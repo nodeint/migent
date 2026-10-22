@@ -260,19 +260,19 @@ function registerSessionCommand(program: Command, status: CliStatus): void {
     .option("--json", "Print the role result as one JSON object.")
     .addHelpText(
       "after",
-      `With --workflow:\n${exitText(LOOP_EXITS)}With --workflow and --once:\n${exitText(STAGE_EXITS)}Without --workflow:\n${exitText(ROLE_EXITS)}Examples:\n  migent session run --workflow plan --task "<one line>"\n  migent session run --session wave-3 --workflow plan\n  migent session run --role reviewer --prompt "<prompt>"\n`,
+      `With --workflow:\n${exitText(LOOP_EXITS)}With --workflow and --once:\n${exitText(STAGE_EXITS)}Without --workflow:\n${exitText(ROLE_EXITS)}Examples:\n  migent session run --workflow plan --task "<one line>"\n  migent session run --session <session> --workflow plan\n  migent session run --role reviewer --prompt "<prompt>"\n`,
     )
     .action((options: OptionValues) => settle(status, () => runSessionCommand(options)));
 
   session
     .command("prepare")
     .description("Create a prepared session and exit. Write task.md, then session run --session <id> --workflow <workflow>.")
-    .argument("<id>", "Session id: a lowercase slug such as wave-3.")
+    .argument("<title>", "Session title shown in the list, such as \"some task title\". The session id is a UUID.")
     .requiredOption("--workflow <workflow>", "Workflow id, or a path to a workflow file.")
     .option("--prior <session>", PRIOR_HELP)
     .addHelpText(
       "after",
-      `${exitText(["Exit 0 when the session is prepared.", "Exit 2 on a configuration error."])}Examples:\n  migent session prepare wave-3 --workflow plan\n`,
+      `${exitText(["Exit 0 when the session is prepared.", "Exit 2 on a configuration error."])}Examples:\n  migent session prepare "some task title" --workflow plan\n`,
     )
     .action((id: string, options: OptionValues) =>
       settle(status, () =>

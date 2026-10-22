@@ -11,6 +11,7 @@ export function prepareWorkflowSession(
   const id = createPreparedSession(workspace, sessionId, workflowId, priorSessionId);
   const payload = {
     session_id: id,
+    title: sessionId.trim(),
     status: "prepared",
     task_path: relativeTaskPath(id),
   };

@@ -30,7 +30,7 @@ test("session run help shows both modes", async () => {
   const captured = await capture(() => main(["session", "run", "--help"]));
   expect(captured.value).toBe(0);
   expect(captured.stdout).toContain("migent session run --workflow plan --task");
-  expect(captured.stdout).toContain("migent session run --session wave-3 --workflow plan");
+  expect(captured.stdout).toContain("migent session run --session <session> --workflow plan");
   expect(captured.stdout).toContain("migent session run --role reviewer --prompt");
   expect(captured.stdout).toContain("With --workflow:");
   expect(captured.stdout).toContain("Without --workflow:");
@@ -119,11 +119,12 @@ test("session run --workflow dispatches one stage", async () => {
     expect(captured.stderr).not.toContain("deprecated");
     const sessionMatch = /session_id: (\S+)/.exec(captured.stderr);
     const sessionId = sessionMatch?.[1] ?? "";
-    expect(sessionId).toContain("plan");
+    expect(sessionId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
     const status = JSON.parse(
       readFileSync(path.join(workspace, ".migent", "sessions", sessionId, "status.json"), "utf8"),
-    ) as { status?: string };
+    ) as { status?: string; title?: string };
     expect(status.status).toBe("active");
+    expect(status.title).toBe("Write a plan");
     const prompt = adapter.calls[0]?.prompt ?? "";
     const roleAt = prompt.indexOf("Role instructions:\n- Stay inside the task.");
     expect(roleAt).toBeGreaterThan(prompt.indexOf("Stage: plan (role: planner)"));
@@ -131,7 +132,12 @@ test("session run --workflow dispatches one stage", async () => {
 
     const listed = await capture(() => main(["session", "list", "--latest", "--json"], workspace));
     expect(listed.value).toBe(0);
-    expect(JSON.parse(listed.stdout)).toMatchObject({ session: sessionId, workflow: "plan", status: "active" });
+    expect(JSON.parse(listed.stdout)).toMatchObject({
+      session: sessionId,
+      title: "Write a plan",
+      workflow: "plan",
+      status: "active",
+    });
 
     const shown = await capture(() => main(["session", "show", sessionId, "--json"], workspace));
     expect(shown.value).toBe(0);
@@ -189,30 +195,33 @@ test("session prepare starts through session run --workflow", async () => {
     "plan-implement": repoWorkflowText("plan-implement"),
   });
   try {
-    const prepared = await capture(() => main(["session", "prepare", "wave-3", "--workflow", "plan"], workspace));
+    const prepared = await capture(() => main(["session", "prepare", "some task title", "--workflow", "plan"], workspace));
     expect(prepared.value).toBe(0);
-    expect(JSON.parse(prepared.stdout)).toEqual({
-      session_id: "wave-3",
+    const preparedBody = JSON.parse(prepared.stdout) as { session_id: string; title: string; task_path: string };
+    expect(preparedBody).toEqual({
+      session_id: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      title: "some task title",
       status: "prepared",
-      task_path: ".migent/sessions/wave-3/task.md",
+      task_path: `.migent/sessions/${preparedBody.session_id}/task.md`,
     });
+    const sessionId = preparedBody.session_id;
 
     const missing = await capture(() =>
-      main(["session", "run", "--session", "wave-3", "--workflow", "plan", "--once"], workspace),
+      main(["session", "run", "--session", sessionId, "--workflow", "plan", "--once"], workspace),
     );
     expect(missing.value).toBe(2);
     expect(missing.stderr).toContain("no task.md");
 
-    writeFileSync(path.join(workspace, ".migent", "sessions", "wave-3", "task.md"), "Migrate the plugin API.\n", "utf8");
+    writeFileSync(path.join(workspace, ".migent", "sessions", sessionId, "task.md"), "Migrate the plugin API.\n", "utf8");
     const mismatch = await capture(() =>
-      main(["session", "run", "--session", "wave-3", "--workflow", "plan-implement", "--once"], workspace),
+      main(["session", "run", "--session", sessionId, "--workflow", "plan-implement", "--once"], workspace),
     );
     expect(mismatch.value).toBe(2);
     expect(mismatch.stderr).toContain("does not match");
 
     cliHooks.runner = new AgentToolRunner({ fake: new ScriptedAdapter(["status: complete\n\nplanned"], ["# Plan\n"]) }, 10);
     const started = await capture(() =>
-      main(["session", "run", "--session", "wave-3", "--workflow", "plan", "--once"], workspace),
+      main(["session", "run", "--session", sessionId, "--workflow", "plan", "--once"], workspace),
     );
     expect(started.value).toBe(0);
     expect(started.stdout).toBe("");

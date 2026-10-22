@@ -172,6 +172,7 @@ function sessionJson(row: readonly string[]): Omit<ReturnType<typeof sessionFiel
   const fields = sessionFields(row);
   return {
     session: fields.session,
+    title: fields.title,
     workflow: fields.workflow,
     status: fields.status,
     execution: fields.execution,

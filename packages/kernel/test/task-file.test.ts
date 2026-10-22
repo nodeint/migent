@@ -8,6 +8,7 @@ import { freezeSessionTask } from "../src/task-file.ts";
 import { tempDir, writeSessionConfig } from "./support.ts";
 
 const WORKFLOW = "schema_version: 1\nid: solo\nstages:\n  - id: work\n    role: developer\n";
+const SESSION_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 function workspaceWithWorkflow(): string {
   const workspace = tempDir("migent-task-");
@@ -29,6 +30,8 @@ test("a one-line task is stored in task.md", () => {
   };
   expect(status.status).toBe("active");
   expect(status.task).toBe("Write a plan");
+  expect(sessionId).toMatch(SESSION_UUID);
+  expect((status as { title?: string }).title).toBe("Write a plan");
 });
 
 test("a task with a newline is rejected before a session exists", () => {
@@ -40,42 +43,55 @@ test("a task with a newline is rejected before a session exists", () => {
   expect(existsSync(path.join(workspace, ".migent", "sessions"))).toBe(false);
 });
 
-test("prepare stores a chosen id and waits for task.md", () => {
+test("prepare stores a title and waits for task.md", () => {
   const workspace = workspaceWithWorkflow();
-  expect(() => createPreparedSession(workspace, "Wave-3", "solo")).toThrow(/lowercase slug/);
-  expect(() => createPreparedSession(workspace, "wave--3", "solo")).toThrow(/lowercase slug/);
-  const sessionId = createPreparedSession(workspace, "wave-3", "solo");
-  expect(sessionId).toBe("wave-3");
-  const directory = path.join(workspace, ".migent", "sessions", "wave-3");
+  expect(() => createPreparedSession(workspace, "   ", "solo")).toThrow(/must not be empty/);
+  expect(() => createPreparedSession(workspace, "one\ntwo", "solo")).toThrow(/one line/);
+  const sessionId = createPreparedSession(workspace, "  some task title  ", "solo");
+  expect(sessionId).toMatch(SESSION_UUID);
+  const directory = path.join(workspace, ".migent", "sessions", sessionId);
   expect(existsSync(path.join(directory, "session.lock"))).toBe(false);
   const createdManifest = readFileSync(path.join(directory, "manifest.yaml"), "utf8");
   expect(createdManifest).toContain("schema_version: 2");
+  expect(createdManifest).toContain('title: "some task title"');
   expect(createdManifest).not.toContain("status:");
-  const status = JSON.parse(readFileSync(path.join(directory, "status.json"), "utf8")) as { status: string; task: string };
-  expect(status).toMatchObject({ status: "prepared", task: "wave-3" });
+  expect(createdManifest).not.toContain("\ntask:");
+  const status = JSON.parse(readFileSync(path.join(directory, "status.json"), "utf8")) as {
+    status: string;
+    title: string;
+  };
+  expect(status).toMatchObject({ status: "prepared", title: "some task title" });
+  expect(status).not.toHaveProperty("task");
   const events = readFileSync(path.join(directory, "events.jsonl"), "utf8");
   expect(events).toContain("\"event\":\"session.created\"");
   expect(events).toContain("\"v\":2");
-  expect(() => createPreparedSession(workspace, "wave-3", "solo")).toThrow(/already exists/);
-  expect(() => activatePreparedSession(workspace, "wave-3")).toThrow(/no task.md/);
+  expect(events).toContain("\"title\":\"some task title\"");
+  const again = createPreparedSession(workspace, "some task title", "solo");
+  expect(again).toMatch(SESSION_UUID);
+  expect(again).not.toBe(sessionId);
+  expect(() => activatePreparedSession(workspace, sessionId)).toThrow(/no task.md/);
   writeFileSync(path.join(directory, "task.md"), "   \n", "utf8");
-  expect(() => activatePreparedSession(workspace, "wave-3")).toThrow(/no task.md/);
+  expect(() => activatePreparedSession(workspace, sessionId)).toThrow(/no task.md/);
   writeFileSync(path.join(directory, "task.md"), "Migrate wave 3.\nNotes.\n", "utf8");
-  activatePreparedSession(workspace, "wave-3");
-  const active = JSON.parse(readFileSync(path.join(directory, "status.json"), "utf8")) as { status: string };
+  activatePreparedSession(workspace, sessionId);
+  const active = JSON.parse(readFileSync(path.join(directory, "status.json"), "utf8")) as {
+    status: string;
+    title: string;
+  };
   expect(active.status).toBe("active");
+  expect(active.title).toBe("some task title");
   expect(readFileSync(path.join(directory, "manifest.yaml"), "utf8")).toBe(createdManifest);
   expect(existsSync(path.join(directory, "session.lock"))).toBe(false);
 });
 
 test("activate keeps a lock the caller already holds", () => {
   const workspace = workspaceWithWorkflow();
-  createPreparedSession(workspace, "wave-4", "solo");
-  const directory = path.join(workspace, ".migent", "sessions", "wave-4");
+  const sessionId = createPreparedSession(workspace, "wave-4", "solo");
+  const directory = path.join(workspace, ".migent", "sessions", sessionId);
   writeFileSync(path.join(directory, "task.md"), "Migrate wave 4.\n", "utf8");
   const lock = SessionLock.acquire(directory);
   try {
-    activatePreparedSession(workspace, "wave-4");
+    activatePreparedSession(workspace, sessionId);
     lock.assertHeld();
   } finally {
     lock.release();
@@ -108,13 +124,13 @@ test("whitespace after the first dispatch is a changed task", () => {
 
 test("an activated prepared session does not invent task.md from its id", () => {
   const workspace = workspaceWithWorkflow();
-  createPreparedSession(workspace, "wave-3", "solo");
-  const directory = path.join(workspace, ".migent", "sessions", "wave-3");
+  const sessionId = createPreparedSession(workspace, "wave-3", "solo");
+  const directory = path.join(workspace, ".migent", "sessions", sessionId);
   const taskPath = path.join(directory, "task.md");
   writeFileSync(taskPath, "Real body\n", "utf8");
-  activatePreparedSession(workspace, "wave-3");
+  activatePreparedSession(workspace, sessionId);
   unlinkSync(taskPath);
-  expect(() => freezeSessionTask(workspace, "wave-3")).toThrow(/no task.md/);
+  expect(() => freezeSessionTask(workspace, sessionId)).toThrow(/no task.md/);
   expect(existsSync(taskPath)).toBe(false);
 });
 

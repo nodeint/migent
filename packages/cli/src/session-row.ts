@@ -7,10 +7,12 @@ export const SESSION_COLUMN = {
   decision: 5,
   outputs: 6,
   task: 7,
+  title: 8,
 } as const;
 
 export interface SessionFields {
   session: string;
+  title: string;
   workflow: string;
   status: string;
   execution: string;
@@ -22,6 +24,7 @@ export interface SessionFields {
 export function sessionFields(row: readonly string[]): SessionFields {
   return {
     session: row[SESSION_COLUMN.session] ?? "",
+    title: row[SESSION_COLUMN.title] ?? "",
     workflow: row[SESSION_COLUMN.workflow] ?? "",
     status: row[SESSION_COLUMN.status] ?? "",
     execution: row[SESSION_COLUMN.execution] ?? "",

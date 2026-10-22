@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import { writeFileAtomic } from "./atomic-file.js";
@@ -10,7 +11,7 @@ import { writeWorkflowFreeze } from "./session-freeze.js";
 import { commitFoldedStatus, readSessionManifest } from "./session-fold.js";
 import { SessionLock, sessionLockHeldLocally } from "./session-lock.js";
 import { SessionStore } from "./session-store.js";
-import { assertManualSessionId, assertSingleLineTask, requireTaskBody, writeTaskFile, taskFilePath } from "./task-file.js";
+import { assertSessionTitle, assertSingleLineTask, requireTaskBody, writeTaskFile, taskFilePath } from "./task-file.js";
 import { isWorkflowV2, loadNamedWorkflow, type WorkflowDocument } from "./workflow.js";
 
 function sessionWorkflowPath(workspace: string, workflow: WorkflowDocument): string {
@@ -58,6 +59,21 @@ export function allocateSessionId(sessionsDirectory: string, sessionIdBase: stri
   return sessionId;
 }
 
+/** A new session directory. The id is a UUID. A collision retries with another UUID. */
+function createUuidSessionDirectory(sessionsDirectory: string): [string, string] {
+  mkdirSync(sessionsDirectory, { recursive: true });
+  for (;;) {
+    const sessionId = randomUUID();
+    const sessionDirectory = path.join(sessionsDirectory, sessionId);
+    try {
+      mkdirSync(sessionDirectory);
+      return [sessionId, sessionDirectory];
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
+  }
+}
+
 export function sessionSlug(value: string, limit: number): string {
   let slug = "";
   for (const character of value) {
@@ -96,14 +112,13 @@ export function createWorkflowSession(
   assertSingleLineTask(task);
   const taskSummary = task.trim();
   if (!taskSummary) throw new ConfigurationError("Task summary must not be empty.");
-  const timestamp = utcStamp();
-  const sessionIdBase = `${timestamp}--${sessionSlug(resolvedId, 36)}--${sessionSlug(taskSummary, 48)}`;
   const sessionsDirectory = path.join(workspace, ".migent", "sessions");
-  const [sessionId, sessionDirectory] = createSessionDirectory(sessionsDirectory, sessionIdBase);
+  const [sessionId, sessionDirectory] = createUuidSessionDirectory(sessionsDirectory);
   const createdAt = utcNow();
   const workflowRelativePath = sessionWorkflowPath(workspace, workflow);
   const manifestLines = [
     `session_id: ${sessionId}`,
+    `title: ${JSON.stringify(taskSummary)}`,
     `workflow_id: ${resolvedId}`,
     `workflow_path: ${workflowRelativePath}`,
     `task: ${JSON.stringify(taskSummary)}`,
@@ -119,6 +134,7 @@ export function createWorkflowSession(
       workflow_id: resolvedId,
       workflow_path: workflowRelativePath,
       hash: frozen.hash,
+      title: taskSummary,
       task: taskSummary,
       prior_session_id: resolvedPrior,
     });
@@ -129,32 +145,24 @@ export function createWorkflowSession(
 
 export function createPreparedSession(
   workspace: string,
-  sessionId: string,
+  title: string,
   workflowId: string,
   priorSessionId?: string | null,
 ): string {
-  const id = sessionId.trim();
-  assertManualSessionId(id);
+  const sessionTitle = title.trim();
+  assertSessionTitle(sessionTitle);
   const workflow = loadNamedWorkflow(workspace, workflowId);
   const resolvedId = workflow.id;
   const resolvedPrior = resolvePriorSessionId(workspace, workflow, priorSessionId);
-  const sessionDirectory = path.join(workspace, ".migent", "sessions", id);
-  mkdirSync(path.dirname(sessionDirectory), { recursive: true });
-  try {
-    mkdirSync(sessionDirectory);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-      throw new ConfigurationError(`Session already exists: ${id}.`);
-    }
-    throw error;
-  }
+  const sessionsDirectory = path.join(workspace, ".migent", "sessions");
+  const [sessionId, sessionDirectory] = createUuidSessionDirectory(sessionsDirectory);
   const createdAt = utcNow();
   const workflowRelativePath = sessionWorkflowPath(workspace, workflow);
   const manifestLines = [
-    `session_id: ${id}`,
+    `session_id: ${sessionId}`,
+    `title: ${JSON.stringify(sessionTitle)}`,
     `workflow_id: ${resolvedId}`,
     `workflow_path: ${workflowRelativePath}`,
-    `task: ${JSON.stringify(id)}`,
     `created_at: ${createdAt}`,
   ];
   if (resolvedPrior) manifestLines.push(`prior_session_id: ${resolvedPrior}`);
@@ -166,13 +174,13 @@ export function createPreparedSession(
       workflow_id: resolvedId,
       workflow_path: workflowRelativePath,
       hash: frozen.hash,
-      task: id,
+      title: sessionTitle,
       prior_session_id: resolvedPrior,
       prepared: true,
     });
     commitFoldedStatus(workspace, sessionDirectory);
   });
-  return id;
+  return sessionId;
 }
 
 export function activatePreparedSession(workspace: string, sessionId: string): void {
@@ -196,16 +204,15 @@ export function activatePreparedSession(workspace: string, sessionId: string): v
 export function createAgentSession(workspace: string, role: string, task: string): string {
   const taskSummary = task.trim();
   if (!taskSummary) throw new ConfigurationError("Task summary must not be empty.");
-  const timestamp = utcStamp();
-  const sessionIdBase = `${timestamp}--agent--${sessionSlug(taskSummary, 48)}`;
   const sessionsDirectory = path.join(workspace, ".migent", "sessions");
-  const [sessionId, sessionDirectory] = createSessionDirectory(sessionsDirectory, sessionIdBase);
+  const [sessionId, sessionDirectory] = createUuidSessionDirectory(sessionsDirectory);
   const createdAt = utcNow();
   withSessionLock(sessionDirectory, () => {
     writeFileAtomic(
       path.join(sessionDirectory, "manifest.yaml"),
       `${[
         `session_id: ${sessionId}`,
+        `title: ${JSON.stringify(taskSummary)}`,
         "workflow_id: agent",
         `role: ${role}`,
         `task: ${JSON.stringify(taskSummary)}`,
@@ -216,6 +223,7 @@ export function createAgentSession(workspace: string, role: string, task: string
     appendSessionCreated(sessionDirectory, createdAt, {
       workflow_id: "agent",
       role,
+      title: taskSummary,
       task: taskSummary,
     });
     commitFoldedStatus(workspace, sessionDirectory);
@@ -326,13 +334,6 @@ function replaceManifestStatus(sessionDirectory: string, status: string): void {
   const pattern = /^status: \S+\s*$/m;
   if (!pattern.test(text)) return;
   writeFileAtomic(manifestPath, text.replace(pattern, `status: ${status}`));
-}
-
-function utcStamp(): string {
-  const iso = new Date().toISOString();
-  const [date, time] = iso.split("T");
-  const [hh, mm, ss] = (time ?? "").split(":");
-  return `${(date ?? "").replaceAll("-", "")}-${hh ?? ""}${mm ?? ""}${(ss ?? "").slice(0, 2)}`;
 }
 
 function exists(filePath: string): boolean {
