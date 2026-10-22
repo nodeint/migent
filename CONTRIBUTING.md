@@ -90,22 +90,32 @@ calls.
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs install, build, and test on Ubuntu, macOS, and
-Windows for every push to `main` and every pull request. Keep it green before tagging
-a release; the release workflow runs the same tests and stops on failure.
+Windows only for a push to `production`. It does not run on `main` or on pull
+requests. A release fast-forwards `production` to `main` and waits for that
+run before tagging. The release workflow runs the same tests for the tag and
+stops on failure.
 
 ## Releasing
 
 All four packages share one version and are released together.
 
-### 1. Bump, tag, push
+### 1. Fast-forward production, then bump, tag, push
 
 ```bash
+git fetch origin
+git push origin origin/main:production
+# wait until ci.yml succeeds for that commit
 pnpm -r exec npm pkg set version=0.2.0
 pnpm install
 git commit -am "Release 0.2.0"
 git tag v0.2.0
 git push origin main v0.2.0
 ```
+
+`production` must be an ancestor of `main`, or absent. That push creates the
+branch or fast-forwards it. Skip the push when `production` already points at
+`main` and CI has passed for that commit. The release commit is made after
+that run, on `main`. Pushing the tag is what publishes.
 
 The tag must equal every package version, or the workflow stops at its first
 check.
