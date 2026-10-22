@@ -18,6 +18,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Check the tag is on production
+        run: |
+          git fetch origin production
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/production; then
+            echo "::error::$GITHUB_REF_NAME is not on production; release from production after CI passes"
+            exit 1
+          fi
 
       - uses: pnpm/action-setup@v4
         with:

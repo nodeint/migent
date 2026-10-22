@@ -101,24 +101,32 @@ All four packages share one version and are released together.
 
 ### 1. Fast-forward production, then bump, tag, push
 
+Develop on `main`. `production` is the release branch: nobody commits to it
+except the release steps below.
+
 ```bash
 git fetch origin
-git push origin origin/main:production
+git push origin origin/main:refs/heads/production
 # wait until ci.yml succeeds for that commit
+git switch production && git merge --ff-only origin/production
 pnpm -r exec npm pkg set version=0.2.0
 pnpm install
-git commit -am "Release 0.2.0"
+git add CHANGELOG.md packages/*/package.json pnpm-lock.yaml
+git commit -m "Release 0.2.0"
 git tag v0.2.0
-git push origin main v0.2.0
+git push origin production production:main v0.2.0
+git switch main && git merge --ff-only origin/main
 ```
 
-`production` must be an ancestor of `main`, or absent. That push creates the
-branch or fast-forwards it. Skip the push when `production` already points at
-`main` and CI has passed for that commit. The release commit is made after
-that run, on `main`. Pushing the tag is what publishes.
+`production` must be an ancestor of `main`, or absent. That first push creates
+the branch or fast-forwards it. Skip it when `production` already points at
+`main` and CI has passed for that commit. The release commit and the tag are
+made on `production`, after that run. The final push also fast-forwards `main`
+to the release commit, so the two branches match. Pushing the tag is what
+publishes.
 
 The tag must equal every package version, or the workflow stops at its first
-check.
+check. It must also be on `production`, or the workflow stops at its second.
 
 ### 2. CI stages the packages
 

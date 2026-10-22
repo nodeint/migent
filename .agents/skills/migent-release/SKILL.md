@@ -2,9 +2,9 @@
 name: migent-release
 description: >
   Release Migent. Fast-forward production to main, wait for CI on that branch,
-  then update CHANGELOG.md and keep five versions there, bump the four
-  workspace packages to one version, commit "Release X.Y.Z", and create
-  lightweight tag vX.Y.Z. Push the tag only when the user asks, then attach
+  then, on production, update CHANGELOG.md and keep five versions there, bump
+  the four workspace packages to one version, commit "Release X.Y.Z", and
+  create lightweight tag vX.Y.Z. Push the tag only when the user asks, then attach
   that changelog to the GitHub Release for the tag. Use when the user says
   release, tag a version, push the release tag, or attach the changelog to the
   tag, including "release phiên bản", "tag", and "push tag". Use when the user
@@ -30,6 +30,9 @@ wait for a yes.
 
 Stop when the working tree is dirty. The release commit does not exist yet.
 
+The release runs on `production`. The release commit and the tag are made
+there, never on `main`.
+
 ## Production CI
 
 `.github/workflows/ci.yml` runs only on a push to `production`. Do this before
@@ -39,7 +42,7 @@ The release candidate is `origin/main`. Fetch, then stop unless `HEAD` is that
 commit. Stop unless that commit's `.github/workflows/ci.yml` triggers on a
 push to `production`.
 
-`production` is the CI branch. Update it from `origin/main` only as a
+`production` is the release branch and the CI branch. Update it from `origin/main` only as a
 fast-forward. Create it with the same push when it is absent.
 
 ```bash
@@ -61,11 +64,20 @@ gh run list --branch production --workflow ci.yml --commit <sha> \
 gh run watch <databaseId> --exit-status
 ```
 
-`<sha>` is `origin/main`. After the run succeeds, stop if `HEAD` is no longer
-that commit. The release commit's parent is that commit.
+`<sha>` is `origin/main`. After the run succeeds, switch to `production` and
+fast-forward it to `origin/production`. Stop unless its `HEAD` is `<sha>`. Do the
+changelog, the bump, the commit, and the tag on `production`. The release
+commit's parent is `<sha>`.
 
-`release.yml` runs the same tests on the tag and stops on failure. It does
-not replace this wait.
+```bash
+git switch production && git merge --ff-only origin/production
+```
+
+Create the local `production` branch from `origin/production` when it is absent.
+
+`release.yml` runs the same tests on the tag and stops on failure. It also
+stops when the tagged commit is not on `origin/production`. It does not
+replace this wait.
 
 ## Changelog
 
@@ -125,12 +137,13 @@ Stop after the commit and the tag. Pushing publishes.
 
 ## Push
 
-Pushing the tag publishes. Push it only when the user asks. Push `main` and
-the tag together. Leave `production` at the commit CI already passed. The
-next release fast-forwards it.
+Pushing the tag publishes. Push it only when the user asks. Push `production`,
+the tag, and a fast-forward of `main` to the release commit together, so both
+branches match. Then fast-forward the local `main`.
 
 ```bash
-git push origin main vX.Y.Z
+git push origin production production:main vX.Y.Z
+git switch main && git merge --ff-only origin/main
 ```
 
 Watch `.github/workflows/release.yml` until that run finishes. The workflow
