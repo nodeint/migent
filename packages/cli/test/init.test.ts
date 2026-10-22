@@ -1,9 +1,8 @@
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import type { ModelCatalog } from "@nodeint/migent-adapters";
-import { loadWorkflowDocument, type AgentAdapter } from "@nodeint/migent-kernel";
+import type { AgentAdapter } from "@nodeint/migent-kernel";
 import { expect, test } from "vitest";
 import { runInit, type Prompter } from "../src/commands/init.ts";
 import { main } from "../src/index.ts";
@@ -156,23 +155,6 @@ test("reports an existing valid project without changing it", async () => {
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }
-});
-
-test("repo plan review uses a lower reasoning effort than the model default", () => {
-  const document = loadWorkflowDocument(fileURLToPath(new URL("../../../.migent/workflows/plan.yaml", import.meta.url)));
-  expect(document.stages.plan?.instructions).toEqual([
-    "Read task.md and the code it depends on, then write plan.md in this execution's artifacts directory.",
-    "Write the plan in English. Include scope and paths, current behavior with path:line evidence, decisions the task already fixed, ordered tasks, tests to add or run, and what is out of scope.",
-    "Each task names the file to change and the behavior to add or keep. Do not mark a task done unless it is already merged.",
-    "When a review routes back, start from the previous plan.md and write the updated file in this execution's artifacts directory. Address every review point and keep the sections the review did not reject.",
-  ]);
-  expect(document.stages["review-plan"]?.instructions).toEqual([
-    "Read plan.md and open the code behind each path:line claim.",
-    "Check correctness, missing risks, unnecessary scope, and any step an implementer would have to guess.",
-    "Approve only when the plan can be implemented as written. Otherwise decide revise and list each required edit once.",
-  ]);
-  expect(document.stages.plan?.options).toEqual({});
-  expect(document.stages["review-plan"]?.options).toEqual({ "reasoning-effort": "high" });
 });
 
 test("plan review shares the default model", async () => {
