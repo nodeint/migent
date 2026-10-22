@@ -44,6 +44,7 @@ export class StageDispatchResult {
     readonly failureKind = "",
     readonly resetAt = "",
     readonly provider = "",
+    readonly executionStatus = "",
   ) {}
 
   toJson(): Record<string, unknown> {
@@ -184,5 +185,6 @@ function resultFromRun(result: RunResult, sessionId: string): StageDispatchResul
     result.failure_kind || "",
     result.reset_at || "",
     result.provider || "",
+    result.execution_status || "",
   );
 }

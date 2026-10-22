@@ -364,7 +364,10 @@ async function executeLocked(
           const outcome =
             result.failure_reason === VERIFY_FAILED
               ? "verify_failed"
-              : result.outcome_status || (result.failure_reason ? "failed" : "finished");
+              : result.outcome_status ||
+                (result.failure_reason || result.failure_kind || result.execution_status === "failed"
+                  ? "failed"
+                  : "finished");
           log(
             stageFinishLine(
               workspace,
@@ -1245,7 +1248,9 @@ async function dispatchExecuteStage(
       );
     },
   );
-  const outcome = result.outcomeStatus || (result.failureReason ? "failed" : "finished");
+  const outcome =
+    result.outcomeStatus ||
+    (result.failureReason || result.failureKind || result.executionStatus === "failed" ? "failed" : "finished");
   log(stageFinishLine(workspace, sessionId, stageId, result.executionId, outcome, result.outcomeDecision));
   return result.toJson();
 }

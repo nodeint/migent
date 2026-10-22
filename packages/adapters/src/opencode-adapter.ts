@@ -92,6 +92,20 @@ function errorString(payload: Record<string, unknown>): string {
   return "opencode reported an error.";
 }
 
+/** Reads "exceeded the 5-hour usage quota … reset at 2026-10-22 18:43:08 +0800 CST". */
+function quotaFromMessage(message: string): FailureClassification | null {
+  if (!/exceeded[^.]*quota/i.test(message)) return null;
+  const window = /(\d+)-hour/i.exec(message);
+  const reset = /(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}) ([+-]\d{2})(\d{2})/.exec(message);
+  const instant = reset === null ? NaN : Date.parse(`${reset[1]}T${reset[2]}${reset[3]}:${reset[4]}`);
+  return {
+    kind: "quota",
+    message,
+    resetAt: Number.isNaN(instant) ? null : new Date(instant).toISOString(),
+    window: window === null ? null : `${window[1]}h`,
+  };
+}
+
 function lookup(source: unknown, path: readonly string[]): unknown {
   let value = source;
   for (const key of path) {
@@ -205,7 +219,7 @@ export class OpencodeAdapter implements AgentAdapter {
     for (const payload of events(stdout)) {
       if (payload.type === "error") errorMessage = errorString(payload);
     }
-    if (errorMessage !== null) return { kind: "provider", message: errorMessage };
+    if (errorMessage !== null) return quotaFromMessage(errorMessage) ?? { kind: "provider", message: errorMessage };
     if (exitCode === 0) return null;
     const [text] = this.parseResponse(stdout, "");
     return { kind: "provider", message: text.trim() || `CLI exited with code ${exitCode}.` };

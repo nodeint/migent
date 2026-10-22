@@ -52,3 +52,14 @@ test("opencode classifies an error event as provider, even at exit 0", () => {
   expect(adapter.classifyFailure('{"type":"step_start"}', 0)).toBeNull();
   expect(adapter.classifyFailure("provider said no", 2)?.kind).toBe("provider");
 });
+
+test("opencode classifies a usage quota error as quota with its reset instant", () => {
+  const message =
+    "You have exceeded the 5-hour usage quota. It will reset at 2026-10-22 18:43:08 +0800 CST. Request id: 1";
+  expect(new OpencodeAdapter().classifyFailure(JSON.stringify({ type: "error", message }), 1)).toEqual({
+    kind: "quota",
+    message,
+    resetAt: "2026-10-22T10:43:08.000Z",
+    window: "5h",
+  });
+});

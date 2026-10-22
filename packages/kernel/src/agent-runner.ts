@@ -44,6 +44,8 @@ export interface RunResult {
   /** UTC ISO instant for a quota failure. Empty otherwise. */
   reset_at: string;
   provider: string;
+  /** Final status of this execution, e.g. `failed` when the provider exited non-zero without a classified failure. */
+  execution_status?: string;
 }
 
 export interface RunRequest {
@@ -585,6 +587,7 @@ export class AgentToolRunner {
       failure_kind: classification?.kind ?? "",
       reset_at: classification?.kind === "quota" && classification.resetAt ? classification.resetAt : "",
       provider: eventReporter.provider,
+      execution_status: record.status,
     };
   }
 
