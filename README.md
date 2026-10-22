@@ -1,7 +1,7 @@
 # Migent
 
 <p align="center">
-  <img src="assets/stylized-m.svg" alt="Migent logo" width="150" /><br>
+  <img src="https://raw.githubusercontent.com/nodeint/migent/main/assets/stylized-m.svg" alt="Migent logo" width="150" /><br>
   <strong>Autonomous, multi-stage engineering pipelines for your coding agents.</strong><br>
   Repeatable workflows. Multi-agent orchestration. Native CLI execution. Full observability.
 </p>
