@@ -12,6 +12,8 @@ export interface StageTarget {
   provider: string;
   model: string;
   options: Record<string, string>;
+  /** CLI client id the provider should drive this model with. Absent means the provider's own. */
+  client?: string;
 }
 
 export interface ModelOverride {
@@ -24,6 +26,7 @@ const stageTargetSchema = z.object({
   provider: z.string(),
   model: z.string(),
   options: z.record(z.string(), z.string()),
+  client: z.string().optional(),
 });
 
 const mappingSchema = z.record(z.string(), z.unknown());
@@ -82,7 +85,7 @@ export function resolveStageSpec(
     modelField,
     options: stage.options,
   });
-  return stageTarget(declared.provider, declared.model, mergeOptions(declared.options, options));
+  return stageTarget(declared.provider, declared.model, mergeOptions(declared.options, options), declared.client);
 }
 
 export function resolveRoleTarget(
@@ -112,6 +115,7 @@ export function loadModelTarget(config: Record<string, unknown>, modelName: stri
     requiredString(modelConfig.provider, `models.${modelName}.provider`),
     requiredString(modelConfig.model, `models.${modelName}.model`),
     readOptions(modelConfig.options, `models.${modelName}.options`),
+    optionalString(modelConfig.client, `models.${modelName}.client`),
   );
 }
 
@@ -131,7 +135,12 @@ function resolveRoleCascade(
   const resolvedName = requiredString(named === null || named === "" ? role.default_model : named, modelField);
   const target = loadModelTarget(config, resolvedName);
   const roleOptions = readOptions(role.options, `roles.${roleKey}.options`);
-  return stageTarget(target.provider, target.model, mergeOptions(target.options, roleOptions, args?.options));
+  return stageTarget(
+    target.provider,
+    target.model,
+    mergeOptions(target.options, roleOptions, args?.options),
+    target.client,
+  );
 }
 
 /** Absent or null instructions are an empty list. A non-list is a configuration error. */
@@ -153,6 +162,10 @@ function requiredString(value: unknown, field: string): string {
     throw new ConfigurationError(`Missing or invalid ${field}.`);
   }
   return value.trim();
+}
+
+function optionalString(value: unknown, field: string): string | undefined {
+  return value == null ? undefined : requiredString(value, field);
 }
 
 function stringItems(raw: unknown, field: string): string[] {
@@ -177,8 +190,13 @@ function mergeOptions(
   return merged;
 }
 
-function stageTarget(provider: string, model: string, options: Record<string, string>): StageTarget {
-  return stageTargetSchema.parse({ provider, model, options });
+function stageTarget(
+  provider: string,
+  model: string,
+  options: Record<string, string>,
+  client?: string,
+): StageTarget {
+  return stageTargetSchema.parse(client === undefined ? { provider, model, options } : { provider, model, options, client });
 }
 
 function normalizeOverride(override?: ModelOverride): {

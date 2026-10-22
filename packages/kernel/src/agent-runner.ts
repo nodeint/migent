@@ -51,6 +51,8 @@ export interface RunResult {
 export interface RunRequest {
   provider: string;
   model: string;
+  /** CLI client id to drive the model with. Absent means the provider's own. */
+  client?: string | null;
   prompt: string;
   workspace: string;
   sessionId?: string | null;
@@ -89,11 +91,12 @@ export class AgentToolRunner {
       throw new Error("Execution order must be at least 1.");
     }
     const providerKey = request.provider.toLowerCase();
-    const provider = this.providers[providerKey];
-    if (provider === undefined) {
+    const base = this.providers[providerKey];
+    if (base === undefined) {
       const supported = Object.keys(this.providers).sort().join(", ");
       throw new Error(`Unsupported CLI provider: ${request.provider}. Supported: ${supported}`);
     }
+    const provider = withClient(base, request.client ?? null);
     const resolvedOptions = { ...(request.options ?? {}) };
     provider.validateOptions(resolvedOptions);
     const profile = profileOptions(provider, resolvedOptions);
@@ -709,6 +712,12 @@ function loadRunStage(store: SessionStore, sessionId: string, stageId: string): 
     if (error instanceof ConfigurationError) return null;
     throw error;
   }
+}
+
+function withClient(provider: Provider, client: string | null): Provider {
+  if (client === null) return provider;
+  if (provider.withClient === undefined) throw new Error(`Provider ${provider.command} cannot switch CLI client.`);
+  return provider.withClient(client) as Provider;
 }
 
 function profileOptions(provider: Provider, options: Record<string, string>): Record<string, string> {

@@ -4,6 +4,8 @@ import type { CommandSpec } from "./command-executor.js";
 export interface ProviderInfo {
   readonly command: string;
   validateOptions(options: Readonly<Record<string, string>>): void;
+  /** The same provider driving another CLI client, named by its id. Throws on an unknown id. */
+  withClient?(clientId: string): ProviderInfo;
 }
 
 export interface ProviderOption {

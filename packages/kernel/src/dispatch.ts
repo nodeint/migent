@@ -99,6 +99,7 @@ export async function dispatchNamedStage(
   const result = await (runner ?? new AgentToolRunner()).run({
     provider: target.provider,
     model: target.model,
+    client: target.client ?? null,
     options: { ...target.options },
     prompt: request.prompt,
     workspace,

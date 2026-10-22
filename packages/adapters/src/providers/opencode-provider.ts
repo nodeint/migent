@@ -1,11 +1,9 @@
-import type { CliClient } from "@nodeint/migent-kernel";
-import { ClientProvider } from "./client-provider.js";
-import { OpencodeClient } from "../clients/opencode-client.js";
+import { ProviderBase } from "./client-provider.js";
 
-export class OpencodeProvider extends ClientProvider {
+export class OpencodeProvider extends ProviderBase {
   readonly displayName = "OpenCode";
 
-  constructor(client: CliClient = new OpencodeClient()) {
-    super(client);
+  constructor(clientId: string = "opencode") {
+    super(clientId);
   }
 }

@@ -122,6 +122,14 @@ function checkConfig(
     if (!Object.hasOwn(executableByProvider, target.provider)) {
       executableByProvider[target.provider] = provider.command;
     }
+    if (target.client !== undefined) {
+      try {
+        if (provider.withClient === undefined) throw new Error(`${target.provider} cannot switch CLI client.`);
+        provider.withClient(target.client);
+      } catch (error) {
+        add(problems, `models.${modelName}.client is not supported: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
     rejectOptions(problems, `models.${modelName}.options`, provider, target.options);
   }
 

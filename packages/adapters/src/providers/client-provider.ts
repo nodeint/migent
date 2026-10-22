@@ -10,7 +10,32 @@ import type {
 } from "@nodeint/migent-kernel";
 import type { CommandSpec } from "@nodeint/migent-kernel";
 import { ModelCatalog } from "../catalog.js";
+import { AgyClient } from "../clients/agy-client.js";
+import { ClaudeCodeClient } from "../clients/claude-code-client.js";
+import { CodexClient } from "../clients/codex-client.js";
+import { GrokClient } from "../clients/grok-client.js";
 import { isRecord } from "../clients/json.js";
+import { OpencodeClient } from "../clients/opencode-client.js";
+
+const clientFactories: Record<string, () => CliClient> = {
+  agy: () => new AgyClient(),
+  "claude-code": () => new ClaudeCodeClient(),
+  codex: () => new CodexClient(),
+  grok: () => new GrokClient(),
+  opencode: () => new OpencodeClient(),
+};
+
+export function clientIds(): string[] {
+  return Object.keys(clientFactories).sort();
+}
+
+export function createClient(clientId: string): CliClient {
+  const factory = Object.hasOwn(clientFactories, clientId) ? clientFactories[clientId] : undefined;
+  if (factory === undefined) {
+    throw new Error(`Unknown CLI client: ${clientId}. Supported: ${clientIds().join(", ")}`);
+  }
+  return factory();
+}
 
 type MigrationBody = Record<string, unknown>;
 export type Migration = (entry: MigrationBody) => void;
@@ -48,12 +73,20 @@ export function moveThinkingTo(option: string): Migration {
  * own policy (usage deltas, failure kinds, defaults). A subclass adds only its
  * policy; anything that reads the CLI's output belongs in the client.
  */
-export abstract class ClientProvider implements Provider {
+export abstract class ProviderBase implements Provider {
   abstract readonly displayName: string;
+  protected readonly client: CliClient;
   private parseEvent: (line: string) => Record<string, unknown> | null;
 
-  constructor(protected readonly client: CliClient) {
-    this.parseEvent = client.createEventParser();
+  constructor(readonly clientId: string) {
+    this.client = createClient(clientId);
+    this.parseEvent = this.client.createEventParser();
+  }
+
+  /** The same provider policy over another CLI client. */
+  withClient(clientId: string): Provider {
+    if (clientId === this.clientId) return this;
+    return new (this.constructor as new (clientId: string) => Provider)(clientId);
   }
 
   get command(): string {

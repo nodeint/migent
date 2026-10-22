@@ -51,7 +51,7 @@ export function writeWorkflowFreeze(
   for (const stage of Object.values(workflow.stages)) {
     if (!isRoleStage(stage)) continue;
     const target = resolveStageSpec(config, stage);
-    targets[stage.id] = { provider: target.provider, model: target.model, options: { ...target.options } };
+    targets[stage.id] = copyTarget(target);
   }
   const sourceSha256 = sourceFileHash(workflow.source);
   const filePath = path.join(sessionDirectory, WORKFLOW_FREEZE_FILE);
@@ -125,8 +125,14 @@ export function frozenStageTarget(
   }
   const target = freeze.targets[stageId];
   if (target === undefined) throw new ConfigurationError(`Stage not found: ${stageId}`);
-  if (options === null) return { provider: target.provider, model: target.model, options: { ...target.options } };
-  return { provider: target.provider, model: target.model, options: { ...target.options, ...options } };
+  if (options === null) return copyTarget(target);
+  return copyTarget(target, { ...target.options, ...options });
+}
+
+function copyTarget(target: StageTarget, options: Record<string, string> = target.options): StageTarget {
+  const copy: StageTarget = { provider: target.provider, model: target.model, options: { ...options } };
+  if (target.client !== undefined) copy.client = target.client;
+  return copy;
 }
 
 export function frozenRoleInstructions(freeze: WorkflowFreeze, role: string): string[] {
@@ -234,7 +240,10 @@ function note(sessionId: string, detail: string): void {
 
 function sameTarget(frozen: StageTarget, live: StageTarget | null): boolean {
   if (live === null) return false;
-  return frozen.provider === live.provider && frozen.model === live.model && sameMap(frozen.options, live.options);
+  return frozen.provider === live.provider &&
+    frozen.model === live.model &&
+    frozen.client === live.client &&
+    sameMap(frozen.options, live.options);
 }
 
 function sameMap(left: Record<string, string>, right: Record<string, string>): boolean {
@@ -351,6 +360,7 @@ function readTargets(value: unknown, filePath: string): Record<string, StageTarg
       model: raw.model,
       options: readOptionStrings(raw.options, filePath, stageId),
     };
+    if (typeof raw.client === "string" && raw.client.trim() !== "") targets[stageId].client = raw.client;
   }
   return targets;
 }

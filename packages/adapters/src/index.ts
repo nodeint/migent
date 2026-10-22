@@ -8,6 +8,7 @@ import { OpencodeProvider } from "./providers/opencode-provider.js";
 export const ADAPTERS_PLACEHOLDER = `providers:${KERNEL_PLACEHOLDER}`;
 
 export { ModelCatalog } from "./catalog.js";
+export { clientIds, createClient } from "./providers/client-provider.js";
 export { AgyClient } from "./clients/agy-client.js";
 export { AgyProvider } from "./providers/agy-provider.js";
 export { ClaudeCodeClient } from "./clients/claude-code-client.js";
