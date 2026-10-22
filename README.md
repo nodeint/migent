@@ -2,252 +2,339 @@
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/nodeint/migent/main/assets/stylized-m.svg" alt="Migent logo" width="150" /><br>
-  <strong>Autonomous, multi-stage engineering pipelines for your coding agents.</strong><br>
-  Repeatable workflows. Multi-agent orchestration. Native CLI execution. Full observability.
+  <strong>Compose AI coding agents into repeatable engineering workflows.
+</strong>
 </p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@nodeint/migent"><img src="https://img.shields.io/npm/v/@nodeint/migent.svg?style=flat-square" alt="npm version" /></a>
   <a href="https://github.com/nodeint/migent/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="License: MIT" /></a>
   <a href="https://nodejs.org"><img src="https://img.shields.io/badge/node-%3E%3D22.0.0-brightgreen.svg?style=flat-square" alt="Node.js 22+" /></a>
-  <img src="https://img.shields.io/badge/agents-Multi--Agent_Ready-orange.svg?style=flat-square" alt="Multi-Agent Ready" />
 </p>
 
 ---
 
-Migent coordinates the coding-agent CLIs you already have into **reusable, verified engineering pipelines**. Instead of juggling tabs, manually copying plans, and pasting test errors back and forth, you define the pipeline as code. Migent orchestrates the handoffs, runs strict local verification gates, handles review loops, and captures deep execution metrics.
 
-### 🌟 Why Migent?
+Migent connects coding-agent CLIs from different providers through explicit,
+repository-defined workflows. One model can plan, another can review, and the
+first can revise—while Migent carries artifacts between them and remembers
+where the process is.
 
-- 🔁 **Automate Recurring Tasks (Workflows & Stages):** Package routine engineering work—bug fixes, refactors, migrations, test authoring—into structured, multi-stage pipelines with deterministic verification gates.
-- 🤖 **Multi-Agent Orchestration & Flexibility:** Assign the best model to each role (`claude` for planning, `codex` for implementation, `grok` for independent review). Run directly through your installed agent CLIs without custom wrappers or API lock-in.
-- 📊 **Observability & Continuous Improvement:** Live-stream running pipelines with `session follow`, and collect token spend, wall-time, and revision counts with `session metrics` to measure and refine your team's workflows.
+## Contents
 
----
+- [Migent](#migent)
+  - [Contents](#contents)
+  - [Why Migent?](#why-migent)
+  - [Supported CLIs](#supported-clis)
+  - [Quickstart](#quickstart)
+    - [Install](#install)
+    - [Install agent skill](#install-agent-skill)
+    - [Create a project](#create-a-project)
+      - [Option 1: Ask your AI agent](#option-1-ask-your-ai-agent)
+      - [Option 2: Run `migent init`](#option-2-run-migent-init)
+    - [Run](#run)
+  - [Workflow as code](#workflow-as-code)
+    - [How decisions work](#how-decisions-work)
+    - [Beyond planning: code and verify](#beyond-planning-code-and-verify)
+  - [Concepts](#concepts)
+    - [Artifact handoff vs session resume](#artifact-handoff-vs-session-resume)
+    - [Built-in safeguards](#built-in-safeguards)
+  - [Current scope](#current-scope)
+  - [Documentation](#documentation)
+  - [Development](#development)
+  - [License](#license)
 
-## Quickstart
+## Why Migent?
 
-### Option A: Agent-Assisted via `/migent` (Recommended)
+Calling two agent CLIs from a shell script is easy. Reliably coordinating them
+across reviews, revisions, failures, and resumed sessions is not.
 
-Let your coding agent handle the initial configuration using Migent's official Skill.
+Migent is built around three ideas:
 
-```bash
-# 1. Install Migent globally
-npm install -g @nodeint/migent
+- **Use models for what they do best.** Assign each role to a provider and model
+  suited to the work, rather than asking one agent to do everything.
+- **Treat AI engineering process as code.** Keep stages, handoffs, review gates,
+  and revision policies in version control beside the project they govern.
+- **Keep orchestration explicit.** The team defines the process; models execute
+  roles inside it. A supervisor model does not invent or dynamically control
+  the workflow.
 
-# 2. Install the Migent Skill in your repo
-migent skill install
-```
+**Models describe execution. Roles describe intent.** Changing the model behind
+a role does not require rewriting the workflow.
 
-Now open your favorite coding agent CLI (such as Google Antigravity `agy`, Anthropic `claude`, Cursor, or Windsurf) in this repository and type:
-
-```text
-/migent Set up a workflow for this repo: Claude for planning, Codex for coding, Grok for review. Then run a pipeline to resolve issue #42.
-```
-
-> **How it works:** `migent skill install` creates `.agents/skills/migent/` containing Migent's schema rules and CLI definitions. Using the `/migent` slash command instructs your agent to inspect your repo, generate valid configuration files under `.migent/`, validate them with `migent doctor`, and launch the workflow.
-
----
-
-### Option B: Terminal CLI (Direct Control)
-
-Prefer setting it up yourself? Get started in three commands:
-
-```bash
-# 1. Initialize a workflow preset and validate environment
-migent init --preset plan
-migent doctor
-
-# 2. Run your engineering task
-migent session run --workflow plan --task "Implement JWT authentication with refresh tokens"
-
-# 3. Stream real-time events or inspect performance metrics
-migent session follow <session-id>
-migent session metrics <session-id> --json
-```
-
----
-
-## What Migent Solves
-
-| Without Migent | With Migent |
-| :--- | :--- |
-| **Manual handoffs:** Copying plans and pasting stack traces across conversations. | **Automated handoffs:** Upstream artifacts and diffs pass automatically into downstream stages. |
-| **Single-agent bottleneck:** One model handles planning, coding, and review, accumulating context bloat. | **Specialized roles:** Multi-agent pipeline with dedicated models per role (e.g., Planner $\rightarrow$ Coder $\rightarrow$ Reviewer). |
-| **Vendor lock-in & wrappers:** Restricted to one provider or requiring custom API providers. | **Native CLI execution:** Drives your installed agent CLIs (`agy`, `claude`, `codex`, `grok`) directly in your workspace. |
-| **Blind trust:** Agents claim "all tests pass" without actually running project commands. | **Verification gates:** Real local checks (`pnpm test`, `pytest`, `cargo test`) must succeed before advancing. |
-| **Fragile one-off prompts:** Team members execute tasks with inconsistent, ad-hoc instructions. | **Process as code:** Workflows live in Git (`.migent/workflows/`), making best practices versioned and repeatable. |
-| **No execution visibility:** No record of how long tasks took, why checks failed, or how many retries occurred. | **Telemetry & Metrics:** Append-only event logs, live streaming, and full JSON metrics for duration, retries, and token cost. |
-
----
-
-## How It Works
-
-A typical software engineering workflow breaks down into structured, verifiable stages:
+**Common workflow model, native provider capabilities.** Migent coordinates
+the process, while each provider CLI remains responsible for authentication,
+agent execution, and its own tools and options.
 
 ```mermaid
 flowchart TD
-    Task["Task: Fix OAuth Callback"] --> Plan["1. Plan\n(Claude)"]
-    Plan -->|"artifact: plan.md"| Implement["2. Implement\n(Codex)"]
-    Implement --> Verify{"3. Verification Gate\n(pnpm test)"}
-    Verify -->|"Fails (retry <= max)"| Implement
-    Verify -->|"Retry limit reached"| Blocked["Stop for inspection"]
-    Verify -->|"Passes"| Review["4. Review\n(Grok)"]
-    Review -->|"Revise + feedback"| Implement
-    Review -->|"Approved"| Done["Workflow Complete"]
+    A[Task] --> B[Planner - Codex]
+    B -->|plan.md| C[Reviewer - Grok]
+    C -->|revise| B
+    C -->|approved| D[Complete]
 ```
 
-1. **Plan:** A high-reasoning model analyzes the codebase and generates an actionable `plan.md`.
-2. **Implement:** A coding model applies changes to the working tree according to the plan.
-3. **Verify Gate:** Migent runs your repository's native verification commands (tests, typecheck, lint).
-4. **Review & Revision Loop:** An independent reviewer evaluates the git diff against the plan. If changes are requested, feedback routes back to the implementation stage.
+## Supported CLIs
 
----
+Migent drives each provider through its headless CLI. Install and sign in to the
+ones your configuration names.
 
-## Core Capabilities
+| Provider           | CLI          |
+| -------------------| -------------|
+| Google Antigravity | `agy`        |
+| Claude             | `claude`     |
+| Codex              | `codex`      |
+| Grok               | `grok`       |
+| BytePlus           | `opencode`   |
+| OpenCode           | `opencode`   |
 
-### 1. Repeatable Workflows as Code
-Define stages, dependencies, artifacts, and routing decisions in declarative YAML stored under `.migent/workflows/`. Version control your engineering processes alongside your application code.
+## Quickstart
 
-### 2. Multi-Agent Orchestration & BYO CLIs
-Decouple **what** a stage does from **which model** executes it. Migent drives the agent CLIs already installed and authenticated on your machine:
+Requires Node.js 22+ (macOS, Linux, or Windows) and the provider CLIs your
+config uses, already signed in.
 
-| Provider | CLI | Typical Role in Pipeline |
-| :--- | :--- | :--- |
-| **Anthropic Claude** | `claude` | High-reasoning architecture planning & refactoring |
-| **Google Antigravity** | `agy` | Deep repository analysis, plan generation & review |
-| **OpenAI Codex** | `codex` | Fast, focused implementation & unit test authoring |
-| **xAI Grok** | `grok` | Independent logic review & edge case discovery |
-| **OpenCode** | `opencode` | Multi-vendor models behind one CLI, for any role |
-| **BytePlus ModelArk** | none (set `client` per model) | BytePlus models run through another installed CLI, e.g. `opencode` |
+### Install
 
-Switch models anytime in `.migent/config.yaml` without touching your workflow logic.
-
-### 3. Observability, Telemetry & Continuous Improvement
-Migent treats engineering runs as first-class observable processes:
-- **Live Monitoring:** `migent session follow <session-id>` streams execution events, stage heartbeats, and runner turns in real time.
-- **Detailed Metrics:** `migent session metrics <session-id> --json` outputs execution wall-time, active runner seconds, verify durations, revision counts, and token usage.
-- **Continuous Refinement:** Use hard metrics from past sessions to optimize prompts, tune retry limits, and pick the most cost-effective models.
-- **Session Recovery:** When rate limits or network issues strike, `migent session continue <session-id>` resumes right where the pipeline stopped.
-
----
-
-## Configuration Example
-
-Migent separates model/role assignments from pipeline control flow.
-
-### 1. Configure Models and Roles (`.migent/config.yaml`)
-
-```yaml
-schema_version: 2
-
-models:
-  planning-model:
-    provider: claude
-    model: opus
-
-  coding-model:
-    provider: codex
-    model: default
-
-  review-model:
-    provider: grok
-    model: grok-4.7
-
-roles:
-  planner:
-    default_model: planning-model
-    instructions:
-      - Analyze the repository and create an actionable plan with file paths.
-
-  coder:
-    default_model: coding-model
-    instructions:
-      - Implement changes according to the plan and write regression tests.
-
-  reviewer:
-    default_model: review-model
-    instructions:
-      - Review the git diff against the plan for correctness, security, and edge cases.
+```bash
+npm install -g @nodeint/migent
+migent --version
 ```
 
-### 2. Define the Pipeline (`.migent/workflows/feature.yaml`)
+Upgrade with `npm install -g @nodeint/migent@latest`.
+
+### Install agent skill
+
+From your project repository:
+
+```bash
+migent skill install
+```
+
+Installs `.agents/skills/migent/` so your AI agent knows how to configure, run,
+and inspect Migent workflows.
+
+### Create a project
+
+Choose one:
+
+#### Option 1: Ask your AI agent
+
+Paste this prompt into your agent (Claude Code, Antigravity, Cursor, etc.):
+
+```text
+Load skill migent: Read and follow .agents/skills/migent/SKILL.md.
+
+Instructions: Initialize Migent for this project using the installed provider CLIs, set up .migent/config.yaml and .migent/workflows/plan.yaml, and run `migent doctor` to verify.
+```
+
+#### Option 2: Run `migent init`
+
+```bash
+migent init
+```
+
+Follow the interactive prompts to select providers and models.
+
+Both options generate:
+
+```text
+.migent/
+├── config.yaml        # models and roles
+├── .gitignore         # keeps sessions/ untracked
+└── workflows/
+    └── plan.yaml      # plan-and-review workflow
+```
+
+Commit `config.yaml` and `workflows/`.
+
+### Run
+
+Start a workflow from your project directory:
+
+```bash
+$ migent session run --workflow plan --task "Plan the account settings redesign"
+
+stage plan · attempt 1 · 10:15:30 · codex/gpt-5 · complete.
+stage review-plan · attempt 1 · 10:16:15 · grok/grok-4 · complete decision=revise.
+stage plan · attempt 2 · 10:17:00 · codex/gpt-5 · complete.
+stage review-plan · attempt 2 · 10:17:45 · grok/grok-4 · complete decision=approved.
+
+Session completed in 2m 15s.
+.migent/sessions/20261022-101530--wave-1/outputs/plan.md
+```
+
+Inspect sessions or resume a stopped run:
+
+```bash
+migent session list
+migent session continue <session-id>
+```
+
+## Workflow as code
+
+Workflows live in `.migent/workflows/` and models in `.migent/config.yaml`.
+
+A standard plan-and-review workflow:
 
 ```yaml
+# .migent/workflows/plan.yaml
 schema_version: 2
-id: feature
-
 stages:
   - id: plan
     role: planner
+    max_revisions: 3
+    instructions:
+      - Read task.md and write plan.md into artifacts.
     produces:
       artifact: plan.md
 
-  - id: implement
-    role: coder
-    depends_on: [plan]
-    verify:
-      - pnpm test
-    max_verify: 3
-
-  - id: review
+  - id: review-plan
     role: reviewer
-    depends_on: [implement]
+    depends_on: [plan]
+    instructions:
+      - Verify plan.md against the codebase.
+      - Approve only if implementation can proceed without ambiguity.
     decision:
       values: [approved, revise]
       routes:
         approved: complete
-        revise: implement
-
-outputs:
-  - name: plan
-    from_stage: plan
-    artifact: plan.md
+        revise: plan
 ```
 
----
+And the roles backed by your chosen provider CLIs:
 
-## CLI Cheatsheet
+```yaml
+# .migent/config.yaml
+schema_version: 2
+models:
+  codex-model:
+    provider: codex
+    model: gpt-5
+  grok-model:
+    provider: grok
+    model: grok-4
+    options:
+      reasoning-effort: high
 
-```bash
-# Setup & Health
-migent init --preset plan           # Initialize starter configuration
-migent doctor                      # Validate configuration, schemas, and CLI availability
-migent provider list               # List registered provider providers and their available models
-migent skill install               # Install the Migent Skill for coding agents (.agents/skills/migent/)
-
-# Execution
-migent session run --workflow <id> --task "<task>"   # Run a workflow
-migent session continue <session-id>                 # Resume an interrupted or blocked session
-
-# Monitoring & Telemetry
-migent session list                                  # List recorded sessions and statuses
-migent session follow <session-id>                   # Live-stream session events and progress
-migent session metrics <session-id> --json           # View token spend, duration, and retry metrics
-migent session show <session-id>                     # Inspect session state and artifact status
+roles:
+  planner:
+    default_model: codex-model
+  reviewer:
+    default_model: grok-model
 ```
 
----
+### How decisions work
+
+Migent enforces a clean, lightweight protocol. Stages communicate outcomes
+through standard RFC-style response headers injected into the prompt:
+
+```text
+status: complete
+decision: approved
+
+The implementation plan covers all requirements and test cases.
+```
+
+When a stage completes, Migent routes execution based on the `decision` header.
+Review prose remains human-readable feedback passed directly to the next stage.
+
+### Beyond planning: code and verify
+
+Stages are not limited to generating documents. A stage can modify repository files
+and declare automated `verify` commands:
+
+```yaml
+stages:
+  - id: implement
+    role: developer
+    instructions:
+      - Implement the approved plan.
+    verify:
+      - pnpm build
+      - pnpm test
+    max_verify: 3
+```
+
+Migent runs the verification commands in the workspace POSIX shell. If tests fail,
+Migent returns the command tail to the agent for an automated repair loop (up to
+`max_verify` attempts) before handing off to review.
+
+## Concepts
+
+A workflow connects stages through dependencies and explicit decision routes.
+
+- A **model** identifies a provider model and its execution options.
+- A **role** names a kind of work and selects its default model.
+- A **stage** assigns work to a role and may declare dependencies, an artifact,
+  a decision, or verification commands.
+- An **artifact** is a named file produced by a successful stage and stored with
+  the workflow session.
+- A **decision** selects the next route, including a route back for revision.
+- A **session** records executions, events, decisions, and artifacts so work can
+  be inspected or resumed.
+
+### Artifact handoff vs session resume
+
+- `depends_on: [stage]`: Makes the upstream stage's artifacts available to the
+  current stage while starting a fresh provider agent. Best for clean context
+  handoffs between different roles and models.
+- `session.resume_from: <stage>`: Continues the upstream stage's provider conversation
+  thread. Best when an agent needs to keep its conversation memory and tool history.
+
+### Built-in safeguards
+
+Engineering workflows have explicit cost and execution guardrails:
+
+- **Revision limits (`max_revisions`)**: Prevents infinite critique loops between
+  agents.
+- **Dispatch circuit breaker (`--max-dispatches`)**: Halts execution if a run
+  exceeds the configured dispatch limit (default 20).
+- **Verification bounds (`max_verify`, `verify_timeout`)**: Limits automated
+  test/repair attempts.
+- **Session metrics (`metrics.json`)**: Tracks tokens, turns, and cost per execution
+  and session.
+
+## Current scope
+
+Migent is a local, file-backed orchestration layer for provider CLIs. It does
+not replace their agent runtimes, and it does not hide their distinctive
+capabilities behind a lowest-common-denominator API.
+
+Today, Migent supports explicit stage routing, review loops, local session
+history, provider-session resume, prerequisite workflows, and standalone role
+execution. A machine-local registry service records workspaces
+so another tool can ask which projects exist.
+
+Workflows can be run directly from the command line, or driven autonomously by your
+coding agent when the project has the Migent skill installed.
 
 ## Documentation
 
-- [Writing Workflows](https://github.com/nodeint/migent/blob/main/docs/workflows.md) — Stages, dependencies, artifacts, and routing decisions.
-- [Providers and Model Configuration](https://github.com/nodeint/migent/blob/main/docs/providers.md) — Configuring CLIs, models, options, and fallback models.
-- [Sessions and State](https://github.com/nodeint/migent/blob/main/docs/sessions.md) — Manifests, append-only event logs, and recovery.
-- [CLI Reference](https://github.com/nodeint/migent/blob/main/docs/cli.md) — Full command catalog, flags, and JSON modes.
+- [Writing workflows](https://github.com/nodeint/migent/blob/main/docs/workflows.md)
+- [Providers and model configuration](https://github.com/nodeint/migent/blob/main/docs/providers.md)
+- [Sessions and workflow composition](https://github.com/nodeint/migent/blob/main/docs/sessions.md)
+- [CLI commands and execution controls](https://github.com/nodeint/migent/blob/main/docs/cli.md)
 
-## Contributing
+Run `migent <command> --help` for the exact command contract, output fields,
+and exit codes.
 
-Migent is built with TypeScript in a pnpm workspace:
+## Development
+
+The pnpm workspace contains four packages: the `@nodeint/migent` CLI and its
+internal libraries `@nodeint/migent-kernel`, `@nodeint/migent-adapters`, and
+`@nodeint/migent-registry`. The libraries have no stable API; depend on
+`@nodeint/migent`.
 
 ```bash
 pnpm install
 pnpm build
 pnpm test
+pnpm migent --help   # run the local build
 ```
 
-See [CONTRIBUTING.md](https://github.com/nodeint/migent/blob/main/CONTRIBUTING.md) for details.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for testing rules, platform notes, and
+the release process.
 
 ## License
 
-Migent is open source under the [MIT License](https://github.com/nodeint/migent/blob/main/LICENSE).
+Migent is licensed under the [MIT License](https://github.com/nodeint/migent/blob/main/LICENSE).
