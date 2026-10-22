@@ -18,7 +18,18 @@ function fakeCodexOutput(models: string[]): string {
 
 // claude: any string containing a version number like "1.2.3"
 function fakeClaudeOutput(): string {
-  return "claude 1.2.3";
+  return JSON.stringify({
+    type: "control_response",
+    response: {
+      subtype: "success",
+      request_id: "migent-models",
+      response: {
+        models: [
+          { value: "opus", resolvedModel: "claude-opus-5-5", supportedEffortLevels: ["low", "high"] },
+        ],
+      },
+    },
+  });
 }
 
 // grok: lines with * prefix and optional "(default)"
@@ -297,7 +308,15 @@ test("runCommand only receives each adapter's modelCatalogCommand argv", async (
     const codexCall = calledCommands.find((c) => c.argv[0] === "codex");
     expect(codexCall?.argv).toEqual(["codex", "debug", "models"]);
     const claudeCall = calledCommands.find((c) => c.argv[0] === "claude");
-    expect(claudeCall?.argv).toEqual(["claude", "--version"]);
+    expect(claudeCall?.argv).toEqual([
+      "claude",
+      "-p",
+      "--input-format",
+      "stream-json",
+      "--output-format",
+      "stream-json",
+      "--verbose",
+    ]);
     const grokCall = calledCommands.find((c) => c.argv[0] === "grok");
     expect(grokCall?.argv).toEqual(["grok", "models"]);
     const opencodeCall = calledCommands.find((c) => c.argv[0] === "opencode");

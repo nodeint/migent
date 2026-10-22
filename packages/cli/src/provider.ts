@@ -3,6 +3,8 @@ import { spawnProviderSync, type AgentAdapter, type ProviderOption } from "@node
 
 export interface CatalogAdapter extends AgentAdapter {
   modelCatalogCommand(): string[];
+  /** Written to the catalog command's stdin when the CLI reads its request there. */
+  modelCatalogInput?(): string;
   parseModelCatalog(stdout: string): ModelCatalog;
   optionValuesCommand(name: string, model: string): string[] | null;
   parseOptionValues(name: string, text: string, model?: string): readonly string[];
@@ -10,7 +12,7 @@ export interface CatalogAdapter extends AgentAdapter {
 }
 
 export type Which = (command: string) => string | null;
-export type RunCommand = (argv: string[]) => string | Promise<string>;
+export type RunCommand = (argv: string[], input?: string) => string | Promise<string>;
 
 export class ProviderCommandFailed extends Error {}
 
@@ -66,7 +68,7 @@ export async function loadCatalog(
   const catalogAdapter = asCatalog(adapter);
   let stdout: string;
   try {
-    stdout = await runCommand(catalogAdapter.modelCatalogCommand());
+    stdout = await runCommand(catalogAdapter.modelCatalogCommand(), catalogAdapter.modelCatalogInput?.());
   } catch (error) {
     if (error instanceof ProviderCommandFailed) throw error;
     const reason = error instanceof Error ? error.message : String(error);
@@ -153,10 +155,15 @@ export async function acceptedOptions(
   return stored;
 }
 
-export function runProviderCommand(argv: string[]): string {
+export function runProviderCommand(argv: string[], input?: string): string {
   const [command, ...args] = argv;
   if (command === undefined) throw new ProviderCommandFailed("Provider command is empty.");
-  const completed = spawnProviderSync(command, args, { encoding: "utf8", timeout: 60_000, windowsHide: true });
+  const completed = spawnProviderSync(command, args, {
+    encoding: "utf8",
+    timeout: 60_000,
+    windowsHide: true,
+    ...(input === undefined ? {} : { input }),
+  });
   if (completed.error) {
     throw new Error(completed.error.message);
   }

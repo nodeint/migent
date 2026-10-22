@@ -108,13 +108,29 @@ test("reports tool progress", () => {
   expect(adapter.parseProgressEvent("not json")).toBeNull();
 });
 
-test("lists aliases and effort levels", () => {
+test("lists models and effort levels from the initialize response", () => {
   const adapter = new ClaudeAdapter();
-  const catalog = adapter.parseModelCatalog("2.1.300 (Claude Code)\n");
-  expect(catalog.ids).toContain("opus");
-  expect(catalog.ids).toContain("claude-sonnet-5-5");
-  expect(catalog.valuesFor("opus", "effort")).toEqual(["low", "medium", "high", "xhigh", "max"]);
-  expect(adapter.modelCatalogCommand()).toEqual(["claude", "--version"]);
+  const response = JSON.stringify({
+    type: "control_response",
+    response: {
+      subtype: "success",
+      request_id: "migent-models",
+      response: {
+        models: [
+          { value: "default", resolvedModel: "claude-sonnet-5-5" },
+          { value: "opus", resolvedModel: "claude-opus-5-5", supportedEffortLevels: ["low", "max"] },
+          { value: "claude-haiku-4-5-20251001", resolvedModel: "claude-haiku-4-5-20251001" },
+        ],
+      },
+    },
+  });
+  const catalog = adapter.parseModelCatalog(`${response}\n`);
+  expect(catalog.ids).toEqual(["opus", "claude-opus-5-5", "claude-haiku-4-5-20251001"]);
+  expect(catalog.valuesFor("opus", "effort")).toEqual(["low", "max"]);
+  expect(catalog.valuesFor("claude-opus-5-5", "effort")).toEqual(["low", "max"]);
+  expect(catalog.valuesFor("claude-haiku-4-5-20251001", "effort")).toBeNull();
+  expect(adapter.modelCatalogCommand()).toContain("--input-format");
+  expect(JSON.parse(adapter.modelCatalogInput())).toMatchObject({ request: { subtype: "initialize" } });
   expect(() => adapter.parseModelCatalog("command not found")).toThrow(/command not found/);
 });
 

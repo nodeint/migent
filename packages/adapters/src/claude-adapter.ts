@@ -11,19 +11,13 @@ import type {
 import type { CommandSpec } from "@nodeint/migent-kernel";
 import { ModelCatalog } from "./catalog.js";
 
-// `claude` has no command that lists models, so the catalog is the documented
-// aliases plus the current full model ids.
-const CLAUDE_MODELS = [
-  "fable",
-  "opus",
-  "sonnet",
-  "haiku",
-  "claude-fable-5-1",
-  "claude-opus-5-5",
-  "claude-sonnet-5-5",
-  "claude-haiku-5-5",
-] as const;
-const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
+// `claude` has no models subcommand; the stream-json `initialize` control
+// request answers with the model list the CLI itself offers.
+const MODEL_CATALOG_REQUEST = JSON.stringify({
+  type: "control_request",
+  request_id: "migent-models",
+  request: { subtype: "initialize" },
+});
 const PERMISSION_MODES = [
   "acceptEdits",
   "auto",
@@ -173,31 +167,60 @@ export class ClaudeAdapter implements AgentAdapter {
   }
 
   modelCatalogCommand(): string[] {
-    return [this.command, "--version"];
+    return [
+      this.command,
+      "-p",
+      "--input-format",
+      "stream-json",
+      "--output-format",
+      "stream-json",
+      "--verbose",
+    ];
+  }
+
+  modelCatalogInput(): string {
+    return `${MODEL_CATALOG_REQUEST}\n`;
   }
 
   parseModelCatalog(stdout: string): ModelCatalog {
-    if (!/\d+\.\d+/.test(stdout)) {
-      const detail = compact(stdout);
-      throw new Error(detail || "claude did not report a version.");
+    let models: unknown[] | null = null;
+    for (const rawLine of stdout.split(/\r\n|\n|\r/)) {
+      const payload = parseJsonObject(rawLine);
+      if (payload?.type !== "control_response" || !isRecord(payload.response)) continue;
+      const body = payload.response.response;
+      if (isRecord(body) && Array.isArray(body.models)) models = body.models;
     }
-    return new ModelCatalog(
-      CLAUDE_MODELS,
-      null,
-      CLAUDE_MODELS.map((model) => [model, "effort", CLAUDE_EFFORTS] as const),
-    );
+    if (models === null) {
+      const detail = compact(stdout);
+      throw new Error(detail || "claude did not report its models.");
+    }
+    const ids: string[] = [];
+    const efforts: Array<readonly [string, string, readonly string[]]> = [];
+    for (const item of models) {
+      if (!isRecord(item) || typeof item.value !== "string" || item.value === "default") continue;
+      const levels = Array.isArray(item.supportedEffortLevels)
+        ? item.supportedEffortLevels.filter((level): level is string => typeof level === "string")
+        : [];
+      const resolved = typeof item.resolvedModel === "string" ? item.resolvedModel : null;
+      for (const id of new Set([item.value, resolved])) {
+        if (id === null || ids.includes(id)) continue;
+        ids.push(id);
+        if (levels.length > 0) efforts.push([id, "effort", levels]);
+      }
+    }
+    return new ModelCatalog(ids, null, efforts);
   }
 
   optionValuesCommand(name: string, model: string): string[] | null {
+    void name;
     void model;
-    if (name !== "effort") return null;
-    return this.modelCatalogCommand();
+    return null;
   }
 
   parseOptionValues(name: string, text: string, model: string): readonly string[] {
-    if (name !== "effort") throw new Error(`claude does not list values for ${name}.`);
     const values = this.parseModelCatalog(text).valuesFor(model, name);
-    return values ?? CLAUDE_EFFORTS;
+    if (values === null) throw new Error(`claude does not list ${name} values for ${model}.`);
+    return values;
   }
 
   validateOptions(options: Readonly<Record<string, string>>): void {
