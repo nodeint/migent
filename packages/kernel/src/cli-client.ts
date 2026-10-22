@@ -1,4 +1,4 @@
-import type { BuildCommandInput, ProviderOption, UsageCapture } from "./adapter.js";
+import type { BuildCommandInput, ProviderOption, TurnUsage, UsageCapture } from "./adapter.js";
 import type { CommandSpec } from "./command-executor.js";
 
 /** What a client extracted from a failed run, before any provider policy. */
@@ -18,6 +18,13 @@ export interface CliModelCatalog {
   readonly defaultId: string | null;
   readonly optionValues: ReadonlyArray<readonly [string, string, readonly string[]]>;
   valuesFor(modelId: string, option: string): readonly string[] | null;
+}
+
+/** A capture's figures as the CLI reported them, one field per `TurnUsage` metric. */
+export interface CliUsage {
+  readonly values: TurnUsage;
+  /** Fields that are running totals across the session, not this turn's own. */
+  readonly cumulative: readonly (keyof TurnUsage)[];
 }
 
 export interface CliRunOutput {
@@ -49,4 +56,9 @@ export interface CliClient {
   extractFailure(stdout: string, exitCode: number): RawFailure | null;
   /** The CLI's own usage figures, unmodified. */
   captureUsage(stdout: string): UsageCapture | null;
+  /** Reads a stored capture. A field the CLI did not report is `null`. */
+  readUsage(capture: UsageCapture): CliUsage;
+  /** Command whose output lists the values `option` accepts, or `null` if the CLI lists none. */
+  optionValuesCommand(option: string, model: string): CommandSpec | null;
+  parseOptionValues(option: string, stdout: string, model: string): readonly string[];
 }

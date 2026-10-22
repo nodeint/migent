@@ -3,13 +3,14 @@ import type {
   BuildCommandInput,
   CliClient,
   CliRunOutput,
+  CliUsage,
   CommandSpec,
   ProviderOption,
   RawFailure,
   UsageCapture,
 } from "@nodeint/migent-kernel";
 import { ModelCatalog } from "../catalog.js";
-import { compact, isRecord, parseJsonObject } from "./json.js";
+import { compact, finite, isRecord, parseJsonObject } from "./json.js";
 
 const OPENCODE_OPTIONS: readonly ProviderOption[] = [{ name: "agent" }, { name: "thinking" }];
 
@@ -60,6 +61,20 @@ function errorString(payload: Record<string, unknown>): string {
   const error = payload.error;
   if (isRecord(error) && typeof error.type === "string" && error.type !== "") return error.type;
   return "opencode reported an error.";
+}
+
+/** Reads "exceeded the 5-hour usage quota … reset at 2026-10-22 18:43:08 +0800 CST". */
+function quotaFromMessage(message: string): Pick<RawFailure, "rateLimit"> {
+  if (!/exceeded[^.]*quota/i.test(message)) return {};
+  const window = /(\d+)-hour/i.exec(message);
+  const reset = /(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}) ([+-]\d{2})(\d{2})/.exec(message);
+  const instant = reset === null ? NaN : Date.parse(`${reset[1]}T${reset[2]}${reset[3]}:${reset[4]}`);
+  return {
+    rateLimit: {
+      resetAt: Number.isNaN(instant) ? null : new Date(instant).toISOString(),
+      window: window === null ? null : `${window[1]}h`,
+    },
+  };
 }
 
 export function lookup(source: unknown, path: readonly string[]): unknown {
@@ -189,9 +204,10 @@ export class OpencodeClient implements CliClient {
     for (const payload of events(stdout)) {
       if (payload.type === "error") errorMessage = errorString(payload);
     }
-    if (errorMessage !== null) return { message: errorMessage, exitCode };
+    if (errorMessage !== null) return { message: errorMessage, exitCode, ...quotaFromMessage(errorMessage) };
     if (exitCode === 0) return null;
-    return { message: this.parseRun(stdout, "").text.trim() || null, exitCode };
+    const message = this.parseRun(stdout, "").text.trim() || null;
+    return { message, exitCode, ...(message === null ? {} : quotaFromMessage(message)) };
   }
 
   captureUsage(stdout: string): UsageCapture | null {
@@ -202,5 +218,41 @@ export class OpencodeClient implements CliClient {
       steps.push({ tokens: part.tokens, cost: part.cost });
     }
     return steps.length === 0 ? null : { steps };
+  }
+
+  readUsage(capture: UsageCapture): CliUsage {
+    const steps = Array.isArray(capture.steps) ? capture.steps : [];
+    const sum = (path: readonly string[]): number | null => {
+      let total = 0;
+      for (const step of steps) {
+        const value = finite(lookup(step, path));
+        if (value === null) return null;
+        total += value;
+      }
+      return total;
+    };
+    return {
+      values: {
+        input_tokens: sum(["tokens", "input"]),
+        output_tokens: sum(["tokens", "output"]),
+        reasoning_tokens: sum(["tokens", "reasoning"]),
+        cache_read_tokens: sum(["tokens", "cache", "read"]),
+        cache_write_tokens: sum(["tokens", "cache", "write"]),
+        cost_usd: sum(["cost"]),
+      },
+      cumulative: [],
+    };
+  }
+
+  optionValuesCommand(option: string, model: string): CommandSpec | null {
+    void option;
+    void model;
+    return null;
+  }
+
+  parseOptionValues(option: string, stdout: string, model: string): readonly string[] {
+    void stdout;
+    void model;
+    throw new Error(`opencode does not list values for ${option}.`);
   }
 }

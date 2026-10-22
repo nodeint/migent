@@ -1,3 +1,5 @@
+import type { TurnUsage } from "@nodeint/migent-kernel";
+
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -24,4 +26,19 @@ export function picked(source: Record<string, unknown>, keys: readonly string[])
     if (Object.hasOwn(source, key)) out[key] = source[key];
   }
   return out;
+}
+
+export function finite(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+export function emptyUsage(): TurnUsage {
+  return {
+    input_tokens: null,
+    output_tokens: null,
+    reasoning_tokens: null,
+    cache_read_tokens: null,
+    cache_write_tokens: null,
+    cost_usd: null,
+  };
 }

@@ -3,13 +3,14 @@ import type {
   BuildCommandInput,
   CliClient,
   CliRunOutput,
+  CliUsage,
   CommandSpec,
   ProviderOption,
   RawFailure,
   UsageCapture,
 } from "@nodeint/migent-kernel";
 import { ModelCatalog } from "../catalog.js";
-import { compact, isRecord, parseJsonObject, picked } from "./json.js";
+import { compact, finite, isRecord, parseJsonObject, picked } from "./json.js";
 
 const PERMISSION_MODES = [
   "default",
@@ -20,9 +21,20 @@ const PERMISSION_MODES = [
   "plan",
 ] as const;
 const GROK_FLAGS: Record<string, string> = {};
+export const GROK_REASONING_OPTION = "reasoning-effort";
+const GROK_EFFORT_PROBE = "migent-probe";
+const GROK_EFFORTS = /use one of: ([^\n]+)/;
+
+function stripDots(value: string): string {
+  let start = 0;
+  let end = value.length;
+  while (start < end && value[start] === ".") start += 1;
+  while (end > start && value[end - 1] === ".") end -= 1;
+  return value.slice(start, end);
+}
 
 const GROK_OPTIONS: readonly ProviderOption[] = [
-  { name: "reasoning-effort", prompt: true, allowDefault: true, overridable: true },
+  { name: GROK_REASONING_OPTION, prompt: true, allowDefault: true, overridable: true },
   { name: "max_turns" },
   { name: "tools" },
   { name: "disallowed_tools" },
@@ -288,5 +300,58 @@ export class GrokClient implements CliClient {
     if (end) return { end: picked(end, ["usage", "total_cost_usd", "num_turns"]) };
     if (usageEvent) return { usage_event: usageEvent };
     return null;
+  }
+
+  readUsage(capture: UsageCapture): CliUsage {
+    const end = isRecord(capture.end) ? capture.end : null;
+    const usage = end !== null
+      ? (isRecord(end.usage) ? end.usage : null)
+      : (isRecord(capture.usage_event) ? capture.usage_event : null);
+    return {
+      values: {
+        input_tokens: finite(usage?.input_tokens),
+        output_tokens: finite(usage?.output_tokens),
+        reasoning_tokens: finite(usage?.reasoning_tokens),
+        cache_read_tokens: finite(usage?.cache_read_input_tokens),
+        cache_write_tokens: finite(usage?.cache_creation_input_tokens),
+        cost_usd: finite(end?.total_cost_usd),
+      },
+      cumulative: [],
+    };
+  }
+
+  /** Grok lists the accepted efforts only in the error it prints for a bad one. */
+  optionValuesCommand(option: string, model: string): CommandSpec | null {
+    if (option !== GROK_REASONING_OPTION) return null;
+    return {
+      argv: [
+        this.command,
+        "-m",
+        model,
+        "--reasoning-effort",
+        GROK_EFFORT_PROBE,
+        "-p",
+        "x",
+        "--output-format",
+        "plain",
+      ],
+    };
+  }
+
+  parseOptionValues(option: string, stdout: string, model: string): readonly string[] {
+    void model;
+    if (option !== GROK_REASONING_OPTION) throw new Error(`grok does not list values for ${option}.`);
+    const match = GROK_EFFORTS.exec(stdout);
+    if (match === null) {
+      const detail = stdout.split(/\s+/).filter((part) => part !== "").join(" ");
+      throw new Error(detail || "grok did not list reasoning-effort values.");
+    }
+    const values: string[] = [];
+    for (const part of (match[1] ?? "").split(",")) {
+      const value = stripDots(part.trim());
+      if (value && !values.includes(value)) values.push(value);
+    }
+    if (values.length === 0) throw new Error("grok did not list reasoning-effort values.");
+    return values;
   }
 }

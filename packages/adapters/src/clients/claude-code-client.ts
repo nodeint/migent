@@ -3,13 +3,14 @@ import type {
   BuildCommandInput,
   CliClient,
   CliRunOutput,
+  CliUsage,
   CommandSpec,
   ProviderOption,
   RawFailure,
   UsageCapture,
 } from "@nodeint/migent-kernel";
 import { ModelCatalog } from "../catalog.js";
-import { compact, isRecord, parseJsonObject, picked } from "./json.js";
+import { compact, finite, isRecord, parseJsonObject, picked } from "./json.js";
 
 // `claude` has no models subcommand; the stream-json `initialize` control
 // request answers with the model list the CLI itself offers.
@@ -332,5 +333,34 @@ export class ClaudeCodeClient implements CliClient {
         "modelUsage",
       ]),
     };
+  }
+
+  readUsage(capture: UsageCapture): CliUsage {
+    const result = isRecord(capture.result) ? capture.result : null;
+    const usage = result !== null && isRecord(result.usage) ? result.usage : null;
+    const details = usage !== null && isRecord(usage.output_tokens_details) ? usage.output_tokens_details : null;
+    return {
+      values: {
+        input_tokens: finite(usage?.input_tokens),
+        output_tokens: finite(usage?.output_tokens),
+        reasoning_tokens: finite(details?.thinking_tokens),
+        cache_read_tokens: finite(usage?.cache_read_input_tokens),
+        cache_write_tokens: finite(usage?.cache_creation_input_tokens),
+        cost_usd: finite(result?.total_cost_usd),
+      },
+      cumulative: ["cost_usd"],
+    };
+  }
+
+  optionValuesCommand(option: string, model: string): CommandSpec | null {
+    void option;
+    void model;
+    return null;
+  }
+
+  parseOptionValues(option: string, stdout: string, model: string): readonly string[] {
+    const values = this.parseModels(stdout).valuesFor(model, option);
+    if (values === null) throw new Error(`claude does not list ${option} values for ${model}.`);
+    return values;
   }
 }

@@ -3,13 +3,15 @@ import type {
   BuildCommandInput,
   CliClient,
   CliRunOutput,
+  CliUsage,
   CommandSpec,
   ProviderOption,
   RawFailure,
+  TurnUsage,
   UsageCapture,
 } from "@nodeint/migent-kernel";
 import { ModelCatalog } from "../catalog.js";
-import { compact, isRecord, parseJsonObject, picked } from "./json.js";
+import { compact, emptyUsage, finite, isRecord, parseJsonObject, picked } from "./json.js";
 
 // `agy models` lists slugs, not effort levels. `--help` fixes the enum.
 export const AGY_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
@@ -146,6 +148,25 @@ function stepKey(step: Record<string, unknown>): string | null {
   const index = step.step_index;
   if (typeof index === "number" && Number.isInteger(index)) return String(index);
   return null;
+}
+
+function sumSteps(steps: unknown[]): TurnUsage {
+  const sum = (field: string): number | null => {
+    let total = 0;
+    for (const step of steps) {
+      const value = finite(isRecord(step) ? step[field] : undefined);
+      if (value === null) return null;
+      total += value;
+    }
+    return total;
+  };
+  return {
+    ...emptyUsage(),
+    input_tokens: sum("input_tokens"),
+    output_tokens: sum("output_tokens"),
+    reasoning_tokens: sum("thinking_tokens"),
+    cache_read_tokens: sum("cache_read_tokens"),
+  };
 }
 
 export class AgyClient implements CliClient {
@@ -310,5 +331,32 @@ export class AgyClient implements CliClient {
     const capture: UsageCapture = { steps };
     if (result) capture.result = picked(result, ["usage", "num_turns", "duration_seconds"]);
     return capture;
+  }
+
+  readUsage(capture: UsageCapture): CliUsage {
+    const steps = Array.isArray(capture.steps) ? capture.steps : [];
+    if (steps.length > 0) return { values: sumSteps(steps), cumulative: [] };
+    const result = isRecord(capture.result) ? capture.result : null;
+    const usage = result !== null && isRecord(result.usage) ? result.usage : null;
+    return {
+      values: {
+        ...emptyUsage(),
+        input_tokens: finite(usage?.input_tokens),
+        output_tokens: finite(usage?.output_tokens),
+        reasoning_tokens: finite(usage?.thinking_tokens),
+        cache_read_tokens: finite(usage?.cache_read_tokens),
+      },
+      cumulative: ["input_tokens", "output_tokens", "reasoning_tokens", "cache_read_tokens"],
+    };
+  }
+
+  optionValuesCommand(option: string, model: string): CommandSpec | null {
+    void model;
+    return option === "effort" ? this.modelsCommand() : null;
+  }
+
+  parseOptionValues(option: string, stdout: string, model: string): readonly string[] {
+    if (option !== "effort") throw new Error(`agy does not list values for ${option}.`);
+    return this.parseModels(stdout).valuesFor(model, option) ?? AGY_EFFORTS;
   }
 }

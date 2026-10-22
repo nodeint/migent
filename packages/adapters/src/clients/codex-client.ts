@@ -3,6 +3,7 @@ import type {
   BuildCommandInput,
   CliClient,
   CliRunOutput,
+  CliUsage,
   CommandSpec,
   ProviderOption,
   RawFailure,
@@ -10,7 +11,7 @@ import type {
 } from "@nodeint/migent-kernel";
 import { ModelCatalog } from "../catalog.js";
 import { readExistingText } from "../read-text.js";
-import { compact, isRecord, parseJsonObject } from "./json.js";
+import { compact, finite, isRecord, parseJsonObject } from "./json.js";
 
 const OPTION_KEY = /^[A-Za-z][A-Za-z0-9_.-]*$/;
 const TOML_BARE = /^-?(?:0|[1-9]\d*)(?:\.\d+)?$|^true$|^false$/;
@@ -207,5 +208,38 @@ export class CodexClient implements CliClient {
     }
     if (turnCompleted.length === 0) return null;
     return { turn_completed: turnCompleted };
+  }
+
+  readUsage(capture: UsageCapture): CliUsage {
+    const list = capture.turn_completed;
+    const last = Array.isArray(list) && list.length > 0 ? list[list.length - 1] : null;
+    const usage = isRecord(last) ? last : null;
+    const input = finite(usage?.input_tokens);
+    const cached = finite(usage?.cached_input_tokens);
+    // Codex counts cached tokens inside `input_tokens`.
+    const uncached = input !== null && cached !== null && input >= cached ? input - cached : null;
+    return {
+      values: {
+        input_tokens: uncached,
+        output_tokens: finite(usage?.output_tokens),
+        reasoning_tokens: finite(usage?.reasoning_output_tokens),
+        cache_read_tokens: cached,
+        cache_write_tokens: finite(usage?.cache_write_input_tokens),
+        cost_usd: null,
+      },
+      cumulative: ["input_tokens", "output_tokens", "reasoning_tokens", "cache_read_tokens", "cache_write_tokens"],
+    };
+  }
+
+  optionValuesCommand(option: string, model: string): CommandSpec | null {
+    void model;
+    return option === CODEX_REASONING_OPTION ? this.modelsCommand() : null;
+  }
+
+  parseOptionValues(option: string, stdout: string, model: string): readonly string[] {
+    if (option !== CODEX_REASONING_OPTION) throw new Error(`codex does not list values for ${option}.`);
+    const values = this.parseModels(stdout).valuesFor(model, option);
+    if (values === null) throw new Error(`codex did not list ${option} values for ${model}.`);
+    return values;
   }
 }

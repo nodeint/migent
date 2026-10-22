@@ -14,6 +14,7 @@ export type {
   CliClient,
   CliModelCatalog,
   CliRunOutput,
+  CliUsage,
   RawFailure,
 } from "./cli-client.js";
 export { CodexAdapter, GrokAdapter, defaultAdapters } from "./adapter.js";
