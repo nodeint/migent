@@ -20,8 +20,6 @@ stages:
     role: reviewer
     depends_on:
       - plan
-    options:
-      reasoning-effort: high
     instructions:
       - Read plan.md and open the code behind each path:line claim.
       - Check correctness, missing risks, unnecessary scope, and any step an implementer would have to guess.
