@@ -536,7 +536,7 @@ test("review-test revise reruns test while the docs branch continues", async () 
       stageStep("review", APPROVED),
       stageStep("test", COMPLETE, { delay_ms: 30 }),
       stageStep("test", COMPLETE),
-      stageStep("docs", COMPLETE, { delay_ms: 3000 }),
+      stageStep("docs", COMPLETE, { delay_ms: 10_000 }),
       stageStep("review-test", REVISE),
       stageStep("review-test", APPROVED),
       stageStep("review-docs", APPROVED),
@@ -558,7 +558,7 @@ test("review-test revise reruns test while the docs branch continues", async () 
   } finally {
     removeWorkspace(workspace);
   }
-}, 30_000);
+}, 60_000);
 
 test("the session completes only after both reviews approve and publishes once", async () => {
   const workspace = tempWorkspace();
