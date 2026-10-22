@@ -99,3 +99,60 @@ test("doctor exits 2 when the workspace is missing", async () => {
     rmSync(workspace, { recursive: true, force: true });
   }
 });
+
+function writeByteplusProject(workspace: string, client: string | null): void {
+  writeProject(workspace);
+  const configPath = path.join(workspace, ".migent", "config.yaml");
+  const clientLine = client === null ? "" : `    client: ${client}\n`;
+  const text = readFileSync(configPath, "utf8").replace(
+    "roles:\n",
+    `  bp-model:\n    provider: byteplus\n    model: seed-1\n${clientLine}roles:\n`,
+  );
+  writeFileSync(configPath, text, "utf8");
+}
+
+function configProblems(stdout: string): string[] {
+  const payload = JSON.parse(stdout) as { checks: Array<{ name: string; problems: string[] }> };
+  return payload.checks.find((check) => check.name === "config")?.problems ?? [];
+}
+
+test("doctor reports a byteplus model that names no client", async () => {
+  const workspace = mkdtempSync(path.join(tmpdir(), "migent-cli-"));
+  try {
+    writeByteplusProject(workspace, null);
+    cliHooks.which = whichBoth;
+    const captured = await capture(() => main(["doctor", "--json"], workspace));
+    expect(captured.value).toBe(1);
+    expect(configProblems(captured.stdout)).toContain(
+      "models.bp-model.client is required: byteplus has no default CLI client.",
+    );
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("doctor accepts a byteplus model with a client and checks that client's command", async () => {
+  const workspace = mkdtempSync(path.join(tmpdir(), "migent-cli-"));
+  try {
+    writeByteplusProject(workspace, "codex");
+    cliHooks.which = whichBoth;
+    const captured = await capture(() => main(["doctor", "--json"], workspace));
+    expect(captured.value).toBe(0);
+    expect(configProblems(captured.stdout)).toEqual([]);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("doctor rejects a byteplus model with an unknown client", async () => {
+  const workspace = mkdtempSync(path.join(tmpdir(), "migent-cli-"));
+  try {
+    writeByteplusProject(workspace, "nope");
+    cliHooks.which = whichBoth;
+    const captured = await capture(() => main(["doctor", "--json"], workspace));
+    expect(captured.value).toBe(1);
+    expect(configProblems(captured.stdout).join("\n")).toMatch(/models\.bp-model\.client is not supported: .*Unknown CLI client: nope/);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});

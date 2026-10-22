@@ -36,7 +36,8 @@ export async function collectProviders(
   which: Which,
   runCommand: RunCommand,
 ): Promise<ProviderRow[]> {
-  const names = Object.keys(providers).sort();
+  // A provider without a default client has no CLI of its own to probe.
+  const names = Object.keys(providers).filter((name) => providers[name].requiresClient !== true).sort();
   const rows: ProviderRow[] = [];
 
   for (const name of names) {

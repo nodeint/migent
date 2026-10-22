@@ -1,4 +1,4 @@
-import { ProviderBase, moveThinkingTo, type Migration } from "./client-provider.js";
+import { ProviderBase, moveThinkingTo, type Migration } from "./provider-base.js";
 import { CODEX_REASONING_OPTION } from "../clients/codex-client.js";
 
 const moveCodexThinking = moveThinkingTo(CODEX_REASONING_OPTION);

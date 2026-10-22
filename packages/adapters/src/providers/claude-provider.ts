@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { BuildCommandInput, NewSession } from "@nodeint/migent-kernel";
 import type { CommandSpec } from "@nodeint/migent-kernel";
-import { ProviderBase } from "./client-provider.js";
+import { ProviderBase } from "./provider-base.js";
 
 const DEFAULT_PERMISSION_MODE = "bypassPermissions";
 

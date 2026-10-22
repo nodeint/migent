@@ -119,18 +119,24 @@ function checkConfig(
       add(problems, `models.${modelName}.provider is not supported: ${target.provider}`);
       continue;
     }
-    if (!Object.hasOwn(executableByProvider, target.provider)) {
-      executableByProvider[target.provider] = provider.command;
+    if (provider.requiresClient === true && target.client === undefined) {
+      add(problems, `models.${modelName}.client is required: ${target.provider} has no default CLI client.`);
+      continue;
     }
+    let effective: ProviderInfo = provider;
     if (target.client !== undefined) {
       try {
         if (provider.withClient === undefined) throw new Error(`${target.provider} cannot switch CLI client.`);
-        provider.withClient(target.client);
+        effective = provider.withClient(target.client);
       } catch (error) {
         add(problems, `models.${modelName}.client is not supported: ${error instanceof Error ? error.message : String(error)}`);
+        continue;
       }
     }
-    rejectOptions(problems, `models.${modelName}.options`, provider, target.options);
+    if (!Object.hasOwn(executableByProvider, target.provider)) {
+      executableByProvider[target.provider] = effective.command;
+    }
+    rejectOptions(problems, `models.${modelName}.options`, effective, target.options);
   }
 
   const roleNames: string[] = [];

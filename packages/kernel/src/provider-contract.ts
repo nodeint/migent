@@ -4,6 +4,8 @@ import type { CommandSpec } from "./command-executor.js";
 export interface ProviderInfo {
   readonly command: string;
   validateOptions(options: Readonly<Record<string, string>>): void;
+  /** True when the provider has no default CLI client and every model must name one. */
+  readonly requiresClient?: boolean;
   /** The same provider driving another CLI client, named by its id. Throws on an unknown id. */
   withClient?(clientId: string): ProviderInfo;
 }

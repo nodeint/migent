@@ -1,4 +1,4 @@
-import { ProviderBase } from "./client-provider.js";
+import { ProviderBase } from "./provider-base.js";
 
 export class OpencodeProvider extends ProviderBase {
   readonly displayName = "OpenCode";

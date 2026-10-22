@@ -41,7 +41,7 @@ export function detected(
   providers: Record<string, Provider>,
   which: Which,
 ): Array<[string, string | null, Provider]> {
-  const rows = Object.entries(providers).map(
+  const rows = Object.entries(providers).filter(([, provider]) => provider.requiresClient !== true).map(
     ([name, provider]) => [name, which(provider.command), provider] as [string, string | null, Provider],
   );
   rows.sort((left, right) => {

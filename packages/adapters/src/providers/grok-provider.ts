@@ -1,4 +1,4 @@
-import { ProviderBase, moveThinkingTo, type Migration } from "./client-provider.js";
+import { ProviderBase, moveThinkingTo, type Migration } from "./provider-base.js";
 import { GROK_REASONING_OPTION } from "../clients/grok-client.js";
 
 const moveGrokThinking = moveThinkingTo(GROK_REASONING_OPTION);

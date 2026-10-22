@@ -1,5 +1,6 @@
 import { KERNEL_PLACEHOLDER, type Provider } from "@nodeint/migent-kernel";
 import { AgyProvider } from "./providers/agy-provider.js";
+import { ByteplusProvider } from "./providers/byteplus-provider.js";
 import { ClaudeProvider } from "./providers/claude-provider.js";
 import { CodexProvider } from "./providers/codex-provider.js";
 import { GrokProvider } from "./providers/grok-provider.js";
@@ -8,9 +9,10 @@ import { OpencodeProvider } from "./providers/opencode-provider.js";
 export const ADAPTERS_PLACEHOLDER = `providers:${KERNEL_PLACEHOLDER}`;
 
 export { ModelCatalog } from "./catalog.js";
-export { clientIds, createClient } from "./providers/client-provider.js";
+export { clientIds, createClient } from "./providers/provider-base.js";
 export { AgyClient } from "./clients/agy-client.js";
 export { AgyProvider } from "./providers/agy-provider.js";
+export { ByteplusProvider } from "./providers/byteplus-provider.js";
 export { ClaudeCodeClient } from "./clients/claude-code-client.js";
 export { ClaudeProvider } from "./providers/claude-provider.js";
 export { CodexClient } from "./clients/codex-client.js";
@@ -23,6 +25,7 @@ export { OpencodeProvider } from "./providers/opencode-provider.js";
 export function defaultProviders(): Record<string, Provider> {
   return {
     agy: new AgyProvider(),
+    byteplus: new ByteplusProvider(),
     claude: new ClaudeProvider(),
     codex: new CodexProvider(),
     grok: new GrokProvider(),

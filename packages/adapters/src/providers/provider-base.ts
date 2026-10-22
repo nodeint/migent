@@ -75,18 +75,33 @@ export function moveThinkingTo(option: string): Migration {
  */
 export abstract class ProviderBase implements Provider {
   abstract readonly displayName: string;
-  protected readonly client: CliClient;
-  private parseEvent: (line: string) => Record<string, unknown> | null;
+  private readonly boundClient: CliClient | null;
+  private parseEvent: ((line: string) => Record<string, unknown> | null) | null;
 
-  constructor(readonly clientId: string) {
-    this.client = createClient(clientId);
-    this.parseEvent = this.client.createEventParser();
+  constructor(readonly clientId: string | null) {
+    this.boundClient = clientId === null ? null : createClient(clientId);
+    this.parseEvent = this.boundClient === null ? null : this.boundClient.createEventParser();
+  }
+
+  /** The CLI client driving this provider; throws when none was chosen. */
+  protected get client(): CliClient {
+    if (this.boundClient === null) {
+      throw new Error(
+        `${this.displayName} has no default CLI client. Set models.<name>.client to one of: ${clientIds().join(", ")}.`,
+      );
+    }
+    return this.boundClient;
+  }
+
+  /** True when the provider still needs a client chosen before it can run. */
+  get requiresClient(): boolean {
+    return this.boundClient === null;
   }
 
   /** The same provider policy over another CLI client. */
   withClient(clientId: string): Provider {
     if (clientId === this.clientId) return this;
-    return new (this.constructor as new (clientId: string) => Provider)(clientId);
+    return new (this.constructor as new (clientId: string | null) => Provider)(clientId);
   }
 
   get command(): string {
@@ -159,7 +174,7 @@ export abstract class ProviderBase implements Provider {
   }
 
   parseProgressEvent(line: string): Record<string, unknown> | null {
-    return this.parseEvent(line);
+    return this.parseEvent === null ? null : this.parseEvent(line);
   }
 
   captureUsage(stdout: string): UsageCapture | null {
