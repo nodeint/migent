@@ -130,11 +130,14 @@ decisions, and the outputs that matter. Output paths are relative to
 ## Set up a project
 
 ```
+migent provider list --json
 migent init --no-input --provider <provider> --model <model-id> [--preset implement|plan] [--skill]
 migent doctor --json
 ```
 
 `--provider` and `--model` go together. The default preset is `implement`.
+`provider list --json` shows which provider CLIs are on PATH and what model
+ids each supports. Use it to pick a `<provider>` and `<model-id>` for `init`.
 `--skill` installs this skill; `migent skill update` refreshes it.
 
 ## Change models

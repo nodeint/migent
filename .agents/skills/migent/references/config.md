@@ -2,6 +2,10 @@
 
 Write commands take `--no-input --json`. The JSON includes the doctor result.
 
+Run `migent provider list --json` to see which provider CLIs are available
+and what model ids each supports. Use that output to pick a provider and
+model id before using `config model` or `init`.
+
 ## Run one role
 
 Without `--workflow`, `session run` runs a single role:

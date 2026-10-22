@@ -11,6 +11,7 @@ import { runInit } from "./commands/init.js";
 import { runSessionMetrics, runSessions } from "./commands/sessions.js";
 import { parsePort, runServiceStart, runServiceStatus, runServiceStop } from "./commands/service.js";
 import { installSkill, updateSkill } from "./commands/skill.js";
+import { runProviderList } from "./commands/provider.js";
 import { runRegister, runRemove, runWorkspaceList } from "./commands/workspace-registry.js";
 import { printError } from "./display.js";
 import { LOOP_EXITS, STAGE_EXITS } from "./exits.js";
@@ -149,6 +150,24 @@ export function createProgram(status: CliStatus): Command {
     .action((options: OptionValues) =>
       settle(status, () => runDoctor(findWorkspace(invocationCwdPath()), { asJson: options.json === true })),
     );
+
+  const provider = program.command("provider").description("List registered provider adapters and their models.");
+  provider
+    .command("list")
+    .description("List each registered provider, whether its CLI is on PATH, and the models it reports.")
+    .option("--json", "Print the provider list as one JSON object.")
+    .addHelpText(
+      "after",
+      exitText([
+        "Exit 0 when the command ran and at least one provider returned models.",
+        "Exit 1 when no provider returned any models.",
+        "A missing optional CLI is not an error.",
+      ]),
+    )
+    .action((options: OptionValues) =>
+      settle(status, () => runProviderList({ asJson: options.json === true })),
+    );
+  showHelpWhenBare(status, provider);
 
   program
     .command("migrate")

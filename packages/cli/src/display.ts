@@ -148,6 +148,51 @@ export function formatWatchTimestamp(timestamp: unknown): string {
   return parsed.toISOString().replace("T", " ").replace(/\.\d+Z$/, "+00:00").replace("Z", "+00:00");
 }
 
+export interface ProviderRow {
+  name: string;
+  command: string;
+  path: string | null;
+  available: boolean;
+  models: string[];
+  default_model: string | null;
+  options: Array<{ name: string; prompt: boolean; allow_default: boolean; overridable: boolean }>;
+  problems: string[];
+}
+
+export function printProviders(rows: readonly ProviderRow[]): void {
+  const tty = Boolean(process.stdout.isTTY);
+  for (const row of rows) {
+    const ok = row.problems.length === 0 && row.models.length > 0;
+    const status = ok ? (tty ? pc.green("ok") : "ok") : tty ? pc.red("failed") : "failed";
+    process.stdout.write(`${row.name.padEnd(12)}${status}\n`);
+    if (row.path !== null) {
+      const line = `  path: ${row.path}`;
+      process.stdout.write(`${tty ? pc.dim(line) : line}\n`);
+    } else {
+      const line = `  path: not found`;
+      process.stdout.write(`${tty ? pc.dim(line) : line}\n`);
+    }
+    if (row.models.length > 0) {
+      process.stdout.write(`  models:\n`);
+      for (const model of row.models) {
+        const marked = model === row.default_model ? `${model} (default)` : model;
+        const line = `    ${marked}`;
+        process.stdout.write(`${tty ? pc.dim(line) : line}\n`);
+      }
+    }
+    if (row.options.length > 0) {
+      process.stdout.write(`  options:\n`);
+      for (const opt of row.options) {
+        const line = `    ${opt.name}`;
+        process.stdout.write(`${tty ? pc.dim(line) : line}\n`);
+      }
+    }
+    for (const problem of row.problems) {
+      process.stdout.write(`  ${problem}\n`);
+    }
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

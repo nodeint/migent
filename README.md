@@ -212,6 +212,7 @@ outputs:
 # Setup & Health
 migent init --preset plan           # Initialize starter configuration
 migent doctor                      # Validate configuration, schemas, and CLI availability
+migent provider list               # List registered provider adapters and their available models
 migent skill install               # Install the Migent Skill for coding agents (.agents/skills/migent/)
 
 # Execution

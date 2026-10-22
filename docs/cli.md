@@ -276,6 +276,51 @@ and whether each provider CLI named in config is on `PATH`. It does not run
 those CLIs or check their login. Exit 0 when every check passes, and exit 1
 when a check fails.
 
+## Providers
+
+```bash
+migent provider list
+migent provider list --json
+```
+
+`provider list` reports every registered provider adapter (agy, claude, codex,
+grok, opencode), whether its CLI is on `PATH`, the model ids that CLI reports,
+and the provider options the adapter exposes. It works without `.migent/config.yaml`.
+
+Model ids come from running each provider's model-listing command: `codex debug models`,
+`grok models`, `opencode models`, and `agy models`. Claude has no listing command, so
+migent runs `claude --version` to confirm the CLI works and reports its built-in model
+names. The JSON output includes `default_model` when the provider reports one.
+
+Options lists the names of options each provider supports (`prompt`, `allow_default`,
+`overridable`). Per-model option values are not fetched, since that would cost a CLI
+call per model and option.
+
+Exit 0 when at least one provider returned models. Exit 1 when no provider returned
+any models. A missing optional CLI is not an error; it is reported as a per-provider
+problem, and the command still exits 0 if other providers work.
+
+`--json` output shape:
+```json
+{
+  "ok": true,
+  "providers": [
+    {
+      "name": "codex",
+      "command": "codex",
+      "path": "/usr/bin/codex",
+      "available": true,
+      "models": ["gpt-5", "gpt-4o"],
+      "default_model": null,
+      "options": [
+        { "name": "model_reasoning_effort", "prompt": true, "allow_default": true, "overridable": true }
+      ],
+      "problems": []
+    }
+  ]
+}
+```
+
 ## Workspace registry
 
 ```bash

@@ -33,6 +33,7 @@ export async function main(argv: string[] = process.argv.slice(2), cwd?: string)
     setInvocationCwd(undefined);
     cliHooks.which = null;
     cliHooks.runner = null;
+    cliHooks.runCommand = null;
   }
 }
 

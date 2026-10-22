@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- `migent provider list [--json]` lists every registered provider adapter, whether its CLI is on PATH, the model ids that CLI reports, and the provider options the adapter exposes. It works without `.migent/config.yaml`. Exit 0 when at least one provider returned models, exit 1 when none did. Missing CLIs and listing failures are reported as per-provider problems, not errors.
+
 ### Changed
 
 - A new session id is a UUID. `manifest.yaml` records `title`. A workflow or role session uses its one-line task as the title. `session prepare <title>` stores that text as the title and prints the UUID. The title is a display label, so spaces and capitals are kept. `session list` prints the title before the id, and its JSON includes `title`. A session with no title is shown by its id. `continue`, `--prior`, and `metrics` still take the id.
