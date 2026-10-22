@@ -2,13 +2,19 @@
 
 ## Unreleased
 
+## 0.1.7
+
 ### Added
 
 - `migent provider list [--json]` lists every registered provider adapter, whether its CLI is on PATH, the model ids that CLI reports, and the provider options the adapter exposes. It works without `.migent/config.yaml`. Exit 0 when at least one provider returned models, exit 1 when none did. Missing CLIs and listing failures are reported as per-provider problems, not errors.
+- An OpenCode provider runs models through the `opencode` CLI. A provider quota error from OpenCode is classified as a quota, so the stage waits or exits 8 like any other provider.
+- `models.<name>.client` is optional and picks the CLI client that runs a model. `doctor` rejects an unknown client id.
+- A BytePlus ModelArk provider has no default CLI client. Set `client` on each BytePlus model, for example `opencode`. `doctor` reports a BytePlus model with no `client` and checks the executable and options of the client it names. `provider list` and `init` skip a provider that still needs a client.
 
 ### Changed
 
 - A new session id is a UUID. `manifest.yaml` records `title`. A workflow or role session uses its one-line task as the title. `session prepare <title>` stores that text as the title and prints the UUID. The title is a display label, so spaces and capitals are kept. `session list` prints the title before the id, and its JSON includes `title`. A session with no title is shown by its id. `continue`, `--prior`, and `metrics` still take the id.
+- Claude models are listed from the CLI initialize response instead of a hardcoded catalog.
 
 ## 0.1.6
 
