@@ -10,6 +10,12 @@ export type {
   UsageCapture,
   TurnUsage,
 } from "./adapter.js";
+export type {
+  CliClient,
+  CliModelCatalog,
+  CliRunOutput,
+  RawFailure,
+} from "./cli-client.js";
 export { CodexAdapter, GrokAdapter, defaultAdapters } from "./adapter.js";
 export {
   documentVersion,

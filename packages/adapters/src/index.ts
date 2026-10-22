@@ -8,10 +8,15 @@ import { OpencodeAdapter } from "./opencode-adapter.js";
 export const ADAPTERS_PLACEHOLDER = `adapters:${KERNEL_PLACEHOLDER}`;
 
 export { ModelCatalog } from "./catalog.js";
+export { AgyClient } from "./clients/agy-client.js";
 export { AgyAdapter } from "./agy-adapter.js";
+export { ClaudeCodeClient } from "./clients/claude-code-client.js";
 export { ClaudeAdapter } from "./claude-adapter.js";
+export { CodexClient } from "./clients/codex-client.js";
 export { CodexAdapter } from "./codex-adapter.js";
+export { GrokClient } from "./clients/grok-client.js";
 export { GrokAdapter } from "./grok-adapter.js";
+export { OpencodeClient } from "./clients/opencode-client.js";
 export { OpencodeAdapter } from "./opencode-adapter.js";
 
 export function defaultAdapters(): Record<string, AgentAdapter> {

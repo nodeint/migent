@@ -1,7 +1,8 @@
-import { classifyProviderError, providerErrorMessage } from "@nodeint/migent-kernel";
 import type {
   AgentAdapter,
   BuildCommandInput,
+  CliClient,
+  FailureClassification,
   NewSession,
   ProviderOption,
   TurnUsage,
@@ -9,18 +10,11 @@ import type {
 } from "@nodeint/migent-kernel";
 import type { CommandSpec } from "@nodeint/migent-kernel";
 import { ModelCatalog } from "./catalog.js";
-import { readExistingText } from "./read-text.js";
+import { CODEX_REASONING_OPTION, CodexClient } from "./clients/codex-client.js";
+import { isRecord } from "./clients/json.js";
 
 type MigrationBody = Record<string, unknown>;
 type Migration = (entry: MigrationBody) => void;
-
-const OPTION_KEY = /^[A-Za-z][A-Za-z0-9_.-]*$/;
-const TOML_BARE = /^-?(?:0|[1-9]\d*)(?:\.\d+)?$|^true$|^false$/;
-const CODEX_CONFIG_KEYS: Record<string, string> = {};
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function nonempty(value: unknown): value is string {
   return typeof value === "string" && value.trim() !== "";
@@ -49,58 +43,23 @@ function moveCodexThinking(body: MigrationBody): void {
   delete body.thinking;
 }
 
-function reasoningLevels(raw: unknown): string[] {
-  if (!Array.isArray(raw)) return [];
-  const values: string[] = [];
-  for (const level of raw) {
-    let effort: unknown;
-    if (isRecord(level)) effort = level.effort;
-    else if (typeof level === "string") effort = level;
-    else continue;
-    if (typeof effort === "string" && effort && !values.includes(effort)) values.push(effort);
-  }
-  return values;
-}
-
-function tomlLiteral(value: string): string {
-  if (TOML_BARE.test(value)) return value;
-  return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
-}
-
-function appendOptions(argv: string[], options: Readonly<Record<string, string>>): void {
-  for (const [key, value] of Object.entries(options)) {
-    const configKey = CODEX_CONFIG_KEYS[key] ?? key;
-    argv.push("-c", `${configKey}=${tomlLiteral(value)}`);
-  }
-}
-
-function compact(value: string, limit = 160): string {
-  const text = value.split(/\s+/).filter((part) => part !== "").join(" ");
-  return text.length <= limit ? text : `${text.slice(0, limit - 1)}…`;
-}
-
-function itemSummary(item: unknown, itemType: unknown, action: string): string {
-  if (isRecord(item) && itemType === "command_execution") {
-    const command = item.command;
-    if (typeof command === "string" && command) return `command ${action}: ${compact(command)}`;
-  }
-  if (isRecord(item) && itemType === "agent_message") {
-    const text = item.text;
-    if (typeof text === "string" && text) return `agent: ${compact(text)}`;
-  }
-  const label = typeof itemType === "string" && itemType ? itemType : "provider item";
-  return `${label} ${action}`;
-}
-
 export class CodexAdapter implements AgentAdapter {
-  readonly command = "codex";
   readonly displayName = "Codex";
   readonly modelMigrations: Record<number, Migration> = { 0: moveCodexThinking };
   readonly roleMigrations: Record<number, Migration> = { 0: moveCodexThinking };
   readonly stageMigrations: Record<number, Migration> = { 0: moveCodexThinking };
+  private readonly parseEvent: (line: string) => Record<string, unknown> | null;
+
+  constructor(private readonly client: CliClient = new CodexClient()) {
+    this.parseEvent = client.createEventParser();
+  }
+
+  get command(): string {
+    return this.client.command;
+  }
 
   providerOptions(): readonly ProviderOption[] {
-    return [{ name: "model_reasoning_effort", prompt: true, allowDefault: true, overridable: true }];
+    return this.client.options();
   }
 
   profileOptions(options: Readonly<Record<string, string>>): Record<string, string> {
@@ -119,170 +78,53 @@ export class CodexAdapter implements AgentAdapter {
   }
 
   modelCatalogCommand(): string[] {
-    return [this.command, "debug", "models"];
+    return this.client.modelsCommand().argv;
   }
 
   parseModelCatalog(stdout: string): ModelCatalog {
-    let payload: unknown;
-    try {
-      payload = JSON.parse(stdout);
-    } catch {
-      throw new Error("codex model catalog is not JSON.");
-    }
-    const models = isRecord(payload) ? payload.models : null;
-    if (!Array.isArray(models)) throw new Error("codex model catalog has no models.");
-    const ids: string[] = [];
-    const optionValues: Array<readonly [string, string, readonly string[]]> = [];
-    for (const item of models) {
-      if (!isRecord(item)) continue;
-      const visibility = item.visibility;
-      if (visibility !== undefined && visibility !== null && visibility !== "list") continue;
-      const slug = item.slug;
-      if (typeof slug === "string" && slug && !ids.includes(slug)) {
-        ids.push(slug);
-        optionValues.push([slug, "model_reasoning_effort", reasoningLevels(item.supported_reasoning_levels)]);
-      }
-    }
-    if (ids.length === 0) throw new Error("codex model catalog is empty.");
-    return new ModelCatalog(ids, null, optionValues);
+    const catalog = this.client.parseModels(stdout);
+    return new ModelCatalog(catalog.ids, catalog.defaultId, catalog.optionValues);
   }
 
   optionValuesCommand(name: string, model: string): string[] | null {
     void model;
-    if (name !== "model_reasoning_effort") return null;
+    if (name !== CODEX_REASONING_OPTION) return null;
     return this.modelCatalogCommand();
   }
 
   parseOptionValues(name: string, text: string, model: string): readonly string[] {
-    if (name !== "model_reasoning_effort") throw new Error(`codex does not list values for ${name}.`);
+    if (name !== CODEX_REASONING_OPTION) throw new Error(`codex does not list values for ${name}.`);
     const values = this.parseModelCatalog(text).valuesFor(model, name);
     if (values === null) throw new Error(`codex did not list ${name} values for ${model}.`);
     return values;
   }
 
   validateOptions(options: Readonly<Record<string, string>>): void {
-    for (const [key, value] of Object.entries(options)) {
-      if (!OPTION_KEY.test(key)) throw new Error(`${key} is not a codex option.`);
-      if (value.trim() === "") throw new Error(`${key} is empty.`);
-    }
+    this.client.validateOptions(options);
   }
 
   buildCommand(input: BuildCommandInput): CommandSpec {
     this.validateOptions(input.options);
-    const argv = [
-      this.command,
-      "exec",
-      "-C",
-      input.workspace,
-      "-m",
-      input.model,
-      "--color",
-      "never",
-      "--json",
-      "--output-last-message",
-      input.lastMessageFile,
-    ];
-    appendOptions(argv, input.options);
-    if (input.agentId) {
-      argv.push("resume", input.agentId, "-");
-    } else {
-      // `--approve-for-me` already selects the workspace-write sandbox.
-      argv.push("--approve-for-me", "-");
-    }
-    return { argv, stdin: input.prompt };
+    return this.client.runCommand(input);
   }
 
   parseResponse(stdout: string, lastMessageFile: string): [string, string | null] {
-    let agentId: string | null = null;
-    let lastText: string | null = null;
-    for (const rawLine of stdout.split(/\r\n|\n|\r/)) {
-      const line = rawLine.trim();
-      if (!line) continue;
-      let event: unknown;
-      try {
-        event = JSON.parse(line);
-      } catch {
-        continue;
-      }
-      if (!isRecord(event)) continue;
-      const eventType = event.type;
-      if (eventType === "thread.started") {
-        const threadId = event.thread_id;
-        if (typeof threadId === "string" && threadId) agentId = threadId;
-      } else if (eventType === "item.completed") {
-        const item = event.item;
-        if (isRecord(item) && item.type === "agent_message") {
-          const text = item.text;
-          if (typeof text === "string" && text) lastText = text;
-        }
-      } else if (eventType === "turn.failed") {
-        const error = event.error;
-        const message = isRecord(error) ? error.message : undefined;
-        if (typeof message === "string" && message) lastText = message;
-      } else if (eventType === "error") {
-        const message = event.message;
-        if (typeof message === "string" && message) lastText = message;
-      }
-    }
-    const fileText = readExistingText(lastMessageFile);
-    if (fileText !== null) {
-      const stripped = fileText.trim();
-      if (stripped) lastText = stripped;
-    }
-    return [lastText !== null ? lastText : stdout.trim(), agentId];
+    const { text, sessionId } = this.client.parseRun(stdout, lastMessageFile);
+    return [text, sessionId];
   }
 
-  classifyFailure(stdout: string, exitCode: number) {
-    if (exitCode === 0) return null;
-    const [text] = this.parseResponse(stdout, "/migent-no-such-last-message");
-    return { kind: "provider" as const, message: text.trim() || `CLI exited with code ${exitCode}.` };
+  classifyFailure(stdout: string, exitCode: number): FailureClassification | null {
+    const raw = this.client.extractFailure(stdout, exitCode);
+    if (raw === null) return null;
+    return { kind: "provider", message: raw.message || `CLI exited with code ${exitCode}.` };
   }
 
   parseProgressEvent(line: string): Record<string, unknown> | null {
-    let payload: unknown;
-    try {
-      payload = JSON.parse(line);
-    } catch {
-      return null;
-    }
-    if (!isRecord(payload)) return null;
-    const eventType = payload.type;
-    if (typeof eventType !== "string") return null;
-    if (eventType === "item.started" || eventType === "item.completed") {
-      const item = payload.item;
-      const itemType = isRecord(item) ? item.type : undefined;
-      const action = eventType.endsWith("started") ? "started" : "completed";
-      return {
-        event: eventType.endsWith("started") ? "provider.item_started" : "provider.item_completed",
-        summary: itemSummary(item, itemType, action),
-        details: typeof itemType === "string" ? { item_type: itemType } : {},
-      };
-    }
-    if (eventType === "turn.failed") {
-      const failed = classifyProviderError(providerErrorMessage(payload));
-      if (failed.event === "provider.warning") return failed;
-      return { event: "provider.turn_failed", summary: failed.summary };
-    }
-    if (eventType === "error") return classifyProviderError(providerErrorMessage(payload));
-    return null;
+    return this.parseEvent(line);
   }
 
   captureUsage(stdout: string): UsageCapture | null {
-    const turnCompleted: Record<string, unknown>[] = [];
-    for (const rawLine of stdout.split(/\r\n|\n|\r/)) {
-      const line = rawLine.trim();
-      if (!line) continue;
-      let event: unknown;
-      try {
-        event = JSON.parse(line);
-      } catch {
-        continue;
-      }
-      if (!isRecord(event) || event.type !== "turn.completed" || !isRecord(event.usage)) continue;
-      turnCompleted.push(event.usage);
-    }
-    if (turnCompleted.length === 0) return null;
-    return { turn_completed: turnCompleted };
+    return this.client.captureUsage(stdout);
   }
 
   normalizeUsage(current: UsageCapture, previous: UsageCapture | null): TurnUsage {
@@ -307,11 +149,11 @@ export class CodexAdapter implements AgentAdapter {
   }
 
   versionCommand(): string[] {
-    return [this.command, "--version"];
+    return this.client.versionCommand().argv;
   }
 
   parseVersion(stdout: string): string | null {
-    return versionLine(stdout);
+    return this.client.parseVersion(stdout);
   }
 }
 
@@ -338,9 +180,4 @@ function codexDelta(
 
 function finite(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
-}
-
-function versionLine(stdout: string): string | null {
-  const line = (stdout.split(/\r\n|\n|\r/, 1)[0] ?? "").trim();
-  return line === "" ? null : line;
 }

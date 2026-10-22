@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { classifyProviderError } from "@nodeint/migent-kernel";
 import type {
   AgentAdapter,
   BuildCommandInput,
+  CliClient,
+  FailureClassification,
   NewSession,
   ProviderOption,
   TurnUsage,
@@ -10,145 +11,25 @@ import type {
 } from "@nodeint/migent-kernel";
 import type { CommandSpec } from "@nodeint/migent-kernel";
 import { ModelCatalog } from "./catalog.js";
+import { ClaudeCodeClient } from "./clients/claude-code-client.js";
+import { isRecord } from "./clients/json.js";
 
-// `claude` has no models subcommand; the stream-json `initialize` control
-// request answers with the model list the CLI itself offers.
-const MODEL_CATALOG_REQUEST = JSON.stringify({
-  type: "control_request",
-  request_id: "migent-models",
-  request: { subtype: "initialize" },
-});
-const PERMISSION_MODES = [
-  "acceptEdits",
-  "auto",
-  "bypassPermissions",
-  "manual",
-  "dontAsk",
-  "plan",
-] as const;
 const DEFAULT_PERMISSION_MODE = "bypassPermissions";
 
-const CLAUDE_OPTIONS: readonly ProviderOption[] = [
-  { name: "effort", prompt: true, allowDefault: true, overridable: true },
-  { name: "permission_mode" },
-  { name: "tools" },
-  { name: "allowed_tools" },
-  { name: "disallowed_tools" },
-  { name: "max_budget_usd" },
-  { name: "fallback_model" },
-  { name: "append_system_prompt" },
-];
-
-function oneOf(value: string, allowed: readonly string[], field: string): void {
-  if (!allowed.includes(value)) {
-    throw new Error(`${field} must be one of: ${allowed.join(", ")}.`);
-  }
-}
-
-function claudeBudget(value: string): void {
-  if (!/^[0-9]+(?:\.[0-9]+)?$/.test(value) || Number(value) <= 0) {
-    throw new Error("max_budget_usd must be a positive number.");
-  }
-}
-
-function claudeText(value: string): void {
-  void value;
-}
-
-const CLAUDE_OPTION_CHECKS: Record<string, (value: string) => void> = {
-  effort: claudeText,
-  permission_mode: (value) => oneOf(value, PERMISSION_MODES, "permission_mode"),
-  tools: claudeText,
-  allowed_tools: claudeText,
-  disallowed_tools: claudeText,
-  max_budget_usd: claudeBudget,
-  fallback_model: claudeText,
-  append_system_prompt: claudeText,
-};
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function appendOptions(argv: string[], options: Readonly<Record<string, string>>): void {
-  for (const [key, value] of Object.entries(options)) {
-    argv.push(`--${key.replaceAll("_", "-")}`, value);
-  }
-}
-
-function parseJsonObject(line: string): Record<string, unknown> | null {
-  const text = line.trim();
-  if (!text) return null;
-  try {
-    const payload: unknown = JSON.parse(text);
-    return isRecord(payload) ? payload : null;
-  } catch {
-    return null;
-  }
-}
-
-function compact(value: string, limit = 160): string {
-  const text = value.split(/\s+/).filter((part) => part !== "").join(" ");
-  return text.length <= limit ? text : `${text.slice(0, limit - 1)}…`;
-}
-
-function contentBlocks(payload: Record<string, unknown>): Record<string, unknown>[] {
-  const message = payload.message;
-  if (!isRecord(message) || !Array.isArray(message.content)) return [];
-  return message.content.filter(isRecord);
-}
-
-function assistantText(payload: Record<string, unknown>): string {
-  return contentBlocks(payload)
-    .filter((block) => block.type === "text" && typeof block.text === "string")
-    .map((block) => block.text as string)
-    .join("");
-}
-
-function inputString(input: unknown, ...keys: string[]): string | null {
-  if (!isRecord(input)) return null;
-  for (const key of keys) {
-    const value = input[key];
-    if (typeof value === "string" && value) return value;
-  }
-  return null;
-}
-
-function toolSummary(block: Record<string, unknown>, action: string): string {
-  const name = typeof block.name === "string" && block.name ? block.name : "tool";
-  const command = inputString(block.input, "command");
-  if (command) return `command ${action}: ${compact(command)}`;
-  const target = inputString(block.input, "file_path", "notebook_path", "path", "pattern", "url");
-  if (target) return `${name} ${action}: ${compact(target)}`;
-  return `${name} ${action}`;
-}
-
-function toolDetails(block: Record<string, unknown>): Record<string, unknown> {
-  const name = block.name;
-  if (typeof name === "string" && name) return { item_type: name };
-  return {};
-}
-
-function resultError(payload: Record<string, unknown>): string | null {
-  const result = payload.result;
-  if (typeof result === "string" && result.trim()) return result.trim();
-  const errors = payload.errors;
-  if (Array.isArray(errors)) {
-    const messages = errors.filter((item): item is string => typeof item === "string" && item !== "");
-    if (messages.length > 0) return messages.join("; ");
-  }
-  const subtype = payload.subtype;
-  if (typeof subtype === "string" && subtype) return `claude failed: ${subtype}`;
-  return null;
-}
-
 export class ClaudeAdapter implements AgentAdapter {
-  readonly command = "claude";
   readonly displayName = "Claude";
-  private toolUses: Record<string, Record<string, unknown>> = {};
+  private parseEvent: (line: string) => Record<string, unknown> | null;
+
+  constructor(private readonly client: CliClient = new ClaudeCodeClient()) {
+    this.parseEvent = client.createEventParser();
+  }
+
+  get command(): string {
+    return this.client.command;
+  }
 
   providerOptions(): readonly ProviderOption[] {
-    return CLAUDE_OPTIONS;
+    return this.client.options();
   }
 
   profileOptions(options: Readonly<Record<string, string>>): Record<string, string> {
@@ -167,48 +48,16 @@ export class ClaudeAdapter implements AgentAdapter {
   }
 
   modelCatalogCommand(): string[] {
-    return [
-      this.command,
-      "-p",
-      "--input-format",
-      "stream-json",
-      "--output-format",
-      "stream-json",
-      "--verbose",
-    ];
+    return this.client.modelsCommand().argv;
   }
 
   modelCatalogInput(): string {
-    return `${MODEL_CATALOG_REQUEST}\n`;
+    return this.client.modelsCommand().stdin ?? "";
   }
 
   parseModelCatalog(stdout: string): ModelCatalog {
-    let models: unknown[] | null = null;
-    for (const rawLine of stdout.split(/\r\n|\n|\r/)) {
-      const payload = parseJsonObject(rawLine);
-      if (payload?.type !== "control_response" || !isRecord(payload.response)) continue;
-      const body = payload.response.response;
-      if (isRecord(body) && Array.isArray(body.models)) models = body.models;
-    }
-    if (models === null) {
-      const detail = compact(stdout);
-      throw new Error(detail || "claude did not report its models.");
-    }
-    const ids: string[] = [];
-    const efforts: Array<readonly [string, string, readonly string[]]> = [];
-    for (const item of models) {
-      if (!isRecord(item) || typeof item.value !== "string" || item.value === "default") continue;
-      const levels = Array.isArray(item.supportedEffortLevels)
-        ? item.supportedEffortLevels.filter((level): level is string => typeof level === "string")
-        : [];
-      const resolved = typeof item.resolvedModel === "string" ? item.resolvedModel : null;
-      for (const id of new Set([item.value, resolved])) {
-        if (id === null || ids.includes(id)) continue;
-        ids.push(id);
-        if (levels.length > 0) efforts.push([id, "effort", levels]);
-      }
-    }
-    return new ModelCatalog(ids, null, efforts);
+    const catalog = this.client.parseModels(stdout);
+    return new ModelCatalog(catalog.ids, catalog.defaultId, catalog.optionValues);
   }
 
   optionValuesCommand(name: string, model: string): string[] | null {
@@ -224,162 +73,42 @@ export class ClaudeAdapter implements AgentAdapter {
   }
 
   validateOptions(options: Readonly<Record<string, string>>): void {
-    for (const [key, value] of Object.entries(options)) {
-      const check = CLAUDE_OPTION_CHECKS[key];
-      if (check === undefined) throw new Error(`${key} is not a claude option.`);
-      if (value.trim() === "") throw new Error(`${key} is empty.`);
-      check(value);
-    }
+    this.client.validateOptions(options);
   }
 
   buildCommand(input: BuildCommandInput): CommandSpec {
-    this.toolUses = {};
+    this.parseEvent = this.client.createEventParser();
     this.validateOptions(input.options);
-    const argv = [
-      this.command,
-      "-p",
-      "--model",
-      input.model,
-      "--output-format",
-      "stream-json",
-      "--verbose",
-    ];
     const options = { ...input.options };
     if (options.permission_mode === undefined) options.permission_mode = DEFAULT_PERMISSION_MODE;
-    appendOptions(argv, options);
-    if (input.agentId) argv.push("--resume", input.agentId);
-    else if (input.newAgentId) argv.push("--session-id", input.newAgentId);
-    // The prompt goes on stdin; the workspace is the process cwd.
-    return { argv, stdin: input.prompt };
+    return this.client.runCommand({ ...input, options });
   }
 
   parseResponse(stdout: string, lastMessageFile: string): [string, string | null] {
-    void lastMessageFile;
-    let agentId: string | null = null;
-    let lastText: string | null = null;
-    let resultText: string | null = null;
-    let sawEvent = false;
-    for (const rawLine of stdout.split(/\r\n|\n|\r/)) {
-      const payload = parseJsonObject(rawLine);
-      if (payload === null) continue;
-      sawEvent = true;
-      const sessionId = payload.session_id;
-      if (typeof sessionId === "string" && sessionId) agentId = sessionId;
-      const eventType = payload.type;
-      if (eventType === "assistant" && payload.parent_tool_use_id == null) {
-        const text = assistantText(payload).trim();
-        if (text) lastText = text;
-      } else if (eventType === "result") {
-        if (payload.is_error === true) {
-          resultText = resultError(payload);
-        } else {
-          const result = payload.result;
-          if (typeof result === "string" && result.trim()) resultText = result.trim();
-        }
-      }
-    }
-    if (resultText !== null) return [resultText, agentId];
-    if (lastText !== null) return [lastText, agentId];
-    if (sawEvent) return ["", agentId];
-    return [stdout.trim(), null];
+    const { text, sessionId } = this.client.parseRun(stdout, lastMessageFile);
+    return [text, sessionId];
   }
 
-  classifyFailure(stdout: string, exitCode: number) {
-    let quota: { resetAt: string | null; window: string | null } | null = null;
-    let human: string | null = null;
-    let providerMessage: string | null = null;
-    let sawError = false;
-    for (const rawLine of stdout.split(/\r\n|\n|\r/)) {
-      const payload = parseJsonObject(rawLine);
-      if (payload === null) continue;
-      if (payload.type === "rate_limit_event" && isRecord(payload.rate_limit_info)) {
-        const info = payload.rate_limit_info;
-        if (info.status === "rejected") {
-          const window = typeof info.rateLimitType === "string" ? info.rateLimitType : null;
-          const resetsAt = info.resetsAt;
-          quota = {
-            resetAt:
-              typeof resetsAt === "number" && Number.isFinite(resetsAt)
-                ? new Date(resetsAt * 1000).toISOString()
-                : null,
-            window,
-          };
-        }
-      }
-      if (payload.type === "assistant" && payload.parent_tool_use_id == null) {
-        const text = assistantText(payload).trim();
-        if (text) human = text;
-      }
-      if (payload.type === "result" && payload.is_error === true) {
-        sawError = true;
-        providerMessage = resultError(payload);
-      }
-    }
-    if (quota !== null) {
+  classifyFailure(stdout: string, exitCode: number): FailureClassification | null {
+    const raw = this.client.extractFailure(stdout, exitCode);
+    if (raw === null) return null;
+    if (raw.rateLimit !== undefined) {
       return {
-        kind: "quota" as const,
-        message: human || providerMessage || "quota",
-        resetAt: quota.resetAt,
-        window: quota.window,
+        kind: "quota",
+        message: raw.message || "quota",
+        resetAt: raw.rateLimit.resetAt,
+        window: raw.rateLimit.window,
       };
     }
-    if (exitCode !== 0 || sawError) {
-      return { kind: "provider" as const, message: providerMessage || `CLI exited with code ${exitCode}.` };
-    }
-    return null;
+    return { kind: "provider", message: raw.message || `CLI exited with code ${exitCode}.` };
   }
 
   parseProgressEvent(line: string): Record<string, unknown> | null {
-    const payload = parseJsonObject(line);
-    if (payload === null) return null;
-    const eventType = payload.type;
-    if (eventType === "assistant") {
-      const block = contentBlocks(payload).find((item) => item.type === "tool_use");
-      if (block === undefined) return null;
-      if (typeof block.id === "string" && block.id) this.toolUses[block.id] = block;
-      return {
-        event: "provider.item_started",
-        summary: toolSummary(block, "started"),
-        details: toolDetails(block),
-      };
-    }
-    if (eventType === "user") {
-      const block = contentBlocks(payload).find((item) => item.type === "tool_result");
-      if (block === undefined) return null;
-      const id = block.tool_use_id;
-      const toolUse = (typeof id === "string" ? this.toolUses[id] : undefined) ?? {};
-      const action = block.is_error === true ? "failed" : "completed";
-      return {
-        event: "provider.item_completed",
-        summary: toolSummary(toolUse, action),
-        details: toolDetails(toolUse),
-      };
-    }
-    if (eventType === "result" && payload.is_error === true) {
-      const failed = classifyProviderError(resultError(payload));
-      if (failed.event === "provider.warning") return failed;
-      return { event: "provider.turn_failed", summary: failed.summary };
-    }
-    return null;
+    return this.parseEvent(line);
   }
 
   captureUsage(stdout: string): UsageCapture | null {
-    let result: Record<string, unknown> | null = null;
-    for (const rawLine of stdout.split(/\r\n|\n|\r/)) {
-      const payload = parseJsonObject(rawLine);
-      if (payload?.type === "result") result = payload;
-    }
-    if (result === null) return null;
-    return {
-      result: picked(result, [
-        "usage",
-        "total_cost_usd",
-        "num_turns",
-        "duration_ms",
-        "duration_api_ms",
-        "modelUsage",
-      ]),
-    };
+    return this.client.captureUsage(stdout);
   }
 
   normalizeUsage(current: UsageCapture, previous: UsageCapture | null): TurnUsage {
@@ -397,29 +126,16 @@ export class ClaudeAdapter implements AgentAdapter {
   }
 
   versionCommand(): string[] {
-    return [this.command, "--version"];
+    return this.client.versionCommand().argv;
   }
 
   parseVersion(stdout: string): string | null {
-    return versionLine(stdout);
+    return this.client.parseVersion(stdout);
   }
-}
-
-function picked(source: Record<string, unknown>, keys: readonly string[]): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const key of keys) {
-    if (Object.hasOwn(source, key)) out[key] = source[key];
-  }
-  return out;
 }
 
 function finite(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
-}
-
-function versionLine(stdout: string): string | null {
-  const line = (stdout.split(/\r\n|\n|\r/, 1)[0] ?? "").trim();
-  return line === "" ? null : line;
 }
 
 function claudeCost(result: Record<string, unknown> | null, previous: UsageCapture | null): number | null {
