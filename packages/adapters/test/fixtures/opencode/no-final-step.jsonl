@@ -1,0 +1,4 @@
+{"type":"step_start","sessionID":"ses_nf","part":{"type":"step-start"}}
+{"type":"text","sessionID":"ses_nf","part":{"type":"text","text":"Working.\n"}}
+{"type":"step_finish","sessionID":"ses_nf","part":{"type":"step-finish","cost":0.01,"tokens":{"input":10,"output":2,"reasoning":1,"cache":{"read":3,"write":4}}}}
+{"type":"text","sessionID":"ses_nf","part":{"type":"text","text":"status: complete\n\nAnswer\n"}}

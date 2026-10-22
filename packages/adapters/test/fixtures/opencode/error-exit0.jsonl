@@ -1,0 +1,2 @@
+{"type":"step_start","sessionID":"ses_er","part":{"type":"step-start"}}
+{"type":"error","sessionID":"ses_er","error":{"type":"provider.auth","message":"Invalid API key"}}

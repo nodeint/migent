@@ -75,6 +75,9 @@ prompts. Leaving one unset keeps the provider default.
   model, and sends it as `--reasoning-effort`. Grok also accepts `max_turns`,
   `tools`, `disallowed_tools`, `permission_mode`, `rules`, `allow`, `deny`,
   and `sandbox`. Other keys are rejected.
+- OpenCode accepts `agent`, sent as `--agent`, and `thinking`, which is `true`
+  or `false`. `true` sends `--thinking` and `false` sends nothing. Neither is
+  prompted for or overridable. Other keys are rejected.
 
 A role or stage `options` map overrides the same keys on the model. Only
 options the adapter marks as overridable are part of the provider session.
@@ -112,7 +115,7 @@ Model options provide the base configuration. A role `options` map overrides
 those keys, and a stage `options` map overrides them for that turn.
 
 Migent currently includes adapters for the headless `agy`, `claude`, `codex`,
-and `grok` CLIs. Those CLIs own authentication, tool use, and agent execution;
+`grok`, and `opencode` CLIs. Those CLIs own authentication, tool use, and agent execution;
 Migent owns selection, prompts, routing, and persistence.
 
 ## Usage
@@ -129,6 +132,7 @@ printed.
 | claude | last `result` event | per process | `total_cost_usd`, cumulative per conversation. This is a client estimate, not a bill. |
 | codex | each `turn.completed` | cumulative per thread. `input_tokens` includes cache reads, and metrics subtract them. | none |
 | grok | `end`, or the last `usage` event when `end` is absent | per process | `total_cost_usd` on `end`, per process. A `usage` event has no cost. |
+| opencode | each printed `step_finish` | per process; sum of `tokens.input`, `tokens.output`, `tokens.reasoning`, `tokens.cache.read`, and `tokens.cache.write`; input is not reduced by cache reads; a missing final `step_finish` undercounts | sum of `part.cost` |
 | agy | `result.usage` and each `DONE` step that has `usage` | step usage is per process. `result.usage` is cumulative per conversation. | none. Cache reads were not observable. |
 
 `input_tokens` in metrics excludes cache reads. `reasoning_tokens` is reported

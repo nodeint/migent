@@ -3,6 +3,7 @@ import { AgyAdapter } from "./agy-adapter.js";
 import { ClaudeAdapter } from "./claude-adapter.js";
 import { CodexAdapter } from "./codex-adapter.js";
 import { GrokAdapter } from "./grok-adapter.js";
+import { OpencodeAdapter } from "./opencode-adapter.js";
 
 export const ADAPTERS_PLACEHOLDER = `adapters:${KERNEL_PLACEHOLDER}`;
 
@@ -11,6 +12,7 @@ export { AgyAdapter } from "./agy-adapter.js";
 export { ClaudeAdapter } from "./claude-adapter.js";
 export { CodexAdapter } from "./codex-adapter.js";
 export { GrokAdapter } from "./grok-adapter.js";
+export { OpencodeAdapter } from "./opencode-adapter.js";
 
 export function defaultAdapters(): Record<string, AgentAdapter> {
   return {
@@ -18,6 +20,7 @@ export function defaultAdapters(): Record<string, AgentAdapter> {
     claude: new ClaudeAdapter(),
     codex: new CodexAdapter(),
     grok: new GrokAdapter(),
+    opencode: new OpencodeAdapter(),
   };
 }
 

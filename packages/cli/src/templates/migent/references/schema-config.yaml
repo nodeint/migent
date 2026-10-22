@@ -19,6 +19,7 @@ models:
     # disallowed_tools, max_budget_usd, fallback_model, and append_system_prompt.
     # codex accepts model_reasoning_effort (overridable). Any other key of letters, digits,
     # dots, underscores, and hyphens is passed through as codex exec -c.
+    # opencode accepts agent and thinking (true sends --thinking, false sends nothing). Neither is overridable.
     options:
       reasoning-effort: high
 

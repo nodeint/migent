@@ -1,0 +1,6 @@
+{"type":"step_start","sessionID":"ses_abc","part":{"type":"step-start"}}
+{"type":"text","sessionID":"ses_abc","part":{"type":"text","text":"Looking at the repo.\n"}}
+{"type":"tool_use","sessionID":"ses_abc","part":{"type":"tool","tool":"bash","state":{"status":"completed","input":{"command":"ls -la"}}}}
+{"type":"step_finish","sessionID":"ses_abc","part":{"type":"step-finish","cost":0.01,"tokens":{"input":100,"output":20,"reasoning":5,"cache":{"read":50,"write":10}}}}
+{"type":"text","sessionID":"ses_abc","part":{"type":"text","text":"status: complete\n\n# Done\n"}}
+{"type":"step_finish","sessionID":"ses_abc","part":{"type":"step-finish","cost":0.02,"tokens":{"input":200,"output":30,"reasoning":0,"cache":{"read":150,"write":0}}}}

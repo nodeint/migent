@@ -3,6 +3,7 @@ import { AgyAdapter } from "../src/agy-adapter.ts";
 import { ClaudeAdapter } from "../src/claude-adapter.ts";
 import { CodexAdapter } from "../src/codex-adapter.ts";
 import { GrokAdapter } from "../src/grok-adapter.ts";
+import { OpencodeAdapter } from "../src/opencode-adapter.ts";
 
 const QUOTA = [
   '{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","resetsAt":1792560600,"rateLimitType":"five_hour","overageStatus":"rejected","overageDisabledReason":"org_level_disabled","isUsingOverage":false,"unifiedWindows":{"five_hour":{"utilization":1,"resetsAt":1792560600},"seven_day":{"utilization":0.45,"resetsAt":1792947600}}},"session_id":"37a685f1-59ec-44a9-9530-0f66e1098c02"}',
@@ -40,4 +41,14 @@ test("codex, grok, and agy classify a numeric failure as provider and exit 0 as 
     expect(adapter.classifyFailure("{}", 0)).toBeNull();
     expect(adapter.classifyFailure("provider said no", 2)?.kind).toBe("provider");
   }
+});
+
+test("opencode classifies an error event as provider, even at exit 0", () => {
+  const adapter = new OpencodeAdapter();
+  expect(adapter.classifyFailure('{"type":"error","message":"nope"}', 0)).toEqual({
+    kind: "provider",
+    message: "nope",
+  });
+  expect(adapter.classifyFailure('{"type":"step_start"}', 0)).toBeNull();
+  expect(adapter.classifyFailure("provider said no", 2)?.kind).toBe("provider");
 });

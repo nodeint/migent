@@ -1,0 +1,3 @@
+{"type":"step_start","sessionID":"ses_sh","part":{"type":"step-start"}}
+{"type":"text","sessionID":"ses_sh","part":{"type":"text","text":"Let me think about this first.\n\nstatus: complete\n\n# Plan\n"}}
+{"type":"step_finish","sessionID":"ses_sh","part":{"type":"step-finish","cost":0,"tokens":{"input":1,"output":1,"reasoning":0,"cache":{"read":0,"write":0}}}}

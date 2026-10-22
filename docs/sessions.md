@@ -361,7 +361,7 @@ A field the provider did not report is null. A total sums the known values and
 `usage_missing` counts, per field, how many turns did not report it. A session
 that mixes providers with and without cost still has a usable cost total.
 `input_tokens` excludes cache reads. `reasoning_tokens` sits beside
-`output_tokens` and is not added to it. `cost_usd` is only what claude and grok
+`output_tokens` and is not added to it. `cost_usd` is only what claude, grok, and opencode
 report. There is no price table.
 
 `wall_seconds` is `completed_at` minus `created_at`, null while that execution
