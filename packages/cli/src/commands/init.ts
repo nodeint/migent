@@ -213,7 +213,7 @@ function classify(
   const gitignore = path.join(root, ".gitignore");
   const owned: string[] = [];
   if (exists(config)) owned.push(".migent/config.yaml");
-  if (exists(workflows)) {
+  if (exists(workflows) && !(isDirectory(workflows) && readdirSync(workflows).length === 0)) {
     owned.push(".migent/workflows");
     if (isDirectory(workflows)) {
       for (const name of readdirSync(workflows).filter((item) => item.endsWith(".yaml")).sort()) {
@@ -251,10 +251,31 @@ function writeProject(
 
 function renderConfig(preset: string, primary: ModelChoice): string {
   const models: Array<[string, ModelChoice]> = [["default", primary]];
-  let roles: Array<[string, string]>;
-  if (preset === "implement") roles = [["developer", "default"]];
-  else roles = [["planner", "default"], ["reviewer", "default"]];
-  const lines = ["schema_version: 2", "models:"];
+  let roles: Array<[string, string, string[]]>;
+  if (preset === "implement") {
+    roles = [["developer", "default", [
+      "Make the smallest change that completes the task; follow existing code conventions.",
+      "Run the relevant checks or tests before finishing and report the result.",
+    ]]];
+  } else {
+    roles = [
+      ["planner", "default", [
+        "Write a concrete, reviewable plan: goal, steps, affected files, risks.",
+        "Keep scope to the task; do not implement.",
+      ]],
+      ["reviewer", "default", [
+        "Check the plan for correctness, missing risks, and unnecessary scope.",
+        "Give a clear verdict and list every gap in one response.",
+      ]],
+    ];
+  }
+  const lines = [
+    "schema_version: 2",
+    "# models: named provider/model pairs. roles: who does the work; default_model names an entry in models.",
+    "# roles.<name>.instructions are added to every prompt for that role, before stage instructions.",
+    "# Per-machine overrides go in .migent/config.local.yaml (not committed). Workflows live in .migent/workflows/.",
+    "models:",
+  ];
   for (const [name, choice] of models) {
     lines.push(`  ${name}:`, `    provider: ${yamlScalar(choice.provider)}`, `    model: ${yamlScalar(choice.model)}`);
     const entries = Object.entries(choice.options);
@@ -264,7 +285,10 @@ function renderConfig(preset: string, primary: ModelChoice): string {
     }
   }
   lines.push("roles:");
-  for (const [role, modelName] of roles) lines.push(`  ${role}:`, `    default_model: ${modelName}`);
+  for (const [role, modelName, instructions] of roles) {
+    lines.push(`  ${role}:`, `    default_model: ${modelName}`, "    instructions:");
+    for (const item of instructions) lines.push(`      - ${yamlScalar(item)}`);
+  }
   return `${lines.join("\n")}\n`;
 }
 
@@ -285,6 +309,8 @@ function renderWorkflow(preset: string): string {
   return (
     "schema_version: 2\n" +
     "id: plan\n" +
+    "constraints:\n" +
+    "  - Plan only. Do not modify source code.\n" +
     "stages:\n" +
     "  - id: plan\n" +
     "    role: planner\n" +
@@ -292,6 +318,7 @@ function renderWorkflow(preset: string): string {
     "    max_revisions: 3\n" +
     "    instructions:\n" +
     "      - Analyze the task and write an implementation plan.\n" +
+    "      - \"Structure plan.md with these sections: Goal, Steps, Files, Risks, Verification.\"\n" +
     "      - When revising, edit the existing plan.md in place. Do not replace the whole file.\n" +
     "    produces:\n" +
     "      artifact: plan.md\n" +
@@ -302,6 +329,9 @@ function renderWorkflow(preset: string): string {
     "    instructions:\n" +
     "      - Review the plan for correctness, missing risks, and unnecessary scope.\n" +
     "      - Report every gap of the same kind in one response.\n" +
+    "      - Check that plan.md has the sections Goal, Steps, Files, Risks, Verification.\n" +
+    "      - Choose revise only for a factual error, a missing risk, a missing section, or unnecessary scope. Do not revise for style.\n" +
+    "      - When choosing revise, list each required change so the planner can act on it.\n" +
     "    decision:\n" +
     "      values:\n" +
     "        - approved\n" +

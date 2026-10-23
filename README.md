@@ -121,9 +121,7 @@ Choose one:
 Paste this prompt into your agent (Claude Code, Antigravity, Cursor, etc.):
 
 ```text
-Load skill migent: Use the installed migent skill.
-
-Instructions: Initialize Migent for this project using the installed provider CLIs, set up .migent/config.yaml and .migent/workflows/plan.yaml, and run `migent doctor` to verify.
+Use the migent skill to set up Migent in this project.
 ```
 
 #### Option 2: Run `migent init`

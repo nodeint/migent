@@ -491,3 +491,31 @@ test("requires provider and model when not interactive", async () => {
     rmSync(workspace, { recursive: true, force: true });
   }
 });
+
+test("initializes over an empty .migent directory", async () => {
+  const workspace = tempDir();
+  try {
+    mkdirSync(path.join(workspace, ".migent"));
+    const captured = await capture(() =>
+      runInit(workspace, { provider: "codex", model: "gpt-5", runCommand, which: which(new Set(["codex"])) }),
+    );
+    expect(captured.value).toBe(0);
+    expect(existsSync(path.join(workspace, ".migent", "config.yaml"))).toBe(true);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("initializes over an empty .migent/workflows directory", async () => {
+  const workspace = tempDir();
+  try {
+    mkdirSync(path.join(workspace, ".migent", "workflows"), { recursive: true });
+    const captured = await capture(() =>
+      runInit(workspace, { provider: "codex", model: "gpt-5", runCommand, which: which(new Set(["codex"])) }),
+    );
+    expect(captured.value).toBe(0);
+    expect(existsSync(path.join(workspace, ".migent", "workflows", "implement.yaml"))).toBe(true);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
