@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.9
+
 ### Added
 
 - `migent skill path` prints the directory of the skill bundled with the CLI. `migent skill install` and `update` take `--project`/`--global`, `--client <ids>` and `-y`, and cover claude-code, codex, opencode, agy and grok. `migent doctor` has a `skill` check that warns, without failing, when the skill is missing or an installed copy differs from the bundled one.
