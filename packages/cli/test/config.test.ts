@@ -493,9 +493,16 @@ test("config edits leave config.local.yaml alone and keep local values out of co
     const local = path.join(workspace, ".migent", "config.local.yaml");
     const localText = "models:\n  shared:\n    model: grok-local\n";
     writeFileSync(local, localText, "utf8");
-    cliHooks.which = which;
     const result = await capture(() =>
-      main(["config", "model", "plain", "--no-input", "--option", "reasoning-effort=low"], workspace),
+      runConfigRole(workspace, {
+        roles: ["reviewer"],
+        provider: "grok",
+        model: "grok-4.6",
+        options: ["reasoning-effort=high"],
+        asJson: true,
+        which,
+        runCommand,
+      }),
     );
     expect(readFileSync(local, "utf8")).toBe(localText);
     expect(readFileSync(path.join(workspace, ".migent", "config.yaml"), "utf8")).not.toContain("grok-local");
