@@ -2,13 +2,15 @@
 
 ## Unreleased
 
+## 0.1.8
+
 ### Added
 
 - `.migent/config.local.yaml` is an optional per-machine override of `.migent/config.yaml`. Mappings (`models`, `roles`, `options`) merge key by key; scalars and lists replace the base value; its `schema_version` is ignored. Runs, session freezes, `agent`, `doctor`, and `config show` read the merged result. `config model` and `config role` still edit `config.yaml` only.
 - `init` ignores `config.local.yaml` in `.migent/.gitignore`. `doctor` warns, without failing, when git tracks it, and `doctor --json` carries `warnings` on each check.
 - `config show` prints the merged config as YAML when `config.local.yaml` exists, and notes the merge on stderr. Without that file it prints `config.yaml` as stored.
 
-### Fixed
+### Changed
 
 - `doctor` no longer reports "has no default CLI client" for a role or stage whose model sets `client`.
 
