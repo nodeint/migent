@@ -5,17 +5,18 @@ models:
     model: sonnet
 
   reviewer:
-    provider: opencode
+    provider: byteplus
+    client: opencode
     model: coding-plan/deepseek-v4-pro
     options:
       thinking: "true"
 
   developer:
-    provider: opencode
+    provider: byteplus
+    client: opencode
     model: coding-plan/dola-seed-2.0-code
     options:
       thinking: "true"
-
 roles:
   planner:
     default_model: planner

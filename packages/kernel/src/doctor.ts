@@ -150,7 +150,7 @@ function checkConfig(
       add(problems, error.message);
       continue;
     }
-    const roleProvider = providers[resolved.provider];
+    const roleProvider = withTargetClient(providers[resolved.provider], resolved.client);
     if (roleProvider !== undefined) {
       rejectOptions(problems, `roles.${roleKey}`, roleProvider, resolved.options);
     }
@@ -205,7 +205,7 @@ function checkStageBindings(
       add(problems, `${document.id}.${stage.id}: ${error.message}`);
       continue;
     }
-    const provider = providers[target.provider];
+    const provider = withTargetClient(providers[target.provider], target.client);
     if (provider === undefined) continue;
     try {
       provider.validateOptions(target.options);
@@ -214,6 +214,16 @@ function checkStageBindings(
       if ([...known].some((problem) => problem.includes(error.message))) continue;
       add(problems, `${document.id}.${stage.id}: ${error.message}`);
     }
+  }
+}
+
+/** The provider bound to the target's CLI client; the base provider when no client is named or it cannot switch. */
+function withTargetClient(provider: ProviderInfo | undefined, client: string | undefined): ProviderInfo | undefined {
+  if (provider === undefined || client === undefined || provider.withClient === undefined) return provider;
+  try {
+    return provider.withClient(client);
+  } catch {
+    return provider;
   }
 }
 
