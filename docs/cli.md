@@ -158,7 +158,8 @@ migent init --preset plan --provider codex --model gpt-5
 migent init --skill --provider codex --model gpt-5
 ```
 
-`init` writes `.migent/config.yaml`, one workflow, and `.migent/.gitignore`.
+`init` writes `.migent/config.yaml`, one workflow, and `.migent/.gitignore`,
+which ignores `sessions/` and `config.local.yaml`.
 The config contains the provider and model you choose. Model ids come from
 that provider's CLI, not from a built-in list. Prompted options come from
 that provider for the model you picked. Omit `--option` to keep the provider
@@ -195,6 +196,10 @@ migent config role reviewer --provider grok --model grok-4.7 --option reasoning-
 ```
 
 `config` and `config show` print `.migent/config.yaml` as stored and exit 0.
+When `.migent/config.local.yaml` exists, they print the merged config as YAML
+instead and write `Merged with .migent/config.local.yaml.` to stderr.
+`config model` and `config role` edit `config.yaml` only and never touch the
+local file.
 `config model` and `config role` accept `--no-input` (and `MIGENT_NO_INPUT=1`).
 With no changes they still list and exit 0.
 
@@ -274,7 +279,9 @@ migent doctor --json
 `doctor` checks `.migent/config.yaml`, every file in `.migent/workflows/`,
 and whether each provider CLI named in config is on `PATH`. It does not run
 those CLIs or check their login. Exit 0 when every check passes, and exit 1
-when a check fails.
+when a check fails. If git tracks `.migent/config.local.yaml`, `doctor` prints
+a `warning:` line (and a `warnings` entry with `--json`); a warning does not
+change the exit code.
 
 ## Providers
 

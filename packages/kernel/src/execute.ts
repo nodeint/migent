@@ -9,7 +9,7 @@ import {
   waitUntil,
   type WaitHooks,
 } from "./command-executor.js";
-import { loadRoleInstructions, loadYamlMapping, resolveStageTarget } from "./config.js";
+import { loadRoleInstructions, loadWorkspaceConfig, resolveStageTarget } from "./config.js";
 import { ConfigurationError, OutputsMissing } from "./errors.js";
 import {
   assertStageDispatchable,
@@ -1192,7 +1192,7 @@ async function dispatchExecuteStage(
   const exhausted = verifyExhaustedExecution(snapshots, stageId);
   const roleInstructions = freeze
     ? frozenRoleInstructions(freeze, stageSpec.role)
-    : loadRoleInstructions(loadYamlMapping(path.join(workspace, ".migent", "config.yaml")), stageSpec.role);
+    : loadRoleInstructions(loadWorkspaceConfig(workspace), stageSpec.role);
   const promptInput = {
     workflow,
     stageId,

@@ -5,12 +5,16 @@ import type { ModelCatalog } from "@nodeint/migent-adapters";
 import {
   ConfigEditError,
   ConfigurationError,
+  LOCAL_CONFIG_FILE,
   assignRoles,
+  configPath,
   describeChange,
   diagnose,
+  hasLocalConfig,
   inspectConfig,
   loadModelTarget,
   loadWorkflowCatalog,
+  loadWorkspaceConfig,
   loadYamlMapping,
   matchingModelName,
   patchConfigText,
@@ -18,6 +22,7 @@ import {
   isRoleStage,
   resolveStageSpec,
   setRoleOptions,
+  stringifyConfig,
   upsertModel,
   whichSync,
   type Provider,
@@ -59,8 +64,13 @@ export interface ConfigPrompter {
 }
 
 export function runConfigShow(workspace: string): number {
-  const text = readFileSync(path.join(workspace, ".migent", "config.yaml"), "utf8");
-  process.stdout.write(text);
+  if (!hasLocalConfig(workspace)) {
+    process.stdout.write(readFileSync(configPath(workspace), "utf8"));
+    return 0;
+  }
+  process.stdout.write(stringifyConfig(loadWorkspaceConfig(workspace)));
+  process.stderr.write(`Merged with .migent/${LOCAL_CONFIG_FILE}.
+`);
   return 0;
 }
 
@@ -456,7 +466,8 @@ async function commit(
   change: ConfigChange,
   args: { asJson: boolean; which: Which; echo?: boolean },
 ): Promise<number> {
-  const filePath = path.join(workspace, ".migent", "config.yaml");
+  // Edits patch config.yaml only, so config.local.yaml values never reach the committed file.
+  const filePath = configPath(workspace);
   const original = readFileSync(filePath, "utf8");
   const updated = patchConfigText(original, change.config);
   if (updated === original) {
@@ -615,7 +626,8 @@ async function selectProvider(
 
 function loaded(workspace: string): [Record<string, unknown>, WorkflowDocument[], ConfigView] {
   requireCurrentSchema(workspace);
-  const config = loadYamlMapping(path.join(workspace, ".migent", "config.yaml"));
+  // Base file only: this snapshot feeds validation and patching of config.yaml.
+  const config = loadYamlMapping(configPath(workspace));
   const workflows = Object.values(loadWorkflowCatalog(workspace).documents);
   return [config, workflows, inspectConfig(config, workflows)];
 }

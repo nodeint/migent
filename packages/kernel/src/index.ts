@@ -19,13 +19,20 @@ export type {
 } from "./cli-client.js";
 export { CodexProvider, GrokProvider, defaultProviders } from "./provider-contract.js";
 export {
+  LOCAL_CONFIG_FILE,
+  configPath,
   documentVersion,
+  hasLocalConfig,
   loadModelTarget,
   loadRoleInstructions,
+  loadWorkspaceConfig,
   loadYamlMapping,
+  localConfigPath,
+  mergeConfig,
   resolveRoleTarget,
   resolveStageSpec,
   resolveStageTarget,
+  stringifyConfig,
 } from "./config.js";
 export type { ModelOverride, StageTarget } from "./config.js";
 export {

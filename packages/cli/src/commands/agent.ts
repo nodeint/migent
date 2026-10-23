@@ -16,6 +16,7 @@ import {
   repairSessionUnlocked,
   SessionLock,
   stringOptions,
+  loadWorkspaceConfig,
   resolveRoleTarget,
   waitUntil,
   type RunResult,
@@ -143,7 +144,7 @@ export async function dispatchAgent(
         else resumedMany = finished;
       } else {
         const prompt = prependRoleInstructions(
-          loadRoleInstructions(loadYamlMapping(path.join(workspace, ".migent", "config.yaml")), args.role),
+          loadRoleInstructions(loadWorkspaceConfig(workspace), args.role),
           resolvePrompt({
             prompt: args.prompt ?? null,
             promptFile: args.promptFile ?? null,
@@ -467,7 +468,7 @@ function finishRole(sessionId: string, code: number): number {
 
 function rolePrompt(workspace: string, role: string, text: string): string {
   return prependRoleInstructions(
-    loadRoleInstructions(loadYamlMapping(path.join(workspace, ".migent", "config.yaml")), role),
+    loadRoleInstructions(loadWorkspaceConfig(workspace), role),
     text,
   );
 }

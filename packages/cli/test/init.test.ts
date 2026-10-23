@@ -94,7 +94,8 @@ test("writes one provider and the implement workflow", async () => {
     expect(config).not.toContain("planner");
     expect(workflow).toContain("id: implement");
     expect(workflow).toContain("role: developer");
-    expect(gitignore).toBe("sessions/\n");
+    expect(gitignore).toBe("sessions/\nconfig.local.yaml\n");
+    expect(existsSync(path.join(workspace, ".migent", "config.local.yaml"))).toBe(false);
     expect(captured.stdout).toContain(".migent/workflows/implement.yaml");
     expect(captured.stdout).toContain('migent session run --workflow implement --task "..."');
     expect(captured.stdout).not.toContain("providers");

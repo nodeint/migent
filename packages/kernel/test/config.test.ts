@@ -4,7 +4,9 @@ import { expect, test } from "vitest";
 import {
   ConfigurationError,
   loadRoleInstructions,
+  loadWorkspaceConfig,
   loadYamlMapping,
+  mergeConfig,
   resolveRoleTarget,
   resolveStageTarget,
 } from "../src/index.ts";
@@ -192,4 +194,71 @@ test("cli override skips the role cascade", () => {
   expect(() => resolveRoleTarget(workspace, "developer", { provider: "grok" })).toThrow(
     /both --provider and --model/,
   );
+});
+
+test("mergeConfig merges mappings and replaces scalars and lists", () => {
+  const base = {
+    schema_version: 2,
+    models: { a: { provider: "grok", model: "m1", options: { x: "1", y: "2" } } },
+    roles: { dev: { default_model: "a", instructions: ["one", "two"] } },
+  };
+  const snapshot = structuredClone(base);
+  const local = {
+    models: { a: { model: "m2", options: { y: "3" } }, b: { provider: "codex", model: "m3" } },
+    roles: { dev: { instructions: ["only"] } },
+  };
+  const localSnapshot = structuredClone(local);
+  const merged = mergeConfig(base, local);
+  expect(merged).toEqual({
+    schema_version: 2,
+    models: {
+      a: { provider: "grok", model: "m2", options: { x: "1", y: "3" } },
+      b: { provider: "codex", model: "m3" },
+    },
+    roles: { dev: { default_model: "a", instructions: ["only"] } },
+  });
+  expect(base).toEqual(snapshot);
+  expect(local).toEqual(localSnapshot);
+});
+
+test("loadWorkspaceConfig equals config.yaml without a local file", () => {
+  const workspace = writeStageWorkspace();
+  expect(loadWorkspaceConfig(workspace)).toEqual(
+    loadYamlMapping(path.join(workspace, ".migent", "config.yaml")),
+  );
+});
+
+test("config.local.yaml overrides role and stage resolution", () => {
+  const workspace = writeStageWorkspace();
+  writeFileSync(
+    path.join(workspace, ".migent", "config.local.yaml"),
+    [
+      "schema_version: 99",
+      "models:",
+      "  grok:",
+      "    model: grok-local",
+      "roles:",
+      "  reviewer:",
+      "    options:",
+      "      model_reasoning_effort: low",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  expect(loadWorkspaceConfig(workspace).schema_version).toBe(
+    loadYamlMapping(path.join(workspace, ".migent", "config.yaml")).schema_version,
+  );
+  expect(resolveRoleTarget(workspace, "developer").model).toBe("grok-local");
+  expect(resolveStageTarget(workspace, "plan-implement", "implement").model).toBe("grok-local");
+  expect(resolveRoleTarget(workspace, "reviewer").options.model_reasoning_effort).toBe("low");
+});
+
+test("a malformed config.local.yaml names the file", () => {
+  const workspace = writeStageWorkspace();
+  const local = path.join(workspace, ".migent", "config.local.yaml");
+  writeFileSync(local, "- not-a-map\n", "utf8");
+  expect(() => resolveRoleTarget(workspace, "developer")).toThrow(ConfigurationError);
+  expect(() => resolveRoleTarget(workspace, "developer")).toThrow("config.local.yaml");
+  writeFileSync(local, "models: [unclosed\n", "utf8");
+  expect(() => loadWorkspaceConfig(workspace)).toThrow(ConfigurationError);
 });

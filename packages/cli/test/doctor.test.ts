@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -152,6 +153,26 @@ test("doctor rejects a byteplus model with an unknown client", async () => {
     const captured = await capture(() => main(["doctor", "--json"], workspace));
     expect(captured.value).toBe(1);
     expect(configProblems(captured.stdout).join("\n")).toMatch(/models\.bp-model\.client is not supported: .*Unknown CLI client: nope/);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("doctor prints and returns a tracked config.local.yaml warning without failing", async () => {
+  const workspace = mkdtempSync(path.join(tmpdir(), "migent-cli-"));
+  try {
+    writeProject(workspace);
+    writeFileSync(path.join(workspace, ".migent", "config.local.yaml"), "models: {}\n", "utf8");
+    execFileSync("git", ["init", "-q"], { cwd: workspace });
+    execFileSync("git", ["add", ".migent/config.local.yaml"], { cwd: workspace });
+    cliHooks.which = whichBoth;
+    const text = await capture(() => main(["doctor"], workspace));
+    expect(text.value).toBe(0);
+    expect(text.stdout).toContain("warning: .migent/config.local.yaml is tracked by git");
+    const json = await capture(() => main(["doctor", "--json"], workspace));
+    expect(json.value).toBe(0);
+    const checks = (JSON.parse(json.stdout) as { checks: Array<{ name: string; warnings: string[] }> }).checks;
+    expect(checks.find((check) => check.name === "config")?.warnings).toHaveLength(1);
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }

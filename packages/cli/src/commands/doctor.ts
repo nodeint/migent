@@ -24,6 +24,7 @@ function payload(checks: readonly Check[]): { ok: boolean; checks: Array<Record<
       ok: check.ok,
       items: [...check.items],
       problems: [...check.problems],
+      warnings: [...check.warnings],
     })),
   };
 }

@@ -233,7 +233,7 @@ function writeProject(
   writeFileSync(path.join(root, "config.yaml"), renderConfig(preset, primary), "utf8");
   const workflowName = `${preset}.yaml`;
   writeFileSync(path.join(workflows, workflowName), renderWorkflow(preset), "utf8");
-  writeFileSync(path.join(root, ".gitignore"), "sessions/\n", "utf8");
+  writeFileSync(path.join(root, ".gitignore"), "sessions/\nconfig.local.yaml\n", "utf8");
   return [".migent/config.yaml", `.migent/workflows/${workflowName}`, ".migent/.gitignore"];
 }
 

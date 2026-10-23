@@ -5,7 +5,8 @@ records stage executions, provider events, decisions, artifacts, and published
 outputs.
 
 Do not commit this directory. Commit `.migent/config.yaml` and
-`.migent/workflows/` instead.
+`.migent/workflows/` instead. `.migent/config.local.yaml` is a per-machine
+override and stays uncommitted.
 
 ## On-disk layout
 

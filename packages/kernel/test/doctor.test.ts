@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "vitest";
@@ -226,4 +227,41 @@ test("reports a verify stage that is not on every path to complete", () => {
   });
   expect(report.ok).toBe(false);
   expect(report.problems.join("\n")).toContain("stages.a.verify is not on every path to complete");
+});
+
+test("warns when config.local.yaml is tracked by git, without failing", () => {
+  const workspace = tempDir("migent-doctor-");
+  writeStageProject(workspace);
+  const local = path.join(workspace, ".migent", "config.local.yaml");
+  writeFileSync(local, "models:\n  grok:\n    model: grok-local\n", "utf8");
+  const options = { providers: defaultProviders(), which: whichFound(new Set(["codex", "grok"])) };
+
+  const outside = diagnose(workspace, options)[0];
+  expect(outside.warnings).toEqual([]);
+
+  execFileSync("git", ["init", "-q"], { cwd: workspace });
+  expect(diagnose(workspace, options)[0].warnings).toEqual([]);
+
+  execFileSync("git", ["add", ".migent/config.local.yaml"], { cwd: workspace });
+  const tracked = diagnose(workspace, options)[0];
+  expect(tracked.ok).toBe(true);
+  expect(tracked.warnings).toEqual([
+    ".migent/config.local.yaml is tracked by git; run git rm --cached .migent/config.local.yaml and keep it ignored.",
+  ]);
+});
+
+test("validates the merged config", () => {
+  const workspace = tempDir("migent-doctor-");
+  writeStageProject(workspace);
+  writeFileSync(
+    path.join(workspace, ".migent", "config.local.yaml"),
+    "models:\n  grok:\n    provider: claude\n",
+    "utf8",
+  );
+  const [config] = diagnose(workspace, {
+    providers: defaultProviders(),
+    which: whichFound(new Set(["codex", "grok"])),
+  });
+  expect(config.ok).toBe(false);
+  expect(config.problems).toContain("models.grok.provider is not supported: claude");
 });

@@ -4,6 +4,11 @@ Models describe execution. Roles describe intent. Both are declared in
 `.migent/config.yaml`. The Migent skill lists every accepted key in
 `.agents/skills/migent/references/schema-config.yaml`.
 
+To override these on one machine, put the same keys in
+`.migent/config.local.yaml`. It is not committed. Mappings merge key by key;
+scalars and lists, such as `instructions`, replace the value from `config.yaml`.
+Its `schema_version` is ignored. Sessions freeze the merged result.
+
 ```yaml
 schema_version: 2
 models:

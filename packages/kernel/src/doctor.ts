@@ -1,11 +1,13 @@
+import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
-import path from "node:path";
 import { z } from "zod";
 import type { ProviderInfo } from "./provider-contract.js";
 import {
   loadModelTarget,
   loadRoleInstructions,
-  loadYamlMapping,
+  hasLocalConfig,
+  LOCAL_CONFIG_FILE,
+  loadWorkspaceConfig,
   resolveRoleTarget,
   resolveStageSpec,
 } from "./config.js";
@@ -23,6 +25,7 @@ export interface Check {
   ok: boolean;
   items: string[];
   problems: string[];
+  warnings: string[];
 }
 
 const checkSchema = z.object({
@@ -30,6 +33,7 @@ const checkSchema = z.object({
   ok: z.boolean(),
   items: z.array(z.string()),
   problems: z.array(z.string()),
+  warnings: z.array(z.string()),
 });
 
 export interface DiagnoseOptions {
@@ -75,11 +79,11 @@ function checkConfig(
 } {
   let config: Record<string, unknown>;
   try {
-    config = loadYamlMapping(path.join(workspace, ".migent", "config.yaml"));
+    config = loadWorkspaceConfig(workspace);
   } catch (error) {
     if (!(error instanceof ConfigurationError)) throw error;
     return {
-      check: failed("config", [error.message]),
+      check: failed("config", [error.message], [], trackedLocalConfigWarnings(workspace)),
       executableByProvider: {},
       problems: [error.message],
       config: null,
@@ -157,11 +161,12 @@ function checkConfig(
     roleNames.push(roleKey);
   }
 
+  const warnings = trackedLocalConfigWarnings(workspace);
   if (problems.length > 0) {
-    return { check: failed("config", problems), executableByProvider, problems, config };
+    return { check: failed("config", problems, [], warnings), executableByProvider, problems, config };
   }
   return {
-    check: passed("config", roleNames),
+    check: passed("config", roleNames, warnings),
     executableByProvider,
     problems: [],
     config,
@@ -272,12 +277,35 @@ function checkProviders(
   return passed("providers", items);
 }
 
-function passed(name: string, items: readonly string[]): Check {
-  return checkSchema.parse({ name, ok: true, items: [...items], problems: [] });
+function passed(name: string, items: readonly string[], warnings: readonly string[] = []): Check {
+  return checkSchema.parse({ name, ok: true, items: [...items], problems: [], warnings: [...warnings] });
 }
 
-function failed(name: string, problems: readonly string[], items: readonly string[] = []): Check {
-  return checkSchema.parse({ name, ok: false, items: [...items], problems: [...problems] });
+function failed(
+  name: string,
+  problems: readonly string[],
+  items: readonly string[] = [],
+  warnings: readonly string[] = [],
+): Check {
+  return checkSchema.parse({
+    name,
+    ok: false,
+    items: [...items],
+    problems: [...problems],
+    warnings: [...warnings],
+  });
+}
+
+/** Empty unless the local override exists and git tracks it. No git, no repo, or untracked is silent. */
+function trackedLocalConfigWarnings(workspace: string): string[] {
+  if (!hasLocalConfig(workspace)) return [];
+  const relative = `.migent/${LOCAL_CONFIG_FILE}`;
+  const result = spawnSync("git", ["ls-files", "--error-unmatch", "--", relative], {
+    cwd: workspace,
+    stdio: "ignore",
+  });
+  if (result.error !== undefined || result.status !== 0) return [];
+  return [`${relative} is tracked by git; run git rm --cached ${relative} and keep it ignored.`];
 }
 
 function add(problems: string[], message: string): void {

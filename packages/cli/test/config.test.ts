@@ -466,3 +466,40 @@ test("bare config prints the file and no-input still lists", async () => {
     rmSync(workspace, { recursive: true, force: true });
   }
 });
+
+test("config show prints the merged config when config.local.yaml exists", async () => {
+  const workspace = tempDir();
+  try {
+    project(workspace);
+    writeFileSync(
+      path.join(workspace, ".migent", "config.local.yaml"),
+      "models:\n  shared:\n    model: grok-local\n",
+      "utf8",
+    );
+    const shown = await capture(() => main(["config", "show"], workspace));
+    expect(shown.value).toBe(0);
+    expect(shown.stdout).toContain("model: grok-local");
+    expect(shown.stdout).toContain("model: grok-4.7");
+    expect(shown.stderr).toContain("Merged with .migent/config.local.yaml.");
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("config edits leave config.local.yaml alone and keep local values out of config.yaml", async () => {
+  const workspace = tempDir();
+  try {
+    project(workspace);
+    const local = path.join(workspace, ".migent", "config.local.yaml");
+    const localText = "models:\n  shared:\n    model: grok-local\n";
+    writeFileSync(local, localText, "utf8");
+    const result = await capture(() =>
+      main(["config", "model", "plain", "--no-input", "--option", "reasoning-effort=low"], workspace),
+    );
+    expect(readFileSync(local, "utf8")).toBe(localText);
+    expect(readFileSync(path.join(workspace, ".migent", "config.yaml"), "utf8")).not.toContain("grok-local");
+    expect(result.value).toBe(0);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});

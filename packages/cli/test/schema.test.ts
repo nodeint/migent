@@ -84,6 +84,7 @@ test("config reference parses and names every key the config parser reads", () =
       model: "grok-4.7",
       options: { "reasoning-effort": "high" },
     });
+    expect(text).toContain("config.local.yaml");
     expect(loadRoleInstructions(config, "planner")).toEqual(["Break the task into a reviewable plan."]);
     expect(loadRoleInstructions(config, "reviewer")).toEqual([]);
     new GrokProvider().validateOptions({ "reasoning-effort": "high" });

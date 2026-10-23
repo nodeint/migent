@@ -5,7 +5,7 @@ import { stringify } from "yaml";
 import { writeFileAtomic } from "./atomic-file.js";
 import {
   loadRoleInstructions,
-  loadYamlMapping,
+  loadWorkspaceConfig,
   resolveStageSpec,
   type ModelOverride,
   type StageTarget,
@@ -44,7 +44,7 @@ export function writeWorkflowFreeze(
   workspace: string,
   workflow: WorkflowDocument,
 ): WrittenFreeze {
-  const config = loadYamlMapping(path.join(workspace, ".migent", "config.yaml"));
+  const config = loadWorkspaceConfig(workspace);
   const roles: Record<string, string[]> = {};
   for (const role of roleNames(workflow)) roles[role] = loadRoleInstructions(config, role);
   const targets: Record<string, StageTarget> = {};
@@ -197,7 +197,7 @@ export function warnIfFrozenDrift(
   }
   let config: Record<string, unknown> | null = null;
   try {
-    config = loadYamlMapping(path.join(workspace, ".migent", "config.yaml"));
+    config = loadWorkspaceConfig(workspace);
   } catch (error) {
     if (!(error instanceof ConfigurationError)) throw error;
   }

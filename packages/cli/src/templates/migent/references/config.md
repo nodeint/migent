@@ -6,6 +6,15 @@ Run `migent provider list --json` to see which provider CLIs are available
 and what model ids each supports. Use that output to pick a provider and
 model id before using `config model` or `init`.
 
+## Per-machine override
+
+`.migent/config.local.yaml` is an optional, uncommitted file with the same keys
+as `config.yaml`. Mappings merge key by key; scalars and lists, such as
+`instructions`, replace the value from `config.yaml`. Its `schema_version` is
+ignored. Runs, `doctor`, and `config show` read the merged result.
+`config model` and `config role` edit `config.yaml` only, never the local file.
+`doctor` warns if git tracks the local file.
+
 ## Run one role
 
 Without `--workflow`, `session run` runs a single role:

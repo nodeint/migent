@@ -1,5 +1,6 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import path from "node:path";
+import { stringify } from "yaml";
 import { z } from "zod";
 import { ConfigurationError } from "./errors.js";
 import { isRecord } from "./record.js";
@@ -48,6 +49,62 @@ export function loadYamlMapping(filePath: string): Record<string, unknown> {
   return mapping.data;
 }
 
+export const LOCAL_CONFIG_FILE = "config.local.yaml";
+
+export function configPath(workspace: string): string {
+  return path.join(workspace, ".migent", "config.yaml");
+}
+
+export function localConfigPath(workspace: string): string {
+  return path.join(workspace, ".migent", LOCAL_CONFIG_FILE);
+}
+
+export function hasLocalConfig(workspace: string): boolean {
+  try {
+    return statSync(localConfigPath(workspace)).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Plain mappings merge recursively. Any other local value, lists included, replaces
+ * the base value. Neither input is mutated.
+ */
+export function mergeConfig(
+  base: Record<string, unknown>,
+  local: Record<string, unknown>,
+): Record<string, unknown> {
+  const merged: Record<string, unknown> = { ...base };
+  for (const [key, value] of Object.entries(local)) {
+    const current = merged[key];
+    merged[key] = isRecord(current) && isRecord(value) ? mergeConfig(current, value) : value;
+  }
+  return merged;
+}
+
+/**
+ * `config.yaml` with `config.local.yaml` merged over it when that file exists.
+ * `schema_version` always comes from `config.yaml`.
+ */
+export function loadWorkspaceConfig(workspace: string): Record<string, unknown> {
+  const base = loadYamlMapping(configPath(workspace));
+  if (!hasLocalConfig(workspace)) return base;
+  let loaded: Record<string, unknown>;
+  try {
+    loaded = loadYamlMapping(localConfigPath(workspace));
+  } catch (error) {
+    if (!(error instanceof ConfigurationError)) throw error;
+    throw new ConfigurationError(`${error.message} (${localConfigPath(workspace)})`);
+  }
+  const { schema_version: _ignored, ...local } = loaded;
+  return mergeConfig(base, local);
+}
+
+export function stringifyConfig(config: Record<string, unknown>): string {
+  return stringify(config, { lineWidth: 0 });
+}
+
 export function resolveStageTarget(
   workspace: string,
   workflowId: string,
@@ -67,7 +124,7 @@ export function resolveStageTarget(
   const stage = workflow.stages[stageId];
   if (stage === undefined) throw new ConfigurationError(`Stage not found: ${stageId}`);
   if (!isRoleStage(stage)) throw new ConfigurationError(`Stage ${stageId} has no role.`);
-  const config = loadYamlMapping(path.join(workspace, ".migent", "config.yaml"));
+  const config = loadWorkspaceConfig(workspace);
   return resolveStageSpec(config, stage, options);
 }
 
@@ -99,7 +156,7 @@ export function resolveRoleTarget(
       "Pass both --provider and --model to override the resolved model, or omit both.",
     );
   }
-  const config = loadYamlMapping(path.join(workspace, ".migent", "config.yaml"));
+  const config = loadWorkspaceConfig(workspace);
   if (provider !== null && model !== null) {
     const roles = mapping(config.roles, "roles");
     mapping(roles[role], `roles.${role}`);

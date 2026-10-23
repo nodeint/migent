@@ -21,6 +21,9 @@ This skill is already in the prompt. Do not open its file again.
   and `schema-workflow.yaml` in the same folder. A key absent from them is
   ignored. Then run `migent doctor --json`; if it reports an outdated schema,
   run `migent migrate --yes`.
+- `.migent/config.local.yaml`, when present, overrides `config.yaml` on this
+  machine. It is not committed. Read both, and edit shared settings in
+  `config.yaml`, not the local file.
 - You have no terminal for prompts. Pass `--no-input` (or set
   `MIGENT_NO_INPUT=1`) to `init`, `config model`, and `config role`, and give
   every value as a flag.

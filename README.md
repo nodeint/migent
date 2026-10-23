@@ -140,12 +140,13 @@ Both options generate:
 ```text
 .migent/
 ├── config.yaml        # models and roles
+├── config.local.yaml  # optional per-machine override, not committed
 ├── .gitignore         # keeps sessions/ untracked
 └── workflows/
     └── plan.yaml      # plan-and-review workflow
 ```
 
-Commit `config.yaml` and `workflows/`.
+Commit `config.yaml` and `workflows/`. `config.local.yaml` overrides `config.yaml` on one machine and is ignored by git.
 
 ### Run
 

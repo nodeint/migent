@@ -5,9 +5,9 @@ import { ConfigurationError, executeNamedWorkflow, loadNamedWorkflow } from "../
 import { AgentToolRunner } from "../src/agent-runner.ts";
 import { readFoldedStatus } from "../src/session-fold.ts";
 import { createAgentSession, createPreparedSession, createWorkflowSession } from "../src/session-records.ts";
-import { WORKFLOW_FREEZE_FILE, loadFrozenWorkflow } from "../src/session-freeze.ts";
+import { WORKFLOW_FREEZE_FILE, loadFrozenWorkflow, readWorkflowFreeze, writeWorkflowFreeze } from "../src/session-freeze.ts";
 import { SessionStore } from "../src/session-store.ts";
-import { ScriptedProvider, tempDir } from "./support.ts";
+import { ScriptedProvider, tempDir, writeStageWorkspace } from "./support.ts";
 
 const ORIGINAL = `\
 id: flow
@@ -288,4 +288,17 @@ test("an agent session has no frozen workflow", async () => {
   await expect(executeNamedWorkflow(workspace, { sessionId, refreshWorkflow: true })).rejects.toThrow(
     `Session ${sessionId} has no frozen workflow.`,
   );
+});
+
+test("freezes the targets of the merged config", () => {
+  const workspace = writeStageWorkspace();
+  writeFileSync(
+    path.join(workspace, ".migent", "config.local.yaml"),
+    "models:\n  grok:\n    model: grok-local\n",
+    "utf8",
+  );
+  const sessionDirectory = tempDir("migent-freeze-");
+  writeWorkflowFreeze(sessionDirectory, workspace, loadNamedWorkflow(workspace, "plan-implement"));
+  const frozen = readWorkflowFreeze(sessionDirectory);
+  expect(frozen?.targets.implement?.model).toBe("grok-local");
 });
