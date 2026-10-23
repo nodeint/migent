@@ -1,16 +1,21 @@
+import { homedir } from "node:os";
 import { diagnose, whichSync, type Check } from "@nodeint/migent-kernel";
 import { printDoctor } from "../display.js";
 import { cliHooks } from "../hooks.js";
 import { requireCurrentSchema } from "../migrate.js";
 import { providerMap, type Which } from "../provider.js";
+import { skillCheck } from "../skill-check.js";
 
 export async function runDoctor(
   workspace: string,
-  options: { asJson?: boolean; which?: Which | null } = {},
+  options: { asJson?: boolean; which?: Which | null; home?: string } = {},
 ): Promise<number> {
   requireCurrentSchema(workspace);
   const which = options.which ?? cliHooks.which ?? whichSync;
-  const checks = diagnose(workspace, { providers: providerMap(), which });
+  const checks = [
+    ...diagnose(workspace, { providers: providerMap(), which }),
+    skillCheck(workspace, options.home ?? homedir()),
+  ];
   if (options.asJson) process.stdout.write(`${JSON.stringify(payload(checks))}\n`);
   else printDoctor(checks);
   return checks.every((check) => check.ok) ? 0 : 1;

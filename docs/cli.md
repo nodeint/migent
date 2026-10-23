@@ -168,7 +168,8 @@ stage. `--preset plan` writes a planner and a reviewer. In a terminal,
 provider, model, and prompted options are chosen from lists. Both `plan`
 roles use that model; give the reviewer another with `migent config role
 reviewer`. In a terminal, init also asks whether to
-install the Migent skill at `.agents/skills/migent/`. `--skill` installs that
+install the Migent skill in the directory the chosen client reads (for
+example `.agents/skills/migent/` for codex). `--skill` installs that
 skill without asking. Pass `--provider` and `--model` together when input is
 not a terminal, or when `--no-input` or `MIGENT_NO_INPUT=1` is set. Without
 `--skill`, a non-interactive init leaves the skill uninstalled. After the
@@ -180,8 +181,7 @@ still installs.
 
 An existing valid project is left unchanged. `--skill` still installs the
 skill on that project. A partial `.migent/` directory stops init and lists
-the files in the way. Init writes nothing when the skill directory already
-exists and installation was requested.
+the files in the way. Init writes nothing when the skill install fails.
 
 ## Config
 
@@ -256,18 +256,29 @@ arguments are rejected, before the file changes.
 ## Project skill
 
 ```bash
-migent skill install
-migent skill update
+migent skill install [--project | --global] [--client <ids>] [-y]
+migent skill update  [--project | --global] [--client <ids>] [-y]
+migent skill path
 ```
 
-`skill install` writes the bundled Migent usage skill to
-`.agents/skills/migent/` in the configured project. It refuses to replace an
-existing directory.
+`skill install` and `skill update` run `npx skills add <bundled skill> -s migent
+--copy`, so they need Node 22.20 or newer and `npx` on PATH. `skills` sends
+anonymous telemetry; Migent sets `DISABLE_TELEMETRY=1` unless you already set it.
 
-`skill update` refreshes a skill previously installed by Migent. It refuses
-to overwrite local changes; use `migent skill update --force` when replacing
-those changes is intentional. The installed template metadata is kept beside
-`SKILL.md` in `.migent-template.json`.
+`install` needs a scope. In a terminal it asks "Project" or "Global"; otherwise
+pass `--project` or `--global`. `--client` takes a comma-separated list of
+`claude-code`, `codex`, `opencode`, `agy`, `grok`. Without it, project scope
+uses the clients of the models in `.migent/config.yaml`, and `skills` asks when
+none are known. Project scope writes to the client's project directory
+(`.claude/skills`, `.agents/skills` for codex, opencode and agy, `.grok/skills`);
+global scope writes under your home directory the same way.
+
+`update` scans every client directory in both scopes and reinstalls the copies
+whose files differ from the skill bundled with this CLI (line endings ignored).
+It asks first, because a copy may hold local edits; `-y` skips the question.
+`npx skills update` does not upgrade this skill; use `migent skill update`.
+
+`skill path` prints the bundled skill directory.
 
 ## Doctor
 

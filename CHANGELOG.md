@@ -4,7 +4,16 @@
 
 ### Added
 
+- `migent skill path` prints the directory of the skill bundled with the CLI. `migent skill install` and `update` take `--project`/`--global`, `--client <ids>` and `-y`, and cover claude-code, codex, opencode, agy and grok. `migent doctor` has a `skill` check that warns, without failing, when the skill is missing or an installed copy differs from the bundled one.
 - `migent session cancel <session> [--wait <sec>] [--json]` asks the process running a session to stop, through a `cancel.requested` marker the lock holder polls every 500 ms. It works on Windows, where signals cannot stop a run cleanly. The run ends as if it got SIGINT (exit 130, execution `cancelled`, lock released), and `session continue` resumes it. Exit 0 when the session stopped, 1 when it still runs after `--wait` (default 15 s), 2 when the session does not exist, is not running, or runs on another machine.
+
+### Changed
+
+- `migent skill install` and `update` run `npx skills add` (Node 22.20 or newer) instead of writing `.agents/skills/migent` themselves. `update` reinstalls every copy that differs from the bundled skill, after asking. `init --skill` installs into the directory of the chosen client.
+
+### Removed
+
+- The `.migent-template.json` state file and `skill update --force`.
 
 ## 0.1.8
 

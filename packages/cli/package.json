@@ -42,7 +42,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsc -b && rm -rf dist/templates && cp -R src/templates dist/templates",
+    "build": "tsc -b && node ../../scripts/copy-templates.mjs",
     "prepack": "pnpm -w run build && cp ../../LICENSE . && cp ../../README.md ."
   },
   "dependencies": {

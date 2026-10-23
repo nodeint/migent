@@ -2,7 +2,7 @@
 
 A workflow is a set of stages connected by dependencies and explicit decision
 routes. Definitions live in `.migent/workflows/` as YAML files. The Migent skill
-lists every accepted key in `.agents/skills/migent/references/schema-workflow.yaml`.
+lists every accepted key in `references/schema-workflow.yaml` in the installed Migent skill (`migent skill path` prints the bundled copy).
 `id` is optional. When it is omitted, the id is the file name without `.yaml`. When
 `id` is set, that value is the workflow name used by `migent session run --workflow`,
 `requires`, and sessions. Two files with the same id are an error. A path to

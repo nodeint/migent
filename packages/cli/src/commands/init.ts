@@ -20,7 +20,7 @@ import {
 } from "../display.js";
 import { cliHooks } from "../hooks.js";
 import { runDoctor } from "./doctor.js";
-import { installSkill } from "./skill.js";
+import { clientsFromConfig, installSkill, projectSkillPath, providerClient } from "./skill.js";
 import {
   acceptedOptions,
   providerMap,
@@ -91,7 +91,9 @@ export async function runInit(
     }
     if (options.presetExplicit === true) printError("Already initialized; ignoring --preset.");
     printAlreadyInitialized();
-    if (skill) return installSkill(workspace);
+    if (skill) {
+      return installSkill({ workspace, scope: "project", clients: clientsFromConfig(workspace, chosen), yes: true, which: resolve });
+    }
     return 0;
   }
   if ((provider === null) !== (model === null)) {
@@ -123,17 +125,27 @@ export async function runInit(
     printError(error instanceof Error ? error.message : String(error));
     return 2;
   }
+  const client = providerClient(chosen[primary.provider]);
   let install = skill;
   if (!install && interactive) {
     try {
-      install = await prompt.confirm("Install the Migent skill in .agents/skills/migent?");
+      install = await prompt.confirm(`Install the Migent skill in ${projectSkillPath(client)}?`);
     } catch (error) {
       if (error instanceof PromptCancelled) throw error;
       printError(error instanceof Error ? error.message : String(error));
       return 2;
     }
   }
-  if (install && installSkill(workspace) !== 0) return 1;
+  if (install) {
+    const code = await installSkill({
+      workspace,
+      scope: "project",
+      clients: client === null ? [] : [client],
+      yes: true,
+      which: resolve,
+    });
+    if (code !== 0) return 1;
+  }
   const paths = writeProject(workspace, preset, primary);
   printCreated(paths, `migent session run --workflow ${preset} --task "..."`);
   if (interactive) {

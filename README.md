@@ -104,14 +104,13 @@ Upgrade with `npm install -g @nodeint/migent@latest`.
 
 ### Install agent skill
 
-From your project repository:
-
 ```bash
 migent skill install
 ```
 
-Installs `.agents/skills/migent/` so your AI agent knows how to configure, run,
-and inspect Migent workflows.
+Pick a project or global install and the AI clients to set up. It uses
+`npx skills`, so it needs Node 22.20 or newer. Run `migent skill update` after
+upgrading Migent. See [docs/cli.md](docs/cli.md#project-skill) for options.
 
 ### Create a project
 
@@ -122,7 +121,7 @@ Choose one:
 Paste this prompt into your agent (Claude Code, Antigravity, Cursor, etc.):
 
 ```text
-Load skill migent: Read and follow .agents/skills/migent/SKILL.md.
+Load skill migent: Use the installed migent skill.
 
 Instructions: Initialize Migent for this project using the installed provider CLIs, set up .migent/config.yaml and .migent/workflows/plan.yaml, and run `migent doctor` to verify.
 ```

@@ -1,3 +1,4 @@
+import { cpSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -176,5 +177,38 @@ test("doctor prints and returns a tracked config.local.yaml warning without fail
     expect(checks.find((check) => check.name === "config")?.warnings).toHaveLength(1);
   } finally {
     rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("doctor warns about a missing or outdated Migent skill without failing", async () => {
+  const workspace = mkdtempSync(path.join(tmpdir(), "migent-cli-"));
+  const home = mkdtempSync(path.join(tmpdir(), "migent-home-"));
+  try {
+    writeProject(workspace);
+    const skills = (await import("../src/skill-check.ts")).skillCheck;
+    const none = skills(workspace, home);
+    expect(none.ok).toBe(true);
+    expect(none.warnings.join("\n")).toContain("migent skill install");
+
+    const installed = path.join(home, ".agents", "skills", "migent");
+    const { skillSourceDirectory } = await import("../src/commands/skill.ts");
+    cpSync(skillSourceDirectory(), installed, { recursive: true });
+    const current = skills(workspace, home);
+    expect(current.warnings).toEqual([]);
+    expect(current.items[0]).toContain("~/.agents/skills/migent");
+
+    writeFileSync(path.join(installed, "SKILL.md"), "---\nname: migent\n---\nold\n", "utf8");
+    const different = skills(workspace, home);
+    expect(different.ok).toBe(true);
+    expect(different.warnings[0]).toContain("migent skill update --global");
+
+    cliHooks.which = whichBoth;
+    const captured = await capture(() => main(["doctor", "--json"], workspace));
+    expect(captured.value).toBe(0);
+    const names = (JSON.parse(captured.stdout) as { checks: Array<{ name: string }> }).checks.map((check) => check.name);
+    expect(names).toContain("skill");
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
   }
 });

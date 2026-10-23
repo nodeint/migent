@@ -13,7 +13,7 @@ import {
 } from "@nodeint/migent-kernel";
 import { expect, test } from "vitest";
 
-const TEMPLATES = fileURLToPath(new URL("../src/templates/migent/references/", import.meta.url));
+const TEMPLATES = fileURLToPath(new URL("../../../skills/migent/references/", import.meta.url));
 const WORKFLOW_PARSER = fileURLToPath(new URL("../../kernel/src/workflow.ts", import.meta.url));
 const CONFIG_PARSER = fileURLToPath(new URL("../../kernel/src/config.ts", import.meta.url));
 const RECORD_PARSER = fileURLToPath(new URL("../../kernel/src/record.ts", import.meta.url));

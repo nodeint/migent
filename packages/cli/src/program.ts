@@ -11,7 +11,7 @@ import { repairWorkflowSession } from "./commands/repair.js";
 import { runInit } from "./commands/init.js";
 import { runSessionMetrics, runSessions } from "./commands/sessions.js";
 import { parsePort, runServiceStart, runServiceStatus, runServiceStop } from "./commands/service.js";
-import { installSkill, updateSkill } from "./commands/skill.js";
+import { installSkill, printSkillPath, updateSkill, type SkillOptions } from "./commands/skill.js";
 import { runProviderList } from "./commands/provider.js";
 import { runRegister, runRemove, runWorkspaceList } from "./commands/workspace-registry.js";
 import { printError } from "./display.js";
@@ -50,7 +50,7 @@ export function createProgram(status: CliStatus): Command {
     .option("--model <model>", "Model id for the default model. Pass with --provider.")
     .option("--option <pair>", "KEY=VALUE stored under models.*.options.", collect, [])
     .option("--preset <preset>", "Workflow to create: implement or plan. Default: implement.", "implement")
-    .option("--skill", "Install the Migent skill at .agents/skills/migent.")
+    .option("--skill", "Install the Migent skill for the chosen client with `npx skills`.")
     .option("--no-input", "Do not prompt. Same as MIGENT_NO_INPUT=1.");
   init.action((options: OptionValues) =>
     settle(status, () => {
@@ -178,18 +178,51 @@ export function createProgram(status: CliStatus): Command {
       settle(status, () => runMigrate(findWorkspace(invocationCwdPath()), { assumeYes: options.yes === true })),
     );
 
-  const skill = program.command("skill").description("Install or update the Migent skill in this project.");
+  const skill = program
+    .command("skill")
+    .description("Install or update the Migent skill with `npx skills` (needs Node 22.20 or newer).");
+  const scoped = (command: Command): Command =>
+    command
+      .option("--project", "Use the current project.")
+      .option("--global", "Use the home directory, for all projects.")
+      .option("--client <ids>", "Comma-separated clients: claude-code, codex, opencode, agy, grok.")
+      .option("-y, --yes", "Do not ask.")
+      .option("--no-input", "Do not prompt. Same as MIGENT_NO_INPUT=1.");
+  const skillOptions = (options: OptionValues): SkillOptions | null => {
+    if (options.project === true && options.global === true) {
+      printError("Pass only one of --project and --global.");
+      return null;
+    }
+    let workspace = invocationCwdPath();
+    try {
+      workspace = findWorkspace(workspace);
+    } catch {
+      // No .migent yet: the skill installs into the current directory.
+    }
+    return {
+      workspace,
+      scope: options.global === true ? "global" : options.project === true ? "project" : null,
+      clients: optionalText(options.client)?.split(",") ?? [],
+      yes: options.yes === true,
+      interactive: !inputDisabled(options) && Boolean(process.stdin.isTTY),
+    };
+  };
+  scoped(skill.command("install").description("Install the Migent skill into the clients' skill directories.")).action(
+    (options: OptionValues) => settle(status, () => {
+      const resolved = skillOptions(options);
+      return resolved === null ? 2 : installSkill(resolved);
+    }),
+  );
+  scoped(skill.command("update").description("Reinstall installed Migent skill copies that differ from the bundled skill.")).action(
+    (options: OptionValues) => settle(status, () => {
+      const resolved = skillOptions(options);
+      return resolved === null ? 2 : updateSkill(resolved);
+    }),
+  );
   skill
-    .command("install")
-    .description("Install the Migent skill without replacing an existing directory.")
-    .action(() => settle(status, () => installSkill(findWorkspace(invocationCwdPath()))));
-  skill
-    .command("update")
-    .description("Update a managed Migent skill to the bundled template.")
-    .option("--force", "Replace a locally modified managed skill with the bundled template.")
-    .action((options: OptionValues) =>
-      settle(status, () => updateSkill(findWorkspace(invocationCwdPath()), { force: options.force === true })),
-    );
+    .command("path")
+    .description("Print the directory of the skill bundled with this CLI.")
+    .action(() => settle(status, () => printSkillPath()));
   showHelpWhenBare(status, skill);
 
   const service = program.command("service").description("Run the local workspace registry service.");
