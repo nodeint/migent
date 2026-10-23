@@ -169,6 +169,7 @@ test("doctor prints and returns a tracked config.local.yaml warning without fail
     const text = await capture(() => main(["doctor"], workspace));
     expect(text.value).toBe(0);
     expect(text.stdout).toContain("warning: .migent/config.local.yaml is tracked by git");
+    cliHooks.which = whichBoth;
     const json = await capture(() => main(["doctor", "--json"], workspace));
     expect(json.value).toBe(0);
     const checks = (JSON.parse(json.stdout) as { checks: Array<{ name: string; warnings: string[] }> }).checks;

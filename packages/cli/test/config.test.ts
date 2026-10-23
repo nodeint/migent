@@ -493,6 +493,7 @@ test("config edits leave config.local.yaml alone and keep local values out of co
     const local = path.join(workspace, ".migent", "config.local.yaml");
     const localText = "models:\n  shared:\n    model: grok-local\n";
     writeFileSync(local, localText, "utf8");
+    cliHooks.which = which;
     const result = await capture(() =>
       main(["config", "model", "plain", "--no-input", "--option", "reasoning-effort=low"], workspace),
     );
