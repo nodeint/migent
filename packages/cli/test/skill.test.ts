@@ -6,6 +6,7 @@ import {
   buildSkillsArgv,
   clientsFromConfig,
   installSkill,
+  quoteShellArg,
   skillSourceDirectory,
   updateSkill,
 } from "../src/commands/skill.ts";
@@ -133,6 +134,11 @@ test("install fails clearly on old Node, missing npx, or a failing skills run", 
   const failed = await capture(() => installSkill({ scope: "global", run: failing.run, which: withNpx }));
   expect(failed.value).toBe(1);
   expect(failed.stderr).toContain("code 3");
+});
+
+test("quoteShellArg quotes an argument that holds a space", () => {
+  expect(quoteShellArg("C:\\Users\\A B\\skills\\migent")).toBe('"C:\\Users\\A B\\skills\\migent"');
+  expect(quoteShellArg("--copy")).toBe("--copy");
 });
 
 test("buildSkillsArgv omits -a without targets", () => {

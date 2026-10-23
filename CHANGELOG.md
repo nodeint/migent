@@ -13,6 +13,8 @@
 
 - `migent skill install` and `update` run `npx skills add` (Node 22.20 or newer) instead of writing `.agents/skills/migent` themselves. `update` reinstalls every copy that differs from the bundled skill, after asking. `init --skill` installs into the directory of the chosen client.
 
+- `migent skill install` and `update` work on Windows when the path of the bundled skill holds a space.
+
 ### Removed
 
 - The `.migent-template.json` state file and `skill update --force`.

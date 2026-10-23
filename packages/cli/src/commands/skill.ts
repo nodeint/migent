@@ -150,11 +150,17 @@ async function runSkills(scope: SkillScope, targets: readonly SkillTarget[], opt
   return code === 0 ? 0 : 1;
 }
 
+/** `shell: true` joins argv unquoted, so cmd.exe splits an argument that holds a space. */
+export function quoteShellArg(arg: string): string {
+  return /[\s&|<>()^%!"]/.test(arg) ? `"${arg.replace(/"/g, '""')}"` : arg;
+}
+
 function defaultRunner(argv: string[], cwd: string): number {
-  const result = spawnSync("npx", argv, {
+  const windows = process.platform === "win32";
+  const result = spawnSync("npx", windows ? argv.map(quoteShellArg) : argv, {
     cwd,
     stdio: "inherit",
-    shell: process.platform === "win32",
+    shell: windows,
     env: { ...process.env, DISABLE_TELEMETRY: process.env.DISABLE_TELEMETRY ?? "1" },
   });
   return result.status ?? 1;
