@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import path from "node:path";
 import { expect, test } from "vitest";
 import type { BuildCommandInput } from "../src/provider-contract.ts";
-import { AgentToolRunner, SessionLock, SessionStore, StageOutcome, createWorkflowSession, executeNamedWorkflow, raiseCancellation } from "../src/index.ts";
+import { AgentToolRunner, SessionLock, SessionStore, StageOutcome, createWorkflowSession, executeNamedWorkflow, raiseCancellation, requestSessionCancel } from "../src/index.ts";
 import { clearInFlightExecution, noteInFlightExecution } from "../src/session-store.ts";
 import type { CommandSpec } from "../src/command-executor.ts";
 import { ScriptedProvider, tempDir } from "./support.ts";
@@ -147,6 +147,59 @@ completion:
     } catch {
       // The waiters were woken; the throw is for signal handlers.
     }
+  }, 50);
+  const first = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId }, runner);
+  clearInterval(timer);
+  expect(first.stopReason).toBe("cancelled");
+  expect(provider.calls).toHaveLength(1);
+  const executionId = executionIds(workspace, sessionId)[0];
+  writeFileSync(marker, "1", "utf8");
+
+  const second = await executeNamedWorkflow(
+    workspace,
+    { workflowId: "wf", sessionId, resetRevisions: true },
+    runner,
+  );
+  expect(second.code).toBe(0);
+  expect(second.stopReason).toBe("completed");
+  expect(second.latestExecutionId).toBe(executionId);
+  expect(executionIds(workspace, sessionId)).toEqual([executionId]);
+  expect(provider.calls).toHaveLength(1);
+  expect(new SessionStore(workspace).readSessionStatus(sessionId).status).toBe("completed");
+}, 30_000);
+
+test("a cancel marker stops a running verify and continue reruns it", async () => {
+  const root = tempDir("migent-cancel-verify-marker-");
+  const marker = path.join(root, "go");
+  const pidFile = path.join(root, "pid");
+  const script = path.join(root, "hold.cjs");
+  writeFileSync(
+    script,
+    `const fs=require("fs");
+if (fs.existsSync(${JSON.stringify(marker)})) process.exit(0);
+fs.writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));
+setInterval(() => { if (fs.existsSync(${JSON.stringify(marker)})) process.exit(0); }, 50);`,
+    "utf8",
+  );
+  const command = `"${process.execPath}" "${script}"`;
+  const { workspace, sessionId } = setup(`\
+id: wf
+stages:
+  - id: implement
+    role: developer
+    produces:
+      artifact: notes.md
+    verify:
+      - ${JSON.stringify(command)}
+completion:
+  stage: implement
+`);
+  const provider = new ScriptedProvider([OK], ["# notes\n"]);
+  const runner = new AgentToolRunner({ fake: provider }, 10);
+  const timer = setInterval(() => {
+    if (!existsSync(pidFile) || readFileSync(pidFile, "utf8").trim() === "") return;
+    clearInterval(timer);
+    requestSessionCancel(path.join(workspace, ".migent", "sessions", sessionId));
   }, 50);
   const first = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId }, runner);
   clearInterval(timer);
@@ -386,3 +439,38 @@ function execution(workspace: string, sessionId: string, executionId: string): R
   const file = path.join(workspace, ".migent", "sessions", sessionId, "executions", executionId, "execution.json");
   return JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
 }
+
+test("a cancel marker stops a hung provider and continue resumes it", async () => {
+  const root = tempDir("migent-cancel-marker-");
+  const pidFile = path.join(root, "pid");
+  const { workspace, sessionId } = setup(`\
+id: wf
+stages:
+  - id: implement
+    role: developer
+completion:
+  stage: implement
+`);
+  const provider = new HangFirstProvider(pidFile, [OK]);
+  const runner = new AgentToolRunner({ fake: provider }, 10);
+  const directory = path.join(workspace, ".migent", "sessions", sessionId);
+  const timer = setInterval(() => {
+    if (!existsSync(pidFile) || readFileSync(pidFile, "utf8").trim() === "") return;
+    clearInterval(timer);
+    requestSessionCancel(directory);
+  }, 50);
+  const first = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId }, runner);
+  clearInterval(timer);
+  expect(first.stopReason).toBe("cancelled");
+  expect(first.status).toBe("cancelled");
+  expect(existsSync(path.join(directory, "session.lock"))).toBe(false);
+  expect(existsSync(path.join(directory, "cancel.requested"))).toBe(false);
+
+  const second = await executeNamedWorkflow(
+    workspace,
+    { workflowId: "wf", sessionId, resetRevisions: true },
+    runner,
+  );
+  expect(second.code).toBe(0);
+  expect(second.stopReason).toBe("completed");
+}, 30_000);

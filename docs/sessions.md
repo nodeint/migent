@@ -24,6 +24,7 @@ show use `session_id` for that session.
 ├── task.md                               # task body; written before the first stage
 ├── events.jsonl
 ├── session.lock                          # present only while a process is running the session
+├── cancel.requested                      # temporary; written by `session cancel`, removed by the running process
 ├── outputs/                              # present after outputs are published
 │   └── <output-name>
 └── executions/

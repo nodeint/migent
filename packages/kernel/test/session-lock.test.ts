@@ -11,7 +11,7 @@ import {
   createWorkflowSession,
   executeNamedWorkflow,
 } from "../src/index.ts";
-import { setBetweenStaleLockReads } from "../src/session-lock.ts";
+import { CANCEL_REQUEST_FILENAME, requestSessionCancel, setBetweenStaleLockReads } from "../src/session-lock.ts";
 import { createSessionDirectory, createPreparedSession } from "../src/session-records.ts";
 import { ScriptedProvider, tempDir } from "./support.ts";
 
@@ -223,4 +223,58 @@ test("an execution directory that exists is an error, never shared", () => {
   } finally {
     lock.release();
   }
+});
+
+test("a cancel marker with the holder's nonce fires the handler once and is removed", async () => {
+  const dir = sessionDir();
+  const lock = SessionLock.acquire(dir);
+  try {
+    let calls = 0;
+    lock.onCancelRequest(() => {
+      calls += 1;
+    });
+    expect(requestSessionCancel(dir)).toBe("requested");
+    await new Promise((resolve) => setTimeout(resolve, 900));
+    expect(calls).toBe(1);
+    expect(existsSync(path.join(dir, CANCEL_REQUEST_FILENAME))).toBe(false);
+  } finally {
+    lock.release();
+  }
+});
+
+test("a cancel marker with another nonce is ignored", async () => {
+  const dir = sessionDir();
+  const lock = SessionLock.acquire(dir);
+  try {
+    let calls = 0;
+    lock.onCancelRequest(() => {
+      calls += 1;
+    });
+    writeFileSync(path.join(dir, CANCEL_REQUEST_FILENAME), JSON.stringify({ nonce: "someone-else" }));
+    await new Promise((resolve) => setTimeout(resolve, 900));
+    expect(calls).toBe(0);
+  } finally {
+    lock.release();
+  }
+});
+
+test("acquire and release remove a stale cancel marker", () => {
+  const dir = sessionDir();
+  const marker = path.join(dir, CANCEL_REQUEST_FILENAME);
+  writeFileSync(marker, JSON.stringify({ nonce: "old" }));
+  const lock = SessionLock.acquire(dir);
+  expect(existsSync(marker)).toBe(false);
+  writeFileSync(marker, JSON.stringify({ nonce: "late" }));
+  lock.release();
+  expect(existsSync(marker)).toBe(false);
+});
+
+test("requestSessionCancel reports not-running and foreign-host", () => {
+  const dir = sessionDir();
+  expect(requestSessionCancel(dir)).toBe("not-running");
+  foreignLock(dir, { heartbeat_at: new Date(Date.now() - 60_000).toISOString() });
+  expect(requestSessionCancel(dir)).toBe("foreign-host");
+  foreignLock(dir, { host: os.hostname(), pid: 2_147_483_000 });
+  expect(requestSessionCancel(dir)).toBe("not-running");
+  expect(existsSync(path.join(dir, CANCEL_REQUEST_FILENAME))).toBe(false);
 });

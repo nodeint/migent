@@ -9,6 +9,40 @@ import { utcNow } from "./runtime.js";
 export const SESSION_LOCK_FILENAME = "session.lock";
 export const SESSION_LOCK_STALE_MS = 30_000;
 export const SESSION_LOCK_HEARTBEAT_MS = 10_000;
+export const CANCEL_REQUEST_FILENAME = "cancel.requested";
+const CANCEL_POLL_MS = 500;
+
+export type CancelRequestResult = "requested" | "not-running" | "foreign-host";
+
+/**
+ * Ask the process that holds the session lock to stop. Writes `cancel.requested` with the holder's
+ * nonce. A lock that is stale, or missing, is not a running session and gets no marker.
+ */
+export function requestSessionCancel(
+  sessionDirectory: string,
+  staleMs: number = SESSION_LOCK_STALE_MS,
+): CancelRequestResult {
+  const directory = path.resolve(sessionDirectory);
+  const info = readLock(path.join(directory, SESSION_LOCK_FILENAME));
+  if (info === null) return "not-running";
+  if (info.host !== os.hostname()) return "foreign-host";
+  if (isStale({ heartbeat: info.heartbeat_at, info }, staleMs)) return "not-running";
+  writeJsonAtomic(path.join(directory, CANCEL_REQUEST_FILENAME), {
+    nonce: info.nonce,
+    requested_at: utcNow(),
+    requested_by_pid: process.pid,
+  });
+  return "requested";
+}
+
+/** True while the lock file exists and its owner is alive. */
+export function sessionLockAlive(
+  sessionDirectory: string,
+  staleMs: number = SESSION_LOCK_STALE_MS,
+): boolean {
+  const info = readLock(path.join(path.resolve(sessionDirectory), SESSION_LOCK_FILENAME));
+  return info !== null && !isStale({ heartbeat: info.heartbeat_at, info }, staleMs);
+}
 
 export interface SessionLockTiming {
   staleMs?: number;
@@ -54,6 +88,7 @@ export function sessionLockHeldLocally(sessionDirectory: string): boolean {
  */
 export class SessionLock {
   private timer: NodeJS.Timeout | null = null;
+  private cancelTimer: NodeJS.Timeout | null = null;
   private lost = false;
 
   private constructor(
@@ -83,6 +118,7 @@ export class SessionLock {
       if (!takeOverStale(lockPath, staleMs)) return null;
       if (!createExclusive(lockPath, info)) return null;
     }
+    removeCancelMarker(directory);
     const lock = new SessionLock(path.basename(directory), directory, lockPath, info, heartbeatMs);
     held.set(directory, lock);
     lock.startHeartbeat();
@@ -110,15 +146,36 @@ export class SessionLock {
   release(): void {
     if (this.timer !== null) clearInterval(this.timer);
     this.timer = null;
+    if (this.cancelTimer !== null) clearInterval(this.cancelTimer);
+    this.cancelTimer = null;
     if (held.get(this.directory) === this) held.delete(this.directory);
     const current = readLock(this.lockPath);
     if (current !== null && current.nonce === this.info.nonce) {
+      removeCancelMarker(this.directory);
       try {
         rmSync(this.lockPath, { force: true });
       } catch {
         // A lock nobody refreshes goes stale.
       }
     }
+  }
+
+  /**
+   * Call `handler` once when `migent session cancel` writes a marker for this lock. Only a run
+   * registers one; a short-lived holder such as repair ignores cancel requests.
+   */
+  onCancelRequest(handler: () => void): void {
+    if (this.cancelTimer !== null) clearInterval(this.cancelTimer);
+    const markerPath = path.join(this.directory, CANCEL_REQUEST_FILENAME);
+    this.cancelTimer = setInterval(() => {
+      const marker = readCancelMarker(markerPath);
+      if (marker === null || marker !== this.info.nonce) return;
+      if (this.cancelTimer !== null) clearInterval(this.cancelTimer);
+      this.cancelTimer = null;
+      removeCancelMarker(this.directory);
+      handler();
+    }, CANCEL_POLL_MS);
+    this.cancelTimer.unref();
   }
 
   /** Write one heartbeat now. Does nothing once the lock is lost. */
@@ -140,6 +197,24 @@ export class SessionLock {
   private startHeartbeat(): void {
     this.timer = setInterval(() => this.refresh(), this.heartbeatMs);
     this.timer.unref();
+  }
+}
+
+function readCancelMarker(markerPath: string): string | null {
+  try {
+    const parsed = JSON.parse(readFileSync(markerPath, "utf8")) as unknown;
+    if (isRecord(parsed) && typeof parsed.nonce === "string") return parsed.nonce;
+  } catch {
+    // Missing, or created but not yet written.
+  }
+  return null;
+}
+
+function removeCancelMarker(directory: string): void {
+  try {
+    rmSync(path.join(directory, CANCEL_REQUEST_FILENAME), { force: true });
+  } catch {
+    // A marker with a dead nonce is ignored and cleaned by the next acquire.
   }
 }
 

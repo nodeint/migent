@@ -375,7 +375,20 @@ migent session follow <session-id>
 migent session follow <session-id> --exit-when-done
 migent session repair <session-id>
 migent session repair <session-id> --accept-task
+migent session cancel <session-id>
+migent session cancel <session-id> --wait 60 --json
 ```
+
+`session cancel` stops a session that another process is running, without a
+signal. It writes `cancel.requested` in the session directory. The process that
+holds the session lock sees it within about 500 ms and stops as if it received
+SIGINT: the execution is marked cancelled, the process exits 130, and the lock
+is released. `session continue` then resumes it. The command waits up to
+`--wait` seconds (default 15) for the lock to go away. Exit 0 when the session
+stopped, 1 when it is still running after the wait, 2 when the session does not
+exist, no live process holds its lock, or the lock belongs to another machine.
+A session that is not running is left unchanged. `--json` prints
+`{"session_id", "cancelled", "status"}`.
 
 `session list` lists recorded runs, newest first. A row with a title prints that
 title before the session id. A row without one prints the id. `--workflow` and `--status`

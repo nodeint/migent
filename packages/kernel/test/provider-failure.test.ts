@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "vitest";
 import { ClaudeProvider } from "../../adapters/src/providers/claude-provider.ts";
@@ -9,6 +9,7 @@ import {
   STATUS_PROVIDER_EVENTS,
   executeNamedWorkflow,
   raiseCancellation,
+  requestSessionCancel,
   resetCancellation,
   sessionMetrics,
   waitUntil,
@@ -381,3 +382,25 @@ test("cancel during a wait leaves the session active and the execution failed", 
   );
   expect(continued.stopReason).toBe("completed");
 });
+
+test("a cancel marker wakes a quota wait and stops the session", async () => {
+  const workspace = workspaceFor(SOLO);
+  const sessions = path.join(workspace, ".migent", "sessions");
+  const timer = setInterval(() => {
+    if (!existsSync(sessions)) return;
+    for (const id of readdirSync(sessions)) {
+      const events = path.join(sessions, id, "events.jsonl");
+      if (!existsSync(events) || !readFileSync(events, "utf8").includes("quota")) continue;
+      clearInterval(timer);
+      requestSessionCancel(path.join(sessions, id));
+    }
+  }, 50);
+  const result = await executeNamedWorkflow(
+    workspace,
+    { workflowId: "wf", task: "Write" },
+    new AgentToolRunner({ alpha: new ClassifiedProvider(["status: complete\n\nlimited"], [quota(FUTURE)]) }, 10),
+  );
+  clearInterval(timer);
+  expect(result.stopReason).toBe("cancelled");
+  expect(existsSync(path.join(sessions, result.sessionId, "session.lock"))).toBe(false);
+}, 30_000);

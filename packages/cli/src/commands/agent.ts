@@ -95,7 +95,7 @@ export async function dispatchAgent(
         .map(([key, value]) => `${key}: ${value}`)
         .join(", ") || "default";
     printNotice(`agent ${args.role} · ${target.provider}/${target.model} (${optionLabel}).`);
-    const unbind = bindCancellationSignals();
+    const unbind = bindCancellationSignals(lock);
     let result: Awaited<ReturnType<AgentToolRunner["run"]>> | undefined;
     let resumedMany: Array<Awaited<ReturnType<AgentToolRunner["run"]>>> | null = null;
     try {
@@ -253,7 +253,7 @@ export async function continueAgent(
         .map(([key, value]) => `${key}: ${value}`)
         .join(", ") || "default";
     printNotice(`agent ${role} · ${profile.provider}/${profile.model} (${optionLabel}).`);
-    const unbind = bindCancellationSignals();
+    const unbind = bindCancellationSignals(lock);
     try {
       const runner = args.runner ?? cliHooks.runner ?? new AgentToolRunner(providerMap());
       if (sessionStatus === "cancelled") {

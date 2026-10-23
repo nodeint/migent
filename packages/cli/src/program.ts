@@ -5,6 +5,7 @@ import { continueAgent, dispatchAgent } from "./commands/agent.js";
 import { runConfigModel, runConfigRole, runConfigShow } from "./commands/config.js";
 import { runDoctor } from "./commands/doctor.js";
 import { executeWorkflow } from "./commands/execute.js";
+import { cancelSession } from "./commands/cancel.js";
 import { prepareWorkflowSession } from "./commands/prepare.js";
 import { repairWorkflowSession } from "./commands/repair.js";
 import { runInit } from "./commands/init.js";
@@ -315,6 +316,31 @@ function registerSessionCommand(program: Command, status: CliStatus): void {
       `Workflow session:\n${exitText(LOOP_EXITS)}With --once:\n${exitText(STAGE_EXITS)}Role session:\n${exitText(ROLE_EXITS)}Examples:\n  migent session continue <session>\n  migent session continue <session> --once\n  migent session continue <session> --reply "<reply>"\n  migent session continue <session> --stage plan --reply-file answer.md\n`,
     )
     .action((id: string, options: OptionValues) => settle(status, () => continueSession(id, options)));
+
+  session
+    .command("cancel")
+    .description("Ask the process running a session to stop. Works on Windows, where signals cannot reach it.")
+    .argument("<session>", "Session to cancel.")
+    .option("--wait <seconds>", "Seconds to wait for the process to stop.", "15")
+    .option("--json", "Print {session_id, cancelled, status}.")
+    .addHelpText(
+      "after",
+      `${exitText([
+        "Exit 0 when the session stopped.",
+        "Exit 1 when the cancel was requested but the process is still running after --wait.",
+        "Exit 2 when the session does not exist, is not running, or runs on another machine.",
+      ])}Examples:\n  migent session cancel <session>\n  migent session cancel <session> --wait 60 --json\n`,
+    )
+    .action((id: string, options: OptionValues) =>
+      settle(status, () => {
+        const wait = Number(options.wait);
+        if (!Number.isFinite(wait) || wait < 0) {
+          printError("--wait must be a number of seconds, 0 or more.");
+          return 2;
+        }
+        return cancelSession(findWorkspace(invocationCwdPath()), id, { waitSeconds: wait, asJson: options.json === true });
+      }),
+    );
 
   session
     .command("repair")

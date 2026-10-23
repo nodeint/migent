@@ -306,6 +306,7 @@ async function executeLocked(
   };
   process.on("SIGINT", onSigint);
   process.on("SIGTERM", onSigterm);
+  held.lock?.onCancelRequest(onSigint);
   const tasks = new Map<string, Promise<unknown>>();
   try {
     const activeRunner = runner ?? new AgentToolRunner();

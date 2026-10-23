@@ -80,7 +80,15 @@ export type {
   WorkflowOutput,
   WorkflowRequires,
 } from "./workflow.js";
-export { SessionLock, SessionLockHeldError, assertSessionLockHeld, isSessionLockLost } from "./session-lock.js";
+export {
+  SessionLock,
+  SessionLockHeldError,
+  assertSessionLockHeld,
+  isSessionLockLost,
+  requestSessionCancel,
+  sessionLockAlive,
+} from "./session-lock.js";
+export type { CancelRequestResult } from "./session-lock.js";
 export { repairSession, repairSessionUnlocked } from "./session-repair.js";
 export type { RepairOptions } from "./session-repair.js";
 export {
