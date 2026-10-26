@@ -1,14 +1,16 @@
 ---
 name: migent-release
 description: >
-  Release Migent through a pull request. From a green main, branch
-  release/X.Y.Z, update CHANGELOG.md and keep five versions there, bump the
-  four workspace packages to one version, commit "Release X.Y.Z", and open a
-  pull request. After it is merged, tag that commit vX.Y.Z. Push the tag only
-  when the user asks; release.yml then stages the packages and creates the
-  GitHub Release from the changelog. Use when the user says release, tag a
-  version, push the release tag, or open the release PR, including "release
-  phiên bản", "tag", and "push tag". Use when the user runs /migent-release.
+  Release Migent through a pull request, end to end. First land any pending
+  work on main through its own pull request (branch, PR, wait for CI,
+  squash-merge). Then, from a green main, branch release/X.Y.Z, update CHANGELOG.md and keep five versions there, bump the
+  four workspace packages to one version, commit "Release X.Y.Z", open a pull
+  request, squash-merge it once its checks pass, tag the merge commit vX.Y.Z,
+  and push the tag. release.yml then stages the packages and creates the
+  GitHub Release from the changelog. Approving the staged packages on npm is
+  the user's job. Use when the user says release, tag a version, push the
+  release tag, or open the release PR, including "release phiên bản", "tag",
+  and "push tag". Use when the user runs /migent-release.
 argument-hint: "0.1.6"
 metadata:
   short-description: "Release Migent on npm"
@@ -22,29 +24,83 @@ they differ.
 
 Work from the repository root. Reply in the user's language.
 
-A release has two stops. Do the first (the release pull request), then stop
-until the user says it is merged. Do the second (the tag) from there. Do not
-merge the pull request yourself.
-
-## Version
+## Confirm once
 
 Use the version the user names. If they do not name one, propose the next
-patch after the highest of `packages/*/package.json` and the `v*` tags, and
-wait for a yes.
+patch after the highest of `packages/*/package.json` and the `v*` tags.
 
-Stop when the working tree is dirty.
+Then ask once, in one message: open a pull request for the pending work (if
+Stage 0 applies), release `X.Y.Z`, squash-merge both pull requests when their
+checks pass, and push the tag `vX.Y.Z` (which starts publishing). A yes covers
+all of it. Do not ask again between the stages below; GitHub's results decide
+whether each stage starts. Without a yes, stop before the first pull request.
 
-## Stop 1: the release pull request
+## Stage 0: the pull request for pending work
 
-Release from `origin/main`. Fetch, then stop unless the latest `ci.yml` run on
-`main` for `origin/main` succeeded. Use that run's URL in the reply. Stop when
-it is missing, failed, cancelled, or still running.
+`main` takes changes only through pull requests, so work that is not on
+`origin/main` needs a branch first. Skip this stage when the working tree is
+clean, the current branch is `main`, and `git rev-list origin/main..HEAD` is
+empty. Go to Stage 1.
+
+```bash
+git fetch origin
+git status --short
+git rev-list --count origin/main..HEAD
+```
+
+1. Pick the branch. If the current branch is not `main`, use it. On `main`,
+   create one from the work, such as `feat/<slug>` or `fix/<slug>`, with
+   `git switch -c <branch>`. Never commit on `main`. If `main` has local commits
+   ahead of `origin/main`, move them to the new branch and leave `main` equal to
+   `origin/main`.
+2. Commit uncommitted changes. Stage the files by name, not with `git add -A`
+   or `git commit -am`, and skip anything that looks like a secret or a build
+   output. Write a message in the style of `git log`. Stop and ask when the
+   changes look unrelated to each other.
+3. Push the branch and open the pull request against `main`. The title is the
+   commit subject, or a short summary when there are several commits. The body
+   says what changed and why.
+   ```bash
+   git push -u origin <branch>
+   gh pr create --base main --title "<title>" --body-file <notes>
+   ```
+4. Wait for the checks with `gh pr checks --watch`. Stop and report the failing
+   check when one fails. Never force-push and never push `main`.
+5. When every check has passed on the latest commit, merge it as in Stage 2:
+   `gh pr merge <number> --squash --delete-branch`. If a ruleset refuses the
+   merge, report the message and stop.
+6. Return to `main` and take the merge:
+   ```bash
+   git switch main
+   git pull --ff-only origin main
+   ```
+
+Then continue with Stage 1. Its first step waits for `ci.yml` on the new
+`origin/main`, which is the run on the commit this stage just merged.
+
+Stop when the working tree is dirty after this stage.
+
+## Stage 1: the release pull request
+
+Release from `origin/main`. Fetch, then find the `ci.yml` run on `main` for
+`origin/main`. Use that run's URL in the reply.
 
 ```bash
 git fetch origin
 gh run list --branch main --workflow ci.yml --commit <sha> \
   --json databaseId,status,conclusion,url,headSha
 ```
+
+- Queued or in progress: wait for it, then decide on its result.
+  ```bash
+  gh run watch <databaseId> --exit-status
+  ```
+- No run yet: the push may have just landed. Wait 30 seconds and list again, up
+  to five times, then stop if there is still none.
+- Succeeded: go on.
+- Failed or cancelled: stop and report the run URL and the failing job.
+
+If `origin/main` moves while you wait, start over with the new commit.
 
 `<sha>` is `origin/main`. Stop when `release/X.Y.Z` already exists locally or
 on `origin`, or when `vX.Y.Z` exists. A bad version gets the next patch.
@@ -102,16 +158,38 @@ git push -u origin release/X.Y.Z
 gh pr create --base main --title "Release X.Y.Z" --body-file <notes>
 ```
 
-Never force-push and never push `main`. Watch the pull request checks with
-`gh pr checks --watch`. Report the pull request URL and the check result, then
-stop. Tell the user to squash-merge it and to land no other pull request first.
-If `main` moves before the merge, rebase the branch, redo the changelog, and
-push again.
+Never force-push and never push `main`. Wait for the checks with
+`gh pr checks --watch`. Stop and report the failing check when one fails. If
+`origin/main` moves before the merge, rebase the branch, redo the changelog,
+push again, and wait for the checks again.
 
-## Stop 2: the tag
+## Stage 2: merge
 
-Continue when the user says the pull request is merged. Fetch, then find the
-merge commit on `origin/main`:
+Start when every check has passed on the latest commit of the pull request.
+Confirm that the pull request is open and that `origin/main` is still the base
+commit it was opened from. Stop when either is false.
+
+```bash
+gh pr merge <number> --squash --delete-branch
+```
+
+Use the default squash subject, `Release X.Y.Z (#N)`. If a ruleset refuses the
+merge (for example a required review), report the message and stop. Do not
+bypass it or merge by another route.
+
+If the user merged the pull request first, skip the command and wait for the
+merge instead:
+
+```bash
+gh pr view <number> --json state,mergeCommit
+```
+
+Poll it every 30 seconds for up to 30 minutes until `state` is `MERGED`. Stop
+and report if the pull request is closed without a merge or the wait runs out.
+
+## Stage 3: tag and push
+
+Fetch, then find the merge commit on `origin/main`:
 
 ```bash
 git fetch origin --tags
@@ -126,23 +204,16 @@ git show <sha>:packages/cli/package.json
 ```
 
 Create a lightweight tag on that commit, the same kind as the existing release
-tags:
+tags, then push it. Do not annotate the tag. Do not move a tag that already
+exists. A bad version gets the next patch. Versions already sent to npm are
+single-use, including versions that were unpublished. Pushing publishes.
 
 ```bash
 git tag vX.Y.Z <sha>
-```
-
-Do not annotate the tag. Do not move a tag that already exists. A bad version
-gets the next patch. Versions already sent to npm are single-use, including
-versions that were unpublished. Stop after the tag. Pushing publishes.
-
-## Push the tag
-
-Push the tag only when the user asks.
-
-```bash
 git push origin vX.Y.Z
 ```
+
+## Stage 4: watch release.yml
 
 Watch `.github/workflows/release.yml` until that run finishes. The workflow
 checks that the tag is on `origin/main` and that every package version matches
@@ -159,20 +230,10 @@ gh run watch <databaseId> --exit-status
 gh release view vX.Y.Z
 ```
 
+If the run list is empty, wait 30 seconds and list again, up to five times.
+
 If `release.yml` fails, leave the tag where it is. Tell the user to reject
 the staged versions and release the next patch, as `CONTRIBUTING.md` describes.
 
-## After a successful stage
-
-Tell the user to approve the staged packages on npm with 2FA, in the
-dependency order in `CONTRIBUTING.md`. Do not approve them yourself. Approving
-the CLI before its dependencies makes `npm i -g @nodeint/migent` fail until
-the others are approved.
-
-After they say the packages are approved, verify:
-
-```bash
-npm view @nodeint/migent version
-npm i -g --prefer-online @nodeint/migent
-migent --version
-```
+On success, report the GitHub Release URL and say the packages are staged. The
+user approves them on npm. Do not approve or verify them.
