@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { ClaudeProvider } from "../../adapters/src/providers/claude-provider.ts";
 import {
   AgentToolRunner,
@@ -15,6 +15,9 @@ import {
   waitUntil,
 } from "../src/index.ts";
 import { ScriptedProvider, tempDir } from "./support.ts";
+
+// Each stage spawns a wrapper and a provider process, which is slow on Windows CI.
+vi.setConfig({ testTimeout: 60_000 });
 
 const CONFIG = `\
 models:

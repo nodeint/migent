@@ -2,10 +2,13 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { AgentToolRunner, raiseCancellation, type BuildCommandInput, type CommandSpec } from "@nodeint/migent-kernel";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { cliHooks } from "../src/hooks.ts";
 import { main } from "../src/index.ts";
 import { ScriptedProvider, capture, removeWorkspace, repoWorkflowText, writeFakeWorkflowWorkspace } from "./support.ts";
+
+// Each stage spawns a wrapper and a provider process, which is slow on Windows CI.
+vi.setConfig({ testTimeout: 60_000 });
 
 function writeWatchSession(workspace: string, status: string): void {
   const root = path.join(workspace, ".migent");

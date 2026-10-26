@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { ConfigurationError, executeNamedWorkflow, loadNamedWorkflow } from "../src/index.ts";
 import { AgentToolRunner } from "../src/agent-runner.ts";
 import { readFoldedStatus } from "../src/session-fold.ts";
@@ -8,6 +8,9 @@ import { createAgentSession, createPreparedSession, createWorkflowSession } from
 import { WORKFLOW_FREEZE_FILE, loadFrozenWorkflow, readWorkflowFreeze, writeWorkflowFreeze } from "../src/session-freeze.ts";
 import { SessionStore } from "../src/session-store.ts";
 import { ScriptedProvider, tempDir, writeStageWorkspace } from "./support.ts";
+
+// Each stage spawns a wrapper and a provider process, which is slow on Windows CI.
+vi.setConfig({ testTimeout: 60_000 });
 
 const ORIGINAL = `\
 id: flow
