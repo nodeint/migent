@@ -213,6 +213,7 @@ function classify(
   const gitignore = path.join(root, ".gitignore");
   const owned: string[] = [];
   if (exists(config)) owned.push(".migent/config.yaml");
+  if (exists(path.join(root, "config.local.yaml"))) owned.push(".migent/config.local.yaml");
   if (exists(workflows) && !(isDirectory(workflows) && readdirSync(workflows).length === 0)) {
     owned.push(".migent/workflows");
     if (isDirectory(workflows)) {
@@ -242,52 +243,76 @@ function writeProject(
   const root = path.join(workspace, ".migent");
   const workflows = path.join(root, "workflows");
   mkdirSync(workflows, { recursive: true });
-  writeFileSync(path.join(root, "config.yaml"), renderConfig(preset, primary), "utf8");
+  writeFileSync(path.join(root, "config.yaml"), renderConfig(preset), "utf8");
+  writeFileSync(path.join(root, "config.local.yaml"), renderLocalConfig(preset, primary), "utf8");
   const workflowName = `${preset}.yaml`;
   writeFileSync(path.join(workflows, workflowName), renderWorkflow(preset), "utf8");
   writeFileSync(path.join(root, ".gitignore"), "sessions/\nconfig.local.yaml\n", "utf8");
-  return [".migent/config.yaml", `.migent/workflows/${workflowName}`, ".migent/.gitignore"];
+  return [
+    ".migent/config.yaml",
+    ".migent/config.local.yaml",
+    `.migent/workflows/${workflowName}`,
+    ".migent/.gitignore",
+  ];
 }
 
-function renderConfig(preset: string, primary: ModelChoice): string {
-  const models: Array<[string, ModelChoice]> = [["default", primary]];
-  let roles: Array<[string, string, string[]]>;
+type PresetRole = readonly [role: string, alias: string, instructions: readonly string[]];
+
+function presetRoles(preset: string): readonly PresetRole[] {
   if (preset === "implement") {
-    roles = [["developer", "default", [
-      "Make the smallest change that completes the task; follow existing code conventions.",
-      "Run the relevant checks or tests before finishing and report the result.",
-    ]]];
-  } else {
-    roles = [
-      ["planner", "default", [
-        "Write a concrete, reviewable plan: goal, steps, affected files, risks.",
-        "Keep scope to the task; do not implement.",
-      ]],
-      ["reviewer", "default", [
-        "Check the plan for correctness, missing risks, and unnecessary scope.",
-        "Give a clear verdict and list every gap in one response.",
+    return [
+      ["developer", "code_generation", [
+        "Make the smallest change that completes the task; follow existing code conventions.",
+        "Run the relevant checks or tests before finishing and report the result.",
       ]],
     ];
   }
+  return [
+    ["planner", "deep_reasoning", [
+      "Write a concrete, reviewable plan: goal, steps, affected files, risks.",
+      "Keep scope to the task; do not implement.",
+    ]],
+    ["reviewer", "critical_review", [
+      "Check the plan for correctness, missing risks, and unnecessary scope.",
+      "Give a clear verdict and list every gap in one response.",
+    ]],
+  ];
+}
+
+function presetAliases(preset: string): string[] {
+  return [...new Set(presetRoles(preset).map(([, alias]) => alias))];
+}
+
+function renderConfig(preset: string): string {
   const lines = [
     "schema_version: 2",
-    "# models: named provider/model pairs. roles: who does the work; default_model names an entry in models.",
+    "# models: stable aliases. Map each one to a provider and model for this machine in .migent/config.local.yaml.",
+    "# roles: who does the work; default_model names an alias in models.",
     "# roles.<name>.instructions are added to every prompt for that role, before stage instructions.",
-    "# Per-machine overrides go in .migent/config.local.yaml (not committed). Workflows live in .migent/workflows/.",
+    "# Workflows live in .migent/workflows/.",
     "models:",
   ];
-  for (const [name, choice] of models) {
-    lines.push(`  ${name}:`, `    provider: ${yamlScalar(choice.provider)}`, `    model: ${yamlScalar(choice.model)}`);
-    const entries = Object.entries(choice.options);
+  for (const alias of presetAliases(preset)) lines.push(`  ${alias}: {}`);
+  lines.push("roles:");
+  for (const [role, alias, instructions] of presetRoles(preset)) {
+    lines.push(`  ${role}:`, `    default_model: ${alias}`, "    instructions:");
+    for (const item of instructions) lines.push(`      - ${yamlScalar(item)}`);
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+function renderLocalConfig(preset: string, primary: ModelChoice): string {
+  const lines = [
+    "# This machine's provider and model for each alias in config.yaml. Not committed.",
+    "models:",
+  ];
+  for (const alias of presetAliases(preset)) {
+    lines.push(`  ${alias}:`, `    provider: ${yamlScalar(primary.provider)}`, `    model: ${yamlScalar(primary.model)}`);
+    const entries = Object.entries(primary.options);
     if (entries.length > 0) {
       lines.push("    options:");
       for (const [optionName, value] of entries) lines.push(`      ${optionName}: ${yamlScalar(value)}`);
     }
-  }
-  lines.push("roles:");
-  for (const [role, modelName, instructions] of roles) {
-    lines.push(`  ${role}:`, `    default_model: ${modelName}`, "    instructions:");
-    for (const item of instructions) lines.push(`      - ${yamlScalar(item)}`);
   }
   return `${lines.join("\n")}\n`;
 }

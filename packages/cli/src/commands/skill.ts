@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { confirm as clackConfirm, isCancel, select as clackSelect } from "@clack/prompts";
-import { loadYamlMapping, whichSync, type Provider } from "@nodeint/migent-kernel";
+import { loadWorkspaceConfig, whichSync, type Provider } from "@nodeint/migent-kernel";
 import { PromptCancelled } from "../errors.js";
 import { printError } from "../display.js";
 import { isDirectory, isFile } from "../fs-utils.js";
@@ -107,7 +107,7 @@ export function clientsFromConfig(workspace: string, providers: Record<string, P
   if (!isFile(configPath)) return [];
   let models: unknown;
   try {
-    models = loadYamlMapping(configPath).models;
+    models = loadWorkspaceConfig(workspace).models;
   } catch {
     return [];
   }

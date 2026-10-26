@@ -100,16 +100,20 @@ test("writes one provider and the implement workflow", async () => {
     expect(captured.value).toBe(0);
     expect(config).toContain("schema_version: 2");
     expect(workflow).toContain("schema_version: 2");
-    expect(config).toContain("provider: codex");
-    expect(config).toContain("model: gpt-5");
-    expect(config).not.toContain("options");
-    expect(config).toContain("default_model: default");
-    expect(config).not.toContain("grok");
+    const local = readFileSync(path.join(workspace, ".migent", "config.local.yaml"), "utf8");
+    expect(config).toContain("code_generation: {}");
+    expect(config).toContain("default_model: code_generation");
+    expect(config).not.toContain("provider:");
+    expect(config).not.toContain("gpt-5");
     expect(config).not.toContain("planner");
+    expect(local).toContain("provider: codex");
+    expect(local).toContain("model: gpt-5");
+    expect(local).not.toContain("options");
+    expect(local).not.toContain("grok");
     expect(workflow).toContain("id: implement");
     expect(workflow).toContain("role: developer");
     expect(gitignore).toBe("sessions/\nconfig.local.yaml\n");
-    expect(existsSync(path.join(workspace, ".migent", "config.local.yaml"))).toBe(false);
+    expect(captured.stdout).toContain(".migent/config.local.yaml");
     expect(captured.stdout).toContain(".migent/workflows/implement.yaml");
     expect(captured.stdout).toContain('migent session run --workflow implement --task "..."');
     expect(captured.stdout).not.toContain("providers");
@@ -172,7 +176,26 @@ test("reports an existing valid project without changing it", async () => {
   }
 });
 
-test("plan review shares the default model", async () => {
+test("a lone config.local.yaml is a conflict and is left unchanged", async () => {
+  const workspace = tempDir();
+  try {
+    const root = path.join(workspace, ".migent");
+    mkdirSync(root);
+    const local = path.join(root, "config.local.yaml");
+    writeFileSync(local, "models: {}\n", "utf8");
+    const captured = await capture(() =>
+      runInit(workspace, { provider: "codex", model: "gpt-5", runCommand, which: which(new Set(["codex"])) }),
+    );
+    expect(captured.value).toBe(1);
+    expect(readFileSync(local, "utf8")).toBe("models: {}\n");
+    expect(existsSync(path.join(root, "config.yaml"))).toBe(false);
+    expect(captured.stderr).toContain(".migent/config.local.yaml");
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("plan maps both aliases to the selected model", async () => {
   const workspace = tempDir();
   try {
     const code = await runInit(workspace, {
@@ -185,8 +208,14 @@ test("plan review shares the default model", async () => {
     const config = readFileSync(path.join(workspace, ".migent", "config.yaml"), "utf8");
     const workflow = readFileSync(path.join(workspace, ".migent", "workflows", "plan.yaml"), "utf8");
     expect(code).toBe(0);
+    const local = readFileSync(path.join(workspace, ".migent", "config.local.yaml"), "utf8");
     expect(config).toContain("planner:");
     expect(config).toContain("reviewer:");
+    expect(config).toContain("default_model: deep_reasoning");
+    expect(config).toContain("default_model: critical_review");
+    expect(local).toContain("deep_reasoning:");
+    expect(local).toContain("critical_review:");
+    expect(local.match(/model: gpt-5/g)).toHaveLength(2);
     expect(config).not.toContain("\n  review:");
     expect(workflow).toContain("id: plan");
     expect(workflow).toContain("revise: plan");
@@ -209,7 +238,7 @@ test("interactive prefers an installed provider", async () => {
         prompter: new ScriptedPrompt(["", "", "", "n"]),
       }),
     );
-    const config = readFileSync(path.join(workspace, ".migent", "config.yaml"), "utf8");
+    const config = readFileSync(path.join(workspace, ".migent", "config.local.yaml"), "utf8");
     expect(captured.value).toBe(0);
     expect(captured.stdout).toContain("providers");
     expect(captured.stdout).toContain("ok");
@@ -231,7 +260,7 @@ test("writes an option only when it is passed", async () => {
       runCommand,
       which: which(new Set(["codex"])),
     });
-    const config = readFileSync(path.join(workspace, ".migent", "config.yaml"), "utf8");
+    const config = readFileSync(path.join(workspace, ".migent", "config.local.yaml"), "utf8");
     expect(code).toBe(0);
     expect(config).toContain("model_reasoning_effort: high");
   } finally {
