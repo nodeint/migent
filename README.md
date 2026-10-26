@@ -143,7 +143,36 @@ Both options generate:
     └── plan.yaml      # plan-and-review workflow
 ```
 
-Commit `config.yaml` and `workflows/`. `config.local.yaml` overrides `config.yaml` on one machine and is ignored by git.
+Commit `config.yaml` and `workflows/`. For a team, keep role names and model
+aliases in `config.yaml`, then map those aliases to each developer's installed
+provider CLI and model in `.migent/config.local.yaml`. This file overrides the
+shared config, is ignored by git, and should be created on every dev machine.
+
+After cloning, each developer should:
+
+1. Install and sign in to the provider CLIs they plan to use.
+2. Run `migent provider list` to see available providers and model IDs.
+3. Create `.migent/config.local.yaml` using the shared model aliases as keys.
+   For example:
+
+   ```yaml
+   models:
+     fast:
+       provider: codex
+       model: gpt-5
+     deep_reasoning:
+       provider: claude
+       model: opus
+   ```
+
+   Use providers and model IDs available on that machine. Keep role defaults
+   and workflow definitions in the committed `config.yaml` and `workflows/`.
+4. Run `migent doctor` and resolve reported configuration or provider issues
+   before starting a workflow.
+
+If a project commits complete provider/model mappings in `config.yaml`, the
+local file is optional. A local file only needs machine-specific overrides;
+omitted mappings continue to come from `config.yaml`.
 
 ### Run
 

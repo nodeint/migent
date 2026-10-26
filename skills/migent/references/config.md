@@ -14,6 +14,34 @@ as `config.yaml`. Mappings merge key by key; scalars and lists, such as
 ignored. Runs, `doctor`, and `config show` read the merged result.
 `config model` and `config role` edit `config.yaml` only, never the local file.
 `doctor` warns if git tracks the local file.
+## Set up a shared project on a dev machine
+
+Do not reinitialize an existing project's config. Keep role defaults and
+workflow choices in the committed `config.yaml`; map its model aliases to the
+provider CLIs and model IDs available on each machine in
+`.migent/config.local.yaml`.
+
+1. Read `.migent/config.yaml` and note the aliases under `models`.
+2. Run `migent provider list --json` and choose available providers and model IDs.
+3. Create `.migent/config.local.yaml`. It may contain only aliases that need
+   local mappings; matching values override the shared config while other
+   shared mappings remain in effect. For example:
+
+   ```yaml
+   models:
+     fast:
+       provider: codex
+       model: gpt-5
+     deep_reasoning:
+       provider: claude
+       model: opus
+   ```
+
+   Replace the example aliases and model IDs with the project's actual names
+   and this machine's available values. The file is uncommitted and ignored by
+   Git.
+4. Run `migent doctor --json` and resolve reported issues before starting a
+   workflow.
 
 ## Run one role
 
