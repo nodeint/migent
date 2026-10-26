@@ -36,6 +36,8 @@ import {
   type Which,
 } from "../provider.js";
 
+const INIT_EXAMPLE = "Example: migent init --provider codex --model gpt-5 --preset implement --no-input";
+
 export const PRESETS = ["implement", "plan"] as const;
 
 export interface ModelChoice {
@@ -97,7 +99,8 @@ export async function runInit(
     return 0;
   }
   if ((provider === null) !== (model === null)) {
-    printError("Pass both --provider and --model, or omit both.");
+    printError(`Pass both --provider and --model, or omit both.
+${INIT_EXAMPLE}`);
     return 2;
   }
   if (optionPairs.length > 0 && provider === null) {
@@ -105,7 +108,8 @@ export async function runInit(
     return 2;
   }
   if (provider === null && !interactive) {
-    printError("Pass --provider and --model when init is not interactive.");
+    printError(`Pass --provider and --model when init is not interactive.
+${INIT_EXAMPLE}`);
     return 2;
   }
   if (classified.state === "conflict") {
@@ -147,7 +151,11 @@ export async function runInit(
     if (code !== 0) return 1;
   }
   const paths = writeProject(workspace, preset, primary);
-  printCreated(paths, `migent session run --workflow ${preset} --task "..."`);
+  printCreated(
+    paths,
+    `${primary.provider}/${primary.model} for the ${preset} workflow. This machine's mapping is in .migent/config.local.yaml.`,
+    `migent session run --workflow ${preset} --task "<what you want done>"`,
+  );
   if (interactive) {
     const doctorCode = await runDoctor(workspace, { which: resolve });
     if (doctorCode !== 0) writeDoctorProblems(workspace, chosen, resolve);

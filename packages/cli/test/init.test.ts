@@ -115,7 +115,7 @@ test("writes one provider and the implement workflow", async () => {
     expect(gitignore).toBe("sessions/\nconfig.local.yaml\n");
     expect(captured.stdout).toContain(".migent/config.local.yaml");
     expect(captured.stdout).toContain(".migent/workflows/implement.yaml");
-    expect(captured.stdout).toContain('migent session run --workflow implement --task "..."');
+    expect(captured.stdout).toContain('migent session run --workflow implement --task "<what you want done>"');
     expect(captured.stdout).not.toContain("providers");
     expect(captured.stderr).not.toContain("Doctor reported problems:");
   } finally {
@@ -456,7 +456,7 @@ test("init exits 0 when doctor later reports a missing provider", async () => {
     );
     expect(captured.value).toBe(0);
     expect(existsSync(path.join(workspace, ".migent", "config.yaml"))).toBe(true);
-    expect(captured.stdout).toContain('migent session run --workflow implement --task "..."');
+    expect(captured.stdout).toContain('migent session run --workflow implement --task "<what you want done>"');
     expect(captured.stdout).not.toContain("failed");
     expect(captured.stderr).toContain("Doctor reported problems:");
     expect(captured.stderr).toContain("not on PATH");
@@ -544,6 +544,27 @@ test("initializes over an empty .migent/workflows directory", async () => {
     );
     expect(captured.value).toBe(0);
     expect(existsSync(path.join(workspace, ".migent", "workflows", "implement.yaml"))).toBe(true);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("init runs only catalog listing commands, never an inference call", async () => {
+  const workspace = tempDir();
+  try {
+    const seen: string[][] = [];
+    const code = await runInit(workspace, {
+      provider: "codex",
+      model: "gpt-5",
+      runCommand: (argv) => {
+        seen.push(argv);
+        return runCommand(argv);
+      },
+      which: which(new Set(["codex"])),
+    });
+    expect(code).toBe(0);
+    expect(seen.length).toBeGreaterThan(0);
+    for (const argv of seen) expect(argv.slice(0, 2)).toEqual(["codex", "debug"]);
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }

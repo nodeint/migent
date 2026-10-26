@@ -265,3 +265,35 @@ test("validates the merged config", () => {
   expect(config.ok).toBe(false);
   expect(config.problems).toContain("models.grok.provider is not supported: claude");
 });
+
+test("names each alias that has no local mapping and how to add it", () => {
+  const workspace = tempDir("migent-doctor-");
+  writeStageProject(workspace);
+  const configPath = path.join(workspace, ".migent", "config.yaml");
+  writeFileSync(
+    configPath,
+    readFileSync(configPath, "utf8").replace(/models:[\s\S]*?\nroles:/, "models:\n  grok: {}\n  gpt-terra: {}\nroles:"),
+    "utf8",
+  );
+  const [config, workflows] = diagnose(workspace, {
+    providers: defaultProviders(),
+    which: whichFound(new Set(["codex", "grok"])),
+  });
+  expect(config.ok).toBe(false);
+  expect(config.problems).toHaveLength(1);
+  expect(config.problems[0]).toContain("models.gpt-terra, models.grok have no provider and model on this machine.");
+  expect(config.problems[0]).toContain(".migent/config.local.yaml");
+  expect(config.problems[0]).toContain("  gpt-terra:\n    provider: <provider>\n    model: <model>");
+  expect(workflows.problems).toEqual([]);
+
+  writeFileSync(
+    path.join(workspace, ".migent", "config.local.yaml"),
+    "models:\n  grok:\n    provider: grok\n    model: grok-4\n  gpt-terra:\n    provider: codex\n    model: gpt-5\n",
+    "utf8",
+  );
+  const [fixed] = diagnose(workspace, {
+    providers: defaultProviders(),
+    which: whichFound(new Set(["codex", "grok"])),
+  });
+  expect(fixed.ok).toBe(true);
+});

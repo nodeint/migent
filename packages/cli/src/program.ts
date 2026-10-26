@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { Command, type OptionValues } from "commander";
 import { ConfigurationError, DEFAULT_MAX_DISPATCHES, requireAgentSession } from "@nodeint/migent-kernel";
 import { continueAgent, dispatchAgent } from "./commands/agent.js";
-import { runConfigModel, runConfigRole, runConfigShow } from "./commands/config.js";
+import { removedConfigCommand, runConfigShow } from "./commands/config.js";
 import { runDoctor } from "./commands/doctor.js";
 import { executeWorkflow } from "./commands/execute.js";
 import { cancelSession } from "./commands/cancel.js";
@@ -45,10 +45,10 @@ export function createProgram(status: CliStatus): Command {
 
   const init = program
     .command("init")
-    .description("Create a minimal config, one workflow, and a sessions gitignore.")
-    .option("--provider <provider>", "Provider for the default model. Pass with --model.")
-    .option("--model <model>", "Model id for the default model. Pass with --provider.")
-    .option("--option <pair>", "KEY=VALUE stored under models.*.options.", collect, [])
+    .description("Create shared config, this machine's model mapping, one workflow, and a gitignore.")
+    .option("--provider <provider>", "Provider for this machine's model mapping. Pass with --model.")
+    .option("--model <model>", "Model id for this machine's model mapping. Pass with --provider.")
+    .option("--option <pair>", "KEY=VALUE stored under models.*.options in config.local.yaml.", collect, [])
     .option("--preset <preset>", "Workflow to create: implement or plan. Default: implement.", "implement")
     .option("--skill", "Install the Migent skill for the chosen client with `npx skills`.")
     .option("--no-input", "Do not prompt. Same as MIGENT_NO_INPUT=1.");
@@ -71,77 +71,24 @@ export function createProgram(status: CliStatus): Command {
 
   const config = program
     .command("config")
-    .description("Print .migent/config.yaml, or update models and roles.");
-  config.action(() => settle(status, () => runConfigShow(findWorkspace(invocationCwdPath()))));
-  config
-    .command("show")
-    .description("Print .migent/config.yaml.")
-    .action(() => settle(status, () => runConfigShow(findWorkspace(invocationCwdPath()))));
-  config
-    .command("model")
-    .description("List models, or create and update one model name.")
-    .argument("[name]", "Name to show or update.")
-    .option("--provider <provider>", "Provider for this name. Pass with --model.")
-    .option("--model <model>", "Model id for this name. Pass with --provider.")
-    .option("--option <pair>", "KEY=VALUE stored under this model's options.", collect, [])
-    .option("--clear-option <key>", "Remove one key from this model's options.", collect, [])
-    .option("--json", "Print one JSON object.")
-    .option("--no-input", "Do not prompt. Same as MIGENT_NO_INPUT=1. With no changes, list models.")
-    .action((name: string | undefined, options: OptionValues) =>
-      settle(status, () => {
-        const provider = optionalText(options.provider);
-        const model = optionalText(options.model);
-        const optionValues = stringList(options.option);
-        const clearOptions = stringList(options.clearOption);
-        const mutating = provider !== null || model !== null || optionValues.length > 0 || clearOptions.length > 0;
-        const interactive = !inputDisabled(options) && Boolean(process.stdin.isTTY) && options.json !== true && !mutating;
-        return runConfigModel(findWorkspace(invocationCwdPath()), {
-          key: text(name),
-          provider,
-          model,
-          options: optionValues,
-          clearOptions,
-          asJson: options.json === true,
-          interactive,
-        });
-      }),
-    );
-  config
-    .command("role")
-    .description("List roles, or point roles at a model.")
-    .argument("[role...]", "Role to show or update.")
-    .option("--model-name <name>", "models: name to point the roles at. This is not a provider model id.")
-    .option("--provider <provider>", "Provider for this role only. Pass with --model.")
-    .option("--model <model>", "Provider model id for this role only. Pass with --provider.")
-    .option("--option <pair>", "KEY=VALUE stored under this role's options.", collect, [])
-    .option("--clear-option <key>", "Remove one key from this role's options.", collect, [])
-    .option("--json", "Print one JSON object.")
-    .option("--no-input", "Do not prompt. Same as MIGENT_NO_INPUT=1. With no changes, list roles.")
-    .action((roles: string[], options: OptionValues) =>
-      settle(status, () => {
-        const unique = roles
-          .map((role) => text(role))
-          .filter((role): role is string => role !== null)
-          .filter((role, index, all) => all.indexOf(role) === index);
-        const provider = optionalText(options.provider);
-        const model = optionalText(options.model);
-        const modelName = optionalText(options.modelName);
-        const optionValues = stringList(options.option);
-        const clearOptions = stringList(options.clearOption);
-        const mutating = modelName !== null || provider !== null || model !== null || optionValues.length > 0 || clearOptions.length > 0;
-        const interactive = !inputDisabled(options) && Boolean(process.stdin.isTTY) && options.json !== true && !mutating;
-        return runConfigRole(findWorkspace(invocationCwdPath()), {
-          roles: unique,
-          modelName,
-          provider,
-          model,
-          options: optionValues,
-          clearOptions,
-          asJson: options.json === true,
-          interactive,
-        });
-      }),
-    );
+    .description("Print the effective config: .migent/config.yaml with .migent/config.local.yaml merged over it.")
+    .option("--json", "Print one JSON object with the merged config and the local file's model names.");
+  config.action((options: OptionValues) =>
+    settle(status, () => runConfigShow(findWorkspace(invocationCwdPath()), { asJson: options.json === true })),
+  );
+  for (const removed of ["show", "model", "role"]) {
+    config
+      .command(removed, { hidden: true })
+      .allowUnknownOption()
+      .allowExcessArguments()
+      .helpOption(false)
+      .action(() =>
+        settle(status, () => {
+          printError(removedConfigCommand(removed));
+          return 2;
+        }),
+      );
+  }
 
   program
     .command("doctor")

@@ -57,6 +57,7 @@ export function diagnose(
     options.providers,
     configResult.problems,
     configResult.config,
+    configResult.unmapped,
   );
   const providerCheck = checkProviders(
     configResult.executableByProvider,
@@ -76,6 +77,7 @@ function checkConfig(
   executableByProvider: Record<string, string>;
   problems: string[];
   config: Record<string, unknown> | null;
+  unmapped: ReadonlySet<string>;
 } {
   let config: Record<string, unknown>;
   try {
@@ -87,6 +89,7 @@ function checkConfig(
       executableByProvider: {},
       problems: [error.message],
       config: null,
+      unmapped: new Set(),
     };
   }
 
@@ -109,7 +112,13 @@ function checkConfig(
     if (Object.keys(roles).length === 0) problems.push("roles is empty.");
   }
 
+  const unmapped = new Set(
+    Object.keys(models).filter((name) => isRecord(models[name]) && Object.keys(models[name]).length === 0),
+  );
+  if (unmapped.size > 0) add(problems, unmappedMessage([...unmapped].sort()));
+
   for (const modelName of Object.keys(models).sort()) {
+    if (unmapped.has(modelName)) continue;
     let target;
     try {
       target = loadModelTarget(config, modelName);
@@ -145,6 +154,11 @@ function checkConfig(
 
   const roleNames: string[] = [];
   for (const roleKey of Object.keys(roles).sort()) {
+    const role = roles[roleKey];
+    if (isRecord(role) && typeof role.default_model === "string" && unmapped.has(role.default_model)) {
+      roleNames.push(roleKey);
+      continue;
+    }
     let resolved;
     try {
       resolved = resolveRoleTarget(workspace, roleKey);
@@ -163,14 +177,25 @@ function checkConfig(
 
   const warnings = trackedLocalConfigWarnings(workspace);
   if (problems.length > 0) {
-    return { check: failed("config", problems, [], warnings), executableByProvider, problems, config };
+    return { check: failed("config", problems, [], warnings), executableByProvider, problems, config, unmapped };
   }
   return {
     check: passed("config", roleNames, warnings),
     executableByProvider,
     problems: [],
     config,
+    unmapped,
   };
+}
+
+function unmappedMessage(aliases: readonly string[]): string {
+  const lines = [
+    `${aliases.map((alias) => `models.${alias}`).join(", ")} ${aliases.length === 1 ? "has" : "have"} no provider and model on this machine.`,
+    `Add ${aliases.length === 1 ? "it" : "them"} to .migent/${LOCAL_CONFIG_FILE}, for example:`,
+    "models:",
+  ];
+  for (const alias of aliases) lines.push(`  ${alias}:`, "    provider: <provider>", "    model: <model>");
+  return lines.join("\n");
 }
 
 function checkWorkflows(
@@ -178,13 +203,14 @@ function checkWorkflows(
   providers: Readonly<Record<string, ProviderInfo>>,
   configProblems: readonly string[],
   config: Record<string, unknown> | null,
+  unmapped: ReadonlySet<string>,
 ): Check {
   const catalog = loadWorkflowCatalog(workspace);
   const problems = [...catalog.problems];
   const known = new Set(configProblems);
   if (config !== null) {
     for (const document of Object.values(catalog.documents)) {
-      checkStageBindings(config, document, providers, known, problems);
+      checkStageBindings(config, document, providers, known, unmapped, problems);
     }
   }
   const items = Object.keys(catalog.documents).filter((workflowId) => !workflowFailed(workflowId, problems));
@@ -197,6 +223,7 @@ function checkStageBindings(
   document: WorkflowDocument,
   providers: Readonly<Record<string, ProviderInfo>>,
   known: ReadonlySet<string>,
+  unmapped: ReadonlySet<string>,
   problems: string[],
 ): void {
   for (const stage of Object.values(document.stages)) {
@@ -207,6 +234,7 @@ function checkStageBindings(
     } catch (error) {
       if (!(error instanceof ConfigurationError)) throw error;
       if (known.has(error.message)) continue;
+      if ([...unmapped].some((alias) => error.message.includes(`models.${alias}.`))) continue;
       add(problems, `${document.id}.${stage.id}: ${error.message}`);
       continue;
     }
