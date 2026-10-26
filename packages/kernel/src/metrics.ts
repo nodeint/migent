@@ -324,6 +324,7 @@ function sessionObject(
       uncaptured_turns: uncaptured,
       usage: usageObject(sessionTotals),
       usage_missing: missingObject(sessionTotals),
+      cost_partial: sessionTotals.seen.cost_usd && sessionTotals.missing.cost_usd > 0,
       failed_executions: executions.filter((execution) => execution.status === "failed").length,
       blocked: executions.filter((execution) => execution.outcomeStatus === "blocked").length,
       cancelled: executions.filter((execution) => execution.status === "cancelled").length,
