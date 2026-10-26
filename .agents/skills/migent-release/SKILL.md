@@ -1,14 +1,14 @@
 ---
 name: migent-release
 description: >
-  Release Migent. Fast-forward production to main, wait for CI on that branch,
-  then, on production, update CHANGELOG.md and keep five versions there, bump
-  the four workspace packages to one version, commit "Release X.Y.Z", and
-  create lightweight tag vX.Y.Z. Push the tag only when the user asks, then attach
-  that changelog to the GitHub Release for the tag. Use when the user says
-  release, tag a version, push the release tag, or attach the changelog to the
-  tag, including "release phiên bản", "tag", and "push tag". Use when the user
-  runs /migent-release.
+  Release Migent through a pull request. From a green main, branch
+  release/X.Y.Z, update CHANGELOG.md and keep five versions there, bump the
+  four workspace packages to one version, commit "Release X.Y.Z", and open a
+  pull request. After it is merged, tag that commit vX.Y.Z. Push the tag only
+  when the user asks; release.yml then stages the packages and creates the
+  GitHub Release from the changelog. Use when the user says release, tag a
+  version, push the release tag, or open the release PR, including "release
+  phiên bản", "tag", and "push tag". Use when the user runs /migent-release.
 argument-hint: "0.1.6"
 metadata:
   short-description: "Release Migent on npm"
@@ -16,11 +16,15 @@ metadata:
 
 # Release Migent
 
-Release this repository. Read `CONTRIBUTING.md` from `## Releasing` through
+Release this repository. Read `CONTRIBUTING.md` from `## Pull requests` through
 `## Release pitfalls` and follow it. The rules below override that file where
 they differ.
 
 Work from the repository root. Reply in the user's language.
+
+A release has two stops. Do the first (the release pull request), then stop
+until the user says it is merged. Do the second (the tag) from there. Do not
+merge the pull request yourself.
 
 ## Version
 
@@ -28,61 +32,33 @@ Use the version the user names. If they do not name one, propose the next
 patch after the highest of `packages/*/package.json` and the `v*` tags, and
 wait for a yes.
 
-Stop when the working tree is dirty. The release commit does not exist yet.
+Stop when the working tree is dirty.
 
-The release runs on `production`. The release commit and the tag are made
-there, never on `main`.
+## Stop 1: the release pull request
 
-## Production CI
-
-`.github/workflows/ci.yml` runs only on a push to `production`. Do this before
-the changelog, the version bump, and the tag.
-
-The release candidate is `origin/main`. Fetch, then stop unless `HEAD` is that
-commit. Stop unless that commit's `.github/workflows/ci.yml` triggers on a
-push to `production`.
-
-`production` is the release branch and the CI branch. Update it from `origin/main` only as a
-fast-forward. Create it with the same push when it is absent.
+Release from `origin/main`. Fetch, then stop unless the latest `ci.yml` run on
+`main` for `origin/main` succeeded. Use that run's URL in the reply. Stop when
+it is missing, failed, cancelled, or still running.
 
 ```bash
 git fetch origin
-git push origin origin/main:production
-```
-
-Stop when `origin/production` exists and is not an ancestor of `origin/main`.
-When `origin/production` already points at `origin/main`, skip the push.
-
-Wait until the `ci.yml` run for that commit exists, then watch it. A run can
-take a moment to appear. Continue only when its conclusion is success, and
-include the run URL. Stop when it fails, is cancelled, or never appears.
-Leave `main` untagged.
-
-```bash
-gh run list --branch production --workflow ci.yml --commit <sha> \
+gh run list --branch main --workflow ci.yml --commit <sha> \
   --json databaseId,status,conclusion,url,headSha
-gh run watch <databaseId> --exit-status
 ```
 
-`<sha>` is `origin/main`. After the run succeeds, switch to `production` and
-fast-forward it to `origin/production`. Stop unless its `HEAD` is `<sha>`. Do the
-changelog, the bump, the commit, and the tag on `production`. The release
-commit's parent is `<sha>`.
+`<sha>` is `origin/main`. Stop when `release/X.Y.Z` already exists locally or
+on `origin`, or when `vX.Y.Z` exists. A bad version gets the next patch.
 
 ```bash
-git switch production && git merge --ff-only origin/production
+git switch -c release/X.Y.Z origin/main
 ```
 
-Create the local `production` branch from `origin/production` when it is absent.
+The release branch changes only `CHANGELOG.md`, `packages/*/package.json`, and
+`pnpm-lock.yaml` when that file changed.
 
-`release.yml` runs the same tests on the tag and stops on failure. It also
-stops when the tagged commit is not on `origin/production`. It does not
-replace this wait.
+### Changelog
 
-## Changelog
-
-Every release updates `CHANGELOG.md`. The release commit includes that file.
-Do not tag when it is unchanged.
+Every release updates `CHANGELOG.md`. Stop when it is unchanged.
 
 Move the body of `## Unreleased` under `## X.Y.Z`. Leave `## Unreleased` empty
 above that heading. Keep `### Added`, `### Changed`, and `### Removed`. Do not
@@ -106,9 +82,7 @@ that are already there.
 Do not put the version in `docs/backlogs.md`. That line records when the
 backlog was written.
 
-Put the `## X.Y.Z` section in the reply that reports the commit and the tag.
-
-## Commit and tag
+### Commit and pull request
 
 ```bash
 pnpm -r exec npm pkg set version=X.Y.Z
@@ -119,52 +93,71 @@ pnpm install
 reads its version from `packages/cli/package.json`. Do not edit
 `packages/cli/src/version.ts`.
 
-Stage only `CHANGELOG.md`, `packages/*/package.json`, and `pnpm-lock.yaml`
-when that file changed. Commit with the message `Release X.Y.Z`. Do not use
-`git commit -am`.
-
-Create a lightweight tag, the same kind as the existing release tags:
+Stage only the files named above. Commit with the message `Release X.Y.Z`. Do
+not use `git commit -am`. Then push the branch and open the pull request. The
+title is `Release X.Y.Z`. The body is the `## X.Y.Z` section and nothing above it.
 
 ```bash
-git tag vX.Y.Z
+git push -u origin release/X.Y.Z
+gh pr create --base main --title "Release X.Y.Z" --body-file <notes>
+```
+
+Never force-push and never push `main`. Watch the pull request checks with
+`gh pr checks --watch`. Report the pull request URL and the check result, then
+stop. Tell the user to squash-merge it and to land no other pull request first.
+If `main` moves before the merge, rebase the branch, redo the changelog, and
+push again.
+
+## Stop 2: the tag
+
+Continue when the user says the pull request is merged. Fetch, then find the
+merge commit on `origin/main`:
+
+```bash
+git fetch origin --tags
+git log origin/main --grep='^Release X.Y.Z' --format='%H %s'
+```
+
+Stop unless exactly one commit matches and every `packages/*/package.json` at
+that commit says `X.Y.Z`:
+
+```bash
+git show <sha>:packages/cli/package.json
+```
+
+Create a lightweight tag on that commit, the same kind as the existing release
+tags:
+
+```bash
+git tag vX.Y.Z <sha>
 ```
 
 Do not annotate the tag. Do not move a tag that already exists. A bad version
 gets the next patch. Versions already sent to npm are single-use, including
-versions that were unpublished.
+versions that were unpublished. Stop after the tag. Pushing publishes.
 
-Stop after the commit and the tag. Pushing publishes.
+## Push the tag
 
-## Push
-
-Pushing the tag publishes. Push it only when the user asks. Push `production`,
-the tag, and a fast-forward of `main` to the release commit together, so both
-branches match. Then fast-forward the local `main`.
+Push the tag only when the user asks.
 
 ```bash
-git push origin production production:main vX.Y.Z
-git switch main && git merge --ff-only origin/main
+git push origin vX.Y.Z
 ```
 
 Watch `.github/workflows/release.yml` until that run finishes. The workflow
-checks that every package version matches the tag, then builds, tests, packs,
-and runs `npm stage publish`. It authenticates with GitHub OIDC. There is no
-npm token in the repo. Say the run succeeded only when its conclusion is
-success, and include the run URL.
-
-Then attach the changelog to that tag as a GitHub Release. The tag is
-lightweight, so it cannot hold the notes. Do not delete or recreate the tag
-to add an annotation. A new push of `v*` runs `release.yml` again.
+checks that the tag is on `origin/main` and that every package version matches
+the tag. It takes the `## X.Y.Z` section of `CHANGELOG.md` as the notes, then
+builds, tests, packs, and runs `npm stage publish` with GitHub OIDC. There is no
+npm token in the repo. After staging it creates the GitHub Release with those
+notes. Say the run succeeded only when its conclusion is success, and include
+the run URL.
 
 ```bash
+gh run list --workflow release.yml --branch vX.Y.Z \
+  --json databaseId,status,conclusion,url
+gh run watch <databaseId> --exit-status
 gh release view vX.Y.Z
-gh release create vX.Y.Z --verify-tag --title "X.Y.Z" --notes-file <notes>
 ```
-
-`<notes>` is the `## X.Y.Z` section and nothing above it. `--verify-tag`
-refuses to create a tag. Skip `gh release create` when the release already
-exists. If the user asks to attach the changelog after the tag is already on
-the remote, do only this step.
 
 If `release.yml` fails, leave the tag where it is. Tell the user to reject
 the staged versions and release the next patch, as `CONTRIBUTING.md` describes.

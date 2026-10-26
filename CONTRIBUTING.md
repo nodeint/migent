@@ -90,51 +90,73 @@ calls.
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs install, build, and test on Ubuntu, macOS, and
-Windows only for a push to `production`. It does not run on `main` or on pull
-requests. A release fast-forwards `production` to `main` and waits for that
-run before tagging. The release workflow runs the same tests for the tag and
-stops on failure.
+Windows for every pull request into `main` and every push to `main`. Make it a
+required status check on `main`. The release workflow runs the same tests again
+for the tag and stops on failure.
+
+## Pull requests
+
+`main` is protected: every change reaches it through a pull request. Settings
+for the `main` ruleset on GitHub:
+
+- Require a pull request and the `test` checks (all three operating systems).
+- Allow squash merge only, and delete the branch after merge.
+- Leave `v*` tags outside the ruleset: a maintainer pushes the release tag
+  directly.
+
+Branch names: `feat/<slug>`, `fix/<slug>`, `docs/<slug>`, `chore/<slug>`, and
+`release/X.Y.Z` for releases. The pull request title is the squash commit
+subject, so write it as one short imperative line.
+
+A pull request that changes behavior a user can see adds a line under
+`## Unreleased` in `CHANGELOG.md`, in the same pull request. Open it as a draft
+until CI is green.
 
 ## Releasing
 
 All four packages share one version and are released together.
 
-### 1. Fast-forward production, then bump, tag, push
+### 1. Release pull request
 
-Develop on `main`. `production` is the release branch: nobody commits to it
-except the release steps below.
+`main` is always releasable. A release is a pull request that changes only the
+version and the changelog.
 
 ```bash
 git fetch origin
-git push origin origin/main:refs/heads/production
-# wait until ci.yml succeeds for that commit
-git switch production && git merge --ff-only origin/production
+git switch -c release/0.2.0 origin/main
+# CHANGELOG.md: move ## Unreleased under ## 0.2.0, keep five versions
 pnpm -r exec npm pkg set version=0.2.0
 pnpm install
 git add CHANGELOG.md packages/*/package.json pnpm-lock.yaml
 git commit -m "Release 0.2.0"
-git tag v0.2.0
-git push origin production production:main v0.2.0
-git switch main && git merge --ff-only origin/main
+git push -u origin release/0.2.0
+gh pr create --title "Release 0.2.0" --body-file <the 0.2.0 section>
 ```
 
-`production` must be an ancestor of `main`, or absent. That first push creates
-the branch or fast-forwards it. Skip it when `production` already points at
-`main` and CI has passed for that commit. The release commit and the tag are
-made on `production`, after that run. The final push also fast-forwards `main`
-to the release commit, so the two branches match. Pushing the tag is what
-publishes.
+Merge other pull requests only before this one, or rebase it and redo the
+changelog after they land. CI must pass on the release pull request. Squash
+merge it; the commit subject becomes `Release 0.2.0 (#N)`.
+
+### 2. Tag the merged commit
+
+Pushing the tag publishes. Tag the commit on `origin/main` whose subject starts
+with `Release 0.2.0`, and check that its `packages/*/package.json` say `0.2.0`.
+
+```bash
+git fetch origin
+git tag v0.2.0 <sha>
+git push origin v0.2.0
+```
 
 The tag must equal every package version, or the workflow stops at its first
-check. It must also be on `production`, or the workflow stops at its second.
+check. It must also be on `main`, or the workflow stops at its second.
 
-### 2. CI stages the packages
-
-`.github/workflows/release.yml` runs on `v*` tags. It builds, tests, packs
-with `pnpm -r pack` (which turns `workspace:*` into exact versions), then runs
-`npm stage publish` for each tarball. It authenticates with npm trusted
-publishing (GitHub OIDC); there is no npm token in the repository. Provenance
-is attached automatically.
+`.github/workflows/release.yml` runs on `v*` tags. It takes the `## 0.2.0`
+section of `CHANGELOG.md` as the release notes, builds, tests, packs with
+`pnpm -r pack` (which turns `workspace:*` into exact versions), runs
+`npm stage publish` for each tarball, then creates the GitHub Release with
+those notes. It authenticates with npm trusted publishing (GitHub OIDC); there
+is no npm token in the repository. Provenance is attached automatically.
 
 ### 3. Approve on npmjs.com
 
