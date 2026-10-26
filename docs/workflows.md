@@ -68,7 +68,10 @@ Decision stages do not need to declare an artifact to pass feedback.
 
 A route is not an ordering edge. A stage with incoming routers is routed when
 every router that completed since this stage last completed lists it on the
-chosen decision. `depends_on` is the join: a stage that depends on two routed
+chosen decision. A router that depends on the stage (a route back) is ignored
+when its decision goes elsewhere. A route back to a completed stage dispatches
+it again, and the stages that depend on it run again after it completes,
+because their dependency is newer. `depends_on` is the join: a stage that depends on two routed
 branches waits until both have completed and both latest decisions list it.
 Authors who need a routed stage to wait for its router keep that router in
 `depends_on`.
@@ -172,6 +175,13 @@ Run `migent session continue <session-id>` to reset the revision count and allow
 to three more revisions in the same session. Each later `session continue` resets the
 count again. `migent session continue <session-id> --once` dispatches one stage and
 does not reset the count.
+
+A route back to any completed stage, including one several stages upstream, is a
+revision of that stage and counts against its `max_revisions`. `session
+continue` (without `--once`) writes a `revisions.reset` event before it
+dispatches, when a stage can start. The event records each stage's current
+completed count as its new baseline. It does not choose or dispatch a stage; it
+only lifts the cap.
 
 ## Concurrency
 

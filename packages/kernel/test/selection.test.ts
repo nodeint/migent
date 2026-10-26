@@ -22,7 +22,7 @@ import {
   type WorkflowDocument,
   type VerifyOnlyStageSpec,
 } from "../src/index.ts";
-import { schedulableStageIds, version2IdleReason } from "../src/selection.ts";
+import { schedulableStageIds, version2GraphQuiet, version2IdleReason } from "../src/selection.ts";
 
 const fixtures = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "workflows");
 
@@ -630,4 +630,57 @@ test("failedStageCount ignores verify_exhausted executions", () => {
   expect(failedStageCount([exhausted, plain], "a")).toBe(1);
   expect(verifyExhaustedExecution([plain, exhausted], "a")).toBe(exhausted);
   expect(verifyExhaustedExecution([exhausted, snapshot("a", 4, { status: "failed", outcomeStatus: null })], "a")).toBeNull();
+});
+
+function routeBackWorkflow(withDocs = true): WorkflowDocument {
+  const stages: Record<string, RoleStageSpec> = {
+    implement: stage("implement", "developer"),
+    review_work: stage("review_work", "reviewer", {
+      dependsOn: ["implement"],
+      decisionValues: ["approved", "revise"],
+      routes: { approved: "write_tests", revise: "implement" },
+    }),
+    write_tests: stage("write_tests", "developer", { dependsOn: ["implement", "review_work"] }),
+    review_tests: stage("review_tests", "reviewer", {
+      dependsOn: ["review_work", "write_tests"],
+      decisionValues: ["approved", "revise", "fix_production"],
+      routes: { approved: "complete", revise: "write_tests", fix_production: "implement" },
+    }),
+  };
+  if (withDocs) stages.update_docs = stage("update_docs", "developer", { dependsOn: ["review_tests"] });
+  return { ...bareWorkflow(stages), schemaVersion: 2 };
+}
+
+function routeBackSnapshots(): ExecutionSnapshot[] {
+  return [
+    snapshot("implement", 1),
+    snapshot("review_work", 2, { decision: "approved" }),
+    snapshot("write_tests", 3),
+    snapshot("review_tests", 4, { decision: "fix_production" }),
+  ];
+}
+
+test("version 2 route back to a completed stage skips a forward decision from a downstream router", () => {
+  const workflow = routeBackWorkflow();
+  const snapshots = routeBackSnapshots();
+  expect(stageDispatchError(workflow, "implement", snapshots)).toBeNull();
+  const schedulable = schedulableStageIds(workflow, snapshots, "active", null, [], new Set());
+  expect(schedulable).toContain("implement");
+  expect(runnableNow(workflow, schedulable, [], 1, snapshots)[0]).toBe("implement");
+  expectResult(nextStage(workflow, snapshots, "active"), new NextStage("implement"));
+  expect(version2GraphQuiet(routeBackWorkflow(false), snapshots, "active")).toBe(false);
+});
+
+test("version 2 downstream stages run again after a route back", () => {
+  const workflow = routeBackWorkflow();
+  const snapshots = [
+    ...routeBackSnapshots(),
+    snapshot("implement", 5),
+    snapshot("review_work", 6, { decision: "approved" }),
+  ];
+  expect(stageDispatchError(workflow, "write_tests", snapshots)).toBeNull();
+  const schedulable = schedulableStageIds(workflow, snapshots, "active", null, [], new Set());
+  const order = runnableNow(workflow, schedulable, [], 2, snapshots);
+  expect(order).toContain("write_tests");
+  expect(order).not.toContain("review_tests");
 });

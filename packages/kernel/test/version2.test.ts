@@ -187,3 +187,89 @@ test("repair records session.completed when a version 2 graph becomes quiet", as
   expect(completed).toHaveLength(1);
   expect(completed[0]).toMatchObject({ execution_id: quiet?.executionId, stage_id: "b" });
 });
+
+const FIX_BACK = `\
+schema_version: 2
+id: fixback
+stages:
+  - id: implement
+    role: developer
+    depends_on: []
+  - id: review_work
+    role: reviewer
+    depends_on: [implement]
+    decision:
+      values: [approved, revise]
+      routes:
+        approved: write_tests
+        revise: implement
+  - id: write_tests
+    role: developer
+    depends_on: [implement, review_work]
+  - id: review_tests
+    role: reviewer
+    depends_on: [review_work, write_tests]
+    decision:
+      values: [approved, revise, fix_production]
+      routes:
+        approved: complete
+        revise: write_tests
+        fix_production: implement
+`;
+
+class StatusProvider extends ScriptedProvider {
+  statuses: unknown[] = [];
+
+  constructor(
+    responses: string[],
+    private readonly store: SessionStore,
+    private readonly sessionId: string,
+  ) {
+    super(responses);
+  }
+
+  override parseResponse(): [string, string | null] {
+    this.statuses.push(this.store.readSessionStatus(this.sessionId).status);
+    return super.parseResponse();
+  }
+}
+
+test("a route back to a completed stage dispatches it and its dependents", async () => {
+  const workspace = workspaceFor("fixback", FIX_BACK);
+  const sessionId = createWorkflowSession(workspace, "fixback", "Fix back");
+  const store = new SessionStore(workspace);
+  const FIX_PRODUCTION = "status: complete\ndecision: fix_production\n\nproduction defect";
+  const provider = new StatusProvider(
+    [DONE, APPROVED, DONE, FIX_PRODUCTION, DONE, APPROVED, DONE, APPROVED],
+    store,
+    sessionId,
+  );
+  const result = await executeNamedWorkflow(
+    workspace,
+    { workflowId: "fixback", sessionId },
+    new AgentToolRunner({ fake: provider }, 10),
+  );
+  expect(result.stopReason).toBe("completed");
+  expect(store.executionSnapshots(sessionId).map((item) => item.stageId)).toEqual([
+    "implement",
+    "review_work",
+    "write_tests",
+    "review_tests",
+    "implement",
+    "review_work",
+    "write_tests",
+    "review_tests",
+  ]);
+  expect(provider.statuses[4]).toBe("active");
+  expect(provider.calls[4]!.prompt).toContain("review_tests (fix_production)");
+  const events = readFileSync(path.join(workspace, ".migent", "sessions", sessionId, "events.jsonl"), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line) as Record<string, any>);
+  const fixIndex = events.findIndex((event) => event.data?.outcome?.decision === "fix_production");
+  expect(fixIndex).toBeGreaterThanOrEqual(0);
+  expect(events[fixIndex]!.data.session_status).toBe("active");
+  const next = events.slice(fixIndex + 1).find((event) => event.event === "execution.started");
+  expect(next!.stage_id).toBe("implement");
+  expect(next!.data.stage_attempt).toBe(2);
+});
