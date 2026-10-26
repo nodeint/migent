@@ -2,9 +2,12 @@
 schema_version: 2
 # .migent/config.local.yaml is an optional per-machine override with the same keys. It is not committed.
 # Mappings merge key by key; scalars and lists replace the value from config.yaml. Its schema_version is ignored.
-# config model and config role edit config.yaml only.
+# Keep shared aliases as empty entries (for example `code_generation: {}`) in config.yaml and map them there.
+# Migent has no config-editing commands. Edit the YAML and run `migent doctor`.
 
 # models.<name>.model is the provider model id.
+# models.<name>.client is optional: the CLI client id (agy, claude-code, codex, grok, opencode); required for provider byteplus
+# that drives this model. Omit it to use the provider's own client.
 # roles.<name>.default_model and a stage model are this name.
 # Options merge in order: model, then role, then stage.
 # Only keys the provider marks overridable are stored on the provider session.
@@ -25,6 +28,12 @@ models:
     # opencode accepts agent and thinking (true sends --thinking, false sends nothing). Neither is overridable.
     options:
       reasoning-effort: high
+
+  coder:
+    provider: byteplus
+    # byteplus has no CLI of its own, so client is required and names the CLI that runs it.
+    client: opencode
+    model: coding-plan/deepseek-v4-pro
 
 roles:
   planner:

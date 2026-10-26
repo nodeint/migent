@@ -1,5 +1,8 @@
 # Plan: improve `migent init` first-run experience
 
+Status: Phases A, B, and C are implemented. The kernel config-edit helpers
+(`config-edit.ts`) were kept because migration still uses them.
+
 ## Goal
 
 Make `migent init` leave a project configured for the current machine and give
@@ -73,9 +76,10 @@ Still to change:
    prerequisite with the fix. Catalog listing may run the provider CLI's list
    command, but init makes no inference call as a health check.
 3. Let the user choose `implement` or `plan`.
-4. Offer to install the Migent skill for the detected client. Declining, no
-   `npx`, or no network produces a warning and the exact manual command; it
-   never fails init.
+4. Offer to install the Migent skill for the detected client. Declining does not stop init. As before, when the user asked for the install
+   (`--skill` or a yes) and `npx skills` fails, init stops before writing
+   anything and reports the error; this behavior is unchanged and covered by
+   an existing test.
 5. Write shared config and workflow, `config.local.yaml`, and gitignore.
 6. Run doctor. Explain each remaining problem and its remedy.
 7. Print the selected provider/model/workflow and a complete first-run

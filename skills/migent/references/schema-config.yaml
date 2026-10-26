@@ -2,7 +2,8 @@
 schema_version: 2
 # .migent/config.local.yaml is an optional per-machine override with the same keys. It is not committed.
 # Mappings merge key by key; scalars and lists replace the value from config.yaml. Its schema_version is ignored.
-# config model and config role edit config.yaml only.
+# Keep shared aliases as empty entries (for example `code_generation: {}`) in config.yaml and map them there.
+# Migent has no config-editing commands. Edit the YAML and run `migent doctor`.
 
 # models.<name>.model is the provider model id.
 # models.<name>.client is optional: the CLI client id (agy, claude-code, codex, grok, opencode); required for provider byteplus

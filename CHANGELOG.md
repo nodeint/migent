@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Changed
+
+- `init` now writes shared aliases to `.migent/config.yaml` (`code_generation` for `implement`; `deep_reasoning` and `critical_review` for `plan`) as empty entries, and this machine's provider, model, and `--option` values to `.migent/config.local.yaml`. Projects created before this change keep working; `init` does not rewrite them. A lone `config.local.yaml` is treated like a partial project and stops init.
+- `init` prints the chosen provider and model and a `migent session run --workflow <preset> --task "<what you want done>"` command. A missing `--provider` or `--model` error includes a full example. `init` still never starts a model.
+- `doctor` reports every model alias that has no provider and model in one message with the YAML to add to `.migent/config.local.yaml`, instead of one `provider is required` problem per role and stage.
+- `migent config` is read-only. `--json` prints `{config, local}`, and the stderr note lists the models `config.local.yaml` sets.
+- `skill install` picks the project's clients from the merged config.
+
+### Removed
+
+- `config show`, `config model`, and `config role`. They exit 2 and print the replacement: edit `.migent/config.yaml` or `.migent/config.local.yaml`, then run `migent doctor`. Scripts that used `config model --json` or `config role --json` should read `migent config --json` and edit the YAML.
+
 ## 0.1.9
 
 ### Added

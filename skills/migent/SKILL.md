@@ -25,8 +25,7 @@ This skill is already in the prompt. Do not open its file again.
   files when the local override exists; shared settings belong in
   `config.yaml` and machine-specific mappings in `config.local.yaml`.
 - You have no terminal for prompts. Pass `--no-input` (or set
-  `MIGENT_NO_INPUT=1`) to `init`, `config model`, and `config role`, and give
-  every value as a flag.
+  `MIGENT_NO_INPUT=1`) to `init`, and give every value as a flag.
 - Do not edit generated session state: `manifest.yaml`, `status.json`,
   `events.jsonl`, `metrics.json`, or anything under `executions/`.
 - Keep the user's task wording. Do not read `task.md` or the documents it
@@ -143,16 +142,25 @@ migent doctor --json
 ids each supports. Use it to pick a `<provider>` and `<model-id>` for `init`.
 `--skill` installs this skill; `migent skill update` refreshes it.
 
+`init` writes `.migent/config.yaml` (roles and model aliases such as
+`code_generation`, with empty entries), `.migent/config.local.yaml` (this
+machine's provider and model for each alias), a workflow, and a `.gitignore`
+that keeps `sessions/` and the local file out of git. It never starts a model.
+It ends by printing the `migent session run` command for the chosen workflow.
+
 ## Change models
 
-Edit a model name (updates every role and stage that uses it):
+No command edits config. Edit the YAML, then validate:
 
-```
-migent config model <name> --provider <provider> --model <model-id> --no-input --json
-```
+1. Print the effective config: `migent config` (or `migent config --json`).
+2. To change the provider and model an alias uses on this machine, edit
+   `models.<alias>` in `.migent/config.local.yaml`.
+3. To change which alias a role uses, or the roles themselves, edit
+   `.migent/config.yaml`.
+4. Run `migent doctor --json` and fix what it reports. A shared alias with no
+   local mapping is reported with the YAML to add.
 
-Show the config with `migent config`, `migent config model --json`, or
-`migent config role --json`.
+Details and an example are in `references/config.md`.
 
 ## Look up anything else
 
@@ -170,7 +178,7 @@ References, read only when the task needs them:
 | --- | --- |
 | `references/schema-config.yaml`, `references/schema-workflow.yaml` | Writing config or a workflow. |
 | `references/sessions.md` | Prerequisite session (`--prior`), several blocked stages (`--stage`), resuming a cancelled session, raising limits, adopting workflow edits (`--refresh-workflow`). |
-| `references/config.md` | Running one role, pointing roles at another model, overriding one role, role instructions. |
+| `references/config.md` | Mapping aliases on a machine, editing models and roles, running one role, role instructions. |
 | `references/inspect.md` | Filtering `session list`, comparing runs with `session metrics`, `session follow`. |
 
 All paths are under `.agents/skills/migent/`.

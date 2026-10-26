@@ -158,50 +158,61 @@ migent init --preset plan --provider codex --model gpt-5
 migent init --skill --provider codex --model gpt-5
 ```
 
-`init` writes `.migent/config.yaml`, one workflow, and `.migent/.gitignore`,
-which ignores `sessions/` and `config.local.yaml`.
-The config contains the provider and model you choose. Model ids come from
-that provider's CLI, not from a built-in list. Prompted options come from
-that provider for the model you picked. Omit `--option` to keep the provider
-default. The default workflow is `implement`, a single developer
-stage. `--preset plan` writes a planner and a reviewer. In a terminal,
-provider, model, and prompted options are chosen from lists. Both `plan`
-roles use that model; give the reviewer another with `migent config role
-reviewer`. In a terminal, init also asks whether to
-install the Migent skill in the directory the chosen client reads (for
-example `.agents/skills/migent/` for codex). `--skill` installs that
-skill without asking. Pass `--provider` and `--model` together when input is
-not a terminal, or when `--no-input` or `MIGENT_NO_INPUT=1` is set. Without
-`--skill`, a non-interactive init leaves the skill uninstalled. After the
-files are written, init exits 0. An interactive init prints the doctor
-report on stdout. A non-interactive init does not. Doctor problems are
-printed as an advisory on stderr. An existing project ignores `--provider`,
-`--model`, `--option`, and an explicit `--preset`, and says so. `--skill`
-still installs.
+`init` writes four files:
+
+```text
+.migent/
+├── config.yaml        # roles and model aliases, committed
+├── config.local.yaml  # this machine's provider and model, not committed
+├── .gitignore         # ignores sessions/ and config.local.yaml
+└── workflows/<preset>.yaml
+```
+
+`config.yaml` holds roles and stable model aliases as empty entries:
+`code_generation` for `implement`, `deep_reasoning` and `critical_review` for
+`plan`. `config.local.yaml` maps each alias to the provider and model you
+choose, plus any `--option`. Model ids come from that provider's CLI, not from a
+built-in list. Prompted options come from that provider for the model you
+picked. Omit `--option` to keep the provider default. The default workflow is
+`implement`, a single developer stage. `--preset plan` writes a planner and a
+reviewer; both start on the model you chose, and you can point either alias at a
+different model by editing `config.local.yaml`. In a terminal, provider, model,
+and prompted options are chosen from lists, and init asks whether to install the
+Migent skill in the directory the chosen client reads (for example
+`.agents/skills/migent/` for codex). `--skill` installs that skill without
+asking. Pass `--provider` and `--model` together when input is not a terminal,
+or when `--no-input` or `MIGENT_NO_INPUT=1` is set; the error repeats a full
+example. Without `--skill`, a non-interactive init leaves the skill
+uninstalled. Init never starts a model. After the files are written it exits 0
+and prints the provider and model, then a `migent session run --workflow
+<preset> --task "<what you want done>"` command to run next. An interactive
+init prints the doctor report on stdout. A non-interactive init does not. Doctor
+problems are printed as an advisory on stderr. An existing project ignores
+`--provider`, `--model`, `--option`, and an explicit `--preset`, and says so.
+`--skill` still installs.
 
 An existing valid project is left unchanged. `--skill` still installs the
-skill on that project. A partial `.migent/` directory stops init and lists
+skill on that project. A partial `.migent/` directory, including a lone `config.local.yaml`, stops init and lists
 the files in the way. Init writes nothing when the skill install fails.
 
 ## Config
 
 ```bash
 migent config
-migent config show
-migent config model
-migent config model <name> --provider grok --model grok-4.7 --option reasoning-effort=medium
-migent config role
-migent config role reviewer --model-name plain
-migent config role reviewer --provider grok --model grok-4.7 --option reasoning-effort=high
+migent config --json
 ```
 
-`config` and `config show` print `.migent/config.yaml` as stored and exit 0.
-When `.migent/config.local.yaml` exists, they print the merged config as YAML
-instead and write `Merged with .migent/config.local.yaml.` to stderr.
-`config model` and `config role` edit `config.yaml` only and never touch the
-local file.
-`config model` and `config role` accept `--no-input` (and `MIGENT_NO_INPUT=1`).
-With no changes they still list and exit 0.
+`config` prints the effective config and exits 0. Without
+`.migent/config.local.yaml` it prints `.migent/config.yaml` as stored. With it,
+`config` prints the merged config as YAML and writes `Merged with
+.migent/config.local.yaml. Local models: <names>.` to stderr. `--json` prints
+one object, `{"config": {...}, "local": {"file": ..., "models": [...]} | null}`.
+
+`config` is read-only. To change a role, an alias, or the provider and model on
+this machine, edit `.migent/config.yaml` or `.migent/config.local.yaml` and run
+`migent doctor`. `doctor` names every alias that has no local mapping and prints
+the YAML to add. The `config` subcommands `show`, `model`, and `role` were removed;
+they exit 2 and print this instruction.
 
 ## Migrate
 
@@ -210,7 +221,7 @@ migent migrate
 migent migrate --yes
 ```
 
-`doctor`, `config model`, `config role`, `session run`, and `session continue`
+`doctor`, `session run`, and `session continue`
 stop when `schema_version` is older than this Migent and print
 `Schema is outdated. Run migent migrate.` A missing `schema_version` is
 version 0.
@@ -219,39 +230,6 @@ version 0.
 without asking, for a caller that has no terminal. Declining leaves the files
 unchanged. The upgrade still runs one version at a time. Each provider defines
 its own function for a model, a role, and a stage at that version.
-
-In a terminal, `config model` or `config role` with no arguments opens a list.
-`--no-input` and `MIGENT_NO_INPUT=1` keep the list. Cancelling a prompt exits
-130 and prints nothing. `migrate` still treats cancel as a decline.
-The last choice adds a model or a role. Choosing a model edits that entry.
-Choosing a role points that role at a model, or adds a model for it.
-
-Pass the flags to write without prompts. `--model` is the provider model id.
-`--model-name` is the name under `models:` in `.migent/config.yaml`, not a
-provider model id.
-`--provider` and `--model` are passed together. Model ids come from that
-provider's CLI. Prompted option values come from that provider for the chosen model.
-
-`config model <name>` creates a missing name and updates an existing one. An
-update changes every role and stage that uses the name. `--option KEY=VALUE`
-sets one entry under `options` and leaves the others in place.
-`--clear-option KEY` removes it.
-
-`config role <role> --model-name <name>` changes only that role's
-`default_model`. Several roles can share one `--model-name`.
-`config role <role> --provider <provider> --model <model-id>` reuses an entry
-with the same provider, model id, and empty options, or adds a new name, and
-points only that role at it. A shared entry is left unchanged.
-`--option` on `role` writes `roles.<role>.options` for one role.
-
-After a write, the command names the roles that changed, the stages that
-follow, and the stages that stay put because they set their own `model` or
-`options`. A model name that nothing points at anymore is reported and kept.
-The command then runs `doctor`.
-
-`--json` prints one object. Exit 0 when a list is shown or the write passes
-doctor. Exit 1 when the file is written and doctor fails. Exit 2 when the
-arguments are rejected, before the file changes.
 
 ## Project skill
 
@@ -268,7 +246,7 @@ anonymous telemetry; Migent sets `DISABLE_TELEMETRY=1` unless you already set it
 `install` needs a scope. In a terminal it asks "Project" or "Global"; otherwise
 pass `--project` or `--global`. `--client` takes a comma-separated list of
 `claude-code`, `codex`, `opencode`, `agy`, `grok`. Without it, project scope
-uses the clients of the models in `.migent/config.yaml`, and `skills` asks when
+uses the clients of the models in the merged `.migent/config.yaml` and `config.local.yaml`, and `skills` asks when
 none are known. Project scope writes to the client's project directory
 (`.claude/skills`, `.agents/skills` for codex, opencode and agy, `.grok/skills`);
 global scope writes under your home directory the same way.

@@ -1,11 +1,14 @@
 # Providers and model configuration
 
-Models describe execution. Roles describe intent. Both are declared in
-`.migent/config.yaml`. The Migent skill lists every accepted key in
+Models describe execution. Roles describe intent. Roles and stable model aliases
+are declared in `.migent/config.yaml`; `migent init` writes the aliases as empty
+entries (`code_generation: {}`). The provider and model each alias uses on this
+machine go in `.migent/config.local.yaml`. The Migent skill lists every accepted key in
 `references/schema-config.yaml` in the installed Migent skill (`migent skill path` prints the bundled copy).
 
-To override these on one machine, put the same keys in
-`.migent/config.local.yaml`. It is not committed. Mappings merge key by key;
+`.migent/config.local.yaml` takes the same keys. It is not committed, so each
+developer maps the shared aliases to the providers installed on their machine.
+`migent doctor` lists any alias that has no mapping and the YAML to add. Mappings merge key by key;
 scalars and lists, such as `instructions`, replace the value from `config.yaml`.
 Its `schema_version` is ignored. Sessions freeze the merged result.
 

@@ -1,10 +1,50 @@
 # Roles and model configuration
 
-Write commands take `--no-input --json`. The JSON includes the doctor result.
+Migent has no commands that edit config. Edit the YAML files and run
+`migent doctor --json`. `migent config` prints the effective (merged) config;
+`migent config --json` also lists the model names the local file sets.
 
 Run `migent provider list --json` to see which provider CLIs are available
 and what model ids each supports. Use that output to pick a provider and
-model id before using `config model` or `init`.
+model id before writing `config.local.yaml` or running `init`.
+
+## Per-machine override
+
+`.migent/config.local.yaml` is an optional, uncommitted file with the same keys
+as `config.yaml`. Mappings merge key by key; scalars and lists, such as
+`instructions`, replace the value from `config.yaml`. Its `schema_version` is
+ignored. Runs, `doctor`, and `config` read the merged result.
+`doctor` warns if git tracks the local file.
+
+## Set up a shared project on a dev machine
+
+Do not reinitialize an existing project's config. Keep role defaults and
+workflow choices in the committed `config.yaml`; map its model aliases to the
+provider CLIs and model IDs available on each machine in
+`.migent/config.local.yaml`.
+
+1. Read `.migent/config.yaml` and note the aliases under `models`.
+2. Run `migent provider list --json` and choose available providers and model IDs.
+3. Create `.migent/config.local.yaml`. It may contain only aliases that need
+   local mappings; matching values override the shared config while other
+   shared mappings remain in effect. For example:
+
+   ```yaml
+   models:
+     fast:
+       provider: codex
+       model: gpt-5
+     deep_reasoning:
+       provider: claude
+       model: opus
+   ```
+
+   Replace the example aliases and model IDs with the project's actual names
+   and this machine's available values. The file is uncommitted and ignored by
+   Git.
+4. Run `migent doctor --json` and resolve reported issues before starting a
+   workflow. An alias that is still `{}` in the shared config is reported with
+   the YAML to add.
 
 ## Run one role
 
@@ -26,28 +66,22 @@ migent session run --role <role> --prompt "<prompt>"
 Without `--json` it prints a table. Exit 0 means the outcome is complete, 1
 not complete. `roles.<role>.instructions`, when set, is prepended to the prompt.
 
-## Model names
+## Change a model
 
-Provider options on a model name: `--option KEY=VALUE` to set,
-`--clear-option KEY` to remove.
+Edit `models.<alias>` in `.migent/config.local.yaml`: `provider`, `model`, and
+optional `options`. Every role and stage that uses the alias follows. Delete an
+option key to clear it.
 
-```
-migent config model <name> --provider <provider> --model <model-id> --no-input --json
-```
+## Point a role at another alias
 
-## Point roles at an existing model name
+Set `roles.<role>.default_model` in `.migent/config.yaml` to a name from
+`models`. It is an alias, not a provider model id. Add the alias to `models` as
+`{}` and map it in `.migent/config.local.yaml`.
 
-The value is a name from `models`, not a provider model id.
+## Override options for one role
 
-```
-migent config role <role>... --model-name <name> --no-input --json
-```
-
-## Override one role without touching the shared name
-
-```
-migent config role <role> --provider <provider> --model <model-id> --no-input --json
-```
+Set `roles.<role>.options` in `.migent/config.yaml`. They merge over the
+alias options.
 
 ## Role instructions
 

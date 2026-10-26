@@ -130,17 +130,18 @@ Use the migent skill to set up Migent in this project.
 migent init
 ```
 
-Follow the interactive prompts to select providers and models.
+Follow the interactive prompts to select a provider and model. `init` does not
+start a model; it prints the command to run next.
 
 Both options generate:
 
 ```text
 .migent/
-├── config.yaml        # models and roles
-├── config.local.yaml  # optional per-machine override, not committed
-├── .gitignore         # keeps sessions/ untracked
+├── config.yaml        # roles and model aliases, committed
+├── config.local.yaml  # this machine's provider and model, not committed
+├── .gitignore         # keeps sessions/ and config.local.yaml untracked
 └── workflows/
-    └── plan.yaml      # plan-and-review workflow
+    └── implement.yaml # or plan.yaml with --preset plan
 ```
 
 Commit `config.yaml` and `workflows/`. For a team, keep role names and model
@@ -170,8 +171,10 @@ After cloning, each developer should:
 4. Run `migent doctor` and resolve reported configuration or provider issues
    before starting a workflow.
 
-If a project commits complete provider/model mappings in `config.yaml`, the
-local file is optional. A local file only needs machine-specific overrides;
+`migent config` prints the effective config. There are no commands that edit
+it: change `config.yaml` or `config.local.yaml` directly, or ask your agent to,
+then run `migent doctor`. If a project commits complete provider/model mappings
+in `config.yaml`, the local file is optional. A local file only needs machine-specific overrides;
 omitted mappings continue to come from `config.yaml`.
 
 ### Run
