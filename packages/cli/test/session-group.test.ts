@@ -458,3 +458,91 @@ test("session metrics leaves a corrupt sealed file in place", async () => {
     removeWorkspace(workspace);
   }
 });
+
+const FIXBACK = `\
+schema_version: 2
+id: fixback
+stages:
+  - id: implement
+    role: developer
+    depends_on: []
+  - id: review_work
+    role: reviewer
+    depends_on: [implement]
+    decision:
+      values: [approved, revise]
+      routes:
+        approved: write_tests
+        revise: implement
+  - id: write_tests
+    role: developer
+    depends_on: [implement, review_work]
+  - id: review_tests
+    role: reviewer
+    depends_on: [review_work, write_tests]
+    decision:
+      values: [approved, revise, fix_production]
+      routes:
+        approved: complete
+        revise: write_tests
+        fix_production: implement
+`;
+
+class ShowDuringRevisitProvider extends ScriptedProvider {
+  shown: Promise<{ value: number; stdout: string }> | null = null;
+  sessionId = "";
+
+  constructor(
+    responses: readonly string[],
+    private readonly workspace: string,
+  ) {
+    super(responses);
+  }
+
+  override buildCommand(input: BuildCommandInput): CommandSpec {
+    const spec = super.buildCommand(input);
+    if (this.calls.length !== 5) return spec;
+    const flag = path.join(this.workspace, "show-done");
+    this.shown = capture(() => main(["session", "show", this.sessionId, "--json"], this.workspace)).finally(() =>
+      writeFileSync(flag, ""),
+    );
+    return {
+      argv: [
+        process.execPath,
+        "-e",
+        "const fs=require('fs');const f=process.argv[1];const t=setInterval(()=>{if(fs.existsSync(f)){clearInterval(t);}},20);setTimeout(()=>clearInterval(t),8000);",
+        flag,
+      ],
+    };
+  }
+}
+
+test("session show reports active while a routed-back stage runs", async () => {
+  const workspace = writeFakeWorkflowWorkspace({ fixback: FIXBACK });
+  const done = "status: complete\n\ndone";
+  const approved = "status: complete\ndecision: approved\n\nok";
+  const fixProduction = "status: complete\ndecision: fix_production\n\nproduction defect";
+  const provider = new ShowDuringRevisitProvider(
+    [done, approved, done, fixProduction, done, approved, done, approved],
+    workspace,
+  );
+  try {
+    const prepared = await capture(() => main(["session", "prepare", "fix back", "--workflow", "fixback"], workspace));
+    const sessionId = (JSON.parse(prepared.stdout) as { session_id: string }).session_id;
+    provider.sessionId = sessionId;
+    writeFileSync(path.join(workspace, ".migent", "sessions", sessionId, "task.md"), "Fix back.\n", "utf8");
+    cliHooks.runner = new AgentToolRunner({ fake: provider }, 10);
+    const run = await capture(() =>
+      main(["session", "run", "--session", sessionId, "--workflow", "fixback"], workspace),
+    );
+    expect(run.value).toBe(0);
+    const shown = await provider.shown;
+    expect(shown?.value).toBe(0);
+    expect(JSON.parse(shown?.stdout ?? "")).toMatchObject({ session_id: sessionId, status: "active" });
+    const after = await capture(() => main(["session", "show", sessionId, "--json"], workspace));
+    expect(JSON.parse(after.stdout)).toMatchObject({ session_id: sessionId, status: "completed" });
+  } finally {
+    cliHooks.runner = null;
+    removeWorkspace(workspace);
+  }
+}, 60_000);

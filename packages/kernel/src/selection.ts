@@ -390,6 +390,7 @@ function version2RouteError(
     if (snapshot === undefined || snapshot.executionOrder <= since) continue;
     const decision = (snapshot.outcomeDecision ?? "").toLowerCase();
     if (!routeListsStage(router.routes[decision], stageId)) {
+      if (dependsOnStage(workflow, router, stageId)) continue;
       return `Stage ${stageId} is not routed by ${router.id} decision ${pyRepr(decision)}.`;
     }
   }
@@ -468,7 +469,15 @@ function hasLaterRouteTo(
   return false;
 }
 
-/** Null when a router that finished since `since` does not list the stage. */
+/** A router downstream of the stage is a route back, so its other decisions do not block it. */
+function dependsOnStage(workflow: WorkflowDocument, router: StageSpec, stageId: string): boolean {
+  return dependencyClosure(workflow.stages, router.id).has(stageId);
+}
+
+/**
+ * Null when a router that finished since `since` does not list the stage.
+ * A router that depends on the stage does not block it when it goes elsewhere.
+ */
 export function relevantRouterSnapshots(
   workflow: WorkflowDocument,
   snapshots: readonly ExecutionSnapshot[],
@@ -490,7 +499,10 @@ function routersCompletedSince(
     const snapshot = complete[router.id];
     if (snapshot === undefined || snapshot.executionOrder <= since) continue;
     const decision = (snapshot.outcomeDecision ?? "").toLowerCase();
-    if (!routeListsStage(router.routes[decision], stageId)) return null;
+    if (!routeListsStage(router.routes[decision], stageId)) {
+      if (dependsOnStage(workflow, router, stageId)) continue;
+      return null;
+    }
     relevant.push(snapshot);
   }
   relevant.sort((left, right) => left.executionOrder - right.executionOrder);

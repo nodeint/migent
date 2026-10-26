@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- In version 2 workflows, a route back to a completed stage (for example `review_tests: fix_production -> implement`) now dispatches that stage and then its dependents. Before, a forward decision from a router between them blocked it, and the session ran or completed the next stage instead.
+
 ## 0.1.10
 
 ### Changed
