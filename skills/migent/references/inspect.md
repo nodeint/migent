@@ -23,7 +23,7 @@ migent session metrics --json
 - One session prints its `metrics.json`. Several print one object per
   line, newest first. Only a completed session has this file. `--workflow`,
   `--status`, and `--limit` filter those rows.
-- Read `usage_missing` and `uncaptured_turns` before comparing totals.
+- Read `usage_missing`, `cost_partial`, and `uncaptured_turns` before comparing totals.
 - `stage_attempt` is not a retry count.
 
 ## Follow

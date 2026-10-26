@@ -349,7 +349,9 @@ test("cost totals keep the known sum and count the gap", () => {
   const totals = sessionMetrics(workspace, "mix", { priced, free }).totals as {
     usage: TurnUsage;
     usage_missing: Record<string, number>;
+    cost_partial: boolean;
   };
+  expect(totals.cost_partial).toBe(true);
   expect(totals.usage.cost_usd).toBe(1.5);
   expect(totals.usage.input_tokens).toBe(14);
   expect(totals.usage_missing.cost_usd).toBe(1);

@@ -272,6 +272,7 @@ no file and does not appear.
       "cache_write_tokens": 2,
       "cost_usd": 2
     },
+    "cost_partial": true,
     "failed_executions": 0,
     "blocked": 0,
     "cancelled": 0,
@@ -364,7 +365,10 @@ A field the provider did not report is null. A total sums the known values and
 that mixes providers with and without cost still has a usable cost total.
 `input_tokens` excludes cache reads. `reasoning_tokens` sits beside
 `output_tokens` and is not added to it. `cost_usd` is only what claude, grok, and opencode
-report. There is no price table.
+report. There is no price table, so a codex or agy execution adds to
+`usage_missing.cost_usd` and nothing to the cost total. `totals.cost_partial` is
+true when some turns reported a cost and others did not, so `totals.usage.cost_usd`
+understates the session cost.
 
 `wall_seconds` is `completed_at` minus `created_at`, null while that execution
 is running. The session wall runs from the first execution's `created_at` to
