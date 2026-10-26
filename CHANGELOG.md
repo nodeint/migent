@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.10
+
 ### Changed
 
 - `init` now writes shared aliases to `.migent/config.yaml` (`code_generation` for `implement`; `deep_reasoning` and `critical_review` for `plan`) as empty entries, and this machine's provider, model, and `--option` values to `.migent/config.local.yaml`. Projects created before this change keep working; `init` does not rewrite them. A lone `config.local.yaml` is treated like a partial project and stops init.
@@ -75,46 +77,6 @@
 - A completed workflow session writes `metrics.json`. `session metrics --json` prints that file and lists only sessions that have it. A session without the file exits 2. Later adapter changes do not change that file. An agent session has no metrics file.
 - Verify runs each command with `/bin/sh` when that file is executable. On Windows it uses `sh` from `PATH`. Publishing a file syncs it through a writable handle, so the publish does not stop with `EPERM`.
 
-## 0.1.5
+## Older versions
 
-### Added
-
-- `session continue --reply` and `--reply-file` send a reply to a blocked stage. The new execution resumes that stage's provider agent. The prompt body is the reply. Without `--reply`, a blocked continue still includes the blocker and the previous response. When more than one stage is blocked, `--stage` selects the stage and the others stay blocked.
-- `session metrics --json` prints derived per-execution and per-session usage, time, and revision counts. Provider turns record `details.usage`, `details.argv`, `details.turn`, and `details.agent_id`. `provider.stage_started` records `cli_version`, `git_head`, and `git_dirty`. Usage is normalized when the metrics are read.
-- A version 2 workflow may set `concurrency` and route one decision to a list of stages. Independent branches run together up to that limit, in declaration order. A branch that blocks or exhausts verify, retries, or revisions stops; the others keep running. The session completes when nothing is running and nothing else can start. `status.json` lists `running_stages` and `blocked_by_execution_ids`. `latest_decision` is still the decision of the highest-order execution.
-- A workflow session pins its workflow, role instructions, and resolved stage targets in `workflow.frozen.yaml`. Later edits warn on stderr and do not change that session. `session continue --refresh-workflow` and `session run --session --refresh-workflow` adopt the current workflow, models, and role instructions.
-- New sessions write `schema_version: 2` on an identity-only `manifest.yaml`. Status lives in `status.json`. A v1 manifest still has its status line and is still updated.
-- `session repair <session>` rebuilds `status.json` from the session directory. It takes the session lock. `--accept-task` is the only way past a v1 `status.json` that does not parse: it stores the hash of the current `task.md`. `session continue` repairs without that flag and refuses when the task hash or output provenance would be lost.
-- Each new event line has `v` and `seq`. Lifecycle changes (`session.created`, `session.activated`, `task.frozen`, `execution.started`, `execution.<status>`, `revisions.reset`, `outputs.published`, `session.<status>`) are recorded before `status.json` is written from that log.
-- `roles.<name>.instructions` is an optional list of strings. A stage prompt includes it before that stage's instructions. A role run prepends it to the prompt. `config role --json` includes the list.
-- `session prepare <some-id> --workflow <workflow>` creates a session with status `prepared` and a caller-chosen id such as `wave-3`. Write `task.md` in that session, then `migent session run --session <some-id> --workflow <workflow>`. `session show <session-id>` prints that session before the first stage.
-- Stage prompts name `task.md` and the session directory. `session run --task` accepts one line and stores it in `task.md`. The first dispatch records a hash of that file. A later change stops the next dispatch. Each execution keeps a copy.
-- A stage may set `verify`. After the model reports `status: complete`, Migent runs those commands in the same execution, in order, and stops at the first failure. A red command sends the report back to that provider agent. The execution stays running and records no outcome until verify passes. A passing run writes `artifacts/verify.md`. After `max_verify` red runs (default 3) the execution fails with `failure_reason: verify_exhausted`. The loop stops with stop reason `verify_exhausted` and exit 6. The session stays active and `--attempts` is not consumed. `session continue` resumes that provider conversation with the last report and a fresh `max_verify` budget, and keeps the provider, model, and options of the exhausted execution.
-- The `agy` adapter runs the Antigravity CLI. Headless runs use stream-json, model ids come from `agy models`, and a later turn resumes with `--conversation`.
-- The installed skill lists every accepted config key in `references/schema-config.yaml` and every accepted workflow key in `references/schema-workflow.yaml`.
-
-### Changed
-
-- `session continue` on a blocked session dispatches that stage again. The new prompt includes the blocker and the previous response. `completed` sessions stay stopped.
-- `session continue` on a cancelled session resumes that same execution. The execution id and stage attempt stay the same. A provider turn that was cut off is sent again. A verify that was cut off runs again. A role run on a cancelled session does the same and does not send the new prompt.
-- A later visit that a decision routes back to a stage resumes that stage's provider agent. The prompt sends only what changed: upstream artifact paths, the route back, or a blocked attempt. It does not repeat the task path, role instructions, stage instructions, constraints, or verify commands. The reviewing stage still starts a new agent.
-- `provider.item_*` and `provider.heartbeat` are appended to `executions/<id>/stream.jsonl`. Other events, including `verify.heartbeat`, stay in `events.jsonl`. Heartbeats do not rewrite `status.json`. `session follow` merges `events.jsonl` with every execution stream in timestamp order. `--cursor` remains a byte offset into `events.jsonl`. `0` replays the whole log and every stream. Any other offset replays events from that byte, and stream lines whose timestamp is at or after the first event there.
-- Session files (`status.json`, `execution.json`, `manifest.yaml`, `task.md`, `prompt.md`, `response.md`) are written to a temp file, synced, and renamed, so a kill no longer leaves a truncated file. Event lines are synced when appended. A save writes its events before `status.json`.
-- One process writes a session at a time. `session run --session`, `session continue` and `session run --role --session` hold `session.lock` in the session directory. A second writer exits 2 with `Session <id> is being run by pid <n> on <host>.` A lock is stale after 30 s without a heartbeat, or when its pid is gone on the same host. A holder whose lock was taken stops before its next write. `session follow` reaps a dead owner only when it can take the lock.
-- Session and execution directories are created with a non-recursive `mkdir`, so two processes never share an id.
-- `session list` shows a session whose `status.json` does not parse with status `corrupt` instead of dropping it. `--status corrupt` selects them. `session show`, `session follow` and `--prior` name the corrupt file and exit 2. Task freeze and prepared-session activation no longer overwrite it.
-- Session commands live under `migent session`. `session run --workflow <workflow>` runs that workflow. Omit `--workflow` and pass `--role` to run one role. `session list`, `session show`, and `session follow` inspect sessions. `session continue` resumes a workflow session.
-- `session list --workflow`, `--status`, and `--limit` filter the newest-first list. `--latest` prints one session, or `null` when nothing matches. JSON list rows and JSON snapshots omit the task text. The human list and snapshot still print it.
-- `init --preset plan` tells the planner to edit the existing plan in place when revising, and tells the reviewer to report every gap of the same kind in one response.
-- A workflow `session run` and `session continue` print a coordination result: `session_id`, `session_status`, `stop_reason`, `latest_decision`, and `outputs`. Exit 1, 3, and 6 also include `latest_execution_id` and `response_path`. `--verbose` adds `stages` with each response. Stderr prints stage boundaries and errors. `--progress` prints each tool call once, when it finishes. A role run prints a table unless `--json`. That JSON is the role result (`outcome_status`), not this object.
-- `session continue SESSION` resumes until the session stops and resets revision counts. `session continue SESSION --once` and `session run --workflow W --task T --once` dispatch one stage and do not reset revision counts.
-- A role run is `session run --role ROLE [--session SESSION]`. `session list` lists sessions. `session show SESSION` prints one snapshot. `session follow SESSION` follows events. `--exit-when-done` makes a follow exit when the session is completed, blocked, or cancelled.
-- `config` with no subcommand prints `.migent/config.yaml` and exits 0. It used to print help and exit 2. `config show` is unchanged.
-- `init` exits 0 after the project files are written. Doctor problems are an advisory on stderr. A failing doctor check no longer makes a successful init exit 1.
-- `service status` exits 1 when the service is stopped. `--json` output is unchanged. `service stop` still exits 0 when the service is already absent.
-- Cancelling an `init` or `config` prompt exits 130 and prints nothing. `migrate` still treats cancel as a decline and exits 0.
-- The workspace register request sends this package's version.
-
-### Removed
-
-`start`, `prepare`, `continue`, `sessions`, `agent`, `stage`, `watch`, `agent start`, and `agent continue` are removed. Use `session run`, `session prepare`, `session continue`, `session list`, `session show`, and `session follow`.
+- [0.1.5](https://github.com/nodeint/migent/releases/tag/v0.1.5)

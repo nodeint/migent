@@ -1,6 +1,6 @@
 {
   "name": "@nodeint/migent-kernel",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Workflow engine, configuration, and session store for Migent.",
   "keywords": [
     "ai",
