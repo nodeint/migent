@@ -90,8 +90,9 @@ calls.
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs install, build, and test on Ubuntu, macOS, and
-Windows for every pull request into `main` and every push to `main`. Make it a
-required status check on `main`. The release workflow runs the same tests again
+Windows for every pull request into `main`. It does not run on pushes to
+`main`: a change reaches `main` only through a pull request whose checks
+passed. Make it a required status check on `main`. The release workflow runs the same tests again
 for the tag and stops on failure.
 
 ## Pull requests

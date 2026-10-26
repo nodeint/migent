@@ -3,7 +3,7 @@ name: migent-release
 description: >
   Release Migent through a pull request, end to end. First land any pending
   work on main through its own pull request (branch, PR, wait for CI,
-  squash-merge). Then, from a green main, branch release/X.Y.Z, update CHANGELOG.md and keep five versions there, bump the
+  squash-merge). Then, from main, branch release/X.Y.Z, update CHANGELOG.md and keep five versions there, bump the
   four workspace packages to one version, commit "Release X.Y.Z", open a pull
   request, squash-merge it once its checks pass, tag the merge commit vX.Y.Z,
   and push the tag. release.yml then stages the packages and creates the
@@ -75,34 +75,21 @@ git rev-list --count origin/main..HEAD
    git pull --ff-only origin main
    ```
 
-Then continue with Stage 1. Its first step waits for `ci.yml` on the new
-`origin/main`, which is the run on the commit this stage just merged.
+Then continue with Stage 1.
 
 Stop when the working tree is dirty after this stage.
 
 ## Stage 1: the release pull request
 
-Release from `origin/main`. Fetch, then find the `ci.yml` run on `main` for
-`origin/main`. Use that run's URL in the reply.
+Release from `origin/main`. `ci.yml` does not run on pushes to `main`; every
+commit there came through a pull request whose checks passed, and the release
+pull request runs them again. Fetch first.
 
 ```bash
 git fetch origin
-gh run list --branch main --workflow ci.yml --commit <sha> \
-  --json databaseId,status,conclusion,url,headSha
 ```
 
-- Queued or in progress: wait for it, then decide on its result.
-  ```bash
-  gh run watch <databaseId> --exit-status
-  ```
-- No run yet: the push may have just landed. Wait 30 seconds and list again, up
-  to five times, then stop if there is still none.
-- Succeeded: go on.
-- Failed or cancelled: stop and report the run URL and the failing job.
-
-If `origin/main` moves while you wait, start over with the new commit.
-
-`<sha>` is `origin/main`. Stop when `release/X.Y.Z` already exists locally or
+Stop when `release/X.Y.Z` already exists locally or
 on `origin`, or when `vX.Y.Z` exists. A bad version gets the next patch.
 
 ```bash
