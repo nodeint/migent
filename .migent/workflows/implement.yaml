@@ -26,7 +26,7 @@ stages:
       - Write implementation.md in English. Record what changed, which tests ran and their results, and any deviation with its reason.
     produces:
       artifact: implementation.md
-  - id: review-work
+  - id: review_work
     role: reviewer
     depends_on:
       - implement

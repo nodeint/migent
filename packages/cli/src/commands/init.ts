@@ -355,7 +355,7 @@ function renderWorkflow(preset: string): string {
     "      - When revising, edit the existing plan.md in place. Do not replace the whole file.\n" +
     "    produces:\n" +
     "      artifact: plan.md\n" +
-    "  - id: review-plan\n" +
+    "  - id: review_plan\n" +
     "    role: reviewer\n" +
     "    depends_on:\n" +
     "      - plan\n" +

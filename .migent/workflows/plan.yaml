@@ -16,7 +16,7 @@ stages:
       - When a review routes back, start from the previous plan.md and write the updated file in this execution's artifacts directory. Address every review point and keep the sections the review did not reject.
     produces:
       artifact: plan.md
-  - id: review-plan
+  - id: review_plan
     role: reviewer
     depends_on:
       - plan

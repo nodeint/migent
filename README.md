@@ -90,10 +90,10 @@ ones your configuration names.
 
 ## Quickstart
 
-Requires Node.js 22+ (macOS, Linux, or Windows) and the provider CLIs your
-config uses, already signed in.
+Requires Node.js 22+ (macOS, Linux, or Windows) and the provider CLIs you plan
+to use, installed and signed in. `migent doctor` reports any that are missing.
 
-### Install
+Install Migent first:
 
 ```bash
 npm install -g @nodeint/migent
@@ -102,38 +102,52 @@ migent --version
 
 Upgrade with `npm install -g @nodeint/migent@latest`.
 
-### Install agent skill
+There are two ways to set up a project. Both end with the same files and the
+same next command.
 
-```bash
-migent skill install
-```
+### With an AI agent
 
-Pick a project or global install and the AI clients to set up. It uses
-`npx skills`, so it needs Node 22.20 or newer. Run `migent skill update` after
-upgrading Migent. See [docs/cli.md](docs/cli.md#project-skill) for options.
+1. Install the agent skill. It uses `npx skills`, so it needs Node 22.20 or
+   newer. Pick a project or global install and the AI clients to set up:
 
-### Create a project
+   ```bash
+   migent skill install
+   ```
 
-Choose one:
+2. Paste this prompt into your agent (Claude Code, Codex, Antigravity, Cursor,
+   etc.):
 
-#### Option 1: Ask your AI agent
+   ```text
+   Use the migent skill to set up Migent in this project.
+   ```
 
-Paste this prompt into your agent (Claude Code, Antigravity, Cursor, etc.):
+The agent checks which provider CLIs are available (`migent provider list`) and
+runs `migent init --no-input` with a provider and model it picked. Ask it for a
+specific provider, model, or the `plan` preset if you have a preference. Run
+`migent skill update` after upgrading Migent. See
+[docs/cli.md](docs/cli.md#project-skill) for options.
 
-```text
-Use the migent skill to set up Migent in this project.
-```
-
-#### Option 2: Run `migent init`
+### Manually
 
 ```bash
 migent init
 ```
 
-Follow the interactive prompts to select a provider and model. `init` does not
-start a model; it prints the command to run next.
+`init` asks for a provider and model, from the provider CLIs it finds on your
+machine, and for the `implement` or `plan` workflow. It also offers to install
+the agent skill. To skip the prompts, pass everything as flags:
 
-Both options generate:
+```bash
+migent init --provider codex --model gpt-5 --preset implement --no-input
+```
+
+`init` runs `migent doctor` when it finishes and prints any problem it finds,
+such as a provider CLI that is not on your PATH. It does not start a model. It
+ends by printing the command to run next.
+
+### What you get
+
+Either way, `init` generates:
 
 ```text
 .migent/
@@ -144,53 +158,31 @@ Both options generate:
     └── implement.yaml # or plan.yaml with --preset plan
 ```
 
-Commit `config.yaml` and `workflows/`. For a team, keep role names and model
-aliases in `config.yaml`, then map those aliases to each developer's installed
-provider CLI and model in `.migent/config.local.yaml`. This file overrides the
-shared config, is ignored by git, and should be created on every dev machine.
+`config.yaml` names the roles and stable model aliases (for example
+`code_generation`). `config.local.yaml` maps each alias to the provider and
+model on this machine. Commit `config.yaml` and `workflows/`. With the `plan`
+preset, the planner and reviewer both start on the model you chose; point either
+alias at another model by editing `config.local.yaml`.
 
-After cloning, each developer should:
-
-1. Install and sign in to the provider CLIs they plan to use.
-2. Run `migent provider list` to see available providers and model IDs.
-3. Create `.migent/config.local.yaml` using the shared model aliases as keys.
-   For example:
-
-   ```yaml
-   models:
-     fast:
-       provider: codex
-       model: gpt-5
-     deep_reasoning:
-       provider: claude
-       model: opus
-   ```
-
-   Use providers and model IDs available on that machine. Keep role defaults
-   and workflow definitions in the committed `config.yaml` and `workflows/`.
-4. Run `migent doctor` and resolve reported configuration or provider issues
-   before starting a workflow.
-
-`migent config` prints the effective config. There are no commands that edit
-it: change `config.yaml` or `config.local.yaml` directly, or ask your agent to,
-then run `migent doctor`. If a project commits complete provider/model mappings
-in `config.yaml`, the local file is optional. A local file only needs machine-specific overrides;
-omitted mappings continue to come from `config.yaml`.
+`migent config` prints the effective config. No command edits it: change
+`config.yaml` or `config.local.yaml` directly, or ask your agent to, then run
+`migent doctor`.
 
 ### Run
 
-Start a workflow from your project directory:
+Start the workflow from your project directory. Replace the task text:
 
 ```bash
-$ migent session run --workflow plan --task "Plan the account settings redesign"
+migent session run --workflow implement --task "Add a --json flag to the export command"
+```
 
-stage plan · attempt 1 · 10:15:30 · codex/gpt-5 · complete.
-stage review-plan · attempt 1 · 10:16:15 · grok/grok-4 · complete decision=revise.
-stage plan · attempt 2 · 10:17:00 · codex/gpt-5 · complete.
-stage review-plan · attempt 2 · 10:17:45 · grok/grok-4 · complete decision=approved.
+Progress prints on stderr. A completed run lists the files it published:
 
-Session completed in 2m 15s.
-.migent/sessions/20261022-101530--wave-1/outputs/plan.md
+```text
+session_id: 5f0c2b6e-8d1a-4c52-9a0e-3b7d41c9e2aa
+stage implement · attempt 1 · 10:15:30 · codex/gpt-5 (effort: medium).
+stage implement · attempt 1 · 2m 15s · complete.
+completed · 2m 15s
 ```
 
 Inspect sessions or resume a stopped run:
@@ -200,9 +192,31 @@ migent session list
 migent session continue <session-id>
 ```
 
+### Join an existing project
+
+`.migent/config.local.yaml` is not committed, so every clone needs its own.
+
+1. Install and sign in to the provider CLIs you plan to use.
+2. Run `migent provider list` to see available providers and model IDs.
+3. Run `migent doctor`. For each alias with no mapping on this machine, it
+   prints the YAML to add. Put it in `.migent/config.local.yaml`, for example:
+
+   ```yaml
+   models:
+     code_generation:
+       provider: codex
+       model: gpt-5
+   ```
+
+4. Run `migent doctor` again, then start a workflow as above.
+
+An agent with the skill installed can do steps 2 to 4 for you. If a project
+commits complete provider and model mappings in `config.yaml`, the local file is
+optional and only needs machine-specific overrides.
+
 ## Workflow as code
 
-Workflows live in `.migent/workflows/` and models in `.migent/config.yaml`.
+Workflows live in `.migent/workflows/`. Roles and model aliases live in `.migent/config.yaml`; the provider and model behind each alias live in `.migent/config.local.yaml`.
 
 A standard plan-and-review workflow:
 
@@ -218,7 +232,7 @@ stages:
     produces:
       artifact: plan.md
 
-  - id: review-plan
+  - id: review_plan
     role: reviewer
     depends_on: [plan]
     instructions:
@@ -231,26 +245,35 @@ stages:
         revise: plan
 ```
 
-And the roles backed by your chosen provider CLIs:
+The roles use model aliases named for the work they do:
 
 ```yaml
-# .migent/config.yaml
+# .migent/config.yaml (committed)
 schema_version: 2
 models:
-  codex-model:
+  deep_reasoning: {}
+  critical_review: {}
+
+roles:
+  planner:
+    default_model: deep_reasoning
+  reviewer:
+    default_model: critical_review
+```
+
+Each machine maps the aliases to the provider CLIs it has:
+
+```yaml
+# .migent/config.local.yaml (this machine, not committed)
+models:
+  deep_reasoning:
     provider: codex
     model: gpt-5
-  grok-model:
+  critical_review:
     provider: grok
     model: grok-4
     options:
       reasoning-effort: high
-
-roles:
-  planner:
-    default_model: codex-model
-  reviewer:
-    default_model: grok-model
 ```
 
 ### How decisions work

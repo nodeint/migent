@@ -8,11 +8,12 @@ schema_version: 2
 # models.<name>.model is the provider model id.
 # models.<name>.client is optional: the CLI client id (agy, claude-code, codex, grok, opencode); required for provider byteplus
 # that drives this model. Omit it to use the provider's own client.
-# roles.<name>.default_model and a stage model are this name.
+# roles.<name>.default_model and a stage model are this name. Name it for the work (code_generation,
+# deep_reasoning, critical_review, fast, general, long_context), not for a provider or a role.
 # Options merge in order: model, then role, then stage.
 # Only keys the provider marks overridable are stored on the provider session.
 models:
-  planner:
+  deep_reasoning:
     provider: grok
     model: grok-4.7
     # grok accepts reasoning-effort (overridable), max_turns, tools, disallowed_tools,
@@ -29,7 +30,7 @@ models:
     options:
       reasoning-effort: high
 
-  coder:
+  code_generation:
     provider: byteplus
     # byteplus has no CLI of its own, so client is required and names the CLI that runs it.
     client: opencode
@@ -37,7 +38,7 @@ models:
 
 roles:
   planner:
-    default_model: planner
+    default_model: deep_reasoning
     # Included in every prompt for this role, before stage instructions.
     # A role run prepends the same list to the prompt.
     instructions:
@@ -45,4 +46,4 @@ roles:
     options:
       reasoning-effort: medium
   reviewer:
-    default_model: planner
+    default_model: deep_reasoning

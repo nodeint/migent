@@ -156,7 +156,7 @@ file:
     "plan": {
       "path": "outputs/plan.md",
       "source_execution_id": "0001-plan--attempt-01",
-      "published_by_execution_id": "0002-review-plan--attempt-01"
+      "published_by_execution_id": "0002-review_plan--attempt-01"
     }
   }
 }
@@ -281,7 +281,7 @@ no file and does not appear.
   },
   "stages": {
     "implement": { "executions": 2, "revisions": 1, "failed": 0, "blocked": 0 },
-    "review-work": { "executions": 2, "revisions": 0, "failed": 0, "blocked": 0 }
+    "review_work": { "executions": 2, "revisions": 0, "failed": 0, "blocked": 0 }
   },
   "executions": [
     {

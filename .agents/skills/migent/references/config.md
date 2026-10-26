@@ -16,6 +16,19 @@ as `config.yaml`. Mappings merge key by key; scalars and lists, such as
 ignored. Runs, `doctor`, and `config` read the merged result.
 `doctor` warns if git tracks the local file.
 
+## Name aliases for the work
+
+Name a model alias for the work it does, not for a provider or a role:
+`code_generation`, `deep_reasoning`, `critical_review`, `fast`, `general`,
+`long_context`. Then a role keeps its alias when you move to another provider.
+Write ids in `snake_case`, as everywhere in Migent YAML (stage ids such as
+`review_plan` too). Only provider option keys keep the provider's spelling, such
+as `reasoning-effort`.
+
+`migent init` uses `code_generation` for `implement`, and `deep_reasoning` and
+`critical_review` for `plan`. Reuse these names; do not add `default`, a provider
+name, or a role name as an alias.
+
 ## Set up a shared project on a dev machine
 
 Do not reinitialize an existing project's config. Keep role defaults and
@@ -31,7 +44,7 @@ provider CLIs and model IDs available on each machine in
 
    ```yaml
    models:
-     fast:
+     code_generation:
        provider: codex
        model: gpt-5
      deep_reasoning:

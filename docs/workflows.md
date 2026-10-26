@@ -8,6 +8,15 @@ lists every accepted key in `references/schema-workflow.yaml` in the installed M
 `requires`, and sessions. Two files with the same id are an error. A path to
 a workflow file also selects that file.
 
+## Naming
+
+Write every key and id in YAML in `snake_case`: workflow ids, stage ids, and model
+aliases (`review_plan`, `code_generation`). Roles are a single word (`planner`,
+`reviewer`). Provider option keys are the exception; use the spelling the provider
+defines, such as `reasoning-effort` for Grok and `model_reasoning_effort` for
+Codex. Execution directories join the order, stage id, and attempt with `-` and
+`--` (`0003-review_work--attempt-01`), which snake_case ids keep unambiguous.
+
 ## Stages and artifacts
 
 `depends_on` makes successful upstream artifacts available to a stage. A stage
@@ -39,7 +48,7 @@ routed back to this stage.
 A decision stage declares every accepted value and its destination:
 
 ```yaml
-- id: review-plan
+- id: review_plan
   role: reviewer
   depends_on: [plan]
   decision:
@@ -250,7 +259,7 @@ of them in the `decision` header.
 
 ## Complete example
 
-`review` approves into `test` and `docs` at the same time. `review-test` can
+`review` approves into `test` and `docs` at the same time. `review_test` can
 start while `docs` is still running. The session completes when both reviews
 approve and nothing else can start.
 
@@ -278,7 +287,7 @@ stages:
   - id: docs
     role: writer
     depends_on: [review]
-  - id: review-test
+  - id: review_test
     role: reviewer
     depends_on: [test]
     decision:
@@ -286,7 +295,7 @@ stages:
       routes:
         approved: complete
         revise: test
-  - id: review-docs
+  - id: review_docs
     role: reviewer
     depends_on: [docs]
     decision:

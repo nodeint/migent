@@ -130,9 +130,9 @@ git:
 **Proposal.**
 
 ```yaml
-- id: owner-approve
+- id: owner_approve
   await: human
-  depends_on: [review-plan]
+  depends_on: [review_plan]
   decision:
     values: [approved, revise]
     routes:

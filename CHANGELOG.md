@@ -10,6 +10,8 @@
 - `migent config` is read-only. `--json` prints `{config, local}`, and the stderr note lists the models `config.local.yaml` sets.
 - `skill install` picks the project's clients from the merged config.
 
+- Documentation, the `plan` workflow written by `init`, and this repository's workflows use `snake_case` ids (`review_plan`, `review_work`). Hyphenated ids still work; existing projects and sessions are unchanged. The docs now state the naming rule.
+
 ### Removed
 
 - `config show`, `config model`, and `config role`. They exit 2 and print the replacement: edit `.migent/config.yaml` or `.migent/config.local.yaml`, then run `migent doctor`. Scripts that used `config model --json` or `config role --json` should read `migent config --json` and edit the YAML.

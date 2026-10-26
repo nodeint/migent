@@ -12,21 +12,32 @@ developer maps the shared aliases to the providers installed on their machine.
 scalars and lists, such as `instructions`, replace the value from `config.yaml`.
 Its `schema_version` is ignored. Sessions freeze the merged result.
 
+Name a model alias for the work it does, not for a provider or a role:
+`code_generation`, `deep_reasoning`, `critical_review`, `fast`, `general`,
+`long_context`. Then a role keeps its alias when you move to another provider.
+
 ```yaml
+# .migent/config.yaml (committed)
 schema_version: 2
 models:
-  implementation:
+  code_generation: {}
+
+roles:
+  developer:
+    default_model: code_generation
+    instructions:
+      - Implement the change described in the task.
+      - Leave unrelated files unchanged.
+```
+
+```yaml
+# .migent/config.local.yaml (this machine)
+models:
+  code_generation:
     provider: codex
     model: gpt-5
     options:
       model_reasoning_effort: medium
-
-roles:
-  developer:
-    default_model: implementation
-    instructions:
-      - Implement the change described in the task.
-      - Leave unrelated files unchanged.
 ```
 
 `roles.<name>.instructions` is an optional list of strings. Migent includes
@@ -40,35 +51,42 @@ Roles can point at different providers. A planner on Codex and a reviewer on
 Grok:
 
 ```yaml
+# .migent/config.yaml (committed)
 schema_version: 2
 models:
-  planner-model:
+  deep_reasoning: {}
+  critical_review: {}
+
+roles:
+  planner:
+    default_model: deep_reasoning
+  reviewer:
+    default_model: critical_review
+```
+
+```yaml
+# .migent/config.local.yaml (this machine)
+models:
+  deep_reasoning:
     provider: codex
     model: gpt-5
     options:
       model_reasoning_effort: medium
-
-  reviewer-model:
+  critical_review:
     provider: grok
     model: grok-4
     options:
       reasoning-effort: high
-
-roles:
-  planner:
-    default_model: planner-model
-  reviewer:
-    default_model: reviewer-model
 ```
 
-`migent init --preset plan` writes this kind of file. In a terminal it can
-give the reviewer its own model entry. The names above are an example. Init
-uses `default` and, when the reviewer has a second model, `review`.
+`migent init --preset plan` writes these two files with `deep_reasoning` and
+`critical_review` both mapped to the model you chose. Edit `config.local.yaml`
+to give the reviewer its own provider and model.
 
 ## Options
 
 Each provider names its own options and lists the values for the selected
-model. `migent init` and `migent config` ask for options marked as
+model. `migent init` asks for options marked as
 prompts. Leaving one unset keeps the provider default.
 
 - Antigravity prompts for `effort` (`low`, `medium`, `high`, `xhigh`, or
@@ -112,9 +130,9 @@ model or override the reasoning level:
 
 ```yaml
 stages:
-  - id: security-review
+  - id: security_review
     role: reviewer
-    model: security-model
+    model: critical_review
     options:
       model_reasoning_effort: high
 ```

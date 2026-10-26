@@ -69,7 +69,7 @@ test("config reference parses and names every key the config parser reads", () =
     writeFileSync(configPath, text, "utf8");
     const config = loadYamlMapping(configPath);
     expect(documentVersion(config)).toBe(2);
-    expect(loadModelTarget(config, "planner")).toEqual({
+    expect(loadModelTarget(config, "deep_reasoning")).toEqual({
       provider: "grok",
       model: "grok-4.7",
       options: { "reasoning-effort": "high" },
@@ -91,7 +91,7 @@ test("config reference parses and names every key the config parser reads", () =
     new GrokProvider().validateOptions({ "reasoning-effort": "medium" });
     const configParser = `${readFileSync(CONFIG_PARSER, "utf8")}\n${readFileSync(RECORD_PARSER, "utf8")}`;
     expect(parserKeys(configParser, "config")).toEqual(CONFIG_KEYS);
-    expect(yamlKeys(text)).toEqual([...CONFIG_KEYS, "client", "coder", "planner", "reasoning-effort", "reviewer"].sort());
+    expect(yamlKeys(text)).toEqual([...CONFIG_KEYS, "client", "code_generation", "deep_reasoning", "planner", "reasoning-effort", "reviewer"].sort());
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }
