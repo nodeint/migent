@@ -97,6 +97,9 @@ export function watchSnapshot(
     running_stages: Array.isArray(status.running_stages) ? status.running_stages.filter(isRecord) : [],
     events_cursor: cursor,
   };
+  snapshot.baseline = isRecord(status.baseline) ? status.baseline : null;
+  snapshot.skipped_stages = Array.isArray(status.skipped_stages) ? status.skipped_stages.filter(isRecord) : [];
+  if (execution && isRecord(execution.skip)) snapshot.skip = execution.skip;
   if (typeof status.title === "string" && status.title !== "") snapshot.title = status.title;
   return snapshot;
 }

@@ -203,8 +203,30 @@ function foldSchema2(inputs: FoldInputs): Record<string, unknown> {
   publishLatestExecution(status, seen);
   updatedAt = publishExecutionStatus(status, inputs, updatedAt);
   publishRunningStages(status, noted, inputs.executions);
+  publishSkippedStages(status, inputs.executions);
   if (updatedAt) status.updated_at = updatedAt;
   return status;
+}
+
+/** Stages whose latest execution is a run_when skip. The key is absent when there are none. */
+function publishSkippedStages(status: Record<string, unknown>, executions: readonly FoldExecution[]): void {
+  delete status.skipped_stages;
+  const latest = new Map<string, FoldExecution>();
+  for (const execution of executions) {
+    const current = latest.get(execution.stageId);
+    if (
+      current === undefined ||
+      execution.executionOrder > current.executionOrder ||
+      (execution.executionOrder === current.executionOrder && execution.executionId > current.executionId)
+    ) {
+      latest.set(execution.stageId, execution);
+    }
+  }
+  const rows = [...latest.values()]
+    .filter((execution) => execution.status === "skipped")
+    .sort((left, right) => left.executionOrder - right.executionOrder)
+    .map((execution) => ({ stage_id: execution.stageId, execution_id: execution.executionId }));
+  if (rows.length > 0) status.skipped_stages = rows;
 }
 
 interface RunningStage {
@@ -232,6 +254,18 @@ function applySharedEvent(
   if (event.event === "task.frozen") {
     const hash = textOr(event.data.sha256);
     if (hash) status.task_sha256 = hash;
+    return true;
+  }
+  if (event.event === "baseline.captured") {
+    if (!isRecord(status.baseline)) {
+      const baseline: Record<string, unknown> = {
+        commit: typeof event.data.commit === "string" ? event.data.commit : null,
+        captured_at: event.timestamp,
+      };
+      const error = textOr(event.data.error);
+      if (error) baseline.error = error;
+      status.baseline = baseline;
+    }
     return true;
   }
   if (event.event === "revisions.reset") {

@@ -82,6 +82,150 @@ routes:
   revise: implement
 ```
 
+## Conditional stages
+
+A stage in a version 2 workflow can run only when the session changed certain
+files. `run_when.changed_paths` is a list of Git path globs. The stage runs when
+any changed path matches any glob (OR). Otherwise Migent records a skip and
+starts no provider.
+
+```yaml
+- id: review_docs
+  role: reviewer
+  depends_on: [docs]
+  run_when:
+    changed_paths:
+      - "docs/**/*"
+      - "**/README.md"
+```
+
+Quote every glob. A plain YAML scalar that starts with `*` is an alias, and
+`migent doctor` reports that YAML error unchanged. `run_when` needs
+`schema_version: 2`, a non-empty list, and no duplicates. Other keys under
+`run_when` are rejected.
+
+**Globs.** A pattern is a path relative to the Git repository root, with `/`
+separators, matched case-sensitively on every platform. `*` matches zero or
+more characters inside one path segment, and `?` matches one. A segment that
+is exactly `**` matches zero or more whole segments. Nothing else is special,
+and dotfiles get no special rule. The whole path must match.
+
+| Pattern | Matches | Does not match |
+| --- | --- | --- |
+| `docs/**/*` | `docs/a.md`, `docs/x/y.md`, `docs/.nojekyll` | `docs`, `src/docs/a.md` |
+| `**/README.md` | `README.md`, `a/README.md`, `a/b/README.md` | `readme.md`, `README.mdx` |
+| `*.md` | `CHANGELOG.md` | `docs/CHANGELOG.md` |
+| `src/*` | `src/a.ts` | `src/a/b.ts` |
+
+These are rejected when the workflow loads: `\`, a leading `/`, a trailing `/`
+(use `dir/**`), an empty segment, a `.` or `..` segment, `**` inside a longer
+segment, `[ ] { }`, and a leading `!`. There are no negative patterns.
+
+When the Migent workspace sits inside a larger repository, paths are still
+relative to the repository root. In `packages/app`, write
+`packages/app/docs/**/*`. Paths outside the project can match too.
+
+**What counts as a change.** Migent records one baseline per session: the
+commit that `HEAD` pointed at just before the session's first stage ran. A
+prepared session captures it at its first dispatch, not at `prepare`. The
+baseline never moves. Resume, retries, `session continue`, routes back, and
+`--refresh-workflow` keep it. When the stage is about to start, Migent compares
+the working tree with the baseline commit. The change set holds files changed
+by commits made after the baseline, staged and unstaged edits, deletions, and
+untracked files that Git does not ignore. A rename counts as both paths. A file
+edited and restored to its original content is not a change. Ignored files and
+Migent's own `.migent/sessions/` files are never changes.
+
+Accepted limits:
+
+- Changes that existed before the first stage (a dirty start) count.
+- Edits by you or by another workflow count, and so do edits made by stages
+  that are still running at that moment. There is no file locking.
+- A file removed from the index with `git rm --cached` but left on disk counts
+  as changed.
+- Only the commit of a submodule counts, not files inside it.
+- Non-UTF-8 file names are decoded lossily, so only `*` and `**` can match them.
+
+**Git errors are not skips.** No Git work tree, no `git` binary, a baseline
+commit that no longer exists, a timeout, or output above 64 MiB stops the
+command with exit 2. No execution is written and the session stays `active`.
+Fix Git and run `session continue`. A session that started before Migent
+recorded baselines cannot evaluate `run_when`; start a new session. A workflow
+that uses `run_when` needs a Git commit at the first dispatch. A workflow
+without it records a missing baseline and carries on.
+
+**Skip semantics.** A skip is an execution with status `skipped` and
+`kind: skip`. It calls no provider, runs no verify, and writes no artifact or
+decision. It stores why it was skipped, the baseline commit, the patterns, and
+how many paths changed. It counts as one dispatch toward `--max-dispatches`.
+
+- A stage that depends on the skipped stage does not run, and neither does
+  anything further downstream. If a stage must always run, do not make it
+  depend on a `run_when` stage.
+- A skipped stage that declares a `decision` follows no route. Its forward
+  route targets are blocked as if the decision had listed none of them. A route
+  back to a stage the skipped stage depends on does not start again.
+- A skip supersedes the stage's earlier completion. Until the stage completes
+  again, dependents do not run on its old artifact, and its old decision routes
+  nothing. This reaches the stage's transitive dependents and its forward route
+  targets, whose completions from before the skip are treated the same way.
+- The stage is evaluated again only after a dependency completes newer than the
+  skip, or a router lists it. Resuming a session does not repeat a skip. A
+  retry after a failure, and a resumed block, do not evaluate the condition
+  again; the visit already matched.
+
+**Restrictions.** `run_when` cannot be combined with `verify` on the same stage.
+A stage that the skip can leave without a current completion is part of the
+conditional set: the `run_when` stage, every stage that depends on a member, and
+every forward route target of a member (a target that is not already in the
+member's dependency closure). Routes back are not forward targets. No stage in
+the conditional set may have `verify`, and no top-level `outputs` entry may
+come from the conditional set, so a skip never bypasses verify and never
+leaves an output missing. Migent rejects such a workflow when it loads.
+
+**Example.** `docs` answers `updated` or `no-docs`. `review_docs` runs only
+when documentation files changed, and `revise` sends the work back to `docs`.
+
+```yaml
+schema_version: 2
+id: docs_flow
+stages:
+  - id: implement
+    role: developer
+    produces:
+      artifact: implementation.md
+  - id: docs
+    role: developer
+    depends_on: [implement]
+    decision:
+      values: [updated, no-docs]
+      routes:
+        updated: review_docs
+        no-docs: complete
+  - id: review_docs
+    role: reviewer
+    depends_on: [docs]
+    run_when:
+      changed_paths:
+        - "docs/**/*"
+        - "**/README.md"
+    decision:
+      values: [approved, revise]
+      routes:
+        approved: complete
+        revise: docs
+outputs:
+  - name: implementation
+    from_stage: implement
+    artifact: implementation.md
+```
+
+`no-docs` means that no documentation change needs review, not merely that the
+docs stage made no edits. If `implement` already changed a README and `docs`
+adds nothing, `docs` should still answer `updated` so the review runs.
+
+Downgrading Migent in the middle of a session is not supported.
+
 ## Verify commands
 
 A stage can omit `role` when it declares `verify`. Migent then runs that list and
@@ -211,7 +355,8 @@ time parks that provider until the instant, and other providers may start.
 The run ends when nothing is running and nothing can start. The exit code and
 `stop_reason` take the first reason in this order: `blocked`, `verify_failed`,
 `verify_exhausted`, `stage_failed`, `revisions_exhausted`. A route to `complete` ends that
-branch only. A stage with no dependents and no routes ends its branch.
+branch only. A stage with no dependents and no routes ends its branch. A
+skipped `run_when` stage ends its branch too.
 Version 1 workflows stay one stage at a time and still complete on the
 completion stage.
 
@@ -222,7 +367,8 @@ nothing is running, nothing is ready or waiting on a ready or running stage,
 no stage is blocked or exhausted, at least one execution completed, and every
 output resolves. Each output is the latest complete artifact of `from_stage`.
 A missing artifact exits 2, leaves the session active, and publishes nothing.
-`session continue` reruns the producer.
+`session continue` reruns the producer. An output cannot come from a `run_when`
+stage, its dependents, or its forward route targets.
 
 ```yaml
 outputs:

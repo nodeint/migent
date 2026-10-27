@@ -10,6 +10,7 @@ import {
 } from "node:fs";
 import path from "node:path";
 import type { Provider } from "./provider-contract.js";
+import type { SkipDetails } from "./run-when.js";
 import { writeFileAtomic, writeJsonAtomic } from "./atomic-file.js";
 import { ConfigurationError, OutputsMissing } from "./errors.js";
 import { sealSessionMetrics } from "./metrics.js";
@@ -26,7 +27,12 @@ import {
   shouldPublishOutputs,
   type ExecutionSnapshot,
 } from "./outputs.js";
-import { blockedExecutions, planExecutionSave, statusExecutionsFromSnapshots } from "./session-ledger.js";
+import {
+  blockedExecutions,
+  planExecutionSave,
+  statusExecutionsFromSnapshots,
+  type PlannedExecutionSave,
+} from "./session-ledger.js";
 import {
   REAP_ALREADY_EXITED,
   REAP_STILL_RUNNING,
@@ -634,6 +640,100 @@ export class SessionStore {
     });
   }
 
+  /** A run_when skip. The row is terminal from the start: no prompt, no provider, no verify. */
+  recordSkippedExecution(sessionId: string, stageId: string, skip: SkipDetails): ExecutionContext {
+    const sessionDirectory = path.join(this.sessionsDirectory, sessionId);
+    assertSessionLockHeld(sessionDirectory);
+    const order = this.nextExecutionOrder(sessionId);
+    const attempt = this.nextStageAttempt(sessionId, stageId);
+    const executionId = `${String(order).padStart(4, "0")}-${safeComponent(stageId)}--attempt-${String(attempt).padStart(2, "0")}`;
+    const directory = path.join(sessionDirectory, EXECUTIONS_DIRNAME, executionId);
+    mkdirSync(path.dirname(directory), { recursive: true });
+    try {
+      mkdirSync(directory);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+        throw new Error(`Execution already exists: ${directory}`);
+      }
+      throw error;
+    }
+    const taskSource = path.join(sessionDirectory, "task.md");
+    if (existsSync(taskSource)) copyFileSync(taskSource, path.join(directory, "task.md"));
+    const context = new ExecutionContext(sessionId, executionId, directory);
+    mkdirSync(context.artifactDirectory);
+    const previousStatus = this.readSessionStatusAt(sessionDirectory);
+    const workflow = this.loadWorkflow(previousStatus);
+    const manifest = readSessionManifest(sessionDirectory);
+    const timestamp = utcNow();
+    const skipRecord = {
+      reason: skip.reason,
+      baseline: skip.baseline,
+      patterns: [...skip.patterns],
+      changed_paths: skip.changedPaths,
+    };
+    writeJsonAtomic(path.join(directory, "execution.json"), {
+      session_id: sessionId,
+      execution_id: executionId,
+      execution_order: order,
+      stage_id: stageId,
+      stage_attempt: attempt,
+      kind: "skip",
+      provider: null,
+      model: null,
+      options: {},
+      agent_id: null,
+      resumes_execution_id: null,
+      status: "skipped",
+      schema_version: EXECUTION_SCHEMA_VERSION,
+      created_at: timestamp,
+      completed_at: timestamp,
+      artifact_directory: "artifacts",
+      skip: skipRecord,
+    });
+    const plan = planExecutionSave({
+      executionStatus: "skipped",
+      outcome: null,
+      storedError: null,
+      stageId,
+      executionOrder: order,
+      executionId,
+      sessionDirectory,
+      previousStatus,
+      workflow,
+      schemaVersion: manifest.schemaVersion,
+      manifestStatus: manifest.manifestStatus,
+      snapshots: this.snapshotList(sessionId),
+    });
+    appendLifecycleEvent(sessionDirectory, {
+      event: "execution.started",
+      timestamp,
+      executionId,
+      stageId,
+      data: {
+        execution_order: order,
+        stage_attempt: attempt,
+        provider: "",
+        model: "",
+        resumes_execution_id: null,
+        kind: "skip",
+      },
+    });
+    this.finishExecutionSave({
+      context,
+      sessionDirectory,
+      status: "skipped",
+      outcome: null,
+      plan,
+      previousStatus,
+      timestamp,
+      stageId,
+      failureReason: null,
+      storedError: null,
+      extraData: { skip: skipRecord },
+    });
+    return context;
+  }
+
   savePrompt(context: ExecutionContext, prompt: string): void {
     writeFileAtomic(path.join(context.directory, "prompt.md"), prompt);
   }
@@ -653,7 +753,12 @@ export class SessionStore {
     const filePath = path.join(context.directory, "execution.json");
     const metadata = readJsonObject(filePath);
     const existingStatus = metadata.status;
-    if (existingStatus === "completed" || existingStatus === "failed" || existingStatus === "cancelled") {
+    if (
+      existingStatus === "completed" ||
+      existingStatus === "failed" ||
+      existingStatus === "cancelled" ||
+      existingStatus === "skipped"
+    ) {
       throw new Error(`Execution ${context.executionId} is immutable after it ended.`);
     }
     const sessionDirectory = path.dirname(path.dirname(context.directory));
@@ -696,6 +801,37 @@ export class SessionStore {
       }),
     });
     writeJsonAtomic(filePath, metadata);
+    this.finishExecutionSave({
+      context,
+      sessionDirectory,
+      status,
+      outcome,
+      plan,
+      previousStatus,
+      timestamp,
+      stageId,
+      failureReason,
+      storedError,
+      extraData: null,
+    });
+  }
+
+  /** Events, fold, and sealing after the execution file is final. Shared by saves and skip records. */
+  private finishExecutionSave(input: {
+    context: ExecutionContext;
+    sessionDirectory: string;
+    status: string;
+    outcome: StageOutcome | null;
+    plan: PlannedExecutionSave;
+    previousStatus: Record<string, unknown>;
+    timestamp: string;
+    stageId: string;
+    failureReason: string | null;
+    storedError: string | null;
+    extraData: Record<string, unknown> | null;
+  }): void {
+    const { context, sessionDirectory, status, outcome, plan, previousStatus, timestamp, stageId } = input;
+    const { failureReason, storedError } = input;
     appendLifecycleEvent(sessionDirectory, {
       event: `execution.${status}`,
       timestamp,
@@ -706,6 +842,7 @@ export class SessionStore {
         failure_reason: failureReason,
         error: storedError,
         session_status: plan.sessionStatus,
+        ...(input.extraData ?? {}),
       },
     });
     if (outcome !== null) {

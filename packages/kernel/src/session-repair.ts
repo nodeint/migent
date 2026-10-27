@@ -298,7 +298,7 @@ function hasEvent(events: FoldInputs["events"], name: string, executionId: strin
 }
 
 function isTerminalExecution(status: string): boolean {
-  return status === "completed" || status === "failed" || status === "cancelled";
+  return status === "completed" || status === "failed" || status === "cancelled" || status === "skipped";
 }
 
 function stageOutcome(execution: FoldExecution): StageOutcome | null {

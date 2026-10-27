@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "vitest";
@@ -5,6 +6,7 @@ import {
   AgentToolRunner,
   ConfigurationError,
   SessionStore,
+  createPreparedSession,
   createWorkflowSession,
   executeNamedWorkflow,
   migrateWorkflow,
@@ -272,4 +274,31 @@ test("a route back to a completed stage dispatches it and its dependents", async
   const next = events.slice(fixIndex + 1).find((event) => event.event === "execution.started");
   expect(next!.stage_id).toBe("implement");
   expect(next!.data.stage_attempt).toBe(2);
+});
+
+test("a prepared session captures its baseline at the first dispatch, not at prepare", async () => {
+  const workspace = workspaceFor("solo", `schema_version: 2\nid: solo\nstages:\n  - id: a\n    role: developer\n`);
+  const git = (...args: string[]) =>
+    execFileSync("git", ["-c", "user.email=t@example.com", "-c", "user.name=T", "-c", "commit.gpgsign=false", ...args], {
+      cwd: workspace,
+      encoding: "utf8",
+    }).trim();
+  git("init", "-b", "main");
+  writeFileSync(path.join(workspace, ".gitignore"), ".migent/config.yaml\n.migent/workflows/\n");
+  git("add", "-A");
+  git("commit", "-m", "initial");
+  const sessionId = createPreparedSession(workspace, "wave-1", "solo");
+  writeFileSync(path.join(workspace, "later.txt"), "x\n");
+  git("add", "-A");
+  git("commit", "-m", "between prepare and run");
+  const later = git("rev-parse", "HEAD");
+  writeFileSync(path.join(workspace, ".migent", "sessions", sessionId, "task.md"), "Run it", "utf8");
+  const result = await executeNamedWorkflow(
+    workspace,
+    { workflowId: "solo", sessionId, task: "Run it", startPrepared: true },
+    new AgentToolRunner({ fake: new ScriptedProvider([DONE]) }, 10),
+  );
+  expect(result.status).toBe("completed");
+  const status = new SessionStore(workspace).readSessionStatus(sessionId);
+  expect((status.baseline as { commit: string }).commit).toBe(later);
 });

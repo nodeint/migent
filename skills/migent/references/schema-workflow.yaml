@@ -64,6 +64,20 @@ stages:
         approved: complete
         revise: draft
 
+  - id: check_docs
+    description: Review documentation changes.
+    role: reviewer
+    depends_on:
+      - review
+    # run_when runs the stage only when a Git path changed since the session baseline matches one glob.
+    # Quote every glob. Paths are relative to the Git repository root. ** spans directories.
+    run_when:
+      changed_paths:
+        - "docs/**/*"
+        - "**/README.md"
+    instructions:
+      - Review the documentation changes.
+
 # An output artifact must match produces.artifact on from_stage.
 outputs:
   - name: draft

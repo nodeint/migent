@@ -1,6 +1,7 @@
 import { missingWorkflowOutputNames, type ExecutionSnapshot } from "./outputs.js";
 import { pyRepr } from "./record.js";
 import {
+  conditionalReach,
   dependencyClosure,
   isWorkflowV2,
   routeListsStage,
@@ -86,9 +87,11 @@ export function version2GraphQuiet(
   snapshots: readonly ExecutionSnapshot[],
   sessionStatus: string,
 ): boolean {
-  if (!snapshots.some((snapshot) => snapshot.status === "completed" && snapshot.outcomeStatus === "complete")) {
-    return false;
-  }
+  const progressed = snapshots.some(
+    (snapshot) =>
+      snapshot.status === "skipped" || (snapshot.status === "completed" && snapshot.outcomeStatus === "complete"),
+  );
+  if (!progressed) return false;
   if (hasBlockingLatest(snapshots)) return false;
   return sequentialCandidates(workflow, snapshots, sessionStatus).length === 0;
 }
@@ -176,15 +179,14 @@ export function stageDispatchError(
   if (Object.keys(workflow.stages).length === 0) return null;
   const stage = workflow.stages[stageId];
   if (stage === undefined) return `Stage is not declared: ${stageId}.`;
-  const latestComplete = latestCompleteByStage(snapshots);
+  const view = scheduleView(workflow, snapshots);
+  const latestComplete = view.current;
   for (const dep of stage.dependsOn) {
-    if (latestComplete[dep] === undefined) {
-      return `Stage ${stageId} depends on ${dep}, which has not completed.`;
-    }
+    if (latestComplete[dep] === undefined) return dependencyError(workflow, snapshots, view, stageId, dep);
   }
   const incoming = incomingRouters(workflow, stageId);
   if (incoming.length === 0) return null;
-  if (isWorkflowV2(workflow)) return version2RouteError(workflow, stageId, latestComplete);
+  if (isWorkflowV2(workflow)) return version2RouteError(workflow, stageId, view);
   const completedIncoming = incoming.filter((router) => latestComplete[router.id] !== undefined);
   if (completedIncoming.length === 0) {
     if (stage.dependsOn.length > 0) return `Stage ${stageId} is waiting for a routing decision.`;
@@ -201,6 +203,92 @@ export function stageDispatchError(
     return `Stage ${stageId} is not routed by ${router.id} decision ${pyRepr(decision)}.`;
   }
   return null;
+}
+
+function dependencyError(
+  workflow: WorkflowDocument,
+  snapshots: readonly ExecutionSnapshot[],
+  view: ScheduleView,
+  stageId: string,
+  dep: string,
+): string {
+  if (view.complete[dep] !== undefined) {
+    const skip = supersedingSkip(workflow, snapshots, dep);
+    if (skip !== null) {
+      if (skip.stageId === dep) return `Stage ${stageId} depends on ${dep}, which was skipped by run_when.`;
+      return `Stage ${stageId} depends on ${dep}, whose completion predates the run_when skip of ${skip.stageId}.`;
+    }
+  } else if (view.skips[dep] !== undefined) {
+    return `Stage ${stageId} depends on ${dep}, which was skipped by run_when.`;
+  }
+  return `Stage ${stageId} depends on ${dep}, which has not completed.`;
+}
+
+/** Highest-order skip snapshot of each stage. Only run_when stages have any. */
+function latestSkipByStage(snapshots: readonly ExecutionSnapshot[]): Record<string, ExecutionSnapshot> {
+  const latest: Record<string, ExecutionSnapshot> = {};
+  for (const snapshot of snapshots) {
+    if (snapshot.status !== "skipped") continue;
+    const current = latest[snapshot.stageId];
+    if (current === undefined || snapshot.executionOrder > current.executionOrder) latest[snapshot.stageId] = snapshot;
+  }
+  return latest;
+}
+
+/** The newest skip whose reach includes the stage. A completion that is not newer than it is superseded. */
+export function supersedingSkip(
+  workflow: WorkflowDocument,
+  snapshots: readonly ExecutionSnapshot[],
+  stageId: string,
+): ExecutionSnapshot | null {
+  return supersedingSkipFrom(workflow, latestSkipByStage(snapshots), stageId);
+}
+
+function supersedingSkipFrom(
+  workflow: WorkflowDocument,
+  skips: Readonly<Record<string, ExecutionSnapshot>>,
+  stageId: string,
+): ExecutionSnapshot | null {
+  let best: ExecutionSnapshot | null = null;
+  for (const skip of Object.values(skips)) {
+    if (!conditionalReach(workflow.stages, skip.stageId).has(stageId)) continue;
+    if (best === null || skip.executionOrder > best.executionOrder) best = skip;
+  }
+  return best;
+}
+
+/**
+ * Latest completion of each stage that scheduling may still read. A skip supersedes the completions of
+ * every stage in its reach that are not newer than the skip. Without skips this equals latestCompleteByStage.
+ */
+export function currentCompleteByStage(
+  workflow: WorkflowDocument,
+  snapshots: readonly ExecutionSnapshot[],
+): Record<string, ExecutionSnapshot> {
+  return scheduleView(workflow, snapshots).current;
+}
+
+interface ScheduleView {
+  complete: Record<string, ExecutionSnapshot>;
+  skips: Record<string, ExecutionSnapshot>;
+  current: Record<string, ExecutionSnapshot>;
+}
+
+function scheduleView(workflow: WorkflowDocument, snapshots: readonly ExecutionSnapshot[]): ScheduleView {
+  const complete = latestCompleteByStage(snapshots);
+  const skips = latestSkipByStage(snapshots);
+  if (Object.keys(skips).length === 0) return { complete, skips, current: complete };
+  const current: Record<string, ExecutionSnapshot> = {};
+  for (const [stageId, snapshot] of Object.entries(complete)) {
+    const skip = supersedingSkipFrom(workflow, skips, stageId);
+    if (skip === null || snapshot.executionOrder > skip.executionOrder) current[stageId] = snapshot;
+  }
+  return { complete, skips, current };
+}
+
+/** Order of the stage's latest completion or skip, or -1 when it has neither. */
+function latestVisitOrder(view: ScheduleView, stageId: string): number {
+  return Math.max(view.complete[stageId]?.executionOrder ?? -1, view.skips[stageId]?.executionOrder ?? -1);
 }
 
 export function latestCompleteByStage(
@@ -265,7 +353,7 @@ export function stageAgentExecution(
 ): string | null {
   let latest: ExecutionSnapshot | null = null;
   for (const snapshot of snapshots) {
-    if (snapshot.stageId !== stageId) continue;
+    if (snapshot.stageId !== stageId || snapshot.status === "skipped") continue;
     if (latest === null || snapshot.executionOrder > latest.executionOrder) latest = snapshot;
   }
   return latest?.executionId ?? null;
@@ -297,7 +385,7 @@ export function revisionResumeExecution(
   snapshots: readonly ExecutionSnapshot[],
   stageId: string,
 ): string | null {
-  const own = snapshots.filter((snapshot) => snapshot.stageId === stageId);
+  const own = snapshots.filter((snapshot) => snapshot.stageId === stageId && snapshot.status !== "skipped");
   if (own.length === 0) return null;
   let latestOwn = own[0]!;
   let latestCompleteOwn: ExecutionSnapshot | null = null;
@@ -379,14 +467,21 @@ function nextVersion2Stage(
   return new NextStageError("no eligible stage");
 }
 
-function version2RouteError(
-  workflow: WorkflowDocument,
-  stageId: string,
-  latestComplete: Readonly<Record<string, ExecutionSnapshot>>,
-): string | null {
-  const since = latestComplete[stageId]?.executionOrder ?? -1;
+/** The router's latest visit is a skip after `since`. It lists no target. */
+function routerSkippedSince(view: ScheduleView, routerId: string, since: number): boolean {
+  const skip = view.skips[routerId];
+  if (skip === undefined || skip.executionOrder <= since) return false;
+  return skip.executionOrder > (view.complete[routerId]?.executionOrder ?? -1);
+}
+
+function version2RouteError(workflow: WorkflowDocument, stageId: string, view: ScheduleView): string | null {
+  const since = latestVisitOrder(view, stageId);
   for (const router of incomingRouters(workflow, stageId)) {
-    const snapshot = latestComplete[router.id];
+    if (routerSkippedSince(view, router.id, since)) {
+      if (dependsOnStage(workflow, router, stageId)) continue;
+      return `Stage ${stageId} is not routed by ${router.id}: ${router.id} was skipped by run_when.`;
+    }
+    const snapshot = view.current[router.id];
     if (snapshot === undefined || snapshot.executionOrder <= since) continue;
     const decision = (snapshot.outcomeDecision ?? "").toLowerCase();
     if (!routeListsStage(router.routes[decision], stageId)) {
@@ -420,20 +515,20 @@ function candidateStageIds(
   workflow: WorkflowDocument,
   snapshots: readonly ExecutionSnapshot[],
 ): string[] {
-  const complete = latestCompleteByStage(snapshots);
+  const view = scheduleView(workflow, snapshots);
   const candidates: string[] = [];
   for (const [stageId, stage] of Object.entries(workflow.stages)) {
     if (stageDispatchError(workflow, stageId, snapshots) !== null) continue;
-    const snapshot = complete[stageId];
-    if (snapshot === undefined) {
+    const since = latestVisitOrder(view, stageId);
+    if (since < 0) {
       candidates.push(stageId);
       continue;
     }
-    if (hasLaterRouteTo(workflow, complete, stageId, snapshot.executionOrder)) {
+    if (hasLaterRouteTo(workflow, view, stageId, since)) {
       candidates.push(stageId);
       continue;
     }
-    if (hasNewerDependency(complete, stage, snapshot.executionOrder)) candidates.push(stageId);
+    if (hasNewerDependency(view.current, stage, since)) candidates.push(stageId);
   }
   return candidates;
 }
@@ -452,16 +547,16 @@ function hasNewerDependency(
 
 function hasLaterRouteTo(
   workflow: WorkflowDocument,
-  complete: Readonly<Record<string, ExecutionSnapshot>>,
+  view: ScheduleView,
   stageId: string,
   completeOrder: number,
 ): boolean {
   if (isWorkflowV2(workflow)) {
-    const relevant = routersCompletedSince(workflow, complete, stageId, completeOrder);
+    const relevant = routersCompletedSince(workflow, view, stageId, completeOrder);
     return relevant !== null && relevant.length > 0;
   }
   for (const router of incomingRouters(workflow, stageId)) {
-    const snapshot = complete[router.id];
+    const snapshot = view.complete[router.id];
     if (snapshot === undefined || snapshot.executionOrder <= completeOrder) continue;
     const decision = (snapshot.outcomeDecision ?? "").toLowerCase();
     if (routeListsStage(router.routes[decision], stageId)) return true;
@@ -483,20 +578,23 @@ export function relevantRouterSnapshots(
   snapshots: readonly ExecutionSnapshot[],
   stageId: string,
 ): ExecutionSnapshot[] | null {
-  const complete = latestCompleteByStage(snapshots);
-  const since = complete[stageId]?.executionOrder ?? -1;
-  return routersCompletedSince(workflow, complete, stageId, since);
+  const view = scheduleView(workflow, snapshots);
+  return routersCompletedSince(workflow, view, stageId, latestVisitOrder(view, stageId));
 }
 
 function routersCompletedSince(
   workflow: WorkflowDocument,
-  complete: Readonly<Record<string, ExecutionSnapshot>>,
+  view: ScheduleView,
   stageId: string,
   since: number,
 ): ExecutionSnapshot[] | null {
   const relevant: ExecutionSnapshot[] = [];
   for (const router of incomingRouters(workflow, stageId)) {
-    const snapshot = complete[router.id];
+    if (routerSkippedSince(view, router.id, since)) {
+      if (dependsOnStage(workflow, router, stageId)) continue;
+      return null;
+    }
+    const snapshot = view.current[router.id];
     if (snapshot === undefined || snapshot.executionOrder <= since) continue;
     const decision = (snapshot.outcomeDecision ?? "").toLowerCase();
     if (!routeListsStage(router.routes[decision], stageId)) {
