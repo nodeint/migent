@@ -60,7 +60,8 @@ import {
 } from "./session-store.js";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { isRoleStage, isWorkflowV2, loadNamedWorkflow, type WorkflowDocument } from "./workflow.js";
+import { evaluateRunWhen, ensureSessionBaseline } from "./run-when.js";
+import { isRoleStage, isWorkflowV2, loadNamedWorkflow, type StageSpec, type WorkflowDocument } from "./workflow.js";
 import { runVerifyOnlyStage } from "./verify-only.js";
 import type { ExecutionSnapshot } from "./outputs.js";
 
@@ -397,7 +398,7 @@ async function executeLocked(
         if (!reopenLatestCancelled && (once || stageId !== null || TERMINAL_SESSION_STATUSES.has(after))) {
           const stopReason = TERMINAL_SESSION_STATUSES.has(after) ? after : "stage";
           const result = executeFinal(status, stopReason, stageJsons);
-          if (stopReason === "stage" && continued.some((item) => item.outcome_status !== "complete")) result.code = 1;
+          if (stopReason === "stage" && continued.some((item) => item.outcome_status !== "complete" && item.execution_status !== "skipped")) result.code = 1;
           return result;
         }
         if (!reopenLatestCancelled) {
@@ -436,7 +437,7 @@ async function executeLocked(
       const after = text(status.status);
       const stopReason = TERMINAL_SESSION_STATUSES.has(after) ? after : "stage";
       const result = executeFinal(status, stopReason, stageJsons);
-      if (stopReason === "stage" && stageJsons.some((item) => item.outcome_status !== "complete")) result.code = 1;
+      if (stopReason === "stage" && stageJsons.some((item) => item.outcome_status !== "complete" && item.execution_status !== "skipped")) result.code = 1;
       return result;
     }
     if (replySent && replyResult !== undefined && stageReply !== null) {
@@ -581,7 +582,9 @@ async function runExecuteOnce(
   if (stage.failure_kind === "quota") return executeFinal(status, "quota", [stage]);
   const stopReason = TERMINAL_SESSION_STATUSES.has(after) ? after : "stage";
   const result = executeFinal(status, stopReason, [stage]);
-  if (stopReason === "stage" && stage.outcome_status !== "complete") result.code = 1;
+  if (stopReason === "stage" && stage.outcome_status !== "complete" && stage.execution_status !== "skipped") {
+    result.code = 1;
+  }
   return result;
 }
 
@@ -1168,6 +1171,12 @@ async function dispatchExecuteStage(
 ): Promise<Record<string, unknown>> {
   const stageSpec = workflow.stages[stageId];
   if (stageSpec === undefined) throw new ConfigurationError(`Stage not found: ${stageId}`);
+  // Runs before the first await so two starts in one pool turn cannot both capture the baseline.
+  if (ensureSessionBaseline(workspace, sessionId, workflow)) {
+    commitFoldedStatus(workspace, path.join(workspace, ".migent", "sessions", sessionId));
+  }
+  const skipped = skipUnlessRunWhenMatches(workspace, sessionId, stageSpec, snapshots, runner);
+  if (skipped !== null) return skipped;
   if (!isRoleStage(stageSpec)) {
     const result = await runVerifyOnlyStage({
       workspace,
@@ -1254,6 +1263,58 @@ async function dispatchExecuteStage(
     (result.failureReason || result.failureKind || result.executionStatus === "failed" ? "failed" : "finished");
   log(stageFinishLine(workspace, sessionId, stageId, result.executionId, outcome, result.outcomeDecision));
   return result.toJson();
+}
+
+/** A fresh visit of a run_when stage is evaluated. Retries and resumed blocks already passed the condition. */
+function skipUnlessRunWhenMatches(
+  workspace: string,
+  sessionId: string,
+  stage: StageSpec,
+  snapshots: readonly ExecutionSnapshot[],
+  runner: AgentToolRunner,
+): Record<string, unknown> | null {
+  if (stage.runWhen == null) return null;
+  let latest: ExecutionSnapshot | null = null;
+  for (const snapshot of snapshots) {
+    if (snapshot.stageId !== stage.id) continue;
+    if (latest === null || snapshot.executionOrder > latest.executionOrder) latest = snapshot;
+  }
+  const fresh =
+    latest === null ||
+    latest.status === "skipped" ||
+    (latest.status === "completed" && latest.outcomeStatus !== "blocked");
+  if (!fresh) return null;
+  const evaluation = evaluateRunWhen(workspace, sessionId, stage);
+  if ("matched" in evaluation) {
+    log(`stage ${stage.id} · run_when matched ${evaluation.matched}.`);
+    return null;
+  }
+  const store = new SessionStore(workspace, undefined, runner.providers);
+  const context = store.recordSkippedExecution(sessionId, stage.id, evaluation.skip);
+  const attempt = parseExecutionId(context.executionId)?.attempt ?? null;
+  log(`stage ${stage.id} · attempt ${attempt ?? 1} · skipped (no changed path matches run_when).`);
+  return {
+    agent_id: null,
+    options: {},
+    session_id: sessionId,
+    execution_id: context.executionId,
+    artifact_directory: context.artifactDirectory,
+    failure_reason: "",
+    failure_kind: "",
+    reset_at: "",
+    provider: "",
+    outcome_status: "",
+    outcome_decision: "",
+    session_status: text(store.readSessionStatus(sessionId).status),
+    response: "",
+    execution_status: "skipped",
+    skip: {
+      reason: evaluation.skip.reason,
+      baseline: evaluation.skip.baseline,
+      patterns: evaluation.skip.patterns,
+      changed_paths: evaluation.skip.changedPaths,
+    },
+  };
 }
 
 function takeStageReply(reply: PendingStageReply | null, stageId: string): string | null {

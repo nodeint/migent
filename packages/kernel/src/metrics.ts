@@ -44,6 +44,7 @@ interface ExecutionRow {
   failureReason: string | null;
   createdAt: string | null;
   completedAt: string | null;
+  skip: Record<string, unknown> | null;
 }
 
 interface NormalizedTurn {
@@ -238,6 +239,7 @@ function executionRow(directoryName: string, raw: Record<string, unknown>): Exec
     failureReason: text(raw.failure_reason),
     createdAt: text(raw.created_at),
     completedAt: text(raw.completed_at),
+    skip: isRecord(raw.skip) ? raw.skip : null,
   };
 }
 
@@ -314,7 +316,8 @@ function sessionObject(
     created_at: text(status.created_at),
     updated_at: text(status.updated_at),
     totals: {
-      executions: executions.length,
+      executions: executions.filter((execution) => execution.status !== "skipped").length,
+      skipped: executions.filter((execution) => execution.status === "skipped").length,
       wall_seconds: wallMs === null ? null : roundSeconds(wallMs),
       active_seconds: executions.some((execution) => elapsedMs(execution.createdAt, execution.completedAt) !== null)
         ? roundSeconds(activeMs)
@@ -403,6 +406,7 @@ function executionObject(
       usage: usageObject(totals),
       usage_missing: missingObject(totals),
       verify: verify.public,
+      skip: execution.skip,
     },
   };
 }
@@ -515,7 +519,8 @@ function stageObjects(
     const own = executions.filter((execution) => execution.stageId === stageId);
     if (own.length === 0 && (revisions.get(stageId) ?? 0) === 0) continue;
     stages[stageId] = {
-      executions: own.length,
+      executions: own.filter((execution) => execution.status !== "skipped").length,
+      skipped: own.filter((execution) => execution.status === "skipped").length,
       revisions: workflow === null ? null : (revisions.get(stageId) ?? 0),
       failed: own.filter((execution) => execution.status === "failed").length,
       blocked: own.filter((execution) => execution.outcomeStatus === "blocked").length,

@@ -79,10 +79,17 @@ The session-level files have distinct purposes:
 - `executions/<id>/stream.jsonl` holds `provider.item_*` and `provider.heartbeat`
   for that execution. Other provider events, including `verify.heartbeat`, stay
   in `events.jsonl`.
+- `baseline.captured` is logged once, just before the session's first execution. It holds the Git commit
+  that `HEAD` pointed at (or null and the reason) and feeds `status.baseline`. A `run_when` stage compares
+  the working tree with it. A session that already had executions never gets one.
 - `executions/` contains one record for every stage attempt. A completed or
   failed execution record is immutable. `session continue` reopens a cancelled
   execution in place; the cancelled event stays in the log. Execution directory
-  names are ordered, for example `0002-review--attempt-01`.
+  names are ordered, for example `0002-review--attempt-01`. A `run_when` skip is an
+  execution with `kind: "skip"` and status `skipped`. It is terminal from the start, holds no
+  prompt or conversation, and stores `skip` (reason, baseline commit, patterns, number of
+  changed paths). `status.json` gains `baseline` (`commit`, `captured_at`, optional `error`) and,
+  while a stage's latest execution is a skip, `skipped_stages` (`stage_id`, `execution_id`).
 - `outputs/` contains the artifacts named by the workflow. A version 2 workflow
   copies top-level `outputs` when the run is quiet and every artifact resolves.
   A version 1 workflow still copies `completion.outputs` when the completion
@@ -251,6 +258,7 @@ no file and does not appear.
   "updated_at": "2026-10-20T08:31:02.110+00:00",
   "totals": {
     "executions": 4,
+    "skipped": 0,
     "wall_seconds": 2553.2,
     "active_seconds": 2190.7,
     "verify_seconds": 312.4,
@@ -281,8 +289,8 @@ no file and does not appear.
     "revisions_reset": 0
   },
   "stages": {
-    "implement": { "executions": 2, "revisions": 1, "failed": 0, "blocked": 0 },
-    "review_work": { "executions": 2, "revisions": 0, "failed": 0, "blocked": 0 }
+    "implement": { "executions": 2, "skipped": 0, "revisions": 1, "failed": 0, "blocked": 0 },
+    "review_work": { "executions": 2, "skipped": 0, "revisions": 0, "failed": 0, "blocked": 0 }
   },
   "executions": [
     {
@@ -340,6 +348,12 @@ no file and does not appear.
 ```
 
 `verify` is null when the stage has no verify commands and no verify events.
+
+A `run_when` skip stays in `executions[]` with status `skipped`, null `provider`
+and `model`, zero turns, blank usage, `verify: null`, and a `skip` object. `skip`
+is null on every other row. `totals.executions` and a stage's `executions` do not
+count skips; `totals.skipped` and the stage's `skipped` do. A stage that only
+skipped is still listed.
 
 `workflow_hash` is the bare hex hash on `session.created`. It is null for an
 agent session. `task_sha256` and `prior_session_id` come from `status.json`.

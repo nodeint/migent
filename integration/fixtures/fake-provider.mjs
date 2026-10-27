@@ -157,7 +157,19 @@ function responseText(prompt, step) {
   return "status: complete\n\nready";
 }
 
+// Optional step key `write_files`: { "<repo-relative path>": "<content>" }, written under --cwd before the response.
+function writeFiles(step) {
+  if (!step.write_files || typeof step.write_files !== "object") return;
+  const root = argAfter("--cwd") || process.cwd();
+  for (const [relative, content] of Object.entries(step.write_files)) {
+    const target = path.join(root, relative);
+    mkdirSync(path.dirname(target), { recursive: true });
+    writeFileSync(target, String(content), "utf8");
+  }
+}
+
 function writeArtifact(prompt, step) {
+  writeFiles(step);
   if (step.skip_artifact === true) return;
   const marker = "Migent artifact directory:\n";
   if (!prompt.includes(marker)) return;

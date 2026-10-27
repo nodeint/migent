@@ -30,7 +30,7 @@ const SESSION_DONE_EXITS: Record<string, number> = {
   cancelled: EXIT_CANCELLED,
 };
 
-const TERMINAL_EXECUTION_STATUSES = new Set(["completed", "failed", "cancelled"]);
+const TERMINAL_EXECUTION_STATUSES = new Set(["completed", "failed", "cancelled", "skipped"]);
 
 export async function followSession(
   workspace: string,
@@ -167,6 +167,7 @@ function emitWatchEvent(line: string, executionId: string | null, jsonLines: boo
 }
 
 function untilTerminalExitCode(record: Record<string, unknown>): number {
+  if (record.status === "skipped") return 0;
   if (record.status === "completed") {
     const outcome = record.outcome;
     if (isRecord(outcome) && outcome.status === "complete") return 0;

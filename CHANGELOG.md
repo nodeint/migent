@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- A version 2 workflow stage can declare `run_when.changed_paths`, a list of Git path globs. The stage runs only when a path changed since the session baseline matches a glob; otherwise Migent records a `skipped` execution, calls no provider, and the branch ends. The baseline is the commit `HEAD` pointed at before the session's first stage. Git errors stop the command with exit 2 and are never a skip. `session show` lists `baseline` and `skipped_stages`, and metrics gain `totals.skipped` and a per-stage `skipped` count (`executions` no longer counts skips). See "Conditional stages" in `docs/workflows.md`.
+
 ### Fixed
 
 - In version 2 workflows, a route back to a completed stage (for example `review_tests: fix_production -> implement`) now dispatches that stage and then its dependents. Before, a forward decision from a router between them blocked it, and the session ran or completed the next stage instead.

@@ -304,6 +304,7 @@ function stageMapping(stage: StageSpec): Record<string, unknown> {
   if (Object.keys(stage.options).length > 0) mapped.options = stage.options;
   if (stage.maxRevisions !== null) mapped.max_revisions = stage.maxRevisions;
   if (stage.resumeFrom !== null) mapped.session = { resume_from: stage.resumeFrom };
+  if (stage.runWhen != null) mapped.run_when = { changed_paths: stage.runWhen.changedPaths };
   if (stage.verify.length > 0) {
     mapped.verify = stage.verify;
     if (isRoleStage(stage) && stage.maxVerify !== 3) mapped.max_verify = stage.maxVerify;

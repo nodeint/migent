@@ -3,11 +3,17 @@ import path from "node:path";
 import { z } from "zod";
 import { ConfigurationError } from "./errors.js";
 import { documentVersion, isRecord, pyRepr } from "./record.js";
+import { compileChangedPathPattern } from "./run-when.js";
 import { parseYamlDocument } from "./yaml.js";
 
 export const VERIFY_ARTIFACT = "verify.md";
 
 const optionKey = /^[A-Za-z][A-Za-z0-9_.-]*$/;
+
+/** Run the stage only when a changed Git path matches one of the globs. */
+export interface RunWhen {
+  changedPaths: string[];
+}
 
 interface StageFields {
   id: string;
@@ -24,6 +30,7 @@ interface StageFields {
   verify: string[];
   maxVerify: number;
   verifyTimeoutSec: number | null;
+  runWhen: RunWhen | null;
 }
 
 export interface RoleStageSpec extends StageFields {
@@ -100,6 +107,7 @@ const stageFieldSchema = {
   routes: z.record(z.string(), z.union([z.string(), z.array(z.string()).min(1)])),
   verify: z.array(z.string()),
   verifyTimeoutSec: z.number().int().min(1).nullable(),
+  runWhen: z.object({ changedPaths: z.array(z.string()).min(1) }).nullable(),
 };
 
 const stageSpecSchema = z.discriminatedUnion("kind", [
@@ -230,6 +238,7 @@ export function parseWorkflowMapping(data: Record<string, unknown>, source: stri
       ? parseCompletion(data.completion, stages)
       : null;
   const outputs = version2 ? parseTopLevelOutputs(data.outputs, stages) : undefined;
+  validateConditionalStages(stages, outputs ?? []);
   const concurrency = version2 ? parseConcurrency(data) : undefined;
   validateVerifyPaths(stages, completion, version2);
   return workflowDocumentSchema.parse({
@@ -398,6 +407,7 @@ function parseStages(raw: unknown, version2 = false): Record<string, StageSpec> 
     const description = stageDescription(item, stageId);
     const dependsOn = stageDependsOn(item, stageId);
     const verify = stageVerify(item, stageId);
+    const runWhen = stageRunWhen(item, stageId, version2, verify);
     if (!stageHasRole(item)) {
       if (!version2 || verify.length === 0) {
         throw new ConfigurationError(`stages.${stageId}.role is required.`);
@@ -420,6 +430,7 @@ function parseStages(raw: unknown, version2 = false): Record<string, StageSpec> 
         verify,
         maxVerify: 0,
         verifyTimeoutSec: stageVerifyTimeout(item, stageId, verify),
+        runWhen,
       });
       items.push(item);
       continue;
@@ -448,6 +459,7 @@ function parseStages(raw: unknown, version2 = false): Record<string, StageSpec> 
       verify,
       maxVerify: stageMaxVerify(item, stageId, verify),
       verifyTimeoutSec: stageVerifyTimeout(item, stageId, verify),
+      runWhen,
     });
     items.push(item);
   }
@@ -458,6 +470,118 @@ function parseStages(raw: unknown, version2 = false): Record<string, StageSpec> 
   }
   validateStageGraph(stages);
   return stages;
+}
+
+function stageRunWhen(
+  stage: Record<string, unknown>,
+  stageId: string,
+  version2: boolean,
+  verify: readonly string[],
+): RunWhen | null {
+  if (!Object.hasOwn(stage, "run_when") || stage.run_when == null) return null;
+  const field = `stages.${stageId}.run_when`;
+  if (!version2) throw new ConfigurationError(`${field} requires schema_version 2.`);
+  const runWhen = stage.run_when;
+  if (!isRecord(runWhen)) throw new ConfigurationError(`${field} must be a mapping.`);
+  for (const key of Object.keys(runWhen)) {
+    if (key !== "changed_paths") throw new ConfigurationError(`${field}.${key} is not supported.`);
+  }
+  if (!Object.hasOwn(runWhen, "changed_paths") || runWhen.changed_paths == null) {
+    throw new ConfigurationError(`${field}.changed_paths is required.`);
+  }
+  const raw = runWhen.changed_paths;
+  if (!Array.isArray(raw)) throw new ConfigurationError(`${field}.changed_paths must be a list.`);
+  if (raw.length === 0) throw new ConfigurationError(`${field}.changed_paths must be a non-empty list.`);
+  const changedPaths: string[] = [];
+  raw.forEach((entry, index) => {
+    const pattern = requiredString(entry, `${field}.changed_paths[${index}]`);
+    if (changedPaths.includes(pattern)) {
+      throw new ConfigurationError(`Duplicate ${field}.changed_paths item: ${pattern}`);
+    }
+    const compiled = compileChangedPathPattern(pattern);
+    if ("error" in compiled) {
+      throw new ConfigurationError(
+        `Invalid ${field}.changed_paths[${index}]: ${pyRepr(pattern)} (${compiled.error}).`,
+      );
+    }
+    changedPaths.push(pattern);
+  });
+  if (verify.length > 0) throw new ConfigurationError(`${field} cannot be combined with verify.`);
+  return { changedPaths };
+}
+
+const reachCache = new WeakMap<Record<string, StageSpec>, Map<string, Set<string>>>();
+
+/**
+ * Stages a skip of `stageId` can leave without a current completion: the stage itself, its dependents,
+ * and its forward route targets, repeated until nothing changes. A route back to a stage in the
+ * member's dependency closure is not a forward target.
+ */
+export function conditionalReach(stages: Record<string, StageSpec>, stageId: string): Set<string> {
+  let cache = reachCache.get(stages);
+  if (cache === undefined) {
+    cache = new Map();
+    reachCache.set(stages, cache);
+  }
+  const cached = cache.get(stageId);
+  if (cached !== undefined) return cached;
+  const reach = new Set<string>([stageId]);
+  const pending = [stageId];
+  while (pending.length > 0) {
+    const member = pending.pop()!;
+    const found: string[] = [];
+    for (const other of Object.values(stages)) {
+      if (other.dependsOn.includes(member)) found.push(other.id);
+    }
+    const closure = dependencyClosure(stages, member);
+    for (const value of Object.values(stages[member]?.routes ?? {})) {
+      for (const target of routeTargets(value)) {
+        if (target !== "complete" && !closure.has(target)) found.push(target);
+      }
+    }
+    for (const next of found) {
+      if (reach.has(next) || !Object.hasOwn(stages, next)) continue;
+      reach.add(next);
+      pending.push(next);
+    }
+  }
+  cache.set(stageId, reach);
+  return reach;
+}
+
+/** Every stage in the reach of a run_when stage, mapped to the first run_when stage that reaches it. */
+export function conditionalStages(stages: Record<string, StageSpec>): Map<string, string> {
+  const members = new Map<string, string>();
+  for (const stage of Object.values(stages)) {
+    if (stage.runWhen == null) continue;
+    for (const reached of conditionalReach(stages, stage.id)) {
+      if (!members.has(reached)) members.set(reached, stage.id);
+    }
+  }
+  return members;
+}
+
+function validateConditionalStages(stages: Record<string, StageSpec>, outputs: readonly WorkflowOutput[]): void {
+  const members = conditionalStages(stages);
+  if (members.size === 0) return;
+  for (const stage of Object.values(stages)) {
+    const source = members.get(stage.id);
+    if (source === undefined || stage.verify.length === 0) continue;
+    throw new ConfigurationError(
+      `stages.${stage.id}.verify is reached through run_when stage ${source}; a skip would bypass this verify.`,
+    );
+  }
+  for (const output of outputs) {
+    const source = members.get(output.fromStage);
+    if (source === undefined) continue;
+    const origin =
+      source === output.fromStage
+        ? `run_when stage ${source}`
+        : `stages.${output.fromStage}, which is reached through run_when stage ${source}`;
+    throw new ConfigurationError(
+      `outputs ${pyRepr(output.name)} comes from ${origin}; a skip would leave it missing.`,
+    );
+  }
 }
 
 function parseRequires(raw: unknown, version2 = false): WorkflowRequires | null {
