@@ -168,6 +168,21 @@ alias at another model by editing `config.local.yaml`.
 `config.yaml` or `config.local.yaml` directly, or ask your agent to, then run
 `migent doctor`.
 
+For a small setup, put the model directly in `.migent/config.yaml`:
+
+```yaml
+schema_version: 2
+roles:
+  developer:
+    default_model:
+      provider: codex
+      model: gpt-5
+      effort: high
+```
+
+Use [model aliases](docs/providers.md) to share a model across roles or choose
+different models on each machine.
+
 ### Run
 
 Start the workflow from your project directory. Replace the task text:

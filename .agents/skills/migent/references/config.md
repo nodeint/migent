@@ -11,9 +11,9 @@ model id before writing `config.local.yaml` or running `init`.
 ## Per-machine override
 
 `.migent/config.local.yaml` is an optional, uncommitted file with the same keys
-as `config.yaml`. Mappings merge key by key; scalars and lists, such as
-`instructions`, replace the value from `config.yaml`. Its `schema_version` is
-ignored. Runs, `doctor`, and `config` read the merged result.
+as `config.yaml`. Model aliases merge key by key. A local role `default_model`
+replaces the shared default; supply a complete model or an alias. Lists such as
+`instructions` replace the shared list.
 `doctor` warns if git tracks the local file.
 
 ## Name aliases for the work
@@ -91,10 +91,23 @@ Set `roles.<role>.default_model` in `.migent/config.yaml` to a name from
 `models`. It is an alias, not a provider model id. Add the alias to `models` as
 `{}` and map it in `.migent/config.local.yaml`.
 
-## Override options for one role
+## Inline model for one role
 
-Set `roles.<role>.options` in `.migent/config.yaml`. They merge over the
-alias options.
+For a model used by one role, put it directly in `default_model`:
+
+```yaml
+schema_version: 2
+roles:
+  developer:
+    default_model:
+      provider: codex
+      model: gpt-5
+      effort: high
+```
+
+No `models` section is needed when all role defaults are inline. Put `effort`,
+`client`, and `options` inside the model. Use aliases when several roles share a
+model or each machine needs its own mapping.
 
 ## Role instructions
 
@@ -105,8 +118,7 @@ prompt.
 
 ## Model effort
 
-Set `models.<alias>.effort` in `config.yaml` or `config.local.yaml` to adjust
-thinking level:
+Set `effort` inside an inline or named model to adjust thinking level:
 
 ```yaml
 models:

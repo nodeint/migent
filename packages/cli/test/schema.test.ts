@@ -81,7 +81,7 @@ test("config reference parses and names every key the config parser reads", () =
     expect(resolveRoleTarget(workspace, "planner", undefined, createProviderResolver(defaultProviders()))).toEqual({
       provider: "grok",
       model: "grok-4.7",
-      options: { "reasoning-effort": "medium" },
+      options: { "reasoning-effort": "medium", max_turns: "10" },
     });
     expect(resolveRoleTarget(workspace, "reviewer", undefined, createProviderResolver(defaultProviders()))).toEqual({
       provider: "grok",
@@ -95,7 +95,7 @@ test("config reference parses and names every key the config parser reads", () =
     new GrokProvider().validateOptions({ "reasoning-effort": "medium" });
     const configParser = `${readFileSync(CONFIG_PARSER, "utf8")}\n${readFileSync(RECORD_PARSER, "utf8")}`;
     expect(parserKeys(configParser, "config")).toEqual(CONFIG_KEYS);
-    expect(yamlKeys(text)).toEqual([...CONFIG_KEYS, "client", "code_generation", "deep_reasoning", "planner", "reasoning-effort", "reviewer"].sort());
+    expect(yamlKeys(text)).toEqual([...CONFIG_KEYS, "client", "code_generation", "deep_reasoning", "planner", "max_turns", "reviewer"].sort());
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }

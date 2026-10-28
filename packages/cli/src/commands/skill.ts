@@ -105,15 +105,23 @@ export async function updateSkill(options: SkillOptions = {}): Promise<number> {
 export function clientsFromConfig(workspace: string, providers: Record<string, Provider> = providerMap()): string[] {
   const configPath = path.join(workspace, ".migent", "config.yaml");
   if (!isFile(configPath)) return [];
-  let models: unknown;
+  let config: Record<string, unknown>;
   try {
-    models = loadWorkspaceConfig(workspace).models;
+    config = loadWorkspaceConfig(workspace);
   } catch {
     return [];
   }
-  if (typeof models !== "object" || models === null) return [];
+  const definitions: unknown[] = typeof config.models === "object" && config.models !== null
+    ? Object.values(config.models) : [];
+  if (typeof config.roles === "object" && config.roles !== null) {
+    for (const role of Object.values(config.roles)) {
+      if (typeof role === "object" && role !== null && "default_model" in role) {
+        definitions.push(role.default_model);
+      }
+    }
+  }
   const found = new Set<string>();
-  for (const model of Object.values(models as Record<string, unknown>)) {
+  for (const model of definitions) {
     if (typeof model !== "object" || model === null) continue;
     const { provider, client } = model as { provider?: unknown; client?: unknown };
     const id = typeof client === "string" ? client : typeof provider === "string" ? providerClient(providers[provider]) : null;

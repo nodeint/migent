@@ -237,3 +237,16 @@ test("scanner reports a shared directory once with all its clients", () => {
   expect(found[0]?.clients).toEqual(["codex", "opencode", "agy"]);
   expect(groupByDirectory(SKILL_TARGETS, "project", { workspace, home })).toHaveLength(3);
 });
+
+
+test("install detects clients from local inline role defaults without models", async () => {
+  const workspace = workspaceOf("roles:\n  developer:\n    default_model:\n      provider: codex\n      model: test\n  reviewer:\n    default_model:\n      provider: grok\n      model: test\n");
+  writeFileSync(path.join(workspace, ".migent", "config.local.yaml"),
+    "roles:\n  developer:\n    default_model:\n      provider: byteplus\n      client: claude-code\n      model: local\n");
+  expect(clientsFromConfig(workspace).sort()).toEqual(["claude-code", "grok"]);
+  const { calls, run } = recorder();
+  expect(await installSkill({ workspace, scope: "project", run, which: withNpx, interactive: false })).toBe(0);
+  expect(calls[0]).toContain("claude-code");
+  expect(calls[0]).toContain("grok");
+  expect(calls[0]).not.toContain("codex");
+});

@@ -10,7 +10,16 @@ export async function checkModelEfforts(
 ): Promise<Record<string, ModelEffortCheck>> {
   let config: Record<string, unknown>;
   try { config = loadWorkspaceConfig(workspace); } catch { return {}; }
-  if (!isRecord(config.models)) return {};
+  const definitions: Array<[string, unknown, string]> = isRecord(config.models)
+    ? Object.entries(config.models).map(([alias, model]) => [alias, model, `models.${alias}`]) : [];
+  if (isRecord(config.roles)) {
+    for (const [name, role] of Object.entries(config.roles)) {
+      if (isRecord(role) && isRecord(role.default_model)) {
+        const field = `roles.${name}.default_model`;
+        definitions.push([field, role.default_model, field]);
+      }
+    }
+  }
   const commands = new Map<string, Promise<string>>();
   const run: RunCommand = (argv, input) => {
     const key = JSON.stringify([argv, input]);
@@ -22,11 +31,11 @@ export async function checkModelEfforts(
     return pending;
   };
   const resolveProvider = createProviderResolver(providers);
-  const results = await Promise.all(Object.entries(config.models).map(async ([alias, model]) => {
+  const results = await Promise.all(definitions.map(async ([alias, model, modelField]) => {
     if (!isRecord(model) || !Object.hasOwn(model, "effort")) return null;
     if (typeof model.provider !== "string" || !model.provider.trim() || typeof model.model !== "string" || !model.model.trim()) return null;
     if (model.client != null && (typeof model.client !== "string" || !model.client.trim())) return null;
-    const field = `models.${alias}.effort`;
+    const field = `${modelField}.effort`;
     const value = JSON.stringify(model.effort);
     const invalidType = typeof model.effort !== "string" || model.effort.trim() === "";
     let values: readonly string[] | null = null;

@@ -46,10 +46,20 @@ test("plan review publishes the plan", async () => {
   }
 }, 30_000);
 
-test("stage runs through the codex provider", async () => {
+test.each([
+  ["alias", CODEX_CONFIG],
+  ["inline", `schema_version: 2
+roles:
+  writer:
+    default_model:
+      provider: codex
+      model: codex-test
+      effort: low
+`],
+])("stage runs through the codex provider with an %s model", async (_kind, config) => {
   const workspace = tempWorkspace();
   try {
-    writeWorkspace(workspace, CODEX_CONFIG, { "draft-note": DRAFT_NOTE });
+    writeWorkspace(workspace, config, { "draft-note": DRAFT_NOTE });
     const [code, objects, stderr] = await runMain(workspace, [
       "session",
       "run",

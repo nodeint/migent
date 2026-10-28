@@ -26,8 +26,7 @@ stages:
     role: planner
     # model is a name under models in config.yaml, not a provider model id.
     model: planner
-    # Options merge in order: model, then role, then stage.
-    # Only keys the provider marks overridable are stored on the provider session.
+    # Override model options for this stage.
     options:
       reasoning-effort: high
     depends_on:
