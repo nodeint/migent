@@ -30,6 +30,7 @@ The workspace root is `migent-monorepo` and is private.
 
 ```bash
 pnpm install
+pnpm setup:git       # install local branch and push safeguards
 pnpm build           # tsc -b for all packages, then copy CLI templates
 pnpm test            # vitest: packages/**/test and integration/
 pnpm migent --help   # run the local build
@@ -97,10 +98,15 @@ for the tag and stops on failure.
 
 ## Pull requests
 
-`main` is protected: every change reaches it through a pull request. Settings
-for the `main` ruleset on GitHub:
+Every change, including a release version bump, reaches `main` through a
+pull request. The ruleset definition is in `.github/main-ruleset.json`;
+maintainers apply it in GitHub repository settings or through the API:
 
-- Require a pull request and the `test` checks (all three operating systems).
+- Require a pull request and successful `test (ubuntu-latest)`,
+  `test (macos-latest)`, and `test (windows-latest)` checks on the current base.
+- Block force-pushes and deletion; leave the bypass list empty, including admins.
+- Require resolved review conversations. A solo-maintained repository need not
+  require a second person's approval.
 - Allow squash merge only, and delete the branch after merge.
 - Leave `v*` tags outside the ruleset: a maintainer pushes the release tag
   directly.
@@ -108,6 +114,28 @@ for the `main` ruleset on GitHub:
 Branch names: `feat/<slug>`, `fix/<slug>`, `docs/<slug>`, `chore/<slug>`, and
 `release/X.Y.Z` for releases. The pull request title is the squash commit
 subject, so write it as one short imperative line.
+
+Start work with an explicit base and no upstream:
+
+```bash
+git fetch origin
+git switch --no-track -c feat/my-change origin/main
+# edit, test, commit
+git push -u origin refs/heads/feat/my-change:refs/heads/feat/my-change
+gh pr create --draft --base main --head feat/my-change --body-file <notes>
+```
+
+Run `pnpm setup:git` once in each clone. It installs pre-commit/pre-push hooks,
+disables automatic upstream inheritance, and removes working branches' accidental
+`origin/main` upstreams. A branch should track its own remote name after its
+first push. Hooks block commits on `main`, direct pushes to `main`, and branch
+pushes to a different name, including pushes from an editor. Tags remain allowed.
+Do not bypass the hooks with `--no-verify`. GitHub's ruleset enforces the PR
+requirement for all clones, even when local hooks are absent.
+
+Keep published history intact. If a commit already reached `main` directly,
+retain it and fix the workflow in a new PR; do not reset or force-push main,
+or revert/reapply working code solely to create a retrospective PR.
 
 A pull request that changes behavior a user can see adds a line under
 `## Unreleased` in `CHANGELOG.md`, in the same pull request. Open it as a draft
@@ -124,14 +152,14 @@ version and the changelog.
 
 ```bash
 git fetch origin
-git switch -c release/0.2.0 origin/main
+git switch --no-track -c release/0.2.0 origin/main
 # CHANGELOG.md: move ## Unreleased under ## 0.2.0, keep five versions
 pnpm -r exec npm pkg set version=0.2.0
 pnpm install
 git add CHANGELOG.md packages/*/package.json pnpm-lock.yaml
 git commit -m "Release 0.2.0"
-git push -u origin release/0.2.0
-gh pr create --title "Release 0.2.0" --body-file <the 0.2.0 section>
+git push -u origin refs/heads/release/0.2.0:refs/heads/release/0.2.0
+gh pr create --draft --base main --head release/0.2.0 --title "Release 0.2.0" --body-file <the 0.2.0 section>
 ```
 
 Merge other pull requests only before this one, or rebase it and redo the

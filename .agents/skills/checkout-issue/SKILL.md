@@ -5,7 +5,6 @@ description: >
   with gh, summarize it, create the branch from origin/main, and stop for the
   user before changing code unless they asked for the fix. Use when the user
   gives an issue URL or number, or says checkout issue, đọc issue, fix issue.
-argument-hint: "1"
 metadata:
   short-description: "Read a GitHub issue and branch for it"
 ---
@@ -41,11 +40,13 @@ Make the slug short and about the change, not the issue number.
 ```bash
 git fetch origin
 git status --short
-git switch -c <branch> origin/main
+git switch --no-track -c <branch> origin/main
 ```
 
 Stop and ask when the working tree has changes that are not part of this issue.
-Never commit on `main`.
+Never commit on `main`. The new branch must have no upstream until its first
+push; verify with `git branch -vv`. Never set a working branch's upstream to
+`origin/main`. Run `pnpm setup:git` once in this checkout to install safeguards.
 
 ## Next
 

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- Contributor and release workflows use branches and pull requests. `pnpm setup:git` installs local hooks that prevent commits/direct pushes to main and mismatched branch pushes.
+
 ### Added
 
 - `doctor` checks model `effort` against the selected client/model catalog, reports invalid values with the valid choices, and warns when the choices cannot be verified.

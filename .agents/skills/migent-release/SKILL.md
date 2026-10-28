@@ -1,21 +1,20 @@
 ---
 name: migent-release
 description: >
-  Release Migent directly from main: update the changelog, bump all four
-  workspace packages, build and test, commit, push main, and push the release
-  tag. Watch release.yml stage packages and create the GitHub Release.
+  Release Migent through a release pull request: update the changelog, bump all
+  four workspace packages, build and test, then tag the merged release commit.
+  Watch release.yml stage packages and create the GitHub Release.
   The user approves staged packages on npm. Use when the user asks to release,
   tag a version, push the release tag, or runs /migent-release.
-argument-hint: "0.1.6"
 metadata:
   short-description: "Release Migent on npm"
 ---
 
 # Release Migent
 
-Release directly on `main`, without creating branches or pull requests.
-Read the release guidance and pitfalls in `CONTRIBUTING.md`; this skill
-overrides its branch, pull request, and merge requirements.
+Follow the release pull request flow and pitfalls in `CONTRIBUTING.md`.
+Never commit or push directly to `main`, bypass branch protection, or tag an
+unmerged release branch.
 
 Work from the repository root. Reply in the user's language.
 
@@ -24,26 +23,25 @@ Work from the repository root. Reply in the user's language.
 Use the version the user names. If they do not name one, propose the next
 patch after the highest of `packages/*/package.json` and the `v*` tags and
 confirm the version before publishing. An explicit request to release a named
-version authorizes committing the release, pushing `main`, and pushing its tag.
+version authorizes preparing and pushing a release PR and tagging the merged
+release commit. Merge only when the user has explicitly authorized the merge.
 Do not ask again for actions already authorized.
 
-## Prepare main
+## Prepare the release branch
 
 ```bash
 git fetch origin --tags
 git status --short
 ```
 
-Work on `main`. If currently on another branch, switch only when it preserves
-the working tree and all intended release changes are available on `main`;
-otherwise stop and explain what must be brought onto `main`. Do not discard
-changes or create a release branch.
+Require a clean working tree. If unrelated changes are present, stop and
+explain; do not stash, discard, or include them. Feature work must reach main
+through its own PR before the release.
 
-Fast-forward `main` from `origin/main` when possible. Preserve local commits
-already ahead of `origin/main`; stop if the histories diverge. If uncommitted
-work belongs in this release, review and commit it separately before the
-release commit. Stage files by name, excluding secrets and build outputs;
-ask before including unrelated work.
+Run `pnpm setup:git`, then create `release/X.Y.Z` from current `origin/main`
+using `git switch --no-track -c release/X.Y.Z origin/main`. For an existing
+release branch/PR, inspect and resume it instead of creating a duplicate.
+Its upstream must be absent or `origin/release/X.Y.Z`, never `origin/main`.
 
 Stop if `vX.Y.Z` exists locally or on `origin`. Versions already sent to npm
 are single-use, including versions that were unpublished. Use the next patch
@@ -80,7 +78,7 @@ that are already there.
 Do not put the version in `docs/backlogs.md`. That line records when the
 backlog was written.
 
-### Validate, commit, and push main
+### Validate and open the release PR
 
 ```bash
 pnpm -r exec npm pkg set version=X.Y.Z
@@ -93,37 +91,33 @@ pnpm test
 reads its version from `packages/cli/package.json`. Do not edit
 `packages/cli/src/version.ts`.
 
-CI does not run on pushes to `main`, so build and tests must pass locally
-before pushing. Follow the provider isolation guidance in `CONTRIBUTING.md`
-when running tests. Stop and report failures.
-
-Stage only the release files named above and commit with `Release X.Y.Z`.
-Do not use `git commit -am`. Require a clean working tree afterward.
-
-Fetch `origin` again before pushing. If `origin/main` has advanced beyond the
-local history, stop and reconcile it before revalidating the release notes,
-build, and tests. Never force-push.
+Build and tests must pass locally. Follow the provider isolation guidance in
+`CONTRIBUTING.md`. Stop and report failures. Stage only the release files
+named above, commit with `Release X.Y.Z`, then push the branch explicitly:
 
 ```bash
-git push origin main
+git push -u origin refs/heads/release/X.Y.Z:refs/heads/release/X.Y.Z
+gh pr create --draft --base main --head release/X.Y.Z --title "Release X.Y.Z" --body-file <notes>
 ```
 
-If repository protection rejects the push, report the error and stop; do not
-bypass protection or silently fall back to a pull request.
+Wait for all three CI jobs to pass. Mark the PR ready when green. If merging
+has not been authorized, report the PR URL and stop before merging or tagging.
+After authorization, squash-merge the green PR; never bypass required checks.
 
-## Tag and push
+## Tag the merged release
 
-After the push succeeds, fetch and verify the release commit is on
-`origin/main`, its subject is `Release X.Y.Z`, and every package manifest at
-that commit says `X.Y.Z`. Tag that exact commit, even if `main` later advances.
-
-Create a lightweight tag, as with existing releases. Pushing the tag starts
-publishing. Do not annotate or move the tag.
+Fetch origin after merging. Find the merged release commit on `origin/main`
+using the PR's merge commit, not a commit with a similar subject. Verify its
+four package versions are `X.Y.Z` and its changelog contains that release.
+Stop if the PR is unmerged or the tag already exists. Never force-push or move
+a tag. Create a lightweight tag on that exact merged commit:
 
 ```bash
-git tag vX.Y.Z <release-sha>
-git push origin vX.Y.Z
+git tag vX.Y.Z <merged-release-sha>
+git push origin refs/tags/vX.Y.Z:refs/tags/vX.Y.Z
 ```
+
+Pushing the tag starts publishing.
 
 ## Watch release.yml
 
