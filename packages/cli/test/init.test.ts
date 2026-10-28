@@ -88,6 +88,7 @@ test("writes inline role models and both working presets", async () => {
       runInit(workspace, {
         provider: "codex",
         model: "gpt-5",
+        plannerProvider: "codex", plannerModel: "gpt-5",
         reviewerProvider: "codex",
         reviewerModel: "gpt-5",
         runCommand,
@@ -145,6 +146,7 @@ test("refuses a partial project and leaves it unchanged", async () => {
       runInit(workspace, {
         provider: "codex",
         model: "gpt-5",
+        plannerProvider: "codex", plannerModel: "gpt-5",
         reviewerProvider: "codex",
         reviewerModel: "gpt-5",
         runCommand,
@@ -167,6 +169,7 @@ test("reports an existing valid project without changing it", async () => {
       await runInit(workspace, {
         provider: "codex",
         model: "gpt-5",
+        plannerProvider: "codex", plannerModel: "gpt-5",
         reviewerProvider: "codex",
         reviewerModel: "gpt-5",
         runCommand,
@@ -179,6 +182,7 @@ test("reports an existing valid project without changing it", async () => {
       runInit(workspace, {
         provider: "grok",
         model: "grok-4",
+        plannerProvider: "codex", plannerModel: "gpt-5",
         reviewerProvider: "codex",
         reviewerModel: "gpt-5",
         runCommand,
@@ -201,7 +205,7 @@ test("a lone config.local.yaml is a conflict and is left unchanged", async () =>
     const local = path.join(root, "config.local.yaml");
     writeFileSync(local, "models: {}\n", "utf8");
     const captured = await capture(() =>
-      runInit(workspace, { provider: "codex", model: "gpt-5", reviewerProvider: "codex", reviewerModel: "gpt-5", runCommand, which: which(new Set(["codex"])) }),
+      runInit(workspace, { provider: "codex", model: "gpt-5", plannerProvider: "codex", plannerModel: "gpt-5", reviewerProvider: "codex", reviewerModel: "gpt-5", runCommand, which: which(new Set(["codex"])) }),
     );
     expect(captured.value).toBe(1);
     expect(readFileSync(local, "utf8")).toBe("models: {}\n");
@@ -212,12 +216,13 @@ test("a lone config.local.yaml is a conflict and is left unchanged", async () =>
   }
 });
 
-test("planner shares the developer model and each workflow uses the reviewer model", async () => {
+test("planner has its own model and each workflow uses the reviewer model", async () => {
   const workspace = tempDir();
   try {
     const code = await runInit(workspace, {
       provider: "codex",
       model: "gpt-5",
+      plannerProvider: "grok", plannerModel: "grok-4.6",
       reviewerProvider: "grok",
       reviewerModel: "grok-4.7",
       runCommand,
@@ -227,7 +232,7 @@ test("planner shares the developer model and each workflow uses the reviewer mod
     const workflow = readFileSync(path.join(workspace, ".migent", "workflows", "plan.yaml"), "utf8");
     expect(code).toBe(0);
     const resolve = createProviderResolver(defaultProviders());
-    expect(resolveStageTarget(workspace, "plan", "plan", undefined, resolve)).toMatchObject({ provider: "codex", model: "gpt-5" });
+    expect(resolveStageTarget(workspace, "plan", "plan", undefined, resolve)).toMatchObject({ provider: "grok", model: "grok-4.6" });
     expect(resolveStageTarget(workspace, "plan", "review_plan", undefined, resolve)).toMatchObject({ provider: "grok", model: "grok-4.7" });
     expect(config).not.toContain("models:");
     expect(config).toContain("planner:");
@@ -251,7 +256,7 @@ test("interactive prefers an installed provider", async () => {
         interactive: true,
         runCommand,
         which: which(new Set(["grok"])),
-        prompter: new ScriptedPrompt(["", "", "", "", "", ""]),
+        prompter: new ScriptedPrompt(["", "", "", "", "", "", "", "", ""]),
       }),
     );
     const config = readFileSync(path.join(workspace, ".migent", "config.yaml"), "utf8");
@@ -272,6 +277,7 @@ test("writes an option only when it is passed", async () => {
     const code = await runInit(workspace, {
       provider: "codex",
       model: "gpt-5",
+      plannerProvider: "codex", plannerModel: "gpt-5",
       reviewerProvider: "codex",
       reviewerModel: "gpt-5",
       options: ["model_reasoning_effort=high"],
@@ -293,6 +299,7 @@ test("rejects a model the provider cli did not list", async () => {
       runInit(workspace, {
         provider: "codex",
         model: "hidden",
+        plannerProvider: "codex", plannerModel: "gpt-5",
         reviewerProvider: "codex",
         reviewerModel: "gpt-5",
         runCommand,
@@ -314,6 +321,7 @@ test("rejects an option value the provider does not list", async () => {
       runInit(workspace, {
         provider: "codex",
         model: "gpt-5",
+        plannerProvider: "codex", plannerModel: "gpt-5",
         reviewerProvider: "codex",
         reviewerModel: "gpt-5",
         options: ["model_reasoning_effort=max"],
@@ -335,6 +343,7 @@ test("init succeeds without npx and suggests a separate skill command", async ()
   try {
     const result = await capture(() => runInit(workspace, {
       provider: "codex", model: "gpt-5",
+      plannerProvider: "codex", plannerModel: "gpt-5",
       reviewerProvider: "codex", reviewerModel: "gpt-5",
       runCommand, which: which(new Set(["codex"])),
     }));
@@ -356,6 +365,7 @@ test.each(["missing npx", "installer failure"])("skill %s after init preserves t
   try {
     const initialized = await capture(() => runInit(workspace, {
       provider: "codex", model: "gpt-5", options: ["model_reasoning_effort=low"],
+      plannerProvider: "codex", plannerModel: "gpt-5",
       reviewerProvider: "grok", reviewerModel: "grok-4.7", reviewerOptions: ["reasoning-effort=high"],
       runCommand, which: which(new Set(["codex", "grok"])),
     }));
@@ -418,12 +428,13 @@ test("init exits 0 when doctor later reports a missing provider", async () => {
       runInit(workspace, {
         provider: "codex",
         model: "gpt-5",
+        plannerProvider: "codex", plannerModel: "gpt-5",
         reviewerProvider: "codex",
         reviewerModel: "gpt-5",
         runCommand,
         which: (command) => {
           seen += 1;
-          return command === "codex" && seen <= 2 ? "/bin/codex" : null;
+          return command === "codex" && seen <= 3 ? "/bin/codex" : null;
         },
       }),
     );
@@ -445,6 +456,7 @@ test("already initialized ignores model selection flags", async () => {
       await runInit(workspace, {
         provider: "codex",
         model: "gpt-5",
+        plannerProvider: "codex", plannerModel: "gpt-5",
         reviewerProvider: "codex",
         reviewerModel: "gpt-5",
         runCommand,
@@ -455,6 +467,7 @@ test("already initialized ignores model selection flags", async () => {
       runInit(workspace, {
         provider: "grok",
         model: "grok-4",
+        plannerProvider: "codex", plannerModel: "gpt-5",
         reviewerProvider: "codex",
         reviewerModel: "gpt-5",
         options: ["reasoning=high"],
@@ -476,7 +489,7 @@ test("requires provider and model when not interactive", async () => {
     const first = await capture(() => main(["init"], workspace));
     expect(first.value).toBe(2);
     expect(existsSync(path.join(workspace, ".migent"))).toBe(false);
-    expect(first.stderr).toContain("Pass --provider and --model for developer when init is not interactive.");
+    expect(first.stderr).toContain("Pass --planner-provider and --planner-model for planner when init is not interactive.");
     const second = await capture(() => main(["init", "--provider", "codex"], workspace));
     expect(second.value).toBe(2);
     expect(second.stderr).toContain("--model");
@@ -485,7 +498,7 @@ test("requires provider and model when not interactive", async () => {
     try {
       const third = await capture(() => main(["init"], workspace));
       expect(third.value).toBe(2);
-      expect(third.stderr).toContain("Pass --provider and --model for developer when init is not interactive.");
+      expect(third.stderr).toContain("Pass --planner-provider and --planner-model for planner when init is not interactive.");
     } finally {
       if (previous === undefined) delete process.env.MIGENT_NO_INPUT;
       else process.env.MIGENT_NO_INPUT = previous;
@@ -500,7 +513,7 @@ test("initializes over an empty .migent directory", async () => {
   try {
     mkdirSync(path.join(workspace, ".migent"));
     const captured = await capture(() =>
-      runInit(workspace, { provider: "codex", model: "gpt-5", reviewerProvider: "codex", reviewerModel: "gpt-5", runCommand, which: which(new Set(["codex"])) }),
+      runInit(workspace, { provider: "codex", model: "gpt-5", plannerProvider: "codex", plannerModel: "gpt-5", reviewerProvider: "codex", reviewerModel: "gpt-5", runCommand, which: which(new Set(["codex"])) }),
     );
     expect(captured.value).toBe(0);
     expect(existsSync(path.join(workspace, ".migent", "config.yaml"))).toBe(true);
@@ -514,7 +527,7 @@ test("initializes over an empty .migent/workflows directory", async () => {
   try {
     mkdirSync(path.join(workspace, ".migent", "workflows"), { recursive: true });
     const captured = await capture(() =>
-      runInit(workspace, { provider: "codex", model: "gpt-5", reviewerProvider: "codex", reviewerModel: "gpt-5", runCommand, which: which(new Set(["codex"])) }),
+      runInit(workspace, { provider: "codex", model: "gpt-5", plannerProvider: "codex", plannerModel: "gpt-5", reviewerProvider: "codex", reviewerModel: "gpt-5", runCommand, which: which(new Set(["codex"])) }),
     );
     expect(captured.value).toBe(0);
     expect(existsSync(path.join(workspace, ".migent", "workflows", "implement.yaml"))).toBe(true);
@@ -530,6 +543,7 @@ test("init runs only catalog listing commands, never an inference call", async (
     const code = await runInit(workspace, {
       provider: "codex",
       model: "gpt-5",
+      plannerProvider: "codex", plannerModel: "gpt-5",
       reviewerProvider: "codex",
       reviewerModel: "gpt-5",
       runCommand: (argv) => {
@@ -547,26 +561,29 @@ test("init runs only catalog listing commands, never an inference call", async (
 });
 
 
-test("non-interactive CLI requires both role models and accepts the same model for each", async () => {
+test("non-interactive CLI requires all three role models and accepts the same model for each", async () => {
   const workspace = tempDir();
   cliHooks.which = which(new Set(["codex"]));
   cliHooks.runCommand = runCommand;
   try {
     const missing = await capture(() => main(["init", "--no-input", "--provider", "codex", "--model", "gpt-5"], workspace));
     expect(missing.value).toBe(2);
-    expect(missing.stderr).toContain("--reviewer-provider and --reviewer-model");
+    expect(missing.stderr).toContain("--planner-provider and --planner-model");
     expect(existsSync(path.join(workspace, ".migent"))).toBe(false);
     cliHooks.which = which(new Set(["codex"]));
     cliHooks.runCommand = runCommand;
     const result = await capture(() => main([
       "init", "--no-input", "--provider", "codex", "--model", "gpt-5",
+      "--planner-provider", "codex", "--planner-model", "gpt-5",
+      "--planner-option", "model_reasoning_effort=medium",
       "--reviewer-provider", "codex", "--reviewer-model", "gpt-5",
       "--option", "model_reasoning_effort=low", "--reviewer-option", "model_reasoning_effort=high",
     ], workspace));
     expect(result.value, result.stderr).toBe(0);
     const resolve = createProviderResolver(defaultProviders());
-    expect(resolveStageTarget(workspace, "plan", "plan", undefined, resolve).options).toEqual({ model_reasoning_effort: "low" });
+    expect(resolveStageTarget(workspace, "plan", "plan", undefined, resolve).options).toEqual({ model_reasoning_effort: "medium" });
     expect(resolveStageTarget(workspace, "plan", "review_plan", undefined, resolve).options).toEqual({ model_reasoning_effort: "high" });
+    expect(resolveStageTarget(workspace, "implement", "implement", undefined, resolve).options).toEqual({ model_reasoning_effort: "low" });
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }
@@ -576,7 +593,7 @@ test("interactive init saves each role independently without installing the skil
   const workspace = tempDir();
   const { calls } = skillRecorder();
   const messages: string[] = [];
-  const prompt = new ScriptedPrompt(["codex", "gpt-5", "low", "grok", "grok-4.7", "high"]);
+  const prompt = new ScriptedPrompt(["codex", "gpt-5", "low", "grok", "grok-4.7", "high", "codex", "gpt-5", "xhigh"]);
   const providerPrompt = prompt.selectProvider.bind(prompt);
   const modelPrompt = prompt.selectModel.bind(prompt);
   const prompter: Prompter = {
@@ -589,11 +606,12 @@ test("interactive init saves each role independently without installing the skil
       interactive: true, prompter, runCommand, which: which(new Set(["codex", "grok"])),
     }));
     expect(result.value, result.stderr).toBe(0);
-    expect(messages).toEqual(["Developer provider", "Developer model", "Reviewer provider", "Reviewer model"]);
+    expect(messages).toEqual(["Planner provider", "Planner model", "Reviewer provider", "Reviewer model", "Developer provider", "Developer model"]);
+    expect(Object.keys(loadWorkspaceConfig(workspace).roles)).toEqual(["planner", "reviewer", "developer"]);
     expect(result.stdout).toContain("migent skill install --project");
     const resolve = createProviderResolver(defaultProviders());
     expect(resolveStageTarget(workspace, "implement", "implement", undefined, resolve)).toEqual({
-      provider: "codex", model: "gpt-5", options: { model_reasoning_effort: "low" },
+      provider: "codex", model: "gpt-5", options: { model_reasoning_effort: "xhigh" },
     });
     expect(resolveStageTarget(workspace, "plan", "review_plan", undefined, resolve)).toEqual({
       provider: "grok", model: "grok-4.7", options: { "reasoning-effort": "high" },
@@ -608,6 +626,28 @@ test("interactive init saves each role independently without installing the skil
 });
 
 test.each([
+  { plannerProvider: "codex", plannerModel: "hidden" },
+  { plannerProvider: "codex" },
+  { plannerModel: "gpt-5" },
+  { plannerOptions: ["model_reasoning_effort=high"] },
+  { plannerProvider: "codex", plannerModel: "gpt-5", plannerOptions: ["model_reasoning_effort=max"] },
+])("invalid planner selection leaves the project unwritten: %j", async (planner) => {
+  const workspace = tempDir();
+  try {
+    const result = await capture(() => runInit(workspace, {
+      ...planner,
+      reviewerProvider: "codex", reviewerModel: "gpt-5",
+      provider: "codex", model: "gpt-5",
+      runCommand, which: which(new Set(["codex"])),
+    }));
+    expect(result.value).toBe(2);
+    expect(existsSync(path.join(workspace, ".migent"))).toBe(false);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test.each([
   { reviewerProvider: "codex", reviewerModel: "hidden" },
   { reviewerProvider: "codex" },
   { reviewerModel: "gpt-5" },
@@ -616,6 +656,7 @@ test.each([
   const workspace = tempDir();
   try {
     const result = await capture(() => runInit(workspace, {
+      plannerProvider: "codex", plannerModel: "gpt-5",
       provider: "codex", model: "gpt-5", ...reviewer,
       runCommand, which: which(new Set(["codex"])),
     }));

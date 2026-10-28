@@ -45,13 +45,16 @@ export function createProgram(status: CliStatus): Command {
 
   const init = program
     .command("init")
-    .description("Set up developer and reviewer models with implement and plan workflows.")
-    .option("--provider <provider>", "Developer provider. Pass with --model.")
-    .option("--model <model>", "Developer model ID. Pass with --provider.")
-    .option("--option <pair>", "Developer model option, KEY=VALUE.", collect, [])
+    .description("Set up planner, reviewer, and developer models with implement and plan workflows.")
+    .option("--planner-provider <provider>", "Planner provider. Pass with --planner-model.")
+    .option("--planner-model <model>", "Planner model ID. Pass with --planner-provider.")
+    .option("--planner-option <pair>", "Planner model option, KEY=VALUE.", collect, [])
     .option("--reviewer-provider <provider>", "Reviewer provider. Pass with --reviewer-model.")
     .option("--reviewer-model <model>", "Reviewer model ID. Pass with --reviewer-provider.")
     .option("--reviewer-option <pair>", "Reviewer model option, KEY=VALUE.", collect, [])
+    .option("--provider <provider>", "Developer provider. Pass with --model.")
+    .option("--model <model>", "Developer model ID. Pass with --provider.")
+    .option("--option <pair>", "Developer model option, KEY=VALUE.", collect, [])
     .addOption(new Option("--skill").hideHelp())
     .option("--no-input", "Do not prompt. Same as MIGENT_NO_INPUT=1.");
   init.action((options: OptionValues) =>
@@ -67,6 +70,9 @@ export function createProgram(status: CliStatus): Command {
         provider,
         model,
         options: stringList(options.option),
+        plannerProvider: optionalText(options.plannerProvider),
+        plannerModel: optionalText(options.plannerModel),
+        plannerOptions: stringList(options.plannerOption),
         reviewerProvider: optionalText(options.reviewerProvider),
         reviewerModel: optionalText(options.reviewerModel),
         reviewerOptions: stringList(options.reviewerOption),

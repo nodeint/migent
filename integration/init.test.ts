@@ -13,6 +13,7 @@ test.each([
   const workspace = tempWorkspace();
   try {
     expect(await runInit(workspace, {
+      plannerProvider: "codex", plannerModel: "codex-test",
       provider: "codex", model: "codex-test",
       reviewerProvider: "grok", reviewerModel: "grok-test",
       which: (command) => path.join(PROVIDER_BIN, command),

@@ -154,15 +154,14 @@ exit codes.
 
 ```bash
 migent init
-migent init --no-input --provider codex --model gpt-5 --reviewer-provider grok --reviewer-model grok-4.7
+migent init --no-input --planner-provider codex --planner-model gpt-5 --reviewer-provider grok --reviewer-model grok-4.7 --provider codex --model gpt-5
 ```
 
-In a terminal, choose a provider and model for the developer, then for the
-reviewer. Each selection can include the provider's prompted options. The two
-roles can use the same model. A separate `planner` role initially copies the
-developer's model and options without another prompt; edit its `default_model`
-later to configure it independently. All three roles include instructions
-for their responsibilities. Init saves these selections and creates the
+In a terminal, choose a provider and model for the planner, then the reviewer,
+then the developer. Each selection can include the provider's prompted options.
+All three roles are configured independently and can use the same model.
+Each role includes instructions for its responsibilities. Init saves these
+selections and creates the
 project. Install the Migent skill separately afterward:
 
 ```bash
@@ -195,11 +194,13 @@ Use the optional local file later for machine-specific overrides.
 
 | Flag | Input / purpose |
 | --- | --- |
-| `--provider`, `--model` | Developer provider and model ID; pass together. |
+| `--planner-provider`, `--planner-model` | Planner provider and model ID; pass together. |
+| `--planner-option KEY=VALUE` | Planner model option; repeat for multiple options. |
 | `--reviewer-provider`, `--reviewer-model` | Reviewer provider and model ID; pass together. |
-| `--option KEY=VALUE` | Developer model option; repeat for multiple options. |
 | `--reviewer-option KEY=VALUE` | Reviewer model option; repeat for multiple options. |
-| `--no-input` | Disable prompts; also set by `MIGENT_NO_INPUT=1`. Both role selections are required. |
+| `--provider`, `--model` | Developer provider and model ID; pass together. |
+| `--option KEY=VALUE` | Developer model option; repeat for multiple options. |
+| `--no-input` | Disable prompts; also set by `MIGENT_NO_INPUT=1`. All three role selections are required. |
 
 Model IDs and prompted option values come from the selected provider CLI.
 Omit options to keep provider defaults. Invalid selections exit 2 before

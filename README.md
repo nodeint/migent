@@ -171,8 +171,6 @@ After setup, your project contains:
     └── plan.yaml      # write and review a plan
 ```
 
-The planner starts with the developer's model and options. Edit
-`roles.planner.default_model` to configure it independently.
 
 Commit these files to share the setup. Run history is saved in
 `.migent/sessions/` when you start a task. If you install the skill, it lives

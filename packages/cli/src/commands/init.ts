@@ -36,7 +36,7 @@ import {
   type Which,
 } from "../provider.js";
 
-const INIT_EXAMPLE = "Example: migent init --provider codex --model gpt-5 --reviewer-provider grok --reviewer-model grok-4.7 --no-input";
+const INIT_EXAMPLE = "Example: migent init --planner-provider codex --planner-model gpt-5 --reviewer-provider grok --reviewer-model grok-4.7 --provider codex --model gpt-5 --no-input";
 
 export const PRESETS = ["implement", "plan"] as const;
 
@@ -61,6 +61,9 @@ export async function runInit(
     provider?: string | null;
     model?: string | null;
     options?: readonly string[];
+    plannerProvider?: string | null;
+    plannerModel?: string | null;
+    plannerOptions?: readonly string[];
     reviewerProvider?: string | null;
     reviewerModel?: string | null;
     reviewerOptions?: readonly string[];
@@ -73,6 +76,8 @@ export async function runInit(
 ): Promise<number> {
   const provider = options.provider ?? null;
   const model = options.model ?? null;
+  const plannerProvider = options.plannerProvider ?? null;
+  const plannerModel = options.plannerModel ?? null;
   const reviewerProvider = options.reviewerProvider ?? null;
   const reviewerModel = options.reviewerModel ?? null;
   const interactive = options.interactive ?? false;
@@ -81,10 +86,12 @@ export async function runInit(
   const prompt = options.prompter ?? new ClackPrompter();
   const execute = options.runCommand ?? cliHooks.runCommand ?? runProviderCommand;
   const optionPairs = options.options ?? [];
+  const plannerOptionPairs = options.plannerOptions ?? [];
   const reviewerOptionPairs = options.reviewerOptions ?? [];
   const classified = classify(workspace, chosen, resolve);
   if (classified.state === "ready") {
     if (provider !== null || model !== null || optionPairs.length > 0 ||
+        plannerProvider !== null || plannerModel !== null || plannerOptionPairs.length > 0 ||
         reviewerProvider !== null || reviewerModel !== null || reviewerOptionPairs.length > 0) {
       printError("Already initialized; ignoring model selection flags.");
     }
@@ -93,8 +100,9 @@ export async function runInit(
     return 0;
   }
   for (const [role, selectedProvider, selectedModel, pairs, prefix] of [
-    ["developer", provider, model, optionPairs, ""],
+    ["planner", plannerProvider, plannerModel, plannerOptionPairs, "planner-"],
     ["reviewer", reviewerProvider, reviewerModel, reviewerOptionPairs, "reviewer-"],
+    ["developer", provider, model, optionPairs, ""],
   ] as const) {
     const flags = `--${prefix}provider and --${prefix}model`;
     if ((selectedProvider === null) !== (selectedModel === null)) {
@@ -115,13 +123,14 @@ export async function runInit(
     return 1;
   }
   let developer: ModelChoice;
+  let planner: ModelChoice;
   let reviewer: ModelChoice;
   try {
-    developer = await choices(chosen, resolve, prompt, {
-      role: "Developer",
-      provider,
-      model,
-      options: parseOptions(optionPairs),
+    planner = await choices(chosen, resolve, prompt, {
+      role: "Planner",
+      provider: plannerProvider,
+      model: plannerModel,
+      options: parseOptions(plannerOptionPairs),
       runCommand: execute,
     });
     reviewer = await choices(chosen, resolve, prompt, {
@@ -131,15 +140,22 @@ export async function runInit(
       options: parseOptions(reviewerOptionPairs),
       runCommand: execute,
     });
+    developer = await choices(chosen, resolve, prompt, {
+      role: "Developer",
+      provider,
+      model,
+      options: parseOptions(optionPairs),
+      runCommand: execute,
+    });
   } catch (error) {
     if (error instanceof PromptCancelled) throw error;
     printError(error instanceof Error ? error.message : String(error));
     return 2;
   }
-  const paths = writeProject(workspace, developer, reviewer);
+  const paths = writeProject(workspace, planner, reviewer, developer);
   printCreated(
     paths,
-    `Developer: ${developer.provider}/${developer.model}. Reviewer: ${reviewer.provider}/${reviewer.model}. Planner uses the developer model. Workflows: implement, plan.`,
+    `Planner: ${planner.provider}/${planner.model}. Reviewer: ${reviewer.provider}/${reviewer.model}. Developer: ${developer.provider}/${developer.model}. Workflows: implement, plan.`,
   );
   if (interactive) {
     const doctorCode = await runDoctor(workspace, { which: resolve, runCommand: execute });
@@ -232,13 +248,14 @@ function classify(
 
 function writeProject(
   workspace: string,
-  developer: ModelChoice,
+  planner: ModelChoice,
   reviewer: ModelChoice,
+  developer: ModelChoice,
 ): string[] {
   const root = path.join(workspace, ".migent");
   const workflows = path.join(root, "workflows");
   mkdirSync(workflows, { recursive: true });
-  writeFileSync(path.join(root, "config.yaml"), renderConfig(developer, reviewer), "utf8");
+  writeFileSync(path.join(root, "config.yaml"), renderConfig(planner, reviewer, developer), "utf8");
   for (const preset of PRESETS) {
     writeFileSync(path.join(workflows, `${preset}.yaml`), renderWorkflow(preset), "utf8");
   }
@@ -250,7 +267,7 @@ function writeProject(
   ];
 }
 
-function renderConfig(developer: ModelChoice, reviewer: ModelChoice): string {
+function renderConfig(planner: ModelChoice, reviewer: ModelChoice, developer: ModelChoice): string {
   const lines = ["schema_version: 2", "roles:"];
   const instructions = {
     developer: [
@@ -273,7 +290,7 @@ function renderConfig(developer: ModelChoice, reviewer: ModelChoice): string {
       "Approve only when the work meets the task and relevant checks are supported by evidence.",
     ],
   };
-  for (const [role, choice] of [["developer", developer], ["planner", developer], ["reviewer", reviewer]] as const) {
+  for (const [role, choice] of [["planner", planner], ["reviewer", reviewer], ["developer", developer]] as const) {
     lines.push(
       `  ${role}:`,
       "    default_model:",

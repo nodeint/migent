@@ -4,7 +4,7 @@
 
 ### Changed
 
-- Init creates developer, planner, and reviewer roles with default instructions. Planner starts with the developer's model/options. Both generated workflows include a review stage with approval/revision routes and a revision limit; implement still runs independently.
+- Init selects independent models and options in planner, reviewer, developer order and creates all three roles with default instructions. Non-interactive setup requires all three role selections; use `--planner-provider`, `--planner-model`, and optional `--planner-option` for the planner. Both generated workflows include a review stage with approval/revision routes and a revision limit; implement still runs independently.
 - Init saves model selections and creates the project independently of skill installation, then suggests `migent skill install --project`. The skill prompt and `init --skill` are removed; the old flag reports the replacement commands.
 
 ### Fixed
