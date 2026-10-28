@@ -1,51 +1,46 @@
-# A missing schema_version is 0. Commands refuse the file while it is older than this Migent.
+# Project configuration. Validate with migent doctor --json after editing.
 schema_version: 2
-# .migent/config.local.yaml is an optional per-machine override with the same keys. It is not committed.
-# Mappings merge key by key; scalars and lists replace the value from config.yaml. Its schema_version is ignored.
-# Keep shared aliases as empty entries (for example `code_generation: {}`) in config.yaml and map them there.
-# Migent has no config-editing commands. Edit the YAML and run `migent doctor`.
 
-# models.<name>.model is the provider model id.
-# models.<name>.client is optional: the CLI client id (agy, claude-code, codex, grok, opencode); required for provider byteplus
-# that drives this model. Omit it to use the provider's own client.
-# roles.<name>.default_model and a stage model are this name. Name it for the work (code_generation,
-# deep_reasoning, critical_review, fast, general, long_context), not for a provider or a role.
-# models.<name>.effort sets thinking level (for example high); use a supported non-empty string.
-# Model-only. Do not also set the equivalent model option, including in local config.
-# With OpenCode V2, use either effort or a model#variant suffix.
-# Options merge in order: model, then role, then stage.
-# Only keys the provider marks overridable are stored on the provider session.
+# Named models can be shared by roles and stages.
+# Use an available provider and model ID from migent provider list --json.
 models:
   deep_reasoning:
     provider: grok
     model: grok-4.7
+    # Optional thinking level; use a supported value, or omit for client default.
+    # Do not also set the equivalent provider option or an OpenCode #variant.
     effort: high
-    # grok accepts reasoning-effort (overridable), max_turns, tools, disallowed_tools,
-    # permission_mode (default, acceptEdits, auto, dontAsk, bypassPermissions, plan),
-    # rules, allow, deny, and sandbox.
-    # agy accepts effort (low, medium, high, xhigh, max; overridable), mode (accept-edits, auto, plan),
-    # agent, sandbox (true or false), and skip_permissions (true or false).
-    # claude accepts effort (low, medium, high, xhigh, max; overridable), permission_mode
-    # (acceptEdits, auto, bypassPermissions, manual, dontAsk, plan), tools, allowed_tools,
-    # disallowed_tools, max_budget_usd, fallback_model, and append_system_prompt.
-    # codex accepts model_reasoning_effort (overridable). Any other key of letters, digits,
-    # dots, underscores, and hyphens is passed through as codex exec -c.
-    # opencode accepts agent, thinking (true shows thinking blocks), and variant (overridable; model#variant).
 
   code_generation:
     provider: byteplus
-    # byteplus has no CLI of its own, so client is required and names the CLI that runs it.
+    # Required for byteplus: the CLI client that runs this model.
+    # Other client IDs: agy, claude-code, codex, grok.
     client: opencode
     model: coding-plan/deepseek-v4-pro
 
 roles:
   planner:
+    # A name from models, not a provider model ID.
     default_model: deep_reasoning
-    # Included in every prompt for this role, before stage instructions.
-    # A role run prepends the same list to the prompt.
+    # Shared instructions for this role.
     instructions:
       - Break the task into a reviewable plan.
+    # Provider options override model options; stage options override these.
     options:
       reasoning-effort: medium
   reviewer:
     default_model: deep_reasoning
+
+# config.local.yaml optionally overrides machine-specific settings; do not commit it.
+# Mapping keys merge; scalars and lists replace shared values. Omit its schema_version.
+# Use snake_case names and the provider's spelling for option keys.
+# For effort errors or missing model mappings, follow doctor's diagnostics.
+# Provider option keys:
+# grok: reasoning-effort, max_turns, tools, disallowed_tools, permission_mode,
+#       rules, allow, deny, sandbox.
+# agy: effort, mode, agent, sandbox, skip_permissions.
+# claude: effort, permission_mode, tools, allowed_tools, disallowed_tools,
+#         max_budget_usd, fallback_model, append_system_prompt.
+# codex: model_reasoning_effort; other keys may contain letters, digits, dots,
+#        underscores, and hyphens.
+# opencode: agent, thinking, variant.
