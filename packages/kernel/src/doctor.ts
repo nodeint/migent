@@ -1,3 +1,4 @@
+import { createProviderResolver } from "./provider-contract.js";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { z } from "zod";
@@ -36,9 +37,15 @@ const checkSchema = z.object({
   warnings: z.array(z.string()),
 });
 
+export interface ModelEffortCheck {
+  problem?: string;
+  warning?: string;
+}
+
 export interface DiagnoseOptions {
   providers: Readonly<Record<string, ProviderInfo>>;
   which?: (command: string) => string | null;
+  modelEffortChecks?: Readonly<Record<string, ModelEffortCheck>>;
 }
 
 export function whichSync(command: string): string | null {
@@ -51,13 +58,14 @@ export function diagnose(
   options: DiagnoseOptions,
 ): [Check, Check, Check] {
   const which = options.which ?? whichSync;
-  const configResult = checkConfig(workspace, options.providers);
+  const configResult = checkConfig(workspace, options.providers, options.modelEffortChecks ?? {});
   const workflowCheck = checkWorkflows(
     workspace,
     options.providers,
     configResult.problems,
     configResult.config,
     configResult.unmapped,
+    new Set(Object.keys(options.modelEffortChecks ?? {}).filter((alias) => options.modelEffortChecks?.[alias]?.problem)),
   );
   const providerCheck = checkProviders(
     configResult.executableByProvider,
@@ -72,6 +80,7 @@ export const doctor = diagnose;
 function checkConfig(
   workspace: string,
   providers: Readonly<Record<string, ProviderInfo>>,
+  effortChecks: Readonly<Record<string, ModelEffortCheck>>,
 ): {
   check: Check;
   executableByProvider: Record<string, string>;
@@ -94,6 +103,7 @@ function checkConfig(
   }
 
   const problems: string[] = [];
+  const effortWarnings: string[] = [];
   const executableByProvider: Record<string, string> = {};
   let models: Record<string, unknown>;
   let roles: Record<string, unknown>;
@@ -119,9 +129,17 @@ function checkConfig(
 
   for (const modelName of Object.keys(models).sort()) {
     if (unmapped.has(modelName)) continue;
+    const effortCheck = effortChecks[modelName];
+    if (effortCheck?.problem) add(problems, effortCheck.problem);
+    if (effortCheck?.warning) effortWarnings.push(effortCheck.warning);
+    let modelConfig = config;
+    if (effortCheck?.problem && isRecord(models[modelName])) {
+      const { effort: _effort, ...rest } = models[modelName];
+      modelConfig = { ...config, models: { ...models, [modelName]: rest } };
+    }
     let target;
     try {
-      target = loadModelTarget(config, modelName);
+      target = loadModelTarget(modelConfig, modelName, createProviderResolver(providers));
     } catch (error) {
       if (!(error instanceof ConfigurationError)) throw error;
       add(problems, error.message);
@@ -159,9 +177,16 @@ function checkConfig(
       roleNames.push(roleKey);
       continue;
     }
+    if (isRecord(role) && typeof role.default_model === "string" && effortChecks[role.default_model]?.problem) {
+      try { loadRoleInstructions(config, roleKey); } catch (error) {
+        if (!(error instanceof ConfigurationError)) throw error;
+        add(problems, error.message);
+      }
+      continue;
+    }
     let resolved;
     try {
-      resolved = resolveRoleTarget(workspace, roleKey);
+      resolved = resolveRoleTarget(workspace, roleKey, undefined, createProviderResolver(providers));
       loadRoleInstructions(config, roleKey);
     } catch (error) {
       if (!(error instanceof ConfigurationError)) throw error;
@@ -175,7 +200,7 @@ function checkConfig(
     roleNames.push(roleKey);
   }
 
-  const warnings = trackedLocalConfigWarnings(workspace);
+  const warnings = [...trackedLocalConfigWarnings(workspace), ...effortWarnings];
   if (problems.length > 0) {
     return { check: failed("config", problems, [], warnings), executableByProvider, problems, config, unmapped };
   }
@@ -204,13 +229,14 @@ function checkWorkflows(
   configProblems: readonly string[],
   config: Record<string, unknown> | null,
   unmapped: ReadonlySet<string>,
+  invalidEffort: ReadonlySet<string>,
 ): Check {
   const catalog = loadWorkflowCatalog(workspace);
   const problems = [...catalog.problems];
   const known = new Set(configProblems);
   if (config !== null) {
     for (const document of Object.values(catalog.documents)) {
-      checkStageBindings(config, document, providers, known, unmapped, problems);
+      checkStageBindings(config, document, providers, known, unmapped, invalidEffort, problems);
     }
   }
   const items = Object.keys(catalog.documents).filter((workflowId) => !workflowFailed(workflowId, problems));
@@ -224,13 +250,17 @@ function checkStageBindings(
   providers: Readonly<Record<string, ProviderInfo>>,
   known: ReadonlySet<string>,
   unmapped: ReadonlySet<string>,
+  invalidEffort: ReadonlySet<string>,
   problems: string[],
 ): void {
   for (const stage of Object.values(document.stages)) {
     if (!isRoleStage(stage)) continue;
+    const role = isRecord(config.roles) ? config.roles[stage.role] : undefined;
+    const alias = stage.modelName ?? (isRecord(role) ? role.default_model : undefined);
+    if (typeof alias === "string" && invalidEffort.has(alias)) continue;
     let target;
     try {
-      target = resolveStageSpec(config, stage);
+      target = resolveStageSpec(config, stage, undefined, createProviderResolver(providers));
     } catch (error) {
       if (!(error instanceof ConfigurationError)) throw error;
       if (known.has(error.message)) continue;

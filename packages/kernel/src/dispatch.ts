@@ -1,3 +1,4 @@
+import { createProviderResolver, type ProviderResolver } from "./provider-contract.js";
 import path from "node:path";
 import { AgentToolRunner, type RunResult } from "./agent-runner.js";
 import { resolveStageTarget, type StageTarget } from "./config.js";
@@ -73,15 +74,17 @@ export async function dispatchNamedStage(
   resolved?: { workflow: WorkflowDocument; target: StageTarget } | null,
   onExecution?: (executionId: string) => void,
 ): Promise<StageDispatchResult> {
-  let loaded = resolved ?? loadDispatchTarget(workspace, request);
+  const activeRunner = runner ?? new AgentToolRunner();
+  const resolveProvider = createProviderResolver(activeRunner.providers);
+  let loaded = resolved ?? loadDispatchTarget(workspace, request, resolveProvider);
   let workflow = loaded.workflow;
   let target = loaded.target;
   let sessionId = request.sessionId ?? null;
   if (sessionId === null) {
     if (!request.task) throw new ConfigurationError("The first workflow stage requires --task.");
-    sessionId = createWorkflowSession(workspace, workflow.id, request.task, request.priorSessionId);
+    sessionId = createWorkflowSession(workspace, workflow.id, request.task, request.priorSessionId, resolveProvider);
     if (!resolved) {
-      loaded = loadDispatchTarget(workspace, { ...request, sessionId });
+      loaded = loadDispatchTarget(workspace, { ...request, sessionId }, resolveProvider);
       workflow = loaded.workflow;
       target = loaded.target;
     }
@@ -96,7 +99,7 @@ export async function dispatchNamedStage(
       revisionResumeExecution(workflow, snapshots, request.stageId) ??
       resolveResumeExecution(workspace, workflow, sessionId, request.stageId))
     : stageAgentExecution(snapshots, request.stageId);
-  const result = await (runner ?? new AgentToolRunner()).run({
+  const result = await activeRunner.run({
     provider: target.provider,
     model: target.model,
     client: target.client ?? null,
@@ -155,6 +158,7 @@ export function resolveResumeExecution(
 function loadDispatchTarget(
   workspace: string,
   request: StageDispatchRequest,
+  resolveProvider: ProviderResolver,
 ): { workflow: WorkflowDocument; target: StageTarget } {
   const sessionId = request.sessionId ?? null;
   const override = { provider: request.provider, model: request.model, options: request.options };
@@ -167,7 +171,7 @@ function loadDispatchTarget(
   const workflow = loadNamedWorkflow(workspace, request.workflowId);
   return {
     workflow,
-    target: resolveStageTarget(workspace, workflow.id, request.stageId, override),
+    target: resolveStageTarget(workspace, workflow.id, request.stageId, override, resolveProvider),
   };
 }
 

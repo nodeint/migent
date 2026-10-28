@@ -39,6 +39,8 @@ export interface CliRunOutput {
 export interface CliClient {
   readonly id: string;
   readonly command: string;
+  /** Native option used for the model-level effort alias; absent when unsupported. */
+  readonly effortOption?: string;
 
   options(): readonly ProviderOption[];
   validateOptions(options: Readonly<Record<string, string>>): void;

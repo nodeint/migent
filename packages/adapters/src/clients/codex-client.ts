@@ -58,6 +58,7 @@ function itemSummary(item: unknown, itemType: unknown, action: string): string {
 export const CODEX_REASONING_OPTION = "model_reasoning_effort";
 
 export class CodexClient implements CliClient {
+  readonly effortOption = "model_reasoning_effort";
   readonly id = "codex";
   readonly command = "codex";
 
@@ -155,7 +156,9 @@ export class CodexClient implements CliClient {
       const slug = item.slug;
       if (typeof slug === "string" && slug && !ids.includes(slug)) {
         ids.push(slug);
-        optionValues.push([slug, CODEX_REASONING_OPTION, reasoningLevels(item.supported_reasoning_levels)]);
+        if (Array.isArray(item.supported_reasoning_levels)) {
+          optionValues.push([slug, CODEX_REASONING_OPTION, reasoningLevels(item.supported_reasoning_levels)]);
+        }
       }
     }
     if (ids.length === 0) throw new Error("codex model catalog is empty.");

@@ -155,6 +155,8 @@ No command edits config. Edit the YAML, then validate:
 1. Print the effective config: `migent config` (or `migent config --json`).
 2. To change the provider and model an alias uses on this machine, edit
    `models.<alias>` in `.migent/config.local.yaml`.
+   Set `models.<alias>.effort` (for example `high`) to adjust thinking level.
+   See `references/config.md` for supported usage.
 3. To change which alias a role uses, or the roles themselves, edit
    `.migent/config.yaml`.
 4. Run `migent doctor --json` and fix what it reports. A shared alias with no

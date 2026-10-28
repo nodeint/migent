@@ -155,12 +155,15 @@ export async function acceptedOptions(
   return stored;
 }
 
-export function runProviderCommand(argv: string[], input?: string): string {
+export function runProviderCommand(
+  argv: string[], input?: string, options: { cwd?: string; timeoutMs?: number } = {},
+): string {
   const [command, ...args] = argv;
   if (command === undefined) throw new ProviderCommandFailed("Provider command is empty.");
   const completed = spawnProviderSync(command, args, {
     encoding: "utf8",
-    timeout: 60_000,
+    timeout: options.timeoutMs ?? 60_000,
+    ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
     windowsHide: true,
     ...(input === undefined ? {} : { input }),
   });

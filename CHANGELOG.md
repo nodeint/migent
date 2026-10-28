@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Added
+
+- `doctor` checks model `effort` against the selected client/model catalog, reports invalid values with the valid choices, and warns when the choices cannot be verified.
+
+- Model configuration accepts `effort` as an alias for the selected CLI client's thinking-level option. OpenCode V2 renders effort as a `#variant` model suffix. Existing native options and role/stage overrides continue to work; conflicting model declarations and unsupported clients report configuration errors.
+
 ## 0.1.11
 
 ### Added

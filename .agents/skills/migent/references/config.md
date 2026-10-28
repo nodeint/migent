@@ -101,3 +101,25 @@ alias options.
 `roles.<name>.instructions` is an optional list of strings. A stage prompt
 includes it before that stage's instructions. A role run prepends it to the
 prompt.
+
+
+## Model effort
+
+Set `models.<alias>.effort` in `config.yaml` or `config.local.yaml` to adjust
+thinking level:
+
+```yaml
+models:
+  code_generation:
+    provider: codex
+    model: gpt-5
+    effort: high
+```
+
+Use a non-empty string supported by the selected client/model, such as `low`,
+`medium`, or `high`. Omit it to keep the client default. This field is model-only.
+
+Do not also set the equivalent model `options` setting, even across shared and
+local config. With OpenCode V2, use either `effort` or a model ID with `#variant`.
+Validate changes with `migent doctor --json`; invalid effort reports valid values.
+If supported values cannot be verified, doctor reports a warning.

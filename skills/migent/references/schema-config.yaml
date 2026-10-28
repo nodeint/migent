@@ -10,12 +10,16 @@ schema_version: 2
 # that drives this model. Omit it to use the provider's own client.
 # roles.<name>.default_model and a stage model are this name. Name it for the work (code_generation,
 # deep_reasoning, critical_review, fast, general, long_context), not for a provider or a role.
+# models.<name>.effort sets thinking level (for example high); use a supported non-empty string.
+# Model-only. Do not also set the equivalent model option, including in local config.
+# With OpenCode V2, use either effort or a model#variant suffix.
 # Options merge in order: model, then role, then stage.
 # Only keys the provider marks overridable are stored on the provider session.
 models:
   deep_reasoning:
     provider: grok
     model: grok-4.7
+    effort: high
     # grok accepts reasoning-effort (overridable), max_turns, tools, disallowed_tools,
     # permission_mode (default, acceptEdits, auto, dontAsk, bypassPermissions, plan),
     # rules, allow, deny, and sandbox.
@@ -26,9 +30,7 @@ models:
     # disallowed_tools, max_budget_usd, fallback_model, and append_system_prompt.
     # codex accepts model_reasoning_effort (overridable). Any other key of letters, digits,
     # dots, underscores, and hyphens is passed through as codex exec -c.
-    # opencode accepts agent and thinking (true sends --thinking, false sends nothing). Neither is overridable.
-    options:
-      reasoning-effort: high
+    # opencode accepts agent, thinking (true shows thinking blocks), and variant (overridable; model#variant).
 
   code_generation:
     provider: byteplus

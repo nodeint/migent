@@ -1,19 +1,24 @@
+import { checkModelEfforts } from "../effort-check.js";
 import { homedir } from "node:os";
 import { diagnose, whichSync, type Check } from "@nodeint/migent-kernel";
 import { printDoctor } from "../display.js";
 import { cliHooks } from "../hooks.js";
 import { requireCurrentSchema } from "../migrate.js";
-import { providerMap, type Which } from "../provider.js";
+import { providerMap, runProviderCommand, type RunCommand, type Which } from "../provider.js";
 import { skillCheck } from "../skill-check.js";
 
 export async function runDoctor(
   workspace: string,
-  options: { asJson?: boolean; which?: Which | null; home?: string } = {},
+  options: { asJson?: boolean; which?: Which | null; home?: string; runCommand?: RunCommand } = {},
 ): Promise<number> {
   requireCurrentSchema(workspace);
   const which = options.which ?? cliHooks.which ?? whichSync;
+  const providers = providerMap();
+  const runCommand = options.runCommand ?? cliHooks.runCommand ??
+    ((argv, input) => runProviderCommand(argv, input, { cwd: workspace, timeoutMs: 10_000 }));
+  const modelEffortChecks = await checkModelEfforts(workspace, providers, which, runCommand);
   const checks = [
-    ...diagnose(workspace, { providers: providerMap(), which }),
+    ...diagnose(workspace, { providers, which, modelEffortChecks }),
     skillCheck(workspace, options.home ?? homedir()),
   ];
   if (options.asJson) process.stdout.write(`${JSON.stringify(payload(checks))}\n`);

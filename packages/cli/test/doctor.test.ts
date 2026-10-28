@@ -1,3 +1,4 @@
+import { loadYamlMapping } from "@nodeint/migent-kernel";
 import { cpSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -210,5 +211,32 @@ test("doctor warns about a missing or outdated Migent skill without failing", as
   } finally {
     rmSync(workspace, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });
+  }
+});
+
+
+test("doctor and session prepare resolve model effort through adapter clients", async () => {
+  const workspace = mkdtempSync(path.join(tmpdir(), "migent-effort-cli-"));
+  try {
+    writeProject(workspace);
+    const configPath = path.join(workspace, ".migent", "config.yaml");
+    writeFileSync(configPath, readFileSync(configPath, "utf8")
+      .replace("    model: gpt-5", "    model: gpt-5\n    effort: high")
+      .replace("    model: grok-4", "    model: grok-4\n    effort: medium"));
+    cliHooks.which = whichBoth;
+    cliHooks.runCommand = () => "";
+    const checked = await capture(() => main(["doctor", "--json"], workspace));
+    expect(checked.value).toBe(0);
+    const prepared = await capture(() => main(["session", "prepare", "effort test", "--workflow", "plan"], workspace));
+    expect(prepared.value).toBe(0);
+    const { session_id } = JSON.parse(prepared.stdout) as { session_id: string };
+    const frozen = loadYamlMapping(path.join(workspace, ".migent", "sessions", session_id, "workflow.frozen.yaml"));
+    const targets = Object.values(frozen.targets as Record<string, { provider: string; options: Record<string, string> }>);
+    expect(targets).toEqual(expect.arrayContaining([
+      expect.objectContaining({ provider: "codex", options: { model_reasoning_effort: "high" } }),
+      expect.objectContaining({ provider: "grok", options: { "reasoning-effort": "medium" } }),
+    ]));
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
   }
 });

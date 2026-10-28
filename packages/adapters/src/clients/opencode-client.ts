@@ -12,7 +12,11 @@ import type {
 import { ModelCatalog } from "../catalog.js";
 import { compact, finite, isRecord, parseJsonObject } from "./json.js";
 
-const OPENCODE_OPTIONS: readonly ProviderOption[] = [{ name: "agent" }, { name: "thinking" }];
+const OPENCODE_OPTIONS: readonly ProviderOption[] = [
+  { name: "agent" },
+  { name: "thinking" },
+  { name: "variant", overridable: true },
+];
 
 function trimToStatusHeader(text: string): string {
   const header = /(?:^|\n)[ \t]*status:[ \t]*(?:complete|blocked)\b/im.exec(text);
@@ -87,6 +91,7 @@ export function lookup(source: unknown, path: readonly string[]): unknown {
 }
 
 export class OpencodeClient implements CliClient {
+  readonly effortOption = "variant";
   readonly id = "opencode";
   readonly command = "opencode";
 
@@ -99,6 +104,9 @@ export class OpencodeClient implements CliClient {
     for (const [key, value] of Object.entries(options)) {
       if (!known.has(key)) throw new Error(`${key} is not an opencode option.`);
       if (value.trim() === "") throw new Error(`${key} is empty.`);
+      if (key === "variant" && /[\s#]/u.test(value)) {
+        throw new Error("variant must be a single variant name without whitespace or #.");
+      }
       if (key === "thinking" && value !== "true" && value !== "false") {
         throw new Error("thinking must be true or false.");
       }
@@ -107,7 +115,12 @@ export class OpencodeClient implements CliClient {
 
   runCommand(input: BuildCommandInput): CommandSpec {
     // The workspace is the process cwd, so input.workspace is not passed.
-    const argv = [this.command, "run", "--format", "json", "--auto", "-m", input.model];
+    const variant = input.options.variant;
+    if (variant !== undefined && input.model.includes("#")) {
+      throw new Error("Model already selects a #variant; use either the model suffix or effort/options.variant, not both.");
+    }
+    const model = variant === undefined ? input.model : `${input.model}#${variant}`;
+    const argv = [this.command, "run", "--format", "json", "--auto", "-m", model];
     const agent = input.options.agent;
     if (agent !== undefined) argv.push("--agent", agent);
     if (input.options.thinking === "true") argv.push("--thinking");
@@ -245,14 +258,23 @@ export class OpencodeClient implements CliClient {
   }
 
   optionValuesCommand(option: string, model: string): CommandSpec | null {
-    void option;
     void model;
-    return null;
+    return option === "variant" ? { argv: [this.command, "api", "model.list"] } : null;
   }
 
   parseOptionValues(option: string, stdout: string, model: string): readonly string[] {
-    void stdout;
-    void model;
-    throw new Error(`opencode does not list values for ${option}.`);
+    if (option !== "variant") throw new Error(`opencode does not list values for ${option}.`);
+    const payload = parseJsonObject(stdout);
+    if (!Array.isArray(payload?.data)) throw new Error("opencode did not report its model variants.");
+    const entry = payload.data.find((item) => isRecord(item) && `${item.providerID}/${item.id}` === model);
+    if (!isRecord(entry) || !Array.isArray(entry.variants)) {
+      throw new Error(`opencode does not list variants for ${model}.`);
+    }
+    return [...new Set(entry.variants.map((item) => {
+      if (!isRecord(item) || typeof item.id !== "string" || item.id.trim() === "") {
+        throw new Error(`opencode returned an invalid variant for ${model}.`);
+      }
+      return item.id;
+    }))];
   }
 }

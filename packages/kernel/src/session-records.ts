@@ -1,3 +1,4 @@
+import type { ProviderResolver } from "./provider-contract.js";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
@@ -105,6 +106,7 @@ export function createWorkflowSession(
   workflowId: string,
   task: string,
   priorSessionId?: string | null,
+  resolveProvider?: ProviderResolver,
 ): string {
   const workflow = loadNamedWorkflow(workspace, workflowId);
   const resolvedId = workflow.id;
@@ -129,7 +131,7 @@ export function createWorkflowSession(
   withSessionLock(sessionDirectory, () => {
     writeFileAtomic(path.join(sessionDirectory, "manifest.yaml"), `${manifestLines.join("\n")}\n`);
     writeTaskFile(taskFilePath(workspace, sessionId), taskSummary);
-    const frozen = writeWorkflowFreeze(sessionDirectory, workspace, workflow);
+    const frozen = writeWorkflowFreeze(sessionDirectory, workspace, workflow, resolveProvider);
     appendSessionCreated(sessionDirectory, createdAt, {
       workflow_id: resolvedId,
       workflow_path: workflowRelativePath,
@@ -148,6 +150,7 @@ export function createPreparedSession(
   title: string,
   workflowId: string,
   priorSessionId?: string | null,
+  resolveProvider?: ProviderResolver,
 ): string {
   const sessionTitle = title.trim();
   assertSessionTitle(sessionTitle);
@@ -169,7 +172,7 @@ export function createPreparedSession(
   manifestLines.push("schema_version: 2");
   withSessionLock(sessionDirectory, () => {
     writeFileAtomic(path.join(sessionDirectory, "manifest.yaml"), `${manifestLines.join("\n")}\n`);
-    const frozen = writeWorkflowFreeze(sessionDirectory, workspace, workflow);
+    const frozen = writeWorkflowFreeze(sessionDirectory, workspace, workflow, resolveProvider);
     appendSessionCreated(sessionDirectory, createdAt, {
       workflow_id: resolvedId,
       workflow_path: workflowRelativePath,

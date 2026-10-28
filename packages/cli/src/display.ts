@@ -53,8 +53,8 @@ export function printDoctor(checks: readonly Check[]): void {
       const line = `  ${item}`;
       process.stdout.write(`${tty ? pc.dim(line) : line}\n`);
     }
-    for (const problem of check.problems) process.stdout.write(`  ${problem}\n`);
-    for (const warning of check.warnings) process.stdout.write(`  warning: ${warning}\n`);
+    for (const problem of check.problems) process.stdout.write(`  ${problem.replaceAll("\n", "\n  ")}\n`);
+    for (const warning of check.warnings) process.stdout.write(`  warning: ${warning.replaceAll("\n", "\n  ")}\n`);
   }
 }
 

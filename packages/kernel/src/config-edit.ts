@@ -1,3 +1,4 @@
+import type { ProviderResolver } from "./provider-contract.js";
 import { loadModelTarget, loadRoleInstructions, resolveStageSpec } from "./config.js";
 import { ConfigurationError } from "./errors.js";
 import { isRecord } from "./record.js";
@@ -80,12 +81,13 @@ type Binding = [unknown, [string, string][]];
 export function inspectConfig(
   config: Record<string, unknown>,
   workflows: readonly WorkflowDocument[] = [],
+  resolveProvider?: ProviderResolver,
 ): ConfigView {
   const models = modelsOf(config);
   const roles = rolesOf(config);
   const modelViews: ModelView[] = [];
   for (const key of Object.keys(models)) {
-    const target = loadModelTarget(config, key);
+    const target = loadModelTarget(config, key, resolveProvider);
     const usedBy = Object.keys(roles).filter((name) => {
       const role = roles[name];
       return isRecord(role) && role.default_model === key;
@@ -103,7 +105,7 @@ export function inspectConfig(
   for (const [name, role] of Object.entries(roles)) {
     if (!isRecord(role)) throw new ConfigurationError(`Missing or invalid roles.${name}.`);
     const modelName = stringValue(role.default_model, `roles.${name}.default_model`);
-    const target = loadModelTarget(config, modelName);
+    const target = loadModelTarget(config, modelName, resolveProvider);
     const shared = Object.keys(roles).filter((other) => {
       if (other === name) return false;
       const otherRole = roles[other];
@@ -131,6 +133,7 @@ export function upsertModel(
     model?: string | null;
     options?: Record<string, string | null>;
     workflows?: readonly WorkflowDocument[];
+    resolveProvider?: ProviderResolver;
   } = {},
 ): ConfigChange {
   const provider = args.provider === undefined ? null : args.provider;
@@ -160,14 +163,14 @@ export function upsertModel(
     body.model = plain(model, "--model");
   }
   if (options !== UNSET) applyModelOptions(body, key, options);
-  return describeChange(config, updated, args.workflows ?? []);
+  return describeChange(config, updated, args.workflows ?? [], { resolveProvider: args.resolveProvider });
 }
 
 export function assignRoles(
   config: Record<string, unknown>,
   roles: readonly string[],
   modelName: string,
-  args: { workflows?: readonly WorkflowDocument[] } = {},
+  args: { workflows?: readonly WorkflowDocument[]; resolveProvider?: ProviderResolver } = {},
 ): ConfigChange {
   const names = roleNames(roles);
   const updated = copyConfig(config);
@@ -184,14 +187,14 @@ export function assignRoles(
     if (!isRecord(role)) throw new ConfigurationError(`Missing or invalid roles.${name}.`);
     role.default_model = modelName;
   }
-  return describeChange(config, updated, args.workflows ?? []);
+  return describeChange(config, updated, args.workflows ?? [], { resolveProvider: args.resolveProvider });
 }
 
 export function setRoleOptions(
   config: Record<string, unknown>,
   role: string,
   options: Record<string, string | null>,
-  args: { workflows?: readonly WorkflowDocument[] } = {},
+  args: { workflows?: readonly WorkflowDocument[]; resolveProvider?: ProviderResolver } = {},
 ): ConfigChange {
   requireName(role, "role");
   const updated = copyConfig(config);
@@ -201,7 +204,7 @@ export function setRoleOptions(
     throw new ConfigEditError(`Unknown role: ${role}.`);
   }
   applyRoleOptions(body, role, options);
-  return describeChange(config, updated, args.workflows ?? []);
+  return describeChange(config, updated, args.workflows ?? [], { resolveProvider: args.resolveProvider });
 }
 
 export function placeRoleModel(
@@ -212,6 +215,7 @@ export function placeRoleModel(
     model: string;
     options?: Record<string, string | null>;
     workflows?: readonly WorkflowDocument[];
+    resolveProvider?: ProviderResolver;
   },
 ): ConfigChange {
   requireName(role, "role");
@@ -221,7 +225,7 @@ export function placeRoleModel(
   const workflows = args.workflows ?? [];
   const updated = copyConfig(config);
   const models = modelsOf(updated);
-  let match = matchingModelName(updated, { provider: providerName, model: modelId, options: {} });
+  let match = matchingModelName(updated, { provider: providerName, model: modelId, options: {} }, args.resolveProvider);
   let created: string | null = null;
   let reused: string | null = null;
   if (match === null) {
@@ -244,7 +248,7 @@ export function placeRoleModel(
     if (!isRecord(roleBody)) throw new ConfigurationError(`Missing or invalid roles.${role}.`);
     applyRoleOptions(roleBody, role, options);
   }
-  const change = describeChange(config, updated, workflows, { reusedModel: reused });
+  const change = describeChange(config, updated, workflows, { reusedModel: reused, resolveProvider: args.resolveProvider });
   if (created !== null) return { ...change, createdModel: created, reusedModel: null };
   return change;
 }
@@ -252,6 +256,7 @@ export function placeRoleModel(
 export function matchingModelName(
   config: Record<string, unknown>,
   args: { provider: string; model: string; options: Record<string, string> },
+  resolveProvider?: ProviderResolver,
 ): string | null {
   const models = config.models;
   if (!isRecord(models)) throw new ConfigurationError("Missing or invalid models.");
@@ -259,7 +264,7 @@ export function matchingModelName(
   for (const key of Object.keys(models)) {
     let target;
     try {
-      target = loadModelTarget(config, key);
+      target = loadModelTarget(config, key, resolveProvider);
     } catch (error) {
       if (error instanceof ConfigurationError) continue;
       throw error;
@@ -279,7 +284,7 @@ export function describeChange(
   before: Record<string, unknown>,
   after: Record<string, unknown>,
   workflows: readonly WorkflowDocument[] = [],
-  args: { reusedModel?: string | null } = {},
+  args: { reusedModel?: string | null; resolveProvider?: ProviderResolver } = {},
 ): ConfigChange {
   const afterCopy = deepCopyRecord(after);
   const beforeRoles = mappingOrEmpty(before.roles);
@@ -289,7 +294,7 @@ export function describeChange(
   const changedRoles = orderedKeys(afterRoles, beforeRoles).filter(
     (name) =>
       !bindingsEqual(binding(beforeRoles[name]), binding(afterRoles[name])) ||
-      !resolvedEqual(resolvedRole(before, name), resolvedRole(afterCopy, name)),
+      !resolvedEqual(resolvedRole(before, name, args.resolveProvider), resolvedRole(afterCopy, name, args.resolveProvider)),
   );
   const created = Object.keys(afterModels).filter((key) => !Object.hasOwn(beforeModels, key));
   const updated = Object.keys(afterModels).filter(
@@ -306,8 +311,8 @@ export function describeChange(
   for (const document of workflows) {
     for (const stage of Object.values(document.stages)) {
       if (!isRoleStage(stage)) continue;
-      const beforeTarget = resolvedStage(before, stage);
-      const afterTarget = resolvedStage(afterCopy, stage);
+      const beforeTarget = resolvedStage(before, stage, args.resolveProvider);
+      const afterTarget = resolvedStage(afterCopy, stage, args.resolveProvider);
       if (!resolvedEqual(beforeTarget, afterTarget)) {
         stagesUpdated.push([document.id, stage.id]);
         continue;
@@ -815,7 +820,7 @@ function references(config: Record<string, unknown>, workflows: readonly Workflo
   return found;
 }
 
-function resolvedRole(config: Record<string, unknown>, role: string): ResolvedTarget | null {
+function resolvedRole(config: Record<string, unknown>, role: string, resolveProvider?: ProviderResolver): ResolvedTarget | null {
   const roles = config.roles;
   if (!isRecord(roles) || !Object.hasOwn(roles, role)) return null;
   try {
@@ -824,7 +829,7 @@ function resolvedRole(config: Record<string, unknown>, role: string): ResolvedTa
       isRecord(body) ? body.default_model : undefined,
       `roles.${role}.default_model`,
     );
-    const target = loadModelTarget(config, modelName);
+    const target = loadModelTarget(config, modelName, resolveProvider);
     const merged = { ...target.options };
     if (isRecord(body)) Object.assign(merged, roleOptionMap(body));
     return [target.provider, target.model, sortedItems(merged)];
@@ -834,9 +839,9 @@ function resolvedRole(config: Record<string, unknown>, role: string): ResolvedTa
   }
 }
 
-function resolvedStage(config: Record<string, unknown>, stage: RoleStageSpec): ResolvedTarget | null {
+function resolvedStage(config: Record<string, unknown>, stage: RoleStageSpec, resolveProvider?: ProviderResolver): ResolvedTarget | null {
   try {
-    const target = resolveStageSpec(config, stage);
+    const target = resolveStageSpec(config, stage, undefined, resolveProvider);
     return [target.provider, target.model, sortedItems(target.options)];
   } catch (error) {
     if (error instanceof ConfigurationError) return null;

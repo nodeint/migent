@@ -1,3 +1,4 @@
+import type { ProviderResolver } from "./provider-contract.js";
 import { readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { stringify } from "yaml";
@@ -110,6 +111,7 @@ export function resolveStageTarget(
   workflowId: string,
   stageId: string,
   override?: ModelOverride,
+  resolveProvider?: ProviderResolver,
 ): StageTarget {
   const { provider, model, options } = normalizeOverride(override);
   if ((provider === null) !== (model === null)) {
@@ -125,13 +127,14 @@ export function resolveStageTarget(
   if (stage === undefined) throw new ConfigurationError(`Stage not found: ${stageId}`);
   if (!isRoleStage(stage)) throw new ConfigurationError(`Stage ${stageId} has no role.`);
   const config = loadWorkspaceConfig(workspace);
-  return resolveStageSpec(config, stage, options);
+  return resolveStageSpec(config, stage, options, resolveProvider);
 }
 
 export function resolveStageSpec(
   config: Record<string, unknown>,
   stage: RoleStageSpec,
   options?: Record<string, string> | null,
+  resolveProvider?: ProviderResolver,
 ): StageTarget {
   const modelField =
     stage.modelName !== null
@@ -141,7 +144,7 @@ export function resolveStageSpec(
     modelName: stage.modelName,
     modelField,
     options: stage.options,
-  });
+  }, resolveProvider);
   return stageTarget(declared.provider, declared.model, mergeOptions(declared.options, options), declared.client);
 }
 
@@ -149,6 +152,7 @@ export function resolveRoleTarget(
   workspace: string,
   role: string,
   override?: ModelOverride,
+  resolveProvider?: ProviderResolver,
 ): StageTarget {
   const { provider, model, options } = normalizeOverride(override);
   if ((provider === null) !== (model === null)) {
@@ -162,18 +166,40 @@ export function resolveRoleTarget(
     mapping(roles[role], `roles.${role}`);
     return stageTarget(provider, model, { ...(options ?? {}) });
   }
-  return resolveRoleCascade(config, role, { options });
+  return resolveRoleCascade(config, role, { options }, resolveProvider);
 }
 
-export function loadModelTarget(config: Record<string, unknown>, modelName: string): StageTarget {
+export function loadModelTarget(
+  config: Record<string, unknown>,
+  modelName: string,
+  resolveProvider?: ProviderResolver,
+): StageTarget {
   const models = mapping(config.models, "models");
   const modelConfig = mapping(models[modelName], `models.${modelName}`);
-  return stageTarget(
-    requiredString(modelConfig.provider, `models.${modelName}.provider`),
-    requiredString(modelConfig.model, `models.${modelName}.model`),
-    readOptions(modelConfig.options, `models.${modelName}.options`),
-    optionalString(modelConfig.client, `models.${modelName}.client`),
-  );
+  const field = `models.${modelName}`;
+  const provider = requiredString(modelConfig.provider, `${field}.provider`);
+  const client = optionalString(modelConfig.client, `${field}.client`);
+  const options = readOptions(modelConfig.options, `${field}.options`);
+  if (Object.hasOwn(modelConfig, "effort")) {
+    const effort = requiredString(modelConfig.effort, `${field}.effort`);
+    if (resolveProvider === undefined) {
+      throw new ConfigurationError(`${field}.effort requires a provider resolver.`);
+    }
+    let option: string | undefined;
+    try {
+      option = resolveProvider(provider, client).effortOption;
+    } catch (error) {
+      throw new ConfigurationError(`${field}.effort: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    if (option === undefined) {
+      throw new ConfigurationError(`${field}.effort is not supported by the selected CLI client.`);
+    }
+    if (Object.hasOwn(options, option)) {
+      throw new ConfigurationError(`${field}.effort conflicts with ${field}.options.${option}; keep only one.`);
+    }
+    options[option] = effort;
+  }
+  return stageTarget(provider, requiredString(modelConfig.model, `${field}.model`), options, client);
 }
 
 function resolveRoleCascade(
@@ -184,13 +210,14 @@ function resolveRoleCascade(
     modelField?: string | null;
     options?: Record<string, string> | null;
   },
+  resolveProvider?: ProviderResolver,
 ): StageTarget {
   const roles = mapping(config.roles, "roles");
   const role = mapping(roles[roleKey], `roles.${roleKey}`);
   const modelField = args?.modelField ?? `roles.${roleKey}.default_model`;
   const named = args?.modelName ?? null;
   const resolvedName = requiredString(named === null || named === "" ? role.default_model : named, modelField);
-  const target = loadModelTarget(config, resolvedName);
+  const target = loadModelTarget(config, resolvedName, resolveProvider);
   const roleOptions = readOptions(role.options, `roles.${roleKey}.options`);
   return stageTarget(
     target.provider,
