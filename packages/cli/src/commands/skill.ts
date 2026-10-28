@@ -36,7 +36,8 @@ export interface SkillOptions {
 export function skillSourceDirectory(): string {
   const built = fileURLToPath(new URL("../templates/migent/", import.meta.url));
   const source = fileURLToPath(new URL("../../../../skills/migent/", import.meta.url));
-  return (isDirectory(built) ? built : source).replace(/[\/]$/, "");
+  // A trailing backslash would escape the closing quote when passed through cmd.exe.
+  return path.resolve(isDirectory(built) ? built : source);
 }
 
 export function printSkillPath(): number {

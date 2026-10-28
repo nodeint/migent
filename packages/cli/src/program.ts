@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { Command, type OptionValues } from "commander";
+import { Command, Option, type OptionValues } from "commander";
 import { ConfigurationError, DEFAULT_MAX_DISPATCHES, requireAgentSession } from "@nodeint/migent-kernel";
 import { continueAgent, dispatchAgent } from "./commands/agent.js";
 import { removedConfigCommand, runConfigShow } from "./commands/config.js";
@@ -52,10 +52,14 @@ export function createProgram(status: CliStatus): Command {
     .option("--reviewer-provider <provider>", "Reviewer provider. Pass with --reviewer-model.")
     .option("--reviewer-model <model>", "Reviewer model ID. Pass with --reviewer-provider.")
     .option("--reviewer-option <pair>", "Reviewer model option, KEY=VALUE.", collect, [])
-    .option("--skill", "Install the Migent skill for the selected clients with `npx skills`.")
+    .addOption(new Option("--skill").hideHelp())
     .option("--no-input", "Do not prompt. Same as MIGENT_NO_INPUT=1.");
   init.action((options: OptionValues) =>
     settle(status, () => {
+      if (options.skill === true) {
+        printError("init --skill has been removed. Run `migent init`, then `migent skill install --project`.");
+        return 2;
+      }
       const provider = optionalText(options.provider);
       const model = optionalText(options.model);
       const interactive = !inputDisabled(options) && Boolean(process.stdin.isTTY);
@@ -66,7 +70,6 @@ export function createProgram(status: CliStatus): Command {
         reviewerProvider: optionalText(options.reviewerProvider),
         reviewerModel: optionalText(options.reviewerModel),
         reviewerOptions: stringList(options.reviewerOption),
-        skill: options.skill === true,
         interactive,
       });
     }),
