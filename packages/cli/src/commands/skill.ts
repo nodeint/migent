@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { confirm as clackConfirm, isCancel, select as clackSelect } from "@clack/prompts";
-import { loadWorkspaceConfig, whichSync, type Provider } from "@nodeint/migent-kernel";
+import { configuredModels, loadWorkspaceConfig, whichSync, type Provider } from "@nodeint/migent-kernel";
 import { PromptCancelled } from "../errors.js";
 import { printError } from "../display.js";
 import { isDirectory, isFile } from "../fs-utils.js";
@@ -105,15 +105,14 @@ export async function updateSkill(options: SkillOptions = {}): Promise<number> {
 export function clientsFromConfig(workspace: string, providers: Record<string, Provider> = providerMap()): string[] {
   const configPath = path.join(workspace, ".migent", "config.yaml");
   if (!isFile(configPath)) return [];
-  let models: unknown;
+  let models: ReturnType<typeof configuredModels>;
   try {
-    models = loadWorkspaceConfig(workspace).models;
+    models = configuredModels(loadWorkspaceConfig(workspace));
   } catch {
     return [];
   }
-  if (typeof models !== "object" || models === null) return [];
   const found = new Set<string>();
-  for (const model of Object.values(models as Record<string, unknown>)) {
+  for (const { definition: model } of models) {
     if (typeof model !== "object" || model === null) continue;
     const { provider, client } = model as { provider?: unknown; client?: unknown };
     const id = typeof client === "string" ? client : typeof provider === "string" ? providerClient(providers[provider]) : null;

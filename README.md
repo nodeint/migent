@@ -31,6 +31,7 @@ where the process is.
     - [Manually](#manually)
     - [Run](#run)
     - [Join an existing project](#join-an-existing-project)
+    - [Project files](#project-files)
   - [Workflow as code](#workflow-as-code)
     - [Start with one role and one stage](#start-with-one-role-and-one-stage)
     - [Add planning and review](#add-planning-and-review)
@@ -116,8 +117,8 @@ same next command.
    Use the migent skill to set up Migent in this project.
    ```
 
-The agent handles setup. Ask it for a specific provider, model, or a
-plan-and-review workflow if you have a preference.
+The agent handles setup. Ask it for a specific provider or model for either
+role if you have a preference.
 
 ### Manually
 
@@ -125,14 +126,15 @@ plan-and-review workflow if you have a preference.
 migent init
 ```
 
-Choose a provider, model, and workflow: `implement` for coding, or `plan` for
-planning and review. `init` creates the configuration and workflow files under
-`.migent/`, checks the setup, and prints the command to run next.
+Choose a provider and model for each role: `developer` and `reviewer`. You can
+use the same model for both. Then choose whether to install the agent skill.
+`init` creates both workflows under `.migent/`: `implement` for coding and
+`plan` for planning and review. It checks the setup and prints the next command.
 
 ### Run
 
-For the `implement` workflow, run this from your project directory with your
-own task text. If you chose `plan`, use `--workflow plan` instead:
+Run this from your project directory with your own task text. To plan and
+review before coding, use `--workflow plan` instead:
 
 ```bash
 migent session run --workflow implement --task "Add a --json flag to the export command"
@@ -154,6 +156,23 @@ Install and sign in to the provider CLIs the project uses, then run
 `migent doctor` and follow its setup instructions. An agent with the Migent
 skill can do this for you. Use the project's existing workflows; do not run
 `init` again.
+
+### Project files
+
+After setup, your project contains:
+
+```text
+.migent/
+├── config.yaml        # developer and reviewer roles, with their models
+├── .gitignore         # keeps run history and local overrides out of Git
+└── workflows/
+    ├── implement.yaml # implement a task
+    └── plan.yaml      # write and review a plan
+```
+
+Commit these files to share the setup. Run history is saved in
+`.migent/sessions/` when you start a task. If you install the skill, it lives
+in your chosen AI client's skills directory.
 
 ## Workflow as code
 
@@ -213,7 +232,7 @@ or different providers:
 # .migent/config.yaml
 schema_version: 2
 roles:
-  planner:
+  developer:
     default_model:
       provider: codex
       model: gpt-5
@@ -223,7 +242,7 @@ roles:
       model: grok-4
 ```
 
-The planner produces `plan.md`. The reviewer receives it through `depends_on`
+The developer produces `plan.md`. The reviewer receives it through `depends_on`
 and decides whether to approve it or send it back for revision:
 
 ```yaml
@@ -231,7 +250,7 @@ and decides whether to approve it or send it back for revision:
 schema_version: 2
 stages:
   - id: plan
-    role: planner
+    role: developer
     max_revisions: 3
     instructions:
       - Read task.md and write plan.md into artifacts.

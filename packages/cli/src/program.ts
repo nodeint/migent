@@ -45,24 +45,27 @@ export function createProgram(status: CliStatus): Command {
 
   const init = program
     .command("init")
-    .description("Create shared config, this machine's model mapping, one workflow, and a gitignore.")
-    .option("--provider <provider>", "Provider for this machine's model mapping. Pass with --model.")
-    .option("--model <model>", "Model id for this machine's model mapping. Pass with --provider.")
-    .option("--option <pair>", "KEY=VALUE stored under models.*.options in config.local.yaml.", collect, [])
-    .option("--preset <preset>", "Workflow to create: implement or plan. Default: implement.", "implement")
-    .option("--skill", "Install the Migent skill for the chosen client with `npx skills`.")
+    .description("Set up developer and reviewer models with implement and plan workflows.")
+    .option("--provider <provider>", "Developer provider. Pass with --model.")
+    .option("--model <model>", "Developer model ID. Pass with --provider.")
+    .option("--option <pair>", "Developer model option, KEY=VALUE.", collect, [])
+    .option("--reviewer-provider <provider>", "Reviewer provider. Pass with --reviewer-model.")
+    .option("--reviewer-model <model>", "Reviewer model ID. Pass with --reviewer-provider.")
+    .option("--reviewer-option <pair>", "Reviewer model option, KEY=VALUE.", collect, [])
+    .option("--skill", "Install the Migent skill for the selected clients with `npx skills`.")
     .option("--no-input", "Do not prompt. Same as MIGENT_NO_INPUT=1.");
   init.action((options: OptionValues) =>
     settle(status, () => {
       const provider = optionalText(options.provider);
       const model = optionalText(options.model);
-      const interactive = !inputDisabled(options) && provider === null && Boolean(process.stdin.isTTY);
+      const interactive = !inputDisabled(options) && Boolean(process.stdin.isTTY);
       return runInit(invocationCwdPath(), {
         provider,
         model,
         options: stringList(options.option),
-        preset: typeof options.preset === "string" ? options.preset : "implement",
-        presetExplicit: init.getOptionValueSource("preset") === "cli",
+        reviewerProvider: optionalText(options.reviewerProvider),
+        reviewerModel: optionalText(options.reviewerModel),
+        reviewerOptions: stringList(options.reviewerOption),
         skill: options.skill === true,
         interactive,
       });

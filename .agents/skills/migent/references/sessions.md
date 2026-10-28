@@ -1,65 +1,53 @@
-# Sessions: uncommon run and resume cases
+# Additional session controls
 
-The everyday commands are in SKILL.md. This file covers the rest.
+For ordinary run, inspect, and continue commands, use [SKILL.md](../SKILL.md).
 
-## Prerequisite session (`--prior`)
+## Use a prerequisite
 
-If the workflow's `requires` block names a prerequisite workflow and decision,
-find the session:
+When the workflow requires an earlier workflow, find its completed session:
 
-```
+```bash
 migent session list --workflow <workflow-id> --status completed --json
 ```
 
-Then pass its id with `--prior <session-id>`. `session continue` accepts
-`--prior` too.
+Pass the chosen ID as `--prior <session-id>` to `session run` or
+`session continue`.
 
-## Several blocked stages
+## Answer one of several blocked stages
 
-When more than one stage is blocked, `session continue` needs the stage:
+Input: the session ID, blocked stage, and user's answer.
 
-```
+```bash
 migent session continue <session-id> --stage <stage> --reply "<reply>"
 ```
 
-The other stages stay blocked.
+Only the selected stage receives the reply; other stages remain blocked.
 
-## Cancelled session (exit 130)
+## Control execution limits
 
-Ask the user first. `session continue <session-id>` resumes that same
-execution. A cut-off verify runs again. A cancelled stage with no role
-reruns its verify list in place and does not open a provider. Role status
-and `--reply` are in the skill's Resume section.
+These flags apply to workflow `session run` and `session continue`:
 
-## Limits
-
-Accepted by workflow `session run` and by `session continue`.
-
-| Flag | Meaning |
+| Flag | Effect |
 | --- | --- |
-| `--max-dispatches <n>` | Stage dispatches allowed in this command (default 20). |
-| `--unlimited-dispatches` | Removes the dispatch ceiling. Use only if the user agrees. |
+| `--max-dispatches <n>` | Allow up to this many stage dispatches in this command; default 20. |
+| `--unlimited-dispatches` | Remove that ceiling; use only with the user's agreement. |
 
-A failed stage stays stopped until `session continue`. That command runs the
-stage and does not sleep until an old `retry_at`. Exit 3 is `stage_failed`.
-Exit 8 is `quota` for `--once` and `--stage`, which do not wait. Exit 130
-during a wait disarms the timer. A single role result uses 0, 1, and 130.
-Exit 6 remains only the path that reopened more than one role execution.
+`session continue <id>` starts another batch and resets revision counts.
+Add `--once` to advance one stage without resetting those counts.
+Review why a limit was reached before continuing; keep the same session.
 
-## `--once` and revision counts
+## Apply configuration changes to a session
 
-`session continue <id>` resets revision counts. `session continue <id> --once`
-advances one stage and does not.
+Existing sessions keep their original workflow, models, and role instructions.
+Edits alone do not update them. To adopt the current settings, validate with
+`migent doctor --json`, then run:
 
-## Config changed during a session
-
-A session keeps the workflow, models, and role instructions it started with.
-Later edits warn on stderr and do not change it. Run `migent doctor --json`
-and tell the user. To adopt the current versions:
-
-```
+```bash
 migent session continue <session-id> --refresh-workflow
+```
+
+For a prepared session that has not started:
+
+```bash
 migent session run --session <session-id> --workflow <workflow> --refresh-workflow
 ```
-
-The second form is for starting a prepared session.

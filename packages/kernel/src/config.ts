@@ -175,8 +175,30 @@ export function loadModelTarget(
   resolveProvider?: ProviderResolver,
 ): StageTarget {
   const models = mapping(config.models, "models");
-  const modelConfig = mapping(models[modelName], `models.${modelName}`);
-  const field = `models.${modelName}`;
+  return loadModelDefinition(models[modelName], `models.${modelName}`, resolveProvider);
+}
+
+/** Named models and inline role defaults, with their diagnostic field paths. */
+export function configuredModels(config: Record<string, unknown>): Array<{ key: string; field: string; definition: unknown }> {
+  const entries = isRecord(config.models)
+    ? Object.entries(config.models).map(([key, definition]) => ({ key, field: `models.${key}`, definition }))
+    : [];
+  if (isRecord(config.roles)) {
+    for (const [name, role] of Object.entries(config.roles)) {
+      if (!isRecord(role) || !isRecord(role.default_model)) continue;
+      const field = `roles.${name}.default_model`;
+      entries.push({ key: field, field, definition: role.default_model });
+    }
+  }
+  return entries;
+}
+
+export function loadModelDefinition(
+  value: unknown,
+  field: string,
+  resolveProvider?: ProviderResolver,
+): StageTarget {
+  const modelConfig = mapping(value, field);
   const provider = requiredString(modelConfig.provider, `${field}.provider`);
   const client = optionalString(modelConfig.client, `${field}.client`);
   const options = readOptions(modelConfig.options, `${field}.options`);
@@ -216,8 +238,10 @@ function resolveRoleCascade(
   const role = mapping(roles[roleKey], `roles.${roleKey}`);
   const modelField = args?.modelField ?? `roles.${roleKey}.default_model`;
   const named = args?.modelName ?? null;
-  const resolvedName = requiredString(named === null || named === "" ? role.default_model : named, modelField);
-  const target = loadModelTarget(config, resolvedName, resolveProvider);
+  const selected = named === null || named === "" ? role.default_model : named;
+  const target = isRecord(selected)
+    ? loadModelDefinition(selected, modelField, resolveProvider)
+    : loadModelTarget(config, requiredString(selected, modelField), resolveProvider);
   const roleOptions = readOptions(role.options, `roles.${roleKey}.options`);
   return stageTarget(
     target.provider,

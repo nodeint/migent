@@ -4,6 +4,8 @@
 
 ### Changed
 
+- `init` always creates both `implement` and `plan` workflows. Choose developer and reviewer models separately; generated roles use inline `default_model` objects without a `models` section or a local config file. The plan stage uses the developer role. For unattended setup, pass both `--provider`/`--model` and `--reviewer-provider`/`--reviewer-model`; `--preset` is removed. Existing projects and named-model configurations remain supported.
+- Role `default_model` accepts a model object with provider, model ID, client, options, and effort. Runs, diagnostics, and skill client selection support inline defaults as well as named models.
 - Contributor and release workflows use branches and pull requests. `pnpm setup:git` installs local hooks that prevent commits/direct pushes to main and mismatched branch pushes.
 
 ### Added

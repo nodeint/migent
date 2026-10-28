@@ -25,16 +25,18 @@ inspect and continue.
 
 ```bash
 migent provider list --json
-migent init --no-input --provider <provider> --model <model-id> [--preset implement|plan] [--skill]
+migent init --no-input --provider <developer-provider> --model <developer-model> --reviewer-provider <reviewer-provider> --reviewer-model <reviewer-model> [--skill]
 migent doctor --json
 ```
 
-Choose an available provider and model ID from `provider list`.
-Pass `--provider` and `--model` together; use `--no-input` for unattended setup.
-The default preset is `implement`; `--skill` installs this skill.
+Choose an available provider and model ID for each role from `provider list`;
+the same pair can be used for both. `--provider` and `--model` select the
+developer; `--reviewer-provider` and `--reviewer-model` select the reviewer.
+Use `--no-input` for unattended setup; `--skill` installs this skill.
 
-Output: configuration and a workflow under `.migent/`, setup diagnostics, and
-the next run command. `init` does not start an agent. For an existing project,
+Output: inline role models in `config.yaml`, both `implement` and `plan`
+workflows, setup diagnostics, and the next run command. `init` does not start
+an agent. For an existing project,
 follow [config.md](references/config.md) instead of running `init` again.
 Refresh an installed skill with `migent skill update` after upgrading Migent.
 

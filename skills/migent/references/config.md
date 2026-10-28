@@ -14,10 +14,22 @@ Use [schema-config.yaml](schema-config.yaml) for configuration fields.
 ## Set up this machine
 
 Keep shared roles and workflows in `.migent/config.yaml`. Put machine-specific
-model mappings in `.migent/config.local.yaml`; do not commit that file or
+overrides in `.migent/config.local.yaml`; do not commit that file or
 reinitialize an existing project.
 
-For a project using named models, use its existing names:
+New projects store model objects directly in each role. To change a role's
+provider, model, options, or effort, edit `roles.<role>.default_model`:
+
+```yaml
+# .migent/config.yaml (or config.local.yaml for a local override)
+roles:
+  developer:
+    default_model:
+      provider: codex
+      model: gpt-5
+```
+
+For a project using named models, keep its existing names:
 
 ```yaml
 # .migent/config.local.yaml
@@ -38,8 +50,8 @@ file. Delete an unwanted option from both files if it is set in both.
 
 - Change `models.<name>.provider`, `model`, or `options` to update every role
   or stage using that named model. Use the local file for machine-only changes.
-- Set `roles.<role>.default_model` to a configured model name to change the
-  role's default. New names need a model mapping.
+- Set `roles.<role>.default_model` to a model object, or a configured model
+  name when reusing a named model. New names need a model mapping.
 - Use `roles.<role>.instructions` for instructions shared by all work in that
   role, and `roles.<role>.options` for role-specific provider options.
 - Use `snake_case` for model, role, and stage names. Keep provider option keys
@@ -48,7 +60,8 @@ file. Delete an unwanted option from both files if it is set in both.
 
 ## Thinking effort
 
-Set `models.<name>.effort` to a value supported by the chosen client and model,
+Set `roles.<role>.default_model.effort` (or `models.<name>.effort` for a named
+model) to a value supported by the chosen client and model,
 such as `high`. Omit it to use the client default.
 
 Do not also set the equivalent model option, including in the local file.

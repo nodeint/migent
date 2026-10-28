@@ -1,38 +1,35 @@
-# A missing schema_version is 0. Commands refuse the file while it is older than this Migent.
+# Workflow configuration. Validate with migent doctor --json after editing.
 schema_version: 2
 concurrency: 1
 
-# When id is omitted, the id is the file name without .yaml.
+# Optional; defaults to the file name without .yaml.
 id: reference
 
 constraints:
   - Stay within the task.
 
-# requires.workflow names another file in .migent/workflows.
+# Optional prerequisite workflow from .migent/workflows/.
 requires:
   workflow: plan
 
 stages:
   - id: prepare
     description: Check the tree before the draft.
-    # No role: Migent runs verify and does not start an agent.
+    # Without a role, run only these checks.
     verify:
       - pnpm build
+    # Seconds for the whole verify list.
     verify_timeout: 1800
-    depends_on: []
 
   - id: draft
-    description: Write the draft.
     role: planner
-    # model is a name under models in config.yaml, not a provider model id.
-    model: planner
-    # Options merge in order: model, then role, then stage.
-    # Only keys the provider marks overridable are stored on the provider session.
+    # Optional model name from config.yaml; omit to use the role's default.
+    model: deep_reasoning
+    # Provider options override model and role options.
     options:
       reasoning-effort: high
-    depends_on:
-      - prepare
-    # max_revisions is allowed only when a route returns to this stage.
+    depends_on: [prepare]
+    # Only allowed when a route returns to this stage.
     max_revisions: 2
     instructions:
       - Write the draft.
@@ -41,44 +38,39 @@ stages:
 
   - id: review
     role: reviewer
-    depends_on:
-      - draft
-    # resume_from must be one entry in depends_on. It continues that stage's provider session.
+    depends_on: [draft]
+    # Optional: continue a provider conversation from a stage in depends_on.
     session:
       resume_from: draft
     instructions:
       - Review the draft.
-    # verify runs after status complete and must sit on every path to complete.
-    # A stage artifact cannot be named verify.md.
+    # Run after agent completion. Put checks on every route to completion.
     verify:
       - pnpm test
-    # max_verify defaults to 3. verify_timeout is seconds for the whole list. Both require verify.
+    # Require verify. max_verify defaults to 3; timeout is seconds for the list.
     max_verify: 3
     verify_timeout: 900
-    # Route keys must match decision.values. A destination is a stage id, complete, or a non-empty list of stage ids.
     decision:
-      values:
-        - approved
-        - revise
+      values: [approved, revise]
+      # Keys must match values. Destinations: a stage ID, complete, or a list of IDs.
       routes:
         approved: complete
         revise: draft
 
   - id: check_docs
-    description: Review documentation changes.
     role: reviewer
-    depends_on:
-      - review
-    # run_when runs the stage only when a Git path changed since the session baseline matches one glob.
-    # Quote every glob. Paths are relative to the Git repository root. ** spans directories.
+    depends_on: [review]
+    # Optional: run only if matching Git paths changed since the session started.
+    # Quote globs; paths are relative to the Git root, and ** spans directories.
     run_when:
       changed_paths:
         - "docs/**/*"
         - "**/README.md"
     instructions:
-      - Review the documentation changes.
+      - Review documentation changes.
 
-# An output artifact must match produces.artifact on from_stage.
+# Publish a file matching the source stage's produces.artifact.
+# Stage artifacts cannot be named verify.md.
 outputs:
   - name: draft
     from_stage: draft

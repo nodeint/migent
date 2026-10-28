@@ -21,9 +21,11 @@ export { CodexProvider, GrokProvider, defaultProviders, createProviderResolver }
 export {
   LOCAL_CONFIG_FILE,
   configPath,
+  configuredModels,
   documentVersion,
   hasLocalConfig,
   loadModelTarget,
+  loadModelDefinition,
   loadRoleInstructions,
   loadWorkspaceConfig,
   loadYamlMapping,

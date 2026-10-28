@@ -19,8 +19,13 @@ models:
     model: coding-plan/deepseek-v4-pro
 
 roles:
+  developer:
+    # Inline model object; no named model entry is needed for this role.
+    default_model:
+      provider: codex
+      model: gpt-5
   planner:
-    # A name from models, not a provider model ID.
+    # Alternatively, use a name from models, not a provider model ID.
     default_model: deep_reasoning
     # Shared instructions for this role.
     instructions:

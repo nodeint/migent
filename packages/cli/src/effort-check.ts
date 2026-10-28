@@ -1,4 +1,4 @@
-import { createProviderResolver, loadWorkspaceConfig, type ModelEffortCheck, type Provider } from "@nodeint/migent-kernel";
+import { configuredModels, createProviderResolver, loadWorkspaceConfig, type ModelEffortCheck, type Provider } from "@nodeint/migent-kernel";
 import { loadCatalog, loadOptionValues, type RunCommand, type Which } from "./provider.js";
 
 /** Catalog lookup belongs at the CLI boundary; kernel diagnostics remain synchronous. */
@@ -10,7 +10,6 @@ export async function checkModelEfforts(
 ): Promise<Record<string, ModelEffortCheck>> {
   let config: Record<string, unknown>;
   try { config = loadWorkspaceConfig(workspace); } catch { return {}; }
-  if (!isRecord(config.models)) return {};
   const commands = new Map<string, Promise<string>>();
   const run: RunCommand = (argv, input) => {
     const key = JSON.stringify([argv, input]);
@@ -22,11 +21,11 @@ export async function checkModelEfforts(
     return pending;
   };
   const resolveProvider = createProviderResolver(providers);
-  const results = await Promise.all(Object.entries(config.models).map(async ([alias, model]) => {
+  const results = await Promise.all(configuredModels(config).map(async ({ key, field: modelField, definition: model }) => {
     if (!isRecord(model) || !Object.hasOwn(model, "effort")) return null;
     if (typeof model.provider !== "string" || !model.provider.trim() || typeof model.model !== "string" || !model.model.trim()) return null;
     if (model.client != null && (typeof model.client !== "string" || !model.client.trim())) return null;
-    const field = `models.${alias}.effort`;
+    const field = `${modelField}.effort`;
     const value = JSON.stringify(model.effort);
     const invalidType = typeof model.effort !== "string" || model.effort.trim() === "";
     let values: readonly string[] | null = null;
@@ -49,7 +48,7 @@ export async function checkModelEfforts(
       const valid = values === null ? "unavailable (could not verify)" : values.length === 0 ? "none (omit effort)" : values.join(", ");
       check.problem = `Invalid ${field}: ${value}\nValid values: ${valid}`;
     }
-    return [alias, check] as const;
+    return [key, check] as const;
   }));
   return Object.fromEntries(results.filter((entry) => entry !== null));
 }
