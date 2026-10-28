@@ -5,7 +5,6 @@ description: >
   against main, then report the CI result. Stops before merging. Use when the
   user says create PR, tạo PR, open a pull request, or push and open a PR. For
   a release, use migent-release instead.
-argument-hint: "[issue number]"
 metadata:
   short-description: "Open a pull request for the current branch"
 ---
@@ -21,11 +20,14 @@ repository root. Reply in the user's language.
 git fetch origin
 git branch --show-current
 git status --short
+git branch -vv
 git rev-list --count origin/main..HEAD
 ```
 
-- On `main`, create a branch first, named as `CONTRIBUTING.md` says. Never
-  commit on `main`.
+- On `main`, create a branch with `git switch --no-track -c <branch> origin/main`.
+  Never commit on `main`. Run `pnpm setup:git` once to install local safeguards.
+- A working branch must have no upstream or track `origin/<same-branch-name>`.
+  Remove a wrong upstream with `git branch --unset-upstream <branch>`.
 - Stop and ask when the changes look unrelated to each other, or when nothing
   differs from `origin/main`.
 
@@ -50,16 +52,18 @@ user already asked for the pull request: push `<branch>` and open a pull request
 against `main`.
 
 ```bash
-git push -u origin <branch>
-gh pr create --base main --title "<subject>" --body-file <notes>
+git push -u origin refs/heads/<branch>:refs/heads/<branch>
+gh pr create --draft --base main --head <branch> --title "<subject>" --body-file <notes>
 ```
 
 The title is the squash commit subject. The body says what changed and why, and
 what was not done. Add `Fixes #<n>` when the work closes an issue. End it with
-the attribution line the session gives. Never force-push.
+the attribution line the session gives, when provided. Never force-push or
+push to `main`; use the explicit same-name refspec above, never a bare push or
+push based on the upstream. Verify the upstream is `origin/<branch>` afterward.
+If work is already on main, report it; do not rewrite main to manufacture a PR.
 
 ## Report
 
 Show the pull request URL. Check the result once with `gh pr checks <number>`
-and say which checks pass, fail, or are pending. Do not merge. Merging is the
-user's call, or `migent-release` Stage 0 for a release.
+and say which checks pass, fail, or are pending. Do not merge. Merging requires the user's instruction.

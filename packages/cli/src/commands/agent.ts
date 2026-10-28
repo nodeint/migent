@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import {
   AgentToolRunner,
+  createProviderResolver,
   CancellationRequested,
   ConfigurationError,
   ProviderEventReporter,
@@ -47,12 +48,13 @@ export async function dispatchAgent(
   },
 ): Promise<number> {
   requireCurrentSchema(workspace);
+  const runner = args.runner ?? cliHooks.runner ?? new AgentToolRunner(providerMap());
   const parsed = parseOptions(args.options ?? []);
   const target = resolveRoleTarget(workspace, args.role, {
     provider: args.provider ?? null,
     model: args.model ?? null,
     options: Object.keys(parsed).length > 0 ? parsed : null,
-  });
+  }, createProviderResolver(runner.providers));
   const [resolvedSessionId, createdSession] = resolveSession(workspace, args.sessionId ?? null, args.role, args.task ?? null);
   if (createdSession) log(`session_id: ${resolvedSessionId}`);
   let lock: SessionLock;
@@ -99,7 +101,6 @@ export async function dispatchAgent(
     let result: Awaited<ReturnType<AgentToolRunner["run"]>> | undefined;
     let resumedMany: Array<Awaited<ReturnType<AgentToolRunner["run"]>>> | null = null;
     try {
-      const runner = args.runner ?? cliHooks.runner ?? new AgentToolRunner(providerMap());
       const waitedUntil = new Map<string, string>();
       const rerun = (prompt: string, resumeId: string) =>
         runner.run({

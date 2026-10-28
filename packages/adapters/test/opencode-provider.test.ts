@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { classifyProviderError } from "@nodeint/migent-kernel";
+import { classifyProviderError, createProviderResolver, loadModelTarget } from "@nodeint/migent-kernel";
 import { expect, test } from "vitest";
 import { OpencodeProvider, defaultProviders, providerCommands } from "../src/index.ts";
 
@@ -215,4 +215,52 @@ test("usage covers only the steps present and is null with none", () => {
 test("the provider is registered", () => {
   expect(providerCommands().opencode).toBe("opencode");
   expect(defaultProviders().opencode).toBeInstanceOf(OpencodeProvider);
+});
+
+
+test("model effort becomes an OpenCode V2 model variant on new and resumed runs", () => {
+  const provider = new OpencodeProvider();
+  const target = loadModelTarget({ models: { fast: {
+    provider: "opencode", model: "openai/test", effort: "high",
+    options: { agent: "build", thinking: "true" },
+  } } }, "fast", createProviderResolver({ opencode: provider }));
+  expect(target.options).toEqual({ variant: "high", agent: "build", thinking: "true" });
+  for (const agentId of [null, "ses_x"]) {
+    const command = provider.buildCommand(input({ model: target.model, options: target.options, agentId }));
+    expect(command.argv[command.argv.indexOf("-m") + 1]).toBe("openai/test#high");
+    expect(command.argv).toContain("--thinking");
+    expect(command.argv).not.toContain("--variant");
+  }
+  expect(provider.profileOptions(target.options)).toEqual({ variant: "high" });
+});
+
+test("native variants and existing model suffixes work independently", () => {
+  const provider = new OpencodeProvider();
+  expect(provider.buildCommand(input({ model: "openai/test#max" })).argv).toContain("openai/test#max");
+  expect(provider.buildCommand(input({ options: { variant: "custom-level" } })).argv)
+    .toContain("anthropic/claude-sonnet-4#custom-level");
+  expect(() => provider.buildCommand(input({ model: "openai/test#low", options: { variant: "high" } })))
+    .toThrow(/already selects a #variant/);
+});
+
+test.each(["", " ", "high#low", "high low", "high\nlow"])("rejects malformed variant %s", (variant) => {
+  expect(() => new OpencodeProvider().buildCommand(input({ options: { variant } }))).toThrow(/variant/);
+});
+
+
+test("lists OpenCode V2 variants for the exact provider and model", () => {
+  const provider = new OpencodeProvider();
+  expect(provider.optionValuesCommand("variant", "custom/test")).toEqual(["opencode", "api", "model.list"]);
+  const catalog = JSON.stringify({ data: [
+    { providerID: "other", id: "test", variants: [{ id: "wrong" }] },
+    { providerID: "custom", id: "test", variants: [{ id: "low" }, { id: "high" }, { id: "high" }] },
+    { providerID: "custom", id: "plain", variants: [] },
+  ] });
+  expect(provider.parseOptionValues("variant", catalog, "custom/test")).toEqual(["low", "high"]);
+  expect(provider.parseOptionValues("variant", catalog, "custom/plain")).toEqual([]);
+  expect(() => provider.parseOptionValues("variant", catalog, "custom/missing")).toThrow(/does not list variants/);
+  expect(() => provider.parseOptionValues("variant", "{}", "custom/test")).toThrow(/did not report/);
+  expect(() => provider.parseOptionValues("variant", JSON.stringify({ data: [
+    { providerID: "custom", id: "test", variants: [{}] },
+  ] }), "custom/test")).toThrow(/invalid variant/);
 });

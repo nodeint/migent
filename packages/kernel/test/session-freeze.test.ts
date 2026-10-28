@@ -1,3 +1,5 @@
+import { defaultProviders } from "@nodeint/migent-adapters";
+import { createProviderResolver } from "../src/provider-contract.ts";
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test, vi } from "vitest";
@@ -293,15 +295,20 @@ test("an agent session has no frozen workflow", async () => {
   );
 });
 
-test("freezes the targets of the merged config", () => {
+test("freezes the targets and native effort of the merged config", () => {
   const workspace = writeStageWorkspace();
+  const configPath = path.join(workspace, ".migent", "config.yaml");
+  writeFileSync(configPath, readFileSync(configPath, "utf8").replace(
+    "    options:\n      reasoning-effort: high", "    effort: low",
+  ));
   writeFileSync(
     path.join(workspace, ".migent", "config.local.yaml"),
-    "models:\n  grok:\n    model: grok-local\n",
+    "models:\n  grok:\n    model: grok-local\n    effort: medium\n",
     "utf8",
   );
   const sessionDirectory = tempDir("migent-freeze-");
-  writeWorkflowFreeze(sessionDirectory, workspace, loadNamedWorkflow(workspace, "plan-implement"));
+  writeWorkflowFreeze(sessionDirectory, workspace, loadNamedWorkflow(workspace, "plan-implement"), createProviderResolver(defaultProviders()));
   const frozen = readWorkflowFreeze(sessionDirectory);
   expect(frozen?.targets.implement?.model).toBe("grok-local");
+  expect(frozen?.targets.implement?.options).toEqual({ "reasoning-effort": "medium" });
 });

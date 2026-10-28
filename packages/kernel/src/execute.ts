@@ -1,3 +1,4 @@
+import { createProviderResolver, type ProviderResolver } from "./provider-contract.js";
 import { createHash } from "node:crypto";
 import { AgentToolRunner, type RunResult } from "./agent-runner.js";
 import { writeFileAtomic, writeJsonAtomic } from "./atomic-file.js";
@@ -159,6 +160,8 @@ async function executeLocked(
   held: { lock: SessionLock | null; sessionId: string | null },
   runner?: AgentToolRunner,
 ): Promise<ExecuteResult> {
+  const activeRunner = runner ?? new AgentToolRunner();
+  const resolveProvider = createProviderResolver(activeRunner.providers);
   const stageId = request.stageId ?? null;
   const once = request.once ?? false;
   const maxDispatches =
@@ -178,13 +181,13 @@ async function executeLocked(
     held.sessionId = sessionId;
     held.lock = SessionLock.acquire(path.join(workspace, ".migent", "sessions", sessionId));
     repairSessionUnlocked(workspace, sessionId);
-    if (request.refreshWorkflow) refreshSessionWorkflow(workspace, sessionId, request.startPrepared === true);
+    if (request.refreshWorkflow) refreshSessionWorkflow(workspace, sessionId, request.startPrepared === true, resolveProvider);
     const bound = bindExecuteRun(workspace, sessionId, request.workflowId, request.priorSessionId);
     workflowId = bound.workflowId;
     if (!request.refreshWorkflow) {
       const workflowPath = typeof bound.status.workflow_path === "string" ? bound.status.workflow_path : null;
       const storedWorkflow = typeof bound.status.workflow_id === "string" ? bound.status.workflow_id : null;
-      warnIfFrozenDrift(workspace, sessionId, workflowPath, storedWorkflow);
+      warnIfFrozenDrift(workspace, sessionId, workflowPath, storedWorkflow, resolveProvider);
     }
     let sessionStatus = typeof bound.status.status === "string" ? bound.status.status : "";
     if (replyText !== null && replyText.trim() === "") {
@@ -257,7 +260,7 @@ async function executeLocked(
     workflowId = workflow.id;
     resolvePriorSessionId(workspace, workflow, request.priorSessionId);
     if (stageId !== null) requireEligibleStage(workflow, [], "active", stageId);
-    sessionId = createWorkflowSession(workspace, workflowId, request.task, request.priorSessionId);
+    sessionId = createWorkflowSession(workspace, workflowId, request.task, request.priorSessionId, resolveProvider);
     held.sessionId = sessionId;
     held.lock = SessionLock.acquire(path.join(workspace, ".migent", "sessions", sessionId));
     log(`session_id: ${sessionId}`);
@@ -310,7 +313,6 @@ async function executeLocked(
   held.lock?.onCancelRequest(onSigint);
   const tasks = new Map<string, Promise<unknown>>();
   try {
-    const activeRunner = runner ?? new AgentToolRunner();
     const stageJsons: Array<Record<string, unknown>> = [];
     const seedWaits: QuotaWait[] = [];
     if (stageReply !== null) {
@@ -825,7 +827,7 @@ async function runVersion2Pool(
     const freeze = readWorkflowFreeze(sessionDirectory);
     const target = freeze
       ? frozenStageTarget(freeze, stageId)
-      : resolveStageTarget(workspace, workflowId, stageId);
+      : resolveStageTarget(workspace, workflowId, stageId, undefined, createProviderResolver(runner.providers));
     return target.provider;
   };
   const attachWait = (park: ParkedWait): void => {
@@ -1192,7 +1194,7 @@ async function dispatchExecuteStage(
   }
   const sessionDirectory = path.join(workspace, ".migent", "sessions", sessionId);
   const freeze = readWorkflowFreeze(sessionDirectory);
-  const target = freeze ? frozenStageTarget(freeze, stageId) : resolveStageTarget(workspace, workflowId, stageId);
+  const target = freeze ? frozenStageTarget(freeze, stageId) : resolveStageTarget(workspace, workflowId, stageId, undefined, createProviderResolver(runner.providers));
   const optionLabel =
     Object.entries(target.options)
       .map(([key, value]) => `${key}: ${value}`)
@@ -1348,7 +1350,7 @@ function bindExecuteRun(
   return { workflowId: storedWorkflow, status };
 }
 
-function refreshSessionWorkflow(workspace: string, sessionId: string, startPrepared: boolean): void {
+function refreshSessionWorkflow(workspace: string, sessionId: string, startPrepared: boolean, resolveProvider: ProviderResolver): void {
   const sessionDirectory = path.join(workspace, ".migent", "sessions", sessionId);
   const freeze = readWorkflowFreeze(sessionDirectory);
   if (freeze === null) throw new ConfigurationError(`Session ${sessionId} has no frozen workflow.`);
@@ -1373,7 +1375,7 @@ function refreshSessionWorkflow(workspace: string, sessionId: string, startPrepa
   const freezePath = path.join(sessionDirectory, WORKFLOW_FREEZE_FILE);
   const previousText = readFileSync(freezePath, "utf8");
   const previousHash = createHash("sha256").update(previousText).digest("hex");
-  const written = writeWorkflowFreeze(sessionDirectory, workspace, live);
+  const written = writeWorkflowFreeze(sessionDirectory, workspace, live, resolveProvider);
   try {
     appendLifecycleEvent(sessionDirectory, {
       event: "workflow.refreshed",

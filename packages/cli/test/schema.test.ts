@@ -2,8 +2,9 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { GrokProvider } from "@nodeint/migent-adapters";
+import { defaultProviders, GrokProvider } from "@nodeint/migent-adapters";
 import {
+  createProviderResolver,
   documentVersion,
   loadModelTarget,
   loadRoleInstructions,
@@ -20,6 +21,7 @@ const RECORD_PARSER = fileURLToPath(new URL("../../kernel/src/record.ts", import
 
 const CONFIG_KEYS = [
   "default_model",
+  "effort",
   "instructions",
   "model",
   "models",
@@ -71,17 +73,17 @@ test("config reference parses and names every key the config parser reads", () =
     writeFileSync(configPath, text, "utf8");
     const config = loadYamlMapping(configPath);
     expect(documentVersion(config)).toBe(2);
-    expect(loadModelTarget(config, "deep_reasoning")).toEqual({
+    expect(loadModelTarget(config, "deep_reasoning", createProviderResolver(defaultProviders()))).toEqual({
       provider: "grok",
       model: "grok-4.7",
       options: { "reasoning-effort": "high" },
     });
-    expect(resolveRoleTarget(workspace, "planner")).toEqual({
+    expect(resolveRoleTarget(workspace, "planner", undefined, createProviderResolver(defaultProviders()))).toEqual({
       provider: "grok",
       model: "grok-4.7",
       options: { "reasoning-effort": "medium" },
     });
-    expect(resolveRoleTarget(workspace, "reviewer")).toEqual({
+    expect(resolveRoleTarget(workspace, "reviewer", undefined, createProviderResolver(defaultProviders()))).toEqual({
       provider: "grok",
       model: "grok-4.7",
       options: { "reasoning-effort": "high" },

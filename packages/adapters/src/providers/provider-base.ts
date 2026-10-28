@@ -108,6 +108,10 @@ export abstract class ProviderBase implements Provider {
     return this.client.command;
   }
 
+  get effortOption(): string | undefined {
+    return this.boundClient?.effortOption;
+  }
+
   providerOptions(): readonly ProviderOption[] {
     return this.client.options();
   }

@@ -170,6 +170,7 @@ function sumSteps(steps: unknown[]): TurnUsage {
 }
 
 export class AgyClient implements CliClient {
+  readonly effortOption = "effort";
   readonly id = "agy";
   readonly command = "agy";
 

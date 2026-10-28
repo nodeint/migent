@@ -1,13 +1,32 @@
+import { ConfigurationError } from "./errors.js";
 import type { CommandSpec } from "./command-executor.js";
 
 /** Methods doctor and config resolution call. Migrations are out of scope. */
 export interface ProviderInfo {
   readonly command: string;
+  readonly effortOption?: string;
   validateOptions(options: Readonly<Record<string, string>>): void;
   /** True when the provider has no default CLI client and every model must name one. */
   readonly requiresClient?: boolean;
   /** The same provider driving another CLI client, named by its id. Throws on an unknown id. */
   withClient?(clientId: string): ProviderInfo;
+}
+
+/** Resolve the provider with its selected CLI client already bound. */
+export type ProviderResolver = (providerId: string, clientId?: string) => ProviderInfo;
+
+export function createProviderResolver(providers: Readonly<Record<string, ProviderInfo>>): ProviderResolver {
+  return (providerId, clientId) => {
+    const provider = Object.hasOwn(providers, providerId) ? providers[providerId] : undefined;
+    if (provider === undefined) throw new ConfigurationError(`Unknown provider: ${providerId}.`);
+    try {
+      if (clientId === undefined) return provider;
+      if (provider.withClient === undefined) throw new Error(`${providerId} cannot switch CLI client.`);
+      return provider.withClient(clientId);
+    } catch (error) {
+      throw new ConfigurationError(error instanceof Error ? error.message : String(error));
+    }
+  };
 }
 
 export interface ProviderOption {

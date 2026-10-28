@@ -1,3 +1,4 @@
+import type { ProviderResolver } from "./provider-contract.js";
 import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import path from "node:path";
@@ -43,6 +44,7 @@ export function writeWorkflowFreeze(
   sessionDirectory: string,
   workspace: string,
   workflow: WorkflowDocument,
+  resolveProvider?: ProviderResolver,
 ): WrittenFreeze {
   const config = loadWorkspaceConfig(workspace);
   const roles: Record<string, string[]> = {};
@@ -50,7 +52,7 @@ export function writeWorkflowFreeze(
   const targets: Record<string, StageTarget> = {};
   for (const stage of Object.values(workflow.stages)) {
     if (!isRoleStage(stage)) continue;
-    const target = resolveStageSpec(config, stage);
+    const target = resolveStageSpec(config, stage, undefined, resolveProvider);
     targets[stage.id] = copyTarget(target);
   }
   const sourceSha256 = sourceFileHash(workflow.source);
@@ -164,6 +166,7 @@ export function warnIfFrozenDrift(
   sessionId: string,
   workflowPath: string | null,
   workflowId: string | null,
+  resolveProvider?: ProviderResolver,
 ): void {
   const sessionDirectory = path.join(workspace, ".migent", "sessions", sessionId);
   const freeze = readWorkflowFreeze(sessionDirectory);
@@ -204,7 +207,7 @@ export function warnIfFrozenDrift(
   if (live !== null && config !== null) {
     for (const [stageId, target] of Object.entries(freeze.targets)) {
       const stage = live.stages[stageId];
-      if (stage === undefined || !sameTarget(target, liveTarget(config, stage))) {
+      if (stage === undefined || !sameTarget(target, liveTarget(config, stage, resolveProvider))) {
         note(sessionId, `Stage ${stageId} model differs.`);
       }
     }
@@ -224,10 +227,10 @@ export function warnIfFrozenDrift(
   }
 }
 
-function liveTarget(config: Record<string, unknown>, stage: StageSpec): StageTarget | null {
+function liveTarget(config: Record<string, unknown>, stage: StageSpec, resolveProvider?: ProviderResolver): StageTarget | null {
   if (!isRoleStage(stage)) return null;
   try {
-    return resolveStageSpec(config, stage);
+    return resolveStageSpec(config, stage, undefined, resolveProvider);
   } catch (error) {
     if (error instanceof ConfigurationError) return null;
     throw error;

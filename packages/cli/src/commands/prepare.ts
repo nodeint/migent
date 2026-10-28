@@ -1,4 +1,5 @@
-import { createPreparedSession, log, relativeTaskPath } from "@nodeint/migent-kernel";
+import { providerMap } from "../provider.js";
+import { createPreparedSession, createProviderResolver, log, relativeTaskPath } from "@nodeint/migent-kernel";
 import { requireCurrentSchema } from "../migrate.js";
 
 export function prepareWorkflowSession(
@@ -8,7 +9,7 @@ export function prepareWorkflowSession(
   priorSessionId: string | null,
 ): number {
   requireCurrentSchema(workspace);
-  const id = createPreparedSession(workspace, sessionId, workflowId, priorSessionId);
+  const id = createPreparedSession(workspace, sessionId, workflowId, priorSessionId, createProviderResolver(providerMap()));
   const payload = {
     session_id: id,
     title: sessionId.trim(),

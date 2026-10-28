@@ -17,7 +17,7 @@ export type {
   CliUsage,
   RawFailure,
 } from "./cli-client.js";
-export { CodexProvider, GrokProvider, defaultProviders } from "./provider-contract.js";
+export { CodexProvider, GrokProvider, defaultProviders, createProviderResolver } from "./provider-contract.js";
 export {
   LOCAL_CONFIG_FILE,
   configPath,
@@ -270,3 +270,7 @@ export type {
 } from "./process-ownership.js";
 
 export const KERNEL_PLACEHOLDER = "kernel";
+
+export type { ProviderResolver } from "./provider-contract.js";
+
+export type { ModelEffortCheck } from "./doctor.js";

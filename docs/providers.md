@@ -101,9 +101,11 @@ prompts. Leaving one unset keeps the provider default.
   model, and sends it as `--reasoning-effort`. Grok also accepts `max_turns`,
   `tools`, `disallowed_tools`, `permission_mode`, `rules`, `allow`, `deny`,
   and `sandbox`. Other keys are rejected.
-- OpenCode accepts `agent`, sent as `--agent`, and `thinking`, which is `true`
-  or `false`. `true` sends `--thinking` and `false` sends nothing. Neither is
-  prompted for or overridable. Other keys are rejected.
+- OpenCode accepts `agent`, sent as `--agent`; `thinking`, a boolean string
+  controlling display of thinking blocks (`true` sends `--thinking`); and
+  `variant`, rendered as a `#variant` suffix on the model ID for OpenCode V2.
+  Only `variant` is overridable and stored on the provider session. None of
+  these options is prompted for. Other keys are rejected.
 
 A role or stage `options` map overrides the same keys on the model. Only
 options the provider marks as overridable are part of the provider session.
@@ -164,3 +166,40 @@ printed.
 `input_tokens` in metrics excludes cache reads. `reasoning_tokens` is reported
 beside `output_tokens` and is not added to it. A field that is missing, not a
 finite number, or a negative delta is null.
+
+
+## Model effort
+
+Set `models.<alias>.effort` in `config.yaml` or `config.local.yaml` to adjust
+thinking level without using the CLI-specific option name:
+
+```yaml
+models:
+  code_generation:
+    provider: codex
+    model: gpt-5
+    effort: high
+```
+
+The alias follows the selected `client`, or the provider's default CLI client:
+Codex uses `model_reasoning_effort`, Grok uses `reasoning-effort`, and Claude
+and Antigravity use `effort`. OpenCode V2 uses `variant`, which the client renders
+as `provider/model#variant` (for example `openai/gpt-5#high`). Available variants
+depend on the selected model. Do not combine effort or `options.variant` with
+a model ID that already contains a `#variant` suffix.
+Values pass through unchanged and must be supported by the selected client/model.
+Omitting `effort` preserves existing behavior. Local effort replaces shared effort.
+
+Use either `effort` or its native option in the model's `options`, never both
+(including after shared/local config merge). Unsupported clients, empty values,
+and non-string values are configuration errors. Existing native options still work.
+
+This field is supported only on models. Role and stage `options` can still
+override the resolved native option, followed by command-line option overrides.
+Sessions freeze the resolved native options.
+
+
+`migent doctor` checks model effort against the selected client's supported values.
+Invalid or empty values report the model field and `Valid values`. If the values
+cannot be verified, doctor prints a warning instead of rejecting an otherwise
+well-formed effort. Empty or non-string values remain errors.

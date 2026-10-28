@@ -125,6 +125,7 @@ export function claudeResultError(payload: Record<string, unknown>): string | nu
 }
 
 export class ClaudeCodeClient implements CliClient {
+  readonly effortOption = "effort";
   readonly id = "claude-code";
   readonly command = "claude";
 
@@ -231,7 +232,7 @@ export class ClaudeCodeClient implements CliClient {
       for (const id of new Set([item.value, resolved])) {
         if (id === null || ids.includes(id)) continue;
         ids.push(id);
-        if (levels.length > 0) efforts.push([id, "effort", levels]);
+        if (Array.isArray(item.supportedEffortLevels)) efforts.push([id, "effort", levels]);
       }
     }
     return new ModelCatalog(ids, null, efforts);

@@ -141,6 +141,7 @@ function toolDetails(payload: Record<string, unknown>): Record<string, unknown> 
 }
 
 export class GrokClient implements CliClient {
+  readonly effortOption = GROK_REASONING_OPTION;
   readonly id = "grok";
   readonly command = "grok";
 
