@@ -351,31 +351,39 @@ test("stalled body returns 408 and a later post succeeds", async () => {
 test("slow drip releases the handler before a restarted timeout would", async () => {
   const fixture = new ServerFixture(freshRoot());
   await fixture.open(0.4);
+  const sock = net.connect({ host: "127.0.0.1", port: fixture.port });
+  const socketErrors: NodeJS.ErrnoException[] = [];
+  // The deadline can reset the connection while the client is still writing.
+  sock.on("error", (error: NodeJS.ErrnoException) => socketErrors.push(error));
+  const socketClosed = new Promise<void>((resolve) => sock.once("close", () => resolve()));
   try {
     const previous = fixture.server.inFlight;
     const payload = Buffer.from("POST /v1/workspaces HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 2\r\n\r\n{}");
     expect(payload.subarray(0, payload.indexOf("\r\n")).length).toBeGreaterThan(15);
-    const sock = net.connect({ host: "127.0.0.1", port: fixture.port });
-    await new Promise((resolve) => sock.once("connect", resolve));
+    await new Promise<void>((resolve, reject) => {
+      sock.once("connect", resolve);
+      sock.once("error", reject);
+    });
     await waitUntil(() => fixture.server.inFlight === previous + 1, 1);
     const started = monotonic();
     for (let index = 0; index < payload.length; index += 1) {
-      try {
-        sock.write(payload.subarray(index, index + 1));
-      } catch {
-        break;
-      }
+      if (sock.destroyed) break;
+      sock.write(payload.subarray(index, index + 1));
       if (fixture.server.inFlight === previous) break;
       if (index + 1 < payload.length) await sleep(0.1);
     }
     await waitUntil(() => fixture.server.inFlight === previous, 2);
     const elapsed = monotonic() - started;
     sock.destroy();
+    await socketClosed;
+    expect(socketErrors.map((error) => error.code).filter((code) => code !== "ECONNRESET")).toEqual([]);
     expect(elapsed).toBeLessThan(0.9);
     expect(existsSync(path.join(fixture.home, "registry.json"))).toBe(false);
     const workspace = makeWorkspace(fixture.root, "later");
     expect((await post(fixture, workspace))[0]).toBe(201);
   } finally {
+    sock.destroy();
+    await socketClosed;
     await fixture.close();
   }
 });
