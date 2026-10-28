@@ -154,47 +154,54 @@ exit codes.
 
 ```bash
 migent init
-migent init --provider codex --model gpt-5
-migent init --preset plan --provider codex --model gpt-5
-migent init --skill --provider codex --model gpt-5
+migent init --no-input --provider codex --model gpt-5 --reviewer-provider grok --reviewer-model grok-4.7
 ```
 
-`init` writes four files:
+In a terminal, choose a provider and model for the developer, then for the
+reviewer. Each selection can include the provider's prompted options. The two
+roles can use the same model. Init then asks whether to install the Migent
+skill for the selected clients; declining still creates the project.
+
+Init always writes both workflows:
 
 ```text
 .migent/
-├── config.yaml        # roles and model aliases, committed
-├── config.local.yaml  # this machine's provider and model, not committed
-├── .gitignore         # ignores sessions/ and config.local.yaml
-└── workflows/<preset>.yaml
+??? config.yaml        # developer and reviewer with inline default_model objects
+??? .gitignore         # ignores sessions/ and optional config.local.yaml
+??? workflows/
+    ??? implement.yaml # developer implements the task
+    ??? plan.yaml      # developer plans, reviewer approves or requests revision
 ```
 
-`config.yaml` holds roles and stable model aliases as empty entries:
-`code_generation` for `implement`, `deep_reasoning` and `critical_review` for
-`plan`. `config.local.yaml` maps each alias to the provider and model you
-choose, plus any `--option`. Model ids come from that provider's CLI, not from a
-built-in list. Prompted options come from that provider for the model you
-picked. Omit `--option` to keep the provider default. The default workflow is
-`implement`, a single developer stage. `--preset plan` writes a planner and a
-reviewer; both start on the model you chose, and you can point either alias at a
-different model by editing `config.local.yaml`. In a terminal, provider, model,
-and prompted options are chosen from lists, and init asks whether to install the
-Migent skill in the directory the chosen client reads (for example
-`.agents/skills/migent/` for codex). `--skill` installs that skill without
-asking. Pass `--provider` and `--model` together when input is not a terminal,
-or when `--no-input` or `MIGENT_NO_INPUT=1` is set; the error repeats a full
-example. Without `--skill`, a non-interactive init leaves the skill
-uninstalled. Init never starts a model. After the files are written it exits 0
-and prints the provider and model, then a `migent session run --workflow
-<preset> --task "<what you want done>"` command to run next. An interactive
-init prints the doctor report on stdout. A non-interactive init does not. Doctor
-problems are printed as an advisory on stderr. An existing project ignores
-`--provider`, `--model`, `--option`, and an explicit `--preset`, and says so.
-`--skill` still installs.
+There is no preset selection. `config.yaml` contains each role's provider,
+model ID, and selected options directly; no `models` section or
+`config.local.yaml` is generated. Commit the configuration and workflows.
+Use the optional local file later for machine-specific overrides.
 
-An existing valid project is left unchanged. `--skill` still installs the
-skill on that project. A partial `.migent/` directory, including a lone `config.local.yaml`, stops init and lists
-the files in the way. Init writes nothing when the skill install fails.
+| Flag | Input / purpose |
+| --- | --- |
+| `--provider`, `--model` | Developer provider and model ID; pass together. |
+| `--reviewer-provider`, `--reviewer-model` | Reviewer provider and model ID; pass together. |
+| `--option KEY=VALUE` | Developer model option; repeat for multiple options. |
+| `--reviewer-option KEY=VALUE` | Reviewer model option; repeat for multiple options. |
+| `--skill` | Install the skill for the selected clients without asking. |
+| `--no-input` | Disable prompts; also set by `MIGENT_NO_INPUT=1`. Both role selections are required. |
+
+Model IDs and prompted option values come from the selected provider CLI.
+Omit options to keep provider defaults. Invalid selections exit 2 before
+writing project files. Missing flags include a complete command example.
+
+Init never starts an agent. It prints the chosen models, created files, and
+a `migent session run --workflow implement --task "<what you want done>"`
+command. Use `--workflow plan` to run planning and review instead.
+Doctor problems are advisory on stderr; interactive setup also shows the
+full doctor report. Successful project creation exits 0.
+
+An existing valid project is left unchanged; model selection flags are
+ignored and `--skill` can still install its configured clients' skills.
+A partial project, including a lone `config.local.yaml`, exits 1 and lists
+conflicting files without overwriting them. A failed skill install also exits
+1 before writing project files.
 
 ## Config
 

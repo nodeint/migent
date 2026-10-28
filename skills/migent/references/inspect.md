@@ -1,32 +1,32 @@
-# Inspecting many sessions
+# Inspect sessions and usage
 
-For one session use `migent session show <session-id> --json` (SKILL.md).
+## Find sessions
 
-## List
-
-```
+```bash
 migent session list --workflow <id> --status completed --limit 5 --json
 ```
 
-- Output is a JSON array. `--latest` gives one object, or `null`; do not
-  combine it with `--limit`.
-- `--status` is one of `active|prepared|completed|blocked|cancelled|corrupt`.
-  A session whose `status.json` does not parse is listed as `corrupt`.
-- JSON rows omit the task text.
+Output: a JSON array of matching sessions, without task text.
+Use `session show <session-id> --json` for details.
 
-## Metrics
+- `--latest` returns one object or `null`; do not combine it with `--limit`.
+- Status filters: `active`, `prepared`, `completed`, `blocked`, `cancelled`,
+  or `corrupt`. A corrupt session cannot be read normally; report it rather
+  than editing generated state.
 
-```
+## Compare usage
+
+```bash
 migent session metrics --json
 ```
 
-- One session prints its `metrics.json`. Several print one object per
-  line, newest first. Only a completed session has this file. `--workflow`,
-  `--status`, and `--limit` filter those rows.
-- Read `usage_missing`, `cost_partial`, and `uncaptured_turns` before comparing totals.
-- `stage_attempt` is not a retry count.
+Use `--workflow`, `--status`, and `--limit` to select sessions.
+Output: metrics for completed sessions; one JSON object per line when there
+are several. Check `usage_missing`, `cost_partial`, and `uncaptured_turns`
+before comparing totals. Do not interpret `stage_attempt` as a retry count.
 
-## Follow
+## Watch progress
 
-`session follow` streams the event trace for a person at a terminal. Do not use
-it or `--cursor` to coordinate a run.
+`migent session follow` displays live progress for a person at a
+terminal. For agent execution, wait on the running command and inspect its
+result; do not use `follow` or `--cursor` to coordinate a run.

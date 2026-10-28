@@ -36,7 +36,7 @@ import {
   type Which,
 } from "../provider.js";
 
-const INIT_EXAMPLE = "Example: migent init --provider codex --model gpt-5 --preset implement --no-input";
+const INIT_EXAMPLE = "Example: migent init --provider codex --model gpt-5 --reviewer-provider grok --reviewer-model grok-4.7 --no-input";
 
 export const PRESETS = ["implement", "plan"] as const;
 
@@ -62,8 +62,9 @@ export async function runInit(
     provider?: string | null;
     model?: string | null;
     options?: readonly string[];
-    preset?: string;
-    presetExplicit?: boolean;
+    reviewerProvider?: string | null;
+    reviewerModel?: string | null;
+    reviewerOptions?: readonly string[];
     skill?: boolean;
     interactive?: boolean;
     providers?: Record<string, Provider> | null;
@@ -74,54 +75,65 @@ export async function runInit(
 ): Promise<number> {
   const provider = options.provider ?? null;
   const model = options.model ?? null;
-  const preset = options.preset ?? "implement";
+  const reviewerProvider = options.reviewerProvider ?? null;
+  const reviewerModel = options.reviewerModel ?? null;
   const skill = options.skill === true;
   const interactive = options.interactive ?? false;
   const chosen = options.providers ?? providerMap();
   const resolve = options.which ?? cliHooks.which ?? whichSync;
   const prompt = options.prompter ?? new ClackPrompter();
-  const execute = options.runCommand ?? runProviderCommand;
-  if (!PRESETS.includes(preset as (typeof PRESETS)[number])) {
-    printError("preset must be implement or plan.");
-    return 2;
-  }
+  const execute = options.runCommand ?? cliHooks.runCommand ?? runProviderCommand;
   const optionPairs = options.options ?? [];
+  const reviewerOptionPairs = options.reviewerOptions ?? [];
   const classified = classify(workspace, chosen, resolve);
   if (classified.state === "ready") {
-    if (provider !== null || model !== null || optionPairs.length > 0) {
-      printError("Already initialized; ignoring --provider/--model/--option.");
+    if (provider !== null || model !== null || optionPairs.length > 0 ||
+        reviewerProvider !== null || reviewerModel !== null || reviewerOptionPairs.length > 0) {
+      printError("Already initialized; ignoring model selection flags.");
     }
-    if (options.presetExplicit === true) printError("Already initialized; ignoring --preset.");
     printAlreadyInitialized();
     if (skill) {
       return installSkill({ workspace, scope: "project", clients: clientsFromConfig(workspace, chosen), yes: true, which: resolve });
     }
     return 0;
   }
-  if ((provider === null) !== (model === null)) {
-    printError(`Pass both --provider and --model, or omit both.
-${INIT_EXAMPLE}`);
-    return 2;
-  }
-  if (optionPairs.length > 0 && provider === null) {
-    printError("Pass --provider and --model with --option.");
-    return 2;
-  }
-  if (provider === null && !interactive) {
-    printError(`Pass --provider and --model when init is not interactive.
-${INIT_EXAMPLE}`);
-    return 2;
+  for (const [role, selectedProvider, selectedModel, pairs, prefix] of [
+    ["developer", provider, model, optionPairs, ""],
+    ["reviewer", reviewerProvider, reviewerModel, reviewerOptionPairs, "reviewer-"],
+  ] as const) {
+    const flags = `--${prefix}provider and --${prefix}model`;
+    if ((selectedProvider === null) !== (selectedModel === null)) {
+      printError(`Pass both ${flags} for ${role}, or omit both.\n${INIT_EXAMPLE}`);
+      return 2;
+    }
+    if (pairs.length > 0 && selectedProvider === null) {
+      printError(`Pass ${flags} with --${prefix}option.`);
+      return 2;
+    }
+    if (selectedProvider === null && !interactive) {
+      printError(`Pass ${flags} for ${role} when init is not interactive.\n${INIT_EXAMPLE}`);
+      return 2;
+    }
   }
   if (classified.state === "conflict") {
     printInitConflicts(classified.conflicts);
     return 1;
   }
-  let primary: ModelChoice;
+  let developer: ModelChoice;
+  let reviewer: ModelChoice;
   try {
-    primary = await choices(chosen, resolve, prompt, {
+    developer = await choices(chosen, resolve, prompt, {
+      role: "Developer",
       provider,
       model,
       options: parseOptions(optionPairs),
+      runCommand: execute,
+    });
+    reviewer = await choices(chosen, resolve, prompt, {
+      role: "Reviewer",
+      provider: reviewerProvider,
+      model: reviewerModel,
+      options: parseOptions(reviewerOptionPairs),
       runCommand: execute,
     });
   } catch (error) {
@@ -129,11 +141,14 @@ ${INIT_EXAMPLE}`);
     printError(error instanceof Error ? error.message : String(error));
     return 2;
   }
-  const client = providerClient(chosen[primary.provider]);
+  const clients = [...new Set([developer, reviewer]
+    .map((choice) => providerClient(chosen[choice.provider]))
+    .filter((client): client is string => client !== null))];
   let install = skill;
   if (!install && interactive) {
     try {
-      install = await prompt.confirm(`Install the Migent skill in ${projectSkillPath(client)}?`);
+      const directories = [...new Set((clients.length > 0 ? clients : [null]).map(projectSkillPath))];
+      install = await prompt.confirm(`Install the Migent skill in ${directories.join(" and ")}?`);
     } catch (error) {
       if (error instanceof PromptCancelled) throw error;
       printError(error instanceof Error ? error.message : String(error));
@@ -144,20 +159,20 @@ ${INIT_EXAMPLE}`);
     const code = await installSkill({
       workspace,
       scope: "project",
-      clients: client === null ? [] : [client],
+      clients,
       yes: true,
       which: resolve,
     });
     if (code !== 0) return 1;
   }
-  const paths = writeProject(workspace, preset, primary);
+  const paths = writeProject(workspace, developer, reviewer);
   printCreated(
     paths,
-    `${primary.provider}/${primary.model} for the ${preset} workflow. This machine's mapping is in .migent/config.local.yaml.`,
-    `migent session run --workflow ${preset} --task "<what you want done>"`,
+    `Developer: ${developer.provider}/${developer.model}. Reviewer: ${reviewer.provider}/${reviewer.model}. Workflows: implement, plan.`,
+    'migent session run --workflow implement --task "<what you want done>"',
   );
   if (interactive) {
-    const doctorCode = await runDoctor(workspace, { which: resolve });
+    const doctorCode = await runDoctor(workspace, { which: resolve, runCommand: execute });
     if (doctorCode !== 0) writeDoctorProblems(workspace, chosen, resolve);
   } else {
     writeDoctorProblems(workspace, chosen, resolve);
@@ -181,6 +196,7 @@ async function choices(
   which: Which,
   prompt: Prompter,
   args: {
+    role: string;
     provider: string | null;
     model: string | null;
     options: Record<string, string>;
@@ -192,11 +208,11 @@ async function choices(
   let stored: Record<string, string>;
   if (provider === null) {
     const rows = detected(providers, which);
-    provider = await prompt.selectProvider(rows, "Default provider");
+    provider = await prompt.selectProvider(rows, `${args.role} provider`);
     const impl = providers[provider];
     if (impl === undefined) throw new ConfigurationError(`Unknown provider: ${provider}.`);
     const catalog = await loadCatalog(impl, which, args.runCommand);
-    model = await prompt.selectModel(provider, catalog, "Model");
+    model = await prompt.selectModel(provider, catalog, `${args.role} model`);
     stored = await promptOptions(impl, model, catalog, which, args.runCommand, prompt);
   } else {
     const impl = requireProvider(providers, provider);
@@ -245,81 +261,36 @@ function classify(
 
 function writeProject(
   workspace: string,
-  preset: string,
-  primary: ModelChoice,
+  developer: ModelChoice,
+  reviewer: ModelChoice,
 ): string[] {
   const root = path.join(workspace, ".migent");
   const workflows = path.join(root, "workflows");
   mkdirSync(workflows, { recursive: true });
-  writeFileSync(path.join(root, "config.yaml"), renderConfig(preset), "utf8");
-  writeFileSync(path.join(root, "config.local.yaml"), renderLocalConfig(preset, primary), "utf8");
-  const workflowName = `${preset}.yaml`;
-  writeFileSync(path.join(workflows, workflowName), renderWorkflow(preset), "utf8");
+  writeFileSync(path.join(root, "config.yaml"), renderConfig(developer, reviewer), "utf8");
+  for (const preset of PRESETS) {
+    writeFileSync(path.join(workflows, `${preset}.yaml`), renderWorkflow(preset), "utf8");
+  }
   writeFileSync(path.join(root, ".gitignore"), "sessions/\nconfig.local.yaml\n", "utf8");
   return [
     ".migent/config.yaml",
-    ".migent/config.local.yaml",
-    `.migent/workflows/${workflowName}`,
+    ...PRESETS.map((preset) => `.migent/workflows/${preset}.yaml`),
     ".migent/.gitignore",
   ];
 }
 
-type PresetRole = readonly [role: string, alias: string, instructions: readonly string[]];
-
-function presetRoles(preset: string): readonly PresetRole[] {
-  if (preset === "implement") {
-    return [
-      ["developer", "code_generation", [
-        "Make the smallest change that completes the task; follow existing code conventions.",
-        "Run the relevant checks or tests before finishing and report the result.",
-      ]],
-    ];
-  }
-  return [
-    ["planner", "deep_reasoning", [
-      "Write a concrete, reviewable plan: goal, steps, affected files, risks.",
-      "Keep scope to the task; do not implement.",
-    ]],
-    ["reviewer", "critical_review", [
-      "Check the plan for correctness, missing risks, and unnecessary scope.",
-      "Give a clear verdict and list every gap in one response.",
-    ]],
-  ];
-}
-
-function presetAliases(preset: string): string[] {
-  return [...new Set(presetRoles(preset).map(([, alias]) => alias))];
-}
-
-function renderConfig(preset: string): string {
-  const lines = [
-    "schema_version: 2",
-    "# models: stable aliases. Map each one to a provider and model for this machine in .migent/config.local.yaml.",
-    "# roles: who does the work; default_model names an alias in models.",
-    "# roles.<name>.instructions are added to every prompt for that role, before stage instructions.",
-    "# Workflows live in .migent/workflows/.",
-    "models:",
-  ];
-  for (const alias of presetAliases(preset)) lines.push(`  ${alias}: {}`);
-  lines.push("roles:");
-  for (const [role, alias, instructions] of presetRoles(preset)) {
-    lines.push(`  ${role}:`, `    default_model: ${alias}`, "    instructions:");
-    for (const item of instructions) lines.push(`      - ${yamlScalar(item)}`);
-  }
-  return `${lines.join("\n")}\n`;
-}
-
-function renderLocalConfig(preset: string, primary: ModelChoice): string {
-  const lines = [
-    "# This machine's provider and model for each alias in config.yaml. Not committed.",
-    "models:",
-  ];
-  for (const alias of presetAliases(preset)) {
-    lines.push(`  ${alias}:`, `    provider: ${yamlScalar(primary.provider)}`, `    model: ${yamlScalar(primary.model)}`);
-    const entries = Object.entries(primary.options);
-    if (entries.length > 0) {
-      lines.push("    options:");
-      for (const [optionName, value] of entries) lines.push(`      ${optionName}: ${yamlScalar(value)}`);
+function renderConfig(developer: ModelChoice, reviewer: ModelChoice): string {
+  const lines = ["schema_version: 2", "roles:"];
+  for (const [role, choice] of [["developer", developer], ["reviewer", reviewer]] as const) {
+    lines.push(
+      `  ${role}:`,
+      "    default_model:",
+      `      provider: ${yamlScalar(choice.provider)}`,
+      `      model: ${yamlScalar(choice.model)}`,
+    );
+    if (Object.keys(choice.options).length > 0) {
+      lines.push("      options:");
+      for (const [key, value] of Object.entries(choice.options)) lines.push(`        ${key}: ${yamlScalar(value)}`);
     }
   }
   return `${lines.join("\n")}\n`;
@@ -346,7 +317,7 @@ function renderWorkflow(preset: string): string {
     "  - Plan only. Do not modify source code.\n" +
     "stages:\n" +
     "  - id: plan\n" +
-    "    role: planner\n" +
+    "    role: developer\n" +
     "    depends_on: []\n" +
     "    max_revisions: 3\n" +
     "    instructions:\n" +
@@ -364,7 +335,7 @@ function renderWorkflow(preset: string): string {
     "      - Report every gap of the same kind in one response.\n" +
     "      - Check that plan.md has the sections Goal, Steps, Files, Risks, Verification.\n" +
     "      - Choose revise only for a factual error, a missing risk, a missing section, or unnecessary scope. Do not revise for style.\n" +
-    "      - When choosing revise, list each required change so the planner can act on it.\n" +
+    "      - When choosing revise, list each required change so the developer can act on it.\n" +
     "    decision:\n" +
     "      values:\n" +
     "        - approved\n" +

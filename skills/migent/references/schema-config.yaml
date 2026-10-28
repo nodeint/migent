@@ -1,37 +1,29 @@
-# A missing schema_version is 0. Commands refuse the file while it is older than this Migent.
+# Project configuration. Validate with migent doctor --json after editing.
 schema_version: 2
-# Edit this file, then run migent doctor.
-# config.local.yaml holds uncommitted settings for this machine.
-# Aliases merge key by key; a local role default_model replaces the shared default.
-# default_model accepts an inline model or an alias under models. Stage model uses an alias.
-# Omit models when every role uses inline definitions.
-# Put effort and options inside the model. Stage options override model options; CLI options apply last.
-# client selects the CLI (agy, claude-code, codex, grok, opencode); required for byteplus.
-# Use effort or the equivalent native option, not both. OpenCode also accepts model#variant.
+
+# Named models can be shared by roles and stages.
+# Use an available provider and model ID from migent provider list --json.
 models:
   deep_reasoning:
     provider: grok
     model: grok-4.7
+    # Optional thinking level; use a supported value, or omit for client default.
+    # Do not also set the equivalent provider option or an OpenCode #variant.
     effort: high
-    # grok accepts reasoning-effort (overridable), max_turns, tools, disallowed_tools,
-    # permission_mode (default, acceptEdits, auto, dontAsk, bypassPermissions, plan),
-    # rules, allow, deny, and sandbox.
-    # agy accepts effort (low, medium, high, xhigh, max; overridable), mode (accept-edits, auto, plan),
-    # agent, sandbox (true or false), and skip_permissions (true or false).
-    # claude accepts effort (low, medium, high, xhigh, max; overridable), permission_mode
-    # (acceptEdits, auto, bypassPermissions, manual, dontAsk, plan), tools, allowed_tools,
-    # disallowed_tools, max_budget_usd, fallback_model, and append_system_prompt.
-    # codex accepts model_reasoning_effort (overridable). Any other key of letters, digits,
-    # dots, underscores, and hyphens is passed through as codex exec -c.
-    # opencode accepts agent, thinking (true shows thinking blocks), and variant (overridable; model#variant).
 
   code_generation:
     provider: byteplus
-    # byteplus has no CLI of its own, so client is required and names the CLI that runs it.
+    # Required for byteplus: the CLI client that runs this model.
+    # Other client IDs: agy, claude-code, codex, grok.
     client: opencode
     model: coding-plan/deepseek-v4-pro
 
 roles:
+  developer:
+    # Inline model object; no named model entry is needed for this role.
+    default_model:
+      provider: codex
+      model: gpt-5
   planner:
     default_model:
       provider: grok
@@ -39,8 +31,24 @@ roles:
       effort: medium
       options:
         max_turns: "10"
-    # Included in every prompt for this role.
+    # Shared instructions for this role.
     instructions:
       - Break the task into a reviewable plan.
   reviewer:
     default_model: deep_reasoning
+
+# config.local.yaml optionally overrides machine-specific settings; do not commit it.
+# Model aliases merge key by key; a local role default_model replaces the shared default.
+# Supply a complete inline model or alias. Scalars and lists replace shared values.
+# Omit schema_version from the local file.
+# Use snake_case names and the provider's spelling for option keys.
+# For effort errors or missing model mappings, follow doctor's diagnostics.
+# Provider option keys:
+# grok: reasoning-effort, max_turns, tools, disallowed_tools, permission_mode,
+#       rules, allow, deny, sandbox.
+# agy: effort, mode, agent, sandbox, skip_permissions.
+# claude: effort, permission_mode, tools, allowed_tools, disallowed_tools,
+#         max_budget_usd, fallback_model, append_system_prompt.
+# codex: model_reasoning_effort; other keys may contain letters, digits, dots,
+#        underscores, and hyphens.
+# opencode: agent, thinking, variant.

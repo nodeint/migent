@@ -1,87 +1,75 @@
 # Providers and model configuration
 
-Models describe execution. Roles describe intent. Roles and stable model aliases
-are declared in `.migent/config.yaml`; `migent init` writes the aliases as empty
-entries (`code_generation: {}`). The provider and model each alias uses on this
-machine go in `.migent/config.local.yaml`. The Migent skill lists every accepted key in
-`references/schema-config.yaml` in the installed Migent skill (`migent skill path` prints the bundled copy).
-
-`.migent/config.local.yaml` takes the same keys. It is not committed, so each
-developer maps the shared aliases to the providers installed on their machine.
-`migent doctor` lists any alias that has no mapping and the YAML to add. Mappings merge key by key;
-scalars and lists, such as `instructions`, replace the value from `config.yaml`.
-Its `schema_version` is ignored. Sessions freeze the merged result.
-
-Name a model alias for the work it does, not for a provider or a role:
-`code_generation`, `deep_reasoning`, `critical_review`, `fast`, `general`,
-`long_context`. Then a role keeps its alias when you move to another provider.
+Models describe execution. Roles describe intent. `migent init` creates
+`developer` and `reviewer` roles with a model object in each `default_model`:
 
 ```yaml
-# .migent/config.yaml (committed)
+# .migent/config.yaml
 schema_version: 2
-models:
-  code_generation: {}
-
 roles:
   developer:
-    default_model: code_generation
-    instructions:
-      - Implement the change described in the task.
-      - Leave unrelated files unchanged.
-```
-
-```yaml
-# .migent/config.local.yaml (this machine)
-models:
-  code_generation:
-    provider: codex
-    model: gpt-5
-    options:
-      model_reasoning_effort: medium
-```
-
-`roles.<name>.instructions` is an optional list of strings. Migent includes
-that list in every prompt for the role, before the stage's own `instructions`.
-`migent session run --role` prepends the same list to the prompt.
-
-Use model identifiers and option values supported by the installed provider
-CLI.
-
-Roles can point at different providers. A planner on Codex and a reviewer on
-Grok:
-
-```yaml
-# .migent/config.yaml (committed)
-schema_version: 2
-models:
-  deep_reasoning: {}
-  critical_review: {}
-
-roles:
-  planner:
-    default_model: deep_reasoning
+    default_model:
+      provider: codex
+      model: gpt-5
+      options:
+        model_reasoning_effort: medium
   reviewer:
-    default_model: critical_review
+    default_model:
+      provider: grok
+      model: grok-4
 ```
 
+Use provider/model IDs and option values supported by your installed CLIs.
+`migent provider list` lists available choices; `migent doctor` checks the
+configuration. The installed skill's `references/schema-config.yaml` lists
+configuration fields (`migent skill path` locates the bundled skill).
+
+`roles.<name>.instructions` is an optional list included before stage
+instructions in every prompt for that role. A standalone role run includes
+the same instructions.
+
+## Machine-specific overrides
+
+`.migent/config.local.yaml` is optional and uncommitted. It accepts the same
+keys as `config.yaml`. A local role default replaces the shared default;
+supply the complete model definition:
+
 ```yaml
-# .migent/config.local.yaml (this machine)
+# .migent/config.local.yaml
+roles:
+  developer:
+    default_model:
+      provider: codex
+      model: another-model-id
+```
+
+Named models merge key by key; role defaults, scalars, and lists replace shared values. The local
+file's `schema_version` is ignored. Sessions use the merged configuration
+from when they started; see [Sessions](sessions.md) for adopting later edits.
+
+## Reuse a named model
+
+When several roles or stages need the same model settings, define a named
+entry under `models` and use its name as `default_model`:
+
+```yaml
+schema_version: 2
 models:
   deep_reasoning:
     provider: codex
     model: gpt-5
-    options:
-      model_reasoning_effort: medium
-  critical_review:
-    provider: grok
-    model: grok-4
-    options:
-      reasoning-effort: high
+roles:
+  developer:
+    default_model: deep_reasoning
+  reviewer:
+    default_model: deep_reasoning
 ```
 
-`migent init --preset plan` writes these two files with `deep_reasoning` and
-`critical_review` both mapped to the model you chose. Edit `config.local.yaml`
-to give the reviewer its own provider and model.
+Existing named-model configurations remain supported, including local
+mappings for shared empty entries such as `deep_reasoning: {}`. Doctor lists
+missing mappings and the YAML to add. Use descriptive names such as
+`deep_reasoning` or `code_generation` to keep model choices separate from
+role names.
 
 ## Inline role defaults
 
@@ -184,7 +172,8 @@ finite number, or a negative delta is null.
 
 ## Model effort
 
-Set `models.<alias>.effort` in `config.yaml` or `config.local.yaml` to adjust
+Set `roles.<role>.default_model.effort` for an inline model, or
+`models.<alias>.effort` for a named model, in either config file to adjust
 thinking level without using the CLI-specific option name:
 
 ```yaml

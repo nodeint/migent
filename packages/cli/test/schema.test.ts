@@ -95,7 +95,7 @@ test("config reference parses and names every key the config parser reads", () =
     new GrokProvider().validateOptions({ "reasoning-effort": "medium" });
     const configParser = `${readFileSync(CONFIG_PARSER, "utf8")}\n${readFileSync(RECORD_PARSER, "utf8")}`;
     expect(parserKeys(configParser, "config")).toEqual(CONFIG_KEYS);
-    expect(yamlKeys(text)).toEqual([...CONFIG_KEYS, "client", "code_generation", "deep_reasoning", "planner", "max_turns", "reviewer"].sort());
+    expect(yamlKeys(text)).toEqual([...CONFIG_KEYS, "client", "code_generation", "deep_reasoning", "developer", "planner", "max_turns", "reviewer"].sort());
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }
@@ -122,8 +122,8 @@ test("workflow reference parses and names every key the workflow parser reads", 
   expect(document.stages.draft).toMatchObject({
     kind: "role",
     role: "planner",
-    description: "Write the draft.",
-    modelName: "planner",
+    description: null,
+    modelName: "deep_reasoning",
     options: { "reasoning-effort": "high" },
     dependsOn: ["prepare"],
     maxRevisions: 2,
@@ -146,9 +146,9 @@ test("workflow reference parses and names every key the workflow parser reads", 
   expect(document.stages.check_docs).toMatchObject({
     kind: "role",
     role: "reviewer",
-    description: "Review documentation changes.",
+    description: null,
     dependsOn: ["review"],
-    instructions: ["Review the documentation changes."],
+    instructions: ["Review documentation changes."],
     verify: [],
     decisionValues: [],
     artifact: null,
