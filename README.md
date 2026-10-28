@@ -27,21 +27,16 @@ where the process is.
   - [Why Migent?](#why-migent)
   - [Supported CLIs](#supported-clis)
   - [Quickstart](#quickstart)
-    - [Install](#install)
-    - [Install agent skill](#install-agent-skill)
-    - [Create a project](#create-a-project)
-      - [Option 1: Ask your AI agent](#option-1-ask-your-ai-agent)
-      - [Option 2: Run `migent init`](#option-2-run-migent-init)
+    - [With an AI agent](#with-an-ai-agent)
+    - [Manually](#manually)
     - [Run](#run)
+    - [Join an existing project](#join-an-existing-project)
   - [Workflow as code](#workflow-as-code)
-    - [How decisions work](#how-decisions-work)
-    - [Beyond planning: code and verify](#beyond-planning-code-and-verify)
+    - [Start with one role and one stage](#start-with-one-role-and-one-stage)
+    - [Add planning and review](#add-planning-and-review)
   - [Concepts](#concepts)
-    - [Artifact handoff vs session resume](#artifact-handoff-vs-session-resume)
-    - [Built-in safeguards](#built-in-safeguards)
   - [Current scope](#current-scope)
   - [Documentation](#documentation)
-  - [Development](#development)
   - [License](#license)
 
 ## Why Migent?
@@ -107,8 +102,8 @@ same next command.
 
 ### With an AI agent
 
-1. Install the agent skill. It uses `npx skills`, so it needs Node 22.20 or
-   newer. Pick a project or global install and the AI clients to set up:
+1. Install the agent skill (requires Node.js 22.20+), then choose the AI
+   clients to set up:
 
    ```bash
    migent skill install
@@ -121,11 +116,8 @@ same next command.
    Use the migent skill to set up Migent in this project.
    ```
 
-The agent checks which provider CLIs are available (`migent provider list`) and
-runs `migent init --no-input` with a provider and model it picked. Ask it for a
-specific provider, model, or the `plan` preset if you have a preference. Run
-`migent skill update` after upgrading Migent. See
-[docs/cli.md](docs/cli.md#project-skill) for options.
+The agent handles setup. Ask it for a specific provider, model, or a
+plan-and-review workflow if you have a preference.
 
 ### Manually
 
@@ -133,59 +125,23 @@ specific provider, model, or the `plan` preset if you have a preference. Run
 migent init
 ```
 
-`init` asks for a provider and model, from the provider CLIs it finds on your
-machine, and for the `implement` or `plan` workflow. It also offers to install
-the agent skill. To skip the prompts, pass everything as flags:
-
-```bash
-migent init --provider codex --model gpt-5 --preset implement --no-input
-```
-
-`init` runs `migent doctor` when it finishes and prints any problem it finds,
-such as a provider CLI that is not on your PATH. It does not start a model. It
-ends by printing the command to run next.
-
-### What you get
-
-Either way, `init` generates:
-
-```text
-.migent/
-├── config.yaml        # roles and model aliases, committed
-├── config.local.yaml  # this machine's provider and model, not committed
-├── .gitignore         # keeps sessions/ and config.local.yaml untracked
-└── workflows/
-    └── implement.yaml # or plan.yaml with --preset plan
-```
-
-`config.yaml` names the roles and stable model aliases (for example
-`code_generation`). `config.local.yaml` maps each alias to the provider and
-model on this machine. Commit `config.yaml` and `workflows/`. With the `plan`
-preset, the planner and reviewer both start on the model you chose; point either
-alias at another model by editing `config.local.yaml`.
-
-`migent config` prints the effective config. No command edits it: change
-`config.yaml` or `config.local.yaml` directly, or ask your agent to, then run
-`migent doctor`.
+Choose a provider, model, and workflow: `implement` for coding, or `plan` for
+planning and review. `init` creates the configuration and workflow files under
+`.migent/`, checks the setup, and prints the command to run next.
 
 ### Run
 
-Start the workflow from your project directory. Replace the task text:
+For the `implement` workflow, run this from your project directory with your
+own task text. If you chose `plan`, use `--workflow plan` instead:
 
 ```bash
 migent session run --workflow implement --task "Add a --json flag to the export command"
 ```
 
-Progress prints on stderr. A completed run lists the files it published:
+Migent shows progress as it runs. A successful run ends with `completed`;
+workflows that publish files also print their paths.
 
-```text
-session_id: 5f0c2b6e-8d1a-4c52-9a0e-3b7d41c9e2aa
-stage implement · attempt 1 · 10:15:30 · codex/gpt-5 (effort: medium).
-stage implement · attempt 1 · 2m 15s · complete.
-completed · 2m 15s
-```
-
-Inspect sessions or resume a stopped run:
+Each run is a session. List sessions or resume a stopped run:
 
 ```bash
 migent session list
@@ -194,31 +150,81 @@ migent session continue <session-id>
 
 ### Join an existing project
 
-`.migent/config.local.yaml` is not committed, so every clone needs its own.
-
-1. Install and sign in to the provider CLIs you plan to use.
-2. Run `migent provider list` to see available providers and model IDs.
-3. Run `migent doctor`. For each alias with no mapping on this machine, it
-   prints the YAML to add. Put it in `.migent/config.local.yaml`, for example:
-
-   ```yaml
-   models:
-     code_generation:
-       provider: codex
-       model: gpt-5
-   ```
-
-4. Run `migent doctor` again, then start a workflow as above.
-
-An agent with the skill installed can do steps 2 to 4 for you. If a project
-commits complete provider and model mappings in `config.yaml`, the local file is
-optional and only needs machine-specific overrides.
+Install and sign in to the provider CLIs the project uses, then run
+`migent doctor` and follow its setup instructions. An agent with the Migent
+skill can do this for you. Use the project's existing workflows; do not run
+`init` again.
 
 ## Workflow as code
 
-Workflows live in `.migent/workflows/`. Roles and model aliases live in `.migent/config.yaml`; the provider and model behind each alias live in `.migent/config.local.yaml`.
+Workflows live in `.migent/workflows/`. Roles live in `.migent/config.yaml`.
+A role names a kind of work and selects a provider and model. A stage assigns
+work to a role; a workflow connects those stages.
 
-A standard plan-and-review workflow:
+### Start with one role and one stage
+
+Set the role's provider and model in `default_model`. Use model IDs available
+from `migent provider list` in place of the example IDs.
+
+```yaml
+# .migent/config.yaml
+schema_version: 2
+roles:
+  developer:
+    default_model:
+      provider: codex
+      model: gpt-5
+```
+
+This workflow asks the developer to implement a task, then checks the result:
+
+```yaml
+# .migent/workflows/implement.yaml
+schema_version: 2
+stages:
+  - id: implement
+    role: developer
+    instructions:
+      - Implement the task described in task.md.
+    verify:
+      - pnpm build
+      - pnpm test
+```
+
+Replace the `verify` commands with your project's build and test commands.
+Run it with the same command as the quickstart:
+
+```bash
+migent session run --workflow implement --task "Add a --json flag to the export command"
+```
+
+If verification fails, Migent asks the agent to fix the problem and checks again.
+
+To change the developer's provider or model, edit its `default_model`. The
+workflow still refers to `developer`. After editing configuration or workflows,
+run `migent doctor` to check them.
+
+### Add planning and review
+
+For a plan-and-review workflow, define two roles. They can use the same model
+or different providers:
+
+```yaml
+# .migent/config.yaml
+schema_version: 2
+roles:
+  planner:
+    default_model:
+      provider: codex
+      model: gpt-5
+  reviewer:
+    default_model:
+      provider: grok
+      model: grok-4
+```
+
+The planner produces `plan.md`. The reviewer receives it through `depends_on`
+and decides whether to approve it or send it back for revision:
 
 ```yaml
 # .migent/workflows/plan.yaml
@@ -245,121 +251,37 @@ stages:
         revise: plan
 ```
 
-The roles use model aliases named for the work they do:
+Run this workflow with:
 
-```yaml
-# .migent/config.yaml (committed)
-schema_version: 2
-models:
-  deep_reasoning: {}
-  critical_review: {}
-
-roles:
-  planner:
-    default_model: deep_reasoning
-  reviewer:
-    default_model: critical_review
+```bash
+migent session run --workflow plan --task "Plan a --json flag for the export command"
 ```
 
-Each machine maps the aliases to the provider CLIs it has:
-
-```yaml
-# .migent/config.local.yaml (this machine, not committed)
-models:
-  deep_reasoning:
-    provider: codex
-    model: gpt-5
-  critical_review:
-    provider: grok
-    model: grok-4
-    options:
-      reasoning-effort: high
-```
-
-### How decisions work
-
-Migent enforces a clean, lightweight protocol. Stages communicate outcomes
-through standard RFC-style response headers injected into the prompt:
-
-```text
-status: complete
-decision: approved
-
-The implementation plan covers all requirements and test cases.
-```
-
-When a stage completes, Migent routes execution based on the `decision` header.
-Review prose remains human-readable feedback passed directly to the next stage.
-
-### Beyond planning: code and verify
-
-Stages are not limited to generating documents. A stage can modify repository files
-and declare automated `verify` commands:
-
-```yaml
-stages:
-  - id: implement
-    role: developer
-    instructions:
-      - Implement the approved plan.
-    verify:
-      - pnpm build
-      - pnpm test
-    max_verify: 3
-```
-
-Migent runs the verification commands in the workspace POSIX shell. If tests fail,
-Migent returns the command tail to the agent for an automated repair loop (up to
-`max_verify` attempts) before handing off to review.
+`max_revisions` bounds the review loop. A successful stage's named file is an
+**artifact**; `depends_on` makes it available to the next stage. The
+**decision** selects a route: `approved` completes the workflow, while `revise`
+returns to `plan` with the review feedback.
 
 ## Concepts
 
-A workflow connects stages through dependencies and explicit decision routes.
-
-- A **model** identifies a provider model and its execution options.
-- A **role** names a kind of work and selects its default model.
-- A **stage** assigns work to a role and may declare dependencies, an artifact,
-  a decision, or verification commands.
-- An **artifact** is a named file produced by a successful stage and stored with
-  the workflow session.
-- A **decision** selects the next route, including a route back for revision.
-- A **session** records executions, events, decisions, and artifacts so work can
-  be inspected or resumed.
-
-### Artifact handoff vs session resume
-
-- `depends_on: [stage]`: Makes the upstream stage's artifacts available to the
-  current stage while starting a fresh provider agent. Best for clean context
-  handoffs between different roles and models.
-- `session.resume_from: <stage>`: Continues the upstream stage's provider conversation
-  thread. Best when an agent needs to keep its conversation memory and tool history.
-
-### Built-in safeguards
-
-Engineering workflows have explicit cost and execution guardrails:
-
-- **Revision limits (`max_revisions`)**: Prevents infinite critique loops between
-  agents.
-- **Dispatch circuit breaker (`--max-dispatches`)**: Halts execution if a run
-  exceeds the configured dispatch limit (default 20).
-- **Verification bounds (`max_verify`, `verify_timeout`)**: Limits automated
-  test/repair attempts.
-- **Session metrics (`metrics.json`)**: Tracks tokens, turns, and cost per execution
-  and session.
+- **Workflow:** A process made of stages, such as plan, review, and implement.
+- **Stage:** One step with instructions for a role, optional checks, and a next step.
+- **Role:** A kind of work, such as developer or reviewer, with a default provider and model.
+- **Model:** The AI model a role uses, identified by its provider and model ID.
+- **Artifact:** A file a stage produces for later stages or the user, such as `plan.md`.
+- **Decision:** A stage's choice of what happens next, such as approve or revise.
+- **Session:** A saved run of a workflow or role that you can inspect and continue.
 
 ## Current scope
 
-Migent is a local, file-backed orchestration layer for provider CLIs. It does
-not replace their agent runtimes, and it does not hide their distinctive
-capabilities behind a lowest-common-denominator API.
+Migent runs locally using your installed coding-agent CLIs. You define the
+stages, checks, and review routes; Migent coordinates them and saves progress
+so you can inspect results or continue stopped work. Each provider CLI handles
+its own sign-in, tools, and agent execution.
 
-Today, Migent supports explicit stage routing, review loops, local session
-history, provider-session resume, prerequisite workflows, and standalone role
-execution. A machine-local registry service records workspaces
-so another tool can ask which projects exist.
-
-Workflows can be run directly from the command line, or driven autonomously by your
-coding agent when the project has the Migent skill installed.
+You can run a single role or a workflow, pass artifacts between stages, and
+connect workflows. Use the CLI directly or ask an AI agent with the Migent
+skill to operate it for you.
 
 ## Documentation
 
@@ -368,25 +290,8 @@ coding agent when the project has the Migent skill installed.
 - [Sessions and workflow composition](https://github.com/nodeint/migent/blob/main/docs/sessions.md)
 - [CLI commands and execution controls](https://github.com/nodeint/migent/blob/main/docs/cli.md)
 
-Run `migent <command> --help` for the exact command contract, output fields,
-and exit codes.
-
-## Development
-
-The pnpm workspace contains four packages: the `@nodeint/migent` CLI and its
-internal libraries `@nodeint/migent-kernel`, `@nodeint/migent-adapters`, and
-`@nodeint/migent-registry`. The libraries have no stable API; depend on
-`@nodeint/migent`.
-
-```bash
-pnpm install
-pnpm build
-pnpm test
-pnpm migent --help   # run the local build
-```
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for testing rules, platform notes, and
-the release process.
+Run `migent <command> --help` for command options. To contribute to Migent, see
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
