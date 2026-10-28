@@ -108,7 +108,7 @@ test("ignores a stray model field", () => {
   expect(target.options).toEqual({});
 });
 
-test("preserves model options and role options", () => {
+test("preserves model options without role options", () => {
   const parsed = loadYamlMapping(writeConfig(STAGE_CONFIG));
   const models = parsed.models as { "gpt-terra": { options: Record<string, string> } };
   const roles = parsed.roles as { reviewer: { options: Record<string, string> } };
@@ -116,7 +116,7 @@ test("preserves model options and role options", () => {
     model_reasoning_effort: "medium",
     temperature: "0.2",
   });
-  expect(roles.reviewer.options.model_reasoning_effort).toBe("medium");
+  expect(roles.reviewer).not.toHaveProperty("options");
 });
 
 test("loads role instructions and rejects a non-list", () => {
@@ -245,8 +245,11 @@ test("config.local.yaml overrides role and stage resolution", () => {
       "    model: grok-local",
       "roles:",
       "  reviewer:",
-      "    options:",
-      "      model_reasoning_effort: low",
+      "    default_model:",
+      "      provider: codex",
+      "      model: local-reviewer",
+      "      options:",
+      "        model_reasoning_effort: low",
       "",
     ].join("\n"),
     "utf8",
@@ -301,7 +304,7 @@ test.each(["codex", "grok", "claude", "agy", "opencode"])("rejects model effort 
   expect(() => loadModelTarget({ models: { fast: { provider, model: "test", effort: "high", options: { [option]: "low" } } } }, "fast", resolveProvider)).toThrow(/conflicts with models.fast.options/);
 });
 
-test("local model effort replaces shared effort and role and stage native options still win", () => {
+test("local model effort replaces shared effort", () => {
   const workspace = writeStageWorkspace();
   const config = loadWorkspaceConfig(workspace);
   const models = config.models as Record<string, Record<string, unknown>>;
@@ -310,11 +313,10 @@ test("local model effort replaces shared effort and role and stage native option
   delete (model.options as Record<string, string>)["reasoning-effort"];
   model.effort = "low";
   const roles = config.roles as Record<string, Record<string, unknown>>;
-  roles.developer!.options = { "reasoning-effort": "high" };
   writeFileSync(path.join(workspace, ".migent", "config.yaml"), stringify(config));
   writeFileSync(path.join(workspace, ".migent", "config.local.yaml"), stringify({ models: { [alias]: { effort: "medium" } } }));
   expect(loadModelTarget(loadWorkspaceConfig(workspace), alias, resolveProvider).options["reasoning-effort"]).toBe("medium");
-  expect(resolveStageTarget(workspace, "plan-implement", "implement", undefined, resolveProvider).options["reasoning-effort"]).toBe("high");
+  expect(resolveStageTarget(workspace, "plan-implement", "implement", undefined, resolveProvider).options["reasoning-effort"]).toBe("medium");
 });
 
 
@@ -325,7 +327,7 @@ test("stage native effort overrides the model alias", () => {
     '    options:\n      model_reasoning_effort: medium\n      temperature: "0.2"',
     '    effort: low\n    options:\n      temperature: "0.2"',
   ));
-  expect(resolveRoleTarget(workspace, "reviewer", undefined, resolveProvider).options.model_reasoning_effort).toBe("medium");
+  expect(resolveRoleTarget(workspace, "reviewer", undefined, resolveProvider).options.model_reasoning_effort).toBe("low");
   expect(resolveStageTarget(workspace, "plan-implement", "review-work", undefined, resolveProvider).options.model_reasoning_effort).toBe("high");
 });
 

@@ -1,5 +1,6 @@
+import { stringify } from "yaml";
 import type { ProviderResolver } from "./provider-contract.js";
-import { loadModelTarget, loadRoleInstructions, resolveStageSpec } from "./config.js";
+import { loadModelTarget, loadRoleInstructions, resolveRoleCascade, resolveStageSpec } from "./config.js";
 import { ConfigurationError } from "./errors.js";
 import { isRecord } from "./record.js";
 import { isRoleStage, type RoleStageSpec, type WorkflowDocument } from "./workflow.js";
@@ -34,7 +35,7 @@ export interface ModelView {
 
 export interface RoleView {
   role: string;
-  modelName: string;
+  modelName: string | null;
   provider: string;
   model: string;
   options: Record<string, string>;
@@ -104,19 +105,19 @@ export function inspectConfig(
   const roleViews: RoleView[] = [];
   for (const [name, role] of Object.entries(roles)) {
     if (!isRecord(role)) throw new ConfigurationError(`Missing or invalid roles.${name}.`);
-    const modelName = stringValue(role.default_model, `roles.${name}.default_model`);
-    const target = loadModelTarget(config, modelName, resolveProvider);
+    const modelName = typeof role.default_model === "string" ? role.default_model : null;
+    const target = resolveRoleCascade(config, name, undefined, resolveProvider);
     const shared = Object.keys(roles).filter((other) => {
       if (other === name) return false;
       const otherRole = roles[other];
-      return isRecord(otherRole) && otherRole.default_model === modelName;
+      return modelName !== null && isRecord(otherRole) && otherRole.default_model === modelName;
     });
     roleViews.push({
       role: name,
       modelName,
       provider: target.provider,
       model: target.model,
-      options: roleOptionMap(role),
+      options: { ...target.options },
       instructions: loadRoleInstructions(config, name),
       sharedWith: shared,
       stages: roleStages(workflows, name),
@@ -190,23 +191,6 @@ export function assignRoles(
   return describeChange(config, updated, args.workflows ?? [], { resolveProvider: args.resolveProvider });
 }
 
-export function setRoleOptions(
-  config: Record<string, unknown>,
-  role: string,
-  options: Record<string, string | null>,
-  args: { workflows?: readonly WorkflowDocument[]; resolveProvider?: ProviderResolver } = {},
-): ConfigChange {
-  requireName(role, "role");
-  const updated = copyConfig(config);
-  const roleMap = rolesOf(updated);
-  const body = roleMap[role];
-  if (!Object.hasOwn(roleMap, role) || !isRecord(body)) {
-    throw new ConfigEditError(`Unknown role: ${role}.`);
-  }
-  applyRoleOptions(body, role, options);
-  return describeChange(config, updated, args.workflows ?? [], { resolveProvider: args.resolveProvider });
-}
-
 export function placeRoleModel(
   config: Record<string, unknown>,
   role: string,
@@ -225,12 +209,16 @@ export function placeRoleModel(
   const workflows = args.workflows ?? [];
   const updated = copyConfig(config);
   const models = modelsOf(updated);
-  let match = matchingModelName(updated, { provider: providerName, model: modelId, options: {} }, args.resolveProvider);
+  const definition: Record<string, unknown> = { provider: providerName, model: modelId };
+  if (options !== UNSET) applyModelOptions(definition, role, options);
+  let match = matchingModelName(updated, {
+    provider: providerName, model: modelId, options: optionsDict(definition, role),
+  }, args.resolveProvider);
   let created: string | null = null;
   let reused: string | null = null;
   if (match === null) {
     match = suggestModelName(updated, role);
-    models[match] = { provider: providerName, model: modelId };
+    models[match] = definition;
     created = match;
   } else {
     reused = match;
@@ -243,11 +231,6 @@ export function placeRoleModel(
     if (!isRecord(body)) throw new ConfigurationError(`Missing or invalid roles.${role}.`);
     body.default_model = match;
   }
-  const roleBody = roleMap[role];
-  if (options !== UNSET) {
-    if (!isRecord(roleBody)) throw new ConfigurationError(`Missing or invalid roles.${role}.`);
-    applyRoleOptions(roleBody, role, options);
-  }
   const change = describeChange(config, updated, workflows, { reusedModel: reused, resolveProvider: args.resolveProvider });
   if (created !== null) return { ...change, createdModel: created, reusedModel: null };
   return change;
@@ -258,8 +241,7 @@ export function matchingModelName(
   args: { provider: string; model: string; options: Record<string, string> },
   resolveProvider?: ProviderResolver,
 ): string | null {
-  const models = config.models;
-  if (!isRecord(models)) throw new ConfigurationError("Missing or invalid models.");
+  const models = modelsOf(config);
   const wanted = { ...args.options };
   for (const key of Object.keys(models)) {
     let target;
@@ -422,7 +404,18 @@ function syncRoles(
     if (section === null) throw new ConfigEditError("Cannot edit roles in this file.");
     const block = childBlock(section, key);
     if (block === null) throw new ConfigEditError(`Cannot edit roles.${key} in this file.`);
-    syncScalar(lines, block, "default_model", body.default_model, `roles.${key}.default_model`, edits);
+    const previous = currentRoles[key];
+    if (isRecord(body.default_model) || (isRecord(previous) && isRecord(previous.default_model))) {
+      const found = childBlock(block, "default_model");
+      if (!found) throw new ConfigEditError(`Cannot edit roles.${key}.default_model in this file.`);
+      if (!isRecord(previous) || !deepEqual(previous.default_model, body.default_model)) {
+        const rendered = stringify({ default_model: body.default_model }, { lineWidth: 0 }).trimEnd()
+          .split("\n").map((line) => " ".repeat(block.indent + unit) + line);
+        edits.push([found.line, found.end, rendered]);
+      }
+    } else {
+      syncScalar(lines, block, "default_model", body.default_model, `roles.${key}.default_model`, edits);
+    }
     syncRoleOptions(lines, block, currentRoles[key], body, key, unit, edits);
     dropRemovedScalars(block, currentRoles[key], body, edits);
   }
@@ -593,7 +586,7 @@ function roleLines(key: string, body: Record<string, unknown>, indent: number, u
   const child = " ".repeat(indent + unit);
   const lines = [
     `${parent}${key}:`,
-    `${child}default_model: ${yamlScalar(stringValue(body.default_model, `roles.${key}.default_model`))}`,
+    ...stringify({ default_model: body.default_model }, { lineWidth: 0 }).trimEnd().split("\n").map((line) => child + line),
   ];
   const roleOptions = roleOptionMap(body);
   if (Object.keys(roleOptions).length > 0) {
@@ -773,7 +766,7 @@ function shields(
   const beforeBinding = binding(beforeRoles[stage.role]);
   const afterBinding = binding(afterRoles[stage.role]);
   const ignores: string[] = [];
-  if (stage.modelName !== null && beforeBinding[0] !== afterBinding[0]) ignores.push("role-model");
+  if (stage.modelName !== null && !deepEqual(beforeBinding[0], afterBinding[0])) ignores.push("role-model");
   if (
     Object.keys(stage.options).length > 0 &&
     (!deepEqual(beforeBinding[1], afterBinding[1]) ||
@@ -824,15 +817,8 @@ function resolvedRole(config: Record<string, unknown>, role: string, resolveProv
   const roles = config.roles;
   if (!isRecord(roles) || !Object.hasOwn(roles, role)) return null;
   try {
-    const body = roles[role];
-    const modelName = stringValue(
-      isRecord(body) ? body.default_model : undefined,
-      `roles.${role}.default_model`,
-    );
-    const target = loadModelTarget(config, modelName, resolveProvider);
-    const merged = { ...target.options };
-    if (isRecord(body)) Object.assign(merged, roleOptionMap(body));
-    return [target.provider, target.model, sortedItems(merged)];
+    const target = resolveRoleCascade(config, role, undefined, resolveProvider);
+    return [target.provider, target.model, sortedItems(target.options)];
   } catch (error) {
     if (error instanceof ConfigurationError) return null;
     throw error;
@@ -872,14 +858,6 @@ function applyModelOptions(body: Record<string, unknown>, key: string, updates: 
   writeOptions(options, updates);
   if (Object.keys(options).length > 0) body.options = options;
   else delete body.options;
-}
-
-function applyRoleOptions(role: Record<string, unknown>, name: string, updates: unknown): void {
-  if (!isRecord(updates)) throw new ConfigEditError("Options must be a mapping.");
-  const options = optionRecord(role.options, `Missing or invalid roles.${name}.options.`);
-  writeOptions(options, updates);
-  if (Object.keys(options).length > 0) role.options = options;
-  else delete role.options;
 }
 
 function optionRecord(value: unknown, field: string): Record<string, unknown> {
@@ -925,13 +903,14 @@ function stringMap(options: Record<string, unknown>): Record<string, string> {
 
 function copyConfig(config: Record<string, unknown>): Record<string, unknown> {
   const copied = deepCopyRecord(config);
+  if (copied.models === undefined) copied.models = {};
   modelsOf(copied);
   rolesOf(copied);
   return copied;
 }
 
 function modelsOf(config: Record<string, unknown>): Record<string, unknown> {
-  const value = config.models;
+  const value = config.models === undefined ? {} : config.models;
   if (!isRecord(value)) throw new ConfigurationError("Missing or invalid models.");
   return value;
 }
@@ -1028,7 +1007,7 @@ function comparePair(left: [string, string], right: [string, string]): number {
 }
 
 function bindingsEqual(left: Binding, right: Binding): boolean {
-  return left[0] === right[0] && deepEqual(left[1], right[1]);
+  return deepEqual(left[0], right[0]) && deepEqual(left[1], right[1]);
 }
 
 function resolvedEqual(left: ResolvedTarget | null, right: ResolvedTarget | null): boolean {

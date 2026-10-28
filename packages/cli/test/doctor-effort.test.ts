@@ -28,13 +28,14 @@ function fakeCatalog(argv: string[]): string {
 
 async function inspect(
   models: Record<string, unknown>,
-  options: { run?: RunCommand; json?: boolean; local?: Record<string, unknown>; which?: typeof which } = {},
+  options: { run?: RunCommand; json?: boolean; local?: Record<string, unknown>; which?: typeof which; inline?: boolean } = {},
 ) {
   const workspace = mkdtempSync(path.join(tmpdir(), "migent-doctor-effort-"));
   try {
     mkdirSync(path.join(workspace, ".migent", "workflows"), { recursive: true });
     writeFileSync(path.join(workspace, ".migent", "config.yaml"), stringify({
-      schema_version: 2, models, roles: { developer: { default_model: Object.keys(models)[0] } },
+      schema_version: 2, ...(options.inline ? {} : { models }),
+      roles: { developer: { default_model: options.inline ? Object.values(models)[0] : Object.keys(models)[0] } },
     }));
     if (options.local) writeFileSync(path.join(workspace, ".migent", "config.local.yaml"), stringify(options.local));
     writeFileSync(path.join(workspace, ".migent", "workflows", "flow.yaml"), stringify({
@@ -165,4 +166,18 @@ test("validates the same trimmed identifiers and value used for execution", asyn
   const result = await inspect({ fast: { provider: " byteplus ", client: " codex ", model: " test ", effort: " high " } });
   expect(result.value).toBe(0);
   expect(JSON.parse(result.stdout).checks[0].warnings).toEqual([]);
+});
+
+
+test.each(["high", "bad", ""])("doctor checks inline effort %j with its full field path", async (effort) => {
+  const calls: string[][] = [];
+  const result = await inspect({ fast: { provider: "codex", model: "test", effort } }, {
+    inline: true, run: (argv) => { calls.push(argv); return fakeCatalog(argv); },
+  });
+  const checks = JSON.parse(result.stdout).checks;
+  expect(result.value).toBe(effort === "high" ? 0 : 1);
+  expect(checks.flatMap((check: { problems: string[] }) => check.problems)).toEqual(effort === "high" ? [] : [
+    `Invalid roles.developer.default_model.effort: ${JSON.stringify(effort)}\nValid values: low, medium, high`,
+  ]);
+  expect(calls).toHaveLength(1);
 });

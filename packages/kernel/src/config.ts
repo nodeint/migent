@@ -99,7 +99,17 @@ export function loadWorkspaceConfig(workspace: string): Record<string, unknown> 
     throw new ConfigurationError(`${error.message} (${localConfigPath(workspace)})`);
   }
   const { schema_version: _ignored, ...local } = loaded;
-  return mergeConfig(base, local);
+  const merged = mergeConfig(base, local);
+  // A role default is a complete selection, including when both values are objects.
+  if (isRecord(local.roles) && isRecord(merged.roles)) {
+    for (const [name, role] of Object.entries(local.roles)) {
+      const target = merged.roles[name];
+      if (isRecord(role) && isRecord(target) && Object.hasOwn(role, "default_model")) {
+        target.default_model = role.default_model;
+      }
+    }
+  }
+  return merged;
 }
 
 export function stringifyConfig(config: Record<string, unknown>): string {
@@ -163,7 +173,7 @@ export function resolveRoleTarget(
   const config = loadWorkspaceConfig(workspace);
   if (provider !== null && model !== null) {
     const roles = mapping(config.roles, "roles");
-    mapping(roles[role], `roles.${role}`);
+    validateRoleOptions(mapping(roles[role], `roles.${role}`), role);
     return stageTarget(provider, model, { ...(options ?? {}) });
   }
   return resolveRoleCascade(config, role, { options }, resolveProvider);
@@ -177,6 +187,16 @@ export function loadModelTarget(
   const models = mapping(config.models, "models");
   const modelConfig = mapping(models[modelName], `models.${modelName}`);
   const field = `models.${modelName}`;
+  return loadModelDefinition(modelConfig, field, resolveProvider);
+}
+
+/** Named and inline models share exactly the same validation and option handling. */
+export function loadModelDefinition(
+  value: unknown,
+  field: string,
+  resolveProvider?: ProviderResolver,
+): StageTarget {
+  const modelConfig = mapping(value, field);
   const provider = requiredString(modelConfig.provider, `${field}.provider`);
   const client = optionalString(modelConfig.client, `${field}.client`);
   const options = readOptions(modelConfig.options, `${field}.options`);
@@ -202,7 +222,7 @@ export function loadModelTarget(
   return stageTarget(provider, requiredString(modelConfig.model, `${field}.model`), options, client);
 }
 
-function resolveRoleCascade(
+export function resolveRoleCascade(
   config: Record<string, unknown>,
   roleKey: string,
   args?: {
@@ -214,23 +234,41 @@ function resolveRoleCascade(
 ): StageTarget {
   const roles = mapping(config.roles, "roles");
   const role = mapping(roles[roleKey], `roles.${roleKey}`);
+  validateRoleOptions(role, roleKey);
   const modelField = args?.modelField ?? `roles.${roleKey}.default_model`;
   const named = args?.modelName ?? null;
-  const resolvedName = requiredString(named === null || named === "" ? role.default_model : named, modelField);
-  const target = loadModelTarget(config, resolvedName, resolveProvider);
-  const roleOptions = readOptions(role.options, `roles.${roleKey}.options`);
+  const selection = named === null || named === "" ? role.default_model : named;
+  let target: StageTarget;
+  if (isRecord(selection)) {
+    target = loadModelDefinition(selection, modelField, resolveProvider);
+  } else {
+    const alias = requiredString(selection, modelField);
+    if (!isRecord(config.models) || !Object.hasOwn(config.models, alias)) {
+      throw new ConfigurationError(`${modelField}: unknown model alias "${alias}" in models.`);
+    }
+    target = loadModelTarget(config, alias, resolveProvider);
+  }
   return stageTarget(
     target.provider,
     target.model,
-    mergeOptions(target.options, roleOptions, args?.options),
+    mergeOptions(target.options, args?.options),
     target.client,
   );
+}
+
+export function validateRoleOptions(role: Record<string, unknown>, roleKey: string): void {
+  if (Object.hasOwn(role, "options")) {
+    throw new ConfigurationError(
+      `roles.${roleKey}.options is no longer supported. Move options into roles.${roleKey}.default_model (inline model) or the referenced models entry.`,
+    );
+  }
 }
 
 /** Absent or null instructions are an empty list. A non-list is a configuration error. */
 export function loadRoleInstructions(config: Record<string, unknown>, roleKey: string): string[] {
   const roles = mapping(config.roles, "roles");
   const role = mapping(roles[roleKey], `roles.${roleKey}`);
+  validateRoleOptions(role, roleKey);
   return stringItems(role.instructions, `roles.${roleKey}.instructions`);
 }
 

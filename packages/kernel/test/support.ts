@@ -84,8 +84,6 @@ roles:
     default_model: grok
   reviewer:
     default_model: gpt-terra
-    options:
-      model_reasoning_effort: medium
 `;
 
 export const STAGE_WORKFLOW = `\

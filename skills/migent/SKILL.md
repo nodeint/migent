@@ -6,8 +6,8 @@ description: Set up Migent in a project, or configure, run, inspect, and resume 
 # Migent
 
 Migent runs a project's multi-stage agent workflows from the `migent` CLI.
-A workflow is a set of stages. A stage runs a role, or runs `verify` alone when `role` is omitted. A role uses a model name
-defined in `.migent/config.yaml`. Each run is a session, stored under
+A stage runs a role, or runs `verify` alone when `role` is omitted. Configure
+role models in `.migent/config.yaml`, inline or by alias. Each run is a session, stored under
 `.migent/sessions/<session-id>/`.
 
 This skill is already in the prompt. Do not open its file again.
@@ -157,8 +157,8 @@ No command edits config. Edit the YAML, then validate:
    `models.<alias>` in `.migent/config.local.yaml`.
    Set `models.<alias>.effort` (for example `high`) to adjust thinking level.
    See `references/config.md` for supported usage.
-3. To change which alias a role uses, or the roles themselves, edit
-   `.migent/config.yaml`.
+3. Set `roles.<role>.default_model` to an alias or inline model. Put options
+   inside the model. See `references/config.md` for examples and local overrides.
 4. Run `migent doctor --json` and fix what it reports. A shared alias with no
    local mapping is reported with the YAML to add.
 

@@ -4,7 +4,8 @@ import { createRequire } from "node:module";
 import { z } from "zod";
 import type { ProviderInfo } from "./provider-contract.js";
 import {
-  loadModelTarget,
+  loadModelDefinition,
+  validateRoleOptions,
   loadRoleInstructions,
   hasLocalConfig,
   LOCAL_CONFIG_FILE,
@@ -107,12 +108,13 @@ function checkConfig(
   const executableByProvider: Record<string, string> = {};
   let models: Record<string, unknown>;
   let roles: Record<string, unknown>;
-  if (!isRecord(config.models)) {
+  if (config.models === undefined) {
+    models = {};
+  } else if (!isRecord(config.models)) {
     problems.push("Missing or invalid models.");
     models = {};
   } else {
     models = config.models;
-    if (Object.keys(models).length === 0) problems.push("models is empty.");
   }
   if (!isRecord(config.roles)) {
     problems.push("Missing or invalid roles.");
@@ -127,19 +129,32 @@ function checkConfig(
   );
   if (unmapped.size > 0) add(problems, unmappedMessage([...unmapped].sort()));
 
-  for (const modelName of Object.keys(models).sort()) {
+  const definitions: Array<[string, unknown, string]> = Object.keys(models).sort()
+    .map((name) => [name, models[name], `models.${name}`]);
+  for (const [name, role] of Object.entries(roles)) {
+    if (!isRecord(role)) continue;
+    try { validateRoleOptions(role, name); } catch (error) {
+      if (!(error instanceof ConfigurationError)) throw error;
+      add(problems, error.message);
+    }
+    if (isRecord(role.default_model)) {
+      const field = `roles.${name}.default_model`;
+      definitions.push([field, role.default_model, field]);
+    }
+  }
+  for (const [modelName, definition, field] of definitions) {
     if (unmapped.has(modelName)) continue;
     const effortCheck = effortChecks[modelName];
     if (effortCheck?.problem) add(problems, effortCheck.problem);
     if (effortCheck?.warning) effortWarnings.push(effortCheck.warning);
-    let modelConfig = config;
-    if (effortCheck?.problem && isRecord(models[modelName])) {
-      const { effort: _effort, ...rest } = models[modelName];
-      modelConfig = { ...config, models: { ...models, [modelName]: rest } };
+    let modelDefinition = definition;
+    if (effortCheck?.problem && isRecord(definition)) {
+      const { effort: _effort, ...rest } = definition;
+      modelDefinition = rest;
     }
     let target;
     try {
-      target = loadModelTarget(modelConfig, modelName, createProviderResolver(providers));
+      target = loadModelDefinition(modelDefinition, field, createProviderResolver(providers));
     } catch (error) {
       if (!(error instanceof ConfigurationError)) throw error;
       add(problems, error.message);
@@ -147,11 +162,11 @@ function checkConfig(
     }
     const provider = providers[target.provider];
     if (provider === undefined) {
-      add(problems, `models.${modelName}.provider is not supported: ${target.provider}`);
+      add(problems, `${field}.provider is not supported: ${target.provider}`);
       continue;
     }
     if (provider.requiresClient === true && target.client === undefined) {
-      add(problems, `models.${modelName}.client is required: ${target.provider} has no default CLI client.`);
+      add(problems, `${field}.client is required: ${target.provider} has no default CLI client.`);
       continue;
     }
     let effective: ProviderInfo = provider;
@@ -160,14 +175,14 @@ function checkConfig(
         if (provider.withClient === undefined) throw new Error(`${target.provider} cannot switch CLI client.`);
         effective = provider.withClient(target.client);
       } catch (error) {
-        add(problems, `models.${modelName}.client is not supported: ${error instanceof Error ? error.message : String(error)}`);
+        add(problems, `${field}.client is not supported: ${error instanceof Error ? error.message : String(error)}`);
         continue;
       }
     }
     if (!Object.hasOwn(executableByProvider, target.provider)) {
       executableByProvider[target.provider] = effective.command;
     }
-    rejectOptions(problems, `models.${modelName}.options`, effective, target.options);
+    rejectOptions(problems, `${field}.options`, effective, target.options);
   }
 
   const roleNames: string[] = [];
@@ -184,6 +199,7 @@ function checkConfig(
       }
       continue;
     }
+    if (effortChecks[`roles.${roleKey}.default_model`]?.problem) continue;
     let resolved;
     try {
       resolved = resolveRoleTarget(workspace, roleKey, undefined, createProviderResolver(providers));
@@ -257,6 +273,7 @@ function checkStageBindings(
     if (!isRoleStage(stage)) continue;
     const role = isRecord(config.roles) ? config.roles[stage.role] : undefined;
     const alias = stage.modelName ?? (isRecord(role) ? role.default_model : undefined);
+    if (stage.modelName === null && invalidEffort.has(`roles.${stage.role}.default_model`)) continue;
     if (typeof alias === "string" && invalidEffort.has(alias)) continue;
     let target;
     try {
