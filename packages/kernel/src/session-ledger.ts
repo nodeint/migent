@@ -308,7 +308,9 @@ function publishVersion2(input: {
   workflow: WorkflowDocument;
   snapshots: readonly ExecutionSnapshot[];
 }): { outputs: LedgerOutput[]; outputsMissing: string[] } {
-  if (input.executionStatus !== "completed" || input.outcome === null || input.outcome.status !== "complete") {
+  const completedStage =
+    input.executionStatus === "completed" && input.outcome !== null && input.outcome.status === "complete";
+  if (!completedStage && input.executionStatus !== "skipped") {
     return { outputs: [], outputsMissing: [] };
   }
   const sessionStatus = typeof input.previousStatus.status === "string" ? input.previousStatus.status : "active";

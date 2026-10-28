@@ -30,6 +30,7 @@ const CONFIG_KEYS = [
 ];
 const WORKFLOW_KEYS = [
   "artifact",
+  "changed_paths",
   "completion",
   "concurrency",
   "constraints",
@@ -50,6 +51,7 @@ const WORKFLOW_KEYS = [
   "resume_from",
   "role",
   "routes",
+  "run_when",
   "schema_version",
   "session",
   "stage",
@@ -138,6 +140,17 @@ test("workflow reference parses and names every key the workflow parser reads", 
     verifyTimeoutSec: 900,
     decisionValues: ["approved", "revise"],
     routes: { approved: "complete", revise: "draft" },
+  });
+  expect(document.stages.check_docs).toMatchObject({
+    kind: "role",
+    role: "reviewer",
+    description: "Review documentation changes.",
+    dependsOn: ["review"],
+    instructions: ["Review the documentation changes."],
+    verify: [],
+    decisionValues: [],
+    artifact: null,
+    runWhen: { changedPaths: ["docs/**/*", "**/README.md"] },
   });
   expect(document.completion).toBeNull();
   expect(document.outputs).toEqual([{ name: "draft", fromStage: "draft", artifact: "draft.md" }]);

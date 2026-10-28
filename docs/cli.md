@@ -94,7 +94,8 @@ migent session continue <session-id> --max-dispatches 50
 migent session continue <session-id> --unlimited-dispatches
 ```
 
-`--once` dispatches only once and has no dispatch ceiling. Do not combine
+A `run_when` skip counts as one dispatch. `--once` dispatches only once and
+has no dispatch ceiling. When that one dispatch is a skip, the command exits 0. Do not combine
 `--once` with `--max-dispatches` or `--unlimited-dispatches`. Revision limits
 are defined by `max_revisions` in
 the workflow. `session continue` resets the session's revision counts before

@@ -119,6 +119,10 @@ export function printWatchSnapshot(snapshot: Record<string, unknown>): void {
       lines.push(["execution", value]);
     }
   }
+  const skippedStages = Array.isArray(snapshot.skipped_stages) ? snapshot.skipped_stages.filter(isRecord) : [];
+  if (skippedStages.length > 0) {
+    lines.push(["skipped", skippedStages.map((stage) => String(stage.stage_id ?? "")).join(", ")]);
+  }
   const outcome = snapshot.outcome;
   if (isRecord(outcome) && typeof outcome.status === "string") {
     lines.push(["outcome", outcome.status]);
