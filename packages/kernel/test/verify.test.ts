@@ -882,7 +882,14 @@ test("continue carries the artifact and completes once verify passes", async () 
 test("cancellation during a verify command marks the execution cancelled and kills the group", async () => {
   const workspace0 = tempDir("migent-verify-p-");
   const pidFile = path.join(workspace0, "pid");
-  const { workspace, sessionId } = setup(workflowText(`echo $$ > "${pidFile}"; exec sleep 30`));
+  const script = path.join(workspace0, "hold.cjs");
+  // Git Bash's $$ is an MSYS PID on Windows; process.kill needs the native PID.
+  writeFileSync(
+    script,
+    `require("fs").writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setTimeout(() => {}, 30_000);`,
+    "utf8",
+  );
+  const { workspace, sessionId } = setup(workflowText(`exec "${process.execPath}" "${script}"`));
   const runner = new AgentToolRunner({ fake: new ScriptedProvider([OK], ["# n\n"]) }, 10);
   const timer = setInterval(() => {
     if (!existsSync(pidFile) || readFileSync(pidFile, "utf8").trim() === "") return;
@@ -899,8 +906,14 @@ test("cancellation during a verify command marks the execution cancelled and kil
     const [id] = readdirSync(executionsDirectory);
     expect(execution(workspace, sessionId, id!).status).toBe("cancelled");
     const pid = Number(readFileSync(pidFile, "utf8").trim());
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    expect(() => process.kill(pid, 0)).toThrow();
+    await expect.poll(() => {
+      try {
+        process.kill(pid, 0);
+        return "running";
+      } catch (error) {
+        return (error as NodeJS.ErrnoException).code;
+      }
+    }, { timeout: 5000 }).toBe("ESRCH");
   } finally {
     clearInterval(timer);
     // runStage does not go through executeNamedWorkflow, which clears the sticky flag.
