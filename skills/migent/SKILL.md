@@ -21,25 +21,6 @@ inspect and continue.
 - Resume the same session after errors or limits; do not create a replacement
   to bypass them. Ask before resuming a cancelled session.
 
-## Set up a project
-
-```bash
-migent provider list --json
-migent init --no-input --provider <developer-provider> --model <developer-model> --reviewer-provider <reviewer-provider> --reviewer-model <reviewer-model> [--skill]
-migent doctor --json
-```
-
-Choose an available provider and model ID for each role from `provider list`;
-the same pair can be used for both. `--provider` and `--model` select the
-developer; `--reviewer-provider` and `--reviewer-model` select the reviewer.
-Use `--no-input` for unattended setup; `--skill` installs this skill.
-
-Output: inline role models in `config.yaml`, both `implement` and `plan`
-workflows, setup diagnostics, and the next run command. `init` does not start
-an agent. For an existing project,
-follow [config.md](references/config.md) instead of running `init` again.
-Refresh an installed skill with `migent skill update` after upgrading Migent.
-
 ## Run a workflow
 
 Input: a workflow ID or file path and the user's task.
@@ -121,6 +102,7 @@ to inspect the effective settings. Read only the reference needed for the task:
 
 | Reference | Use for |
 | --- | --- |
+| [setup.md](references/setup.md) | Initializing a project and selecting provider models. |
 | [config.md](references/config.md) | Models, roles, machine setup, and running one role. |
 | [schema-config.yaml](references/schema-config.yaml) | Writing configuration. |
 | [schema-workflow.yaml](references/schema-workflow.yaml) | Writing workflows. |

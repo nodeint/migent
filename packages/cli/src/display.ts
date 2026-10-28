@@ -27,12 +27,17 @@ export function printResumeCommand(sessionId: string): void {
   process.stderr.write(`Resume with:\nmigent session continue ${sessionId}\n`);
 }
 
-export function printCreated(paths: readonly string[], summary: string, nextCommand: string): void {
+export function printCreated(paths: readonly string[], summary: string): void {
   process.stdout.write("Created:\n");
   for (const filePath of paths) process.stdout.write(`  ${filePath}\n`);
   process.stdout.write(`Using ${summary}\n`);
-  process.stdout.write("Next, replace the task text with what you want done:\n");
-  process.stdout.write(`  ${nextCommand}\n`);
+}
+
+export function printInitNextSteps(): void {
+  process.stdout.write("Install the Migent skill for this project's clients (optional):\n");
+  process.stdout.write("  migent skill install --project\n");
+  process.stdout.write("Start a workflow, replacing the task text with what you want done:\n");
+  process.stdout.write('  migent session run --workflow implement --task "<what you want done>"\n');
 }
 
 export function printAlreadyInitialized(): void {

@@ -154,24 +154,38 @@ exit codes.
 
 ```bash
 migent init
-migent init --no-input --provider codex --model gpt-5 --reviewer-provider grok --reviewer-model grok-4.7
+migent init --no-input --planner-provider codex --planner-model gpt-5 --reviewer-provider grok --reviewer-model grok-4.7 --provider codex --model gpt-5
 ```
 
-In a terminal, choose a provider and model for the developer, then for the
-reviewer. Each selection can include the provider's prompted options. The two
-roles can use the same model. Init then asks whether to install the Migent
-skill for the selected clients; declining still creates the project.
+In a terminal, choose a provider and model for the planner, then the reviewer,
+then the developer. Each selection can include the provider's prompted options.
+All three roles are configured independently and can use the same model.
+Each role includes instructions for its responsibilities. Init saves these
+selections and creates the
+project. Install the Migent skill separately afterward:
+
+```bash
+migent skill install --project
+```
+
+This command reads the configured clients from the project. If installation
+fails, retry it; the saved configuration and workflows remain unchanged.
+Init does not need `npx`.
 
 Init always writes both workflows:
 
 ```text
 .migent/
-??? config.yaml        # developer and reviewer with inline default_model objects
+??? config.yaml        # developer, planner, reviewer with inline models and instructions
 ??? .gitignore         # ignores sessions/ and optional config.local.yaml
 ??? workflows/
-    ??? implement.yaml # developer implements the task
-    ??? plan.yaml      # developer plans, reviewer approves or requests revision
+    ??? implement.yaml # developer implements, reviewer approves or requests revision
+    ??? plan.yaml      # planner plans, reviewer approves or requests revision
 ```
+
+Both workflows route `approved` to completion and `revise` back to the
+work stage, with `max_revisions: 3`. The implement workflow can run
+independently; it does not require a prior plan session.
 
 There is no preset selection. `config.yaml` contains each role's provider,
 model ID, and selected options directly; no `models` section or
@@ -180,28 +194,32 @@ Use the optional local file later for machine-specific overrides.
 
 | Flag | Input / purpose |
 | --- | --- |
-| `--provider`, `--model` | Developer provider and model ID; pass together. |
+| `--planner-provider`, `--planner-model` | Planner provider and model ID; pass together. |
+| `--planner-option KEY=VALUE` | Planner model option; repeat for multiple options. |
 | `--reviewer-provider`, `--reviewer-model` | Reviewer provider and model ID; pass together. |
-| `--option KEY=VALUE` | Developer model option; repeat for multiple options. |
 | `--reviewer-option KEY=VALUE` | Reviewer model option; repeat for multiple options. |
-| `--skill` | Install the skill for the selected clients without asking. |
-| `--no-input` | Disable prompts; also set by `MIGENT_NO_INPUT=1`. Both role selections are required. |
+| `--provider`, `--model` | Developer provider and model ID; pass together. |
+| `--option KEY=VALUE` | Developer model option; repeat for multiple options. |
+| `--no-input` | Disable prompts; also set by `MIGENT_NO_INPUT=1`. All three role selections are required. |
 
 Model IDs and prompted option values come from the selected provider CLI.
 Omit options to keep provider defaults. Invalid selections exit 2 before
 writing project files. Missing flags include a complete command example.
 
-Init never starts an agent. It prints the chosen models, created files, and
-a `migent session run --workflow implement --task "<what you want done>"`
+Init never starts an agent. It prints the chosen models, created files,
+`migent skill install --project`, and a
+`migent session run --workflow implement --task "<what you want done>"`
 command. Use `--workflow plan` to run planning and review instead.
 Doctor problems are advisory on stderr; interactive setup also shows the
 full doctor report. Successful project creation exits 0.
 
 An existing valid project is left unchanged; model selection flags are
-ignored and `--skill` can still install its configured clients' skills.
+ignored and init prints the next commands again.
 A partial project, including a lone `config.local.yaml`, exits 1 and lists
-conflicting files without overwriting them. A failed skill install also exits
-1 before writing project files.
+conflicting files without overwriting them.
+
+`init --skill` has been removed. It exits 2 with instructions to run
+`migent init` followed by `migent skill install --project`.
 
 ## Config
 

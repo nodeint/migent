@@ -1,12 +1,19 @@
 # Providers and model configuration
 
 Models describe execution. Roles describe intent. `migent init` creates
-`developer` and `reviewer` roles with a model object in each `default_model`:
+`planner`, `reviewer`, and `developer` roles with an independent model object
+in each `default_model`:
 
 ```yaml
 # .migent/config.yaml
 schema_version: 2
 roles:
+  planner:
+    default_model:
+      provider: codex
+      model: gpt-5
+      options:
+        model_reasoning_effort: high
   developer:
     default_model:
       provider: codex

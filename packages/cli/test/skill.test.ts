@@ -66,6 +66,12 @@ test("skill path prints the bundled directory", async () => {
   expect(readFileSync(path.join(skillSourceDirectory(), "SKILL.md"), "utf8")).toContain("name: migent");
 });
 
+test("skill source has no trailing separator before shell quoting on Windows", () => {
+  const source = skillSourceDirectory();
+  expect(path.basename(source)).toBe("migent");
+  expect(source).toBe(path.resolve(source));
+});
+
 test("install builds the project command line", async () => {
   const workspace = workspaceOf();
   const { calls, run } = recorder();

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Changed
+
+- Init selects independent models and options in planner, reviewer, developer order and creates all three roles with default instructions. Non-interactive setup requires all three role selections; use `--planner-provider`, `--planner-model`, and optional `--planner-option` for the planner. Both generated workflows include a review stage with approval/revision routes and a revision limit; implement still runs independently.
+- Init saves model selections and creates the project independently of skill installation, then suggests `migent skill install --project`. The skill prompt and `init --skill` are removed; the old flag reports the replacement commands.
+
+### Fixed
+
+- Skill install and update work on Windows when the Migent installation path contains spaces.
+
 ## 0.2.0
 
 ### Changed
