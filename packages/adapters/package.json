@@ -1,6 +1,6 @@
 {
   "name": "@nodeint/migent-adapters",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "Provider adapters (Antigravity, Claude, Codex, Grok, OpenCode) for Migent.",
   "keywords": [
     "ai",

@@ -2,9 +2,13 @@
 
 ## Unreleased
 
+## 0.1.11
+
 ### Added
 
 - A version 2 workflow stage can declare `run_when.changed_paths`, a list of Git path globs. The stage runs only when a path changed since the session baseline matches a glob; otherwise Migent records a `skipped` execution, calls no provider, and the branch ends. The baseline is the commit `HEAD` pointed at before the session's first stage. Git errors stop the command with exit 2 and are never a skip. `session show` lists `baseline` and `skipped_stages`, and metrics gain `totals.skipped` and a per-stage `skipped` count (`executions` no longer counts skips). See "Conditional stages" in `docs/workflows.md`.
+
+- Session metrics include `totals.cost_partial`, which is true when some turns report cost and others do not. This flags a partial total instead of presenting it as complete.
 
 ### Fixed
 
@@ -69,22 +73,7 @@
 - A new session id is a UUID. `manifest.yaml` records `title`. A workflow or role session uses its one-line task as the title. `session prepare <title>` stores that text as the title and prints the UUID. The title is a display label, so spaces and capitals are kept. `session list` prints the title before the id, and its JSON includes `title`. A session with no title is shown by its id. `continue`, `--prior`, and `metrics` still take the id.
 - Claude models are listed from the CLI initialize response instead of a hardcoded catalog.
 
-## 0.1.6
-
-### Added
-
-- A version 2 stage may omit `role` when it sets `verify`. Migent runs that list and does not start an agent. `description` is an optional one-line label on any stage. It is printed on the stage start line and is not part of the provider prompt. All exits 0 complete the stage and publish `artifacts/verify.md`. The first non-zero exit, a timeout, or a failure to start the shell fails the stage with `failure_reason: verify_failed`. Dependents do not start. The session stays active and the command exits 7. `session continue` runs the list again in a new execution and does not open a provider. A cancelled stage with no role reruns its verify list in place. `max_verify`, `instructions`, `model`, `options`, `session`, `produces`, `decision`, and `max_revisions` are rejected on a stage with no role.
-- The installed skill ships `references/sessions.md`, `references/inspect.md`, and `references/config.md` next to the schema files.
-
-### Changed
-
-- A workflow run prints plain stage lines and leaves stdout empty. A stage line names the attempt. The start line also names the clock time. The finish line names how long that attempt took. A completed session prints `completed · <duration>` and, when it published files, one `artifact: <absolute-path>` line per file. The path starts at the filesystem root. A published file keeps the artifact name, including its suffix. The stage report is not printed. Exit 1, 3, 6, and 8 print `response: executions/<id>/response.md`. Exit 7 prints `verify: executions/<id>/turns/01/verify.md`.
-- A workflow run that stops before the session is completed prints the resume command on stderr: `migent session continue <session-id>`. That includes blocked, cancelled, a failed or exhausted stage, and `--once` while later stages remain. A completed session does not print it.
-- `session continue <session-id>` also resumes a role session. A cancelled role execution resumes in place. A blocked role session runs again. An active role session sends its last prompt again. `--reply` is the next user turn. A completed role session stays stopped unless `--reply` is set. A stopped role run prints the same command.
-- A failed provider stage stops the branch. `session continue` runs that stage again. Exit 3 is `stage_failed`. `--once` and `--stage` that hit a provider quota exit 8 and do not wait. A quota with a reset time waits in the owning process, then dispatches that stage. Cancelling during the wait is exit 130 and does not sleep until the old `retry_at` on the next continue. `--attempts` and `retry_exhausted` are gone. A single role result uses exits 0, 1, and 130. Exit 6 stays the path that reopened more than one role execution.
-- A completed workflow session writes `metrics.json`. `session metrics --json` prints that file and lists only sessions that have it. A session without the file exits 2. Later adapter changes do not change that file. An agent session has no metrics file.
-- Verify runs each command with `/bin/sh` when that file is executable. On Windows it uses `sh` from `PATH`. Publishing a file syncs it through a writable handle, so the publish does not stop with `EPERM`.
-
 ## Older versions
 
+- [0.1.6](https://github.com/nodeint/migent/releases/tag/v0.1.6)
 - [0.1.5](https://github.com/nodeint/migent/releases/tag/v0.1.5)
