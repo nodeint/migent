@@ -17,8 +17,8 @@
 
 Migent connects coding-agent CLIs from different providers through explicit,
 repository-defined workflows. One model can plan, another can review, and the
-first can revise—while Migent carries artifacts between them and remembers
-where the process is.
+first can revise—while Migent passes artifacts between them and tracks
+the workflow's progress.
 
 ## Contents
 
@@ -29,9 +29,8 @@ where the process is.
   - [Quickstart](#quickstart)
     - [With an AI agent](#with-an-ai-agent)
     - [Manually](#manually)
-    - [Run](#run)
-    - [Join an existing project](#join-an-existing-project)
     - [Project files](#project-files)
+    - [Tracking](#tracking)
   - [Workflow as code](#workflow-as-code)
     - [Start with one role and one stage](#start-with-one-role-and-one-stage)
     - [Add planning and review](#add-planning-and-review)
@@ -49,13 +48,13 @@ Migent is built around three ideas:
 
 - **Use models for what they do best.** Assign each role to a provider and model
   suited to the work, rather than asking one agent to do everything.
-- **Treat AI engineering process as code.** Keep stages, handoffs, review gates,
+- **Treat the engineering process as code.** Keep stages, handoffs, review gates,
   and revision policies in version control beside the project they govern.
 - **Keep orchestration explicit.** The team defines the process; models execute
   roles inside it. A supervisor model does not invent or dynamically control
   the workflow.
 
-**Models describe execution. Roles describe intent.** Changing the model behind
+**Roles define the work. Models carry it out.** Changing the model behind
 a role does not require rewriting the workflow.
 
 **Common workflow model, native provider capabilities.** Migent coordinates
@@ -64,8 +63,8 @@ agent execution, and its own tools and options.
 
 ```mermaid
 flowchart TD
-    A[Task] --> B[Planner - Codex]
-    B -->|plan.md| C[Reviewer - Grok]
+    A[Task] --> B[Planner - claude-opus-5-5]
+    B -->|plan.md| C[Reviewer - gpt-6-sol]
     C -->|revise| B
     C -->|approved| D[Complete]
 ```
@@ -73,7 +72,7 @@ flowchart TD
 ## Supported CLIs
 
 Migent drives each provider through its headless CLI. Install and sign in to the
-ones your configuration names.
+ones used by your configuration.
 
 | Provider           | CLI          |
 | -------------------| -------------|
@@ -86,8 +85,8 @@ ones your configuration names.
 
 ## Quickstart
 
-Requires Node.js 22+ (macOS, Linux, or Windows) and the provider CLIs you plan
-to use, installed and signed in. `migent doctor` reports any that are missing.
+Migent requires Node.js 22+ on macOS, Linux, or Windows. Install and sign in to
+the provider CLIs you plan to use.
 
 Install Migent first:
 
@@ -98,79 +97,66 @@ migent --version
 
 Upgrade with `npm install -g @nodeint/migent@latest`.
 
-There are two ways to set up a project. Both end with the same files and the
-same next command.
+Run setup from your project root, either with an AI agent or with the CLI.
 
 ### With an AI agent
 
 1. Install the agent skill (requires Node.js 22.20+), then choose the AI
    clients to set up:
 
-   ```bash
-   migent skill install
-   ```
+```bash
+   migent skill install --project
+```
 
 2. Paste this prompt into your agent (Claude Code, Codex, Antigravity, Cursor,
    etc.):
 
-   ```text
+```text
    Use the migent skill to set up Migent in this project.
-   ```
+```
 
-The agent handles setup. Ask it for a specific provider or model for either
-role if you have a preference.
+   The agent handles setup. If you have provider or model preferences, specify
+   them for the developer, planner, or reviewer role.
+
+3. Ask the agent to write and review a plan for your task (optional):
+
+```text
+   Use the migent skill to run the plan workflow for this task: <Describe your task here>.
+```
+
+4. Ask the agent to implement the plan and review the changes (optional):
+
+```text
+   Use the migent skill to run the implement workflow with this plan: <Path to your plan file>.
+```
 
 ### Manually
 
-```bash
-migent init
-```
-
-Choose a provider and model for each role: `developer` and `reviewer`. You can
-use the same model for both. Then choose whether to install the agent skill.
-`init` creates both workflows under `.migent/`: `implement` for coding and
-`plan` for planning and review. It checks the setup and prints the next command.
-
-For a small setup, put the model directly in `.migent/config.yaml`:
-
-```yaml
-schema_version: 2
-roles:
-  developer:
-    default_model:
-      provider: codex
-      model: gpt-5
-      effort: high
-```
-
-Use [model aliases](docs/providers.md) to share a model across roles or choose
-different models on each machine.
-
-### Run
-
-Run this from your project directory with your own task text. To plan and
-review before coding, use `--workflow plan` instead:
+1. Run `migent init` and choose the provider, model, and options for the developer and
+   reviewer:
 
 ```bash
-migent session run --workflow implement --task "Add a --json flag to the export command"
+  migent init
 ```
 
-Migent shows progress as it runs. A successful run ends with `completed`;
-workflows that publish files also print their paths.
-
-Each run is a session. List sessions or resume a stopped run:
+2. To let an AI agent operate Migent, install the skill separately
+   (requires Node.js 22.20+):
 
 ```bash
-migent session list
-migent session continue <session-id>
+ migent skill install
 ```
 
-### Join an existing project
+3. Write and review a plan for your task (optional):
 
-Install and sign in to the provider CLIs the project uses, then run
-`migent doctor` and follow its setup instructions. An agent with the Migent
-skill can do this for you. Use the project's existing workflows; do not run
-`init` again.
+```bash
+migent session run --workflow plan --task "<Describe your task here>"
+```
+
+4. Implement the plan and review the changes (optional):
+
+```bash
+migent session run --workflow implement --task "<Path to your plan file>"
+```
 
 ### Project files
 
@@ -178,16 +164,71 @@ After setup, your project contains:
 
 ```text
 .migent/
-├── config.yaml        # developer and reviewer roles, with their models
+├── config.yaml        # developer, planner, reviewer: models and instructions
 ├── .gitignore         # keeps run history and local overrides out of Git
 └── workflows/
-    ├── implement.yaml # implement a task
+    ├── implement.yaml # implement and review a task
     └── plan.yaml      # write and review a plan
 ```
+
+The planner starts with the developer's model and options. Edit
+`roles.planner.default_model` to configure it independently.
 
 Commit these files to share the setup. Run history is saved in
 `.migent/sessions/` when you start a task. If you install the skill, it lives
 in your chosen AI client's skills directory.
+
+### Tracking
+
+Migent shows progress as it runs. A successful run ends with `completed`;
+workflows that publish files also print their paths.
+
+Each run is a session. Open another terminal in the project root to find
+active sessions and inspect one:
+
+```bash
+migent session list --status active
+migent session show <session-id>
+```
+
+`show` prints the current status, running stages, latest decisions, blockers,
+and published outputs. To watch live stage events and provider activity, run:
+
+```bash
+migent session follow <session-id> --exit-when-done
+```
+
+The watcher exits when the session completes, is blocked, or is cancelled.
+Press Ctrl+C to stop watching; the workflow keeps running in its own terminal.
+Use `migent session list` to include stopped sessions, then resume one with:
+
+```bash
+migent session continue <session-id>
+```
+
+Session files are saved under `.migent/sessions/`. A typical workflow session
+contains:
+
+```text
+.migent/sessions/<session-id>/
+├── manifest.yaml              # session identity and workflow
+├── workflow.frozen.yaml       # workflow and role settings used by this run
+├── task.md                    # original task
+├── status.json                # current status, stages, and decisions
+├── events.jsonl               # session event history
+├── outputs/                   # published workflow results, when available
+└── executions/
+    └── <order>-<stage-id>--attempt-<n>/
+        ├── execution.json     # stage attempt status and metadata
+        ├── stream.jsonl       # provider activity and heartbeats
+        ├── prompt.md          # prompt sent to the agent
+        ├── response.md        # saved agent response, when available
+        └── artifacts/         # files produced by this stage
+```
+
+Read responses and artifacts to inspect the work behind each stage. Use the
+CLI to manage session state. See [Sessions](docs/sessions.md) for the full
+layout and recovery commands.
 
 ## Workflow as code
 
@@ -196,6 +237,9 @@ A role names a kind of work and selects a provider and model. A stage assigns
 work to a role; a workflow connects those stages.
 
 ### Start with one role and one stage
+
+The following examples show how to write custom workflows. `migent init`
+generates the workflows described in the quickstart.
 
 Set the role's provider and model in `default_model`. Use model IDs available
 from `migent provider list` in place of the example IDs.
@@ -226,7 +270,7 @@ stages:
 ```
 
 Replace the `verify` commands with your project's build and test commands.
-Run it with the same command as the quickstart:
+Run it with `migent session run`, as in the quickstart:
 
 ```bash
 migent session run --workflow implement --task "Add a --json flag to the export command"
@@ -247,7 +291,7 @@ or different providers:
 # .migent/config.yaml
 schema_version: 2
 roles:
-  developer:
+  planner:
     default_model:
       provider: codex
       model: gpt-5
@@ -257,7 +301,7 @@ roles:
       model: grok-4
 ```
 
-The developer produces `plan.md`. The reviewer receives it through `depends_on`
+The planner produces `plan.md`. The reviewer receives it through `depends_on`
 and decides whether to approve it or send it back for revision:
 
 ```yaml
@@ -265,7 +309,7 @@ and decides whether to approve it or send it back for revision:
 schema_version: 2
 stages:
   - id: plan
-    role: developer
+    role: planner
     max_revisions: 3
     instructions:
       - Read task.md and write plan.md into artifacts.
@@ -291,8 +335,8 @@ Run this workflow with:
 migent session run --workflow plan --task "Plan a --json flag for the export command"
 ```
 
-`max_revisions` bounds the review loop. A successful stage's named file is an
-**artifact**; `depends_on` makes it available to the next stage. The
+`max_revisions` limits the number of revisions. The file declared in `produces`
+is an **artifact**; `depends_on` makes it available to the reviewer. The
 **decision** selects a route: `approved` completes the workflow, while `revise`
 returns to `plan` with the review feedback.
 
@@ -303,7 +347,7 @@ returns to `plan` with the review feedback.
 - **Role:** A kind of work, such as developer or reviewer, with a default provider and model.
 - **Model:** The AI model a role uses, identified by its provider and model ID.
 - **Artifact:** A file a stage produces for later stages or the user, such as `plan.md`.
-- **Decision:** A stage's choice of what happens next, such as approve or revise.
+- **Decision:** A stage's choice of what happens next, such as `approved` or `revise`.
 - **Session:** A saved run of a workflow or role that you can inspect and continue.
 
 ## Current scope
