@@ -5,7 +5,8 @@
   "scripts": {
     "build": "tsc -b && node scripts/copy-templates.mjs",
     "test": "vitest run",
-    "migent": "node packages/cli/dist/index.js"
+    "migent": "node packages/cli/dist/index.js",
+    "setup:git": "node scripts/setup-git.mjs"
   },
   "devDependencies": {
     "@nodeint/migent": "workspace:*",
