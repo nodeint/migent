@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.2.1
+
 ### Changed
 
 - Init selects independent models and options in planner, reviewer, developer order and creates all three roles with default instructions. Non-interactive setup requires all three role selections; use `--planner-provider`, `--planner-model`, and optional `--planner-option` for the planner. Both generated workflows include a review stage with approval/revision routes and a revision limit; implement still runs independently.
@@ -70,20 +72,9 @@
 
 - The `.migent-template.json` state file and `skill update --force`.
 
-## 0.1.8
-
-### Added
-
-- `.migent/config.local.yaml` is an optional per-machine override of `.migent/config.yaml`. Mappings (`models`, `roles`, `options`) merge key by key; scalars and lists replace the base value; its `schema_version` is ignored. Runs, session freezes, `agent`, `doctor`, and `config show` read the merged result. `config model` and `config role` still edit `config.yaml` only.
-- `init` ignores `config.local.yaml` in `.migent/.gitignore`. `doctor` warns, without failing, when git tracks it, and `doctor --json` carries `warnings` on each check.
-- `config show` prints the merged config as YAML when `config.local.yaml` exists, and notes the merge on stderr. Without that file it prints `config.yaml` as stored.
-
-### Changed
-
-- `doctor` no longer reports "has no default CLI client" for a role or stage whose model sets `client`.
-
 ## Older versions
 
+- [0.1.8](https://github.com/nodeint/migent/releases/tag/v0.1.8)
 - [0.1.7](https://github.com/nodeint/migent/releases/tag/v0.1.7)
 - [0.1.6](https://github.com/nodeint/migent/releases/tag/v0.1.6)
 - [0.1.5](https://github.com/nodeint/migent/releases/tag/v0.1.5)
