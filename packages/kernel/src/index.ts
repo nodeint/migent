@@ -21,7 +21,6 @@ export { CodexProvider, GrokProvider, defaultProviders, createProviderResolver }
 export {
   LOCAL_CONFIG_FILE,
   configPath,
-  configuredModels,
   documentVersion,
   hasLocalConfig,
   loadModelTarget,
@@ -32,6 +31,7 @@ export {
   localConfigPath,
   mergeConfig,
   resolveRoleTarget,
+  resolveRoleCascade,
   resolveStageSpec,
   resolveStageTarget,
   stringifyConfig,
@@ -45,7 +45,6 @@ export {
   matchingModelName,
   patchConfigText,
   placeRoleModel,
-  setRoleOptions,
   upsertModel,
   yamlScalar,
 } from "./config-edit.js";

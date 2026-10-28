@@ -4,8 +4,8 @@ import { createRequire } from "node:module";
 import { z } from "zod";
 import type { ProviderInfo } from "./provider-contract.js";
 import {
-  configuredModels,
   loadModelDefinition,
+  validateRoleOptions,
   loadRoleInstructions,
   hasLocalConfig,
   LOCAL_CONFIG_FILE,
@@ -129,19 +129,32 @@ function checkConfig(
   );
   if (unmapped.size > 0) add(problems, unmappedMessage([...unmapped].sort()));
 
-  for (const { key: modelName, field, definition } of configuredModels(config).sort((a, b) => a.field.localeCompare(b.field))) {
+  const definitions: Array<[string, unknown, string]> = Object.keys(models).sort()
+    .map((name) => [name, models[name], `models.${name}`]);
+  for (const [name, role] of Object.entries(roles)) {
+    if (!isRecord(role)) continue;
+    try { validateRoleOptions(role, name); } catch (error) {
+      if (!(error instanceof ConfigurationError)) throw error;
+      add(problems, error.message);
+    }
+    if (isRecord(role.default_model)) {
+      const field = `roles.${name}.default_model`;
+      definitions.push([field, role.default_model, field]);
+    }
+  }
+  for (const [modelName, definition, field] of definitions) {
     if (unmapped.has(modelName)) continue;
     const effortCheck = effortChecks[modelName];
     if (effortCheck?.problem) add(problems, effortCheck.problem);
     if (effortCheck?.warning) effortWarnings.push(effortCheck.warning);
-    let modelConfig = definition;
+    let modelDefinition = definition;
     if (effortCheck?.problem && isRecord(definition)) {
       const { effort: _effort, ...rest } = definition;
-      modelConfig = rest;
+      modelDefinition = rest;
     }
     let target;
     try {
-      target = loadModelDefinition(modelConfig, field, createProviderResolver(providers));
+      target = loadModelDefinition(modelDefinition, field, createProviderResolver(providers));
     } catch (error) {
       if (!(error instanceof ConfigurationError)) throw error;
       add(problems, error.message);
@@ -179,15 +192,14 @@ function checkConfig(
       roleNames.push(roleKey);
       continue;
     }
-    const effortKey = isRecord(role) && typeof role.default_model === "string"
-      ? role.default_model : `roles.${roleKey}.default_model`;
-    if (effortChecks[effortKey]?.problem) {
+    if (isRecord(role) && typeof role.default_model === "string" && effortChecks[role.default_model]?.problem) {
       try { loadRoleInstructions(config, roleKey); } catch (error) {
         if (!(error instanceof ConfigurationError)) throw error;
         add(problems, error.message);
       }
       continue;
     }
+    if (effortChecks[`roles.${roleKey}.default_model`]?.problem) continue;
     let resolved;
     try {
       resolved = resolveRoleTarget(workspace, roleKey, undefined, createProviderResolver(providers));
@@ -260,8 +272,8 @@ function checkStageBindings(
   for (const stage of Object.values(document.stages)) {
     if (!isRoleStage(stage)) continue;
     const role = isRecord(config.roles) ? config.roles[stage.role] : undefined;
-    const alias = stage.modelName ?? (isRecord(role) && typeof role.default_model === "string"
-      ? role.default_model : `roles.${stage.role}.default_model`);
+    const alias = stage.modelName ?? (isRecord(role) ? role.default_model : undefined);
+    if (stage.modelName === null && invalidEffort.has(`roles.${stage.role}.default_model`)) continue;
     if (typeof alias === "string" && invalidEffort.has(alias)) continue;
     let target;
     try {

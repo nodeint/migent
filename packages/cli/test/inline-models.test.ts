@@ -21,7 +21,7 @@ function project(model: unknown, extra: Record<string, unknown> = {}): string {
   mkdirSync(path.join(workspace, ".migent", "workflows"), { recursive: true });
   writeFileSync(path.join(workspace, ".migent", "config.yaml"), stringifyConfig({
     schema_version: 2,
-    roles: { developer: { default_model: model, options: { model_reasoning_effort: "medium" } } },
+    roles: { developer: { default_model: model } },
     ...extra,
   }));
   writeFileSync(path.join(workspace, ".migent", "workflows", "work.yaml"), stringifyConfig({
@@ -38,13 +38,13 @@ afterEach(() => {
 test("inline defaults support options, effort, clients, and local overrides", () => {
   const workspace = project({ provider: "byteplus", client: "codex", model: "test", effort: "low" });
   expect(resolveRoleTarget(workspace, "developer", undefined, resolve)).toEqual({
-    provider: "byteplus", client: "codex", model: "test", options: { model_reasoning_effort: "medium" },
+    provider: "byteplus", client: "codex", model: "test", options: { model_reasoning_effort: "low" },
   });
   expect(resolveStageTarget(workspace, "work", "work", undefined, resolve).options).toEqual({ model_reasoning_effort: "high" });
   expect(diagnose(workspace, { providers, which }).every((check) => check.ok)).toBe(true);
   expect(clientsFromConfig(workspace)).toEqual(["codex"]);
   writeFileSync(path.join(workspace, ".migent", "config.local.yaml"), stringifyConfig({
-    roles: { developer: { default_model: { model: "local" } } },
+    roles: { developer: { default_model: { provider: "byteplus", client: "codex", model: "local" } } },
   }));
   expect(resolveRoleTarget(workspace, "developer", undefined, resolve).model).toBe("local");
 });

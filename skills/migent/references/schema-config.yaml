@@ -25,19 +25,22 @@ roles:
       provider: codex
       model: gpt-5
   planner:
-    # Alternatively, use a name from models, not a provider model ID.
-    default_model: deep_reasoning
+    default_model:
+      provider: grok
+      model: grok-4.7
+      effort: medium
+      options:
+        max_turns: "10"
     # Shared instructions for this role.
     instructions:
       - Break the task into a reviewable plan.
-    # Provider options override model options; stage options override these.
-    options:
-      reasoning-effort: medium
   reviewer:
     default_model: deep_reasoning
 
 # config.local.yaml optionally overrides machine-specific settings; do not commit it.
-# Mapping keys merge; scalars and lists replace shared values. Omit its schema_version.
+# Model aliases merge key by key; a local role default_model replaces the shared default.
+# Supply a complete inline model or alias. Scalars and lists replace shared values.
+# Omit schema_version from the local file.
 # Use snake_case names and the provider's spelling for option keys.
 # For effort errors or missing model mappings, follow doctor's diagnostics.
 # Provider option keys:

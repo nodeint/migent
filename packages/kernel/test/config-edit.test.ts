@@ -7,7 +7,6 @@ import {
   loadYamlMapping,
   patchConfigText,
   placeRoleModel,
-  setRoleOptions,
   upsertModel,
   type RoleStageSpec,
   type WorkflowDocument,
@@ -33,8 +32,6 @@ roles:
     default_model: shared
   reviewer:
     default_model: shared
-    options:
-      reasoning-effort: low
 `;
 
 function stage(input: {
@@ -105,7 +102,7 @@ test("assign role keeps the shared model", () => {
   expect(mapping(roles.developer).default_model).toBe("shared");
   expect(mapping(roles.planner).default_model).toBe("shared");
   expect(reviewer.default_model).toBe("other");
-  expect(mapping(reviewer.options)["reasoning-effort"]).toBe("low");
+  expect(reviewer).not.toHaveProperty("options");
   expect(change.stagesUpdated).toEqual([["plan", "plain-review"]]);
   expect(change.stagesUnchanged[0]?.stage).toBe("review");
   expect(change.stagesUnchanged[0]?.ignores).toEqual(["role-model"]);
@@ -126,9 +123,9 @@ test("place role model creates a private entry", () => {
   expect(change.reusedModel).toBeNull();
   expect(mapping(models.shared).model).toBe("grok-4.6");
   expect(created.model).toBe("grok-4.7");
-  expect(created).not.toHaveProperty("options");
+  expect(mapping(roles.reviewer)).not.toHaveProperty("options");
   expect(mapping(roles.reviewer).default_model).toBe("reviewer");
-  expect(mapping(mapping(roles.reviewer).options)["reasoning-effort"]).toBe("high");
+  expect(mapping(created.options)["reasoning-effort"]).toBe("high");
   expect(mapping(roles.developer).default_model).toBe("shared");
   expect(change.orphanedModels).toEqual([]);
 });
@@ -167,7 +164,7 @@ test("upsert option preserves other options", () => {
   expect(options["reasoning-effort"]).toBe("high");
   expect(options.temperature).toBe("0.2");
   expect(change.updatedModel).toBe("shared");
-  expect(change.roles).toEqual(["developer", "planner"]);
+  expect(change.roles).toEqual(["developer", "planner", "reviewer"]);
   expect(change.stagesUpdated).toContainEqual(["plan", "implement"]);
   const shielded = Object.fromEntries(change.stagesUnchanged.map((item) => [item.stage, item.ignores]));
   expect(shielded.audit).toEqual(["role-options"]);
@@ -233,7 +230,7 @@ test("patch preserves comments and sibling options", () => {
   const roles = mapping(parsed.roles);
   expect(mapping(roles.developer).default_model).toBe("shared");
   expect(mapping(roles.reviewer).default_model).toBe("other");
-  expect(mapping(mapping(roles.reviewer).options)["reasoning-effort"]).toBe("low");
+  expect(mapping(roles.reviewer)).not.toHaveProperty("options");
   expect(mapping(mapping(mapping(parsed.models).shared).options).temperature).toBe("0.2");
 });
 
@@ -262,16 +259,6 @@ test("rejects a partial provider update", () => {
   );
 });
 
-test("role option does not change the model", () => {
-  const change = setRoleOptions(config(), "developer", { "reasoning-effort": "high" }, {
-    workflows: [workflow()],
-  });
-  expect(change.roles).toEqual(["developer"]);
-  expect(mapping(mapping(mapping(change.config.models).shared).options)["reasoning-effort"]).toBe("medium");
-  expect(mapping(mapping(mapping(change.config.roles).developer).options)["reasoning-effort"]).toBe("high");
-  expect(change.stagesUpdated).toContainEqual(["plan", "implement"]);
-});
-
 test("new role points at an existing model", () => {
   const change = assignRoles(config(), ["security", "planner"], "other");
   const roles = mapping(change.config.roles);
@@ -285,7 +272,7 @@ test("inspect shows the model name and stage override", () => {
   const reviewer = view.roles.find((role) => role.role === "reviewer");
   expect(reviewer).toBeDefined();
   expect(reviewer?.modelName).toBe("shared");
-  expect(reviewer?.options["reasoning-effort"]).toBe("low");
+  expect(reviewer?.options["reasoning-effort"]).toBe("medium");
   expect(reviewer?.sharedWith).toEqual(["developer", "planner"]);
   const overrides = Object.fromEntries(
     (reviewer?.stages ?? []).map((item) => [item.stage, [item.modelName, item.options]]),

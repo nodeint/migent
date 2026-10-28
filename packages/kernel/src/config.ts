@@ -99,7 +99,17 @@ export function loadWorkspaceConfig(workspace: string): Record<string, unknown> 
     throw new ConfigurationError(`${error.message} (${localConfigPath(workspace)})`);
   }
   const { schema_version: _ignored, ...local } = loaded;
-  return mergeConfig(base, local);
+  const merged = mergeConfig(base, local);
+  // A role default is a complete selection, including when both values are objects.
+  if (isRecord(local.roles) && isRecord(merged.roles)) {
+    for (const [name, role] of Object.entries(local.roles)) {
+      const target = merged.roles[name];
+      if (isRecord(role) && isRecord(target) && Object.hasOwn(role, "default_model")) {
+        target.default_model = role.default_model;
+      }
+    }
+  }
+  return merged;
 }
 
 export function stringifyConfig(config: Record<string, unknown>): string {
@@ -163,7 +173,7 @@ export function resolveRoleTarget(
   const config = loadWorkspaceConfig(workspace);
   if (provider !== null && model !== null) {
     const roles = mapping(config.roles, "roles");
-    mapping(roles[role], `roles.${role}`);
+    validateRoleOptions(mapping(roles[role], `roles.${role}`), role);
     return stageTarget(provider, model, { ...(options ?? {}) });
   }
   return resolveRoleCascade(config, role, { options }, resolveProvider);
@@ -175,24 +185,12 @@ export function loadModelTarget(
   resolveProvider?: ProviderResolver,
 ): StageTarget {
   const models = mapping(config.models, "models");
-  return loadModelDefinition(models[modelName], `models.${modelName}`, resolveProvider);
+  const modelConfig = mapping(models[modelName], `models.${modelName}`);
+  const field = `models.${modelName}`;
+  return loadModelDefinition(modelConfig, field, resolveProvider);
 }
 
-/** Named models and inline role defaults, with their diagnostic field paths. */
-export function configuredModels(config: Record<string, unknown>): Array<{ key: string; field: string; definition: unknown }> {
-  const entries = isRecord(config.models)
-    ? Object.entries(config.models).map(([key, definition]) => ({ key, field: `models.${key}`, definition }))
-    : [];
-  if (isRecord(config.roles)) {
-    for (const [name, role] of Object.entries(config.roles)) {
-      if (!isRecord(role) || !isRecord(role.default_model)) continue;
-      const field = `roles.${name}.default_model`;
-      entries.push({ key: field, field, definition: role.default_model });
-    }
-  }
-  return entries;
-}
-
+/** Named and inline models share exactly the same validation and option handling. */
 export function loadModelDefinition(
   value: unknown,
   field: string,
@@ -224,7 +222,7 @@ export function loadModelDefinition(
   return stageTarget(provider, requiredString(modelConfig.model, `${field}.model`), options, client);
 }
 
-function resolveRoleCascade(
+export function resolveRoleCascade(
   config: Record<string, unknown>,
   roleKey: string,
   args?: {
@@ -236,25 +234,41 @@ function resolveRoleCascade(
 ): StageTarget {
   const roles = mapping(config.roles, "roles");
   const role = mapping(roles[roleKey], `roles.${roleKey}`);
+  validateRoleOptions(role, roleKey);
   const modelField = args?.modelField ?? `roles.${roleKey}.default_model`;
   const named = args?.modelName ?? null;
-  const selected = named === null || named === "" ? role.default_model : named;
-  const target = isRecord(selected)
-    ? loadModelDefinition(selected, modelField, resolveProvider)
-    : loadModelTarget(config, requiredString(selected, modelField), resolveProvider);
-  const roleOptions = readOptions(role.options, `roles.${roleKey}.options`);
+  const selection = named === null || named === "" ? role.default_model : named;
+  let target: StageTarget;
+  if (isRecord(selection)) {
+    target = loadModelDefinition(selection, modelField, resolveProvider);
+  } else {
+    const alias = requiredString(selection, modelField);
+    if (!isRecord(config.models) || !Object.hasOwn(config.models, alias)) {
+      throw new ConfigurationError(`${modelField}: unknown model alias "${alias}" in models.`);
+    }
+    target = loadModelTarget(config, alias, resolveProvider);
+  }
   return stageTarget(
     target.provider,
     target.model,
-    mergeOptions(target.options, roleOptions, args?.options),
+    mergeOptions(target.options, args?.options),
     target.client,
   );
+}
+
+export function validateRoleOptions(role: Record<string, unknown>, roleKey: string): void {
+  if (Object.hasOwn(role, "options")) {
+    throw new ConfigurationError(
+      `roles.${roleKey}.options is no longer supported. Move options into roles.${roleKey}.default_model (inline model) or the referenced models entry.`,
+    );
+  }
 }
 
 /** Absent or null instructions are an empty list. A non-list is a configuration error. */
 export function loadRoleInstructions(config: Record<string, unknown>, roleKey: string): string[] {
   const roles = mapping(config.roles, "roles");
   const role = mapping(roles[roleKey], `roles.${roleKey}`);
+  validateRoleOptions(role, roleKey);
   return stringItems(role.instructions, `roles.${roleKey}.instructions`);
 }
 

@@ -25,7 +25,7 @@ stages:
     role: planner
     # Optional model name from config.yaml; omit to use the role's default.
     model: deep_reasoning
-    # Provider options override model and role options.
+    # Provider options override model options.
     options:
       reasoning-effort: high
     depends_on: [prepare]

@@ -31,17 +31,19 @@ the same instructions.
 ## Machine-specific overrides
 
 `.migent/config.local.yaml` is optional and uncommitted. It accepts the same
-keys as `config.yaml`. Override just the fields that differ on this machine:
+keys as `config.yaml`. A local role default replaces the shared default;
+supply the complete model definition:
 
 ```yaml
 # .migent/config.local.yaml
 roles:
   developer:
     default_model:
+      provider: codex
       model: another-model-id
 ```
 
-Mappings merge key by key; scalars and lists replace shared values. The local
+Named models merge key by key; role defaults, scalars, and lists replace shared values. The local
 file's `schema_version` is ignored. Sessions use the merged configuration
 from when they started; see [Sessions](sessions.md) for adopting later edits.
 
@@ -69,6 +71,27 @@ missing mappings and the YAML to add. Use descriptive names such as
 `deep_reasoning` or `code_generation` to keep model choices separate from
 role names.
 
+## Inline role defaults
+
+Put a model directly in a role when it does not need a shared alias:
+
+```yaml
+schema_version: 2
+roles:
+  developer:
+    default_model:
+      provider: codex
+      model: gpt-5
+      effort: high
+```
+
+No `models` section is needed for inline-only setups. To reuse a model, set
+`default_model` to its alias in `models`. Put `effort`, `client`, and `options`
+inside the model definition.
+
+To change a role on this machine, set its `default_model` in `config.local.yaml`.
+Supply the full model definition or an alias; it replaces the shared default.
+
 ## Options
 
 Each provider names its own options and lists the values for the selected
@@ -93,7 +116,7 @@ prompts. Leaving one unset keeps the provider default.
   Only `variant` is overridable and stored on the provider session. None of
   these options is prompted for. Other keys are rejected.
 
-A role or stage `options` map overrides the same keys on the model. Only
+A stage `options` map overrides the same keys on the model. Only
 options the provider marks as overridable are part of the provider session.
 
 ## Schema version
@@ -103,13 +126,6 @@ document version. A missing value is version 0. A command that uses those
 files stops while the recorded version is older and tells you to run
 `migent migrate`. That command asks before writing. `migent migrate --yes`
 writes without asking.
-
-The kernel walks one version at a time. A file at version 1 that is moving to
-version 3 runs the version 1 function, then the version 2 function. Each
-provider defines those functions itself, separately for a model entry, a role,
-and a workflow stage. Grok version 0 moves `thinking` to `reasoning-effort`.
-Codex version 0 moves `thinking` to `model_reasoning_effort`. A project's own
-`version` field is left as it is.
 
 ## Selection and overrides
 
@@ -125,8 +141,8 @@ stages:
       model_reasoning_effort: high
 ```
 
-Model options provide the base configuration. A role `options` map overrides
-those keys, and a stage `options` map overrides them for that turn.
+Model options provide the base configuration. A stage `options` map overrides
+those keys for that turn, and CLI option overrides apply last.
 
 Migent currently includes providers for the headless `agy`, `claude`, `codex`,
 `grok`, and `opencode` CLIs. Those CLIs own authentication, tool use, and agent execution;

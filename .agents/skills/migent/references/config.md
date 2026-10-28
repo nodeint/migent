@@ -42,9 +42,11 @@ models:
 Replace the example name and model ID with the project's name and an available
 model. Run doctor and resolve missing mappings before starting a workflow.
 
-The local file accepts the same keys as the shared file. Mapping keys merge;
-scalars and lists replace shared values. Omit `schema_version` from the local
-file. Delete an unwanted option from both files if it is set in both.
+The local file accepts the same keys as the shared file. Named models merge
+key by key; a local role `default_model` replaces the shared default, so supply
+a complete model or an alias. Scalars and lists replace shared values. Omit
+`schema_version` from the local file. Delete an unwanted option from both files
+if it is set in both.
 
 ## Change a role or model
 
@@ -53,7 +55,8 @@ file. Delete an unwanted option from both files if it is set in both.
 - Set `roles.<role>.default_model` to a model object, or a configured model
   name when reusing a named model. New names need a model mapping.
 - Use `roles.<role>.instructions` for instructions shared by all work in that
-  role, and `roles.<role>.options` for role-specific provider options.
+  role. Put provider options inside the inline or named model;
+  `roles.<role>.options` is no longer supported.
 - Use `snake_case` for model, role, and stage names. Keep provider option keys
   in the provider's spelling. Descriptive model names include
   `code_generation`, `deep_reasoning`, and `critical_review`.

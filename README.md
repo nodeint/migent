@@ -131,6 +131,21 @@ use the same model for both. Then choose whether to install the agent skill.
 `init` creates both workflows under `.migent/`: `implement` for coding and
 `plan` for planning and review. It checks the setup and prints the next command.
 
+For a small setup, put the model directly in `.migent/config.yaml`:
+
+```yaml
+schema_version: 2
+roles:
+  developer:
+    default_model:
+      provider: codex
+      model: gpt-5
+      effort: high
+```
+
+Use [model aliases](docs/providers.md) to share a model across roles or choose
+different models on each machine.
+
 ### Run
 
 Run this from your project directory with your own task text. To plan and
