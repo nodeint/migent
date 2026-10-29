@@ -1,4 +1,4 @@
-import type { TurnUsage } from "@nodeint/migent-kernel";
+import type { TurnUsage } from "../types.js";
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

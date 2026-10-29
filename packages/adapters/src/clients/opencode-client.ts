@@ -1,4 +1,4 @@
-import { classifyProviderError, providerErrorMessage } from "@nodeint/migent-kernel";
+import { classifyProviderError, providerErrorMessage } from "../types.js";
 import type {
   BuildCommandInput,
   CliClient,
@@ -8,7 +8,7 @@ import type {
   ProviderOption,
   RawFailure,
   UsageCapture,
-} from "@nodeint/migent-kernel";
+} from "../types.js";
 import { ModelCatalog } from "../catalog.js";
 import { compact, finite, isRecord, parseJsonObject } from "./json.js";
 

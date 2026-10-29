@@ -44,7 +44,5 @@
   "scripts": {
     "prepack": "pnpm -w run build && cp ../../LICENSE ."
   },
-  "dependencies": {
-    "@nodeint/migent-kernel": "workspace:*"
-  }
+  "dependencies": {}
 }
