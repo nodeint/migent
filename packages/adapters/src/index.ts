@@ -1,4 +1,4 @@
-import { KERNEL_PLACEHOLDER, type Provider } from "@nodeint/migent-kernel";
+import { KERNEL_PLACEHOLDER, type Provider } from "./types.js";
 import { AgyProvider } from "./providers/agy-provider.js";
 import { ByteplusProvider } from "./providers/byteplus-provider.js";
 import { ClaudeProvider } from "./providers/claude-provider.js";
@@ -7,6 +7,35 @@ import { GrokProvider } from "./providers/grok-provider.js";
 import { OpencodeProvider } from "./providers/opencode-provider.js";
 
 export const ADAPTERS_PLACEHOLDER = `providers:${KERNEL_PLACEHOLDER}`;
+
+// Re-export all types from types.ts để adapters hoàn toàn độc lập
+export {
+  KERNEL_PLACEHOLDER,
+  STATUS_PROVIDER_EVENTS,
+  isRecord,
+  classifyProviderError,
+  providerErrorMessage,
+} from "./types.js";
+
+export type {
+  CommandSpec,
+  ProviderInfo,
+  ProviderResolver,
+  ProviderOption,
+  NewSession,
+  BuildCommandInput,
+  UsageCapture,
+  TurnUsage,
+  QuotaClassification,
+  ProviderClassification,
+  FailureClassification,
+  Provider,
+  RawFailure,
+  CliModelCatalog,
+  CliUsage,
+  CliRunOutput,
+  CliClient,
+} from "./types.js";
 
 export { ModelCatalog } from "./catalog.js";
 export { clientIds, createClient } from "./providers/provider-base.js";

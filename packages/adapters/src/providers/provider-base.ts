@@ -7,8 +7,8 @@ import type {
   ProviderOption,
   TurnUsage,
   UsageCapture,
-} from "@nodeint/migent-kernel";
-import type { CommandSpec } from "@nodeint/migent-kernel";
+  CommandSpec,
+} from "../types.js";
 import { ModelCatalog } from "../catalog.js";
 import { AgyClient } from "../clients/agy-client.js";
 import { ClaudeCodeClient } from "../clients/claude-code-client.js";
