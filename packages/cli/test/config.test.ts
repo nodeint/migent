@@ -8,7 +8,7 @@ import { runMigrate } from "../src/migrate.ts";
 import { capture } from "./support.ts";
 
 const CONFIG = `\
-schema_version: 2
+schema_version: 3
 models:
   shared:
     provider: grok
@@ -27,7 +27,7 @@ roles:
 `;
 
 const WORKFLOW = `\
-schema_version: 2
+schema_version: 3
 id: plan
 stages:
   - id: implement
@@ -166,7 +166,7 @@ roles:
     const migrated = await capture(() => runMigrate(workspace, { assumeYes: true }));
     const config = loadYamlMapping(configPath);
     expect(migrated.value).toBe(0);
-    expect(migrated.stdout).toContain("Upgraded schema to version 2.");
+    expect(migrated.stdout).toContain("Upgraded schema to version 3.");
     const models = config.models as { grok: { options: Record<string, string> } };
     const roles = config.roles as { developer: Record<string, unknown> & { options: Record<string, string> } };
     expect(models.grok.options["reasoning-effort"]).toBe("medium");
@@ -182,7 +182,7 @@ test("migrate asks before writing and yes skips the question", async () => {
   try {
     project(workspace);
     const configPath = path.join(workspace, ".migent", "config.yaml");
-    const original = readFileSync(configPath, "utf8").replace("schema_version: 2\n", "");
+    const original = readFileSync(configPath, "utf8").replace("schema_version: 3\n", "");
     writeFileSync(configPath, original, "utf8");
     const declined = await capture(() => runMigrate(workspace, { confirm: () => false }));
     const refused = await capture(() => main(["migrate"], workspace));
@@ -194,7 +194,7 @@ test("migrate asks before writing and yes skips the question", async () => {
     const upgraded = await main(["migrate", "--yes"], workspace);
     expect(upgraded).toBe(0);
     const loaded = loadYamlMapping(configPath);
-    expect(String(loaded.schema_version)).toBe("2");
+    expect(String(loaded.schema_version)).toBe("3");
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }

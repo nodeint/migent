@@ -146,7 +146,7 @@ export class AgentToolRunner {
     }
     const stage = sessionId === null ? null : loadRunStage(store, context.sessionId, stageId);
     const decisionValues = stage?.decisionValues ?? [];
-    if (sessionId !== null) turnPrompt = addStageOutcomeContract(turnPrompt, decisionValues);
+    if (sessionId !== null) turnPrompt = addStageOutcomeContract(turnPrompt, decisionValues, stage?.decisionInstructions);
     const artifactName = stage?.artifact ?? null;
     const verifyCommands = stage?.verify ?? [];
     if (request.resumeExecutionId && verifyCommands.length > 0 && artifactName) {
@@ -247,7 +247,7 @@ export class AgentToolRunner {
         currentPrompt = agentId
           ? last.content
           : flattenHistory(record.history as Array<{ role: string; content: string }>);
-        currentPrompt = addStageOutcomeContract(currentPrompt, decisionValues);
+        currentPrompt = addStageOutcomeContract(currentPrompt, decisionValues, stage?.decisionInstructions);
       }
       return this.driveTurns({
         provider,
@@ -573,7 +573,7 @@ export class AgentToolRunner {
       currentPrompt = currentAgentId
         ? repair
         : flattenHistory(record.history as Array<{ role: string; content: string }>);
-      currentPrompt = addStageOutcomeContract(currentPrompt, decisionValues);
+      currentPrompt = addStageOutcomeContract(currentPrompt, decisionValues, stage?.decisionInstructions);
     }
     const sessionStatus = store.readSessionStatus(context.sessionId);
     return {

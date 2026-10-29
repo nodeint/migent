@@ -20,12 +20,12 @@ function project(model: unknown, extra: Record<string, unknown> = {}): string {
   directories.push(workspace);
   mkdirSync(path.join(workspace, ".migent", "workflows"), { recursive: true });
   writeFileSync(path.join(workspace, ".migent", "config.yaml"), stringifyConfig({
-    schema_version: 2,
+    schema_version: 3,
     roles: { developer: { default_model: model } },
     ...extra,
   }));
   writeFileSync(path.join(workspace, ".migent", "workflows", "work.yaml"), stringifyConfig({
-    schema_version: 2,
+    schema_version: 3,
     stages: [{ id: "work", role: "developer", options: { model_reasoning_effort: "high" } }],
   }));
   return workspace;
@@ -54,7 +54,7 @@ test("a named stage model overrides an inline role default", () => {
     models: { alternate: { provider: "codex", model: "named" } },
   });
   writeFileSync(path.join(workspace, ".migent", "workflows", "work.yaml"), stringifyConfig({
-    schema_version: 2, stages: [{ id: "work", role: "developer", model: "alternate" }],
+    schema_version: 3, stages: [{ id: "work", role: "developer", model: "alternate" }],
   }));
   expect(resolveStageTarget(workspace, "work", "work", undefined, resolve)).toMatchObject({ model: "named" });
   expect(resolveStageTarget(workspace, "work", "work", { provider: "grok", model: "cli" }, resolve)).toEqual({

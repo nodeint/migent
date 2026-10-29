@@ -264,7 +264,7 @@ function workflowMapping(workflow: WorkflowDocument): Record<string, unknown> {
     schema_version: 1,
     id: workflow.id,
     constraints: workflow.constraints,
-    stages: Object.values(workflow.stages).map(stageMapping),
+    stages: Object.values(workflow.stages).map((stage) => stageMapping(stage)),
     completion: workflow.completion === null ? null : completionMapping(workflow.completion),
     requires:
       workflow.requires === null
@@ -279,7 +279,7 @@ function version2WorkflowMapping(workflow: WorkflowDocument): Record<string, unk
     id: workflow.id,
     concurrency: workflow.concurrency ?? 1,
     constraints: workflow.constraints,
-    stages: Object.values(workflow.stages).map(stageMapping),
+    stages: Object.values(workflow.stages).map((stage) => stageMapping(stage, (workflow.schemaVersion ?? 2) >= 3)),
     requires: workflow.requires === null ? null : { workflow: workflow.requires.workflow },
   };
   const outputs = workflow.outputs ?? [];
@@ -293,7 +293,7 @@ function version2WorkflowMapping(workflow: WorkflowDocument): Record<string, unk
   return mapped;
 }
 
-function stageMapping(stage: StageSpec): Record<string, unknown> {
+function stageMapping(stage: StageSpec, version3 = false): Record<string, unknown> {
   const mapped: Record<string, unknown> = {
     id: stage.id,
     depends_on: stage.dependsOn,
@@ -302,7 +302,11 @@ function stageMapping(stage: StageSpec): Record<string, unknown> {
   if (stage.description !== null) mapped.description = stage.description;
   if (stage.instructions.length > 0) mapped.instructions = stage.instructions;
   if (stage.artifact !== null) mapped.produces = { artifact: stage.artifact };
-  if (stage.decisionValues.length > 0) mapped.decision = { values: stage.decisionValues, routes: stage.routes };
+  if (stage.decisionValues.length > 0) {
+    mapped.decision = version3
+      ? stage.decisionValues.map((name) => ({ [name]: { when: stage.decisionInstructions?.[name], navigate: stage.routes[name] } }))
+      : { values: stage.decisionValues, routes: stage.routes };
+  }
   if (stage.modelName !== null) mapped.model = stage.modelName;
   if (Object.keys(stage.options).length > 0) mapped.options = stage.options;
   if (stage.maxRevisions !== null) mapped.max_revisions = stage.maxRevisions;

@@ -352,7 +352,7 @@ function deadOwnerSession(workspace: string): { sessionDirectory: string; execut
       "role: reviewer",
       "task: \"review\"",
       "created_at: 2026-10-19T00:00:00Z",
-      "schema_version: 2",
+      "schema_version: 3",
       "",
     ].join("\n"),
     "utf8",

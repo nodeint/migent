@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import {
   AgentToolRunner,
   SessionStore,
@@ -14,6 +14,9 @@ import {
 } from "../src/index.ts";
 import { loadFrozenWorkflow } from "../src/session-freeze.ts";
 import { ScriptedProvider, tempDir } from "./support.ts";
+
+// Git setup and wrapper/provider process startup can exceed 10 seconds on Windows CI.
+vi.setConfig({ testTimeout: 60_000 });
 
 const CONFIG = `\
 models:

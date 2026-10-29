@@ -34,12 +34,12 @@ async function inspect(
   try {
     mkdirSync(path.join(workspace, ".migent", "workflows"), { recursive: true });
     writeFileSync(path.join(workspace, ".migent", "config.yaml"), stringify({
-      schema_version: 2, ...(options.inline ? {} : { models }),
+      schema_version: 3, ...(options.inline ? {} : { models }),
       roles: { developer: { default_model: options.inline ? Object.values(models)[0] : Object.keys(models)[0] } },
     }));
     if (options.local) writeFileSync(path.join(workspace, ".migent", "config.local.yaml"), stringify(options.local));
     writeFileSync(path.join(workspace, ".migent", "workflows", "flow.yaml"), stringify({
-      schema_version: 2, stages: [{ id: "work", role: "developer" }, { id: "again", role: "developer", depends_on: ["work"] }],
+      schema_version: 3, stages: [{ id: "work", role: "developer" }, { id: "again", role: "developer", depends_on: ["work"] }],
     }));
     return await capture(() => runDoctor(workspace, {
       asJson: options.json ?? true, which: options.which ?? which, runCommand: options.run ?? fakeCatalog, home: workspace,

@@ -1,4 +1,4 @@
-schema_version: 2
+schema_version: 3
 id: plan-implement
 description: Implement and review production code, then write and review tests.
 
@@ -21,12 +21,12 @@ stages:
       - Review production code only.
       - Do not review test code.
     decision:
-      values:
-        - approved
-        - revise
-      routes:
-        approved: write-tests
-        revise: implement
+      - approved:
+          when: Choose approved according to the task.
+          navigate: write-tests
+      - revise:
+          when: Choose revise according to the task.
+          navigate: implement
 
   - id: write-tests
     role: developer
@@ -57,12 +57,12 @@ stages:
       - Verify each test protects meaningful behavior, decision branches, failure boundaries, or regression risks.
       - Reject or require removal of low-value tests added only for coverage, trivial implementation details, boilerplate, or duplicate assertions.
     decision:
-      values:
-        - approved
-        - revise
-      routes:
-        approved: complete
-        revise: write-tests
+      - approved:
+          when: Choose approved according to the task.
+          navigate: complete
+      - revise:
+          when: Choose revise according to the task.
+          navigate: write-tests
 
 outputs:
   - name: implementation-result

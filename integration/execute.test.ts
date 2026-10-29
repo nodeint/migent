@@ -48,7 +48,7 @@ test("plan review publishes the plan", async () => {
 
 test.each([
   ["alias", CODEX_CONFIG],
-  ["inline", `schema_version: 2
+  ["inline", `schema_version: 3
 roles:
   writer:
     default_model:
@@ -424,7 +424,7 @@ test("codex last message overrides stdout", async () => {
 }, 30_000);
 
 const BRANCH_CONFIG = `\
-schema_version: 2
+schema_version: 3
 models:
   grok-model:
     provider: grok
@@ -439,7 +439,7 @@ roles:
 `;
 
 const BRANCH_WORKFLOW = `\
-schema_version: 2
+schema_version: 3
 id: implement
 concurrency: 2
 stages:
@@ -452,10 +452,12 @@ stages:
     role: reviewer
     depends_on: [implement]
     decision:
-      values: [approved, revise]
-      routes:
-        approved: [test, docs]
-        revise: implement
+      - approved:
+          when: Choose approved according to the task.
+          navigate: [test, docs]
+      - revise:
+          when: Choose revise according to the task.
+          navigate: implement
   - id: test
     role: developer
     depends_on: [review]
@@ -466,18 +468,22 @@ stages:
     role: reviewer
     depends_on: [test]
     decision:
-      values: [approved, revise]
-      routes:
-        approved: complete
-        revise: test
+      - approved:
+          when: Choose approved according to the task.
+          navigate: complete
+      - revise:
+          when: Choose revise according to the task.
+          navigate: test
   - id: review-docs
     role: reviewer
     depends_on: [docs]
     decision:
-      values: [approved, revise]
-      routes:
-        approved: complete
-        revise: docs
+      - approved:
+          when: Choose approved according to the task.
+          navigate: complete
+      - revise:
+          when: Choose revise according to the task.
+          navigate: docs
 outputs:
   - name: implementation
     from_stage: implement
@@ -670,13 +676,9 @@ test("review-test stays suspended while implement reruns and the session does no
   const workspace = tempWorkspace();
   try {
     const workflow = BRANCH_WORKFLOW.replace(
-      `      routes:
-        approved: [test, docs]
-        revise: implement`,
-      `      routes:
-        approved: [test, docs]
-        revise: review`,
-    ).replace("        revise: docs", "        revise: implement");
+      "          navigate: implement",
+      "          navigate: review",
+    ).replace("          navigate: docs", "          navigate: implement");
     writeWorkspace(workspace, BRANCH_CONFIG, { implement: workflow });
     installScript(workspace, [
       implementStep(COMPLETE),

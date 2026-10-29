@@ -1,5 +1,5 @@
 # Workflow configuration. Validate with migent doctor --json after editing.
-schema_version: 2
+schema_version: 3
 concurrency: 1
 
 # Optional; defaults to the file name without .yaml.
@@ -51,11 +51,14 @@ stages:
     max_verify: 3
     verify_timeout: 900
     decision:
-      values: [approved, revise]
-      # Keys must match values. Destinations: a stage ID, complete, or a list of IDs.
-      routes:
-        approved: complete
-        revise: draft
+      # Agent guidance: choose one decision using when, then return its name.
+      # navigate accepts a stage ID, complete, or a non-empty list of stage IDs.
+      - approved:
+          when: The work meets the task and required checks pass.
+          navigate: complete
+      - revise:
+          when: Required fixes remain. List each fix and its impact.
+          navigate: draft
 
   - id: check_docs
     role: reviewer

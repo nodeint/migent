@@ -20,6 +20,7 @@ interface StageFields {
   description: string | null;
   artifact: string | null;
   decisionValues: string[];
+  decisionInstructions?: Record<string, string>;
   dependsOn: string[];
   resumeFrom: string | null;
   instructions: string[];
@@ -82,7 +83,7 @@ export interface WorkflowDocument {
 }
 
 /** Accepted workflow and config document version. */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export function isWorkflowV2(workflow: WorkflowDocument | null | undefined): boolean {
   return (workflow?.schemaVersion ?? 1) >= 2;
@@ -98,6 +99,7 @@ const stageFieldSchema = {
   description: z.string().nullable(),
   artifact: z.string().nullable(),
   decisionValues: z.array(z.string()),
+  decisionInstructions: z.record(z.string(), z.string()).optional(),
   dependsOn: z.array(z.string()),
   resumeFrom: z.string().nullable(),
   instructions: z.array(z.string()),
@@ -232,7 +234,7 @@ export function parseWorkflowMapping(data: Record<string, unknown>, source: stri
   if (version2 && Object.hasOwn(data, "completion") && data.completion != null) {
     throw new ConfigurationError("schema_version 2 does not allow completion. Run `migent migrate`.");
   }
-  const stages = parseStages(data.stages, version2);
+  const stages = parseStages(data.stages, version2, schemaVersion >= 3);
   const completion =
     !version2 && isRecord(data.completion) && Object.keys(stages).length > 0
       ? parseCompletion(data.completion, stages)
@@ -396,12 +398,13 @@ function documentId(data: Record<string, unknown>, filePath: string): string {
   return requiredString(data.id, "id");
 }
 
-function parseStages(raw: unknown, version2 = false): Record<string, StageSpec> {
+function parseStages(raw: unknown, version2 = false, version3 = false): Record<string, StageSpec> {
   if (!Array.isArray(raw) || raw.length === 0) return {};
   const stages: Record<string, StageSpec> = {};
   const items: Record<string, unknown>[] = [];
-  for (const item of raw) {
-    if (!isRecord(item)) throw new ConfigurationError("Workflow stage must be a mapping.");
+  for (const rawItem of raw) {
+    if (!isRecord(rawItem)) throw new ConfigurationError("Workflow stage must be a mapping.");
+    const item = version3 ? normalizeStageDecision(rawItem) : rawItem;
     const stageId = requiredString(item.id, "stages.id");
     if (Object.hasOwn(stages, stageId)) throw new ConfigurationError(`Duplicate stage id: ${stageId}`);
     const description = stageDescription(item, stageId);
@@ -449,6 +452,7 @@ function parseStages(raw: unknown, version2 = false): Record<string, StageSpec> 
       role,
       artifact,
       decisionValues: stageDecisionValues(item, stageId),
+      ...(version3 && isRecord(item.decision) ? { decisionInstructions: item.decision.instructions } : {}),
       dependsOn,
       resumeFrom: stageResumeFrom(item, stageId, dependsOn),
       instructions: stringItems(item.instructions, `stages.${stageId}.instructions`),
@@ -644,6 +648,36 @@ function stageResumeFrom(
     );
   }
   return value;
+}
+
+/** Normalize the public v3 list into the scheduler's decision names and routes. */
+function normalizeStageDecision(stage: Record<string, unknown>): Record<string, unknown> {
+  if (stage.decision == null) return stage;
+  const field = `stages.${String(stage.id)}.decision`;
+  if (!Array.isArray(stage.decision) || stage.decision.length === 0) {
+    throw new ConfigurationError(`${field} must be a non-empty list in schema_version 3. Run \`migent migrate\` for older workflows.`);
+  }
+  const values: string[] = [];
+  const routes: Record<string, unknown> = Object.create(null);
+  const instructions: Record<string, string> = Object.create(null);
+  for (const entry of stage.decision) {
+    if (!isRecord(entry) || Object.keys(entry).length !== 1) {
+      throw new ConfigurationError(`${field} entries must each declare exactly one decision.`);
+    }
+    const rawName = Object.keys(entry)[0]!;
+    const name = requiredString(rawName, field).toLowerCase();
+    if (Object.hasOwn(routes, name)) throw new ConfigurationError(`Duplicate decision value on ${field}: ${name}`);
+    const body = entry[rawName];
+    if (!isRecord(body)) throw new ConfigurationError(`${field}.${name} must be a mapping.`);
+    for (const key of Object.keys(body)) {
+      if (key !== "when" && key !== "navigate") throw new ConfigurationError(`${field}.${name}.${key} is not allowed.`);
+    }
+    instructions[name] = requiredString(body.when, `${field}.${name}.when`);
+    if (body.navigate == null) throw new ConfigurationError(`${field}.${name}.navigate is required.`);
+    values.push(name);
+    routes[name] = body.navigate;
+  }
+  return { ...stage, decision: { values, routes, instructions } };
 }
 
 function stageRoutes(
