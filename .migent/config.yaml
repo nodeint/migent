@@ -1,4 +1,4 @@
-schema_version: 2
+schema_version: 3
 models:
   # Map these capability names to each machine's available provider/model in config.local.yaml.
   deep_reasoning: {}

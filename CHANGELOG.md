@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- Schema v3 declares each stage decision with `when` instructions for the agent and a `navigate` destination. `migent migrate` converts older values/routes while preserving existing stage instructions. Frozen sessions retain their original schema and behavior.
+
 ## 0.2.1
 
 ### Changed

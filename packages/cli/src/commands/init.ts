@@ -268,7 +268,7 @@ function writeProject(
 }
 
 function renderConfig(planner: ModelChoice, reviewer: ModelChoice, developer: ModelChoice): string {
-  const lines = ["schema_version: 2", "roles:"];
+  const lines = ["schema_version: 3", "roles:"];
   const instructions = {
     developer: [
       "Read the relevant code and project instructions before making changes.",
@@ -310,7 +310,7 @@ function renderConfig(planner: ModelChoice, reviewer: ModelChoice, developer: Mo
 function renderWorkflow(preset: string): string {
   if (preset === "implement") {
     return (
-      "schema_version: 2\n" +
+      "schema_version: 3\n" +
       "id: implement\n" +
       "stages:\n" +
       "  - id: implement\n" +
@@ -328,19 +328,17 @@ function renderWorkflow(preset: string): string {
       "    instructions:\n" +
       "      - Review the diff against the task and inspect the relevant code.\n" +
       "      - Check correctness, regressions, missing requirements, and the reported verification results.\n" +
-      "      - Choose approved only when the requested change is complete and supported by verification evidence.\n" +
-      "      - Otherwise choose revise and list all required fixes with file locations and their impact.\n" +
       "    decision:\n" +
-      "      values:\n" +
-      "        - approved\n" +
-      "        - revise\n" +
-      "      routes:\n" +
-      "        approved: complete\n" +
-      "        revise: implement\n"
+      "      - approved:\n" +
+      "          when: The requested change is complete and supported by verification evidence.\n" +
+      "          navigate: complete\n" +
+      "      - revise:\n" +
+      "          when: Required fixes remain. List all fixes with file locations and their impact.\n" +
+      "          navigate: implement\n"
     );
   }
   return (
-    "schema_version: 2\n" +
+    "schema_version: 3\n" +
     "id: plan\n" +
     "constraints:\n" +
     "  - Plan only. Do not modify source code.\n" +
@@ -363,15 +361,13 @@ function renderWorkflow(preset: string): string {
     "      - Review the plan for correctness, missing risks, and unnecessary scope.\n" +
     "      - Report every gap of the same kind in one response.\n" +
     "      - Check that plan.md has the sections Goal, Steps, Files, Risks, Verification.\n" +
-    "      - Choose revise only for a factual error, a missing risk, a missing section, or unnecessary scope. Do not revise for style.\n" +
-    "      - When choosing revise, list each required change so the developer can act on it.\n" +
     "    decision:\n" +
-    "      values:\n" +
-    "        - approved\n" +
-    "        - revise\n" +
-    "      routes:\n" +
-    "        approved: complete\n" +
-    "        revise: plan\n" +
+    "      - approved:\n" +
+    "          when: The plan has no factual errors, missing risks, missing sections, or unnecessary scope. Style differences alone are acceptable.\n" +
+    "          navigate: complete\n" +
+    "      - revise:\n" +
+    "          when: A factual error, missing risk, missing section, or unnecessary scope remains. List each required change. Do not revise for style.\n" +
+    "          navigate: plan\n" +
     "outputs:\n" +
     "  - name: plan\n" +
     "    from_stage: plan\n" +

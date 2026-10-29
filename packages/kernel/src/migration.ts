@@ -55,6 +55,7 @@ export function migrateWorkflow(
   while (version < current) {
     migrateStages(workflow, config, providers, version);
     if (version === 1) liftWorkflowCompletion(workflow);
+    if (version === 2) liftWorkflowDecisions(workflow);
     version += 1;
   }
   workflow[SCHEMA_VERSION_FIELD] = current;
@@ -75,9 +76,9 @@ export function patchWorkflowText(original: string, updated: Readonly<Record<str
   return text;
 }
 
-/** Version 2 must load, and must not keep completion or requires.decision. */
+/** The migrated document must load and must not retain removed fields. */
 function assertMigratedWorkflow(text: string, updated: Readonly<Record<string, unknown>>): void {
-  if (documentVersion(updated) < SCHEMA_VERSION) return;
+  if (documentVersion(updated) < 2) return;
   const parsed = parseYamlDocument(text);
   if (!isRecord(parsed)) throw new ConfigEditError("Workflow must be a mapping.");
   if (Object.hasOwn(parsed, "completion")) {
@@ -107,6 +108,34 @@ function liftWorkflowCompletion(workflow: Record<string, unknown>): void {
   if (!isRecord(requires)) return;
   delete requires.decision;
   if (Object.keys(requires).length === 0) delete workflow.requires;
+}
+
+/** Keep existing prose criteria; migration cannot infer a new decision policy. */
+function liftWorkflowDecisions(workflow: Record<string, unknown>): void {
+  if (!Array.isArray(workflow.stages)) return;
+  for (const stage of workflow.stages) {
+    if (!isRecord(stage) || stage.decision == null || Array.isArray(stage.decision)) continue;
+    const field = `stages.${String(stage.id)}.decision`;
+    const decision = stage.decision;
+    if (isRecord(decision) && Object.keys(decision).length === 0) {
+      delete stage.decision;
+      continue;
+    }
+    if (!isRecord(decision) || !Array.isArray(decision.values) || !isRecord(decision.routes)) {
+      throw new ConfigurationError(`${field} requires values and routes before migration.`);
+    }
+    const routes = decision.routes;
+    const names = decision.values.map((value) => typeof value === "string" ? value.trim().toLowerCase() : "");
+    const targets = new Map(Object.entries(routes).map(([key, value]) => [key.trim().toLowerCase(), value]));
+    if (names.length === 0 || names.some((name) => !name || !targets.has(name)) ||
+        new Set(names).size !== names.length || targets.size !== Object.keys(routes).length ||
+        targets.size !== names.length) {
+      throw new ConfigurationError(`${field}.routes keys must match unique decision.values.`);
+    }
+    stage.decision = names.map((name) => ({
+      [name]: { when: `Choose ${name} according to the stage instructions.`, navigate: targets.get(name) },
+    }));
+  }
 }
 
 function refuseForeignCompleteRoutes(
@@ -285,6 +314,9 @@ function stageNotes(before: Readonly<Record<string, unknown>>, after: Readonly<R
     const updated = afterStages.get(stageId);
     if (updated === undefined) continue;
     notes.push(...bodyNotes(stage, updated, `stages.${stageId}`));
+    if (!deepEqual(stage.decision, updated.decision)) {
+      notes.push(`stages.${stageId}.decision migrated; review when instructions (existing criteria remain in stage instructions)`);
+    }
   }
   return notes;
 }
@@ -408,6 +440,14 @@ function patchStage(
   const firstIndent = first[1].indent;
   const siblingIndent = siblingIndentOf(content, firstIndent);
   const unit = siblingIndent > firstIndent ? siblingIndent - firstIndent : 2;
+  if (!deepEqual(before.decision, after.decision)) {
+    const span = nestedKeySpan(lines, { start, end }, "decision");
+    if (span === null) throw new ConfigEditError("Cannot locate the stage decision to migrate.");
+    const replacement = Object.hasOwn(after, "decision")
+      ? renderTopLevel("decision", after.decision).map((line) => `${" ".repeat(siblingIndent)}${line}`)
+      : [];
+    edits.push([span[0], span[1], replacement]);
+  }
   let optionsAt: number | null = null;
   let optionIndent: number | null = null;
   let inOptions = false;
@@ -538,6 +578,7 @@ function stageSpans(lines: string[]): Array<[string, number, number]> {
     }
     if (item.indent === 0) {
       if (start !== null && stageId !== null) spans.push([stageId, start, index]);
+      start = null;
       break;
     }
     const text = codeOf(line);

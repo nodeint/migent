@@ -52,7 +52,11 @@ export function addArtifactContext(
   );
 }
 
-export function addStageOutcomeContract(prompt: string, decisionValues: readonly string[] = []): string {
+export function addStageOutcomeContract(
+  prompt: string,
+  decisionValues: readonly string[] = [],
+  decisionInstructions: Readonly<Record<string, string>> = {},
+): string {
   const lines = [
     "Workflow stage response contract:",
     "Start the final response with `status: complete` or `status: blocked`.",
@@ -62,6 +66,10 @@ export function addStageOutcomeContract(prompt: string, decisionValues: readonly
   if (allowed.length > 0) {
     lines.push(`When complete, put \`decision: ${allowed.join("|")}\` on the next line.`);
     lines.push("Do not put the decision only in prose.");
+    if (Object.keys(decisionInstructions).length > 0) {
+      lines.push("Choose exactly one decision using these instructions:");
+      for (const value of allowed) lines.push(`- ${value}: ${decisionInstructions[value]}`);
+    }
   }
   lines.push("Use a blank line before the report body.");
   return `${prompt}\n\n${lines.join("\n")}`;

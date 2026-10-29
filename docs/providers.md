@@ -6,7 +6,7 @@ in each `default_model`:
 
 ```yaml
 # .migent/config.yaml
-schema_version: 2
+schema_version: 3
 roles:
   planner:
     default_model:
@@ -60,7 +60,7 @@ When several roles or stages need the same model settings, define a named
 entry under `models` and use its name as `default_model`:
 
 ```yaml
-schema_version: 2
+schema_version: 3
 models:
   deep_reasoning:
     provider: codex
@@ -83,7 +83,7 @@ role names.
 Put a model directly in a role when it does not need a shared alias:
 
 ```yaml
-schema_version: 2
+schema_version: 3
 roles:
   developer:
     default_model:

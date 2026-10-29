@@ -1,4 +1,4 @@
-schema_version: 2
+schema_version: 3
 id: implement
 requires:
   workflow: plan
@@ -33,14 +33,19 @@ stages:
     instructions:
       - Read the prior plan, implementation.md, and the diff.
       - Check for missing plan items, extra scope, and tests that skip a case the plan requires.
-      - Approve only when the code matches the plan and the named tests passed. Otherwise decide revise and list the files and changes still required.
     decision:
-      values:
-        - approved
-        - revise
-      routes:
-        approved: complete
-        revise: implement
+      - approved:
+          when: The code matches the plan, the named tests passed, and no findings remain.
+          navigate: complete
+      - approved-with-note:
+          when: The code matches the plan and the named tests passed. Only non-blocking findings remain; record them in review.md.
+          navigate: complete
+      - revise:
+          when: Blocking issues, missing plan items, extra scope, or required test failures remain. List the files and changes still required in review.md.
+          navigate: implement
+    produces:
+      artifact: review.md
+
 outputs:
   - name: implementation
     from_stage: implement

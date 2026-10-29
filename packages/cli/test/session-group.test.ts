@@ -460,7 +460,7 @@ test("session metrics leaves a corrupt sealed file in place", async () => {
 });
 
 const FIXBACK = `\
-schema_version: 2
+schema_version: 3
 id: fixback
 stages:
   - id: implement
@@ -470,10 +470,12 @@ stages:
     role: reviewer
     depends_on: [implement]
     decision:
-      values: [approved, revise]
-      routes:
-        approved: write_tests
-        revise: implement
+      - approved:
+          when: Choose approved according to the task.
+          navigate: write_tests
+      - revise:
+          when: Choose revise according to the task.
+          navigate: implement
   - id: write_tests
     role: developer
     depends_on: [implement, review_work]
@@ -481,11 +483,15 @@ stages:
     role: reviewer
     depends_on: [review_work, write_tests]
     decision:
-      values: [approved, revise, fix_production]
-      routes:
-        approved: complete
-        revise: write_tests
-        fix_production: implement
+      - approved:
+          when: Choose approved according to the task.
+          navigate: complete
+      - revise:
+          when: Choose revise according to the task.
+          navigate: write_tests
+      - fix_production:
+          when: Choose fix_production according to the task.
+          navigate: implement
 `;
 
 class ShowDuringRevisitProvider extends ScriptedProvider {

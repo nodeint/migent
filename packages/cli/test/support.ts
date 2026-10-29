@@ -83,7 +83,7 @@ function writePromptArtifact(prompt: string, body: string): void {
 }
 
 export const FAKE_FLOW_CONFIG = `\
-schema_version: 2
+schema_version: 3
 models:
   fake-model:
     provider: fake

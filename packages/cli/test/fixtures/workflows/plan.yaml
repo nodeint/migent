@@ -1,4 +1,4 @@
-schema_version: 2
+schema_version: 3
 id: plan
 description: Write and approve a plan before implementation.
 stages:
@@ -13,12 +13,12 @@ stages:
     depends_on:
       - plan
     decision:
-      values:
-        - approved
-        - revise
-      routes:
-        approved: complete
-        revise: plan
+      - approved:
+          when: Choose approved according to the task.
+          navigate: complete
+      - revise:
+          when: Choose revise according to the task.
+          navigate: plan
 outputs:
   - name: plan
     from_stage: plan

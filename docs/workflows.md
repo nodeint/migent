@@ -45,22 +45,31 @@ routed back to this stage.
 
 ## Decisions and routes
 
-A decision stage declares every accepted value and its destination:
+A schema v3 decision stage declares each choice with `when` instructions for
+the agent and a `navigate` destination:
 
 ```yaml
 - id: review_plan
   role: reviewer
   depends_on: [plan]
   decision:
-    values: [approved, revise]
-    routes:
-      approved: complete
-      revise: plan
+    - approved:
+        when: The work meets the task and required checks pass.
+        navigate: complete
+    - revise:
+        when: Required fixes remain. List each fix and its impact.
+        navigate: plan
 ```
 
 A destination is another declared stage, `complete`, or a non-empty list of
-stage ids. `complete` is never in a list. Route keys must exactly match the
-declared decision values. Every stage in a list is routed by that decision.
+stage ids. `complete` is never in a list. Each list entry declares exactly one
+unique decision name with a non-empty `when` and a valid `navigate` destination.
+Every stage in a destination list is routed by that decision.
+The agent chooses one decision using `when` and returns its name in the
+`decision` header. Migent validates the name and follows `navigate`; `when` is
+natural-language guidance, not an expression evaluated by the engine.
+Several decisions can share a destination, such as `approved` and
+`approved-with-note` both navigating to `complete`.
 When a decision routes to another stage, Migent includes the decision
 execution's `response.md` in the destination prompt. On a return to a stage,
 the prompt also references that stage's latest artifact when one exists.
@@ -77,14 +86,27 @@ Authors who need a routed stage to wait for its router keep that router in
 `depends_on`.
 
 ```yaml
-routes:
-  approved: [test, docs]
-  revise: implement
+decision:
+  - approved:
+      when: The implementation is ready for testing and documentation.
+      navigate: [test, docs]
+  - revise:
+      when: Required implementation fixes remain.
+      navigate: implement
 ```
+
+Run `migent migrate --yes` to upgrade config and workflow files to schema v3.
+Migration converts old `values` and `routes` into decision entries. It preserves
+stage instructions and supplies `when: Choose <name> according to the stage
+instructions.` Review these placeholders and move your decision criteria into
+`when` as appropriate. A v1 workflow first receives the v2 completion/output
+migration, then the v3 decision migration. Config files only advance their
+version for this step. Running migration again leaves current files unchanged.
+Existing sessions keep their frozen workflow and original decision format.
 
 ## Conditional stages
 
-A stage in a version 2 workflow can run only when the session changed certain
+A stage in a version 2 or newer workflow can run only when the session changed certain
 files. `run_when.changed_paths` is a list of Git path globs. The stage runs when
 any changed path matches any glob (OR). Otherwise Migent records a skip and
 starts no provider.
@@ -101,7 +123,7 @@ starts no provider.
 
 Quote every glob. A plain YAML scalar that starts with `*` is an alias, and
 `migent doctor` reports that YAML error unchanged. `run_when` needs
-`schema_version: 2`, a non-empty list, and no duplicates. Other keys under
+`schema_version: 2` or newer, a non-empty list, and no duplicates. Other keys under
 `run_when` are rejected.
 
 **Globs.** A pattern is a path relative to the Git repository root, with `/`
@@ -187,7 +209,7 @@ leaves an output missing. Migent rejects such a workflow when it loads.
 when documentation files changed, and `revise` sends the work back to `docs`.
 
 ```yaml
-schema_version: 2
+schema_version: 3
 id: docs_flow
 stages:
   - id: implement
@@ -198,10 +220,12 @@ stages:
     role: developer
     depends_on: [implement]
     decision:
-      values: [updated, no-docs]
-      routes:
-        updated: review_docs
-        no-docs: complete
+      - updated:
+          when: Documentation changes need review.
+          navigate: review_docs
+      - no-docs:
+          when: No documentation changes need review.
+          navigate: complete
   - id: review_docs
     role: reviewer
     depends_on: [docs]
@@ -210,10 +234,12 @@ stages:
         - "docs/**/*"
         - "**/README.md"
     decision:
-      values: [approved, revise]
-      routes:
-        approved: complete
-        revise: docs
+      - approved:
+          when: The work meets the task and required checks pass.
+          navigate: complete
+      - revise:
+          when: Required fixes remain. List each fix and its impact.
+          navigate: docs
 outputs:
   - name: implementation
     from_stage: implement
@@ -410,8 +436,9 @@ reply as the new attempt's prompt body and does not repeat the blocker. The
 earlier execution stays blocked. A cancelled session is resumed
 on that same execution. `completed` sessions are not resumed.
 
-If the stage declares `decision.values`, a completed response must include one
-of them in the `decision` header.
+If the stage declares decisions, a completed response must include one of their
+names in the `decision` header. The decision instructions are included on each
+turn, including resume, reply, and repair after verification fails.
 
 ## Complete example
 
@@ -420,7 +447,7 @@ start while `docs` is still running. The session completes when both reviews
 approve and nothing else can start.
 
 ```yaml
-schema_version: 2
+schema_version: 3
 id: implement
 concurrency: 2
 stages:
@@ -433,10 +460,12 @@ stages:
     role: reviewer
     depends_on: [implement]
     decision:
-      values: [approved, revise]
-      routes:
-        approved: [test, docs]
-        revise: implement
+      - approved:
+          when: The work meets the task and required checks pass.
+          navigate: [test, docs]
+      - revise:
+          when: Required fixes remain. List each fix and its impact.
+          navigate: implement
   - id: test
     role: developer
     depends_on: [review]
@@ -447,18 +476,22 @@ stages:
     role: reviewer
     depends_on: [test]
     decision:
-      values: [approved, revise]
-      routes:
-        approved: complete
-        revise: test
+      - approved:
+          when: The work meets the task and required checks pass.
+          navigate: complete
+      - revise:
+          when: Required fixes remain. List each fix and its impact.
+          navigate: test
   - id: review_docs
     role: reviewer
     depends_on: [docs]
     decision:
-      values: [approved, revise]
-      routes:
-        approved: complete
-        revise: docs
+      - approved:
+          when: The work meets the task and required checks pass.
+          navigate: complete
+      - revise:
+          when: Required fixes remain. List each fix and its impact.
+          navigate: docs
 outputs:
   - name: implementation
     from_stage: implement

@@ -1,4 +1,4 @@
-schema_version: 2
+schema_version: 3
 id: plan
 constraints:
   - Do not write implementation code.
@@ -23,14 +23,13 @@ stages:
     instructions:
       - Read plan.md and open the code behind each path:line claim.
       - Check correctness, missing risks, unnecessary scope, and any step an implementer would have to guess.
-      - Approve only when the plan can be implemented as written. Otherwise decide revise and list each required edit once.
     decision:
-      values:
-        - approved
-        - revise
-      routes:
-        approved: complete
-        revise: plan
+      - approved:
+          when: The plan can be implemented as written.
+          navigate: complete
+      - revise:
+          when: Required edits remain before the plan can be implemented. List each required edit once.
+          navigate: plan
 outputs:
   - name: plan
     from_stage: plan

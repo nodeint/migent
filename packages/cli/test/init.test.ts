@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ModelCatalog } from "@nodeint/migent-adapters";
-import { createProviderResolver, diagnose, loadWorkspaceConfig, resolveStageTarget, type Provider } from "@nodeint/migent-kernel";
+import { createProviderResolver, diagnose, loadWorkflowDocument, loadWorkspaceConfig, resolveStageTarget, type Provider } from "@nodeint/migent-kernel";
 import { defaultProviders } from "@nodeint/migent-adapters";
 import { afterEach, expect, test } from "vitest";
 import { cliHooks } from "../src/hooks.ts";
@@ -99,10 +99,10 @@ test("writes inline role models and both working presets", async () => {
     const workflow = readFileSync(path.join(workspace, ".migent", "workflows", "implement.yaml"), "utf8");
     const gitignore = readFileSync(path.join(workspace, ".migent", ".gitignore"), "utf8");
     expect(captured.value).toBe(0);
-    expect(config).toContain("schema_version: 2");
-    expect(workflow).toContain("schema_version: 2");
+    expect(config).toContain("schema_version: 3");
+    expect(workflow).toContain("schema_version: 3");
     expect(loadWorkspaceConfig(workspace)).toMatchObject({
-      schema_version: 2,
+      schema_version: 3,
       roles: {
         developer: { default_model: { provider: "codex", model: "gpt-5" } },
         planner: { default_model: { provider: "codex", model: "gpt-5" } },
@@ -239,7 +239,7 @@ test("planner has its own model and each workflow uses the reviewer model", asyn
     expect(workflow).toContain("role: planner");
     expect(resolveStageTarget(workspace, "implement", "review_work", undefined, resolve)).toMatchObject({ provider: "grok", model: "grok-4.7" });
     expect(workflow).toContain("id: plan");
-    expect(workflow).toContain("revise: plan");
+    expect(loadWorkflowDocument(path.join(workspace, ".migent", "workflows", "plan.yaml")).stages.review_plan?.routes.revise).toBe("plan");
     expect(workflow).toContain("When revising, edit the existing plan.md in place. Do not replace the whole file.");
     expect(workflow).toContain("Report every gap of the same kind in one response.");
     expect(workflow).not.toContain("reasoning-effort");
