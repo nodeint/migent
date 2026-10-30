@@ -4,7 +4,7 @@ description: >
   Commit the work on the current branch, push it, and open a pull request
   against next, then report the CI result. Stops before merging. Use when the
   user says create PR, tạo PR, open a pull request, or push and open a PR. For
-  a release, use migent-release instead.
+  a release, use release instead.
 metadata:
   short-description: "Open a pull request for the current branch"
 ---

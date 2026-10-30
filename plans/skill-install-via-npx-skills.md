@@ -191,7 +191,7 @@ section).
     check for installed skills.
   - Changed: `migent skill install` and `update` run `npx skills`.
   - Removed: the `.migent-template.json` state file.
-- No change to the `migent-release` skill: nothing is stamped at build time.
+- No change to the `release` skill: nothing is stamped at build time.
 
 ## Risks
 

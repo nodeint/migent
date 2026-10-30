@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Release tags are validated on `next`; `main` advances to the exact tagged commit only after all four npm packages and the installed CLI are verified.
+
 - `migent migrate` upgrades and versions `config.local.yaml`, resolves providers across config layers, and preserves shared roles whose default model is supplied locally.
 
 ## 0.3.0

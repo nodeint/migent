@@ -67,10 +67,23 @@ test("installed hooks enforce PR flow in a real isolated clone", () => {
     git("switch", "main");
     const commit = spawnSync("git", ["commit", "--allow-empty", "-m", "Wrong"], { cwd: repo, encoding: "utf8" });
     expect(commit.status).not.toBe(0);
-    expect(commit.stderr).toContain("main changes through pull requests");
+    expect(commit.stderr).toContain("main advances only to a verified published release");
     git("switch", "--no-track", "-c", "feat/next", "origin/main");
     expect(git("for-each-ref", "--format=%(upstream)", "refs/heads/feat/next")).toBe("");
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
 }, 30_000);
+
+
+test("main accepts only a release tag after successful publication verification", () => {
+  let checked = false;
+  const verify = () => { checked = true; };
+  expect(pushProblems(update("refs/tags/v0.3.1", "refs/heads/main"), "", verify)).toEqual([]);
+  expect(checked).toBe(true);
+  expect(pushProblems(update("refs/tags/v0.3.1", "refs/heads/main"), "", () => { throw new Error("not public"); })).toEqual(["Release synchronization blocked: not public"]);
+  checked = false;
+  expect(pushProblems(update("refs/heads/next", "refs/heads/main"), "", verify)).toHaveLength(1);
+  expect(checked).toBe(false);
+  expect(pushProblems(update("refs/tags/v0.3.1", "refs/heads/main"), "")).toHaveLength(1);
+});

@@ -1,11 +1,11 @@
 ---
-name: migent-release
+name: release
 description: >
   Release Migent through a release pull request: update the changelog, bump all
   four workspace packages, build and test, then tag the merged release commit.
   Watch release.yml stage packages and create the GitHub Release.
   The user approves staged packages on npm; then fast-forward main to the tag. Use when the user asks to release,
-  tag a version, push the release tag, or runs /migent-release.
+  tag a version, push the release tag, or runs /release.
 metadata:
   short-description: "Release Migent on npm"
 ---

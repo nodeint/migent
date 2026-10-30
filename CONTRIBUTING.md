@@ -125,19 +125,20 @@ both branches; reinstall them with `pnpm setup:git` after pulling updates.
 The CI trigger change must reach the remote branch before relying on PR
 checks into `next`.
 
-The remaining release migration prerequisites are:
+Release configuration must match the checked-in definitions:
 
-1. Set `next` as the repository default branch for development and PRs.
-2. Update `.github/main-ruleset.json` and GitHub protection for the restricted
-   post-publication fast-forward described above.
-3. Change the release workflow's tag ancestry check from `origin/main` to
-   `origin/next`. Continue building and packing the tagged commit.
-4. Add a guarded release-only fast-forward path to the local safeguards.
-   Direct pushes to both long-lived branches currently remain blocked.
+1. Use `next` as the repository default branch.
+2. Apply `.github/main-ruleset.json` to preserve release history and
+   `.github/main-release-ruleset.json` to restrict updates to repository admins
+   acting as release maintainers. The actor exception applies only to the update
+   restriction; deletion, force-push, and linear-history rules have no exceptions.
+3. The release workflow checks tag ancestry on `origin/next`.
+4. Run `pnpm setup:git`. The pre-push hook permits only an existing remote
+   lightweight version tag to advance `main`, after checking a clean tree,
+   remote refs, fast-forward ancestry, package versions, release notes, all four
+   public npm versions, and an isolated installation of the CLI.
 
-Do not bypass hooks or protection, or advance `main` before publication to
-work around an unmigrated check. The release migration steps above must be completed before publishing
-with the new flow.
+Never advance `main` before publication or bypass hooks or protection.
 
 Branch names: `feat/<slug>`, `fix/<slug>`, `docs/<slug>`, `chore/<slug>`, and
 `release/X.Y.Z` for releases. The pull request title is the squash commit
@@ -206,7 +207,7 @@ git push origin v0.2.0
 ```
 
 The tag must equal every package version, or the workflow stops at its first
-check. It must also be on `next`. Migrate the workflow ancestry check before tagging.
+check. It must also be on `next`. The workflow checks ancestry on `origin/next`.
 Never move an existing tag, and never tag an unmerged release PR.
 
 `.github/workflows/release.yml` runs on `v*` tags. It takes the `## 0.2.0`
@@ -251,7 +252,7 @@ installed CLI version. Then fast-forward `main` to the exact tagged release
 commit. There is a short interval between publication and this update; the
 branches and public packages are synchronized when the release completes.
 
-The migrated release safeguard must validate publication before allowing
+The release safeguard must validate publication before allowing
 this update. Use a clean checkout and the authorized release actor:
 
 ```bash
