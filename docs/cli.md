@@ -250,7 +250,9 @@ migent migrate --yes
 `doctor`, `session run`, and `session continue`
 stop when `schema_version` is older than this Migent and print
 `Schema is outdated. Run migent migrate.` A missing `schema_version` is
-version 0.
+version 0. Both `.migent/config.yaml` and an existing
+`.migent/config.local.yaml` are checked and migrated independently. Workflows
+resolve providers from the merged configuration.
 
 `migrate` prints the pending changes and asks before it writes. `--yes` writes
 without asking, for a caller that has no terminal. Declining leaves the files

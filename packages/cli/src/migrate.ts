@@ -5,6 +5,9 @@ import {
   SCHEMA_VERSION,
   documentVersion,
   loadYamlMapping,
+  loadWorkspaceConfig,
+  localConfigPath,
+  mergeConfig,
   migrateConfig,
   migrateWorkflow,
   patchConfigText,
@@ -111,16 +114,35 @@ async function accepted(confirm: ((message: string) => boolean | Promise<boolean
 function pendingRewrites(workspace: string, providers: Record<string, MigrationProvider>): Rewrite[] {
   const configPath = path.join(workspace, ".migent", "config.yaml");
   if (!isFile(configPath)) return [];
-  const [config, configRewrite] = configRewriteOf(configPath, providers);
+  const context = loadWorkspaceConfig(workspace);
+  const [config, configRewrite] = configRewriteOf(configPath, providers, context);
   if (config === null) return [];
   const rewrites: Rewrite[] = [];
   if (configRewrite !== null) rewrites.push(configRewrite);
-  rewrites.push(...workflowRewrites(workspace, config, providers));
+  let effective = config;
+  const localPath = localConfigPath(workspace);
+  if (isFile(localPath)) {
+    const [local, rewrite] = configRewriteOf(localPath, providers, context);
+    if (rewrite !== null) rewrites.push(rewrite);
+    if (local !== null) {
+      effective = mergeConfig(config, local);
+      if (isRecord(local.roles) && isRecord(effective.roles)) {
+        for (const [name, role] of Object.entries(local.roles)) {
+          const target = effective.roles[name];
+          if (isRecord(role) && isRecord(target) && Object.hasOwn(role, "default_model")) {
+            target.default_model = role.default_model;
+          }
+        }
+      }
+    }
+  }
+  rewrites.push(...workflowRewrites(workspace, effective, providers));
   return rewrites;
 }
 
 function schemaFiles(workspace: string): Array<[string, string]> {
   const files: Array<[string, string]> = [[".migent/config.yaml", path.join(workspace, ".migent", "config.yaml")]];
+  files.push([".migent/config.local.yaml", localConfigPath(workspace)]);
   const directory = workflowsDirectory(workspace);
   if (isDirectory(directory)) {
     for (const name of readdirSync(directory).filter((item) => item.endsWith(".yaml")).sort()) {
@@ -143,6 +165,7 @@ function storedVersion(filePath: string): number | null {
 function configRewriteOf(
   filePath: string,
   providers: Record<string, MigrationProvider>,
+  context: Record<string, unknown>,
 ): [Record<string, unknown> | null, Rewrite | null] {
   const original = readFileSync(filePath, "utf8");
   let parsed: Record<string, unknown>;
@@ -154,7 +177,7 @@ function configRewriteOf(
   const updated = structuredClone(parsed);
   let notes: string[];
   try {
-    notes = migrateConfig(updated, providers);
+    notes = migrateConfig(updated, providers, SCHEMA_VERSION, context);
   } catch (error) {
     if (error instanceof ConfigurationError) throw error;
     return [null, null];
@@ -163,7 +186,7 @@ function configRewriteOf(
   const rewritten = patchConfigText(original, updated);
   if (rewritten === original) return [updated, null];
   const labeled = notes.map((note) =>
-    note.startsWith("schema_version") ? `Migrated .migent/config.yaml ${note}` : note,
+    note.startsWith("schema_version") ? `Migrated .migent/${path.basename(filePath)} ${note}` : note,
   );
   return [updated, { path: filePath, text: rewritten, notes: labeled }];
 }
@@ -207,3 +230,7 @@ function workflowRewrites(
 }
 
 
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}

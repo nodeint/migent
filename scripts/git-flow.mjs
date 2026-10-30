@@ -4,8 +4,8 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 export function commitProblem(branch) {
-  return !branch || branch === "main"
-    ? "Commit on a feature, fix, chore, or release branch; main changes through pull requests."
+  return !branch || branch === "main" || branch === "next"
+    ? "Commit on a feature, fix, chore, or release branch; main changes through pull requests. Develop through PRs into next."
     : null;
 }
 
@@ -14,8 +14,8 @@ export function pushProblems(input, currentRef) {
   for (const line of input.trim().split(/\r?\n/)) {
     if (!line.trim()) continue;
     const [source, , target] = line.trim().split(/\s+/);
-    if (target === "refs/heads/main") {
-      problems.push("Direct pushes to main are blocked. Push your branch and open a pull request.");
+    if (target === "refs/heads/main" || target === "refs/heads/next") {
+      problems.push(`Direct pushes to ${target.slice("refs/heads/".length)} are blocked. Push your branch and open a pull request.`);
     } else if (target?.startsWith("refs/heads/") && source !== "(delete)") {
       const resolved = source === "HEAD" ? currentRef : source;
       if (resolved !== target) problems.push(`Branch destination mismatch: ${source} -> ${target}. Push to the same branch name.`);

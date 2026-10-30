@@ -14,9 +14,9 @@ for (const [key, value] of [
 ]) git("config", "--local", key, value);
 for (const line of git("for-each-ref", "--format=%(refname:short) %(upstream)", "refs/heads").split("\n")) {
   const [branch, upstream] = line.split(" ");
-  if (branch !== "main" && upstream === "refs/remotes/origin/main") {
+  if (!["main", "next"].includes(branch) && ["refs/remotes/origin/main", "refs/remotes/origin/next"].includes(upstream)) {
     git("branch", "--unset-upstream", branch);
-    process.stdout.write(`Removed incorrect origin/main upstream from ${branch}.\n`);
+    process.stdout.write(`Removed incorrect ${upstream.replace("refs/remotes/", "")} upstream from ${branch}.\n`);
   }
 }
 process.stdout.write("Installed repository Git hooks and branch/push defaults (local config only).\n");

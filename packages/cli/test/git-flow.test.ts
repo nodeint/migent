@@ -19,6 +19,9 @@ test("push guard rejects main updates, deletion, and mismatched branches", () =>
   expect(pushProblems(update("(delete)", "refs/heads/old"), "refs/heads/feat/work")).toEqual([]);
   expect(pushProblems(update("refs/tags/v1.0.0", "refs/tags/v1.0.0"), "")).toEqual([]);
   expect(commitProblem("main")).toBeTruthy();
+  expect(commitProblem("next")).toBeTruthy();
+  expect(pushProblems(update("refs/heads/next", "refs/heads/next"), "refs/heads/next")).toHaveLength(1);
+  expect(pushProblems(update("(delete)", "refs/heads/next"), "refs/heads/feat/work")).toHaveLength(1);
   expect(commitProblem("")).toBeTruthy();
   expect(commitProblem("release/1.0.0")).toBeNull();
 });
@@ -59,6 +62,8 @@ test("installed hooks enforce PR flow in a real isolated clone", () => {
     expect(git("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")).toBe("origin/feat/work");
     git("tag", "v-test");
     expect(push("origin", "refs/tags/v-test:refs/tags/v-test").status).toBe(0);
+    git("switch", "--no-track", "-c", "next", "origin/main");
+    expect(spawnSync("git", ["commit", "--allow-empty", "-m", "Wrong next"], { cwd: repo, encoding: "utf8" }).status).not.toBe(0);
     git("switch", "main");
     const commit = spawnSync("git", ["commit", "--allow-empty", "-m", "Wrong"], { cwd: repo, encoding: "utf8" });
     expect(commit.status).not.toBe(0);

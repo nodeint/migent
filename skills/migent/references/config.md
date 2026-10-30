@@ -44,8 +44,9 @@ model. Run doctor and resolve missing mappings before starting a workflow.
 
 The local file accepts the same keys as the shared file. Named models merge
 key by key; a local role `default_model` replaces the shared default, so supply
-a complete model or an alias. Scalars and lists replace shared values. Omit
-`schema_version` from the local file. Delete an unwanted option from both files
+a complete model or an alias. Scalars and lists replace shared values. Keep
+`schema_version: 4` in each file; run `migent migrate`
+to stamp and upgrade both files independently. Delete an unwanted option from both files
 if it is set in both.
 
 ## Change a role or model

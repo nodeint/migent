@@ -165,7 +165,7 @@ test("doctor prints and returns a tracked config.local.yaml warning without fail
   const workspace = mkdtempSync(path.join(tmpdir(), "migent-cli-"));
   try {
     writeProject(workspace);
-    writeFileSync(path.join(workspace, ".migent", "config.local.yaml"), "models: {}\n", "utf8");
+    writeFileSync(path.join(workspace, ".migent", "config.local.yaml"), "schema_version: 4\nmodels: {}\n", "utf8");
     execFileSync("git", ["init", "-q"], { cwd: workspace });
     execFileSync("git", ["add", ".migent/config.local.yaml"], { cwd: workspace });
     cliHooks.which = whichBoth;

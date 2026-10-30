@@ -4,7 +4,7 @@ import path from "node:path";
 import { loadYamlMapping } from "@nodeint/migent-kernel";
 import { expect, test } from "vitest";
 import { main } from "../src/index.ts";
-import { runMigrate } from "../src/migrate.ts";
+import { requireCurrentSchema, runMigrate } from "../src/migrate.ts";
 import { capture } from "./support.ts";
 
 const CONFIG = `\
@@ -212,6 +212,31 @@ test("migrate does not modify a session directory", async () => {
     const captured = await capture(() => runMigrate(workspace, { assumeYes: true }));
     expect(captured.value).toBe(0);
     expect(readFileSync(marker, "utf8")).toBe(body);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("migrate versions both config layers and preserves roles without a default", async () => {
+  const workspace = mkdtempSync(path.join(tmpdir(), "migent-layer-migration-"));
+  const root = path.join(workspace, ".migent");
+  mkdirSync(root);
+  const base = "schema_version: 2\nmodels: {}\nroles:\n  architect:\n    instructions:\n      - Plan the work.\n";
+  const local = "# Machine settings\nmodels:\n  local:\n    provider: codex\n    model: test\n    thinking: high\nroles:\n  architect:\n    default_model: local\n";
+  writeFileSync(path.join(root, "config.yaml"), base);
+  writeFileSync(path.join(root, "config.local.yaml"), local);
+  try {
+    expect(() => requireCurrentSchema(workspace)).toThrow(".migent/config.local.yaml");
+    const result = await capture(() => runMigrate(workspace, { assumeYes: true }));
+    expect(() => requireCurrentSchema(workspace)).not.toThrow();
+    expect(result.value).toBe(0);
+    expect(readFileSync(path.join(root, "config.yaml"), "utf8")).toBe(base.replace("schema_version: 2", "schema_version: 4"));
+    const migrated = loadYamlMapping(path.join(root, "config.local.yaml"));
+    expect(migrated.schema_version).toBe(4);
+    expect(migrated.models).toEqual({ local: { provider: "codex", model: "test", options: { model_reasoning_effort: "high" } } });
+    expect(readFileSync(path.join(root, "config.local.yaml"), "utf8")).toContain("# Machine settings");
+    const second = await capture(() => runMigrate(workspace, { assumeYes: true }));
+    expect(second.stdout).toContain("Schema is current.");
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }
