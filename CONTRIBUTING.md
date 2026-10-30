@@ -118,25 +118,26 @@ Configure branch protection as follows:
 
 ### Migration prerequisites
 
-These are the intended rules. The existing `.github/main-ruleset.json`,
-`.github/workflows/ci.yml`, `.github/workflows/release.yml`, and local Git
-safeguards still describe the previous `main`-based flow and must be migrated
-before using this release process:
+The `next` protection definition is `.github/next-ruleset.json`; it requires
+PRs, current-base CI, linear history, and resolved conversations, with no
+bypass actors. CI targets both `main` and `next`. Local safeguards protect
+both branches; reinstall them with `pnpm setup:git` after pulling updates.
+The CI trigger change must reach the remote branch before relying on PR
+checks into `next`.
 
-1. Create remote `next` from the current `main` if it does not already exist;
-   set `next` as the default branch for development and PRs.
-2. Move the PR/CI rules to `next`, make CI target `next`, and configure `main`
-   for the restricted release fast-forward described above.
+The remaining release migration prerequisites are:
+
+1. Set `next` as the repository default branch for development and PRs.
+2. Update `.github/main-ruleset.json` and GitHub protection for the restricted
+   post-publication fast-forward described above.
 3. Change the release workflow's tag ancestry check from `origin/main` to
    `origin/next`. Continue building and packing the tagged commit.
-4. Update `scripts/git-flow.mjs` and `scripts/setup-git.mjs` to protect both
-   long-lived branches, reject working branches tracking either one, and
-   support a guarded release-only fast-forward to `main` after publication.
-   Reinstall safeguards with `pnpm setup:git`.
+4. Add a guarded release-only fast-forward path to the local safeguards.
+   Direct pushes to both long-lived branches currently remain blocked.
 
 Do not bypass hooks or protection, or advance `main` before publication to
-work around an unmigrated check. This documentation update does not apply
-GitHub settings or change workflows and hooks.
+work around an unmigrated check. The release migration steps above must be completed before publishing
+with the new flow.
 
 Branch names: `feat/<slug>`, `fix/<slug>`, `docs/<slug>`, `chore/<slug>`, and
 `release/X.Y.Z` for releases. The pull request title is the squash commit
