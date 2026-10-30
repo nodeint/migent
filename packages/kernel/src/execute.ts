@@ -182,7 +182,7 @@ async function executeLocked(
     held.sessionId = sessionId;
     held.lock = SessionLock.acquire(path.join(workspace, ".migent", "sessions", sessionId));
     repairSessionUnlocked(workspace, sessionId);
-    if (request.refreshWorkflow) refreshSessionWorkflow(workspace, sessionId, request.startPrepared === true, resolveProvider);
+    if (request.refreshWorkflow && !request.startPrepared) refreshSessionWorkflow(workspace, sessionId, false, resolveProvider);
     const bound = bindExecuteRun(workspace, sessionId, request.workflowId, request.priorSessionId);
     workflowId = bound.workflowId;
     if (!request.refreshWorkflow) {
@@ -220,7 +220,7 @@ async function executeLocked(
             : `Session ${sessionId} is ${sessionStatus || "unknown"}. migent session run --session --workflow only starts a prepared session.`;
         throw new ConfigurationError(hint);
       }
-      activatePreparedSession(workspace, sessionId);
+      activatePreparedSession(workspace, sessionId, resolveProvider);
       sessionStatus = "active";
     } else if (sessionStatus === "prepared") {
       throw new ConfigurationError(
@@ -253,7 +253,6 @@ async function executeLocked(
       throw new ConfigurationError("--refresh-workflow requires an existing session.");
     }
     if (!request.workflowId) throw new ConfigurationError("Creating a session requires a workflow.");
-    if (!request.task) throw new ConfigurationError("Creating a session requires --task.");
     workflow = loadNamedWorkflow(workspace, request.workflowId);
     workflowId = workflow.id;
     resolvePriorSessionId(workspace, workflow, request.priorSessionId);
@@ -1219,7 +1218,7 @@ async function dispatchExecuteStage(
     snapshots,
     workspace,
     priorSessionId,
-    priorOutputs: priorSessionOutputs(workspace, priorSessionId),
+    priorOutputs: priorSessionOutputs(workspace, priorSessionId, sessionId),
     roleInstructions,
   };
   const stageReply = takeStageReply(reply, stageId);
@@ -1359,7 +1358,6 @@ function bindExecuteRun(
 function refreshSessionWorkflow(workspace: string, sessionId: string, startPrepared: boolean, resolveProvider: ProviderResolver): void {
   const sessionDirectory = path.join(workspace, ".migent", "sessions", sessionId);
   const freeze = readWorkflowFreeze(sessionDirectory);
-  if (freeze === null) throw new ConfigurationError(`Session ${sessionId} has no frozen workflow.`);
   const status = new SessionStore(workspace).readSessionStatus(sessionId);
   const sessionStatus = typeof status.status === "string" ? status.status : "";
   if (sessionStatus === "completed" || sessionStatus === "cancelled") {
@@ -1368,6 +1366,7 @@ function refreshSessionWorkflow(workspace: string, sessionId: string, startPrepa
   if (!startPrepared && sessionStatus === "prepared") {
     throw new ConfigurationError(`Session ${sessionId} is prepared. Run: ${preparedRunHint(sessionId, status)}`);
   }
+  if (freeze === null) throw new ConfigurationError(`Session ${sessionId} has no frozen workflow.`);
   if (startPrepared && sessionStatus !== "prepared") {
     const hint =
       sessionStatus === "active"
@@ -1412,8 +1411,18 @@ function storedPriorSessionId(status: Record<string, unknown>): string | null {
 function priorSessionOutputs(
   workspace: string,
   priorSessionId: string | null,
+  sessionId?: string,
 ): Record<string, unknown> | null {
   if (!priorSessionId) return null;
+  if (sessionId) {
+    const handoff = new SessionStore(workspace).readSessionStatus(sessionId).handoff;
+    if (isRecord(handoff) && isRecord(handoff.artifacts)) {
+      return Object.fromEntries(Object.entries(handoff.artifacts).map(([name, value]) => {
+        const record = isRecord(value) ? value : {};
+        return [name, { ...record, path: path.resolve(workspace, ".migent", "sessions", sessionId, String(record.path)) }];
+      }));
+    }
+  }
   const outputs = new SessionStore(workspace).readSessionStatus(priorSessionId).outputs;
   return isRecord(outputs) ? outputs : {};
 }

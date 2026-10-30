@@ -268,7 +268,7 @@ function writeProject(
 }
 
 function renderConfig(planner: ModelChoice, reviewer: ModelChoice, developer: ModelChoice): string {
-  const lines = ["schema_version: 3", "roles:"];
+  const lines = ["schema_version: 4", "roles:"];
   const instructions = {
     developer: [
       "Read the relevant code and project instructions before making changes.",
@@ -310,7 +310,7 @@ function renderConfig(planner: ModelChoice, reviewer: ModelChoice, developer: Mo
 function renderWorkflow(preset: string): string {
   if (preset === "implement") {
     return (
-      "schema_version: 3\n" +
+      "schema_version: 4\n" +
       "id: implement\n" +
       "stages:\n" +
       "  - id: implement\n" +
@@ -338,7 +338,7 @@ function renderWorkflow(preset: string): string {
     );
   }
   return (
-    "schema_version: 3\n" +
+    "schema_version: 4\n" +
     "id: plan\n" +
     "constraints:\n" +
     "  - Plan only. Do not modify source code.\n" +
@@ -371,7 +371,12 @@ function renderWorkflow(preset: string): string {
     "outputs:\n" +
     "  - name: plan\n" +
     "    from_stage: plan\n" +
-    "    artifact: plan.md\n"
+    "    artifact: plan.md\n" +
+    "downstream:\n" +
+    "  - workflow: implement\n" +
+    "    task: Implement the approved plan.\n" +
+    "    artifacts:\n" +
+    "      plan: plan\n"
   );
 }
 

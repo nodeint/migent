@@ -81,7 +81,6 @@ export async function dispatchNamedStage(
   let target = loaded.target;
   let sessionId = request.sessionId ?? null;
   if (sessionId === null) {
-    if (!request.task) throw new ConfigurationError("The first workflow stage requires --task.");
     sessionId = createWorkflowSession(workspace, workflow.id, request.task, request.priorSessionId, resolveProvider);
     if (!resolved) {
       loaded = loadDispatchTarget(workspace, { ...request, sessionId }, resolveProvider);

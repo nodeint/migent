@@ -56,6 +56,7 @@ export function migrateWorkflow(
     migrateStages(workflow, config, providers, version);
     if (version === 1) liftWorkflowCompletion(workflow);
     if (version === 2) liftWorkflowDecisions(workflow);
+    if (version === 3) delete workflow.requires;
     version += 1;
   }
   workflow[SCHEMA_VERSION_FIELD] = current;
@@ -296,6 +297,9 @@ function workflowNotes(before: Readonly<Record<string, unknown>>, after: Readonl
   if (!Object.hasOwn(before, "outputs") && Object.hasOwn(after, "outputs")) notes.push("completion.outputs -> outputs");
   const beforeRequires = isRecord(before.requires) ? before.requires : null;
   const afterRequires = isRecord(after.requires) ? after.requires : null;
+  if (Object.hasOwn(before, "requires") && !Object.hasOwn(after, "requires")) {
+    notes.push("requires removed; use --prior for context and add downstream suggestions to the producer manually");
+  }
   if (
     beforeRequires !== null &&
     Object.hasOwn(beforeRequires, "decision") &&

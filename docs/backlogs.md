@@ -278,7 +278,7 @@ deny_commands:
 
 **Problem.**
 
-- `requires` names one prerequisite workflow and decision (`packages/kernel/src/workflow.ts:36`).
+- Workflows suggest downstream runs with artifact mappings; operators start them using --prior.
 - Nothing chains sessions or runs them in parallel.
 
 **Why it is needed.**
@@ -290,7 +290,7 @@ deny_commands:
 
 - A `pipeline.yaml` lists nodes, each with a workflow, a task file, dependencies, and a parallel flag.
 - `migent run <pipeline>` starts each node once its dependencies complete.
-- `requires` accepts several priors.
+- Pipeline nodes can bind artifacts from several completed sources without imposing prerequisites on standalone workflows.
 
 **Why this is P2.** An operator agent can drive the graph with a short script once requirements 1 to 3 exist.
 

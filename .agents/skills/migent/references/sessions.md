@@ -2,16 +2,20 @@
 
 For ordinary run, inspect, and continue commands, use [SKILL.md](../SKILL.md).
 
-## Use a prerequisite
+## Use a prior session as context
 
-When the workflow requires an earlier workflow, find its completed session:
+Workflows run independently. A completed workflow with `downstream` prints a
+`next.json` path and commands you can copy, for example:
 
 ```bash
-migent session list --workflow <workflow-id> --status completed --json
+migent session run --workflow implement --prior <plan-session-id>
 ```
 
-Pass the chosen ID as `--prior <session-id>` to `session run` or
-`session continue`.
+A matching suggestion supplies the task and named artifact mapping. `--task`
+overrides the suggested task. Without a matching suggestion, pass `--task`;
+all published prior outputs become context under their output names. The prior
+session must be completed and its artifacts present. Context is snapshotted
+when the target starts; resume keeps that snapshot. No automatic dispatch occurs.
 
 ## Answer one of several waiting stages
 
@@ -64,8 +68,8 @@ Edits alone do not update them. To adopt the current settings, validate with
 migent session continue <session-id> --refresh-workflow
 ```
 
-For a prepared session that has not started:
+A prepared session reads and freezes current workflow/model settings when it starts; no refresh flag is needed:
 
 ```bash
-migent session run --session <session-id> --workflow <workflow> --refresh-workflow
+migent session run --session <session-id> --workflow <workflow>
 ```

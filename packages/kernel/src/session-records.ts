@@ -1,6 +1,7 @@
 import type { ProviderResolver } from "./provider-contract.js";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
+import { stringify } from "yaml";
 import path from "node:path";
 import { writeFileAtomic } from "./atomic-file.js";
 import { ConfigurationError } from "./errors.js";
@@ -8,7 +9,9 @@ import { pyRepr } from "./record.js";
 import { corruptStatusMessage, readStatusFileState } from "./query.js";
 import { isUnicodeAlnum, utcNow } from "./runtime.js";
 import { appendLifecycleEvent } from "./session-events.js";
-import { writeWorkflowFreeze } from "./session-freeze.js";
+import { requireLiveWorkflow, writeWorkflowFreeze } from "./session-freeze.js";
+import { completedPriorStatus, resolveHandoff, snapshotHandoff } from "./next-handoff.js";
+import { parseYamlDocument } from "./yaml.js";
 import { commitFoldedStatus, readSessionManifest } from "./session-fold.js";
 import { SessionLock, sessionLockHeldLocally } from "./session-lock.js";
 import { SessionStore } from "./session-store.js";
@@ -104,15 +107,18 @@ function withSessionLock<T>(sessionDirectory: string, fn: () => T): T {
 export function createWorkflowSession(
   workspace: string,
   workflowId: string,
-  task: string,
+  task: string | null | undefined,
   priorSessionId?: string | null,
   resolveProvider?: ProviderResolver,
 ): string {
   const workflow = loadNamedWorkflow(workspace, workflowId);
   const resolvedId = workflow.id;
   const resolvedPrior = resolvePriorSessionId(workspace, workflow, priorSessionId);
-  assertSingleLineTask(task);
-  const taskSummary = task.trim();
+  const handoff = resolveHandoff(workspace, workflow.id, resolvedPrior);
+  const selectedTask = task ?? handoff?.task;
+  if (!selectedTask) throw new ConfigurationError("Creating a session requires --task when the prior session has no matching downstream suggestion.");
+  assertSingleLineTask(selectedTask);
+  const taskSummary = selectedTask.trim();
   if (!taskSummary) throw new ConfigurationError("Task summary must not be empty.");
   const sessionsDirectory = path.join(workspace, ".migent", "sessions");
   const [sessionId, sessionDirectory] = createUuidSessionDirectory(sessionsDirectory);
@@ -128,20 +134,29 @@ export function createWorkflowSession(
   ];
   if (resolvedPrior) manifestLines.push(`prior_session_id: ${resolvedPrior}`);
   manifestLines.push("schema_version: 2");
-  withSessionLock(sessionDirectory, () => {
-    writeFileAtomic(path.join(sessionDirectory, "manifest.yaml"), `${manifestLines.join("\n")}\n`);
-    writeTaskFile(taskFilePath(workspace, sessionId), taskSummary);
-    const frozen = writeWorkflowFreeze(sessionDirectory, workspace, workflow, resolveProvider);
-    appendSessionCreated(sessionDirectory, createdAt, {
-      workflow_id: resolvedId,
-      workflow_path: workflowRelativePath,
-      hash: frozen.hash,
-      title: taskSummary,
-      task: taskSummary,
-      prior_session_id: resolvedPrior,
+  try {
+    withSessionLock(sessionDirectory, () => {
+      const snapshot = snapshotHandoff(sessionDirectory, handoff);
+      if (snapshot) manifestLines.push(`handoff: ${JSON.stringify(snapshot)}`);
+      writeFileAtomic(path.join(sessionDirectory, "manifest.yaml"), `${manifestLines.join("\n")}\n`);
+      writeTaskFile(taskFilePath(workspace, sessionId), taskSummary);
+      const frozen = writeWorkflowFreeze(sessionDirectory, workspace, workflow, resolveProvider);
+      appendSessionCreated(sessionDirectory, createdAt, {
+        workflow_id: resolvedId,
+        workflow_path: workflowRelativePath,
+        hash: frozen.hash,
+        title: taskSummary,
+        task: taskSummary,
+        prior_session_id: resolvedPrior,
+        handoff: snapshot,
+      });
+      commitFoldedStatus(workspace, sessionDirectory);
     });
-    commitFoldedStatus(workspace, sessionDirectory);
-  });
+  } catch (error) {
+    // This directory was allocated above with a fresh UUID and belongs to this failed creation.
+    rmSync(sessionDirectory, { recursive: true, force: true });
+    throw error;
+  }
   return sessionId;
 }
 
@@ -172,11 +187,9 @@ export function createPreparedSession(
   manifestLines.push("schema_version: 2");
   withSessionLock(sessionDirectory, () => {
     writeFileAtomic(path.join(sessionDirectory, "manifest.yaml"), `${manifestLines.join("\n")}\n`);
-    const frozen = writeWorkflowFreeze(sessionDirectory, workspace, workflow, resolveProvider);
     appendSessionCreated(sessionDirectory, createdAt, {
       workflow_id: resolvedId,
       workflow_path: workflowRelativePath,
-      hash: frozen.hash,
       title: sessionTitle,
       prior_session_id: resolvedPrior,
       prepared: true,
@@ -186,14 +199,29 @@ export function createPreparedSession(
   return sessionId;
 }
 
-export function activatePreparedSession(workspace: string, sessionId: string): void {
+export function activatePreparedSession(workspace: string, sessionId: string, resolveProvider?: ProviderResolver): void {
   requireTaskBody(workspace, sessionId);
   const sessionDirectory = path.join(workspace, ".migent", "sessions", sessionId);
   const statusPath = path.join(sessionDirectory, "status.json");
   const read = readStatusFileState(statusPath);
   if (read.state === "corrupt") throw new ConfigurationError(corruptStatusMessage(statusPath));
   if (read.state === "missing") throw new ConfigurationError(`Session not found: ${sessionId}.`);
+  const manifest = readSessionManifest(sessionDirectory);
+  const workflow = requireLiveWorkflow(workspace, manifest.workflowPath, manifest.workflowId);
+  const prior = resolvePriorSessionId(workspace, workflow, manifest.priorSessionId);
+  const handoff = resolveHandoff(workspace, workflow.id, prior);
   withSessionLock(sessionDirectory, () => {
+    const snapshot = snapshotHandoff(sessionDirectory, handoff);
+    const frozen = writeWorkflowFreeze(sessionDirectory, workspace, workflow, resolveProvider);
+    appendLifecycleEvent(sessionDirectory, {
+      event: "handoff.bound", timestamp: utcNow(), data: { handoff: snapshot, hash: frozen.hash },
+    });
+    if (snapshot) {
+      const manifestPath = path.join(sessionDirectory, "manifest.yaml");
+      const body = parseYamlDocument(readFileSync(manifestPath, "utf8")) as Record<string, unknown>;
+      body.handoff = snapshot;
+      writeFileAtomic(manifestPath, stringify(body));
+    }
     appendLifecycleEvent(sessionDirectory, {
       event: "session.activated",
       timestamp: utcNow(),
@@ -256,6 +284,10 @@ export function resolvePriorSessionId(
   workflow: WorkflowDocument,
   priorSessionId?: string | null,
 ): string | null {
+  if ((workflow.schemaVersion ?? 1) >= 4) {
+    if (priorSessionId) completedPriorStatus(workspace, priorSessionId);
+    return priorSessionId || null;
+  }
   if (workflow.requires === null) {
     if (priorSessionId) throw new ConfigurationError("Workflow does not declare requires; omit --prior.");
     return null;

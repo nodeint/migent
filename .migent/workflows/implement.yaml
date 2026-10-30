@@ -1,11 +1,9 @@
-schema_version: 3
+schema_version: 4
 id: implement
-requires:
-  workflow: plan
 constraints:
-  - Implement the approved plan. Do not redesign it.
+  - Implement the task and any supplied approved plan. Do not redesign an approved plan.
   - Do not commit or push.
-  - Do not edit files the plan does not name.
+  - Stay within the task scope and any supplied plan.
 stages:
   - id: prepare
     description: Check the tree is green before implementation starts.
@@ -20,9 +18,9 @@ stages:
       - prepare
     max_revisions: 3
     instructions:
-      - Read task.md and the prior session output named plan, then implement that plan.
+      - Read task.md and any prior session context. Implement the task, following the approved plan when one is supplied.
       - If the plan and the code disagree, stop and name the disagreement. Do not invent a design.
-      - Run the tests the plan names. Fix failures your change caused before you report complete.
+      - Run the relevant tests, including those named in any supplied plan. Fix failures your change caused before you report complete.
       - Write implementation.md in English. Record what changed, which tests ran and their results, and any deviation with its reason.
     produces:
       artifact: implementation.md

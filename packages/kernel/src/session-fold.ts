@@ -269,11 +269,16 @@ function applySharedEvent(
 ): boolean {
   if (event.event === "workflow.refreshed") return false;
   if (event.event === "session.created") {
+    if (isRecord(event.data.handoff)) status.handoff = cloneRecord(event.data.handoff);
     if (event.data.prepared === true) {
       status.status = "prepared";
       return true;
     }
     return false;
+  }
+  if (event.event === "handoff.bound") {
+    if (isRecord(event.data.handoff)) status.handoff = cloneRecord(event.data.handoff);
+    return true;
   }
   if (event.event === "task.frozen") {
     const hash = textOr(event.data.sha256);

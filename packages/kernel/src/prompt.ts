@@ -45,7 +45,7 @@ export function buildStagePrompt(input: {
   }
   sections.push(...stageContinuationSections(input, stage.dependsOn));
   const prior = priorResultLines(input.workspace, input.priorSessionId, input.priorOutputs);
-  if (prior.length > 0) sections.push(`Required prior workflow result:\n${prior.join("\n")}`);
+  if (prior.length > 0) sections.push(`Prior session context:\n${prior.join("\n")}`);
   if (stage.artifact) {
     sections.push(
       `Write the file artifact as \`${stage.artifact}\` in the execution artifacts directory.`,
@@ -248,24 +248,11 @@ function priorResultLines(
 ): string[] {
   if (!priorSessionId) return [];
   const lines = [`- session: ${priorSessionId}`];
-  const paths = priorOutputPaths(workspace, priorSessionId, priorOutputs);
-  if (paths.length > 0) lines.push(`- outputs: ${paths.join(", ")}`);
-  return lines;
-}
-
-function priorOutputPaths(
-  workspace: string,
-  priorSessionId: string,
-  priorOutputs: Readonly<Record<string, unknown>> | null | undefined,
-): string[] {
-  if (priorOutputs === null || priorOutputs === undefined) return [];
-  if (Object.keys(priorOutputs).length === 0) return [];
-  const paths: string[] = [];
-  for (const entry of Object.values(priorOutputs)) {
-    const outputPath = absoluteOutputPath(workspace, priorSessionId, entry);
-    if (outputPath !== null) paths.push(outputPath);
+  for (const [name, value] of Object.entries(priorOutputs ?? {})) {
+    const outputPath = absoluteOutputPath(workspace, priorSessionId, value);
+    if (outputPath) lines.push(`- ${name}: ${outputPath}`);
   }
-  return paths;
+  return lines;
 }
 
 function absoluteOutputPath(

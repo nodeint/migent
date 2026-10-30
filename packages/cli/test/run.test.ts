@@ -91,7 +91,7 @@ function stopReasonFor(code: number, status: string): string {
   return "stage";
 }
 
-async function runExecute(workspace: string, argv: string[], provider: ScriptedProvider): Promise<[number, Row[]]> {
+async function runExecute(workspace: string, argv: string[], provider: ScriptedProvider): Promise<[number, Row[], string]> {
   const hinted = sessionIdFromOutput("", argv);
   const before = hinted === null ? new Map<string, string>() : executionTexts(workspace, hinted);
   cliHooks.runner = new AgentToolRunner({ fake: provider }, 10);
@@ -124,7 +124,7 @@ async function runExecute(workspace: string, argv: string[], provider: ScriptedP
     stop_reason: stopReasonFor(captured.value as number, typeof status.status === "string" ? status.status : ""),
     outputs: status.outputs ?? {},
   };
-  return [captured.value as number, [...stages, summary]];
+  return [captured.value as number, [...stages, summary], captured.stderr];
 }
 
 function executions(workspace: string, sessionId: string): string[] {
@@ -410,26 +410,22 @@ test("execute reruns plan then review after revise", async () => {
   }
 }, 30_000);
 
-test("execute requires prior session then completes plan implement", async () => {
-  const requiring = repoWorkflowText("plan-implement").replace(
-    "schema_version: 3\n",
-    "schema_version: 3\nrequires:\n  workflow: plan\n",
-  );
+test("execute uses a downstream suggestion through --prior then completes plan implement", async () => {
   const workspace = writeFakeWorkflowWorkspace({
-    plan: repoWorkflowText("plan"),
-    "plan-implement": requiring,
+    plan: repoWorkflowText("plan") + "\ndownstream:\n  - workflow: plan-implement\n    task: Do work\n    artifacts:\n      approved_plan: plan\n",
+    "plan-implement": repoWorkflowText("plan-implement"),
   });
   try {
     for (const argv of [
-      ["session", "run", "--workflow", "plan-implement", "--task", "Do work"],
-      ["session", "run", "--workflow", "plan-implement", "--task", "Do work", "--once"],
+      ["session", "run", "--workflow", "plan-implement", "--task", "Do work", "--prior", "missing"],
+      ["session", "run", "--workflow", "plan-implement", "--task", "Do work", "--prior", "missing", "--once"],
     ]) {
       const captured = await capture(() => main(argv, workspace));
       expect(captured.value).toBe(2);
-      expect(captured.stderr).toContain("pass --prior");
+      expect(captured.stderr).toContain("Prior session not found");
     }
     expect(readdirSync(path.join(workspace, ".migent")).includes("sessions")).toBe(false);
-    const [priorCode, priorObjects] = await runExecute(
+    const [priorCode, priorObjects, priorStderr] = await runExecute(
       workspace,
       ["session", "run", "--workflow", "plan", "--task", "Write a plan"],
       new ScriptedProvider(
@@ -439,6 +435,10 @@ test("execute requires prior session then completes plan implement", async () =>
     );
     expect(priorCode).toBe(0);
     const priorId = String(priorObjects.at(-1)?.session_id);
+    expect(priorStderr).toContain(`next: ${path.join(workspace, ".migent", "sessions", priorId, "next.json")}`);
+    expect(priorStderr).toContain(`migent session run --workflow plan-implement --prior ${priorId}`);
+    const next = JSON.parse(readFileSync(path.join(workspace, ".migent", "sessions", priorId, "next.json"), "utf8"));
+    expect(next.next[0].artifacts.approved_plan.output).toBe("plan");
     const provider = new ScriptedProvider(
       [
         "status: complete\n\nimplemented",
@@ -450,10 +450,13 @@ test("execute requires prior session then completes plan implement", async () =>
     );
     const [code, objects] = await runExecute(
       workspace,
-      ["session", "run", "--workflow", "plan-implement", "--task", "Do work", "--prior", priorId],
+      next.next[0].argv.slice(1),
       provider,
     );
     expect(code).toBe(0);
+    expect(provider.calls[0]?.prompt).toContain("Prior session context:");
+    expect(provider.calls[0]?.prompt).toContain("- approved_plan:");
+    expect(provider.calls[0]?.prompt).toContain(`${path.sep}handoff${path.sep}`);
     expect(new Set(Object.keys(objects.at(-1)?.outputs as object))).toEqual(
       new Set(["implementation-result", "test-result"]),
     );
@@ -681,7 +684,7 @@ test("stage rejects a dispatch ceiling", async () => {
 
 test("stage id resumes the declared source session", async () => {
   const workflow = `\
-schema_version: 3
+schema_version: 4
 id: resume-sample
 stages:
   - id: draft
@@ -734,7 +737,7 @@ stages:
 });
 
 const REVISION_LOOP = `\
-schema_version: 3
+schema_version: 4
 id: loop
 stages:
   - id: plan
@@ -756,7 +759,7 @@ stages:
 `;
 
 const OPEN_LOOP = `\
-schema_version: 3
+schema_version: 4
 id: loop
 stages:
   - id: plan

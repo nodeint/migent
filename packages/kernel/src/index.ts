@@ -78,6 +78,7 @@ export type {
   WorkflowCatalog,
   WorkflowCompletion,
   WorkflowDocument,
+  WorkflowDownstream,
   WorkflowOutput,
   WorkflowRequires,
 } from "./workflow.js";
@@ -277,3 +278,4 @@ export const KERNEL_PLACEHOLDER = "kernel";
 export type { ProviderResolver } from "./provider-contract.js";
 
 export type { ModelEffortCheck } from "./doctor.js";
+export { publishNextSuggestions, resolveNextSuggestions, formatNextCommand } from "./next-handoff.js";

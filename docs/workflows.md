@@ -5,7 +5,7 @@ routes. Definitions live in `.migent/workflows/` as YAML files. The Migent skill
 lists every accepted key in `references/schema-workflow.yaml` in the installed Migent skill (`migent skill path` prints the bundled copy).
 `id` is optional. When it is omitted, the id is the file name without `.yaml`. When
 `id` is set, that value is the workflow name used by `migent session run --workflow`,
-`requires`, and sessions. Two files with the same id are an error. A path to
+downstream suggestions, and sessions. Two files with the same id are an error. A path to
 a workflow file also selects that file.
 
 ## Naming
@@ -209,7 +209,7 @@ leaves an output missing. Migent rejects such a workflow when it loads.
 when documentation files changed, and `revise` sends the work back to `docs`.
 
 ```yaml
-schema_version: 3
+schema_version: 4
 id: docs_flow
 stages:
   - id: implement
@@ -406,9 +406,34 @@ outputs:
 A version 1 workflow still completes when its `completion` stage makes the
 configured decision, and still publishes `completion.outputs` then.
 
-`requires` names another workflow. It requires a prior session whose status
-is `completed`. It has no decision. A declining decision that must not satisfy
-`requires` blocks, or routes to a stage that does not end the branch.
+## Downstream handoff
+
+Schema v4 removes `requires`. Every workflow can run independently with a task.
+A producer can suggest subsequent workflows using its published outputs:
+
+```yaml
+downstream:
+  - workflow: implement
+    task: Implement the approved plan.
+    artifacts:
+      plan: approved_plan
+```
+
+`workflow` is an ID, not a path, and must be unique within `downstream`.
+`task` is a nonempty one-line task. Optional `artifacts` maps destination
+context names to output names declared in this workflow. Context names start
+with a letter and contain letters, digits or underscores. Unknown fields,
+missing output references, duplicate target workflows and invalid names are errors.
+Doctor reports missing target workflows; completion does not load or freeze them.
+
+After success, Migent writes session `next.json` and prints its absolute path
+and commands such as `migent session run --workflow implement --prior <id>`.
+Nothing starts automatically. The target requires no input declaration.
+The source's frozen downstream declaration determines the suggestions. The
+current target definition is loaded only when that target starts.
+See [session handoff](sessions.md#reusable-workflow-boundaries) for JSON and
+`--prior` behavior. Run `migent migrate` to upgrade; migration removes `requires`
+with guidance but cannot infer downstream tasks or mappings.
 
 ## Stage protocol
 
@@ -558,7 +583,7 @@ start while `docs` is still running. The session completes when both reviews
 approve and nothing else can start.
 
 ```yaml
-schema_version: 3
+schema_version: 4
 id: implement
 concurrency: 2
 stages:

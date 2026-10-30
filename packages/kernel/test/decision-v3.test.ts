@@ -112,7 +112,7 @@ ${version === 1 ? "  " : ""}    artifact: draft.md
   expect(migrated).toContain("Revise only for blocking findings.");
   expect(migrated).not.toContain("values:");
   const loaded = parseWorkflowMapping(parseYamlDocument(migrated) as Record<string, unknown>, "migrated.yaml");
-  expect(loaded.schemaVersion).toBe(3);
+  expect(loaded.schemaVersion).toBe(4);
   expect(loaded.stages.review?.routes).toEqual({ approved: "complete", "approved-with-note": "complete", revise: version === 1 ? "draft" : ["draft"] });
   expect(loaded.outputs).toEqual([{ name: "draft", fromStage: "draft", artifact: "draft.md" }]);
   expect(loaded.stages.review?.artifact).toBe("review.md");

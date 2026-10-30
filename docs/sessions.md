@@ -41,15 +41,15 @@ show use `session_id` for that session.
 
 The session-level files have distinct purposes:
 
-- `manifest.yaml` on a schema 2 session is identity only: `session_id`, an
+- `manifest.yaml` on a schema 2 session records identity and handoff provenance: `session_id`, an
   optional `title`, the workflow id and path, the task label, `created_at`, an
   optional `prior_session_id` or `role`, and `schema_version`. A prepared session
   has a title and no task label. The task body is `task.md`. The manifest has no status line.
   Status lives in `status.json`. A v1 manifest still has a `status` line, and
   that line is still updated. An ad hoc agent session records its role; a
-  workflow with `requires` records its prerequisite as `prior_session_id`.
+  workflow started with prior context records `prior_session_id` and a `handoff` mapping with source output names, snapshot paths and SHA-256 hashes.
 - `workflow.frozen.yaml` pins the workflow, role instructions, and resolved
-  stage targets when a workflow session is created. `session continue` and
+  stage targets when a workflow session starts. Prepared sessions defer this until `run`. `session continue` and
   `session run --session` keep using that copy when the live files change, and
   warn on stderr. `--refresh-workflow` replaces it. A missing file means the
   session uses the live workflow and config. Repair does not rebuild it.
@@ -379,7 +379,7 @@ is null on every other row. `totals.executions` and a stage's `executions` do no
 count skips; `totals.skipped` and the stage's `skipped` do. A stage that only
 skipped is still listed.
 
-`workflow_hash` is the bare hex hash on `session.created`. It is null for an
+`workflow_hash` is the bare hex hash on `session.created`, or the start-time `handoff.bound` event for a prepared session. It is null for an
 agent session. `task_sha256` and `prior_session_id` come from `status.json`.
 `role` is the stage role in the frozen workflow, otherwise the live workflow.
 An agent session uses the manifest role. `stage_attempt` counts every execution
@@ -461,23 +461,52 @@ progress.
 
 ## Reusable workflow boundaries
 
-One workflow can require an approved run of another. This lets teams separate
-reusable processes—for example, plan approval from implementation:
+Workflows run independently. A completed producer with `downstream` publishes
+`next.json` under its session directory and prints its path and runnable commands:
 
-```yaml
-id: implement
-requires:
-  workflow: plan
+```text
+next: <absolute-session-directory>/next.json
+migent session run --workflow implement --prior <plan-session-id>
 ```
 
-`requires` has no decision. The prior session must be `completed`. A declining
-decision that must not satisfy `requires` blocks, or routes to a stage that
-does not end the branch.
+The JSON contains no hashes and does not freeze target workflows:
 
-Start it with the completed prerequisite session:
-
-```bash
-migent session run --workflow implement \
-  --task "Build the approved plan" \
-  --prior <plan-session-id>
+```json
+{
+  "schema_version": 1,
+  "source_session_id": "<plan-session-id>",
+  "next": [{
+    "workflow": "implement",
+    "task": "Implement the approved plan.",
+    "artifacts": {
+      "plan": { "output": "approved_plan", "path": "outputs/plan.md" }
+    },
+    "argv": ["migent", "session", "run", "--workflow", "implement", "--prior", "<plan-session-id>"]
+  }]
+}
 ```
+
+Artifact paths are relative to the source session. `argv` provides shell-independent
+arguments; printed commands use PowerShell quoting on Windows and POSIX quoting
+elsewhere. No file is written when no suggestions exist. Suggestions are derived
+from the source's frozen workflow and published output records; editing `next.json`
+does not change the handoff. A write failure warns without changing completion or
+exit status; available commands are still printed. Continuing an already completed
+session recreates the file and prints suggestions without dispatching any stages.
+
+`--prior` always identifies a completed source session. A suggestion matching the
+target workflow supplies the default task and mapped artifacts. Explicit `--task`
+overrides the suggestion. If none matches, `--task` is required and all published
+outputs become context under their original output names. A standalone run needs
+only its own task; no `--prior` or mandatory input declaration is required.
+
+At target start, Migent validates the source and artifacts, snapshots context into
+`handoff/`, calculates SHA-256 hashes and records provenance in the manifest and
+event log. Every agent stage receives named snapshot paths. Resume uses those
+snapshots rather than reading mutable source files. Historical sessions without
+handoff records retain their original live context behavior.
+
+`prepare --prior` records the source ID without snapshotting artifacts or freezing
+the target workflow. Starting the prepared session uses current workflow/model
+settings and binds context. A failed bind leaves it prepared. Its manually written
+`task.md` remains the task; suggestions do not overwrite it.

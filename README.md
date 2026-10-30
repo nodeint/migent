@@ -244,7 +244,7 @@ from `migent provider list` in place of the example IDs.
 
 ```yaml
 # .migent/config.yaml
-schema_version: 3
+schema_version: 4
 roles:
   developer:
     default_model:
@@ -256,7 +256,7 @@ This workflow asks the developer to implement a task, then checks the result:
 
 ```yaml
 # .migent/workflows/implement.yaml
-schema_version: 3
+schema_version: 4
 stages:
   - id: implement
     role: developer
@@ -287,7 +287,7 @@ or different providers:
 
 ```yaml
 # .migent/config.yaml
-schema_version: 3
+schema_version: 4
 roles:
   planner:
     default_model:
@@ -304,7 +304,7 @@ and decides whether to approve it or send it back for revision:
 
 ```yaml
 # .migent/workflows/plan.yaml
-schema_version: 3
+schema_version: 4
 stages:
   - id: plan
     role: planner

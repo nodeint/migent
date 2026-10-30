@@ -45,7 +45,7 @@ test("standalone role questions wait, list and follow with exit 9, then accept a
 });
 
 test("workflow run prints the pending question and its response after a newer sibling finishes", async () => {
-  const root = writeFakeWorkflowWorkspace({ plan: "schema_version: 3\nid: plan\nstages:\n  - { id: plan, role: planner, ask: human }\n  - { id: docs, role: planner }\n" });
+  const root = writeFakeWorkflowWorkspace({ plan: "schema_version: 4\nid: plan\nstages:\n  - { id: plan, role: planner, ask: human }\n  - { id: docs, role: planner }\n" });
   const provider = new ScriptedProvider([
     question,
     "status: complete\n\nDocs inspected.",
