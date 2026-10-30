@@ -26,9 +26,12 @@ import { ProviderEventReporter } from "./provider-events.js";
 import { loadFrozenWorkflow } from "./session-freeze.js";
 import { AgentSessionRecord, SessionStore, stringOptions, type ExecutionContext } from "./session-store.js";
 import { parseStageOutcome, StageOutcome } from "./stage-outcome.js";
+import type { Question } from "./questions.js";
 import { isWorkflowV2, loadNamedWorkflow, loadStage, type StageSpec } from "./workflow.js";
 
 export interface RunResult {
+  questions?: Question[];
+  questions_file?: string;
   agent_id: string;
   options: Record<string, string>;
   session_id: string;
@@ -146,13 +149,22 @@ export class AgentToolRunner {
     }
     const stage = sessionId === null ? null : loadRunStage(store, context.sessionId, stageId);
     const decisionValues = stage?.decisionValues ?? [];
-    if (sessionId !== null) turnPrompt = addStageOutcomeContract(turnPrompt, decisionValues, stage?.decisionInstructions);
+    const ask = stage?.ask ?? (stage === null ? "human" : null);
+    if (sessionId !== null) turnPrompt = addStageOutcomeContract(turnPrompt, decisionValues, stage?.decisionInstructions, ask);
     const artifactName = stage?.artifact ?? null;
     const verifyCommands = stage?.verify ?? [];
+    const previous = request.resumeExecutionId
+      ? store.executionSnapshots(context.sessionId).find((row) => row.executionId === request.resumeExecutionId && row.stageId === stageId && row.outcomeStatus === "question")
+      : undefined;
+    const progress = previous
+      ? verifyProgress(JSON.parse(readFileSync(path.join(path.dirname(previous.artifactDirectory), "execution.json"), "utf8")))
+      : null;
+    if (previous && artifactName) store.carryVerifyArtifact(previous.artifactDirectory, context, artifactName);
     if (request.resumeExecutionId && verifyCommands.length > 0 && artifactName) {
       this.carryExhaustedArtifact(store, context, request.resumeExecutionId, artifactName);
     }
     turnPrompt = addArtifactContext(turnPrompt, context.artifactDirectory, artifactName);
+    if (previous && progress?.lastReport) turnPrompt += `\n\nPrevious verify report: ${path.resolve(path.dirname(previous.artifactDirectory), progress.lastReport)}`;
     store.savePrompt(context, turnPrompt);
     const started: Record<string, unknown> = {
       cli_version: this.cachedCliVersion(provider, providerKey, workspacePath),
@@ -179,10 +191,11 @@ export class AgentToolRunner {
       maxVerify: stage?.maxVerify ?? 0,
       verifyTimeoutSec: stage?.verifyTimeoutSec ?? null,
       turn: 1,
-      red: 0,
-      verifyRuns: 0,
-      lastReport: null,
-      lastResult: null,
+      red: progress?.red ?? 0,
+      verifyRuns: progress?.runs ?? 0,
+      lastReport: previous && progress?.lastReport
+        ? path.relative(context.directory, path.resolve(path.dirname(previous.artifactDirectory), progress.lastReport)) : null,
+      lastResult: progress?.lastResult ?? null,
       currentPrompt: turnPrompt,
       currentAgentId: agentId,
       currentSession: newSession,
@@ -222,6 +235,7 @@ export class AgentToolRunner {
     const stageId = typeof metadata.stage_id === "string" ? metadata.stage_id : "agent";
     const stage = loadRunStage(store, sessionId, stageId);
     const decisionValues = stage?.decisionValues ?? [];
+    const ask = stage?.ask ?? (stage === null ? "human" : null);
     const artifactName = stage?.artifact ?? null;
     const verifyCommands = stage?.verify ?? [];
     const eventReporter = new ProviderEventReporter(store, context, providerKey, model, this.itemProgress);
@@ -247,7 +261,7 @@ export class AgentToolRunner {
         currentPrompt = agentId
           ? last.content
           : flattenHistory(record.history as Array<{ role: string; content: string }>);
-        currentPrompt = addStageOutcomeContract(currentPrompt, decisionValues, stage?.decisionInstructions);
+        currentPrompt = addStageOutcomeContract(currentPrompt, decisionValues, stage?.decisionInstructions, ask);
       }
       return this.driveTurns({
         provider,
@@ -334,6 +348,7 @@ export class AgentToolRunner {
       verifyCommands,
     } = state;
     const maxVerify = state.maxVerify;
+    const ask = stage?.ask ?? (stage === null ? "human" : null);
     let turn = state.turn;
     let red = state.red;
     let verifyRuns = state.verifyRuns;
@@ -423,7 +438,7 @@ export class AgentToolRunner {
         outcome = null;
         if (invokeError === null) {
           try {
-            outcome = parseStageOutcome(responseText, sessionId !== null, decisionValues);
+            outcome = parseStageOutcome(responseText, sessionId !== null, decisionValues, ask);
           } catch (error) {
             if (!(error instanceof Error)) throw error;
             invokeError = error.message;
@@ -573,7 +588,7 @@ export class AgentToolRunner {
       currentPrompt = currentAgentId
         ? repair
         : flattenHistory(record.history as Array<{ role: string; content: string }>);
-      currentPrompt = addStageOutcomeContract(currentPrompt, decisionValues, stage?.decisionInstructions);
+      currentPrompt = addStageOutcomeContract(currentPrompt, decisionValues, stage?.decisionInstructions, ask);
     }
     const sessionStatus = store.readSessionStatus(context.sessionId);
     return {
@@ -583,6 +598,9 @@ export class AgentToolRunner {
       execution_id: context.executionId,
       artifact_directory: context.artifactDirectory,
       outcome_status: outcome?.status ?? "",
+      ...(outcome?.status === "question" ? {
+        questions: outcome.questions, questions_file: path.join(context.directory, "questions.json"),
+      } : {}),
       outcome_decision: outcome?.decision ?? "",
       session_status: typeof sessionStatus.status === "string" ? sessionStatus.status : "",
       response: responseText,

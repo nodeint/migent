@@ -1,3 +1,4 @@
+import type { AskTarget } from "./stage-outcome.js";
 export const MIGENT_DIRNAME = ".migent";
 export const EXECUTIONS_DIRNAME = "executions";
 export const SESSIONS_DIRNAME = "sessions";
@@ -56,12 +57,22 @@ export function addStageOutcomeContract(
   prompt: string,
   decisionValues: readonly string[] = [],
   decisionInstructions: Readonly<Record<string, string>> = {},
+  ask: AskTarget | null = null,
 ): string {
   const lines = [
     "Workflow stage response contract:",
-    "Start the final response with `status: complete` or `status: blocked`.",
+    ask === null
+      ? "Start the final response with `status: complete` or `status: blocked`."
+      : "Start the final response with `status: complete`, `status: blocked`, or `status: question`.",
     "When blocked, put `blocker: <concise reason>` on the next line.",
   ];
+  if (ask !== null) {
+    lines.push('To ask the human, return status: question, a blank line, and a JSON document: {"schema_version":1,"questions":[{"question":"Include existing sessions?","context":"Migration adds work.","selection":"single","options":[{"label":"New sessions only"},{"label":"Include existing sessions"}]}]}.');
+    lines.push("Each question requires question, context, selection (single or multiple), and 2 to 26 options with labels. Migent assigns question IDs 1, 2, 3, ... and option IDs A, B, C, ... by order. Omit IDs. Put every choice and its explanation in the JSON, not in prose.");
+    lines.push("Optional fields: option.description and question.recommended (array of option IDs; at most one for single selection). Free-text answers are always allowed for every question. Never choose on the recipient's behalf.");
+    lines.push("Migent writes validated questions to questions.json. You may ask several questions in one document. Every question must be answered before the stage continues.");
+    lines.push("Use blocked for an obstacle you cannot resolve; use question when you need an answer. Do not choose a decision while asking.");
+  }
   const allowed = decisionValues.filter((value) => value).map((value) => value.toLowerCase());
   if (allowed.length > 0) {
     lines.push(`When complete, put \`decision: ${allowed.join("|")}\` on the next line.`);

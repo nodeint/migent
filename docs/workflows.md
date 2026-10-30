@@ -374,12 +374,12 @@ whenever any stage can start. `session continue --once` does not.
 Migent does not serialize stages that edit the same files. That is the
 workflow author's concern.
 
-A branch stops when its latest execution is blocked, or when verify or
+A branch stops when its latest execution is blocked or asks a question, or when verify or
 revisions are exhausted, or when a stage fails and continue has not marked
 that execution. Other branches keep starting. A provider quota with a reset
 time parks that provider until the instant, and other providers may start.
 The run ends when nothing is running and nothing can start. The exit code and
-`stop_reason` take the first reason in this order: `blocked`, `verify_failed`,
+`stop_reason` take the first reason in this order: `blocked`, `question`, `verify_failed`,
 `verify_exhausted`, `stage_failed`, `revisions_exhausted`. A route to `complete` ends that
 branch only. A stage with no dependents and no routes ends its branch. A
 skipped `run_when` stage ends its branch too.
@@ -390,7 +390,7 @@ completion stage.
 
 A version 2 workflow publishes top-level `outputs` when the run is quiet:
 nothing is running, nothing is ready or waiting on a ready or running stage,
-no stage is blocked or exhausted, at least one execution completed, and every
+no stage is blocked, waiting for an answer, or exhausted, at least one execution completed, and every
 output resolves. Each output is the latest complete artifact of `from_stage`.
 A missing artifact exits 2, leaves the session active, and publishes nothing.
 `session continue` reruns the producer. An output cannot come from a `run_when`
@@ -421,7 +421,7 @@ decision: approved
 The plan covers the required behavior and tests.
 ```
 
-The status must be `complete` or `blocked`. A blocked stage may include a
+The status must be `complete`, `blocked`, or (with `ask: human`) `question`. A blocked stage may include a
 reason:
 
 ```text
@@ -439,6 +439,117 @@ on that same execution. `completed` sessions are not resumed.
 If the stage declares decisions, a completed response must include one of their
 names in the `decision` header. The decision instructions are included on each
 turn, including resume, reply, and repair after verification fails.
+
+### Questions and human decisions
+
+For the user interaction guide, CLI examples, and question history, see
+[Human-in-the-loop interaction](human-in-the-loop.md).
+
+Enable questions on any stage with a role:
+
+```yaml
+- id: plan
+  role: planner
+  ask: human
+```
+
+`ask` selects the recipient. Only `human` is supported today; other values,
+including role names, are configuration errors. Omit `ask` to disable questions.
+A stage without a role cannot declare it. Use `instructions` to describe when
+the agent should ask. The recipient is independent of the question protocol,
+so an agent recipient can be added later without introducing another stage.
+
+```text
+status: question
+
+{
+  "schema_version": 1,
+  "questions": [
+    {
+      "question": "Should the plan support existing sessions?",
+      "context": "Existing sessions require migration.",
+      "selection": "single",
+      "options": [
+        { "label": "New sessions only" },
+        { "label": "Include existing sessions" }
+      ],
+      "recommended": ["A"]
+    }
+  ]
+}
+```
+
+The response body is a validated JSON document, not a prose list of choices.
+Each question requires `question`, `context`, `selection`, and 2 to 26 `options`.
+Migent assigns question IDs `1`, `2`, `3`, ... and option IDs `A`, `B`, `C`, ...
+by their order. Agents omit IDs; if supplied, IDs must match that order.
+Each option requires `label`, with optional `description`.
+`single` means exactly one selection; `multiple` means one or more distinct
+selections. Optional `recommended` is an array of option IDs, with at most one
+entry for single selection. A recommendation is never an answer.
+
+Migent writes the full questions, context, and options to
+`.migent/sessions/<session-id>/questions.json`. This file contains all rounds,
+including each question's `stage_id`, `execution_id`, `recipient`, `status`
+(`pending`, `answered`, or `superseded`), and structured `answer` when answered.
+The pair `(execution_id, id)` identifies a question across rounds. Question
+numbering restarts at 1 for each stage's new batch. The original
+batch is also stored in `executions/<execution-id>/questions.json`. Neither
+humans nor programs need to read `response.md` to obtain the questions.
+`session show` prints the options and selection mode; `--json` exposes full
+pending questions in `questions`. Repair can rebuild both question files.
+
+Use `blocked` for an obstacle the agent cannot resolve (missing resources or
+an unrecoverable command error); use `question` to ask for information or a
+decision. Commands the agent can repair do not require either outcome.
+
+The execution ends, but the stage stays unfinished. There is no final artifact
+requirement, verification, routing, or output publication for a question.
+Dependent stages wait; independent branches can continue. `session show`
+lists pending questions even when another branch determines the session status.
+When no work can run, `blocked` takes priority over `question`. With no blockers,
+a session waiting for answers has status `question` and the run exits 9.
+For `--once` or `--stage`, a selected execution that asks a question exits 9.
+Inspection commands still exit 0 when they successfully read the session.
+
+```bash
+migent session continue <session-id> --stage plan --reply "1A, 2B, 3 chưa rõ - giải thích thêm"
+```
+
+Use the question number followed by an option letter or free text. Separate
+answers with commas or newlines. For multiple selections, use `2A+C`.
+Letters are case-insensitive. Duplicate question entries, unknown numbers,
+unknown option letters, and too many selections are rejected. Other commas
+inside a free-text answer are preserved. If free text contains a comma followed
+by what looks like another numbered answer, use the JSON form below.
+
+For one question, a bare letter or `A+C` also works. Programs can still send a
+JSON object mapping question numbers to letters, arrays, or text:
+
+```json
+{
+  "1": "A",
+  "2": ["A", "C"],
+  "3": "chưa rõ - giải thích thêm"
+}
+```
+
+Save this as `answers.json` and pass `--reply-file answers.json`, or pass the
+JSON through `--reply`. Invalid IDs in selection arrays, repeated IDs, missing answers, and multiple
+selections for a single-choice question are rejected before the agent resumes.
+Free text is always accepted for every question and replaces its option selection.
+In a batch, use a text string as that question's value. No configuration flag is needed.
+
+A reply targets a pending question or a blocked stage regardless of the overall
+session status. When multiple stages can receive it, `--stage` is required.
+Without a reply, a question stays pending. A reply starts a new execution on the
+same provider conversation and carries forward the declared working artifact.
+The answer does not automatically choose a workflow decision.
+
+An agent can also ask during a verification repair turn. Asking runs no checks
+and consumes no verification failure or revision. Failures already recorded
+still count toward `max_verify` after the reply. After repairing, the agent must
+report `complete` again, and the full verification list runs before completion.
 
 ## Complete example
 

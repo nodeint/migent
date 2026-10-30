@@ -9,7 +9,7 @@ import {
   type WorkflowDocument,
 } from "./workflow.js";
 
-const terminalSessionStatuses = new Set(["blocked", "cancelled", "completed"]);
+const terminalSessionStatuses = new Set(["blocked", "question", "cancelled", "completed"]);
 
 export class NextStage {
   constructor(readonly stageId: string) {}
@@ -126,7 +126,7 @@ export function readyStages(
       // Continue reopens this execution. A new dispatch would leave the cancelled one behind.
       if (latest.status === "cancelled") return false;
       // Snapshots keep the blocked outcome after continue. The resume event is the signal.
-      if (latest.outcomeStatus === "blocked" && !blockResumed(sessionStatus, latest.executionId, resumes)) {
+      if ((latest.outcomeStatus === "blocked" || latest.outcomeStatus === "question") && !blockResumed(sessionStatus, latest.executionId, resumes)) {
         return false;
       }
       if (latest.status === "failed") {
@@ -152,7 +152,7 @@ function blockResumed(
 ): boolean {
   if (sessionStatus !== "active" || resumes == null) return false;
   return resumes.some(
-    (event) => event.event === "session.active" && event.executionId === executionId && event.data?.from === "blocked",
+    (event) => event.event === "session.active" && event.executionId === executionId && (event.data?.from === "blocked" || event.data?.from === "question"),
   );
 }
 
@@ -643,7 +643,7 @@ function hasBlockingLatest(snapshots: readonly ExecutionSnapshot[]): boolean {
   }
   for (const snapshot of latest.values()) {
     if (snapshot.status === "failed" || snapshot.status === "cancelled" || snapshot.status === "running") return true;
-    if (snapshot.outcomeStatus === "blocked") return true;
+    if (snapshot.outcomeStatus === "blocked" || snapshot.outcomeStatus === "question") return true;
   }
   return false;
 }
@@ -763,9 +763,13 @@ export function version2IdleReason(
   }
   for (const stageId of Object.keys(workflow.stages)) {
     const latest = latestStageSnapshot(snapshots, stageId);
-    if (latest !== null && latest.outcomeStatus === "blocked" && !blockResumed(sessionStatus, latest.executionId, resumes)) {
+    if (latest?.outcomeStatus === "blocked" && !blockResumed(sessionStatus, latest.executionId, resumes)) {
       return "blocked";
     }
+  }
+  for (const stageId of Object.keys(workflow.stages)) {
+    const latest = latestStageSnapshot(snapshots, stageId);
+    if (latest?.outcomeStatus === "question" && !blockResumed(sessionStatus, latest.executionId, resumes)) return "question";
   }
   for (const stageId of Object.keys(workflow.stages)) {
     const latest = latestStageSnapshot(snapshots, stageId);
@@ -806,7 +810,7 @@ function stoppedStageIds(
   for (const stageId of Object.keys(workflow.stages)) {
     const latest = latestStageSnapshot(snapshots, stageId);
     if (latest === null) continue;
-    if (latest.outcomeStatus === "blocked" && !blockResumed(sessionStatus, latest.executionId, resumes)) {
+    if ((latest.outcomeStatus === "blocked" || latest.outcomeStatus === "question") && !blockResumed(sessionStatus, latest.executionId, resumes)) {
       stopped.add(stageId);
     }
     if (latest.status === "failed" && latest.failureReason === VERIFY_EXHAUSTED) stopped.add(stageId);

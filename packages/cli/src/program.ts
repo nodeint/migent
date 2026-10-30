@@ -301,8 +301,8 @@ function registerSessionCommand(program: Command, status: CliStatus): void {
     "Dispatch the next eligible stage once and do not reset revision counts. Without --once, continue resets them.",
   );
   continueCommand
-    .option("--reply <text>", "Reply for the blocked stage. The new execution prompt body is this text.")
-    .option("--reply-file <file>", "Read the blocked stage's reply from this file.")
+    .option("--reply <text>", "Reply for a blocked stage or pending question. The new execution prompt body is this text.")
+    .option("--reply-file <file>", "Read the stage's reply from this file.")
     .addHelpText(
       "after",
       `Workflow session:\n${exitText(LOOP_EXITS)}With --once:\n${exitText(STAGE_EXITS)}Role session:\n${exitText(ROLE_EXITS)}Examples:\n  migent session continue <session>\n  migent session continue <session> --once\n  migent session continue <session> --reply "<reply>"\n  migent session continue <session> --stage plan --reply-file answer.md\n`,
@@ -357,7 +357,7 @@ function registerSessionCommand(program: Command, status: CliStatus): void {
     .description("List sessions, newest first.")
     .option("--json", "Print a JSON array without the task. With --latest, print one object, or null.")
     .option("--workflow <id>", "List sessions for this workflow id.")
-    .option("--status <status>", "List sessions with this status: active, prepared, completed, blocked, cancelled, or corrupt.")
+    .option("--status <status>", "List sessions with this status: active, prepared, completed, blocked, question, cancelled, or corrupt.")
     .option("--limit <n>", "List the newest n sessions. At least 1. Cannot be combined with --latest.")
     .option("--latest", "Print the newest matching session. Cannot be combined with --limit.")
     .addHelpText(
@@ -444,7 +444,7 @@ function registerSessionCommand(program: Command, status: CliStatus): void {
       "Byte offset in events.jsonl. 0 replays the whole log and every execution stream. Any other offset replays events from that byte, and stream lines whose timestamp is at or after the first event there. Skips the snapshot.",
     )
     .option("--until", "Exit when --execution reaches completed, failed, or cancelled. Requires --execution.")
-    .option("--exit-when-done", "Exit when the session is completed (0), blocked (1), or cancelled (130).")
+    .option("--exit-when-done", "Exit when the session is completed (0), blocked (1), waiting for a reply (9), or cancelled (130).")
     .addHelpText(
       "after",
       `${exitText([

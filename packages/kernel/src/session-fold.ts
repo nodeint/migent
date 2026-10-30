@@ -5,6 +5,7 @@ import { ConfigurationError } from "./errors.js";
 import {
   applyTerminalFields,
   blockedExecutions,
+  latestPerStage,
   decisionOfOutcome,
   latestDecision,
   recordLatestDecision,
@@ -22,6 +23,7 @@ import {
 } from "./session-events.js";
 import { loadFrozenWorkflow } from "./session-freeze.js";
 import { StageOutcome } from "./stage-outcome.js";
+import { storedQuestions } from "./questions.js";
 import { loadNamedWorkflow, loadWorkflowDocument, type WorkflowDocument } from "./workflow.js";
 import { parseYamlDocument } from "./yaml.js";
 
@@ -117,9 +119,31 @@ export function readFoldedStatus(workspace: string, sessionDirectory: string): R
 }
 
 export function commitFoldedStatus(workspace: string, sessionDirectory: string): Record<string, unknown> {
-  const folded = readFoldedStatus(workspace, sessionDirectory);
+  const inputs = loadFoldInputs(workspace, sessionDirectory);
+  const folded = foldStatus(inputs);
+  writeQuestionsFile(sessionDirectory, inputs);
   writeJsonAtomic(path.join(sessionDirectory, "status.json"), folded);
   return folded;
+}
+
+/** A stable machine-readable list of every question and answer, across execution boundaries. */
+export function writeQuestionsFile(sessionDirectory: string, inputs: FoldInputs): void {
+  const latest = new Set(latestPerStage(statusExecutionsFromFolds(inputs.executions)).map((row) => row.executionId));
+  const questions = inputs.executions.flatMap((execution) => {
+    if (execution.outcome?.status !== "question") return [];
+    const reply = [...inputs.events].reverse().find((event) =>
+      event.event === "session.active" && event.executionId === execution.executionId && event.data.from === "question",
+    );
+    const answers = Array.isArray(reply?.data.answers) ? reply.data.answers.filter(isRecord) : [];
+    return storedQuestions(execution.outcome).map((question) => ({
+      ...question, execution_id: execution.executionId, stage_id: execution.stageId,
+      recipient: inputs.workflow?.stages[execution.stageId]?.ask ?? "human",
+      status: reply ? "answered" : latest.has(execution.executionId) ? "pending" : "superseded",
+      answer: answers.find((answer) => answer.question_id === question.id) ?? null,
+      ...(reply ? { answered_at: reply.timestamp } : {}),
+    }));
+  });
+  writeJsonAtomic(path.join(sessionDirectory, "questions.json"), { schema_version: 1, questions });
 }
 
 /** Schema 2 only. Show prints this on stderr and does not rewrite status.json. */
@@ -397,6 +421,13 @@ function publishExecutionStatus(
     noteLatest(status, latest.executionId, latest.status, latest.stageId);
     recordLatestDecision(status, decisionOfOutcome(latest.outcome));
   }
+  const questions = latestPerStage(rows).filter((row) => row.outcome?.status === "question" && row.status !== "running");
+  status.questions = questions.flatMap((row) => row.outcome!.questions.map((question) => ({
+    ...question, execution_id: row.executionId, stage_id: row.stageId,
+    recipient: inputs.workflow?.stages[row.stageId]?.ask ?? "human",
+    file: "executions/" + row.executionId + "/questions.json",
+  })));
+  if (questions.length === 0) delete status.questions;
   const blocked = blockedExecutions(rows, status, inputs.workflow).map((row) => ({
     executionId: row.executionId,
     stageId: row.stageId,
@@ -416,7 +447,7 @@ function publishExecutionStatus(
   return applyBlockedResume(
     status,
     inputs.events,
-    blocked.map((row) => row.executionId),
+    [...blocked, ...questions].map((row) => row.executionId),
     later(updatedAt, latest.completedAt ?? latest.createdAt),
   );
 }
@@ -439,8 +470,8 @@ function eventExecutionOrder(event: ParsedEvent): number {
 }
 
 /**
- * `session.active` with `data.from: blocked` reopens that execution.
- * One such event makes the session runnable. A blocked execution without one stays unready.
+ * An explicit resume of a blocker or an answered question makes the session runnable.
+ * Each stopped execution still requires its own resume event before dispatch.
  */
 function applyBlockedResume(
   status: Record<string, unknown>,
@@ -448,13 +479,13 @@ function applyBlockedResume(
   blockedIds: readonly string[],
   updatedAt: string | null,
 ): string | null {
-  if (status.status !== "blocked" || blockedIds.length === 0) return updatedAt;
+  if ((status.status !== "blocked" && status.status !== "question") || blockedIds.length === 0) return updatedAt;
   const resumes: ParsedEvent[] = [];
   for (const executionId of blockedIds) {
     let resume: ParsedEvent | null = null;
     for (const event of events) {
       if (event.event !== "session.active" || event.executionId !== executionId) continue;
-      if (event.data.from !== "blocked") continue;
+      if (event.data.from !== "blocked" && event.data.from !== "question") continue;
       resume = event;
     }
     if (resume !== null) resumes.push(resume);
@@ -548,7 +579,7 @@ function applyManifestIdentity(status: Record<string, unknown>, manifest: Sessio
 
 function manifestStatusToSession(manifestStatus: string | null): string {
   if (manifestStatus === "prepared") return "prepared";
-  if (manifestStatus === "completed" || manifestStatus === "blocked" || manifestStatus === "cancelled") {
+  if (manifestStatus === "completed" || manifestStatus === "blocked" || manifestStatus === "question" || manifestStatus === "cancelled") {
     return manifestStatus;
   }
   return "active";
@@ -560,6 +591,7 @@ function outcomeRecord(event: ParsedEvent): Record<string, unknown> | null {
   if (typeof event.raw.status === "string") top.status = event.raw.status;
   if (typeof event.raw.blocker === "string") top.blocker = event.raw.blocker;
   if (typeof event.raw.decision === "string") top.decision = event.raw.decision;
+  if (typeof event.raw.question === "string") top.question = event.raw.question;
   return Object.keys(top).length > 0 ? top : null;
 }
 
@@ -570,7 +602,7 @@ function decisionOf(outcome: Record<string, unknown> | null): string | null {
 
 function toStageOutcome(outcome: Record<string, unknown> | null): StageOutcome | null {
   if (outcome === null || typeof outcome.status !== "string") return null;
-  return new StageOutcome(outcome.status, textOr(outcome.blocker), textOr(outcome.decision));
+  return new StageOutcome(outcome.status, textOr(outcome.blocker), textOr(outcome.decision), textOr(outcome.question), storedQuestions(outcome));
 }
 
 function latestExecution(executions: readonly FoldExecution[]): FoldExecution | null {

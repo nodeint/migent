@@ -32,6 +32,7 @@ const CONFIG_KEYS = [
 ];
 const WORKFLOW_KEYS = [
   "artifact",
+  "ask",
   "changed_paths",
   "completion",
   "concurrency",

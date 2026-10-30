@@ -6,9 +6,10 @@ import {
   executeNamedWorkflow,
   formatDuration,
   log,
+  SessionStore,
   type ExecuteResult,
 } from "@nodeint/migent-kernel";
-import { printResumeCommand } from "../display.js";
+import { printResumeCommand, printReplyCommand, formatQuestion } from "../display.js";
 import { cliHooks } from "../hooks.js";
 import { requireCurrentSchema } from "../migrate.js";
 import { providerMap } from "../provider.js";
@@ -58,13 +59,18 @@ export async function executeWorkflow(workspace: string, options: ExecuteWorkflo
     runner,
   );
   printResult(workspace, result);
-  printResumeHint(result);
+  printResumeHint(workspace, result);
   return result.code;
 }
 
-function printResumeHint(result: ExecuteResult): void {
+function printResumeHint(workspace: string, result: ExecuteResult): void {
   if (result.sessionId === "" || result.status === "completed" || result.stopReason === "completed") return;
   if (result.stopReason === "configuration") return;
+  const questions = new SessionStore(workspace).questionStages(result.sessionId);
+  if (questions.length > 0) {
+    for (const question of questions) printReplyCommand(result.sessionId, question.stageId);
+    if (result.status !== "blocked") return;
+  }
   printResumeCommand(result.sessionId);
 }
 
@@ -78,6 +84,11 @@ function printResult(workspace: string, result: ExecuteResult): void {
       log(`artifact: ${filePath}`);
     }
     return;
+  }
+  const questions = result.sessionId === "" ? [] : new SessionStore(workspace).questionStages(result.sessionId);
+  if (questions.length > 0) log(`questions: .migent/sessions/${result.sessionId}/questions.json`);
+  for (const stage of questions) {
+    for (const question of stage.questions) log(formatQuestion({ ...question, stage_id: stage.stageId }));
   }
   if (INSPECT_EXIT_CODES.has(result.code) && result.latestExecutionId) {
     log(`response: executions/${result.latestExecutionId}/response.md`);
@@ -148,5 +159,3 @@ function parsedTime(value: unknown): number | null {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
-
-

@@ -63,6 +63,7 @@ Workflow runs print progress on stderr, not JSON on stdout. Use the reported
 | 6 | Agent stage failed verification | Read the response, fix the cause, and continue. |
 | 7 | Verification-only stage failed | Read the verify report, fix the workspace, and continue to rerun checks. |
 | 8 | Provider quota reached with `--once` or `--stage` | Read the response; resolve the quota or wait for availability before continuing. |
+| 9 | Agent asked questions | Read session `questions.json` or `session show --json`; present numbered questions, lettered options, context, and single/multiple selection mode. Always allow free text. Use replies such as `1A, 2B, 3 explain further`; multiple selections use `2A+C`. Never infer an answer from a recommendation. |
 | 130 | Cancelled | Ask the user before continuing. |
 
 A stopped session is not necessarily complete. Continue retries immediately;
@@ -85,6 +86,7 @@ Use the session status to choose how to continue:
 
 | Session | Action |
 | --- | --- |
+| Question | Obtain the user's answer, then continue with `--reply`. Without a reply the question stays pending. Use `--stage` for a workflow when more than one stage is waiting. |
 | Workflow stopped, including a resolved blocker | Continue; add `--reply "<reply>"` when the user answered a blocker. The reply is the whole prompt body. |
 | Workflow, one stage only | Continue with `--once`. |
 | Role cancelled | Continue without `--reply` to resume the interrupted turn. |

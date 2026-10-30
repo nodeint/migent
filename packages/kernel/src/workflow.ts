@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
+import type { AskTarget } from "./stage-outcome.js";
 import { ConfigurationError } from "./errors.js";
 import { documentVersion, isRecord, pyRepr } from "./record.js";
 import { compileChangedPathPattern } from "./run-when.js";
@@ -16,6 +17,7 @@ export interface RunWhen {
 }
 
 interface StageFields {
+  ask?: AskTarget;
   id: string;
   description: string | null;
   artifact: string | null;
@@ -95,6 +97,7 @@ export interface WorkflowCatalog {
 }
 
 const stageFieldSchema = {
+  ask: z.literal("human").optional(),
   id: z.string(),
   description: z.string().nullable(),
   artifact: z.string().nullable(),
@@ -450,6 +453,7 @@ function parseStages(raw: unknown, version2 = false, version3 = false): Record<s
       id: stageId,
       description,
       role,
+      ...(Object.hasOwn(item, "ask") ? { ask: stageAsk(item, stageId) } : {}),
       artifact,
       decisionValues: stageDecisionValues(item, stageId),
       ...(version3 && isRecord(item.decision) ? { decisionInstructions: item.decision.instructions } : {}),
@@ -778,7 +782,13 @@ function validateStageGraph(stages: Record<string, StageSpec>): void {
   }
 }
 
+function stageAsk(stage: Record<string, unknown>, stageId: string): AskTarget {
+  if (stage.ask !== "human") throw new ConfigurationError(`stages.${stageId}.ask must be human.`);
+  return "human";
+}
+
 const ROLE_ONLY_KEYS = [
+  "ask",
   "instructions",
   "model",
   "options",
@@ -794,6 +804,7 @@ function stageHasRole(stage: Record<string, unknown>): boolean {
 }
 
 function rejectRoleOnlyKeys(stage: Record<string, unknown>, stageId: string): void {
+  if (Object.hasOwn(stage, "ask")) throw new ConfigurationError(`stages.${stageId}.ask requires a role.`);
   for (const key of ROLE_ONLY_KEYS) {
     if (Object.hasOwn(stage, key) && stage[key] != null) {
       throw new ConfigurationError(`stages.${stageId}.${key} requires a role.`);

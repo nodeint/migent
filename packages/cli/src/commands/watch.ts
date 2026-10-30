@@ -13,7 +13,7 @@ import {
   watchSnapshot,
 } from "@nodeint/migent-kernel";
 import { printNotice, printWatchEvent, printWatchSnapshot } from "../display.js";
-import { EXIT_BLOCKED, EXIT_CANCELLED, EXIT_OK } from "../exits.js";
+import { EXIT_BLOCKED, EXIT_CANCELLED, EXIT_OK, EXIT_QUESTION } from "../exits.js";
 import {
   compareFollowLines,
   includeStreamLine,
@@ -27,6 +27,7 @@ import { bindCancellationSignals, delay, throwIfCliCancelled } from "../signals.
 const SESSION_DONE_EXITS: Record<string, number> = {
   completed: EXIT_OK,
   blocked: EXIT_BLOCKED,
+  question: EXIT_QUESTION,
   cancelled: EXIT_CANCELLED,
 };
 
@@ -171,6 +172,7 @@ function untilTerminalExitCode(record: Record<string, unknown>): number {
   if (record.status === "completed") {
     const outcome = record.outcome;
     if (isRecord(outcome) && outcome.status === "complete") return 0;
+    if (isRecord(outcome) && outcome.status === "question") return EXIT_QUESTION;
     return 1;
   }
   return 1;

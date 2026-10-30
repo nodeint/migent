@@ -14,7 +14,7 @@ import type { SkipDetails } from "./run-when.js";
 import { writeFileAtomic, writeJsonAtomic } from "./atomic-file.js";
 import { ConfigurationError, OutputsMissing } from "./errors.js";
 import { sealSessionMetrics } from "./metrics.js";
-import { appendLifecycleEvent, appendRecordedEvent, reservedExecutionOrders, reservedStageAttempts, skipsStatusWrite } from "./session-events.js";
+import { appendLifecycleEvent, appendRecordedEvent, readParsedEvents, reservedExecutionOrders, reservedStageAttempts, skipsStatusWrite } from "./session-events.js";
 import { commitFoldedStatus, readSessionManifest } from "./session-fold.js";
 import { loadFrozenWorkflow } from "./session-freeze.js";
 import { assertSessionLockHeld } from "./session-lock.js";
@@ -57,6 +57,7 @@ import {
 } from "./runtime.js";
 import { withFileLockSync } from "./file-lock.js";
 import type { StageOutcome } from "./stage-outcome.js";
+import { answerQuestions, formatQuestionAnswers, storedQuestions, type Question } from "./questions.js";
 import {
   VERIFY_ARTIFACT,
   loadNamedWorkflow,
@@ -354,8 +355,7 @@ export class SessionStore {
   }
 
   /**
-   * Carry the stage artifact of a verify-exhausted execution into a new one, so a repair
-   * turn that only fixes code still finds it.
+   * Carry a working artifact across verification retries or question replies.
    */
   carryVerifyArtifact(previousArtifactDirectory: string, context: ExecutionContext, name: string): void {
     const source = path.join(previousArtifactDirectory, name);
@@ -426,6 +426,50 @@ export class SessionStore {
     }));
   }
 
+  /** Questions are execution outcomes; the recipient is configured by the stage. */
+  questionStages(sessionId: string): { executionId: string; stageId: string; question: string; questions: Question[] }[] {
+    const latest = new Map<string, ExecutionSnapshot>();
+    for (const row of this.executionSnapshots(sessionId)) {
+      const prev = latest.get(row.stageId);
+      if (prev === undefined || row.executionOrder > prev.executionOrder) latest.set(row.stageId, row);
+    }
+    return [...latest.values()]
+      .filter((row) => row.outcomeStatus === "question" && row.status !== "running")
+      .map((row) => {
+        const metadata = readJsonObject(path.join(
+          this.sessionsDirectory, sessionId, EXECUTIONS_DIRNAME, row.executionId, "execution.json",
+        ));
+        const outcome = isRecord(metadata.outcome) ? metadata.outcome : {};
+        return { executionId: row.executionId, stageId: row.stageId, question: String(outcome.question ?? ""), questions: storedQuestions(outcome) };
+      });
+  }
+
+  /** A reply unlocks only its selected question. No automatic resume without a reply. */
+  resumeQuestion(sessionId: string, stageId: string, reply: string): string {
+    const directory = path.join(this.sessionsDirectory, sessionId);
+    assertSessionLockHeld(directory);
+    const target = this.questionStages(sessionId).find((row) => row.stageId === stageId);
+    if (!target) throw new ConfigurationError(`Stage ${stageId} has no pending question.`);
+    if (!reply.trim()) throw new ConfigurationError("--reply is empty.");
+    const answers = answerQuestions(target.questions, reply);
+    const formatted = formatQuestionAnswers(target.questions, answers);
+    // Persist the answer before unlocking dispatch, including if dispatch fails before creating an execution.
+    appendLifecycleEvent(directory, {
+      event: "session.active", timestamp: utcNow(), executionId: target.executionId, stageId,
+      data: { from: "question", reply: formatted, answers, input: reply },
+    });
+    commitFoldedStatus(this.workspace, directory);
+    return formatted;
+  }
+
+  questionReply(sessionId: string, executionId: string): string | null {
+    const events = readParsedEvents(path.join(this.sessionsDirectory, sessionId, "events.jsonl"));
+    const event = events.reverse().find((row) =>
+      row.event === "session.active" && row.executionId === executionId && row.data.from === "question",
+    );
+    return typeof event?.data.reply === "string" ? event.data.reply : null;
+  }
+
   /**
    * Record that continue is running blocked stages again. The caller holds the session lock.
    * `stageId` resumes that stage only. Other blocked stages stay blocked.
@@ -434,7 +478,7 @@ export class SessionStore {
     const sessionDirectory = path.join(this.sessionsDirectory, sessionId);
     assertSessionLockHeld(sessionDirectory);
     const status = this.readSessionStatus(sessionId);
-    if (status.status !== "blocked") {
+    if (status.status !== "blocked" && status.status !== "active") {
       throw new ConfigurationError(`Session ${sessionId} is ${String(status.status)}, not blocked.`);
     }
     const blocked = this.blockedStageRows(sessionId);
@@ -773,7 +817,16 @@ export class SessionStore {
     metadata.agent_id = record.agentId;
     metadata.completed_at = status === "running" ? null : timestamp;
     if (error !== null) metadata.error = error;
-    if (outcome !== null) metadata.outcome = outcome.toJson();
+    if (outcome !== null) {
+      metadata.outcome = outcome.toJson();
+      if (outcome.status === "question") {
+        writeJsonAtomic(path.join(context.directory, "questions.json"), {
+          schema_version: 1, stage_id: metadata.stage_id, execution_id: context.executionId,
+          recipient: workflow?.stages[stageId]?.ask ?? "human",
+          questions: outcome.questions,
+        });
+      }
+    }
     if (extra !== null) Object.assign(metadata, extra);
     const storedError = typeof metadata.error === "string" ? metadata.error : null;
     const failureReason = typeof metadata.failure_reason === "string" ? metadata.failure_reason : null;
