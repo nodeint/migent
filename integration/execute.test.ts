@@ -514,8 +514,10 @@ test("test and docs overlap and review-test starts while docs runs", async () =>
     installScript(workspace, [
       implementStep(COMPLETE),
       stageStep("review", APPROVED),
-      stageStep("test", COMPLETE, { delay_ms: 800 }),
-      stageStep("docs", COMPLETE, { delay_ms: 2000 }),
+      // Hold test until docs starts, then hold docs until review-test starts. This
+      // proves overlap and incremental scheduling without guessing process startup time.
+      stageStep("test", COMPLETE, { wait_stage: "docs" }),
+      stageStep("docs", COMPLETE, { wait_stage: "review-test" }),
       stageStep("review-test", APPROVED),
       stageStep("review-docs", APPROVED),
     ]);
