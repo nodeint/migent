@@ -442,6 +442,9 @@ turn, including resume, reply, and repair after verification fails.
 
 ### Questions and human decisions
 
+For the user interaction guide, CLI examples, and question history, see
+[Human-in-the-loop interaction](human-in-the-loop.md).
+
 Enable questions on any stage with a role:
 
 ```yaml

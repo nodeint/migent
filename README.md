@@ -363,6 +363,7 @@ skill to operate it for you.
 
 ## Documentation
 
+- [Human-in-the-loop interaction](docs/human-in-the-loop.md)
 - [Writing workflows](https://github.com/nodeint/migent/blob/main/docs/workflows.md)
 - [Providers and model configuration](https://github.com/nodeint/migent/blob/main/docs/providers.md)
 - [Sessions and workflow composition](https://github.com/nodeint/migent/blob/main/docs/sessions.md)

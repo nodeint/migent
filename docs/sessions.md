@@ -176,6 +176,9 @@ quiet on a version 2 workflow.
 
 ## Inspect and resume
 
+See [Human-in-the-loop interaction](human-in-the-loop.md) for the complete
+question-and-answer flow, including numbered replies and structured history.
+
 Stages with `ask: human` can stop with outcome `question`. `session show` lists
 each pending question with its context, options, and `single`/`multiple`
 selection mode. The machine-readable session `questions.json` contains all
