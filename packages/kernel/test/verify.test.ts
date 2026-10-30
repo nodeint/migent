@@ -135,6 +135,8 @@ test("blocked runs no verify command", async () => {
 
 const BLOCKED = "status: blocked\nblocker: gate clones\n\nstopped";
 
+// Three provider turns plus verification spawn real wrapper processes. Parallel Windows
+// CI can exceed the default 10 seconds even when every subprocess exits normally.
 test("continue redispatches a blocked stage and names the blocker", async () => {
   const { workspace, sessionId } = setup(workflowText(`node -e "process.exit(0)"`));
   const provider = new ScriptedProvider([BLOCKED, OK, OK], [null, "# notes\n", null]);
@@ -167,7 +169,7 @@ test("continue redispatches a blocked stage and names the blocker", async () => 
   const status = new SessionStore(workspace).readSessionStatus(sessionId);
   expect(status.blocker).toBeUndefined();
   expect(status.blocked_by_execution_id).toBeUndefined();
-});
+}, 30_000);
 
 test("continue with a reply sends only that reply to the blocked stage", async () => {
   const { workspace, sessionId } = setup(workflowText(`node -e "process.exit(0)"`));
