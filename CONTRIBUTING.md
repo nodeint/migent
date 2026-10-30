@@ -90,26 +90,53 @@ calls.
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs install, build, and test on Ubuntu, macOS, and
-Windows for every pull request into `main`. It does not run on pushes to
-`main`: a change reaches `main` only through a pull request whose checks
-passed. Make it a required status check on `main`. The release workflow runs the same tests again
-for the tag and stops on failure.
+The integration branch is `next`. Create working branches from `origin/next`
+and target all feature, fix, documentation, and release PRs at `next`. CI must
+run install, build, and test on Ubuntu, macOS, and Windows for every PR into
+`next`. Require all three checks against the current base before merging.
+The release workflow repeats build and tests on the exact tagged commit.
 
 ## Pull requests
 
-Every change, including a release version bump, reaches `main` through a
-pull request. The ruleset definition is in `.github/main-ruleset.json`;
-maintainers apply it in GitHub repository settings or through the API:
+Every development change, including release version bumps, reaches `next`
+through a PR. `main` records the exact commit of the latest successfully
+published release; it advances only after all four packages are public and
+verified.
 
-- Require a pull request and successful `test (ubuntu-latest)`,
-  `test (macos-latest)`, and `test (windows-latest)` checks on the current base.
-- Block force-pushes and deletion; leave the bypass list empty, including admins.
-- Require resolved review conversations. A solo-maintained repository need not
-  require a second person's approval.
-- Allow squash merge only, and delete the branch after merge.
-- Leave `v*` tags outside the ruleset: a maintainer pushes the release tag
-  directly.
+Configure branch protection as follows:
+
+- On `next`, require a PR and successful `test (ubuntu-latest)`,
+  `test (macos-latest)`, and `test (windows-latest)` checks against the current
+  base. Require resolved conversations; a second review is optional for a
+  solo maintainer. Use squash merges and delete working branches after merge.
+- Block force-pushes and deletion on both `next` and `main`.
+- On `main`, allow only the designated release maintainer or automation to
+  fast-forward to the verified release commit. Do not require a squash PR
+  for this update: it must preserve the tagged commit SHA. Scope any required
+  protection exception to that release actor.
+- Keep `v*` tags immutable once pushed. A maintainer pushes the release tag.
+
+### Migration prerequisites
+
+These are the intended rules. The existing `.github/main-ruleset.json`,
+`.github/workflows/ci.yml`, `.github/workflows/release.yml`, and local Git
+safeguards still describe the previous `main`-based flow and must be migrated
+before using this release process:
+
+1. Create remote `next` from the current `main` if it does not already exist;
+   set `next` as the default branch for development and PRs.
+2. Move the PR/CI rules to `next`, make CI target `next`, and configure `main`
+   for the restricted release fast-forward described above.
+3. Change the release workflow's tag ancestry check from `origin/main` to
+   `origin/next`. Continue building and packing the tagged commit.
+4. Update `scripts/git-flow.mjs` and `scripts/setup-git.mjs` to protect both
+   long-lived branches, reject working branches tracking either one, and
+   support a guarded release-only fast-forward to `main` after publication.
+   Reinstall safeguards with `pnpm setup:git`.
+
+Do not bypass hooks or protection, or advance `main` before publication to
+work around an unmigrated check. This documentation update does not apply
+GitHub settings or change workflows and hooks.
 
 Branch names: `feat/<slug>`, `fix/<slug>`, `docs/<slug>`, `chore/<slug>`, and
 `release/X.Y.Z` for releases. The pull request title is the squash commit
@@ -119,23 +146,21 @@ Start work with an explicit base and no upstream:
 
 ```bash
 git fetch origin
-git switch --no-track -c feat/my-change origin/main
+git switch --no-track -c feat/my-change origin/next
 # edit, test, commit
 git push -u origin refs/heads/feat/my-change:refs/heads/feat/my-change
-gh pr create --draft --base main --head feat/my-change --body-file <notes>
+gh pr create --draft --base next --head feat/my-change --body-file <notes>
 ```
 
-Run `pnpm setup:git` once in each clone. It installs pre-commit/pre-push hooks,
-disables automatic upstream inheritance, and removes working branches' accidental
-`origin/main` upstreams. A branch should track its own remote name after its
-first push. Hooks block commits on `main`, direct pushes to `main`, and branch
-pushes to a different name, including pushes from an editor. Tags remain allowed.
-Do not bypass the hooks with `--no-verify`. GitHub's ruleset enforces the PR
-requirement for all clones, even when local hooks are absent.
+Run `pnpm setup:git` once in each clone after migrating the safeguards. Working
+branches start without an upstream and track their own remote name after the
+first push. Hooks must block commits on `main` and `next`, direct development
+pushes to either branch, and pushes to a different branch name. Tags remain
+allowed. The release-only update to `main` must verify the published version
+and tagged commit. Do not use `--no-verify` or force-push.
 
-Keep published history intact. If a commit already reached `main` directly,
-retain it and fix the workflow in a new PR; do not reset or force-push main,
-or revert/reapply working code solely to create a retrospective PR.
+Keep published history intact. Do not reset either long-lived branch or
+revert/reapply working code solely to create a retrospective PR.
 
 A pull request that changes behavior a user can see adds a line under
 `## Unreleased` in `CHANGELOG.md`, in the same pull request. Open it as a draft
@@ -147,19 +172,19 @@ All four packages share one version and are released together.
 
 ### 1. Release pull request
 
-`main` is always releasable. A release is a pull request that changes only the
-version and the changelog.
+Create the release branch from `origin/next`. Its PR targets `next` and changes
+only package versions, the changelog, and the lockfile when needed.
 
 ```bash
 git fetch origin
-git switch --no-track -c release/0.2.0 origin/main
+git switch --no-track -c release/0.2.0 origin/next
 # CHANGELOG.md: move ## Unreleased under ## 0.2.0, keep five versions
 pnpm -r exec npm pkg set version=0.2.0
 pnpm install
 git add CHANGELOG.md packages/*/package.json pnpm-lock.yaml
 git commit -m "Release 0.2.0"
 git push -u origin refs/heads/release/0.2.0:refs/heads/release/0.2.0
-gh pr create --draft --base main --head release/0.2.0 --title "Release 0.2.0" --body-file <the 0.2.0 section>
+gh pr create --draft --base next --head release/0.2.0 --title "Release 0.2.0" --body-file <the 0.2.0 section>
 ```
 
 Merge other pull requests only before this one, or rebase it and redo the
@@ -168,8 +193,10 @@ merge it; the commit subject becomes `Release 0.2.0 (#N)`.
 
 ### 2. Tag the merged commit
 
-Pushing the tag publishes. Tag the commit on `origin/main` whose subject starts
-with `Release 0.2.0`, and check that its `packages/*/package.json` say `0.2.0`.
+Pushing the tag starts the release workflow. Read the exact merged commit SHA
+from the release PR; verify it is on `origin/next`, all four package versions
+are `0.2.0`, and its changelog contains that release. Do not select a commit
+only by subject or tag the pre-merge release branch.
 
 ```bash
 git fetch origin
@@ -178,7 +205,8 @@ git push origin v0.2.0
 ```
 
 The tag must equal every package version, or the workflow stops at its first
-check. It must also be on `main`, or the workflow stops at its second.
+check. It must also be on `next`. Migrate the workflow ancestry check before tagging.
+Never move an existing tag, and never tag an unmerged release PR.
 
 `.github/workflows/release.yml` runs on `v*` tags. It takes the `## 0.2.0`
 section of `CHANGELOG.md` as the release notes, builds, tests, packs with
@@ -204,13 +232,47 @@ broken until the rest are approved.
 ### 4. Verify
 
 ```bash
-npm view @nodeint/migent version
-npm i -g --prefer-online @nodeint/migent
+for package in migent-kernel migent-adapters migent-registry migent; do
+  npm view "@nodeint/$package@0.2.0" version
+done
+npm i -g --prefer-online @nodeint/migent@0.2.0
 migent --version
 ```
 
 `--prefer-online` matters for the first few minutes: npm may still have cached
 metadata without the new version and fail with `ETARGET`.
+
+### 5. Synchronize main with the published release
+
+Staging packages and creating a GitHub Release do not complete publication.
+After all four packages are approved, verify their exact versions and the
+installed CLI version. Then fast-forward `main` to the exact tagged release
+commit. There is a short interval between publication and this update; the
+branches and public packages are synchronized when the release completes.
+
+The migrated release safeguard must validate publication before allowing
+this update. Use a clean checkout and the authorized release actor:
+
+```bash
+git fetch origin main next --tags
+git rev-parse 'v0.2.0^{commit}' # must equal the release PR's merged SHA
+git merge-base --is-ancestor v0.2.0 origin/next
+git merge-base --is-ancestor origin/main v0.2.0
+# Continue only if both ancestry checks and publication verification passed.
+git push origin refs/tags/v0.2.0:refs/heads/main
+git fetch origin main
+git rev-parse origin/main 'v0.2.0^{commit}' # both SHAs must match
+```
+
+Do not merge the latest `next` HEAD: it may already contain work for the next
+release. Do not create a separate merge or squash commit on `main`. If `main`
+has diverged, or hooks/protection reject the update, stop and resolve the
+configuration or history issue without force-pushing or bypassing safeguards.
+
+If publication fails or is partial, leave `main` unchanged and keep the tag
+intact. Verify existing package versions and staging state before any retry;
+never try to publish an already public package version again. Use a new patch
+release when the failed version cannot be completed safely.
 
 ### Trusted publisher settings
 

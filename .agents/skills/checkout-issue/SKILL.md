@@ -2,7 +2,7 @@
 name: checkout-issue
 description: >
   Read a GitHub issue of this repository and start work on it. Fetch the issue
-  with gh, summarize it, create the branch from origin/main, and stop for the
+  with gh, summarize it, create the branch from origin/next, and stop for the
   user before changing code unless they asked for the fix. Use when the user
   gives an issue URL or number, or says checkout issue, đọc issue, fix issue.
 metadata:
@@ -40,13 +40,13 @@ Make the slug short and about the change, not the issue number.
 ```bash
 git fetch origin
 git status --short
-git switch --no-track -c <branch> origin/main
+git switch --no-track -c <branch> origin/next
 ```
 
 Stop and ask when the working tree has changes that are not part of this issue.
-Never commit on `main`. The new branch must have no upstream until its first
+Never commit on `main` or `next`. The new branch must have no upstream until its first
 push; verify with `git branch -vv`. Never set a working branch's upstream to
-`origin/main`. Run `pnpm setup:git` once in this checkout to install safeguards.
+`origin/main` or `origin/next`. Run `pnpm setup:git` once in this checkout to install safeguards.
 
 ## Next
 
