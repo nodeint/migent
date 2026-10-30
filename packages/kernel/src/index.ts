@@ -151,6 +151,8 @@ export {
 } from "./selection.js";
 export type { NextStageResult } from "./selection.js";
 export { outcomeStatuses, parseStageOutcome, StageOutcome } from "./stage-outcome.js";
+export type { AskTarget } from "./stage-outcome.js";
+export type { Question, QuestionAnswer } from "./questions.js";
 export { log, utcNow } from "./runtime.js";
 export {
   MIGENT_DIRNAME,

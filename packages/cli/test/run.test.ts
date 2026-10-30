@@ -312,7 +312,7 @@ test("session filters select the newest match and reject bad flags", async () =>
     expect(combined.stderr).toContain("--latest cannot be combined with --limit.");
     const badStatus = await capture(() => main(["session", "list", "--status", "paused"], workspace));
     expect(badStatus.value).toBe(2);
-    expect(badStatus.stderr).toContain("--status must be active, prepared, completed, blocked, cancelled, or corrupt.");
+    expect(badStatus.stderr).toContain("--status must be active, prepared, completed, blocked, question, cancelled, or corrupt.");
     const badLimit = await capture(() => main(["session", "list", "--limit", "0"], workspace));
     expect(badLimit.value).toBe(2);
     expect(badLimit.stderr).toContain("--limit must be an integer >= 1.");

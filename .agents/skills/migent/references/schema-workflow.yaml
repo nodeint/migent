@@ -23,6 +23,8 @@ stages:
 
   - id: draft
     role: planner
+    # Optional recipient for questions. Only human is supported; omit to disable questions.
+    ask: human
     # Optional model name from config.yaml; omit to use the role's default.
     model: deep_reasoning
     # Provider options override model options.

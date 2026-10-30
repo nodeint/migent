@@ -178,9 +178,10 @@ export function reservedStageAttempts(sessionDirectory: string): ReservedAttempt
 /** Why a session status change is recorded on `session.<status>`. */
 export function sessionChangeReason(
   sessionStatus: string,
-  outcome: { blocker?: string | null; decision?: string | null } | null,
+  outcome: { blocker?: string | null; decision?: string | null; question?: string | null } | null,
   error: string | null,
 ): string | null {
+  if (sessionStatus === "question") return outcome?.question || "question";
   if (sessionStatus === "blocked") return outcome?.blocker || "blocked";
   if (sessionStatus === "cancelled") return "cancelled";
   if (sessionStatus === "completed") return outcome?.decision || "completed";

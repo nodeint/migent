@@ -71,6 +71,7 @@ export const DEFAULT_MAX_DISPATCHES = 20;
 const EXECUTE_EXIT_CODES: Record<string, number> = {
   completed: 0,
   blocked: 1,
+  question: 9,
   cancelled: 130,
   stage_failed: 3,
   revisions_exhausted: 4,
@@ -81,7 +82,7 @@ const EXECUTE_EXIT_CODES: Record<string, number> = {
   stage: 0,
 };
 
-const TERMINAL_SESSION_STATUSES = new Set(["completed", "blocked", "cancelled"]);
+const TERMINAL_SESSION_STATUSES = new Set(["completed", "blocked", "question", "cancelled"]);
 
 export interface ExecuteRequest {
   workflowId?: string | null;
@@ -97,7 +98,7 @@ export interface ExecuteRequest {
   waitHooks?: WaitHooks;
   startPrepared?: boolean;
   refreshWorkflow?: boolean;
-  /** Reply for one blocked stage. The new execution's prompt body is this text. */
+  /** Reply for one blocked stage or pending question. */
   reply?: string | null;
 }
 
@@ -193,10 +194,23 @@ async function executeLocked(
     if (replyText !== null && replyText.trim() === "") {
       throw new ConfigurationError("--reply is empty.");
     }
-    if (replyText !== null && sessionStatus !== "blocked") {
-      throw new ConfigurationError(
-        `--reply requires a blocked session. Session ${sessionId} is ${sessionStatus || "unknown"}.`,
-      );
+    if (replyText !== null) {
+      const waiting = [...store.blockedStages(sessionId), ...store.questionStages(sessionId)];
+      if (waiting.length === 0) throw new ConfigurationError("--reply requires a blocked stage or a pending question.");
+      if (waiting.length > 1 && stageId === null) throw new ConfigurationError(`--reply needs --stage when more than one stage is waiting: ${waiting.map((row) => row.stageId).join(", ")}.`);
+      const target = stageId ?? waiting[0]!.stageId;
+      if (!waiting.some((row) => row.stageId === target)) throw new ConfigurationError(`Stage ${target} is not waiting for a reply.`);
+      stageReply = { stageId: target, text: replyText };
+      if (store.questionStages(sessionId).some((row) => row.stageId === target)) {
+        stageReply.text = store.resumeQuestion(sessionId, target, replyText);
+        sessionStatus = "active";
+      }
+    } else {
+      // Recover an answer recorded before a dispatch was interrupted or failed preflight.
+      const answered = store.questionStages(sessionId).map((row) => ({
+        ...row, reply: store.questionReply(sessionId!, row.executionId),
+      })).find((row) => row.reply !== null && (stageId === null || stageId === row.stageId));
+      if (answered) stageReply = { stageId: answered.stageId, text: answered.reply! };
     }
     if (request.startPrepared) {
       if (sessionStatus !== "prepared") {
@@ -213,26 +227,10 @@ async function executeLocked(
         `Session ${sessionId} is prepared. Run: ${preparedRunHint(sessionId, bound.status)}`,
       );
     }
-    if (sessionStatus === "blocked") {
-      const blocked = store.blockedStages(sessionId);
-      if (replyText !== null) {
-        if (blocked.length > 1 && stageId === null) {
-          const names = blocked.map((item) => item.stageId).join(", ");
-          throw new ConfigurationError(`--reply needs --stage when more than one stage is blocked: ${names}.`);
-        }
-        const target = stageId ?? blocked[0]?.stageId ?? "";
-        if (!blocked.some((item) => item.stageId === target)) {
-          throw new ConfigurationError(
-            blocked.length === 0
-              ? `Session ${sessionId} is blocked without an execution.`
-              : `Stage ${target} is not blocked. Blocked stages: ${blocked.map((item) => item.stageId).join(", ")}.`,
-          );
-        }
-        stageReply = { stageId: target, text: replyText };
-      }
+    if (sessionStatus === "blocked" || (stageReply !== null && store.blockedStages(sessionId).some((row) => row.stageId === stageReply!.stageId))) {
       const resumed = store.resumeBlockedSession(
         sessionId,
-        stageReply !== null && blocked.length > 1 ? stageReply.stageId : null,
+        stageReply?.stageId ?? stageId,
       );
       sessionStatus = "active";
       for (const item of resumed) {
@@ -400,7 +398,7 @@ async function executeLocked(
         if (!reopenLatestCancelled && (once || stageId !== null || TERMINAL_SESSION_STATUSES.has(after))) {
           const stopReason = TERMINAL_SESSION_STATUSES.has(after) ? after : "stage";
           const result = executeFinal(status, stopReason, stageJsons);
-          if (stopReason === "stage" && continued.some((item) => item.outcome_status !== "complete" && item.execution_status !== "skipped")) result.code = 1;
+          if (stopReason === "stage" && continued.some((item) => item.outcome_status !== "complete" && item.execution_status !== "skipped")) result.code = continued.some((item) => item.outcome_status === "question") ? 9 : 1;
           return result;
         }
         if (!reopenLatestCancelled) {
@@ -439,7 +437,11 @@ async function executeLocked(
       const after = text(status.status);
       const stopReason = TERMINAL_SESSION_STATUSES.has(after) ? after : "stage";
       const result = executeFinal(status, stopReason, stageJsons);
-      if (stopReason === "stage" && stageJsons.some((item) => item.outcome_status !== "complete" && item.execution_status !== "skipped")) result.code = 1;
+      if (replyResult?.outcome_status === "question") {
+        result.code = 9;
+        result.stopReason = "question";
+      }
+      if (stopReason === "stage" && stageJsons.some((item) => item.outcome_status !== "complete" && item.execution_status !== "skipped")) result.code = stageJsons.some((item) => item.outcome_status === "question") ? 9 : 1;
       return result;
     }
     if (replySent && replyResult !== undefined && stageReply !== null) {
@@ -584,8 +586,12 @@ async function runExecuteOnce(
   if (stage.failure_kind === "quota") return executeFinal(status, "quota", [stage]);
   const stopReason = TERMINAL_SESSION_STATUSES.has(after) ? after : "stage";
   const result = executeFinal(status, stopReason, [stage]);
+  if (stage.outcome_status === "question") {
+    result.code = 9;
+    result.stopReason = "question";
+  }
   if (stopReason === "stage" && stage.outcome_status !== "complete" && stage.execution_status !== "skipped") {
-    result.code = 1;
+    result.code = stage.outcome_status === "question" ? 9 : 1;
   }
   return result;
 }
@@ -1219,7 +1225,7 @@ async function dispatchExecuteStage(
   const stageReply = takeStageReply(reply, stageId);
   const prompt =
     stageReply !== null
-      ? buildStageReplyPrompt(stageReply)
+      ? buildStageReplyPrompt(stageReply, new SessionStore(workspace).questionStages(sessionId).find((row) => row.stageId === stageId)?.question)
       : exhausted?.verifyReport
         ? buildVerifyRepairPrompt(
             readFileSync(exhausted.verifyReport, "utf8"),
@@ -1284,7 +1290,7 @@ function skipUnlessRunWhenMatches(
   const fresh =
     latest === null ||
     latest.status === "skipped" ||
-    (latest.status === "completed" && latest.outcomeStatus !== "blocked");
+    (latest.status === "completed" && latest.outcomeStatus !== "blocked" && latest.outcomeStatus !== "question");
   if (!fresh) return null;
   const evaluation = evaluateRunWhen(workspace, sessionId, stage);
   if ("matched" in evaluation) {

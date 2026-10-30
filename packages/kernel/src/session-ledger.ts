@@ -76,6 +76,7 @@ export function sessionStatusFromExecutions(
   const latest = latestPerStage(executions);
   if (latest.some((execution) => execution.status === "running")) return "active";
   let cancelled = false;
+  let stopped: "blocked" | "question" | null = null;
   let completed = false;
   for (const execution of latest) {
     const status = sessionStatusForExecution(
@@ -85,7 +86,7 @@ export function sessionStatusFromExecutions(
       workflow,
       execution.stageId,
     );
-    if (status === "blocked") {
+    if (status === "blocked" || status === "question") {
       if (workflow !== null && isWorkflowV2(workflow)) {
         const snapshots = snapshotsFromStatus(executions);
         const startable = readyOutsideStoppedBranches(
@@ -100,11 +101,12 @@ export function sessionStatusFromExecutions(
         });
         if (startable.length > 0) return "active";
       }
-      return "blocked";
+      if (status === "blocked" || stopped === null) stopped = status;
     }
     if (status === "cancelled") cancelled = true;
     else if (status === "completed") completed = true;
   }
+  if (stopped !== null) return stopped;
   if (cancelled) return "cancelled";
   if (workflow !== null && isWorkflowV2(workflow)) {
     const snapshots = snapshotsFromStatus(executions);
@@ -392,7 +394,7 @@ function manifestLine(
   if (executionStatus === "running" && previousSessionStatus === "completed") desired = "running";
   if (
     sessionStatus !== previousSessionStatus &&
-    (sessionStatus === "completed" || sessionStatus === "blocked" || sessionStatus === "cancelled")
+    (sessionStatus === "completed" || sessionStatus === "blocked" || sessionStatus === "question" || sessionStatus === "cancelled")
   ) {
     desired = sessionStatus;
   }

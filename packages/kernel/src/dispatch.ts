@@ -94,11 +94,15 @@ export async function dispatchNamedStage(
   assertStageDispatchable(workspace, workflow, sessionId, request.stageId);
   const snapshots = new SessionStore(workspace).executionSnapshots(sessionId);
   const stage = workflow.stages[request.stageId];
-  const resumeExecutionId = stage?.resumeFrom
-    ? (verifyExhaustedExecution(snapshots, request.stageId)?.executionId ??
-      revisionResumeExecution(workflow, snapshots, request.stageId) ??
-      resolveResumeExecution(workspace, workflow, sessionId, request.stageId))
-    : stageAgentExecution(snapshots, request.stageId);
+  const ownAgent = stageAgentExecution(snapshots, request.stageId);
+  const question = snapshots.find((row) => row.executionId === ownAgent && row.outcomeStatus === "question");
+  const resumeExecutionId = question
+    ? question.executionId
+    : stage?.resumeFrom
+      ? (verifyExhaustedExecution(snapshots, request.stageId)?.executionId ??
+        revisionResumeExecution(workflow, snapshots, request.stageId) ??
+        resolveResumeExecution(workspace, workflow, sessionId, request.stageId))
+      : ownAgent;
   const result = await activeRunner.run({
     provider: target.provider,
     model: target.model,

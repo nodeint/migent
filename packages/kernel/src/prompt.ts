@@ -55,8 +55,8 @@ export function buildStagePrompt(input: {
 }
 
 /** Reply to a stage that already holds the conversation. The runner appends the response contract. */
-export function buildStageReplyPrompt(reply: string): string {
-  return `Reply:\n${reply}`;
+export function buildStageReplyPrompt(reply: string, question?: string): string {
+  return question ? `Reply to: ${question}\n${reply}` : `Reply:\n${reply}`;
 }
 
 /** Later visit of a stage. The provider conversation already has the stage prompt. */

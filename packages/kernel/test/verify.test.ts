@@ -232,13 +232,13 @@ stages:
 
   await expect(
     executeNamedWorkflow(workspace, { workflowId: "wf", sessionId, reply: "answer a" }, runner),
-  ).rejects.toThrow(/--reply needs --stage when more than one stage is blocked: a, b/);
+  ).rejects.toThrow(/--reply needs --stage when more than one stage is waiting: a, b/);
   expect(store.readSessionStatus(sessionId).status).toBe("blocked");
   expect(store.executionSnapshots(sessionId)).toHaveLength(2);
 
   await expect(
     executeNamedWorkflow(workspace, { workflowId: "wf", sessionId, stageId: "missing", reply: "answer" }, runner),
-  ).rejects.toThrow(/Stage missing is not blocked/);
+  ).rejects.toThrow(/Stage missing is not waiting for a reply/);
   expect(store.readSessionStatus(sessionId).status).toBe("blocked");
 
   const second = await executeNamedWorkflow(

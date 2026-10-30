@@ -23,7 +23,7 @@ import {
   type RunResult,
   type WaitHooks,
 } from "@nodeint/migent-kernel";
-import { printAgent, printError, printNotice, printResumeCommand } from "../display.js";
+import { printAgent, printError, printNotice, printResumeCommand, printReplyCommand } from "../display.js";
 import { cliHooks } from "../hooks.js";
 import { requireCurrentSchema } from "../migrate.js";
 import { bindCancellationSignals } from "../signals.js";
@@ -144,14 +144,14 @@ export async function dispatchAgent(
         if (finished.length === 1) result = finished[0];
         else resumedMany = finished;
       } else {
-        const prompt = prependRoleInstructions(
-          loadRoleInstructions(loadWorkspaceConfig(workspace), args.role),
-          resolvePrompt({
+        let input = resolvePrompt({
             prompt: args.prompt ?? null,
             promptFile: args.promptFile ?? null,
             promptStdin: args.promptStdin ?? false,
-          }),
-        );
+          });
+        const question = new SessionStore(workspace).questionStages(resolvedSessionId).find((row) => row.stageId === args.role);
+        if (question) input = new SessionStore(workspace).resumeQuestion(resolvedSessionId, args.role, input);
+        const prompt = prependRoleInstructions(loadRoleInstructions(loadWorkspaceConfig(workspace), args.role), input);
         result = await rerunQuota(
           workspace,
           resolvedSessionId,
@@ -198,7 +198,7 @@ export async function dispatchAgent(
     if (result === undefined) throw new Error("Agent run produced no result.");
     if (args.asJson) process.stdout.write(`${JSON.stringify(result)}\n`);
     else printAgent({ ...result }, args.role, target.provider, target.model);
-    return finishRole(resolvedSessionId, result.outcome_status === "complete" ? 0 : 1);
+    return finishRole(resolvedSessionId, result.outcome_status === "complete" ? 0 : result.outcome_status === "question" ? 9 : 1);
   }
 }
 
@@ -246,6 +246,12 @@ export async function continueAgent(
         `Session ${args.sessionId} was cancelled. session continue resumes that execution. Omit --reply.`,
       );
     }
+    const pending = store.questionStages(args.sessionId).find((row) => row.stageId === role);
+    const reply = args.reply ?? (pending ? store.questionReply(args.sessionId, pending.executionId) : null);
+    if (sessionStatus === "question" && reply === null) {
+      printNotice(`Session ${args.sessionId} has a pending question. Continue with --reply.`);
+      return 9;
+    }
     const latest = store.latestExecution(args.sessionId);
     if (latest === null) throw new ConfigurationError(`Session ${args.sessionId} has no execution.`);
     const profile = executionProfile(latest.directory, latest.executionId);
@@ -269,8 +275,9 @@ export async function continueAgent(
         );
       }
       let prompt: string;
-      if (args.reply !== null) {
-        prompt = rolePrompt(workspace, role, args.reply);
+      if (reply !== null) {
+        const answer = pending && args.reply !== null ? store.resumeQuestion(args.sessionId, role, reply) : reply;
+        prompt = rolePrompt(workspace, role, answer);
       } else if (sessionStatus === "blocked") {
         const blocker = executionBlocker(latest.directory);
         const resumed = store.resumeBlockedSession(args.sessionId);
@@ -309,7 +316,7 @@ export async function continueAgent(
         args.waitHooks,
       );
       printAgent({ ...result }, role, profile.provider, profile.model);
-      return finishRole(args.sessionId, result.outcome_status === "complete" ? 0 : 1);
+      return finishRole(args.sessionId, result.outcome_status === "complete" ? 0 : result.outcome_status === "question" ? 9 : 1);
     } catch (error) {
       if (error instanceof CancellationRequested) {
         log(error.message);
@@ -380,7 +387,7 @@ async function runCancelledRole(
     if (result === undefined) throw new Error("Agent run produced no result.");
     if (asJson) process.stdout.write(`${JSON.stringify(result)}\n`);
     else printAgent({ ...result }, role, profile.provider, profile.model);
-    return finishRole(sessionId, result.outcome_status === "complete" ? 0 : 1);
+    return finishRole(sessionId, result.outcome_status === "complete" ? 0 : result.outcome_status === "question" ? 9 : 1);
   }
   if (asJson) process.stdout.write(`${JSON.stringify(finished)}\n`);
   else {
@@ -463,6 +470,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function finishRole(sessionId: string, code: number): number {
+  if (code === 9) printReplyCommand(sessionId);
   if (code === 1 || code === 6 || code === 130) printResumeCommand(sessionId);
   return code;
 }

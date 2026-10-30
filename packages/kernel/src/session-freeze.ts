@@ -299,6 +299,7 @@ function stageMapping(stage: StageSpec, version3 = false): Record<string, unknow
     depends_on: stage.dependsOn,
   };
   if (isRoleStage(stage)) mapped.role = stage.role;
+  if (stage.ask !== undefined) mapped.ask = stage.ask;
   if (stage.description !== null) mapped.description = stage.description;
   if (stage.instructions.length > 0) mapped.instructions = stage.instructions;
   if (stage.artifact !== null) mapped.produces = { artifact: stage.artifact };

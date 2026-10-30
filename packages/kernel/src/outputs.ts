@@ -38,7 +38,7 @@ export function sessionStatusAfterExecution(
   workflow: WorkflowDocument | null,
   stageId: string,
 ): string {
-  if (outcome && outcome.status === "blocked") return "blocked";
+  if (outcome && (outcome.status === "blocked" || outcome.status === "question")) return outcome.status;
   if (executionStatus === "cancelled") return "cancelled";
   if (previousStatus.workflow_id === "agent") {
     if (executionStatus === "completed" && outcome !== null && outcome.status === "complete") {

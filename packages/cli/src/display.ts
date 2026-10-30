@@ -27,6 +27,26 @@ export function printResumeCommand(sessionId: string): void {
   process.stderr.write(`Resume with:\nmigent session continue ${sessionId}\n`);
 }
 
+export function printReplyCommand(sessionId: string, stageId?: string): void {
+  const stage = stageId ? ` --stage ${stageId}` : "";
+  process.stderr.write(`Reply with:\nmigent session continue ${sessionId}${stage} --reply "<answer>"\n`);
+}
+
+export function formatQuestion(question: Record<string, unknown>): string {
+  const mode = question.selection === "multiple" ? "choose one or more" : "choose one";
+  const stage = typeof question.stage_id === "string" ? `; stage ${question.stage_id}` : "";
+  const number = String(question.id);
+  const lines = [`${number}. ${String(question.question)} (${mode}${stage})`, String(question.context)];
+  const recommended = Array.isArray(question.recommended) ? question.recommended : [];
+  for (const option of Array.isArray(question.options) ? question.options.filter(isRecord) : []) {
+    const note = recommended.includes(option.id) ? " (recommended)" : "";
+    lines.push(`  ${String(option.id)}. ${String(option.label)}${note}${option.description ? ` — ${String(option.description)}` : ""}`);
+  }
+  lines.push("  A free-text answer is always allowed.");
+  lines.push(`  Answer: ${number}${question.selection === "multiple" ? "A+B" : "A"} or ${number} <free text>.`);
+  return lines.join("\n");
+}
+
 export function printCreated(paths: readonly string[], summary: string): void {
   process.stdout.write("Created:\n");
   for (const filePath of paths) process.stdout.write(`  ${filePath}\n`);
@@ -90,6 +110,12 @@ export function printAgent(result: Record<string, unknown>, role: string, provid
     ["execution", String(result.execution_id ?? "")],
   ];
   for (const [label, value] of rows) process.stdout.write(`${label}  ${value}\n`);
+  if (result.outcome_status === "question") {
+    for (const question of Array.isArray(result.questions) ? result.questions.filter(isRecord) : []) {
+      process.stdout.write(`${formatQuestion(question)}\n`);
+    }
+    if (typeof result.questions_file === "string") process.stdout.write(`questions  ${result.questions_file}\n`);
+  }
 }
 
 export function printWatchSnapshot(snapshot: Record<string, unknown>): void {
@@ -124,6 +150,9 @@ export function printWatchSnapshot(snapshot: Record<string, unknown>): void {
       lines.push(["execution", value]);
     }
   }
+  if (typeof snapshot.blocker === "string" && snapshot.blocker) lines.push(["blocked", snapshot.blocker]);
+  const questions = Array.isArray(snapshot.questions) ? snapshot.questions.filter(isRecord) : [];
+  for (const item of questions) lines.push(["question", formatQuestion(item)]);
   const skippedStages = Array.isArray(snapshot.skipped_stages) ? snapshot.skipped_stages.filter(isRecord) : [];
   if (skippedStages.length > 0) {
     lines.push(["skipped", skippedStages.map((stage) => String(stage.stage_id ?? "")).join(", ")]);

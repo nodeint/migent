@@ -4,7 +4,7 @@ import { SESSION_COLUMN, sessionFields } from "../session-row.js";
 import { optionalText } from "../text.js";
 import { followSession } from "./watch.js";
 
-const SESSION_STATUSES = new Set(["active", "prepared", "completed", "blocked", "cancelled", "corrupt"]);
+const SESSION_STATUSES = new Set(["active", "prepared", "completed", "blocked", "question", "cancelled", "corrupt"]);
 
 export interface SessionListOptions {
   asJson?: boolean;
@@ -196,7 +196,7 @@ function parseListSelection(options: {
   const status = optionalText(options.status);
   if (options.status !== null && status === null) throw new ConfigurationError("--status is empty.");
   if (status !== null && !SESSION_STATUSES.has(status)) {
-    throw new ConfigurationError("--status must be active, prepared, completed, blocked, cancelled, or corrupt.");
+    throw new ConfigurationError("--status must be active, prepared, completed, blocked, question, cancelled, or corrupt.");
   }
   let limit: number | null = null;
   if (options.limit !== null) {

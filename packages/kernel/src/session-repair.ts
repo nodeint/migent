@@ -3,6 +3,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { writeJsonAtomic } from "./atomic-file.js";
 import { ConfigurationError } from "./errors.js";
+import { storedQuestions } from "./questions.js";
 import { sessionStatusAfterExecution } from "./outputs.js";
 import { sessionStatusFromExecutions, type StatusExecution } from "./session-ledger.js";
 import { isRecord } from "./record.js";
@@ -19,6 +20,7 @@ import {
 } from "./session-events.js";
 import {
   foldStatus,
+  writeQuestionsFile,
   loadFoldInputs,
   readSessionManifest,
   type FoldExecution,
@@ -88,6 +90,15 @@ export function repairSessionUnlocked(
   if (reasons.length > 0) throw new ConfigurationError(repairRefusalMessage(sessionId, reasons));
   if (torn) sealSessionEventLogs(sessionDirectory);
   for (const draft of drafts) appendLifecycleEvent(sessionDirectory, draft);
+  for (const execution of inputs.executions) {
+    if (execution.outcome?.status !== "question") continue;
+    writeJsonAtomic(path.join(sessionDirectory, "executions", execution.executionId, "questions.json"), {
+      schema_version: 1, stage_id: execution.stageId, execution_id: execution.executionId,
+      recipient: inputs.workflow?.stages[execution.stageId]?.ask ?? "human",
+      questions: storedQuestions(execution.outcome),
+    });
+  }
+  writeQuestionsFile(sessionDirectory, withDrafts(inputs, drafts));
   writeJsonAtomic(statusPath, folded);
   return folded;
 }
@@ -306,7 +317,7 @@ function stageOutcome(execution: FoldExecution): StageOutcome | null {
   if (!isRecord(outcome) || typeof outcome.status !== "string" || outcome.status === "") return null;
   const blocker = typeof outcome.blocker === "string" && outcome.blocker ? outcome.blocker : null;
   const decision = typeof outcome.decision === "string" && outcome.decision ? outcome.decision : null;
-  return new StageOutcome(outcome.status, blocker, decision);
+  return new StageOutcome(outcome.status, blocker, decision, typeof outcome.question === "string" ? outcome.question : null, storedQuestions(outcome));
 }
 
 function compareExecutions(left: FoldExecution, right: FoldExecution): number {
@@ -318,7 +329,7 @@ function compareExecutions(left: FoldExecution, right: FoldExecution): number {
 
 function manifestSessionStatus(manifestStatus: string | null): string {
   if (manifestStatus === "prepared") return "prepared";
-  if (manifestStatus === "completed" || manifestStatus === "blocked" || manifestStatus === "cancelled") {
+  if (manifestStatus === "completed" || manifestStatus === "blocked" || manifestStatus === "question" || manifestStatus === "cancelled") {
     return manifestStatus;
   }
   return "active";

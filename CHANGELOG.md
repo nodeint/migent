@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Stages can opt into human decisions with `ask: human` and return `status: question` with a structured JSON question batch. Session `questions.json` records all rounds, context, options, single/multiple selection modes, and answers; each execution keeps its original batch. Migent numbers questions and letters options in order, accepting short replies such as `1A, 2B, 3 explain further` or `2A+C` for multiple selections. Free-text answers are always allowed. Reply with `session continue --reply` or `--reply-file`, selecting `--stage` when needed. Answers are validated before dispatch. Questions stop only their branch, exit with code 9, and preserve artifacts and the remaining verification budget across replies. Standalone role sessions can ask the human too.
+
 ### Changed
 
 - Schema v3 declares each stage decision with `when` instructions for the agent and a `navigate` destination. `migent migrate` converts older values/routes while preserving existing stage instructions. Frozen sessions retain their original schema and behavior.

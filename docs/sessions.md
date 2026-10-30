@@ -176,6 +176,27 @@ quiet on a version 2 workflow.
 
 ## Inspect and resume
 
+Stages with `ask: human` can stop with outcome `question`. `session show` lists
+each pending question with its context, options, and `single`/`multiple`
+selection mode. The machine-readable session `questions.json` contains all
+rounds and their answers; each execution's `questions.json` preserves its
+original batch. Questions are identified by execution ID and question ID.
+These requests remain visible while independent branches run or another stage
+is blocked. A quiet session is `blocked` if any stage is blocked, otherwise
+`question` if an answer is pending. A question exits 9 and is not a failure.
+
+Questions are numbered from 1 in each stage's batch; options are lettered A, B,
+C, ... by order. Reply with `session continue <session-id> --reply "1A, 2B, 3 explain further"`.
+Multiple selections use `2A+C`. JSON objects mapping question numbers to letters,
+arrays, or text are also accepted through `--reply` or `--reply-file`. Invalid answers
+are rejected before dispatch. Free text is always allowed for every question;
+in a batch, use a text string as the question's value. Use `--stage`
+when more than one stage is waiting for a reply, including blocked stages.
+Continuing without a reply leaves questions pending. The reply creates a new
+execution in the same conversation, carries the declared artifact, and preserves
+the verification failures used before asking. Standalone role sessions can ask
+the human without workflow configuration and use the same reply command.
+
 ```bash
 migent session list
 migent session list --latest --json
