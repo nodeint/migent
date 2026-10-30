@@ -373,8 +373,8 @@ function syncModels(
     if (section === null) throw new ConfigEditError("Cannot edit models in this file.");
     const block = childBlock(section, key);
     if (block === null) throw new ConfigEditError(`Cannot edit models.${key} in this file.`);
-    syncScalar(lines, block, "provider", body.provider, `models.${key}.provider`, edits);
-    syncScalar(lines, block, "model", body.model, `models.${key}.model`, edits);
+    if (Object.hasOwn(body, "provider")) syncScalar(lines, block, "provider", body.provider, `models.${key}.provider`, edits);
+    if (Object.hasOwn(body, "model")) syncScalar(lines, block, "model", body.model, `models.${key}.model`, edits);
     syncOptions(lines, block, currentModels[key], body, key, unit, edits);
     dropRemovedScalars(block, currentModels[key], body, edits);
   }
@@ -413,7 +413,7 @@ function syncRoles(
           .split("\n").map((line) => " ".repeat(block.indent + unit) + line);
         edits.push([found.line, found.end, rendered]);
       }
-    } else {
+    } else if (Object.hasOwn(body, "default_model")) {
       syncScalar(lines, block, "default_model", body.default_model, `roles.${key}.default_model`, edits);
     }
     syncRoleOptions(lines, block, currentRoles[key], body, key, unit, edits);

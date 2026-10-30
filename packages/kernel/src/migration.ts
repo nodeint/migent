@@ -30,13 +30,14 @@ export function migrateConfig(
   config: Record<string, unknown>,
   providers: Readonly<Record<string, MigrationProvider>>,
   current = SCHEMA_VERSION,
+  context: Readonly<Record<string, unknown>> = config,
 ): string[] {
   let version = requireCurrent(documentVersion(config), current, "config");
   if (version === current) return [];
   const before = deepCopyRecord(config);
   while (version < current) {
-    migrateModels(config, providers, version);
-    migrateRoles(config, providers, version);
+    migrateModels(config, providers, version, context);
+    migrateRoles(config, providers, version, context);
     version += 1;
   }
   config[SCHEMA_VERSION_FIELD] = current;
@@ -191,12 +192,13 @@ function migrateModels(
   config: Record<string, unknown>,
   providers: Readonly<Record<string, MigrationProvider>>,
   version: number,
+  context: Readonly<Record<string, unknown>>,
 ): void {
   const models = config.models;
   if (!isRecord(models)) return;
-  for (const body of Object.values(models)) {
+  for (const [name, body] of Object.entries(models)) {
     if (!isRecord(body)) continue;
-    const provider = providerName(body.provider);
+    const provider = providerName(body.provider) ?? modelProvider(context, name);
     if (provider === null) continue;
     const impl = providers[provider];
     if (impl === undefined) continue;
@@ -208,12 +210,15 @@ function migrateRoles(
   config: Record<string, unknown>,
   providers: Readonly<Record<string, MigrationProvider>>,
   version: number,
+  context: Readonly<Record<string, unknown>>,
 ): void {
   const roles = config.roles;
   if (!isRecord(roles)) return;
-  for (const body of Object.values(roles)) {
+  for (const [name, body] of Object.entries(roles)) {
     if (!isRecord(body)) continue;
-    const provider = roleProvider(config, body);
+    const effectiveRoles = context.roles;
+    const effectiveRole = isRecord(effectiveRoles) ? effectiveRoles[name] : null;
+    const provider = roleProvider(context, Object.hasOwn(body, "default_model") ? body : isRecord(effectiveRole) ? effectiveRole : body);
     if (provider === null) continue;
     const impl = providers[provider];
     if (impl === undefined) continue;

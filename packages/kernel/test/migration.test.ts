@@ -605,3 +605,21 @@ stages:
     new ConfigurationError("migration left requires.decision in the workflow."),
   );
 });
+
+test("partial config migrations resolve providers from the other config layer", () => {
+  const context = {
+    models: { shared: { provider: "codex", model: "test" } },
+    roles: { developer: { default_model: "shared" } },
+  };
+  const local = {
+    models: { shared: { thinking: "high" } },
+    roles: { developer: { thinking: "medium" } },
+  };
+  const move = (body: Record<string, unknown>) => {
+    body.options = { model_reasoning_effort: body.thinking };
+    delete body.thinking;
+  };
+  migrateConfig(local, { codex: { modelMigrations: { 0: move }, roleMigrations: { 0: move }, stageMigrations: {} } }, 4, context);
+  expect(local.models.shared).toEqual({ options: { model_reasoning_effort: "high" } });
+  expect(local.roles.developer).toEqual({ options: { model_reasoning_effort: "medium" } });
+});
