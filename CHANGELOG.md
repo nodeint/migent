@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.3.1
+
 ### Fixed
 
 - Release tags are validated on `next`; `main` advances to the exact tagged commit only after all four npm packages and the installed CLI are verified.
@@ -61,24 +63,9 @@
 
 - In version 2 workflows, a route back to a completed stage (for example `review_tests: fix_production -> implement`) now dispatches that stage and then its dependents. Before, a forward decision from a router between them blocked it, and the session ran or completed the next stage instead.
 
-## 0.1.10
-
-### Changed
-
-- `init` now writes shared aliases to `.migent/config.yaml` (`code_generation` for `implement`; `deep_reasoning` and `critical_review` for `plan`) as empty entries, and this machine's provider, model, and `--option` values to `.migent/config.local.yaml`. Projects created before this change keep working; `init` does not rewrite them. A lone `config.local.yaml` is treated like a partial project and stops init.
-- `init` prints the chosen provider and model and a `migent session run --workflow <preset> --task "<what you want done>"` command. A missing `--provider` or `--model` error includes a full example. `init` still never starts a model.
-- `doctor` reports every model alias that has no provider and model in one message with the YAML to add to `.migent/config.local.yaml`, instead of one `provider is required` problem per role and stage.
-- `migent config` is read-only. `--json` prints `{config, local}`, and the stderr note lists the models `config.local.yaml` sets.
-- `skill install` picks the project's clients from the merged config.
-
-- Documentation, the `plan` workflow written by `init`, and this repository's workflows use `snake_case` ids (`review_plan`, `review_work`). Hyphenated ids still work; existing projects and sessions are unchanged. The docs now state the naming rule.
-
-### Removed
-
-- `config show`, `config model`, and `config role`. They exit 2 and print the replacement: edit `.migent/config.yaml` or `.migent/config.local.yaml`, then run `migent doctor`. Scripts that used `config model --json` or `config role --json` should read `migent config --json` and edit the YAML.
-
 ## Older versions
 
+- [0.1.10](https://github.com/nodeint/migent/releases/tag/v0.1.10)
 - [0.1.9](https://github.com/nodeint/migent/releases/tag/v0.1.9)
 - [0.1.8](https://github.com/nodeint/migent/releases/tag/v0.1.8)
 - [0.1.7](https://github.com/nodeint/migent/releases/tag/v0.1.7)
