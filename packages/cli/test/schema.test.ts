@@ -32,6 +32,7 @@ const CONFIG_KEYS = [
 ];
 const WORKFLOW_KEYS = [
   "artifact",
+  "artifacts",
   "ask",
   "changed_paths",
   "completion",
@@ -40,6 +41,7 @@ const WORKFLOW_KEYS = [
   "decision",
   "depends_on",
   "description",
+  "downstream",
   "from_stage",
   "id",
   "instructions",
@@ -60,6 +62,7 @@ const WORKFLOW_KEYS = [
   "session",
   "stage",
   "stages",
+  "task",
   "values",
   "verify",
   "verify_timeout",
@@ -75,7 +78,7 @@ test("config reference parses and names every key the config parser reads", () =
     mkdirSync(path.dirname(configPath), { recursive: true });
     writeFileSync(configPath, text, "utf8");
     const config = loadYamlMapping(configPath);
-    expect(documentVersion(config)).toBe(3);
+    expect(documentVersion(config)).toBe(4);
     expect(loadModelTarget(config, "deep_reasoning", createProviderResolver(defaultProviders()))).toEqual({
       provider: "grok",
       model: "grok-4.7",
@@ -108,12 +111,13 @@ test("workflow reference parses and names every key the workflow parser reads", 
   const text = readFileSync(path.join(TEMPLATES, "schema-workflow.yaml"), "utf8");
   const filePath = path.join(TEMPLATES, "schema-workflow.yaml");
   const document = loadWorkflowDocument(filePath);
-  expect(documentVersion(loadYamlMapping(filePath))).toBe(3);
-  expect(document.schemaVersion).toBe(3);
+  expect(documentVersion(loadYamlMapping(filePath))).toBe(4);
+  expect(document.schemaVersion).toBe(4);
   expect(document.concurrency).toBe(1);
   expect(document.id).toBe("reference");
   expect(document.constraints).toEqual(["Stay within the task."]);
-  expect(document.requires).toEqual({ workflow: "plan", decision: null });
+  expect(document.requires).toBeNull();
+  expect(document.downstream).toEqual([{ workflow: "implement", task: "Implement the approved draft.", artifacts: { plan: "draft" } }]);
   expect(document.stages.prepare).toMatchObject({
     kind: "verify",
     role: null,
@@ -162,8 +166,8 @@ test("workflow reference parses and names every key the workflow parser reads", 
   const scanned = new Set(parserKeys(readFileSync(WORKFLOW_PARSER, "utf8"), "workflow"));
   scanned.add("schema_version");
   expect([...scanned].sort()).toEqual(WORKFLOW_KEYS);
-  const sampleKeys = WORKFLOW_KEYS.filter((key) => !["completion", "stage", "values", "routes"].includes(key));
-  expect(yamlKeys(text)).toEqual([...sampleKeys, "approved", "reasoning-effort", "revise"].sort());
+  const sampleKeys = WORKFLOW_KEYS.filter((key) => !["completion", "requires", "stage", "values", "routes"].includes(key));
+  expect(yamlKeys(text)).toEqual([...sampleKeys, "approved", "plan", "reasoning-effort", "revise"].sort());
 });
 
 function parserKeys(source: string, kind: "config" | "workflow"): string[] {
@@ -179,6 +183,7 @@ function parserKeys(source: string, kind: "config" | "workflow"): string[] {
     for (const match of source.matchAll(/\bdata\.(stages|completion|requires|outputs|concurrency)\b/g)) keys.add(match[1] ?? "");
     for (const match of source.matchAll(/\bdecision\.(values|routes)\b/g)) keys.add(match[1] ?? "");
     if (source.includes("body.navigate")) keys.add("navigate");
+    if (source.includes("entry.artifacts")) keys.add("artifacts");
     for (const match of source.matchAll(/\braw\.outputs\b/g)) keys.add("outputs");
   }
   keys.delete("");

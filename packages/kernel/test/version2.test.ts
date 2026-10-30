@@ -236,6 +236,7 @@ class StatusProvider extends ScriptedProvider {
   }
 }
 
+// Eight sequential wrapper/provider launches need more time on Windows CI.
 test("a route back to a completed stage dispatches it and its dependents", async () => {
   const workspace = workspaceFor("fixback", FIX_BACK);
   const sessionId = createWorkflowSession(workspace, "fixback", "Fix back");
@@ -274,7 +275,7 @@ test("a route back to a completed stage dispatches it and its dependents", async
   const next = events.slice(fixIndex + 1).find((event) => event.event === "execution.started");
   expect(next!.stage_id).toBe("implement");
   expect(next!.data.stage_attempt).toBe(2);
-});
+}, 30_000);
 
 test("a prepared session captures its baseline at the first dispatch, not at prepare", async () => {
   const workspace = workspaceFor("solo", `schema_version: 2\nid: solo\nstages:\n  - id: a\n    role: developer\n`);

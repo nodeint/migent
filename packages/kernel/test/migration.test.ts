@@ -130,12 +130,12 @@ test("version steps follow each model's provider", () => {
   const grok = new StepProvider();
   const codex = new StepProvider();
   const notes = migrateConfig(config, { grok, codex });
-  expect(notes[0]).toBe("schema_version -> 3");
+  expect(notes[0]).toBe("schema_version -> 4");
   expect(grok.models).toEqual(["grok-4.6"]);
   expect(codex.models).toEqual(["gpt-5.6-terra"]);
   expect(grok.roles).toEqual(["grok"]);
   expect(codex.roles).toEqual(["gpt-terra"]);
-  expect(config.schema_version).toBe(3);
+  expect(config.schema_version).toBe(4);
   const workflow = {
     id: "plan",
     stages: [
@@ -149,7 +149,7 @@ test("version steps follow each model's provider", () => {
 });
 
 test("current version is left alone", () => {
-  const config = { schema_version: "3", models: {}, roles: {} };
+  const config = { schema_version: "4", models: {}, roles: {} };
   const grok = new StepProvider();
   expect(migrateConfig(config, { grok })).toEqual([]);
   expect(grok.models).toEqual([]);
@@ -162,14 +162,14 @@ test("an unknown provider is skipped and the version still advances", () => {
     roles: {},
   };
   const notes = migrateConfig(config, {});
-  expect(notes).toEqual(["schema_version -> 3"]);
+  expect(notes).toEqual(["schema_version -> 4"]);
   expect(mapping(mapping(mapping(config.models).custom).options).thinking).toBe("medium");
-  expect(config.schema_version).toBe(3);
+  expect(config.schema_version).toBe(4);
 });
 
 test("newer version is rejected", () => {
-  expect(() => migrateConfig({ schema_version: 4 }, {})).toThrow(
-    new ConfigurationError("config schema_version 4 is newer than this Migent (3)."),
+  expect(() => migrateConfig({ schema_version: 5 }, {})).toThrow(
+    new ConfigurationError("config schema_version 5 is newer than this Migent (4)."),
   );
 });
 
@@ -191,7 +191,7 @@ test("thinking moves to the provider option and keeps the file", () => {
   const rewritten = patchConfigText(LEGACY, config);
   const parsed = loadYamlMapping(writeConfig(rewritten));
   expect(parsed.version).toBe("1.0");
-  expect(parsed.schema_version).toBe(3);
+  expect(parsed.schema_version).toBe(4);
   expect(mapping(mapping(mapping(parsed.models).grok).options)["reasoning-effort"]).toBe("medium");
   expect(rewritten).not.toContain("thinking");
   expect(rewritten).toContain("# project");
@@ -211,8 +211,8 @@ test("workflow stage keeps instructions and records its version", () => {
   const document = loadWorkflowDocument(writeConfig(rewritten));
   expect(document.stages.plan?.options).toEqual({ "reasoning-effort": "high" });
   expect(document.stages.review?.options).toEqual({ model_reasoning_effort: "low" });
-  expect(rewritten).toContain("schema_version: 3");
-  expect(document.schemaVersion).toBe(3);
+  expect(rewritten).toContain("schema_version: 4");
+  expect(document.schemaVersion).toBe(4);
   expect(document.completion).toBeNull();
 });
 
@@ -380,16 +380,16 @@ roles:
       - Do not commit or push. Run the tests that work names and fix failures your change caused before you report complete.
 `;
 
-test("repo plan and implement workflows migrate to version 3", () => {
+test("repo plan and implement workflows migrate to version 4", () => {
   const planBefore = loadWorkflowDocument(writeConfig(PLAN_V1));
   const planParsed = mapping(parseYamlDocument(PLAN_V1));
   const planNotes = migrateWorkflow(planParsed, { models: {}, roles: {} });
-  expect(planNotes).toContain("schema_version -> 3");
+  expect(planNotes).toContain("schema_version -> 4");
   expect(planNotes).toContain("completion removed");
   expect(planNotes).toContain("completion.outputs -> outputs");
   const planText = patchWorkflowText(PLAN_V1, planParsed);
   const planAfter = loadWorkflowDocument(writeConfig(planText));
-  expect(planAfter.schemaVersion).toBe(3);
+  expect(planAfter.schemaVersion).toBe(4);
   expect(planAfter.completion).toBeNull();
   expect(planAfter.concurrency).toBe(1);
   expect(planAfter.requires).toBeNull();
@@ -405,9 +405,9 @@ test("repo plan and implement workflows migrate to version 3", () => {
   expect(implementNotes).toContain("completion.outputs -> outputs");
   const implementText = patchWorkflowText(IMPLEMENT_V1, implementParsed);
   const implementAfter = loadWorkflowDocument(writeConfig(implementText));
-  expect(implementAfter.schemaVersion).toBe(3);
+  expect(implementAfter.schemaVersion).toBe(4);
   expect(implementAfter.completion).toBeNull();
-  expect(implementAfter.requires).toEqual({ workflow: "plan", decision: null });
+  expect(implementAfter.requires).toBeNull();
   expect(implementAfter.outputs).toEqual([
     { name: "implementation", fromStage: "implement", artifact: "implementation.md" },
   ]);
@@ -417,11 +417,11 @@ test("repo plan and implement workflows migrate to version 3", () => {
   );
 });
 
-test("config version 3 changes nothing but the version", () => {
+test("config version 4 changes nothing but the version", () => {
   const parsed = loadYamlMapping(writeConfig(CONFIG_V1));
   const notes = migrateConfig(parsed, {});
-  expect(notes).toEqual(["schema_version -> 3"]);
-  expect(patchConfigText(CONFIG_V1, parsed)).toBe(CONFIG_V1.replace("schema_version: 1\n", "schema_version: 3\n"));
+  expect(notes).toEqual(["schema_version -> 4"]);
+  expect(patchConfigText(CONFIG_V1, parsed)).toBe(CONFIG_V1.replace("schema_version: 1\n", "schema_version: 4\n"));
 });
 
 test("a route to complete from another stage or decision is refused", () => {
@@ -473,7 +473,7 @@ completion:
   );
 });
 
-test("folded, flow, and quoted requires.decision migrate to version 3", () => {
+test("folded, flow, and quoted requires.decision migrate to version 4", () => {
   const folded = `\
 schema_version: 1
 id: check
@@ -509,12 +509,10 @@ stages:
     const text = patchWorkflowText(original, updated);
     const parsed = mapping(parseYamlDocument(text));
     const document = parseWorkflowMapping(parsed, "check.yaml");
-    expect(document.requires).toEqual({ workflow: "plan", decision: null });
+    expect(document.requires).toBeNull();
     expect(document.completion).toBeNull();
     expect(parsed).not.toHaveProperty("completion");
-    const requires = mapping(parsed.requires);
-    expect(requires.workflow).toBe("plan");
-    expect(requires).not.toHaveProperty("decision");
+    expect(parsed).not.toHaveProperty("requires");
   }
 });
 
@@ -574,12 +572,9 @@ stages:
     const text = patchWorkflowText(original, updated);
     const parsed = mapping(parseYamlDocument(text));
     const document = parseWorkflowMapping(parsed, "check.yaml");
-    expect(document.requires).toEqual({ workflow: "plan", decision: null });
-    const requires = mapping(parsed.requires);
-    expect(requires.workflow).toBe("plan");
-    expect(requires).not.toHaveProperty("decision");
-    expect(requires).not.toHaveProperty("approved");
-    expect(requires).not.toHaveProperty("note");
+    expect(document.requires).toBeNull();
+    expect(parsed).not.toHaveProperty("requires");
+
   }
 });
 

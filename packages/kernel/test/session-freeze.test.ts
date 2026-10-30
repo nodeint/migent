@@ -282,9 +282,8 @@ test("refresh does not start a prepared session", async () => {
   const workspace = workspaceWithFlow();
   const sessionId = createPreparedSession(workspace, "wave-3", "flow");
   const freezePath = path.join(sessionDirectory(workspace, sessionId), WORKFLOW_FREEZE_FILE);
-  const freeze = readFileSync(freezePath, "utf8");
   await expect(executeNamedWorkflow(workspace, { sessionId, refreshWorkflow: true })).rejects.toThrow(/is prepared/);
-  expect(readFileSync(freezePath, "utf8")).toBe(freeze);
+  expect(existsSync(freezePath)).toBe(false);
 });
 
 test("an agent session has no frozen workflow", async () => {

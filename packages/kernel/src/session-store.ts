@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { publishNextSuggestions } from "./next-handoff.js";
 import {
   copyFileSync,
   existsSync,
@@ -937,6 +938,7 @@ export class SessionStore {
     ) {
       sealSessionMetrics(this.workspace, context.sessionId, this.metricsProviders);
     }
+    if (plan.sessionStatus === "completed") publishNextSuggestions(this.workspace, context.sessionId);
     if (plan.outputsMissing.length > 0) throw new OutputsMissing(plan.outputsMissing);
   }
 

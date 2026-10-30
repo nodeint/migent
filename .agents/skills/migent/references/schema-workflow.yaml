@@ -1,5 +1,5 @@
 # Workflow configuration. Validate with migent doctor --json after editing.
-schema_version: 3
+schema_version: 4
 concurrency: 1
 
 # Optional; defaults to the file name without .yaml.
@@ -8,9 +8,6 @@ id: reference
 constraints:
   - Stay within the task.
 
-# Optional prerequisite workflow from .migent/workflows/.
-requires:
-  workflow: plan
 
 stages:
   - id: prepare
@@ -80,3 +77,11 @@ outputs:
   - name: draft
     from_stage: draft
     artifact: draft.md
+
+# Optional suggestions, available after successful completion. No automatic dispatch.
+# Each target workflow appears once. Keys name context at the destination; values name outputs above.
+downstream:
+  - workflow: implement
+    task: Implement the approved draft.
+    artifacts:
+      plan: draft

@@ -99,10 +99,10 @@ test("writes inline role models and both working presets", async () => {
     const workflow = readFileSync(path.join(workspace, ".migent", "workflows", "implement.yaml"), "utf8");
     const gitignore = readFileSync(path.join(workspace, ".migent", ".gitignore"), "utf8");
     expect(captured.value).toBe(0);
-    expect(config).toContain("schema_version: 3");
-    expect(workflow).toContain("schema_version: 3");
+    expect(config).toContain("schema_version: 4");
+    expect(workflow).toContain("schema_version: 4");
     expect(loadWorkspaceConfig(workspace)).toMatchObject({
-      schema_version: 3,
+      schema_version: 4,
       roles: {
         developer: { default_model: { provider: "codex", model: "gpt-5" } },
         planner: { default_model: { provider: "codex", model: "gpt-5" } },

@@ -108,7 +108,7 @@ to inspect the effective settings. Read only the reference needed for the task:
 | [config.md](references/config.md) | Models, roles, machine setup, and running one role. |
 | [schema-config.yaml](references/schema-config.yaml) | Writing configuration. |
 | [schema-workflow.yaml](references/schema-workflow.yaml) | Writing workflows. |
-| [sessions.md](references/sessions.md) | Prerequisites, multiple blockers, limits, and adopting workflow changes. |
+| [sessions.md](references/sessions.md) | Prior context, downstream suggestions, multiple blockers, limits, and adopting workflow changes. |
 | [inspect.md](references/inspect.md) | Filtering sessions, metrics, and live progress. |
 
 Use `migent <command> --help` before using an unfamiliar flag.

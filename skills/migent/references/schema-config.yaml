@@ -1,5 +1,5 @@
 # Project configuration. Validate with migent doctor --json after editing.
-schema_version: 3
+schema_version: 4
 
 # Named models can be shared by roles and stages.
 # Use an available provider and model ID from migent provider list --json.

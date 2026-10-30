@@ -596,7 +596,7 @@ function countByExecution(events: ParsedEvent[], name: string, known: Set<string
 
 function workflowHash(events: ParsedEvent[]): string | null {
   for (const event of events) {
-    if (event.event === "session.created" && typeof event.data.hash === "string") return event.data.hash;
+    if ((event.event === "session.created" || event.event === "handoff.bound") && typeof event.data.hash === "string") return event.data.hash;
   }
   return null;
 }

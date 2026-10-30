@@ -446,3 +446,18 @@ the session status is completed (0), blocked (1), or cancelled (130).
 A role run prints its new session id on stderr as soon as the session exists.
 `--json` prints one result object on stdout. Without `--json` the result is a
 table. Use `--file PATH` or `--stdin` instead of `--prompt`.
+
+## Downstream suggestions and prior context
+
+A completed workflow with `downstream` prints a `next.json` path and commands
+ready to copy. Run a suggestion using the existing flag:
+
+```bash
+migent session run --workflow implement --prior <completed-session-id>
+```
+
+A matching suggestion supplies task and named artifacts. `--task` overrides its
+task. Without a matching suggestion, provide `--task`; all prior published outputs
+become context. Workflows can always run independently without `--prior`.
+Prepared sessions freeze current workflow/configuration and prior artifacts at
+`run`, allowing manual edits before starting. No downstream is started automatically.

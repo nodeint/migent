@@ -66,9 +66,16 @@ export interface WorkflowCompletion {
   outputs: WorkflowOutput[];
 }
 
+/** Historical schema <=3 only; retained for frozen-session compatibility. */
 export interface WorkflowRequires {
   workflow: string;
   decision: string | null;
+}
+
+export interface WorkflowDownstream {
+  workflow: string;
+  task: string;
+  artifacts: Record<string, string>;
 }
 
 export interface WorkflowDocument {
@@ -82,10 +89,11 @@ export interface WorkflowDocument {
   schemaVersion?: number;
   concurrency?: number;
   outputs?: WorkflowOutput[];
+  downstream?: WorkflowDownstream[];
 }
 
 /** Accepted workflow and config document version. */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 export function isWorkflowV2(workflow: WorkflowDocument | null | undefined): boolean {
   return (workflow?.schemaVersion ?? 1) >= 2;
@@ -158,6 +166,7 @@ const workflowDocumentSchema = z.object({
   schemaVersion: z.number().int().nonnegative().optional(),
   concurrency: z.number().int().positive().optional(),
   outputs: z.array(workflowOutputSchema).optional(),
+  downstream: z.array(z.object({ workflow: z.string(), task: z.string(), artifacts: z.record(z.string(), z.string()) })).optional(),
 });
 
 export function workflowsDirectory(workspace: string): string {
@@ -207,6 +216,9 @@ export function loadWorkflowCatalog(workspace: string): WorkflowCatalog {
     if (document.requires !== null) {
       checkRequires(workflowId, document.requires, documents, failedIds, problems);
     }
+    for (const next of document.downstream ?? []) {
+      if (!Object.hasOwn(documents, next.workflow)) problems.push(`${workflowId}: downstream workflow ${next.workflow} is not in .migent/workflows.`);
+    }
   }
   return { documents, problems };
 }
@@ -234,6 +246,12 @@ export function parseWorkflowMapping(data: Record<string, unknown>, source: stri
     );
   }
   const version2 = schemaVersion >= 2;
+  if (schemaVersion >= 4 && Object.hasOwn(data, "requires")) {
+    throw new ConfigurationError("requires was removed in schema_version 4. Run `migent migrate`; use --prior for context and downstream for suggestions.");
+  }
+  if (schemaVersion < 4 && Object.hasOwn(data, "downstream")) {
+    throw new ConfigurationError("downstream requires schema_version 4.");
+  }
   if (version2 && Object.hasOwn(data, "completion") && data.completion != null) {
     throw new ConfigurationError("schema_version 2 does not allow completion. Run `migent migrate`.");
   }
@@ -256,6 +274,37 @@ export function parseWorkflowMapping(data: Record<string, unknown>, source: stri
     schemaVersion,
     ...(concurrency === undefined ? {} : { concurrency }),
     ...(outputs === undefined ? {} : { outputs }),
+    ...(schemaVersion >= 4 ? { downstream: parseDownstream(data.downstream, outputs ?? []) } : {}),
+  });
+}
+
+function parseDownstream(raw: unknown, outputs: readonly WorkflowOutput[]): WorkflowDownstream[] {
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw)) throw new ConfigurationError("downstream must be a list.");
+  const seen = new Set<string>();
+  return raw.map((entry) => {
+    if (!isRecord(entry)) throw new ConfigurationError("downstream entries must be mappings.");
+    for (const key of Object.keys(entry)) {
+      if (!["workflow", "task", "artifacts"].includes(key)) throw new ConfigurationError(`Unknown downstream field: ${key}.`);
+    }
+    const workflow = requiredString(entry.workflow, "downstream.workflow");
+    if (isPathReference(workflow)) throw new ConfigurationError("downstream.workflow must be a workflow id, not a path.");
+    if (seen.has(workflow)) throw new ConfigurationError(`Duplicate downstream workflow: ${workflow}.`);
+    seen.add(workflow);
+    const task = requiredString(entry.task, "downstream.task");
+    if (typeof entry.task === "string" && /[\r\n]/.test(entry.task)) throw new ConfigurationError("downstream.task must be a single line.");
+    const mapping = entry.artifacts === undefined ? {} : entry.artifacts;
+    if (!isRecord(mapping)) throw new ConfigurationError("downstream.artifacts must be a mapping.");
+    const artifacts: Record<string, string> = {};
+    for (const [name, source] of Object.entries(mapping)) {
+      if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(name) || name === "__proto__" || name === "constructor" || name === "prototype") {
+        throw new ConfigurationError(`Invalid downstream artifact name: ${name}.`);
+      }
+      const output = requiredString(source, `downstream.artifacts.${name}`);
+      if (!outputs.some((item) => item.name === output)) throw new ConfigurationError(`downstream.artifacts.${name}: unknown output ${output}.`);
+      artifacts[name] = output;
+    }
+    return { workflow, task, artifacts };
   });
 }
 

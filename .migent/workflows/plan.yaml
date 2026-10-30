@@ -1,4 +1,4 @@
-schema_version: 3
+schema_version: 4
 id: plan
 constraints:
   - Do not write implementation code.
@@ -36,3 +36,9 @@ outputs:
   - name: plan
     from_stage: plan
     artifact: plan.md
+
+downstream:
+  - workflow: implement
+    task: Implement the approved plan.
+    artifacts:
+      plan: plan

@@ -1,4 +1,5 @@
-import { loadYamlMapping } from "@nodeint/migent-kernel";
+import { activatePreparedSession, createProviderResolver, loadYamlMapping } from "@nodeint/migent-kernel";
+import { defaultProviders } from "@nodeint/migent-adapters";
 import { cpSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -18,7 +19,7 @@ function writeProject(workspace: string): void {
   const workflows = path.join(workspace, ".migent", "workflows");
   mkdirSync(workflows, { recursive: true });
   const config = `\
-schema_version: 3
+schema_version: 4
 models:
   planner-model:
     provider: codex
@@ -81,7 +82,7 @@ test("doctor stops when the schema is outdated", async () => {
   try {
     writeProject(workspace);
     const configPath = path.join(workspace, ".migent", "config.yaml");
-    const original = readFileSync(configPath, "utf8").replace("schema_version: 3\n", "");
+    const original = readFileSync(configPath, "utf8").replace("schema_version: 4\n", "");
     writeFileSync(configPath, original, "utf8");
     const captured = await capture(() => main(["doctor"], workspace));
     expect(captured.value).toBe(2);
@@ -230,6 +231,8 @@ test("doctor and session prepare resolve model effort through adapter clients", 
     const prepared = await capture(() => main(["session", "prepare", "effort test", "--workflow", "plan"], workspace));
     expect(prepared.value).toBe(0);
     const { session_id } = JSON.parse(prepared.stdout) as { session_id: string };
+    writeFileSync(path.join(workspace, ".migent", "sessions", session_id, "task.md"), "Check effort at start\n");
+    activatePreparedSession(workspace, session_id, createProviderResolver(defaultProviders()));
     const frozen = loadYamlMapping(path.join(workspace, ".migent", "sessions", session_id, "workflow.frozen.yaml"));
     const targets = Object.values(frozen.targets as Record<string, { provider: string; options: Record<string, string> }>);
     expect(targets).toEqual(expect.arrayContaining([

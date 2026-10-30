@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { writeJsonAtomic } from "./atomic-file.js";
+import { publishNextSuggestions } from "./next-handoff.js";
 import { ConfigurationError } from "./errors.js";
 import { storedQuestions } from "./questions.js";
 import { sessionStatusAfterExecution } from "./outputs.js";
@@ -100,6 +101,7 @@ export function repairSessionUnlocked(
   }
   writeQuestionsFile(sessionDirectory, withDrafts(inputs, drafts));
   writeJsonAtomic(statusPath, folded);
+  if (folded.status === "completed") publishNextSuggestions(workspace, sessionId);
   return folded;
 }
 

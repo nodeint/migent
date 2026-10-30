@@ -8,6 +8,8 @@ import {
   log,
   SessionStore,
   type ExecuteResult,
+  publishNextSuggestions,
+  formatNextCommand,
 } from "@nodeint/migent-kernel";
 import { printResumeCommand, printReplyCommand, formatQuestion } from "../display.js";
 import { cliHooks } from "../hooks.js";
@@ -83,6 +85,9 @@ function printResult(workspace: string, result: ExecuteResult): void {
     for (const filePath of artifactPaths(workspace, result.sessionId, result.outputs)) {
       log(`artifact: ${filePath}`);
     }
+    const suggestions = publishNextSuggestions(workspace, result.sessionId);
+    if (suggestions.path) log(`next: ${suggestions.path}`);
+    for (const next of suggestions.next) log(formatNextCommand(next.argv));
     return;
   }
   const questions = result.sessionId === "" ? [] : new SessionStore(workspace).questionStages(result.sessionId);

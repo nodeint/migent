@@ -283,6 +283,10 @@ function version2WorkflowMapping(workflow: WorkflowDocument): Record<string, unk
     requires: workflow.requires === null ? null : { workflow: workflow.requires.workflow },
   };
   const outputs = workflow.outputs ?? [];
+  if ((workflow.schemaVersion ?? 2) >= 4) {
+    delete mapped.requires;
+    if (workflow.downstream?.length) mapped.downstream = workflow.downstream;
+  }
   if (outputs.length > 0) {
     mapped.outputs = outputs.map((output) => ({
       name: output.name,

@@ -22,7 +22,7 @@ import { PACKAGE_VERSION } from "./version.js";
 import { findWorkspace, invocationCwdPath } from "./workspace.js";
 
 const PRIOR_HELP =
-  "Completed session with the workflow id and decision named in requires. Checked before outputs are injected.";
+  "Completed session whose outputs provide context. A matching downstream suggestion supplies the task and named artifacts.";
 const PROGRESS_HELP =
   "Print each tool call when it finishes. The default prints one line when a stage starts and one when it finishes.";
 const VERBOSE_HELP =
@@ -498,7 +498,7 @@ function runSessionCommand(options: OptionValues): number | Promise<number> {
       printError("Pass --workflow and --task, or --session and --workflow, not both.");
       return 2;
     }
-    if (!prepared && task === null) {
+    if (!prepared && task === null && options.prior === undefined) {
       printError("Pass --task.");
       return 2;
     }

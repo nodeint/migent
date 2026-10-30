@@ -460,7 +460,7 @@ test("session metrics leaves a corrupt sealed file in place", async () => {
 });
 
 const FIXBACK = `\
-schema_version: 3
+schema_version: 4
 id: fixback
 stages:
   - id: implement

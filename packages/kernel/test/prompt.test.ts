@@ -129,7 +129,7 @@ test("populated prompt matches the template snapshot", () => {
       "Instructions:\n- Implement production code only.\n- Do not add or modify test code.",
       "Constraints:\n- Do not write implementation code.\n- Do not infer decisions from review prose.",
       `Upstream artifacts on this session:\n- plan: ${planPath}`,
-      `Required prior workflow result:\n- session: prior-1\n- outputs: ${priorPath}`,
+      `Prior session context:\n- session: prior-1\n- plan: ${priorPath}`,
       "Write the file artifact as `implementation-result.md` in the execution artifacts directory.",
     ].join("\n\n"),
   );
