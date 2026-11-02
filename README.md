@@ -1,7 +1,7 @@
 # Migent
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/nodeint/migent/main/assets/stylized-m.svg" alt="Migent logo" width="150" /><br>
+  <img src="https://raw.githubusercontent.com/nodeint/migent/main/assets/migent.svg" alt="Migent logo" width="150" /><br>
   <strong>Compose AI coding agents into repeatable engineering workflows.
 </strong>
 </p>
