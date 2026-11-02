@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, test } from "vitest";
@@ -22,7 +22,7 @@ const workflow = parseWorkflowMapping({
 }, "neutral.yaml");
 
 function fixture() {
-  const root = mkdtempSync(path.join(tmpdir(), "migent-baseline-"));
+  const root = realpathSync(mkdtempSync(path.join(tmpdir(), "migent-baseline-"))); // macOS tmp is a symlink; prompts print resolved paths
   const session = path.join(root, ".migent", "sessions", "s1");
   const execution = (name: string, artifacts: boolean) => {
     const dir = path.join(session, "executions", name);
