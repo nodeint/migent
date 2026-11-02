@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import {
   AgentToolRunner,
   ConfigurationError,
@@ -12,6 +12,9 @@ import {
 import { repairSession } from "../src/session-repair.ts";
 import { VerifyRunner } from "../src/verify-runner.ts";
 import { ScriptedProvider, tempDir } from "./support.ts";
+
+// Each flow runs several git-backed stages; Windows runners exceed the 10s default.
+vi.setConfig({ testTimeout: 60_000 });
 
 const CONFIG = `\
 models:
