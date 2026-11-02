@@ -10,7 +10,7 @@ for (const example of contracts) {
     expect(renderProviderPrompt(example.body, {
       contract: true, ask: example.ask, decisionValues: example.values,
       decisionInstructions: example.instructions, artifactDirectory: example.directory,
-      artifactName: example.artifact,
+      artifactName: example.artifact, questionFile: example.questionFile,
     })).toBe(example.output);
   });
 }

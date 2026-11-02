@@ -56,10 +56,12 @@ Workflow stage response contract:
 Start the final response with \`status: complete\`, \`status: blocked\`, or \`status: question\`.
 \`complete\`: the stage finished this turn's work. \`question\`: an answer is needed before the stage can continue. \`blocked\`: an obstacle this turn cannot resolve.
 When blocked, put \`blocker: <concise reason>\` on the next line.
-To ask the human, return \`status: question\`, a blank line, then a JSON document:
+To ask the human, write the question document to the question request file, then return \`status: question\`. The response body is a report; do not put question JSON in it.
+Question request file: <QFILE>
+The file holds one JSON document:
 \`{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","options":[{"label":"..."}]}]}\`
 Example: {"schema_version":1,"questions":[{"question":"Include existing sessions?","context":"Migration adds work.","selection":"single","options":[{"label":"New sessions only"},{"label":"Include existing sessions"}]}]}
-Every question needs 2 to 26 options. Optional: option.description and question.recommended (array of option IDs; at most one for single selection). Omit IDs; Migent assigns them by order. Free-text answers are always allowed. Never choose on the recipient's behalf. Put every choice and its explanation in the JSON, not in prose. You may ask several questions in one document; every question must be answered before the stage continues. Do not choose a decision while asking.
+Every question needs 2 to 26 options. Optional: option.description and question.recommended (array of option IDs; at most one for single selection). Omit IDs; Migent assigns them by order. Free-text answers are always allowed. Never choose on the recipient's behalf. Put every choice and its explanation in the file, not in prose. You may ask several questions in one document; every question must be answered before the stage continues. Do not choose a decision while asking. Migent reads the file only when the status is \`question\`.
 
 Use a blank line before the report body.
 
@@ -84,10 +86,12 @@ Workflow stage response contract:
 Start the final response with \`status: complete\`, \`status: blocked\`, or \`status: question\`.
 \`complete\`: the stage finished this turn's work. \`question\`: an answer is needed before the stage can continue. \`blocked\`: an obstacle this turn cannot resolve.
 When blocked, put \`blocker: <concise reason>\` on the next line.
-To ask the human, return \`status: question\`, a blank line, then a JSON document:
+To ask the human, write the question document to the question request file, then return \`status: question\`. The response body is a report; do not put question JSON in it.
+Question request file: <QFILE>
+The file holds one JSON document:
 \`{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","options":[{"label":"..."}]}]}\`
 Example: {"schema_version":1,"questions":[{"question":"Include existing sessions?","context":"Migration adds work.","selection":"single","options":[{"label":"New sessions only"},{"label":"Include existing sessions"}]}]}
-Every question needs 2 to 26 options. Optional: option.description and question.recommended (array of option IDs; at most one for single selection). Omit IDs; Migent assigns them by order. Free-text answers are always allowed. Never choose on the recipient's behalf. Put every choice and its explanation in the JSON, not in prose. You may ask several questions in one document; every question must be answered before the stage continues. Do not choose a decision while asking.
+Every question needs 2 to 26 options. Optional: option.description and question.recommended (array of option IDs; at most one for single selection). Omit IDs; Migent assigns them by order. Free-text answers are always allowed. Never choose on the recipient's behalf. Put every choice and its explanation in the file, not in prose. You may ask several questions in one document; every question must be answered before the stage continues. Do not choose a decision while asking. Migent reads the file only when the status is \`question\`.
 
 Use a blank line before the report body.
 
@@ -143,10 +147,12 @@ Workflow stage response contract:
 Start the final response with \`status: complete\`, \`status: blocked\`, or \`status: question\`.
 \`complete\`: the stage finished this turn's work. \`question\`: an answer is needed before the stage can continue. \`blocked\`: an obstacle this turn cannot resolve.
 When blocked, put \`blocker: <concise reason>\` on the next line.
-To ask the human, return \`status: question\`, a blank line, then a JSON document:
+To ask the human, write the question document to the question request file, then return \`status: question\`. The response body is a report; do not put question JSON in it.
+Question request file: <QFILE>
+The file holds one JSON document:
 \`{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","options":[{"label":"..."}]}]}\`
 Example: {"schema_version":1,"questions":[{"question":"Include existing sessions?","context":"Migration adds work.","selection":"single","options":[{"label":"New sessions only"},{"label":"Include existing sessions"}]}]}
-Every question needs 2 to 26 options. Optional: option.description and question.recommended (array of option IDs; at most one for single selection). Omit IDs; Migent assigns them by order. Free-text answers are always allowed. Never choose on the recipient's behalf. Put every choice and its explanation in the JSON, not in prose. You may ask several questions in one document; every question must be answered before the stage continues. Do not choose a decision while asking.
+Every question needs 2 to 26 options. Optional: option.description and question.recommended (array of option IDs; at most one for single selection). Omit IDs; Migent assigns them by order. Free-text answers are always allowed. Never choose on the recipient's behalf. Put every choice and its explanation in the file, not in prose. You may ask several questions in one document; every question must be answered before the stage continues. Do not choose a decision while asking. Migent reads the file only when the status is \`question\`.
 
 Use a blank line before the report body.
 
@@ -170,10 +176,12 @@ Workflow stage response contract:
 Start the final response with \`status: complete\`, \`status: blocked\`, or \`status: question\`.
 \`complete\`: the stage finished this turn's work. \`question\`: an answer is needed before the stage can continue. \`blocked\`: an obstacle this turn cannot resolve.
 When blocked, put \`blocker: <concise reason>\` on the next line.
-To ask the human, return \`status: question\`, a blank line, then a JSON document:
+To ask the human, write the question document to the question request file, then return \`status: question\`. The response body is a report; do not put question JSON in it.
+Question request file: <QFILE>
+The file holds one JSON document:
 \`{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","options":[{"label":"..."}]}]}\`
 Example: {"schema_version":1,"questions":[{"question":"Include existing sessions?","context":"Migration adds work.","selection":"single","options":[{"label":"New sessions only"},{"label":"Include existing sessions"}]}]}
-Every question needs 2 to 26 options. Optional: option.description and question.recommended (array of option IDs; at most one for single selection). Omit IDs; Migent assigns them by order. Free-text answers are always allowed. Never choose on the recipient's behalf. Put every choice and its explanation in the JSON, not in prose. You may ask several questions in one document; every question must be answered before the stage continues. Do not choose a decision while asking.
+Every question needs 2 to 26 options. Optional: option.description and question.recommended (array of option IDs; at most one for single selection). Omit IDs; Migent assigns them by order. Free-text answers are always allowed. Never choose on the recipient's behalf. Put every choice and its explanation in the file, not in prose. You may ask several questions in one document; every question must be answered before the stage continues. Do not choose a decision while asking. Migent reads the file only when the status is \`question\`.
 
 Use a blank line before the report body.
 
@@ -189,10 +197,12 @@ Workflow stage response contract:
 Start the final response with \`status: complete\`, \`status: blocked\`, or \`status: question\`.
 \`complete\`: the stage finished this turn's work. \`question\`: an answer is needed before the stage can continue. \`blocked\`: an obstacle this turn cannot resolve.
 When blocked, put \`blocker: <concise reason>\` on the next line.
-To ask the human, return \`status: question\`, a blank line, then a JSON document:
+To ask the human, write the question document to the question request file, then return \`status: question\`. The response body is a report; do not put question JSON in it.
+Question request file: <QFILE>
+The file holds one JSON document:
 \`{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","options":[{"label":"..."}]}]}\`
 Example: {"schema_version":1,"questions":[{"question":"Include existing sessions?","context":"Migration adds work.","selection":"single","options":[{"label":"New sessions only"},{"label":"Include existing sessions"}]}]}
-Every question needs 2 to 26 options. Optional: option.description and question.recommended (array of option IDs; at most one for single selection). Omit IDs; Migent assigns them by order. Free-text answers are always allowed. Never choose on the recipient's behalf. Put every choice and its explanation in the JSON, not in prose. You may ask several questions in one document; every question must be answered before the stage continues. Do not choose a decision while asking.
+Every question needs 2 to 26 options. Optional: option.description and question.recommended (array of option IDs; at most one for single selection). Omit IDs; Migent assigns them by order. Free-text answers are always allowed. Never choose on the recipient's behalf. Put every choice and its explanation in the file, not in prose. You may ask several questions in one document; every question must be answered before the stage continues. Do not choose a decision while asking. Migent reads the file only when the status is \`question\`.
 
 Use a blank line before the report body.
 
@@ -212,10 +222,12 @@ Workflow stage response contract:
 Start the final response with \`status: complete\`, \`status: blocked\`, or \`status: question\`.
 \`complete\`: the stage finished this turn's work. \`question\`: an answer is needed before the stage can continue. \`blocked\`: an obstacle this turn cannot resolve.
 When blocked, put \`blocker: <concise reason>\` on the next line.
-To ask the human, return \`status: question\`, a blank line, then a JSON document:
+To ask the human, write the question document to the question request file, then return \`status: question\`. The response body is a report; do not put question JSON in it.
+Question request file: <QFILE>
+The file holds one JSON document:
 \`{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","options":[{"label":"..."}]}]}\`
 Example: {"schema_version":1,"questions":[{"question":"Include existing sessions?","context":"Migration adds work.","selection":"single","options":[{"label":"New sessions only"},{"label":"Include existing sessions"}]}]}
-Every question needs 2 to 26 options. Optional: option.description and question.recommended (array of option IDs; at most one for single selection). Omit IDs; Migent assigns them by order. Free-text answers are always allowed. Never choose on the recipient's behalf. Put every choice and its explanation in the JSON, not in prose. You may ask several questions in one document; every question must be answered before the stage continues. Do not choose a decision while asking.
+Every question needs 2 to 26 options. Optional: option.description and question.recommended (array of option IDs; at most one for single selection). Omit IDs; Migent assigns them by order. Free-text answers are always allowed. Never choose on the recipient's behalf. Put every choice and its explanation in the file, not in prose. You may ask several questions in one document; every question must be answered before the stage continues. Do not choose a decision while asking. Migent reads the file only when the status is \`question\`.
 
 Use a blank line before the report body.
 
@@ -229,10 +241,12 @@ Workflow stage response contract:
 Start the final response with \`status: complete\`, \`status: blocked\`, or \`status: question\`.
 \`complete\`: the stage finished this turn's work. \`question\`: an answer is needed before the stage can continue. \`blocked\`: an obstacle this turn cannot resolve.
 When blocked, put \`blocker: <concise reason>\` on the next line.
-To ask the human, return \`status: question\`, a blank line, then a JSON document:
+To ask the human, write the question document to the question request file, then return \`status: question\`. The response body is a report; do not put question JSON in it.
+Question request file: <QFILE>
+The file holds one JSON document:
 \`{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","options":[{"label":"..."}]}]}\`
 Example: {"schema_version":1,"questions":[{"question":"Include existing sessions?","context":"Migration adds work.","selection":"single","options":[{"label":"New sessions only"},{"label":"Include existing sessions"}]}]}
-Every question needs 2 to 26 options. Optional: option.description and question.recommended (array of option IDs; at most one for single selection). Omit IDs; Migent assigns them by order. Free-text answers are always allowed. Never choose on the recipient's behalf. Put every choice and its explanation in the JSON, not in prose. You may ask several questions in one document; every question must be answered before the stage continues. Do not choose a decision while asking.
+Every question needs 2 to 26 options. Optional: option.description and question.recommended (array of option IDs; at most one for single selection). Omit IDs; Migent assigns them by order. Free-text answers are always allowed. Never choose on the recipient's behalf. Put every choice and its explanation in the file, not in prose. You may ask several questions in one document; every question must be answered before the stage continues. Do not choose a decision while asking. Migent reads the file only when the status is \`question\`.
 
 Use a blank line before the report body.
 
@@ -250,10 +264,12 @@ Workflow stage response contract:
 Start the final response with \`status: complete\`, \`status: blocked\`, or \`status: question\`.
 \`complete\`: the stage finished this turn's work. \`question\`: an answer is needed before the stage can continue. \`blocked\`: an obstacle this turn cannot resolve.
 When blocked, put \`blocker: <concise reason>\` on the next line.
-To ask the human, return \`status: question\`, a blank line, then a JSON document:
+To ask the human, write the question document to the question request file, then return \`status: question\`. The response body is a report; do not put question JSON in it.
+Question request file: <QFILE>
+The file holds one JSON document:
 \`{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","options":[{"label":"..."}]}]}\`
 Example: {"schema_version":1,"questions":[{"question":"Include existing sessions?","context":"Migration adds work.","selection":"single","options":[{"label":"New sessions only"},{"label":"Include existing sessions"}]}]}
-Every question needs 2 to 26 options. Optional: option.description and question.recommended (array of option IDs; at most one for single selection). Omit IDs; Migent assigns them by order. Free-text answers are always allowed. Never choose on the recipient's behalf. Put every choice and its explanation in the JSON, not in prose. You may ask several questions in one document; every question must be answered before the stage continues. Do not choose a decision while asking.
+Every question needs 2 to 26 options. Optional: option.description and question.recommended (array of option IDs; at most one for single selection). Omit IDs; Migent assigns them by order. Free-text answers are always allowed. Never choose on the recipient's behalf. Put every choice and its explanation in the file, not in prose. You may ask several questions in one document; every question must be answered before the stage continues. Do not choose a decision while asking. Migent reads the file only when the status is \`question\`.
 
 Use a blank line before the report body.
 
@@ -272,10 +288,12 @@ Workflow stage response contract:
 Start the final response with \`status: complete\`, \`status: blocked\`, or \`status: question\`.
 \`complete\`: the stage finished this turn's work. \`question\`: an answer is needed before the stage can continue. \`blocked\`: an obstacle this turn cannot resolve.
 When blocked, put \`blocker: <concise reason>\` on the next line.
-To ask the human, return \`status: question\`, a blank line, then a JSON document:
+To ask the human, write the question document to the question request file, then return \`status: question\`. The response body is a report; do not put question JSON in it.
+Question request file: <QFILE>
+The file holds one JSON document:
 \`{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","options":[{"label":"..."}]}]}\`
 Example: {"schema_version":1,"questions":[{"question":"Include existing sessions?","context":"Migration adds work.","selection":"single","options":[{"label":"New sessions only"},{"label":"Include existing sessions"}]}]}
-Every question needs 2 to 26 options. Optional: option.description and question.recommended (array of option IDs; at most one for single selection). Omit IDs; Migent assigns them by order. Free-text answers are always allowed. Never choose on the recipient's behalf. Put every choice and its explanation in the JSON, not in prose. You may ask several questions in one document; every question must be answered before the stage continues. Do not choose a decision while asking.
+Every question needs 2 to 26 options. Optional: option.description and question.recommended (array of option IDs; at most one for single selection). Omit IDs; Migent assigns them by order. Free-text answers are always allowed. Never choose on the recipient's behalf. Put every choice and its explanation in the file, not in prose. You may ask several questions in one document; every question must be answered before the stage continues. Do not choose a decision while asking. Migent reads the file only when the status is \`question\`.
 
 Use a blank line before the report body.
 
@@ -298,10 +316,12 @@ Workflow stage response contract:
 Start the final response with \`status: complete\`, \`status: blocked\`, or \`status: question\`.
 \`complete\`: the stage finished this turn's work. \`question\`: an answer is needed before the stage can continue. \`blocked\`: an obstacle this turn cannot resolve.
 When blocked, put \`blocker: <concise reason>\` on the next line.
-To ask the human, return \`status: question\`, a blank line, then a JSON document:
+To ask the human, write the question document to the question request file, then return \`status: question\`. The response body is a report; do not put question JSON in it.
+Question request file: <QFILE>
+The file holds one JSON document:
 \`{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","options":[{"label":"..."}]}]}\`
 Example: {"schema_version":1,"questions":[{"question":"Include existing sessions?","context":"Migration adds work.","selection":"single","options":[{"label":"New sessions only"},{"label":"Include existing sessions"}]}]}
-Every question needs 2 to 26 options. Optional: option.description and question.recommended (array of option IDs; at most one for single selection). Omit IDs; Migent assigns them by order. Free-text answers are always allowed. Never choose on the recipient's behalf. Put every choice and its explanation in the JSON, not in prose. You may ask several questions in one document; every question must be answered before the stage continues. Do not choose a decision while asking.
+Every question needs 2 to 26 options. Optional: option.description and question.recommended (array of option IDs; at most one for single selection). Omit IDs; Migent assigns them by order. Free-text answers are always allowed. Never choose on the recipient's behalf. Put every choice and its explanation in the file, not in prose. You may ask several questions in one document; every question must be answered before the stage continues. Do not choose a decision while asking. Migent reads the file only when the status is \`question\`.
 
 Use a blank line before the report body.
 

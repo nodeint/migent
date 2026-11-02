@@ -1,4 +1,4 @@
-import { parseQuestionBody, type Question } from "./questions.js";
+import type { Question } from "./questions.js";
 
 export const outcomeStatuses = new Set(["complete", "blocked", "question"]);
 
@@ -24,6 +24,7 @@ export class StageOutcome {
   }
 }
 
+/** Parses response headers only. A `question` outcome has no questions until the request file is loaded. */
 export function parseStageOutcome(
   response: string,
   required: boolean,
@@ -48,8 +49,8 @@ export function parseStageOutcome(
   const decision = parseDecision(headers.get("decision"), status, decisionValues);
   if (status === "question") {
     if (ask === null) throw new Error("status: question requires ask: human.");
-    const questions = parseQuestionBody(response);
-    return new StageOutcome(status, null, null, questions[0]!.question, questions);
+    // Questions come from the question request file; see resolveStageOutcome.
+    return new StageOutcome(status);
   }
   return new StageOutcome(status, headers.get("blocker") ?? null, decision);
 }

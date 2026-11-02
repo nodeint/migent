@@ -37,6 +37,11 @@ The original batch is in `executions/<execution-id>/questions.json`; reading
 `response.md` is unnecessary. The pair of execution ID and question ID identifies
 each question across rounds.
 
+Agents write questions to a request file named in their response contract, not in the
+response body. If a stage fails with `question_file_invalid`, the file stayed unusable
+after one correction turn; the error names the file and the problem. Run
+`migent session continue <session-id>` to rerun the stage.
+
 Questions are numbered from 1 and options lettered A, B, C, ... by order. Reply
 with `--reply "1A, 2B, 3 explain further"`; multiple selections use `2A+C`.
 Numbering restarts in each stage's new batch. Programs can also pass a JSON

@@ -484,9 +484,10 @@ A stage without a role cannot declare it. Use `instructions` to describe when
 the agent should ask. The recipient is independent of the question protocol,
 so an agent recipient can be added later without introducing another stage.
 
-```text
-status: question
+The agent writes this document to the question request file named in its
+response contract, then responds with `status: question`:
 
+```json
 {
   "schema_version": 1,
   "questions": [
@@ -504,7 +505,9 @@ status: question
 }
 ```
 
-The response body is a validated JSON document, not a prose list of choices.
+The request file is a validated JSON document, not a prose list of choices; the
+response body is an ordinary report. One correction turn is allowed when the file
+is unusable, then the stage fails with `question_file_invalid`.
 Each question requires `question`, `context`, `selection`, and 2 to 26 `options`.
 Migent assigns question IDs `1`, `2`, `3`, ... and option IDs `A`, `B`, `C`, ...
 by their order. Agents omit IDs; if supplied, IDs must match that order.

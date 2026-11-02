@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { z } from "zod";
 import { ConfigurationError } from "./errors.js";
 
@@ -52,13 +53,37 @@ export function storedQuestions(outcome: Record<string, unknown> | null): Questi
   return questionDocumentSchema.parse({ schema_version: 1, questions: outcome.questions }).questions;
 }
 
-export function parseQuestionBody(response: string): Question[] {
-  const separator = /\r?\n\s*\r?\n/.exec(response);
-  if (!separator) throw new Error("status: question requires a JSON question document after the headers.");
-  const body = response.slice(separator.index + separator[0].length).trim()
-    .replace(/^```json\s*\n([\s\S]*?)\n```$/, "$1");
-  const parsed = questionDocumentSchema.safeParse(JSON.parse(body));
-  if (!parsed.success) throw new Error(`Invalid questions: ${parsed.error.message}`);
+export type QuestionFileErrorKind = "missing" | "empty" | "invalid_json" | "invalid_schema";
+
+/** The question request file cannot be used. The kind and detail are safe to show to the agent. */
+export class QuestionFileError extends Error {
+  constructor(readonly kind: QuestionFileErrorKind, readonly detail: string, readonly file: string) {
+    super(`Question request file ${file} is invalid (${kind}): ${detail}`);
+    this.name = "QuestionFileError";
+  }
+}
+
+/** Read and validate the question request file the agent wrote. */
+export function loadQuestionFile(file: string): Question[] {
+  let text: string;
+  try {
+    text = readFileSync(file, "utf8");
+  } catch (error) {
+    const code = (error as { code?: unknown }).code;
+    throw new QuestionFileError("missing", code === "ENOENT" ? "the file was not written" : `the file cannot be read (${String(code ?? error)})`, file);
+  }
+  if (text.trim() === "") throw new QuestionFileError("empty", "the file has no content", file);
+  let value: unknown;
+  try {
+    value = JSON.parse(text.replace(/^﻿/, ""));
+  } catch (error) {
+    throw new QuestionFileError("invalid_json", error instanceof Error ? error.message : String(error), file);
+  }
+  const parsed = questionDocumentSchema.safeParse(value);
+  if (!parsed.success) {
+    const detail = parsed.error.issues.map((issue) => `${issue.path.length > 0 ? issue.path.join(".") : "document"}: ${issue.message}`).join("; ");
+    throw new QuestionFileError("invalid_schema", detail, file);
+  }
   return parsed.data.questions;
 }
 

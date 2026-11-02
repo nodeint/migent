@@ -223,11 +223,19 @@ question files from the saved execution outcomes and events.
 
 ## Agent response format
 
-An agent asks by returning `status: question`, a blank line, and a JSON document:
+An agent asks in two steps. It writes the question document to the **question
+request file** whose absolute path appears in its response contract
+(`question-request.json` in the execution directory, outside `artifacts/`), then
+ends its response with `status: question`. The response body is an ordinary
+report; Migent never reads questions from it. Migent reads the file only when
+the status is `question` and ignores it for any other status. Migent removes a
+leftover file before each provider turn so an old file is never read as a new
+question. The file is not `questions.json`, which Migent writes from the
+validated outcome.
 
-```text
-status: question
+The file holds one JSON document:
 
+```json
 {
   "schema_version": 1,
   "questions": [
@@ -254,6 +262,21 @@ Optional `recommended` contains distinct option letters. It permits at most
 one entry for a `single` question and never supplies an answer automatically.
 The document can contain several questions. Migent validates the complete
 document before accepting the question outcome.
+
+### When the question file is unusable
+
+If the status is `question` and the file is missing, empty, not valid JSON, or
+fails validation, Migent sends the agent one correction turn in the same
+execution and conversation. The message names the file and the problem; the
+agent rewrites the file and responds again. The correction is recorded in
+`execution.json` as `question_correction`, so cancelling and resuming never
+grants a second one. A `question.file_invalid` event records the failure.
+
+If the file is still unusable, the execution fails with
+`failure_reason: question_file_invalid`. The error names the file, the problem
+(`missing`, `empty`, `invalid_json`, or `invalid_schema`) and how to recover:
+`migent session continue <session>` runs the stage again. The invalid file stays
+in the execution directory for diagnosis.
 
 ## Resume and verification
 

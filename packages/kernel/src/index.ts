@@ -153,6 +153,8 @@ export {
 export type { NextStageResult } from "./selection.js";
 export { outcomeStatuses, parseStageOutcome, StageOutcome } from "./stage-outcome.js";
 export type { AskTarget } from "./stage-outcome.js";
+export { resolveStageOutcome } from "./outcome-resolver.js";
+export { QuestionFileError, loadQuestionFile } from "./questions.js";
 export type { Question, QuestionAnswer } from "./questions.js";
 export { log, utcNow } from "./runtime.js";
 export {

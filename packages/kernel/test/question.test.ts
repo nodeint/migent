@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, test } from "vitest";
@@ -26,10 +26,10 @@ function workspace(stages: string, extra = ""): string {
   return root;
 }
 
-test("question requires an opted-in recipient and a structured question document", () => {
+test("question requires an opted-in recipient; the response headers carry no question data", () => {
   expect(() => parseStageOutcome(question, true)).toThrow("requires ask: human");
-  expect(() => parseStageOutcome("status: question\nquestion: Plain text", true, [], "human")).toThrow("JSON question document");
-  expect(parseStageOutcome(question.replace("status: question", "status: question\ndecision: approved"), true, ["approved"], "human")?.toJson()).toMatchObject({ status: "question", question: "Support existing sessions?", questions: [scopeQuestion] });
+  expect(parseStageOutcome("status: question\n\nSee the question request file.", true, [], "human")?.toJson()).toEqual({ status: "question" });
+  expect(parseStageOutcome(question.replace("status: question", "status: question\ndecision: approved"), true, ["approved"], "human")?.status).toBe("question");
 });
 
 test.each(["jev", "some-role", true, null, { when: "Ask" }])("rejects unsupported ask recipient %j", (ask) => {
@@ -260,5 +260,81 @@ test("a batch validates single and multiple selections before resuming and recor
     expect(reply).toContain("2. Which platforms?\nSelected: Linux; Windows");
     expect(reply).toContain("3. Is the migration requirement clear?\nAnswer: chưa rõ - giải thích thêm");
     expect(reply).not.toContain('"labels"');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+const validFile = JSON.stringify({ schema_version: 1, questions: [scopeQuestion] });
+const askStage = "  - { id: plan, role: planner, ask: human }\n";
+
+function lastExecution(root: string, sessionId: string): Record<string, unknown> {
+  const directory = path.join(root, ".migent/sessions", sessionId, "executions");
+  const names = readdirSync(directory).sort();
+  return JSON.parse(readFileSync(path.join(directory, names.at(-1)!, "execution.json"), "utf8"));
+}
+
+test("an invalid question file gets one correction turn in the same conversation, then the question is registered", async () => {
+  const root = workspace(askStage);
+  try {
+    const provider = new ScriptedProvider([
+      "status: question\n\nI need an answer.\n<<FILE>>{\"schema_version\":1,\"questions\":[",
+      "status: question\n\nFixed.\n<<FILE>>" + validFile,
+    ]);
+    const result = await executeNamedWorkflow(root, { workflowId: "plan", task: "Plan" }, new AgentToolRunner({ fake: provider }, 10));
+    expect(result.code).toBe(9);
+    expect(provider.calls).toHaveLength(2);
+    expect(provider.calls[1]?.agentId).toBe("native-session-1");
+    expect(provider.calls[1]?.prompt).toContain("question request file is not valid");
+    expect(provider.calls[1]?.prompt).toContain("(invalid_json)");
+    expect(provider.calls[1]?.prompt).toContain("Question request file: ");
+    const execution = lastExecution(root, result.sessionId);
+    expect(execution.question_correction).toMatchObject({ turn: 1, error_kind: "invalid_json" });
+    expect(execution.outcome).toMatchObject({ status: "question", questions: [scopeQuestion] });
+    expect(execution.response_protocol).toBe(2);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("a question file that stays invalid fails with a named, recoverable error after one correction", async () => {
+  const root = workspace(askStage);
+  try {
+    const provider = new ScriptedProvider([
+      "status: question\n\nNo file written.",
+      "status: question\n\nStill nothing.\n<<FILE>>{\"schema_version\":2}",
+    ]);
+    const result = await executeNamedWorkflow(root, { workflowId: "plan", task: "Plan" }, new AgentToolRunner({ fake: provider }, 10));
+    expect(provider.calls).toHaveLength(2);
+    expect(result.code).not.toBe(9);
+    const execution = lastExecution(root, result.sessionId);
+    expect(execution).toMatchObject({ status: "failed", failure_reason: "question_file_invalid" });
+    expect(execution.error).toContain("question-request.json");
+    expect(execution.error).toContain("invalid_schema");
+    expect(execution.error).toContain("status: question");
+    expect(execution.error).toContain("session continue");
+    expect(execution.error).not.toMatch(/^Unexpected/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("the question file is ignored unless the status is question", async () => {
+  const root = workspace(askStage);
+  try {
+    const provider = new ScriptedProvider(["status: complete\n\nDone.\n<<FILE>>not json at all"]);
+    const result = await executeNamedWorkflow(root, { workflowId: "plan", task: "Plan" }, new AgentToolRunner({ fake: provider }, 10));
+    expect(result.code).toBe(0);
+    expect(lastExecution(root, result.sessionId)).toMatchObject({ status: "completed", outcome: { status: "complete" } });
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("a leftover question file from an earlier turn is not read as a new question", async () => {
+  const root = workspace(askStage);
+  try {
+    const provider = new ScriptedProvider([
+      "status: question\n\nAsk.\n<<FILE>>" + validFile,
+      "status: question\n\nAsk again without a file.",
+      "status: question\n\nStill no file.",
+    ]);
+    const runner = new AgentToolRunner({ fake: provider }, 10);
+    const first = await executeNamedWorkflow(root, { workflowId: "plan", task: "Plan" }, runner);
+    expect(first.code).toBe(9);
+    const second = await executeNamedWorkflow(root, { sessionId: first.sessionId, reply: "1A" }, runner);
+    expect(lastExecution(root, second.sessionId)).toMatchObject({ status: "failed", failure_reason: "question_file_invalid" });
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

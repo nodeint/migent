@@ -9,6 +9,8 @@ export interface ProviderPromptOptions {
   decisionValues?: readonly string[];
   decisionInstructions?: Readonly<Record<string, string>>;
   ask?: AskTarget | null;
+  /** Absolute path of the question request file. Required to describe the question protocol when `ask` is set. */
+  questionFile?: string | null;
   artifactDirectory?: string;
   artifactName?: string | null;
   previousVerifyReport?: string | null;
@@ -24,6 +26,7 @@ export function renderProviderPrompt(prompt: string, options: ProviderPromptOpti
     prompt,
     contract: options.contract ?? false,
     canAsk: options.ask != null,
+    questionFile: options.questionFile ?? "",
     decisions,
     decisionLabel: decisions.map(({ name }) => name).join("|"),
     hasDecisionInstructions: Object.keys(instructions).length > 0,
@@ -119,4 +122,23 @@ export function formatQuestionAnswers(questions: readonly AnsweredQuestion[], an
     if (answer.text) lines.push(`Answer: ${answer.text}`);
     return lines.join("\n");
   }).join("\n\n");
+}
+
+export interface QuestionCorrectionContext {
+  questionFile: string;
+  errorKind: string;
+  errorDetail: string;
+}
+
+/** The single correction message sent when a question request file fails validation. */
+export function renderQuestionCorrection(context: QuestionCorrectionContext): string {
+  return renderPrompt("question-correction", context);
+}
+
+/**
+ * Appended to a prompt saved under an older response protocol. It carries the current
+ * contract and states that it replaces the earlier response instructions.
+ */
+export function renderProtocolUpdate(options: ProviderPromptOptions): string {
+  return renderProviderPrompt(renderPrompt("protocol-update", {}), { ...options, contract: true });
 }

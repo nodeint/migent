@@ -1,5 +1,8 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { expect, test } from "vitest";
-import { answerQuestions, parseQuestionBody, type Question } from "../src/questions.ts";
+import { answerQuestions, loadQuestionFile, QuestionFileError, type Question } from "../src/questions.ts";
 
 const single: Question = {
   id: "1", question: "Choose scope", context: "Migration adds work.", selection: "single",
@@ -10,7 +13,32 @@ const multiple: Question = {
   options: [{ id: "A", label: "Linux" }, { id: "B", label: "Windows" }, { id: "C", label: "macOS" }],
 };
 
-function body(questions: unknown[]) { return "status: question\n\n" + JSON.stringify({ schema_version: 1, questions }); }
+function body(questions: unknown[]) { return JSON.stringify({ schema_version: 1, questions }); }
+
+/** Write `text` to a question request file (or leave it missing when null) and load it. */
+function loadText(text: string | null): Question[] {
+  const directory = mkdtempSync(path.join(tmpdir(), "migent-questions-"));
+  try {
+    const file = path.join(directory, "question-request.json");
+    if (text !== null) writeFileSync(file, text);
+    return loadQuestionFile(file);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+}
+
+function fileError(text: string | null): QuestionFileError {
+  try { loadText(text); } catch (error) { if (error instanceof QuestionFileError) return error; throw error; }
+  throw new Error("expected a QuestionFileError");
+}
+
+test("the question request file reports a missing, empty, malformed or invalid file by kind", () => {
+  expect(fileError(null).kind).toBe("missing");
+  expect(fileError("  \n").kind).toBe("empty");
+  const malformed = fileError('{"schema_version":1,"questions":[] trailing');
+  expect(malformed.kind).toBe("invalid_json");
+  expect(malformed.message).toContain("question-request.json");
+  expect(fileError(body([{ ...single, options: [single.options[0]] }])).detail).toContain("questions.0.options");
+  expect(loadText(body([single]))).toEqual([single]);
+});
 
 test.each([
   { ...single, options: undefined },
@@ -22,11 +50,11 @@ test.each([
   { ...single, recommended: ["missing"] },
   { ...single, recommended: ["A", "B"] },
 ])("rejects an incomplete or ambiguous question %j", (question) => {
-  expect(() => parseQuestionBody(body([question]))).toThrow("Invalid questions");
+  expect(fileError(body([question])).kind).toBe("invalid_schema");
 });
 
 test("question IDs must be unique in a batch", () => {
-  expect(() => parseQuestionBody(body([single, single]))).toThrow("Duplicate question id");
+  expect(fileError(body([single, single])).detail).toContain("Duplicate question id");
 });
 
 test("single and multiple selections have explicit validated answers", () => {
@@ -67,7 +95,7 @@ test("Migent assigns question numbers and option letters when the agent omits ID
   const { id: firstId, ...first } = single;
   const { id: secondId, ...second } = multiple;
   const withoutIds = (question: typeof first) => ({ ...question, options: question.options.map(({ id, ...option }) => option) });
-  const parsed = parseQuestionBody(body([withoutIds(first), withoutIds(second)]));
+  const parsed = loadText(body([withoutIds(first), withoutIds(second)]));
   expect(parsed.map((question) => question.id)).toEqual(["1", "2"]);
   expect(parsed[1]!.options.map((option) => option.id)).toEqual(["A", "B", "C"]);
 });

@@ -107,7 +107,8 @@ Each execution directory contains:
   `turns/01/commands/MM.log` and does not write a model response.
   `execution.json` for a role stage also records `turns`, `verify` (`runs`,
   `red`, `max_verify`, `last_result`, `last_report`), and `failure_reason`
-  (`verify_exhausted`). A stage with no role records `failure_reason:
+  (`verify_exhausted`, or `question_file_invalid` when the question request file
+  stays unusable after one correction turn). A stage with no role records `failure_reason:
   verify_failed` when the list fails.
 - `conversation.json`: provider conversation checkpoint used when resuming a
   provider session. It stores the provider and model, native agent ID, options
