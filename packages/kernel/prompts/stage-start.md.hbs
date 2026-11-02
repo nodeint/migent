@@ -1,0 +1,24 @@
+{{> task}}
+
+Stage: {{stage.id}} (role: {{stage.role}}){{#if roleInstructions}}
+
+Role instructions:{{#each roleInstructions}}
+- {{this}}{{/each}}{{/if}}{{#if stage.instructions}}
+
+Instructions:{{#each stage.instructions}}
+- {{this}}{{/each}}{{/if}}{{#if constraints}}
+
+Constraints:{{#each constraints}}
+- {{this}}{{/each}}{{/if}}{{#if stage.verify}}
+
+Verify commands:
+These commands must exit 0 before you report `status: complete`.
+Run them in the workspace, in order. When a command fails, fix the cause and run it again.
+Report `status: complete` only after every command passes.{{#each stage.verify}}
+- {{this}}{{/each}}{{/if}}{{> continuation}}{{#if prior}}
+
+Prior session context:
+- session: {{prior.sessionId}}{{#each prior.outputs}}
+- {{name}}: {{path}}{{/each}}{{/if}}{{#if stage.artifact}}
+
+Write the file artifact as `{{stage.artifact}}` in the execution artifacts directory.{{/if}}

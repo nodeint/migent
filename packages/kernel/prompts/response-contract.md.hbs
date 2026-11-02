@@ -1,0 +1,15 @@
+
+
+Workflow stage response contract:
+{{#if canAsk}}Start the final response with `status: complete`, `status: blocked`, or `status: question`.{{else}}Start the final response with `status: complete` or `status: blocked`.{{/if}}
+When blocked, put `blocker: <concise reason>` on the next line.{{#if canAsk}}
+To ask the human, return status: question, a blank line, and a JSON document: {"schema_version":1,"questions":[{"question":"Include existing sessions?","context":"Migration adds work.","selection":"single","options":[{"label":"New sessions only"},{"label":"Include existing sessions"}]}]}.
+Each question requires question, context, selection (single or multiple), and 2 to 26 options with labels. Migent assigns question IDs 1, 2, 3, ... and option IDs A, B, C, ... by order. Omit IDs. Put every choice and its explanation in the JSON, not in prose.
+Optional fields: option.description and question.recommended (array of option IDs; at most one for single selection). Free-text answers are always allowed for every question. Never choose on the recipient's behalf.
+Migent writes validated questions to questions.json. You may ask several questions in one document. Every question must be answered before the stage continues.
+Use blocked for an obstacle you cannot resolve; use question when you need an answer. Do not choose a decision while asking.{{/if}}{{#if decisions}}
+When complete, put `decision: {{decisionLabel}}` on the next line.
+Do not put the decision only in prose.{{#if hasDecisionInstructions}}
+Choose exactly one decision using these instructions:{{#each decisions}}
+- {{name}}: {{instruction}}{{/each}}{{/if}}{{/if}}
+Use a blank line before the report body.

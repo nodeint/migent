@@ -8,6 +8,8 @@
 
 ### Changed
 
+- Kernel prompts render from packaged Markdown templates while preserving workflow and conversation behavior.
+
 - `migent init` renders role models and sample workflows from packaged project templates.
 
 ## 0.3.1
