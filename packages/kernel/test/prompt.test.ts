@@ -378,6 +378,12 @@ test("a stage reply is only the reply text", () => {
   expect(buildStageReplyPrompt("use docs/api.yaml")).toBe("Reply:\nuse docs/api.yaml");
 });
 
+test("a reply to a stopped turn names the interrupted execution", () => {
+  expect(buildStageReplyPrompt("use docs/api.yaml", undefined, "0001-plan")).toBe(
+    "Your previous turn (execution 0001-plan) was stopped by the human before it finished.\n\nReply:\nuse docs/api.yaml",
+  );
+});
+
 test("a later complete attempt drops the blocked note", () => {
   const root = tempDir("migent-prompt-");
   const blocked = path.join(root, "blocked", "artifacts");

@@ -7,6 +7,9 @@ import { assertSessionLockHeld } from "./session-lock.js";
 
 export const EVENT_VERSION = 2;
 
+/** `session.active` `data.from` for a reply that supersedes a cancelled execution. */
+export const CANCELLED_REPLY = "cancelled_reply";
+
 const ENVELOPE_KEYS = new Set(["v", "seq", "event", "timestamp", "data"]);
 
 /** Item traces and provider heartbeats are per execution, not session lifecycle. */

@@ -330,7 +330,7 @@ completion:
   const provider = new ScriptedProvider([OK]);
   const result = await executeNamedWorkflow(
     workspace,
-    { workflowId: "wf", sessionId, reply: "use the schema" },
+    { workflowId: "wf", sessionId, stageId: "implement", reply: "use the schema" },
     new AgentToolRunner({ fake: provider }, 10),
   );
   expect(result.stopReason).toBe("verify_exhausted");
@@ -1057,4 +1057,188 @@ completion:
   expect(execution(workspace, sessionId, snapshots[3]!.executionId).resumes_execution_id).toBe(
     snapshots[2]?.executionId,
   );
+});
+
+function seedStages(
+  workspace: string,
+  sessionId: string,
+  rows: Array<{ stageId: string; agentId: string; status: "completed" | "cancelled"; outcome?: StageOutcome }>,
+) {
+  const store = new SessionStore(workspace);
+  const lock = SessionLock.acquire(path.join(workspace, ".migent", "sessions", sessionId));
+  const ids: Record<string, string> = {};
+  try {
+    const created = rows.map((row) => {
+      const [record, , context] = store.loadOrCreate("fake", "m1", {}, workspace, sessionId, row.stageId, null, null, row.stageId);
+      noteInFlightExecution(sessionId, context.executionId);
+      record.agentId = row.agentId;
+      record.history.push({ role: "user", content: row.stageId });
+      store.save(record, context);
+      return { row, record, context };
+    });
+    for (const { row, record, context } of created) {
+      store.saveExecution(context, record, row.status, null, row.outcome);
+      clearInFlightExecution(sessionId, context.executionId);
+      ids[row.stageId] = context.executionId;
+    }
+  } finally {
+    lock.release();
+  }
+  return { store, ids };
+}
+
+const PARALLEL = `\
+schema_version: 2
+concurrency: 2
+id: wf
+stages:
+  - id: a
+    role: developer
+  - id: b
+    role: developer
+`;
+
+test("a reply to a cancelled stage keeps a blocked sibling blocked", async () => {
+  const { workspace, sessionId } = setup(PARALLEL);
+  const { store, ids } = seedStages(workspace, sessionId, [
+    { stageId: "a", agentId: "native-a", status: "completed", outcome: new StageOutcome("blocked", "a gate") },
+    { stageId: "b", agentId: "native-b", status: "cancelled" },
+  ]);
+  const provider = new ScriptedProvider([OK]);
+  const result = await executeNamedWorkflow(
+    workspace,
+    { workflowId: "wf", sessionId, stageId: "b", reply: "steer b" },
+    new AgentToolRunner({ fake: provider }, 10),
+  );
+  expect(result.stopReason).toBe("blocked");
+  expect(provider.calls[0]?.prompt).toContain(`Your previous turn (execution ${ids.b}) was stopped`);
+  expect(execution(workspace, sessionId, ids.b!).status).toBe("cancelled");
+  expect(store.blockedStages(sessionId).map((item) => item.stageId)).toEqual(["a"]);
+  expect(store.executionSnapshots(sessionId).filter((item) => item.stageId === "b")).toHaveLength(2);
+});
+
+test("a saved reply to a cancelled stage is recovered beside a blocked sibling", async () => {
+  const { workspace, sessionId } = setup(PARALLEL);
+  const { store } = seedStages(workspace, sessionId, [
+    { stageId: "a", agentId: "native-a", status: "completed", outcome: new StageOutcome("blocked", "a gate") },
+    { stageId: "b", agentId: "native-b", status: "cancelled" },
+  ]);
+  const lock = SessionLock.acquire(path.join(workspace, ".migent", "sessions", sessionId));
+  try {
+    store.supersedeCancelled(sessionId, "b", "saved steer");
+  } finally {
+    lock.release();
+  }
+  const provider = new ScriptedProvider([OK]);
+  await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId }, new AgentToolRunner({ fake: provider }, 10));
+  expect(provider.calls[0]?.prompt).toContain("saved steer");
+  expect(provider.calls[0]?.agentId).toBe("native-b");
+  expect(store.blockedStages(sessionId).map((item) => item.stageId)).toEqual(["a"]);
+  expect(store.pendingCancelledReply(sessionId)).toBeNull();
+});
+
+test("a reply to a cancelled resume_from stage continues its own conversation", async () => {
+  const { workspace, sessionId } = setup(`\
+schema_version: 2
+id: wf
+stages:
+  - id: a
+    role: developer
+  - id: b
+    role: developer
+    depends_on: [a]
+    session:
+      resume_from: a
+`);
+  const { ids } = seedStages(workspace, sessionId, [
+    { stageId: "a", agentId: "native-a", status: "completed", outcome: new StageOutcome("complete") },
+    { stageId: "b", agentId: "native-b", status: "cancelled" },
+  ]);
+  const provider = new ScriptedProvider([OK]);
+  await executeNamedWorkflow(
+    workspace,
+    { workflowId: "wf", sessionId, stageId: "b", reply: "steer" },
+    new AgentToolRunner({ fake: provider }, 10),
+  );
+  expect(provider.calls[0]?.agentId).toBe("native-b");
+  expect(execution(workspace, sessionId, ids.b!).status).toBe("cancelled");
+});
+
+test("a reply needs --stage when a cancelled stage waits beside a blocked one", async () => {
+  const { workspace, sessionId } = setup(PARALLEL);
+  seedStages(workspace, sessionId, [
+    { stageId: "a", agentId: "native-a", status: "completed", outcome: new StageOutcome("blocked", "a gate") },
+    { stageId: "b", agentId: "native-b", status: "cancelled" },
+  ]);
+  await expect(
+    executeNamedWorkflow(workspace, { workflowId: "wf", sessionId, reply: "steer" }, new AgentToolRunner({ fake: new ScriptedProvider([OK]) }, 10)),
+  ).rejects.toThrow(/needs --stage.*a, b/);
+});
+
+test("a reply to one of two cancelled stages dispatches first, then the sibling is reopened", async () => {
+  const { workspace, sessionId } = setup(PARALLEL);
+  const { store, ids } = seedStages(workspace, sessionId, [
+    { stageId: "a", agentId: "native-a", status: "cancelled" },
+    { stageId: "b", agentId: "native-b", status: "cancelled" },
+  ]);
+  const provider = new ScriptedProvider([OK, OK]);
+  const result = await executeNamedWorkflow(
+    workspace,
+    { workflowId: "wf", sessionId, stageId: "b", reply: "steer b" },
+    new AgentToolRunner({ fake: provider }, 10),
+  );
+  expect(result.code).toBe(0);
+  expect(provider.calls[0]?.prompt).toContain("steer b");
+  expect(provider.calls[0]?.agentId).toBe("native-b");
+  expect(execution(workspace, sessionId, ids.b!).status).toBe("cancelled");
+  expect(execution(workspace, sessionId, ids.a!).status).toBe("completed");
+  expect(store.executionSnapshots(sessionId).filter((item) => item.stageId === "b")).toHaveLength(2);
+});
+
+test("a saved reply to one of two cancelled stages is recovered and the sibling reopened", async () => {
+  const { workspace, sessionId } = setup(PARALLEL);
+  const { store, ids } = seedStages(workspace, sessionId, [
+    { stageId: "a", agentId: "native-a", status: "cancelled" },
+    { stageId: "b", agentId: "native-b", status: "cancelled" },
+  ]);
+  const lock = SessionLock.acquire(path.join(workspace, ".migent", "sessions", sessionId));
+  try {
+    store.supersedeCancelled(sessionId, "b", "saved steer");
+  } finally {
+    lock.release();
+  }
+  const provider = new ScriptedProvider([OK, OK]);
+  const result = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId }, new AgentToolRunner({ fake: provider }, 10));
+  expect(result.code).toBe(0);
+  expect(provider.calls[0]?.prompt).toContain("saved steer");
+  expect(execution(workspace, sessionId, ids.a!).status).toBe("completed");
+  expect(store.pendingCancelledReply(sessionId)).toBeNull();
+});
+
+const CHAIN = `\
+schema_version: 2
+id: wf
+stages:
+  - id: a
+    role: developer
+  - id: b
+    role: developer
+    depends_on: [a]
+`;
+
+test("plain continue --once on a cancelled stage resumes only that stage", async () => {
+  const { workspace, sessionId } = setup(CHAIN);
+  const { store, ids } = seedStages(workspace, sessionId, [{ stageId: "a", agentId: "native-a", status: "cancelled" }]);
+  const provider = new ScriptedProvider([OK, OK]);
+  await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId, once: true }, new AgentToolRunner({ fake: provider }, 10));
+  expect(execution(workspace, sessionId, ids.a!).status).toBe("completed");
+  expect(store.executionSnapshots(sessionId).filter((item) => item.stageId === "b")).toHaveLength(0);
+});
+
+test("plain continue --stage on a cancelled stage resumes it without error", async () => {
+  const { workspace, sessionId } = setup(CHAIN);
+  const { ids } = seedStages(workspace, sessionId, [{ stageId: "a", agentId: "native-a", status: "cancelled" }]);
+  const provider = new ScriptedProvider([OK, OK]);
+  await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId, stageId: "a" }, new AgentToolRunner({ fake: provider }, 10));
+  expect(execution(workspace, sessionId, ids.a!).status).toBe("completed");
 });

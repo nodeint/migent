@@ -301,7 +301,7 @@ function registerSessionCommand(program: Command, status: CliStatus): void {
     "Dispatch the next eligible stage once and do not reset revision counts. Without --once, continue resets them.",
   );
   continueCommand
-    .option("--reply <text>", "Reply for a blocked stage or pending question. The new execution prompt body is this text.")
+    .option("--reply <text>", "Reply for a blocked or cancelled stage, or a pending question. The new execution prompt body is this text.")
     .option("--reply-file <file>", "Read the stage's reply from this file.")
     .addHelpText(
       "after",

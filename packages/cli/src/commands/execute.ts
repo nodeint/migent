@@ -74,6 +74,10 @@ function printResumeHint(workspace: string, result: ExecuteResult): void {
     if (result.status !== "blocked") return;
   }
   printResumeCommand(result.sessionId);
+  if (result.status === "cancelled" || result.code === 130) {
+    const cancelled = new SessionStore(workspace).cancelledStages(result.sessionId);
+    printReplyCommand(result.sessionId, cancelled.length === 1 ? cancelled[0]!.stageId : undefined, "steer");
+  }
 }
 
 const INSPECT_EXIT_CODES = new Set([1, 3, 6, 8]);

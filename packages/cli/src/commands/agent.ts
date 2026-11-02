@@ -11,6 +11,7 @@ import {
   loadRoleInstructions,
   loadYamlMapping,
   log,
+  buildStageReplyPrompt,
   prependRoleInstructions,
   requireAgentSession,
   isSessionLockLost,
@@ -234,19 +235,26 @@ export async function continueAgent(
     repairSessionUnlocked(workspace, args.sessionId);
     const store = new SessionStore(workspace);
     const status = store.readSessionStatus(args.sessionId);
-    const sessionStatus = typeof status.status === "string" ? status.status : "";
+    let sessionStatus = typeof status.status === "string" ? status.status : "";
     const role = typeof status.role === "string" ? status.role : "";
     if (role === "") throw new ConfigurationError(`Session ${args.sessionId} has no role.`);
+    // A reply to a stopped turn supersedes it: the cancelled execution stays cancelled and the reply runs as a new turn.
+    let cancelledReply: { executionId: string; text: string } | null = null;
+    const pendingCancelled = store.pendingCancelledReply(args.sessionId, role);
+    if (args.reply !== null && (sessionStatus === "cancelled" || pendingCancelled !== null)) {
+      const target = store.cancelledStages(args.sessionId).find((row) => row.stageId === role);
+      if (!target) throw new ConfigurationError(`Session ${args.sessionId} has no cancelled execution to reply to.`);
+      store.supersedeCancelled(args.sessionId, role, args.reply);
+      cancelledReply = { executionId: target.executionId, text: args.reply };
+    } else if (pendingCancelled !== null) {
+      cancelledReply = { executionId: pendingCancelled.executionId, text: pendingCancelled.reply };
+    }
+    if (cancelledReply !== null) sessionStatus = "active";
     if (sessionStatus === "completed" && args.reply === null) {
       printNotice(`Session ${args.sessionId} is completed.`);
       return 0;
     }
-    if (sessionStatus === "cancelled" && args.reply !== null) {
-      throw new ConfigurationError(
-        `Session ${args.sessionId} was cancelled. session continue resumes that execution. Omit --reply.`,
-      );
-    }
-    const pending = store.questionStages(args.sessionId).find((row) => row.stageId === role);
+    const pending = cancelledReply === null ? store.questionStages(args.sessionId).find((row) => row.stageId === role) : undefined;
     const reply = args.reply ?? (pending ? store.questionReply(args.sessionId, pending.executionId) : null);
     if (sessionStatus === "question" && reply === null) {
       printNotice(`Session ${args.sessionId} has a pending question. Continue with --reply.`);
@@ -275,7 +283,12 @@ export async function continueAgent(
         );
       }
       let prompt: string;
-      if (reply !== null) {
+      let resumeId = latest.executionId;
+      if (cancelledReply !== null) {
+        log(`session ${args.sessionId} was stopped during ${cancelledReply.executionId}. Sending your reply to ${role}.`);
+        prompt = rolePrompt(workspace, role, buildStageReplyPrompt(cancelledReply.text, undefined, cancelledReply.executionId));
+        resumeId = cancelledReply.executionId;
+      } else if (reply !== null) {
         const answer = pending && args.reply !== null ? store.resumeQuestion(args.sessionId, role, reply) : reply;
         prompt = rolePrompt(workspace, role, answer);
       } else if (sessionStatus === "blocked") {
@@ -309,7 +322,7 @@ export async function continueAgent(
       const result = await rerunQuota(
         workspace,
         args.sessionId,
-        await rerun(prompt, latest.executionId),
+        await rerun(prompt, resumeId),
         () => prompt,
         rerun,
         waitedUntil,
@@ -472,6 +485,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function finishRole(sessionId: string, code: number): number {
   if (code === 9) printReplyCommand(sessionId);
   if (code === 1 || code === 6 || code === 130) printResumeCommand(sessionId);
+  if (code === 130) printReplyCommand(sessionId, undefined, "steer");
   return code;
 }
 

@@ -15,7 +15,7 @@ import type { SkipDetails } from "./run-when.js";
 import { writeFileAtomic, writeJsonAtomic } from "./atomic-file.js";
 import { ConfigurationError, OutputsMissing } from "./errors.js";
 import { sealSessionMetrics } from "./metrics.js";
-import { appendLifecycleEvent, appendRecordedEvent, readParsedEvents, reservedExecutionOrders, reservedStageAttempts, skipsStatusWrite } from "./session-events.js";
+import { appendLifecycleEvent, appendRecordedEvent, CANCELLED_REPLY, readParsedEvents, reservedExecutionOrders, reservedStageAttempts, skipsStatusWrite } from "./session-events.js";
 import { commitFoldedStatus, readSessionManifest } from "./session-fold.js";
 import { loadFrozenWorkflow } from "./session-freeze.js";
 import { assertSessionLockHeld } from "./session-lock.js";
@@ -427,6 +427,61 @@ export class SessionStore {
     }));
   }
 
+  /** Latest cancelled execution of each stage, in execution order. */
+  cancelledStages(sessionId: string): { executionId: string; stageId: string }[] {
+    const latest = new Map<string, ExecutionSnapshot>();
+    for (const row of this.executionSnapshots(sessionId)) {
+      if (row.status === "skipped") continue;
+      const prev = latest.get(row.stageId);
+      if (prev === undefined || row.executionOrder > prev.executionOrder) latest.set(row.stageId, row);
+    }
+    return [...latest.values()]
+      .filter((row) => row.status === "cancelled")
+      .sort((left, right) => left.executionOrder - right.executionOrder)
+      .map((row) => ({ executionId: row.executionId, stageId: row.stageId }));
+  }
+
+  /** Cancelled executions that a reply replaced. They are never reopened in place. */
+  supersededExecutionIds(sessionId: string): Set<string> {
+    const ids = new Set<string>();
+    for (const event of readParsedEvents(path.join(this.sessionsDirectory, sessionId, "events.jsonl"))) {
+      if (event.event === "session.active" && event.data.from === CANCELLED_REPLY && event.executionId) ids.add(event.executionId);
+    }
+    return ids;
+  }
+
+  /**
+   * Record a reply that supersedes a cancelled stage execution. The execution stays cancelled;
+   * the reply is dispatched as a new execution that continues its conversation.
+   */
+  supersedeCancelled(sessionId: string, stageId: string, reply: string): void {
+    const directory = path.join(this.sessionsDirectory, sessionId);
+    assertSessionLockHeld(directory);
+    const target = this.cancelledStages(sessionId).find((row) => row.stageId === stageId);
+    if (!target) throw new ConfigurationError(`Stage ${stageId} has no cancelled execution.`);
+    if (!reply.trim()) throw new ConfigurationError("--reply is empty.");
+    // Persist the reply before dispatch so an interrupted dispatch can be recovered.
+    appendLifecycleEvent(directory, {
+      event: "session.active", timestamp: utcNow(), executionId: target.executionId, stageId: stageId || null,
+      data: { from: CANCELLED_REPLY, reply },
+    });
+    this.rewriteManifestStatus(directory, "running");
+    commitFoldedStatus(this.workspace, directory);
+  }
+
+  /** A recorded reply whose superseded execution is still the latest of its stage, so it was not dispatched yet. */
+  pendingCancelledReply(sessionId: string, stageId: string | null = null): { executionId: string; stageId: string; reply: string } | null {
+    const events = readParsedEvents(path.join(this.sessionsDirectory, sessionId, "events.jsonl"));
+    for (const row of this.cancelledStages(sessionId)) {
+      if (stageId !== null && row.stageId !== stageId) continue;
+      const event = [...events].reverse().find((item) =>
+        item.event === "session.active" && item.executionId === row.executionId && item.data.from === CANCELLED_REPLY,
+      );
+      if (typeof event?.data.reply === "string") return { ...row, reply: event.data.reply };
+    }
+    return null;
+  }
+
   /** Questions are execution outcomes; the recipient is configured by the stage. */
   questionStages(sessionId: string): { executionId: string; stageId: string; question: string; questions: Question[] }[] {
     const latest = new Map<string, ExecutionSnapshot>();
@@ -578,8 +633,9 @@ export class SessionStore {
       return { context, metadata, order: asInt(metadata.execution_order) };
     });
     const selected = latestPerStage ? latestExecutionPerStage(rows) : rows;
+    const superseded = this.supersededExecutionIds(sessionId);
     const cancelled = selected
-      .filter((item) => item.metadata.status === "cancelled")
+      .filter((item) => item.metadata.status === "cancelled" && !superseded.has(item.context.executionId))
       .sort((left, right) =>
         compareSortKey([left.order, left.context.executionId], [right.order, right.context.executionId]),
       );

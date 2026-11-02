@@ -95,8 +95,12 @@ export async function dispatchNamedStage(
   const stage = workflow.stages[request.stageId];
   const ownAgent = stageAgentExecution(snapshots, request.stageId);
   const question = snapshots.find((row) => row.executionId === ownAgent && row.outcomeStatus === "question");
+  // A reply to a stopped turn continues that turn's own conversation, even for a resume_from stage.
+  const interrupted = snapshots.find((row) => row.executionId === ownAgent && row.status === "cancelled");
   const resumeExecutionId = question
     ? question.executionId
+    : interrupted
+      ? interrupted.executionId
     : stage?.resumeFrom
       ? (verifyExhaustedExecution(snapshots, request.stageId)?.executionId ??
         revisionResumeExecution(workflow, snapshots, request.stageId) ??

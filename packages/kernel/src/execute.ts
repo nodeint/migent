@@ -176,6 +176,8 @@ async function executeLocked(
   let workflowId: string;
   let resumeCancelled = false;
   let reopenLatestCancelled = false;
+  // A cancelled-stage reply never resumes blocked siblings; they keep their blockers.
+  let cancelledReplyStage = false;
   let stageReply: PendingStageReply | null = null;
   const replyText = typeof request.reply === "string" ? request.reply : null;
   if (sessionId) {
@@ -195,15 +197,26 @@ async function executeLocked(
       throw new ConfigurationError("--reply is empty.");
     }
     if (replyText !== null) {
-      const waiting = [...store.blockedStages(sessionId), ...store.questionStages(sessionId)];
-      if (waiting.length === 0) throw new ConfigurationError("--reply requires a blocked stage or a pending question.");
+      const cancelled = store.cancelledStages(sessionId);
+      const waiting = [...store.blockedStages(sessionId), ...store.questionStages(sessionId), ...cancelled];
+      if (waiting.length === 0) throw new ConfigurationError("--reply requires a blocked, cancelled, or question stage.");
       if (waiting.length > 1 && stageId === null) throw new ConfigurationError(`--reply needs --stage when more than one stage is waiting: ${waiting.map((row) => row.stageId).join(", ")}.`);
       const target = stageId ?? waiting[0]!.stageId;
       if (!waiting.some((row) => row.stageId === target)) throw new ConfigurationError(`Stage ${target} is not waiting for a reply.`);
       stageReply = { stageId: target, text: replyText };
+      const cancelledTarget = cancelled.find((row) => row.stageId === target);
       if (store.questionStages(sessionId).some((row) => row.stageId === target)) {
         stageReply.text = store.resumeQuestion(sessionId, target, replyText);
         sessionStatus = "active";
+      } else if (cancelledTarget) {
+        if (verifyOnlyExecution(workspace, sessionId, cancelledTarget.executionId)) {
+          throw new ConfigurationError(`Stage ${target} has no agent to reply to. Omit --reply to run its verify list again.`);
+        }
+        store.supersedeCancelled(sessionId, target, replyText);
+        sessionStatus = "active";
+        cancelledReplyStage = true;
+        resumeCancelled = true;
+        reopenLatestCancelled = true;
       }
     } else {
       // Recover an answer recorded before a dispatch was interrupted or failed preflight.
@@ -211,6 +224,25 @@ async function executeLocked(
         ...row, reply: store.questionReply(sessionId!, row.executionId),
       })).find((row) => row.reply !== null && (stageId === null || stageId === row.stageId));
       if (answered) stageReply = { stageId: answered.stageId, text: answered.reply! };
+      else {
+        // Recover a reply to a cancelled stage that was recorded before its dispatch.
+        const pending = store.pendingCancelledReply(sessionId, stageId);
+        if (pending) {
+          stageReply = { stageId: pending.stageId, text: pending.reply };
+          sessionStatus = "active";
+          cancelledReplyStage = true;
+          resumeCancelled = true;
+          reopenLatestCancelled = true;
+        }
+      }
+    }
+    if (!resumeCancelled && store.pendingCancelledReply(sessionId) !== null) {
+      // A saved reply makes the session active while another cancelled stage still waits to be reopened.
+      const superseded = store.supersededExecutionIds(sessionId);
+      if (store.cancelledStages(sessionId).some((row) => !superseded.has(row.executionId))) {
+        resumeCancelled = true;
+        reopenLatestCancelled = true;
+      }
     }
     if (request.startPrepared) {
       if (sessionStatus !== "prepared") {
@@ -227,7 +259,7 @@ async function executeLocked(
         `Session ${sessionId} is prepared. Run: ${preparedRunHint(sessionId, bound.status)}`,
       );
     }
-    if (sessionStatus === "blocked" || (stageReply !== null && store.blockedStages(sessionId).some((row) => row.stageId === stageReply!.stageId))) {
+    if (!cancelledReplyStage && (sessionStatus === "blocked" || (stageReply !== null && store.blockedStages(sessionId).some((row) => row.stageId === stageReply!.stageId)))) {
       const resumed = store.resumeBlockedSession(
         sessionId,
         stageReply?.stageId ?? stageId,
@@ -1224,7 +1256,11 @@ async function dispatchExecuteStage(
   const stageReply = takeStageReply(reply, stageId);
   const prompt =
     stageReply !== null
-      ? buildStageReplyPrompt(stageReply, new SessionStore(workspace).questionStages(sessionId).find((row) => row.stageId === stageId)?.question)
+      ? buildStageReplyPrompt(
+          stageReply,
+          new SessionStore(workspace).questionStages(sessionId).find((row) => row.stageId === stageId)?.question,
+          interruptedExecutionId(snapshots, stageId),
+        )
       : exhausted?.verifyReport
         ? buildVerifyRepairPrompt(
             readFileSync(exhausted.verifyReport, "utf8"),
@@ -1322,6 +1358,16 @@ function skipUnlessRunWhenMatches(
       changed_paths: evaluation.skip.changedPaths,
     },
   };
+}
+
+/** Execution id of the stage's latest attempt when the human stopped it before it finished. */
+function interruptedExecutionId(snapshots: readonly ExecutionSnapshot[], stageId: string): string | undefined {
+  let latest: ExecutionSnapshot | null = null;
+  for (const snapshot of snapshots) {
+    if (snapshot.stageId !== stageId || snapshot.status === "skipped") continue;
+    if (latest === null || snapshot.executionOrder > latest.executionOrder) latest = snapshot;
+  }
+  return latest?.status === "cancelled" ? latest.executionId : undefined;
 }
 
 function takeStageReply(reply: PendingStageReply | null, stageId: string): string | null {

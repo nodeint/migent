@@ -474,3 +474,94 @@ completion:
   expect(second.code).toBe(0);
   expect(second.stopReason).toBe("completed");
 }, 30_000);
+
+test("a reply to a cancelled stage runs as a new execution in the same conversation", async () => {
+  const root = tempDir("migent-cancel-reply-");
+  const pidFile = path.join(root, "pid");
+  const { workspace, sessionId } = setup(`\
+id: wf
+stages:
+  - id: implement
+    role: developer
+completion:
+  stage: implement
+`);
+  const provider = new HangFirstProvider(pidFile, [OK]);
+  const runner = new AgentToolRunner({ fake: provider }, 10);
+  const timer = setInterval(() => {
+    if (!existsSync(pidFile) || readFileSync(pidFile, "utf8").trim() === "") return;
+    clearInterval(timer);
+    try {
+      raiseCancellation(15);
+    } catch {
+      // The waiters were woken; the throw is for signal handlers.
+    }
+  }, 50);
+  const first = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId }, runner);
+  clearInterval(timer);
+  expect(first.status).toBe("cancelled");
+  const cancelledId = executionIds(workspace, sessionId)[0]!;
+  expect(new SessionStore(workspace).cancelledStages(sessionId).map((row) => row.executionId)).toEqual([cancelledId]);
+
+  const second = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId, reply: "Use the v2 API instead", resetRevisions: true }, runner);
+  expect(second.code).toBe(0);
+  expect(second.stopReason).toBe("completed");
+  const ids = executionIds(workspace, sessionId);
+  expect(ids).toHaveLength(2);
+  expect(second.latestExecutionId).not.toBe(cancelledId);
+  const store = new SessionStore(workspace);
+  expect(store.supersededExecutionIds(sessionId).has(cancelledId)).toBe(true);
+  expect(store.pendingCancelledReply(sessionId)).toBeNull();
+  const executionJson = JSON.parse(
+    readFileSync(path.join(workspace, ".migent", "sessions", sessionId, "executions", cancelledId, "execution.json"), "utf8"),
+  ) as { status: string };
+  expect(executionJson.status).toBe("cancelled");
+  const prompt = provider.calls[1]?.prompt ?? "";
+  expect(prompt).toContain(`Your previous turn (execution ${cancelledId}) was stopped by the human before it finished.`);
+  expect(prompt).toContain("Use the v2 API instead");
+}, 30_000);
+
+test("a reply recorded before dispatch is sent by plain continue and never reopens the superseded execution", async () => {
+  const root = tempDir("migent-cancel-reply-recover-");
+  const pidFile = path.join(root, "pid");
+  const { workspace, sessionId } = setup(`\
+id: wf
+stages:
+  - id: implement
+    role: developer
+completion:
+  stage: implement
+`);
+  const provider = new HangFirstProvider(pidFile, [OK]);
+  const runner = new AgentToolRunner({ fake: provider }, 10);
+  const timer = setInterval(() => {
+    if (!existsSync(pidFile) || readFileSync(pidFile, "utf8").trim() === "") return;
+    clearInterval(timer);
+    try {
+      raiseCancellation(15);
+    } catch {
+      // The waiters were woken; the throw is for signal handlers.
+    }
+  }, 50);
+  await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId }, runner);
+  clearInterval(timer);
+  const cancelledId = executionIds(workspace, sessionId)[0]!;
+  const store = new SessionStore(workspace);
+  const lock = SessionLock.acquire(path.join(workspace, ".migent", "sessions", sessionId));
+  try {
+    store.supersedeCancelled(sessionId, "implement", "Take another approach");
+    expect(store.readSessionStatus(sessionId).status).toBe("active");
+    expect(store.pendingCancelledReply(sessionId)?.reply).toBe("Take another approach");
+    expect(() => store.reopenCancelledExecutions(sessionId, true)).not.toThrow();
+    expect(store.reopenCancelledExecutions(sessionId, true)).toEqual([]);
+  } finally {
+    lock.release();
+  }
+  const result = await executeNamedWorkflow(workspace, { workflowId: "wf", sessionId }, runner);
+  expect(result.code).toBe(0);
+  expect(executionIds(workspace, sessionId)).toHaveLength(2);
+  expect(provider.calls[1]?.prompt).toContain("Take another approach");
+  expect(new SessionStore(workspace).pendingCancelledReply(sessionId)).toBeNull();
+  expect(new SessionStore(workspace).cancelledStages(sessionId).map((row) => row.executionId)).toEqual([]);
+  expect(cancelledId).toBeTruthy();
+}, 30_000);
