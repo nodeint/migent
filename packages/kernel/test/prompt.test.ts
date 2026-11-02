@@ -130,7 +130,6 @@ test("populated prompt matches the template snapshot", () => {
       "Constraints:\n- Do not write implementation code.\n- Do not infer decisions from review prose.",
       `Upstream artifacts on this session:\n- plan: ${planPath}`,
       `Prior session context:\n- session: prior-1\n- plan: ${priorPath}`,
-      "Write the file artifact as `implementation-result.md` in the execution artifacts directory.",
     ].join("\n\n"),
   );
 });
@@ -163,7 +162,7 @@ test("plan includes artifact sentence and constraints", () => {
     snapshots: [],
     workspace: "/tmp",
   });
-  expect(prompt).toContain("Write the file artifact as `plan.md`");
+  expect(prompt).not.toContain("Write the file artifact");
   expect(prompt).toContain("Do not write implementation code.");
   expect(prompt).not.toContain("Upstream artifacts");
 });
@@ -224,7 +223,7 @@ test("write tests uses latest successful implement artifact", () => {
   });
   expect(prompt).toContain(resolved(path.join(ok, "implementation-result.md")));
   expect(prompt).not.toContain(resolved(path.join(failed, "implementation-result.md")));
-  expect(prompt).toContain("Write the file artifact as `test-result.md`");
+  expect(prompt).not.toContain("Write the file artifact");
   expect(prompt).toContain(resolved(path.join(review, "response.md")));
 });
 
@@ -276,11 +275,11 @@ test("a later visit sends only the continuation", () => {
   expect(prompt).toContain(resolved(path.join(review, "response.md")));
   expect(prompt).toContain("Previous plan artifact");
   expect(prompt).not.toContain("Do not write implementation code.");
-  expect(prompt).not.toContain("Read the task from");
+  expect(prompt).toContain("Read the task from");
   expect(prompt).not.toContain("Stage: plan");
 });
 
-test("a later visit with no new notes is only the continuation line", () => {
+test("a later visit with no new notes names only the task", () => {
   const workspace = tempDir("migent-prompt-");
   const prompt = buildStageResumePrompt({
     workflow: workflowFile("plan"),
@@ -288,7 +287,7 @@ test("a later visit with no new notes is only the continuation line", () => {
     snapshots: [snapshot("plan", 1, path.join(workspace, "plan-1"), { status: "failed", outcomeStatus: null })],
     workspace,
   });
-  expect(prompt).toBe("Continue this stage.");
+  expect(prompt).toBe(`Continue this stage.\nRead the task from \`${resolved(path.join(workspace, ".migent", "sessions", "session", "task.md"))}\`.`);
 });
 
 test("revision retry keeps the review that requested it", () => {

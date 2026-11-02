@@ -255,6 +255,10 @@ test("a batch validates single and multiple selections before resuming and recor
       { status: "answered", answer: { selected: ["A", "B"] } },
       { status: "answered", answer: { selected: [], text: "chưa rõ - giải thích thêm" } },
     ]);
-    expect(provider.calls[1]?.prompt).toContain('"labels": [');
+    const reply = provider.calls[1]?.prompt ?? "";
+    expect(reply).toContain("1. Support existing sessions?\nSelected: New sessions only");
+    expect(reply).toContain("2. Which platforms?\nSelected: Linux; Windows");
+    expect(reply).toContain("3. Is the migration requirement clear?\nAnswer: chưa rõ - giải thích thêm");
+    expect(reply).not.toContain('"labels"');
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

@@ -1,3 +1,4 @@
+import path from "node:path";
 import { createProviderResolver } from "./provider-contract.js";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
@@ -15,6 +16,9 @@ import {
 } from "./config.js";
 import { ConfigurationError } from "./errors.js";
 import { isRecord } from "./record.js";
+import { placeholderWhenWarnings, unknownRoleKeys } from "./authoring-diagnostics.js";
+import { readFileSync } from "node:fs";
+import { parseYamlDocument } from "./yaml.js";
 import { isRoleStage, loadWorkflowCatalog, type WorkflowDocument } from "./workflow.js";
 
 const require = createRequire(import.meta.url);
@@ -216,7 +220,7 @@ function checkConfig(
     roleNames.push(roleKey);
   }
 
-  const warnings = [...trackedLocalConfigWarnings(workspace), ...effortWarnings];
+  const warnings = [...trackedLocalConfigWarnings(workspace), ...effortWarnings, ...unknownRoleKeys(config)];
   if (problems.length > 0) {
     return { check: failed("config", problems, [], warnings), executableByProvider, problems, config, unmapped };
   }
@@ -256,8 +260,22 @@ function checkWorkflows(
     }
   }
   const items = Object.keys(catalog.documents).filter((workflowId) => !workflowFailed(workflowId, problems));
-  if (problems.length > 0) return failed("workflows", problems, items);
-  return passed("workflows", items);
+  const warnings = Object.values(catalog.documents).flatMap(workflowWarnings);
+  if (problems.length > 0) return failed("workflows", problems, items, warnings);
+  return passed("workflows", items, warnings);
+}
+
+/** Parse-time unknown keys plus decision `when` values that still hold the migration placeholder. */
+function workflowWarnings(document: WorkflowDocument): string[] {
+  const label = document.source === null ? document.id : path.basename(document.source);
+  const messages = [...(document.warnings ?? [])];
+  if (document.source !== null) {
+    try {
+      const raw = parseYamlDocument(readFileSync(document.source, "utf8"));
+      if (isRecord(raw)) messages.push(...placeholderWhenWarnings(raw));
+    } catch { /* The loader already reported an unreadable workflow. */ }
+  }
+  return messages.map((message) => `${label}: ${message}`);
 }
 
 function checkStageBindings(

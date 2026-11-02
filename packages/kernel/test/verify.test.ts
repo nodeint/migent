@@ -747,7 +747,7 @@ test("prompt lists verify commands and dependency pass table", () => {
   const workflow = loadWorkflowDocument(file);
   const prompt = buildStagePrompt({ workflow, stageId: "implement", snapshots: [], workspace: dir });
   expect(prompt).toContain("Verify commands:");
-  expect(prompt).toContain("These commands must exit 0 before you report `status: complete`.");
+  expect(prompt).toContain("After you report `status: complete`, Migent runs these commands in the workspace, in order, and accepts completion only if all exit 0.");
   expect(prompt).not.toContain("after you report `status: complete`");
   expect(prompt).not.toContain("The first failure stops the run.");
   expect(prompt).toContain("- pnpm gate");

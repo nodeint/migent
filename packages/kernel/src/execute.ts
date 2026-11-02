@@ -1258,7 +1258,7 @@ async function dispatchExecuteStage(
     stageReply !== null
       ? buildStageReplyPrompt(
           stageReply,
-          new SessionStore(workspace).questionStages(sessionId).find((row) => row.stageId === stageId)?.question,
+          lonePendingQuestion(new SessionStore(workspace).questionStages(sessionId).find((row) => row.stageId === stageId)),
           interruptedExecutionId(snapshots, stageId),
         )
       : exhausted?.verifyReport
@@ -1670,4 +1670,9 @@ function startTracked<T>(
 
 function hasErrorCode(error: Error): boolean {
   return "code" in error && typeof (error as { code?: unknown }).code === "string";
+}
+
+/** The reply prompt names a lone question; several questions are spelled out in the formatted answers. */
+function lonePendingQuestion(row: { question: string; questions: readonly unknown[] } | undefined): string | undefined {
+  return row !== undefined && row.questions.length <= 1 ? row.question : undefined;
 }

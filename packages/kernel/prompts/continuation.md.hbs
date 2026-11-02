@@ -1,7 +1,7 @@
 {{#if upstream}}
 
 Upstream artifacts on this session:{{#each upstream}}
-- {{stageId}}{{#if verify}} verify{{/if}}: {{path}}{{/each}}{{/if}}{{#if routed}}
+- {{stageId}}{{#if verify}} verify{{/if}}: {{path}}{{#if updated}} (updated since your last visit){{/if}}{{/each}}{{/if}}{{#if routed}}
 
 Decision that routed to this stage:{{#each routed.decisions}}
 - {{stageId}} ({{decision}}): {{path}}{{/each}}

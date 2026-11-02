@@ -297,3 +297,39 @@ test("names each alias that has no local mapping and how to add it", () => {
   });
   expect(fixed.ok).toBe(true);
 });
+
+test("warns about unused workflow keys and placeholder decision text, with locations", () => {
+  const workspace = tempDir("migent-doctor-");
+  writeStageProject(workspace);
+  writeFileSync(path.join(workspace, ".migent", "workflows", "plan-implement.yaml"), [
+    "schema_version: 4",
+    "id: plan-implement",
+    "stages:",
+    "  - id: build",
+    "    role: developer",
+    "    depends_on: []",
+    "    instrutions:",
+    "      - Build it.",
+    "    produces:",
+    "      artifact: build.md",
+    "      description: What the build contains.",
+    "  - id: review",
+    "    role: reviewer",
+    "    depends_on: [build]",
+    "    decision:",
+    "      - approved:",
+    "          when: Choose approved according to the stage instructions.",
+    "          navigate: complete",
+    "      - revise:",
+    "          when: A required fix remains.",
+    "          navigate: build",
+    "",
+  ].join("\n"), "utf8");
+  const [, workflows] = diagnose(workspace, { providers: defaultProviders(), which: whichFound(new Set(["codex", "grok"])) });
+  expect(workflows.ok).toBe(true);
+  const text = workflows.warnings.join("\n");
+  expect(text).toContain("plan-implement.yaml: stages.build.instrutions is not used by Migent. Did you mean stages.build.instructions?");
+  expect(text).toContain("stages.build.produces.description is not used by Migent.");
+  expect(text).toContain("stages.review.decision.approved.when is the migration placeholder.");
+  expect(text).not.toContain("decision.revise");
+});

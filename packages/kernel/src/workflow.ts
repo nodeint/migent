@@ -1,4 +1,5 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
+import { UNKNOWN_KEYS_ERROR_SCHEMA_VERSION, unknownWorkflowKeys } from "./authoring-diagnostics.js";
 import path from "node:path";
 import { z } from "zod";
 import type { AskTarget } from "./stage-outcome.js";
@@ -90,6 +91,8 @@ export interface WorkflowDocument {
   concurrency?: number;
   outputs?: WorkflowOutput[];
   downstream?: WorkflowDownstream[];
+  /** Authoring diagnostics from parsing; not part of the document schema. */
+  warnings?: string[];
 }
 
 /** Accepted workflow and config document version. */
@@ -233,7 +236,16 @@ export function loadWorkflowDocument(filePath: string): WorkflowDocument {
   }
   const data = parseYamlDocument(text);
   if (!isRecord(data)) throw new ConfigurationError(`Workflow must be a mapping: ${filePath}`);
-  return parseWorkflowMapping(data, filePath);
+  const document = parseWorkflowMapping(data, filePath);
+  for (const warning of document.warnings ?? []) warnOnce(`${path.basename(filePath)}: ${warning}`);
+  return document;
+}
+
+const reportedWarnings = new Set<string>();
+function warnOnce(message: string): void {
+  if (reportedWarnings.has(message)) return;
+  reportedWarnings.add(message);
+  process.stderr.write(`warning: ${message}\n`);
 }
 
 /** Parse a workflow mapping. `source` is stored on the document and is not read from `data`. */
@@ -246,6 +258,10 @@ export function parseWorkflowMapping(data: Record<string, unknown>, source: stri
     );
   }
   const version2 = schemaVersion >= 2;
+  const unknown = unknownWorkflowKeys(data);
+  if (unknown.length > 0 && schemaVersion >= UNKNOWN_KEYS_ERROR_SCHEMA_VERSION) {
+    throw new ConfigurationError(`Unknown workflow keys: ${unknown.join(" ")}`);
+  }
   if (schemaVersion >= 4 && Object.hasOwn(data, "requires")) {
     throw new ConfigurationError("requires was removed in schema_version 4. Run `migent migrate`; use --prior for context and downstream for suggestions.");
   }
@@ -264,7 +280,7 @@ export function parseWorkflowMapping(data: Record<string, unknown>, source: stri
   validateConditionalStages(stages, outputs ?? []);
   const concurrency = version2 ? parseConcurrency(data) : undefined;
   validateVerifyPaths(stages, completion, version2);
-  return workflowDocumentSchema.parse({
+  const document: WorkflowDocument = workflowDocumentSchema.parse({
     id: workflowId,
     stages,
     completion,
@@ -276,6 +292,8 @@ export function parseWorkflowMapping(data: Record<string, unknown>, source: stri
     ...(outputs === undefined ? {} : { outputs }),
     ...(schemaVersion >= 4 ? { downstream: parseDownstream(data.downstream, outputs ?? []) } : {}),
   });
+  if (unknown.length > 0) document.warnings = unknown;
+  return document;
 }
 
 function parseDownstream(raw: unknown, outputs: readonly WorkflowOutput[]): WorkflowDownstream[] {

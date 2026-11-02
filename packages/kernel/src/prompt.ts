@@ -45,10 +45,19 @@ export function buildStageResumePrompt(input: {
   stageId: string;
   snapshots: readonly ExecutionSnapshot[];
   workspace: string;
+  taskFile?: string | null;
+  sessionDirectory?: string | null;
 }): string {
   const stage = input.workflow.stages[input.stageId];
   if (stage === undefined) throw new Error(`Stage is not declared: ${input.stageId}.`);
-  return renderPrompt("stage-continue", continuationContext(input, stage.dependsOn));
+  const sessionDirectory = input.sessionDirectory ?? path.join(input.workspace, ".migent", "sessions", "session");
+  const previous = latestCompleteByStage(input.snapshots)[input.stageId];
+  const response = previous ? resolvePath(path.join(path.dirname(previous.artifactDirectory), "response.md")) : null;
+  return renderPrompt("stage-continue", {
+    ...continuationContext(input, stage.dependsOn),
+    taskFile: resolvePath(input.taskFile ?? path.join(sessionDirectory, "task.md")),
+    previousResponse: response !== null && isFile(response) ? response : null,
+  });
 }
 
 function continuationContext(
@@ -56,7 +65,7 @@ function continuationContext(
   dependsOn: readonly string[],
 ) {
   return {
-    upstream: upstreamArtifacts(input.workflow, dependsOn, input.snapshots),
+    upstream: upstreamArtifacts(input.workflow, dependsOn, input.snapshots, input.stageId),
     routed: routedResultContext(input.workflow, input.stageId, input.snapshots),
     blocked: previousBlockedAttempt(input.stageId, input.snapshots),
   };
@@ -85,9 +94,11 @@ function upstreamArtifacts(
   workflow: WorkflowDocument,
   dependsOn: readonly string[],
   snapshots: readonly ExecutionSnapshot[],
-): { stageId: string; path: string; verify: boolean }[] {
+  stageId: string,
+): { stageId: string; path: string; verify: boolean; updated: boolean }[] {
   const complete = latestCompleteByStage(snapshots);
-  const lines: { stageId: string; path: string; verify: boolean }[] = [];
+  const ownOrder = complete[stageId]?.executionOrder ?? 0; // 0: first visit, nothing counts as updated
+  const lines: { stageId: string; path: string; verify: boolean; updated: boolean }[] = [];
   for (const depId of dependsOn) {
     const dep = workflow.stages[depId];
     if (dep === undefined) continue;
@@ -95,11 +106,11 @@ function upstreamArtifacts(
     if (snapshot === undefined) continue;
     if (dep.artifact) {
       const artifactPath = resolvePath(path.join(snapshot.artifactDirectory, dep.artifact));
-      lines.push({ stageId: depId, path: artifactPath, verify: false });
+      lines.push({ stageId: depId, path: artifactPath, verify: false, updated: ownOrder > 0 && snapshot.executionOrder > ownOrder });
     }
     if (dep.verify.length > 0) {
       const reportPath = resolvePath(path.join(snapshot.artifactDirectory, VERIFY_ARTIFACT));
-      lines.push({ stageId: depId, path: reportPath, verify: true });
+      lines.push({ stageId: depId, path: reportPath, verify: true, updated: ownOrder > 0 && snapshot.executionOrder > ownOrder });
     }
   }
   return lines;
