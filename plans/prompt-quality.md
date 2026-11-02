@@ -27,9 +27,9 @@ files. Prompts of the same kind differ only in session paths, so five kinds
 exist: implement (first), review (first), implement (revision), review
 (revision), and implement (reply to a human answer).
 
-Session `a895aac7` (task: "tiếp tục implement S11") needed four `implement`
-attempts. The review decision `revise` in that session is the main case study
-for T4 and T7.
+Session `a895aac7` (task: "tiếp tục implement S11") ran five executions:
+implement, review (`revise`), implement (asked the human), then two more
+implement runs answering the human. It is the main case study for T4 and T7.
 
 Prompt-engineering criteria used for judging, with their limits:
 
@@ -164,11 +164,15 @@ Two required parts of S11 remain incomplete:
 ```
 
 The first `implement` attempt had already written those gaps into
-`implement.md` and still returned `status: complete`. The workflow then ran
-attempts 2, 3, and 4 before the human was asked, because both items need a
-person or a real host, not more code.
+`implement.md` and still returned `status: complete`. Only the revision attempt
+(`0003-implement--attempt-02`) recognised that the items need a person or a
+real host and returned `status: question` ("I can run VS Code on this Windows
+machine only through the automated integration harness. I cannot drive the
+GUI ..."). That question was then answered in two further rounds (`0004`,
+`0005`).
 
-Impact: three extra attempts, and the first review round was wasted.
+Impact: one full implement-plus-review round was spent before the question
+that could have been asked at the start.
 
 Proposal, in the implement stage: "Before changing code, list the
 requirements that cannot be verified by running commands here (manual steps,
