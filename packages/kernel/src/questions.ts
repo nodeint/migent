@@ -124,19 +124,4 @@ function numberedAnswers(questions: readonly Question[], reply: string): Record<
   return values;
 }
 
-/**
- * Readable Q/A text for the agent: selected option labels and any free text; empty fields are omitted.
- * A lone question is not repeated because the reply prompt already names it; several are numbered with their text.
- */
-export function formatQuestionAnswers(questions: readonly Question[], answers: readonly QuestionAnswer[]): string {
-  return answers.map((answer) => {
-    const question = questions.find((row) => row.id === answer.question_id)!;
-    const lines = questions.length === 1 ? [] : [`${answer.question_id}. ${question.question}`];
-    if (answer.selected.length > 0) {
-      const labels = answer.selected.map((id) => question.options.find((option) => option.id === id)!.label);
-      lines.push(`Selected: ${labels.join("; ")}`);
-    }
-    if (answer.text) lines.push(`Answer: ${answer.text}`);
-    return lines.join("\n");
-  }).join("\n\n");
-}
+export { formatQuestionAnswers } from "@nodeint/migent-prompts";

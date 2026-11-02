@@ -2,7 +2,7 @@
 // Plain Node so it runs the same from sh, cmd.exe and PowerShell.
 import { chmodSync, cpSync, rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import "./copy-kernel-prompts.mjs";
+import "./copy-prompts.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const source = `${root}skills/migent`;

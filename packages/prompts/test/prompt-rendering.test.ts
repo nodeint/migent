@@ -1,8 +1,7 @@
 import { readFileSync } from "node:fs";
 import { expect, test } from "vitest";
-import { renderPrompt } from "../src/prompt-renderer.ts";
-import { renderProviderPrompt, flattenHistory, addArtifactContext } from "../src/runtime.ts";
-import { buildStageReplyPrompt, buildVerifyRepairPrompt } from "../src/prompt.ts";
+import { renderPrompt } from "../src/renderer.ts";
+import { addArtifactContext, buildStageReplyPrompt, flattenHistory, renderProviderPrompt, renderVerifyRepair } from "../src/index.ts";
 
 // Captured from the pre-template renderer, including whitespace and protocol examples.
 const contracts = JSON.parse(readFileSync(new URL("./fixtures/prompt-contracts.json", import.meta.url), "utf8"));
@@ -28,7 +27,7 @@ test("renders context as literal data without escaping HTML or evaluating nested
 });
 
 test("repair and previous verify report preserve their original layout", () => {
-  expect(buildVerifyRepairPrompt('check <failed>\n', 1, 3, 'C:\\work\\result.md')).toBe(
+  expect(renderVerifyRepair({ report: 'check <failed>\n', red: 1, maxVerify: 3, artifactPath: 'C:\\work\\result.md', taskFile: null, sessionDirectory: null })).toBe(
     'Verify failed (1 of 3 red runs). Fix the cause, then report again.\nThe stage artifact is at C:\\work\\result.md. Update it if your fix changes it.\n\ncheck <failed>\n',
   );
   expect(renderProviderPrompt('body', { previousVerifyReport: 'C:\\work\\verify.md' }))

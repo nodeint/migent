@@ -12,6 +12,7 @@ const templates = new Map<string, ReturnType<typeof engine.compile>>();
 type PromptName = "stage-start" | "stage-continue" | "stage-reply" | "verify-repair"
   | "role-run" | "provider-turn" | "history";
 
+/** Internal: renders one template by name. Strict lookup fails on missing data. */
 export function renderPrompt(name: PromptName, context: object): string {
   let template = templates.get(name);
   if (!template) {

@@ -50,12 +50,12 @@ importers:
 
   packages/kernel:
     dependencies:
+      '@nodeint/migent-prompts':
+        specifier: workspace:*
+        version: link:../prompts
       cross-spawn:
         specifier: ^7.0.6
         version: 7.0.6
-      handlebars:
-        specifier: ^4.7.10
-        version: 4.7.10
       proper-lockfile:
         specifier: ^4.1.2
         version: 4.1.2
@@ -78,6 +78,16 @@ importers:
       '@types/proper-lockfile':
         specifier: ^4.1.4
         version: 4.1.4
+
+  packages/prompts:
+    dependencies:
+      handlebars:
+        specifier: ^4.7.10
+        version: 4.7.10
+    devDependencies:
+      '@types/node':
+        specifier: ^26.6.4
+        version: 26.6.4
 
   packages/registry:
     dependencies:

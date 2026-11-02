@@ -39,12 +39,12 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsc -b && node ../../scripts/copy-kernel-prompts.mjs",
+    "build": "tsc -b",
     "prepack": "pnpm -w run build && cp ../../LICENSE ."
   },
   "dependencies": {
+    "@nodeint/migent-prompts": "workspace:*",
     "cross-spawn": "^7.0.6",
-    "handlebars": "^4.7.10",
     "proper-lockfile": "^4.1.2",
     "which": "^7.0.0",
     "yaml": "^2.9.1",

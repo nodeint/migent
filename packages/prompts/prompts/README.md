@@ -1,8 +1,8 @@
-# Kernel prompt templates
+# Prompt templates
 
 These Markdown/Handlebars assets own the wording and layout sent to providers.
-`prompt.ts` selects execution context and resolves paths; `runtime.ts` renders
-the provider envelope. Workflow and role instructions remain workspace data.
+The kernel (`prompt.ts`) selects execution context and resolves paths; this package renders
+the messages and provider envelope. Workflow and role instructions remain workspace data.
 
 - `stage-start`, `stage-continue`, `stage-reply`, and `verify-repair` describe
   the messages for each workflow turn.
@@ -17,5 +17,5 @@ standalone-line removal. Context text is inserted literally, never rendered
 again as a template. Preserve whitespace when changing protocol templates.
 The contract fixtures were captured from the renderer before this refactor.
 
-Builds copy these assets beside the kernel modules in `dist/prompts`; compiled
+Builds copy these assets beside the package modules in `dist/prompts`; compiled
 modules never fall back to source assets. Add new template names to the renderer.

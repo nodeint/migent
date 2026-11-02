@@ -1,4 +1,4 @@
-import { renderPrompt } from "./prompt-renderer.js";
+import { buildStageReplyPrompt, prependRoleInstructions, renderStageContinue, renderStageStart, renderVerifyRepair } from "@nodeint/migent-prompts";
 import { readFileSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import type { ExecutionSnapshot } from "./outputs.js";
@@ -23,7 +23,7 @@ export function buildStagePrompt(input: {
   const sessionDirectory =
     input.sessionDirectory ?? path.join(input.workspace, ".migent", "sessions", "session");
   const taskFile = input.taskFile ?? path.join(sessionDirectory, "task.md");
-  return renderPrompt("stage-start", {
+  return renderStageStart({
     taskFile: resolvePath(taskFile),
     sessionDirectory: resolvePath(sessionDirectory),
     stage,
@@ -34,10 +34,7 @@ export function buildStagePrompt(input: {
   });
 }
 
-/** Reply to a stage that already holds the conversation. The runner appends the response contract. */
-export function buildStageReplyPrompt(reply: string, question?: string, interruptedExecutionId?: string): string {
-  return renderPrompt("stage-reply", { reply, question: question ?? null, interruptedExecutionId: interruptedExecutionId ?? null });
-}
+export { buildStageReplyPrompt, prependRoleInstructions };
 
 /** Later visit of a stage. The provider conversation already has the stage prompt. */
 export function buildStageResumePrompt(input: {
@@ -53,7 +50,7 @@ export function buildStageResumePrompt(input: {
   const sessionDirectory = input.sessionDirectory ?? path.join(input.workspace, ".migent", "sessions", "session");
   const previous = latestCompleteByStage(input.snapshots)[input.stageId];
   const response = previous ? resolvePath(path.join(path.dirname(previous.artifactDirectory), "response.md")) : null;
-  return renderPrompt("stage-continue", {
+  return renderStageContinue({
     ...continuationContext(input, stage.dependsOn),
     taskFile: resolvePath(input.taskFile ?? path.join(sessionDirectory, "task.md")),
     previousResponse: response !== null && isFile(response) ? response : null,
@@ -71,10 +68,6 @@ function continuationContext(
   };
 }
 
-export function prependRoleInstructions(instructions: readonly string[], prompt: string): string {
-  return renderPrompt("role-run", { instructions, prompt });
-}
-
 export function buildVerifyRepairPrompt(
   report: string,
   red: number,
@@ -83,7 +76,7 @@ export function buildVerifyRepairPrompt(
   taskFile?: string | null,
   sessionDirectory?: string | null,
 ): string {
-  return renderPrompt("verify-repair", {
+  return renderVerifyRepair({
     report, red, maxVerify, artifactPath,
     taskFile: taskFile && sessionDirectory ? resolvePath(taskFile) : null,
     sessionDirectory: taskFile && sessionDirectory ? resolvePath(sessionDirectory) : null,

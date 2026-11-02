@@ -1,5 +1,4 @@
-import { renderPrompt } from "./prompt-renderer.js";
-import type { AskTarget } from "./stage-outcome.js";
+export { addArtifactContext, addStageOutcomeContract, flattenHistory, renderProviderPrompt, type ProviderPromptOptions } from "@nodeint/migent-prompts";
 export const MIGENT_DIRNAME = ".migent";
 export const EXECUTIONS_DIRNAME = "executions";
 export const SESSIONS_DIRNAME = "sessions";
@@ -38,52 +37,6 @@ export function logProgress(message: string): void {
 /** Python `datetime.now(timezone.utc).isoformat()` uses `+00:00`. */
 export function utcNow(): string {
   return new Date().toISOString().replace(/Z$/, "+00:00");
-}
-
-export interface ProviderPromptOptions {
-  contract?: boolean;
-  decisionValues?: readonly string[];
-  decisionInstructions?: Readonly<Record<string, string>>;
-  ask?: AskTarget | null;
-  artifactDirectory?: string;
-  artifactName?: string | null;
-  previousVerifyReport?: string | null;
-}
-
-export function renderProviderPrompt(prompt: string, options: ProviderPromptOptions = {}): string {
-  const instructions = options.decisionInstructions ?? {};
-  const decisions = (options.decisionValues ?? []).filter(Boolean).map((value) => {
-    const name = value.toLowerCase();
-    return { name, instruction: instructions[name] ?? "undefined" };
-  });
-  return renderPrompt("provider-turn", {
-    prompt,
-    contract: options.contract ?? false,
-    canAsk: options.ask != null,
-    decisions,
-    decisionLabel: decisions.map(({ name }) => name).join("|"),
-    hasDecisionInstructions: Object.keys(instructions).length > 0,
-    artifactDirectory: options.artifactDirectory ?? "",
-    artifactName: options.artifactName ?? null,
-    previousVerifyReport: options.previousVerifyReport ?? null,
-  });
-}
-
-export function addArtifactContext(prompt: string, artifactDirectory: string, artifactName?: string | null): string {
-  return renderProviderPrompt(prompt, { artifactDirectory, artifactName });
-}
-
-export function addStageOutcomeContract(
-  prompt: string,
-  decisionValues: readonly string[] = [],
-  decisionInstructions: Readonly<Record<string, string>> = {},
-  ask: AskTarget | null = null,
-): string {
-  return renderProviderPrompt(prompt, { contract: true, decisionValues, decisionInstructions, ask });
-}
-
-export function flattenHistory(history: readonly { role: string; content: string }[]): string {
-  return renderPrompt("history", { history });
 }
 
 export function isUnicodeAlnum(character: string): boolean {
