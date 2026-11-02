@@ -5,6 +5,7 @@ This module walks those steps and writes the resulting schema_version.
 A missing schema_version is version 0. Writes stay on the text patchers.
 */
 import { stringify } from "yaml";
+import { placeholderWhen } from "./authoring-diagnostics.js";
 import { ConfigEditError, yamlScalar } from "./config-edit.js";
 import { ConfigurationError } from "./errors.js";
 import { documentVersion, isRecord } from "./record.js";
@@ -135,7 +136,7 @@ function liftWorkflowDecisions(workflow: Record<string, unknown>): void {
       throw new ConfigurationError(`${field}.routes keys must match unique decision.values.`);
     }
     stage.decision = names.map((name) => ({
-      [name]: { when: `Choose ${name} according to the stage instructions.`, navigate: targets.get(name) },
+      [name]: { when: placeholderWhen(name), navigate: targets.get(name) },
     }));
   }
 }

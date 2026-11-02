@@ -13,6 +13,7 @@ behavior is documented in [README.md](README.md) and [docs/](docs/).
 
 | Path | npm package | Role |
 |---|---|---|
+| `packages/prompts` | `@nodeint/migent-prompts` | Prompt templates and renderers |
 | `packages/kernel` | `@nodeint/migent-kernel` | Workflow engine, config, session store, libc bindings |
 | `packages/adapters` | `@nodeint/migent-adapters` | Antigravity, BytePlus, Claude, Codex, Grok, and OpenCode providers |
 | `packages/registry` | `@nodeint/migent-registry` | Machine-local workspace registry service |
@@ -223,10 +224,11 @@ Staged versions are invisible until a maintainer approves them with 2FA. Open
 the **Staged Packages** tab on npmjs.com (or use `npm stage list` /
 `npm stage approve <id>`, npm 11.15+) and approve in dependency order:
 
-1. `@nodeint/migent-kernel`
-2. `@nodeint/migent-adapters`
-3. `@nodeint/migent-registry`
-4. `@nodeint/migent`
+1. `@nodeint/migent-prompts`
+2. `@nodeint/migent-kernel`
+3. `@nodeint/migent-adapters`
+4. `@nodeint/migent-registry`
+5. `@nodeint/migent`
 
 Approving the CLI before its dependencies leaves `npm i -g @nodeint/migent`
 broken until the rest are approved.

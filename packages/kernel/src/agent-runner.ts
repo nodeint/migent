@@ -17,8 +17,7 @@ import { ConfigurationError } from "./errors.js";
 import { nonemptyArtifact } from "./outputs.js";
 import { isRecord } from "./record.js";
 import {
-  addArtifactContext,
-  addStageOutcomeContract,
+  renderProviderPrompt,
   flattenHistory,
   log,
 } from "./runtime.js";
@@ -150,7 +149,6 @@ export class AgentToolRunner {
     const stage = sessionId === null ? null : loadRunStage(store, context.sessionId, stageId);
     const decisionValues = stage?.decisionValues ?? [];
     const ask = stage?.ask ?? (stage === null ? "human" : null);
-    if (sessionId !== null) turnPrompt = addStageOutcomeContract(turnPrompt, decisionValues, stage?.decisionInstructions, ask);
     const artifactName = stage?.artifact ?? null;
     const verifyCommands = stage?.verify ?? [];
     const previous = request.resumeExecutionId
@@ -163,8 +161,12 @@ export class AgentToolRunner {
     if (request.resumeExecutionId && verifyCommands.length > 0 && artifactName) {
       this.carryExhaustedArtifact(store, context, request.resumeExecutionId, artifactName);
     }
-    turnPrompt = addArtifactContext(turnPrompt, context.artifactDirectory, artifactName);
-    if (previous && progress?.lastReport) turnPrompt += `\n\nPrevious verify report: ${path.resolve(path.dirname(previous.artifactDirectory), progress.lastReport)}`;
+    turnPrompt = renderProviderPrompt(turnPrompt, {
+      contract: sessionId !== null, decisionValues, decisionInstructions: stage?.decisionInstructions, ask,
+      artifactDirectory: context.artifactDirectory, artifactName,
+      previousVerifyReport: previous && progress?.lastReport
+        ? path.resolve(path.dirname(previous.artifactDirectory), progress.lastReport) : null,
+    });
     store.savePrompt(context, turnPrompt);
     const started: Record<string, unknown> = {
       cli_version: this.cachedCliVersion(provider, providerKey, workspacePath),
@@ -261,7 +263,7 @@ export class AgentToolRunner {
         currentPrompt = agentId
           ? last.content
           : flattenHistory(record.history as Array<{ role: string; content: string }>);
-        currentPrompt = addStageOutcomeContract(currentPrompt, decisionValues, stage?.decisionInstructions, ask);
+        currentPrompt = renderProviderPrompt(currentPrompt, { contract: true, decisionValues, decisionInstructions: stage?.decisionInstructions, ask });
       }
       return this.driveTurns({
         provider,
@@ -588,7 +590,7 @@ export class AgentToolRunner {
       currentPrompt = currentAgentId
         ? repair
         : flattenHistory(record.history as Array<{ role: string; content: string }>);
-      currentPrompt = addStageOutcomeContract(currentPrompt, decisionValues, stage?.decisionInstructions, ask);
+      currentPrompt = renderProviderPrompt(currentPrompt, { contract: true, decisionValues, decisionInstructions: stage?.decisionInstructions, ask });
     }
     const sessionStatus = store.readSessionStatus(context.sessionId);
     return {

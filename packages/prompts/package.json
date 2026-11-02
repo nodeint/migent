@@ -1,0 +1,42 @@
+{
+  "name": "@nodeint/migent-prompts",
+  "version": "0.3.1",
+  "description": "Prompt templates and renderers for Migent.",
+  "keywords": ["ai", "agents", "workflow", "prompts", "migent"],
+  "license": "MIT",
+  "homepage": "https://github.com/nodeint/migent/tree/main/packages/prompts#readme",
+  "bugs": {
+    "url": "https://github.com/nodeint/migent/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nodeint/migent.git",
+    "directory": "packages/prompts"
+  },
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -b && node ../../scripts/copy-prompts.mjs",
+    "prepack": "pnpm -w run build && cp ../../LICENSE ."
+  },
+  "dependencies": {
+    "handlebars": "^4.7.10"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4"
+  }
+}

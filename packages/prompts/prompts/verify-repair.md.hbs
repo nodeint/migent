@@ -1,0 +1,5 @@
+{{#if taskFile}}{{> task}}
+{{/if}}Verify failed ({{red}} of {{maxVerify}} red runs). Fix the cause, then report again.{{#if artifactPath}}
+The stage artifact is at {{artifactPath}}. Update it if your fix changes it.{{/if}}
+
+{{report}}

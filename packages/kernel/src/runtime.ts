@@ -1,4 +1,4 @@
-import type { AskTarget } from "./stage-outcome.js";
+export { addArtifactContext, addStageOutcomeContract, flattenHistory, renderProviderPrompt, type ProviderPromptOptions } from "@nodeint/migent-prompts";
 export const MIGENT_DIRNAME = ".migent";
 export const EXECUTIONS_DIRNAME = "executions";
 export const SESSIONS_DIRNAME = "sessions";
@@ -37,57 +37,6 @@ export function logProgress(message: string): void {
 /** Python `datetime.now(timezone.utc).isoformat()` uses `+00:00`. */
 export function utcNow(): string {
   return new Date().toISOString().replace(/Z$/, "+00:00");
-}
-
-export function addArtifactContext(
-  prompt: string,
-  artifactDirectory: string,
-  artifactName?: string | null,
-): string {
-  if (!artifactName) return prompt;
-  return (
-    `${prompt}\n\n` +
-    "Migent artifact directory:\n" +
-    `${artifactDirectory}\n` +
-    `Write the file artifact as \`${artifactName}\` in that directory.`
-  );
-}
-
-export function addStageOutcomeContract(
-  prompt: string,
-  decisionValues: readonly string[] = [],
-  decisionInstructions: Readonly<Record<string, string>> = {},
-  ask: AskTarget | null = null,
-): string {
-  const lines = [
-    "Workflow stage response contract:",
-    ask === null
-      ? "Start the final response with `status: complete` or `status: blocked`."
-      : "Start the final response with `status: complete`, `status: blocked`, or `status: question`.",
-    "When blocked, put `blocker: <concise reason>` on the next line.",
-  ];
-  if (ask !== null) {
-    lines.push('To ask the human, return status: question, a blank line, and a JSON document: {"schema_version":1,"questions":[{"question":"Include existing sessions?","context":"Migration adds work.","selection":"single","options":[{"label":"New sessions only"},{"label":"Include existing sessions"}]}]}.');
-    lines.push("Each question requires question, context, selection (single or multiple), and 2 to 26 options with labels. Migent assigns question IDs 1, 2, 3, ... and option IDs A, B, C, ... by order. Omit IDs. Put every choice and its explanation in the JSON, not in prose.");
-    lines.push("Optional fields: option.description and question.recommended (array of option IDs; at most one for single selection). Free-text answers are always allowed for every question. Never choose on the recipient's behalf.");
-    lines.push("Migent writes validated questions to questions.json. You may ask several questions in one document. Every question must be answered before the stage continues.");
-    lines.push("Use blocked for an obstacle you cannot resolve; use question when you need an answer. Do not choose a decision while asking.");
-  }
-  const allowed = decisionValues.filter((value) => value).map((value) => value.toLowerCase());
-  if (allowed.length > 0) {
-    lines.push(`When complete, put \`decision: ${allowed.join("|")}\` on the next line.`);
-    lines.push("Do not put the decision only in prose.");
-    if (Object.keys(decisionInstructions).length > 0) {
-      lines.push("Choose exactly one decision using these instructions:");
-      for (const value of allowed) lines.push(`- ${value}: ${decisionInstructions[value]}`);
-    }
-  }
-  lines.push("Use a blank line before the report body.");
-  return `${prompt}\n\n${lines.join("\n")}`;
-}
-
-export function flattenHistory(history: readonly { role: string; content: string }[]): string {
-  return history.map((item) => `${item.role}: ${item.content}`).join("\n");
 }
 
 export function isUnicodeAlnum(character: string): boolean {

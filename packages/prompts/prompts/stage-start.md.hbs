@@ -1,0 +1,20 @@
+{{> task}}
+
+Stage: {{stage.id}} (role: {{stage.role}}){{#if roleInstructions}}
+
+Role instructions:{{#each roleInstructions}}
+- {{this}}{{/each}}{{/if}}{{#if stage.instructions}}
+
+Instructions:{{#each stage.instructions}}
+- {{this}}{{/each}}{{/if}}{{#if constraints}}
+
+Constraints:{{#each constraints}}
+- {{this}}{{/each}}{{/if}}{{#if stage.verify}}
+
+Verify commands:
+After you report `status: complete`, Migent runs these commands in the workspace, in order, and accepts completion only if all exit 0.{{#each stage.verify}}
+- {{this}}{{/each}}{{/if}}{{> continuation}}{{#if prior}}
+
+Prior session context:
+- session: {{prior.sessionId}}{{#each prior.outputs}}
+- {{name}}: {{path}}{{/each}}{{/if}}

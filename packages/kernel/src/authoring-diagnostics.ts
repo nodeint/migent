@@ -1,0 +1,106 @@
+import { isRecord } from "./record.js";
+
+/**
+ * Authoring feedback. These helpers report what Migent cannot use in a workflow or config document.
+ * They never rewrite or reinterpret the author's text.
+ */
+
+/** Workflow keys that schema_version 4 reads. */
+const WORKFLOW_KEYS = ["schema_version", "id", "stages", "outputs", "concurrency", "constraints", "downstream", "completion", "requires"];
+const STAGE_KEYS = [
+  "id", "description", "role", "depends_on", "instructions", "model", "options", "max_revisions", "max_verify",
+  "verify", "verify_timeout", "produces", "decision", "session", "ask", "run_when",
+];
+const PRODUCES_KEYS = ["artifact"];
+const SESSION_KEYS = ["resume_from"];
+const DECISION_ENTRY_KEYS = ["when", "navigate"];
+const ROLE_KEYS = ["default_model", "instructions", "options"];
+
+/** The next schema version turns unknown keys from warnings into errors. */
+export const UNKNOWN_KEYS_ERROR_SCHEMA_VERSION = 5;
+
+function distance(a: string, b: string): number {
+  const row = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= a.length; i += 1) {
+    let diagonal = row[0]!;
+    row[0] = i;
+    for (let j = 1; j <= b.length; j += 1) {
+      const above = row[j]!;
+      row[j] = Math.min(above + 1, row[j - 1]! + 1, diagonal + (a[i - 1] === b[j - 1] ? 0 : 1));
+      diagonal = above;
+    }
+  }
+  return row[b.length]!;
+}
+
+function closest(key: string, valid: readonly string[]): string | null {
+  let best: string | null = null;
+  let bestDistance = Math.max(2, Math.floor(key.length / 3)) + 1;
+  for (const candidate of valid) {
+    const d = distance(key.toLowerCase(), candidate);
+    if (d < bestDistance) { best = candidate; bestDistance = d; }
+  }
+  return best;
+}
+
+function unknownKeys(value: Record<string, unknown>, valid: readonly string[], location: string): string[] {
+  const messages: string[] = [];
+  for (const key of Object.keys(value)) {
+    if (valid.includes(key)) continue;
+    const suggestion = closest(key, valid);
+    const path = location === "" ? key : `${location}.${key}`;
+    messages.push(`${path} is not used by Migent.${suggestion === null ? "" : ` Did you mean ${location === "" ? suggestion : `${location}.${suggestion}`}?`}`);
+  }
+  return messages;
+}
+
+/** Unknown keys at the top level, stages, `produces`, `session` and decision entries of a workflow mapping. */
+export function unknownWorkflowKeys(data: Record<string, unknown>): string[] {
+  const messages = unknownKeys(data, WORKFLOW_KEYS, "");
+  if (!Array.isArray(data.stages)) return messages;
+  for (const stage of data.stages) {
+    if (!isRecord(stage) || typeof stage.id !== "string") continue;
+    const base = `stages.${stage.id}`;
+    messages.push(...unknownKeys(stage, STAGE_KEYS, base));
+    if (isRecord(stage.produces)) messages.push(...unknownKeys(stage.produces, PRODUCES_KEYS, `${base}.produces`));
+    if (isRecord(stage.session)) messages.push(...unknownKeys(stage.session, SESSION_KEYS, `${base}.session`));
+    if (!Array.isArray(stage.decision)) continue;
+    for (const entry of stage.decision) {
+      if (!isRecord(entry) || Object.keys(entry).length !== 1) continue;
+      const name = Object.keys(entry)[0]!;
+      const body = entry[name];
+      if (isRecord(body)) messages.push(...unknownKeys(body, DECISION_ENTRY_KEYS, `${base}.decision.${name}`));
+    }
+  }
+  return messages;
+}
+
+/** Unknown keys under each role of a config document. */
+export function unknownRoleKeys(config: Record<string, unknown>): string[] {
+  if (!isRecord(config.roles)) return [];
+  return Object.entries(config.roles).flatMap(([name, role]) =>
+    isRecord(role) ? unknownKeys(role, ROLE_KEYS, `roles.${name}`) : []);
+}
+
+/** The `when` text `migent migrate` generates when it has no real criterion to put there. */
+export function placeholderWhen(decision: string): string {
+  return `Choose ${decision} according to the stage instructions.`;
+}
+
+/** Decision entries whose `when` still equals the migration placeholder. The workflow runs unchanged. */
+export function placeholderWhenWarnings(data: Record<string, unknown>): string[] {
+  if (!Array.isArray(data.stages)) return [];
+  const messages: string[] = [];
+  for (const stage of data.stages) {
+    if (!isRecord(stage) || typeof stage.id !== "string" || !Array.isArray(stage.decision)) continue;
+    for (const entry of stage.decision) {
+      if (!isRecord(entry) || Object.keys(entry).length !== 1) continue;
+      const name = Object.keys(entry)[0]!;
+      const body = entry[name];
+      if (isRecord(body) && typeof body.when === "string" && body.when.trim() === placeholderWhen(name.trim().toLowerCase())) {
+        messages.push(`stages.${stage.id}.decision.${name}.when is the migration placeholder. State when to choose ${name}.`);
+      }
+    }
+  }
+  return messages;
+}

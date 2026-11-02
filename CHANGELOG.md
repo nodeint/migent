@@ -4,9 +4,15 @@
 
 ### Added
 
+- `migent doctor` warns about workflow and role keys Migent does not use, with a suggested key, and about decision `when` text left as the migration placeholder.
+
 - `migent session continue --reply` redirects a stopped (cancelled) workflow stage or role session. The reply runs as a new execution in the same conversation.
 
 ### Changed
+
+- Prompt templates and renderers live in the new `@nodeint/migent-prompts` package and render from packaged Markdown templates while preserving workflow and conversation behavior.
+
+- Stage prompts state status meanings once, describe the verify gate as engine behavior, name the artifact once, and render answered questions as readable Q/A text. Re-entry prompts name the task, the stage's previous response, and upstream artifacts updated since its last visit.
 
 - `migent init` renders role models and sample workflows from packaged project templates.
 

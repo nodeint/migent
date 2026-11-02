@@ -1,3 +1,4 @@
+import { buildStageReplyPrompt, prependRoleInstructions, renderStageContinue, renderStageStart, renderVerifyRepair } from "@nodeint/migent-prompts";
 import { readFileSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import type { ExecutionSnapshot } from "./outputs.js";
@@ -22,44 +23,18 @@ export function buildStagePrompt(input: {
   const sessionDirectory =
     input.sessionDirectory ?? path.join(input.workspace, ".migent", "sessions", "session");
   const taskFile = input.taskFile ?? path.join(sessionDirectory, "task.md");
-  const sections = [taskLocationSection(taskFile, sessionDirectory), `Stage: ${stage.id} (role: ${stage.role})`];
-  const roleSection = bulletSection("Role instructions:", input.roleInstructions);
-  if (roleSection !== null) sections.push(roleSection);
-  if (stage.instructions.length > 0) {
-    const lines = ["Instructions:", ...stage.instructions.map((item) => `- ${item}`)];
-    sections.push(lines.join("\n"));
-  }
-  if (input.workflow.constraints.length > 0) {
-    const lines = ["Constraints:", ...input.workflow.constraints.map((item) => `- ${item}`)];
-    sections.push(lines.join("\n"));
-  }
-  if (stage.verify.length > 0) {
-    const lines = [
-      "Verify commands:",
-      "These commands must exit 0 before you report `status: complete`.",
-      "Run them in the workspace, in order. When a command fails, fix the cause and run it again.",
-      "Report `status: complete` only after every command passes.",
-      ...stage.verify.map((item) => `- ${item}`),
-    ];
-    sections.push(lines.join("\n"));
-  }
-  sections.push(...stageContinuationSections(input, stage.dependsOn));
-  const prior = priorResultLines(input.workspace, input.priorSessionId, input.priorOutputs);
-  if (prior.length > 0) sections.push(`Prior session context:\n${prior.join("\n")}`);
-  if (stage.artifact) {
-    sections.push(
-      `Write the file artifact as \`${stage.artifact}\` in the execution artifacts directory.`,
-    );
-  }
-  return sections.join("\n\n");
+  return renderStageStart({
+    taskFile: resolvePath(taskFile),
+    sessionDirectory: resolvePath(sessionDirectory),
+    stage,
+    roleInstructions: input.roleInstructions ?? [],
+    constraints: input.workflow.constraints,
+    ...continuationContext(input, stage.dependsOn),
+    prior: priorResultContext(input.workspace, input.priorSessionId, input.priorOutputs),
+  });
 }
 
-/** Reply to a stage that already holds the conversation. The runner appends the response contract. */
-export function buildStageReplyPrompt(reply: string, question?: string, interruptedExecutionId?: string): string {
-  const body = question ? `Reply to: ${question}\n${reply}` : `Reply:\n${reply}`;
-  if (!interruptedExecutionId) return body;
-  return `Your previous turn (execution ${interruptedExecutionId}) was stopped by the human before it finished.\n\n${body}`;
-}
+export { buildStageReplyPrompt, prependRoleInstructions };
 
 /** Later visit of a stage. The provider conversation already has the stage prompt. */
 export function buildStageResumePrompt(input: {
@@ -67,45 +42,30 @@ export function buildStageResumePrompt(input: {
   stageId: string;
   snapshots: readonly ExecutionSnapshot[];
   workspace: string;
+  taskFile?: string | null;
+  sessionDirectory?: string | null;
 }): string {
   const stage = input.workflow.stages[input.stageId];
   if (stage === undefined) throw new Error(`Stage is not declared: ${input.stageId}.`);
-  return ["Continue this stage.", ...stageContinuationSections(input, stage.dependsOn)].join("\n\n");
+  const sessionDirectory = input.sessionDirectory ?? path.join(input.workspace, ".migent", "sessions", "session");
+  const previous = latestCompleteByStage(input.snapshots)[input.stageId];
+  const response = previous ? resolvePath(path.join(path.dirname(previous.artifactDirectory), "response.md")) : null;
+  return renderStageContinue({
+    ...continuationContext(input, stage.dependsOn),
+    taskFile: resolvePath(input.taskFile ?? path.join(sessionDirectory, "task.md")),
+    previousResponse: response !== null && isFile(response) ? response : null,
+  });
 }
 
-function stageContinuationSections(
-  input: {
-    workflow: WorkflowDocument;
-    stageId: string;
-    snapshots: readonly ExecutionSnapshot[];
-    workspace: string;
-  },
+function continuationContext(
+  input: { workflow: WorkflowDocument; stageId: string; snapshots: readonly ExecutionSnapshot[]; workspace: string },
   dependsOn: readonly string[],
-): string[] {
-  const sections: string[] = [];
-  const upstream = upstreamArtifactLines(input.workflow, dependsOn, input.snapshots);
-  if (upstream.length > 0) {
-    sections.push(`Upstream artifacts on this session:\n${upstream.join("\n")}`);
-  }
-  const routed = routedResultLines(input.workflow, input.stageId, input.snapshots);
-  if (routed.length > 0) {
-    sections.push(`Decision that routed to this stage:\n${routed.join("\n")}`);
-  }
-  const blocked = previousBlockedAttempt(input.stageId, input.snapshots);
-  if (blocked !== null) sections.push(blocked);
-  return sections;
-}
-
-export function prependRoleInstructions(instructions: readonly string[], prompt: string): string {
-  const section = bulletSection("Role instructions:", instructions);
-  if (section === null) return prompt;
-  if (prompt === "") return section;
-  return `${section}\n\n${prompt}`;
-}
-
-function bulletSection(heading: string, items: readonly string[] | null | undefined): string | null {
-  if (items == null || items.length === 0) return null;
-  return [heading, ...items.map((item) => `- ${item}`)].join("\n");
+) {
+  return {
+    upstream: upstreamArtifacts(input.workflow, dependsOn, input.snapshots, input.stageId),
+    routed: routedResultContext(input.workflow, input.stageId, input.snapshots),
+    blocked: previousBlockedAttempt(input.stageId, input.snapshots),
+  };
 }
 
 export function buildVerifyRepairPrompt(
@@ -116,29 +76,22 @@ export function buildVerifyRepairPrompt(
   taskFile?: string | null,
   sessionDirectory?: string | null,
 ): string {
-  const lines: string[] = [];
-  if (taskFile && sessionDirectory) lines.push(taskLocationSection(taskFile, sessionDirectory));
-  lines.push(`Verify failed (${red} of ${maxVerify} red runs). Fix the cause, then report again.`);
-  if (artifactPath !== null) {
-    lines.push(`The stage artifact is at ${artifactPath}. Update it if your fix changes it.`);
-  }
-  return `${lines.join("\n")}\n\n${report}`;
+  return renderVerifyRepair({
+    report, red, maxVerify, artifactPath,
+    taskFile: taskFile && sessionDirectory ? resolvePath(taskFile) : null,
+    sessionDirectory: taskFile && sessionDirectory ? resolvePath(sessionDirectory) : null,
+  });
 }
 
-function taskLocationSection(taskFile: string, sessionDirectory: string): string {
-  return [
-    `Read the task from \`${resolvePath(taskFile)}\`.`,
-    `Session files are in \`${resolvePath(sessionDirectory)}\`.`,
-  ].join("\n");
-}
-
-function upstreamArtifactLines(
+function upstreamArtifacts(
   workflow: WorkflowDocument,
   dependsOn: readonly string[],
   snapshots: readonly ExecutionSnapshot[],
-): string[] {
+  stageId: string,
+): { stageId: string; path: string; verify: boolean; updated: boolean }[] {
   const complete = latestCompleteByStage(snapshots);
-  const lines: string[] = [];
+  const ownOrder = complete[stageId]?.executionOrder ?? 0; // 0: first visit, nothing counts as updated
+  const lines: { stageId: string; path: string; verify: boolean; updated: boolean }[] = [];
   for (const depId of dependsOn) {
     const dep = workflow.stages[depId];
     if (dep === undefined) continue;
@@ -146,75 +99,44 @@ function upstreamArtifactLines(
     if (snapshot === undefined) continue;
     if (dep.artifact) {
       const artifactPath = resolvePath(path.join(snapshot.artifactDirectory, dep.artifact));
-      lines.push(`- ${depId}: ${artifactPath}`);
+      lines.push({ stageId: depId, path: artifactPath, verify: false, updated: ownOrder > 0 && snapshot.executionOrder > ownOrder });
     }
     if (dep.verify.length > 0) {
       const reportPath = resolvePath(path.join(snapshot.artifactDirectory, VERIFY_ARTIFACT));
-      lines.push(`- ${depId} verify: ${reportPath}`);
+      lines.push({ stageId: depId, path: reportPath, verify: true, updated: ownOrder > 0 && snapshot.executionOrder > ownOrder });
     }
   }
   return lines;
 }
 
-function routedResultLines(
-  workflow: WorkflowDocument,
-  stageId: string,
-  snapshots: readonly ExecutionSnapshot[],
-): string[] {
-  if (isWorkflowV2(workflow)) return version2RoutedLines(workflow, stageId, snapshots);
+function routedResultContext(workflow: WorkflowDocument, stageId: string, snapshots: readonly ExecutionSnapshot[]) {
   const complete = latestCompleteByStage(snapshots);
   const previous = complete[stageId];
   const previousOrder = previous ? previous.executionOrder : 0;
-  const routed = snapshots.filter((snapshot) => {
-    if (snapshot.status !== "completed" || snapshot.outcomeStatus !== "complete") return false;
-    if (snapshot.executionOrder <= previousOrder) return false;
-    const source = workflow.stages[snapshot.stageId];
-    if (source === undefined) return false;
-    return routeListsStage(source.routes[(snapshot.outcomeDecision ?? "").toLowerCase()], stageId);
-  });
-  if (routed.length === 0) return [];
-  let decision = routed[0]!;
-  for (const snapshot of routed.slice(1)) {
-    if (snapshot.executionOrder > decision.executionOrder) decision = snapshot;
+  let routed: readonly ExecutionSnapshot[];
+  if (isWorkflowV2(workflow)) {
+    routed = relevantRouterSnapshots(workflow, snapshots, stageId) ?? [];
+  } else {
+    const candidates = snapshots.filter((snapshot) => {
+      if (snapshot.status !== "completed" || snapshot.outcomeStatus !== "complete") return false;
+      if (snapshot.executionOrder <= previousOrder) return false;
+      const source = workflow.stages[snapshot.stageId];
+      return source !== undefined && routeListsStage(source.routes[(snapshot.outcomeDecision ?? "").toLowerCase()], stageId);
+    });
+    routed = candidates.length === 0 ? [] : [candidates.reduce((a, b) => b.executionOrder > a.executionOrder ? b : a)];
   }
-  const response = resolvePath(path.join(path.dirname(decision.artifactDirectory), "response.md"));
-  if (!isFile(response)) throw new Error(`Routed stage response is missing: ${response}`);
-  const lines = [
-    `- ${decision.stageId} (${decision.outcomeDecision}): ${response}`,
-    "Read this response and use its decision and feedback when working on this stage.",
-  ];
-  const stage = workflow.stages[stageId]!;
-  if (previous && stage.artifact) {
-    const artifact = resolvePath(path.join(previous.artifactDirectory, stage.artifact));
-    if (isFile(artifact)) lines.push(`- Previous ${stageId} artifact: ${artifact}`);
-  }
-  return lines;
-}
-
-function version2RoutedLines(
-  workflow: WorkflowDocument,
-  stageId: string,
-  snapshots: readonly ExecutionSnapshot[],
-): string[] {
-  const routed = relevantRouterSnapshots(workflow, snapshots, stageId);
-  if (routed === null || routed.length === 0) return [];
-  const lines: string[] = [];
-  for (const decision of routed) {
+  if (routed.length === 0) return null;
+  const decisions = routed.map((decision) => {
     const response = resolvePath(path.join(path.dirname(decision.artifactDirectory), "response.md"));
     if (!isFile(response)) throw new Error(`Routed stage response is missing: ${response}`);
-    lines.push(`- ${decision.stageId} (${decision.outcomeDecision}): ${response}`);
-  }
-  lines.push("Read this response and use its decision and feedback when working on this stage.");
-  const previous = latestCompleteByStage(snapshots)[stageId];
-  const stage = workflow.stages[stageId];
-  if (previous && stage?.artifact) {
-    const artifact = resolvePath(path.join(previous.artifactDirectory, stage.artifact));
-    if (isFile(artifact)) lines.push(`- Previous ${stageId} artifact: ${artifact}`);
-  }
-  return lines;
+    return { stageId: decision.stageId, decision: decision.outcomeDecision, path: response };
+  });
+  const artifactName = workflow.stages[stageId]?.artifact;
+  const artifact = previous && artifactName ? resolvePath(path.join(previous.artifactDirectory, artifactName)) : null;
+  return { decisions, stageId, previousArtifact: artifact && isFile(artifact) ? artifact : null };
 }
 
-function previousBlockedAttempt(stageId: string, snapshots: readonly ExecutionSnapshot[]): string | null {
+function previousBlockedAttempt(stageId: string, snapshots: readonly ExecutionSnapshot[]) {
   let latest: ExecutionSnapshot | null = null;
   for (const snapshot of snapshots) {
     if (snapshot.stageId !== stageId) continue;
@@ -222,13 +144,9 @@ function previousBlockedAttempt(stageId: string, snapshots: readonly ExecutionSn
   }
   if (latest === null || latest.status !== "completed" || latest.outcomeStatus !== "blocked") return null;
   const executionDirectory = path.dirname(latest.artifactDirectory);
-  const lines = ["Previous attempt of this stage:", `- execution: ${latest.executionId}`];
   const blocker = readOutcomeBlocker(path.join(executionDirectory, "execution.json"));
-  if (blocker) lines.push(`- blocker: ${blocker}`);
   const responsePath = path.join(executionDirectory, "response.md");
-  if (isFile(responsePath)) lines.push(`- response: ${resolvePath(responsePath)}`);
-  lines.push("That attempt ended blocked. The blocker was handled outside this session. Continue this stage.");
-  return lines.join("\n");
+  return { executionId: latest.executionId, blocker, response: isFile(responsePath) ? resolvePath(responsePath) : null };
 }
 
 function readOutcomeBlocker(filePath: string): string | null {
@@ -243,18 +161,18 @@ function readOutcomeBlocker(filePath: string): string | null {
   return typeof blocker === "string" && blocker ? blocker : null;
 }
 
-function priorResultLines(
+function priorResultContext(
   workspace: string,
   priorSessionId: string | null | undefined,
   priorOutputs: Readonly<Record<string, unknown>> | null | undefined,
-): string[] {
-  if (!priorSessionId) return [];
-  const lines = [`- session: ${priorSessionId}`];
+) {
+  if (!priorSessionId) return null;
+  const outputs: { name: string; path: string }[] = [];
   for (const [name, value] of Object.entries(priorOutputs ?? {})) {
     const outputPath = absoluteOutputPath(workspace, priorSessionId, value);
-    if (outputPath) lines.push(`- ${name}: ${outputPath}`);
+    if (outputPath) outputs.push({ name, path: outputPath });
   }
-  return lines;
+  return { sessionId: priorSessionId, outputs };
 }
 
 function absoluteOutputPath(

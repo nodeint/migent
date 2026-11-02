@@ -1,0 +1,312 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`prompt kinds under native resume, history replay and resume_from 1`] = `
+{
+  "first turn (resume_from) / native": "Read the task from \`<ROOT>/.migent/sessions/s1/task.md\`.
+Session files are in \`<ROOT>/.migent/sessions/s1\`.
+
+Stage: again (role: worker)
+
+Upstream artifacts on this session:
+- make: <ROOT>/.migent/sessions/s1/executions/e1/artifacts/make.md
+- make verify: <ROOT>/.migent/sessions/s1/executions/e1/artifacts/verify.md
+
+Workflow stage response contract:
+Start the final response with \`status: complete\` or \`status: blocked\`.
+\`complete\`: the stage finished this turn's work. \`blocked\`: an obstacle this turn cannot resolve.
+When blocked, put \`blocker: <concise reason>\` on the next line.
+Use a blank line before the report body.
+
+Migent artifact directory:
+<ART>
+Write the file artifact as \`again.md\` in that directory.",
+  "first turn (resume_from) / replay": "user: (earlier turn)
+
+assistant: (earlier response)
+
+user: Read the task from \`<ROOT>/.migent/sessions/s1/task.md\`.
+Session files are in \`<ROOT>/.migent/sessions/s1\`.
+
+Stage: again (role: worker)
+
+Upstream artifacts on this session:
+- make: <ROOT>/.migent/sessions/s1/executions/e1/artifacts/make.md
+- make verify: <ROOT>/.migent/sessions/s1/executions/e1/artifacts/verify.md
+
+Workflow stage response contract:
+Start the final response with \`status: complete\` or \`status: blocked\`.
+\`complete\`: the stage finished this turn's work. \`blocked\`: an obstacle this turn cannot resolve.
+When blocked, put \`blocker: <concise reason>\` on the next line.
+Use a blank line before the report body.
+
+Migent artifact directory:
+<ART>
+Write the file artifact as \`again.md\` in that directory.",
+  "first turn / native": "Read the task from \`<ROOT>/.migent/sessions/s1/task.md\`.
+Session files are in \`<ROOT>/.migent/sessions/s1\`.
+
+Stage: make (role: worker)
+
+Verify commands:
+After you report \`status: complete\`, Migent runs these commands in the workspace, in order, and accepts completion only if all exit 0.
+- check-one
+- check-two
+
+Workflow stage response contract:
+Start the final response with \`status: complete\`, \`status: blocked\`, or \`status: question\`.
+\`complete\`: the stage finished this turn's work. \`question\`: an answer is needed before the stage can continue. \`blocked\`: an obstacle this turn cannot resolve.
+When blocked, put \`blocker: <concise reason>\` on the next line.
+To ask the human, return \`status: question\`, a blank line, then a JSON document:
+\`{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","options":[{"label":"..."}]}]}\`
+Example: {"schema_version":1,"questions":[{"question":"Include existing sessions?","context":"Migration adds work.","selection":"single","options":[{"label":"New sessions only"},{"label":"Include existing sessions"}]}]}
+Every question needs 2 to 26 options. Optional: option.description and question.recommended (array of option IDs; at most one for single selection). Omit IDs; Migent assigns them by order. Free-text answers are always allowed. Never choose on the recipient's behalf. Put every choice and its explanation in the JSON, not in prose. You may ask several questions in one document; every question must be answered before the stage continues. Do not choose a decision while asking.
+
+Use a blank line before the report body.
+
+Migent artifact directory:
+<ART>
+Write the file artifact as \`make.md\` in that directory.",
+  "first turn / replay": "user: (earlier turn)
+
+assistant: (earlier response)
+
+user: Read the task from \`<ROOT>/.migent/sessions/s1/task.md\`.
+Session files are in \`<ROOT>/.migent/sessions/s1\`.
+
+Stage: make (role: worker)
+
+Verify commands:
+After you report \`status: complete\`, Migent runs these commands in the workspace, in order, and accepts completion only if all exit 0.
+- check-one
+- check-two
+
+Workflow stage response contract:
+Start the final response with \`status: complete\`, \`status: blocked\`, or \`status: question\`.
+\`complete\`: the stage finished this turn's work. \`question\`: an answer is needed before the stage can continue. \`blocked\`: an obstacle this turn cannot resolve.
+When blocked, put \`blocker: <concise reason>\` on the next line.
+To ask the human, return \`status: question\`, a blank line, then a JSON document:
+\`{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","options":[{"label":"..."}]}]}\`
+Example: {"schema_version":1,"questions":[{"question":"Include existing sessions?","context":"Migration adds work.","selection":"single","options":[{"label":"New sessions only"},{"label":"Include existing sessions"}]}]}
+Every question needs 2 to 26 options. Optional: option.description and question.recommended (array of option IDs; at most one for single selection). Omit IDs; Migent assigns them by order. Free-text answers are always allowed. Never choose on the recipient's behalf. Put every choice and its explanation in the JSON, not in prose. You may ask several questions in one document; every question must be answered before the stage continues. Do not choose a decision while asking.
+
+Use a blank line before the report body.
+
+Migent artifact directory:
+<ART>
+Write the file artifact as \`make.md\` in that directory.",
+  "re-entry (resume_from) / native": "Continue this stage.
+Read the task from \`<ROOT>/.migent/sessions/s1/task.md\`.
+
+Upstream artifacts on this session:
+- make: <ROOT>/.migent/sessions/s1/executions/e1/artifacts/make.md
+- make verify: <ROOT>/.migent/sessions/s1/executions/e1/artifacts/verify.md
+
+Workflow stage response contract:
+Start the final response with \`status: complete\` or \`status: blocked\`.
+\`complete\`: the stage finished this turn's work. \`blocked\`: an obstacle this turn cannot resolve.
+When blocked, put \`blocker: <concise reason>\` on the next line.
+Use a blank line before the report body.
+
+Migent artifact directory:
+<ART>
+Write the file artifact as \`again.md\` in that directory.",
+  "re-entry (resume_from) / replay": "user: (earlier turn)
+
+assistant: (earlier response)
+
+user: Continue this stage.
+Read the task from \`<ROOT>/.migent/sessions/s1/task.md\`.
+
+Upstream artifacts on this session:
+- make: <ROOT>/.migent/sessions/s1/executions/e1/artifacts/make.md
+- make verify: <ROOT>/.migent/sessions/s1/executions/e1/artifacts/verify.md
+
+Workflow stage response contract:
+Start the final response with \`status: complete\` or \`status: blocked\`.
+\`complete\`: the stage finished this turn's work. \`blocked\`: an obstacle this turn cannot resolve.
+When blocked, put \`blocker: <concise reason>\` on the next line.
+Use a blank line before the report body.
+
+Migent artifact directory:
+<ART>
+Write the file artifact as \`again.md\` in that directory.",
+  "re-entry after revise / native": "Continue this stage.
+Read the task from \`<ROOT>/.migent/sessions/s1/task.md\`.
+Your previous response in this stage: <ROOT>/.migent/sessions/s1/executions/e1/response.md
+
+Decision that routed to this stage:
+- check (revise): <ROOT>/.migent/sessions/s1/executions/e2/response.md
+Read this response and use its decision and feedback when working on this stage.
+- Previous make artifact: <ROOT>/.migent/sessions/s1/executions/e1/artifacts/make.md
+
+Workflow stage response contract:
+Start the final response with \`status: complete\`, \`status: blocked\`, or \`status: question\`.
+\`complete\`: the stage finished this turn's work. \`question\`: an answer is needed before the stage can continue. \`blocked\`: an obstacle this turn cannot resolve.
+When blocked, put \`blocker: <concise reason>\` on the next line.
+To ask the human, return \`status: question\`, a blank line, then a JSON document:
+\`{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","options":[{"label":"..."}]}]}\`
+Example: {"schema_version":1,"questions":[{"question":"Include existing sessions?","context":"Migration adds work.","selection":"single","options":[{"label":"New sessions only"},{"label":"Include existing sessions"}]}]}
+Every question needs 2 to 26 options. Optional: option.description and question.recommended (array of option IDs; at most one for single selection). Omit IDs; Migent assigns them by order. Free-text answers are always allowed. Never choose on the recipient's behalf. Put every choice and its explanation in the JSON, not in prose. You may ask several questions in one document; every question must be answered before the stage continues. Do not choose a decision while asking.
+
+Use a blank line before the report body.
+
+Migent artifact directory:
+<ART>
+Write the file artifact as \`make.md\` in that directory.",
+  "re-entry after revise / replay": "user: (earlier turn)
+
+assistant: (earlier response)
+
+user: Continue this stage.
+Read the task from \`<ROOT>/.migent/sessions/s1/task.md\`.
+Your previous response in this stage: <ROOT>/.migent/sessions/s1/executions/e1/response.md
+
+Decision that routed to this stage:
+- check (revise): <ROOT>/.migent/sessions/s1/executions/e2/response.md
+Read this response and use its decision and feedback when working on this stage.
+- Previous make artifact: <ROOT>/.migent/sessions/s1/executions/e1/artifacts/make.md
+
+Workflow stage response contract:
+Start the final response with \`status: complete\`, \`status: blocked\`, or \`status: question\`.
+\`complete\`: the stage finished this turn's work. \`question\`: an answer is needed before the stage can continue. \`blocked\`: an obstacle this turn cannot resolve.
+When blocked, put \`blocker: <concise reason>\` on the next line.
+To ask the human, return \`status: question\`, a blank line, then a JSON document:
+\`{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","options":[{"label":"..."}]}]}\`
+Example: {"schema_version":1,"questions":[{"question":"Include existing sessions?","context":"Migration adds work.","selection":"single","options":[{"label":"New sessions only"},{"label":"Include existing sessions"}]}]}
+Every question needs 2 to 26 options. Optional: option.description and question.recommended (array of option IDs; at most one for single selection). Omit IDs; Migent assigns them by order. Free-text answers are always allowed. Never choose on the recipient's behalf. Put every choice and its explanation in the JSON, not in prose. You may ask several questions in one document; every question must be answered before the stage continues. Do not choose a decision while asking.
+
+Use a blank line before the report body.
+
+Migent artifact directory:
+<ART>
+Write the file artifact as \`make.md\` in that directory.",
+  "reply to cancelled stage / native": "Your previous turn (execution e9) was stopped by the human before it finished.
+
+Reply:
+go on
+
+Workflow stage response contract:
+Start the final response with \`status: complete\`, \`status: blocked\`, or \`status: question\`.
+\`complete\`: the stage finished this turn's work. \`question\`: an answer is needed before the stage can continue. \`blocked\`: an obstacle this turn cannot resolve.
+When blocked, put \`blocker: <concise reason>\` on the next line.
+To ask the human, return \`status: question\`, a blank line, then a JSON document:
+\`{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","options":[{"label":"..."}]}]}\`
+Example: {"schema_version":1,"questions":[{"question":"Include existing sessions?","context":"Migration adds work.","selection":"single","options":[{"label":"New sessions only"},{"label":"Include existing sessions"}]}]}
+Every question needs 2 to 26 options. Optional: option.description and question.recommended (array of option IDs; at most one for single selection). Omit IDs; Migent assigns them by order. Free-text answers are always allowed. Never choose on the recipient's behalf. Put every choice and its explanation in the JSON, not in prose. You may ask several questions in one document; every question must be answered before the stage continues. Do not choose a decision while asking.
+
+Use a blank line before the report body.
+
+Migent artifact directory:
+<ART>
+Write the file artifact as \`make.md\` in that directory.",
+  "reply to cancelled stage / replay": "user: (earlier turn)
+
+assistant: (earlier response)
+
+user: Your previous turn (execution e9) was stopped by the human before it finished.
+
+Reply:
+go on
+
+Workflow stage response contract:
+Start the final response with \`status: complete\`, \`status: blocked\`, or \`status: question\`.
+\`complete\`: the stage finished this turn's work. \`question\`: an answer is needed before the stage can continue. \`blocked\`: an obstacle this turn cannot resolve.
+When blocked, put \`blocker: <concise reason>\` on the next line.
+To ask the human, return \`status: question\`, a blank line, then a JSON document:
+\`{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","options":[{"label":"..."}]}]}\`
+Example: {"schema_version":1,"questions":[{"question":"Include existing sessions?","context":"Migration adds work.","selection":"single","options":[{"label":"New sessions only"},{"label":"Include existing sessions"}]}]}
+Every question needs 2 to 26 options. Optional: option.description and question.recommended (array of option IDs; at most one for single selection). Omit IDs; Migent assigns them by order. Free-text answers are always allowed. Never choose on the recipient's behalf. Put every choice and its explanation in the JSON, not in prose. You may ask several questions in one document; every question must be answered before the stage continues. Do not choose a decision while asking.
+
+Use a blank line before the report body.
+
+Migent artifact directory:
+<ART>
+Write the file artifact as \`make.md\` in that directory.",
+  "reply to human answer / native": "Reply to: Pick one?
+A
+
+Workflow stage response contract:
+Start the final response with \`status: complete\`, \`status: blocked\`, or \`status: question\`.
+\`complete\`: the stage finished this turn's work. \`question\`: an answer is needed before the stage can continue. \`blocked\`: an obstacle this turn cannot resolve.
+When blocked, put \`blocker: <concise reason>\` on the next line.
+To ask the human, return \`status: question\`, a blank line, then a JSON document:
+\`{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","options":[{"label":"..."}]}]}\`
+Example: {"schema_version":1,"questions":[{"question":"Include existing sessions?","context":"Migration adds work.","selection":"single","options":[{"label":"New sessions only"},{"label":"Include existing sessions"}]}]}
+Every question needs 2 to 26 options. Optional: option.description and question.recommended (array of option IDs; at most one for single selection). Omit IDs; Migent assigns them by order. Free-text answers are always allowed. Never choose on the recipient's behalf. Put every choice and its explanation in the JSON, not in prose. You may ask several questions in one document; every question must be answered before the stage continues. Do not choose a decision while asking.
+
+Use a blank line before the report body.
+
+Migent artifact directory:
+<ART>
+Write the file artifact as \`make.md\` in that directory.",
+  "reply to human answer / replay": "user: (earlier turn)
+
+assistant: (earlier response)
+
+user: Reply to: Pick one?
+A
+
+Workflow stage response contract:
+Start the final response with \`status: complete\`, \`status: blocked\`, or \`status: question\`.
+\`complete\`: the stage finished this turn's work. \`question\`: an answer is needed before the stage can continue. \`blocked\`: an obstacle this turn cannot resolve.
+When blocked, put \`blocker: <concise reason>\` on the next line.
+To ask the human, return \`status: question\`, a blank line, then a JSON document:
+\`{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","options":[{"label":"..."}]}]}\`
+Example: {"schema_version":1,"questions":[{"question":"Include existing sessions?","context":"Migration adds work.","selection":"single","options":[{"label":"New sessions only"},{"label":"Include existing sessions"}]}]}
+Every question needs 2 to 26 options. Optional: option.description and question.recommended (array of option IDs; at most one for single selection). Omit IDs; Migent assigns them by order. Free-text answers are always allowed. Never choose on the recipient's behalf. Put every choice and its explanation in the JSON, not in prose. You may ask several questions in one document; every question must be answered before the stage continues. Do not choose a decision while asking.
+
+Use a blank line before the report body.
+
+Migent artifact directory:
+<ART>
+Write the file artifact as \`make.md\` in that directory.",
+  "verify repair / native": "Read the task from \`<ROOT>/.migent/sessions/s1/task.md\`.
+Session files are in \`<ROOT>/.migent/sessions/s1\`.
+Verify failed (1 of 3 red runs). Fix the cause, then report again.
+The stage artifact is at <ROOT>/.migent/sessions/s1/make.md. Update it if your fix changes it.
+
+check-one failed
+
+
+Workflow stage response contract:
+Start the final response with \`status: complete\`, \`status: blocked\`, or \`status: question\`.
+\`complete\`: the stage finished this turn's work. \`question\`: an answer is needed before the stage can continue. \`blocked\`: an obstacle this turn cannot resolve.
+When blocked, put \`blocker: <concise reason>\` on the next line.
+To ask the human, return \`status: question\`, a blank line, then a JSON document:
+\`{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","options":[{"label":"..."}]}]}\`
+Example: {"schema_version":1,"questions":[{"question":"Include existing sessions?","context":"Migration adds work.","selection":"single","options":[{"label":"New sessions only"},{"label":"Include existing sessions"}]}]}
+Every question needs 2 to 26 options. Optional: option.description and question.recommended (array of option IDs; at most one for single selection). Omit IDs; Migent assigns them by order. Free-text answers are always allowed. Never choose on the recipient's behalf. Put every choice and its explanation in the JSON, not in prose. You may ask several questions in one document; every question must be answered before the stage continues. Do not choose a decision while asking.
+
+Use a blank line before the report body.
+
+Migent artifact directory:
+<ART>
+Write the file artifact as \`make.md\` in that directory.",
+  "verify repair / replay": "user: (earlier turn)
+
+assistant: (earlier response)
+
+user: Read the task from \`<ROOT>/.migent/sessions/s1/task.md\`.
+Session files are in \`<ROOT>/.migent/sessions/s1\`.
+Verify failed (1 of 3 red runs). Fix the cause, then report again.
+The stage artifact is at <ROOT>/.migent/sessions/s1/make.md. Update it if your fix changes it.
+
+check-one failed
+
+
+Workflow stage response contract:
+Start the final response with \`status: complete\`, \`status: blocked\`, or \`status: question\`.
+\`complete\`: the stage finished this turn's work. \`question\`: an answer is needed before the stage can continue. \`blocked\`: an obstacle this turn cannot resolve.
+When blocked, put \`blocker: <concise reason>\` on the next line.
+To ask the human, return \`status: question\`, a blank line, then a JSON document:
+\`{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","options":[{"label":"..."}]}]}\`
+Example: {"schema_version":1,"questions":[{"question":"Include existing sessions?","context":"Migration adds work.","selection":"single","options":[{"label":"New sessions only"},{"label":"Include existing sessions"}]}]}
+Every question needs 2 to 26 options. Optional: option.description and question.recommended (array of option IDs; at most one for single selection). Omit IDs; Migent assigns them by order. Free-text answers are always allowed. Never choose on the recipient's behalf. Put every choice and its explanation in the JSON, not in prose. You may ask several questions in one document; every question must be answered before the stage continues. Do not choose a decision while asking.
+
+Use a blank line before the report body.
+
+Migent artifact directory:
+<ART>
+Write the file artifact as \`make.md\` in that directory.",
+}
+`;

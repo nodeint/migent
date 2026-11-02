@@ -124,10 +124,4 @@ function numberedAnswers(questions: readonly Question[], reply: string): Record<
   return values;
 }
 
-export function formatQuestionAnswers(questions: readonly Question[], answers: readonly QuestionAnswer[]): string {
-  return JSON.stringify({ answers: answers.map((answer) => ({
-    ...answer,
-    question: questions.find((question) => question.id === answer.question_id)!.question,
-    labels: answer.selected.map((id) => questions.find((question) => question.id === answer.question_id)!.options.find((option) => option.id === id)!.label),
-  })) }, null, 2);
-}
+export { formatQuestionAnswers } from "@nodeint/migent-prompts";
