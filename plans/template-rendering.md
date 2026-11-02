@@ -16,7 +16,7 @@ workflow engine or existing workspaces. Implementation is not part of this docum
   workspace and CLI builds, but currently copies only `skills/migent`.
 - `packages/cli/package.json` publishes `dist`, so runtime assets must live
   there. Installed CLI execution cannot depend on the repository root or cwd.
-- `templates/config.yaml` contains complete model examples, including effort.
+- `templates/config.yaml` contains role-specific model placeholders.
   Both workflow templates have `ask: human`; plan has no downstream declaration,
   and implement produces `implement.md`. These are intentional template semantics
   to preserve, rather than reconstruct from the old renderer.
@@ -35,13 +35,13 @@ templates/
     plan.yaml
 ```
 
-They remain valid, readable Migent YAML, with concrete example models. Do not
-introduce placeholders, a template language, conditionals, or a generic rendering
-engine. Workflows have no dynamic values and are copied as bytes.
+The config is readable YAML with explicit role model placeholders. Do not
+introduce conditionals or a generic rendering engine. Workflows have no dynamic
+values and are copied as bytes.
 
 The selected role models are runtime inputs from the existing init selection
-flow. Example models in the config template are not fallback choices and do not
-change the existing interactive/noninteractive selection contract.
+flow. Placeholders do not change the existing interactive/noninteractive
+selection contract.
 
 ### Build and asset resolution
 
@@ -86,11 +86,10 @@ as a direct CLI dependency. Do not import a transitive dependency accidentally,
 use regex to rewrite YAML, or round-trip the entire config through plain objects.
 
 Each replacement contains `provider`, `model`, and `options` only when supplied.
-Replace the complete model node: do not inherit template `effort`, `client`, or
-provider-specific options. This preserves the current selection semantics and
-avoids carrying Claude settings into a Codex selection, for example. Represent
-model values as YAML scalar strings so punctuation and scalar-like values remain
-safe. Unknown template content outside the replacement nodes is retained.
+Replace the complete placeholder node and retain the current selection semantics.
+Represent model values as YAML scalar strings so punctuation and scalar-like
+values remain safe. Unknown template content outside the replacement nodes is
+retained.
 
 Keep the supported presets explicit (`implement`, `plan`). Do not interpret every
 file found in the directory as a public workflow. Adding a preset should be an
@@ -154,6 +153,5 @@ workflows unchanged preserves the approved text and keeps rendering small.
 An explicit fixed preset list is sufficient now; a manifest or extensible
 template engine would add a second configuration system without a current need.
 
-There are no unresolved architecture decisions for this scope. Model defaults
-in templates remain examples; changing init to accept them automatically would
-be a separate user-facing decision.
+There are no unresolved architecture decisions for this scope. Changing init to
+accept automatic model defaults would be a separate user-facing decision.

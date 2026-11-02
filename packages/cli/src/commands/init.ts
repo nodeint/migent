@@ -6,7 +6,6 @@ import {
   ConfigurationError,
   diagnose,
   whichSync,
-  yamlScalar,
   type Provider,
   type ProviderOption,
 } from "@nodeint/migent-kernel";
@@ -20,6 +19,7 @@ import {
   printInitNextSteps,
 } from "../display.js";
 import { cliHooks } from "../hooks.js";
+import { renderProject, type ModelChoice, type RenderedFile } from "../project-template.js";
 import { runDoctor } from "./doctor.js";
 import {
   acceptedOptions,
@@ -38,13 +38,6 @@ import {
 
 const INIT_EXAMPLE = "Example: migent init --planner-provider codex --planner-model gpt-5 --reviewer-provider grok --reviewer-model grok-4.7 --provider codex --model gpt-5 --no-input";
 
-export const PRESETS = ["implement", "plan"] as const;
-
-export interface ModelChoice {
-  provider: string;
-  model: string;
-  options: Record<string, string>;
-}
 
 export interface Prompter {
   selectProvider(
@@ -152,7 +145,14 @@ export async function runInit(
     printError(error instanceof Error ? error.message : String(error));
     return 2;
   }
-  const paths = writeProject(workspace, planner, reviewer, developer);
+  let files: RenderedFile[];
+  try {
+    files = renderProject({ planner, reviewer, developer });
+  } catch (error) {
+    printError(error instanceof Error ? error.message : String(error));
+    return 2;
+  }
+  const paths = writeProject(workspace, files);
   printCreated(
     paths,
     `Planner: ${planner.provider}/${planner.model}. Reviewer: ${reviewer.provider}/${reviewer.model}. Developer: ${developer.provider}/${developer.model}. Workflows: implement, plan.`,
@@ -246,138 +246,13 @@ function classify(
   return { state: "conflict", conflicts: owned };
 }
 
-function writeProject(
-  workspace: string,
-  planner: ModelChoice,
-  reviewer: ModelChoice,
-  developer: ModelChoice,
-): string[] {
-  const root = path.join(workspace, ".migent");
-  const workflows = path.join(root, "workflows");
-  mkdirSync(workflows, { recursive: true });
-  writeFileSync(path.join(root, "config.yaml"), renderConfig(planner, reviewer, developer), "utf8");
-  for (const preset of PRESETS) {
-    writeFileSync(path.join(workflows, `${preset}.yaml`), renderWorkflow(preset), "utf8");
+function writeProject(workspace: string, files: readonly RenderedFile[]): string[] {
+  for (const file of files) {
+    const target = path.join(workspace, file.path);
+    mkdirSync(path.dirname(target), { recursive: true });
+    writeFileSync(target, file.content, "utf8");
   }
-  writeFileSync(path.join(root, ".gitignore"), "sessions/\nconfig.local.yaml\n", "utf8");
-  return [
-    ".migent/config.yaml",
-    ...PRESETS.map((preset) => `.migent/workflows/${preset}.yaml`),
-    ".migent/.gitignore",
-  ];
-}
-
-function renderConfig(planner: ModelChoice, reviewer: ModelChoice, developer: ModelChoice): string {
-  const lines = ["schema_version: 4", "roles:"];
-  const instructions = {
-    developer: [
-      "Read the relevant code and project instructions before making changes.",
-      "Implement only the requested scope and follow the project conventions.",
-      "Run relevant checks or tests and fix failures caused by your changes.",
-      "Report what changed, the verification results, and anything not verified.",
-    ],
-    planner: [
-      "Read the task, relevant code, and project instructions before planning.",
-      "Write only planning artifacts; do not modify project files or implement code.",
-      "Describe the scope, ordered changes, affected files, risks, and verification.",
-      "Support claims about current behavior with file paths and line numbers; identify assumptions.",
-    ],
-    reviewer: [
-      "Read the task and inspect the relevant code, diff, or planning artifact.",
-      "Check correctness, missing requirements, unnecessary scope, and verification evidence.",
-      "Do not modify project files or implement fixes while reviewing.",
-      "Report all actionable findings in one response with file locations, impact, and required changes.",
-      "Approve only when the work meets the task and relevant checks are supported by evidence.",
-    ],
-  };
-  for (const [role, choice] of [["planner", planner], ["reviewer", reviewer], ["developer", developer]] as const) {
-    lines.push(
-      `  ${role}:`,
-      "    default_model:",
-      `      provider: ${yamlScalar(choice.provider)}`,
-      `      model: ${yamlScalar(choice.model)}`,
-    );
-    if (Object.keys(choice.options).length > 0) {
-      lines.push("      options:");
-      for (const [key, value] of Object.entries(choice.options)) lines.push(`        ${key}: ${yamlScalar(value)}`);
-    }
-    lines.push("    instructions:");
-    for (const instruction of instructions[role]) lines.push(`      - ${yamlScalar(instruction)}`);
-  }
-  return `${lines.join("\n")}\n`;
-}
-
-function renderWorkflow(preset: string): string {
-  if (preset === "implement") {
-    return (
-      "schema_version: 4\n" +
-      "id: implement\n" +
-      "stages:\n" +
-      "  - id: implement\n" +
-      "    role: developer\n" +
-      "    depends_on: []\n" +
-      "    max_revisions: 3\n" +
-      "    instructions:\n" +
-      "      - Implement the requested change.\n" +
-      "      - Verify the result with relevant checks or tests.\n" +
-      "      - When revising, address all review findings and rerun the relevant checks.\n" +
-      "  - id: review_work\n" +
-      "    role: reviewer\n" +
-      "    depends_on:\n" +
-      "      - implement\n" +
-      "    instructions:\n" +
-      "      - Review the diff against the task and inspect the relevant code.\n" +
-      "      - Check correctness, regressions, missing requirements, and the reported verification results.\n" +
-      "    decision:\n" +
-      "      - approved:\n" +
-      "          when: The requested change is complete and supported by verification evidence.\n" +
-      "          navigate: complete\n" +
-      "      - revise:\n" +
-      "          when: Required fixes remain. List all fixes with file locations and their impact.\n" +
-      "          navigate: implement\n"
-    );
-  }
-  return (
-    "schema_version: 4\n" +
-    "id: plan\n" +
-    "constraints:\n" +
-    "  - Plan only. Do not modify source code.\n" +
-    "stages:\n" +
-    "  - id: plan\n" +
-    "    role: planner\n" +
-    "    depends_on: []\n" +
-    "    max_revisions: 3\n" +
-    "    instructions:\n" +
-    "      - Analyze the task and write an implementation plan.\n" +
-    "      - \"Structure plan.md with these sections: Goal, Steps, Files, Risks, Verification.\"\n" +
-    "      - When revising, edit the existing plan.md in place. Do not replace the whole file.\n" +
-    "    produces:\n" +
-    "      artifact: plan.md\n" +
-    "  - id: review_plan\n" +
-    "    role: reviewer\n" +
-    "    depends_on:\n" +
-    "      - plan\n" +
-    "    instructions:\n" +
-    "      - Review the plan for correctness, missing risks, and unnecessary scope.\n" +
-    "      - Report every gap of the same kind in one response.\n" +
-    "      - Check that plan.md has the sections Goal, Steps, Files, Risks, Verification.\n" +
-    "    decision:\n" +
-    "      - approved:\n" +
-    "          when: The plan has no factual errors, missing risks, missing sections, or unnecessary scope. Style differences alone are acceptable.\n" +
-    "          navigate: complete\n" +
-    "      - revise:\n" +
-    "          when: A factual error, missing risk, missing section, or unnecessary scope remains. List each required change. Do not revise for style.\n" +
-    "          navigate: plan\n" +
-    "outputs:\n" +
-    "  - name: plan\n" +
-    "    from_stage: plan\n" +
-    "    artifact: plan.md\n" +
-    "downstream:\n" +
-    "  - workflow: implement\n" +
-    "    task: Implement the approved plan.\n" +
-    "    artifacts:\n" +
-    "      plan: plan\n"
-  );
+  return files.map((file) => file.path);
 }
 
 async function promptOptions(
