@@ -1,50 +1,35 @@
 schema_version: 4
 id: implement
-constraints:
-  - Implement the task and any supplied approved plan. Do not redesign an approved plan.
-  - Do not commit or push.
-  - Stay within the task scope and any supplied plan.
 stages:
-  - id: prepare
-    description: Check the tree is green before implementation starts.
-    verify:
-      - pnpm build
-      - pnpm test
-    verify_timeout: 1800
-    depends_on: []
   - id: implement
     role: developer
-    depends_on:
-      - prepare
+    depends_on: []
     max_revisions: 3
+    ask: human
     instructions:
-      - Read task.md and any prior session context. Implement the task, following the approved plan when one is supplied.
-      - If the plan and the code disagree, stop and name the disagreement. Do not invent a design.
-      - Run the relevant tests, including those named in any supplied plan. Fix failures your change caused before you report complete.
-      - Write implementation.md in English. Record what changed, which tests ran and their results, and any deviation with its reason.
+      - Implement within scope, following repository conventions and any agreed architecture.
+      - Work directly from the task when no architectural decisions are needed.
+      - Resolve implementation details and edge cases. Add or update relevant tests.
+      - Report architectural blockers with evidence. Seek a decision before changing the agreed design.
+      - Run relevant checks and tests, and report results and anything unverified.
+      - When revising, address all required review findings and rerun the affected checks.
     produces:
-      artifact: implementation.md
+      artifact: implement.md
+
   - id: review_work
     role: reviewer
     depends_on:
       - implement
     instructions:
-      - Read the prior plan, implementation.md, and the diff.
-      - Check for missing plan items, extra scope, and tests that skip a case the plan requires.
+      - Review the actual code and diff against the task, repository conventions, and the agreed architecture when provided.
+      - Check correctness, edge cases, regressions, maintainability, test coverage, and verification evidence.
+      - Respect agreed architectural decisions. Report concrete design problems with implementation evidence, not personal preference.
+      - Report all required fixes together with file locations, impact, and required corrections.
+      - Choose approved when the task is complete and verified; otherwise choose revise.
     decision:
       - approved:
-          when: The code matches the plan, the named tests passed, and no findings remain.
-          navigate: complete
-      - approved-with-note:
-          when: The code matches the plan and the named tests passed. Only non-blocking findings remain; record them in review.md.
+          when: Choose approved according to the stage instructions.
           navigate: complete
       - revise:
-          when: Blocking issues, missing plan items, extra scope, or required test failures remain. List the files and changes still required in review.md.
+          when: Choose revise according to the stage instructions.
           navigate: implement
-    produces:
-      artifact: review.md
-
-outputs:
-  - name: implementation
-    from_stage: implement
-    artifact: implementation.md

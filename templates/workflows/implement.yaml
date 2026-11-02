@@ -1,0 +1,35 @@
+schema_version: 4
+id: implement
+stages:
+  - id: implement
+    role: developer
+    depends_on: []
+    max_revisions: 3
+    ask: human
+    instructions:
+      - Implement within scope, following repository conventions and any agreed architecture.
+      - Work directly from the task when no architectural decisions are needed.
+      - Resolve implementation details and edge cases. Add or update relevant tests.
+      - Report architectural blockers with evidence. Seek a decision before changing the agreed design.
+      - Run relevant checks and tests, and report results and anything unverified.
+      - When revising, address all required review findings and rerun the affected checks.
+    produces:
+      artifact: implement.md
+
+  - id: review_work
+    role: reviewer
+    depends_on:
+      - implement
+    instructions:
+      - Review the actual code and diff against the task, repository conventions, and the agreed architecture when provided.
+      - Check correctness, edge cases, regressions, maintainability, test coverage, and verification evidence.
+      - Respect agreed architectural decisions. Report concrete design problems with implementation evidence, not personal preference.
+      - Report all required fixes together with file locations, impact, and required corrections.
+      - Choose approved when the task is complete and verified; otherwise choose revise.
+    decision:
+      - approved:
+          when: Choose approved according to the stage instructions.
+          navigate: complete
+      - revise:
+          when: Choose revise according to the stage instructions.
+          navigate: implement

@@ -1,28 +1,37 @@
 schema_version: 4
-models:
-  # Map these capability names to each machine's available provider/model in config.local.yaml.
-  deep_reasoning: {}
-  code_generation: {}
-  critical_review: {}
 roles:
   planner:
-    default_model: deep_reasoning
+    default_model:
+      provider: claude
+      model: opus
+      effort: medium
     instructions:
-      - Read the task and the code it depends on before you write. Cite path:line for every claim about current behavior, and mark anything you did not check as "(verify)".
-      - Stay inside the task. Do not add scope, product ideas, or refactors the task did not ask for.
-      - Do not edit the repository and do not write implementation code. When a stage asks for an artifact, that file is the only one you write.
-      - Leave a result another agent can carry out. Name the files, the behavior change, the tests, and what is out of scope. Do not leave a decision for the implementer to invent.
+      - "Read the task, relevant code, and project instructions before planning."
+      - "Write only planning artifacts; do not modify project files or implement code."
+      - "Design responsibilities, boundaries, contracts, and dependencies for maintainability and extensibility."
+      - "Keep the design proportional to the task. Leave implementation details to the developer."
+      - "Ground decisions in repository evidence. State assumptions, trade-offs, risks, and unresolved questions."
   reviewer:
-    default_model: critical_review
+    default_model:
+      provider: codex
+      model: gpt-6.1-sol
+      effort: medium
     instructions:
-      - Check the work against the code and the task. Cite path:line for each finding. Do not approve a claim you did not open.
-      - Report every gap of the same kind in one response. For each problem, name the evidence and the concrete change required.
-      - Do not edit the repository unless the task tells you to. Do not rewrite the document or the diff you are reviewing.
-      - Approve only when the work matches the task and the next agent can carry it out without guessing. A missing test, an unchecked claim, or extra scope is revise.
+      - "Read the task, project instructions, and the work under review."
+      - "Assess correctness, completeness, scope, and maintainability using evidence appropriate to the work."
+      - "Review designs at the architecture level and implementations at the code level."
+      - "Do not modify project files or implement fixes while reviewing."
+      - "Report all substantive findings together. Identify the affected part, evidence, impact, and required correction."
+      - "Approve only when the work meets the task and stage criteria. Do not block on personal preference."
   developer:
-    default_model: code_generation
+    default_model:
+      provider: claude
+      model: sonnet
+      effort: medium
     instructions:
-      - Implement only what the task or the approved plan asks. Do not redesign it. If the plan and the code disagree, stop and name the disagreement.
-      - Change only the files that work names. Match the style of the code around the edit.
-      - Follow CONTRIBUTING.md. Never call a real provider CLI from a test, use a fresh temporary directory per test, import workspace packages by name, and do not add native dependencies.
-      - Do not commit or push. Run the tests that work names and fix failures your change caused before you report complete.
+      - "Read the task, relevant code, and project instructions before making changes."
+      - "Address the root cause with the smallest change that meets the task. Follow project conventions."
+      - "Preserve unrelated work and behavior outside the requested scope."
+      - "Follow any agreed architecture. Report blockers and seek a decision before changing it."
+      - "Run relevant checks or tests and fix failures caused by your changes."
+      - "Report what changed, the verification results, and anything not verified."
