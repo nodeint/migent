@@ -1,44 +1,42 @@
 schema_version: 4
 id: plan
 constraints:
-  - Do not write implementation code.
-  - Do not edit repository files. Write only the stage artifact.
-  - Only the decision header routes this workflow. Review prose is feedback, not a route.
+  - Plan only. Do not modify source code.
 stages:
   - id: plan
     role: planner
-    ask: human
     depends_on: []
     max_revisions: 3
+    ask: human
     instructions:
-      - Read task.md and the code it depends on, then write plan.md in this execution's artifacts directory.
-      - Write the plan in English. Include scope and paths, current behavior with path:line evidence, decisions the task already fixed, ordered tasks, tests to add or run, and what is out of scope.
-      - Each task names the file to change and the behavior to add or keep. Do not mark a task done unless it is already merged.
-      - When a review routes back, start from the previous plan.md and write the updated file in this execution's artifacts directory. Address every review point and keep the sections the review did not reject.
+      - Define the goal, scope, and architectural constraints from the task and repository evidence.
+      - Design component responsibilities, boundaries, contracts, and dependencies.
+      - Favor maintainability and extensibility. Keep the design proportional to the task.
+      - Explain key decisions, trade-offs, risks, and open questions.
+      - Stay at the architecture level. Exclude implementation steps, code-level details, and test procedures.
+      - Resolve substantive review findings when revising.
     produces:
       artifact: plan.md
   - id: review_plan
     role: reviewer
-    ask: human
     depends_on:
       - plan
     instructions:
-      - Read plan.md and open the code behind each path:line claim.
-      - Check correctness, missing risks, unnecessary scope, and any step an implementer would have to guess.
+      - Review the architecture against the task and repository evidence.
+      - Assess correctness, feasibility, maintainability, and extensibility.
+      - Check responsibilities, boundaries, contracts, dependencies, and material trade-offs or risks.
+      - Stay at the architecture level. Do not require implementation steps, code-level details, or test procedures.
+      - Report all substantive gaps together with their impact and required corrections.
+      - Choose revise for substantive gaps; otherwise choose approved.
+      - Do not revise for style or formatting.
     decision:
       - approved:
-          when: The plan can be implemented as written.
+          when: Choose approved according to the stage instructions.
           navigate: complete
       - revise:
-          when: Required edits remain before the plan can be implemented. List each required edit once.
+          when: Choose revise according to the stage instructions.
           navigate: plan
 outputs:
   - name: plan
     from_stage: plan
     artifact: plan.md
-
-downstream:
-  - workflow: implement
-    task: Implement the approved plan.
-    artifacts:
-      plan: plan

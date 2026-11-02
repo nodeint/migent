@@ -240,8 +240,7 @@ test("planner has its own model and each workflow uses the reviewer model", asyn
     expect(resolveStageTarget(workspace, "implement", "review_work", undefined, resolve)).toMatchObject({ provider: "grok", model: "grok-4.7" });
     expect(workflow).toContain("id: plan");
     expect(loadWorkflowDocument(path.join(workspace, ".migent", "workflows", "plan.yaml")).stages.review_plan?.routes.revise).toBe("plan");
-    expect(workflow).toContain("When revising, edit the existing plan.md in place. Do not replace the whole file.");
-    expect(workflow).toContain("Report every gap of the same kind in one response.");
+    expect(workflow).toBe(readFileSync(new URL("../../../templates/workflows/plan.yaml", import.meta.url), "utf8"));
     expect(workflow).not.toContain("reasoning-effort");
   } finally {
     rmSync(workspace, { recursive: true, force: true });

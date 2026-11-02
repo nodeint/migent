@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- `migent init` renders role models and sample workflows from packaged project templates.
+
 ## 0.3.1
 
 ### Fixed

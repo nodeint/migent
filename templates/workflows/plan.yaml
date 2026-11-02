@@ -1,0 +1,42 @@
+schema_version: 4
+id: plan
+constraints:
+  - Plan only. Do not modify source code.
+stages:
+  - id: plan
+    role: planner
+    depends_on: []
+    max_revisions: 3
+    ask: human
+    instructions:
+      - Define the goal, scope, and architectural constraints from the task and repository evidence.
+      - Design component responsibilities, boundaries, contracts, and dependencies.
+      - Favor maintainability and extensibility. Keep the design proportional to the task.
+      - Explain key decisions, trade-offs, risks, and open questions.
+      - Stay at the architecture level. Exclude implementation steps, code-level details, and test procedures.
+      - Resolve substantive review findings when revising.
+    produces:
+      artifact: plan.md
+  - id: review_plan
+    role: reviewer
+    depends_on:
+      - plan
+    instructions:
+      - Review the architecture against the task and repository evidence.
+      - Assess correctness, feasibility, maintainability, and extensibility.
+      - Check responsibilities, boundaries, contracts, dependencies, and material trade-offs or risks.
+      - Stay at the architecture level. Do not require implementation steps, code-level details, or test procedures.
+      - Report all substantive gaps together with their impact and required corrections.
+      - Choose revise for substantive gaps; otherwise choose approved.
+      - Do not revise for style or formatting.
+    decision:
+      - approved:
+          when: Choose approved according to the stage instructions.
+          navigate: complete
+      - revise:
+          when: Choose revise according to the stage instructions.
+          navigate: plan
+outputs:
+  - name: plan
+    from_stage: plan
+    artifact: plan.md
