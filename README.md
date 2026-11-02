@@ -367,6 +367,8 @@ skill to operate it for you.
 - [Writing workflows](https://github.com/nodeint/migent/blob/main/docs/workflows.md)
 - [Providers and model configuration](https://github.com/nodeint/migent/blob/main/docs/providers.md)
 - [Sessions and workflow composition](https://github.com/nodeint/migent/blob/main/docs/sessions.md)
+- [Session metrics](https://github.com/nodeint/migent/blob/main/docs/session-metrics.md)
+- [Session handoff](https://github.com/nodeint/migent/blob/main/docs/session-handoff.md)
 - [CLI commands and execution controls](https://github.com/nodeint/migent/blob/main/docs/cli.md)
 
 Run `migent <command> --help` for command options. To contribute to Migent, see

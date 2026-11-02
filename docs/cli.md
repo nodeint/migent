@@ -22,6 +22,9 @@ migent session run --session <session-id> --workflow <workflow>
 # place. A blocked role session runs again. An active role session sends its
 # last prompt again. --reply is that role's next user turn. A completed role
 # session stays stopped unless --reply is set.
+# A cancelled stage (Ctrl+C, SIGTERM, session cancel) also accepts --reply. The
+# cancelled execution stays cancelled. The reply runs as a new execution in the
+# same conversation, and the prompt first says the previous turn was stopped.
 migent session continue <session-id>
 migent session continue <session-id> --reply "<reply>"
 migent session continue <session-id> --stage <stage> --reply-file <path>

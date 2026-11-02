@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- `migent session continue --reply` redirects a stopped (cancelled) workflow stage or role session. The reply runs as a new execution in the same conversation.
+
 ### Changed
 
 - `migent init` renders role models and sample workflows from packaged project templates.

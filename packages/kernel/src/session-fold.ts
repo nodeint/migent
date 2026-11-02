@@ -16,6 +16,7 @@ import { readStatusFileState, type StatusFileState } from "./query.js";
 import { isRecord } from "./record.js";
 import { EXECUTIONS_DIRNAME } from "./runtime.js";
 import {
+  CANCELLED_REPLY,
   parseExecutionId,
   readParsedEvents,
   skipsStatusWrite,
@@ -449,12 +450,46 @@ function publishExecutionStatus(
     null,
     blocked,
   );
-  return applyBlockedResume(
+  const resumedAt = applyBlockedResume(
     status,
     inputs.events,
     [...blocked, ...questions].map((row) => row.executionId),
     later(updatedAt, latest.completedAt ?? latest.createdAt),
   );
+  return applyCancelledReply(
+    status,
+    inputs.events,
+    latestPerStage(rows).filter((row) => row.status === "cancelled").map((row) => row.executionId),
+    resumedAt,
+  );
+}
+
+/**
+ * A recorded reply to a cancelled stage makes the session runnable until the reply is dispatched.
+ * Any cancelled stage with a reply is enough: the reply dispatches first, then the command reopens
+ * the other cancelled stages in place.
+ */
+function applyCancelledReply(
+  status: Record<string, unknown>,
+  events: readonly ParsedEvent[],
+  cancelledIds: readonly string[],
+  updatedAt: string | null,
+): string | null {
+  const current = status.status;
+  if ((current !== "cancelled" && current !== "blocked" && current !== "question") || cancelledIds.length === 0) return updatedAt;
+  let next = updatedAt;
+  let replied = 0;
+  for (const executionId of cancelledIds) {
+    const replies = events.filter((event) =>
+      event.event === "session.active" && event.executionId === executionId && event.data.from === CANCELLED_REPLY);
+    if (replies.length === 0) continue;
+    replied += 1;
+    for (const reply of replies) next = later(next, reply.timestamp);
+  }
+  if (replied === 0) return updatedAt;
+  status.status = "active";
+  applyTerminalFields(status, "active", null, null);
+  return next;
 }
 
 function statusExecutionsFromFolds(executions: readonly FoldExecution[]): StatusExecution[] {

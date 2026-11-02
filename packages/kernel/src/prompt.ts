@@ -55,8 +55,10 @@ export function buildStagePrompt(input: {
 }
 
 /** Reply to a stage that already holds the conversation. The runner appends the response contract. */
-export function buildStageReplyPrompt(reply: string, question?: string): string {
-  return question ? `Reply to: ${question}\n${reply}` : `Reply:\n${reply}`;
+export function buildStageReplyPrompt(reply: string, question?: string, interruptedExecutionId?: string): string {
+  const body = question ? `Reply to: ${question}\n${reply}` : `Reply:\n${reply}`;
+  if (!interruptedExecutionId) return body;
+  return `Your previous turn (execution ${interruptedExecutionId}) was stopped by the human before it finished.\n\n${body}`;
 }
 
 /** Later visit of a stage. The provider conversation already has the stage prompt. */

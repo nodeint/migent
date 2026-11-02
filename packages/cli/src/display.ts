@@ -27,7 +27,7 @@ export function printResumeCommand(sessionId: string): void {
   process.stderr.write(`Resume with:\nmigent session continue ${sessionId}\n`);
 }
 
-export function printReplyCommand(sessionId: string, stageId?: string): void {
+export function printReplyCommand(sessionId: string, stageId?: string, purpose: "answer" | "steer" = "answer"): void {
   const stage = stageId ? ` --stage ${stageId}` : "";
   process.stderr.write(`Reply with:\nmigent session continue ${sessionId}${stage} --reply "<answer>"\n`);
 }
