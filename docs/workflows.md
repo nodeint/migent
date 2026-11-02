@@ -431,7 +431,7 @@ and commands such as `migent session run --workflow implement --prior <id>`.
 Nothing starts automatically. The target requires no input declaration.
 The source's frozen downstream declaration determines the suggestions. The
 current target definition is loaded only when that target starts.
-See [session handoff](sessions.md#reusable-workflow-boundaries) for JSON and
+See [session handoff](session-handoff.md) for JSON and
 `--prior` behavior. Run `migent migrate` to upgrade; migration removes `requires`
 with guidance but cannot infer downstream tasks or mappings.
 
