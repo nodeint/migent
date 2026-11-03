@@ -1,8 +1,14 @@
 {
   "name": "@nodeint/migent-prompts",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Prompt templates and renderers for Migent.",
-  "keywords": ["ai", "agents", "workflow", "prompts", "migent"],
+  "keywords": [
+    "ai",
+    "agents",
+    "workflow",
+    "prompts",
+    "migent"
+  ],
   "license": "MIT",
   "homepage": "https://github.com/nodeint/migent/tree/main/packages/prompts#readme",
   "bugs": {

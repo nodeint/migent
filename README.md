@@ -2,18 +2,15 @@
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/nodeint/migent/main/assets/stylized-m.svg" alt="Migent logo" width="150" /><br>
-  <strong>Compose AI coding agents into repeatable engineering workflows.
-</strong>
+  <strong>Compose AI coding agents into repeatable engineering workflows.</strong>
 </p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@nodeint/migent"><img src="https://img.shields.io/npm/v/@nodeint/migent.svg?style=flat-square" alt="npm version" /></a>
-  <a href="https://github.com/nodeint/migent/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="License: MIT" /></a>
-  <a href="https://nodejs.org"><img src="https://img.shields.io/badge/node-%3E%3D22.0.0-brightgreen.svg?style=flat-square" alt="Node.js 22+" /></a>
+  <a href="https://marketplace.visualstudio.com/items?itemName=nodeint.migent-vscode"><img src="https://img.shields.io/visual-studio-marketplace/v/nodeint.migent-vscode?style=flat-square" alt="VS Code Marketplace" /></a>
 </p>
 
 ---
-
 
 Migent connects coding-agent CLIs from different providers through explicit,
 repository-defined workflows. One model can plan, another can review, and the
@@ -26,9 +23,11 @@ the workflow's progress.
   - [Contents](#contents)
   - [Why Migent?](#why-migent)
   - [Supported CLIs](#supported-clis)
+  - [Editor extension](#editor-extension)
   - [Quickstart](#quickstart)
-    - [With an AI agent](#with-an-ai-agent)
-    - [Manually](#manually)
+    - [Install Migent](#install-migent)
+    - [Option 1: Set up with an AI agent](#option-1-set-up-with-an-ai-agent)
+    - [Option 2: Set up manually](#option-2-set-up-manually)
     - [Project files](#project-files)
     - [Tracking](#tracking)
   - [Workflow as code](#workflow-as-code)
@@ -71,8 +70,8 @@ flowchart TD
 
 ## Supported CLIs
 
-Migent drives each provider through its headless CLI. Install and sign in to the
-ones used by your configuration.
+Migent uses each provider's CLI in headless mode. Install and sign in to the
+CLIs used by your configuration.
 
 | Provider           | CLI          |
 | -------------------| -------------|
@@ -83,80 +82,87 @@ ones used by your configuration.
 | BytePlus           | `opencode`   |
 | OpenCode           | `opencode`   |
 
+## Editor extension
+
+Use Migent from your editor with the **Migent extension**:
+
+- [Install for VS Code](https://marketplace.visualstudio.com/items?itemName=nodeint.migent-vscode)
+- [Install for Cursor and other Open VSX editors](https://open-vsx.org/extension/nodeint/migent-vscode)
+
 ## Quickstart
 
-Migent requires Node.js 22+ on macOS, Linux, or Windows. Install and sign in to
-the provider CLIs you plan to use.
+Before you begin, make sure you have:
 
-Install Migent first:
+- Node.js 22+ installed.
+- The [provider CLIs](#supported-clis) you plan to use. Install them and sign in.
+
+### Install Migent
 
 ```bash
-npm install -g @nodeint/migent
+npm install -g @nodeint/migent@latest
 migent --version
 ```
 
-Upgrade with `npm install -g @nodeint/migent@latest`.
-
 Run setup from your project root, either with an AI agent or with the CLI.
 
-### With an AI agent
+### Option 1: Set up with an AI agent
 
 1. Install the agent skill (requires Node.js 22.20+), then choose the AI
    clients to set up:
 
-```bash
+   ```bash
    migent skill install --project
-```
+   ```
 
 2. Paste this prompt into your agent (Claude Code, Codex, Antigravity, Cursor,
    etc.):
 
-```text
+   ```text
    Use the migent skill to set up Migent in this project.
-```
+   ```
 
    The agent handles setup. If you have provider or model preferences, specify
    them for the developer, planner, or reviewer role.
 
 3. Ask the agent to write and review a plan for your task (optional):
 
-```text
+   ```text
    Use the migent skill to run the plan workflow for this task: <Describe your task here>.
-```
+   ```
 
 4. Ask the agent to implement the plan and review the changes (optional):
 
-```text
+   ```text
    Use the migent skill to run the implement workflow with this plan: <Path to your plan file>.
-```
+   ```
 
-### Manually
+### Option 2: Set up manually
 
-1. Run `migent init` and choose the provider, model, and options for the developer and
-   reviewer:
+1. Run `migent init` and choose the provider, model, and options for the
+   developer and reviewer:
 
-```bash
-  migent init
-```
+   ```bash
+   migent init
+   ```
 
 2. To let an AI agent operate Migent, install the skill separately
    (requires Node.js 22.20+):
 
-```bash
- migent skill install
-```
+   ```bash
+   migent skill install
+   ```
 
 3. Write and review a plan for your task (optional):
 
-```bash
-migent session run --workflow plan --task "<Describe your task here>"
-```
+   ```bash
+   migent session run --workflow plan --task "<Describe your task here>"
+   ```
 
 4. Implement the plan and review the changes (optional):
 
-```bash
-migent session run --workflow implement --task "<Path to your plan file>"
-```
+   ```bash
+   migent session run --workflow implement --task "<Path to your plan file>"
+   ```
 
 ### Project files
 
@@ -170,7 +176,6 @@ After setup, your project contains:
     ├── implement.yaml # implement and review a task
     └── plan.yaml      # write and review a plan
 ```
-
 
 Commit these files to share the setup. Run history is saved in
 `.migent/sessions/` when you start a task. If you install the skill, it lives
@@ -189,14 +194,14 @@ migent session list --status active
 migent session show <session-id>
 ```
 
-`show` prints the current status, running stages, latest decisions, blockers,
+The `show` command prints the current status, running stages, latest decisions, blockers,
 and published outputs. To watch live stage events and provider activity, run:
 
 ```bash
 migent session follow <session-id> --exit-when-done
 ```
 
-The watcher exits when the session completes, is blocked, or is cancelled.
+The watcher exits when the session completes, becomes blocked, or is cancelled.
 Press Ctrl+C to stop watching; the workflow keeps running in its own terminal.
 Use `migent session list` to include stopped sessions, then resume one with:
 
@@ -268,7 +273,7 @@ stages:
 ```
 
 Replace the `verify` commands with your project's build and test commands.
-Run it with `migent session run`, as in the quickstart:
+Run the workflow with `migent session run`, as in the quickstart:
 
 ```bash
 migent session run --workflow implement --task "Add a --json flag to the export command"
