@@ -21,7 +21,7 @@ import {
   flattenHistory,
   log,
 } from "./runtime.js";
-import { renderProtocolUpdate, renderQuestionCorrection } from "@nodeint/migent-prompts";
+import { renderProtocolUpdate, renderQuestionCorrection, type TurnKind } from "@nodeint/migent-prompts";
 import { ProviderEventReporter } from "./provider-events.js";
 import { loadFrozenWorkflow } from "./session-freeze.js";
 import { AgentSessionRecord, SessionStore, stringOptions, type ExecutionContext } from "./session-store.js";
@@ -60,6 +60,8 @@ export interface RunRequest {
   /** CLI client id to drive the model with. Absent means the provider's own. */
   client?: string | null;
   prompt: string;
+  /** What the prompt is; it picks the closing instruction and is kept for resume. */
+  turn?: TurnKind | null;
   workspace: string;
   sessionId?: string | null;
   resumeExecutionId?: string | null;
@@ -75,6 +77,26 @@ export interface RunRequest {
 export const QUESTION_FILE_INVALID = "question_file_invalid";
 /** Version of the response contract baked into a saved first prompt. 2 = questions via request file. */
 const RESPONSE_PROTOCOL = 2;
+
+const TURN_KINDS: readonly TurnKind[] = ["start", "continue", "reply", "answers", "repair", "correction"];
+
+/** The kind of the execution's latest user turn, as saved in execution.json. */
+function storedTurn(metadata: Record<string, unknown>): TurnKind | null {
+  const value = metadata.turn_kind;
+  return TURN_KINDS.find((kind) => kind === value) ?? null;
+}
+
+/** Task file and session directory of a workflow execution, for the prompt's Execution block. */
+function sessionPaths(context: ExecutionContext, sessionId: string | null): { taskFile?: string; sessionDirectory?: string } {
+  if (sessionId === null) return {};
+  const sessionDirectory = path.dirname(path.dirname(context.directory));
+  const taskFile = path.join(sessionDirectory, "task.md");
+  try {
+    return statSync(taskFile).isFile() ? { taskFile, sessionDirectory } : {};
+  } catch {
+    return {};
+  }
+}
 const QUESTION_FILE_NAME = "question-request.json";
 
 /** Absolute, native path the agent writes questions to. It sits outside `artifacts/`. */
@@ -185,22 +207,27 @@ export class AgentToolRunner {
     const previous = request.resumeExecutionId
       ? store.executionSnapshots(context.sessionId).find((row) => row.executionId === request.resumeExecutionId && row.stageId === stageId && row.outcomeStatus === "question")
       : undefined;
-    const progress = previous
-      ? verifyProgress(JSON.parse(readFileSync(path.join(path.dirname(previous.artifactDirectory), "execution.json"), "utf8")))
+    const previousMetadata = previous
+      ? JSON.parse(readFileSync(path.join(path.dirname(previous.artifactDirectory), "execution.json"), "utf8")) as Record<string, unknown>
       : null;
+    const progress = previousMetadata ? verifyProgress(previousMetadata) : null;
+    // Answering a question on the same agent: the conversation already holds the contract and stage instructions.
+    const sameConversation = previous !== undefined && agentId !== null && agentId !== ""
+      && previousMetadata?.response_protocol === RESPONSE_PROTOCOL;
     if (previous && artifactName) store.carryVerifyArtifact(previous.artifactDirectory, context, artifactName);
     if (request.resumeExecutionId && verifyCommands.length > 0 && artifactName) {
       this.carryExhaustedArtifact(store, context, request.resumeExecutionId, artifactName);
     }
-    turnPrompt = renderProviderPrompt(turnPrompt, {
-      contract: sessionId !== null, decisionValues, decisionInstructions: stage?.decisionInstructions, ask,
+    turnPrompt = renderProviderPrompt(turnPrompt, { ...sessionPaths(context, sessionId),
+      contract: sessionId === null ? false : sameConversation ? "reminder" : "full", turn: request.turn ?? null, decisionValues, decisionInstructions: stage?.decisionInstructions, ask,
       questionFile: questionRequestPath(context),
       artifactDirectory: context.artifactDirectory, artifactName,
+      previousArtifactDirectory: previous?.artifactDirectory ?? null,
       previousVerifyReport: previous && progress?.lastReport
         ? path.resolve(path.dirname(previous.artifactDirectory), progress.lastReport) : null,
     });
     store.savePrompt(context, turnPrompt);
-    store.saveExecutionProgress(context, record, { response_protocol: RESPONSE_PROTOCOL });
+    store.saveExecutionProgress(context, record, { response_protocol: RESPONSE_PROTOCOL, turn_kind: request.turn ?? null });
     const started: Record<string, unknown> = {
       cli_version: this.cachedCliVersion(provider, providerKey, workspacePath),
       ...readGitFacts(workspacePath),
@@ -297,7 +324,7 @@ export class AgentToolRunner {
         }
         // A first prompt saved under an older protocol carries the old question instructions.
         if (sessionId !== null && ask !== null && metadata.response_protocol !== RESPONSE_PROTOCOL) {
-          currentPrompt += renderProtocolUpdate({
+          currentPrompt += renderProtocolUpdate({ ...sessionPaths(context, sessionId), turn: storedTurn(metadata),
             decisionValues, decisionInstructions: stage?.decisionInstructions, ask, questionFile,
           });
         }
@@ -305,7 +332,8 @@ export class AgentToolRunner {
         currentPrompt = agentId
           ? last.content
           : flattenHistory(record.history as Array<{ role: string; content: string }>);
-        currentPrompt = renderProviderPrompt(currentPrompt, { contract: true, decisionValues, decisionInstructions: stage?.decisionInstructions, ask, questionFile });
+        const contract = agentId && metadata.response_protocol === RESPONSE_PROTOCOL ? "reminder" : "full";
+        currentPrompt = renderProviderPrompt(currentPrompt, { ...sessionPaths(context, sessionId), contract, turn: storedTurn(metadata), decisionValues, decisionInstructions: stage?.decisionInstructions, ask, questionFile, artifactDirectory: context.artifactDirectory, artifactName });
       }
       return this.driveTurns({
         provider,
@@ -682,13 +710,17 @@ export class AgentToolRunner {
       );
       record.history.push({ role: "user", content: repair });
       store.save(record, context);
+      store.saveExecutionProgress(context, record, { turn_kind: "repair" });
       turn += 1;
       currentAgentId = record.agentId;
       currentSession = null;
       currentPrompt = currentAgentId
         ? repair
         : flattenHistory(record.history as Array<{ role: string; content: string }>);
-      currentPrompt = renderProviderPrompt(currentPrompt, { contract: true, decisionValues, decisionInstructions: stage?.decisionInstructions, ask, questionFile });
+      currentPrompt = renderProviderPrompt(currentPrompt, { ...sessionPaths(context, sessionId),
+        contract: currentAgentId ? "reminder" : "full", turn: "repair", decisionValues, decisionInstructions: stage?.decisionInstructions, ask, questionFile,
+        artifactDirectory: context.artifactDirectory, artifactName,
+      });
     }
     const sessionStatus = store.readSessionStatus(context.sessionId);
     return {
@@ -725,7 +757,7 @@ export class AgentToolRunner {
     state: TurnDrive,
     eventReporter: ProviderEventReporter,
   ): { correction: QuestionCorrection; prompt: string } | null {
-    const { store, context, record, decisionValues, stage } = state;
+    const { store, context, record, decisionValues, stage, artifactName, sessionId } = state;
     if (correction !== null && correction.turn !== turn) return null;
     const used: QuestionCorrection = correction ?? { turn, error_kind: error.kind, error_detail: error.detail };
     if (correction === null) {
@@ -739,13 +771,14 @@ export class AgentToolRunner {
     });
     record.history.push({ role: "user", content: message });
     store.save(record, context);
+    store.saveExecutionProgress(context, record, { turn_kind: "correction" });
     const ask = stage?.ask ?? (stage === null ? "human" : null);
     const base = record.agentId
       ? message
       : flattenHistory(record.history as Array<{ role: string; content: string }>);
-    const prompt = renderProviderPrompt(base, {
-      contract: true, decisionValues, decisionInstructions: stage?.decisionInstructions, ask,
-      questionFile: error.file,
+    const prompt = renderProviderPrompt(base, { ...sessionPaths(context, sessionId),
+      contract: record.agentId ? "reminder" : "full", turn: "correction", decisionValues, decisionInstructions: stage?.decisionInstructions, ask,
+      questionFile: error.file, artifactDirectory: context.artifactDirectory, artifactName,
     });
     return { correction: used, prompt };
   }

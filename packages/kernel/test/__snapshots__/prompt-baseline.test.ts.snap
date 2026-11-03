@@ -2,331 +2,687 @@
 
 exports[`prompt kinds under native resume, history replay and resume_from 1`] = `
 {
-  "first turn (resume_from) / native": "Read the task from \`<ROOT>/.migent/sessions/s1/task.md\`.
-Session files are in \`<ROOT>/.migent/sessions/s1\`.
+  "first turn (resume_from) / native": "# Migent workflow stage
 
-Stage: again (role: worker)
+## Response contract
 
-Upstream artifacts on this session:
-- make: <ROOT>/.migent/sessions/s1/executions/e1/artifacts/make.md
-- make verify: <ROOT>/.migent/sessions/s1/executions/e1/artifacts/verify.md
+Start the response with a status header, then a blank line, then the report:
 
-Workflow stage response contract:
-Start the final response with \`status: complete\` or \`status: blocked\`.
-\`complete\`: the stage finished this turn's work. \`blocked\`: an obstacle this turn cannot resolve.
-When blocked, put \`blocker: <concise reason>\` on the next line.
-Use a blank line before the report body.
+\`\`\`
+status: complete | blocked
+blocker: <reason>   ← only with blocked
+\`\`\`
 
-Migent artifact directory:
-<ART>
-Write the file artifact as \`again.md\` in that directory.",
+| Status | Meaning |
+| :--- | :--- |
+| \`complete\` | The stage's work is finished, artifact written. |
+| \`blocked\` | An obstacle you cannot resolve in this turn. |
+
+## Stage: again (role: worker)
+
+## Upstream artifacts
+
+- make: \`<ROOT>/.migent/sessions/s1/executions/e1/artifacts/make.md\`
+- make verify report: \`<ROOT>/.migent/sessions/s1/executions/e1/artifacts/verify.md\`
+
+## Execution
+
+- Task: \`<SESSION>/task.md\`
+- Session dir: \`<SESSION>\` (shared session files)
+- Artifacts: \`<ART>\`
+
+## Do
+
+Read the task, then carry out the stage.
+Write the artifact as \`again.md\` in the artifacts directory.",
   "first turn (resume_from) / replay": "user: (earlier turn)
 
 assistant: (earlier response)
 
-user: Read the task from \`<ROOT>/.migent/sessions/s1/task.md\`.
-Session files are in \`<ROOT>/.migent/sessions/s1\`.
+user: # Migent workflow stage
 
-Stage: again (role: worker)
+## Response contract
 
-Upstream artifacts on this session:
-- make: <ROOT>/.migent/sessions/s1/executions/e1/artifacts/make.md
-- make verify: <ROOT>/.migent/sessions/s1/executions/e1/artifacts/verify.md
+Start the response with a status header, then a blank line, then the report:
 
-Workflow stage response contract:
-Start the final response with \`status: complete\` or \`status: blocked\`.
-\`complete\`: the stage finished this turn's work. \`blocked\`: an obstacle this turn cannot resolve.
-When blocked, put \`blocker: <concise reason>\` on the next line.
-Use a blank line before the report body.
+\`\`\`
+status: complete | blocked
+blocker: <reason>   ← only with blocked
+\`\`\`
 
-Migent artifact directory:
-<ART>
-Write the file artifact as \`again.md\` in that directory.",
-  "first turn / native": "Read the task from \`<ROOT>/.migent/sessions/s1/task.md\`.
-Session files are in \`<ROOT>/.migent/sessions/s1\`.
+| Status | Meaning |
+| :--- | :--- |
+| \`complete\` | The stage's work is finished, artifact written. |
+| \`blocked\` | An obstacle you cannot resolve in this turn. |
 
-Stage: make (role: worker)
+## Stage: again (role: worker)
 
-Verify commands:
-After you report \`status: complete\`, Migent runs these commands in the workspace, in order, and accepts completion only if all exit 0.
-- check-one
-- check-two
+## Upstream artifacts
 
-Workflow stage response contract:
-Start the final response with \`status: complete\`, \`status: blocked\`, or \`status: question\`.
-\`complete\`: the stage finished this turn's work. \`question\`: an answer is needed before the stage can continue. \`blocked\`: an obstacle this turn cannot resolve.
-When blocked, put \`blocker: <concise reason>\` on the next line.
-To ask the human, write the question document to the question request file, then return \`status: question\`. The response body is a report; do not put question JSON in it.
-Question request file: <QFILE>
-The file holds one JSON document:
-\`{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","options":[{"label":"..."}]}]}\`
-Example: {"schema_version":1,"questions":[{"question":"Include existing sessions?","context":"Migration adds work.","selection":"single","options":[{"label":"New sessions only"},{"label":"Include existing sessions"}]}]}
-Every question needs 2 to 26 options. Optional: option.description and question.recommended (array of option IDs; at most one for single selection). Omit IDs; Migent assigns them by order. Free-text answers are always allowed. Never choose on the recipient's behalf. Put every choice and its explanation in the file, not in prose. You may ask several questions in one document; every question must be answered before the stage continues. Do not choose a decision while asking. Migent reads the file only when the status is \`question\`.
+- make: \`<ROOT>/.migent/sessions/s1/executions/e1/artifacts/make.md\`
+- make verify report: \`<ROOT>/.migent/sessions/s1/executions/e1/artifacts/verify.md\`
 
-Use a blank line before the report body.
+## Execution
 
-Migent artifact directory:
-<ART>
-Write the file artifact as \`make.md\` in that directory.",
+- Task: \`<SESSION>/task.md\`
+- Session dir: \`<SESSION>\` (shared session files)
+- Artifacts: \`<ART>\`
+
+## Do
+
+Read the task, then carry out the stage.
+Write the artifact as \`again.md\` in the artifacts directory.",
+  "first turn / native": "# Migent workflow stage
+
+## Response contract
+
+Start the response with a status header, then a blank line, then the report:
+
+\`\`\`
+status: complete | question | blocked
+blocker: <reason>   ← only with blocked
+\`\`\`
+
+| Status | Meaning |
+| :--- | :--- |
+| \`complete\` | The stage's work is finished, artifact written. |
+| \`question\` | You need a human answer to continue. |
+| \`blocked\` | An obstacle you cannot resolve in this turn. |
+
+## Asking questions
+
+Write the question document to the question file (see Execution), then return \`status: question\`. Migent reads the file only for that status. Keep choices out of the report body.
+
+\`\`\`json
+{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","recommended":["A"],"options":[{"label":"...","description":"..."}]}]}
+\`\`\`
+
+- Each question needs 2–26 options.
+- Omit IDs: Migent letters options A, B, C… and numbers questions 1, 2, 3… in order.
+- Optional: \`description\` on an option; \`recommended\` on a question, a list of option letters (at most one for \`single\`).
+- Free-text answers are always allowed.
+- Several questions per file are allowed; all must be answered before the stage continues.
+- Present choices neutrally. Never decide on the human's behalf.
+
+## Stage: make (role: worker)
+
+### Verify
+
+After \`status: complete\`, Migent runs these commands in order. Completion counts only if all exit 0; otherwise you get the report and fix it here.
+
+- \`check-one\`
+- \`check-two\`
+
+## Execution
+
+- Task: \`<SESSION>/task.md\`
+- Session dir: \`<SESSION>\` (shared session files)
+- Question file: \`<QFILE>\`
+- Artifacts: \`<ART>\`
+
+## Do
+
+Read the task, then carry out the stage.
+Write the artifact as \`make.md\` in the artifacts directory.",
   "first turn / replay": "user: (earlier turn)
 
 assistant: (earlier response)
 
-user: Read the task from \`<ROOT>/.migent/sessions/s1/task.md\`.
-Session files are in \`<ROOT>/.migent/sessions/s1\`.
+user: # Migent workflow stage
 
-Stage: make (role: worker)
+## Response contract
 
-Verify commands:
-After you report \`status: complete\`, Migent runs these commands in the workspace, in order, and accepts completion only if all exit 0.
-- check-one
-- check-two
+Start the response with a status header, then a blank line, then the report:
 
-Workflow stage response contract:
-Start the final response with \`status: complete\`, \`status: blocked\`, or \`status: question\`.
-\`complete\`: the stage finished this turn's work. \`question\`: an answer is needed before the stage can continue. \`blocked\`: an obstacle this turn cannot resolve.
-When blocked, put \`blocker: <concise reason>\` on the next line.
-To ask the human, write the question document to the question request file, then return \`status: question\`. The response body is a report; do not put question JSON in it.
-Question request file: <QFILE>
-The file holds one JSON document:
-\`{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","options":[{"label":"..."}]}]}\`
-Example: {"schema_version":1,"questions":[{"question":"Include existing sessions?","context":"Migration adds work.","selection":"single","options":[{"label":"New sessions only"},{"label":"Include existing sessions"}]}]}
-Every question needs 2 to 26 options. Optional: option.description and question.recommended (array of option IDs; at most one for single selection). Omit IDs; Migent assigns them by order. Free-text answers are always allowed. Never choose on the recipient's behalf. Put every choice and its explanation in the file, not in prose. You may ask several questions in one document; every question must be answered before the stage continues. Do not choose a decision while asking. Migent reads the file only when the status is \`question\`.
+\`\`\`
+status: complete | question | blocked
+blocker: <reason>   ← only with blocked
+\`\`\`
 
-Use a blank line before the report body.
+| Status | Meaning |
+| :--- | :--- |
+| \`complete\` | The stage's work is finished, artifact written. |
+| \`question\` | You need a human answer to continue. |
+| \`blocked\` | An obstacle you cannot resolve in this turn. |
 
-Migent artifact directory:
-<ART>
-Write the file artifact as \`make.md\` in that directory.",
-  "re-entry (resume_from) / native": "Continue this stage.
-Read the task from \`<ROOT>/.migent/sessions/s1/task.md\`.
+## Asking questions
 
-Upstream artifacts on this session:
-- make: <ROOT>/.migent/sessions/s1/executions/e1/artifacts/make.md
-- make verify: <ROOT>/.migent/sessions/s1/executions/e1/artifacts/verify.md
+Write the question document to the question file (see Execution), then return \`status: question\`. Migent reads the file only for that status. Keep choices out of the report body.
 
-Workflow stage response contract:
-Start the final response with \`status: complete\` or \`status: blocked\`.
-\`complete\`: the stage finished this turn's work. \`blocked\`: an obstacle this turn cannot resolve.
-When blocked, put \`blocker: <concise reason>\` on the next line.
-Use a blank line before the report body.
+\`\`\`json
+{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","recommended":["A"],"options":[{"label":"...","description":"..."}]}]}
+\`\`\`
 
-Migent artifact directory:
-<ART>
-Write the file artifact as \`again.md\` in that directory.",
+- Each question needs 2–26 options.
+- Omit IDs: Migent letters options A, B, C… and numbers questions 1, 2, 3… in order.
+- Optional: \`description\` on an option; \`recommended\` on a question, a list of option letters (at most one for \`single\`).
+- Free-text answers are always allowed.
+- Several questions per file are allowed; all must be answered before the stage continues.
+- Present choices neutrally. Never decide on the human's behalf.
+
+## Stage: make (role: worker)
+
+### Verify
+
+After \`status: complete\`, Migent runs these commands in order. Completion counts only if all exit 0; otherwise you get the report and fix it here.
+
+- \`check-one\`
+- \`check-two\`
+
+## Execution
+
+- Task: \`<SESSION>/task.md\`
+- Session dir: \`<SESSION>\` (shared session files)
+- Question file: \`<QFILE>\`
+- Artifacts: \`<ART>\`
+
+## Do
+
+Read the task, then carry out the stage.
+Write the artifact as \`make.md\` in the artifacts directory.",
+  "re-entry (resume_from) / native": "# Migent workflow stage
+
+## Response contract
+
+Start the response with a status header, then a blank line, then the report:
+
+\`\`\`
+status: complete | blocked
+blocker: <reason>   ← only with blocked
+\`\`\`
+
+| Status | Meaning |
+| :--- | :--- |
+| \`complete\` | The stage's work is finished, artifact written. |
+| \`blocked\` | An obstacle you cannot resolve in this turn. |
+
+## Continue stage
+
+This stage runs again.
+
+## Upstream artifacts
+
+- make: \`<ROOT>/.migent/sessions/s1/executions/e1/artifacts/make.md\`
+- make verify report: \`<ROOT>/.migent/sessions/s1/executions/e1/artifacts/verify.md\`
+
+## Execution
+
+- Task: \`<SESSION>/task.md\`
+- Session dir: \`<SESSION>\` (shared session files)
+- Artifacts: \`<ART>\`
+
+## Do
+
+Read the task, then continue the stage with the context above.
+Write the artifact as \`again.md\` in the artifacts directory.",
   "re-entry (resume_from) / replay": "user: (earlier turn)
 
 assistant: (earlier response)
 
-user: Continue this stage.
-Read the task from \`<ROOT>/.migent/sessions/s1/task.md\`.
+user: # Migent workflow stage
 
-Upstream artifacts on this session:
-- make: <ROOT>/.migent/sessions/s1/executions/e1/artifacts/make.md
-- make verify: <ROOT>/.migent/sessions/s1/executions/e1/artifacts/verify.md
+## Response contract
 
-Workflow stage response contract:
-Start the final response with \`status: complete\` or \`status: blocked\`.
-\`complete\`: the stage finished this turn's work. \`blocked\`: an obstacle this turn cannot resolve.
-When blocked, put \`blocker: <concise reason>\` on the next line.
-Use a blank line before the report body.
+Start the response with a status header, then a blank line, then the report:
 
-Migent artifact directory:
-<ART>
-Write the file artifact as \`again.md\` in that directory.",
-  "re-entry after revise / native": "Continue this stage.
-Read the task from \`<ROOT>/.migent/sessions/s1/task.md\`.
-Your previous response in this stage: <ROOT>/.migent/sessions/s1/executions/e1/response.md
+\`\`\`
+status: complete | blocked
+blocker: <reason>   ← only with blocked
+\`\`\`
 
-Decision that routed to this stage:
-- check (revise): <ROOT>/.migent/sessions/s1/executions/e2/response.md
-Read this response and use its decision and feedback when working on this stage.
-- Previous make artifact: <ROOT>/.migent/sessions/s1/executions/e1/artifacts/make.md
+| Status | Meaning |
+| :--- | :--- |
+| \`complete\` | The stage's work is finished, artifact written. |
+| \`blocked\` | An obstacle you cannot resolve in this turn. |
 
-Workflow stage response contract:
-Start the final response with \`status: complete\`, \`status: blocked\`, or \`status: question\`.
-\`complete\`: the stage finished this turn's work. \`question\`: an answer is needed before the stage can continue. \`blocked\`: an obstacle this turn cannot resolve.
-When blocked, put \`blocker: <concise reason>\` on the next line.
-To ask the human, write the question document to the question request file, then return \`status: question\`. The response body is a report; do not put question JSON in it.
-Question request file: <QFILE>
-The file holds one JSON document:
-\`{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","options":[{"label":"..."}]}]}\`
-Example: {"schema_version":1,"questions":[{"question":"Include existing sessions?","context":"Migration adds work.","selection":"single","options":[{"label":"New sessions only"},{"label":"Include existing sessions"}]}]}
-Every question needs 2 to 26 options. Optional: option.description and question.recommended (array of option IDs; at most one for single selection). Omit IDs; Migent assigns them by order. Free-text answers are always allowed. Never choose on the recipient's behalf. Put every choice and its explanation in the file, not in prose. You may ask several questions in one document; every question must be answered before the stage continues. Do not choose a decision while asking. Migent reads the file only when the status is \`question\`.
+## Continue stage
 
-Use a blank line before the report body.
+This stage runs again.
 
-Migent artifact directory:
-<ART>
-Write the file artifact as \`make.md\` in that directory.",
+## Upstream artifacts
+
+- make: \`<ROOT>/.migent/sessions/s1/executions/e1/artifacts/make.md\`
+- make verify report: \`<ROOT>/.migent/sessions/s1/executions/e1/artifacts/verify.md\`
+
+## Execution
+
+- Task: \`<SESSION>/task.md\`
+- Session dir: \`<SESSION>\` (shared session files)
+- Artifacts: \`<ART>\`
+
+## Do
+
+Read the task, then continue the stage with the context above.
+Write the artifact as \`again.md\` in the artifacts directory.",
+  "re-entry after revise / native": "# Migent workflow stage
+
+## Response contract
+
+Start the response with a status header, then a blank line, then the report:
+
+\`\`\`
+status: complete | question | blocked
+blocker: <reason>   ← only with blocked
+\`\`\`
+
+| Status | Meaning |
+| :--- | :--- |
+| \`complete\` | The stage's work is finished, artifact written. |
+| \`question\` | You need a human answer to continue. |
+| \`blocked\` | An obstacle you cannot resolve in this turn. |
+
+## Asking questions
+
+Write the question document to the question file (see Execution), then return \`status: question\`. Migent reads the file only for that status. Keep choices out of the report body.
+
+\`\`\`json
+{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","recommended":["A"],"options":[{"label":"...","description":"..."}]}]}
+\`\`\`
+
+- Each question needs 2–26 options.
+- Omit IDs: Migent letters options A, B, C… and numbers questions 1, 2, 3… in order.
+- Optional: \`description\` on an option; \`recommended\` on a question, a list of option letters (at most one for \`single\`).
+- Free-text answers are always allowed.
+- Several questions per file are allowed; all must be answered before the stage continues.
+- Present choices neutrally. Never decide on the human's behalf.
+
+## Continue stage
+
+This stage runs again. Your previous response in this stage: \`<ROOT>/.migent/sessions/s1/executions/e1/response.md\`
+
+## Routing decision
+
+Read these responses and use their decision and feedback when working on this stage.
+
+- check (\`revise\`): \`<ROOT>/.migent/sessions/s1/executions/e2/response.md\`
+- Your previous artifact: \`<ROOT>/.migent/sessions/s1/executions/e1/artifacts/make.md\`
+
+## Execution
+
+- Task: \`<SESSION>/task.md\`
+- Session dir: \`<SESSION>\` (shared session files)
+- Question file: \`<QFILE>\`
+- Artifacts: \`<ART>\`
+
+## Do
+
+Read the task, then continue the stage with the context above.
+Write the artifact as \`make.md\` in the artifacts directory.",
   "re-entry after revise / replay": "user: (earlier turn)
 
 assistant: (earlier response)
 
-user: Continue this stage.
-Read the task from \`<ROOT>/.migent/sessions/s1/task.md\`.
-Your previous response in this stage: <ROOT>/.migent/sessions/s1/executions/e1/response.md
+user: # Migent workflow stage
 
-Decision that routed to this stage:
-- check (revise): <ROOT>/.migent/sessions/s1/executions/e2/response.md
-Read this response and use its decision and feedback when working on this stage.
-- Previous make artifact: <ROOT>/.migent/sessions/s1/executions/e1/artifacts/make.md
+## Response contract
 
-Workflow stage response contract:
-Start the final response with \`status: complete\`, \`status: blocked\`, or \`status: question\`.
-\`complete\`: the stage finished this turn's work. \`question\`: an answer is needed before the stage can continue. \`blocked\`: an obstacle this turn cannot resolve.
-When blocked, put \`blocker: <concise reason>\` on the next line.
-To ask the human, write the question document to the question request file, then return \`status: question\`. The response body is a report; do not put question JSON in it.
-Question request file: <QFILE>
-The file holds one JSON document:
-\`{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","options":[{"label":"..."}]}]}\`
-Example: {"schema_version":1,"questions":[{"question":"Include existing sessions?","context":"Migration adds work.","selection":"single","options":[{"label":"New sessions only"},{"label":"Include existing sessions"}]}]}
-Every question needs 2 to 26 options. Optional: option.description and question.recommended (array of option IDs; at most one for single selection). Omit IDs; Migent assigns them by order. Free-text answers are always allowed. Never choose on the recipient's behalf. Put every choice and its explanation in the file, not in prose. You may ask several questions in one document; every question must be answered before the stage continues. Do not choose a decision while asking. Migent reads the file only when the status is \`question\`.
+Start the response with a status header, then a blank line, then the report:
 
-Use a blank line before the report body.
+\`\`\`
+status: complete | question | blocked
+blocker: <reason>   ← only with blocked
+\`\`\`
 
-Migent artifact directory:
-<ART>
-Write the file artifact as \`make.md\` in that directory.",
-  "reply to cancelled stage / native": "Your previous turn (execution e9) was stopped by the human before it finished.
+| Status | Meaning |
+| :--- | :--- |
+| \`complete\` | The stage's work is finished, artifact written. |
+| \`question\` | You need a human answer to continue. |
+| \`blocked\` | An obstacle you cannot resolve in this turn. |
 
-Reply:
+## Asking questions
+
+Write the question document to the question file (see Execution), then return \`status: question\`. Migent reads the file only for that status. Keep choices out of the report body.
+
+\`\`\`json
+{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","recommended":["A"],"options":[{"label":"...","description":"..."}]}]}
+\`\`\`
+
+- Each question needs 2–26 options.
+- Omit IDs: Migent letters options A, B, C… and numbers questions 1, 2, 3… in order.
+- Optional: \`description\` on an option; \`recommended\` on a question, a list of option letters (at most one for \`single\`).
+- Free-text answers are always allowed.
+- Several questions per file are allowed; all must be answered before the stage continues.
+- Present choices neutrally. Never decide on the human's behalf.
+
+## Continue stage
+
+This stage runs again. Your previous response in this stage: \`<ROOT>/.migent/sessions/s1/executions/e1/response.md\`
+
+## Routing decision
+
+Read these responses and use their decision and feedback when working on this stage.
+
+- check (\`revise\`): \`<ROOT>/.migent/sessions/s1/executions/e2/response.md\`
+- Your previous artifact: \`<ROOT>/.migent/sessions/s1/executions/e1/artifacts/make.md\`
+
+## Execution
+
+- Task: \`<SESSION>/task.md\`
+- Session dir: \`<SESSION>\` (shared session files)
+- Question file: \`<QFILE>\`
+- Artifacts: \`<ART>\`
+
+## Do
+
+Read the task, then continue the stage with the context above.
+Write the artifact as \`make.md\` in the artifacts directory.",
+  "reply to cancelled stage / native": "# Migent workflow stage
+
+## Response contract
+
+Start the response with a status header, then a blank line, then the report:
+
+\`\`\`
+status: complete | question | blocked
+blocker: <reason>   ← only with blocked
+\`\`\`
+
+| Status | Meaning |
+| :--- | :--- |
+| \`complete\` | The stage's work is finished, artifact written. |
+| \`question\` | You need a human answer to continue. |
+| \`blocked\` | An obstacle you cannot resolve in this turn. |
+
+## Asking questions
+
+Write the question document to the question file (see Execution), then return \`status: question\`. Migent reads the file only for that status. Keep choices out of the report body.
+
+\`\`\`json
+{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","recommended":["A"],"options":[{"label":"...","description":"..."}]}]}
+\`\`\`
+
+- Each question needs 2–26 options.
+- Omit IDs: Migent letters options A, B, C… and numbers questions 1, 2, 3… in order.
+- Optional: \`description\` on an option; \`recommended\` on a question, a list of option letters (at most one for \`single\`).
+- Free-text answers are always allowed.
+- Several questions per file are allowed; all must be answered before the stage continues.
+- Present choices neutrally. Never decide on the human's behalf.
+
+## Human reply
+
+Your previous turn was stopped by the human before it finished. Their message:
+
 go on
 
-Workflow stage response contract:
-Start the final response with \`status: complete\`, \`status: blocked\`, or \`status: question\`.
-\`complete\`: the stage finished this turn's work. \`question\`: an answer is needed before the stage can continue. \`blocked\`: an obstacle this turn cannot resolve.
-When blocked, put \`blocker: <concise reason>\` on the next line.
-To ask the human, write the question document to the question request file, then return \`status: question\`. The response body is a report; do not put question JSON in it.
-Question request file: <QFILE>
-The file holds one JSON document:
-\`{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","options":[{"label":"..."}]}]}\`
-Example: {"schema_version":1,"questions":[{"question":"Include existing sessions?","context":"Migration adds work.","selection":"single","options":[{"label":"New sessions only"},{"label":"Include existing sessions"}]}]}
-Every question needs 2 to 26 options. Optional: option.description and question.recommended (array of option IDs; at most one for single selection). Omit IDs; Migent assigns them by order. Free-text answers are always allowed. Never choose on the recipient's behalf. Put every choice and its explanation in the file, not in prose. You may ask several questions in one document; every question must be answered before the stage continues. Do not choose a decision while asking. Migent reads the file only when the status is \`question\`.
+## Execution
 
-Use a blank line before the report body.
+- Task: \`<SESSION>/task.md\`
+- Session dir: \`<SESSION>\` (shared session files)
+- Question file: \`<QFILE>\`
+- Artifacts: \`<ART>\`
 
-Migent artifact directory:
-<ART>
-Write the file artifact as \`make.md\` in that directory.",
+## Do
+
+Continue the stage with the human reply above.
+Write the artifact as \`make.md\` in the artifacts directory.",
   "reply to cancelled stage / replay": "user: (earlier turn)
 
 assistant: (earlier response)
 
-user: Your previous turn (execution e9) was stopped by the human before it finished.
+user: # Migent workflow stage
 
-Reply:
+## Response contract
+
+Start the response with a status header, then a blank line, then the report:
+
+\`\`\`
+status: complete | question | blocked
+blocker: <reason>   ← only with blocked
+\`\`\`
+
+| Status | Meaning |
+| :--- | :--- |
+| \`complete\` | The stage's work is finished, artifact written. |
+| \`question\` | You need a human answer to continue. |
+| \`blocked\` | An obstacle you cannot resolve in this turn. |
+
+## Asking questions
+
+Write the question document to the question file (see Execution), then return \`status: question\`. Migent reads the file only for that status. Keep choices out of the report body.
+
+\`\`\`json
+{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","recommended":["A"],"options":[{"label":"...","description":"..."}]}]}
+\`\`\`
+
+- Each question needs 2–26 options.
+- Omit IDs: Migent letters options A, B, C… and numbers questions 1, 2, 3… in order.
+- Optional: \`description\` on an option; \`recommended\` on a question, a list of option letters (at most one for \`single\`).
+- Free-text answers are always allowed.
+- Several questions per file are allowed; all must be answered before the stage continues.
+- Present choices neutrally. Never decide on the human's behalf.
+
+## Human reply
+
+Your previous turn was stopped by the human before it finished. Their message:
+
 go on
 
-Workflow stage response contract:
-Start the final response with \`status: complete\`, \`status: blocked\`, or \`status: question\`.
-\`complete\`: the stage finished this turn's work. \`question\`: an answer is needed before the stage can continue. \`blocked\`: an obstacle this turn cannot resolve.
-When blocked, put \`blocker: <concise reason>\` on the next line.
-To ask the human, write the question document to the question request file, then return \`status: question\`. The response body is a report; do not put question JSON in it.
-Question request file: <QFILE>
-The file holds one JSON document:
-\`{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","options":[{"label":"..."}]}]}\`
-Example: {"schema_version":1,"questions":[{"question":"Include existing sessions?","context":"Migration adds work.","selection":"single","options":[{"label":"New sessions only"},{"label":"Include existing sessions"}]}]}
-Every question needs 2 to 26 options. Optional: option.description and question.recommended (array of option IDs; at most one for single selection). Omit IDs; Migent assigns them by order. Free-text answers are always allowed. Never choose on the recipient's behalf. Put every choice and its explanation in the file, not in prose. You may ask several questions in one document; every question must be answered before the stage continues. Do not choose a decision while asking. Migent reads the file only when the status is \`question\`.
+## Execution
 
-Use a blank line before the report body.
+- Task: \`<SESSION>/task.md\`
+- Session dir: \`<SESSION>\` (shared session files)
+- Question file: \`<QFILE>\`
+- Artifacts: \`<ART>\`
 
-Migent artifact directory:
-<ART>
-Write the file artifact as \`make.md\` in that directory.",
-  "reply to human answer / native": "Reply to: Pick one?
-A
+## Do
 
-Workflow stage response contract:
-Start the final response with \`status: complete\`, \`status: blocked\`, or \`status: question\`.
-\`complete\`: the stage finished this turn's work. \`question\`: an answer is needed before the stage can continue. \`blocked\`: an obstacle this turn cannot resolve.
-When blocked, put \`blocker: <concise reason>\` on the next line.
-To ask the human, write the question document to the question request file, then return \`status: question\`. The response body is a report; do not put question JSON in it.
-Question request file: <QFILE>
-The file holds one JSON document:
-\`{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","options":[{"label":"..."}]}]}\`
-Example: {"schema_version":1,"questions":[{"question":"Include existing sessions?","context":"Migration adds work.","selection":"single","options":[{"label":"New sessions only"},{"label":"Include existing sessions"}]}]}
-Every question needs 2 to 26 options. Optional: option.description and question.recommended (array of option IDs; at most one for single selection). Omit IDs; Migent assigns them by order. Free-text answers are always allowed. Never choose on the recipient's behalf. Put every choice and its explanation in the file, not in prose. You may ask several questions in one document; every question must be answered before the stage continues. Do not choose a decision while asking. Migent reads the file only when the status is \`question\`.
+Continue the stage with the human reply above.
+Write the artifact as \`make.md\` in the artifacts directory.",
+  "reply to human answer / native": "# Migent workflow stage
 
-Use a blank line before the report body.
+## Response contract
 
-Migent artifact directory:
-<ART>
-Write the file artifact as \`make.md\` in that directory.",
+Start the response with a status header, then a blank line, then the report:
+
+\`\`\`
+status: complete | question | blocked
+blocker: <reason>   ← only with blocked
+\`\`\`
+
+| Status | Meaning |
+| :--- | :--- |
+| \`complete\` | The stage's work is finished, artifact written. |
+| \`question\` | You need a human answer to continue. |
+| \`blocked\` | An obstacle you cannot resolve in this turn. |
+
+## Asking questions
+
+Write the question document to the question file (see Execution), then return \`status: question\`. Migent reads the file only for that status. Keep choices out of the report body.
+
+\`\`\`json
+{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","recommended":["A"],"options":[{"label":"...","description":"..."}]}]}
+\`\`\`
+
+- Each question needs 2–26 options.
+- Omit IDs: Migent letters options A, B, C… and numbers questions 1, 2, 3… in order.
+- Optional: \`description\` on an option; \`recommended\` on a question, a list of option letters (at most one for \`single\`).
+- Free-text answers are always allowed.
+- Several questions per file are allowed; all must be answered before the stage continues.
+- Present choices neutrally. Never decide on the human's behalf.
+
+## Human answers
+
+Answers to your latest questions.
+
+1. Pick one? (single)
+   - Selected: A. Yes
+
+## Execution
+
+- Task: \`<SESSION>/task.md\`
+- Session dir: \`<SESSION>\` (shared session files)
+- Question file: \`<QFILE>\`
+- Artifacts: \`<ART>\`
+
+## Do
+
+Continue the stage using these answers.
+Write the artifact as \`make.md\` in the artifacts directory.",
   "reply to human answer / replay": "user: (earlier turn)
 
 assistant: (earlier response)
 
-user: Reply to: Pick one?
-A
+user: # Migent workflow stage
 
-Workflow stage response contract:
-Start the final response with \`status: complete\`, \`status: blocked\`, or \`status: question\`.
-\`complete\`: the stage finished this turn's work. \`question\`: an answer is needed before the stage can continue. \`blocked\`: an obstacle this turn cannot resolve.
-When blocked, put \`blocker: <concise reason>\` on the next line.
-To ask the human, write the question document to the question request file, then return \`status: question\`. The response body is a report; do not put question JSON in it.
-Question request file: <QFILE>
-The file holds one JSON document:
-\`{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","options":[{"label":"..."}]}]}\`
-Example: {"schema_version":1,"questions":[{"question":"Include existing sessions?","context":"Migration adds work.","selection":"single","options":[{"label":"New sessions only"},{"label":"Include existing sessions"}]}]}
-Every question needs 2 to 26 options. Optional: option.description and question.recommended (array of option IDs; at most one for single selection). Omit IDs; Migent assigns them by order. Free-text answers are always allowed. Never choose on the recipient's behalf. Put every choice and its explanation in the file, not in prose. You may ask several questions in one document; every question must be answered before the stage continues. Do not choose a decision while asking. Migent reads the file only when the status is \`question\`.
+## Response contract
 
-Use a blank line before the report body.
+Start the response with a status header, then a blank line, then the report:
 
-Migent artifact directory:
-<ART>
-Write the file artifact as \`make.md\` in that directory.",
-  "verify repair / native": "Read the task from \`<ROOT>/.migent/sessions/s1/task.md\`.
-Session files are in \`<ROOT>/.migent/sessions/s1\`.
-Verify failed (1 of 3 red runs). Fix the cause, then report again.
-The stage artifact is at <ROOT>/.migent/sessions/s1/make.md. Update it if your fix changes it.
+\`\`\`
+status: complete | question | blocked
+blocker: <reason>   ← only with blocked
+\`\`\`
+
+| Status | Meaning |
+| :--- | :--- |
+| \`complete\` | The stage's work is finished, artifact written. |
+| \`question\` | You need a human answer to continue. |
+| \`blocked\` | An obstacle you cannot resolve in this turn. |
+
+## Asking questions
+
+Write the question document to the question file (see Execution), then return \`status: question\`. Migent reads the file only for that status. Keep choices out of the report body.
+
+\`\`\`json
+{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","recommended":["A"],"options":[{"label":"...","description":"..."}]}]}
+\`\`\`
+
+- Each question needs 2–26 options.
+- Omit IDs: Migent letters options A, B, C… and numbers questions 1, 2, 3… in order.
+- Optional: \`description\` on an option; \`recommended\` on a question, a list of option letters (at most one for \`single\`).
+- Free-text answers are always allowed.
+- Several questions per file are allowed; all must be answered before the stage continues.
+- Present choices neutrally. Never decide on the human's behalf.
+
+## Human answers
+
+Answers to your latest questions.
+
+1. Pick one? (single)
+   - Selected: A. Yes
+
+## Execution
+
+- Task: \`<SESSION>/task.md\`
+- Session dir: \`<SESSION>\` (shared session files)
+- Question file: \`<QFILE>\`
+- Artifacts: \`<ART>\`
+
+## Do
+
+Continue the stage using these answers.
+Write the artifact as \`make.md\` in the artifacts directory.",
+  "verify repair / native": "# Migent workflow stage
+
+## Response contract
+
+Start the response with a status header, then a blank line, then the report:
+
+\`\`\`
+status: complete | question | blocked
+blocker: <reason>   ← only with blocked
+\`\`\`
+
+| Status | Meaning |
+| :--- | :--- |
+| \`complete\` | The stage's work is finished, artifact written. |
+| \`question\` | You need a human answer to continue. |
+| \`blocked\` | An obstacle you cannot resolve in this turn. |
+
+## Asking questions
+
+Write the question document to the question file (see Execution), then return \`status: question\`. Migent reads the file only for that status. Keep choices out of the report body.
+
+\`\`\`json
+{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","recommended":["A"],"options":[{"label":"...","description":"..."}]}]}
+\`\`\`
+
+- Each question needs 2–26 options.
+- Omit IDs: Migent letters options A, B, C… and numbers questions 1, 2, 3… in order.
+- Optional: \`description\` on an option; \`recommended\` on a question, a list of option letters (at most one for \`single\`).
+- Free-text answers are always allowed.
+- Several questions per file are allowed; all must be answered before the stage continues.
+- Present choices neutrally. Never decide on the human's behalf.
+
+## Verify failed
+
+1 of 3 red runs.
+
+- Stage artifact: \`<ROOT>/.migent/sessions/s1/make.md\` (update it if your fix changes it)
+
+### Report
 
 check-one failed
 
 
-Workflow stage response contract:
-Start the final response with \`status: complete\`, \`status: blocked\`, or \`status: question\`.
-\`complete\`: the stage finished this turn's work. \`question\`: an answer is needed before the stage can continue. \`blocked\`: an obstacle this turn cannot resolve.
-When blocked, put \`blocker: <concise reason>\` on the next line.
-To ask the human, write the question document to the question request file, then return \`status: question\`. The response body is a report; do not put question JSON in it.
-Question request file: <QFILE>
-The file holds one JSON document:
-\`{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","options":[{"label":"..."}]}]}\`
-Example: {"schema_version":1,"questions":[{"question":"Include existing sessions?","context":"Migration adds work.","selection":"single","options":[{"label":"New sessions only"},{"label":"Include existing sessions"}]}]}
-Every question needs 2 to 26 options. Optional: option.description and question.recommended (array of option IDs; at most one for single selection). Omit IDs; Migent assigns them by order. Free-text answers are always allowed. Never choose on the recipient's behalf. Put every choice and its explanation in the file, not in prose. You may ask several questions in one document; every question must be answered before the stage continues. Do not choose a decision while asking. Migent reads the file only when the status is \`question\`.
+## Execution
 
-Use a blank line before the report body.
+- Task: \`<SESSION>/task.md\`
+- Session dir: \`<SESSION>\` (shared session files)
+- Question file: \`<QFILE>\`
+- Artifacts: \`<ART>\`
 
-Migent artifact directory:
-<ART>
-Write the file artifact as \`make.md\` in that directory.",
+## Do
+
+Fix the verify failure above, then report again.
+Write the artifact as \`make.md\` in the artifacts directory.",
   "verify repair / replay": "user: (earlier turn)
 
 assistant: (earlier response)
 
-user: Read the task from \`<ROOT>/.migent/sessions/s1/task.md\`.
-Session files are in \`<ROOT>/.migent/sessions/s1\`.
-Verify failed (1 of 3 red runs). Fix the cause, then report again.
-The stage artifact is at <ROOT>/.migent/sessions/s1/make.md. Update it if your fix changes it.
+user: # Migent workflow stage
+
+## Response contract
+
+Start the response with a status header, then a blank line, then the report:
+
+\`\`\`
+status: complete | question | blocked
+blocker: <reason>   ← only with blocked
+\`\`\`
+
+| Status | Meaning |
+| :--- | :--- |
+| \`complete\` | The stage's work is finished, artifact written. |
+| \`question\` | You need a human answer to continue. |
+| \`blocked\` | An obstacle you cannot resolve in this turn. |
+
+## Asking questions
+
+Write the question document to the question file (see Execution), then return \`status: question\`. Migent reads the file only for that status. Keep choices out of the report body.
+
+\`\`\`json
+{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","recommended":["A"],"options":[{"label":"...","description":"..."}]}]}
+\`\`\`
+
+- Each question needs 2–26 options.
+- Omit IDs: Migent letters options A, B, C… and numbers questions 1, 2, 3… in order.
+- Optional: \`description\` on an option; \`recommended\` on a question, a list of option letters (at most one for \`single\`).
+- Free-text answers are always allowed.
+- Several questions per file are allowed; all must be answered before the stage continues.
+- Present choices neutrally. Never decide on the human's behalf.
+
+## Verify failed
+
+1 of 3 red runs.
+
+- Stage artifact: \`<ROOT>/.migent/sessions/s1/make.md\` (update it if your fix changes it)
+
+### Report
 
 check-one failed
 
 
-Workflow stage response contract:
-Start the final response with \`status: complete\`, \`status: blocked\`, or \`status: question\`.
-\`complete\`: the stage finished this turn's work. \`question\`: an answer is needed before the stage can continue. \`blocked\`: an obstacle this turn cannot resolve.
-When blocked, put \`blocker: <concise reason>\` on the next line.
-To ask the human, write the question document to the question request file, then return \`status: question\`. The response body is a report; do not put question JSON in it.
-Question request file: <QFILE>
-The file holds one JSON document:
-\`{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","options":[{"label":"..."}]}]}\`
-Example: {"schema_version":1,"questions":[{"question":"Include existing sessions?","context":"Migration adds work.","selection":"single","options":[{"label":"New sessions only"},{"label":"Include existing sessions"}]}]}
-Every question needs 2 to 26 options. Optional: option.description and question.recommended (array of option IDs; at most one for single selection). Omit IDs; Migent assigns them by order. Free-text answers are always allowed. Never choose on the recipient's behalf. Put every choice and its explanation in the file, not in prose. You may ask several questions in one document; every question must be answered before the stage continues. Do not choose a decision while asking. Migent reads the file only when the status is \`question\`.
+## Execution
 
-Use a blank line before the report body.
+- Task: \`<SESSION>/task.md\`
+- Session dir: \`<SESSION>\` (shared session files)
+- Question file: \`<QFILE>\`
+- Artifacts: \`<ART>\`
 
-Migent artifact directory:
-<ART>
-Write the file artifact as \`make.md\` in that directory.",
+## Do
+
+Fix the verify failure above, then report again.
+Write the artifact as \`make.md\` in the artifacts directory.",
 }
 `;

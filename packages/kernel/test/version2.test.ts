@@ -56,7 +56,7 @@ class DropPlanProvider extends ScriptedProvider {
     const parsed = super.parseResponse();
     if (this.drops <= 0) return parsed;
     const prompt = this.calls.at(-1)?.prompt ?? "";
-    const match = /^- plan: (.+)$/m.exec(prompt);
+    const match = /^- plan: `(.+)`$/m.exec(prompt);
     const artifact = match?.[1]?.trim();
     if (artifact) {
       unlinkSync(artifact);
@@ -264,7 +264,7 @@ test("a route back to a completed stage dispatches it and its dependents", async
     "review_tests",
   ]);
   expect(provider.statuses[4]).toBe("active");
-  expect(provider.calls[4]!.prompt).toContain("review_tests (fix_production)");
+  expect(provider.calls[4]!.prompt).toContain("review_tests (`fix_production`)");
   const events = readFileSync(path.join(workspace, ".migent", "sessions", sessionId, "events.jsonl"), "utf8")
     .trim()
     .split("\n")

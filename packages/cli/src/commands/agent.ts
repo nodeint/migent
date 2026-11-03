@@ -23,6 +23,7 @@ import {
   waitUntil,
   type RunResult,
   type WaitHooks,
+  type TurnKind,
 } from "@nodeint/migent-kernel";
 import { printAgent, printError, printNotice, printResumeCommand, printReplyCommand } from "../display.js";
 import { cliHooks } from "../hooks.js";
@@ -283,14 +284,18 @@ export async function continueAgent(
         );
       }
       let prompt: string;
+      let turn: TurnKind | null = null;
       let resumeId = latest.executionId;
       if (cancelledReply !== null) {
         log(`session ${args.sessionId} was stopped during ${cancelledReply.executionId}. Sending your reply to ${role}.`);
-        prompt = rolePrompt(workspace, role, buildStageReplyPrompt(cancelledReply.text, undefined, cancelledReply.executionId));
+        prompt = rolePrompt(workspace, role, buildStageReplyPrompt(cancelledReply.text, { interrupted: true }));
+        turn = "reply";
         resumeId = cancelledReply.executionId;
       } else if (reply !== null) {
-        const answer = pending && args.reply !== null ? store.resumeQuestion(args.sessionId, role, reply) : reply;
-        prompt = rolePrompt(workspace, role, answer);
+        const answers = pending && args.reply !== null;
+        const answer = answers ? store.resumeQuestion(args.sessionId, role, reply) : reply;
+        prompt = rolePrompt(workspace, role, buildStageReplyPrompt(answer, { answers }));
+        turn = answers ? "answers" : "reply";
       } else if (sessionStatus === "blocked") {
         const blocker = executionBlocker(latest.directory);
         const resumed = store.resumeBlockedSession(args.sessionId);
@@ -301,6 +306,7 @@ export async function continueAgent(
         if (blocker) lines.push(`- blocker: ${blocker}`);
         lines.push("That attempt ended blocked. The blocker was handled outside this session. Continue.");
         prompt = rolePrompt(workspace, role, lines.join("\n"));
+        turn = "continue";
       } else if (sessionStatus === "active") {
         log(`session ${args.sessionId} is active. Resuming ${role} with its last prompt.`);
         prompt = lastUserPrompt(workspace, args.sessionId, latest.executionId);
@@ -314,6 +320,7 @@ export async function continueAgent(
           model: profile.model,
           options: { ...profile.options },
           prompt: nextPrompt,
+          turn,
           workspace,
           sessionId: args.sessionId,
           resumeExecutionId: resumeId,

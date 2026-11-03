@@ -1,4 +1,11 @@
-{{#if interruptedExecutionId}}Your previous turn (execution {{interruptedExecutionId}}) was stopped by the human before it finished.
+{{#if interrupted}}## Human reply
 
-{{/if}}{{#if question}}Reply to: {{question}}{{else}}Reply:{{/if}}
-{{reply}}
+Your previous turn was stopped by the human before it finished. Their message:
+
+{{reply}}{{else if answers}}## Human answers
+
+Answers to your latest questions.
+
+{{reply}}{{else}}## Human reply
+
+{{reply}}{{/if}}

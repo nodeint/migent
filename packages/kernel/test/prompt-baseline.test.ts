@@ -6,6 +6,7 @@ import type { ExecutionSnapshot } from "../src/outputs.ts";
 import { buildStagePrompt, buildStageReplyPrompt, buildStageResumePrompt, buildVerifyRepairPrompt } from "../src/prompt.ts";
 import { flattenHistory, renderProviderPrompt } from "../src/runtime.ts";
 import { parseWorkflowMapping } from "../src/workflow.ts";
+import type { TurnKind } from "../src/index.ts";
 
 // Neutral fixture: no role or stage instructions, so every prompt line below comes from the engine.
 const workflow = parseWorkflowMapping({
@@ -43,11 +44,12 @@ function fixture() {
 const normalize = (text: string, root: string) =>
   text.split(root).join("<ROOT>").split(root.replaceAll("\\", "/")).join("<ROOT>").replaceAll("\\", "/");
 
-function turn(prompt: string, stageId: string) {
+function turn(prompt: string, stageId: string, kind: TurnKind) {
   const stage = workflow.stages[stageId]!;
   return renderProviderPrompt(prompt, {
-    contract: true, decisionValues: stage.decisionValues, decisionInstructions: stage.decisionInstructions,
+    contract: true, turn: kind, decisionValues: stage.decisionValues, decisionInstructions: stage.decisionInstructions,
     ask: stage.ask ?? null, questionFile: "<QFILE>", artifactDirectory: "<ART>", artifactName: stage.artifact ?? null,
+    taskFile: "<SESSION>/task.md", sessionDirectory: "<SESSION>",
   });
 }
 
@@ -55,20 +57,20 @@ test("prompt kinds under native resume, history replay and resume_from", () => {
   const { root, session, snapshots } = fixture();
   const base = { workflow, workspace: root, sessionDirectory: session, taskFile: path.join(session, "task.md"), roleInstructions: [] as string[] };
   const kinds: Record<string, string> = {};
-  const record = (name: string, stageId: string, body: string) => {
-    kinds[`${name} / native`] = turn(body, stageId);
+  const record = (name: string, stageId: string, kind: TurnKind, body: string) => {
+    kinds[`${name} / native`] = turn(body, stageId, kind);
     kinds[`${name} / replay`] = flattenHistory([
       { role: "user", content: "(earlier turn)" }, { role: "assistant", content: "(earlier response)" },
-      { role: "user", content: turn(body, stageId) },
+      { role: "user", content: turn(body, stageId, kind) },
     ]);
   };
-  record("first turn", "make", buildStagePrompt({ ...base, stageId: "make", snapshots: [] }));
-  record("re-entry after revise", "make", buildStageResumePrompt({ ...base, stageId: "make", snapshots }));
-  record("first turn (resume_from)", "again", buildStagePrompt({ ...base, stageId: "again", snapshots }));
-  record("re-entry (resume_from)", "again", buildStageResumePrompt({ ...base, stageId: "again", snapshots }));
-  record("reply to human answer", "make", buildStageReplyPrompt("A", "Pick one?"));
-  record("reply to cancelled stage", "make", buildStageReplyPrompt("go on", undefined, "e9"));
-  record("verify repair", "make", buildVerifyRepairPrompt("check-one failed\n", 1, 3, path.join(session, "make.md"), base.taskFile, session));
+  record("first turn", "make", "start", buildStagePrompt({ ...base, stageId: "make", snapshots: [] }));
+  record("re-entry after revise", "make", "continue", buildStageResumePrompt({ ...base, stageId: "make", snapshots }));
+  record("first turn (resume_from)", "again", "start", buildStagePrompt({ ...base, stageId: "again", snapshots }));
+  record("re-entry (resume_from)", "again", "continue", buildStageResumePrompt({ ...base, stageId: "again", snapshots }));
+  record("reply to human answer", "make", "answers", buildStageReplyPrompt("1. Pick one? (single)\n   - Selected: A. Yes", { answers: true }));
+  record("reply to cancelled stage", "make", "reply", buildStageReplyPrompt("go on", { interrupted: true }));
+  record("verify repair", "make", "repair", buildVerifyRepairPrompt("check-one failed\n", 1, 3, path.join(session, "make.md"), base.taskFile, session));
 
   const normalized = Object.fromEntries(Object.entries(kinds).map(([k, v]) => [k, normalize(v, root)]));
   expect(normalized).toMatchSnapshot();

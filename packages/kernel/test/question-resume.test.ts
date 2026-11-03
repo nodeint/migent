@@ -94,7 +94,7 @@ test("a recorded correction that was never sent is sent on resume without a seco
   run.patchExecution({ question_correction: { turn: 1, error_kind: "missing", error_detail: "the file was not written" } });
   await run.resume();
   expect(run.provider.calls).toHaveLength(2);
-  expect(run.provider.calls[1]?.prompt).toContain("question request file is not valid");
+  expect(run.provider.calls[1]?.prompt).toContain("question file is not valid");
   expect(run.execution()).toMatchObject({ status: "failed", failure_reason: "question_file_invalid" });
 }, 30_000);
 
@@ -114,7 +114,7 @@ test("a first prompt saved under an older protocol gets the protocol update on r
   await run.resume();
   expect(run.provider.calls).toHaveLength(2);
   expect(run.provider.calls[1]?.prompt).toContain("Response protocol update");
-  expect(run.provider.calls[1]?.prompt).toContain("Question request file: ");
+  expect(run.provider.calls[1]?.prompt).toContain("- Question file: ");
 }, 30_000);
 
 const OK_COMPLETE = "status: complete\n\ndone";

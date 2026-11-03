@@ -66,7 +66,8 @@ test("question persists through repair, waits without reply, and resumes the con
     const result = await executeNamedWorkflow(root, { sessionId: first.sessionId, reply: "New sessions only" }, runner);
     expect(result.code).toBe(0);
     expect(provider.calls[1]?.agentId).toBe("native-session-1");
-    expect(provider.calls[1]?.prompt).toContain("Reply to: Support existing sessions?");
+    expect(provider.calls[1]?.prompt).toContain("1. Support existing sessions? (single)");
+    expect(provider.calls[1]?.prompt).toContain("## Do\n\nContinue the stage using these answers.");
     expect(provider.calls[1]?.prompt).toContain("New sessions only");
     expect(readFileSync(path.join(sessionDir, "outputs/plan.md"), "utf8")).toBe("# Partial plan");
     expect(new SessionStore(root).executionSnapshots(first.sessionId)).toHaveLength(2);
@@ -199,7 +200,7 @@ test("verification passes after repeated questions without consuming extra failu
     const metadata = JSON.parse(readFileSync(path.join(path.dirname(latest.artifactDirectory), "execution.json"), "utf8"));
     expect(metadata.verify.red).toBe(1);
     expect(metadata.verify.runs).toBe(2);
-    expect(provider.calls[3]?.prompt).toContain("Previous verify report:");
+    expect(provider.calls[3]?.prompt).toContain("- Previous verify report:");
   } finally { rmSync(root, { recursive: true, force: true }); }
 }, 30_000);
 
@@ -256,9 +257,9 @@ test("a batch validates single and multiple selections before resuming and recor
       { status: "answered", answer: { selected: [], text: "chưa rõ - giải thích thêm" } },
     ]);
     const reply = provider.calls[1]?.prompt ?? "";
-    expect(reply).toContain("1. Support existing sessions?\nSelected: New sessions only");
-    expect(reply).toContain("2. Which platforms?\nSelected: Linux; Windows");
-    expect(reply).toContain("3. Is the migration requirement clear?\nAnswer: chưa rõ - giải thích thêm");
+    expect(reply).toContain("1. Support existing sessions? (single)\n   - Selected: A. New sessions only");
+    expect(reply).toContain("2. Which platforms? (multiple)\n   - Selected: A. Linux; B. Windows");
+    expect(reply).toContain("3. Is the migration requirement clear? (single)\n   - Selected: none\n   - Free text: \"chưa rõ - giải thích thêm\"");
     expect(reply).not.toContain('"labels"');
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
@@ -283,9 +284,10 @@ test("an invalid question file gets one correction turn in the same conversation
     expect(result.code).toBe(9);
     expect(provider.calls).toHaveLength(2);
     expect(provider.calls[1]?.agentId).toBe("native-session-1");
-    expect(provider.calls[1]?.prompt).toContain("question request file is not valid");
+    expect(provider.calls[1]?.prompt).toContain("question file is not valid");
+    expect(provider.calls[1]?.prompt).toContain("## Do\n\nRewrite the whole question file");
     expect(provider.calls[1]?.prompt).toContain("(invalid_json)");
-    expect(provider.calls[1]?.prompt).toContain("Question request file: ");
+    expect(provider.calls[1]?.prompt).toContain("- Question file: ");
     const execution = lastExecution(root, result.sessionId);
     expect(execution.question_correction).toMatchObject({ turn: 1, error_kind: "invalid_json" });
     expect(execution.outcome).toMatchObject({ status: "question", questions: [scopeQuestion] });
