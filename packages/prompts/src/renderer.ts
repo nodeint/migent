@@ -4,7 +4,7 @@ import Handlebars from "handlebars";
 // Source tests read the source assets; published modules read only packaged assets.
 const directory = new URL(import.meta.url.endsWith(".ts") ? "../prompts/" : "./prompts/", import.meta.url);
 const engine = Handlebars.create();
-for (const name of ["task", "continuation", "response-contract", "artifact"]) {
+for (const name of ["continuation", "response-contract", "execution", "do"]) {
   engine.registerPartial(name, readFileSync(new URL(`${name}.md.hbs`, directory), "utf8").replace(/\r\n/g, "\n"));
 }
 const templates = new Map<string, ReturnType<typeof engine.compile>>();

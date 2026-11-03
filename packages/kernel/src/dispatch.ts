@@ -1,3 +1,4 @@
+import type { TurnKind } from "@nodeint/migent-prompts";
 import { createProviderResolver, type ProviderResolver } from "./provider-contract.js";
 import path from "node:path";
 import { AgentToolRunner, type RunResult } from "./agent-runner.js";
@@ -20,6 +21,8 @@ export interface StageDispatchRequest {
   workflowId: string;
   stageId: string;
   prompt: string;
+  /** What the prompt is; it picks the closing instruction. */
+  turn?: TurnKind | null;
   task?: string | null;
   sessionId?: string | null;
   priorSessionId?: string | null;
@@ -112,6 +115,7 @@ export async function dispatchNamedStage(
     client: target.client ?? null,
     options: { ...target.options },
     prompt: request.prompt,
+    turn: request.turn ?? null,
     workspace,
     sessionId,
     resumeExecutionId,

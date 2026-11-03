@@ -126,9 +126,9 @@ test("session run --workflow dispatches one stage", async () => {
     expect(status.status).toBe("active");
     expect(status.title).toBe("Write a plan");
     const prompt = provider.calls[0]?.prompt ?? "";
-    const roleAt = prompt.indexOf("Role instructions:\n- Stay inside the task.");
-    expect(roleAt).toBeGreaterThan(prompt.indexOf("Stage: plan (role: planner)"));
-    expect(prompt.indexOf("Constraints:")).toBeGreaterThan(roleAt);
+    const roleAt = prompt.indexOf("### Role\n\n- Stay inside the task.");
+    expect(roleAt).toBeGreaterThan(prompt.indexOf("## Stage: plan (role: planner)"));
+    expect(prompt.indexOf("### Constraints")).toBeGreaterThan(roleAt);
 
     const listed = await capture(() => main(["session", "list", "--latest", "--json"], workspace));
     expect(listed.value).toBe(0);
@@ -168,7 +168,7 @@ test("session run without --workflow runs one role", async () => {
     const payload = JSON.parse(captured.stdout) as { outcome_status: string; session_id: string };
     expect(payload.outcome_status).toBe("complete");
     expect(provider.calls[0]?.prompt).toContain(
-      "Role instructions:\n- Judge the change.\n\nReview the latest changes",
+      "## Role\n\n- Judge the change.\n\nReview the latest changes",
     );
 
     cliHooks.runner = new AgentToolRunner({ fake: provider }, 10);
@@ -181,7 +181,7 @@ test("session run without --workflow runs one role", async () => {
     expect(again.value).toBe(0);
     expect(JSON.parse(again.stdout)).toMatchObject({ session_id: payload.session_id, outcome_status: "complete" });
     expect(provider.calls[1]?.prompt).toContain(
-      "Role instructions:\n- Judge the change.\n\nSummarize the risks",
+      "## Role\n\n- Judge the change.\n\nSummarize the risks",
     );
   } finally {
     cliHooks.runner = null;

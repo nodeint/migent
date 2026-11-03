@@ -401,8 +401,8 @@ test("execute reruns plan then review after revise", async () => {
       "native-session-1",
       "native-session-1",
     ]);
-    expect(provider.calls[2]?.prompt).toContain("Decision that routed to this stage");
-    expect(provider.calls[2]?.prompt).toContain("Previous plan artifact");
+    expect(provider.calls[2]?.prompt).toContain("## Routing decision");
+    expect(provider.calls[2]?.prompt).toContain("- Your previous artifact: ");
     expect(provider.calls[2]?.prompt).not.toContain("Do not write implementation code.");
     expect(provider.calls[0]?.prompt).toContain("Do not write implementation code.");
   } finally {
@@ -454,7 +454,7 @@ test("execute uses a downstream suggestion through --prior then completes plan i
       provider,
     );
     expect(code).toBe(0);
-    expect(provider.calls[0]?.prompt).toContain("Prior session context:");
+    expect(provider.calls[0]?.prompt).toContain("## Prior session");
     expect(provider.calls[0]?.prompt).toContain("- approved_plan:");
     expect(provider.calls[0]?.prompt).toContain(`${path.sep}handoff${path.sep}`);
     expect(new Set(Object.keys(objects.at(-1)?.outputs as object))).toEqual(

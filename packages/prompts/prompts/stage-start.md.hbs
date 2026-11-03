@@ -1,20 +1,24 @@
-{{> task}}
+## Stage: {{stage.id}} (role: {{stage.role}}){{#if roleInstructions}}
 
-Stage: {{stage.id}} (role: {{stage.role}}){{#if roleInstructions}}
+### Role
+{{#each roleInstructions}}
+- {{this}}{{/each}}{{/if}}{{#if stageInstructions}}
 
-Role instructions:{{#each roleInstructions}}
-- {{this}}{{/each}}{{/if}}{{#if stage.instructions}}
-
-Instructions:{{#each stage.instructions}}
+### Instructions
+{{#each stageInstructions}}
 - {{this}}{{/each}}{{/if}}{{#if constraints}}
 
-Constraints:{{#each constraints}}
+### Constraints
+{{#each constraints}}
 - {{this}}{{/each}}{{/if}}{{#if stage.verify}}
 
-Verify commands:
-After you report `status: complete`, Migent runs these commands in the workspace, in order, and accepts completion only if all exit 0.{{#each stage.verify}}
-- {{this}}{{/each}}{{/if}}{{> continuation}}{{#if prior}}
+### Verify
 
-Prior session context:
-- session: {{prior.sessionId}}{{#each prior.outputs}}
-- {{name}}: {{path}}{{/each}}{{/if}}
+After `status: complete`, Migent runs these commands in order. Completion counts only if all exit 0; otherwise you get the report and fix it here.
+{{#each stage.verify}}
+- `{{this}}`{{/each}}{{/if}}{{> continuation}}{{#if prior}}
+
+## Prior session
+
+- Session: {{prior.sessionId}}{{#each prior.outputs}}
+- {{name}}: `{{path}}`{{/each}}{{/if}}

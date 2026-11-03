@@ -1,3 +1,5 @@
-{{prompt}}{{#if contract}}{{> response-contract}}{{/if}}{{> artifact}}{{#if previousVerifyReport}}
+{{#if full}}# Migent workflow stage
 
-Previous verify report: {{previousVerifyReport}}{{/if}}
+{{> response-contract}}
+
+{{/if}}{{prompt}}{{> execution}}{{> do}}

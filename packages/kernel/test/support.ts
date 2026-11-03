@@ -220,7 +220,7 @@ export class ScriptedProvider extends FakeProvider {
    */
   private writeQuestionFile(response: string): string {
     const prompt = this.calls.at(-1)?.prompt ?? "";
-    const target = /^Question request file: (.+)$/m.exec(prompt)?.[1]?.trim();
+    const target = [...prompt.matchAll(/^- Question file: `(.+)`$/gm)].at(-1)?.[1];
     const marker = "\n<<FILE>>";
     const split = response.indexOf(marker);
     if (split >= 0) {
@@ -235,24 +235,10 @@ export class ScriptedProvider extends FakeProvider {
 }
 
 function writePromptArtifact(prompt: string, body: string): void {
-  const marker = "Migent artifact directory:\n";
-  const markerAt = prompt.indexOf(marker);
-  if (markerAt < 0) return;
-  const rest = prompt.slice(markerAt + marker.length);
-  const lines = rest.split(/\r\n|\n|\r/);
-  if (lines.length === 0 || lines[0] === undefined) return;
-  const directory = lines[0].trim();
-  let name: string | null = null;
-  for (const line of lines.slice(1, 6)) {
-    const start = line.indexOf("as `");
-    if (start >= 0) {
-      const tail = line.slice(start + 4);
-      const end = tail.indexOf("`");
-      if (end >= 0) name = tail.slice(0, end);
-      break;
-    }
-  }
-  if (!name) return;
+  // The latest Execution block wins: replayed history can hold earlier ones.
+  const directory = [...prompt.matchAll(/^- Artifacts: `(.+)`$/gm)].at(-1)?.[1];
+  const name = [...prompt.matchAll(/^Write the artifact as `(.+?)`/gm)].at(-1)?.[1];
+  if (!directory || !name) return;
   mkdirSync(directory, { recursive: true });
   writeFileSync(path.join(directory, name), body, "utf8");
 }

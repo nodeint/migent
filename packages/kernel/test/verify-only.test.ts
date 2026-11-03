@@ -67,7 +67,7 @@ test("a passing verify-only stage publishes verify.md and then starts the role s
   expect(prepare.status).toBe("completed");
   expect(existsSync(path.join(executions, "0001-prepare--attempt-01", "prompt.md"))).toBe(false);
   expect(existsSync(path.join(executions, "0001-prepare--attempt-01", "artifacts", "verify.md"))).toBe(true);
-  expect(provider.calls[0]?.prompt).toContain("prepare verify:");
+  expect(provider.calls[0]?.prompt).toContain("prepare verify report:");
   const document = loadWorkflowDocument(path.join(workspace, ".migent", "workflows", "wf.yaml"));
   expect(document.stages.prepare?.kind).toBe("verify");
 });

@@ -37,11 +37,11 @@ function withCursorLock(cursor, fn) {
 }
 
 function promptStage(prompt) {
-  const match = /^Stage: (\S+)/m.exec(prompt);
+  const match = /^## Stage: (\S+)/m.exec(prompt);
   return match ? match[1] : "";
 }
 
-// A later visit is only "Continue this stage." Several of those prompts match, so claim one
+// A later visit is only the "Continue stage" message. Several of those prompts match, so claim one
 // running execution inside the cursor lock. The lowest order is claimed first.
 function continuationMatches(prompt) {
   const cwd = argAfter("--cwd") || process.cwd();
@@ -171,19 +171,10 @@ function writeFiles(step) {
 function writeArtifact(prompt, step) {
   writeFiles(step);
   if (step.skip_artifact === true) return;
-  const marker = "Migent artifact directory:\n";
-  if (!prompt.includes(marker)) return;
-  const lines = prompt.split(marker)[1].split(/\r?\n/);
-  if (lines.length === 0) return;
-  const directory = lines[0].trim();
-  let name = null;
-  for (const line of lines.slice(1, 6)) {
-    if (line.includes("as `")) {
-      name = line.split("as `")[1].split("`")[0];
-      break;
-    }
-  }
-  if (!name) return;
+  // The latest Execution block wins: replayed history can hold earlier ones.
+  const directory = [...prompt.matchAll(/^- Artifacts: `(.+)`$/gm)].at(-1)?.[1];
+  const name = [...prompt.matchAll(/^Write the artifact as `(.+?)`/gm)].at(-1)?.[1];
+  if (!directory || !name) return;
   mkdirSync(directory, { recursive: true });
   writeFileSync(path.join(directory, name), typeof step.artifact === "string" ? step.artifact : "# ready\n", "utf8");
 }

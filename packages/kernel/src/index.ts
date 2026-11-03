@@ -132,6 +132,7 @@ export {
 } from "./outputs.js";
 export type { ExecutionSnapshot, PublishedOutput } from "./outputs.js";
 export { buildStagePrompt, buildStageReplyPrompt, buildStageResumePrompt, prependRoleInstructions } from "./prompt.js";
+export type { TurnKind } from "@nodeint/migent-prompts";
 export {
   failedStageCount,
   latestCompleteByStage,
