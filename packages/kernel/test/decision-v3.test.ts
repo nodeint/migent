@@ -46,7 +46,7 @@ test("v3 decisions carry agent instructions and route two approvals or a revisio
   }
   const prompt = addStageOutcomeContract("Review the work.", review.decisionValues, review.decisionInstructions);
   expect(prompt).toContain("decision: approved|approved-with-note|revise");
-  expect(prompt).toContain("approved-with-note: Only minor findings remain. Record them in review.md.");
+  expect(prompt).toContain("`approved-with-note`: Only minor findings remain. Record them in review.md.");
 });
 
 test("v3 navigation retains routing to multiple stages", () => {
@@ -184,10 +184,12 @@ stages:
     expect(continued.code).toBe(0);
     expect(continued.latestDecision).toBe("approved-with-note");
     expect(provider.calls).toHaveLength(3);
-    for (const call of provider.calls) {
-      expect(call.prompt).toContain("approved-with-note: Only minor findings remain. Record them in review.md.");
-      expect(call.prompt).not.toContain("UPDATED criteria.");
+    // The repair turn goes to the same agent, so it restates only the decision line, not the criteria.
+    for (const call of provider.calls.slice(0, 2)) {
+      expect(call.prompt).toContain("`approved-with-note`: Only minor findings remain. Record them in review.md.");
     }
+    expect(provider.calls[2]?.prompt).toContain("with `decision: approved|approved-with-note` when complete");
+    for (const call of provider.calls) expect(call.prompt).not.toContain("UPDATED criteria.");
     expect(provider.calls[1]?.prompt).toContain("Use the existing task.");
     expect(provider.calls[2]?.prompt).toContain("Verify failed");
     expect(readFileSync(frozenFile, "utf8")).toBe(frozenBefore);

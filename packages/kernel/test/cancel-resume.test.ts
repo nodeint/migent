@@ -517,7 +517,7 @@ completion:
   ) as { status: string };
   expect(executionJson.status).toBe("cancelled");
   const prompt = provider.calls[1]?.prompt ?? "";
-  expect(prompt).toContain(`Your previous turn (execution ${cancelledId}) was stopped by the human before it finished.`);
+  expect(prompt).toContain("Your previous turn was stopped by the human before it finished.");
   expect(prompt).toContain("Use the v2 API instead");
 }, 30_000);
 

@@ -1,18 +1,36 @@
+## Response contract
 
+Start the response with a status header, then a blank line, then the report:
 
-Workflow stage response contract:
-{{#if canAsk}}Start the final response with `status: complete`, `status: blocked`, or `status: question`.{{else}}Start the final response with `status: complete` or `status: blocked`.{{/if}}
-`complete`: the stage finished this turn's work{{#if decisions}}; the decision selects the route{{/if}}.{{#if canAsk}} `question`: an answer is needed before the stage can continue.{{/if}} `blocked`: an obstacle this turn cannot resolve.
-When blocked, put `blocker: <concise reason>` on the next line.{{#if canAsk}}
-To ask the human, write the question document to the question request file, then return `status: question`. The response body is a report; do not put question JSON in it.
-Question request file: {{questionFile}}
-The file holds one JSON document:
-`{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","options":[{"label":"..."}]}]}`
-Example: {"schema_version":1,"questions":[{"question":"Include existing sessions?","context":"Migration adds work.","selection":"single","options":[{"label":"New sessions only"},{"label":"Include existing sessions"}]}]}
-Every question needs 2 to 26 options. Optional: option.description and question.recommended (array of option IDs; at most one for single selection). Omit IDs; Migent assigns them by order. Free-text answers are always allowed. Never choose on the recipient's behalf. Put every choice and its explanation in the file, not in prose. You may ask several questions in one document; every question must be answered before the stage continues. Do not choose a decision while asking. Migent reads the file only when the status is `question`.
-{{/if}}{{#if decisions}}
-When complete, put `decision: {{decisionLabel}}` on the next line.
-Do not put the decision only in prose.{{#if hasDecisionInstructions}}
-Choose exactly one decision using these instructions:{{#each decisions}}
-- {{name}}: {{instruction}}{{/each}}{{/if}}{{/if}}
-Use a blank line before the report body.
+```
+status: {{statusLabel}}{{#if decisions}}
+decision: {{decisionLabel}}   ← only with complete{{/if}}
+blocker: <reason>   ← only with blocked
+```
+
+| Status | Meaning |
+| :--- | :--- |
+| `complete` | The stage's work is finished{{#if artifactName}}, artifact written{{/if}}. |
+{{#if canAsk}}| `question` | You need a human answer to continue. |
+{{/if}}| `blocked` | An obstacle you cannot resolve in this turn. |{{#if decisions}}
+
+## Decisions
+
+Choose exactly one when complete. State it in the header, not only in prose.{{#if canAsk}} Do not choose one while asking a question.{{/if}}
+{{#each decisions}}
+- `{{name}}`{{#if instruction}}: {{instruction}}{{/if}}{{/each}}{{/if}}{{#if canAsk}}
+
+## Asking questions
+
+Write the question document to the question file (see Execution), then return `status: question`. Migent reads the file only for that status. Keep choices out of the report body.
+
+```json
+{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","recommended":["A"],"options":[{"label":"...","description":"..."}]}]}
+```
+
+- Each question needs 2–26 options.
+- Omit IDs: Migent letters options A, B, C… and numbers questions 1, 2, 3… in order.
+- Optional: `description` on an option; `recommended` on a question, a list of option letters (at most one for `single`).
+- Free-text answers are always allowed.
+- Several questions per file are allowed; all must be answered before the stage continues.
+- Present choices neutrally. Never decide on the human's behalf.{{/if}}

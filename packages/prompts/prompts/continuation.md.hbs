@@ -1,15 +1,19 @@
 {{#if upstream}}
 
-Upstream artifacts on this session:{{#each upstream}}
-- {{stageId}}{{#if verify}} verify{{/if}}: {{path}}{{#if updated}} (updated since your last visit){{/if}}{{/each}}{{/if}}{{#if routed}}
+## Upstream artifacts
+{{#each upstream}}
+- {{stageId}}{{#if verify}} verify report{{/if}}: `{{path}}`{{#if updated}} (updated since your last visit){{/if}}{{/each}}{{/if}}{{#if routed}}
 
-Decision that routed to this stage:{{#each routed.decisions}}
-- {{stageId}} ({{decision}}): {{path}}{{/each}}
-Read this response and use its decision and feedback when working on this stage.{{#if routed.previousArtifact}}
-- Previous {{routed.stageId}} artifact: {{routed.previousArtifact}}{{/if}}{{/if}}{{#if blocked}}
+## Routing decision
 
-Previous attempt of this stage:
-- execution: {{blocked.executionId}}{{#if blocked.blocker}}
-- blocker: {{blocked.blocker}}{{/if}}{{#if blocked.response}}
-- response: {{blocked.response}}{{/if}}
-That attempt ended blocked. The blocker was handled outside this session. Continue this stage.{{/if}}
+Read these responses and use their decision and feedback when working on this stage.
+{{#each routed.decisions}}
+- {{stageId}} (`{{decision}}`): `{{path}}`{{/each}}{{#if routed.previousArtifact}}
+- Your previous artifact: `{{routed.previousArtifact}}`{{/if}}{{/if}}{{#if blocked}}
+
+## Previous attempt
+
+The previous attempt of this stage ended blocked. The blocker was handled outside this session. Continue this stage.
+{{#if blocked.blocker}}
+- Blocker: {{blocked.blocker}}{{/if}}{{#if blocked.response}}
+- Response: `{{blocked.response}}`{{/if}}{{/if}}

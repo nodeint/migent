@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Changed
+
+- Stage prompts are restructured as Markdown sections, ordered stable to variable: the response contract (status table, decisions, question rules) first, then the stage (`Role` and `Stage` instructions as separate lists, with stage lines already in the role list dropped, then constraints and verify), then upstream and routing context, then an `Execution` block with the task, session, question file and artifact paths, and a closing `Do` that is the only instruction for the turn. The instruction follows what the turn is (start, revisit, human reply, answers, verify repair, question-file correction); the kind is saved as `turn_kind` in `execution.json` so a resumed turn keeps it. The header format is shown as a block, and prompts no longer mention routing or execution IDs. The contract states that `recommended` holds the option letters Migent assigns (#44).
+
+- Answers to stage questions are structured: every answer is numbered, echoes its question and selection kind, always has `Selected:` (option ID and label, or `none`), and adds `Free text:` only when given (#44).
+
+- A turn that goes back to the same agent under the same response protocol (answering its questions, a verify repair, a question-file correction) no longer resends the full contract. It sends the new `Execution` paths, the previous artifact directory when resuming a question, and a short status reminder (#44).
+
 ## 0.3.3
 
 ### Added

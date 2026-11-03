@@ -124,34 +124,37 @@ test("populated prompt matches the template snapshot", () => {
   );
   expect(prompt).toBe(
     [
-      `Read the task from \`${resolved(path.join(workspace, ".migent", "sessions", "session", "task.md"))}\`.\nSession files are in \`${resolved(path.join(workspace, ".migent", "sessions", "session"))}\`.`,
-      "Stage: implement (role: developer)",
-      "Instructions:\n- Implement production code only.\n- Do not add or modify test code.",
-      "Constraints:\n- Do not write implementation code.\n- Do not infer decisions from review prose.",
-      `Upstream artifacts on this session:\n- plan: ${planPath}`,
-      `Prior session context:\n- session: prior-1\n- plan: ${priorPath}`,
+      "## Stage: implement (role: developer)",
+      "### Instructions",
+      "- Implement production code only.\n- Do not add or modify test code.",
+      "### Constraints",
+      "- Do not write implementation code.\n- Do not infer decisions from review prose.",
+      "## Upstream artifacts",
+      `- plan: \`${planPath}\``,
+      "## Prior session",
+      `- Session: prior-1\n- plan: \`${priorPath}\``,
     ].join("\n\n"),
   );
 });
 
-test("role instructions precede stage instructions", () => {
+test("role and stage instructions render as separate sections without repeats", () => {
   const prompt = buildStagePrompt({
     workflow: workflowFile("plan-implement"),
     stageId: "implement",
     snapshots: [],
     workspace: "/tmp",
-    roleInstructions: ["Stay inside the task.", "Do not write code."],
+    roleInstructions: ["Stay inside the task.", "Implement production code only."],
   });
-  const roleAt = prompt.indexOf("Role instructions:\n- Stay inside the task.\n- Do not write code.");
-  const stageAt = prompt.indexOf("Instructions:\n- Implement production code only.");
-  expect(roleAt).toBeGreaterThan(prompt.indexOf("Stage: implement (role: developer)"));
-  expect(stageAt).toBeGreaterThan(roleAt);
+  expect(prompt).toContain(
+    "## Stage: implement (role: developer)\n\n### Role\n\n- Stay inside the task.\n- Implement production code only.\n\n### Instructions\n\n- Do not add or modify test code.",
+  );
+  expect(prompt.match(/- Implement production code only\./g)).toHaveLength(1);
 });
 
 test("prependRoleInstructions puts the role list ahead of the prompt", () => {
   expect(prependRoleInstructions([], "Review the latest changes")).toBe("Review the latest changes");
   expect(prependRoleInstructions(["Judge the change.", "Name the risks."], "Review the latest changes")).toBe(
-    "Role instructions:\n- Judge the change.\n- Name the risks.\n\nReview the latest changes",
+    "## Role\n\n- Judge the change.\n- Name the risks.\n\nReview the latest changes",
   );
 });
 
@@ -178,7 +181,7 @@ test("review omits artifact sentence", () => {
     workspace: root,
   });
   expect(prompt).not.toContain("Write the file artifact");
-  expect(prompt).toContain("Upstream artifacts on this session:");
+  expect(prompt).toContain("## Upstream artifacts");
   expect(prompt).toContain(resolved(path.join(planDir, "plan.md")));
 });
 
@@ -250,7 +253,7 @@ test("revision references latest review and previous artifact", () => {
   });
   expect(prompt).toContain(resolved(path.join(review, "response.md")));
   expect(prompt).toContain(resolved(path.join(plan, "plan.md")));
-  expect(prompt).toContain("Read this response and use its decision and feedback");
+  expect(prompt).toContain("Read these responses and use their decision and feedback");
 });
 
 test("a later visit sends only the continuation", () => {
@@ -271,12 +274,11 @@ test("a later visit sends only the continuation", () => {
     snapshots,
     workspace,
   });
-  expect(prompt.startsWith("Continue this stage.")).toBe(true);
+  expect(prompt.startsWith("## Continue stage\n\nThis stage runs again.")).toBe(true);
   expect(prompt).toContain(resolved(path.join(review, "response.md")));
-  expect(prompt).toContain("Previous plan artifact");
+  expect(prompt).toContain("- Your previous artifact: ");
   expect(prompt).not.toContain("Do not write implementation code.");
-  expect(prompt).toContain("Read the task from");
-  expect(prompt).not.toContain("Stage: plan");
+  expect(prompt).not.toContain("## Stage: plan");
 });
 
 test("a later visit with no new notes names only the task", () => {
@@ -287,7 +289,7 @@ test("a later visit with no new notes names only the task", () => {
     snapshots: [snapshot("plan", 1, path.join(workspace, "plan-1"), { status: "failed", outcomeStatus: null })],
     workspace,
   });
-  expect(prompt).toBe(`Continue this stage.\nRead the task from \`${resolved(path.join(workspace, ".migent", "sessions", "session", "task.md"))}\`.`);
+  expect(prompt).toBe("## Continue stage\n\nThis stage runs again.");
 });
 
 test("revision retry keeps the review that requested it", () => {
@@ -344,7 +346,7 @@ test("includes prior session published outputs", () => {
     priorSessionId: "prior-1",
     priorOutputs: { plan: { path: "outputs/plan" } },
   });
-  expect(prompt).toContain("- session: prior-1");
+  expect(prompt).toContain("- Session: prior-1");
   const expected = path.join(workspace, ".migent", "sessions", "prior-1", "outputs", "plan");
   expect(prompt).toContain(resolved(expected));
 });
@@ -366,20 +368,20 @@ test("a blocked attempt is named in the next prompt", () => {
     snapshots: [snapshot("implement", 1, artifacts, { outcomeStatus: "blocked" })],
     workspace: root,
   });
-  expect(prompt).toContain("Previous attempt of this stage:");
-  expect(prompt).toContain("- execution: 0001-implement");
-  expect(prompt).toContain("- blocker: gate clones");
+  expect(prompt).toContain("## Previous attempt");
+  expect(prompt).not.toContain("0001-implement");
+  expect(prompt).toContain("- Blocker: gate clones");
   expect(prompt).toContain(resolved(path.join(executionDirectory, "response.md")));
   expect(prompt).toContain("handled outside this session");
 });
 
 test("a stage reply is only the reply text", () => {
-  expect(buildStageReplyPrompt("use docs/api.yaml")).toBe("Reply:\nuse docs/api.yaml");
+  expect(buildStageReplyPrompt("use docs/api.yaml")).toBe("## Human reply\n\nuse docs/api.yaml");
 });
 
-test("a reply to a stopped turn names the interrupted execution", () => {
-  expect(buildStageReplyPrompt("use docs/api.yaml", undefined, "0001-plan")).toBe(
-    "Your previous turn (execution 0001-plan) was stopped by the human before it finished.\n\nReply:\nuse docs/api.yaml",
+test("a reply to a stopped turn says the turn was interrupted without naming the execution", () => {
+  expect(buildStageReplyPrompt("use docs/api.yaml", { interrupted: true })).toBe(
+    "## Human reply\n\nYour previous turn was stopped by the human before it finished. Their message:\n\nuse docs/api.yaml",
   );
 });
 
@@ -398,7 +400,7 @@ test("a later complete attempt drops the blocked note", () => {
     ],
     workspace: root,
   });
-  expect(prompt).not.toContain("Previous attempt of this stage:");
+  expect(prompt).not.toContain("## Previous attempt");
 });
 
 test("rejects an undeclared stage", () => {

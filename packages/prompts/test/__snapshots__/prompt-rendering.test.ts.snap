@@ -1,0 +1,235 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`orders the stage prompt stable first: contract, stage, execution, ask 1`] = `
+"# Migent workflow stage
+
+## Response contract
+
+Start the response with a status header, then a blank line, then the report:
+
+\`\`\`
+status: complete | question | blocked
+blocker: <reason>   ← only with blocked
+\`\`\`
+
+| Status | Meaning |
+| :--- | :--- |
+| \`complete\` | The stage's work is finished, artifact written. |
+| \`question\` | You need a human answer to continue. |
+| \`blocked\` | An obstacle you cannot resolve in this turn. |
+
+## Asking questions
+
+Write the question document to the question file (see Execution), then return \`status: question\`. Migent reads the file only for that status. Keep choices out of the report body.
+
+\`\`\`json
+{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","recommended":["A"],"options":[{"label":"...","description":"..."}]}]}
+\`\`\`
+
+- Each question needs 2–26 options.
+- Omit IDs: Migent letters options A, B, C… and numbers questions 1, 2, 3… in order.
+- Optional: \`description\` on an option; \`recommended\` on a question, a list of option letters (at most one for \`single\`).
+- Free-text answers are always allowed.
+- Several questions per file are allowed; all must be answered before the stage continues.
+- Present choices neutrally. Never decide on the human's behalf.
+
+## Stage: plan (role: planner)
+
+### Role
+
+- Be brief.
+
+### Instructions
+
+- Stay at the architecture level.
+
+### Constraints
+
+- Plan only.
+
+## Execution
+
+- Task: \`/s/task.md\`
+- Session dir: \`/s\` (shared session files)
+- Question file: \`/s/e1/question-request.json\`
+- Artifacts: \`/s/e1/artifacts\`
+
+## Do
+
+Read the task, then carry out the stage.
+Write the artifact as \`plan.md\` in the artifacts directory."
+`;
+
+exports[`renders the full contract (ask=human, decisions=0) 1`] = `
+"# Migent workflow stage
+
+## Response contract
+
+Start the response with a status header, then a blank line, then the report:
+
+\`\`\`
+status: complete | question | blocked
+blocker: <reason>   ← only with blocked
+\`\`\`
+
+| Status | Meaning |
+| :--- | :--- |
+| \`complete\` | The stage's work is finished, artifact written. |
+| \`question\` | You need a human answer to continue. |
+| \`blocked\` | An obstacle you cannot resolve in this turn. |
+
+## Asking questions
+
+Write the question document to the question file (see Execution), then return \`status: question\`. Migent reads the file only for that status. Keep choices out of the report body.
+
+\`\`\`json
+{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","recommended":["A"],"options":[{"label":"...","description":"..."}]}]}
+\`\`\`
+
+- Each question needs 2–26 options.
+- Omit IDs: Migent letters options A, B, C… and numbers questions 1, 2, 3… in order.
+- Optional: \`description\` on an option; \`recommended\` on a question, a list of option letters (at most one for \`single\`).
+- Free-text answers are always allowed.
+- Several questions per file are allowed; all must be answered before the stage continues.
+- Present choices neutrally. Never decide on the human's behalf.
+
+Task <T> & \`code\` {{literal}}
+
+
+
+## Execution
+
+- Question file: \`C:\\workspace & evidence\\executions\\0001\\question-request.json\`
+- Artifacts: \`C:\\workspace & evidence\\artifacts\`
+
+## Do
+
+Carry out the request above.
+Write the artifact as \`report.md\` in the artifacts directory."
+`;
+
+exports[`renders the full contract (ask=human, decisions=2) 1`] = `
+"# Migent workflow stage
+
+## Response contract
+
+Start the response with a status header, then a blank line, then the report:
+
+\`\`\`
+status: complete | question | blocked
+decision: approved|revise   ← only with complete
+blocker: <reason>   ← only with blocked
+\`\`\`
+
+| Status | Meaning |
+| :--- | :--- |
+| \`complete\` | The stage's work is finished, artifact written. |
+| \`question\` | You need a human answer to continue. |
+| \`blocked\` | An obstacle you cannot resolve in this turn. |
+
+## Decisions
+
+Choose exactly one when complete. State it in the header, not only in prose. Do not choose one while asking a question.
+
+- \`approved\`: Tests <pass> & evidence matches {{task}}.
+- \`revise\`: Fix required issues.
+
+## Asking questions
+
+Write the question document to the question file (see Execution), then return \`status: question\`. Migent reads the file only for that status. Keep choices out of the report body.
+
+\`\`\`json
+{"schema_version":1,"questions":[{"question":"...","context":"...","selection":"single|multiple","recommended":["A"],"options":[{"label":"...","description":"..."}]}]}
+\`\`\`
+
+- Each question needs 2–26 options.
+- Omit IDs: Migent letters options A, B, C… and numbers questions 1, 2, 3… in order.
+- Optional: \`description\` on an option; \`recommended\` on a question, a list of option letters (at most one for \`single\`).
+- Free-text answers are always allowed.
+- Several questions per file are allowed; all must be answered before the stage continues.
+- Present choices neutrally. Never decide on the human's behalf.
+
+Task <T> & \`code\` {{literal}}
+
+
+
+## Execution
+
+- Question file: \`C:\\workspace & evidence\\executions\\0001\\question-request.json\`
+- Artifacts: \`C:\\workspace & evidence\\artifacts\`
+
+## Do
+
+Carry out the request above.
+Write the artifact as \`report.md\` in the artifacts directory."
+`;
+
+exports[`renders the full contract (ask=null, decisions=0) 1`] = `
+"# Migent workflow stage
+
+## Response contract
+
+Start the response with a status header, then a blank line, then the report:
+
+\`\`\`
+status: complete | blocked
+blocker: <reason>   ← only with blocked
+\`\`\`
+
+| Status | Meaning |
+| :--- | :--- |
+| \`complete\` | The stage's work is finished, artifact written. |
+| \`blocked\` | An obstacle you cannot resolve in this turn. |
+
+Task <T> & \`code\` {{literal}}
+
+
+
+## Execution
+
+- Artifacts: \`C:\\workspace & evidence\\artifacts\`
+
+## Do
+
+Carry out the request above.
+Write the artifact as \`report.md\` in the artifacts directory."
+`;
+
+exports[`renders the full contract (ask=null, decisions=2) 1`] = `
+"# Migent workflow stage
+
+## Response contract
+
+Start the response with a status header, then a blank line, then the report:
+
+\`\`\`
+status: complete | blocked
+decision: approved|revise   ← only with complete
+blocker: <reason>   ← only with blocked
+\`\`\`
+
+| Status | Meaning |
+| :--- | :--- |
+| \`complete\` | The stage's work is finished, artifact written. |
+| \`blocked\` | An obstacle you cannot resolve in this turn. |
+
+## Decisions
+
+Choose exactly one when complete. State it in the header, not only in prose.
+
+- \`approved\`: Tests <pass> & evidence matches {{task}}.
+- \`revise\`: Fix required issues.
+
+Task <T> & \`code\` {{literal}}
+
+
+
+## Execution
+
+- Artifacts: \`C:\\workspace & evidence\\artifacts\`
+
+## Do
+
+Carry out the request above.
+Write the artifact as \`report.md\` in the artifacts directory."
+`;

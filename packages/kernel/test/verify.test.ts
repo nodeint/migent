@@ -110,7 +110,8 @@ test("red verify repairs in the same execution", async () => {
   expect((record.verify as Record<string, unknown>).red).toBe(1);
   expect(provider.calls).toHaveLength(2);
   expect(provider.calls[1]?.newAgentId).toBeNull();
-  expect(provider.calls[1]?.prompt).toContain("Verify failed (1 of 3 red runs)");
+  expect(provider.calls[1]?.prompt).toContain("## Verify failed\n\n1 of 3 red runs.");
+  expect(provider.calls[1]?.prompt).toContain("## Do\n\nFix the verify failure above, then report again.");
   expect(provider.calls[1]?.prompt).toContain("boom 1");
   expect(existsSync(path.join(result.artifact_directory, "verify.md"))).toBe(true);
   const events = readFileSync(
@@ -191,12 +192,12 @@ test("continue with a reply sends only that reply to the blocked stage", async (
   const resumed = snapshots[1]!;
   expect(execution(workspace, sessionId, resumed.executionId).resumes_execution_id).toBe(snapshots[0]?.executionId);
   const sent = provider.calls[1]?.prompt ?? "";
-  expect(sent.startsWith(`Reply:\n${reply}\n`)).toBe(true);
-  expect(sent).toContain("Workflow stage response contract:");
-  expect(sent).toContain("Migent artifact directory:");
+  expect(sent.includes(`## Human reply\n\n${reply}\n`)).toBe(true);
+  expect(sent).toContain("## Response contract");
+  expect(sent).toContain("- Artifacts: ");
   expect(sent).not.toContain("gate clones");
   expect(sent).not.toContain("handled outside this session");
-  expect(sent).not.toContain("Previous attempt of this stage:");
+  expect(sent).not.toContain("## Previous attempt");
   expect(provider.calls[1]?.agentId).toBe("native-session-1");
   expect(provider.calls[2]?.prompt ?? "").not.toContain(reply);
 });
@@ -256,9 +257,10 @@ stages:
   expect(bRuns).toHaveLength(2);
   expect(bRuns[1]?.outcomeStatus).toBe("complete");
   expect(execution(workspace, sessionId, bRuns[1]!.executionId).resumes_execution_id).toBe(bRuns[0]?.executionId);
-  const sent = provider.calls.find((call) => call.prompt.startsWith("Reply:\n"));
-  expect(sent?.prompt.startsWith("Reply:\nanswer b\n")).toBe(true);
-  expect(sent?.prompt).toContain("Workflow stage response contract:");
+  const sent = provider.calls.find((call) => call.prompt.includes("## Human reply\n"));
+  expect(sent?.prompt.includes("## Human reply\n\nanswer b\n")).toBe(true);
+  expect(sent?.prompt).toContain("## Response contract");
+  expect(sent?.prompt).toContain("## Do\n\nContinue the stage with the human reply above.");
   expect(sent?.prompt).not.toContain("gate clones");
   expect(sent?.agentId).toBe("native-session-1");
   expect(store.readSessionStatus(sessionId).status).toBe("blocked");
@@ -335,8 +337,8 @@ completion:
   );
   expect(result.stopReason).toBe("verify_exhausted");
   expect(result.code).toBe(6);
-  const sent = provider.calls.find((call) => call.prompt.startsWith("Reply:\n"));
-  expect(sent?.prompt.startsWith("Reply:\nuse the schema\n")).toBe(true);
+  const sent = provider.calls.find((call) => call.prompt.includes("## Human reply\n"));
+  expect(sent?.prompt.includes("## Human reply\n\nuse the schema\n")).toBe(true);
   expect(sent?.prompt).not.toContain("implement gate");
   expect(execution(workspace, sessionId, reviewId).status).toBe("failed");
   const implementRuns = new SessionStore(workspace)
@@ -404,8 +406,8 @@ stages:
     new AgentToolRunner({ fake: provider }, 10),
   );
   expect(result.stopReason).toBe("blocked");
-  const sent = provider.calls.find((call) => call.prompt.startsWith("Reply:\n"));
-  expect(sent?.prompt.startsWith("Reply:\nanswer b\n")).toBe(true);
+  const sent = provider.calls.find((call) => call.prompt.includes("## Human reply\n"));
+  expect(sent?.prompt.includes("## Human reply\n\nanswer b\n")).toBe(true);
   expect(sent?.prompt).not.toContain("b gate");
   const snapshots = store.executionSnapshots(sessionId);
   expect(snapshots.filter((item) => item.stageId === "a")).toHaveLength(1);
@@ -438,7 +440,7 @@ stages:
   expect(second.stopReason).toBe("verify_exhausted");
   expect(second.code).toBe(6);
   expect(provider.calls).toHaveLength(2);
-  expect(provider.calls[1]?.prompt.startsWith("Reply:\nship it\n")).toBe(true);
+  expect(provider.calls[1]?.prompt.includes("## Human reply\n\nship it\n")).toBe(true);
   expect(new SessionStore(workspace).executionSnapshots(sessionId)).toHaveLength(2);
 });
 
@@ -457,7 +459,7 @@ test("a reply counts toward the dispatch ceiling", async () => {
   expect(second.code).toBe(5);
   const snapshots = new SessionStore(workspace).executionSnapshots(sessionId);
   expect(snapshots.map((item) => item.stageId)).toEqual(["implement", "implement"]);
-  expect(provider.calls[1]?.prompt.startsWith("Reply:\nuse docs/api.yaml\n")).toBe(true);
+  expect(provider.calls[1]?.prompt.includes("## Human reply\n\nuse docs/api.yaml\n")).toBe(true);
 });
 
 test("continue once redispatches only the blocked stage", async () => {
@@ -746,11 +748,11 @@ test("prompt lists verify commands and dependency pass table", () => {
   writeFileSync(file, workflowText("pnpm gate"), "utf8");
   const workflow = loadWorkflowDocument(file);
   const prompt = buildStagePrompt({ workflow, stageId: "implement", snapshots: [], workspace: dir });
-  expect(prompt).toContain("Verify commands:");
-  expect(prompt).toContain("After you report `status: complete`, Migent runs these commands in the workspace, in order, and accepts completion only if all exit 0.");
+  expect(prompt).toContain("### Verify");
+  expect(prompt).toContain("After `status: complete`, Migent runs these commands in order. Completion counts only if all exit 0; otherwise you get the report and fix it here.");
   expect(prompt).not.toContain("after you report `status: complete`");
   expect(prompt).not.toContain("The first failure stops the run.");
-  expect(prompt).toContain("- pnpm gate");
+  expect(prompt).toContain("- `pnpm gate`");
   const dependent = buildStagePrompt({
     workflow,
     stageId: "review",
@@ -767,7 +769,7 @@ test("prompt lists verify commands and dependency pass table", () => {
       },
     ],
   });
-  expect(dependent).toContain("implement verify:");
+  expect(dependent).toContain("implement verify report:");
 });
 
 test("VerifyRunner: onEnd runs after a non-zero exit and an unspawnable shell is infra", async () => {
@@ -993,7 +995,7 @@ test("a repair turn without an agent id receives the flattened history", async (
   const repair = provider.calls[1]?.prompt ?? "";
   expect(provider.calls[1]?.agentId).toBeNull();
   expect(repair).toContain("done");
-  expect(repair).toContain("Verify failed (1 of 3 red runs)");
+  expect(repair).toContain("## Verify failed\n\n1 of 3 red runs.");
 });
 
 test("resume_from sends the stage prompt again when it rejoins the dependency", async () => {
@@ -1047,12 +1049,12 @@ completion:
   expect(result.stopReason).toBe("completed");
   expect(provider.calls[1]?.prompt).toContain("Review the draft.");
   expect(provider.calls[1]?.agentId).toBe("native-session-1");
-  expect(provider.calls[2]?.prompt).toContain("Continue this stage.");
+  expect(provider.calls[2]?.prompt).toContain("## Continue stage");
   expect(provider.calls[2]?.prompt).not.toContain("Write the draft.");
   const rejoined = provider.calls[3]?.prompt ?? "";
-  expect(rejoined).toContain("Stage: review (role: developer)");
+  expect(rejoined).toContain("## Stage: review (role: developer)");
   expect(rejoined).toContain("Review the draft.");
-  expect(rejoined).not.toContain("Continue this stage.");
+  expect(rejoined).not.toContain("## Continue stage");
   const snapshots = new SessionStore(workspace).executionSnapshots(sessionId);
   expect(execution(workspace, sessionId, snapshots[3]!.executionId).resumes_execution_id).toBe(
     snapshots[2]?.executionId,
@@ -1111,7 +1113,7 @@ test("a reply to a cancelled stage keeps a blocked sibling blocked", async () =>
     new AgentToolRunner({ fake: provider }, 10),
   );
   expect(result.stopReason).toBe("blocked");
-  expect(provider.calls[0]?.prompt).toContain(`Your previous turn (execution ${ids.b}) was stopped`);
+  expect(provider.calls[0]?.prompt).toContain("Your previous turn was stopped");
   expect(execution(workspace, sessionId, ids.b!).status).toBe("cancelled");
   expect(store.blockedStages(sessionId).map((item) => item.stageId)).toEqual(["a"]);
   expect(store.executionSnapshots(sessionId).filter((item) => item.stageId === "b")).toHaveLength(2);

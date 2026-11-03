@@ -1,3 +1,4 @@
+import type { TurnKind } from "@nodeint/migent-prompts";
 import { createProviderResolver, type ProviderResolver } from "./provider-contract.js";
 import { createHash } from "node:crypto";
 import { AgentToolRunner, type RunResult } from "./agent-runner.js";
@@ -1254,29 +1255,33 @@ async function dispatchExecuteStage(
     roleInstructions,
   };
   const stageReply = takeStageReply(reply, stageId);
+  const answers = stageReply !== null
+    && new SessionStore(workspace).questionStages(sessionId).some((row) => row.stageId === stageId);
+  const interrupted = stageReply !== null && interruptedExecutionId(snapshots, stageId) !== undefined;
+  const turn: TurnKind = stageReply !== null
+    ? (answers && !interrupted ? "answers" : "reply")
+    : exhausted?.verifyReport ? "repair"
+      : stagePromptAlreadyDelivered(workflow, snapshots, stageId) ? "continue" : "start";
   const prompt =
-    stageReply !== null
-      ? buildStageReplyPrompt(
-          stageReply,
-          lonePendingQuestion(new SessionStore(workspace).questionStages(sessionId).find((row) => row.stageId === stageId)),
-          interruptedExecutionId(snapshots, stageId),
-        )
-      : exhausted?.verifyReport
+    turn === "answers" || turn === "reply"
+      ? buildStageReplyPrompt(stageReply!, { answers, interrupted })
+      : turn === "repair"
         ? buildVerifyRepairPrompt(
-            readFileSync(exhausted.verifyReport, "utf8"),
+            readFileSync(exhausted!.verifyReport!, "utf8"),
             stageSpec.maxVerify,
             stageSpec.maxVerify,
             null,
             frozen.taskFile,
             frozen.sessionDirectory,
           )
-        : stagePromptAlreadyDelivered(workflow, snapshots, stageId)
+        : turn === "continue"
           ? buildStageResumePrompt(promptInput)
           : buildStagePrompt(promptInput);
   const request: StageDispatchRequest = {
     workflowId,
     stageId,
     prompt,
+    turn,
     sessionId,
   };
   let loggedStart = false;
@@ -1673,6 +1678,3 @@ function hasErrorCode(error: Error): boolean {
 }
 
 /** The reply prompt names a lone question; several questions are spelled out in the formatted answers. */
-function lonePendingQuestion(row: { question: string; questions: readonly unknown[] } | undefined): string | undefined {
-  return row !== undefined && row.questions.length <= 1 ? row.question : undefined;
-}
