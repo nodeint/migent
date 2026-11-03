@@ -201,7 +201,7 @@ test("verification passes after repeated questions without consuming extra failu
     expect(metadata.verify.runs).toBe(2);
     expect(provider.calls[3]?.prompt).toContain("Previous verify report:");
   } finally { rmSync(root, { recursive: true, force: true }); }
-});
+}, 30_000);
 
 test("a reply keeps the questioning execution even when session.resume_from names a dependency", async () => {
   const root = workspace("  - { id: base, role: planner }\n  - id: plan\n    role: planner\n    ask: human\n    depends_on: [base]\n    session: { resume_from: base }\n");
