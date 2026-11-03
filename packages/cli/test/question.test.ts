@@ -109,3 +109,25 @@ test("a question-file failure is shown with its stage even when a newer sibling 
     expect(result.stderr).toContain("(missing)");
   } finally { removeWorkspace(root); }
 });
+
+test("continue with a reply for a named stage keeps running the workflow after that stage", async () => {
+  const root = writeFakeWorkflowWorkspace({ plan: "schema_version: 4\nid: plan\nstages:\n  - { id: plan, role: planner, ask: human }\n  - { id: review_plan, role: planner, depends_on: [plan] }\n" });
+  const provider = new ScriptedProvider([
+    question,
+    "status: complete\n\nPlan written.",
+    "status: complete\n\nPlan reviewed.",
+  ]);
+  const runner = new AgentToolRunner({ fake: provider }, 10);
+  try {
+    const first = await capture(() => executeWorkflow(root, { action: "start", workflowId: "plan", task: "Plan", runner }));
+    expect(first.value).toBe(9);
+    const id = readdirSync(path.join(root, ".migent/sessions"))[0]!;
+    const replied = await capture(() => executeWorkflow(root, {
+      action: "continue", sessionId: id, replyStageId: "plan", reply: "1A", continueFailed: true, runner,
+    }));
+    expect(replied.value).toBe(0);
+    expect(provider.calls).toHaveLength(3);
+    expect(provider.calls[1]?.prompt).toContain("New sessions only");
+    expect(new SessionStore(root).readSessionStatus(id).status).toBe("completed");
+  } finally { removeWorkspace(root); }
+});

@@ -90,6 +90,8 @@ export interface ExecuteRequest {
   task?: string | null;
   sessionId?: string | null;
   stageId?: string | null;
+  /** Stage that receives `reply` when `stageId` is not set. It does not limit dispatch to one stage. */
+  replyStageId?: string | null;
   priorSessionId?: string | null;
   maxDispatches?: number | null;
   once?: boolean;
@@ -165,6 +167,7 @@ async function executeLocked(
   const activeRunner = runner ?? new AgentToolRunner();
   const resolveProvider = createProviderResolver(activeRunner.providers);
   const stageId = request.stageId ?? null;
+  const replyStageId = stageId ?? request.replyStageId ?? null;
   const once = request.once ?? false;
   const maxDispatches =
     request.maxDispatches === undefined ? DEFAULT_MAX_DISPATCHES : request.maxDispatches;
@@ -201,8 +204,8 @@ async function executeLocked(
       const cancelled = store.cancelledStages(sessionId);
       const waiting = [...store.blockedStages(sessionId), ...store.questionStages(sessionId), ...cancelled];
       if (waiting.length === 0) throw new ConfigurationError("--reply requires a blocked, cancelled, or question stage.");
-      if (waiting.length > 1 && stageId === null) throw new ConfigurationError(`--reply needs --stage when more than one stage is waiting: ${waiting.map((row) => row.stageId).join(", ")}.`);
-      const target = stageId ?? waiting[0]!.stageId;
+      if (waiting.length > 1 && replyStageId === null) throw new ConfigurationError(`--reply needs --stage when more than one stage is waiting: ${waiting.map((row) => row.stageId).join(", ")}.`);
+      const target = replyStageId ?? waiting[0]!.stageId;
       if (!waiting.some((row) => row.stageId === target)) throw new ConfigurationError(`Stage ${target} is not waiting for a reply.`);
       stageReply = { stageId: target, text: replyText };
       const cancelledTarget = cancelled.find((row) => row.stageId === target);
@@ -223,11 +226,11 @@ async function executeLocked(
       // Recover an answer recorded before a dispatch was interrupted or failed preflight.
       const answered = store.questionStages(sessionId).map((row) => ({
         ...row, reply: store.questionReply(sessionId!, row.executionId),
-      })).find((row) => row.reply !== null && (stageId === null || stageId === row.stageId));
+      })).find((row) => row.reply !== null && (replyStageId === null || replyStageId === row.stageId));
       if (answered) stageReply = { stageId: answered.stageId, text: answered.reply! };
       else {
         // Recover a reply to a cancelled stage that was recorded before its dispatch.
-        const pending = store.pendingCancelledReply(sessionId, stageId);
+        const pending = store.pendingCancelledReply(sessionId, replyStageId);
         if (pending) {
           stageReply = { stageId: pending.stageId, text: pending.reply };
           sessionStatus = "active";

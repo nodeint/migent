@@ -31,6 +31,7 @@ export interface ExecuteWorkflowOptions {
   startPrepared?: boolean;
   refreshWorkflow?: boolean;
   reply?: string | null;
+  replyStageId?: string | null;
 }
 
 export async function executeWorkflow(workspace: string, options: ExecuteWorkflowOptions): Promise<number> {
@@ -57,6 +58,7 @@ export async function executeWorkflow(workspace: string, options: ExecuteWorkflo
       resetRevisions: options.action === "continue",
       refreshWorkflow: options.refreshWorkflow === true,
       reply: options.reply ?? null,
+      replyStageId: options.replyStageId ?? null,
     },
     runner,
   );

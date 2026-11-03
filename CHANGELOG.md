@@ -10,6 +10,10 @@
 
 - A turn that goes back to the same agent under the same response protocol (answering its questions, a verify repair, a question-file correction) no longer resends the full contract. It sends the new `Execution` paths, the previous artifact directory when resuming a question, and a short status reminder (#44).
 
+### Fixed
+
+- `migent session continue <session> --stage <stage> --reply` keeps running the workflow after the answered stage. Before, it dispatched only that stage, like `--once`, and left downstream stages undispatched. `--stage` without `--reply` still dispatches one stage.
+
 ## 0.3.3
 
 ### Added

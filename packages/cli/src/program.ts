@@ -597,7 +597,8 @@ function continueSession(session: string, options: OptionValues): number | Promi
   const reply = readReply(options);
   if (reply === "invalid") return 2;
   const stageId = optionalText(options.stage);
-  if (options.once === true || stageId !== null) {
+  // With --reply and no --once, --stage only picks the stage that receives the reply; the workflow keeps running.
+  if (options.once === true || (stageId !== null && reply === null)) {
     return executeWorkflow(findWorkspace(invocationCwdPath()), {
       action: "stage",
       sessionId: session,
@@ -615,6 +616,7 @@ function continueSession(session: string, options: OptionValues): number | Promi
   return executeWorkflow(findWorkspace(invocationCwdPath()), {
     action: "continue",
     sessionId: session,
+    replyStageId: stageId,
     priorSessionId: optionalText(options.prior),
     maxDispatches: ceiling,
     continueFailed: true,
