@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.3.4
+
 ### Added
 
 - `migent update` upgrades Migent to the latest published version with the package manager that installed it (npm, pnpm, yarn, or bun), or prints the command when it cannot tell. `--check` (or `--dry-run`) only reports; `--json` prints one object. After an upgrade it suggests `migent migrate` and `migent skill update` (#46).
@@ -71,22 +73,9 @@
 
 - Skill install and update work on Windows when the Migent installation path contains spaces.
 
-## 0.2.0
-
-### Changed
-
-- `init` always creates both `implement` and `plan` workflows. Choose developer and reviewer models separately; generated roles use inline `default_model` objects without a `models` section or a local config file. The plan stage uses the developer role. For unattended setup, pass both `--provider`/`--model` and `--reviewer-provider`/`--reviewer-model`; `--preset` is removed. Existing projects and named-model configurations remain supported.
-- Role defaults accept inline models alongside aliases. Move `roles.<role>.options` into the inline or named model.
-- Contributor and release workflows use branches and pull requests. `pnpm setup:git` installs local hooks that prevent commits/direct pushes to main and mismatched branch pushes.
-
-### Added
-
-- `doctor` checks model `effort` against the selected client/model catalog, reports invalid values with the valid choices, and warns when the choices cannot be verified.
-
-- Model configuration accepts `effort` as an alias for the selected CLI client's thinking-level option. OpenCode V2 renders effort as a `#variant` model suffix. Existing native options and stage overrides continue to work; conflicting model declarations and unsupported clients report configuration errors.
-
 ## Older versions
 
+- [0.2.0](https://github.com/nodeint/migent/releases/tag/v0.2.0)
 - [0.1.11](https://github.com/nodeint/migent/releases/tag/v0.1.11)
 - [0.1.10](https://github.com/nodeint/migent/releases/tag/v0.1.10)
 - [0.1.9](https://github.com/nodeint/migent/releases/tag/v0.1.9)
