@@ -10,6 +10,8 @@
 
 ### Changed
 
+- Agents ask questions by writing a JSON document to a request file whose path is in the response contract, then answering `status: question`. The response body is a normal report and is never parsed for questions, which removes the contradiction between "the body is JSON" and "use a blank line before the report body". An unusable file gets one correction turn, then the stage fails with `question_file_invalid` and an error that names the file, the problem and how to recover. `parseStageOutcome` from `@nodeint/migent-kernel` now reads response headers only; `resolveStageOutcome` loads the question file. Inline JSON in the response is no longer accepted.
+
 - Prompt templates and renderers live in the new `@nodeint/migent-prompts` package and render from packaged Markdown templates while preserving workflow and conversation behavior.
 
 - Stage prompts state status meanings once, describe the verify gate as engine behavior, name the artifact once, and render answered questions as readable Q/A text. Re-entry prompts name the task, the stage's previous response, and upstream artifacts updated since its last visit.

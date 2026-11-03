@@ -61,3 +61,51 @@ test("workflow run prints the pending question and its response after a newer si
     expect(result.stderr).toContain('--stage plan --reply "<answer>"');
   } finally { removeWorkspace(root); }
 });
+
+test("a workflow stage whose question file stays invalid shows the file, the problem and the recovery", async () => {
+  const root = writeFakeWorkflowWorkspace({ plan: "schema_version: 4\nid: plan\nstages:\n  - { id: plan, role: planner, ask: human }\n" });
+  const provider = new ScriptedProvider([
+    "status: question\n\nNo file.",
+    "status: question\n\nStill broken.\n<<FILE>>{\"schema_version\":1,\"questions\":[]}",
+  ]);
+  try {
+    const result = await capture(() => executeWorkflow(root, {
+      action: "start", workflowId: "plan", task: "Plan", runner: new AgentToolRunner({ fake: provider }, 10),
+    }));
+    expect(result.value).not.toBe(9);
+    expect(provider.calls).toHaveLength(2);
+    expect(result.stderr).toContain("question-request.json");
+    expect(result.stderr).toContain("invalid_schema");
+    expect(result.stderr).toContain("session continue");
+  } finally { removeWorkspace(root); }
+});
+
+test("a role session whose question file stays invalid prints the diagnostic", async () => {
+  const root = writeFakeWorkflowWorkspace({});
+  const provider = new ScriptedProvider(["status: question\n\nNo file.", "status: question\n\nStill none."]);
+  const runner = new AgentToolRunner({ fake: provider }, 10);
+  try {
+    const result = await capture(() => dispatchAgent(root, { role: "reviewer", prompt: "Review scope", runner }));
+    expect(result.value).toBe(1);
+    expect(result.stdout).toContain("question-request.json");
+    expect(result.stdout).toContain("missing");
+  } finally { removeWorkspace(root); }
+});
+
+test("a question-file failure is shown with its stage even when a newer sibling stage succeeds", async () => {
+  const root = writeFakeWorkflowWorkspace({ plan: "schema_version: 4\nid: plan\nstages:\n  - { id: plan, role: planner, ask: human }\n  - { id: docs, role: planner }\n" });
+  const provider = new ScriptedProvider([
+    "status: question\n\nNo file.",
+    "status: question\n\nStill no file.",
+    "status: complete\n\nDocs inspected.",
+  ]);
+  try {
+    const result = await capture(() => executeWorkflow(root, {
+      action: "start", workflowId: "plan", task: "Plan", runner: new AgentToolRunner({ fake: provider }, 10),
+    }));
+    expect(result.value).not.toBe(0);
+    expect(result.stderr).toContain("stage plan:");
+    expect(result.stderr).toContain("question-request.json");
+    expect(result.stderr).toContain("(missing)");
+  } finally { removeWorkspace(root); }
+});

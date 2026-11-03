@@ -102,9 +102,40 @@ function printResult(workspace: string, result: ExecuteResult): void {
   if (INSPECT_EXIT_CODES.has(result.code) && result.latestExecutionId) {
     log(`response: executions/${result.latestExecutionId}/response.md`);
   }
+  if (result.sessionId !== "") for (const line of questionFileFailures(workspace, result.sessionId)) log(line);
   if (result.code === 7 && result.latestExecutionId) {
     log(`verify: executions/${result.latestExecutionId}/turns/01/verify.md`);
   }
+}
+
+/**
+ * Diagnostics for stages whose latest execution failed on an unusable question request file.
+ * Every stage is checked, so a newer successful sibling does not hide the failure.
+ */
+function questionFileFailures(workspace: string, sessionId: string): string[] {
+  const directory = path.join(workspace, ".migent", "sessions", sessionId, "executions");
+  let names: string[];
+  try {
+    names = readdirSync(directory).sort();
+  } catch {
+    return [];
+  }
+  const latest = new Map<string, Record<string, unknown>>();
+  for (const name of names) {
+    try {
+      const metadata: unknown = JSON.parse(readFileSync(path.join(directory, name, "execution.json"), "utf8"));
+      if (isRecord(metadata) && typeof metadata.stage_id === "string") latest.set(metadata.stage_id, metadata);
+    } catch {
+      continue;
+    }
+  }
+  const lines: string[] = [];
+  for (const [stageId, metadata] of latest) {
+    if (metadata.failure_reason === "question_file_invalid" && typeof metadata.error === "string") {
+      lines.push(`stage ${stageId}: ${metadata.error}`);
+    }
+  }
+  return lines;
 }
 
 function artifactPaths(workspace: string, sessionId: string, outputs: Record<string, unknown>): string[] {

@@ -57,7 +57,26 @@ export class ScriptedProvider extends FakeProvider {
     }
     const response = this.responses.shift();
     if (response === undefined) throw new Error("ScriptedProvider has no response left.");
-    return [response, "native-session-1"];
+    return [this.writeQuestionFile(response), "native-session-1"];
+  }
+
+  /**
+   * `status: question` followed by a JSON body is shorthand: the body goes to the question
+   * request file named in the prompt. `<<FILE>>` splits a report from raw file content.
+   */
+  private writeQuestionFile(response: string): string {
+    const prompt = this.calls.at(-1)?.prompt ?? "";
+    const target = /^Question request file: (.+)$/m.exec(prompt)?.[1]?.trim();
+    const marker = "\n<<FILE>>";
+    const split = response.indexOf(marker);
+    if (split >= 0) {
+      if (target) writeFileSync(target, response.slice(split + marker.length), "utf8");
+      return response.slice(0, split);
+    }
+    const head = "status: question\n\n";
+    if (!response.startsWith(head) || !response.slice(head.length).startsWith("{")) return response;
+    if (target) writeFileSync(target, response.slice(head.length), "utf8");
+    return head + "The questions are in the request file.";
   }
 }
 

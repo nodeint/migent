@@ -55,7 +55,9 @@ test("a role quota waits and reruns with the original prompt", async () => {
     });
     expect(code).toBe(0);
     expect(provider.calls).toHaveLength(2);
-    expect(provider.calls[1]?.prompt).toBe(provider.calls[0]?.prompt);
+    // The question request file lives in the execution directory, which differs per attempt.
+    const sameExceptQuestionFile = (prompt: string | undefined) => prompt?.replace(/^Question request file: .*$/m, "Question request file: <FILE>");
+    expect(sameExceptQuestionFile(provider.calls[1]?.prompt)).toBe(sameExceptQuestionFile(provider.calls[0]?.prompt));
     expect(provider.calls[1]?.prompt).toContain("Review the latest changes");
     const sessionId = readSessionId(root);
     const executions = readdirSync(path.join(root, ".migent", "sessions", sessionId, "executions")).sort();

@@ -116,6 +116,9 @@ export function printAgent(result: Record<string, unknown>, role: string, provid
     }
     if (typeof result.questions_file === "string") process.stdout.write(`questions  ${result.questions_file}\n`);
   }
+  if (result.failure_reason === "question_file_invalid" && typeof result.failure_detail === "string") {
+    process.stdout.write(`error  ${result.failure_detail}\n`);
+  }
 }
 
 export function printWatchSnapshot(snapshot: Record<string, unknown>): void {

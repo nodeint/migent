@@ -21,11 +21,13 @@ import {
   flattenHistory,
   log,
 } from "./runtime.js";
+import { renderProtocolUpdate, renderQuestionCorrection } from "@nodeint/migent-prompts";
 import { ProviderEventReporter } from "./provider-events.js";
 import { loadFrozenWorkflow } from "./session-freeze.js";
 import { AgentSessionRecord, SessionStore, stringOptions, type ExecutionContext } from "./session-store.js";
-import { parseStageOutcome, StageOutcome } from "./stage-outcome.js";
-import type { Question } from "./questions.js";
+import { StageOutcome } from "./stage-outcome.js";
+import { resolveStageOutcome, type OutcomeContext } from "./outcome-resolver.js";
+import { QuestionFileError, type Question } from "./questions.js";
 import { isWorkflowV2, loadNamedWorkflow, loadStage, type StageSpec } from "./workflow.js";
 
 export interface RunResult {
@@ -41,6 +43,8 @@ export interface RunResult {
   session_status: string;
   response: string;
   failure_reason: string;
+  /** Readable diagnostic for `question_file_invalid`: the file, the problem and how to recover. Absent otherwise. */
+  failure_detail?: string;
   /** `quota`, `provider`, or empty when the turn was not a provider failure. */
   failure_kind: string;
   /** UTC ISO instant for a quota failure. Empty otherwise. */
@@ -65,6 +69,33 @@ export interface RunRequest {
   options?: Record<string, string> | null;
   /** Called as soon as the execution id exists, before the first await. */
   onExecution?: (executionId: string) => void;
+}
+
+/** Failure reason when the question request file stays invalid after the correction turn. */
+export const QUESTION_FILE_INVALID = "question_file_invalid";
+/** Version of the response contract baked into a saved first prompt. 2 = questions via request file. */
+const RESPONSE_PROTOCOL = 2;
+const QUESTION_FILE_NAME = "question-request.json";
+
+/** Absolute, native path the agent writes questions to. It sits outside `artifacts/`. */
+export function questionRequestPath(context: ExecutionContext): string {
+  return path.resolve(context.directory, QUESTION_FILE_NAME);
+}
+
+interface QuestionCorrection {
+  turn: number;
+  error_kind: string;
+  error_detail: string;
+}
+
+function storedCorrection(metadata: Record<string, unknown>): QuestionCorrection | null {
+  const value = metadata.question_correction;
+  if (!isRecord(value) || typeof value.turn !== "number") return null;
+  return {
+    turn: value.turn,
+    error_kind: typeof value.error_kind === "string" ? value.error_kind : "",
+    error_detail: typeof value.error_detail === "string" ? value.error_detail : "",
+  };
 }
 
 export class AgentToolRunner {
@@ -163,11 +194,13 @@ export class AgentToolRunner {
     }
     turnPrompt = renderProviderPrompt(turnPrompt, {
       contract: sessionId !== null, decisionValues, decisionInstructions: stage?.decisionInstructions, ask,
+      questionFile: questionRequestPath(context),
       artifactDirectory: context.artifactDirectory, artifactName,
       previousVerifyReport: previous && progress?.lastReport
         ? path.resolve(path.dirname(previous.artifactDirectory), progress.lastReport) : null,
     });
     store.savePrompt(context, turnPrompt);
+    store.saveExecutionProgress(context, record, { response_protocol: RESPONSE_PROTOCOL });
     const started: Record<string, unknown> = {
       cli_version: this.cachedCliVersion(provider, providerKey, workspacePath),
       ...readGitFacts(workspacePath),
@@ -202,6 +235,7 @@ export class AgentToolRunner {
       currentAgentId: agentId,
       currentSession: newSession,
       pendingVerify: null,
+      questionCorrection: null,
     });
   }
 
@@ -242,6 +276,8 @@ export class AgentToolRunner {
     const verifyCommands = stage?.verify ?? [];
     const eventReporter = new ProviderEventReporter(store, context, providerKey, model, this.itemProgress);
     const progress = verifyProgress(metadata);
+    const correction = storedCorrection(metadata);
+    const questionFile = questionRequestPath(context);
     const assistants = record.history.filter((item) => item.role === "assistant").length;
     const last = record.history.at(-1);
     const lastRole = last && typeof last.role === "string" ? last.role : "";
@@ -259,11 +295,17 @@ export class AgentToolRunner {
         } catch {
           throw new ConfigurationError(`Execution ${executionId} has no prompt to resume.`);
         }
+        // A first prompt saved under an older protocol carries the old question instructions.
+        if (sessionId !== null && ask !== null && metadata.response_protocol !== RESPONSE_PROTOCOL) {
+          currentPrompt += renderProtocolUpdate({
+            decisionValues, decisionInstructions: stage?.decisionInstructions, ask, questionFile,
+          });
+        }
       } else {
         currentPrompt = agentId
           ? last.content
           : flattenHistory(record.history as Array<{ role: string; content: string }>);
-        currentPrompt = renderProviderPrompt(currentPrompt, { contract: true, decisionValues, decisionInstructions: stage?.decisionInstructions, ask });
+        currentPrompt = renderProviderPrompt(currentPrompt, { contract: true, decisionValues, decisionInstructions: stage?.decisionInstructions, ask, questionFile });
       }
       return this.driveTurns({
         provider,
@@ -291,17 +333,20 @@ export class AgentToolRunner {
         currentAgentId: agentId,
         currentSession: null,
         pendingVerify: null,
+        questionCorrection: correction,
       });
     }
     const turn = Math.max(1, assistants);
     const responseText = savedResponse(context, last);
     let outcome: StageOutcome | null = null;
     let invokeError: string | null = null;
+    let questionError: QuestionFileError | null = null;
     try {
-      outcome = savedOutcome(store, context, turn, responseText, sessionId !== null, decisionValues);
+      outcome = savedOutcome(store, context, turn, responseText, { required: sessionId !== null, decisionValues, ask, questionFile });
     } catch (error) {
-      if (!(error instanceof Error)) throw error;
-      invokeError = error.message;
+      if (error instanceof QuestionFileError) questionError = error;
+      else if (error instanceof Error) invokeError = error.message;
+      else throw error;
     }
     return this.driveTurns({
       provider,
@@ -328,7 +373,8 @@ export class AgentToolRunner {
       currentPrompt: "",
       currentAgentId: record.agentId,
       currentSession: null,
-      pendingVerify: { responseText, outcome, invokeError },
+      pendingVerify: { responseText, outcome, invokeError, questionError },
+      questionCorrection: correction,
     });
   }
 
@@ -360,9 +406,13 @@ export class AgentToolRunner {
     let currentAgentId = state.currentAgentId;
     let currentSession = state.currentSession;
     let pendingVerify = state.pendingVerify;
+    let questionCorrection = state.questionCorrection;
+    const questionFile = questionRequestPath(context);
+    let keepQuestionFile = false;
     let responseText = pendingVerify?.responseText ?? "";
     let outcome: StageOutcome | null = pendingVerify?.outcome ?? null;
     let failureReason = "";
+    let failureDetail = "";
     let classification: FailureClassification | null = null;
     const markCancelled = (error: unknown): never => {
       if (error instanceof CancellationRequested) {
@@ -390,18 +440,27 @@ export class AgentToolRunner {
       return fields;
     };
     const outcomeFields = (): Record<string, unknown> | null => {
+      if (failureReason === QUESTION_FILE_INVALID) {
+        return { ...(extraFields() ?? {}), failure_reason: QUESTION_FILE_INVALID };
+      }
       if (classification?.kind !== "quota") return extraFields();
       failureReason = "quota";
       return { ...(extraFields() ?? {}), failure_reason: "quota", retry_at: classification.resetAt };
     };
     while (true) {
       let invokeError: string | null = null;
+      let questionError: QuestionFileError | null = null;
       if (pendingVerify) {
         responseText = pendingVerify.responseText;
         outcome = pendingVerify.outcome;
         invokeError = pendingVerify.invokeError;
+        questionError = pendingVerify.questionError;
         pendingVerify = null;
       } else {
+        // A request file left by an earlier turn must not be read as a new question. The
+        // correction turn keeps the invalid file so the agent can repair it.
+        if (!keepQuestionFile) rmSync(questionFile, { force: true });
+        keepQuestionFile = false;
         let parsedProviderId: string | null;
         let argv: string[] = [];
         let usage: UsageCapture | null = null;
@@ -440,10 +499,13 @@ export class AgentToolRunner {
         outcome = null;
         if (invokeError === null) {
           try {
-            outcome = parseStageOutcome(responseText, sessionId !== null, decisionValues, ask);
+            outcome = resolveStageOutcome(responseText, {
+              required: sessionId !== null, decisionValues, ask, questionFile,
+            });
           } catch (error) {
-            if (!(error instanceof Error)) throw error;
-            invokeError = error.message;
+            if (error instanceof QuestionFileError) questionError = error;
+            else if (error instanceof Error) invokeError = error.message;
+            else throw error;
           }
         }
         if (invokeError === null && outcome?.status === "complete" && artifactName) {
@@ -460,7 +522,7 @@ export class AgentToolRunner {
         }
         const needsVerify =
           verifyCommands.length > 0 && invokeError === null && outcome?.status === "complete";
-        record.status = needsVerify ? "running" : invokeError === null ? "completed" : "failed";
+        record.status = needsVerify ? "running" : invokeError === null && questionError === null ? "completed" : "failed";
         record.history.push({ role: "assistant", content: responseText });
         store.save(record, context);
         store.saveResponse(context, responseText);
@@ -468,10 +530,46 @@ export class AgentToolRunner {
           store.saveTurnResponse(context, turn, responseText);
           if (outcome?.status === "complete") store.saveTurnOutcome(context, turn, outcome);
         }
+        if (questionError !== null) {
+          const next = this.questionRetry(questionError, questionCorrection, turn, state, eventReporter);
+          if (next === null) {
+            invokeError = questionFailureMessage(questionError);
+            failureDetail = invokeError;
+            failureReason = QUESTION_FILE_INVALID;
+            record.status = "failed";
+            store.save(record, context);
+            store.saveExecution(context, record, "failed", invokeError, null, false, outcomeFields());
+            break;
+          }
+          ({ correction: questionCorrection, prompt: currentPrompt } = next);
+          turn += 1;
+          currentAgentId = record.agentId;
+          currentSession = null;
+          keepQuestionFile = true;
+          continue;
+        }
         if (!needsVerify || outcome === null) {
           store.saveExecution(context, record, record.status, invokeError, outcome, false, outcomeFields());
           break;
         }
+      }
+      if (questionError !== null) {
+        // Resumed from a saved response whose question file was unusable.
+        const next = this.questionRetry(questionError, questionCorrection, turn, state, eventReporter);
+        if (next === null) {
+          failureReason = QUESTION_FILE_INVALID;
+          failureDetail = questionFailureMessage(questionError);
+          record.status = "failed";
+          store.save(record, context);
+          store.saveExecution(context, record, "failed", failureDetail, null, false, outcomeFields());
+          break;
+        }
+        ({ correction: questionCorrection, prompt: currentPrompt } = next);
+        turn += 1;
+        currentAgentId = record.agentId;
+        currentSession = null;
+        keepQuestionFile = true;
+        continue;
       }
       if (invokeError !== null || outcome === null || outcome.status !== "complete" || verifyCommands.length === 0) {
         record.status = invokeError === null && outcome !== null ? "completed" : "failed";
@@ -590,7 +688,7 @@ export class AgentToolRunner {
       currentPrompt = currentAgentId
         ? repair
         : flattenHistory(record.history as Array<{ role: string; content: string }>);
-      currentPrompt = renderProviderPrompt(currentPrompt, { contract: true, decisionValues, decisionInstructions: stage?.decisionInstructions, ask });
+      currentPrompt = renderProviderPrompt(currentPrompt, { contract: true, decisionValues, decisionInstructions: stage?.decisionInstructions, ask, questionFile });
     }
     const sessionStatus = store.readSessionStatus(context.sessionId);
     return {
@@ -607,11 +705,49 @@ export class AgentToolRunner {
       session_status: typeof sessionStatus.status === "string" ? sessionStatus.status : "",
       response: responseText,
       failure_reason: failureReason,
+      ...(failureDetail === "" ? {} : { failure_detail: failureDetail }),
       failure_kind: classification?.kind ?? "",
       reset_at: classification?.kind === "quota" && classification.resetAt ? classification.resetAt : "",
       provider: eventReporter.provider,
       execution_status: record.status,
     };
+  }
+
+  /**
+   * Decide whether an unusable question file gets the one correction turn. Returns null when the
+   * budget is already used. The budget is persisted before the message joins the history, so a
+   * stop between the two writes still sends the correction on resume and never grants a second.
+   */
+  private questionRetry(
+    error: QuestionFileError,
+    correction: QuestionCorrection | null,
+    turn: number,
+    state: TurnDrive,
+    eventReporter: ProviderEventReporter,
+  ): { correction: QuestionCorrection; prompt: string } | null {
+    const { store, context, record, decisionValues, stage } = state;
+    if (correction !== null && correction.turn !== turn) return null;
+    const used: QuestionCorrection = correction ?? { turn, error_kind: error.kind, error_detail: error.detail };
+    if (correction === null) {
+      store.saveExecutionProgress(context, record, { question_correction: used });
+      eventReporter.emit("question.file_invalid", `${error.kind}: ${error.detail}`, {
+        turn, error_kind: error.kind, file: error.file,
+      });
+    }
+    const message = renderQuestionCorrection({
+      questionFile: error.file, errorKind: used.error_kind, errorDetail: used.error_detail,
+    });
+    record.history.push({ role: "user", content: message });
+    store.save(record, context);
+    const ask = stage?.ask ?? (stage === null ? "human" : null);
+    const base = record.agentId
+      ? message
+      : flattenHistory(record.history as Array<{ role: string; content: string }>);
+    const prompt = renderProviderPrompt(base, {
+      contract: true, decisionValues, decisionInstructions: stage?.decisionInstructions, ask,
+      questionFile: error.file,
+    });
+    return { correction: used, prompt };
   }
 
   private carryExhaustedArtifact(
@@ -810,6 +946,7 @@ interface PendingVerify {
   responseText: string;
   outcome: StageOutcome | null;
   invokeError: string | null;
+  questionError: QuestionFileError | null;
 }
 
 interface TurnDrive {
@@ -838,6 +975,12 @@ interface TurnDrive {
   currentAgentId: string | null;
   currentSession: NewSession | null;
   pendingVerify: PendingVerify | null;
+  questionCorrection: QuestionCorrection | null;
+}
+
+function questionFailureMessage(error: QuestionFileError): string {
+  return `The response said status: question, but the question request file is unusable (${error.kind}): ${error.detail}. ` +
+    `File: ${error.file}. The agent had one correction turn. Run \`migent session continue\` to rerun the stage.`;
 }
 
 function verifyProgress(metadata: Record<string, unknown>): {
@@ -873,14 +1016,13 @@ function savedOutcome(
   context: ExecutionContext,
   turn: number,
   responseText: string,
-  required: boolean,
-  decisionValues: readonly string[],
+  context2: OutcomeContext,
 ): StageOutcome | null {
   try {
     const raw = JSON.parse(
       readFileSync(path.join(store.turnDirectory(context, turn), "outcome.json"), "utf8"),
     ) as unknown;
-    if (isRecord(raw) && typeof raw.status === "string" && raw.status) {
+    if (isRecord(raw) && raw.status === "complete") {
       return new StageOutcome(
         raw.status,
         typeof raw.blocker === "string" && raw.blocker ? raw.blocker : null,
@@ -890,7 +1032,7 @@ function savedOutcome(
   } catch {
     // The saved response is the fallback.
   }
-  return parseStageOutcome(responseText, required, decisionValues);
+  return resolveStageOutcome(responseText, context2);
 }
 
 function readCliVersion(provider: Provider, workspace: string): string | null {
