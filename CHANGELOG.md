@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- `migent update` upgrades Migent to the latest published version with the package manager that installed it (npm, pnpm, yarn, or bun), or prints the command when it cannot tell. `--check` (or `--dry-run`) only reports; `--json` prints one object. After an upgrade it suggests `migent migrate` and `migent skill update` (#46).
+
 ### Changed
 
 - Stage prompts are restructured as Markdown sections, ordered stable to variable: the response contract (status table, decisions, question rules) first, then the stage (`Role` and `Stage` instructions as separate lists, with stage lines already in the role list dropped, then constraints and verify), then upstream and routing context, then an `Execution` block with the task, session, question file and artifact paths, and a closing `Do` that is the only instruction for the turn. The instruction follows what the turn is (start, revisit, human reply, answers, verify repair, question-file correction); the kind is saved as `turn_kind` in `execution.json` so a resumed turn keeps it. The header format is shown as a block, and prompts no longer mention routing or execution IDs. The contract states that `recommended` holds the option letters Migent assigns (#44).

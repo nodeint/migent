@@ -8,6 +8,7 @@ import { executeWorkflow } from "./commands/execute.js";
 import { cancelSession } from "./commands/cancel.js";
 import { prepareWorkflowSession } from "./commands/prepare.js";
 import { repairWorkflowSession } from "./commands/repair.js";
+import { runUpdate } from "./commands/update.js";
 import { runInit } from "./commands/init.js";
 import { runSessionMetrics, runSessions } from "./commands/sessions.js";
 import { parsePort, runServiceStart, runServiceStatus, runServiceStop } from "./commands/service.js";
@@ -109,6 +110,19 @@ export function createProgram(status: CliStatus): Command {
     .addHelpText("after", exitText(["Exit 0 when every check passes.", "Exit 1 when a check fails."]))
     .action((options: OptionValues) =>
       settle(status, () => runDoctor(findWorkspace(invocationCwdPath()), { asJson: options.json === true })),
+    );
+
+  program
+    .command("update")
+    .description("Update Migent to the latest published version.")
+    .option("--check", "Only report whether an update is available.")
+    .option("--dry-run", "Same as --check.")
+    .option("--json", "Print the result as one JSON object.")
+    .addHelpText("after", exitText(["Exit 0 when up to date, when only checking, or after a successful update.", "Exit 1 when the registry or the upgrade command fails."]))
+    .action((options: OptionValues) =>
+      settle(status, () =>
+        runUpdate({ check: options.check === true || options.dryRun === true, asJson: options.json === true }),
+      ),
     );
 
   const provider = program.command("provider").description("List registered provider providers and their models.");
