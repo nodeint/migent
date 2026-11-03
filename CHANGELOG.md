@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- `migent session continue <session> --stage <stage> --reply` keeps running the workflow after the answered stage. Before, it dispatched only that stage, like `--once`, and left downstream stages undispatched. `--stage` without `--reply` still dispatches one stage.
+
 ## 0.3.3
 
 ### Added
