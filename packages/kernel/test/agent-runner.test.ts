@@ -579,3 +579,59 @@ test("the version command runs once for two executions", async () => {
   expect(versions).toEqual(["2.1.304", "2.1.304"]);
   expect(readFileSync(hits, "utf8")).toBe("1\n");
 });
+
+class UnstartableProvider extends FakeProvider {
+  buildCommand(input: Parameters<FakeProvider["buildCommand"]>[0]) {
+    super.buildCommand(input);
+    return { argv: ["migent-no-such-binary", "--api-key=hunter2", "secret prompt"] };
+  }
+
+  parseResponse(stdout: string): [string, string | null] {
+    return stdout ? super.parseResponse(stdout) : ["", null];
+  }
+}
+
+test("a provider that cannot start leaves diagnostics.json without argument values", async () => {
+  const runner = new AgentToolRunner({ fake: new UnstartableProvider() }, 10);
+  const tmp = tempDir("migent-runner-");
+  const result = await runner.run({ provider: "fake", model: "m1", prompt: "p", workspace: tmp });
+  const file = path.join(path.dirname(executionFile(tmp, result.session_id, result.execution_id)), "diagnostics.json");
+  const text = readFileSync(file, "utf8");
+  const diagnostics = JSON.parse(text) as Record<string, any>;
+  expect(diagnostics.failure).toMatchObject({ kind: "start", phase: "spawn", code: "ENOENT" });
+  expect(diagnostics.command).toEqual({ executable: "migent-no-such-binary", argument_count: 2 });
+  expect(diagnostics.migent_version).toMatch(/^\d+\.\d+\.\d+/);
+  expect(diagnostics.node_version).toBe(process.version);
+  expect(text).not.toContain("hunter2");
+  expect(text).not.toContain("secret prompt");
+});
+
+test("MIGENT_DEBUG writes wrapper and executor steps to debug.log for successful and failed runs", async () => {
+  const previous = process.env.MIGENT_DEBUG;
+  process.env.MIGENT_DEBUG = "1";
+  try {
+    for (const provider of [new FakeProvider(), new UnstartableProvider()]) {
+      const runner = new AgentToolRunner({ fake: provider }, 10);
+      const tmp = tempDir("migent-runner-");
+      const result = await runner.run({ provider: "fake", model: "m1", prompt: "p", workspace: tmp });
+      const log = readFileSync(
+        path.join(path.dirname(executionFile(tmp, result.session_id, result.execution_id)), "debug.log"),
+        "utf8",
+      );
+      expect(log).toContain("wrapper spawned");
+      expect(log).toContain("wrapper ready");
+      expect(log).toContain("wrapper: listening");
+      expect(log).toContain("wrapper: provider spawned");
+    }
+  } finally {
+    if (previous === undefined) delete process.env.MIGENT_DEBUG;
+    else process.env.MIGENT_DEBUG = previous;
+  }
+}, 30000);
+
+test("no debug.log without MIGENT_DEBUG", async () => {
+  const runner = new AgentToolRunner({ fake: new FakeProvider() }, 10);
+  const tmp = tempDir("migent-runner-");
+  const result = await runner.run({ provider: "fake", model: "m1", prompt: "p", workspace: tmp });
+  expect(existsSync(path.join(path.dirname(executionFile(tmp, result.session_id, result.execution_id)), "debug.log"))).toBe(false);
+});

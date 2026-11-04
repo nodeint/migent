@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { publishNextSuggestions } from "./next-handoff.js";
 import {
+  appendFileSync,
   copyFileSync,
   existsSync,
   mkdirSync,
@@ -190,6 +191,9 @@ export function clearInFlightExecutions(sessionId: string): void {
   inFlightBySession.delete(sessionId);
 }
 
+export const DIAGNOSTICS_FILENAME = "diagnostics.json";
+export const DEBUG_LOG_FILENAME = "debug.log";
+
 export class SessionStore {
   readonly workspace: string;
   readonly sessionsDirectory: string;
@@ -373,6 +377,21 @@ export class SessionStore {
       Object.assign(metadata, processMetadataPayload(info));
       writeJsonAtomic(filePath, metadata);
     });
+  }
+
+  /** The last wrapper-level failure of this execution. Separate from `execution.json`, which is frozen once the execution ends. */
+  saveDiagnostics(context: ExecutionContext, payload: Record<string, unknown>): void {
+    mkdirSync(context.directory, { recursive: true });
+    writeJsonAtomic(path.join(context.directory, DIAGNOSTICS_FILENAME), payload);
+  }
+
+  appendDebugLog(context: ExecutionContext, line: string): void {
+    try {
+      mkdirSync(context.directory, { recursive: true });
+      appendFileSync(path.join(context.directory, DEBUG_LOG_FILENAME), `${line}\n`, "utf8");
+    } catch {
+      // tracing must never fail a run
+    }
   }
 
   reapOrphanedExecutions(sessionId: string, onLiveOwner: string, inFlight?: ReadonlySet<string>): void {

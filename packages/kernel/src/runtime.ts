@@ -6,6 +6,11 @@ export const CONVERSATION_FILENAME = "conversation.json";
 export const LEGACY_CONVERSATION_FILENAME = "session.json";
 export const EXECUTION_SCHEMA_VERSION = 1;
 
+/** `MIGENT_DEBUG=1` turns on the wrapper start/stop trace (stderr and `debug.log`). */
+export function debugEnabled(): boolean {
+  return process.env.MIGENT_DEBUG === "1" || process.env.MIGENT_DEBUG === "true";
+}
+
 export function log(message: string): void {
   process.stderr.write(`[migent] ${message}\n`);
 }

@@ -14,7 +14,8 @@ import {
   waitForReady,
 } from "./command-executor.js";
 import { collectProcessStartInfo, type ProcessStartInfo } from "./process-ownership.js";
-import { WRAPPER_START, wrapperEndpoint } from "./process-wrapper.js";
+import { wrapperEndpoint } from "./process-wrapper.js";
+import { WRAPPER_START } from "./wrapper-protocol.js";
 
 export const VERIFY_TAIL_LINES = 200;
 const OUTPUT_DRAIN_MS = 1000;
@@ -125,9 +126,9 @@ export class VerifyRunner {
       ["ignore", "pipe", "inherit", "ipc"],
     );
     try {
-      const ready = await waitForReady(child);
+      const started = await waitForReady(child);
       cancellation.throwIfCancelled();
-      if (!ready) {
+      if (started.kind !== "ready") {
         await stopProcessGroup(child);
         return "infra";
       }

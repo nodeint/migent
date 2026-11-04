@@ -256,7 +256,18 @@ export {
   stopProcessGroup,
   waitUntil,
 } from "./command-executor.js";
-export type { CommandSpec, WaitHandle, WaitHooks } from "./command-executor.js";
+export type {
+  CommandResult,
+  CommandSpec,
+  ExecutionFailure,
+  RunOptions,
+  StartFailure,
+  StartResult,
+  WaitHandle,
+  WaitHooks,
+} from "./command-executor.js";
+export { describeStartFailure } from "./command-executor.js";
+export { DIAGNOSTICS_FILENAME, DEBUG_LOG_FILENAME } from "./session-store.js";
 export {
   ENDPOINT_ALIVE,
   ENDPOINT_GONE,
@@ -291,3 +302,4 @@ export type { ProviderResolver } from "./provider-contract.js";
 
 export type { ModelEffortCheck } from "./doctor.js";
 export { publishNextSuggestions, resolveNextSuggestions, formatNextCommand } from "./next-handoff.js";
+export { latestDiagnosticsPath, sessionDiagnosticsCheck } from "./session-diagnostics.js";

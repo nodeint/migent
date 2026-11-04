@@ -32,6 +32,8 @@ show use `session_id` for that session.
 └── executions/
     └── <order>-<stage-id>--attempt-<n>/
         ├── execution.json
+        ├── diagnostics.json              # only after a provider wrapper failure; see diagnostics.md
+        ├── debug.log                     # only when MIGENT_DEBUG is on
         ├── stream.jsonl                  # provider item traces and provider heartbeats
         ├── conversation.json             # provider conversation checkpoint
         ├── prompt.md

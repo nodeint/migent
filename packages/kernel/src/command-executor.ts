@@ -1,11 +1,24 @@
 import { type ChildProcess, type StdioOptions, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import type { Readable } from "node:stream";
+import { StringDecoder } from "node:string_decoder";
 import { constants as osConstants } from "node:os";
 import { log } from "./runtime.js";
 import { collectProcessStartInfo, type ProcessStartInfo, wrapperArgv } from "./process-ownership.js";
 import { UnpassableArgument, assertArgumentsPassable } from "./provider-spawn.js";
-import { WRAPPER_READY, WRAPPER_START, killProcessTree, wrapperEndpoint } from "./process-wrapper.js";
+import { killProcessTree, wrapperEndpoint } from "./process-wrapper.js";
+import { TailBuffer } from "./tail-buffer.js";
+import {
+  UNPASSABLE_ARGUMENT_CODE,
+  WRAPPER_READY,
+  WRAPPER_START,
+  type StartFailure,
+  type StartResult,
+  type WrapperFailedMessage,
+  parseFailedMessage,
+} from "./wrapper-protocol.js";
+
+export type { StartFailure, StartResult } from "./wrapper-protocol.js";
 
 export const DEFAULT_TIMEOUT_SEC: number | null = null;
 export const PROGRESS_INTERVAL_SEC = 30;
@@ -14,6 +27,41 @@ export const TERMINATION_GRACE_SEC = 5;
 export interface CommandSpec {
   argv: string[];
   stdin?: string | null;
+}
+
+/** A wrapper-level failure of one provider turn, for the caller to record. */
+export interface ExecutionFailure {
+  kind: "start" | "provider-exit";
+  /** The typed handshake outcome for `start`; the wrapper's own report after start, if any. */
+  result: StartFailure | null;
+  phase: string | null;
+  code: string | null;
+  errno: number | null;
+  syscall: string | null;
+  path: string | null;
+  message: string;
+  stderrTail: string;
+  endpoint: string;
+  executable: string;
+  argCount: number;
+  cwd: string;
+  spawnedAt: string;
+  failedAt: string;
+}
+
+export interface CommandResult {
+  stdout: string;
+  error: string | null;
+  exitCode: number | null;
+  failure?: ExecutionFailure;
+}
+
+export interface RunOptions {
+  onOutput?: ((line: string) => void) | null;
+  onHeartbeat?: ((elapsedSec: number) => void) | null;
+  onStart?: ((info: ProcessStartInfo) => void) | null;
+  /** Receives timestamped trace steps when set (see `MIGENT_DEBUG`). */
+  onDebug?: ((step: string, fromWrapper?: boolean) => void) | null;
 }
 
 export class CancellationRequested extends Error {
@@ -140,39 +188,84 @@ export class CommandExecutor {
     this.progressIntervalSec = progressIntervalSec;
   }
 
-  async run(
-    spec: CommandSpec,
-    cwd: string,
-    onOutput?: ((line: string) => void) | null,
-    onHeartbeat?: ((elapsedSec: number) => void) | null,
-    onStart?: ((info: ProcessStartInfo) => void) | null,
-  ): Promise<[string, string | null, number | null]> {
+  async run(spec: CommandSpec, cwd: string, options: RunOptions = {}): Promise<CommandResult> {
+    const { onOutput, onHeartbeat, onStart, onDebug } = options;
+    const executable = spec.argv[0] ?? "command";
     let child: ChildProcess | null = null;
     try {
       assertArgumentsPassable(spec.argv[0] ?? "", spec.argv.slice(1));
     } catch (error) {
-      if (error instanceof UnpassableArgument) return ["", error.message, null];
+      if (error instanceof UnpassableArgument) return { stdout: "", error: error.message, exitCode: null };
       throw error;
     }
     try {
       const endpoint = wrapperEndpoint(randomBytes(16).toString("hex"));
+      onDebug?.(`endpoint ${endpoint} (length ${Buffer.byteLength(endpoint)})`);
+      const spawnedAt = new Date().toISOString();
       child = startWrapper(spec, cwd, endpoint);
-      const ready = await waitForReady(child);
-      throwIfCancelled();
-      if (!ready) {
-        if (childStatus(child) === 127) {
-          return ["", `CLI executable not found: ${spec.argv[0] ?? "command"}`, null];
-        }
+      onDebug?.(`wrapper spawned pid=${child.pid ?? "none"}`);
+      if (onDebug) forwardWrapperSteps(child, onDebug);
+      const started = await waitForReady(child);
+      const describe = (result: StartFailure, kind: ExecutionFailure["kind"]): ExecutionFailure => {
+        const stderrTail = stderrTailOf(child as ChildProcess);
+        const detail = result.kind === "wrapper-reported" || result.kind === "spawn-error" ? result : null;
+        return {
+          kind,
+          result,
+          phase: result.kind === "wrapper-reported" ? result.phase : null,
+          code: detail?.code ?? null,
+          errno: detail?.errno ?? null,
+          syscall: detail?.syscall ?? null,
+          path: detail?.path ?? null,
+          message: describeStartFailure(result, { command: executable, stderrTail }),
+          stderrTail,
+          endpoint,
+          executable,
+          argCount: Math.max(0, spec.argv.length - 1),
+          cwd,
+          spawnedAt,
+          failedAt: new Date().toISOString(),
+        };
+      };
+      if (started.kind === "cancelled") throwIfCancelled();
+      if (started.kind !== "ready" && started.kind !== "cancelled") {
+        onDebug?.(`wrapper failed: ${started.kind}`);
+        const failure = describe(started, "start");
         await stopProcessGroup(child);
-        return ["", "Provider process wrapper did not start.", null];
+        // A cancel that lands before this point must never be persisted as a startup failure.
+        throwIfCancelled();
+        return { stdout: "", error: failure.message, exitCode: null, failure };
       }
+      onDebug?.("wrapper ready");
       if (onStart && child.pid !== undefined) onStart(collectProcessStartInfo(child.pid, endpoint));
+      let reported: WrapperFailedMessage | null = null;
+      child.on("message", (message: unknown) => {
+        reported = parseFailedMessage(message) ?? reported;
+      });
       child.send({ type: WRAPPER_START });
+      onDebug?.("start sent");
       const [stdout, error, exitCode] = await this.wait(child, spec, onOutput, onHeartbeat);
-      if (error !== null && childStatus(child) === 127) {
-        return [stdout, `CLI executable not found: ${spec.argv[0] ?? "command"}`, null];
+      onDebug?.(`provider exit code=${exitCode} error=${error ?? "none"}`);
+      if (error !== null) {
+        await channelDrained(child);
+        // A cancel that lands while the pipes drain must not be persisted as a failure.
+        throwIfCancelled();
       }
-      return [stdout, error, exitCode];
+      const wrapperReport = reported as WrapperFailedMessage | null;
+      if (wrapperReport !== null && error !== null) {
+        const result: StartFailure = { kind: "wrapper-reported", ...stripType(wrapperReport) };
+        const failure = describe(result, "start");
+        return { stdout, error: failure.message, exitCode: null, failure };
+      }
+      if (error !== null && exitCode !== null && exitCode !== 0) {
+        const tail = stderrTailOf(child);
+        if (tail.trim().length > 0) {
+          const failure = describe({ kind: "exited", code: exitCode, signal: null }, "provider-exit");
+          failure.message = error;
+          return { stdout, error, exitCode, failure };
+        }
+      }
+      return { stdout, error, exitCode };
     } catch (error) {
       if (error instanceof CancellationRequested) {
         log("Cancellation requested; stopping the sub-agent group.");
@@ -344,11 +437,39 @@ export function childStatus(child: ChildProcess): number | null {
   return null;
 }
 
+let stderrGuarded = false;
+
+/** Mirror wrapper stderr to ours. A closed pipe emits `error` asynchronously; swallow it and keep draining. */
+function forwardToOwnerStderr(chunk: Buffer): void {
+  if (!stderrGuarded) {
+    stderrGuarded = true;
+    process.stderr.on("error", () => undefined);
+  }
+  if (process.stderr.destroyed || process.stderr.writableEnded) return;
+  try {
+    process.stderr.write(chunk);
+  } catch {
+    // the owner's stderr is gone
+  }
+}
+
+interface WrapperDiagnostics {
+  spawnError: NodeJS.ErrnoException | null;
+  stderr: TailBuffer;
+}
+
+const diagnostics = new WeakMap<ChildProcess, WrapperDiagnostics>();
+
+/** The last stderr the wrapper (and the provider, which shares its fd 2) wrote. */
+export function stderrTailOf(child: ChildProcess): string {
+  return diagnostics.get(child)?.stderr.toString() ?? "";
+}
+
 export function startWrapper(
   spec: CommandSpec,
   cwd: string,
   endpoint: string,
-  stdio: StdioOptions = [spec.stdin != null ? "pipe" : "inherit", "pipe", "inherit", "ipc"],
+  stdio: StdioOptions = [spec.stdin != null ? "pipe" : "inherit", "pipe", "pipe", "ipc"],
 ): ChildProcess {
   const argv = wrapperArgv(spec.argv, { endpoint, graceSec: TERMINATION_GRACE_SEC });
   const child = spawn(argv[0] ?? "", argv.slice(1), {
@@ -359,32 +480,207 @@ export function startWrapper(
     stdio,
     windowsHide: true,
   });
-  child.on("error", () => undefined);
+  const record: WrapperDiagnostics = { spawnError: null, stderr: new TailBuffer() };
+  diagnostics.set(child, record);
+  child.on("error", (error: NodeJS.ErrnoException) => {
+    record.spawnError = error;
+  });
+  // Tee for the whole life of the child, so a full pipe can never block the provider.
+  const stderr = child.stderr;
+  if (stderr) {
+    stderr.on("data", (chunk: Buffer) => {
+      record.stderr.append(chunk);
+      forwardToOwnerStderr(chunk);
+    });
+    stderr.on("error", () => undefined);
+  }
   return child;
 }
 
-/** Resolves true once the wrapper's endpoint is listening, false if it exits first. */
-export function waitForReady(child: ChildProcess): Promise<boolean> {
+export const SIGNAL_SETTLE_MS = 300;
+const EXIT_DRAIN_MS = 200;
+
+export interface WaitForReadyOptions {
+  /** How long a signal-like exit stays a candidate while cancellation may still arrive. */
+  settleMs?: number;
+}
+
+function signalLike(code: number | null, signal: string | null): boolean {
+  return signal !== null || (code !== null && code > 128 && code <= 128 + 64);
+}
+
+/**
+ * Resolves the start handshake. A non-ready observation is only a candidate: it becomes the
+ * result once settled, and a cancellation raised before that wins (`cancelled`).
+ */
+export function waitForReady(child: ChildProcess, options: WaitForReadyOptions = {}): Promise<StartResult> {
+  const settleMs = options.settleMs ?? SIGNAL_SETTLE_MS;
   return new Promise((resolve) => {
-    const finish = (ready: boolean) => {
+    let candidate: StartFailure | null = null;
+    let timer: NodeJS.Timeout | null = null;
+    let done = false;
+    const finish = (result: StartResult) => {
+      if (done) return;
+      done = true;
+      if (timer) clearTimeout(timer);
       child.off("message", onMessage);
       child.off("exit", onExit);
-      child.off("error", onExit);
+      child.off("close", onClose);
+      child.off("error", onError);
       cancelWaiters.delete(onCancel);
-      resolve(ready);
+      resolve(result);
+    };
+    const settle = (next: StartFailure, delayMs: number) => {
+      candidate = next;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        // The flag can be set with no waiter call left (callback order is not guaranteed).
+        finish(cancelled !== null ? { kind: "cancelled" } : (candidate as StartFailure));
+      }, delayMs);
     };
     const onMessage = (message: unknown) => {
+      if (done) return;
       if (message && typeof message === "object" && (message as { type?: unknown }).type === WRAPPER_READY) {
-        finish(true);
+        finish({ kind: "ready" });
+        return;
+      }
+      const failed = parseFailedMessage(message);
+      if (failed !== null) {
+        const { type: _type, ...rest } = failed;
+        settle({ kind: "wrapper-reported", ...rest }, 0);
       }
     };
-    const onExit = () => finish(false);
-    const onCancel = () => finish(false);
+    const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
+      if (done) return;
+      // A wrapper-reported failure already explains this exit.
+      if (candidate?.kind === "wrapper-reported") return;
+      const next: StartFailure = { kind: "exited", code, signal };
+      // Plain exits wait for the pipes to close so stderr and a `failed` message can land.
+      settle(next, signalLike(code, signal) ? settleMs : EXIT_DRAIN_MS);
+    };
+    const onClose = () => {
+      if (done || candidate === null) return;
+      if (candidate.kind === "exited" && signalLike(candidate.code, candidate.signal)) return;
+      settle(candidate, 0);
+    };
+    const onError = (error: NodeJS.ErrnoException) => {
+      const { message, code, errno, syscall, path } = error;
+      settle({ kind: "spawn-error", message, code, errno, syscall, path }, 0);
+    };
+    const onCancel = () => finish({ kind: "cancelled" });
     child.on("message", onMessage);
     child.once("exit", onExit);
-    child.once("error", onExit);
+    child.once("close", onClose);
+    child.once("error", onError);
     cancelWaiters.add(onCancel);
+    // Events that fired before this listener was attached.
+    const early = diagnostics.get(child)?.spawnError;
+    if (early) onError(early);
+    else if (child.exitCode !== null || child.signalCode !== null) onExit(child.exitCode, child.signalCode);
   });
+}
+
+function stripType(message: WrapperFailedMessage): Omit<WrapperFailedMessage, "type"> {
+  const { type: _type, ...rest } = message;
+  return rest;
+}
+
+/** Waits (bounded) for a finished child's pipes to close, so late stderr and IPC are seen. */
+function channelDrained(child: ChildProcess): Promise<void> {
+  if (child.exitCode === null && child.signalCode === null) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timer = setTimeout(done, EXIT_DRAIN_MS);
+    function done() {
+      clearTimeout(timer);
+      child.off("close", done);
+      resolve();
+    }
+    child.once("close", done);
+  });
+}
+
+const WRAPPER_STEP_PREFIX = "[migent-wrapper] ";
+
+const MAX_STEP_LINE_CHARS = 4096;
+
+/**
+ * Splits a stream into wrapper trace lines. Memory stays bounded: a line that does not start
+ * with the wrapper prefix, or grows past the limit, is dropped up to its next newline.
+ */
+export function createWrapperStepParser(onStep: (step: string) => void): (chunk: string) => void {
+  let partial = "";
+  let discarding = false;
+  return (chunk) => {
+    let rest = chunk;
+    while (rest.length > 0) {
+      const newline = rest.indexOf("\n");
+      const piece = newline === -1 ? rest : rest.slice(0, newline);
+      rest = newline === -1 ? "" : rest.slice(newline + 1);
+      if (!discarding) {
+        partial += piece;
+        const prefixLength = Math.min(partial.length, WRAPPER_STEP_PREFIX.length);
+        if (partial.slice(0, prefixLength) !== WRAPPER_STEP_PREFIX.slice(0, prefixLength) || partial.length > MAX_STEP_LINE_CHARS) {
+          discarding = true;
+          partial = "";
+        }
+      }
+      if (newline === -1) continue;
+      if (!discarding && partial.startsWith(WRAPPER_STEP_PREFIX)) {
+        onStep(partial.slice(WRAPPER_STEP_PREFIX.length).replace(/\r$/, "").replace(/^\S+Z /, ""));
+      }
+      partial = "";
+      discarding = false;
+    }
+  };
+}
+
+/** Hands the wrapper's own `[migent-wrapper]` trace lines to the debug sink as they arrive. */
+function forwardWrapperSteps(child: ChildProcess, onDebug: (step: string, fromWrapper?: boolean) => void): void {
+  const parse = createWrapperStepParser((step) => onDebug(step, true));
+  const stderr = child.stderr;
+  if (!stderr) return;
+  const decoder = new StringDecoder("utf8");
+  stderr.on("data", (chunk: Buffer) => parse(decoder.write(chunk)));
+}
+
+const STDERR_EXCERPT_LINES = 3;
+
+function stderrExcerpt(stderrTail: string): string {
+  const lines = stderrTail.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0);
+  return lines.slice(-STDERR_EXCERPT_LINES).join(" | ");
+}
+
+/** The user-facing message for a failed start. Pure. */
+export function describeStartFailure(
+  failure: StartFailure,
+  context: { command: string; stderrTail?: string },
+): string {
+  const excerpt = stderrExcerpt(context.stderrTail ?? "");
+  const withExcerpt = (text: string) => (excerpt ? `${text} stderr: ${excerpt}` : text);
+  switch (failure.kind) {
+    case "spawn-error": {
+      const where = failure.path ?? "node";
+      const cause = [failure.code, failure.syscall ? `(${failure.syscall})` : null].filter(Boolean).join(" ");
+      return `Could not launch ${where}: ${cause ? `${cause} ` : ""}${failure.message}`.trim();
+    }
+    case "exited": {
+      const how = failure.signal ? `signal ${failure.signal}` : `code ${failure.code ?? "null"}`;
+      return withExcerpt(`Provider process wrapper exited before it was ready (${how}).`);
+    }
+    case "wrapper-reported": {
+      if (failure.phase === "spawn") {
+        if (failure.code === "ENOENT") return `CLI executable not found: ${context.command}`;
+        if (failure.code === UNPASSABLE_ARGUMENT_CODE) return failure.message;
+        if (failure.code) {
+          const syscall = failure.syscall ? ` (${failure.syscall})` : "";
+          return `Provider CLI could not be started: ${context.command}: ${failure.code}${syscall} ${failure.message}`;
+        }
+      }
+      const early = failure.phase === "argv" || failure.phase === "ipc" || failure.phase === "listen";
+      const head = early ? "Provider wrapper failed to start" : "Provider wrapper failed";
+      return withExcerpt(`${head} (${failure.phase}): ${failure.message}`);
+    }
+  }
 }
 
 export async function stopProcessGroup(child: ChildProcess): Promise<void> {

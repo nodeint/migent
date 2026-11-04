@@ -165,6 +165,7 @@ export function printWatchSnapshot(snapshot: Record<string, unknown>): void {
     lines.push(["outcome", outcome.status]);
     if (typeof outcome.decision === "string" && outcome.decision) lines.push(["decision", outcome.decision]);
   }
+  if (typeof snapshot.diagnostics === "string" && snapshot.diagnostics) lines.push(["diagnostics", snapshot.diagnostics]);
   lines.push(["updated_at", formatWatchTimestamp(snapshot.updated_at)]);
   const outputs = snapshot.outputs;
   if (isRecord(outputs) && Object.keys(outputs).length > 0) lines.push(["outputs", Object.keys(outputs).join(", ")]);
