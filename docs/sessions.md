@@ -54,7 +54,7 @@ The session-level files have distinct purposes:
 - `workflow.yaml` is the editable draft that `session prepare` writes from the
   named workflow, with an explicit `id`. It is this session's workflow source:
   edit it before starting, keep its `id`, and run
-  `session run --session <id> --workflow <id>`. At the first dispatch Migent
+  `session run --session <id>`. At the first dispatch Migent
   freezes it to `workflow.frozen.yaml`. Changes to `.migent/workflows/` do not
   change this session, and `--refresh-workflow` rereads the draft.
   Prepared sessions created by an older Migent have no draft and read the
@@ -265,7 +265,7 @@ advances one stage and does not reset revision counts.
 
 A session with status `prepared` is not resumed by `session continue`. Write
 `task.md`, adjust `workflow.yaml` if needed, then run
-`migent session run --session <session-id> --workflow <workflow>`.
+`migent session run --session <session-id>`.
 
 `session repair <session-id>` rebuilds `status.json` from the session directory
 and takes the session lock. `session continue` does the same rebuild before it

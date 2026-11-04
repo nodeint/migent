@@ -65,18 +65,34 @@ Review why a limit was reached before continuing; keep the same session.
 
 ## Apply configuration changes to a session
 
-Existing sessions keep their original workflow, models, and role instructions.
-Edits alone do not update them. To adopt the current settings, validate with
-`migent doctor --json`, then run:
+`migent doctor --json` checks project config and project workflows, not a
+session's own workflow file. That file is validated when starting or refreshing.
+
+### Before the first run
+
+Edit the prepared session's `workflow_path` (`workflow.yaml`), keeping its `id`.
+To change one stage's model, set its `model` to a configured model name (see
+[schema-workflow.yaml](schema-workflow.yaml)); omit it to use the role default.
+Run `migent doctor --json`, then start:
+
+```bash
+migent session run --session <session-id>
+```
+
+The session freezes current model settings at startup; no refresh flag is needed.
+Older prepared sessions use the project workflow path recorded in their manifest.
+
+### After the workflow has started
+
+Once the session stops, edit the workflow at its recorded `workflow_path`
+(the session's `workflow.yaml` for newly prepared sessions). Set the stage's
+`model` as above, and update its model mapping in project or local config if
+needed. Run `migent doctor --json`, then apply the changes and resume:
 
 ```bash
 migent session continue <session-id> --refresh-workflow
 ```
 
-A newly prepared session reads its own `workflow.yaml` and freezes current model
-settings when it starts; no refresh flag is needed. Older prepared sessions keep
-the project workflow path recorded in their manifest:
-
-```bash
-migent session run --session <session-id> --workflow <workflow>
-```
+Without refresh, the session keeps its frozen workflow, models, and role
+instructions. Refresh adopts all current settings, not just the edited stage's
+model. Completed or cancelled sessions cannot be refreshed.

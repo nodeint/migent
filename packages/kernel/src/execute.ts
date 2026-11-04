@@ -60,7 +60,7 @@ import {
   noteInFlightExecution,
   SessionStore,
 } from "./session-store.js";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { evaluateRunWhen, ensureSessionBaseline } from "./run-when.js";
 import { isRoleStage, isWorkflowV2, loadNamedWorkflow, type StageSpec, type WorkflowDocument } from "./workflow.js";
@@ -185,6 +185,9 @@ async function executeLocked(
   let stageReply: PendingStageReply | null = null;
   const replyText = typeof request.reply === "string" ? request.reply : null;
   if (sessionId) {
+    if (!existsSync(path.join(workspace, ".migent", "sessions", sessionId))) {
+      throw new ConfigurationError(`Session not found: ${sessionId}.`);
+    }
     held.sessionId = sessionId;
     held.lock = SessionLock.acquire(path.join(workspace, ".migent", "sessions", sessionId));
     repairSessionUnlocked(workspace, sessionId);
@@ -253,14 +256,14 @@ async function executeLocked(
         const hint =
           sessionStatus === "active"
             ? `Session ${sessionId} is active. Resume with: migent session continue ${sessionId}`
-            : `Session ${sessionId} is ${sessionStatus || "unknown"}. migent session run --session --workflow only starts a prepared session.`;
+            : `Session ${sessionId} is ${sessionStatus || "unknown"}. migent session run --session only starts a prepared session.`;
         throw new ConfigurationError(hint);
       }
       activatePreparedSession(workspace, sessionId, resolveProvider);
       sessionStatus = "active";
     } else if (sessionStatus === "prepared") {
       throw new ConfigurationError(
-        `Session ${sessionId} is prepared. Run: ${preparedRunHint(sessionId, bound.status)}`,
+        `Session ${sessionId} is prepared. Run: ${preparedRunHint(sessionId)}`,
       );
     }
     if (!cancelledReplyStage && (sessionStatus === "blocked" || (stageReply !== null && store.blockedStages(sessionId).some((row) => row.stageId === stageReply!.stageId)))) {
@@ -1418,14 +1421,14 @@ function refreshSessionWorkflow(workspace: string, sessionId: string, startPrepa
     throw new ConfigurationError(`Session ${sessionId} is ${sessionStatus}.`);
   }
   if (!startPrepared && sessionStatus === "prepared") {
-    throw new ConfigurationError(`Session ${sessionId} is prepared. Run: ${preparedRunHint(sessionId, status)}`);
+    throw new ConfigurationError(`Session ${sessionId} is prepared. Run: ${preparedRunHint(sessionId)}`);
   }
   if (freeze === null) throw new ConfigurationError(`Session ${sessionId} has no frozen workflow.`);
   if (startPrepared && sessionStatus !== "prepared") {
     const hint =
       sessionStatus === "active"
         ? `Session ${sessionId} is active. Resume with: migent session continue ${sessionId}`
-        : `Session ${sessionId} is ${sessionStatus || "unknown"}. migent session run --session --workflow only starts a prepared session.`;
+        : `Session ${sessionId} is ${sessionStatus || "unknown"}. migent session run --session only starts a prepared session.`;
     throw new ConfigurationError(hint);
   }
   const workflowPath = typeof status.workflow_path === "string" ? status.workflow_path : null;
@@ -1452,9 +1455,8 @@ function refreshSessionWorkflow(workspace: string, sessionId: string, startPrepa
   }
 }
 
-function preparedRunHint(sessionId: string, status: Record<string, unknown>): string {
-  const workflowId = typeof status.workflow_id === "string" && status.workflow_id ? status.workflow_id : "<workflow>";
-  return `migent session run --session ${sessionId} --workflow ${workflowId}`;
+function preparedRunHint(sessionId: string): string {
+  return `migent session run --session ${sessionId}`;
 }
 
 function storedPriorSessionId(status: Record<string, unknown>): string | null {

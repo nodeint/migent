@@ -52,7 +52,7 @@ export function freezeSessionTask(
   const status = readStatus(statusPath);
   if (status.status === "prepared") {
     throw new ConfigurationError(
-      `Session ${sessionId} is prepared. Run: ${preparedRunHint(sessionId, status)}`,
+      `Session ${sessionId} is prepared. Run: ${preparedRunHint(sessionId)}`,
     );
   }
   const filePath = taskFilePath(workspace, sessionId);
@@ -106,9 +106,8 @@ function readTask(filePath: string): string | null {
   return readFileSync(filePath, "utf8");
 }
 
-function preparedRunHint(sessionId: string, status: Record<string, unknown>): string {
-  const workflowId = typeof status.workflow_id === "string" && status.workflow_id ? status.workflow_id : "<workflow>";
-  return `migent session run --session ${sessionId} --workflow ${workflowId}`;
+function preparedRunHint(sessionId: string): string {
+  return `migent session run --session ${sessionId}`;
 }
 
 function readStatus(filePath: string): Record<string, unknown> {
