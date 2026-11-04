@@ -4,9 +4,15 @@
 
 ### Added
 
+- `migent doctor --session <id>` validates the workflow one session runs without starting it: a prepared session's editable `workflow.yaml`, a started session's `workflow.frozen.yaml` with its pinned roles and targets, or an older session's live workflow. It checks only that workflow and its provider CLIs, is read-only, reports the checked source and path (`--json` adds a `session` object), and warns when a frozen session differs from live files.
+
 - `migent session prepare` now writes an empty `task.md` and an editable `workflow.yaml` in the session directory. The draft is the session's workflow source, so a prepared session can be adjusted without changing `.migent/workflows/`; `session run --session` validates the draft, requires its `id` to match, and freezes it when the session starts.
 
 - `migent session run --session <id>` starts a prepared workflow session from its recorded workflow, so `--workflow` is optional. A given `--workflow` must still match the session's workflow id. Creating a session still requires `--workflow`.
+
+### Changed
+
+- The Migent skill now provides a command guide with usage scenarios and routes detailed workflow, role, resume, reply, and configuration tasks to focused references.
 
 ### Fixed
 

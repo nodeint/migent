@@ -176,19 +176,28 @@ export function workflowsDirectory(workspace: string): string {
   return path.join(workspace, ".migent", "workflows");
 }
 
-export function loadNamedWorkflow(workspace: string, workflowId: string): WorkflowDocument {
+/** `quiet` keeps authoring warnings off stderr; they remain on `document.warnings`. */
+export interface LoadWorkflowOptions {
+  quiet?: boolean;
+}
+
+export function loadNamedWorkflow(
+  workspace: string,
+  workflowId: string,
+  options: LoadWorkflowOptions = {},
+): WorkflowDocument {
   if (isPathReference(workflowId)) {
     const filePath = resolveWorkflowPath(workspace, workflowId);
     if (filePath === null) fail(`Workflow not found: ${workflowId}`);
-    return requireStages(loadWorkflowDocument(filePath));
+    return requireStages(loadWorkflowDocument(filePath, options));
   }
-  const matches = readableWorkflows(workspace).filter((entry) => entry.document.id === workflowId);
+  const matches = readWorkflowDirectory(workspace, options).loaded.filter((entry) => entry.document.id === workflowId);
   if (matches.length > 1) {
     const names = matches.map((entry) => path.basename(entry.path)).join(", ");
     fail(`${workflowId}: id is declared by ${names}.`);
   }
   if (matches.length === 0) fail(`Workflow not found: ${workflowId}`);
-  return requireStages(loadWorkflowDocument(matches[0]!.path));
+  return requireStages(loadWorkflowDocument(matches[0]!.path, options));
 }
 
 export function loadWorkflowCatalog(workspace: string): WorkflowCatalog {
@@ -226,7 +235,7 @@ export function loadWorkflowCatalog(workspace: string): WorkflowCatalog {
   return { documents, problems };
 }
 
-export function loadWorkflowDocument(filePath: string): WorkflowDocument {
+export function loadWorkflowDocument(filePath: string, options: LoadWorkflowOptions = {}): WorkflowDocument {
   let text: string;
   try {
     text = readFileSync(filePath, "utf8");
@@ -237,7 +246,7 @@ export function loadWorkflowDocument(filePath: string): WorkflowDocument {
   const data = parseYamlDocument(text);
   if (!isRecord(data)) throw new ConfigurationError(`Workflow must be a mapping: ${filePath}`);
   const document = parseWorkflowMapping(data, filePath);
-  for (const warning of document.warnings ?? []) warnOnce(`${path.basename(filePath)}: ${warning}`);
+  if (options.quiet !== true) for (const warning of document.warnings ?? []) warnOnce(`${path.basename(filePath)}: ${warning}`);
   return document;
 }
 
@@ -355,11 +364,7 @@ interface LoadedWorkflow {
   document: WorkflowDocument;
 }
 
-function readableWorkflows(workspace: string): LoadedWorkflow[] {
-  return readWorkflowDirectory(workspace).loaded;
-}
-
-function readWorkflowDirectory(workspace: string): { loaded: LoadedWorkflow[]; problems: string[] } {
+function readWorkflowDirectory(workspace: string, options: LoadWorkflowOptions = {}): { loaded: LoadedWorkflow[]; problems: string[] } {
   const directory = workflowsDirectory(workspace);
   if (!isDir(directory)) {
     return { loaded: [], problems: ["Workflows directory not found: .migent/workflows"] };
@@ -376,7 +381,7 @@ function readWorkflowDirectory(workspace: string): { loaded: LoadedWorkflow[]; p
   const problems: string[] = [];
   for (const filePath of paths) {
     try {
-      loaded.push({ path: filePath, document: loadWorkflowDocument(filePath) });
+      loaded.push({ path: filePath, document: loadWorkflowDocument(filePath, options) });
     } catch (error) {
       if (!(error instanceof ConfigurationError)) throw error;
       problems.push(`${path.basename(filePath)}: ${error.message}`);

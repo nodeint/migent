@@ -307,6 +307,7 @@ It asks first, because a copy may hold local edits; `-y` skips the question.
 ```bash
 migent doctor
 migent doctor --json
+migent doctor --session <session-id> [--json]
 ```
 
 `doctor` checks `.migent/config.yaml`, every file in `.migent/workflows/`,
@@ -315,6 +316,39 @@ those CLIs or check their login. Exit 0 when every check passes, and exit 1
 when a check fails. If git tracks `.migent/config.local.yaml`, `doctor` prints
 a `warning:` line (and a `warnings` entry with `--json`); a warning does not
 change the exit code.
+
+`doctor --session <id>` checks only the workflow that one workflow session runs,
+and the provider CLIs its stages need. It ignores other workflows, unused roles
+and models, and the installed skill, and it is read-only: it never starts,
+freezes, or repairs the session. The source it checks matches what the runtime
+uses:
+
+- A prepared session: its editable `workflow.yaml` (source `draft`), validated
+  against current config. The workflow `id` must still match the session.
+- A started session: its `workflow.frozen.yaml` (source `frozen`). Pinned role
+  instructions and stage targets are validated as stored, so removing or
+  changing the live workflow or config does not fail it; such differences are
+  reported as warnings. A corrupt freeze fails and never falls back to the live
+  file.
+- An older session without a freeze: its recorded workflow file (source `live`).
+
+Output has the checks `session` (id, workflow id, source kind, path), `workflow`,
+`bindings`, and `providers`. With `--json` the object also has
+`"session": {"id", "workflow_id", "source", "path"}`; `source` and `path` are
+`null` when none could be determined. Exit 0 when every check passes and exit 1
+when one fails, including an unknown session, a role session (it has no
+workflow), a missing or corrupt manifest or freeze, a broken workflow, or a
+missing provider CLI. Exit 2 for an invalid session id (such as `../x`) or an
+outdated config schema for a draft or live source.
+
+```bash
+# Edit .migent/sessions/<id>/workflow.yaml, then validate it before starting
+migent doctor --session <id>
+migent session run --session <id>
+
+# Check a started session's frozen workflow
+migent doctor --session <id> --json
+```
 
 ## Providers
 

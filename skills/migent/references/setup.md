@@ -14,9 +14,9 @@ to inspect and update its configuration instead of running init again.
 
    Pass model options as repeated `--planner-option KEY=VALUE`,
    `--reviewer-option KEY=VALUE`, or `--option KEY=VALUE` flags when needed.
-3. Run `migent doctor --json` and resolve reported problems. To customize
-   the generated roles or workflows, follow [config.md](config.md)
-   and validate again before starting a workflow.
+3. Run `migent doctor --json` and resolve reported problems. Use
+   [config.md](config.md) for model and role changes, or
+   [schema-workflow.yaml](schema-workflow.yaml) to edit workflows.
 
 Install the project skill separately when needed:
 
@@ -24,4 +24,6 @@ Install the project skill separately when needed:
 migent skill install --project -y
 ```
 
-Refresh an installed skill with `migent skill update` after upgrading Migent.
+After upgrading Migent, refresh installed copies with
+`migent skill update --project -y` or `migent skill update --global -y`, matching
+their installation scope.

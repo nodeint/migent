@@ -5,115 +5,43 @@ description: Set up, configure, run, inspect, and resume Migent workflows and ro
 
 # Migent
 
-Run a project's agent workflows with `migent`. Each run is a session you can
-inspect and continue.
+Migent runs agent workflows and individual roles through a CLI. Each run is a
+session with saved progress, decisions, and artifacts that you can inspect or resume.
 
-## Before running or editing
+Work from the project root. Read the reference for the current job before acting;
+use `migent <command> --help` for unfamiliar flags.
 
-- Work from the project root. Read `.migent/config.yaml`, its optional
-  `config.local.yaml`, and the selected workflow before running it.
-- Before editing configuration or workflows, read the matching schema in
-  `references/`. Use only documented keys, then run `migent doctor --json`.
-  If doctor reports an outdated schema, run `migent migrate --yes`.
-- Pass the user's task unchanged. Leave reading `task.md` and its referenced
-  documents to the stage agent. Do not edit `task.md` after stages start.
-- Do not edit generated session state files such as `manifest.yaml`,
-  `status.json`, `events.jsonl`, or `executions/`. You may fill the prepared
-  `task.md`. To change a stage's model before or after starting, follow
-  [sessions.md](references/sessions.md#apply-configuration-changes-to-a-session).
-  Use the CLI to inspect and resume.
-- Resume the same session after errors or limits; do not create a replacement
-  to bypass them. Ask before resuming a cancelled session.
+## Common commands
 
-## Run a workflow
-
-Input: a workflow ID or file path and the user's task.
-
-```bash
-migent session run --workflow <workflow> --task "<task>"
-```
-
-For a longer task, prepare a session:
-
-```bash
-migent session prepare "<title>" --workflow <workflow>
-```
-
-Output: `session_id`, `task_path`, and `workflow_path`. Write the unchanged task
-to `task_path`, with supporting files beside it. Adjust `workflow_path` for this
-session if needed, keeping its `id`. Then run:
-
-```bash
-migent session run --session <session-id>
-```
-
-The command runs until the session stops. Add `--once` to dispatch one stage.
-If it runs in the background, wait for completion; do not add another watcher.
-Do not pass `--verbose` or `--progress`, or use `session follow` to wait.
-
-### Output and errors
-
-Workflow runs print progress on stderr, not JSON on stdout. Use the reported
-`session_id`, outcome, decision, and diagnostic paths. Read the reported
-`response:` or `verify:` file when a run stops with an error.
-
-| Exit | Result | Action |
-| --- | --- | --- |
-| 0 | Completed, or one stage completed with `--once` | Only report the session complete when `completed` is printed. Report each published `artifact:` path exactly. |
-| 1 | Blocked or incomplete | Read the response. Resolve the blocker or obtain the user's reply, then continue. |
-| 2 | Configuration error | Run `migent doctor --json`, fix the reported configuration, and retry. |
-| 3 | Stage failed | Read the response, fix the cause, and continue. |
-| 4 | Revision limit | Review repeated feedback before continuing another batch. |
-| 5 | Dispatch limit | Continue if more stages are appropriate. |
-| 6 | Agent stage failed verification | Read the response, fix the cause, and continue. |
-| 7 | Verification-only stage failed | Read the verify report, fix the workspace, and continue to rerun checks. |
-| 8 | Provider quota reached with `--once` or `--stage` | Read the response; resolve the quota or wait for availability before continuing. |
-| 9 | Agent asked questions | Read session `questions.json` or `session show --json`; present numbered questions, lettered options, context, and single/multiple selection mode. Always allow free text. Never infer an answer from a recommendation. |
-| 130 | Cancelled | Ask the user before continuing. |
-
-A stopped session is not necessarily complete. Continue retries immediately;
-it does not wait for a previously recorded retry time.
-
-## Inspect and continue
-
-```bash
-migent session show <session-id> --json
-migent session list --latest --json
-migent session continue <session-id>
-```
-
-`show` returns status, latest execution, decisions, and outputs. `list --latest`
-returns the newest session or `null`. Report the ID, title when present, status,
-stop reason, and relevant decisions and outputs. Paths from `show` are relative
-to `.migent/sessions/<session-id>/`.
-
-Use the session status to choose how to continue:
-
-| Session | Action |
+| When | Command |
 | --- | --- |
-| Question | Obtain the user's answer, then continue with `--reply`. Without a reply the question stays pending. Use `--stage` for a workflow when more than one stage is waiting. |
-| Workflow stopped, including a resolved blocker | Continue; add `--reply "<reply>"` when the user answered a blocker. The reply is the whole prompt body. |
-| Workflow, one stage only | Continue with `--once`. |
-| Role or workflow stage cancelled | Continue without `--reply` to resume the interrupted turn. To steer the agent instead, continue with `--reply "<text>"`; the reply runs as a new execution in the same conversation. |
-| Role active | Continue to resend the last prompt. |
-| Role blocked | Continue with `--reply "<reply>"` for the user's answer; without it, the agent is told to continue. |
-| Role completed | Leave stopped unless the user supplies a new turn with `--reply`. |
+| Check project setup after configuration edits or diagnose a configuration error | `migent doctor --json` |
+| Check a session's edited draft or effective frozen workflow | `migent doctor --session <id> --json` |
+| Inspect effective project settings, including local overrides | `migent config --json` |
+| Start a workflow with a one-line task | `migent session run --workflow <workflow> --task "<task>"` |
+| Prepare a longer task or customize a workflow for one session | `migent session prepare "<title>" --workflow <workflow>` |
+| Start a prepared session after filling its task and validating its draft | `migent session run --session <id>` |
+| Run one configured role without a workflow | `migent session run --role <role> --prompt "<prompt>" --json` |
+| Find the most recent session when its ID is unknown | `migent session list --latest --json` |
+| Check a known session's status, decisions, and outputs | `migent session show <id> --json` |
+| Resume stopped work after resolving its blocker or failure | `migent session continue <id>` |
 
-For a long reply, use `--reply-file <path>` instead of `--reply`.
-Do not use `--once` or `--stage` with a role session.
+For preparation steps and status-specific resume behavior, read the matching
+reference below. Obtain the user's answers before continuing questions, and
+approval before resuming a cancelled session.
 
-## Configure or use other commands
+## Job references
 
-Edit YAML directly, then run `migent doctor --json`. Use `migent config --json`
-to inspect the effective settings. Read only the reference needed for the task:
-
-| Reference | Use for |
+| Job | Reference |
 | --- | --- |
-| [setup.md](references/setup.md) | Initializing a project and selecting provider models. |
-| [config.md](references/config.md) | Models, roles, machine setup, and running one role. |
-| [schema-config.yaml](references/schema-config.yaml) | Writing configuration. |
-| [schema-workflow.yaml](references/schema-workflow.yaml) | Writing workflows. |
-| [sessions.md](references/sessions.md) | Prior context, downstream suggestions, multiple blockers, limits, and adopting workflow changes. |
-| [inspect.md](references/inspect.md) | Filtering sessions, metrics, and live progress. |
-
-Use `migent <command> --help` before using an unfamiliar flag.
+| Initialize a project or install/update the skill | [setup.md](references/setup.md) |
+| Configure models, roles, local overrides, or client options | [config.md](references/config.md), [configuration fields](references/schema-config.yaml) |
+| Run or prepare a workflow | [workflow-sessions.md](references/workflow-sessions.md) |
+| Run one role or send it a new prompt | [role-sessions.md](references/role-sessions.md) |
+| Inspect sessions, usage, or progress | [inspect.md](references/inspect.md) |
+| Resume stopped work | [session-resume.md](references/session-resume.md) |
+| Handle workflow failures, quotas, or execution limits | [workflow-results.md](references/workflow-results.md) |
+| Answer questions or blockers | [session-replies.md](references/session-replies.md) |
+| Use prior outputs as context | [session-context.md](references/session-context.md) |
+| Validate or change a session workflow | [session-workflow.md](references/session-workflow.md) |
+| Write workflow YAML | [workflow fields](references/schema-workflow.yaml) |
