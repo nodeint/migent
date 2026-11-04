@@ -68,7 +68,7 @@ test("prepare writes a chosen session and start runs task.md", async () => {
 
     const early = await capture(() => main(["session", "continue", sessionId], workspace));
     expect(early.value).toBe(2);
-    expect(early.stderr).toContain(`migent session run --session ${sessionId} --workflow plan`);
+    expect(early.stderr).toContain(`migent session run --session ${sessionId}`);
 
     const missing = await capture(() => main(["session", "run", "--session", sessionId, "--workflow", "plan", "--once"], workspace));
     expect(missing.value).toBe(2);

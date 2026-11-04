@@ -9,8 +9,12 @@ migent session list --workflow <id> --status completed --limit 5 --json
 Output: a JSON array of matching sessions, without task text.
 Use `session show <session-id> --json` for details.
 
+`show` returns status, latest execution, decisions, and outputs. Report the session
+ID, title when present, status, stop reason, and relevant decisions and outputs.
+Its paths are relative to `.migent/sessions/<session-id>/`.
+
 - `--latest` returns one object or `null`; do not combine it with `--limit`.
-- Status filters: `active`, `prepared`, `completed`, `blocked`, `cancelled`,
+- Status filters: `active`, `prepared`, `completed`, `blocked`, `question`, `cancelled`,
   or `corrupt`. A corrupt session cannot be read normally; report it rather
   than editing generated state.
 
@@ -21,9 +25,13 @@ migent session metrics --json
 ```
 
 Use `--workflow`, `--status`, and `--limit` to select sessions.
-Output: metrics for completed sessions; one JSON object per line when there
-are several. Check `usage_missing`, `cost_partial`, and `uncaptured_turns`
-before comparing totals. Do not interpret `stage_attempt` as a retry count.
+`--json` is required. A list returns one object per line; no matches print nothing.
+For one completed workflow session, use `migent session metrics <id> --json`.
+Missing or corrupt metrics produce an error.
+
+Check `totals.usage_missing`, `totals.cost_partial`, and `totals.uncaptured_turns`
+before comparing totals. `stage_attempt` counts executions, including revisions,
+rather than retries alone.
 
 ## Watch progress
 

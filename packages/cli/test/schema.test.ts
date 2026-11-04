@@ -148,7 +148,7 @@ test("workflow reference parses and names every key the workflow parser reads", 
     maxVerify: 3,
     verifyTimeoutSec: 900,
     decisionValues: ["approved", "revise"],
-    routes: { approved: "complete", revise: "draft" },
+    routes: { approved: "check_docs", revise: "draft" },
   });
   expect(document.stages.check_docs).toMatchObject({
     kind: "role",
