@@ -270,11 +270,11 @@ function registerSessionCommand(program: Command, status: CliStatus): void {
   const session = program.command("session").description("Create, run, resume, and inspect sessions.");
   const run = session
     .command("run")
-    .description("Run a workflow, or one role when --workflow is omitted.")
-    .option("--workflow <workflow>", "Workflow id, or a path to a workflow file. Omit to run one role.")
+    .description("Run a workflow (create with --workflow, or start a prepared session with --session), or one role with --role.")
+    .option("--workflow <workflow>", "Workflow id, or a path to a workflow file. Required to create a workflow session. Omit to run one role, or to start a prepared session with --session.")
     .option("--task <task>", "Workflow: one-line task stored in task.md. Role: label for a new session.")
-    .option("--session <session>", "Workflow: prepared session to start, with --workflow. Role: session to continue.");
-  addDispatchOptions(run, "Dispatch the next eligible stage once. Requires --workflow.");
+    .option("--session <session>", "Workflow: prepared session to start; --workflow is optional. Role: session to continue.");
+  addDispatchOptions(run, "Dispatch the next eligible stage once. Workflow mode only.");
   run
     .option("--role <role>", "Role to run. Omit --workflow.")
     .option("--provider <provider>", "Provider for this role. Pass with --model, or omit both.")
@@ -286,13 +286,13 @@ function registerSessionCommand(program: Command, status: CliStatus): void {
     .option("--json", "Print the role result as one JSON object.")
     .addHelpText(
       "after",
-      `With --workflow:\n${exitText(LOOP_EXITS)}With --workflow and --once:\n${exitText(STAGE_EXITS)}Without --workflow:\n${exitText(ROLE_EXITS)}Examples:\n  migent session run --workflow plan --task "<one line>"\n  migent session run --session <session> --workflow plan\n  migent session run --role reviewer --prompt "<prompt>"\n`,
+      `Workflow run:\n${exitText(LOOP_EXITS)}Workflow run with --once:\n${exitText(STAGE_EXITS)}Role run:\n${exitText(ROLE_EXITS)}Examples:\n  migent session run --workflow plan --task "<one line>"\n  migent session run --session <prepared-session>\n  migent session run --role reviewer --prompt "<prompt>"\n`,
     )
     .action((options: OptionValues) => settle(status, () => runSessionCommand(options)));
 
   session
     .command("prepare")
-    .description("Create a prepared session with task.md and an editable workflow.yaml, then exit. Fill them in, then session run --session <id> --workflow <workflow>.")
+    .description("Create a prepared session with task.md and an editable workflow.yaml, then exit. Fill them in, then session run --session <id>.")
     .argument("<title>", "Session title shown in the list, such as \"some task title\". The session id is a UUID.")
     .requiredOption("--workflow <workflow>", "Workflow id, or a path to a workflow file.")
     .option("--prior <session>", PRIOR_HELP)
@@ -498,18 +498,19 @@ function runSessionCommand(options: OptionValues): number | Promise<number> {
     printError("--workflow is empty.");
     return 2;
   }
+  const sessionId = optionalText(options.session);
   const roleMode = roleFlagsPresent(options);
   const workflowMode = workflowFlagsPresent(options);
-  if ((workflowId !== null && roleMode) || (workflowId === null && workflowMode)) {
+  if ((workflowId !== null && roleMode) || (workflowId === null && workflowMode && (roleMode || sessionId === null))) {
     printError(RUN_SPLIT);
     return 2;
   }
-  if (workflowId !== null) {
-    const sessionId = optionalText(options.session);
+  // A session without role flags is a prepared workflow session; it records its own workflow.
+  if (workflowId !== null || (sessionId !== null && !roleMode)) {
     const task = rawText(options.task);
     const prepared = sessionId !== null;
     if (prepared && task !== null) {
-      printError("Pass --workflow and --task, or --session and --workflow, not both.");
+      printError("Pass --workflow and --task, or --session, not both.");
       return 2;
     }
     if (!prepared && task === null && options.prior === undefined) {

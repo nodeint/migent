@@ -183,7 +183,7 @@ export function createPreparedSession(
   const workflowRelativePath = relativeWorkflowPath(sessionId);
   const draftHeader =
     "# Session workflow draft. Edit this file before starting the session.\n" +
-    `# Start with: migent session run --session ${sessionId} --workflow ${resolvedId}\n`;
+    `# Start with: migent session run --session ${sessionId}\n`;
   const manifestLines = [
     `session_id: ${sessionId}`,
     `title: ${JSON.stringify(sessionTitle)}`,

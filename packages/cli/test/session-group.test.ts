@@ -22,7 +22,7 @@ test("session prepare help names the workflow start", async () => {
   const captured = await capture(() => main(["session", "prepare", "--help"]));
   expect(captured.value).toBe(0);
   expect(captured.stdout.replaceAll(/\s+/g, " ")).toContain(
-    "session run --session <id> --workflow <workflow>",
+    "session run --session <id>.",
   );
 });
 
@@ -30,10 +30,10 @@ test("session run help shows both modes", async () => {
   const captured = await capture(() => main(["session", "run", "--help"]));
   expect(captured.value).toBe(0);
   expect(captured.stdout).toContain("migent session run --workflow plan --task");
-  expect(captured.stdout).toContain("migent session run --session <session> --workflow plan");
+  expect(captured.stdout).toContain("migent session run --session <prepared-session>");
   expect(captured.stdout).toContain("migent session run --role reviewer --prompt");
-  expect(captured.stdout).toContain("With --workflow:");
-  expect(captured.stdout).toContain("Without --workflow:");
+  expect(captured.stdout).toContain("Workflow run:");
+  expect(captured.stdout).toContain("Role run:");
 });
 
 test("session continue help shows reply", async () => {
@@ -61,10 +61,6 @@ test("session run requires a workflow or a role", async () => {
   expect(neither.value).toBe(2);
   expect(neither.stderr).toContain(SPLIT);
 
-  const sessionOnly = await capture(() => main(["session", "run", "--session", "wave-3"]));
-  expect(sessionOnly.value).toBe(2);
-  expect(sessionOnly.stderr).toContain(SPLIT);
-
   const both = await capture(() => main(["session", "run", "--workflow", "plan", "--role", "reviewer", "--prompt", "x"]));
   expect(both.value).toBe(2);
   expect(both.stderr).toContain(SPLIT);
@@ -78,6 +74,14 @@ test("session run requires a workflow or a role", async () => {
   );
   expect(refresh.value).toBe(2);
   expect(refresh.stderr).toContain(SPLIT);
+
+  for (const flag of [["--once"], ["--stage", "plan"], ["--refresh-workflow"], ["--prior", "x"]]) {
+    const mixed = await capture(() =>
+      main(["session", "run", "--role", "reviewer", "--session", "wave-3", "--prompt", "x", ...flag]),
+    );
+    expect(mixed.value).toBe(2);
+    expect(mixed.stderr).toContain(SPLIT);
+  }
 
   const empty = await capture(() => main(["session", "run", "--workflow", " "]));
   expect(empty.value).toBe(2);
@@ -229,6 +233,80 @@ test("session prepare starts through session run --workflow", async () => {
     expect(started.stderr).toMatch(/stage plan · attempt 1 ·/);
   } finally {
     cliHooks.runner = null;
+    removeWorkspace(workspace);
+  }
+});
+
+test("session run --session alone starts a prepared session from its edited workflow", async () => {
+  const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
+  try {
+    const prepared = await capture(() => main(["session", "prepare", "some task title", "--workflow", "plan"], workspace));
+    const sessionId = (JSON.parse(prepared.stdout) as { session_id: string }).session_id;
+    const sessionDirectory = path.join(workspace, ".migent", "sessions", sessionId);
+    writeFileSync(path.join(sessionDirectory, "task.md"), "Migrate the plugin API.\n", "utf8");
+    const draftPath = path.join(sessionDirectory, "workflow.yaml");
+    const draft = readFileSync(draftPath, "utf8");
+    expect(draft).toContain("role: planner");
+    writeFileSync(draftPath, draft.replace("role: planner", "role: planner\n    instructions:\n      - Edited before the first run."));
+
+    const provider = new ScriptedProvider(["status: complete\n\nplanned"], ["# Plan\n"]);
+    cliHooks.runner = new AgentToolRunner({ fake: provider }, 10);
+    const started = await capture(() => main(["session", "run", "--session", sessionId, "--once"], workspace));
+    expect(started.value).toBe(0);
+    expect(provider.calls[0]?.prompt).toContain("Edited before the first run.");
+    expect(readFileSync(path.join(sessionDirectory, "workflow.frozen.yaml"), "utf8")).toContain("Edited before the first run");
+
+    const again = await capture(() => main(["session", "run", "--session", sessionId], workspace));
+    expect(again.value).toBe(2);
+    expect(again.stderr).toContain(`migent session continue ${sessionId}`);
+  } finally {
+    cliHooks.runner = null;
+    removeWorkspace(workspace);
+  }
+});
+
+test("session run --session accepts a matching --workflow and rejects a different one", async () => {
+  const workspace = writeFakeWorkflowWorkspace({
+    plan: repoWorkflowText("plan"),
+    "plan-implement": repoWorkflowText("plan-implement"),
+  });
+  try {
+    const prepared = await capture(() => main(["session", "prepare", "some task title", "--workflow", "plan"], workspace));
+    const sessionId = (JSON.parse(prepared.stdout) as { session_id: string }).session_id;
+    writeFileSync(path.join(workspace, ".migent", "sessions", sessionId, "task.md"), "Task.\n", "utf8");
+
+    const mismatch = await capture(() =>
+      main(["session", "run", "--session", sessionId, "--workflow", "plan-implement", "--once"], workspace),
+    );
+    expect(mismatch.value).toBe(2);
+    expect(mismatch.stderr).toContain("Workflow plan-implement does not match session plan.");
+
+    cliHooks.runner = new AgentToolRunner({ fake: new ScriptedProvider(["status: complete\n\nplanned"], ["# Plan\n"]) }, 10);
+    const matching = await capture(() =>
+      main(["session", "run", "--session", sessionId, "--workflow", "plan", "--once"], workspace),
+    );
+    expect(matching.value).toBe(0);
+  } finally {
+    cliHooks.runner = null;
+    removeWorkspace(workspace);
+  }
+});
+
+test("session run --session reports a missing session and rejects --task", async () => {
+  const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
+  try {
+    const missing = await capture(() => main(["session", "run", "--session", "wave-3"], workspace));
+    expect(missing.value).toBe(2);
+    expect(missing.stderr).toContain("Session not found: wave-3.");
+
+    const both = await capture(() => main(["session", "run", "--session", "wave-3", "--task", "x"], workspace));
+    expect(both.value).toBe(2);
+    expect(both.stderr).toContain("not both");
+
+    const creating = await capture(() => main(["session", "run", "--task", "x"], workspace));
+    expect(creating.value).toBe(2);
+    expect(creating.stderr).toContain(SPLIT);
+  } finally {
     removeWorkspace(workspace);
   }
 });

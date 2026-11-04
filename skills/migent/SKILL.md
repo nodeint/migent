@@ -19,8 +19,9 @@ inspect and continue.
   documents to the stage agent. Do not edit `task.md` after stages start.
 - Do not edit generated session state files such as `manifest.yaml`,
   `status.json`, `events.jsonl`, or `executions/`. You may fill the prepared
-  `task.md` and edit its `workflow.yaml` before starting. Use the CLI to
-  inspect and resume.
+  `task.md`. To change a stage's model before or after starting, follow
+  [sessions.md](references/sessions.md#apply-configuration-changes-to-a-session).
+  Use the CLI to inspect and resume.
 - Resume the same session after errors or limits; do not create a replacement
   to bypass them. Ask before resuming a cancelled session.
 
@@ -43,7 +44,7 @@ to `task_path`, with supporting files beside it. Adjust `workflow_path` for this
 session if needed, keeping its `id`. Then run:
 
 ```bash
-migent session run --session <session-id> --workflow <workflow>
+migent session run --session <session-id>
 ```
 
 The command runs until the session stops. Add `--once` to dispatch one stage.
