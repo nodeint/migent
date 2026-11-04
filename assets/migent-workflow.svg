@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1220" height="620" viewBox="0 0 1220 620" role="img" aria-labelledby="title desc">
+<title id="title">How Migent works</title>
+<desc id="desc">Workflow diagram: Task to Planner to Reviewer to Complete, with a revision loop returning from Reviewer to Planner.</desc>
+<defs>
+
+<linearGradient id="lane" x1="323" y1="0" x2="896" y2="0" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="rgba(168,85,247,.10)"/><stop offset="100%" stop-color="rgba(255,255,255,.06)"/></linearGradient>
+<filter id="sh" x="-20%" y="-20%" width="140%" height="160%"><feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000" flood-opacity="0.55"/></filter>
+<marker id="arr" viewBox="0 0 9 9" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M1 1 L7 4.5 L1 8" fill="none" stroke="#c084fc" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></marker>
+<marker id="arrp" viewBox="0 0 9 9" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M1 1 L7 4.5 L1 8" fill="none" stroke="#22d3ee" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></marker>
+<marker id="arrg" viewBox="0 0 9 9" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M1 1 L7 4.5 L1 8" fill="none" stroke="#34d399" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></marker>
+<marker id="arro" viewBox="0 0 9 9" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M1 1 L7 4.5 L1 8" fill="none" stroke="#fb923c" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></marker>
+</defs>
+<rect width="1220" height="620" rx="16" fill="#0d1117"/><rect x="0.5" y="0.5" width="1219" height="619" rx="15.5" fill="none" stroke="#30363d"/>
+<svg x="52" y="30" width="48" height="48" viewBox="67 -33 700 700" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#D946EF"/><stop offset="100%" stop-color="#7C3AED"/></linearGradient></defs><g fill="url(#lg)"><path d="M99 273C99 164 185 75 293 75C400 75 486 160 486 250C486 264 492 270 506 270L537 270C644 270 730 355 730 465C730 518 699 559 658 559C616 559 585 525 585 480L585 459C585 429 564 410 537 410C510 410 488 431 488 461L488 480C488 525 457 559 415 559C373 559 341 525 341 480L341 269C341 241 321 220 293 220C265 220 244 241 244 269L244 480C244 525 213 559 172 559C130 559 99 525 99 480Z"/><circle cx="658" cy="160" r="77"/></g></svg>
+<text x="108" y="59" font-family="Inter,'Segoe UI',Arial,sans-serif" font-size="15" font-weight="760" letter-spacing="1.2" fill="#ffffff">MIGENT</text>
+<text x="1166" y="56" text-anchor="end" font-family="Inter,'Segoe UI',Arial,sans-serif" font-size="11" font-weight="700" letter-spacing="2" fill="#9198a1">WORKFLOW / PLAN + REVIEW</text>
+<path d="M54 80.5H1166" stroke="#3d444d"/>
+<text x="54" y="148" font-family="Inter,'Segoe UI',Arial,sans-serif" font-size="46" font-weight="780" letter-spacing="-2.8" fill="#ffffff">How Migent works</text>
+<text x="54" y="180" font-family="Inter,'Segoe UI',Arial,sans-serif" font-size="16" fill="#b1bac4">One task moves through explicit roles: write the plan, review the artifact, then either revise or complete.</text>
+<rect x="54" y="196" width="248" height="34" rx="17" fill="none" stroke="#30363d"/>
+<text x="178" y="217" text-anchor="middle" font-family="Inter,'Segoe UI',Arial,sans-serif" font-size="12" font-weight="650" fill="#9198a1">Plan → Review → Revise → Complete</text>
+<rect x="323" y="260" width="573" height="206" rx="30" fill="url(#lane)" stroke="#3d444d"/>
+<path d="M268 364H345" stroke="#c084fc" stroke-width="2.4" stroke-linecap="round" fill="none" marker-end="url(#arr)"/>
+<path d="M567 364H644" stroke="#22d3ee" stroke-width="2.4" stroke-linecap="round" fill="none" marker-end="url(#arrp)"/>
+<path d="M866 364H943" stroke="#34d399" stroke-width="2.4" stroke-linecap="round" fill="none" marker-end="url(#arrg)"/>
+<path d="M759 452V468C759 494 741 510 716 510H503C476 510 460 490 460 464V458" stroke="#fb923c" stroke-width="2.6" stroke-linecap="round" fill="none" marker-end="url(#arro)" stroke-dasharray="6 5"/>
+<g filter="url(#sh)">
+<rect x="54" y="276" width="214" height="176" rx="14" fill="#21262d" stroke="#57606a"/>
+<text x="72" y="302" font-family="Inter,'Segoe UI',Arial,sans-serif" font-size="10" font-weight="760" letter-spacing="1.8" fill="#9198a1">INPUT</text>
+<rect x="222" y="286" width="28" height="28" rx="14" fill="none" stroke="#57606a"/>
+<text x="236" y="304" text-anchor="middle" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="11" font-weight="700" fill="#c9d1d9">01</text>
+<rect x="72" y="320" width="42" height="42" rx="13" fill="#21262d" stroke="#30363d"/>
+<rect x="86" y="333" width="14" height="16" rx="3" fill="none" stroke="#c9d1d9" stroke-width="1.6"/><path d="M90 338H96M90 342H96" stroke="#c9d1d9" stroke-width="1.6" stroke-linecap="round"/>
+<text x="72" y="405" font-family="Inter,'Segoe UI',Arial,sans-serif" font-size="28" font-weight="770" letter-spacing="-1.7" fill="#e6edf3">Task</text>
+<text x="72" y="432" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="12" font-weight="550" fill="#b1bac4">User request</text>
+</g>
+<g filter="url(#sh)">
+<rect x="353" y="276" width="214" height="176" rx="14" fill="#21262d" stroke="#A855F7"/>
+<text x="371" y="302" font-family="Inter,'Segoe UI',Arial,sans-serif" font-size="10" font-weight="760" letter-spacing="1.8" fill="#9198a1">WRITE</text>
+<rect x="521" y="286" width="28" height="28" rx="14" fill="none" stroke="#57606a"/>
+<text x="535" y="304" text-anchor="middle" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="11" font-weight="700" fill="#c9d1d9">02</text>
+<rect x="371" y="320" width="42" height="42" rx="13" fill="rgba(168,85,247,.25)" stroke="rgba(192,132,252,.6)"/>
+<path d="M392 329L403 333.5L392 338L381 333.5Z" fill="none" stroke="#e9d5ff" stroke-width="1.7" stroke-linejoin="round"/><path d="M381 339L392 344L403 339M381 344L392 349L403 344" fill="none" stroke="#e9d5ff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="371" y="405" font-family="Inter,'Segoe UI',Arial,sans-serif" font-size="28" font-weight="770" letter-spacing="-1.7" fill="#e9d5ff">Plan</text>
+<text x="371" y="432" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="12" font-weight="800" fill="#b1bac4">claude-opus-5-5</text>
+</g>
+<g filter="url(#sh)">
+<rect x="652" y="276" width="214" height="176" rx="14" fill="#21262d" stroke="#22d3ee"/>
+<text x="670" y="302" font-family="Inter,'Segoe UI',Arial,sans-serif" font-size="10" font-weight="760" letter-spacing="1.8" fill="#9198a1">REVIEW</text>
+<rect x="820" y="286" width="28" height="28" rx="14" fill="none" stroke="#57606a"/>
+<text x="834" y="304" text-anchor="middle" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="11" font-weight="700" fill="#c9d1d9">03</text>
+<rect x="670" y="320" width="42" height="42" rx="13" fill="rgba(34,211,238,.20)" stroke="rgba(34,211,238,.55)"/>
+<circle cx="688" cy="339" r="6.5" fill="none" stroke="#67e8f9" stroke-width="1.7"/><path d="M693 344L699 350" stroke="#67e8f9" stroke-width="1.7" stroke-linecap="round"/>
+<text x="670" y="405" font-family="Inter,'Segoe UI',Arial,sans-serif" font-size="28" font-weight="770" letter-spacing="-1.7" fill="#67e8f9">Review</text>
+<text x="670" y="432" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="12" font-weight="800" fill="#b1bac4">gpt-6-sol</text>
+</g>
+<g filter="url(#sh)">
+<rect x="951" y="276" width="214" height="176" rx="14" fill="#21262d" stroke="#34d399"/>
+<text x="969" y="302" font-family="Inter,'Segoe UI',Arial,sans-serif" font-size="10" font-weight="760" letter-spacing="1.8" fill="#9198a1">OUTPUT</text>
+<rect x="1119" y="286" width="28" height="28" rx="14" fill="none" stroke="#57606a"/>
+<text x="1133" y="304" text-anchor="middle" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="11" font-weight="700" fill="#c9d1d9">04</text>
+<rect x="969" y="320" width="42" height="42" rx="13" fill="rgba(52,211,153,.20)" stroke="rgba(52,211,153,.55)"/>
+<circle cx="990" cy="341" r="8" fill="none" stroke="#6ee7b7" stroke-width="1.7"/><path d="M986 341L989 344L994.5 338.5" fill="none" stroke="#6ee7b7" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="969" y="405" font-family="Inter,'Segoe UI',Arial,sans-serif" font-size="28" font-weight="770" letter-spacing="-1.7" fill="#6ee7b7">Complete</text>
+<text x="969" y="432" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="12" font-weight="550" fill="#b1bac4">Approved plan</text>
+</g>
+<rect x="576.5" y="315" width="66" height="31" rx="15.5" fill="#161b22" stroke="#6e7681"/>
+<text x="609.5" y="335" text-anchor="middle" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="11" font-weight="650" fill="#f0f6fc">plan.md</text>
+<rect x="873.5" y="315" width="70" height="31" rx="15.5" fill="#161b22" stroke="#6e7681"/>
+<text x="908.5" y="335" text-anchor="middle" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="11" font-weight="650" fill="#f0f6fc">approved</text>
+<rect x="521.5" y="492" width="176" height="36" rx="11" fill="#1f1409" stroke="rgba(251,146,60,.65)"/>
+<text x="609.5" y="514" text-anchor="middle" font-family="Inter,'Segoe UI',Arial,sans-serif" font-size="11" font-weight="760" letter-spacing="1.4" fill="#fdba74">REVISION REQUESTED</text>
+<path d="M54 568.5H1166" stroke="#3d444d"/>
+<text x="54" y="594" font-family="Inter,'Segoe UI',Arial,sans-serif" font-size="11" font-weight="700" letter-spacing=".5" fill="#e6edf3">REPOSITORY-DEFINED WORKFLOW</text>
+<text x="258" y="594" font-family="Inter,'Segoe UI',Arial,sans-serif" font-size="11" fill="#7d8590">· Explicit roles, artifacts, review gates, and revision paths.</text>
+</svg>

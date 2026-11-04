@@ -1,6 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { hostname } from "node:os";
 import path from "node:path";
 import { expect, test } from "vitest";
+import { ENDPOINT_UNKNOWN, PID_GONE, type ProcessInspector } from "../src/process-ownership.ts";
 import {
   AgentToolRunner,
   ConfigurationError,
@@ -616,6 +618,28 @@ test("reap skips an in-flight sibling", () => {
   } finally {
     clearInFlightExecutions(sessionId);
   }
+});
+
+test("a new execution records its owner so a dead owner can be reaped", () => {
+  const { workspace, sessionId } = setup(workflowText(`node -e "process.exit(0)"`));
+  const probed: number[] = [];
+  const inspector: ProcessInspector = {
+    hostname: () => hostname(),
+    probePid: (pid) => {
+      probed.push(pid);
+      return PID_GONE;
+    },
+    probeEndpoint: () => ENDPOINT_UNKNOWN,
+  };
+  const store = new SessionStore(workspace, inspector);
+  const [, , created] = store.loadOrCreate("fake", "m1", {}, workspace, sessionId, "implement", null, null, "go");
+  const recorded = execution(workspace, sessionId, created.executionId);
+  expect(recorded.owner_pid).toBe(process.pid);
+  expect(recorded.hostname).toBe(hostname());
+  expect(recorded.provider_endpoint).toBeUndefined();
+  expect(() => store.reapOrphanedExecutions(sessionId, "raise")).not.toThrow();
+  expect(probed).toEqual([process.pid]);
+  expect(execution(workspace, sessionId, created.executionId).status).toBe("failed");
 });
 
 test("resume reopens every blocked stage", () => {

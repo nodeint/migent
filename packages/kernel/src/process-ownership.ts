@@ -201,10 +201,17 @@ export function classifyOrphanedExecution(
   return { action: REAP_UNVERIFIED, sessionId, executionId, ownerPid };
 }
 
+/** Owner fields recorded when an execution is created, before any provider process exists. */
+export function ownerMetadataPayload(
+  hostname: string = osHostname(),
+  ownerPid: number = process.pid,
+): Record<string, unknown> {
+  return { hostname, owner_pid: ownerPid };
+}
+
 export function processMetadataPayload(info: ProcessStartInfo): Record<string, unknown> {
   return {
-    hostname: info.hostname,
-    owner_pid: info.ownerPid,
+    ...ownerMetadataPayload(info.hostname, info.ownerPid),
     provider_pid: info.providerPid,
     provider_endpoint: info.endpoint,
   };

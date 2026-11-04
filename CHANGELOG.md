@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- A session no longer stays stuck in `running` when `migent session run` is killed right after a stage starts. Each execution now records its host and owner pid when it is created, not only after the provider spawns, so `migent session continue` can tell the owner is gone, fail the orphaned execution, and resume instead of refusing with "has an unverified live provider process". Executions created by earlier versions still need manual recovery (#51).
+
 ## 0.3.4
 
 ### Added

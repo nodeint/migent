@@ -1,13 +1,10 @@
-# Migent
-
 <p align="center">
-  <img src="https://raw.githubusercontent.com/nodeint/migent/main/assets/stylized-m.svg" alt="Migent logo" width="150" /><br>
-  <strong>Compose AI coding agents into repeatable engineering workflows.</strong>
+  <img src="https://raw.githubusercontent.com/nodeint/migent/main/assets/migent.svg" alt="Migent logo" width="150" /><br>
+    <strong>Compose AI coding agents into repeatable engineering workflows.</strong>
 </p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@nodeint/migent"><img src="https://img.shields.io/npm/v/@nodeint/migent.svg?style=flat-square" alt="npm version" /></a>
-  <a href="https://marketplace.visualstudio.com/items?itemName=nodeint.migent-vscode"><img src="https://img.shields.io/visual-studio-marketplace/v/nodeint.migent-vscode?style=flat-square" alt="VS Code Marketplace" /></a>
 </p>
 
 ---
@@ -16,6 +13,13 @@ Migent connects coding-agent CLIs from different providers through explicit,
 repository-defined workflows. One model can plan, another can review, and the
 first can revise—while Migent passes artifacts between them and tracks
 the workflow's progress.
+
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/nodeint/migent/main/assets/migent-workflow.svg" alt="Migent workflow: Task, Planner, Reviewer, Complete, with a revision loop from Reviewer back to Planner" />
+</p>
+
+
 
 ## Contents
 
@@ -60,14 +64,6 @@ a role does not require rewriting the workflow.
 **Common workflow model, native provider capabilities.** Migent coordinates
 the process, while each provider CLI remains responsible for authentication,
 agent execution, and its own tools and options.
-
-```mermaid
-flowchart TD
-    A[Task] --> B[Planner - claude-opus-5-5]
-    B -->|plan.md| C[Reviewer - gpt-6-sol]
-    C -->|revise| B
-    C -->|approved| D[Complete]
-```
 
 ## Supported CLIs
 

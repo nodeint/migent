@@ -14,7 +14,8 @@ export default defineConfig({
   },
   test: {
     include: ["packages/**/*.test.ts", "integration/**/*.test.ts"],
-    testTimeout: 10_000,
+    // Windows runners start processes and touch files more slowly.
+    testTimeout: process.platform === "win32" ? 30_000 : 10_000,
     reporters: [["dot", { summary: false }]],
     silent: true,
     setupFiles: ["scripts/vitest-quiet-setup.ts"],
