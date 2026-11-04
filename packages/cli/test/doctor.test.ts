@@ -2,7 +2,7 @@ import { activatePreparedSession, createProviderResolver, loadYamlMapping } from
 import { defaultProviders } from "@nodeint/migent-adapters";
 import { cpSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, test } from "vitest";
@@ -239,6 +239,126 @@ test("doctor and session prepare resolve model effort through adapter clients", 
       expect.objectContaining({ provider: "codex", options: { model_reasoning_effort: "high" } }),
       expect.objectContaining({ provider: "grok", options: { "reasoning-effort": "medium" } }),
     ]));
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+async function prepareSession(workspace: string): Promise<string> {
+  const prepared = await capture(() => main(["session", "prepare", "doctor session", "--workflow", "plan"], workspace));
+  expect(prepared.value).toBe(0);
+  return (JSON.parse(prepared.stdout) as { session_id: string }).session_id;
+}
+
+function treeText(directory: string): string {
+  const parts: string[] = [];
+  const visit = (current: string): void => {
+    for (const name of readdirSync(current).sort()) {
+      const full = path.join(current, name);
+      if (statSync(full).isDirectory()) visit(full);
+      else parts.push(`${path.relative(directory, full)}\n${readFileSync(full, "utf8")}`);
+    }
+  };
+  visit(directory);
+  return parts.join("\n--\n");
+}
+
+test("doctor --session validates a prepared draft in text and JSON without writing", async () => {
+  const workspace = mkdtempSync(path.join(tmpdir(), "migent-cli-"));
+  try {
+    writeProject(workspace);
+    const sessionId = await prepareSession(workspace);
+    cliHooks.which = whichBoth;
+    const before = treeText(path.join(workspace, ".migent"));
+    const text = await capture(() => main(["doctor", "--session", sessionId], workspace));
+    expect(text.value).toBe(0);
+    expect(text.stdout).toContain(`source  draft  .migent/sessions/${sessionId}/workflow.yaml`);
+    expect(text.stdout).not.toContain("skill");
+    cliHooks.which = whichBoth;
+    const json = await capture(() => main(["doctor", "--session", sessionId, "--json"], workspace));
+    expect(json.value).toBe(0);
+    expect(json.stderr).toBe("");
+    const payload = JSON.parse(json.stdout) as { ok: boolean; session: Record<string, string>; checks: Array<{ name: string }> };
+    expect(payload.ok).toBe(true);
+    expect(payload.session).toEqual({
+      id: sessionId,
+      workflow_id: "plan",
+      source: "draft",
+      path: `.migent/sessions/${sessionId}/workflow.yaml`,
+    });
+    expect(payload.checks.map((check) => check.name)).toEqual(["session", "workflow", "bindings", "providers"]);
+    expect(treeText(path.join(workspace, ".migent"))).toBe(before);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("doctor --session exits 1 for a broken draft and a missing executable", async () => {
+  const workspace = mkdtempSync(path.join(tmpdir(), "migent-cli-"));
+  try {
+    writeProject(workspace);
+    const sessionId = await prepareSession(workspace);
+    const draft = path.join(workspace, ".migent", "sessions", sessionId, "workflow.yaml");
+    cliHooks.which = (command) => (command === "codex" ? "/bin/codex" : null);
+    const missing = await capture(() => main(["doctor", "--session", sessionId, "--json"], workspace));
+    expect(missing.value).toBe(1);
+    const providers = (JSON.parse(missing.stdout) as { checks: Array<{ name: string; problems: string[] }> }).checks
+      .find((check) => check.name === "providers");
+    expect(providers?.problems.join("\n")).toContain("grok is not on PATH (stages:");
+    writeFileSync(draft, "id: plan\nstages: nope\n", "utf8");
+    cliHooks.which = whichBoth;
+    const broken = await capture(() => main(["doctor", "--session", sessionId], workspace));
+    expect(broken.value).toBe(1);
+    expect(broken.stdout).toContain("failed");
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("doctor --session validates a frozen session without live workflows or an unrelated broken catalog", async () => {
+  const workspace = mkdtempSync(path.join(tmpdir(), "migent-cli-"));
+  try {
+    writeProject(workspace);
+    const sessionId = await prepareSession(workspace);
+    writeFileSync(path.join(workspace, ".migent", "sessions", sessionId, "task.md"), "Task\n");
+    activatePreparedSession(workspace, sessionId, createProviderResolver(defaultProviders()));
+    rmSync(path.join(workspace, ".migent", "workflows"), { recursive: true });
+    mkdirSync(path.join(workspace, ".migent", "workflows"));
+    writeFileSync(path.join(workspace, ".migent", "workflows", "bad.yaml"), "id: bad\nstages: nope\n");
+    const draft = path.join(workspace, ".migent", "sessions", sessionId, "workflow.yaml");
+    writeFileSync(draft, `${readFileSync(draft, "utf8")}# edited after start
+`);
+    cliHooks.which = whichBoth;
+    const workspaceDoctor = await capture(() => main(["doctor"], workspace));
+    expect(workspaceDoctor.value).not.toBe(0);
+    cliHooks.which = whichBoth;
+    const captured = await capture(() => main(["doctor", "--session", sessionId, "--json"], workspace));
+    expect(captured.value).toBe(0);
+    expect(captured.stderr).toBe("");
+    const payload = JSON.parse(captured.stdout) as { session: Record<string, string>; checks: Array<{ warnings: string[] }> };
+    expect(payload.session.source).toBe("frozen");
+    expect(payload.checks.flatMap((check) => check.warnings).join("\n")).toContain("The workflow file differs.");
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("doctor --session uses the CLI exit conventions for unusable sessions", async () => {
+  const workspace = mkdtempSync(path.join(tmpdir(), "migent-cli-"));
+  try {
+    writeProject(workspace);
+    cliHooks.which = whichBoth;
+    const invalid = await capture(() => main(["doctor", "--session", "../escape"], workspace));
+    expect(invalid.value).toBe(2);
+    expect(invalid.stderr).toContain("Invalid session id: ../escape.");
+    const unknown = await capture(() => main(["doctor", "--session", "missing", "--json"], workspace));
+    expect(unknown.value).toBe(1);
+    const payload = JSON.parse(unknown.stdout) as { ok: boolean; session: { id: string; source: null }; checks: Array<{ problems: string[] }> };
+    expect(payload.ok).toBe(false);
+    expect(payload.session).toMatchObject({ id: "missing", source: null });
+    expect(payload.checks[0]?.problems).toEqual(["Session not found: missing."]);
+    const help = await capture(() => main(["doctor", "--help"], workspace));
+    expect(help.stdout).toContain("--session <id>");
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }

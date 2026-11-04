@@ -105,11 +105,28 @@ export function createProgram(status: CliStatus): Command {
 
   program
     .command("doctor")
-    .description("Check config, workflows, and provider CLIs.")
+    .description("Check config, workflows, and provider CLIs, or one session's workflow.")
     .option("--json", "Print the checks as one JSON object.")
-    .addHelpText("after", exitText(["Exit 0 when every check passes.", "Exit 1 when a check fails."]))
+    .option("--session <id>", "Check only the workflow this session runs: its draft, frozen copy, or live source. Read-only.")
+    .addHelpText(
+      "after",
+      `
+Examples:
+  migent doctor
+  migent doctor --session <id>    Validate an edited prepared workflow before \`session run\`.
+  migent doctor --session <id> --json
+${exitText([
+        "Exit 0 when every check passes.",
+        "Exit 1 when a check fails, including an unknown session, a role session, or a broken workflow.",
+        "Exit 2 for an invalid session id or an outdated schema.",
+      ])}`,
+    )
     .action((options: OptionValues) =>
-      settle(status, () => runDoctor(findWorkspace(invocationCwdPath()), { asJson: options.json === true })),
+      settle(status, () =>
+        runDoctor(findWorkspace(invocationCwdPath()), {
+          asJson: options.json === true,
+          ...(typeof options.session === "string" ? { session: options.session } : {}),
+        })),
     );
 
   program

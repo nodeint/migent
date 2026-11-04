@@ -31,10 +31,12 @@ interface Rewrite {
   notes: string[];
 }
 
-export function requireCurrentSchema(workspace: string): void {
+/** `configOnly` skips `.migent/workflows/`, for a check that never reads the project catalog. */
+export function requireCurrentSchema(workspace: string, options: { configOnly?: boolean } = {}): void {
   const newer: Array<[string, number]> = [];
   const older: Array<[string, number]> = [];
-  for (const [label, filePath] of schemaFiles(workspace)) {
+  const files = schemaFiles(workspace).filter(([label]) => options.configOnly !== true || !label.includes("/workflows/"));
+  for (const [label, filePath] of files) {
     const version = storedVersion(filePath);
     if (version === null || version === SCHEMA_VERSION) continue;
     (version > SCHEMA_VERSION ? newer : older).push([label, version]);

@@ -1,6 +1,14 @@
 import { checkModelEfforts } from "../effort-check.js";
 import { homedir } from "node:os";
-import { diagnose, whichSync, type Check } from "@nodeint/migent-kernel";
+import {
+  diagnose,
+  diagnoseSession,
+  selectSessionWorkflow,
+  sessionEffortKeys,
+  whichSync,
+  type Check,
+  type SessionSource,
+} from "@nodeint/migent-kernel";
 import { printDoctor } from "../display.js";
 import { cliHooks } from "../hooks.js";
 import { requireCurrentSchema } from "../migrate.js";
@@ -9,8 +17,9 @@ import { skillCheck } from "../skill-check.js";
 
 export async function runDoctor(
   workspace: string,
-  options: { asJson?: boolean; which?: Which | null; home?: string; runCommand?: RunCommand } = {},
+  options: { asJson?: boolean; session?: string; which?: Which | null; home?: string; runCommand?: RunCommand } = {},
 ): Promise<number> {
+  if (options.session !== undefined) return runSessionDoctor(workspace, options.session, options);
   requireCurrentSchema(workspace);
   const which = options.which ?? cliHooks.which ?? whichSync;
   const providers = providerMap();
@@ -36,5 +45,38 @@ function payload(checks: readonly Check[]): { ok: boolean; checks: Array<Record<
       problems: [...check.problems],
       warnings: [...check.warnings],
     })),
+  };
+}
+
+/** Validates the workflow one session runs. Read-only, and independent of the rest of the project. */
+async function runSessionDoctor(
+  workspace: string,
+  sessionId: string,
+  options: { asJson?: boolean; which?: Which | null; runCommand?: RunCommand },
+): Promise<number> {
+  const selection = selectSessionWorkflow(workspace, sessionId);
+  // A freeze needs no live config, so only a live source requires a current config schema.
+  if (selection.document !== null && selection.freeze === null) requireCurrentSchema(workspace, { configOnly: true });
+  const which = options.which ?? cliHooks.which ?? whichSync;
+  const providers = providerMap();
+  let modelEffortChecks = {};
+  const keys = sessionEffortKeys(workspace, selection);
+  if (keys.size > 0) {
+    const runCommand = options.runCommand ?? cliHooks.runCommand ??
+      ((argv, input) => runProviderCommand(argv, input, { cwd: workspace, timeoutMs: 10_000 }));
+    modelEffortChecks = await checkModelEfforts(workspace, providers, which, runCommand, keys);
+  }
+  const diagnosis = diagnoseSession(workspace, selection, { providers, which, modelEffortChecks });
+  if (options.asJson) process.stdout.write(`${JSON.stringify({ ...payload(diagnosis.checks), session: sessionPayload(sessionId, diagnosis.source) })}\n`);
+  else printDoctor(diagnosis.checks);
+  return diagnosis.ok ? 0 : 1;
+}
+
+function sessionPayload(sessionId: string, source: SessionSource | null): Record<string, unknown> {
+  return {
+    id: sessionId,
+    workflow_id: source?.workflowId ?? null,
+    source: source?.kind ?? null,
+    path: source?.path ?? null,
   };
 }

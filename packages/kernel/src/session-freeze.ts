@@ -176,29 +176,47 @@ export function warnIfFrozenDrift(
   const sessionDirectory = path.join(workspace, ".migent", "sessions", sessionId);
   const freeze = readWorkflowFreeze(sessionDirectory);
   if (freeze === null) return;
+  for (const detail of collectFrozenDrift(workspace, freeze, workflowPath, workflowId, resolveProvider, false)) {
+    note(sessionId, detail);
+  }
+}
+
+/**
+ * How the live source and config differ from what the freeze pinned. Read-only; a missing or
+ * broken live file is a difference, never an error. `quiet` keeps authoring warnings off stderr.
+ */
+export function collectFrozenDrift(
+  workspace: string,
+  freeze: WorkflowFreeze,
+  workflowPath: string | null,
+  workflowId: string | null,
+  resolveProvider: ProviderResolver | undefined,
+  quiet: boolean,
+): string[] {
+  const details: string[] = [];
   const filePath = workflowPath ? workflowFile(workspace, workflowPath) : null;
   let readable = false;
   if (filePath === null || !isFile(filePath)) {
-    note(sessionId, "The workflow file is missing.");
+    details.push("The workflow file is missing.");
   } else {
     const digest = sourceFileHash(filePath);
-    if (digest === null) note(sessionId, "The workflow file cannot be loaded.");
+    if (digest === null) details.push("The workflow file cannot be loaded.");
     else {
       readable = true;
-      if (digest !== freeze.sourceSha256) note(sessionId, "The workflow file differs.");
+      if (digest !== freeze.sourceSha256) details.push("The workflow file differs.");
     }
   }
   let live: WorkflowDocument | null = null;
   if (readable && filePath !== null) {
     try {
-      live = loadWorkflowDocument(filePath);
+      live = loadWorkflowDocument(filePath, { quiet });
     } catch (error) {
       if (!(error instanceof ConfigurationError)) throw error;
-      note(sessionId, "The workflow file cannot be loaded.");
+      details.push("The workflow file cannot be loaded.");
     }
   } else if (filePath === null && workflowId) {
     try {
-      live = loadNamedWorkflow(workspace, workflowId);
+      live = loadNamedWorkflow(workspace, workflowId, { quiet });
     } catch (error) {
       if (!(error instanceof ConfigurationError)) throw error;
     }
@@ -213,7 +231,7 @@ export function warnIfFrozenDrift(
     for (const [stageId, target] of Object.entries(freeze.targets)) {
       const stage = live.stages[stageId];
       if (stage === undefined || !sameTarget(target, liveTarget(config, stage, resolveProvider))) {
-        note(sessionId, `Stage ${stageId} model differs.`);
+        details.push(`Stage ${stageId} model differs.`);
       }
     }
   }
@@ -226,10 +244,11 @@ export function warnIfFrozenDrift(
         if (!(error instanceof ConfigurationError)) throw error;
       }
       if (current === null || !sameList(current, instructions)) {
-        note(sessionId, `Role ${role} instructions differ.`);
+        details.push(`Role ${role} instructions differ.`);
       }
     }
   }
+  return details;
 }
 
 function liveTarget(config: Record<string, unknown>, stage: StageSpec, resolveProvider?: ProviderResolver): StageTarget | null {
@@ -378,7 +397,12 @@ function readTargets(value: unknown, filePath: string): Record<string, StageTarg
       model: raw.model,
       options: readOptionStrings(raw.options, filePath, stageId),
     };
-    if (typeof raw.client === "string" && raw.client.trim() !== "") targets[stageId].client = raw.client;
+    if (raw.client != null) {
+      if (typeof raw.client !== "string" || raw.client.trim() === "") {
+        throw corrupt(filePath, `targets.${stageId}.client must be a non-empty string`);
+      }
+      targets[stageId].client = raw.client;
+    }
   }
   return targets;
 }

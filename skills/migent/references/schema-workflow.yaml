@@ -1,4 +1,5 @@
-# Workflow configuration. Validate with migent doctor --json after editing.
+# Annotated workflow example. For validation, session drafts, and refresh,
+# see session-workflow.md. For project setup, see setup.md.
 schema_version: 4
 concurrency: 1
 
@@ -7,7 +8,6 @@ id: reference
 
 constraints:
   - Stay within the task.
-
 
 stages:
   - id: prepare
@@ -38,7 +38,8 @@ stages:
   - id: review
     role: reviewer
     depends_on: [draft]
-    # Optional: continue a provider conversation from a stage in depends_on.
+    # Optional: resume a completed role stage listed in depends_on.
+    # Both stages must use compatible provider, model, and conversation options.
     session:
       resume_from: draft
     instructions:
@@ -46,7 +47,7 @@ stages:
     # Run after agent completion. Put checks on every route to completion.
     verify:
       - pnpm test
-    # Require verify. max_verify defaults to 3; timeout is seconds for the list.
+    # These fields require verify. max_verify defaults to 3.
     max_verify: 3
     verify_timeout: 900
     decision:
@@ -54,7 +55,7 @@ stages:
       # navigate accepts a stage ID, complete, or a non-empty list of stage IDs.
       - approved:
           when: The work meets the task and required checks pass.
-          navigate: complete
+          navigate: check_docs
       - revise:
           when: Required fixes remain. List each fix and its impact.
           navigate: draft
@@ -70,6 +71,7 @@ stages:
         - "**/README.md"
     instructions:
       - Review documentation changes.
+    # A leaf stage without a decision completes naturally, including when skipped.
 
 # Publish a file matching the source stage's produces.artifact.
 # Stage artifacts cannot be named verify.md.
