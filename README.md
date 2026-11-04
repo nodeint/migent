@@ -35,6 +35,7 @@ the workflow's progress.
     - [Add planning and review](#add-planning-and-review)
   - [Concepts](#concepts)
   - [Current scope](#current-scope)
+  - [Update Migent](#update-migent)
   - [Documentation](#documentation)
   - [License](#license)
 
@@ -111,18 +112,21 @@ Run setup from your project root, either with an AI agent or with the CLI.
    clients to set up:
 
    ```bash
-   migent skill install --project
+   migent skill install
    ```
 
 2. Paste this prompt into your agent (Claude Code, Codex, Antigravity, Cursor,
    etc.):
 
    ```text
-   Use the migent skill to set up Migent in this project.
+   Use the migent skill to set up Migent in this project. Configure the
+   planner, developer, and reviewer roles with different models, and choose an
+   effort level that fits each role (for example, higher effort for planning
+   and review, medium effort for development).
    ```
 
-   The agent handles setup. If you have provider or model preferences, specify
-   them for the developer, planner, or reviewer role.
+   The agent handles setup. If you have specific provider or model
+   preferences, mention them for each role in the same prompt.
 
 3. Ask the agent to write and review a plan for your task (optional):
 
@@ -365,6 +369,15 @@ its own sign-in, tools, and agent execution.
 You can run a single role or a workflow, pass artifacts between stages, and
 connect workflows. Use the CLI directly or ask an AI agent with the Migent
 skill to operate it for you.
+
+## Update Migent
+
+```bash
+migent update          # upgrade the CLI (add --check to only look)
+migent doctor          # check config, workflows, and provider CLIs
+migent migrate         # upgrade config and workflows to the current schema
+migent skill update    # refresh installed skill copies
+```
 
 ## Documentation
 

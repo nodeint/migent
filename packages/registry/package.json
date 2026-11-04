@@ -1,6 +1,6 @@
 {
   "name": "@nodeint/migent-registry",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "Machine-local workspace registry service for Migent.",
   "keywords": [
     "ai",
