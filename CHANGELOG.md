@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.3.5
+
 ### Added
 
 - `migent doctor --session <id>` validates the workflow one session runs without starting it: a prepared session's editable `workflow.yaml`, a started session's `workflow.frozen.yaml` with its pinned roles and targets, or an older session's live workflow. It checks only that workflow and its provider CLIs, is read-only, reports the checked source and path (`--json` adds a `session` object), and warns when a frozen session differs from live files.
@@ -11,6 +13,8 @@
 - `migent session run --session <id>` starts a prepared workflow session from its recorded workflow, so `--workflow` is optional. A given `--workflow` must still match the session's workflow id. Creating a session still requires `--workflow`.
 
 ### Changed
+
+- The README explains role sessions, workflow capabilities, and the roadmap, with expanded setup and workflow examples, role instructions, human questions, and published outputs.
 
 - The Migent skill now provides a command guide with usage scenarios and routes detailed workflow, role, resume, reply, and configuration tasks to focused references.
 
@@ -78,19 +82,9 @@
 
 - Schema v3 declares each stage decision with `when` instructions for the agent and a `navigate` destination. `migent migrate` converts older values/routes while preserving existing stage instructions. Frozen sessions retain their original schema and behavior.
 
-## 0.2.1
-
-### Changed
-
-- Init selects independent models and options in planner, reviewer, developer order and creates all three roles with default instructions. Non-interactive setup requires all three role selections; use `--planner-provider`, `--planner-model`, and optional `--planner-option` for the planner. Both generated workflows include a review stage with approval/revision routes and a revision limit; implement still runs independently.
-- Init saves model selections and creates the project independently of skill installation, then suggests `migent skill install --project`. The skill prompt and `init --skill` are removed; the old flag reports the replacement commands.
-
-### Fixed
-
-- Skill install and update work on Windows when the Migent installation path contains spaces.
-
 ## Older versions
 
+- [0.2.1](https://github.com/nodeint/migent/releases/tag/v0.2.1)
 - [0.2.0](https://github.com/nodeint/migent/releases/tag/v0.2.0)
 - [0.1.11](https://github.com/nodeint/migent/releases/tag/v0.1.11)
 - [0.1.10](https://github.com/nodeint/migent/releases/tag/v0.1.10)
