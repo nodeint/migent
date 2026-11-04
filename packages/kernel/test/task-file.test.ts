@@ -3,6 +3,7 @@ import path from "node:path";
 import { expect, test } from "vitest";
 import { ConfigurationError, createPreparedSession, createWorkflowSession } from "../src/index.ts";
 import { activatePreparedSession } from "../src/session-records.ts";
+import { loadFrozenWorkflow } from "../src/session-freeze.ts";
 import { SessionLock } from "../src/session-lock.ts";
 import { freezeSessionTask } from "../src/task-file.ts";
 import { tempDir, writeSessionConfig } from "./support.ts";
@@ -51,9 +52,14 @@ test("prepare stores a title and waits for task.md", () => {
   expect(sessionId).toMatch(SESSION_UUID);
   const directory = path.join(workspace, ".migent", "sessions", sessionId);
   expect(existsSync(path.join(directory, "session.lock"))).toBe(false);
+  expect(readFileSync(path.join(directory, "task.md"), "utf8")).toBe("");
+  const draft = readFileSync(path.join(directory, "workflow.yaml"), "utf8");
+  expect(draft).toContain("id: solo");
+  expect(draft).toContain("role: developer");
   const createdManifest = readFileSync(path.join(directory, "manifest.yaml"), "utf8");
   expect(createdManifest).toContain("schema_version: 2");
   expect(createdManifest).toContain('title: "some task title"');
+  expect(createdManifest).toContain(`workflow_path: .migent/sessions/${sessionId}/workflow.yaml`);
   expect(createdManifest).not.toContain("status:");
   expect(createdManifest).not.toContain("\ntask:");
   const status = JSON.parse(readFileSync(path.join(directory, "status.json"), "utf8")) as {
@@ -82,6 +88,41 @@ test("prepare stores a title and waits for task.md", () => {
   expect(active.title).toBe("some task title");
   expect(readFileSync(path.join(directory, "manifest.yaml"), "utf8")).toBe(createdManifest);
   expect(existsSync(path.join(directory, "session.lock"))).toBe(false);
+});
+
+test("an activated prepared session freezes its own workflow draft", () => {
+  const workspace = workspaceWithWorkflow();
+  const sessionId = createPreparedSession(workspace, "draft", "solo");
+  const directory = path.join(workspace, ".migent", "sessions", sessionId);
+  writeFileSync(path.join(directory, "task.md"), "Do the draft.\n", "utf8");
+  writeFileSync(
+    path.join(directory, "workflow.yaml"),
+    "schema_version: 1\nid: solo\nstages:\n  - id: drafted\n    role: developer\n",
+    "utf8",
+  );
+  writeFileSync(
+    path.join(workspace, ".migent", "workflows", "solo.yaml"),
+    "schema_version: 1\nid: solo\nstages:\n  - id: live\n    role: developer\n",
+    "utf8",
+  );
+  activatePreparedSession(workspace, sessionId);
+  const frozen = loadFrozenWorkflow(directory);
+  expect(frozen?.stages.drafted).toBeDefined();
+  expect(frozen?.stages.live).toBeUndefined();
+});
+
+test("a workflow draft may not change the session workflow id", () => {
+  const workspace = workspaceWithWorkflow();
+  const sessionId = createPreparedSession(workspace, "draft", "solo");
+  const directory = path.join(workspace, ".migent", "sessions", sessionId);
+  writeFileSync(path.join(directory, "task.md"), "Do the draft.\n", "utf8");
+  writeFileSync(
+    path.join(directory, "workflow.yaml"),
+    "schema_version: 1\nid: renamed\nstages:\n  - id: work\n    role: developer\n",
+    "utf8",
+  );
+  expect(() => activatePreparedSession(workspace, sessionId)).toThrow(/Do not change id in workflow.yaml/);
+  expect(readFileSync(path.join(directory, "status.json"), "utf8")).toContain("\"prepared\"");
 });
 
 test("activate keeps a lock the caller already holds", () => {

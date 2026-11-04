@@ -13,12 +13,14 @@ override and stays uncommitted.
 Each run has its own directory, named by its session ID. A new session id is a
 UUID. `manifest.yaml` also records `title`. A workflow or role session sets
 `title` to its one-line task. `session prepare` sets `title` to the text you
-pass. The title is for display, so spaces and capitals stay. A session written by an older Migent has no `title`. List and
+pass, creates an empty `task.md`, and copies the workflow to an editable
+`workflow.yaml`. The title is for display, so spaces and capitals stay. A session written by an older Migent has no `title`. List and
 show use `session_id` for that session.
 
 ```text
 .migent/sessions/<session-id>/
 ├── manifest.yaml
+├── workflow.yaml                         # editable workflow draft created by prepare
 ├── workflow.frozen.yaml                  # pinned workflow, roles, and stage targets
 ├── status.json
 ├── task.md                               # task body; written before the first stage
@@ -44,18 +46,28 @@ The session-level files have distinct purposes:
 - `manifest.yaml` on a schema 2 session records identity and handoff provenance: `session_id`, an
   optional `title`, the workflow id and path, the task label, `created_at`, an
   optional `prior_session_id` or `role`, and `schema_version`. A prepared session
-  has a title and no task label. The task body is `task.md`. The manifest has no status line.
+  has a title and no task label. The task body is `task.md`; `workflow_path`
+  names its editable `workflow.yaml`. The manifest has no status line.
   Status lives in `status.json`. A v1 manifest still has a `status` line, and
   that line is still updated. An ad hoc agent session records its role; a
   workflow started with prior context records `prior_session_id` and a `handoff` mapping with source output names, snapshot paths and SHA-256 hashes.
+- `workflow.yaml` is the editable draft that `session prepare` writes from the
+  named workflow, with an explicit `id`. It is this session's workflow source:
+  edit it before starting, keep its `id`, and run
+  `session run --session <id> --workflow <id>`. At the first dispatch Migent
+  freezes it to `workflow.frozen.yaml`. Changes to `.migent/workflows/` do not
+  change this session, and `--refresh-workflow` rereads the draft.
+  Prepared sessions created by an older Migent have no draft and read the
+  project workflow.
 - `workflow.frozen.yaml` pins the workflow, role instructions, and resolved
-  stage targets when a workflow session starts. Prepared sessions defer this until `run`. `session continue` and
+  stage targets when a workflow session starts. Prepared sessions freeze from
+  `workflow.yaml` at `run`. `session continue` and
   `session run --session` keep using that copy when the live files change, and
   warn on stderr. `--refresh-workflow` replaces it. A missing file means the
   session uses the live workflow and config. Repair does not rebuild it.
   Agent sessions do not have this file.
 - `task.md` is the task body. A one-line `session run --workflow --task` writes
-  that sentence here. A prepared session leaves the file for you to write, along with any
+  that sentence here. A prepared session creates an empty file for you to write, along with any
   other files that belong next to it. Stage prompts name this path and the
   session directory. They do not include the task text. The first dispatch
   records a hash of `task.md`. A later change stops the next dispatch.
@@ -126,7 +138,8 @@ Each execution directory contains:
   session-level `outputs/` directory.
 
 These files are Migent's resumable local state. Before the first stage of a
-prepared session, write `task.md` and files next to it. Do not edit
+prepared session, write `task.md`, add any files next to it, and adjust
+`workflow.yaml` if needed. Do not edit
 `manifest.yaml`, `status.json`, `events.jsonl`, or `executions/` by hand.
 Prefer the CLI commands below for inspection and automation.
 
@@ -251,7 +264,8 @@ the target. Replying to the cancelled stage leaves the blocked stage blocked.
 advances one stage and does not reset revision counts.
 
 A session with status `prepared` is not resumed by `session continue`. Write
-`task.md`, then run `migent session run --session <session-id> --workflow <workflow>`.
+`task.md`, adjust `workflow.yaml` if needed, then run
+`migent session run --session <session-id> --workflow <workflow>`.
 
 `session repair <session-id>` rebuilds `status.json` from the session directory
 and takes the session lock. `session continue` does the same rebuild before it

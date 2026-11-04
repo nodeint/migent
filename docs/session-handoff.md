@@ -48,6 +48,8 @@ snapshots rather than reading mutable source files. Historical sessions without
 handoff records retain their original live context behavior.
 
 `prepare --prior` records the source ID without snapshotting artifacts or freezing
-the target workflow. Starting the prepared session uses current workflow/model
-settings and binds context. A failed bind leaves it prepared. Its manually written
+the target workflow. Starting a newly prepared session reads its `workflow.yaml`
+and current model settings, then binds context. A prepared session from an
+older Migent keeps the project workflow path recorded in its manifest. A failed
+bind leaves it prepared. Its manually written
 `task.md` remains the task; suggestions do not overwrite it.

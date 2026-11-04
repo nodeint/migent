@@ -34,12 +34,13 @@ test("prepare writes a chosen session and start runs task.md", async () => {
 
     const prepared = await capture(() => main(["session", "prepare", "some task title", "--workflow", "plan"], workspace));
     expect(prepared.value).toBe(0);
-    const preparedBody = JSON.parse(prepared.stdout) as { session_id: string; title: string; task_path: string };
+    const preparedBody = JSON.parse(prepared.stdout) as { session_id: string; title: string; task_path: string; workflow_path: string };
     expect(preparedBody).toEqual({
       session_id: expect.stringMatching(/^[0-9a-f-]{36}$/),
       title: "some task title",
       status: "prepared",
       task_path: `.migent/sessions/${preparedBody.session_id}/task.md`,
+      workflow_path: `.migent/sessions/${preparedBody.session_id}/workflow.yaml`,
     });
     expect(prepared.stderr).toContain(`session_id: ${preparedBody.session_id}`);
     const sessionId = preparedBody.session_id;

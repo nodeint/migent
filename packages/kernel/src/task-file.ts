@@ -67,7 +67,7 @@ export function freezeSessionTask(
     // A label equal to the session id is the placeholder written by an older Migent.
     if (fallback.trim() === "" || fallback === sessionId) {
       throw new ConfigurationError(
-        `Session ${sessionId} has no task.md. Write ${relativeTaskPath(sessionId)} before starting.`,
+        `Session ${sessionId} has no task.md or it is empty. Write ${relativeTaskPath(sessionId)} before starting.`,
       );
     }
     writeTaskFile(filePath, fallback);
@@ -75,7 +75,7 @@ export function freezeSessionTask(
   }
   if (text === null || (storedHash === "" && text.trim() === "")) {
     throw new ConfigurationError(
-      `Session ${sessionId} has no task.md. Write ${relativeTaskPath(sessionId)} before starting.`,
+      `Session ${sessionId} has no task.md or it is empty. Write ${relativeTaskPath(sessionId)} before starting.`,
     );
   }
   const hash = createHash("sha256").update(text, "utf8").digest("hex");
@@ -96,7 +96,7 @@ export function requireTaskBody(workspace: string, sessionId: string): void {
   const text = readTask(taskFilePath(workspace, sessionId));
   if (text === null || text.trim() === "") {
     throw new ConfigurationError(
-      `Session ${sessionId} has no task.md. Write ${relativeTaskPath(sessionId)} before starting.`,
+      `Session ${sessionId} has no task.md or it is empty. Write ${relativeTaskPath(sessionId)} before starting.`,
     );
   }
 }

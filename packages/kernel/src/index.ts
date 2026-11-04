@@ -208,6 +208,7 @@ export {
   requireAgentSession,
   resolvePriorSessionId,
   bindPriorSessionId,
+  relativeWorkflowPath,
 } from "./session-records.js";
 export {
   stringOptions,

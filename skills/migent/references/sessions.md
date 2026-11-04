@@ -73,7 +73,9 @@ Edits alone do not update them. To adopt the current settings, validate with
 migent session continue <session-id> --refresh-workflow
 ```
 
-A prepared session reads and freezes current workflow/model settings when it starts; no refresh flag is needed:
+A newly prepared session reads its own `workflow.yaml` and freezes current model
+settings when it starts; no refresh flag is needed. Older prepared sessions keep
+the project workflow path recorded in their manifest:
 
 ```bash
 migent session run --session <session-id> --workflow <workflow>

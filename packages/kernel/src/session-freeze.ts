@@ -28,6 +28,11 @@ import { parseYamlDocument } from "./yaml.js";
 
 export const WORKFLOW_FREEZE_FILE = "workflow.frozen.yaml";
 
+/** Canonical YAML for an editable workflow source. The id is always written. */
+export function renderWorkflowSource(workflow: WorkflowDocument): string {
+  return stringify(workflowMapping(workflow), { lineWidth: 0 });
+}
+
 export interface WorkflowFreeze {
   sourceSha256: string | null;
   workflow: WorkflowDocument;

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- `migent session prepare` now writes an empty `task.md` and an editable `workflow.yaml` in the session directory. The draft is the session's workflow source, so a prepared session can be adjusted without changing `.migent/workflows/`; `session run --session` validates the draft, requires its `id` to match, and freezes it when the session starts.
+
 ### Fixed
 
 - A session no longer stays stuck in `running` when `migent session run` is killed right after a stage starts. Each execution now records its host and owner pid when it is created, not only after the provider spawns, so `migent session continue` can tell the owner is gone, fail the orphaned execution, and resume instead of refusing with "has an unverified live provider process". Executions created by earlier versions still need manual recovery (#51).

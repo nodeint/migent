@@ -9,7 +9,7 @@ import { pyRepr } from "./record.js";
 import { corruptStatusMessage, readStatusFileState } from "./query.js";
 import { isUnicodeAlnum, utcNow } from "./runtime.js";
 import { appendLifecycleEvent } from "./session-events.js";
-import { requireLiveWorkflow, writeWorkflowFreeze } from "./session-freeze.js";
+import { requireLiveWorkflow, renderWorkflowSource, writeWorkflowFreeze } from "./session-freeze.js";
 import { completedPriorStatus, resolveHandoff, snapshotHandoff } from "./next-handoff.js";
 import { parseYamlDocument } from "./yaml.js";
 import { commitFoldedStatus, readSessionManifest } from "./session-fold.js";
@@ -36,6 +36,11 @@ function realPath(target: string): string {
   } catch {
     return path.resolve(target);
   }
+}
+
+/** Workspace-relative path of the editable workflow draft created by prepare. */
+export function relativeWorkflowPath(sessionId: string): string {
+  return `.migent/sessions/${sessionId}/workflow.yaml`;
 }
 
 /** Create a fresh session directory. The id gets a numeric suffix until a non-recursive mkdir wins. */
@@ -175,7 +180,10 @@ export function createPreparedSession(
   const sessionsDirectory = path.join(workspace, ".migent", "sessions");
   const [sessionId, sessionDirectory] = createUuidSessionDirectory(sessionsDirectory);
   const createdAt = utcNow();
-  const workflowRelativePath = sessionWorkflowPath(workspace, workflow);
+  const workflowRelativePath = relativeWorkflowPath(sessionId);
+  const draftHeader =
+    "# Session workflow draft. Edit this file before starting the session.\n" +
+    `# Start with: migent session run --session ${sessionId} --workflow ${resolvedId}\n`;
   const manifestLines = [
     `session_id: ${sessionId}`,
     `title: ${JSON.stringify(sessionTitle)}`,
@@ -185,17 +193,25 @@ export function createPreparedSession(
   ];
   if (resolvedPrior) manifestLines.push(`prior_session_id: ${resolvedPrior}`);
   manifestLines.push("schema_version: 2");
-  withSessionLock(sessionDirectory, () => {
-    writeFileAtomic(path.join(sessionDirectory, "manifest.yaml"), `${manifestLines.join("\n")}\n`);
-    appendSessionCreated(sessionDirectory, createdAt, {
-      workflow_id: resolvedId,
-      workflow_path: workflowRelativePath,
-      title: sessionTitle,
-      prior_session_id: resolvedPrior,
-      prepared: true,
+  try {
+    withSessionLock(sessionDirectory, () => {
+      writeFileAtomic(path.join(sessionDirectory, "manifest.yaml"), `${manifestLines.join("\n")}\n`);
+      writeFileAtomic(taskFilePath(workspace, sessionId), "");
+      writeFileAtomic(path.join(sessionDirectory, "workflow.yaml"), `${draftHeader}${renderWorkflowSource(workflow)}`);
+      appendSessionCreated(sessionDirectory, createdAt, {
+        workflow_id: resolvedId,
+        workflow_path: workflowRelativePath,
+        title: sessionTitle,
+        prior_session_id: resolvedPrior,
+        prepared: true,
+      });
+      commitFoldedStatus(workspace, sessionDirectory);
     });
-    commitFoldedStatus(workspace, sessionDirectory);
-  });
+  } catch (error) {
+    // This directory was allocated above with a fresh UUID and belongs to this failed creation.
+    rmSync(sessionDirectory, { recursive: true, force: true });
+    throw error;
+  }
   return sessionId;
 }
 
@@ -208,6 +224,15 @@ export function activatePreparedSession(workspace: string, sessionId: string, re
   if (read.state === "missing") throw new ConfigurationError(`Session not found: ${sessionId}.`);
   const manifest = readSessionManifest(sessionDirectory);
   const workflow = requireLiveWorkflow(workspace, manifest.workflowPath, manifest.workflowId);
+  if (
+    manifest.workflowPath === relativeWorkflowPath(sessionId) &&
+    manifest.workflowId &&
+    workflow.id !== manifest.workflowId
+  ) {
+    throw new ConfigurationError(
+      `Session workflow id is ${workflow.id}, not ${manifest.workflowId}. Do not change id in workflow.yaml.`,
+    );
+  }
   const prior = resolvePriorSessionId(workspace, workflow, manifest.priorSessionId);
   const handoff = resolveHandoff(workspace, workflow.id, prior);
   withSessionLock(sessionDirectory, () => {

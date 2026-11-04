@@ -17,7 +17,10 @@ inspect and continue.
   If doctor reports an outdated schema, run `migent migrate --yes`.
 - Pass the user's task unchanged. Leave reading `task.md` and its referenced
   documents to the stage agent. Do not edit `task.md` after stages start.
-- Do not edit generated session files. Use the CLI to inspect and resume.
+- Do not edit generated session state files such as `manifest.yaml`,
+  `status.json`, `events.jsonl`, or `executions/`. You may fill the prepared
+  `task.md` and edit its `workflow.yaml` before starting. Use the CLI to
+  inspect and resume.
 - Resume the same session after errors or limits; do not create a replacement
   to bypass them. Ask before resuming a cancelled session.
 
@@ -35,8 +38,9 @@ For a longer task, prepare a session:
 migent session prepare "<title>" --workflow <workflow>
 ```
 
-Output: `session_id` and `task_path`. Write the unchanged task to `task_path`,
-with supporting files beside it, then run:
+Output: `session_id`, `task_path`, and `workflow_path`. Write the unchanged task
+to `task_path`, with supporting files beside it. Adjust `workflow_path` for this
+session if needed, keeping its `id`. Then run:
 
 ```bash
 migent session run --session <session-id> --workflow <workflow>

@@ -1,5 +1,5 @@
 import { providerMap } from "../provider.js";
-import { createPreparedSession, createProviderResolver, log, relativeTaskPath } from "@nodeint/migent-kernel";
+import { createPreparedSession, createProviderResolver, log, relativeTaskPath, relativeWorkflowPath } from "@nodeint/migent-kernel";
 import { requireCurrentSchema } from "../migrate.js";
 
 export function prepareWorkflowSession(
@@ -15,6 +15,7 @@ export function prepareWorkflowSession(
     title: sessionId.trim(),
     status: "prepared",
     task_path: relativeTaskPath(id),
+    workflow_path: relativeWorkflowPath(id),
   };
   process.stdout.write(`${JSON.stringify(payload)}\n`);
   log(`session_id: ${id}`);

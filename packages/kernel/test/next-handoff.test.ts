@@ -103,20 +103,23 @@ test("invalid prior sources fail before allocating a target session", () => {
   expect(readdirSync(sessions)).toEqual(before);
 });
 
-test("prepare defers workflow and handoff snapshots until run, and binding failure stays prepared", () => {
+test("prepare defers handoff snapshots until run, and binding failure stays prepared", () => {
   const { root, prior, workflows, directory } = setup();
   const prepared = createPreparedSession(root, "Prepared target", "implement", prior);
   const targetDir = path.join(root, ".migent", "sessions", prepared);
   expect(existsSync(path.join(targetDir, "workflow.frozen.yaml"))).toBe(false);
+  expect(existsSync(path.join(targetDir, "workflow.yaml"))).toBe(true);
   expect(existsSync(path.join(targetDir, "handoff"))).toBe(false);
   writeFileSync(path.join(targetDir, "task.md"), "A manually prepared task\n");
-  writeFileSync(path.join(workflows, "implement.yaml"), "schema_version: 4\nid: implement\nstages:\n  - { id: changed, role: developer }\n");
+  writeFileSync(path.join(workflows, "implement.yaml"), "schema_version: 4\nid: implement\nstages:\n  - { id: live_change, role: developer }\n");
+  writeFileSync(path.join(targetDir, "workflow.yaml"), "schema_version: 4\nid: implement\nstages:\n  - { id: changed, role: developer }\n");
   rmSync(path.join(directory, "outputs", "plan.md"));
   expect(() => activatePreparedSession(root, prepared)).toThrow(/missing or empty/);
   expect(readFoldedStatus(root, targetDir).status).toBe("prepared");
   writeFileSync(path.join(directory, "outputs", "plan.md"), "Updated before run\n");
   activatePreparedSession(root, prepared);
   expect(loadFrozenWorkflow(targetDir)?.stages.changed).toBeDefined();
+  expect(loadFrozenWorkflow(targetDir)?.stages.live_change).toBeUndefined();
   const status = readFoldedStatus(root, targetDir) as any;
   expect(status.status).toBe("active");
   expect(readFileSync(path.join(targetDir, status.handoff.artifacts.plan.path), "utf8")).toBe("Updated before run\n");
