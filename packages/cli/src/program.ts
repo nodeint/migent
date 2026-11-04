@@ -292,7 +292,7 @@ function registerSessionCommand(program: Command, status: CliStatus): void {
 
   session
     .command("prepare")
-    .description("Create a prepared session and exit. Write task.md, then session run --session <id> --workflow <workflow>.")
+    .description("Create a prepared session with task.md and an editable workflow.yaml, then exit. Fill them in, then session run --session <id> --workflow <workflow>.")
     .argument("<title>", "Session title shown in the list, such as \"some task title\". The session id is a UUID.")
     .requiredOption("--workflow <workflow>", "Workflow id, or a path to a workflow file.")
     .option("--prior <session>", PRIOR_HELP)
@@ -722,7 +722,7 @@ function addDispatchOptions(command: Command, onceDescription: string): void {
     .option("--verbose", VERBOSE_HELP)
     .option(
       "--refresh-workflow",
-      "Use the current workflow, models, and role instructions for this session. Requires an existing session that has a frozen workflow.",
+      "Use the current workflow, models, and role instructions for this session. Requires an existing session that has a frozen workflow. A prepared-session start reads its recorded workflow source instead and does not need this flag.",
     );
 }
 

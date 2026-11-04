@@ -197,12 +197,13 @@ test("session prepare starts through session run --workflow", async () => {
   try {
     const prepared = await capture(() => main(["session", "prepare", "some task title", "--workflow", "plan"], workspace));
     expect(prepared.value).toBe(0);
-    const preparedBody = JSON.parse(prepared.stdout) as { session_id: string; title: string; task_path: string };
+    const preparedBody = JSON.parse(prepared.stdout) as { session_id: string; title: string; task_path: string; workflow_path: string };
     expect(preparedBody).toEqual({
       session_id: expect.stringMatching(/^[0-9a-f-]{36}$/),
       title: "some task title",
       status: "prepared",
       task_path: `.migent/sessions/${preparedBody.session_id}/task.md`,
+      workflow_path: `.migent/sessions/${preparedBody.session_id}/workflow.yaml`,
     });
     const sessionId = preparedBody.session_id;
 

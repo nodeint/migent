@@ -8,7 +8,8 @@ Run commands from the configured project or any of its subdirectories.
 # Create a session and run until it stops. --task is one line and is stored in task.md.
 migent session run --workflow <workflow> --task "<task>"
 
-# Create a prepared session, write a longer task, then start it.
+# Create a prepared session with an empty task.md and an editable workflow.yaml,
+# fill them in, then start it.
 # <title> is a display label, such as "some task title". The printed session_id is a UUID.
 migent session prepare "<title>" --workflow <workflow>
 migent session run --session <session-id> --workflow <workflow>
@@ -57,14 +58,21 @@ without `--workflow` is an error.
 title is that line. A longer task uses `session prepare`.
 `<title>` is the display label, such as `some task title`. Spaces and capitals
 stay. It must be one non-empty line. The command creates the session with status
-`prepared` and prints `session_id`, `title`, `status`, and `task_path` on stdout.
-Write that file, and any companion files in the same directory, then
+`prepared`, an empty `task.md`, and an editable `workflow.yaml` copied from the
+named workflow, then prints `session_id`, `title`, `status`, `task_path`, and
+`workflow_path` on stdout. Write `task.md`, and any companion files in the same
+directory, and adjust `workflow.yaml` if needed. Then run
 `migent session run --session <session-id> --workflow <workflow>`. The workflow
-must be the one stored on the session. `session continue` rejects a prepared
+id must match the session; do not change `id` in `workflow.yaml`. `session continue` rejects a prepared
 session. `session run --session --workflow` accepts only a prepared session. Stage prompts
 name `task.md` and the session directory. They do not include the task text.
-After the first dispatch, a change to `task.md` stops the next dispatch.
-The title stays the text from `prepare`.
+At the first dispatch, Migent validates the draft, freezes it to
+`workflow.frozen.yaml`, and records a hash of `task.md`. After that, a change to
+`task.md` stops the next dispatch. The draft is the source for this session:
+edits to `.migent/workflows/<workflow>.yaml` do not change it, and
+`--refresh-workflow` rereads the draft. Older prepared sessions have no draft
+and keep the project workflow path stored in their manifest. The title stays
+the text from `prepare`.
 
 On a role run, `--task` is the label for a new session and is stored as the title.
 The session id is a UUID. `--task` cannot be
@@ -120,11 +128,15 @@ A workflow session keeps the workflow, models, and role instructions from when
 it was created, in `workflow.frozen.yaml`. An edit to those files does not
 change that session. `session continue` and `session run --session` warn on
 stderr and keep the frozen copy. `--refresh-workflow` adopts the current
-workflow, models, and role instructions, then resumes. It requires an existing
-session that has a frozen workflow. A creating run, a session without that
-file, and a completed or cancelled session exit 2. It does not start a prepared
-session: `session continue` still rejects one, and `session run --session` is
-still the command that starts it.
+workflow, models, and role instructions, then resumes. It requires a session
+that has a frozen workflow. A creating run, a session without that file, and a
+completed or cancelled session exit 2. Starting a prepared session with
+`session run --session --workflow` does not need the flag: that command reads
+the workflow source recorded for the session (`workflow.yaml` for a newly
+prepared session, or the recorded project workflow path for an older one) and
+writes `workflow.frozen.yaml` regardless, so the flag has no effect on that
+start. `session continue` still rejects a prepared session,
+and `session run --session` remains the command that starts it.
 
 A workflow run leaves stdout empty. Stderr is plain lines. A stage start line
 names the stage, attempt, clock time, provider, and model. A stage finish line
