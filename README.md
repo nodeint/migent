@@ -25,6 +25,7 @@ the workflow's progress.
 
 - [Migent](#migent)
   - [Contents](#contents)
+  - [What you can do](#what-you-can-do)
   - [Why Migent?](#why-migent)
   - [Supported CLIs](#supported-clis)
   - [Editor extension](#editor-extension)
@@ -37,33 +38,48 @@ the workflow's progress.
   - [Workflow as code](#workflow-as-code)
     - [Start with one role and one stage](#start-with-one-role-and-one-stage)
     - [Add planning and review](#add-planning-and-review)
+    - [Beyond sequential workflows](#beyond-sequential-workflows)
   - [Concepts](#concepts)
-  - [Current scope](#current-scope)
+  - [Roadmap](#roadmap)
+    - [In progress](#in-progress)
+    - [Planned](#planned)
   - [Update Migent](#update-migent)
   - [Documentation](#documentation)
   - [License](#license)
 
+## What you can do
+
+- **Define roles, choose models.** Define each role's responsibilities and assign a provider and model suited to its work.
+- **Run a single role.** Ask a planner, developer, or reviewer to work on a task, then continue the conversation in the same session.
+- **Automate workflows.** Connect roles with artifact handoffs, verification checks, and review cycles.
+- **Keep people involved.** Let agents ask questions and continue with your answers.
+- **Track and resume work.** Inspect sessions, follow live activity, and continue stopped work.
+- **Connect workflows.** Start a new workflow using a completed session's outputs as context.
+- **Inspect usage.** View session time, token usage, reported costs, and revision counts.
+- **Work from your editor or agent.** Use the editor extension or let an AI agent operate Migent through its skill.
+
 ## Why Migent?
 
-Calling two agent CLIs from a shell script is easy. Reliably coordinating them
-across reviews, revisions, failures, and resumed sessions is not.
+Different models bring different strengths, often across different providers
+and coding-agent CLIs. Using them together means coordinating the work yourself.
 
-Migent is built around three ideas:
+- **You become the bridge.** Copy plans between conversations, carry review
+  feedback back to the author, and keep each model working from the latest context.
+- **You keep track of progress.** Remember what was approved, what needs revision,
+  and where to pick up when work stops.
+- **You repeat the coordination.** Recreate the same handoffs and review steps
+  for the next task or teammate.
 
-- **Use models for what they do best.** Assign each role to a provider and model
-  suited to the work, rather than asking one agent to do everything.
-- **Treat the engineering process as code.** Keep stages, handoffs, review gates,
-  and revision policies in version control beside the project they govern.
-- **Keep orchestration explicit.** The team defines the process; models execute
-  roles inside it. A supervisor model does not invent or dynamically control
-  the workflow.
+Migent turns that coordination into a repeatable process:
 
-**Roles define the work. Models carry it out.** Changing the model behind
-a role does not require rewriting the workflow.
+- **Assign roles, choose models.** Run a role independently or connect several
+  into a workflow. Change providers without rewriting the process.
+- **Make handoffs explicit.** Pass artifacts between stages, verify results,
+  and route review feedback back for revision.
+- **Keep progress and process.** Inspect and resume saved sessions; version
+  roles and workflows alongside your code.
 
-**Common workflow model, native provider capabilities.** Migent coordinates
-the process, while each provider CLI remains responsible for authentication,
-agent execution, and its own tools and options.
+Each provider CLI keeps its own authentication, tools, and execution capabilities.
 
 ## Supported CLIs
 
@@ -124,13 +140,19 @@ Run setup from your project root, either with an AI agent or with the CLI.
    The agent handles setup. If you have specific provider or model
    preferences, mention them for each role in the same prompt.
 
-3. Ask the agent to write and review a plan for your task (optional):
+3. Ask the agent to run a single role, such as the reviewer (optional):
+
+   ```text
+   Use the migent skill to ask the reviewer role to review my latest changes.
+   ```
+
+4. Ask the agent to write and review a plan for your task (optional):
 
    ```text
    Use the migent skill to run the plan workflow for this task: <Describe your task here>.
    ```
 
-4. Ask the agent to implement the plan and review the changes (optional):
+5. Ask the agent to implement the plan and review the changes (optional):
 
    ```text
    Use the migent skill to run the implement workflow with this plan: <Path to your plan file>.
@@ -152,13 +174,19 @@ Run setup from your project root, either with an AI agent or with the CLI.
    migent skill install
    ```
 
-3. Write and review a plan for your task (optional):
+3. Run a single role, such as the reviewer (optional):
+
+   ```bash
+   migent session run --role reviewer --prompt "Review my latest changes"
+   ```
+
+4. Write and review a plan for your task (optional):
 
    ```bash
    migent session run --workflow plan --task "<Describe your task here>"
    ```
 
-4. Implement the plan and review the changes (optional):
+5. Implement the plan and review the changes (optional):
 
    ```bash
    migent session run --workflow implement --task "<Path to your plan file>"
@@ -236,8 +264,9 @@ layout and recovery commands.
 ## Workflow as code
 
 Workflows live in `.migent/workflows/`. Roles live in `.migent/config.yaml`.
-A role names a kind of work and selects a provider and model. A stage assigns
+A role defines responsibilities and selects a provider and model. A stage assigns
 work to a role; a workflow connects those stages.
+Role instructions set shared working standards; stage instructions define the task.
 
 ### Start with one role and one stage
 
@@ -252,9 +281,12 @@ from `migent provider list` in place of the example IDs.
 schema_version: 4
 roles:
   developer:
+    instructions:
+      - Make focused changes that address root causes and follow project conventions.
+      - Preserve unrelated behavior and support changes with relevant checks.
     default_model:
-      provider: codex
-      model: gpt-5
+      provider: claude
+      model: claude-sonnet-5.5
 ```
 
 This workflow asks the developer to implement a task, then checks the result:
@@ -266,7 +298,8 @@ stages:
   - id: implement
     role: developer
     instructions:
-      - Implement the task described in task.md.
+      - Implement the requested behavior, including edge cases and relevant tests.
+      - Address required review findings when revising and rerun affected checks.
     verify:
       - pnpm build
       - pnpm test
@@ -295,13 +328,21 @@ or different providers:
 schema_version: 4
 roles:
   planner:
+    instructions:
+      - Design maintainable architecture grounded in repository evidence.
+      - Keep designs proportional to the task; produce plans without changing code.
+    default_model:
+      provider: claude
+      model: claude-opus-5.5
+      effort: high
+  reviewer:
+    instructions:
+      - Assess correctness, completeness, and maintainability using concrete evidence.
+      - Report substantive findings with impact and required corrections; do not edit code.
     default_model:
       provider: codex
-      model: gpt-5
-  reviewer:
-    default_model:
-      provider: grok
-      model: grok-4
+      model: gpt-6.1-sol
+      effort: medium
 ```
 
 The planner produces `plan.md`. The reviewer receives it through `depends_on`
@@ -313,9 +354,12 @@ schema_version: 4
 stages:
   - id: plan
     role: planner
+    ask: human
     max_revisions: 3
     instructions:
-      - Read task.md and write plan.md into artifacts.
+      - Define scope, component boundaries, contracts, and key trade-offs in plan.md.
+      - Ask the user when scope or requirements are unclear.
+      - Resolve substantive review findings when revising the plan.
     produces:
       artifact: plan.md
 
@@ -323,15 +367,20 @@ stages:
     role: reviewer
     depends_on: [plan]
     instructions:
-      - Verify plan.md against the codebase.
-      - Approve only if implementation can proceed without ambiguity.
+      - Review plan.md against the task and codebase for feasibility and architectural gaps.
+      - Report required corrections together; keep the review at the architecture level.
     decision:
       - approved:
-          when: The work meets the task and required checks pass.
+          when: The plan meets the task with no substantive architectural gaps.
           navigate: complete
       - revise:
-          when: Required fixes remain. List each fix and its impact.
+          when: Scope, feasibility, or architectural issues require corrections.
           navigate: plan
+
+outputs:
+  - name: approved_plan
+    from_stage: plan
+    artifact: plan.md
 ```
 
 Run this workflow with:
@@ -341,9 +390,32 @@ migent session run --workflow plan --task "Plan a --json flag for the export com
 ```
 
 `max_revisions` limits the number of revisions. The file declared in `produces`
-is an **artifact**; `depends_on` makes it available to the reviewer. The
+is an **artifact**; 
+
+`depends_on` makes it available to the reviewer. The
 **decision** selects a route: `approved` completes the workflow, while `revise`
 returns to `plan` with the review feedback.
+
+`ask: human` lets the planner pause for your answers and continue the same
+conversation. `outputs` publishes the final plan when the workflow completes.
+
+### Beyond sequential workflows
+
+- **Branch and join.** Use `concurrency` to run independent stages in parallel,
+  `navigate: [test, docs]` to branch, and `depends_on` to wait for upstream stages.
+- **Run only relevant work.** Use `run_when.changed_paths` to run a stage only
+  when matching Git paths have changed.
+- **Tune each stage.** Share named models across roles, set model `effort`, or
+  override a stage's `model` and provider `options`.
+- **Control context.** Set shared `constraints` for the workflow or use
+  `session.resume_from` to continue an upstream stage's provider conversation.
+- **Set check limits.** Use `max_verify` and `verify_timeout` to bound checks;
+  omit `role` for a stage that only runs verification commands.
+- **Connect workflows.** Declare `downstream` suggestions that pass published
+  outputs to a new workflow when you start it with `--prior`.
+
+See [Writing workflows](docs/workflows.md) and
+[Model configuration](docs/providers.md) for details and examples.
 
 ## Concepts
 
@@ -355,16 +427,18 @@ returns to `plan` with the review feedback.
 - **Decision:** A stage's choice of what happens next, such as `approved` or `revise`.
 - **Session:** A saved run of a workflow or role that you can inspect and continue.
 
-## Current scope
+## Roadmap
 
-Migent runs locally using your installed coding-agent CLIs. You define the
-stages, checks, and review routes; Migent coordinates them and saves progress
-so you can inspect results or continue stopped work. Each provider CLI handles
-its own sign-in, tools, and agent execution.
+### In progress
 
-You can run a single role or a workflow, pass artifacts between stages, and
-connect workflows. Use the CLI directly or ask an AI agent with the Migent
-skill to operate it for you.
+- [ ] **Everyday CLI** — Refine core commands for reliable daily use.
+- [ ] **IDE extensions** — Simplify interactions and visualize Migent inside your editor.
+
+### Planned
+
+- [ ] **Local app** — Manage Migent workspaces across your machine in one place.
+- [ ] **Operations chatbot** — Configure, run, and monitor Migent through conversation.
+- [ ] **Team collaboration** — Support shared workflows and coordination across teams.
 
 ## Update Migent
 
