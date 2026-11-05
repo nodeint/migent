@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.3.6
+
 ### Added
 
 - `migent provider list --json` includes a native headless option catalog discovered from each installed CLI, with flag aliases, descriptions, argument metadata, choices, defaults, and per-provider discovery errors. Added adapter contracts and a documentation map.
@@ -93,24 +95,9 @@
 
 - `migent migrate` upgrades and versions `config.local.yaml`, resolves providers across config layers, and preserves shared roles whose default model is supplied locally.
 
-## 0.3.0
-
-### Added
-
-- Internal packages include README files linking to the Migent CLI on npm.
-
-- Workflows can suggest `downstream` runs with explicit artifact mappings. Completed sessions publish `next.json` and copyable commands using `--prior`. Target sessions snapshot named context at start; `--prior` without a matching suggestion accepts an explicit task and all published source outputs.
-
-- Stages can opt into human decisions with `ask: human` and return `status: question` with a structured JSON question batch. Session `questions.json` records all rounds, context, options, single/multiple selection modes, and answers; each execution keeps its original batch. Migent numbers questions and letters options in order, accepting short replies such as `1A, 2B, 3 explain further` or `2A+C` for multiple selections. Free-text answers are always allowed. Reply with `session continue --reply` or `--reply-file`, selecting `--stage` when needed. Answers are validated before dispatch. Questions stop only their branch, exit with code 9, and preserve artifacts and the remaining verification budget across replies. Standalone role sessions can ask the human too.
-
-### Changed
-
-- Schema v4 removes workflow `requires`; workflows run independently. `migent migrate` removes prerequisites with guidance for manual downstream setup. Prepared sessions freeze workflow, models, and prior artifacts when started, so edits before `run` take effect.
-
-- Schema v3 declares each stage decision with `when` instructions for the agent and a `navigate` destination. `migent migrate` converts older values/routes while preserving existing stage instructions. Frozen sessions retain their original schema and behavior.
-
 ## Older versions
 
+- [0.3.0](https://github.com/nodeint/migent/releases/tag/v0.3.0)
 - [0.2.1](https://github.com/nodeint/migent/releases/tag/v0.2.1)
 - [0.2.0](https://github.com/nodeint/migent/releases/tag/v0.2.0)
 - [0.1.11](https://github.com/nodeint/migent/releases/tag/v0.1.11)
