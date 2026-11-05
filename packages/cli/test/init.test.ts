@@ -494,7 +494,7 @@ test("requires provider and model when not interactive", async () => {
     expect(first.stderr).toContain("Pass --planner-provider and --planner-model for planner when init is not interactive.");
     const second = await capture(() => main(["init", "--provider", "codex"], workspace));
     expect(second.value).toBe(2);
-    expect(second.stderr).toContain("--model");
+    expect(second.stderr).toContain("--developer-model");
     const previous = process.env.MIGENT_NO_INPUT;
     process.env.MIGENT_NO_INPUT = "1";
     try {
@@ -586,6 +586,45 @@ test("non-interactive CLI requires all three role models and accepts the same mo
     expect(resolveStageTarget(workspace, "plan", "plan", undefined, resolve).options).toEqual({ model_reasoning_effort: "medium" });
     expect(resolveStageTarget(workspace, "plan", "review_plan", undefined, resolve).options).toEqual({ model_reasoning_effort: "high" });
     expect(resolveStageTarget(workspace, "implement", "implement", undefined, resolve).options).toEqual({ model_reasoning_effort: "low" });
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("init accepts independent effort flags and rejects conflicting or invalid values", async () => {
+  const workspace = tempDir();
+  cliHooks.which = which(new Set(["codex"]));
+  cliHooks.runCommand = runCommand;
+  const args = ["init", "--no-input", "--provider", "codex", "--model", "gpt-5",
+    "--planner-provider", "codex", "--planner-model", "gpt-5",
+    "--reviewer-provider", "codex", "--reviewer-model", "gpt-5"];
+  try {
+    const aliases = await capture(() => main([...args, "--developer-provider", "codex"], workspace));
+    expect(aliases.value).toBe(2);
+    expect(aliases.stderr).toContain("Use only one of --developer-provider and --provider");
+    cliHooks.which = which(new Set(["codex"]));
+    cliHooks.runCommand = runCommand;
+    const conflict = await capture(() => main([...args, "--effort", "high", "--option", "model_reasoning_effort=low"], workspace));
+    expect(conflict.value).toBe(2);
+    expect(conflict.stderr).toContain("conflicts");
+    cliHooks.which = which(new Set(["codex"]));
+    cliHooks.runCommand = runCommand;
+    const invalid = await capture(() => main([...args, "--planner-effort", "invalid"], workspace));
+    expect(invalid.value).toBe(2);
+    expect(existsSync(path.join(workspace, ".migent"))).toBe(false);
+    cliHooks.which = which(new Set(["codex"]));
+    cliHooks.runCommand = runCommand;
+    const developerArgs = args.map((arg) => arg === "--provider" ? "--developer-provider" : arg === "--model" ? "--developer-model" : arg);
+    const result = await capture(() => main([...developerArgs, "--planner-effort", "medium", "--reviewer-effort", "high", "--developer-effort", "low"], workspace));
+    expect(result.value, result.stderr).toBe(0);
+    const local = readFileSync(path.join(workspace, ".migent", "config.local.yaml"), "utf8");
+    expect(local).toContain("effort: medium");
+    expect(local).toContain("effort: high");
+    expect(local).toContain("effort: low");
+    const resolve = createProviderResolver(defaultProviders());
+    expect(resolveStageTarget(workspace, "plan", "plan", undefined, resolve).options.model_reasoning_effort).toBe("medium");
+    expect(resolveStageTarget(workspace, "plan", "review_plan", undefined, resolve).options.model_reasoning_effort).toBe("high");
+    expect(resolveStageTarget(workspace, "implement", "implement", undefined, resolve).options.model_reasoning_effort).toBe("low");
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }

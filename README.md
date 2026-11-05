@@ -131,10 +131,7 @@ Run setup from your project root, either with an AI agent or with the CLI.
    etc.):
 
    ```text
-   Use the migent skill to set up Migent in this project. Configure the
-   planner, developer, and reviewer roles with different models, and choose an
-   effort level that fits each role (for example, higher effort for planning
-   and review, medium effort for development).
+   Use the migent skill to set up Migent in this project.
    ```
 
    The agent handles setup. If you have specific provider or model

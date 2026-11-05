@@ -11,6 +11,7 @@ const ROLES = ["planner", "reviewer", "developer"] as const;
 export interface ModelChoice {
   provider: string;
   model: string;
+  effort?: string;
   options: Record<string, string>;
 }
 
@@ -75,6 +76,7 @@ function renderConfig(source: string, models: Record<(typeof ROLES)[number], Mod
     }
     const choice = models[role];
     const node: Record<string, unknown> = { provider: choice.provider, model: choice.model };
+    if (choice.effort !== undefined) node.effort = choice.effort;
     if (Object.keys(choice.options).length > 0) node.options = choice.options;
     doc.setIn(["roles", role, "default_model"], doc.createNode(node));
   }

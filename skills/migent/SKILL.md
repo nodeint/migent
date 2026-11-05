@@ -34,7 +34,7 @@ approval before resuming a cancelled session.
 
 | Job | Reference |
 | --- | --- |
-| Initialize a project or install/update the skill | [setup.md](references/setup.md) |
+| Initialize a project or update the skill | [setup.md](references/setup.md) |
 | Configure models, roles, local overrides, or client options | [config.md](references/config.md), [configuration fields](references/schema-config.yaml) |
 | Run or prepare a workflow | [workflow-sessions.md](references/workflow-sessions.md) |
 | Run one role or send it a new prompt | [role-sessions.md](references/role-sessions.md) |
