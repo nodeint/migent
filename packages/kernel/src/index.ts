@@ -27,8 +27,14 @@ export {
   loadModelTarget,
   loadModelDefinition,
   loadRoleInstructions,
+  loadMergedConfig,
   loadWorkspaceConfig,
   loadYamlMapping,
+  listModelDefinitions,
+  field,
+  readConfigLayer,
+  mergeConfigLayers,
+  resolveEffectiveProvider,
   localConfigPath,
   mergeConfig,
   resolveRoleTarget,
@@ -36,8 +42,18 @@ export {
   resolveStageSpec,
   resolveStageTarget,
   stringifyConfig,
+  validateRoleOptions,
 } from "./config.js";
-export type { ModelOverride, StageTarget } from "./config.js";
+export type {
+  ConfigLayer,
+  Field,
+  ConfigOwner,
+  EffectiveProviderFailure,
+  MergedConfig,
+  ModelDefinitionEntry,
+  ModelOverride,
+  StageTarget,
+} from "./config.js";
 export {
   ConfigEditError,
   assignRoles,
@@ -59,17 +75,20 @@ export type {
   StageRef,
   StageShield,
 } from "./config-edit.js";
-export { diagnose, doctor, whichSync } from "./doctor.js";
-export type { Check, DiagnoseOptions } from "./doctor.js";
-export { assertSessionId, diagnoseSession, selectRunWorkflow, selectSessionWorkflow, sessionEffortKeys } from "./doctor-session.js";
-export type {
-  DiagnoseSessionOptions,
-  SessionDiagnosis,
-  SessionSelection,
-  SessionSource,
-  SessionWorkflowKind,
-} from "./doctor-session.js";
+export { whichSync } from "./which.js";
+export {
+  assertSessionId,
+  authoringMessage,
+  selectRunWorkflow,
+  selectSessionWorkflow,
+} from "./session-selection.js";
+export type { SessionSelection, SessionSource, SessionWorkflowKind } from "./session-selection.js";
 export { ConfigurationError, OutputsMissing } from "./errors.js";
+export type { ConfigurationErrorDetails } from "./errors.js";
+export { unknownRoleKeyEntries } from "./authoring-diagnostics.js";
+export type { UnknownKey } from "./authoring-diagnostics.js";
+export { WORKFLOW_FREEZE_FILE, collectFrozenDrift } from "./session-freeze.js";
+export type { WorkflowFreeze } from "./session-freeze.js";
 export {
   isWorkflowV2,
   loadNamedWorkflow,
@@ -301,9 +320,9 @@ export const KERNEL_PLACEHOLDER = "kernel";
 
 export type { ProviderResolver } from "./provider-contract.js";
 
-export type { ModelEffortCheck } from "./doctor.js";
 export { publishNextSuggestions, resolveNextSuggestions, formatNextCommand } from "./next-handoff.js";
-export { latestDiagnosticsPath, sessionDiagnosticsCheck } from "./session-diagnostics.js";
+export { latestDiagnosticsPath, readRecordedDiagnostics } from "./session-diagnostics.js";
+export type { RecordedDiagnostics } from "./session-diagnostics.js";
 export {
   LOCAL_CONFIG_LABEL,
   getConfigView,

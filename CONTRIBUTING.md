@@ -15,12 +15,13 @@ behavior is documented in [README.md](README.md) and [docs/](docs/).
 |---|---|---|
 | `packages/prompts` | `@nodeint/migent-prompts` | Prompt templates and renderers |
 | `packages/kernel` | `@nodeint/migent-kernel` | Workflow engine, config, session store, libc bindings |
+| `packages/doctor` | `@nodeint/migent-doctor` | Health checks and diagnostics: config, workflows, providers, sessions, model availability |
 | `packages/adapters` | `@nodeint/migent-adapters` | Antigravity, BytePlus, Claude, Codex, Grok, and OpenCode providers |
 | `packages/registry` | `@nodeint/migent-registry` | Machine-local workspace registry service |
 | `packages/cli` | `@nodeint/migent` | The `migent` command |
 | `integration/` | — | End-to-end tests against fake provider binaries |
 
-Users install only `@nodeint/migent`. The other three packages have no stable
+Users install only `@nodeint/migent`. The other packages have no stable
 API and are published only because the CLI depends on them. Import them by
 package name (`@nodeint/migent-kernel`), never by relative path across package
 boundaries.
@@ -101,7 +102,7 @@ The release workflow repeats build and tests on the exact tagged commit.
 
 Every development change, including release version bumps, reaches `next`
 through a PR. `main` records the exact commit of the latest successfully
-published release; it advances only after all four packages are public and
+published release; it advances only after all packages are public and
 verified.
 
 Configure branch protection as follows:
@@ -136,7 +137,7 @@ Release configuration must match the checked-in definitions:
 3. The release workflow checks tag ancestry on `origin/next`.
 4. Run `pnpm setup:git`. The pre-push hook permits only an existing remote
    lightweight version tag to advance `main`, after checking a clean tree,
-   remote refs, fast-forward ancestry, package versions, release notes, all four
+   remote refs, fast-forward ancestry, package versions, release notes, all
    public npm versions, and an isolated installation of the CLI.
 
 Never advance `main` before publication or bypass hooks or protection.
@@ -171,7 +172,7 @@ until CI is green.
 
 ## Releasing
 
-All four packages share one version and are released together.
+All packages share one version and are released together.
 
 ### 1. Release pull request
 
@@ -197,7 +198,7 @@ merge it; the commit subject becomes `Release 0.2.0 (#N)`.
 ### 2. Tag the merged commit
 
 Pushing the tag starts the release workflow. Read the exact merged commit SHA
-from the release PR; verify it is on `origin/next`, all four package versions
+from the release PR; verify it is on `origin/next`, all package versions
 are `0.2.0`, and its changelog contains that release. Do not select a commit
 only by subject or tag the pre-merge release branch.
 
@@ -226,9 +227,10 @@ the **Staged Packages** tab on npmjs.com (or use `npm stage list` /
 
 1. `@nodeint/migent-prompts`
 2. `@nodeint/migent-kernel`
-3. `@nodeint/migent-adapters`
-4. `@nodeint/migent-registry`
-5. `@nodeint/migent`
+3. `@nodeint/migent-doctor`
+4. `@nodeint/migent-adapters`
+5. `@nodeint/migent-registry`
+6. `@nodeint/migent`
 
 Approving the CLI before its dependencies leaves `npm i -g @nodeint/migent`
 broken until the rest are approved.
@@ -236,7 +238,7 @@ broken until the rest are approved.
 ### 4. Verify
 
 ```bash
-for package in migent-kernel migent-adapters migent-registry migent; do
+for package in migent-kernel migent-doctor migent-adapters migent-registry migent; do
   npm view "@nodeint/$package@0.2.0" version
 done
 npm i -g --prefer-online @nodeint/migent@0.2.0
@@ -249,7 +251,7 @@ metadata without the new version and fail with `ETARGET`.
 ### 5. Synchronize main with the published release
 
 Staging packages and creating a GitHub Release do not complete publication.
-After all four packages are approved, verify their exact versions and the
+After all packages are approved, verify their exact versions and the
 installed CLI version. Then fast-forward `main` to the exact tagged release
 commit. There is a short interval between publication and this update; the
 branches and public packages are synchronized when the release completes.
@@ -280,7 +282,7 @@ release when the failed version cannot be completed safely.
 
 ### Trusted publisher settings
 
-Each of the four packages on npmjs.com has a GitHub Actions trusted publisher:
+Each package on npmjs.com (including `@nodeint/migent-doctor`, which must have its trusted publisher configured before its first release) has a GitHub Actions trusted publisher:
 
 | Field | Value |
 |---|---|

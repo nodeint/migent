@@ -14,6 +14,7 @@
 
 ### Changed
 
+- Health checks moved out of the kernel into a new package, `@nodeint/migent-doctor` (CLI → doctor → kernel). The kernel no longer exports `diagnose`, `doctor`, `diagnoseSession`, `sessionEffortKeys`, `sessionDiagnosticsCheck`, `Check`, `DiagnoseOptions`, `ModelEffortCheck`, `DiagnoseSessionOptions`, or `SessionDiagnosis`; import them from the doctor package. Session workflow selection stays in the kernel. The kernel gains `mergeConfigLayers`, `readConfigLayer`, `listModelDefinitions`, and `resolveEffectiveProvider`, and `ConfigurationError` carries optional `code`, `path`, `layer`, and `position`. `migent doctor` output is unchanged.
 - `migent init` stores selected role models in the shared config, starts local configuration with empty model and role overrides, and includes explicit decision criteria and outputs in workflow templates.
 - Decision `when` guidance is optional. Migration no longer generates placeholder guidance, and doctor no longer warns about existing placeholders.
 - A signal-like exit of the wrapper during startup no longer reports a startup failure when a cancellation arrives within a short window; it is reported as a cancellation.

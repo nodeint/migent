@@ -9,6 +9,7 @@ export default defineConfig({
     alias: {
       "@nodeint/migent-adapters": path.join(root, "packages/adapters/src/index.ts"),
       "@nodeint/migent-prompts": path.join(root, "packages/prompts/src/index.ts"),
+      "@nodeint/migent-doctor": path.join(root, "packages/doctor/src/index.ts"),
       "@nodeint/migent-kernel": path.join(root, "packages/kernel/src/index.ts"),
     },
   },

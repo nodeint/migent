@@ -1,31 +1,19 @@
-import { ModelCatalog, defaultProviders } from "@nodeint/migent-adapters";
-import { killProcessTree, spawnProvider, spawnProviderSync, type Provider, type ProviderOption } from "@nodeint/migent-kernel";
+import { defaultProviders } from "@nodeint/migent-adapters";
+import {
+  ProviderCommandFailed,
+  loadOptionValues,
+  type CatalogProvider,
+  type RunCommand,
+  type Which,
+} from "@nodeint/migent-doctor";
+import { killProcessTree, spawnProvider, spawnProviderSync, type CliModelCatalog, type Provider } from "@nodeint/migent-kernel";
 
-export interface CatalogProvider extends Provider {
-  modelCatalogCommand(): string[];
-  /** Written to the catalog command's stdin when the CLI reads its request there. */
-  modelCatalogInput?(): string;
-  parseModelCatalog(stdout: string): ModelCatalog;
-  optionValuesCommand(name: string, model: string): string[] | null;
-  parseOptionValues(name: string, text: string, model?: string): readonly string[];
-  providerOptions(): readonly ProviderOption[];
-}
-
-export type Which = (command: string) => string | null;
-export type RunCommand = (argv: string[], input?: string) => string | Promise<string>;
-
-export class ProviderCommandFailed extends Error {}
+// The catalog helpers belong to the doctor; commands keep importing them from here.
+export { ProviderCommandFailed, asCatalog, knownModel, loadCatalog, loadOptionValues } from "@nodeint/migent-doctor";
+export type { CatalogProvider, RunCommand, Which } from "@nodeint/migent-doctor";
 
 export function providerMap(): Record<string, Provider> {
   return defaultProviders();
-}
-
-export function asCatalog(provider: Provider): CatalogProvider {
-  const candidate = provider as Partial<CatalogProvider>;
-  if (typeof candidate.modelCatalogCommand !== "function" || typeof candidate.parseModelCatalog !== "function") {
-    throw new ProviderCommandFailed(`${provider.command} does not list models.`);
-  }
-  return candidate as CatalogProvider;
 }
 
 export function requireProvider(providers: Record<string, Provider>, provider: string): Provider {
@@ -55,36 +43,6 @@ export function detected(
   return rows;
 }
 
-export async function loadCatalog(
-  provider: Provider,
-  which: Which,
-  runCommand: RunCommand,
-): Promise<ModelCatalog> {
-  if (which(provider.command) === null) {
-    throw new ProviderCommandFailed(
-      `${provider.command} is not on PATH, so its models could not be listed.`,
-    );
-  }
-  const catalogProvider = asCatalog(provider);
-  let stdout: string;
-  try {
-    stdout = await runCommand(catalogProvider.modelCatalogCommand(), catalogProvider.modelCatalogInput?.());
-  } catch (error) {
-    if (error instanceof ProviderCommandFailed) throw error;
-    const reason = error instanceof Error ? error.message : String(error);
-    throw new ProviderCommandFailed(`Could not list ${provider.command} models: ${reason}`);
-  }
-  const catalog = catalogProvider.parseModelCatalog(stdout);
-  if (catalog.ids.length === 0) throw new ProviderCommandFailed(`${provider.command} returned no models.`);
-  return catalog;
-}
-
-export function knownModel(model: string, catalog: ModelCatalog): string {
-  const value = model.trim();
-  if (!catalog.ids.includes(value)) throw new ProviderCommandFailed(`Unknown model: ${value}.`);
-  return value;
-}
-
 export function parseOptions(pairs: readonly string[]): Record<string, string> {
   const parsed: Record<string, string> = {};
   for (const pair of pairs) {
@@ -98,41 +56,10 @@ export function parseOptions(pairs: readonly string[]): Record<string, string> {
   return parsed;
 }
 
-export async function loadOptionValues(
-  provider: Provider,
-  name: string,
-  model: string,
-  catalog: ModelCatalog,
-  which: Which,
-  runCommand: RunCommand,
-): Promise<readonly string[] | null> {
-  const found = catalog.valuesFor(model, name);
-  if (found !== null) return found;
-  const catalogProvider = asCatalog(provider);
-  const argv = catalogProvider.optionValuesCommand(name, model);
-  if (argv === null) return null;
-  if (which(provider.command) === null) {
-    throw new ProviderCommandFailed(
-      `${provider.command} is not on PATH, so its ${name} values could not be listed.`,
-    );
-  }
-  let text: string;
-  try {
-    text = await runCommand(argv);
-  } catch (error) {
-    if (error instanceof ProviderCommandFailed) text = error.message;
-    else {
-      const reason = error instanceof Error ? error.message : String(error);
-      throw new ProviderCommandFailed(`Could not list ${provider.command} ${name} values for ${model}: ${reason}`);
-    }
-  }
-  return catalogProvider.parseOptionValues(name, text, model);
-}
-
 export async function acceptedOptions(
   provider: Provider,
   model: string,
-  catalog: ModelCatalog,
+  catalog: CliModelCatalog,
   which: Which,
   runCommand: RunCommand,
   options: Readonly<Record<string, string>>,

@@ -1079,12 +1079,25 @@ function stageOptions(stage: Record<string, unknown>, stageId: string): Record<s
   return readOptionMap(raw, `stages.${stageId}.options`);
 }
 
-export function readOptionMap(raw: Record<string, unknown>, field: string): Record<string, string> {
+/** `path` is the literal key path of `field`, for errors that must say where the problem sits. */
+export function readOptionMap(
+  raw: Record<string, unknown>,
+  field: string,
+  path?: readonly string[],
+): Record<string, string> {
   const parsed: Record<string, string> = {};
   for (const [key, item] of Object.entries(raw)) {
-    if (!optionKey.test(key)) throw new ConfigurationError(`Missing or invalid ${field} key.`);
+    if (!optionKey.test(key)) {
+      throw new ConfigurationError(`Missing or invalid ${field} key.`, {
+        code: "option-key-invalid",
+        ...(path === undefined ? {} : { path: [...path, key] }),
+      });
+    }
     if (typeof item !== "string" || item.trim() === "") {
-      throw new ConfigurationError(`Missing or invalid ${field}.${key}.`);
+      throw new ConfigurationError(`Missing or invalid ${field}.${key}.`, {
+        code: "option-invalid",
+        ...(path === undefined ? {} : { path: [...path, key] }),
+      });
     }
     parsed[key] = item.trim();
   }

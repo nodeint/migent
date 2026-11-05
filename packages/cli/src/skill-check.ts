@@ -1,5 +1,5 @@
 import path from "node:path";
-import type { Check } from "@nodeint/migent-kernel";
+import type { Check } from "@nodeint/migent-doctor";
 import { skillSourceDirectory } from "./commands/skill.js";
 import { scanInstalledSkills } from "./skill-scan.js";
 

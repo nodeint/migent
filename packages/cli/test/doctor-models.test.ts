@@ -4,7 +4,7 @@ import path from "node:path";
 import { expect, test } from "vitest";
 import { stringifyConfig as stringify } from "@nodeint/migent-kernel";
 import { runDoctor } from "../src/commands/doctor.ts";
-import { closest } from "../src/model-check.ts";
+import { closest } from "@nodeint/migent-doctor";
 import type { RunCommand } from "../src/provider.ts";
 import { capture } from "./support.ts";
 

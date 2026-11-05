@@ -6,7 +6,11 @@ export function parseYamlDocument(text: string): unknown {
     return parse(text);
   } catch (error) {
     if (error instanceof YAMLParseError) {
-      throw new ConfigurationError(error.message);
+      const [position] = error.linePos ?? [];
+      throw new ConfigurationError(error.message, {
+        code: "yaml-syntax",
+        ...(position === undefined ? {} : { position: { line: position.line, column: position.col } }),
+      });
     }
     throw error;
   }

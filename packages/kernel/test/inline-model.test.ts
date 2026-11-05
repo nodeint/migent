@@ -5,7 +5,7 @@ import { stringify } from "yaml";
 import { afterEach, expect, test } from "vitest";
 import { defaultProviders } from "@nodeint/migent-adapters";
 import {
-  createProviderResolver, describeChange, diagnose, inspectConfig, loadWorkspaceConfig, patchConfigText,
+  createProviderResolver, describeChange, inspectConfig, loadWorkspaceConfig, patchConfigText,
   resolveRoleCascade, resolveRoleTarget, resolveStageSpec,
 } from "../src/index.ts";
 import { parseWorkflowMapping } from "../src/workflow.ts";
@@ -25,15 +25,11 @@ function workspace(config: unknown, local?: unknown): string {
   return root;
 }
 
-test("inline-only role resolution and doctor use the same model validation as aliases", () => {
+test("inline-only role resolution validates models like aliases", () => {
   const root = workspace({ roles: { dev: { default_model: model } } });
   expect(resolveRoleTarget(root, "dev", undefined, resolver)).toEqual({
     provider: "codex", model: "test-model", options: { model_reasoning_effort: "high", temperature: "0.2" },
   });
-  const checks = diagnose(root, { providers, which: () => "/fake/provider" });
-  expect(checks[0].problems).toEqual([]);
-  expect(checks[2].ok).toBe(true);
-  expect(checks[2].items.join(" ")).toContain("codex");
   const config = loadWorkspaceConfig(root);
   const snapshot = structuredClone(config);
   const view = inspectConfig(config, [], resolver);
@@ -73,8 +69,6 @@ test.each([
 test.each([{}, null, { temperature: "0.2" }])("removed role options are rejected: %j", (options) => {
   const config = { roles: { dev: { default_model: model, options } } };
   expect(() => resolveRoleCascade(config, "dev", undefined, resolver)).toThrow("roles.dev.options is no longer supported");
-  const checks = diagnose(workspace(config), { providers, which: () => "/fake/provider" });
-  expect(checks[0].problems.join(" ")).toContain("roles.dev.options is no longer supported");
 });
 
 test("stage model selection, stage options and CLI options override inline defaults", () => {
@@ -89,23 +83,6 @@ test("stage model selection, stage options and CLI options override inline defau
   expect(resolveStageSpec(config, inline, undefined, resolver).options.model_reasoning_effort).toBe("low");
   expect(resolveStageSpec(config, inline, { model_reasoning_effort: "medium" }, resolver).options.model_reasoning_effort).toBe("medium");
   expect(resolveStageSpec(config, named, undefined, resolver)).toEqual({ provider: "grok", model: "other", options: {} });
-});
-
-test.each([
-  { provider: "unknown", model: "test" },
-  { provider: "byteplus", model: "test" },
-  { provider: "codex", client: "unknown", model: "test" },
-])("doctor validates inline provider and client: %j", (definition) => {
-  const checks = diagnose(workspace({ roles: { dev: { default_model: definition } } }), { providers, which: () => "/fake/provider" });
-  expect(checks[0].ok).toBe(false);
-  expect(checks[0].problems.join(" ")).toContain("roles.dev.default_model");
-});
-
-test("inline client selects the effective CLI", () => {
-  const definition = { provider: "byteplus", client: "codex", model: "test", effort: "high" };
-  const root = workspace({ roles: { dev: { default_model: definition } } });
-  expect(resolveRoleTarget(root, "dev", undefined, resolver)).toMatchObject({ client: "codex", options: { model_reasoning_effort: "high" } });
-  expect(diagnose(root, { providers, which: () => "/fake/provider" })[0].ok).toBe(true);
 });
 
 test("text patching supports alias and inline transitions and keeps role instructions", () => {

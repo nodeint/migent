@@ -2,9 +2,9 @@ import { mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { isCancel, select as clackSelect } from "@clack/prompts";
 import type { ModelCatalog } from "@nodeint/migent-adapters";
+import { diagnose } from "@nodeint/migent-doctor";
 import {
   ConfigurationError,
-  diagnose,
   whichSync,
   type Provider,
   type ProviderOption,

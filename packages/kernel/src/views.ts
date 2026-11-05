@@ -10,7 +10,7 @@ import {
   resolveStageSpec,
   type StageTarget,
 } from "./config.js";
-import { selectSessionWorkflow } from "./doctor-session.js";
+import { selectSessionWorkflow } from "./session-selection.js";
 import { ConfigurationError } from "./errors.js";
 import type { ProviderResolver } from "./provider-contract.js";
 import { isRecord } from "./record.js";

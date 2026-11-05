@@ -1,7 +1,8 @@
-import { createProviderResolver, loadWorkspaceConfig, type ModelEffortCheck, type Provider } from "@nodeint/migent-kernel";
-import { loadCatalog, loadOptionValues, type RunCommand, type Which } from "./provider.js";
+import { createProviderResolver, listModelDefinitions, loadWorkspaceConfig, type Provider } from "@nodeint/migent-kernel";
+import type { ModelEffortCheck } from "./check.js";
+import { cached, loadCatalog, loadOptionValues, type RunCommand, type Which } from "./catalog.js";
 
-/** Catalog lookup belongs at the CLI boundary; kernel diagnostics remain synchronous. */
+/** Catalog lookup is asynchronous and needs the machine, so it stays out of the static checks. */
 export async function checkModelEfforts(
   workspace: string,
   providers: Record<string, Provider>,
@@ -13,28 +14,10 @@ export async function checkModelEfforts(
 ): Promise<Record<string, ModelEffortCheck>> {
   let config: Record<string, unknown>;
   try { config = loadWorkspaceConfig(workspace); } catch { return {}; }
-  const definitions: Array<[string, unknown, string]> = isRecord(config.models)
-    ? Object.entries(config.models).map(([alias, model]) => [alias, model, `models.${alias}`]) : [];
-  if (isRecord(config.roles)) {
-    for (const [name, role] of Object.entries(config.roles)) {
-      if (isRecord(role) && isRecord(role.default_model)) {
-        const field = `roles.${name}.default_model`;
-        definitions.push([field, role.default_model, field]);
-      }
-    }
-  }
-  const commands = new Map<string, Promise<string>>();
-  const run: RunCommand = (argv, input) => {
-    const key = JSON.stringify([argv, input]);
-    let pending = commands.get(key);
-    if (pending === undefined) {
-      pending = Promise.resolve().then(() => runCommand(argv, input));
-      commands.set(key, pending);
-    }
-    return pending;
-  };
+  const definitions = listModelDefinitions(config);
+  const run = cached(runCommand);
   const resolveProvider = createProviderResolver(providers);
-  const results = await Promise.all(definitions.map(async ([alias, model, modelField]) => {
+  const results = await Promise.all(definitions.map(async ({ key: alias, value: model, field: modelField }) => {
     if (only !== undefined && !only.has(alias)) return null;
     if (skip?.has(alias)) return null;
     if (!isRecord(model) || !Object.hasOwn(model, "effort")) return null;

@@ -3,8 +3,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { defaultProviders } from "@nodeint/migent-adapters";
 import {
-  createProviderResolver, diagnose, resolveRoleTarget, resolveStageTarget, stringifyConfig,
+  createProviderResolver, resolveRoleTarget, resolveStageTarget, stringifyConfig,
 } from "@nodeint/migent-kernel";
+import { diagnose } from "@nodeint/migent-doctor";
 import { afterEach, expect, test } from "vitest";
 import { runDoctor } from "../src/commands/doctor.ts";
 import { clientsFromConfig } from "../src/commands/skill.ts";
