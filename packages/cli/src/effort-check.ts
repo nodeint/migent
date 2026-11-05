@@ -8,6 +8,8 @@ export async function checkModelEfforts(
   which: Which,
   runCommand: RunCommand,
   only?: ReadonlySet<string>,
+  /** Keys whose model is already reported unknown: one root cause, one message. */
+  skip?: ReadonlySet<string>,
 ): Promise<Record<string, ModelEffortCheck>> {
   let config: Record<string, unknown>;
   try { config = loadWorkspaceConfig(workspace); } catch { return {}; }
@@ -34,6 +36,7 @@ export async function checkModelEfforts(
   const resolveProvider = createProviderResolver(providers);
   const results = await Promise.all(definitions.map(async ([alias, model, modelField]) => {
     if (only !== undefined && !only.has(alias)) return null;
+    if (skip?.has(alias)) return null;
     if (!isRecord(model) || !Object.hasOwn(model, "effort")) return null;
     if (typeof model.provider !== "string" || !model.provider.trim() || typeof model.model !== "string" || !model.model.trim()) return null;
     if (model.client != null && (typeof model.client !== "string" || !model.client.trim())) return null;

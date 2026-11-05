@@ -184,6 +184,37 @@ export function selectSessionWorkflow(workspace: string, sessionId: string): Ses
   return selection;
 }
 
+/**
+ * The workflow a new session would freeze, read without creating anything. A workflow that
+ * cannot be loaded is returned as a problem, so the caller reports it like any other check.
+ */
+export function selectRunWorkflow(workspace: string, workflowId: string): SessionSelection {
+  const selection: SessionSelection = {
+    sessionId: "(new)",
+    source: null,
+    document: null,
+    freeze: null,
+    workflowPath: null,
+    manifestWorkflowId: null,
+    problems: [],
+    warnings: [],
+  };
+  try {
+    selection.document = loadNamedWorkflow(workspace, workflowId, { quiet: true });
+  } catch (error) {
+    selection.problems.push(authoringMessage(error));
+    return selection;
+  }
+  const document = selection.document;
+  selection.source = {
+    sessionId: selection.sessionId,
+    workflowId: document.id,
+    kind: "live",
+    path: document.source === null ? `.migent/workflows (${document.id})` : display(workspace, document.source),
+  };
+  return selection;
+}
+
 /** Model aliases and inline-model fields the session's role stages resolve against live config. */
 export function sessionEffortKeys(workspace: string, selection: SessionSelection): Set<string> {
   const keys = new Set<string>();

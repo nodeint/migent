@@ -1,0 +1,77 @@
+import {
+  diagnoseSession,
+  readStatusFileState,
+  selectRunWorkflow,
+  selectSessionWorkflow,
+  sessionEffortKeys,
+  whichSync,
+  type Provider,
+  type SessionDiagnosis,
+  type SessionSelection,
+} from "@nodeint/migent-kernel";
+import path from "node:path";
+import { printDoctor } from "./display.js";
+import { cliHooks } from "./hooks.js";
+import { checkModels } from "./model-check.js";
+import { runProviderCommandAsync, type RunCommand, type Which } from "./provider.js";
+
+export interface DiagnoseHooks {
+  providers: Record<string, Provider>;
+  which?: Which | null;
+  runCommand?: RunCommand | null;
+}
+
+/**
+ * The checks `migent doctor --session` runs, shared with the preflight of `session run`.
+ * Only the models the selected workflow uses are looked up.
+ */
+export async function diagnoseSelection(
+  workspace: string,
+  selection: SessionSelection,
+  hooks: DiagnoseHooks,
+): Promise<SessionDiagnosis> {
+  const which = hooks.which ?? cliHooks.which ?? whichSync;
+  let modelEffortChecks = {};
+  const keys = sessionEffortKeys(workspace, selection);
+  if (keys.size > 0) {
+    const runCommand = hooks.runCommand ?? cliHooks.runCommand ??
+      ((argv, input) => runProviderCommandAsync(argv, input, { cwd: workspace, timeoutMs: 10_000 }));
+    modelEffortChecks = await checkModels(workspace, hooks.providers, which, runCommand, keys);
+  }
+  return diagnoseSession(workspace, selection, { providers: hooks.providers, which, modelEffortChecks });
+}
+
+export interface PreflightTarget {
+  /** Workflow id or path of a session about to be created. */
+  workflowId: string | null;
+  /** Prepared session about to be started. */
+  sessionId: string | null;
+}
+
+/**
+ * Validates the whole workflow before a session is created or frozen. Writes to stderr only.
+ * Returns false when a problem blocks the run; warnings never do.
+ */
+export async function runPreflight(workspace: string, target: PreflightTarget, hooks: DiagnoseHooks): Promise<boolean> {
+  let selection: SessionSelection;
+  if (target.sessionId !== null) {
+    selection = selectSessionWorkflow(workspace, target.sessionId);
+    const status = readStatusFileState(path.join(workspace, ".migent", "sessions", target.sessionId, "status.json"));
+    // Anything but a prepared session is rejected by the run itself with its own message.
+    if (selection.problems.length === 0 && !(status.state === "ok" && status.status.status === "prepared")) return true;
+  } else if (target.workflowId !== null) {
+    selection = selectRunWorkflow(workspace, target.workflowId);
+  } else {
+    return true;
+  }
+  const diagnosis = await diagnoseSelection(workspace, selection, hooks);
+  if (!diagnosis.ok) {
+    printDoctor(diagnosis.checks, process.stderr);
+    process.stderr.write("Preflight failed: fix the problems above and run again, or pass --skip-preflight.\n");
+    return false;
+  }
+  const warnings = diagnosis.checks.flatMap((check) => check.warnings);
+  for (const warning of warnings) process.stderr.write(`preflight warning: ${warning.replaceAll("\n", "\n  ")}\n`);
+  process.stderr.write("preflight ok\n");
+  return true;
+}

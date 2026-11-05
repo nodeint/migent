@@ -50,8 +50,12 @@ The id comes from the file's `id` field, or from the file name when `id` is omit
 one role when `--workflow` is omitted. Passing `--workflow` together with
 `--role`, a prompt, `--provider`, `--model`, `--option`, or `--json` is an error.
 Passing `--once`, `--prior`, `--max-dispatches`,
-`--unlimited-dispatches`, `--progress`, `--verbose`, or `--refresh-workflow`
-without `--workflow` is an error.
+`--unlimited-dispatches`, `--progress`, `--verbose`, `--refresh-workflow`, or
+`--skip-preflight` without `--workflow` is an error.
+
+Before a workflow run starts, `session run` runs the `doctor --session` checks
+over every stage. A problem exits 2 and creates or freezes nothing. Pass
+`--skip-preflight` to bypass it. `session continue` and `--role` skip it.
 
 `--task` is one line on a workflow run. Migent writes it to
 `.migent/sessions/<session-id>/task.md`. The session id is a UUID. The session
@@ -347,8 +351,10 @@ migent doctor --session <session-id> [--json]
 ```
 
 `doctor` checks `.migent/config.yaml`, every file in `.migent/workflows/`,
-and whether each provider CLI named in config is on `PATH`. It does not run
-those CLIs or check their login. Exit 0 when every check passes, and exit 1
+and whether each provider CLI named in config is on `PATH`. It also checks
+that each configured model name exists by asking the provider CLI for its model
+list (see [Model availability](#model-availability)). It does not check login,
+quota, or account entitlement. Exit 0 when every check passes, and exit 1
 when a check fails. If git tracks `.migent/config.local.yaml`, `doctor` prints
 a `warning:` line (and a `warnings` entry with `--json`); a warning does not
 change the exit code.
@@ -376,6 +382,12 @@ when one fails, including an unknown session, a role session (it has no
 workflow), a missing or corrupt manifest or freeze, a broken workflow, or a
 missing provider CLI. Exit 2 for an invalid session id (such as `../x`) or an
 outdated config schema for a draft or live source.
+
+### Model availability
+
+`doctor` checks that each configured model name exists by asking the provider
+CLI for its model list. A missing name is a problem for `opencode`, `grok`, and
+`agy`, and a warning for other providers. An unreadable list is a warning.
 
 ```bash
 # Edit .migent/sessions/<id>/workflow.yaml, then validate it before starting

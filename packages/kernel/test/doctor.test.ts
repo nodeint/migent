@@ -333,3 +333,36 @@ test("warns about unused workflow keys without warning on decision guidance", ()
   expect(text).not.toContain("decision.approved");
   expect(text).not.toContain("decision.revise");
 });
+
+test("a model availability problem fails doctor and a warning does not", () => {
+  const workspace = tempDir("migent-doctor-");
+  writeStageProject(workspace);
+  const options = { providers: defaultProviders(), which: whichFound(new Set(["codex", "grok"])) };
+  const problem = 'Invalid models.grok.model: "grok-4x"\nUnknown model: grok-4x.\nDid you mean: grok-4';
+  const [failed] = diagnose(workspace, { ...options, modelEffortChecks: { grok: { problem } } });
+  expect(failed.ok).toBe(false);
+  expect(failed.problems).toContain(problem);
+  const warning = 'Could not validate models.grok.model: "grok-4"\ngrok is not on PATH';
+  const [warned] = diagnose(workspace, { ...options, modelEffortChecks: { "gpt-terra": { warning } } });
+  expect(warned.ok).toBe(true);
+  expect(warned.warnings).toContain(warning);
+});
+
+test("an unmapped alias reports only the no-mapping message, not a model check", () => {
+  const workspace = tempDir("migent-doctor-");
+  writeStageProject(workspace);
+  const configPath = path.join(workspace, ".migent", "config.yaml");
+  writeFileSync(
+    configPath,
+    readFileSync(configPath, "utf8").replace(/models:[\s\S]*?\nroles:/, "models:\n  grok: {}\n  gpt-terra: {}\nroles:"),
+    "utf8",
+  );
+  const [config] = diagnose(workspace, {
+    providers: defaultProviders(),
+    which: whichFound(new Set(["codex", "grok"])),
+    modelEffortChecks: { grok: { problem: 'Invalid models.grok.model: "x"', warning: 'Could not validate models.grok.model: "x"' } },
+  });
+  expect(config.problems).toHaveLength(1);
+  expect(config.problems[0]).toContain("have no provider and model on this machine.");
+  expect(config.warnings.join("\n")).not.toContain("Could not validate");
+});

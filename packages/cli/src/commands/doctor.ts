@@ -1,15 +1,14 @@
-import { checkModelEfforts } from "../effort-check.js";
+import { checkModels } from "../model-check.js";
 import { homedir } from "node:os";
 import {
   diagnose,
-  diagnoseSession,
   selectSessionWorkflow,
   sessionDiagnosticsCheck,
-  sessionEffortKeys,
   whichSync,
   type Check,
   type SessionSource,
 } from "@nodeint/migent-kernel";
+import { diagnoseSelection } from "../preflight.js";
 import { printDoctor } from "../display.js";
 import { cliHooks } from "../hooks.js";
 import { requireCurrentSchema } from "../migrate.js";
@@ -26,7 +25,7 @@ export async function runDoctor(
   const providers = providerMap();
   const runCommand = options.runCommand ?? cliHooks.runCommand ??
     ((argv, input) => runProviderCommand(argv, input, { cwd: workspace, timeoutMs: 10_000 }));
-  const modelEffortChecks = await checkModelEfforts(workspace, providers, which, runCommand);
+  const modelEffortChecks = await checkModels(workspace, providers, which, runCommand);
   const checks = [
     ...diagnose(workspace, { providers, which, modelEffortChecks }),
     skillCheck(workspace, options.home ?? homedir()),
@@ -66,16 +65,7 @@ async function runSessionDoctor(
   }
   // A freeze needs no live config, so only a live source requires a current config schema.
   if (selection.document !== null && selection.freeze === null) requireCurrentSchema(workspace, { configOnly: true });
-  const which = options.which ?? cliHooks.which ?? whichSync;
-  const providers = providerMap();
-  let modelEffortChecks = {};
-  const keys = sessionEffortKeys(workspace, selection);
-  if (keys.size > 0) {
-    const runCommand = options.runCommand ?? cliHooks.runCommand ??
-      ((argv, input) => runProviderCommand(argv, input, { cwd: workspace, timeoutMs: 10_000 }));
-    modelEffortChecks = await checkModelEfforts(workspace, providers, which, runCommand, keys);
-  }
-  const diagnosis = diagnoseSession(workspace, selection, { providers, which, modelEffortChecks });
+  const diagnosis = await diagnoseSelection(workspace, selection, { providers: providerMap(), which: options.which, runCommand: options.runCommand });
   // Shown only when something was recorded, so a clean session prints what it always did.
   if (diagnostics.warnings.length > 0) diagnosis.checks.push(diagnostics);
   if (options.asJson) process.stdout.write(`${JSON.stringify({ ...payload(diagnosis.checks), session: sessionPayload(sessionId, diagnosis.source) })}\n`);

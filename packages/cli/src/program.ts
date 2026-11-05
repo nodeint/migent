@@ -325,6 +325,8 @@ ${exitText([
   return program;
 }
 
+const PREFLIGHT_EXIT = "Exit 2 when the preflight check finds a problem. Nothing is created or frozen. Pass --skip-preflight to bypass it.";
+
 const ROLE_EXITS = [
   "Exit 0 when the outcome is complete, or the role session is already completed.",
   "Exit 1 when the outcome is not complete.",
@@ -345,6 +347,7 @@ function registerSessionCommand(program: Command, status: CliStatus): void {
     .option("--session <session>", "Workflow: prepared session to start; --workflow is optional. Role: session to continue.");
   addDispatchOptions(run, "Dispatch the next eligible stage once. Workflow mode only.");
   run
+    .option("--skip-preflight", "Workflow mode: start without the doctor checks that run over the whole workflow first. Use when a check is wrong or the run is urgent.")
     .option("--role <role>", "Role to run. Omit --workflow.")
     .option("--provider <provider>", "Provider for this role. Pass with --model, or omit both.")
     .option("--model <model>", "Native model id for this role. Pass with --provider, or omit both.")
@@ -355,7 +358,7 @@ function registerSessionCommand(program: Command, status: CliStatus): void {
     .option("--json", "Print the role result as one JSON object.")
     .addHelpText(
       "after",
-      `Workflow run:\n${exitText(LOOP_EXITS)}Workflow run with --once:\n${exitText(STAGE_EXITS)}Role run:\n${exitText(ROLE_EXITS)}Examples:\n  migent session run --workflow plan --task "<one line>"\n  migent session run --session <prepared-session>\n  migent session run --role reviewer --prompt "<prompt>"\n`,
+      `Before a workflow run starts (--workflow, or --session on a prepared session), the doctor checks run over every stage. ${PREFLIGHT_EXIT}\nWorkflow run:\n${exitText(LOOP_EXITS)}Workflow run with --once:\n${exitText(STAGE_EXITS)}Role run:\n${exitText(ROLE_EXITS)}Examples:\n  migent session run --workflow plan --task "<one line>"\n  migent session run --session <prepared-session>\n  migent session run --role reviewer --prompt "<prompt>"\n`,
     )
     .action((options: OptionValues) => settle(status, () => runSessionCommand(options)));
 
@@ -624,7 +627,8 @@ function workflowFlagsPresent(options: OptionValues): boolean {
     options.unlimitedDispatches === true ||
     options.progress === true ||
     options.verbose === true ||
-    options.refreshWorkflow === true
+    options.refreshWorkflow === true ||
+    options.skipPreflight === true
   );
 }
 
@@ -653,6 +657,7 @@ function runWorkflowCommand(args: {
       priorSessionId: optionalText(args.options.prior),
       maxDispatches: ceiling,
       refreshWorkflow: args.options.refreshWorkflow === true,
+      skipPreflight: args.options.skipPreflight === true,
       ...outputFlags(args.options),
     });
   }
@@ -666,6 +671,7 @@ function runWorkflowCommand(args: {
     priorSessionId: optionalText(args.options.prior),
     maxDispatches: null,
     refreshWorkflow: args.options.refreshWorkflow === true,
+    skipPreflight: args.options.skipPreflight === true,
     ...outputFlags(args.options),
   });
 }
