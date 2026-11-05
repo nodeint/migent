@@ -1,4 +1,4 @@
-import { checkModelEfforts } from "../effort-check.js";
+import { checkModels } from "../model-check.js";
 import { homedir } from "node:os";
 import {
   diagnose,
@@ -26,7 +26,7 @@ export async function runDoctor(
   const providers = providerMap();
   const runCommand = options.runCommand ?? cliHooks.runCommand ??
     ((argv, input) => runProviderCommand(argv, input, { cwd: workspace, timeoutMs: 10_000 }));
-  const modelEffortChecks = await checkModelEfforts(workspace, providers, which, runCommand);
+  const modelEffortChecks = await checkModels(workspace, providers, which, runCommand);
   const checks = [
     ...diagnose(workspace, { providers, which, modelEffortChecks }),
     skillCheck(workspace, options.home ?? homedir()),
@@ -73,7 +73,7 @@ async function runSessionDoctor(
   if (keys.size > 0) {
     const runCommand = options.runCommand ?? cliHooks.runCommand ??
       ((argv, input) => runProviderCommand(argv, input, { cwd: workspace, timeoutMs: 10_000 }));
-    modelEffortChecks = await checkModelEfforts(workspace, providers, which, runCommand, keys);
+    modelEffortChecks = await checkModels(workspace, providers, which, runCommand, keys);
   }
   const diagnosis = diagnoseSession(workspace, selection, { providers, which, modelEffortChecks });
   // Shown only when something was recorded, so a clean session prints what it always did.

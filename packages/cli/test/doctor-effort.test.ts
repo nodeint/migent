@@ -92,12 +92,14 @@ test("local effort and an alternate client select the correct catalog", async ()
   expect(calls.every((argv) => argv[0] === "grok")).toBe(true);
 });
 
-test("missing effort never queries a provider", async () => {
+test("missing effort never queries effort values", async () => {
+  const calls: string[][] = [];
   const result = await inspect({ fast: { provider: "codex", model: "test" } }, {
-    run: () => { throw new Error("Must not query"); },
+    run: (argv) => { calls.push(argv); return fakeCatalog(argv); },
   });
   expect(result.value).toBe(0);
   expect(result.stdout).not.toContain("Could not validate");
+  expect(calls).toHaveLength(1); // Only the model catalog.
 });
 
 test.each(["request timed out", "invalid catalog", "CLI unavailable"])("unverifiable effort warns without failing: %s", async (reason) => {
@@ -107,7 +109,7 @@ test.each(["request timed out", "invalid catalog", "CLI unavailable"])("unverifi
   expect(result.value).toBe(0);
   const config = JSON.parse(result.stdout).checks[0];
   expect(config.problems).toEqual([]);
-  expect(config.warnings).toEqual([expect.stringContaining('Could not validate models.fast.effort: "high"')]);
+  expect(config.warnings).toEqual([expect.stringContaining('Could not validate models.fast.model: "test"')]);
   expect(config.warnings[0]).toContain(reason);
 });
 

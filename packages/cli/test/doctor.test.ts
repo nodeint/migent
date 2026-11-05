@@ -5,10 +5,15 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test } from "vitest";
 import { cliHooks } from "../src/hooks.ts";
 import { main } from "../src/index.ts";
 import { capture, repoWorkflowText } from "./support.ts";
+
+// Never reach the developer's real provider CLIs: model lists are unavailable unless a test injects them.
+const offline = (): string => { throw new Error("offline"); };
+beforeEach(() => { cliHooks.runCommand = offline; });
+afterEach(() => { cliHooks.runCommand = null; });
 
 function whichBoth(command: string): string | null {
   if (command === "codex" || command === "grok") return `/bin/${command}`;
@@ -173,10 +178,11 @@ test("doctor prints and returns a tracked config.local.yaml warning without fail
     expect(text.value).toBe(0);
     expect(text.stdout).toContain("warning: .migent/config.local.yaml is tracked by git");
     cliHooks.which = whichBoth;
+    cliHooks.runCommand = offline;
     const json = await capture(() => main(["doctor", "--json"], workspace));
     expect(json.value).toBe(0);
     const checks = (JSON.parse(json.stdout) as { checks: Array<{ name: string; warnings: string[] }> }).checks;
-    expect(checks.find((check) => check.name === "config")?.warnings).toHaveLength(1);
+    expect(checks.find((check) => check.name === "config")?.warnings.filter((warning) => !warning.startsWith("Could not validate"))).toHaveLength(1);
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }
@@ -269,12 +275,14 @@ test("doctor --session validates a prepared draft in text and JSON without writi
     writeProject(workspace);
     const sessionId = await prepareSession(workspace);
     cliHooks.which = whichBoth;
+    cliHooks.runCommand = offline;
     const before = treeText(path.join(workspace, ".migent"));
     const text = await capture(() => main(["doctor", "--session", sessionId], workspace));
     expect(text.value).toBe(0);
     expect(text.stdout).toContain(`source  draft  .migent/sessions/${sessionId}/workflow.yaml`);
     expect(text.stdout).not.toContain("skill");
     cliHooks.which = whichBoth;
+    cliHooks.runCommand = offline;
     const json = await capture(() => main(["doctor", "--session", sessionId, "--json"], workspace));
     expect(json.value).toBe(0);
     expect(json.stderr).toBe("");

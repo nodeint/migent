@@ -393,6 +393,24 @@ test("effort problems and warnings are scoped to the models the session uses", (
   expect(sessionEffortKeys(workspace, selectSessionWorkflow(workspace, frozenId)).size).toBe(0);
 });
 
+test("model availability problems and warnings are scoped to the session's models", () => {
+  const workspace = writeStageWorkspace();
+  const sessionId = createPreparedSession(workspace, "wave", "plan-implement");
+  const diagnosis = run(workspace, sessionId, {
+    modelEffortChecks: {
+      grok: { problem: 'Invalid models.grok.model: "grok-4x"\nUnknown model: grok-4x.' },
+      "gpt-terra": { warning: 'Could not validate models.gpt-terra.model: "gpt-5"' },
+      unused: { problem: 'Invalid models.unused.model: "x"' },
+    },
+  });
+  expect(diagnosis.ok).toBe(false);
+  expect(allProblems(diagnosis)).toContain("plan-implement.implement: Invalid models.grok.model");
+  expect(allProblems(diagnosis)).not.toContain("unused");
+  expect(check(diagnosis, "bindings").warnings).toEqual(['Could not validate models.gpt-terra.model: "gpt-5"']);
+  const warned = run(workspace, sessionId, { modelEffortChecks: { grok: { warning: 'Could not validate models.grok.model: "grok-4"' } } });
+  expect(warned.ok).toBe(true);
+});
+
 test("session diagnosis writes nothing", () => {
   const workspace = writeStageWorkspace();
   const draftId = createPreparedSession(workspace, "wave", "plan-implement");
