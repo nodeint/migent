@@ -1,6 +1,6 @@
 {
   "name": "@nodeint/migent-doctor",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "description": "Health checks and diagnostics for Migent workspaces, sessions, and models.",
   "keywords": [
     "ai",
