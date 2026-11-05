@@ -200,8 +200,8 @@ export function loadNamedWorkflow(
   return requireStages(loadWorkflowDocument(matches[0]!.path, options));
 }
 
-export function loadWorkflowCatalog(workspace: string): WorkflowCatalog {
-  const { loaded, problems } = readWorkflowDirectory(workspace);
+export function loadWorkflowCatalog(workspace: string, options: LoadWorkflowOptions = {}): WorkflowCatalog {
+  const { loaded, problems } = readWorkflowDirectory(workspace, options);
   if (loaded.length === 0) return { documents: {}, problems };
   const failedIds = unreadableWorkflowIds(problems);
   const grouped = new Map<string, LoadedWorkflow[]>();

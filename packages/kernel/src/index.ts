@@ -303,3 +303,16 @@ export type { ProviderResolver } from "./provider-contract.js";
 export type { ModelEffortCheck } from "./doctor.js";
 export { publishNextSuggestions, resolveNextSuggestions, formatNextCommand } from "./next-handoff.js";
 export { latestDiagnosticsPath, sessionDiagnosticsCheck } from "./session-diagnostics.js";
+export {
+  LOCAL_CONFIG_LABEL,
+  getConfigView,
+  getModelView,
+  getRoleView,
+  getSessionWorkflowView,
+  getWorkflowView,
+  listModelViews,
+  listRoleViews,
+  listWorkflowViews,
+  localModelNames,
+} from "./views.js";
+export type { View, WorkflowSourceKind } from "./views.js";

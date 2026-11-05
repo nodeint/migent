@@ -49,8 +49,8 @@ export function renderProject(
   models: { planner: ModelChoice; reviewer: ModelChoice; developer: ModelChoice },
   directory: string = projectTemplateDirectory(),
 ): RenderedFile[] {
-  const config = readAsset(directory, "config.yaml");
-  const localConfig = renderConfig(readAsset(directory, "config.local.yaml"), models);
+  const config = renderConfig(readAsset(directory, "config.yaml"), models);
+  const localConfig = readAsset(directory, "config.local.yaml");
   return [
     { path: ".migent/config.yaml", content: config },
     { path: ".migent/config.local.yaml", content: localConfig },
@@ -65,14 +65,14 @@ export function renderProject(
 function renderConfig(source: string, models: Record<(typeof ROLES)[number], ModelChoice>): string {
   const doc = parseDocument(source);
   if (doc.errors.length > 0) {
-    throw new ConfigurationError(`Project template config.local.yaml is invalid: ${doc.errors[0]?.message}`);
+    throw new ConfigurationError(`Project template config.yaml is invalid: ${doc.errors[0]?.message}`);
   }
   for (const role of ROLES) {
     if (!isMap(doc.getIn(["roles", role]))) {
-      throw new ConfigurationError(`Project template config.local.yaml is missing or invalid: roles.${role}.`);
+      throw new ConfigurationError(`Project template config.yaml is missing or invalid: roles.${role}.`);
     }
     if (doc.getIn(["roles", role, "default_model"]) !== `{{${role}.default_model}}`) {
-      throw new ConfigurationError(`Project template config.local.yaml is missing or invalid: roles.${role}.default_model.`);
+      throw new ConfigurationError(`Project template config.yaml is missing or invalid: roles.${role}.default_model.`);
     }
     const choice = models[role];
     const node: Record<string, unknown> = { provider: choice.provider, model: choice.model };

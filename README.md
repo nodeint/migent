@@ -93,7 +93,7 @@ CLIs used by your configuration.
 | Codex              | `codex`      |
 | Grok               | `grok`       |
 | BytePlus           | `opencode`   |
-| OpenCode           | `opencode`   |
+| Others             | `opencode`   |
 
 ## Editor extension
 
@@ -112,23 +112,21 @@ Before you begin, make sure you have:
 ### Install Migent
 
 ```bash
+# Install Migent globally
 npm install -g @nodeint/migent@latest
+
+# Verify that Migent is installed
 migent --version
+
+# Install the agent skill
+migent skill install
 ```
 
-Run setup from your project root, either with an AI agent or with the CLI.
+Then run setup from your project root, either with an AI agent or with the CLI.
 
 ### Option 1: Set up with an AI agent
 
-1. Install the agent skill (requires Node.js 22.20+), then choose the AI
-   clients to set up:
-
-   ```bash
-   migent skill install
-   ```
-
-2. Paste this prompt into your agent (Claude Code, Codex, Antigravity, Cursor,
-   etc.):
+1. Paste this prompt into your agent:
 
    ```text
    Use the migent skill to set up Migent in this project.
@@ -137,19 +135,19 @@ Run setup from your project root, either with an AI agent or with the CLI.
    The agent handles setup. If you have specific provider or model
    preferences, mention them for each role in the same prompt.
 
-3. Ask the agent to run a single role, such as the reviewer (optional):
+2. Ask the agent to run a single role, such as the reviewer (optional):
 
    ```text
    Use the migent skill to ask the reviewer role to review my latest changes.
    ```
 
-4. Ask the agent to write and review a plan for your task (optional):
+3. Ask the agent to write and review a plan for your task (optional):
 
    ```text
    Use the migent skill to run the plan workflow for this task: <Describe your task here>.
    ```
 
-5. Ask the agent to implement the plan and review the changes (optional):
+4. Ask the agent to implement the plan and review the changes (optional):
 
    ```text
    Use the migent skill to run the implement workflow with this plan: <Path to your plan file>.
@@ -164,26 +162,19 @@ Run setup from your project root, either with an AI agent or with the CLI.
    migent init
    ```
 
-2. To let an AI agent operate Migent, install the skill separately
-   (requires Node.js 22.20+):
-
-   ```bash
-   migent skill install
-   ```
-
-3. Run a single role, such as the reviewer (optional):
+2. Run a single role, such as the reviewer (optional):
 
    ```bash
    migent session run --role reviewer --prompt "Review my latest changes"
    ```
 
-4. Write and review a plan for your task (optional):
+3. Write and review a plan for your task (optional):
 
    ```bash
    migent session run --workflow plan --task "<Describe your task here>"
    ```
 
-5. Implement the plan and review the changes (optional):
+4. Implement the plan and review the changes (optional):
 
    ```bash
    migent session run --workflow implement --task "<Path to your plan file>"
@@ -196,6 +187,7 @@ After setup, your project contains:
 ```text
 .migent/
 ├── config.yaml        # developer, planner, reviewer: models and instructions
+├── config.local.yaml  # local configuration overrides
 ├── .gitignore         # keeps run history and local overrides out of Git
 └── workflows/
     ├── implement.yaml # implement and review a task
@@ -203,8 +195,7 @@ After setup, your project contains:
 ```
 
 Commit these files to share the setup. Run history is saved in
-`.migent/sessions/` when you start a task. If you install the skill, it lives
-in your chosen AI client's skills directory.
+`.migent/sessions/` when you start a task. The skill lives in your chosen AI client's skills directory.
 
 ### Tracking
 
@@ -442,6 +433,7 @@ See [Writing workflows](docs/workflows.md) and
 ## Update Migent
 
 ```bash
+migent get workflows   # inspect configured workflows
 migent update          # upgrade the CLI (add --check to only look)
 migent doctor          # check config, workflows, and provider CLIs
 migent migrate         # upgrade config and workflows to the current schema

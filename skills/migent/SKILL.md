@@ -18,6 +18,8 @@ use `migent <command> --help` for unfamiliar flags.
 | Check project setup after configuration edits or diagnose a configuration error | `migent doctor --json` |
 | Check a session's edited draft or effective frozen workflow | `migent doctor --session <id> --json` |
 | Inspect effective project settings, including local overrides | `migent config --json` |
+| Look up a workflow's stages and resolved models | `migent get workflow <id> --json` |
+| Look up roles and model aliases | `migent get roles --json` |
 | Start a workflow with a one-line task | `migent session run --workflow <workflow> --task "<task>"` |
 | Prepare a longer task or customize a workflow for one session | `migent session prepare "<title>" --workflow <workflow>` |
 | Start a prepared session after filling its task and validating its draft | `migent session run --session <id>` |

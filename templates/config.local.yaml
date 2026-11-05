@@ -2,10 +2,4 @@ schema_version: 4
 
 models: {}
 
-roles:
-  planner:
-    default_model: "{{planner.default_model}}"
-  reviewer:
-    default_model: "{{reviewer.default_model}}"
-  developer:
-    default_model: "{{developer.default_model}}"
+roles: {}

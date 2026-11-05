@@ -9,6 +9,7 @@ Read [schema-config.yaml](schema-config.yaml) before editing; use its documented
 | --- | --- |
 | `migent provider list --json` | Discover CLI clients, model IDs, and options available on this machine. |
 | `migent config --json` | Inspect the merged project and local configuration. |
+| `migent get roles --json` / `migent get models --json` | Look up roles and model aliases with resolved targets. |
 | `migent doctor --json` | Validate edits; follow diagnostics for invalid settings or missing model mappings. |
 
 ## Set up this machine
