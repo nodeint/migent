@@ -60,10 +60,13 @@ class ServerProvider extends FakeProvider {
     this.calls.push({ ...input, options: { ...input.options } });
     const announce =
       this.reportedId === null ? "" : `console.log(JSON.stringify({sessionID:${JSON.stringify(this.reportedId)}}));`;
+    // Announce first and publish the pid later: the test cancels as soon as the pid file exists, and the
+    // parent must have read the announced id by then (a slow runner otherwise cancels before it does).
+    const writePid = `require("fs").writeFileSync(${JSON.stringify(this.pidFile)}, String(process.pid));`;
     const code =
-      `require("fs").writeFileSync(${JSON.stringify(this.pidFile)}, String(process.pid));` +
-      announce +
-      "setInterval(() => {}, 1000);";
+      announce === ""
+        ? writePid + "setInterval(() => {}, 1000);"
+        : announce + `setTimeout(() => {${writePid}}, 1000);setInterval(() => {}, 1000);`;
     return { argv: [process.execPath, "-e", code] };
   }
 
