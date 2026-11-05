@@ -1,4 +1,4 @@
-import type { BuildCommandInput, ProviderOption, TurnUsage, UsageCapture } from "./provider-contract.js";
+import type { BuildCommandInput, InterruptOutcome, ProviderOption, TurnUsage, UsageCapture } from "./provider-contract.js";
 import type { CommandSpec } from "./command-executor.js";
 
 /** What a client extracted from a failed run, before any provider policy. */
@@ -50,6 +50,11 @@ export interface CliClient {
   versionCommand(): CommandSpec;
 
   parseRun(stdout: string, lastMessageFile: string): CliRunOutput;
+  /** A fresh session identity the CLI accepts on its first run; absent when the CLI picks its own. */
+  newSessionId?(): string | null;
+  interruptCommand?(sessionId: string): CommandSpec | null;
+  classifyInterrupt?(stdout: string, exitCode: number | null): InterruptOutcome;
+  sessionIdFromLine?(line: string): string | null;
   parseModels(stdout: string): CliModelCatalog;
   parseVersion(stdout: string): string | null;
   /** One parser per run: it may keep state between lines. */

@@ -8,7 +8,8 @@ import {
   type NewSession,
   type UsageCapture,
 } from "./provider-contract.js";
-import { CancellationRequested, CommandExecutor, DEFAULT_TIMEOUT_SEC, type ExecutionFailure } from "./command-executor.js";
+import { CancellationRequested, CommandExecutor, DEFAULT_TIMEOUT_SEC, type ExecutionFailure, type StopReason } from "./command-executor.js";
+import { DEFAULT_INTERRUPT_POLICY, type InterruptPolicy, type InterruptReport, interruptSession, isSettled } from "./provider-interrupt.js";
 import { KERNEL_VERSION } from "./package-version.js";
 import { spawnProviderSync } from "./provider-spawn.js";
 import { buildVerifyRepairPrompt } from "./prompt.js";
@@ -127,6 +128,7 @@ export class AgentToolRunner {
   readonly executor: CommandExecutor;
   readonly verifyRunner: VerifyRunner;
   itemProgress = false;
+  interruptPolicy: InterruptPolicy = DEFAULT_INTERRUPT_POLICY;
   private readonly cliVersions = new Map<string, string | null>();
 
   constructor(
@@ -848,9 +850,58 @@ export class AgentToolRunner {
             store.appendDebugLog(context, line);
           }
         : null;
+      // Every id this turn may own on the provider's server: the one Migent holds, and any
+      // different one the provider reports. Cleanup targets all of them.
+      const expectedId = agentId || newSession?.agentId || null;
+      const knownIds = new Set<string>(expectedId ? [expectedId] : []);
+      const reports = new Map<string, InterruptReport>();
+      let mismatchReported = false;
+      const reportMismatch = (reported: string) => {
+        if (expectedId === null || reported === expectedId || mismatchReported) return;
+        mismatchReported = true;
+        eventReporter.emit(
+          "provider.warning",
+          `provider reported session ${reported}, not the expected ${expectedId}; both are targeted for cleanup`,
+          { expected_agent_id: expectedId, reported_agent_id: reported },
+        );
+      };
+      const cleanup = async (phase: "before" | "after", reason: StopReason): Promise<boolean> => {
+        let attempted = false;
+        for (const id of [...knownIds]) {
+          // After the process is gone, only sessions not yet seen interrupted are asked again.
+          if (phase === "after" && reports.get(id)?.outcome === "interrupted") continue;
+          const report = await interruptSession(provider, id, workspace, this.interruptPolicy);
+          if (report === null) continue;
+          attempted = true;
+          reports.set(id, report);
+          const details = { agent_id: id, reason, phase, outcome: report.outcome, attempts: report.attempts };
+          if (isSettled(report)) {
+            eventReporter.emit("provider.interrupt", `session ${id}: ${report.outcome}`, details);
+          } else if (phase === "after") {
+            eventReporter.emit(
+              "provider.warning",
+              `could not confirm session ${id} stopped (${report.detail}); agent id retained for recovery`,
+              details,
+            );
+          }
+        }
+        return attempted;
+      };
       const result = await this.executor.run(spec, workspace, {
         onDebug: debugStep,
+        // Only a provider with a server-side interrupt gets hooks, and so the exit grace period.
+        ...(provider.interruptCommand === undefined
+          ? {}
+          : {
+              onInterrupt: (reason: StopReason) => cleanup("before", reason),
+              onStopped: (reason: StopReason) => cleanup("after", reason),
+            }),
         onOutput: (line) => {
+          const reported = provider.sessionIdFromLine?.(line) ?? null;
+          if (reported !== null && !knownIds.has(reported)) {
+            knownIds.add(reported);
+            reportMismatch(reported);
+          }
           const event = provider.parseProgressEvent?.(line);
           if (!isRecord(event) || typeof event.event !== "string") return;
           eventReporter.emit(
@@ -871,6 +922,7 @@ export class AgentToolRunner {
       const { stdout, error: executorError, exitCode, failure } = result;
       if (failure) store.saveDiagnostics(context, diagnosticsPayload(failure, turn));
       const [responseText, parsedProviderId] = provider.parseResponse(stdout, lastMessageFile);
+      if (parsedProviderId) reportMismatch(parsedProviderId);
       const classification = classifyFinishedProcess(provider, stdout, exitCode, executorError);
       let invokeError = executorError;
       if (exitCode === 0 && classification !== null) invokeError = classification.message;

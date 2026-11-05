@@ -71,11 +71,23 @@ export interface ProviderClassification {
 /** `null` means this finished process is not a provider failure. */
 export type FailureClassification = QuotaClassification | ProviderClassification;
 
+/**
+ * What an explicit server-side interrupt found. `interrupted`: a running turn was stopped.
+ * `idle`: the server holds the session and nothing was running. `not-found`: the server does not
+ * know the session (yet). `failed`: the interrupt could not be completed or verified.
+ */
+export type InterruptOutcome = "interrupted" | "idle" | "not-found" | "failed";
+
 /** Provider CLI surface used by the workflow runner. Not the providers package. */
 export interface Provider extends ProviderInfo {
   providerOptions?(): readonly ProviderOption[];
   profileOptions?(options: Readonly<Record<string, string>>): Record<string, string>;
   createNewSession?(): NewSession;
+  /** Command that stops the server-side turn of `agentId`, for providers whose turn outlives the client. */
+  interruptCommand?(agentId: string): CommandSpec | null;
+  classifyInterrupt?(stdout: string, exitCode: number | null): InterruptOutcome;
+  /** The session identity one output line carries, if any. */
+  sessionIdFromLine?(line: string): string | null;
   buildCommand(input: BuildCommandInput): CommandSpec;
   parseResponse(stdout: string, lastMessageFile: string): [string, string | null];
   /** Classify one finished process. Absent means the runner uses its fallback. */
@@ -138,6 +150,11 @@ export interface CliClient {
   versionCommand(): CommandSpec;
 
   parseRun(stdout: string, lastMessageFile: string): CliRunOutput;
+  /** A fresh session identity the CLI accepts on its first run; absent when the CLI picks its own. */
+  newSessionId?(): string | null;
+  interruptCommand?(sessionId: string): CommandSpec | null;
+  classifyInterrupt?(stdout: string, exitCode: number | null): InterruptOutcome;
+  sessionIdFromLine?(line: string): string | null;
   parseModels(stdout: string): CliModelCatalog;
   parseVersion(stdout: string): string | null;
   /** One parser per run: it may keep state between lines. */
