@@ -1,6 +1,6 @@
 # Run one role
 
-Read `.migent/config.yaml` and optional `config.local.yaml`. Pass a configured
+Look up the role with `migent get role <name> --json`. Pass a configured
 role and the user's prompt unchanged; no workflow is required:
 
 ```bash

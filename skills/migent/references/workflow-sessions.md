@@ -1,7 +1,7 @@
 # Run or prepare a workflow
 
-Read `.migent/config.yaml`, optional `config.local.yaml`, and the selected workflow
-before running. For a new project, follow [setup.md](setup.md).
+Look up the selected workflow with `migent get workflow <id> --json` and the roles with
+`migent get roles --json` before running (use `--session <id>` for a prepared session). For a new project, follow [setup.md](setup.md).
 
 Pass the user's task unchanged. Leave reading `task.md` and its referenced
 documents to the stage agent; do not edit `task.md` after stages start.

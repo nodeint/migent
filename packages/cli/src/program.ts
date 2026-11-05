@@ -3,6 +3,7 @@ import { Command, Option, type OptionValues } from "commander";
 import { ConfigurationError, DEFAULT_MAX_DISPATCHES, requireAgentSession } from "@nodeint/migent-kernel";
 import { continueAgent, dispatchAgent } from "./commands/agent.js";
 import { removedConfigCommand, runConfigShow } from "./commands/config.js";
+import { getHelpTypes, runGet } from "./commands/get.js";
 import { runDoctor } from "./commands/doctor.js";
 import { executeWorkflow } from "./commands/execute.js";
 import { cancelSession } from "./commands/cancel.js";
@@ -118,6 +119,41 @@ export function createProgram(status: CliStatus): Command {
         }),
       );
   }
+
+  program
+    .command("get [type] [name]")
+    .description("Look up workflows, roles, model aliases, or the effective config (read-only).")
+    .option("-o, --output <format>", "Output format: json, yaml, or name. Default is a table or YAML.")
+    .option("--json", "Same as -o json.")
+    .option("--session <id>", "For workflows: the workflow this session runs (draft, frozen, or live).")
+    .addHelpText(
+      "after",
+      `
+Types:
+${getHelpTypes()}
+${exitText(["Exit 0 on success, including an empty list.", "Exit 2 on a usage or configuration error, or when the name is not found."])}Examples:
+  migent get workflows
+  migent get workflow plan --json
+  migent get workflow --session <id> -o yaml
+  migent get roles -o name
+  migent get model <alias>
+`,
+    )
+    .action((type: string | undefined, name: string | undefined, options: OptionValues, command: Command) => {
+      if (type === undefined) {
+        command.outputHelp();
+        status.handled = true;
+        status.code = 2;
+        return;
+      }
+      return settle(status, () =>
+        runGet(findWorkspace(invocationCwdPath()), type, name ?? null, {
+          output: optionalText(options.output) ?? undefined,
+          json: options.json === true,
+          session: optionalText(options.session) ?? undefined,
+        }),
+      );
+    });
 
   program
     .command("doctor")
