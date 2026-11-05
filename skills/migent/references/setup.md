@@ -30,9 +30,9 @@ migent init --no-input \
 Effort flags are optional. Use values supported by each model; see
 [config.md](config.md).
 
-Init writes shared role instructions to `.migent/config.yaml` and selected
-models to `.migent/config.local.yaml`. Git ignores the local file, so each
-machine can use its own model settings.
+Init writes role instructions and selected models to `.migent/config.yaml`.
+It also creates an empty `.migent/config.local.yaml` for machine-specific
+overrides; Git ignores the local file.
 
 ## Verify
 
