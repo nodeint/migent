@@ -3,7 +3,7 @@ import path from "node:path";
 import { confirm as clackConfirm, isCancel } from "@clack/prompts";
 import {
   SCHEMA_VERSION,
-  documentVersion,
+  checkDocumentSchemaVersion,
   loadYamlMapping,
   loadWorkspaceConfig,
   localConfigPath,
@@ -158,7 +158,8 @@ function schemaFiles(workspace: string): Array<[string, string]> {
 function storedVersion(filePath: string): number | null {
   if (!isFile(filePath)) return null;
   try {
-    return documentVersion(loadYamlMapping(filePath));
+    const result = checkDocumentSchemaVersion(loadYamlMapping(filePath));
+    return result.status === "invalid" ? null : result.version;
   } catch {
     return null;
   }

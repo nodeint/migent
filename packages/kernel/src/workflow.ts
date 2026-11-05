@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { UNKNOWN_KEYS_ERROR_SCHEMA_VERSION, unknownWorkflowKeys } from "./authoring-diagnostics.js";
+import { UNKNOWN_KEYS_ERROR_SCHEMA_VERSION, unknownWorkflowKeys, stageErrorPath, workflowErrorPath, workflowRuleCode } from "./authoring-diagnostics.js";
 import path from "node:path";
 import { z } from "zod";
 import type { AskTarget } from "./stage-outcome.js";
@@ -203,33 +203,61 @@ export function loadNamedWorkflow(
 export function loadWorkflowCatalog(workspace: string, options: LoadWorkflowOptions = {}): WorkflowCatalog {
   const { loaded, problems } = readWorkflowDirectory(workspace, options);
   if (loaded.length === 0) return { documents: {}, problems };
-  const failedIds = unreadableWorkflowIds(problems);
-  const grouped = new Map<string, LoadedWorkflow[]>();
-  for (const entry of loaded) {
+  const checked = checkWorkflowCatalog(
+    loaded.map((entry) => ({ file: path.basename(entry.path), document: entry.document })),
+    unreadableWorkflowIds(problems),
+  );
+  return { documents: checked.documents, problems: [...problems, ...checked.problems.map((problem) => problem.message)] };
+}
+
+/** A cross-workflow finding. `workflow` is the id it concerns; `files` the declaring files, when known. */
+export interface CatalogProblem {
+  code: "duplicate-id" | "no-stages" | "unknown-downstream" | "requires-invalid";
+  message: string;
+  workflow: string;
+  files?: string[];
+}
+
+/**
+ * The cross-file rules of the catalog over workflows already parsed: duplicate ids, empty stages,
+ * `requires` and `downstream`. Pure; `failedIds` names workflows that could not be parsed.
+ */
+export function checkWorkflowCatalog(
+  entries: ReadonlyArray<{ file: string; document: WorkflowDocument }>,
+  failedIds: ReadonlySet<string> = new Set(),
+): { documents: Record<string, WorkflowDocument>; problems: CatalogProblem[] } {
+  const failed = new Set(failedIds);
+  const problems: CatalogProblem[] = [];
+  const grouped = new Map<string, Array<{ file: string; document: WorkflowDocument }>>();
+  for (const entry of entries) {
     const list = grouped.get(entry.document.id);
     if (list === undefined) grouped.set(entry.document.id, [entry]);
     else list.push(entry);
   }
   const documents: Record<string, WorkflowDocument> = {};
-  for (const [workflowId, entries] of grouped) {
-    if (entries.length > 1) {
-      const names = entries.map((entry) => path.basename(entry.path)).join(", ");
-      problems.push(`${workflowId}: id is declared by ${names}.`);
-      failedIds.add(workflowId);
+  for (const [workflowId, group] of grouped) {
+    if (group.length > 1) {
+      const files = group.map((entry) => entry.file);
+      problems.push({ code: "duplicate-id", message: `${workflowId}: id is declared by ${files.join(", ")}.`, workflow: workflowId, files });
+      failed.add(workflowId);
       continue;
     }
-    const document = entries[0]!.document;
+    const document = group[0]!.document;
     documents[workflowId] = document;
     if (Object.keys(document.stages).length === 0) {
-      problems.push(`${document.id}: declares no stages.`);
+      problems.push({ code: "no-stages", message: `${document.id}: declares no stages.`, workflow: workflowId });
     }
   }
   for (const [workflowId, document] of Object.entries(documents)) {
     if (document.requires !== null) {
-      checkRequires(workflowId, document.requires, documents, failedIds, problems);
+      const messages: string[] = [];
+      checkRequires(workflowId, document.requires, documents, failed, messages);
+      for (const message of messages) problems.push({ code: "requires-invalid", message, workflow: workflowId });
     }
     for (const next of document.downstream ?? []) {
-      if (!Object.hasOwn(documents, next.workflow)) problems.push(`${workflowId}: downstream workflow ${next.workflow} is not in .migent/workflows.`);
+      if (!Object.hasOwn(documents, next.workflow)) {
+        problems.push({ code: "unknown-downstream", message: `${workflowId}: downstream workflow ${next.workflow} is not in .migent/workflows.`, workflow: workflowId });
+      }
     }
   }
   return { documents, problems };
@@ -259,6 +287,22 @@ function warnOnce(message: string): void {
 
 /** Parse a workflow mapping. `source` is stored on the document and is not read from `data`. */
 export function parseWorkflowMapping(data: Record<string, unknown>, source: string): WorkflowDocument {
+  try {
+    return parseWorkflowMappingUnchecked(data, source);
+  } catch (error) {
+    // Give every rule a stable code and an author-coordinate path without changing its message.
+    if (!(error instanceof ConfigurationError) || (error.code !== undefined && error.path !== undefined)) throw error;
+    const path = error.path ?? workflowErrorPath(error.message, data);
+    throw new ConfigurationError(error.message, {
+      code: error.code ?? workflowRuleCode(error.message),
+      ...(path === undefined ? {} : { path }),
+      ...(error.layer === undefined ? {} : { layer: error.layer }),
+      ...(error.position === undefined ? {} : { position: error.position }),
+    });
+  }
+}
+
+function parseWorkflowMappingUnchecked(data: Record<string, unknown>, source: string): WorkflowDocument {
   const workflowId = documentId(data, source);
   const schemaVersion = documentVersion(data);
   if (schemaVersion > SCHEMA_VERSION) {
@@ -477,7 +521,9 @@ function parseStages(raw: unknown, version2 = false, version3 = false): Record<s
   if (!Array.isArray(raw) || raw.length === 0) return {};
   const stages: Record<string, StageSpec> = {};
   const items: Record<string, unknown>[] = [];
-  for (const rawItem of raw) {
+  const rawItems: unknown[] = [];
+  for (const [index, rawItem] of raw.entries()) {
+    try {
     if (!isRecord(rawItem)) throw new ConfigurationError("Workflow stage must be a mapping.");
     const item = version3 ? normalizeStageDecision(rawItem) : rawItem;
     const stageId = requiredString(item.id, "stages.id");
@@ -511,6 +557,7 @@ function parseStages(raw: unknown, version2 = false, version3 = false): Record<s
         runWhen,
       });
       items.push(item);
+      rawItems.push(rawItem);
       continue;
     }
     const role = requiredString(item.role, `stages.${stageId}.role`);
@@ -542,14 +589,34 @@ function parseStages(raw: unknown, version2 = false, version3 = false): Record<s
       runWhen,
     });
     items.push(item);
+    rawItems.push(rawItem);
+    } catch (error) {
+      throw locatedAtStage(error, index, rawItem);
+    }
   }
-  for (const item of items) {
-    const stageId = requiredString(item.id, "stages.id");
-    const stage = stages[stageId]!;
-    stage.routes = stageRoutes(item, stageId, stage.decisionValues, stages, version2);
+  for (const [index, item] of items.entries()) {
+    try {
+      const stageId = requiredString(item.id, "stages.id");
+      const stage = stages[stageId]!;
+      stage.routes = stageRoutes(item, stageId, stage.decisionValues, stages, version2);
+    } catch (error) {
+      throw locatedAtStage(error, index, rawItems[index]);
+    }
   }
   validateStageGraph(stages);
   return stages;
+}
+
+/** Gives a parse error raised while reading stage `index` its code and author-coordinate path. */
+function locatedAtStage(error: unknown, index: number, item: unknown): unknown {
+  if (!(error instanceof ConfigurationError) || error.path !== undefined) return error;
+  const path = stageErrorPath(error.message, index, item);
+  return new ConfigurationError(error.message, {
+    code: error.code ?? workflowRuleCode(error.message),
+    path,
+    ...(error.layer === undefined ? {} : { layer: error.layer }),
+    ...(error.position === undefined ? {} : { position: error.position }),
+  });
 }
 
 function stageRunWhen(
@@ -1083,7 +1150,7 @@ function stageOptions(stage: Record<string, unknown>, stageId: string): Record<s
 export function readOptionMap(
   raw: Record<string, unknown>,
   field: string,
-  path?: readonly string[],
+  path?: readonly (string | number)[],
 ): Record<string, string> {
   const parsed: Record<string, string> = {};
   for (const [key, item] of Object.entries(raw)) {

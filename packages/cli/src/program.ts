@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { Command, Option, type OptionValues } from "commander";
 import { ConfigurationError, DEFAULT_MAX_DISPATCHES, requireAgentSession } from "@nodeint/migent-kernel";
 import { continueAgent, dispatchAgent } from "./commands/agent.js";
+import { runAuthoring, type AuthoringKind, type AuthoringMode } from "./commands/authoring.js";
 import { removedConfigCommand, runConfigShow } from "./commands/config.js";
 import { getHelpTypes, runGet } from "./commands/get.js";
 import { runDoctor } from "./commands/doctor.js";
@@ -35,8 +36,10 @@ export interface CliStatus {
   handled: boolean;
 }
 
-export function createProgram(status: CliStatus): Command {
+export function createProgram(status: CliStatus, options: { quietErrors?: boolean } = {}): Command {
   const program = new Command();
+  // Authoring commands with --json report usage errors as an envelope, so Commander stays silent.
+  if (options.quietErrors === true) program.configureOutput({ writeErr: () => undefined });
   program
     .name("migent")
     .description("Run named workflows and standalone roles from .migent/.")
@@ -106,6 +109,39 @@ export function createProgram(status: CliStatus): Command {
   config.action((options: OptionValues) =>
     settle(status, () => runConfigShow(findWorkspace(invocationCwdPath()), { asJson: options.json === true })),
   );
+  const authoring = (parent: Command, kind: AuthoringKind, mode: AuthoringMode, summary: string): void => {
+    const sub = parent
+      .command(`${mode} <draft>`)
+      .description(summary)
+      .option("--format <format>", "Draft format: yaml or json. Required for stdin (`-`).")
+      .option("--json", "Print one JSON envelope with the diagnostics.");
+    if (kind === "config") sub.option("--scope <scope>", "Layer the draft replaces: project or local.", "project");
+    if (kind === "workflow") sub.option("--target <file>", "Workflow file name under .migent/workflows/ (default <id>.yaml).");
+    if (mode === "save") sub.option("--base-hash <sha256>", "SHA-256 of the file being replaced. Without it, save only creates a new file.");
+    sub.action((draft: string, _local: OptionValues, self: Command) => {
+      // `config --json` is also declared on the parent, which consumes the flag first.
+      const options = self.optsWithGlobals();
+      return settle(status, () =>
+        runAuthoring({
+          kind,
+          mode,
+          draft,
+          ...(typeof options.scope === "string" ? { scope: options.scope } : {}),
+          ...(typeof options.format === "string" ? { format: options.format } : {}),
+          ...(typeof options.target === "string" ? { target: options.target } : {}),
+          ...(typeof options.baseHash === "string" ? { baseHash: options.baseHash } : {}),
+          asJson: options.json === true,
+        }),
+      );
+    });
+  };
+  for (const mode of ["validate", "render", "save"] as const) {
+    authoring(config, "config", mode, `${mode === "validate" ? "Validate" : mode === "render" ? "Print canonical YAML for" : "Validate and save"} a config draft (a file, or - for stdin).`);
+  }
+  const workflow = program.command("workflow").description("Validate, render, or save workflow drafts.");
+  for (const mode of ["validate", "render", "save"] as const) {
+    authoring(workflow, "workflow", mode, `${mode === "validate" ? "Validate" : mode === "render" ? "Print canonical YAML for" : "Validate and save"} a workflow draft (a file, or - for stdin).`);
+  }
   for (const removed of ["show", "model", "role"]) {
     config
       .command(removed, { hidden: true })

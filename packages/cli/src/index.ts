@@ -3,6 +3,7 @@ import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { CommanderError } from "commander";
 import { ConfigurationError } from "@nodeint/migent-kernel";
+import { authoringCommandOf, printInvocationEnvelope } from "./commands/authoring.js";
 import { printError } from "./display.js";
 import { PromptCancelled } from "./errors.js";
 import { EXIT_CANCELLED, EXIT_CONFIG } from "./exits.js";
@@ -13,8 +14,9 @@ import { setInvocationCwd } from "./workspace.js";
 export async function main(argv: string[] = process.argv.slice(2), cwd?: string): Promise<number> {
   setInvocationCwd(cwd);
   const status: CliStatus = { code: 0, handled: false };
+  const authoring = authoringCommandOf(argv);
   try {
-    const program = createProgram(status);
+    const program = createProgram(status, { quietErrors: authoring !== null });
     await program.parseAsync(argv, { from: "user" });
     if (!status.handled) {
       program.outputHelp();
@@ -27,7 +29,10 @@ export async function main(argv: string[] = process.argv.slice(2), cwd?: string)
       printError(error.message);
       return EXIT_CONFIG;
     }
-    if (error instanceof CommanderError) return error.exitCode === 0 ? 0 : 2;
+    if (error instanceof CommanderError) {
+      if (error.exitCode !== 0 && authoring !== null) printInvocationEnvelope(authoring, error.message.replace(/^error: /, ""));
+      return error.exitCode === 0 ? 0 : 2;
+    }
     throw error;
   } finally {
     setInvocationCwd(undefined);

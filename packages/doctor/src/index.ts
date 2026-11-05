@@ -1,5 +1,7 @@
 export { diagnose } from "./diagnose.js";
 export { analyzeConfig, validateConfigLayers } from "./config-check.js";
+export { validateConfigDraft, validateWorkflowDraft } from "./authoring.js";
+export type { ConfigDraftInput, ConfigLoad, WorkflowDraftInput } from "./authoring.js";
 export type { ConfigAnalysis } from "./config-check.js";
 export { DiagnosticList, diagnosticKey, identityKey } from "./check.js";
 export type { Check, DiagnoseOptions, Diagnostic, ModelEffortCheck } from "./check.js";

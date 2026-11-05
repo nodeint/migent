@@ -43,11 +43,11 @@ export function analyzeConfig(
   config: Record<string, unknown>,
   providers: Providers,
   effortChecks: Readonly<Record<string, ModelEffortCheck>>,
-  ownerOf: (path: readonly string[]) => ConfigOwner,
+  ownerOf: (path: readonly (string | number)[]) => ConfigOwner,
 ): ConfigAnalysis {
   const diagnostics = new DiagnosticList();
   const executableByProvider: Record<string, string> = {};
-  const error = (code: string, message: string, path?: readonly string[], detail?: string): void => {
+  const error = (code: string, message: string, path?: readonly (string | number)[], detail?: string): void => {
     diagnostics.add({
       severity: "error",
       code,
@@ -56,7 +56,7 @@ export function analyzeConfig(
       ...(detail === undefined ? {} : { detail }),
     });
   };
-  const fromError = (caught: unknown, fallbackPath?: readonly string[]): void => {
+  const fromError = (caught: unknown, fallbackPath?: readonly (string | number)[]): void => {
     if (!(caught instanceof ConfigurationError)) throw caught;
     error(caught.code ?? "config-invalid", caught.message, caught.path ?? fallbackPath);
   };
