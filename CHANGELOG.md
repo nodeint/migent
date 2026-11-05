@@ -21,6 +21,7 @@
 
 ### Fixed
 
+- OpenCode sessions retain their identity before provider startup. Cancellation and timeout explicitly interrupt the server-side turn before local process cleanup, retry early session-creation races, and warn when remote cleanup cannot be confirmed.
 - `response.md` holds only the model's response. A provider that cannot start leaves it absent instead of writing the error text there. A failed turn also no longer stores Migent's error as an assistant message in `conversation.json`, so a later resume cannot replay that error as something the model said.
 
 ## 0.3.5

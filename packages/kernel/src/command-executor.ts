@@ -23,6 +23,8 @@ export type { StartFailure, StartResult } from "./wrapper-protocol.js";
 export const DEFAULT_TIMEOUT_SEC: number | null = null;
 export const PROGRESS_INTERVAL_SEC = 30;
 export const TERMINATION_GRACE_SEC = 5;
+/** How long a client may exit by itself after its server-side turn was interrupted. */
+export const INTERRUPT_EXIT_GRACE_MS = 3000;
 
 export interface CommandSpec {
   argv: string[];
@@ -62,6 +64,26 @@ export interface RunOptions {
   onStart?: ((info: ProcessStartInfo) => void) | null;
   /** Receives timestamped trace steps when set (see `MIGENT_DEBUG`). */
   onDebug?: ((step: string, fromWrapper?: boolean) => void) | null;
+  /**
+   * Awaited before the process group is stopped on cancellation or timeout, so a provider whose
+   * turn runs in a server can stop it first. The callback bounds its own time and must not throw.
+   */
+  onInterrupt?: ((reason: StopReason) => Promise<void | boolean>) | null;
+  /** Awaited after the process group is stopped, for a last check of what the interrupt could not settle. */
+  onStopped?: ((reason: StopReason) => Promise<void | boolean>) | null;
+}
+
+export type StopReason = "cancel" | "timeout";
+
+/** Runs a hook; true unless it reports (by returning false) that it did nothing. */
+async function notify(hook: ((reason: StopReason) => Promise<void | boolean>) | null | undefined, reason: StopReason): Promise<boolean> {
+  if (!hook) return false;
+  try {
+    return (await hook(reason)) !== false;
+  } catch (error) {
+    log(`Provider cleanup failed: ${error instanceof Error ? error.message : String(error)}`);
+    return true;
+  }
 }
 
 export class CancellationRequested extends Error {
@@ -179,6 +201,7 @@ function throwIfCancelled(): void {
 export class CommandExecutor {
   readonly timeoutSec: number | null;
   readonly progressIntervalSec: number;
+  interruptExitGraceMs = INTERRUPT_EXIT_GRACE_MS;
 
   constructor(
     timeoutSec: number | null = DEFAULT_TIMEOUT_SEC,
@@ -188,10 +211,19 @@ export class CommandExecutor {
     this.progressIntervalSec = progressIntervalSec;
   }
 
+  /** After an interrupt ran: let the client exit by itself for a bounded time; the caller forces the rest. */
+  private async interrupt(child: ChildProcess, options: RunOptions, reason: StopReason): Promise<void> {
+    if (!options.onInterrupt) return;
+    // No grace when the hook had nothing to interrupt: the client is the only thing left to stop.
+    if (await notify(options.onInterrupt, reason)) await waitForExit(child, this.interruptExitGraceMs);
+  }
+
   async run(spec: CommandSpec, cwd: string, options: RunOptions = {}): Promise<CommandResult> {
     const { onOutput, onHeartbeat, onStart, onDebug } = options;
     const executable = spec.argv[0] ?? "command";
     let child: ChildProcess | null = null;
+    // True once the provider was told to start; before that no server-side turn can exist.
+    let launched = false;
     try {
       assertArgumentsPassable(spec.argv[0] ?? "", spec.argv.slice(1));
     } catch (error) {
@@ -243,8 +275,9 @@ export class CommandExecutor {
         reported = parseFailedMessage(message) ?? reported;
       });
       child.send({ type: WRAPPER_START });
+      launched = true;
       onDebug?.("start sent");
-      const [stdout, error, exitCode] = await this.wait(child, spec, onOutput, onHeartbeat);
+      const [stdout, error, exitCode] = await this.wait(child, spec, onOutput, onHeartbeat, options);
       onDebug?.(`provider exit code=${exitCode} error=${error ?? "none"}`);
       if (error !== null) {
         await channelDrained(child);
@@ -269,7 +302,11 @@ export class CommandExecutor {
     } catch (error) {
       if (error instanceof CancellationRequested) {
         log("Cancellation requested; stopping the sub-agent group.");
-        if (child !== null) await stopProcessGroup(child);
+        if (child !== null) {
+          if (launched) await this.interrupt(child, options, "cancel");
+          await stopProcessGroup(child);
+          if (launched) await notify(options.onStopped, "cancel");
+        }
         log("Sub-agent group stopped.");
       }
       throw error;
@@ -281,6 +318,7 @@ export class CommandExecutor {
     spec: CommandSpec,
     onOutput?: ((line: string) => void) | null,
     onHeartbeat?: ((elapsedSec: number) => void) | null,
+    hooks: RunOptions = {},
   ): Promise<[string, string | null, number | null]> {
     const startedAt = Date.now();
     const queue = createLineQueue(child.stdout ?? null);
@@ -295,7 +333,7 @@ export class CommandExecutor {
       let waitMs = this.progressIntervalSec * 1000;
       if (this.timeoutSec !== null) {
         const remainingMs = this.timeoutSec * 1000 - (Date.now() - startedAt);
-        if (remainingMs <= 0) return this.timeout(child);
+        if (remainingMs <= 0) return this.timeout(child, hooks);
         waitMs = Math.min(waitMs, remainingMs);
       }
       let line: string | null | "timeout";
@@ -328,8 +366,10 @@ export class CommandExecutor {
     return [stdout, `CLI exited with code ${status}.`, status];
   }
 
-  private async timeout(child: ChildProcess): Promise<[string, string, null]> {
+  private async timeout(child: ChildProcess, hooks: RunOptions): Promise<[string, string, null]> {
+    await this.interrupt(child, hooks, "timeout");
     await stopProcessGroup(child);
+    await notify(hooks.onStopped, "timeout");
     return ["", `Sub-agent timed out after ${this.timeoutSec}s.`, null];
   }
 }

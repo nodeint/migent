@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { classifyProviderError, providerErrorMessage } from "../types.js";
 import type {
   BuildCommandInput,
@@ -5,6 +6,7 @@ import type {
   CliRunOutput,
   CliUsage,
   CommandSpec,
+  InterruptOutcome,
   ProviderOption,
   RawFailure,
   UsageCapture,
@@ -81,6 +83,26 @@ function quotaFromMessage(message: string): Pick<RawFailure, "rateLimit"> {
   };
 }
 
+const BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+
+/**
+ * An OpenCode session id in the shape the server itself issues: `ses_`, 12 hex digits, then 14
+ * base62 characters. The server creates a session under any unused `ses_` id passed to `run -s`.
+ */
+export function generateSessionId(random: (size: number) => Uint8Array = randomBytes): string {
+  const hex = Array.from(random(6), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  let tail = "";
+  // Rejection sampling keeps the base62 digits uniform.
+  while (tail.length < 14) {
+    for (const byte of random(16)) {
+      if (byte < 248 && tail.length < 14) tail += BASE62[byte % 62];
+    }
+  }
+  return `ses_${hex}${tail}`;
+}
+
+const SESSION_ID = /^ses_[0-9A-Za-z]{10,40}$/;
+
 export function lookup(source: unknown, path: readonly string[]): unknown {
   let value = source;
   for (const key of path) {
@@ -124,8 +146,38 @@ export class OpencodeClient implements CliClient {
     const agent = input.options.agent;
     if (agent !== undefined) argv.push("--agent", agent);
     if (input.options.thinking === "true") argv.push("--thinking");
-    if (input.agentId) argv.push("-s", input.agentId);
+    // A resumed turn reuses the stored id; a fresh one runs under the id Migent already persisted.
+    const sessionId = input.agentId || input.newAgentId;
+    if (sessionId) argv.push("-s", sessionId);
     return { argv, stdin: input.prompt };
+  }
+
+  newSessionId(): string {
+    return generateSessionId();
+  }
+
+  /**
+   * `opencode api` finds the same background service `run` used, from the same cwd and
+   * environment, so no server address is named here.
+   */
+  interruptCommand(sessionId: string): CommandSpec | null {
+    if (!SESSION_ID.test(sessionId)) return null;
+    return { argv: [this.command, "api", "session.interrupt", "--param", `sessionID=${sessionId}`] };
+  }
+
+  classifyInterrupt(output: string, exitCode: number | null): InterruptOutcome {
+    if (exitCode === 0) {
+      const payload = parseJsonObject(output.trim());
+      if (payload?.interrupted === true) return "interrupted";
+      if (payload?.interrupted === false) return "idle";
+      return "failed";
+    }
+    return /not[\s_-]?found|\b404\b/i.test(output) ? "not-found" : "failed";
+  }
+
+  sessionIdFromLine(line: string): string | null {
+    const id = parseJsonObject(line)?.sessionID;
+    return typeof id === "string" && id !== "" ? id : null;
   }
 
   modelsCommand(): CommandSpec {

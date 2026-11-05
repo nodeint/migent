@@ -3,6 +3,7 @@ import type {
   BuildCommandInput,
   CliClient,
   FailureClassification,
+  InterruptOutcome,
   NewSession,
   ProviderOption,
   TurnUsage,
@@ -128,7 +129,20 @@ export abstract class ProviderBase implements Provider {
   }
 
   createNewSession(): NewSession {
-    return {};
+    const agentId = this.client.newSessionId?.() ?? null;
+    return agentId === null ? {} : { agentId };
+  }
+
+  interruptCommand(agentId: string): CommandSpec | null {
+    return this.client.interruptCommand?.(agentId) ?? null;
+  }
+
+  classifyInterrupt(stdout: string, exitCode: number | null): InterruptOutcome {
+    return this.client.classifyInterrupt?.(stdout, exitCode) ?? "failed";
+  }
+
+  sessionIdFromLine(line: string): string | null {
+    return this.client.sessionIdFromLine?.(line) ?? null;
   }
 
   modelCatalogCommand(): string[] {

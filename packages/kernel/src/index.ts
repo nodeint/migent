@@ -1,6 +1,7 @@
 export type {
   ProviderInfo,
   ProviderOption,
+  InterruptOutcome,
   NewSession,
   BuildCommandInput,
   Provider,
