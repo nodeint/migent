@@ -93,6 +93,12 @@ test("a prepared session stays prepared and unfrozen until the problem is fixed"
     const directory = path.join(workspace, ".migent", "sessions", sessionId);
     writeFileSync(path.join(directory, "task.md"), "do it\n", "utf8");
 
+    // main() clears cliHooks when it returns, so reinstall them for the next invocation.
+    cliHooks.runner = new AgentToolRunner({ ...providerMap(), fake: provider }, 10);
+    cliHooks.runCommand = (argv) => {
+      if (argv[0] === "grok") return CATALOG;
+      throw new Error(`Unexpected command: ${argv.join(" ")}`);
+    };
     const failed = await capture(() => main(["session", "run", "--once", "--session", sessionId], workspace));
     expect(failed.value).toBe(2);
     expect(failed.stderr).toContain('Invalid models.later.model: "grok-typo"');
