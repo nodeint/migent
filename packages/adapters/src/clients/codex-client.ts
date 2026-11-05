@@ -1,3 +1,4 @@
+import { parseHelpOptions } from "../utils/parse-help-options.js";
 import { classifyProviderError, providerErrorMessage } from "../types.js";
 import type {
   BuildCommandInput,
@@ -58,6 +59,14 @@ function itemSummary(item: unknown, itemType: unknown, action: string): string {
 export const CODEX_REASONING_OPTION = "model_reasoning_effort";
 
 export class CodexClient implements CliClient {
+  optionsCommand(): CommandSpec {
+    return { argv: [this.command, "exec", "--help"] };
+  }
+
+  parseOptions(help: string) {
+    return parseHelpOptions(help, { section: /^Options:\s*$/, inferArgumentType: true });
+  }
+
   readonly effortOption = "model_reasoning_effort";
   readonly id = "codex";
   readonly command = "codex";

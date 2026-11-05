@@ -1,4 +1,4 @@
-import { defaultProviders } from "@nodeint/migent-adapters";
+import { type HeadlessOption, type CommandSpec, defaultProviders } from "@nodeint/migent-adapters";
 import {
   ProviderCommandFailed,
   loadOptionValues,
@@ -147,3 +147,34 @@ export function runProviderCommandAsync(
   });
 }
 
+
+/** Discover native headless CLI options independently of model availability. */
+export async function loadHeadlessOptions(
+  provider: Provider,
+  runCommand: RunCommand,
+): Promise<HeadlessOption[]> {
+  const candidate = provider as Provider & {
+    optionsCommand?: () => CommandSpec;
+    parseOptions?: (help: string) => HeadlessOption[];
+  };
+  if (!candidate.optionsCommand || !candidate.parseOptions) {
+    throw new ProviderCommandFailed(`${provider.command} does not discover headless options.`);
+  }
+  const command = candidate.optionsCommand();
+  const help = await runCommand(command.argv, command.stdin ?? undefined);
+  return candidate.parseOptions(help);
+}
+
+/** Help may be printed on stderr even when the command succeeds (Agy). */
+export const runOptionsCommand: RunCommand = (argv, input) => {
+  const [command, ...args] = argv;
+  if (!command) throw new ProviderCommandFailed("Options command is empty.");
+  const completed = spawnProviderSync(command, args, {
+    encoding: "utf8", timeout: 15_000, windowsHide: true,
+    ...(input === undefined ? {} : { input }),
+  });
+  if (completed.error) throw completed.error;
+  const output = [completed.stdout, completed.stderr].filter(Boolean).join("\n");
+  if (completed.status !== 0) throw new ProviderCommandFailed(output.trim() || `${command} exited ${completed.status}.`);
+  return output;
+};

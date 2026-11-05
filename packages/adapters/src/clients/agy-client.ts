@@ -1,3 +1,4 @@
+import { parseHelpOptions } from "../utils/parse-help-options.js";
 import { classifyProviderError } from "../types.js";
 import type {
   BuildCommandInput,
@@ -170,6 +171,14 @@ function sumSteps(steps: unknown[]): TurnUsage {
 }
 
 export class AgyClient implements CliClient {
+  optionsCommand(): CommandSpec {
+    return { argv: [this.command, "-p", "--help"] };
+  }
+
+  parseOptions(help: string) {
+    return parseHelpOptions(help, { section: /^Usage of agy:/, inferArgumentType: false });
+  }
+
   readonly effortOption = "effort";
   readonly id = "agy";
   readonly command = "agy";

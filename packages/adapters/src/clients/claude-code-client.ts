@@ -1,3 +1,4 @@
+import { parseHelpOptions } from "../utils/parse-help-options.js";
 import { classifyProviderError } from "../types.js";
 import type {
   BuildCommandInput,
@@ -125,6 +126,14 @@ export function claudeResultError(payload: Record<string, unknown>): string | nu
 }
 
 export class ClaudeCodeClient implements CliClient {
+  optionsCommand(): CommandSpec {
+    return { argv: [this.command, "-p", "--help"] };
+  }
+
+  parseOptions(help: string) {
+    return parseHelpOptions(help, { section: /^Options:\s*$/, inferArgumentType: true });
+  }
+
   readonly effortOption = "effort";
   readonly id = "claude-code";
   readonly command = "claude";

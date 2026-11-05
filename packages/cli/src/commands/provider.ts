@@ -3,6 +3,8 @@ import { printProviders, type ProviderRow } from "../display.js";
 import { cliHooks } from "../hooks.js";
 import {
   providerMap,
+  loadHeadlessOptions,
+  runOptionsCommand,
   loadCatalog,
   runProviderCommand,
   type RunCommand,
@@ -35,6 +37,7 @@ export async function collectProviders(
   providers: Record<string, Provider>,
   which: Which,
   runCommand: RunCommand,
+  optionsRunner: RunCommand = runCommand,
 ): Promise<ProviderRow[]> {
   // A provider without a default client has no CLI of its own to probe.
   const names = Object.keys(providers).filter((name) => providers[name].requiresClient !== true).sort();
@@ -45,12 +48,18 @@ export async function collectProviders(
     const path = which(provider.command);
     const options = getProviderOptions(provider);
     const problems: string[] = [];
+    let headless_options: ProviderRow["headless_options"] = null;
     let models: string[] = [];
     let default_model: string | null = null;
 
     if (path === null) {
       problems.push(`${provider.command} is not on PATH.`);
     } else {
+      try {
+        headless_options = await loadHeadlessOptions(provider, optionsRunner);
+      } catch (error) {
+        problems.push(`Headless options: ${error instanceof Error ? error.message : String(error)}`);
+      }
       try {
         const catalog = await loadCatalog(provider, which, runCommand);
         models = [...catalog.ids];
@@ -69,6 +78,7 @@ export async function collectProviders(
       models,
       default_model,
       options,
+      headless_options,
       problems,
     });
   }
@@ -96,7 +106,7 @@ export async function runProviderList(options: {
   const which = options.which ?? cliHooks.which ?? whichSync;
   const runCommand = options.runCommand ?? cliHooks.runCommand ?? runProviderCommand;
 
-  const rows = await collectProviders(providers, which, runCommand);
+  const rows = await collectProviders(providers, which, runCommand, options.runCommand ?? cliHooks.runCommand ?? runOptionsCommand);
 
   if (options.asJson) {
     process.stdout.write(`${JSON.stringify(providerPayload(rows))}\n`);
