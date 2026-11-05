@@ -20,8 +20,6 @@ export interface RenderedFile {
   content: string;
 }
 
-const GITIGNORE = "sessions/\nconfig.local.yaml\n";
-
 /**
  * Compiled modules (`.js`) read only `templates/project` beside them; source modules (`.ts`) read the
  * root `templates/`. A compiled layout never falls back to repository files.
@@ -50,28 +48,30 @@ export function renderProject(
   models: { planner: ModelChoice; reviewer: ModelChoice; developer: ModelChoice },
   directory: string = projectTemplateDirectory(),
 ): RenderedFile[] {
-  const config = renderConfig(readAsset(directory, "config.yaml"), models);
+  const config = readAsset(directory, "config.yaml");
+  const localConfig = renderConfig(readAsset(directory, "config.local.yaml"), models);
   return [
     { path: ".migent/config.yaml", content: config },
+    { path: ".migent/config.local.yaml", content: localConfig },
     ...PRESETS.map((preset) => ({
       path: `.migent/workflows/${preset}.yaml`,
       content: readAsset(directory, `workflows/${preset}.yaml`),
     })),
-    { path: ".migent/.gitignore", content: GITIGNORE },
+    { path: ".migent/.gitignore", content: readAsset(directory, ".gitignore.txt") },
   ];
 }
 
 function renderConfig(source: string, models: Record<(typeof ROLES)[number], ModelChoice>): string {
   const doc = parseDocument(source);
   if (doc.errors.length > 0) {
-    throw new ConfigurationError(`Project template config.yaml is invalid: ${doc.errors[0]?.message}`);
+    throw new ConfigurationError(`Project template config.local.yaml is invalid: ${doc.errors[0]?.message}`);
   }
   for (const role of ROLES) {
     if (!isMap(doc.getIn(["roles", role]))) {
-      throw new ConfigurationError(`Project template config.yaml is missing or invalid: roles.${role}.`);
+      throw new ConfigurationError(`Project template config.local.yaml is missing or invalid: roles.${role}.`);
     }
     if (doc.getIn(["roles", role, "default_model"]) !== `{{${role}.default_model}}`) {
-      throw new ConfigurationError(`Project template config.yaml is missing or invalid: roles.${role}.default_model.`);
+      throw new ConfigurationError(`Project template config.local.yaml is missing or invalid: roles.${role}.default_model.`);
     }
     const choice = models[role];
     const node: Record<string, unknown> = { provider: choice.provider, model: choice.model };

@@ -9,6 +9,7 @@
 
 ### Changed
 
+- `migent init` stores selected role models in the ignored local config, and its workflow templates include explicit decision criteria and outputs. Doctor explains how to replace migrated decision placeholders.
 - A signal-like exit of the wrapper during startup no longer reports a startup failure when a cancellation arrives within a short window; it is reported as a cancellation.
 - `CommandExecutor.run` now takes an options object and returns `{ stdout, error, exitCode, failure? }` instead of a tuple. Callers of the exported class must update.
 
