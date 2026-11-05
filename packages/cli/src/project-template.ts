@@ -80,5 +80,5 @@ function renderConfig(source: string, models: Record<(typeof ROLES)[number], Mod
     if (Object.keys(choice.options).length > 0) node.options = choice.options;
     doc.setIn(["roles", role, "default_model"], doc.createNode(node));
   }
-  return doc.toString({ defaultStringType: "PLAIN", defaultKeyType: "PLAIN" });
+  return doc.toString({ defaultStringType: "PLAIN", defaultKeyType: "PLAIN", lineWidth: 0 });
 }

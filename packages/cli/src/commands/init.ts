@@ -1,6 +1,6 @@
 import { mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { isCancel, select as clackSelect } from "@clack/prompts";
+import { autocomplete, isCancel, select as clackSelect, spinner } from "@clack/prompts";
 import type { ModelCatalog } from "@nodeint/migent-adapters";
 import { diagnose } from "@nodeint/migent-doctor";
 import {
@@ -31,7 +31,7 @@ import {
   loadOptionValues,
   parseOptions,
   requireProvider,
-  runProviderCommand,
+  runProviderCommandAsync,
   type RunCommand,
   type Which,
 } from "../provider.js";
@@ -39,12 +39,10 @@ import {
 const INIT_EXAMPLE = "Example: migent init --planner-provider codex --planner-model gpt-5 --reviewer-provider grok --reviewer-model grok-4.7 --developer-provider codex --developer-model gpt-5 --no-input";
 
 
+export interface ModelSelection { provider: string; model: string }
+
 export interface Prompter {
-  selectProvider(
-    rows: ReadonlyArray<readonly [string, string | null, Provider]>,
-    message: string,
-  ): string | Promise<string>;
-  selectModel(provider: string, catalog: ModelCatalog, message: string): string | Promise<string>;
+  selectModel(models: readonly ModelSelection[], message: string): ModelSelection | Promise<ModelSelection>;
   selectOption(name: string, values: readonly string[], allowDefault: boolean): string | Promise<string>;
 }
 
@@ -80,7 +78,17 @@ export async function runInit(
   const chosen = options.providers ?? providerMap();
   const resolve = options.which ?? cliHooks.which ?? whichSync;
   const prompt = options.prompter ?? new ClackPrompter();
-  const execute = options.runCommand ?? cliHooks.runCommand ?? runProviderCommand;
+  const runCommand = options.runCommand ?? cliHooks.runCommand ?? runProviderCommandAsync;
+  const commands = new Map<string, Promise<string>>();
+  const execute: RunCommand = (argv, input) => {
+    const key = JSON.stringify([argv, input]);
+    let pending = commands.get(key);
+    if (!pending) {
+      pending = Promise.resolve().then(() => runCommand(argv, input));
+      commands.set(key, pending);
+    }
+    return pending;
+  };
   const optionPairs = options.options ?? [];
   const plannerOptionPairs = options.plannerOptions ?? [];
   const reviewerOptionPairs = options.reviewerOptions ?? [];
@@ -122,6 +130,37 @@ export async function runInit(
     printInitConflicts(classified.conflicts);
     return 1;
   }
+  const catalogs = new Map<string, Promise<ModelCatalog>>();
+  const getCatalog = (name: string): Promise<ModelCatalog> => {
+    let catalog = catalogs.get(name);
+    if (!catalog) {
+      catalog = loadCatalog(requireProvider(chosen, name), resolve, execute);
+      catalogs.set(name, catalog);
+    }
+    return catalog;
+  };
+  let models: ModelSelection[] = [];
+  if ([plannerProvider, reviewerProvider, provider].some((value) => value === null)) {
+    const loading = options.prompter ? null : spinner();
+    loading?.start("Loading models from installed providers...");
+    const rows = detected(chosen, resolve).filter(([, found]) => found !== null);
+    const results = await Promise.allSettled(rows.map(async ([name]) => ({ name, catalog: await getCatalog(name) })));
+    loading?.stop("Model catalogs loaded.");
+    const failures: string[] = [];
+    for (const [index, result] of results.entries()) {
+      if (result.status === "fulfilled") {
+        const { name, catalog } = result.value;
+        models.push(...catalog.ids.map((id) => ({ provider: name, model: id })));
+      } else {
+        failures.push(`${rows[index]?.[0]}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`);
+      }
+    }
+    for (const failure of failures) process.stderr.write(`Could not load models for ${failure}\n`);
+    if (models.length === 0) {
+      printError("No models available from installed providers.");
+      return 2;
+    }
+  }
   let developer: ModelChoice;
   let planner: ModelChoice;
   let reviewer: ModelChoice;
@@ -133,6 +172,7 @@ export async function runInit(
       options: parseOptions(plannerOptionPairs),
       effort: options.plannerEffort ?? null,
       runCommand: execute,
+      models, getCatalog,
     });
     reviewer = await choices(chosen, resolve, prompt, {
       role: "Reviewer",
@@ -141,6 +181,7 @@ export async function runInit(
       options: parseOptions(reviewerOptionPairs),
       effort: options.reviewerEffort ?? null,
       runCommand: execute,
+      models, getCatalog,
     });
     developer = await choices(chosen, resolve, prompt, {
       role: "Developer",
@@ -149,6 +190,7 @@ export async function runInit(
       options: parseOptions(optionPairs),
       effort: options.effort ?? null,
       runCommand: execute,
+      models, getCatalog,
     });
   } catch (error) {
     if (error instanceof PromptCancelled) throw error;
@@ -199,23 +241,34 @@ async function choices(
     options: Record<string, string>;
     effort: string | null;
     runCommand: RunCommand;
+    models: readonly ModelSelection[];
+    getCatalog: (name: string) => Promise<ModelCatalog>;
   },
 ): Promise<ModelChoice> {
   let provider = args.provider;
   let model = args.model;
+  let effort = args.effort;
   let stored: Record<string, string>;
   if (provider === null) {
-    const rows = detected(providers, which);
-    provider = await prompt.selectProvider(rows, `${args.role} provider`);
-    const impl = providers[provider];
-    if (impl === undefined) throw new ConfigurationError(`Unknown provider: ${provider}.`);
-    const catalog = await loadCatalog(impl, which, args.runCommand);
-    model = await prompt.selectModel(provider, catalog, `${args.role} model`);
+    const selected = await prompt.selectModel(args.models, `${args.role} model`);
+    if (!args.models.some((item) => item.provider === selected.provider && item.model === selected.model)) {
+      throw new ConfigurationError("Unknown provider or model.");
+    }
+    provider = selected.provider;
+    model = selected.model;
+    const impl = requireProvider(providers, provider);
+    const catalog = await args.getCatalog(provider);
     stored = await promptOptions(impl, model, catalog, which, args.runCommand, prompt);
+    // The prompt stores effort as a native option; keep it in the dedicated `effort` field instead.
+    const promptedOption = impl.effortOption;
+    if (promptedOption && Object.hasOwn(stored, promptedOption) && !(promptedOption === "variant" && model.includes("#"))) {
+      effort = stored[promptedOption] ?? null;
+      delete stored[promptedOption];
+    }
   } else {
     const impl = requireProvider(providers, provider);
     if (model === null) throw new ConfigurationError("Model is required.");
-    const catalog = await loadCatalog(impl, which, args.runCommand);
+    const catalog = await args.getCatalog(provider);
     model = knownModel(model, catalog);
     const effortOption = impl.effortOption;
     if (args.effort !== null && !effortOption) throw new ConfigurationError(`${args.role} provider does not support effort.`);
@@ -232,7 +285,7 @@ async function choices(
     if (args.effort !== null && effortOption) delete stored[effortOption];
   }
   if (model.trim() === "") throw new ConfigurationError("Model is required.");
-  const primary = { provider, model: model.trim(), options: stored, ...(args.effort !== null ? { effort: args.effort } : {}) };
+  const primary = { provider, model: model.trim(), options: stored, ...(effort !== null ? { effort } : {}) };
   return primary;
 }
 
@@ -302,33 +355,17 @@ function providerOptions(provider: Provider): readonly ProviderOption[] {
 }
 
 class ClackPrompter implements Prompter {
-  async selectProvider(
-    rows: ReadonlyArray<readonly [string, string | null, Provider]>,
-    message: string,
-  ): Promise<string> {
-    if (rows.length === 0) throw new ConfigurationError("No providers are available.");
-    const names = new Set(rows.map(([name]) => name));
-    const result = await clackSelect({
+  async selectModel(models: readonly ModelSelection[], message: string): Promise<ModelSelection> {
+    const result = await autocomplete({
       message,
-      options: rows.map(([name, found]) => ({ value: name, label: `${name}  ${found ?? "not found"}` })),
-      initialValue: rows[0]?.[0],
+      placeholder: "Search provider or model...",
+      options: models.map((item, index) => ({ value: String(index), label: `${item.provider} / ${item.model}` })),
+      filter: (search, option) => (option.label ?? "").toLowerCase().includes(search.toLowerCase()),
     });
     if (isCancel(result)) throw new PromptCancelled();
-    if (typeof result !== "string" || !names.has(result)) throw new ConfigurationError("Provider is required.");
-    return result;
-  }
-
-  async selectModel(_provider: string, catalog: ModelCatalog, message: string): Promise<string> {
-    if (catalog.ids.length === 0) throw new ConfigurationError("Model is required.");
-    const initial = catalog.defaultId && catalog.ids.includes(catalog.defaultId) ? catalog.defaultId : catalog.ids[0];
-    const result = await clackSelect({
-      message,
-      options: catalog.ids.map((id) => ({ value: id, label: id })),
-      initialValue: initial,
-    });
-    if (isCancel(result)) throw new PromptCancelled();
-    if (!catalog.ids.includes(String(result))) throw new ConfigurationError(`Unknown model: ${String(result)}.`);
-    return String(result);
+    const selected = models[Number(result)];
+    if (!selected) throw new ConfigurationError("Model is required.");
+    return selected;
   }
 
   async selectOption(name: string, values: readonly string[], allowDefault: boolean): Promise<string> {
