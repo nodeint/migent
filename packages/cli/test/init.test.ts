@@ -1,13 +1,12 @@
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { ModelCatalog } from "@nodeint/migent-adapters";
 import { diagnose } from "@nodeint/migent-doctor";
-import { createProviderResolver, loadWorkflowDocument, loadWorkspaceConfig, resolveStageTarget, type Provider } from "@nodeint/migent-kernel";
+import { createProviderResolver, loadWorkflowDocument, loadWorkspaceConfig, resolveStageTarget } from "@nodeint/migent-kernel";
 import { defaultProviders } from "@nodeint/migent-adapters";
 import { afterEach, expect, test } from "vitest";
 import { cliHooks } from "../src/hooks.ts";
-import { runInit, type Prompter } from "../src/commands/init.ts";
+import { runInit, type Prompter, type ModelSelection } from "../src/commands/init.ts";
 import { main } from "../src/index.ts";
 import { capture } from "./support.ts";
 
@@ -54,16 +53,12 @@ class ScriptedPrompt implements Prompter {
     this.answers = [...answers];
   }
 
-  selectProvider(rows: ReadonlyArray<readonly [string, string | null, Provider]>): string {
-    const raw = this.answers[this.index++] ?? "";
-    return raw === "" ? (rows[0]?.[0] ?? "") : raw;
-  }
-
-  selectModel(_provider: string, catalog: ModelCatalog): string {
-    const raw = this.answers[this.index++] ?? "";
-    if (raw === "") return catalog.defaultId || catalog.ids[0] || "";
-    if (!catalog.ids.includes(raw)) throw new Error(`Unknown model: ${raw}.`);
-    return raw;
+  selectModel(models: readonly ModelSelection[]): ModelSelection {
+    const provider = this.answers[this.index++] ?? "";
+    const model = this.answers[this.index++] ?? "";
+    const selected = models.find((item) => (!provider || item.provider === provider) && (!model || item.model === model));
+    if (!selected) throw new Error(`Unknown model: ${provider}/${model}.`);
+    return selected;
   }
 
   selectOption(_name: string, values: readonly string[]): string {
@@ -437,7 +432,7 @@ test("init exits 0 when doctor later reports a missing provider", async () => {
         runCommand,
         which: (command) => {
           seen += 1;
-          return command === "codex" && seen <= 3 ? "/bin/codex" : null;
+          return command === "codex" && seen <= 1 ? "/bin/codex" : null;
         },
       }),
     );
@@ -636,11 +631,9 @@ test("interactive init saves each role independently without installing the skil
   const { calls } = skillRecorder();
   const messages: string[] = [];
   const prompt = new ScriptedPrompt(["codex", "gpt-5", "low", "grok", "grok-4.7", "high", "codex", "gpt-5", "xhigh"]);
-  const providerPrompt = prompt.selectProvider.bind(prompt);
   const modelPrompt = prompt.selectModel.bind(prompt);
   const prompter: Prompter = {
-    selectProvider(rows, message) { messages.push(message); return providerPrompt(rows); },
-    selectModel(provider, catalog, message) { messages.push(message); return modelPrompt(provider, catalog); },
+    selectModel(models, message) { messages.push(message); return modelPrompt(models); },
     selectOption: prompt.selectOption.bind(prompt),
   };
   try {
@@ -648,7 +641,7 @@ test("interactive init saves each role independently without installing the skil
       interactive: true, prompter, runCommand, which: which(new Set(["codex", "grok"])),
     }));
     expect(result.value, result.stderr).toBe(0);
-    expect(messages).toEqual(["Planner provider", "Planner model", "Reviewer provider", "Reviewer model", "Developer provider", "Developer model"]);
+    expect(messages).toEqual(["Planner model", "Reviewer model", "Developer model"]);
     expect(Object.keys(loadWorkspaceConfig(workspace).roles)).toEqual(["planner", "reviewer", "developer"]);
     expect(result.stdout).toContain("migent skill install --project");
     const resolve = createProviderResolver(defaultProviders());
@@ -704,6 +697,39 @@ test.each([
     }));
     expect(result.value).toBe(2);
     expect(existsSync(path.join(workspace, ".migent"))).toBe(false);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+
+test("interactive init loads each available catalog once and tolerates a failed provider", async () => {
+  const workspace = tempDir();
+  const catalogCalls: string[] = [];
+  const modelsSeen: ModelSelection[][] = [];
+  try {
+    const prompt = new ScriptedPrompt(["codex", "gpt-5", "low", "codex", "gpt-5", "medium", "codex", "gpt-5", "high"]);
+    const result = await capture(() => runInit(workspace, {
+      interactive: true,
+      which: which(new Set(["codex", "grok"])),
+      runCommand: (argv) => {
+        if (argv[0] === "codex" && argv[1] === "debug" || argv[0] === "grok" && argv[1] === "models") {
+          catalogCalls.push(argv[0]);
+          if (argv[0] === "grok") throw new Error("offline");
+        }
+        return runCommand(argv);
+      },
+      prompter: {
+        selectModel(models) { modelsSeen.push([...models]); return prompt.selectModel(models); },
+        selectOption: prompt.selectOption.bind(prompt),
+      },
+    }));
+    expect(result.value, result.stderr).toBe(0);
+    expect(catalogCalls.filter((name) => name === "codex")).toHaveLength(1);
+    expect(catalogCalls.filter((name) => name === "grok")).toHaveLength(1);
+    expect(modelsSeen).toHaveLength(3);
+    expect(modelsSeen.every((models) => models.some((item) => item.provider === "codex" && item.model === "gpt-5"))).toBe(true);
+    expect(result.stderr).toContain("offline");
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }
