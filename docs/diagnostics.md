@@ -52,9 +52,16 @@ directory, next to `execution.json`:
 ```text
 .migent/sessions/<session-id>/executions/<order>-<stage-id>--attempt-<n>/
 ├── execution.json
+├── failure.md              # readable failure report for a failed execution
+├── response.md             # model output only, when the model produced one
 ├── diagnostics.json        # only after a wrapper-level failure
 └── debug.log               # only when MIGENT_DEBUG is on
 ```
+
+`failure.md` is the human-readable companion written for every failed
+execution. It names the stage and provider, repeats the error message, and
+points at `diagnostics.json` or the verify report. Read it before the JSON
+files; `execution.json` and `diagnostics.json` stay the machine-readable sources.
 
 `diagnostics.json` is separate because `execution.json` cannot change after an
 execution ends. Each execution keeps the last failure; `turn` says which turn it
@@ -84,6 +91,9 @@ read it before you share the file.
 ## Where to look
 
 ```bash
+# The readable report for a failed execution
+cat .migent/sessions/<session-id>/executions/<execution-id>/failure.md
+
 # The error, plus a pointer to the file
 migent session show <session-id>
 
@@ -131,7 +141,7 @@ sensitive values as stderr. Do not commit it.
 | `exited before it was ready (signal SIGKILL)` | The OS or another process killed the wrapper. | Check memory pressure and `dmesg` or the system log. |
 | `Could not launch …: ENOENT` | The Node binary or wrapper file is missing. | Reinstall Migent and check `node -v`. |
 | `CLI executable not found` | The provider CLI is not on `PATH`. | Run `migent doctor` and install or fix the path. |
-| No `diagnostics.json` after a failure | The run was cancelled, or the failure came from the provider's own output. | Read `response.md`, `stream.jsonl`, and the stage `failure_detail`. |
+| No `diagnostics.json` after a failure | The run was cancelled, or the failure came from the provider's own output. | Read `failure.md` and `execution.json`; read `response.md` only when the model produced one. |
 
 When you report a bug, attach `diagnostics.json` and `debug.log` after you check
 them for secrets.

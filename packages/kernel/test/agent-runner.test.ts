@@ -174,6 +174,16 @@ test("blocks a session after a blocked stage outcome", async () => {
   expect(result.outcome_status).toBe("blocked");
   expect(status.status).toBe("blocked");
   expect(status.blocked_by_execution_id).toBe(result.execution_id);
+  const executionDirectory = path.join(
+    workspace,
+    ".migent",
+    "sessions",
+    "blocked-run",
+    "executions",
+    result.execution_id,
+  );
+  expect(readFileSync(path.join(executionDirectory, "response.md"), "utf8")).toContain("status: blocked");
+  expect(existsSync(path.join(executionDirectory, "failure.md"))).toBe(false);
   await expect(
     runner.run({
       provider: "fake",
@@ -202,6 +212,11 @@ test("fails a workflow session without a stage status", async () => {
   const status = readJson(path.join(sessionDirectory, "status.json"));
   expect(execution.status).toBe("failed");
   expect(String(execution.error)).toContain("must start with");
+  const executionDirectory = path.join(sessionDirectory, "executions", result.execution_id);
+  expect(readFileSync(path.join(executionDirectory, "response.md"), "utf8")).toBe(
+    "implementation report without a status header",
+  );
+  expect(readFileSync(path.join(executionDirectory, "failure.md"), "utf8")).toContain("must start with");
   expect(status.status).toBe("active");
   expect(status).not.toHaveProperty("terminal_execution_id");
   const retry = await new AgentToolRunner({ fake: new FakeProvider() }, 10).run({
@@ -604,6 +619,16 @@ test("a provider that cannot start leaves diagnostics.json without argument valu
   expect(diagnostics.node_version).toBe(process.version);
   expect(text).not.toContain("hunter2");
   expect(text).not.toContain("secret prompt");
+  const executionDirectory = path.dirname(file);
+  expect(existsSync(path.join(executionDirectory, "response.md"))).toBe(false);
+  const failure = readFileSync(path.join(executionDirectory, "failure.md"), "utf8");
+  expect(failure).toContain("CLI executable not found");
+  expect(failure).toContain("diagnostics.json");
+  const conversation = JSON.parse(
+    readFileSync(path.join(executionDirectory, "conversation.json"), "utf8"),
+  ) as { history: Array<{ role: string }> };
+  expect(conversation.history.some((entry) => entry.role === "assistant")).toBe(false);
+  expect(result.response).toBe("");
 });
 
 test("MIGENT_DEBUG writes wrapper and executor steps to debug.log for successful and failed runs", async () => {

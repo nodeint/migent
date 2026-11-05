@@ -1,5 +1,7 @@
+import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
-import type { Check } from "@nodeint/migent-kernel";
+import path from "node:path";
+import { FAILURE_FILENAME, type Check } from "@nodeint/migent-kernel";
 import { sessionFields } from "./session-row.js";
 
 const require = createRequire(import.meta.url);
@@ -98,7 +100,13 @@ export function printSessions(rows: readonly string[][]): void {
   }
 }
 
-export function printAgent(result: Record<string, unknown>, role: string, provider: string, model: string): void {
+export function printAgent(
+  result: Record<string, unknown>,
+  role: string,
+  provider: string,
+  model: string,
+  workspace: string | null = null,
+): void {
   const decision = String(result.outcome_decision ?? "");
   let outcome = String(result.outcome_status ?? "failed");
   if (decision) outcome = `${outcome} ${decision}`;
@@ -110,6 +118,8 @@ export function printAgent(result: Record<string, unknown>, role: string, provid
     ["execution", String(result.execution_id ?? "")],
   ];
   for (const [label, value] of rows) process.stdout.write(`${label}  ${value}\n`);
+  const failurePath = failureArtifactPath(workspace, result);
+  if (failurePath !== null) process.stdout.write(`failure  ${failurePath}\n`);
   if (result.outcome_status === "question") {
     for (const question of Array.isArray(result.questions) ? result.questions.filter(isRecord) : []) {
       process.stdout.write(`${formatQuestion(question)}\n`);
@@ -119,6 +129,20 @@ export function printAgent(result: Record<string, unknown>, role: string, provid
   if (result.failure_reason === "question_file_invalid" && typeof result.failure_detail === "string") {
     process.stdout.write(`error  ${result.failure_detail}\n`);
   }
+}
+
+function failureArtifactPath(workspace: string | null, result: Record<string, unknown>): string | null {
+  if (workspace === null) return null;
+  const failed =
+    result.execution_status === "failed" ||
+    (typeof result.failure_reason === "string" && result.failure_reason !== "");
+  if (!failed) return null;
+  const sessionId = typeof result.session_id === "string" ? result.session_id : "";
+  const executionId = typeof result.execution_id === "string" ? result.execution_id : "";
+  if (sessionId === "" || executionId === "") return null;
+  const relative = `executions/${executionId}/${FAILURE_FILENAME}`;
+  const absolute = path.join(workspace, ".migent", "sessions", sessionId, relative);
+  return existsSync(absolute) ? relative : null;
 }
 
 export function printWatchSnapshot(snapshot: Record<string, unknown>): void {

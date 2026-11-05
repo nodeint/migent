@@ -48,6 +48,7 @@ import {
   type ProcessStartInfo,
 } from "./process-ownership.js";
 import { isRecord } from "./record.js";
+import { VERIFY_EXHAUSTED, VERIFY_FAILED } from "./selection.js";
 import {
   MIGENT_DIRNAME,
   CONVERSATION_FILENAME,
@@ -192,6 +193,7 @@ export function clearInFlightExecutions(sessionId: string): void {
 }
 
 export const DIAGNOSTICS_FILENAME = "diagnostics.json";
+export const FAILURE_FILENAME = "failure.md";
 export const DEBUG_LOG_FILENAME = "debug.log";
 
 export class SessionStore {
@@ -859,6 +861,7 @@ export class SessionStore {
     writeFileAtomic(path.join(context.directory, "prompt.md"), prompt);
   }
 
+  /** Save text returned by the model. Never pass Migent error text; a failed turn writes failure.md instead. */
   saveResponse(context: ExecutionContext, responseText: string): void {
     writeFileAtomic(path.join(context.directory, "response.md"), responseText);
   }
@@ -931,6 +934,9 @@ export class SessionStore {
       }),
     });
     writeJsonAtomic(filePath, metadata);
+    if (status === "failed") {
+      writeFailureReport(context, metadata, error ?? (typeof metadata.error === "string" ? metadata.error : null));
+    }
     this.finishExecutionSave({
       context,
       sessionDirectory,
@@ -1293,6 +1299,59 @@ export class SessionStore {
     }
     return snapshots;
   }
+}
+
+/**
+ * A readable report beside a failed execution. It keeps errors out of response.md,
+ * which holds only what the provider returned.
+ */
+function writeFailureReport(
+  context: ExecutionContext,
+  metadata: Record<string, unknown>,
+  error: string | null,
+): void {
+  const stageId = textField(metadata.stage_id) ?? "agent";
+  const attempt = typeof metadata.stage_attempt === "number" ? metadata.stage_attempt : null;
+  const provider = textField(metadata.provider);
+  const model = textField(metadata.model);
+  const failureReason = textField(metadata.failure_reason);
+  const lines = [
+    "# Execution failed",
+    "",
+    `- Session: \`${context.sessionId}\``,
+    `- Execution: \`${context.executionId}\``,
+    `- Stage: \`${stageId}\`${attempt === null ? "" : ` (attempt ${attempt})`}`,
+  ];
+  if (metadata.kind === "verify") lines.push("- Kind: verify-only");
+  if (provider !== null || model !== null) {
+    lines.push(`- Provider: \`${provider ?? "unknown"}/${model ?? "unknown"}\``);
+  }
+  if (failureReason !== null) lines.push(`- Failure reason: \`${failureReason}\``);
+  if (typeof metadata.completed_at === "string") lines.push(`- Completed at: ${metadata.completed_at}`);
+  lines.push("", "## Error", "", "```text", error ?? "No error message was recorded.", "```");
+  if (existsSync(path.join(context.directory, DIAGNOSTICS_FILENAME))) {
+    lines.push("", "## Diagnostics", "", `See [\`${DIAGNOSTICS_FILENAME}\`](${DIAGNOSTICS_FILENAME}).`);
+  }
+  const verifyReport = verifyFailureReport(context.directory, metadata, failureReason);
+  if (verifyReport !== null) {
+    lines.push("", "## Verify", "", `See [\`${verifyReport}\`](${verifyReport}).`);
+  }
+  writeFileAtomic(path.join(context.directory, FAILURE_FILENAME), `${lines.join("\n")}\n`);
+}
+
+function verifyFailureReport(
+  directory: string,
+  metadata: Record<string, unknown>,
+  failureReason: string | null,
+): string | null {
+  const verify = isRecord(metadata.verify) ? metadata.verify : null;
+  const recorded =
+    verify !== null && typeof verify.last_report === "string" && verify.last_report !== ""
+      ? verify.last_report
+      : null;
+  if (recorded !== null) return existsSync(path.join(directory, recorded)) ? recorded : null;
+  if (failureReason !== VERIFY_EXHAUSTED && failureReason !== VERIFY_FAILED) return null;
+  return existsSync(path.join(directory, "turns/01/verify.md")) ? "turns/01/verify.md" : null;
 }
 
 function latestExecutionPerStage<

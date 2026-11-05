@@ -137,5 +137,6 @@ function executionJson(
     outcome_decision: "",
     session_status: typeof sessionStatus.status === "string" ? sessionStatus.status : "",
     response: "",
+    execution_status: failureReason === "" ? "completed" : "failed",
   };
 }

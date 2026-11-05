@@ -267,7 +267,7 @@ export type {
   WaitHooks,
 } from "./command-executor.js";
 export { describeStartFailure } from "./command-executor.js";
-export { DIAGNOSTICS_FILENAME, DEBUG_LOG_FILENAME } from "./session-store.js";
+export { DIAGNOSTICS_FILENAME, FAILURE_FILENAME, DEBUG_LOG_FILENAME } from "./session-store.js";
 export {
   ENDPOINT_ALIVE,
   ENDPOINT_GONE,

@@ -253,11 +253,13 @@ contains:
         ├── execution.json     # stage attempt status and metadata
         ├── stream.jsonl       # provider activity and heartbeats
         ├── prompt.md          # prompt sent to the agent
-        ├── response.md        # saved agent response, when available
+        ├── response.md        # model response only, when the model produced one
+        ├── failure.md         # readable failure report, when the execution failed
         └── artifacts/         # files produced by this stage
 ```
 
-Read responses and artifacts to inspect the work behind each stage. Use the
+Read `response.md` for what the model said and `failure.md` for why an attempt
+failed. Read artifacts to inspect the work behind each stage. Use the
 CLI to manage session state. See [Sessions](docs/sessions.md) for the full
 layout and recovery commands.
 

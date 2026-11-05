@@ -554,12 +554,18 @@ export class AgentToolRunner {
         const needsVerify =
           verifyCommands.length > 0 && invokeError === null && outcome?.status === "complete";
         record.status = needsVerify ? "running" : invokeError === null && questionError === null ? "completed" : "failed";
-        record.history.push({ role: "assistant", content: responseText });
+        // Only a real model reply belongs in the conversation. A provider that never
+        // produced output, or that failed with a classified error, leaves this turn
+        // absent, so a resume cannot replay an error as if the model had said it.
+        const modelResponded = responseText !== "" && classification === null;
+        if (modelResponded) record.history.push({ role: "assistant", content: responseText });
         store.save(record, context);
-        store.saveResponse(context, responseText);
-        if (verifyCommands.length > 0) {
-          store.saveTurnResponse(context, turn, responseText);
-          if (outcome?.status === "complete") store.saveTurnOutcome(context, turn, outcome);
+        if (modelResponded) {
+          store.saveResponse(context, responseText);
+          if (verifyCommands.length > 0) store.saveTurnResponse(context, turn, responseText);
+        }
+        if (verifyCommands.length > 0 && outcome?.status === "complete") {
+          store.saveTurnOutcome(context, turn, outcome);
         }
         if (questionError !== null) {
           const next = this.questionRetry(questionError, questionCorrection, turn, state, eventReporter);
@@ -877,7 +883,7 @@ export class AgentToolRunner {
           usage = null;
         }
       }
-      return [responseText || invokeError || "", parsedProviderId, invokeError, spec.argv, usage, classification];
+      return [responseText, parsedProviderId, invokeError, spec.argv, usage, classification];
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

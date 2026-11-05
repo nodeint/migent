@@ -1,11 +1,17 @@
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { AgentToolRunner, raiseCancellation, type BuildCommandInput, type CommandSpec } from "@nodeint/migent-kernel";
+import {
+  AgentToolRunner,
+  raiseCancellation,
+  type BuildCommandInput,
+  type CommandSpec,
+  type FailureClassification,
+} from "@nodeint/migent-kernel";
 import { expect, test, vi } from "vitest";
 import { cliHooks } from "../src/hooks.ts";
 import { main } from "../src/index.ts";
-import { ScriptedProvider, capture, removeWorkspace, repoWorkflowText, writeFakeWorkflowWorkspace } from "./support.ts";
+import { ScriptedProvider, FakeProvider, capture, removeWorkspace, repoWorkflowText, writeFakeWorkflowWorkspace } from "./support.ts";
 
 // Each stage spawns a wrapper and a provider process, which is slow on Windows CI.
 vi.setConfig({ testTimeout: 60_000 });
@@ -345,4 +351,126 @@ test("session inspect help names list, show, and follow", async () => {
   const follow = await capture(() => main(["session", "follow", "--help"]));
   expect(follow.stdout).toContain("migent session follow <session>");
   expect(follow.stdout).toContain("--exit-when-done");
+});
+
+class UnstartableProvider extends FakeProvider {
+  override buildCommand(input: BuildCommandInput): CommandSpec {
+    super.buildCommand(input);
+    return { argv: ["migent-no-such-binary-xyz"] };
+  }
+
+  override parseResponse(stdout: string): [string, string | null] {
+    return stdout ? super.parseResponse(stdout, "") : ["", null];
+  }
+}
+
+test("a stage that never ran the model points at failure.md, not response.md", async () => {
+  const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
+  try {
+    cliHooks.runner = new AgentToolRunner({ fake: new UnstartableProvider() }, 10);
+    const failed = await capture(() =>
+      main(["session", "run", "--workflow", "plan", "--task", "Write a plan", "--once"], workspace),
+    );
+    expect(failed.value).not.toBe(0);
+    expect(failed.stderr).toContain("failure: executions/");
+    expect(failed.stderr).not.toContain("response: executions/");
+  } finally {
+    removeWorkspace(workspace);
+  }
+});
+
+class SlowSiblingProvider extends FakeProvider {
+  override buildCommand(input: BuildCommandInput): CommandSpec {
+    super.buildCommand(input);
+    if (input.prompt.includes("## Stage: b ")) {
+      return { argv: [process.execPath, "-e", "setTimeout(() => process.stdout.write('STAGE_B'), 800)"] };
+    }
+    return { argv: [process.execPath, "-e", "process.stdout.write('STAGE_A')"] };
+  }
+
+  override parseResponse(stdout: string, _lastMessageFile: string): [string, string | null] {
+    if (stdout.includes("STAGE_A")) return ["report without a status header", null];
+    return ["status: complete\n\nb done", null];
+  }
+}
+
+test("a failed stage is named even when a concurrent sibling finishes last", async () => {
+  const workspace = writeFakeWorkflowWorkspace({
+    concurrent: `schema_version: 4
+concurrency: 2
+id: concurrent
+stages:
+  - id: a
+    role: planner
+  - id: b
+    role: planner
+`,
+  });
+  try {
+    cliHooks.runner = new AgentToolRunner({ fake: new SlowSiblingProvider() }, 10);
+    const run = await capture(() =>
+      main(["session", "run", "--workflow", "concurrent", "--task", "Review changes"], workspace),
+    );
+    expect(run.value).not.toBe(0);
+    const sessionId = sessionIdFrom(run.stderr);
+    const directory = path.join(workspace, ".migent", "sessions", sessionId);
+    const executions = readdirSync(path.join(directory, "executions")).sort();
+    const failedId = executions.find((name) => name.includes("-a--attempt-"));
+    const latestId = executions.find((name) => name.includes("-b--attempt-"));
+    expect(failedId).toBeDefined();
+    expect(latestId).toBeDefined();
+    const status = JSON.parse(readFileSync(path.join(directory, "status.json"), "utf8")) as {
+      latest_execution_id: string;
+    };
+    expect(status.latest_execution_id).toBe(latestId);
+    expect(run.stderr).toContain(`failure: executions/${failedId}/failure.md`);
+  } finally {
+    removeWorkspace(workspace);
+  }
+});
+
+class QuotaThenCompleteProvider extends ScriptedProvider {
+  private readonly kinds: Array<FailureClassification | null> = [
+    { kind: "quota", message: "limited", resetAt: "2000-01-01T00:00:00.000Z", window: null },
+    null,
+  ];
+
+  override classifyFailure(): FailureClassification | null {
+    return this.kinds.shift() ?? null;
+  }
+}
+
+test("a failed attempt is named after the session recovers and completes", async () => {
+  const workspace = writeFakeWorkflowWorkspace({
+    solo: `schema_version: 4
+id: solo
+stages:
+  - id: work
+    role: planner
+`,
+  });
+  try {
+    cliHooks.runner = new AgentToolRunner(
+      {
+        fake: new QuotaThenCompleteProvider([
+          "status: complete\n\nlimited",
+          "status: complete\n\nwork done",
+        ]),
+      },
+      10,
+    );
+    const run = await capture(() =>
+      main(["session", "run", "--workflow", "solo", "--task", "Write"], workspace),
+    );
+    expect(run.value).toBe(0);
+    const sessionId = sessionIdFrom(run.stderr);
+    const executions = readdirSync(
+      path.join(workspace, ".migent", "sessions", sessionId, "executions"),
+    ).sort();
+    expect(executions).toHaveLength(2);
+    expect(run.stderr).toContain(`failure: executions/${executions[0]}/failure.md`);
+    expect(run.stderr).toContain("completed");
+  } finally {
+    removeWorkspace(workspace);
+  }
 });

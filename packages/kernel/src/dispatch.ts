@@ -66,6 +66,7 @@ export class StageDispatchResult {
       outcome_decision: this.outcomeDecision,
       session_status: this.sessionStatus,
       response: this.response,
+      execution_status: this.executionStatus,
     };
   }
 }

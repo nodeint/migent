@@ -1508,6 +1508,7 @@ function runResultJson(result: RunResult): Record<string, unknown> {
     outcome_decision: result.outcome_decision,
     session_status: result.session_status,
     response: result.response,
+    execution_status: result.execution_status ?? "",
   };
 }
 
