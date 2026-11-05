@@ -35,7 +35,7 @@ function toolUse(status: unknown): string {
 }
 
 test("buildCommand sends the prompt on stdin and relies on the process cwd", () => {
-  const spec = new OpencodeProvider().buildCommand(input({ newAgentId: "ses_new" }));
+  const spec = new OpencodeProvider().buildCommand(input());
   expect(spec.argv).toEqual(["opencode", "run", "--format", "json", "--auto", "-m", "anthropic/claude-sonnet-4"]);
   expect(spec.stdin).toBe("do the thing");
   expect(spec.argv).not.toContain("--cwd");
@@ -63,7 +63,7 @@ test("buildCommand validates options first", () => {
 
 test("session, profile options, and option values", () => {
   const provider = new OpencodeProvider();
-  expect(provider.createNewSession()).toEqual({});
+  expect(Object.keys(provider.createNewSession())).toEqual(["agentId"]);
   expect(provider.profileOptions({ agent: "build" })).toEqual({});
   expect(provider.optionValuesCommand("agent", "m")).toBeNull();
   expect(provider.optionValuesCommand("thinking", "m")).toBeNull();
@@ -263,4 +263,55 @@ test("lists OpenCode V2 variants for the exact provider and model", () => {
   expect(() => provider.parseOptionValues("variant", JSON.stringify({ data: [
     { providerID: "custom", id: "test", variants: [{}] },
   ] }), "custom/test")).toThrow(/invalid variant/);
+});
+
+test("a new session gets a unique server-shaped id that the first command passes with -s", () => {
+  const provider = new OpencodeProvider();
+  const first = provider.createNewSession().agentId;
+  const second = provider.createNewSession().agentId;
+  expect(first).toMatch(/^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/);
+  expect(second).not.toBe(first);
+  const argv = provider.buildCommand(input({ newAgentId: first })).argv;
+  expect(argv.slice(-2)).toEqual(["-s", first]);
+});
+
+test("a resumed turn passes the stored id, not the preallocated one", () => {
+  const argv = new OpencodeProvider().buildCommand(input({ agentId: "ses_stored", newAgentId: "ses_fresh" })).argv;
+  expect(argv.slice(-2)).toEqual(["-s", "ses_stored"]);
+  expect(argv).not.toContain("ses_fresh");
+});
+
+test("the interrupt command targets the session through opencode api without naming a server", () => {
+  const provider = new OpencodeProvider();
+  const id = provider.createNewSession().agentId as string;
+  expect(provider.interruptCommand(id)?.argv).toEqual([
+    "opencode", "api", "session.interrupt", "--param", `sessionID=${id}`,
+  ]);
+  expect(provider.interruptCommand("ses_x; rm -rf /")).toBeNull();
+});
+
+test("interrupt results are classified", () => {
+  const provider = new OpencodeProvider();
+  expect(provider.classifyInterrupt('{"interrupted":true}', 0)).toBe("interrupted");
+  expect(provider.classifyInterrupt('{"interrupted":false}', 0)).toBe("idle");
+  expect(provider.classifyInterrupt("not json", 0)).toBe("failed");
+  expect(provider.classifyInterrupt("SessionNotFound: ses_x", 1)).toBe("not-found");
+  expect(provider.classifyInterrupt("HTTP 404", 1)).toBe("not-found");
+  expect(provider.classifyInterrupt("connection refused", 1)).toBe("failed");
+});
+
+test("the session id is read from any output line", () => {
+  const provider = new OpencodeProvider();
+  expect(provider.sessionIdFromLine(JSON.stringify({ type: "step_start", sessionID: "ses_a" }))).toBe("ses_a");
+  expect(provider.sessionIdFromLine(JSON.stringify({ type: "text" }))).toBeNull();
+  expect(provider.sessionIdFromLine("plain text")).toBeNull();
+});
+
+test("interrupt classification matches the responses OpenCode 2.2.5 returned", () => {
+  const provider = new OpencodeProvider();
+  const notFound = JSON.stringify({ _tag: "SessionNotFoundError", sessionID: "ses_x", message: "Session not found: ses_x" }) + "\nHTTP 404 Not Found";
+  const invalid = JSON.stringify({ _tag: "InvalidRequestError", message: 'Expected a string starting with "ses"', kind: "Params" }) + "\nHTTP 400 Bad Request";
+  expect(provider.classifyInterrupt(notFound, 1)).toBe("not-found");
+  expect(provider.classifyInterrupt(invalid, 1)).toBe("failed");
+  expect(provider.createNewSession().agentId?.startsWith("ses")).toBe(true);
 });

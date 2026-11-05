@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, test } from "vitest";
@@ -279,3 +279,59 @@ test("wrapper step parser stays bounded on long newline-free output and keeps la
   parse("apper] provider spawned\r\nnot a trace\n");
   expect(steps).toEqual(["listening", "provider spawned"]);
 });
+
+async function cancelAfterInterrupt(script: string, graceMs: number): Promise<{ order: string[]; dir: string }> {
+  const dir = mkdtempSync(path.join(tmpdir(), "migent-grace-"));
+  const order: string[] = [];
+  const executor = new CommandExecutor(30);
+  executor.interruptExitGraceMs = graceMs;
+  let ready: () => void = () => {};
+  const started = new Promise<void>((resolve) => {
+    ready = resolve;
+  });
+  const run = executor.run({ argv: [process.execPath, "-e", script.replaceAll("DIR", JSON.stringify(dir))] }, process.cwd(), {
+    onStart: () => ready(),
+    onInterrupt: async () => {
+      order.push("interrupt");
+      writeFileSync(path.join(dir, "interrupted"), "1");
+    },
+    onStopped: async () => {
+      order.push("stopped");
+    },
+  });
+  const outcome = run.then(() => null, (error: unknown) => error);
+  try {
+    await started;
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    try {
+      raiseCancellation(15);
+    } catch {
+      // The flag stays set for the running command.
+    }
+    expect(await outcome).toBeInstanceOf(CancellationRequested);
+  } finally {
+    resetCancellation();
+  }
+  return { order, dir };
+}
+
+test("after an interrupt the client may exit by itself before anything is forced", async () => {
+  const script =
+    `const fs=require("fs"),p=require("path");setInterval(()=>{` +
+    `if(fs.existsSync(p.join(DIR,"interrupted"))){fs.writeFileSync(p.join(DIR,"graceful"),"1");process.exit(1)}},50)`;
+  const { order, dir } = await cancelAfterInterrupt(script, 5000);
+  expect(order).toEqual(["interrupt", "stopped"]);
+  expect(readFileSync(path.join(dir, "graceful"), "utf8")).toBe("1");
+  rmSync(dir, { recursive: true, force: true });
+}, 30_000);
+
+test("a client that ignores the interrupt is terminated once the grace period ends", async () => {
+  const script = `require("fs").writeFileSync(require("path").join(DIR,"pid"),String(process.pid));setInterval(()=>{},1000)`;
+  const startedAt = Date.now();
+  const { order, dir } = await cancelAfterInterrupt(script, 300);
+  expect(order).toEqual(["interrupt", "stopped"]);
+  const pid = Number(readFileSync(path.join(dir, "pid"), "utf8"));
+  expect(() => process.kill(pid, 0)).toThrow();
+  expect(Date.now() - startedAt).toBeLessThan(20_000);
+  rmSync(dir, { recursive: true, force: true });
+}, 30_000);
