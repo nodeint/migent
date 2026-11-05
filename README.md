@@ -442,14 +442,7 @@ migent skill update    # refresh installed skill copies
 
 ## Documentation
 
-- [Human-in-the-loop interaction](docs/human-in-the-loop.md)
-- [Writing workflows](https://github.com/nodeint/migent/blob/main/docs/workflows.md)
-- [Providers and model configuration](https://github.com/nodeint/migent/blob/main/docs/providers.md)
-- [Sessions and workflow composition](https://github.com/nodeint/migent/blob/main/docs/sessions.md)
-- [Session metrics](https://github.com/nodeint/migent/blob/main/docs/session-metrics.md)
-- [Diagnosing provider failures](https://github.com/nodeint/migent/blob/main/docs/diagnostics.md)
-- [Session handoff](https://github.com/nodeint/migent/blob/main/docs/session-handoff.md)
-- [CLI commands and execution controls](https://github.com/nodeint/migent/blob/main/docs/cli.md)
+See the [documentation map](docs/README.md) to find guides by topic, task, and search term.
 
 Run `migent <command> --help` for command options. To contribute to Migent, see
 [CONTRIBUTING.md](CONTRIBUTING.md).

@@ -1,3 +1,4 @@
+import { parseHelpOptions } from "../utils/parse-help-options.js";
 import { classifyProviderError, providerErrorMessage } from "../types.js";
 import type {
   BuildCommandInput,
@@ -141,6 +142,14 @@ function toolDetails(payload: Record<string, unknown>): Record<string, unknown> 
 }
 
 export class GrokClient implements CliClient {
+  optionsCommand(): CommandSpec {
+    return { argv: [this.command, "-p", "x", "--help"] };
+  }
+
+  parseOptions(help: string) {
+    return parseHelpOptions(help, { section: /^Options:\s*$/, inferArgumentType: true });
+  }
+
   readonly effortOption = GROK_REASONING_OPTION;
   readonly id = "grok";
   readonly command = "grok";

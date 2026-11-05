@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, test } from "vitest";
@@ -55,6 +55,12 @@ function fakeAgyOutput(models: string[]): string {
   return models.join("\n");
 }
 
+function fakeHelp(argv: string[]): string | null {
+  if (!argv.includes("--help")) return null;
+  const client = argv[0] === "claude" ? "claude-code" : argv[0];
+  return readFileSync(new URL(`../../adapters/src/options/${client}.txt`, import.meta.url), "utf8");
+}
+
 interface CommandCall {
   argv: string[];
 }
@@ -66,6 +72,8 @@ function createTempDir(): string {
 function createFakeRunCommand(calledCommands: CommandCall[]): (argv: string[]) => string {
   return (argv: string[]): string => {
     calledCommands.push({ argv: [...argv] });
+    const help = fakeHelp(argv);
+    if (help !== null) return help;
     const cmd = argv[0];
     switch (cmd) {
       case "codex":
@@ -152,6 +160,7 @@ test("missing CLI reports path: null and a problem, and does not call runCommand
     cliHooks.which = (command: string) => (command === "codex" ? "/bin/codex" : null);
     cliHooks.runCommand = (argv: string[]) => {
       calledCommands.push({ argv: [...argv] });
+      if (fakeHelp(argv) !== null) return fakeHelp(argv)!;
       if (argv[0] === "codex") return fakeCodexOutput(["gpt-5"]);
       return "";
     };
@@ -168,7 +177,7 @@ test("missing CLI reports path: null and a problem, and does not call runCommand
     expect(claude?.available).toBe(false);
     expect(claude?.problems).toContainEqual(expect.stringContaining("not on PATH"));
     const commandsCalled = calledCommands.map((c) => c.argv[0]);
-    expect(commandsCalled).toEqual(["codex"]);
+    expect(commandsCalled).toEqual(["codex", "codex"]);
   } finally {
     rmSync(workspace, { recursive: true, force: true });
     cliHooks.which = null;
@@ -187,6 +196,7 @@ test("runCommand failure is reported as a problem; other providers unaffected", 
       if (argv[0] === "claude") {
         throw new Error("generic failure");
       }
+      if (fakeHelp(argv) !== null) return fakeHelp(argv)!;
       if (argv[0] === "grok") {
         return fakeGrokOutput(["grok-4"]);
       }
@@ -221,6 +231,7 @@ test("empty listing (zero models) is reported as a problem", async () => {
       if (argv[0] === "opencode") {
         return fakeOpencodeOutput([]);
       }
+      if (fakeHelp(argv) !== null) return fakeHelp(argv)!;
       if (argv[0] === "grok") {
         return fakeGrokOutput(["grok-4"]);
       }
@@ -246,6 +257,7 @@ test("exit 0 when some providers fail; exit 1 when every provider has no models"
     // Test 1: at least one provider has models -> exit 0
     cliHooks.which = (command: string) => `/bin/${command}`;
     cliHooks.runCommand = (argv: string[]) => {
+      if (fakeHelp(argv) !== null) return fakeHelp(argv)!;
       if (argv[0] === "codex") return fakeCodexOutput(["gpt-5"]);
       if (argv[0] === "claude") {
         throw new ProviderCommandFailed("failed");
@@ -278,6 +290,7 @@ test("text mode contains provider names, paths, model ids, and 'not found'", asy
   try {
     cliHooks.which = (command: string) => (command === "codex" ? "/usr/local/bin/codex" : null);
     cliHooks.runCommand = (argv: string[]) => {
+      if (fakeHelp(argv) !== null) return fakeHelp(argv)!;
       if (argv[0] === "codex") return fakeCodexOutput(["gpt-5"]);
       return "";
     };
@@ -295,7 +308,7 @@ test("text mode contains provider names, paths, model ids, and 'not found'", asy
   }
 });
 
-test("runCommand only receives each provider's modelCatalogCommand argv", async () => {
+test("runCommand receives headless help and model catalog commands", async () => {
   const workspace = createTempDir();
   const calledCommands: CommandCall[] = [];
   try {
@@ -305,9 +318,13 @@ test("runCommand only receives each provider's modelCatalogCommand argv", async 
       return createFakeRunCommand([])(argv);
     };
     await capture(() => main(["provider", "list", "--json"], workspace));
-    const codexCall = calledCommands.find((c) => c.argv[0] === "codex");
+    expect(calledCommands.filter(c => c.argv.includes("--help")).map(c => c.argv)).toEqual(expect.arrayContaining([
+      ["codex", "exec", "--help"], ["claude", "-p", "--help"],
+      ["agy", "-p", "--help"], ["grok", "-p", "x", "--help"], ["opencode", "run", "--help"],
+    ]));
+    const codexCall = calledCommands.filter(c => !c.argv.includes("--help")).find((c) => c.argv[0] === "codex");
     expect(codexCall?.argv).toEqual(["codex", "debug", "models"]);
-    const claudeCall = calledCommands.find((c) => c.argv[0] === "claude");
+    const claudeCall = calledCommands.filter(c => !c.argv.includes("--help")).find((c) => c.argv[0] === "claude");
     expect(claudeCall?.argv).toEqual([
       "claude",
       "-p",
@@ -317,11 +334,11 @@ test("runCommand only receives each provider's modelCatalogCommand argv", async 
       "stream-json",
       "--verbose",
     ]);
-    const grokCall = calledCommands.find((c) => c.argv[0] === "grok");
+    const grokCall = calledCommands.filter(c => !c.argv.includes("--help")).find((c) => c.argv[0] === "grok");
     expect(grokCall?.argv).toEqual(["grok", "models"]);
-    const opencodeCall = calledCommands.find((c) => c.argv[0] === "opencode");
+    const opencodeCall = calledCommands.filter(c => !c.argv.includes("--help")).find((c) => c.argv[0] === "opencode");
     expect(opencodeCall?.argv).toEqual(["opencode", "models"]);
-    const agyCall = calledCommands.find((c) => c.argv[0] === "agy");
+    const agyCall = calledCommands.filter(c => !c.argv.includes("--help")).find((c) => c.argv[0] === "agy");
     expect(agyCall?.argv).toEqual(["agy", "models"]);
   } finally {
     rmSync(workspace, { recursive: true, force: true });

@@ -145,6 +145,14 @@ export abstract class ProviderBase implements Provider {
     return this.client.sessionIdFromLine?.(line) ?? null;
   }
 
+  optionsCommand(): CommandSpec {
+    return this.client.optionsCommand();
+  }
+
+  parseOptions(help: string) {
+    return this.client.parseOptions(help);
+  }
+
   modelCatalogCommand(): string[] {
     return this.client.modelsCommand().argv;
   }

@@ -136,6 +136,9 @@ agent session. `task_sha256` and `prior_session_id` come from `status.json`.
 An agent session uses the manifest role. `stage_attempt` counts every execution
 of a stage, including a route back. It is not a retry count.
 
+The adapter capture and normalization contract is documented in
+[Adapters](adpaters.md#failures-and-usage).
+
 Usage is stored raw on the runner's turn event. When a workflow session
 becomes `completed`, Migent normalizes those captures and writes `metrics.json`. A
 later change to an provider does not change that file. The previous capture is

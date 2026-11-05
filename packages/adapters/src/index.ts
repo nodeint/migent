@@ -67,3 +67,7 @@ export function providerCommands(): Record<string, string> {
     Object.entries(defaultProviders()).map(([name, provider]) => [name, provider.command]),
   );
 }
+
+export { parseHelpOptions } from "./utils/parse-help-options.js";
+export type { HelpOptionsFormat } from "./utils/parse-help-options.js";
+export type { HeadlessOption } from "./types.js";

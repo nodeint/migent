@@ -1,3 +1,4 @@
+import { parseHelpOptions } from "../utils/parse-help-options.js";
 import { randomBytes } from "node:crypto";
 import { classifyProviderError, providerErrorMessage } from "../types.js";
 import type {
@@ -113,6 +114,14 @@ export function lookup(source: unknown, path: readonly string[]): unknown {
 }
 
 export class OpencodeClient implements CliClient {
+  optionsCommand(): CommandSpec {
+    return { argv: [this.command, "run", "--help"] };
+  }
+
+  parseOptions(help: string) {
+    return parseHelpOptions(help, { section: /^Options:\s*$/, inferArgumentType: true });
+  }
+
   readonly effortOption = "variant";
   readonly id = "opencode";
   readonly command = "opencode";
