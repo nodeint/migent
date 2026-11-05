@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Added
+
+- Provider wrapper startup failures now explain themselves. The wrapper reports its own failures (arguments, IPC, listen, provider spawn, runtime) to the owner, and the error names the cause with a short stderr excerpt instead of "did not start". A failed turn writes `diagnostics.json` in the execution directory (executable and argument count only, never other arguments). `MIGENT_DEBUG=1` adds a step trace on stderr and in `debug.log`. `migent doctor --session <id>` lists recorded diagnostics as warnings and now accepts role sessions.
+- Every failed execution writes `failure.md`: a readable report with the stage, attempt, provider, `failure_reason`, the error message, and pointers to `diagnostics.json` or the verify report. CLI output names each one as `failure: executions/<id>/failure.md`, including an attempt that a later retry recovered from.
+
+### Changed
+
+- A signal-like exit of the wrapper during startup no longer reports a startup failure when a cancellation arrives within a short window; it is reported as a cancellation.
+- `CommandExecutor.run` now takes an options object and returns `{ stdout, error, exitCode, failure? }` instead of a tuple. Callers of the exported class must update.
+
+### Fixed
+
+- `response.md` holds only the model's response. A provider that cannot start leaves it absent instead of writing the error text there. A failed turn also no longer stores Migent's error as an assistant message in `conversation.json`, so a later resume cannot replay that error as something the model said.
+
 ## 0.3.5
 
 ### Added

@@ -27,6 +27,6 @@ test("sync spawn runs a command and reports a missing one", () => {
 });
 
 test.runIf(process.platform === "win32")("executor refuses a multi-line argument to a .cmd shim", async () => {
-  const [, error] = await new CommandExecutor(10).run({ argv: ["npm", "--version\nx"] }, process.cwd());
+  const { error } = await new CommandExecutor(10).run({ argv: ["npm", "--version\nx"] }, process.cwd());
   expect(error).toMatch(/batch script/);
 });

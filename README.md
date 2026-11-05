@@ -253,11 +253,13 @@ contains:
         ├── execution.json     # stage attempt status and metadata
         ├── stream.jsonl       # provider activity and heartbeats
         ├── prompt.md          # prompt sent to the agent
-        ├── response.md        # saved agent response, when available
+        ├── response.md        # model response only, when the model produced one
+        ├── failure.md         # readable failure report, when the execution failed
         └── artifacts/         # files produced by this stage
 ```
 
-Read responses and artifacts to inspect the work behind each stage. Use the
+Read `response.md` for what the model said and `failure.md` for why an attempt
+failed. Read artifacts to inspect the work behind each stage. Use the
 CLI to manage session state. See [Sessions](docs/sessions.md) for the full
 layout and recovery commands.
 
@@ -456,6 +458,7 @@ migent skill update    # refresh installed skill copies
 - [Providers and model configuration](https://github.com/nodeint/migent/blob/main/docs/providers.md)
 - [Sessions and workflow composition](https://github.com/nodeint/migent/blob/main/docs/sessions.md)
 - [Session metrics](https://github.com/nodeint/migent/blob/main/docs/session-metrics.md)
+- [Diagnosing provider failures](https://github.com/nodeint/migent/blob/main/docs/diagnostics.md)
 - [Session handoff](https://github.com/nodeint/migent/blob/main/docs/session-handoff.md)
 - [CLI commands and execution controls](https://github.com/nodeint/migent/blob/main/docs/cli.md)
 

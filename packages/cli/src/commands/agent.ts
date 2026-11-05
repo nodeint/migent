@@ -190,7 +190,7 @@ export async function dispatchAgent(
     if (resumedMany !== null) {
       if (args.asJson) process.stdout.write(`${JSON.stringify(resumedMany)}\n`);
       else {
-        for (const item of resumedMany) printAgent({ ...item }, args.role, target.provider, target.model);
+        for (const item of resumedMany) printAgent({ ...item }, args.role, target.provider, target.model, workspace);
       }
       if (resumedMany.some((item) => item.failure_reason === "verify_exhausted")) {
         return finishRole(resolvedSessionId, 6);
@@ -199,7 +199,7 @@ export async function dispatchAgent(
     }
     if (result === undefined) throw new Error("Agent run produced no result.");
     if (args.asJson) process.stdout.write(`${JSON.stringify(result)}\n`);
-    else printAgent({ ...result }, args.role, target.provider, target.model);
+    else printAgent({ ...result }, args.role, target.provider, target.model, workspace);
     return finishRole(resolvedSessionId, result.outcome_status === "complete" ? 0 : result.outcome_status === "question" ? 9 : 1);
   }
 }
@@ -335,7 +335,7 @@ export async function continueAgent(
         waitedUntil,
         args.waitHooks,
       );
-      printAgent({ ...result }, role, profile.provider, profile.model);
+      printAgent({ ...result }, role, profile.provider, profile.model, workspace);
       return finishRole(args.sessionId, result.outcome_status === "complete" ? 0 : result.outcome_status === "question" ? 9 : 1);
     } catch (error) {
       if (error instanceof CancellationRequested) {
@@ -406,12 +406,12 @@ async function runCancelledRole(
     const result = finished[0];
     if (result === undefined) throw new Error("Agent run produced no result.");
     if (asJson) process.stdout.write(`${JSON.stringify(result)}\n`);
-    else printAgent({ ...result }, role, profile.provider, profile.model);
+    else printAgent({ ...result }, role, profile.provider, profile.model, workspace);
     return finishRole(sessionId, result.outcome_status === "complete" ? 0 : result.outcome_status === "question" ? 9 : 1);
   }
   if (asJson) process.stdout.write(`${JSON.stringify(finished)}\n`);
   else {
-    for (const item of finished) printAgent({ ...item }, role, profile.provider, profile.model);
+    for (const item of finished) printAgent({ ...item }, role, profile.provider, profile.model, workspace);
   }
   if (finished.some((item) => item.failure_reason === "verify_exhausted")) return finishRole(sessionId, 6);
   return finishRole(sessionId, finished.every((item) => item.outcome_status === "complete") ? 0 : 1);

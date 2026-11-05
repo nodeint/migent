@@ -1,9 +1,10 @@
-import { readdirSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 import {
   AgentToolRunner,
   DEFAULT_MAX_DISPATCHES,
   executeNamedWorkflow,
+  FAILURE_FILENAME,
   formatDuration,
   log,
   SessionStore,
@@ -85,6 +86,13 @@ function printResumeHint(workspace: string, result: ExecuteResult): void {
 const INSPECT_EXIT_CODES = new Set([1, 3, 6, 8]);
 
 function printResult(workspace: string, result: ExecuteResult): void {
+  // Printed before the completed branch: a retried attempt can fail and still end in a completed session.
+  for (const executionId of failedExecutionIds(result)) {
+    const failure = `executions/${executionId}/${FAILURE_FILENAME}`;
+    if (executionFileExists(workspace, result.sessionId, executionId, FAILURE_FILENAME)) {
+      log(`failure: ${failure}`);
+    }
+  }
   if (result.status === "completed" || result.stopReason === "completed") {
     const duration = sessionDurationLabel(workspace, result.sessionId);
     log(duration === null ? "completed" : `completed · ${duration}`);
@@ -101,13 +109,44 @@ function printResult(workspace: string, result: ExecuteResult): void {
   for (const stage of questions) {
     for (const question of stage.questions) log(formatQuestion({ ...question, stage_id: stage.stageId }));
   }
-  if (INSPECT_EXIT_CODES.has(result.code) && result.latestExecutionId) {
+  if (
+    result.latestExecutionId &&
+    INSPECT_EXIT_CODES.has(result.code) &&
+    executionFileExists(workspace, result.sessionId, result.latestExecutionId, "response.md")
+  ) {
     log(`response: executions/${result.latestExecutionId}/response.md`);
   }
   if (result.sessionId !== "") for (const line of questionFileFailures(workspace, result.sessionId)) log(line);
   if (result.code === 7 && result.latestExecutionId) {
     log(`verify: executions/${result.latestExecutionId}/turns/01/verify.md`);
   }
+}
+
+/**
+ * Every execution that ended failed in this run. `latestExecutionId` alone can
+ * point at a later sibling when concurrent stages finish in another order.
+ */
+function failedExecutionIds(result: ExecuteResult): string[] {
+  const ids = new Set<string>();
+  for (const stage of result.stages) {
+    if (stage.execution_status !== "failed") continue;
+    const executionId = stage.execution_id;
+    if (typeof executionId === "string" && executionId !== "") ids.add(executionId);
+  }
+  if (ids.size === 0 && result.latestExecutionId) ids.add(result.latestExecutionId);
+  return [...ids];
+}
+
+function executionFileExists(
+  workspace: string,
+  sessionId: string,
+  executionId: string,
+  name: string,
+): boolean {
+  if (sessionId === "") return false;
+  return existsSync(
+    path.join(workspace, ".migent", "sessions", sessionId, "executions", executionId, name),
+  );
 }
 
 /**

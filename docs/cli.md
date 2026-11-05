@@ -145,9 +145,12 @@ names the stage, attempt, duration, outcome, and decision. A completed session
 adds `completed · <duration>` and, when the workflow published files, one
 `artifact: <absolute-path>` line per file. The path starts at the filesystem
 root and names the published file, so the suffix stays, such as `plan.md`. The stage
-report is not printed. Exit 1, 3, 6, and 8 also print
-`response: executions/<id>/response.md`. Exit 7 prints
-`verify: executions/<id>/turns/01/verify.md`. `--verbose` does not print the
+report is not printed. Every execution that ended failed prints
+`failure: executions/<id>/failure.md`, including an attempt that a later retry
+recovered from. Exit 1, 3, 6, and 8 also print
+`response: executions/<id>/response.md` when the model produced a response;
+when the provider never started there is no response line.
+Exit 7 prints `verify: executions/<id>/turns/01/verify.md`. `--verbose` does not print the
 report. Stderr also has the session id when the session is created, and provider
 errors. When a workflow or role session stops before it is completed, including blocked,
 cancelled, and `--once` while later workflow stages remain, stderr ends with:

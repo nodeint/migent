@@ -174,6 +174,16 @@ test("blocks a session after a blocked stage outcome", async () => {
   expect(result.outcome_status).toBe("blocked");
   expect(status.status).toBe("blocked");
   expect(status.blocked_by_execution_id).toBe(result.execution_id);
+  const executionDirectory = path.join(
+    workspace,
+    ".migent",
+    "sessions",
+    "blocked-run",
+    "executions",
+    result.execution_id,
+  );
+  expect(readFileSync(path.join(executionDirectory, "response.md"), "utf8")).toContain("status: blocked");
+  expect(existsSync(path.join(executionDirectory, "failure.md"))).toBe(false);
   await expect(
     runner.run({
       provider: "fake",
@@ -202,6 +212,11 @@ test("fails a workflow session without a stage status", async () => {
   const status = readJson(path.join(sessionDirectory, "status.json"));
   expect(execution.status).toBe("failed");
   expect(String(execution.error)).toContain("must start with");
+  const executionDirectory = path.join(sessionDirectory, "executions", result.execution_id);
+  expect(readFileSync(path.join(executionDirectory, "response.md"), "utf8")).toBe(
+    "implementation report without a status header",
+  );
+  expect(readFileSync(path.join(executionDirectory, "failure.md"), "utf8")).toContain("must start with");
   expect(status.status).toBe("active");
   expect(status).not.toHaveProperty("terminal_execution_id");
   const retry = await new AgentToolRunner({ fake: new FakeProvider() }, 10).run({
@@ -578,4 +593,70 @@ test("the version command runs once for two executions", async () => {
     .map((event) => (event.details as { cli_version?: unknown }).cli_version);
   expect(versions).toEqual(["2.1.304", "2.1.304"]);
   expect(readFileSync(hits, "utf8")).toBe("1\n");
+});
+
+class UnstartableProvider extends FakeProvider {
+  buildCommand(input: Parameters<FakeProvider["buildCommand"]>[0]) {
+    super.buildCommand(input);
+    return { argv: ["migent-no-such-binary", "--api-key=hunter2", "secret prompt"] };
+  }
+
+  parseResponse(stdout: string): [string, string | null] {
+    return stdout ? super.parseResponse(stdout) : ["", null];
+  }
+}
+
+test("a provider that cannot start leaves diagnostics.json without argument values", async () => {
+  const runner = new AgentToolRunner({ fake: new UnstartableProvider() }, 10);
+  const tmp = tempDir("migent-runner-");
+  const result = await runner.run({ provider: "fake", model: "m1", prompt: "p", workspace: tmp });
+  const file = path.join(path.dirname(executionFile(tmp, result.session_id, result.execution_id)), "diagnostics.json");
+  const text = readFileSync(file, "utf8");
+  const diagnostics = JSON.parse(text) as Record<string, any>;
+  expect(diagnostics.failure).toMatchObject({ kind: "start", phase: "spawn", code: "ENOENT" });
+  expect(diagnostics.command).toEqual({ executable: "migent-no-such-binary", argument_count: 2 });
+  expect(diagnostics.migent_version).toMatch(/^\d+\.\d+\.\d+/);
+  expect(diagnostics.node_version).toBe(process.version);
+  expect(text).not.toContain("hunter2");
+  expect(text).not.toContain("secret prompt");
+  const executionDirectory = path.dirname(file);
+  expect(existsSync(path.join(executionDirectory, "response.md"))).toBe(false);
+  const failure = readFileSync(path.join(executionDirectory, "failure.md"), "utf8");
+  expect(failure).toContain("CLI executable not found");
+  expect(failure).toContain("diagnostics.json");
+  const conversation = JSON.parse(
+    readFileSync(path.join(executionDirectory, "conversation.json"), "utf8"),
+  ) as { history: Array<{ role: string }> };
+  expect(conversation.history.some((entry) => entry.role === "assistant")).toBe(false);
+  expect(result.response).toBe("");
+});
+
+test("MIGENT_DEBUG writes wrapper and executor steps to debug.log for successful and failed runs", async () => {
+  const previous = process.env.MIGENT_DEBUG;
+  process.env.MIGENT_DEBUG = "1";
+  try {
+    for (const provider of [new FakeProvider(), new UnstartableProvider()]) {
+      const runner = new AgentToolRunner({ fake: provider }, 10);
+      const tmp = tempDir("migent-runner-");
+      const result = await runner.run({ provider: "fake", model: "m1", prompt: "p", workspace: tmp });
+      const log = readFileSync(
+        path.join(path.dirname(executionFile(tmp, result.session_id, result.execution_id)), "debug.log"),
+        "utf8",
+      );
+      expect(log).toContain("wrapper spawned");
+      expect(log).toContain("wrapper ready");
+      expect(log).toContain("wrapper: listening");
+      expect(log).toContain("wrapper: provider spawned");
+    }
+  } finally {
+    if (previous === undefined) delete process.env.MIGENT_DEBUG;
+    else process.env.MIGENT_DEBUG = previous;
+  }
+}, 30000);
+
+test("no debug.log without MIGENT_DEBUG", async () => {
+  const runner = new AgentToolRunner({ fake: new FakeProvider() }, 10);
+  const tmp = tempDir("migent-runner-");
+  const result = await runner.run({ provider: "fake", model: "m1", prompt: "p", workspace: tmp });
+  expect(existsSync(path.join(path.dirname(executionFile(tmp, result.session_id, result.execution_id)), "debug.log"))).toBe(false);
 });

@@ -960,6 +960,11 @@ test("an infra failure stops the stage and is not verify_exhausted", async () =>
   const snapshots = new SessionStore(workspace).executionSnapshots(sessionId);
   expect(snapshots).toHaveLength(1);
   expect(snapshots.every((item) => item.failureReason !== "verify_exhausted")).toBe(true);
+  const failure = readFileSync(
+    path.join(workspace, ".migent", "sessions", sessionId, "executions", snapshots[0]!.executionId, "failure.md"),
+    "utf8",
+  );
+  expect(failure).toContain("turns/01/verify.md");
 });
 
 test("a provider failure retries the same stage agent", async () => {

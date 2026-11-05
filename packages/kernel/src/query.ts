@@ -1,3 +1,4 @@
+import { latestDiagnosticsPathIn } from "./session-diagnostics.js";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { isRecord } from "./record.js";
@@ -105,6 +106,8 @@ export function watchSnapshot(
   snapshot.skipped_stages = Array.isArray(status.skipped_stages) ? status.skipped_stages.filter(isRecord) : [];
   if (execution && isRecord(execution.skip)) snapshot.skip = execution.skip;
   if (typeof status.title === "string" && status.title !== "") snapshot.title = status.title;
+  const diagnostics = latestDiagnosticsPathIn(sessionDirectory);
+  if (diagnostics !== null) snapshot.diagnostics = diagnostics;
   return snapshot;
 }
 

@@ -8,7 +8,8 @@ import {
   type NewSession,
   type UsageCapture,
 } from "./provider-contract.js";
-import { CancellationRequested, CommandExecutor, DEFAULT_TIMEOUT_SEC } from "./command-executor.js";
+import { CancellationRequested, CommandExecutor, DEFAULT_TIMEOUT_SEC, type ExecutionFailure } from "./command-executor.js";
+import { KERNEL_VERSION } from "./package-version.js";
 import { spawnProviderSync } from "./provider-spawn.js";
 import { buildVerifyRepairPrompt } from "./prompt.js";
 import { VERIFY_EXHAUSTED } from "./selection.js";
@@ -19,6 +20,7 @@ import { isRecord } from "./record.js";
 import {
   renderProviderPrompt,
   flattenHistory,
+  debugEnabled,
   log,
 } from "./runtime.js";
 import { renderProtocolUpdate, renderQuestionCorrection, type TurnKind } from "@nodeint/migent-prompts";
@@ -504,6 +506,7 @@ export class AgentToolRunner {
             eventReporter,
             store,
             context,
+            turn,
           );
         } catch (error) {
           return markCancelled(error);
@@ -551,12 +554,18 @@ export class AgentToolRunner {
         const needsVerify =
           verifyCommands.length > 0 && invokeError === null && outcome?.status === "complete";
         record.status = needsVerify ? "running" : invokeError === null && questionError === null ? "completed" : "failed";
-        record.history.push({ role: "assistant", content: responseText });
+        // Only a real model reply belongs in the conversation. A provider that never
+        // produced output, or that failed with a classified error, leaves this turn
+        // absent, so a resume cannot replay an error as if the model had said it.
+        const modelResponded = responseText !== "" && classification === null;
+        if (modelResponded) record.history.push({ role: "assistant", content: responseText });
         store.save(record, context);
-        store.saveResponse(context, responseText);
-        if (verifyCommands.length > 0) {
-          store.saveTurnResponse(context, turn, responseText);
-          if (outcome?.status === "complete") store.saveTurnOutcome(context, turn, outcome);
+        if (modelResponded) {
+          store.saveResponse(context, responseText);
+          if (verifyCommands.length > 0) store.saveTurnResponse(context, turn, responseText);
+        }
+        if (verifyCommands.length > 0 && outcome?.status === "complete") {
+          store.saveTurnOutcome(context, turn, outcome);
         }
         if (questionError !== null) {
           const next = this.questionRetry(questionError, questionCorrection, turn, state, eventReporter);
@@ -814,6 +823,7 @@ export class AgentToolRunner {
     eventReporter: ProviderEventReporter,
     store: SessionStore,
     context: ExecutionContext,
+    turn: number,
   ): Promise<[string, string | null, string | null, string[], UsageCapture | null, FailureClassification | null]> {
     const tmp = mkdtempSync(path.join(tmpdir(), "migent_"));
     try {
@@ -830,10 +840,17 @@ export class AgentToolRunner {
         lastMessageFile,
         options,
       });
-      const [stdout, executorError, exitCode] = await this.executor.run(
-        spec,
-        workspace,
-        (line) => {
+      const debugStep = debugEnabled()
+        ? (step: string, fromWrapper = false) => {
+            const line = `${new Date().toISOString()} turn=${turn} ${fromWrapper ? "wrapper: " : ""}${step}`;
+            // Wrapper lines already reached stderr through the tee.
+            if (!fromWrapper) log(`debug: ${line}`);
+            store.appendDebugLog(context, line);
+          }
+        : null;
+      const result = await this.executor.run(spec, workspace, {
+        onDebug: debugStep,
+        onOutput: (line) => {
           const event = provider.parseProgressEvent?.(line);
           if (!isRecord(event) || typeof event.event !== "string") return;
           eventReporter.emit(
@@ -842,15 +859,17 @@ export class AgentToolRunner {
             isRecord(event.details) ? event.details : null,
           );
         },
-        (elapsed) => {
+        onHeartbeat: (elapsed) => {
           eventReporter.emit("provider.heartbeat", `running for ${elapsed}s`, {
             elapsed_seconds: elapsed,
           });
         },
-        (info) => {
+        onStart: (info) => {
           store.saveProcessMetadata(context, info);
         },
-      );
+      });
+      const { stdout, error: executorError, exitCode, failure } = result;
+      if (failure) store.saveDiagnostics(context, diagnosticsPayload(failure, turn));
       const [responseText, parsedProviderId] = provider.parseResponse(stdout, lastMessageFile);
       const classification = classifyFinishedProcess(provider, stdout, exitCode, executorError);
       let invokeError = executorError;
@@ -864,11 +883,39 @@ export class AgentToolRunner {
           usage = null;
         }
       }
-      return [responseText || invokeError || "", parsedProviderId, invokeError, spec.argv, usage, classification];
+      return [responseText, parsedProviderId, invokeError, spec.argv, usage, classification];
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
   }
+}
+
+function diagnosticsPayload(failure: ExecutionFailure, turn: number): Record<string, unknown> {
+  return {
+    schema_version: 1,
+    turn,
+    recorded_at: failure.failedAt,
+    failure: {
+      kind: failure.kind,
+      phase: failure.phase,
+      code: failure.code,
+      errno: failure.errno,
+      syscall: failure.syscall,
+      path: failure.path,
+      message: failure.message,
+    },
+    stderr_tail: failure.stderrTail,
+    // Only the executable and the argument count: other tokens may carry secrets or prompt text.
+    command: { executable: failure.executable, argument_count: failure.argCount },
+    cwd: failure.cwd,
+    endpoint: failure.endpoint,
+    endpoint_length: Buffer.byteLength(failure.endpoint),
+    migent_version: KERNEL_VERSION,
+    node_version: process.version,
+    platform: process.platform,
+    arch: process.arch,
+    timings: { spawned_at: failure.spawnedAt, failed_at: failure.failedAt },
+  };
 }
 
 function classifyFinishedProcess(

@@ -23,7 +23,7 @@ import {
   type ProcessInspector,
   wrapperArgv,
 } from "../src/process-ownership.ts";
-import { WRAPPER_READY, WRAPPER_START, killProcessTree, wrapperEndpoint } from "../src/process-wrapper.ts";
+import { WRAPPER_READY, WRAPPER_START, killProcessTree, wrapperEndpoint, wrapperEntry } from "../src/process-wrapper.ts";
 
 // Writes its own pid to argv[1], then waits until argv[2] exists.
 const SENTINEL_SCRIPT = `
@@ -243,4 +243,18 @@ test("legacy record without endpoint trusts only a vanished owner", () => {
   expect(classifyOrphanedExecution(metadata({ provider_endpoint: undefined }), "/x", fake).action).toBe(
     REAP_UNVERIFIED,
   );
+});
+
+test("wrapper with bad arguments reports a failed argv message and exits 1", async () => {
+  const entry = wrapperEntry();
+  const child = spawn(process.execPath, [entry, "--bogus"], { stdio: ["ignore", "ignore", "pipe", "ipc"] });
+  let stderr = "";
+  child.stderr?.on("data", (chunk: Buffer) => {
+    stderr += chunk.toString();
+  });
+  const message = await nextMessage(child);
+  expect(message).toMatchObject({ type: "failed", phase: "argv" });
+  await waitUntil(() => exited(child), 5);
+  expect(child.exitCode).toBe(1);
+  expect(stderr).toContain("[migent-wrapper] argv:");
 });

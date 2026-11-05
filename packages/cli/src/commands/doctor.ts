@@ -4,6 +4,7 @@ import {
   diagnose,
   diagnoseSession,
   selectSessionWorkflow,
+  sessionDiagnosticsCheck,
   sessionEffortKeys,
   whichSync,
   type Check,
@@ -55,6 +56,14 @@ async function runSessionDoctor(
   options: { asJson?: boolean; which?: Which | null; runCommand?: RunCommand },
 ): Promise<number> {
   const selection = selectSessionWorkflow(workspace, sessionId);
+  const diagnostics = sessionDiagnosticsCheck(workspace, sessionId);
+  // A role session has no workflow: the workflow check does not apply, diagnostics still do.
+  if (selection.manifestWorkflowId === "agent") {
+    const checks = [{ name: "Workflow", ok: true, items: ["Role session: no workflow to validate."], problems: [], warnings: [] }, diagnostics];
+    if (options.asJson) process.stdout.write(`${JSON.stringify({ ...payload(checks), session: sessionPayload(sessionId, null) })}\n`);
+    else printDoctor(checks);
+    return 0;
+  }
   // A freeze needs no live config, so only a live source requires a current config schema.
   if (selection.document !== null && selection.freeze === null) requireCurrentSchema(workspace, { configOnly: true });
   const which = options.which ?? cliHooks.which ?? whichSync;
@@ -67,6 +76,8 @@ async function runSessionDoctor(
     modelEffortChecks = await checkModelEfforts(workspace, providers, which, runCommand, keys);
   }
   const diagnosis = diagnoseSession(workspace, selection, { providers, which, modelEffortChecks });
+  // Shown only when something was recorded, so a clean session prints what it always did.
+  if (diagnostics.warnings.length > 0) diagnosis.checks.push(diagnostics);
   if (options.asJson) process.stdout.write(`${JSON.stringify({ ...payload(diagnosis.checks), session: sessionPayload(sessionId, diagnosis.source) })}\n`);
   else printDoctor(diagnosis.checks);
   return diagnosis.ok ? 0 : 1;

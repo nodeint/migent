@@ -32,11 +32,14 @@ show use `session_id` for that session.
 └── executions/
     └── <order>-<stage-id>--attempt-<n>/
         ├── execution.json
+        ├── diagnostics.json              # only after a provider wrapper failure; see diagnostics.md
+        ├── debug.log                     # only when MIGENT_DEBUG is on
         ├── stream.jsonl                  # provider item traces and provider heartbeats
         ├── conversation.json             # provider conversation checkpoint
         ├── prompt.md
         ├── task.md                       # copy of the session task at dispatch
-        ├── response.md                   # present after a response is saved
+        ├── response.md                   # model response, only when the model produced one
+        ├── failure.md                    # readable failure report for a failed execution
         └── artifacts/
             └── <stage artifact files>
 ```
@@ -128,11 +131,17 @@ Each execution directory contains:
   role does not write this file. This is separate from the Migent
   session-level `status.json`.
 - `prompt.md` and `response.md`: the exact prompt sent for the attempt and the
-  response saved from the provider. A stage with no role writes neither file.
+  response returned by the model. `response.md` is written only when the model
+  produced output; a provider that could not start leaves it absent, and it
+  never holds Migent's error text. A stage with no role writes neither file.
   A later attempt that continues the same stage's provider agent records the
   continuation prompt. An attempt that continues a `session.resume_from`
   dependency records the full stage prompt. `task.md` in this directory is a
   copy of the session task at the moment the execution was created.
+- `failure.md`: written when the execution ends `failed`. It is a readable
+  report with the stage, attempt, provider, `failure_reason`, the error message,
+  and pointers to `diagnostics.json` or the verify report. Structured data stays
+  in `execution.json` (`error`, `failure_reason`) and `diagnostics.json`.
 - `artifacts/`: files written by that stage. These are per-attempt working
   artifacts; only explicitly configured outputs are copied to the
   session-level `outputs/` directory.
