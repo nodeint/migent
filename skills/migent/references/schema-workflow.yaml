@@ -51,10 +51,9 @@ stages:
     max_verify: 3
     verify_timeout: 900
     decision:
-      # Agent guidance: choose one decision using when, then return its name.
+      # Agent guidance: return one decision name. Add when only if the label needs clarification.
       # navigate accepts a stage ID, complete, or a non-empty list of stage IDs.
       - approved:
-          when: The work meets the task and required checks pass.
           navigate: check_docs
       - revise:
           when: Required fixes remain. List each fix and its impact.

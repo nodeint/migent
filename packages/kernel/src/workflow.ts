@@ -748,7 +748,7 @@ function normalizeStageDecision(stage: Record<string, unknown>): Record<string, 
     for (const key of Object.keys(body)) {
       if (key !== "when" && key !== "navigate") throw new ConfigurationError(`${field}.${name}.${key} is not allowed.`);
     }
-    instructions[name] = requiredString(body.when, `${field}.${name}.when`);
+    if (body.when !== undefined) instructions[name] = requiredString(body.when, `${field}.${name}.when`);
     if (body.navigate == null) throw new ConfigurationError(`${field}.${name}.navigate is required.`);
     values.push(name);
     routes[name] = body.navigate;

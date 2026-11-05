@@ -57,10 +57,22 @@ test("v3 navigation retains routing to multiple stages", () => {
   expect(parseWorkflowMapping(raw, "flow.yaml").stages.review?.routes.approved).toEqual(["tests", "docs"]);
 });
 
+test("decisions can omit when while retaining labels, routes, and optional guidance", () => {
+  const review = parseWorkflowMapping(mapping([
+    { approved: { navigate: "complete" } },
+    { revise: { when: "Blocking findings remain.", navigate: "implement" } },
+  ]), "flow.yaml").stages.review!;
+  expect(review.decisionValues).toEqual(["approved", "revise"]);
+  expect(review.decisionInstructions).toEqual({ revise: "Blocking findings remain." });
+  expect(review.routes.approved).toBe("complete");
+  const prompt = addStageOutcomeContract("Review.", review.decisionValues, review.decisionInstructions);
+  expect(prompt).toContain("decision: approved|revise");
+  expect(prompt).toContain("Blocking findings remain.");
+});
+
 test.each([
   [[], "non-empty list"],
   [{ values: ["approved"], routes: { approved: "complete" } }, "non-empty list"],
-  [[{ approved: { navigate: "complete" } }], ".when"],
   [[{ approved: { when: "  ", navigate: "complete" } }], ".when"],
   [[{ approved: { when: "Ready." } }], ".navigate"],
   [[{ approved: { when: "Ready.", navigate: "missing" } }], "not a declared stage"],
@@ -106,11 +118,12 @@ ${version === 1 ? "  " : ""}    artifact: draft.md
   const source = version === 1 ? original.replace("revise: [draft]", "revise: draft") : original;
   const raw = parseYamlDocument(source) as Record<string, unknown>;
   const notes = migrateWorkflow(raw, {}, {});
-  expect(notes.some((note) => note.includes("review when instructions"))).toBe(true);
+  expect(notes.some((note) => note.includes("decision migrated"))).toBe(true);
   const migrated = patchWorkflowText(source, raw);
   expect(migrated).toContain("# project workflow");
   expect(migrated).toContain("Revise only for blocking findings.");
   expect(migrated).not.toContain("values:");
+  expect(migrated).not.toContain("when:");
   const loaded = parseWorkflowMapping(parseYamlDocument(migrated) as Record<string, unknown>, "migrated.yaml");
   expect(loaded.schemaVersion).toBe(4);
   expect(loaded.stages.review?.routes).toEqual({ approved: "complete", "approved-with-note": "complete", revise: version === 1 ? "draft" : ["draft"] });

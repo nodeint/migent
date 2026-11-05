@@ -3,7 +3,6 @@ import path from "node:path";
 import { ZodError } from "zod";
 import { loadRoleInstructions, loadWorkspaceConfig, resolveStageSpec, type StageTarget } from "./config.js";
 import { whichSync, type Check, type DiagnoseOptions } from "./doctor.js";
-import { placeholderWhenWarnings } from "./authoring-diagnostics.js";
 import { ConfigurationError } from "./errors.js";
 import type { ProviderInfo } from "./provider-contract.js";
 import { createProviderResolver } from "./provider-contract.js";
@@ -403,12 +402,6 @@ function modelKey(config: Record<string, unknown>, stage: RoleStageSpec): string
 
 function authoringWarnings(document: WorkflowDocument, label: string): string[] {
   const messages = [...(document.warnings ?? [])];
-  if (document.source !== null) {
-    try {
-      const raw = parseYamlDocument(readFileSync(document.source, "utf8"));
-      if (isRecord(raw)) messages.push(...placeholderWhenWarnings(raw));
-    } catch { /* The loader already reported an unreadable workflow. */ }
-  }
   return messages.map((message) => `${label}: ${message}`);
 }
 

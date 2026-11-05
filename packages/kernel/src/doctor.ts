@@ -16,9 +16,7 @@ import {
 } from "./config.js";
 import { ConfigurationError } from "./errors.js";
 import { isRecord } from "./record.js";
-import { placeholderWhenWarnings, unknownRoleKeys } from "./authoring-diagnostics.js";
-import { readFileSync } from "node:fs";
-import { parseYamlDocument } from "./yaml.js";
+import { unknownRoleKeys } from "./authoring-diagnostics.js";
 import { isRoleStage, loadWorkflowCatalog, type WorkflowDocument } from "./workflow.js";
 
 const require = createRequire(import.meta.url);
@@ -265,16 +263,10 @@ function checkWorkflows(
   return passed("workflows", items, warnings);
 }
 
-/** Parse-time unknown keys plus decision `when` values that still hold the migration placeholder. */
+/** Parse-time unknown keys in the workflow. */
 function workflowWarnings(document: WorkflowDocument): string[] {
   const label = document.source === null ? document.id : path.basename(document.source);
   const messages = [...(document.warnings ?? [])];
-  if (document.source !== null) {
-    try {
-      const raw = parseYamlDocument(readFileSync(document.source, "utf8"));
-      if (isRecord(raw)) messages.push(...placeholderWhenWarnings(raw));
-    } catch { /* The loader already reported an unreadable workflow. */ }
-  }
   return messages.map((message) => `${label}: ${message}`);
 }
 
