@@ -43,6 +43,33 @@ function closest(key: string, valid: readonly string[]): string | null {
   return best;
 }
 
+/** A key Migent does not use, with where it sits. */
+export interface UnknownKey {
+  code: "unknown-key";
+  message: string;
+  path: string[];
+}
+
+function unknownKeyEntries(
+  value: Record<string, unknown>,
+  valid: readonly string[],
+  location: string,
+  base: readonly string[],
+): UnknownKey[] {
+  const entries: UnknownKey[] = [];
+  for (const key of Object.keys(value)) {
+    if (valid.includes(key)) continue;
+    const suggestion = closest(key, valid);
+    const path = location === "" ? key : `${location}.${key}`;
+    entries.push({
+      code: "unknown-key",
+      message: `${path} is not used by Migent.${suggestion === null ? "" : ` Did you mean ${location === "" ? suggestion : `${location}.${suggestion}`}?`}`,
+      path: [...base, key],
+    });
+  }
+  return entries;
+}
+
 function unknownKeys(value: Record<string, unknown>, valid: readonly string[], location: string): string[] {
   const messages: string[] = [];
   for (const key of Object.keys(value)) {
@@ -75,9 +102,16 @@ export function unknownWorkflowKeys(data: Record<string, unknown>): string[] {
   return messages;
 }
 
-/** Unknown keys under each role of a config document. */
-export function unknownRoleKeys(config: Record<string, unknown>): string[] {
+/** Unknown keys under each role of a config document, with their paths. */
+export function unknownRoleKeyEntries(config: Record<string, unknown>): UnknownKey[] {
   if (!isRecord(config.roles)) return [];
   return Object.entries(config.roles).flatMap(([name, role]) =>
-    isRecord(role) ? unknownKeys(role, ROLE_KEYS, `roles.${name}`) : []);
+    isRecord(role)
+      ? unknownKeyEntries(role, ROLE_KEYS, `roles.${name}`, ["roles", name])
+      : []);
+}
+
+/** Unknown keys under each role of a config document. */
+export function unknownRoleKeys(config: Record<string, unknown>): string[] {
+  return unknownRoleKeyEntries(config).map((entry) => entry.message);
 }

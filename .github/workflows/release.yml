@@ -74,7 +74,7 @@ jobs:
         run: |
           cd "$RUNNER_TEMP/release"
           version="${GITHUB_REF_NAME#v}"
-          for name in migent-prompts migent-kernel migent-adapters migent-registry migent; do
+          for name in migent-prompts migent-kernel migent-doctor migent-adapters migent-registry migent; do
             npm stage publish "./nodeint-$name-$version.tgz"
           done
 

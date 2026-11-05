@@ -2,7 +2,8 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ModelCatalog } from "@nodeint/migent-adapters";
-import { createProviderResolver, diagnose, loadWorkflowDocument, loadWorkspaceConfig, resolveStageTarget, type Provider } from "@nodeint/migent-kernel";
+import { diagnose } from "@nodeint/migent-doctor";
+import { createProviderResolver, loadWorkflowDocument, loadWorkspaceConfig, resolveStageTarget, type Provider } from "@nodeint/migent-kernel";
 import { defaultProviders } from "@nodeint/migent-adapters";
 import { afterEach, expect, test } from "vitest";
 import { cliHooks } from "../src/hooks.ts";

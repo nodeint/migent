@@ -2,7 +2,7 @@
 name: release
 description: >
   Release Migent through a release pull request: update the changelog, bump all
-  four workspace packages, build and test, then tag the merged release commit.
+  workspace packages, build and test, then tag the merged release commit.
   Watch release.yml stage packages and create the GitHub Release.
   The user approves staged packages on npm; then fast-forward main to the tag. Use when the user asks to release,
   tag a version, push the release tag, or runs /release.
@@ -114,7 +114,7 @@ After authorization, squash-merge the green PR; never bypass required checks.
 
 Fetch origin after merging. Find the merged release commit on `origin/next`
 using the PR's merge commit, not a commit with a similar subject. Verify its
-four package versions are `X.Y.Z` and its changelog contains that release.
+package versions are `X.Y.Z` and its changelog contains that release.
 Stop if the PR is unmerged or the tag already exists. Never force-push or move
 a tag. Create a lightweight tag on that exact merged commit:
 
@@ -153,7 +153,7 @@ Staging and the GitHub Release alone do not mean the version is public.
 
 ## Verify publication and synchronize main
 
-After the user confirms npm approval, verify all four packages expose `X.Y.Z`
+After the user confirms npm approval, verify all workspace packages expose `X.Y.Z`
 and installing `@nodeint/migent@X.Y.Z` reports that version, following
 `CONTRIBUTING.md`. If verification fails or publication is incomplete, leave
 `main` unchanged and report the blocker.

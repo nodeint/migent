@@ -1,18 +1,19 @@
 import {
-  diagnoseSession,
+  diagnoseSelection as diagnose,
+  type DiagnoseHooks as DoctorHooks,
+  type SessionDiagnosis,
+} from "@nodeint/migent-doctor";
+import {
   readStatusFileState,
   selectRunWorkflow,
   selectSessionWorkflow,
-  sessionEffortKeys,
   whichSync,
   type Provider,
-  type SessionDiagnosis,
   type SessionSelection,
 } from "@nodeint/migent-kernel";
 import path from "node:path";
 import { printDoctor } from "./display.js";
 import { cliHooks } from "./hooks.js";
-import { checkModels } from "./model-check.js";
 import { runProviderCommandAsync, type RunCommand, type Which } from "./provider.js";
 
 export interface DiagnoseHooks {
@@ -31,14 +32,10 @@ export async function diagnoseSelection(
   hooks: DiagnoseHooks,
 ): Promise<SessionDiagnosis> {
   const which = hooks.which ?? cliHooks.which ?? whichSync;
-  let modelEffortChecks = {};
-  const keys = sessionEffortKeys(workspace, selection);
-  if (keys.size > 0) {
-    const runCommand = hooks.runCommand ?? cliHooks.runCommand ??
-      ((argv, input) => runProviderCommandAsync(argv, input, { cwd: workspace, timeoutMs: 10_000 }));
-    modelEffortChecks = await checkModels(workspace, hooks.providers, which, runCommand, keys);
-  }
-  return diagnoseSession(workspace, selection, { providers: hooks.providers, which, modelEffortChecks });
+  const runCommand = hooks.runCommand ?? cliHooks.runCommand ??
+    ((argv, input) => runProviderCommandAsync(argv, input, { cwd: workspace, timeoutMs: 10_000 }));
+  const resolved: DoctorHooks = { providers: hooks.providers, which, runCommand };
+  return diagnose(workspace, selection, resolved);
 }
 
 export interface PreflightTarget {

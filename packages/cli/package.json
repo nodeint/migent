@@ -48,6 +48,7 @@
   "dependencies": {
     "@clack/prompts": "^1.8.1",
     "@nodeint/migent-adapters": "workspace:*",
+    "@nodeint/migent-doctor": "workspace:*",
     "@nodeint/migent-kernel": "workspace:*",
     "@nodeint/migent-registry": "workspace:*",
     "commander": "^14.0.2",

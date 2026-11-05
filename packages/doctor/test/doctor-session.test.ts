@@ -4,16 +4,21 @@ import { expect, test } from "vitest";
 import { parse, stringify } from "yaml";
 import {
   ConfigurationError,
-  diagnoseSession,
+  WORKFLOW_FREEZE_FILE,
+  createAgentSession,
+  createPreparedSession,
+  createWorkflowSession,
   selectSessionWorkflow,
+  type ProviderInfo,
+} from "@nodeint/migent-kernel";
+import {
+  diagnoseSession,
   sessionEffortKeys,
   type Check,
   type DiagnoseOptions,
-  type ProviderInfo,
   type SessionDiagnosis,
 } from "../src/index.ts";
-import { WORKFLOW_FREEZE_FILE } from "../src/session-freeze.ts";
-import { createAgentSession, createPreparedSession, createWorkflowSession } from "../src/session-records.ts";
+
 import { defaultProviders, tempDir, whichFound, writeStageWorkspace } from "./support.ts";
 
 const ALL = new Set(["codex", "grok"]);

@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "vitest";
-import { diagnose } from "../src/index.ts";
+import { diagnose, validateConfigLayers } from "../src/index.ts";
 import { defaultProviders, STAGE_CONFIG, STAGE_WORKFLOW, tempDir, whichFound } from "./support.ts";
 
 test("reports roles, workflows, and provider paths", () => {
@@ -365,4 +365,64 @@ test("an unmapped alias reports only the no-mapping message, not a model check",
   expect(config.problems).toHaveLength(1);
   expect(config.problems[0]).toContain("have no provider and model on this machine.");
   expect(config.warnings.join("\n")).not.toContain("Could not validate");
+});
+
+test("static validation merges layers like the runtime and reports every problem", () => {
+  const providers = defaultProviders();
+  const diagnostics = validateConfigLayers(
+    {
+      project: { models: { x: {} }, roles: { dev: { default_model: "x" }, qa: { default_model: "missing", extra: 1 } } },
+      local: { models: { x: { provider: "nope", model: "m" } } },
+    },
+    providers,
+  );
+  const errors = diagnostics.filter((item) => item.severity === "error");
+  expect(errors.map((item) => item.message)).toEqual([
+    "models.x.provider is not supported: nope",
+    'roles.qa.default_model: unknown model alias "missing" in models.',
+  ]);
+  expect(errors[0]!.source).toEqual({ layer: "local" });
+  expect(errors[1]!.source).toEqual({ layer: "project" });
+  expect(diagnostics.some((item) => item.severity === "warning" && item.path?.join(".") === "roles.qa.extra")).toBe(true);
+});
+
+test("static validation accepts a project that only needs a local mapping", () => {
+  const diagnostics = validateConfigLayers(
+    { project: { models: { x: {} }, roles: { dev: { default_model: "x" } } } },
+    defaultProviders(),
+  );
+  expect(diagnostics.filter((item) => item.code !== "model-unmapped")).toEqual([]);
+});
+
+test("an invalid model option is reported once, however many roles use the model", () => {
+  const diagnostics = validateConfigLayers(
+    {
+      project: {
+        models: { x: { provider: "codex", model: "m", options: { a: 3 } } },
+        roles: { dev: { default_model: "x" }, qa: { default_model: "x" } },
+      },
+    },
+    defaultProviders(),
+  );
+  const errors = diagnostics.filter((item) => item.severity === "error");
+  expect(errors.map((item) => item.message)).toEqual(["Missing or invalid models.x.options.a."]);
+  expect(errors[0]!.path).toEqual(["models", "x", "options", "a"]);
+});
+
+test("a project-owned bad provider on a dotted alias is not attributed to the merge", () => {
+  const diagnostics = validateConfigLayers(
+    { project: { models: { "gpt.5": { provider: "nope" } }, roles: { dev: { default_model: "gpt.5" } } }, local: { models: { "gpt.5": { model: "m" } } } },
+    defaultProviders(),
+  );
+  const error = diagnostics.find((item) => item.code === "provider-unsupported");
+  expect(error?.path).toEqual(["models", "gpt.5", "provider"]);
+  expect(error?.source).toEqual({ layer: "project" });
+});
+
+test("an unknown role key containing a dot keeps its whole name in the path", () => {
+  const diagnostics = validateConfigLayers(
+    { project: { models: { x: { provider: "codex", model: "m" } }, roles: { dev: { default_model: "x", "a.b": 1 } } } },
+    defaultProviders(),
+  );
+  expect(diagnostics.find((item) => item.code === "unknown-key")?.path).toEqual(["roles", "dev", "a.b"]);
 });

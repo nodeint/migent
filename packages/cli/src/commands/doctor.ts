@@ -1,13 +1,6 @@
-import { checkModels } from "../model-check.js";
 import { homedir } from "node:os";
-import {
-  diagnose,
-  selectSessionWorkflow,
-  sessionDiagnosticsCheck,
-  whichSync,
-  type Check,
-  type SessionSource,
-} from "@nodeint/migent-kernel";
+import { diagnoseWorkspace, sessionDiagnosticsCheck, type Check } from "@nodeint/migent-doctor";
+import { selectSessionWorkflow, whichSync, type SessionSource } from "@nodeint/migent-kernel";
 import { diagnoseSelection } from "../preflight.js";
 import { printDoctor } from "../display.js";
 import { cliHooks } from "../hooks.js";
@@ -25,9 +18,8 @@ export async function runDoctor(
   const providers = providerMap();
   const runCommand = options.runCommand ?? cliHooks.runCommand ??
     ((argv, input) => runProviderCommand(argv, input, { cwd: workspace, timeoutMs: 10_000 }));
-  const modelEffortChecks = await checkModels(workspace, providers, which, runCommand);
   const checks = [
-    ...diagnose(workspace, { providers, which, modelEffortChecks }),
+    ...(await diagnoseWorkspace(workspace, { providers, which, runCommand })),
     skillCheck(workspace, options.home ?? homedir()),
   ];
   if (options.asJson) process.stdout.write(`${JSON.stringify(payload(checks))}\n`);
