@@ -142,6 +142,8 @@ export interface CliClient {
   /** Native option used for the model-level effort alias; absent when unsupported. */
   readonly effortOption?: string;
 
+  optionsCommand(): CommandSpec;
+  parseOptions(help: string): HeadlessOption[];
   options(): readonly ProviderOption[];
   validateOptions(options: Readonly<Record<string, string>>): void;
 
@@ -216,4 +218,16 @@ export function classifyProviderError(message: string | null): { event: string; 
     : "provider.error";
   if (!STATUS_PROVIDER_EVENTS.has(event)) event = "provider.error";
   return { event, summary };
+}
+
+/** Help-derived facts only. Unknown types must not be treated as boolean flags. */
+export interface HeadlessOption {
+  name: string;
+  flags: string[];
+  description: string;
+  argument: string | null;
+  valueMode: "required" | "optional" | "none" | "unknown";
+  type: "string" | "number" | "boolean" | "array" | "unknown";
+  choices: string[] | null;
+  defaultValue: string | null;
 }

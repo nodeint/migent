@@ -101,6 +101,10 @@ Supply the full model definition or an alias; it replaces the shared default.
 
 ## Options
 
+For the shared client/provider contracts, discovery catalogs, and validation
+boundaries, see [Adapters](adpaters.md). The client-specific settings below
+describe the existing configuration surface.
+
 Each provider names its own options and lists the values for the selected
 model. `migent init` asks for options marked as
 prompts. Leaving one unset keeps the provider default.
@@ -157,12 +161,9 @@ Migent owns selection, prompts, routing, and persistence.
 
 ## Usage
 
-Each provider selects the usage events from one process and stores them on the
-turn. When a workflow session becomes `completed`, Migent asks that same provider to
-normalize the capture and writes `metrics.json`. A later change to the provider
-does not change that file. A cumulative provider subtracts the previous capture
-for the same provider agent. A per-process provider reports the process as
-printed.
+The shared capture and normalization contract is documented in
+[Adapters: Failures and usage](adpaters.md#failures-and-usage).
+The table below records client-specific usage behavior.
 
 | Provider | What it prints | Tokens | Cost |
 | --- | --- | --- | --- |
@@ -171,11 +172,6 @@ printed.
 | grok | `end`, or the last `usage` event when `end` is absent | per process | `total_cost_usd` on `end`, per process. A `usage` event has no cost. |
 | opencode | each printed `step_finish` | per process; sum of `tokens.input`, `tokens.output`, `tokens.reasoning`, `tokens.cache.read`, and `tokens.cache.write`; input is not reduced by cache reads; a missing final `step_finish` undercounts | sum of `part.cost` |
 | agy | `result.usage` and each `DONE` step that has `usage` | step usage is per process. `result.usage` is cumulative per conversation. | none. Cache reads were not observable. |
-
-`input_tokens` in metrics excludes cache reads. `reasoning_tokens` is reported
-beside `output_tokens` and is not added to it. A field that is missing, not a
-finite number, or a negative delta is null.
-
 
 ## Model effort
 

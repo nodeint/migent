@@ -4,6 +4,8 @@
 
 ### Added
 
+- `migent provider list --json` includes a native headless option catalog discovered from each installed CLI, with flag aliases, descriptions, argument metadata, choices, defaults, and per-provider discovery errors. Added adapter contracts and a documentation map.
+
 - `migent config validate|render|save <draft|->` and `migent workflow validate|render|save <draft|->` validate unsaved YAML or JSON drafts against the workspace's config layers and workflow references. `render` prints canonical YAML; `save` writes the same bytes atomically, creates files without overwriting by default, and requires a matching raw-content SHA-256 via `--base-hash` for updates. Comments are not preserved; replacing a commented file reports a warning. `--json` returns versioned results with structured diagnostics, field paths, and source locations where available (#62).
 - `migent get <type> [name]` is a read-only lookup of workflows, roles, model aliases, and the effective config (`-o json|yaml|name`, `--json`). `migent get workflow --session <id>` shows the draft, frozen, or live workflow a session runs, with each stage's resolved provider and model. See `docs/cli.md`.
 - `migent init` accepts `--planner-effort`, `--reviewer-effort`, and `--developer-effort` to configure effort separately for each role. Developer flags also have explicit `--developer-` names; the existing short names remain aliases.

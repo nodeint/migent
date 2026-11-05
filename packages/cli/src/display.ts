@@ -1,3 +1,4 @@
+import type { HeadlessOption } from "@nodeint/migent-adapters";
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -225,6 +226,7 @@ export interface ProviderRow {
   models: string[];
   default_model: string | null;
   options: Array<{ name: string; prompt: boolean; allow_default: boolean; overridable: boolean }>;
+  headless_options?: HeadlessOption[] | null;
   problems: string[];
 }
 
