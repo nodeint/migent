@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterEach, beforeEach, expect, test } from "vitest";
 import { sha256Hex } from "../src/authoring.ts";
 import { writeFileConditional } from "../src/conditional-write.ts";
@@ -22,7 +22,7 @@ async function race(base: string | null, count: number): Promise<Array<{ tag: st
   const children = Array.from({ length: count }, (_, i) => {
     const child = spawn(
       process.execPath,
-      ["--experimental-transform-types", "--import", path.join(here, "ts-register.mjs"), path.join(here, "conditional-write-worker.ts"), file, start, base ?? "-", `w${i}`],
+      ["--experimental-transform-types", "--import", pathToFileURL(path.join(here, "ts-register.mjs")).href, path.join(here, "conditional-write-worker.ts"), file, start, base ?? "-", `w${i}`],
       { stdio: ["ignore", "pipe", "pipe"] },
     );
     return new Promise<{ tag: string; status: string }>((resolve, reject) => {
