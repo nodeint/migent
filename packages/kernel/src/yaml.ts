@@ -8,7 +8,7 @@ export function parseYamlDocument(text: string): unknown {
     if (error instanceof YAMLParseError) {
       const [position] = error.linePos ?? [];
       throw new ConfigurationError(error.message, {
-        code: "yaml-syntax",
+        code: error.code === "DUPLICATE_KEY" ? "duplicate-key" : "yaml-syntax",
         ...(position === undefined ? {} : { position: { line: position.line, column: position.col } }),
       });
     }

@@ -105,7 +105,7 @@ function checkStageBindings(
       const identity = { code: error.code ?? "config-invalid", ...(error.path === undefined ? {} : { path: error.path }), message: error.message };
       if (known.has(identityKey(identity))) continue;
       // An unmapped alias is reported once, by the config check.
-      if (error.path?.[0] === "models" && error.path[1] !== undefined && unmapped.has(error.path[1])) continue;
+      if (error.path?.[0] === "models" && typeof error.path[1] === "string" && unmapped.has(error.path[1])) continue;
       report(stage.id, error.message);
       continue;
     }

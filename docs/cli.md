@@ -263,6 +263,22 @@ this machine, edit `.migent/config.yaml` or `.migent/config.local.yaml` and run
 the YAML to add. The `config` subcommands `show`, `model`, and `role` were removed;
 they exit 2 and print this instruction.
 
+## Authoring drafts
+
+```
+migent config validate|render|save <draft|-> [--scope project|local] [--format yaml|json] [--json]
+migent workflow validate|render|save <draft|-> [--target <file>.yaml] [--format yaml|json] [--json]
+migent {config|workflow} save ... [--base-hash <sha256>]
+```
+
+These check an unsaved draft with the rules the runtime uses. A config draft is merged with the other layer on disk. A workflow draft is checked against the sibling workflows and the effective config.
+
+- `render` prints canonical YAML (`yaml` stringify, key order kept). `save` writes exactly those bytes. Comments are not preserved; replacing a file that has comments adds a `comments-dropped` warning.
+- `save` without `--base-hash` only creates a file (exclusive hard link; it never overwrites). With `--base-hash` the file must exist and its raw-byte SHA-256 must match, or the save is a `stale-base` conflict. Both run under a file lock. An editor that writes between the hash check and the rename can still be overwritten.
+- A local config draft must carry the current `schema_version`.
+- Exit codes: 0 ok (warnings allowed), 1 invalid draft, 2 invocation or I/O error, 3 conflict (`stale-base`, `already-exists`).
+- `--json` prints one envelope: `schema_version`, `command`, `valid`, `diagnostics`, and `rendered`, `file`, `hash`, `written` where they apply. Each diagnostic has `severity`, `code`, `message`, and optionally `source` (`project`, `local`, `effective`, `workflow`), `file`, `draft`, `path` (strings and list indices), `line`, `column`.
+
 ## Get
 
 ```bash

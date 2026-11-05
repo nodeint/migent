@@ -3,7 +3,7 @@ export interface ConfigurationErrorDetails {
   /** Stable identifier of the rule that failed. */
   code?: string;
   /** Field path in the effective config, e.g. `["roles", "dev", "default_model"]`. */
-  path?: readonly string[];
+  path?: readonly (string | number)[];
   /** Config layer the problem was found in, when a single file was read. */
   layer?: "project" | "local";
   /** One-based line and column, for YAML syntax errors. */
@@ -12,7 +12,7 @@ export interface ConfigurationErrorDetails {
 
 export class ConfigurationError extends Error {
   readonly code: string | undefined;
-  readonly path: readonly string[] | undefined;
+  readonly path: readonly (string | number)[] | undefined;
   readonly layer: "project" | "local" | undefined;
   readonly position: { line: number; column: number } | undefined;
 

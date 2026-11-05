@@ -38,11 +38,11 @@ export interface Diagnostic {
   code: string;
   message: string;
   /** Field path in the effective config, when the finding belongs to one. */
-  path?: readonly string[];
+  path?: readonly (string | number)[];
   /** The underlying reason, for findings whose message adds a label (e.g. provider option errors). */
   detail?: string;
   /** Which layer supplies the offending node, derived from the merge. */
-  source?: { layer: ConfigOwner };
+  source?: { layer: ConfigOwner } | { workflow: string };
   position?: { line: number; column: number };
 }
 

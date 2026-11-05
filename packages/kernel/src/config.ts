@@ -119,7 +119,7 @@ export interface MergedConfig {
    * a value one layer replaces belongs to that layer with its whole subtree. Mappings both layers
    * define are `merged`, and so is a field missing directly under such a mapping.
    */
-  ownerOf(path: readonly string[]): ConfigOwner;
+  ownerOf(path: readonly (string | number)[]): ConfigOwner;
 }
 
 /**
@@ -143,7 +143,7 @@ export function mergeConfigLayers(
       }
     }
   }
-  const ownerOf = (path: readonly string[]): ConfigOwner => {
+  const ownerOf = (path: readonly (string | number)[]): ConfigOwner => {
     if (path[0] === "schema_version") return "project";
     let base: unknown = project;
     let over: unknown = layer;
@@ -450,7 +450,7 @@ export function loadRoleInstructions(config: Record<string, unknown>, roleKey: s
  */
 export interface Field {
   label: string;
-  path: readonly string[];
+  path: readonly (string | number)[];
 }
 
 /** A `Field` from literal key segments. */
@@ -491,7 +491,7 @@ function stringItems(raw: unknown, where: Field): string[] {
     throw new ConfigurationError(`${where.label} must be a list.`, { code: "not-a-list", path: where.path });
   }
   return raw.map((item, index) =>
-    requiredString(item, { label: `${where.label}[${index}]`, path: [...where.path, String(index)] }));
+    requiredString(item, { label: `${where.label}[${index}]`, path: [...where.path, index] }));
 }
 
 function readOptions(value: unknown, where: Field): Record<string, string> {
