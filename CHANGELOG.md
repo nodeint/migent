@@ -4,6 +4,7 @@
 
 ### Added
 
+- `migent get <type> [name]` is a read-only lookup of workflows, roles, model aliases, and the effective config (`-o json|yaml|name`, `--json`). `migent get workflow --session <id>` shows the draft, frozen, or live workflow a session runs, with each stage's resolved provider and model. See `docs/cli.md`.
 - `migent init` accepts `--planner-effort`, `--reviewer-effort`, and `--developer-effort` to configure effort separately for each role. Developer flags also have explicit `--developer-` names; the existing short names remain aliases.
 - Provider wrapper startup failures now explain themselves. The wrapper reports its own failures (arguments, IPC, listen, provider spawn, runtime) to the owner, and the error names the cause with a short stderr excerpt instead of "did not start". A failed turn writes `diagnostics.json` in the execution directory (executable and argument count only, never other arguments). `MIGENT_DEBUG=1` adds a step trace on stderr and in `debug.log`. `migent doctor --session <id>` lists recorded diagnostics as warnings and now accepts role sessions.
 - Every failed execution writes `failure.md`: a readable report with the stage, attempt, provider, `failure_reason`, the error message, and pointers to `diagnostics.json` or the verify report. CLI output names each one as `failure: executions/<id>/failure.md`, including an attempt that a later retry recovered from.
@@ -13,8 +14,8 @@
 
 ### Changed
 
+- `migent init` stores selected role models in the shared config, starts local configuration with empty model and role overrides, and includes explicit decision criteria and outputs in workflow templates.
 - Decision `when` guidance is optional. Migration no longer generates placeholder guidance, and doctor no longer warns about existing placeholders.
-- `migent init` stores selected role models in the ignored local config, and its workflow templates include explicit decision criteria and outputs.
 - A signal-like exit of the wrapper during startup no longer reports a startup failure when a cancellation arrives within a short window; it is reported as a cancellation.
 - `CommandExecutor.run` now takes an options object and returns `{ stdout, error, exitCode, failure? }` instead of a tuple. Callers of the exported class must update.
 

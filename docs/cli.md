@@ -263,6 +263,39 @@ this machine, edit `.migent/config.yaml` or `.migent/config.local.yaml` and run
 the YAML to add. The `config` subcommands `show`, `model`, and `role` were removed;
 they exit 2 and print this instruction.
 
+## Get
+
+```bash
+migent get workflows
+migent get workflow plan --json
+migent get workflow --session <id> -o yaml
+migent get roles | migent get role <name>
+migent get models | migent get model <alias>
+migent get config -o json
+```
+
+`get` looks up what the project defines without reading and merging YAML by
+hand. It is read-only: no writes, no session lock, no subprocesses. Types are
+`workflow`, `role`, `model`, and `config` (plural forms and `wf` also work).
+`models` lists the aliases the project names; `provider list` shows what this
+machine can run.
+
+- Without a name, `workflows`, `roles`, and `models` print a table; a name prints
+  that resource as YAML. `-o json` prints an array for a list and an object for
+  one resource; `-o yaml` prints the same view as YAML; `-o name` prints one bare
+  name per line (not valid for `config`). `--json` is the same as `-o json`.
+- Every view has `kind` and `name`, snake_case fields, `null` for absent values,
+  and `problems` that report an unresolved model or a broken file instead of
+  aborting. `doctor` remains the validator.
+- A workflow view gives each stage its `depends_on`, `decisions`, and resolved
+  `target` (`provider`, `model`, `client`, `options`). With `--session <id>` the
+  `source.kind` is `draft`, `frozen` (targets are the pinned ones), or `live`.
+- Exit 0 on success, including an empty list. Exit 2 on a usage error, an unknown
+  or not-found name, or a configuration error.
+
+`get config` carries the same merged config as `migent config --json` and is not
+redacted: `.migent/` config is not a secret store.
+
 ## Migrate
 
 ```bash

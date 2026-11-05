@@ -100,7 +100,7 @@ test("writes inline role models and both working presets", async () => {
     const gitignore = readFileSync(path.join(workspace, ".migent", ".gitignore"), "utf8");
     expect(captured.value).toBe(0);
     expect(config).toContain("schema_version: 4");
-    expect(config).not.toContain("default_model");
+    expect(config).toContain("default_model");
     expect(workflow).toContain("schema_version: 4");
     expect(loadWorkspaceConfig(workspace)).toMatchObject({
       schema_version: 4,
@@ -117,7 +117,7 @@ test("writes inline role models and both working presets", async () => {
     expect(roles.reviewer?.instructions.join("\n")).toContain("Do not modify project files");
     const localConfig = readFileSync(path.join(workspace, ".migent", "config.local.yaml"), "utf8");
     expect(localConfig).not.toContain("{{");
-    expect(localConfig).toContain("provider: codex");
+    expect(localConfig).toContain("roles: {}");
     expect(workflow).toContain("id: implement");
     expect(workflow).toContain("role: developer");
     expect(gitignore).toBe("sessions/\nconfig.local.yaml\n");
@@ -261,7 +261,7 @@ test("interactive prefers an installed provider", async () => {
         prompter: new ScriptedPrompt(["", "", "", "", "", "", "", "", ""]),
       }),
     );
-    const config = readFileSync(path.join(workspace, ".migent", "config.local.yaml"), "utf8");
+    const config = readFileSync(path.join(workspace, ".migent", "config.yaml"), "utf8");
     expect(captured.value).toBe(0);
     expect(captured.stdout).toContain("providers");
     expect(captured.stdout).toContain("ok");
@@ -286,7 +286,7 @@ test("writes an option only when it is passed", async () => {
       runCommand,
       which: which(new Set(["codex"])),
     });
-    const config = readFileSync(path.join(workspace, ".migent", "config.local.yaml"), "utf8");
+    const config = readFileSync(path.join(workspace, ".migent", "config.yaml"), "utf8");
     expect(code).toBe(0);
     expect(config).toContain("model_reasoning_effort: high");
   } finally {
@@ -617,7 +617,7 @@ test("init accepts independent effort flags and rejects conflicting or invalid v
     const developerArgs = args.map((arg) => arg === "--provider" ? "--developer-provider" : arg === "--model" ? "--developer-model" : arg);
     const result = await capture(() => main([...developerArgs, "--planner-effort", "medium", "--reviewer-effort", "high", "--developer-effort", "low"], workspace));
     expect(result.value, result.stderr).toBe(0);
-    const local = readFileSync(path.join(workspace, ".migent", "config.local.yaml"), "utf8");
+    const local = readFileSync(path.join(workspace, ".migent", "config.yaml"), "utf8");
     expect(local).toContain("effort: medium");
     expect(local).toContain("effort: high");
     expect(local).toContain("effort: low");
