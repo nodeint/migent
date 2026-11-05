@@ -148,14 +148,15 @@ test("missing executable is reported", async () => {
 test("a provider that cannot be started reports its real cause", async () => {
   const directory = mkdtempSync(path.join(tmpdir(), "migent-exec-"));
   try {
-    const file = path.join(directory, "not-executable");
-    writeFileSync(file, "#!/bin/sh\n");
-    chmodSync(file, 0o644);
+    const file = path.join(directory, process.platform === "win32" ? "invalid.exe" : "not-executable");
+    writeFileSync(file, process.platform === "win32" ? "invalid executable" : "#!/bin/sh\n");
+    if (process.platform !== "win32") chmodSync(file, 0o644);
     const { error, failure } = await new CommandExecutor(10).run({ argv: [file] }, process.cwd());
-    expect(error).toContain("EACCES");
+    expect(error).toContain(process.platform === "win32" ? "UNKNOWN" : "EACCES");
     expect(error).not.toContain("not found");
     expect(failure?.kind).toBe("start");
     expect(failure?.phase).toBe("spawn");
+    expect(failure?.code).toBe(process.platform === "win32" ? "UNKNOWN" : "EACCES");
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
