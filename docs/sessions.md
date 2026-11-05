@@ -149,7 +149,8 @@ Each execution directory contains:
 These files are Migent's resumable local state. Before the first stage of a
 prepared session, write `task.md`, add any files next to it, and adjust
 `workflow.yaml` if needed, then check it with `migent doctor --session <id>`
-(read-only; see [cli.md](cli.md#doctor)). Do not edit
+(read-only; see [cli.md](cli.md#doctor)). `session run` repeats these checks
+before it freezes the draft. Do not edit
 `manifest.yaml`, `status.json`, `events.jsonl`, or `executions/` by hand.
 Prefer the CLI commands below for inspection and automation.
 

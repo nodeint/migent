@@ -52,7 +52,7 @@ import {
 } from "./selection.js";
 import { repairSessionUnlocked } from "./session-repair.js";
 import { activatePreparedSession, bindPriorSessionId, createWorkflowSession, resolvePriorSessionId } from "./session-records.js";
-import { freezeSessionTask } from "./task-file.js";
+import { assertSingleLineTask, freezeSessionTask, requireTaskBody } from "./task-file.js";
 import { isSessionLockLost, SessionLock, SessionLockHeldError } from "./session-lock.js";
 import {
   clearInFlightExecution,
@@ -101,6 +101,11 @@ export interface ExecuteRequest {
   waitHooks?: WaitHooks;
   startPrepared?: boolean;
   refreshWorkflow?: boolean;
+  /**
+   * Runs once the request is validated and before a new session is created or a prepared one is
+   * frozen. Returning false stops the run with a configuration error and leaves nothing behind.
+   */
+  preflight?: (target: { workflowId: string | null; sessionId: string | null }) => Promise<boolean>;
   /** Reply for one blocked stage or pending question. */
   reply?: string | null;
 }
@@ -156,6 +161,19 @@ export async function executeNamedWorkflow(
     held.lock?.release();
     resetCancellation();
   }
+}
+
+function preflightFailed(sessionId: string): ExecuteResult {
+  return {
+    code: 2,
+    status: "",
+    stopReason: "configuration",
+    sessionId,
+    latestDecision: null,
+    latestExecutionId: null,
+    outputs: {},
+    stages: [],
+  };
 }
 
 async function executeLocked(
@@ -259,6 +277,10 @@ async function executeLocked(
             : `Session ${sessionId} is ${sessionStatus || "unknown"}. migent session run --session only starts a prepared session.`;
         throw new ConfigurationError(hint);
       }
+      if (request.preflight) {
+        requireTaskBody(workspace, sessionId);
+        if (!(await request.preflight({ workflowId: null, sessionId }))) return preflightFailed(sessionId);
+      }
       activatePreparedSession(workspace, sessionId, resolveProvider);
       sessionStatus = "active";
     } else if (sessionStatus === "prepared") {
@@ -296,6 +318,11 @@ async function executeLocked(
     workflowId = workflow.id;
     resolvePriorSessionId(workspace, workflow, request.priorSessionId);
     if (stageId !== null) requireEligibleStage(workflow, [], "active", stageId);
+    if (request.preflight) {
+      // Argument errors come before the doctor checks.
+      if (request.task) assertSingleLineTask(request.task);
+      if (!(await request.preflight({ workflowId: request.workflowId, sessionId: null }))) return preflightFailed("");
+    }
     sessionId = createWorkflowSession(workspace, workflowId, request.task, request.priorSessionId, resolveProvider);
     held.sessionId = sessionId;
     held.lock = SessionLock.acquire(path.join(workspace, ".migent", "sessions", sessionId));

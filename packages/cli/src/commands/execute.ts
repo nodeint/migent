@@ -15,6 +15,7 @@ import {
 import { printResumeCommand, printReplyCommand, formatQuestion } from "../display.js";
 import { cliHooks } from "../hooks.js";
 import { requireCurrentSchema } from "../migrate.js";
+import { runPreflight } from "../preflight.js";
 import { providerMap } from "../provider.js";
 import { text } from "../text.js";
 
@@ -31,6 +32,7 @@ export interface ExecuteWorkflowOptions {
   itemProgress?: boolean;
   startPrepared?: boolean;
   refreshWorkflow?: boolean;
+  skipPreflight?: boolean;
   reply?: string | null;
   replyStageId?: string | null;
 }
@@ -58,6 +60,13 @@ export async function executeWorkflow(workspace: string, options: ExecuteWorkflo
       once,
       resetRevisions: options.action === "continue",
       refreshWorkflow: options.refreshWorkflow === true,
+      preflight: !creating && !startPrepared ? undefined : async (target) => {
+        if (options.skipPreflight === true) {
+          process.stderr.write("preflight skipped (--skip-preflight)\n");
+          return true;
+        }
+        return runPreflight(workspace, target, { providers: runner.providers });
+      },
       reply: options.reply ?? null,
       replyStageId: options.replyStageId ?? null,
     },

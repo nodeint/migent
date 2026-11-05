@@ -8,6 +8,9 @@
 - Provider wrapper startup failures now explain themselves. The wrapper reports its own failures (arguments, IPC, listen, provider spawn, runtime) to the owner, and the error names the cause with a short stderr excerpt instead of "did not start". A failed turn writes `diagnostics.json` in the execution directory (executable and argument count only, never other arguments). `MIGENT_DEBUG=1` adds a step trace on stderr and in `debug.log`. `migent doctor --session <id>` lists recorded diagnostics as warnings and now accepts role sessions.
 - Every failed execution writes `failure.md`: a readable report with the stage, attempt, provider, `failure_reason`, the error message, and pointers to `diagnostics.json` or the verify report. CLI output names each one as `failure: executions/<id>/failure.md`, including an attempt that a later retry recovered from.
 
+- `migent doctor` checks that each configured model name exists in the provider's model list.
+- `migent session run` runs the `doctor --session` checks before a workflow session starts and exits 2 on a problem. `--skip-preflight` bypasses it.
+
 ### Changed
 
 - Decision `when` guidance is optional. Migration no longer generates placeholder guidance, and doctor no longer warns about existing placeholders.

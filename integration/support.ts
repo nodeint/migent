@@ -198,8 +198,10 @@ export async function runMain(
     delete process.env.MIGENT_FAKE_LOG;
   }
   const before = executionTexts(workspace);
+  // These tests exercise stage execution; the preflight would add its own catalog calls to the fake CLIs.
+  const skip = argv[0] === "session" && argv[1] === "run" && !argv.includes("--role") && !argv.includes("--skip-preflight");
   try {
-    const captured = await capture(() => main(argv, workspace));
+    const captured = await capture(() => main(skip ? [...argv, "--skip-preflight"] : argv, workspace));
     const printed = jsonObjects(captured.stdout);
     const objects =
       printed.length > 0

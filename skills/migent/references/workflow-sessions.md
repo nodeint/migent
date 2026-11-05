@@ -30,6 +30,9 @@ migent doctor --session <session-id> --json
 migent session run --session <session-id>
 ```
 
+`session run` repeats these checks first and exits 2 on a problem. Use
+`--skip-preflight` only if the user asks.
+
 Edit the prepared task and workflow source only as described above. Do not edit
 generated state such as `manifest.yaml`, `status.json`, `workflow.frozen.yaml`,
 `events.jsonl`, or `executions/`. Use [session workflow changes](session-workflow.md)

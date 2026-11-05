@@ -1,5 +1,5 @@
 import { ModelCatalog, defaultProviders } from "@nodeint/migent-adapters";
-import { spawnProviderSync, type Provider, type ProviderOption } from "@nodeint/migent-kernel";
+import { killProcessTree, spawnProvider, spawnProviderSync, type Provider, type ProviderOption } from "@nodeint/migent-kernel";
 
 export interface CatalogProvider extends Provider {
   modelCatalogCommand(): string[];
@@ -176,3 +176,47 @@ export function runProviderCommand(
   }
   return completed.stdout ?? "";
 }
+
+/** Like `runProviderCommand`, but does not block the event loop, so lookups run side by side. */
+export function runProviderCommandAsync(
+  argv: string[], input?: string, options: { cwd?: string; timeoutMs?: number } = {},
+): Promise<string> {
+  const [command, ...args] = argv;
+  if (command === undefined) return Promise.reject(new ProviderCommandFailed("Provider command is empty."));
+  return new Promise((resolve, reject) => {
+    const child = spawnProvider(command, args, {
+      ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+      windowsHide: true,
+      // Its own process group on POSIX, so a timeout can end the whole tree.
+      detached: process.platform !== "win32",
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    const finish = (action: () => void): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      action();
+    };
+    const timer = setTimeout(() => {
+      try {
+        if (child.pid !== undefined) killProcessTree(child.pid, "SIGKILL");
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ESRCH") child.kill();
+      }
+      finish(() => reject(new Error(`${command} timed out after ${options.timeoutMs ?? 60_000}ms.`)));
+    }, options.timeoutMs ?? 60_000);
+    child.stdout?.setEncoding("utf8").on("data", (chunk: string) => { stdout += chunk; });
+    child.stderr?.setEncoding("utf8").on("data", (chunk: string) => { stderr += chunk; });
+    child.on("error", (error) => finish(() => reject(new Error(error.message))));
+    child.on("close", (status) => finish(() => {
+      if (status === 0) resolve(stdout);
+      else reject(new ProviderCommandFailed((stderr || stdout).trim() || `${command} exited ${status}.`));
+    }));
+    child.stdin?.on("error", () => {});
+    child.stdin?.end(input);
+  });
+}
+

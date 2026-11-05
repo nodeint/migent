@@ -60,7 +60,7 @@ export type {
 } from "./config-edit.js";
 export { diagnose, doctor, whichSync } from "./doctor.js";
 export type { Check, DiagnoseOptions } from "./doctor.js";
-export { assertSessionId, diagnoseSession, selectSessionWorkflow, sessionEffortKeys } from "./doctor-session.js";
+export { assertSessionId, diagnoseSession, selectRunWorkflow, selectSessionWorkflow, sessionEffortKeys } from "./doctor-session.js";
 export type {
   DiagnoseSessionOptions,
   SessionDiagnosis,

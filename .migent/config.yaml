@@ -35,3 +35,10 @@ roles:
       - "Follow any agreed architecture. Report blockers and seek a decision before changing it."
       - "Run relevant checks or tests and fix failures caused by your changes."
       - "Report what changed, the verification results, and anything not verified."
+
+  test:
+    default_model:
+      provider: opencode
+      model: coding-plan/deepseek-v4.1-flash
+    instructions:
+      - "Just a test role, don't do anything."

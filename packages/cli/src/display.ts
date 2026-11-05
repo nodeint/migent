@@ -71,17 +71,17 @@ export function printInitConflicts(paths: readonly string[]): void {
   for (const filePath of paths) process.stderr.write(`  ${filePath}\n`);
 }
 
-export function printDoctor(checks: readonly Check[]): void {
-  const tty = Boolean(process.stdout.isTTY);
+export function printDoctor(checks: readonly Check[], out: NodeJS.WriteStream = process.stdout): void {
+  const tty = Boolean(out.isTTY);
   for (const check of checks) {
     const status = check.ok ? (tty ? pc.green("ok") : "ok") : tty ? pc.red("failed") : "failed";
-    process.stdout.write(`${check.name.padEnd(12)}${status}\n`);
+    out.write(`${check.name.padEnd(12)}${status}\n`);
     for (const item of check.items) {
       const line = `  ${item}`;
-      process.stdout.write(`${tty ? pc.dim(line) : line}\n`);
+      out.write(`${tty ? pc.dim(line) : line}\n`);
     }
-    for (const problem of check.problems) process.stdout.write(`  ${problem.replaceAll("\n", "\n  ")}\n`);
-    for (const warning of check.warnings) process.stdout.write(`  warning: ${warning.replaceAll("\n", "\n  ")}\n`);
+    for (const problem of check.problems) out.write(`  ${problem.replaceAll("\n", "\n  ")}\n`);
+    for (const warning of check.warnings) out.write(`  warning: ${warning.replaceAll("\n", "\n  ")}\n`);
   }
 }
 

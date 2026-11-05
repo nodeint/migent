@@ -209,7 +209,9 @@ override the resolved native option, followed by command-line option overrides.
 Sessions freeze the resolved native options.
 
 
-`migent doctor` checks model effort against the selected client's supported values.
+`migent doctor` checks that the model exists (see
+[cli.md](cli.md#model-availability)) and checks model effort against the
+selected client's supported values.
 Invalid or empty values report the model field and `Valid values`. If the values
 cannot be verified, doctor prints a warning instead of rejecting an otherwise
 well-formed effort. Empty or non-string values remain errors.
