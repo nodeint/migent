@@ -28,8 +28,13 @@ stages:
       - Choose approved when the task is complete and verified; otherwise choose revise.
     decision:
       - approved:
-          when: Choose approved according to the stage instructions.
+          when: The task is complete and verified.
           navigate: complete
       - revise:
-          when: Choose revise according to the stage instructions.
+          when: The task is incomplete or unverified.
           navigate: implement
+
+outputs:
+  - name: implement
+    from_stage: implement
+    artifact: implement.md

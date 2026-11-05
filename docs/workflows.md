@@ -45,8 +45,8 @@ routed back to this stage.
 
 ## Decisions and routes
 
-A schema v3 decision stage declares each choice with `when` instructions for
-the agent and a `navigate` destination:
+A decision stage declares each choice with a `navigate` destination and
+optional `when` guidance for the agent:
 
 ```yaml
 - id: review_plan
@@ -54,7 +54,6 @@ the agent and a `navigate` destination:
   depends_on: [plan]
   decision:
     - approved:
-        when: The work meets the task and required checks pass.
         navigate: complete
     - revise:
         when: Required fixes remain. List each fix and its impact.
@@ -63,11 +62,14 @@ the agent and a `navigate` destination:
 
 A destination is another declared stage, `complete`, or a non-empty list of
 stage ids. `complete` is never in a list. Each list entry declares exactly one
-unique decision name with a non-empty `when` and a valid `navigate` destination.
+unique decision name and a valid `navigate` destination. Add `when` when the
+name alone does not adequately explain the choice; if supplied, it must be a
+non-empty string.
 Every stage in a destination list is routed by that decision.
-The agent chooses one decision using `when` and returns its name in the
-`decision` header. Migent validates the name and follows `navigate`; `when` is
-natural-language guidance, not an expression evaluated by the engine.
+The agent chooses a decision using its name and any `when` guidance, and returns
+its name in the `decision` header. Migent validates the name and follows
+`navigate`; `when` is natural-language guidance, not an expression evaluated by
+the engine.
 Several decisions can share a destination, such as `approved` and
 `approved-with-note` both navigating to `complete`.
 When a decision routes to another stage, Migent includes the decision
@@ -96,10 +98,9 @@ decision:
 ```
 
 Run `migent migrate --yes` to upgrade config and workflow files to schema v3.
-Migration converts old `values` and `routes` into decision entries. It preserves
-stage instructions and supplies `when: Choose <name> according to the stage
-instructions.` Review these placeholders and move your decision criteria into
-`when` as appropriate. A v1 workflow first receives the v2 completion/output
+Migration converts old `values` and `routes` into decision entries and preserves
+stage instructions. Add `when` guidance where a decision name needs clarification.
+A v1 workflow first receives the v2 completion/output
 migration, then the v3 decision migration. Config files only advance their
 version for this step. Running migration again leaves current files unchanged.
 Existing sessions keep their frozen workflow and original decision format.

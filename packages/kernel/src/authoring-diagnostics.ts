@@ -81,26 +81,3 @@ export function unknownRoleKeys(config: Record<string, unknown>): string[] {
   return Object.entries(config.roles).flatMap(([name, role]) =>
     isRecord(role) ? unknownKeys(role, ROLE_KEYS, `roles.${name}`) : []);
 }
-
-/** The `when` text `migent migrate` generates when it has no real criterion to put there. */
-export function placeholderWhen(decision: string): string {
-  return `Choose ${decision} according to the stage instructions.`;
-}
-
-/** Decision entries whose `when` still equals the migration placeholder. The workflow runs unchanged. */
-export function placeholderWhenWarnings(data: Record<string, unknown>): string[] {
-  if (!Array.isArray(data.stages)) return [];
-  const messages: string[] = [];
-  for (const stage of data.stages) {
-    if (!isRecord(stage) || typeof stage.id !== "string" || !Array.isArray(stage.decision)) continue;
-    for (const entry of stage.decision) {
-      if (!isRecord(entry) || Object.keys(entry).length !== 1) continue;
-      const name = Object.keys(entry)[0]!;
-      const body = entry[name];
-      if (isRecord(body) && typeof body.when === "string" && body.when.trim() === placeholderWhen(name.trim().toLowerCase())) {
-        messages.push(`stages.${stage.id}.decision.${name}.when is the migration placeholder. State when to choose ${name}.`);
-      }
-    }
-  }
-  return messages;
-}

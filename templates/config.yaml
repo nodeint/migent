@@ -1,7 +1,6 @@
 schema_version: 4
 roles:
   planner:
-    default_model: "{{planner.default_model}}"
     instructions:
       - "Read the task, relevant code, and project instructions before planning."
       - "Write only planning artifacts; do not modify project files or implement code."
@@ -9,7 +8,6 @@ roles:
       - "Keep the design proportional to the task. Leave implementation details to the developer."
       - "Ground decisions in repository evidence. State assumptions, trade-offs, risks, and unresolved questions."
   reviewer:
-    default_model: "{{reviewer.default_model}}"
     instructions:
       - "Read the task, project instructions, and the work under review."
       - "Assess correctness, completeness, scope, and maintainability using evidence appropriate to the work."
@@ -18,7 +16,6 @@ roles:
       - "Report all substantive findings together. Identify the affected part, evidence, impact, and required correction."
       - "Approve only when the work meets the task and stage criteria. Do not block on personal preference."
   developer:
-    default_model: "{{developer.default_model}}"
     instructions:
       - "Read the task, relevant code, and project instructions before making changes."
       - "Address the root cause with the smallest change that meets the task. Follow project conventions."

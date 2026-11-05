@@ -49,13 +49,20 @@ export function createProgram(status: CliStatus): Command {
     .description("Set up planner, reviewer, and developer models with implement and plan workflows.")
     .option("--planner-provider <provider>", "Planner provider. Pass with --planner-model.")
     .option("--planner-model <model>", "Planner model ID. Pass with --planner-provider.")
+    .option("--planner-effort <effort>", "Planner model effort.")
     .option("--planner-option <pair>", "Planner model option, KEY=VALUE.", collect, [])
     .option("--reviewer-provider <provider>", "Reviewer provider. Pass with --reviewer-model.")
     .option("--reviewer-model <model>", "Reviewer model ID. Pass with --reviewer-provider.")
+    .option("--reviewer-effort <effort>", "Reviewer model effort.")
     .option("--reviewer-option <pair>", "Reviewer model option, KEY=VALUE.", collect, [])
-    .option("--provider <provider>", "Developer provider. Pass with --model.")
-    .option("--model <model>", "Developer model ID. Pass with --provider.")
-    .option("--option <pair>", "Developer model option, KEY=VALUE.", collect, [])
+    .option("--developer-provider <provider>", "Developer provider. Pass with --developer-model.")
+    .option("--developer-model <model>", "Developer model ID. Pass with --developer-provider.")
+    .option("--developer-effort <effort>", "Developer model effort.")
+    .option("--developer-option <pair>", "Developer model option, KEY=VALUE.", collect, [])
+    .option("--provider <provider>", "Alias for --developer-provider.")
+    .option("--model <model>", "Alias for --developer-model.")
+    .option("--effort <effort>", "Alias for --developer-effort.")
+    .option("--option <pair>", "Alias for --developer-option, KEY=VALUE.", collect, [])
     .addOption(new Option("--skill").hideHelp())
     .option("--no-input", "Do not prompt. Same as MIGENT_NO_INPUT=1.");
   init.action((options: OptionValues) =>
@@ -64,18 +71,27 @@ export function createProgram(status: CliStatus): Command {
         printError("init --skill has been removed. Run `migent init`, then `migent skill install --project`.");
         return 2;
       }
-      const provider = optionalText(options.provider);
-      const model = optionalText(options.model);
+      for (const [name, legacy] of [["developerProvider", "provider"], ["developerModel", "model"], ["developerEffort", "effort"]] as const) {
+        if (options[name] !== undefined && options[legacy] !== undefined) {
+          printError(`Use only one of --${name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)} and --${legacy}.`);
+          return 2;
+        }
+      }
+      const provider = optionalText(options.developerProvider ?? options.provider);
+      const model = optionalText(options.developerModel ?? options.model);
       const interactive = !inputDisabled(options) && Boolean(process.stdin.isTTY);
       return runInit(invocationCwdPath(), {
         provider,
         model,
-        options: stringList(options.option),
+        effort: optionalText(options.developerEffort ?? options.effort),
+        options: [...stringList(options.developerOption), ...stringList(options.option)],
         plannerProvider: optionalText(options.plannerProvider),
         plannerModel: optionalText(options.plannerModel),
+        plannerEffort: optionalText(options.plannerEffort),
         plannerOptions: stringList(options.plannerOption),
         reviewerProvider: optionalText(options.reviewerProvider),
         reviewerModel: optionalText(options.reviewerModel),
+        reviewerEffort: optionalText(options.reviewerEffort),
         reviewerOptions: stringList(options.reviewerOption),
         interactive,
       });

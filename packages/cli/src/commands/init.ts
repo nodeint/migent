@@ -36,7 +36,7 @@ import {
   type Which,
 } from "../provider.js";
 
-const INIT_EXAMPLE = "Example: migent init --planner-provider codex --planner-model gpt-5 --reviewer-provider grok --reviewer-model grok-4.7 --provider codex --model gpt-5 --no-input";
+const INIT_EXAMPLE = "Example: migent init --planner-provider codex --planner-model gpt-5 --reviewer-provider grok --reviewer-model grok-4.7 --developer-provider codex --developer-model gpt-5 --no-input";
 
 
 export interface Prompter {
@@ -53,12 +53,15 @@ export async function runInit(
   options: {
     provider?: string | null;
     model?: string | null;
+    effort?: string | null;
     options?: readonly string[];
     plannerProvider?: string | null;
     plannerModel?: string | null;
+    plannerEffort?: string | null;
     plannerOptions?: readonly string[];
     reviewerProvider?: string | null;
     reviewerModel?: string | null;
+    reviewerEffort?: string | null;
     reviewerOptions?: readonly string[];
     interactive?: boolean;
     providers?: Record<string, Provider> | null;
@@ -83,19 +86,19 @@ export async function runInit(
   const reviewerOptionPairs = options.reviewerOptions ?? [];
   const classified = classify(workspace, chosen, resolve);
   if (classified.state === "ready") {
-    if (provider !== null || model !== null || optionPairs.length > 0 ||
-        plannerProvider !== null || plannerModel !== null || plannerOptionPairs.length > 0 ||
-        reviewerProvider !== null || reviewerModel !== null || reviewerOptionPairs.length > 0) {
+    if (provider !== null || model !== null || options.effort != null || optionPairs.length > 0 ||
+        plannerProvider !== null || plannerModel !== null || options.plannerEffort != null || plannerOptionPairs.length > 0 ||
+        reviewerProvider !== null || reviewerModel !== null || options.reviewerEffort != null || reviewerOptionPairs.length > 0) {
       printError("Already initialized; ignoring model selection flags.");
     }
     printAlreadyInitialized();
     printInitNextSteps();
     return 0;
   }
-  for (const [role, selectedProvider, selectedModel, pairs, prefix] of [
-    ["planner", plannerProvider, plannerModel, plannerOptionPairs, "planner-"],
-    ["reviewer", reviewerProvider, reviewerModel, reviewerOptionPairs, "reviewer-"],
-    ["developer", provider, model, optionPairs, ""],
+  for (const [role, selectedProvider, selectedModel, pairs, effort, prefix] of [
+    ["planner", plannerProvider, plannerModel, plannerOptionPairs, options.plannerEffort, "planner-"],
+    ["reviewer", reviewerProvider, reviewerModel, reviewerOptionPairs, options.reviewerEffort, "reviewer-"],
+    ["developer", provider, model, optionPairs, options.effort, "developer-"],
   ] as const) {
     const flags = `--${prefix}provider and --${prefix}model`;
     if ((selectedProvider === null) !== (selectedModel === null)) {
@@ -104,6 +107,10 @@ export async function runInit(
     }
     if (pairs.length > 0 && selectedProvider === null) {
       printError(`Pass ${flags} with --${prefix}option.`);
+      return 2;
+    }
+    if (effort != null && selectedProvider === null) {
+      printError(`Pass ${flags} with --${prefix}effort.`);
       return 2;
     }
     if (selectedProvider === null && !interactive) {
@@ -124,6 +131,7 @@ export async function runInit(
       provider: plannerProvider,
       model: plannerModel,
       options: parseOptions(plannerOptionPairs),
+      effort: options.plannerEffort ?? null,
       runCommand: execute,
     });
     reviewer = await choices(chosen, resolve, prompt, {
@@ -131,6 +139,7 @@ export async function runInit(
       provider: reviewerProvider,
       model: reviewerModel,
       options: parseOptions(reviewerOptionPairs),
+      effort: options.reviewerEffort ?? null,
       runCommand: execute,
     });
     developer = await choices(chosen, resolve, prompt, {
@@ -138,6 +147,7 @@ export async function runInit(
       provider,
       model,
       options: parseOptions(optionPairs),
+      effort: options.effort ?? null,
       runCommand: execute,
     });
   } catch (error) {
@@ -187,6 +197,7 @@ async function choices(
     provider: string | null;
     model: string | null;
     options: Record<string, string>;
+    effort: string | null;
     runCommand: RunCommand;
   },
 ): Promise<ModelChoice> {
@@ -206,10 +217,22 @@ async function choices(
     if (model === null) throw new ConfigurationError("Model is required.");
     const catalog = await loadCatalog(impl, which, args.runCommand);
     model = knownModel(model, catalog);
-    stored = await acceptedOptions(impl, model, catalog, which, args.runCommand, args.options);
+    const effortOption = impl.effortOption;
+    if (args.effort !== null && !effortOption) throw new ConfigurationError(`${args.role} provider does not support effort.`);
+    if (args.effort !== null && effortOption && Object.hasOwn(args.options, effortOption)) {
+      throw new ConfigurationError(`${args.role} effort conflicts with option ${effortOption}; use only one.`);
+    }
+    if (args.effort !== null && model.includes("#") && effortOption === "variant") {
+      throw new ConfigurationError(`${args.role} model already selects a #variant; omit effort.`);
+    }
+    const requested = args.effort !== null && effortOption
+      ? { ...args.options, [effortOption]: args.effort }
+      : args.options;
+    stored = await acceptedOptions(impl, model, catalog, which, args.runCommand, requested);
+    if (args.effort !== null && effortOption) delete stored[effortOption];
   }
   if (model.trim() === "") throw new ConfigurationError("Model is required.");
-  const primary = { provider, model: model.trim(), options: stored };
+  const primary = { provider, model: model.trim(), options: stored, ...(args.effort !== null ? { effort: args.effort } : {}) };
   return primary;
 }
 
