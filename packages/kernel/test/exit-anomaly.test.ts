@@ -262,7 +262,8 @@ test("a signal-like exit code is never accepted on its reply", async () => {
   expect(named(events(workspace, sessionId), "provider.exit_anomaly")).toHaveLength(0);
 });
 
-test("a provider that kills itself with a signal is never accepted, end to end", async () => {
+// Windows has no signals: libuv ends a self-killed process with exit code 1, so no signal identity reaches the wrapper.
+test.skipIf(process.platform === "win32")("a provider that kills itself with a signal is never accepted, end to end", async () => {
   const { workspace, sessionId } = setup(workflowText());
   class Killed extends ExitProvider {
     override buildCommand(input: Parameters<ScriptedProvider["buildCommand"]>[0]) {
