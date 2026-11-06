@@ -7,7 +7,8 @@ import {
   loadYamlMapping,
   loadWorkspaceConfig,
   localConfigPath,
-  mergeConfig,
+  mergeConfigLayers,
+  assertConfigClientEquivalence,
   migrateConfig,
   migrateWorkflow,
   patchConfigText,
@@ -16,13 +17,12 @@ import {
   stringifyConfig,
   workflowsDirectory,
   yamlHasComments,
-  type MigrationProvider,
   ConfigEditError,
   ConfigurationError,
 } from "@nodeint/migent-kernel";
 import { printError, printNotice } from "./display.js";
+import { clientRegistry } from "./client.js";
 import { isDirectory, isFile } from "./fs-utils.js";
-import { providerMap } from "./provider.js";
 
 function versionList(entries: ReadonlyArray<[string, number]>): string {
   const width = Math.max(...entries.map(([label]) => label.length));
@@ -63,11 +63,11 @@ export async function runMigrate(
   options: {
     assumeYes?: boolean;
     confirm?: ((message: string) => boolean | Promise<boolean>) | null;
-    providers?: Record<string, MigrationProvider> | null;
+    clientIds?: readonly string[] | null;
   } = {},
 ): Promise<number> {
-  const providers = options.providers ?? migrationProviders();
-  const rewrites = pendingRewrites(workspace, providers);
+  const clientIds = options.clientIds ?? clientRegistry().ids();
+  const rewrites = pendingRewrites(workspace, clientIds);
   if (rewrites.length === 0) {
     process.stdout.write("Schema is current.\n");
     return 0;
@@ -81,21 +81,6 @@ export async function runMigrate(
   for (const rewrite of rewrites) writeFileSync(rewrite.path, rewrite.text, "utf8");
   process.stdout.write(`Upgraded schema to version ${SCHEMA_VERSION}.\n`);
   return 0;
-}
-
-export function migrationProviders(
-  providers: Record<string, unknown> = providerMap(),
-): Record<string, MigrationProvider> {
-  const mapped: Record<string, MigrationProvider> = {};
-  for (const [name, provider] of Object.entries(providers)) {
-    const candidate = provider as Partial<MigrationProvider>;
-    mapped[name] = {
-      modelMigrations: candidate.modelMigrations ?? {},
-      roleMigrations: candidate.roleMigrations ?? {},
-      stageMigrations: candidate.stageMigrations ?? {},
-    };
-  }
-  return mapped;
 }
 
 async function accepted(confirm: ((message: string) => boolean | Promise<boolean>) | null): Promise<boolean> {
@@ -117,33 +102,50 @@ async function accepted(confirm: ((message: string) => boolean | Promise<boolean
   return true;
 }
 
-function pendingRewrites(workspace: string, providers: Record<string, MigrationProvider>): Rewrite[] {
+function pendingRewrites(workspace: string, clientIds: readonly string[]): Rewrite[] {
   const configPath = path.join(workspace, ".migent", "config.yaml");
   if (!isFile(configPath)) return [];
+  // The v5 merged view, read before any layer is rewritten.
   const context = loadWorkspaceConfig(workspace);
-  const [config, configRewrite] = configRewriteOf(configPath, providers, context);
+  const projectOriginal = readConfigOriginal(configPath);
+  if (projectOriginal === null) return [];
+  const localPath = localConfigPath(workspace);
+  const localOriginal = isFile(localPath) ? readConfigOriginal(localPath) : null;
+  const [config, configRewrite] = configRewriteOf(configPath, projectOriginal, context, clientIds, {
+    layer: "project",
+    project: projectOriginal,
+    local: localOriginal,
+  });
   if (config === null) return [];
   const rewrites: Rewrite[] = [];
   if (configRewrite !== null) rewrites.push(configRewrite);
   let effective = config;
-  const localPath = localConfigPath(workspace);
-  if (isFile(localPath)) {
-    const [local, rewrite] = configRewriteOf(localPath, providers, context);
+  if (localOriginal !== null) {
+    const [local, rewrite] = configRewriteOf(localPath, localOriginal, context, clientIds, {
+      layer: "local",
+      project: projectOriginal,
+      local: localOriginal,
+    });
     if (rewrite !== null) rewrites.push(rewrite);
-    if (local !== null) {
-      effective = mergeConfig(config, local);
-      if (isRecord(local.roles) && isRecord(effective.roles)) {
-        for (const [name, role] of Object.entries(local.roles)) {
-          const target = effective.roles[name];
-          for (const key of ["agent", "default_model"]) {
-            if (isRecord(role) && isRecord(target) && Object.hasOwn(role, key)) target[key] = role[key];
-          }
-        }
-      }
-    }
+    if (local !== null) effective = mergeConfigLayers(config, local).config;
   }
-  rewrites.push(...workflowRewrites(workspace, effective, providers));
+  // Both views must keep the client every location had in the original v5 documents.
+  assertConfigClientEquivalence({
+    originalProject: projectOriginal,
+    originalMerged: context,
+    updatedProject: config,
+    updatedMerged: effective,
+  });
+  rewrites.push(...workflowRewrites(workspace, effective, clientIds));
   return rewrites;
+}
+
+function readConfigOriginal(filePath: string): Record<string, unknown> | null {
+  try {
+    return loadYamlMapping(filePath);
+  } catch {
+    return null;
+  }
 }
 
 function schemaFiles(workspace: string): Array<[string, string]> {
@@ -171,20 +173,20 @@ function storedVersion(filePath: string): number | null {
 
 function configRewriteOf(
   filePath: string,
-  providers: Record<string, MigrationProvider>,
+  originalDocument: Record<string, unknown>,
   context: Record<string, unknown>,
+  clientIds: readonly string[],
+  layers: { layer: "project" | "local"; project: Record<string, unknown>; local: Record<string, unknown> | null },
 ): [Record<string, unknown> | null, Rewrite | null] {
   const original = readFileSync(filePath, "utf8");
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = loadYamlMapping(filePath);
-  } catch {
-    return [null, null];
-  }
-  const updated = structuredClone(parsed);
+  const updated = structuredClone(originalDocument);
   let notes: string[];
   try {
-    notes = migrateConfig(updated, providers, SCHEMA_VERSION, context);
+    notes = migrateConfig(updated, SCHEMA_VERSION, context, {
+      ...layers,
+      merged: context,
+      clientIds,
+    });
   } catch (error) {
     if (error instanceof ConfigurationError) throw error;
     return [null, null];
@@ -212,7 +214,7 @@ function configRewriteOf(
 function workflowRewrites(
   workspace: string,
   config: Record<string, unknown>,
-  providers: Record<string, MigrationProvider>,
+  clientIds: readonly string[],
 ): Rewrite[] {
   const directory = workflowsDirectory(workspace);
   if (!isDirectory(directory)) return [];
@@ -230,7 +232,7 @@ function workflowRewrites(
     const updated = structuredClone(parsed);
     let changed: string[];
     try {
-      changed = migrateWorkflow(updated, config, providers);
+      changed = migrateWorkflow(updated, config, SCHEMA_VERSION, clientIds);
     } catch (error) {
       if (error instanceof ConfigurationError) throw error;
       continue;

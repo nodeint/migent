@@ -12,7 +12,7 @@ a workflow file also selects that file.
 
 Write every key and id in YAML in `snake_case`: workflow ids, stage ids, and agent
 names (`review_plan`, `code_generation`). Roles are a single word (`planner`,
-`reviewer`). Provider option keys are the exception; use the spelling the provider
+`reviewer`). Client option keys are the exception; use the spelling the client
 defines, such as `reasoning-effort` for Grok and `model_reasoning_effort` for
 Codex. Execution directories join the order, stage id, and attempt with `-` and
 `--` (`0003-review_work--attempt-01`), which snake_case ids keep unambiguous.
@@ -33,13 +33,13 @@ may produce one named file artifact:
 ```
 
 Workflow-level `constraints`, the role's `responsibilities` from
-`.migent/config.yaml`, and stage `instructions` are included in the provider
+`.migent/config.yaml`, and stage `instructions` are included in the client
 prompt on the first execution of a stage. Role responsibilities come before stage
-instructions. A later execution that continues the same stage's provider agent
+instructions. A later execution that continues the same stage's client session
 sends only what changed: upstream artifact paths, a route back to this stage,
 or a blocked attempt. It does not repeat the task path, role responsibilities,
 stage instructions, constraints, or verify commands. A `session.resume_from`
-visit that continues the named dependency's agent receives the full stage
+visit that continues the named dependency's session receives the full stage
 prompt again. That includes the first visit and any later visit that was not
 routed back to this stage.
 
@@ -56,13 +56,14 @@ complete inline agent.
 - id: final_check
   role: reviewer
   agent:                         # a complete agent; nothing is inherited
-    provider: codex
     model: gpt-5
     effort: high
+    client:
+      type: codex
 ```
 
 An inline agent replaces the role's agent entirely, so it restates the
-provider and model. Schema version 5 has no stage `options`; put native options
+client and model. Schema version 6 has no stage `options`; put native options
 in an inline agent's `client.options`, or in a named agent. `migent migrate`
 renames `model` to `agent` and removes stage `options`, listing every option it
 removes so you can recreate them as an inline agent if needed.
@@ -134,7 +135,7 @@ Existing sessions keep their frozen workflow and original decision format.
 A stage in a version 2 or newer workflow can run only when the session changed certain
 files. `run_when.changed_paths` is a list of Git path globs. The stage runs when
 any changed path matches any glob (OR). Otherwise Migent records a skip and
-starts no provider.
+starts no client.
 
 ```yaml
 - id: review_docs
@@ -202,7 +203,7 @@ that uses `run_when` needs a Git commit at the first dispatch. A workflow
 without it records a missing baseline and carries on.
 
 **Skip semantics.** A skip is an execution with status `skipped` and
-`kind: skip`. It calls no provider, runs no verify, and writes no artifact or
+`kind: skip`. It calls no client, runs no verify, and writes no artifact or
 decision. It stores why it was skipped, the baseline commit, the patterns, and
 how many paths changed. It counts as one dispatch toward `--max-dispatches`.
 
@@ -234,7 +235,7 @@ leaves an output missing. Migent rejects such a workflow when it loads.
 when documentation files changed, and `revise` sends the work back to `docs`.
 
 ```yaml
-schema_version: 5
+schema_version: 6
 id: docs_flow
 stages:
   - id: implement
@@ -281,7 +282,7 @@ Downgrading Migent in the middle of a session is not supported.
 
 A stage can omit `role` when it declares `verify`. Migent then runs that list and
 does not start an agent. `description` is an optional one-line label on any
-stage. It is printed on the stage's start line and is not part of the provider
+stage. It is printed on the stage's start line and is not part of the client
 prompt.
 
 ```yaml
@@ -298,7 +299,7 @@ All exits 0 complete the stage and publish `artifacts/verify.md`. The first
 non-zero exit, a timeout, or a failure to start the shell fails the stage with
 `failure_reason: verify_failed`. Dependents do not start. The session stays
 active and the command exits 7. `session continue` runs the list again in a
-new execution and does not open a provider. `max_verify` is rejected on a
+new execution and does not start a client. `max_verify` is rejected on a
 stage with no role, because there is no model to repair. A stage that has a
 role keeps the repair loop below.
 
@@ -321,7 +322,7 @@ decide the result.
   themselves. Verify supports POSIX shells only.
 - Commands run in order. The first failure stops the run and skips the rest.
 - On a red run the model receives the report with the tail of the failing
-  command and continues in the same provider conversation. The execution stays
+  command and continues in the same client conversation. The execution stays
   `running` and records no outcome until verify passes.
 - A `blocked` response runs no verify command.
 - A passing run writes `artifacts/verify.md`. Dependent stages list it in
@@ -329,9 +330,9 @@ decide the result.
 - After `max_verify` red runs the execution fails with
   `failure_reason: verify_exhausted`. The loop stops with stop reason
   `verify_exhausted` and exit code 6. The session stays active. A verify
-  failure does not arm a provider wait.
-- `migent session continue <session-id>` resumes the same provider conversation with
-  the last report and a fresh `max_verify` budget. It keeps the provider, model,
+  failure does not arm a client wait.
+- `migent session continue <session-id>` resumes the same client conversation with
+  the last report and a fresh `max_verify` budget. It keeps the client, model,
   and options of the exhausted execution. If config changed them, the resume is
   refused with exit code 2. To use a different model, start a new session.
 - Put `verify` on the stage that edits code. A stage that both decides and
@@ -362,9 +363,9 @@ plan -> review -> revise  # refused; session remains active
 
 The review after the third revision still runs. Migent stops only when its
 decision would exceed the configured limit. Each later visit continues that
-stage's provider agent. A route back's prompt points at the routing stage's
+stage's client session. A route back's prompt points at the routing stage's
 response and the previous artifact. A stage with `session.resume_from`
-continues the named stage's agent instead, and that visit receives the full
+continues the named stage's session instead, and that visit receives the full
 stage prompt unless a route has returned to this stage.
 Run `migent session continue <session-id>` to reset the revision count and allow up
 to three more revisions in the same session. Each later `session continue` resets the
@@ -401,8 +402,14 @@ workflow author's concern.
 
 A branch stops when its latest execution is blocked or asks a question, or when verify or
 revisions are exhausted, or when a stage fails and continue has not marked
-that execution. Other branches keep starting. A provider quota with a reset
-time parks that provider until the instant, and other providers may start.
+that execution. Other branches keep starting. A quota with a reset time parks
+the client that reported it until the instant, and other clients may start. The
+wait is keyed by client ID: stages that share a client share one wait, and
+stages on different clients wait independently. A legacy wait recorded without a
+client takes its key from the provider in the old status or results; with no
+evidence it stays `legacy:<provider>` and never joins another group. The key is
+the only selector Migent has, so two clients that reach the same account can
+still each fail once and park separately.
 The run ends when nothing is running and nothing can start. The exit code and
 `stop_reason` take the first reason in this order: `blocked`, `question`, `verify_failed`,
 `verify_exhausted`, `stage_failed`, `revisions_exhausted`. A route to `complete` ends that
@@ -486,8 +493,8 @@ reply as the new attempt's prompt body and does not repeat the blocker. The
 earlier execution stays blocked. A cancelled session is resumed
 on that same execution. `completed` sessions are not resumed.
 
-A provider process that exits non-zero does not by itself fail a stage. If the
-provider reported no error and its reply passes the checks an exit-0 reply must
+A client process that exits non-zero does not by itself fail a stage. If the
+client reported no error and its reply passes the checks an exit-0 reply must
 pass (a parsable outcome, the stage artifact, completion outputs), the turn is
 accepted and then follows the normal path: an unusable question file still gets
 its single correction turn, and `verify` commands still run and repair as usual.
@@ -606,7 +613,7 @@ In a batch, use a text string as that question's value. No configuration flag is
 A reply targets a pending question or a blocked stage regardless of the overall
 session status. When multiple stages can receive it, `--stage` is required.
 Without a reply, a question stays pending. A reply starts a new execution on the
-same provider conversation and carries forward the declared working artifact.
+same client conversation and carries forward the declared working artifact.
 The answer does not automatically choose a workflow decision.
 
 An agent can also ask during a verification repair turn. Asking runs no checks
@@ -621,7 +628,7 @@ start while `docs` is still running. The session completes when both reviews
 approve and nothing else can start.
 
 ```yaml
-schema_version: 5
+schema_version: 6
 id: implement
 concurrency: 2
 stages:

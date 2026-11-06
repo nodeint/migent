@@ -156,7 +156,7 @@ Ship as three commits or PRs; each leaves tests green.
 9. `.agents/skills/migent/`: update from the bundled source. If no check
    exists, add a test that fails when the two copies differ (or a sync script
    referenced in CONTRIBUTING.md) so drift is detected.
-10. `README.md`, `docs/cli.md`, `docs/providers.md`, `docs/sessions.md`, and
+10. `README.md`, `docs/cli.md`, `docs/agents.md`, `docs/sessions.md`, and
     any other page mentioning init/config: fix the generated-file tree, remove
     config-editing examples, describe the local file and clone setup.
 11. `CHANGELOG.md` Unreleased: split config in init, read-only `config`,

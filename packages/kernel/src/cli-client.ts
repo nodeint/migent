@@ -1,11 +1,3 @@
-import type {
-  BuildCommandInput,
-  InterruptOutcome,
-  ProviderOption,
-  ResponseSource,
-  TurnUsage,
-  UsageCapture,
-} from "./provider-contract.js";
 import type { CommandSpec } from "./command-executor.js";
 
 /** What a client extracted from a failed run, before any provider policy. */
@@ -20,6 +12,41 @@ export interface RawFailure {
     resetAt: string | null;
     window: string | null;
   };
+}
+
+export interface ClientOption {
+  name: string;
+  prompt?: boolean;
+  allowDefault?: boolean;
+  overridable?: boolean;
+}
+
+export interface NewSession {
+  agentId?: string | null;
+  agentIdSource?: string | null;
+}
+
+export interface BuildCommandInput {
+  model: string;
+  workspace: string;
+  prompt: string;
+  agentId: string | null;
+  newAgentId: string | null;
+  promptFile: string;
+  lastMessageFile: string;
+  options: Readonly<Record<string, string>>;
+}
+
+/** Provider-shaped JSON selected from one process's stdout. Stored verbatim. */
+export type UsageCapture = Record<string, unknown>;
+
+export interface TurnUsage {
+  input_tokens: number | null;
+  output_tokens: number | null;
+  reasoning_tokens: number | null;
+  cache_read_tokens: number | null;
+  cache_write_tokens: number | null;
+  cost_usd: number | null;
 }
 
 export interface CliModelCatalog {
@@ -44,6 +71,44 @@ export interface CliRunOutput {
 }
 
 /**
+ * Where a failure was observed. `provider-error`: the CLI protocol reported an error (an error event,
+ * `is_error`, a failed result). `exit-only`: a non-zero exit with no reported error. `start`: no usable
+ * exit code at all (spawn failure, an unpassable argument, signal death).
+ */
+export type FailureOrigin = "provider-error" | "exit-only" | "start";
+
+/**
+ * What the reply text of one run is. `model`: assistant output. `error`: text from an error payload or
+ * unparsed stdout. `none`: no text.
+ */
+export type ResponseSource = "model" | "error" | "none";
+
+export interface QuotaClassification {
+  kind: "quota";
+  origin: FailureOrigin;
+  message: string;
+  /** UTC ISO instant, or null when the provider did not name one. */
+  resetAt: string | null;
+  window: string | null;
+}
+
+export interface ProviderClassification {
+  kind: "provider";
+  origin: FailureOrigin;
+  message: string;
+}
+
+/** `null` means this finished process is not a provider failure. */
+export type FailureClassification = QuotaClassification | ProviderClassification;
+
+/**
+ * What an explicit server-side interrupt found. `interrupted`: a running turn was stopped.
+ * `idle`: the server holds the session and nothing was running. `not-found`: the server does not
+ * know the session (yet). `failed`: the interrupt could not be completed or verified.
+ */
+export type InterruptOutcome = "interrupted" | "idle" | "not-found" | "failed";
+
+/**
  * The CLI itself: how to invoke it and how to read what it prints. A client
  * knows nothing about migent defaults, usage accounting or failure policy.
  */
@@ -53,7 +118,7 @@ export interface CliClient {
   /** Native option used for the model-level effort alias; absent when unsupported. */
   readonly effortOption?: string;
 
-  options(): readonly ProviderOption[];
+  options(): readonly ClientOption[];
   validateOptions(options: Readonly<Record<string, string>>): void;
 
   runCommand(input: BuildCommandInput): CommandSpec;
@@ -84,4 +149,23 @@ export interface CliClient {
   /** Command whose output lists the values `option` accepts, or `null` if the CLI lists none. */
   optionValuesCommand(option: string, model: string): CommandSpec | null;
   parseOptionValues(option: string, stdout: string, model: string): readonly string[];
+}
+
+/** The narrow client surface config resolution and doctor need. */
+export interface ClientInfo {
+  readonly id: string;
+  readonly command: string;
+  readonly effortOption?: string;
+  options(): readonly ClientOption[];
+  validateOptions(options: Readonly<Record<string, string>>): void;
+}
+
+/**
+ * The one selection entry point. The kernel only defines the interface; the CLI
+ * composition root builds it from the adapters' `createClient`/`clientIds`.
+ * `get` throws a `ConfigurationError` that names the supported IDs.
+ */
+export interface ClientRegistry {
+  ids(): string[];
+  get(id: string): CliClient;
 }

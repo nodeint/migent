@@ -1,16 +1,18 @@
 import { expect, test } from "vitest";
-import { CodexProvider, GrokProvider } from "@nodeint/migent-adapters";
 import {
   ConfigurationError,
   SCHEMA_VERSION,
+  assertConfigClientEquivalence,
   documentVersion,
   loadWorkflowDocument,
   loadYamlMapping,
+  mergeConfigLayers,
   migrateConfig,
   migrateWorkflow,
   patchConfigText,
   patchWorkflowText,
 } from "../src/index.ts";
+import { applyLegacyMigration } from "../src/migration-legacy.ts";
 import { parseWorkflowMapping } from "../src/workflow.ts";
 import { parseYamlDocument } from "../src/yaml.ts";
 import { writeConfig } from "./support.ts";
@@ -65,59 +67,6 @@ completion:
   stage: review
 `;
 
-class StepProvider {
-  readonly models: string[] = [];
-  readonly roles: string[] = [];
-  readonly stages: string[] = [];
-  readonly modelMigrations = {
-    0: (body: Record<string, unknown>) => {
-      this.models.push(body.model as string);
-    },
-  };
-  readonly roleMigrations = {
-    0: (body: Record<string, unknown>) => {
-      this.roles.push(body.default_model as string);
-    },
-  };
-  readonly stageMigrations = {
-    0: (body: Record<string, unknown>) => {
-      this.stages.push(body.id as string);
-    },
-  };
-}
-
-class ChainProvider {
-  readonly trace: Array<[string, number]> = [];
-  readonly modelMigrations: Record<number, (body: Record<string, unknown>) => void>;
-  readonly roleMigrations: Record<number, (body: Record<string, unknown>) => void>;
-  readonly stageMigrations: Record<number, (body: Record<string, unknown>) => void>;
-
-  constructor() {
-    const mark = (kind: string, version: number) => () => {
-      this.trace.push([kind, version]);
-    };
-    this.modelMigrations = {
-      0: mark("model", 0),
-      1: mark("model", 1),
-      2: mark("model", 2),
-    };
-    this.roleMigrations = {
-      0: mark("role", 0),
-      1: mark("role", 1),
-      2: mark("role", 2),
-    };
-    this.stageMigrations = {
-      0: mark("stage", 0),
-      1: mark("stage", 1),
-      2: mark("stage", 2),
-    };
-  }
-}
-
-function providers(): { grok: GrokProvider; codex: CodexProvider } {
-  return { grok: new GrokProvider(), codex: new CodexProvider() };
-}
-
 function mapping(value: unknown): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new Error("expected a mapping");
@@ -125,57 +74,47 @@ function mapping(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-test("version steps follow each model's provider", () => {
+test("v0 thinking follows the legacy provider and the document version advances", () => {
   const config = loadYamlMapping(writeConfig(LEGACY));
-  const grok = new StepProvider();
-  const codex = new StepProvider();
-  const notes = migrateConfig(config, { grok, codex });
-  expect(notes[0]).toBe("schema_version -> 5");
-  expect(grok.models).toEqual(["grok-4.6"]);
-  expect(codex.models).toEqual(["gpt-5.6-terra"]);
-  expect(grok.roles).toEqual(["grok"]);
-  expect(codex.roles).toEqual(["gpt-terra"]);
-  expect(config.schema_version).toBe(5);
-  const workflow = {
-    id: "plan",
-    stages: [
-      { id: "plan", role: "planner" },
-      { id: "review", role: "reviewer", model: "gpt-terra" },
-    ],
-  };
-  migrateWorkflow(workflow, config, { grok, codex });
-  expect(grok.stages).toEqual(["plan"]);
-  expect(codex.stages).toEqual(["review"]);
+  const notes = migrateConfig(config);
+  expect(notes[0]).toBe("schema_version -> 6");
+  expect(mapping(mapping(mapping(config.agents).grok).client).options).toEqual({ "reasoning-effort": "medium" });
+  expect(mapping(mapping(mapping(config.agents)["gpt-terra"]).client).options).toEqual({
+    model_reasoning_effort: "medium",
+    temperature: "0.2",
+  });
+  expect(mapping(mapping(config.roles).planner).options).toEqual({ "reasoning-effort": "high" });
+  expect(config.schema_version).toBe(6);
 });
 
 test("current version is left alone", () => {
-  const config = { schema_version: "5", agents: {}, roles: {} };
-  const grok = new StepProvider();
-  expect(migrateConfig(config, { grok })).toEqual([]);
-  expect(grok.models).toEqual([]);
+  const config = { schema_version: "6", agents: {}, roles: {} };
+  expect(migrateConfig(config)).toEqual([]);
   expect(documentVersion(config)).toBe(SCHEMA_VERSION);
 });
 
-test("an unknown provider is skipped and the version still advances", () => {
+test("an unknown provider without a client fails and names the field", () => {
   const config = {
-    models: { custom: { provider: "other", model: "x", options: { thinking: "medium" } } },
+    schema_version: 5,
+    agents: { custom: { provider: "other", model: "x" } },
     roles: {},
   };
-  const notes = migrateConfig(config, {});
-  expect(notes).toEqual(["schema_version -> 5", "models -> agents", "agents.custom.options -> client.options"]);
-  expect(mapping(mapping(mapping(mapping(config.agents).custom).client).options).thinking).toBe("medium");
-  expect(config.schema_version).toBe(5);
+  expect(() =>
+    migrateConfig(config, SCHEMA_VERSION, config, { clientIds: ["agy", "claude-code", "codex", "grok", "opencode"] }),
+  ).toThrow(
+    "agents.custom: provider other has no default client; add agents.custom.client.type (one of: agy, claude-code, codex, grok, opencode) and rerun migrate.",
+  );
 });
 
 test("newer version is rejected", () => {
-  expect(() => migrateConfig({ schema_version: 6 }, {})).toThrow(
-    new ConfigurationError("config schema_version 6 is newer than this Migent (5)."),
+  expect(() => migrateConfig({ schema_version: 7 })).toThrow(
+    new ConfigurationError("config schema_version 7 is newer than this Migent (6)."),
   );
 });
 
 test("thinking moves to the provider option and keeps the file", () => {
   const config = loadYamlMapping(writeConfig(LEGACY));
-  const notes = migrateConfig(config, providers());
+  const notes = migrateConfig(config);
   expect(notes).toContain("models.grok.options.thinking -> reasoning-effort");
   expect(notes).toContain("models.gpt-terra.options.thinking -> model_reasoning_effort");
   expect(notes).toContain("roles.planner.thinking -> options.reasoning-effort");
@@ -192,7 +131,7 @@ test("thinking moves to the provider option and keeps the file", () => {
   const rewritten = patchConfigText(LEGACY, config);
   const parsed = loadYamlMapping(writeConfig(rewritten));
   expect(parsed.version).toBe("1.0");
-  expect(parsed.schema_version).toBe(5);
+  expect(parsed.schema_version).toBe(6);
   expect(mapping(mapping(mapping(mapping(parsed.agents).grok).client).options)["reasoning-effort"]).toBe("medium");
   expect(mapping(mapping(parsed.roles).reviewer).agent).toBe("gpt-terra");
   expect(rewritten).not.toContain("thinking");
@@ -202,9 +141,9 @@ test("thinking moves to the provider option and keeps the file", () => {
 
 test("workflow stage keeps instructions and records its version", () => {
   const config = loadYamlMapping(writeConfig(LEGACY));
-  migrateConfig(config, providers());
+  migrateConfig(config);
   const parsed = mapping(parseYamlDocument(WORKFLOW));
-  const notes = migrateWorkflow(parsed, config, providers());
+  const notes = migrateWorkflow(parsed, config);
   expect(notes).toContain("stages.review.model -> agent");
   expect(notes).toContain("stages.review.options.thinking removed");
   const rewritten = patchWorkflowText(WORKFLOW, parsed);
@@ -218,35 +157,23 @@ test("workflow stage keeps instructions and records its version", () => {
   expect(rewritten).not.toContain("options:");
   expect(rewritten).not.toContain("model: gpt-terra");
   expect(rewritten).toContain("agent: gpt-terra");
-  expect(rewritten).toContain("schema_version: 5");
-  expect(document.schemaVersion).toBe(5);
+  expect(rewritten).toContain("schema_version: 6");
+  expect(document.schemaVersion).toBe(6);
   expect(document.completion).toBeNull();
 });
 
-test("an upgrade runs each version and skips versions already passed", () => {
-  const provider = new ChainProvider();
+test("a version 0 upgrade applies the legacy thinking step and the v5 lifts in one pass", () => {
   const config = {
-    schema_version: 1,
-    models: { m: { provider: "grok", model: "x" } },
+    schema_version: 0,
+    models: { m: { provider: "grok", model: "x", options: { thinking: "high" } } },
     roles: { dev: { default_model: "m" } },
   };
-  migrateConfig(config, { grok: provider }, 3);
-  expect(provider.trace.filter((item) => item[0] === "model")).toEqual([
-    ["model", 1],
-    ["model", 2],
-  ]);
-  expect(provider.trace.filter((item) => item[0] === "role")).toEqual([
-    ["role", 1],
-    ["role", 2],
-  ]);
-  expect(config.schema_version).toBe(3);
-  const workflow = { schema_version: 1, stages: [{ id: "plan", role: "dev" }] };
-  migrateWorkflow(workflow, config, { grok: provider }, 3);
-  expect(provider.trace.filter((item) => item[0] === "stage")).toEqual([
-    ["stage", 1],
-    ["stage", 2],
-  ]);
-  expect(workflow.schema_version).toBe(3);
+  const notes = migrateConfig(config);
+  expect(config.schema_version).toBe(6);
+  expect(mapping(mapping(mapping(config.agents).m).client).options).toEqual({ "reasoning-effort": "high" });
+  expect(mapping(mapping(config.roles).dev).agent).toBe("m");
+  expect(notes).toContain("models.m.options.thinking -> reasoning-effort");
+  expect(notes).toContain("agents.m.provider grok -> client.type grok");
 });
 
 test("an existing option wins over thinking", () => {
@@ -254,9 +181,7 @@ test("an existing option wins over thinking", () => {
     options: { thinking: "medium", "reasoning-effort": "low" },
     thinking: "high",
   };
-  const step = new GrokProvider().modelMigrations[0];
-  if (step === undefined) throw new Error("missing grok model migration 0");
-  step(body);
+  applyLegacyMigration("model", "grok", 0, body);
   expect(body).toEqual({ options: { "reasoning-effort": "low" } });
 });
 
@@ -387,16 +312,16 @@ roles:
       - Do not commit or push. Run the tests that work names and fix failures your change caused before you report complete.
 `;
 
-test("repo plan and implement workflows migrate to version 5", () => {
+test("repo plan and implement workflows migrate to version 6", () => {
   const planBefore = loadWorkflowDocument(writeConfig(PLAN_V1));
   const planParsed = mapping(parseYamlDocument(PLAN_V1));
   const planNotes = migrateWorkflow(planParsed, { models: {}, roles: {} });
-  expect(planNotes).toContain("schema_version -> 5");
+  expect(planNotes).toContain("schema_version -> 6");
   expect(planNotes).toContain("completion removed");
   expect(planNotes).toContain("completion.outputs -> outputs");
   const planText = patchWorkflowText(PLAN_V1, planParsed);
   const planAfter = loadWorkflowDocument(writeConfig(planText));
-  expect(planAfter.schemaVersion).toBe(5);
+  expect(planAfter.schemaVersion).toBe(6);
   expect(planAfter.completion).toBeNull();
   expect(planAfter.concurrency).toBe(1);
   expect(planAfter.requires).toBeNull();
@@ -413,7 +338,7 @@ test("repo plan and implement workflows migrate to version 5", () => {
   expect(implementNotes).toContain("completion.outputs -> outputs");
   const implementText = patchWorkflowText(IMPLEMENT_V1, implementParsed);
   const implementAfter = loadWorkflowDocument(writeConfig(implementText));
-  expect(implementAfter.schemaVersion).toBe(5);
+  expect(implementAfter.schemaVersion).toBe(6);
   expect(implementAfter.completion).toBeNull();
   expect(implementAfter.requires).toBeNull();
   expect(implementAfter.outputs).toEqual([
@@ -425,11 +350,11 @@ test("repo plan and implement workflows migrate to version 5", () => {
   );
 });
 
-test("a version 1 config upgrades to version 5 and keeps its layout", () => {
+test("a version 1 config upgrades to version 6 and keeps its layout", () => {
   const parsed = loadYamlMapping(writeConfig(CONFIG_V1));
-  const notes = migrateConfig(parsed, {});
+  const notes = migrateConfig(parsed);
   expect(notes).toEqual([
-    "schema_version -> 5",
+    "schema_version -> 6",
     "models -> agents",
     "agents.grok.options -> client.options",
     "roles.planner.default_model -> agent",
@@ -438,10 +363,24 @@ test("a version 1 config upgrades to version 5 and keeps its layout", () => {
     "roles.reviewer.instructions -> responsibilities",
     "roles.developer.default_model -> agent",
     "roles.developer.instructions -> responsibilities",
+    "agents.opus.provider claude -> client.type claude-code",
+    "agents.grok.provider grok -> client.type grok",
+    "agents.sonnet.provider claude -> client.type claude-code",
   ]);
-  const expected = CONFIG_V1.replace("schema_version: 1\n", "schema_version: 5\n")
+  const expected = CONFIG_V1.replace("schema_version: 1\n", "schema_version: 6\n")
     .replace("models:\n", "agents:\n")
-    .replace("    options:\n      reasoning-effort: high\n", "    client:\n      options:\n        reasoning-effort: high\n")
+    .replace(
+      "  opus:\n    provider: claude\n    model: opus\n",
+      "  opus:\n    model: opus\n\n    client:\n      type: claude-code",
+    )
+    .replace(
+      "  grok:\n    provider: grok\n    model: grok-4.7\n    options:\n      reasoning-effort: high\n",
+      "  grok:\n    model: grok-4.7\n    client:\n      type: grok\n      options:\n        reasoning-effort: high\n",
+    )
+    .replace(
+      "  sonnet:\n    provider: claude\n    model: sonnet\n",
+      "  sonnet:\n    model: sonnet\n\n    client:\n      type: claude-code",
+    )
     .replaceAll("default_model:", "agent:")
     .replaceAll("    instructions:\n", "    responsibilities:\n");
   expect(patchConfigText(CONFIG_V1, parsed)).toBe(expected);
@@ -476,9 +415,9 @@ roles:
 
 test("a version 4 config moves models, client and options with comments intact", () => {
   const parsed = loadYamlMapping(writeConfig(CONFIG_V4));
-  const notes = migrateConfig(parsed, {});
+  const notes = migrateConfig(parsed);
   expect(notes).toEqual([
-    "schema_version -> 5",
+    "schema_version -> 6",
     "models -> agents",
     "agents.grok.client -> client.type",
     "agents.grok.options -> client.options",
@@ -486,14 +425,16 @@ test("a version 4 config moves models, client and options with comments intact",
     "roles.dev.instructions -> responsibilities",
     "roles.rev.agent.options -> client.options",
     "roles.rev.default_model -> agent",
+    "agents.grok.provider dropped (explicit client opencode)",
+    "agents.plain.provider codex -> client.type codex",
+    "roles.rev.agent.provider codex -> client.type codex",
   ]);
   const text = patchConfigText(CONFIG_V4, parsed);
   expect(text).toBe(`\
-schema_version: 5
+schema_version: 6
 # agents live here
 agents:
   grok: # main
-    provider: grok
     model: grok-4.6
     client:
       type: opencode # cli
@@ -501,8 +442,9 @@ agents:
         reasoning-effort: high # keep
 
   plain:
-    provider: codex
     model: gpt-5
+    client:
+      type: codex
 roles:
   dev:
     agent: grok
@@ -510,9 +452,9 @@ roles:
       - Do it. # c
   rev:
     agent:
-      provider: codex
       model: gpt-5
       client:
+        type: codex
         options:
           temperature: "0.2"
 `);
@@ -522,11 +464,11 @@ roles:
 test("a config that cannot be edited line by line falls back to the canonical rendering", () => {
   const text = "schema_version: 4\nmodels: { fast: { provider: codex, model: gpt-5, options: { a: b } } }\nroles: {}\n";
   const parsed = loadYamlMapping(writeConfig(text));
-  migrateConfig(parsed, {});
+  migrateConfig(parsed);
   const rewritten = patchConfigText(text, parsed);
   expect(parseYamlDocument(rewritten)).toEqual({
-    schema_version: 5,
-    agents: { fast: { provider: "codex", model: "gpt-5", client: { options: { a: "b" } } } },
+    schema_version: 6,
+    agents: { fast: { model: "gpt-5", client: { type: "codex", options: { a: "b" } } } },
     roles: {},
   });
 });
@@ -534,8 +476,8 @@ test("a config that cannot be edited line by line falls back to the canonical re
 test("a local config with only roles and models migrates on its own", () => {
   const text = "schema_version: 4\nmodels: {}\nroles:\n  dev:\n    default_model: shared # local pick\n";
   const parsed = loadYamlMapping(writeConfig(text));
-  migrateConfig(parsed, {});
-  expect(patchConfigText(text, parsed)).toBe("schema_version: 5\nagents: {}\nroles:\n  dev:\n    agent: shared # local pick\n");
+  migrateConfig(parsed);
+  expect(patchConfigText(text, parsed)).toBe("schema_version: 6\nagents: {}\nroles:\n  dev:\n    agent: shared # local pick\n");
 });
 
 const WORKFLOW_V4 = `\
@@ -559,9 +501,9 @@ stages:
 
 test("a version 4 workflow renames model to agent and drops stage options with a note", () => {
   const parsed = mapping(parseYamlDocument(WORKFLOW_V4));
-  const notes = migrateWorkflow(parsed, { models: { plain: { provider: "codex", model: "gpt-5" } }, roles: {} }, {});
+  const notes = migrateWorkflow(parsed, { models: { plain: { provider: "codex", model: "gpt-5" } }, roles: {} });
   expect(notes).toEqual([
-    "schema_version -> 5",
+    "schema_version -> 6",
     "stages.a.options.effort removed",
     "stages.a.options removed in schema_version 5; set options on an inline stages.a.agent if the stage still needs them",
     "stages.a.model -> agent",
@@ -569,7 +511,7 @@ test("a version 4 workflow renames model to agent and drops stage options with a
     "stages.b.options removed in schema_version 5; set options on an inline stages.b.agent if the stage still needs them",
   ]);
   expect(patchWorkflowText(WORKFLOW_V4, parsed)).toBe(`\
-schema_version: 5
+schema_version: 6
 id: p
 stages:
   - id: a
@@ -767,20 +709,214 @@ stages:
   );
 });
 
-test("partial config migrations resolve providers from the other config layer", () => {
-  const context = {
-    models: { shared: { provider: "codex", model: "test" } },
-    roles: { developer: { default_model: "shared" } },
-  };
-  const local = {
-    models: { shared: { thinking: "high" } },
-    roles: { developer: { thinking: "medium" } },
-  };
-  const move = (body: Record<string, unknown>) => {
-    body.options = { model_reasoning_effort: body.thinking };
-    delete body.thinking;
-  };
-  migrateConfig(local, { codex: { modelMigrations: { 0: move }, roleMigrations: { 0: move }, stageMigrations: {} } }, 4, context);
-  expect(local.models.shared).toEqual({ options: { model_reasoning_effort: "high" } });
-  expect(local.roles.developer).toEqual({ options: { model_reasoning_effort: "medium" } });
+const CLIENT_IDS = ["agy", "claude-code", "codex", "grok", "opencode"];
+
+function v5Layer(agents: Record<string, unknown>, roles: Record<string, unknown> = {}): Record<string, unknown> {
+  return { schema_version: 5, project: "Test", agents, roles };
+}
+
+/**
+ * Mirrors `packages/cli/src/migrate.ts`: both layers are migrated against the original v5 merged
+ * context, then the equivalence guard checks the project-alone and merged views.
+ */
+function migrateLayers(
+  projectDocument: Record<string, unknown>,
+  localDocument: Record<string, unknown> | null,
+  clientIds: readonly string[] = CLIENT_IDS,
+): {
+  project: Record<string, unknown>;
+  local: Record<string, unknown> | null;
+  effective: Record<string, unknown>;
+  notes: { project: string[]; local: string[] };
+} {
+  // The v5 merged view, read before either layer is rewritten.
+  const merged = mergeConfigLayers(projectDocument, localDocument).config;
+  const project = structuredClone(projectDocument);
+  const local = localDocument === null ? null : structuredClone(localDocument);
+  const projectNotes = migrateConfig(project, SCHEMA_VERSION, merged, {
+    layer: "project",
+    project: projectDocument,
+    local: localDocument,
+    merged,
+    clientIds,
+  });
+  const localNotes =
+    local === null
+      ? []
+      : migrateConfig(local, SCHEMA_VERSION, merged, {
+          layer: "local",
+          project: projectDocument,
+          local: localDocument,
+          merged,
+          clientIds,
+        });
+  const effective = local === null ? project : mergeConfigLayers(project, local).config;
+  assertConfigClientEquivalence({
+    originalProject: projectDocument,
+    originalMerged: merged,
+    updatedProject: project,
+    updatedMerged: effective,
+  });
+  return { project, local, effective, notes: { project: projectNotes, local: localNotes } };
+}
+
+test("a shared placeholder stays empty while the local provider selects the client", () => {
+  const migrated = migrateLayers(
+    v5Layer({ shared: {} }),
+    v5Layer({ shared: { provider: "codex", model: "gpt-5" } }),
+  );
+  expect(mapping(migrated.project.agents).shared).toEqual({});
+  expect(mapping(migrated.local?.agents).shared).toEqual({ model: "gpt-5", client: { type: "codex" } });
+  expect(mapping(migrated.effective.agents).shared).toEqual({ model: "gpt-5", client: { type: "codex" } });
+  expect(migrated.notes.project).toEqual(["schema_version -> 6"]);
+  expect(migrated.notes.local).toContain("agents.shared.provider codex -> client.type codex");
+});
+
+test("a client.options-only local entry leaves the shared provider's client in place", () => {
+  const migrated = migrateLayers(
+    v5Layer({ shared: { provider: "claude", model: "opus" } }),
+    v5Layer({ shared: { client: { options: { temperature: "0.2" } } } }),
+  );
+  expect(mapping(migrated.project.agents).shared).toEqual({ model: "opus", client: { type: "claude-code" } });
+  expect(mapping(migrated.local?.agents).shared).toEqual({ client: { options: { temperature: "0.2" } } });
+  expect(mapping(migrated.effective.agents).shared).toEqual({
+    model: "opus",
+    client: { type: "claude-code", options: { temperature: "0.2" } },
+  });
+  expect(migrated.notes.local).toEqual(["schema_version -> 6"]);
+});
+
+test("both layers naming a provider keep their own client and the local one wins the merge", () => {
+  const migrated = migrateLayers(
+    v5Layer({ shared: { provider: "claude" } }),
+    v5Layer({ shared: { provider: "codex" } }),
+  );
+  expect(mapping(migrated.project.agents).shared).toEqual({ client: { type: "claude-code" } });
+  expect(mapping(migrated.local?.agents).shared).toEqual({ client: { type: "codex" } });
+  expect(mapping(migrated.effective.agents).shared).toEqual({ client: { type: "codex" } });
+  expect(migrated.notes.project).toContain("agents.shared.provider claude -> client.type claude-code");
+  expect(migrated.notes.local).toContain("agents.shared.provider codex -> client.type codex");
+});
+
+test("an explicit client in the shared layer wins over the local provider", () => {
+  const migrated = migrateLayers(
+    v5Layer({ shared: { provider: "claude", client: { type: "opencode" } } }),
+    v5Layer({ shared: { provider: "codex" } }),
+  );
+  expect(mapping(migrated.project.agents).shared).toEqual({ client: { type: "opencode" } });
+  expect(mapping(migrated.local?.agents).shared).toEqual({});
+  expect(mapping(migrated.effective.agents).shared).toEqual({ client: { type: "opencode" } });
+  expect(migrated.notes.project).toContain("agents.shared.provider dropped (explicit client opencode)");
+  expect(migrated.notes.local).toContain("agents.shared.provider dropped (client from config.yaml)");
+});
+
+test("a byteplus provider in the shared layer stays partial when the local client supplies the choice", () => {
+  const migrated = migrateLayers(
+    v5Layer({ shared: { provider: "byteplus", model: "gpt-5" } }),
+    v5Layer({ shared: { client: { type: "opencode" } } }),
+  );
+  expect(mapping(migrated.project.agents).shared).toEqual({ model: "gpt-5" });
+  expect(mapping(migrated.local?.agents).shared).toEqual({ client: { type: "opencode" } });
+  expect(mapping(migrated.effective.agents).shared).toEqual({
+    model: "gpt-5",
+    client: { type: "opencode" },
+  });
+  expect(migrated.notes.project).toContain("agents.shared.provider dropped (client from config.local.yaml)");
+});
+
+test("an unresolvable provider fails and names the field and the client list", () => {
+  expect(() => migrateLayers(v5Layer({ shared: { provider: "byteplus" } }), v5Layer({}))).toThrow(
+    new ConfigurationError(
+      `agents.shared: provider byteplus has no default client; add agents.shared.client.type (one of: ${CLIENT_IDS.join(", ")}) and rerun migrate.`,
+    ),
+  );
+});
+
+test("an unknown provider fails in the layer that names it", () => {
+  expect(() =>
+    migrateLayers(
+      v5Layer({ shared: { model: "gpt-5" } }),
+      v5Layer({ shared: { provider: "mystery" } }),
+    ),
+  ).toThrow(
+    new ConfigurationError(
+      `agents.shared: provider mystery has no default client; add agents.shared.client.type (one of: ${CLIENT_IDS.join(", ")}) and rerun migrate.`,
+    ),
+  );
+});
+
+test("locations with no provider or client in any layer are left unchanged", () => {
+  const migrated = migrateLayers(
+    v5Layer({ placeholder: {}, model_only: { model: "gpt-5" }, options_only: { client: { options: { a: "b" } } } }),
+    v5Layer({ placeholder: { effort: "high" } }),
+  );
+  expect(mapping(migrated.project.agents)).toEqual({
+    placeholder: {},
+    model_only: { model: "gpt-5" },
+    options_only: { client: { options: { a: "b" } } },
+  });
+  expect(mapping(migrated.local?.agents)).toEqual({ placeholder: { effort: "high" } });
+  expect(migrated.notes.project).toEqual(["schema_version -> 6"]);
+  expect(migrated.notes.local).toEqual(["schema_version -> 6"]);
+});
+
+test("the equivalence guard aborts when a rewrite would change a client", () => {
+  expect(() =>
+    assertConfigClientEquivalence({
+      originalProject: { agents: { x: { provider: "claude" } } },
+      originalMerged: { agents: { x: { provider: "claude" } } },
+      updatedProject: { agents: { x: { client: { type: "codex" } } } },
+      updatedMerged: { agents: { x: { client: { type: "codex" } } } },
+    }),
+  ).toThrow(
+    new ConfigurationError(
+      "migration would change config.yaml agents.x from client claude-code to codex; nothing was written.",
+    ),
+  );
+});
+
+test("a layered rewrite keeps comments, key order, and the text patcher's shape", () => {
+  const projectText = `\
+schema_version: 5
+# shared agents
+agents:
+  shared: # main
+    provider: claude
+    model: opus
+`;
+  const localText = `\
+schema_version: 5
+agents:
+  shared:
+    client:
+      options:
+        temperature: "0.2"
+`;
+  const projectDocument = loadYamlMapping(writeConfig(projectText));
+  const localDocument = loadYamlMapping(writeConfig(localText));
+  const migrated = migrateLayers(projectDocument, localDocument);
+  const rewritten = patchConfigText(projectText, migrated.project);
+  expect(rewritten).toBe(`\
+schema_version: 6
+# shared agents
+agents:
+  shared: # main
+    model: opus
+    client:
+      type: claude-code
+`);
+  expect(parseYamlDocument(rewritten)).toEqual(migrated.project);
+});
+
+test("a second layered migration at version 6 changes nothing", () => {
+  const project = v5Layer({ shared: { provider: "claude", model: "opus" } });
+  const local = v5Layer({ shared: { provider: "codex" } });
+  const first = migrateLayers(project, local);
+  const second = migrateLayers(first.project, first.local);
+  expect(second.project).toEqual(first.project);
+  expect(second.local).toEqual(first.local);
+  expect(second.notes.project).toEqual([]);
+  expect(second.notes.local).toEqual([]);
+  expect(documentVersion(second.project)).toBe(SCHEMA_VERSION);
+  expect(documentVersion(second.local)).toBe(SCHEMA_VERSION);
 });

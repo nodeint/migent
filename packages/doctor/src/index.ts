@@ -13,7 +13,7 @@ export type { DiagnoseHooks } from "./selection.js";
 export { checkModelAvailability, checkModels, closest } from "./model-check.js";
 export { checkModelEfforts } from "./effort-check.js";
 export {
-  ProviderCommandFailed,
+  ClientCommandFailed,
   asCatalog,
   cached,
   clientCatalogSource,
@@ -22,7 +22,6 @@ export {
   loadOptionValues,
 } from "./catalog.js";
 export type {
-  CatalogProvider,
   CatalogSource,
   ClientCatalogInput,
   HeadlessOptionFact,

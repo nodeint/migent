@@ -4,7 +4,7 @@ export const EXECUTIONS_DIRNAME = "executions";
 export const SESSIONS_DIRNAME = "sessions";
 export const CONVERSATION_FILENAME = "conversation.json";
 export const LEGACY_CONVERSATION_FILENAME = "session.json";
-export const EXECUTION_SCHEMA_VERSION = 1;
+export const EXECUTION_SCHEMA_VERSION = 2;
 
 /** `MIGENT_DEBUG=1` turns on the wrapper start/stop trace (stderr and `debug.log`). */
 export function debugEnabled(): boolean {

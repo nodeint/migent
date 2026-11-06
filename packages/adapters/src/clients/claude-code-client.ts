@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { parseHelpOptions } from "../utils/parse-help-options.js";
 import { classifyProviderError } from "../types.js";
 import type {
@@ -6,7 +7,7 @@ import type {
   CliRunOutput,
   CliUsage,
   CommandSpec,
-  ProviderOption,
+  ClientOption,
   RawFailure,
   UsageCapture,
 } from "../types.js";
@@ -30,7 +31,9 @@ export const CLAUDE_PERMISSION_MODES = [
   "plan",
 ] as const;
 
-const CLAUDE_OPTIONS: readonly ProviderOption[] = [
+const DEFAULT_PERMISSION_MODE = "bypassPermissions";
+
+const CLAUDE_OPTIONS: readonly ClientOption[] = [
   { name: "effort", prompt: true, allowDefault: true, overridable: true },
   { name: "permission_mode" },
   { name: "tools" },
@@ -142,7 +145,7 @@ export class ClaudeCodeClient implements CliClient {
   readonly id = "claude-code";
   readonly command = "claude";
 
-  options(): readonly ProviderOption[] {
+  options(): readonly ClientOption[] {
     return CLAUDE_OPTIONS;
   }
 
@@ -156,6 +159,9 @@ export class ClaudeCodeClient implements CliClient {
   }
 
   runCommand(input: BuildCommandInput): CommandSpec {
+    const options = { ...input.options };
+    // Execution default only: never persisted, and an explicit option wins.
+    if (options.permission_mode === undefined) options.permission_mode = DEFAULT_PERMISSION_MODE;
     const argv = [
       this.command,
       "-p",
@@ -165,11 +171,15 @@ export class ClaudeCodeClient implements CliClient {
       "stream-json",
       "--verbose",
     ];
-    appendOptions(argv, input.options);
+    appendOptions(argv, options);
     if (input.agentId) argv.push("--resume", input.agentId);
     else if (input.newAgentId) argv.push("--session-id", input.newAgentId);
     // The prompt goes on stdin; the workspace is the process cwd.
     return { argv, stdin: input.prompt };
+  }
+
+  newSessionId(): string {
+    return randomUUID();
   }
 
   modelsCommand(): CommandSpec {

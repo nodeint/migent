@@ -13,7 +13,7 @@ import {
   watchSnapshot,
 } from "../src/index.ts";
 import { loadFrozenWorkflow } from "../src/session-freeze.ts";
-import { ScriptedProvider, tempDir } from "./support.ts";
+import { ScriptedClient, tempDir, registryOf } from "./support.ts";
 
 // Git setup and wrapper/provider process startup can exceed 10 seconds on Windows CI.
 vi.setConfig({ testTimeout: 60_000 });
@@ -21,7 +21,8 @@ vi.setConfig({ testTimeout: 60_000 });
 const CONFIG = `\
 agents:
   fake:
-    provider: fake
+    client:
+      type: fake
     model: m1
 roles:
   developer:
@@ -54,7 +55,7 @@ outputs:
 const DONE = "status: complete\n\ndone";
 
 /** Runs each hook when the matching provider call is parsed, so a test can edit files mid-session. */
-class EditingProvider extends ScriptedProvider {
+class EditingProvider extends ScriptedClient {
   private hooks: Array<() => void>;
 
   constructor(responses: string[], artifacts: Array<string | null>, hooks: Array<() => void>) {
@@ -98,8 +99,8 @@ function write(repo: string, relative: string, body: string): () => void {
   };
 }
 
-function runner(provider: ScriptedProvider): AgentToolRunner {
-  return new AgentToolRunner({ fake: provider }, 10);
+function runner(provider: ScriptedClient): AgentToolRunner {
+  return new AgentToolRunner(registryOf({ fake: provider }), 10);
 }
 
 function eventNames(repo: string, sessionId: string): string[] {
@@ -128,7 +129,7 @@ test("a stage whose paths did not change is skipped and the session completes", 
   expect(record).toMatchObject({
     kind: "skip",
     status: "skipped",
-    provider: null,
+    client: null,
     skip: {
       reason: "no changed path matches run_when.changed_paths",
       baseline: base,
@@ -146,11 +147,11 @@ test("a stage whose paths did not change is skipped and the session completes", 
   expect(snapshot.skipped_stages).toEqual(status.skipped_stages);
   expect(snapshot.baseline).toMatchObject({ commit: base });
 
-  const metrics = sessionMetrics(repo, sessionId, { fake: provider });
+  const metrics = sessionMetrics(repo, sessionId, registryOf({ fake: provider }));
   expect(metrics.totals).toMatchObject({ executions: 1, skipped: 1 });
   expect((metrics.stages as Record<string, unknown>).review_docs).toMatchObject({ executions: 0, skipped: 1 });
   const row = (metrics.executions as Array<Record<string, unknown>>).find((item) => item.status === "skipped")!;
-  expect(row).toMatchObject({ provider: null, model: null, turns: 0, verify: null });
+  expect(row).toMatchObject({ client: null, model: null, turns: 0, verify: null });
   expect(row.skip).toMatchObject({ baseline: base });
 
   const frozen = loadFrozenWorkflow(path.join(repo, ".migent", "sessions", sessionId));

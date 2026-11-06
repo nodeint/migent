@@ -6,7 +6,7 @@ import type {
   CliRunOutput,
   CliUsage,
   CommandSpec,
-  ProviderOption,
+  ClientOption,
   RawFailure,
   UsageCapture,
 } from "../types.js";
@@ -78,7 +78,7 @@ export class CodexClient implements CliClient {
   readonly id = "codex";
   readonly command = "codex";
 
-  options(): readonly ProviderOption[] {
+  options(): readonly ClientOption[] {
     return [{ name: CODEX_REASONING_OPTION, prompt: true, allowDefault: true, overridable: true }];
   }
 

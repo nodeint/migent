@@ -2,18 +2,19 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { defaultProviders, GrokProvider } from "@nodeint/migent-adapters";
+import { GrokClient, clientIds } from "@nodeint/migent-adapters";
 import {
-  createProviderResolver,
   documentVersion,
   loadAgentTarget,
   loadRoleDescription,
   loadRoleResponsibilities,
   loadWorkflowDocument,
   loadYamlMapping,
+  migrateConfig,
   resolveRoleTarget,
 } from "@nodeint/migent-kernel";
 import { expect, test } from "vitest";
+import { clientRegistry } from "../src/client.ts";
 
 const TEMPLATES = fileURLToPath(new URL("../../../skills/migent/references/", import.meta.url));
 const WORKFLOW_PARSER = fileURLToPath(new URL("../../kernel/src/workflow.ts", import.meta.url));
@@ -28,14 +29,13 @@ const CONFIG_KEYS = [
   "effort",
   "model",
   "options",
-  "provider",
   "responsibilities",
   "roles",
   "schema_version",
   "type",
 ];
 // Keys the parser still names only to reject them with a pointer to the v5 replacement.
-const LEGACY_CONFIG_KEYS = ["models"];
+const LEGACY_CONFIG_KEYS = ["models", "provider"];
 const WORKFLOW_KEYS = [
   "agent",
   "artifact",
@@ -84,33 +84,38 @@ test("config reference parses and names every key the config parser reads", () =
     const configPath = path.join(workspace, ".migent", "config.yaml");
     mkdirSync(path.dirname(configPath), { recursive: true });
     writeFileSync(configPath, text, "utf8");
-    const config = loadYamlMapping(configPath);
-    expect(documentVersion(config)).toBe(5);
-    expect(loadAgentTarget(config, "deep_reasoning", createProviderResolver(defaultProviders()))).toEqual({
-      provider: "grok",
+    const reference = loadYamlMapping(configPath);
+    expect(documentVersion(reference)).toBe(6);
+    const config = structuredClone(reference);
+    migrateConfig(config, 6, config, { layer: "project", clientIds: clientIds() });
+    expect(documentVersion(config)).toBe(6);
+    writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+    const clients = clientRegistry();
+    expect(loadAgentTarget(config, "deep_reasoning", clients)).toEqual({
+      client: "grok",
       model: "grok-4.7",
       options: { "reasoning-effort": "high" },
     });
-    expect(loadAgentTarget(config, "code_generation", createProviderResolver(defaultProviders()))).toMatchObject({
-      provider: "byteplus",
+    expect(loadAgentTarget(config, "code_generation", clients)).toMatchObject({
       client: "opencode",
+      model: "coding-plan/deepseek-v4-pro",
     });
     expect(loadRoleDescription(config, "planner")).toBe("Designs the approach and writes the plan.");
-    expect(resolveRoleTarget(workspace, "planner", undefined, createProviderResolver(defaultProviders()))).toEqual({
-      provider: "grok",
+    expect(resolveRoleTarget(workspace, "planner", undefined, clients)).toEqual({
+      client: "grok",
       model: "grok-4.7",
       options: { "reasoning-effort": "medium", max_turns: "10" },
     });
-    expect(resolveRoleTarget(workspace, "reviewer", undefined, createProviderResolver(defaultProviders()))).toEqual({
-      provider: "grok",
+    expect(resolveRoleTarget(workspace, "reviewer", undefined, clients)).toEqual({
+      client: "grok",
       model: "grok-4.7",
       options: { "reasoning-effort": "high" },
     });
     expect(text).toContain("config.local.yaml");
     expect(loadRoleResponsibilities(config, "planner")).toEqual(["Break the task into a reviewable plan."]);
     expect(loadRoleResponsibilities(config, "reviewer")).toEqual([]);
-    new GrokProvider().validateOptions({ "reasoning-effort": "high" });
-    new GrokProvider().validateOptions({ "reasoning-effort": "medium" });
+    new GrokClient().validateOptions({ "reasoning-effort": "high" });
+    new GrokClient().validateOptions({ "reasoning-effort": "medium" });
     const configParser = `${readFileSync(CONFIG_PARSER, "utf8")}\n${readFileSync(RECORD_PARSER, "utf8")}`;
     expect(parserKeys(configParser, "config").filter((key) => !LEGACY_CONFIG_KEYS.includes(key))).toEqual(CONFIG_KEYS);
     expect(yamlKeys(text)).toEqual([...CONFIG_KEYS, "code_generation", "deep_reasoning", "developer", "planner", "max_turns", "reviewer"].sort());
@@ -123,8 +128,8 @@ test("workflow reference parses and names every key the workflow parser reads", 
   const text = readFileSync(path.join(TEMPLATES, "schema-workflow.yaml"), "utf8");
   const filePath = path.join(TEMPLATES, "schema-workflow.yaml");
   const document = loadWorkflowDocument(filePath);
-  expect(documentVersion(loadYamlMapping(filePath))).toBe(5);
-  expect(document.schemaVersion).toBe(5);
+  expect(documentVersion(loadYamlMapping(filePath))).toBe(6);
+  expect(document.schemaVersion).toBe(6);
   expect(document.concurrency).toBe(1);
   expect(document.id).toBe("reference");
   expect(document.constraints).toEqual(["Stay within the task."]);
@@ -167,7 +172,7 @@ test("workflow reference parses and names every key the workflow parser reads", 
     role: "reviewer",
     description: null,
     dependsOn: ["review"],
-    agent: { kind: "inline", value: { provider: "codex", model: "gpt-5", effort: "low" } },
+    agent: { kind: "inline", value: { model: "gpt-5", effort: "low", client: { type: "codex" } } },
     instructions: ["Review documentation changes."],
     verify: [],
     decisionValues: [],
@@ -180,7 +185,7 @@ test("workflow reference parses and names every key the workflow parser reads", 
   scanned.add("schema_version");
   expect([...scanned].sort()).toEqual(WORKFLOW_KEYS);
   const sampleKeys = WORKFLOW_KEYS.filter((key) => !["completion", "requires", "stage", "values", "routes", "options"].includes(key));
-  expect(yamlKeys(text)).toEqual([...sampleKeys, "approved", "effort", "plan", "provider", "revise"].sort());
+  expect(yamlKeys(text)).toEqual([...sampleKeys, "approved", "client", "effort", "plan", "revise", "type"].sort());
 });
 
 function parserKeys(source: string, kind: "config" | "workflow"): string[] {

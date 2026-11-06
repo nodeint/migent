@@ -3,14 +3,15 @@ import path from "node:path";
 import { expect, test, vi } from "vitest";
 import {
   AgentToolRunner,
-  type FailureClassification,
+  type CliRunOutput,
   type FailureOrigin,
+  type RawFailure,
   type ResponseSource,
   createWorkflowSession,
 } from "../src/index.ts";
 import { CommandExecutor } from "../src/command-executor.ts";
 import { StreamSummarizer, observeTurn, renderProviderDiagnostics } from "../src/turn-diagnostics.ts";
-import { ScriptedProvider, tempDir } from "./support.ts";
+import { ScriptedClient, tempDir, registryOf } from "./support.ts";
 
 vi.setConfig({ testTimeout: 60_000 });
 
@@ -27,7 +28,7 @@ interface Turn {
   reportedError?: boolean;
 }
 
-class DiagProvider extends ScriptedProvider {
+class DiagProvider extends ScriptedClient {
   private readonly turns: Turn[];
   private current: Turn | null = null;
 
@@ -36,7 +37,7 @@ class DiagProvider extends ScriptedProvider {
     this.turns = [...turns];
   }
 
-  override buildCommand(input: Parameters<ScriptedProvider["buildCommand"]>[0]) {
+  override buildCommand(input: Parameters<ScriptedClient["buildCommand"]>[0]) {
     super.buildCommand(input);
     this.current = this.turns.shift() ?? null;
     const turn = this.current;
@@ -50,10 +51,9 @@ class DiagProvider extends ScriptedProvider {
     return { argv: [process.execPath, "-e", script] };
   }
 
-  override parseResponse(): [string, string | null, ResponseSource?] {
-    const [text, id] = super.parseResponse();
-    const source = this.current?.source;
-    return source === undefined ? [text, id] : [text, id, source];
+  override parseRun(_stdout: string): CliRunOutput {
+    const [text, sessionId] = this.parseResponse();
+    return { text, sessionId, source: this.current?.source ?? "none" };
   }
 
   eventLabel(line: string): string | null {
@@ -65,12 +65,12 @@ class DiagProvider extends ScriptedProvider {
     }
   }
 
-  classifyFailure(_stdout: string, exitCode: number): FailureClassification | null {
+  override extractFailure(_stdout: string, exitCode: number): RawFailure | null {
     if (exitCode === 0 && this.current?.reportedError !== true) return null;
     return {
-      kind: "provider",
       origin: this.current?.reportedError ? "provider-error" : (this.current?.origin ?? "exit-only"),
       message: `provider message ${exitCode}`,
+      exitCode,
     };
   }
 }
@@ -80,7 +80,8 @@ const OK = "status: complete\n\ndone";
 const CONFIG = `\
 agents:
   fake:
-    provider: fake
+    client:
+      type: fake
     model: m1
 roles:
   developer:
@@ -112,8 +113,8 @@ function setup(ask = false): { workspace: string; sessionId: string } {
 }
 
 async function run(provider: DiagProvider, workspace: string, sessionId: string) {
-  return new AgentToolRunner({ fake: provider }, 10).run({
-    provider: "fake", model: "m1", prompt: "go", workspace, sessionId, stageId: "implement",
+  return new AgentToolRunner(registryOf({ fake: provider }), 10).run({
+    client: "fake", model: "m1", prompt: "go", workspace, sessionId, stageId: "implement",
   });
 }
 

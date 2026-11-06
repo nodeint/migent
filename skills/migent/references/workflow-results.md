@@ -13,7 +13,7 @@ is not necessarily complete; retain its ID when resolving the cause and retrying
 | 5 | Dispatch limit | Continue if more stages are appropriate. |
 | 6 | Agent stage failed verification | Read the response, fix the cause, and continue. |
 | 7 | Verification-only stage failed | Read the verify report, fix the workspace, and continue. |
-| 8 | Provider quota reached with `--once` or `--stage` | Resolve the quota or wait for availability before continuing. |
+| 8 | Client quota reached with `--once` or `--stage` | Resolve the quota or wait for availability before continuing. |
 | 9 | Questions pending | Follow [Answer questions and blockers](session-replies.md). |
 | 130 | Cancelled | Ask before resuming; follow [resume behavior](session-resume.md). |
 

@@ -5,7 +5,7 @@ import { diagnoseSelection } from "../preflight.js";
 import { printDoctor } from "../display.js";
 import { cliHooks } from "../hooks.js";
 import { requireCurrentSchema } from "../migrate.js";
-import { providerMap, runProviderCommand, type RunCommand, type Which } from "../provider.js";
+import { clientRegistry, runClientCommand, type RunCommand, type Which } from "../client.js";
 import { skillCheck } from "../skill-check.js";
 
 export async function runDoctor(
@@ -15,11 +15,11 @@ export async function runDoctor(
   if (options.session !== undefined) return runSessionDoctor(workspace, options.session, options);
   requireCurrentSchema(workspace);
   const which = options.which ?? cliHooks.which ?? whichSync;
-  const providers = providerMap();
+  const clients = clientRegistry();
   const runCommand = options.runCommand ?? cliHooks.runCommand ??
-    ((argv, input) => runProviderCommand(argv, input, { cwd: workspace, timeoutMs: 10_000 }));
+    ((argv, input) => runClientCommand(argv, input, { cwd: workspace, timeoutMs: 10_000 }));
   const checks = [
-    ...(await diagnoseWorkspace(workspace, { providers, which, runCommand })),
+    ...(await diagnoseWorkspace(workspace, { clients, which, runCommand })),
     skillCheck(workspace, options.home ?? homedir()),
   ];
   if (options.asJson) process.stdout.write(`${JSON.stringify(payload(checks))}\n`);
@@ -57,7 +57,7 @@ async function runSessionDoctor(
   }
   // A freeze needs no live config, so only a live source requires a current config schema.
   if (selection.document !== null && selection.freeze === null) requireCurrentSchema(workspace, { configOnly: true });
-  const diagnosis = await diagnoseSelection(workspace, selection, { providers: providerMap(), which: options.which, runCommand: options.runCommand });
+  const diagnosis = await diagnoseSelection(workspace, selection, { clients: clientRegistry(), which: options.which, runCommand: options.runCommand });
   // Shown only when something was recorded, so a clean session prints what it always did.
   if (diagnostics.warnings.length > 0) diagnosis.checks.push(diagnostics);
   if (options.asJson) process.stdout.write(`${JSON.stringify({ ...payload(diagnosis.checks), session: sessionPayload(sessionId, diagnosis.source) })}\n`);

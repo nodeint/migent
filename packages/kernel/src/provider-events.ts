@@ -44,7 +44,7 @@ export function classifyProviderError(message: string | null): { event: string; 
 
 export class ProviderEvent {
   readonly event: string;
-  readonly provider: string;
+  readonly client: string;
   readonly sessionId: string;
   readonly executionId: string;
   readonly stageId: string;
@@ -54,7 +54,7 @@ export class ProviderEvent {
 
   constructor(input: {
     event: string;
-    provider: string;
+    client: string;
     sessionId: string;
     executionId: string;
     stageId: string;
@@ -63,7 +63,7 @@ export class ProviderEvent {
     details?: Record<string, unknown>;
   }) {
     this.event = input.event;
-    this.provider = input.provider;
+    this.client = input.client;
     this.sessionId = input.sessionId;
     this.executionId = input.executionId;
     this.stageId = input.stageId;
@@ -75,7 +75,7 @@ export class ProviderEvent {
   toJson(): Record<string, unknown> {
     const payload: Record<string, unknown> = {
       event: this.event,
-      provider: this.provider,
+      client: this.client,
       session_id: this.sessionId,
       execution_id: this.executionId,
       stage_id: this.stageId,
@@ -91,7 +91,7 @@ export class ProviderEventReporter {
   constructor(
     readonly store: SessionStore,
     readonly context: ExecutionContext,
-    readonly provider: string,
+    readonly client: string,
     readonly model: string,
     readonly itemProgress = false,
   ) {}
@@ -99,7 +99,7 @@ export class ProviderEventReporter {
   emit(event: string, summary?: string | null, details?: Record<string, unknown> | null): void {
     const providerEvent = new ProviderEvent({
       event,
-      provider: this.provider,
+      client: this.client,
       sessionId: this.context.sessionId,
       executionId: this.context.executionId,
       stageId: this.store.stageId(this.context),

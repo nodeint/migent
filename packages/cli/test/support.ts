@@ -2,9 +2,20 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Provider, BuildCommandInput, CommandSpec } from "@nodeint/migent-kernel";
+import type {
+  BuildCommandInput,
+  CliClient,
+  CliModelCatalog,
+  CliRunOutput,
+  CliUsage,
+  ClientOption,
+  ClientRegistry,
+  CommandSpec,
+  RawFailure,
+  UsageCapture,
+} from "@nodeint/migent-kernel";
 
-export interface ProviderCall {
+export interface ClientCall {
   model: string;
   workspace: string;
   prompt: string;
@@ -14,13 +25,47 @@ export interface ProviderCall {
   options: Record<string, string>;
 }
 
-export class FakeProvider implements Provider {
+/** The registry the runner and metrics use: any id a test names resolves to its own client. */
+export function registryOf(clients: Record<string, CliClient>): ClientRegistry {
+  return {
+    ids: () => Object.keys(clients),
+    get: (id: string): CliClient => {
+      const client = clients[id];
+      if (client === undefined) throw new Error(`Unknown CLI client: ${id}`);
+      return client;
+    },
+  };
+}
+
+const BLANK_USAGE: CliUsage = {
+  values: {
+    input_tokens: null,
+    output_tokens: null,
+    reasoning_tokens: null,
+    cache_read_tokens: null,
+    cache_write_tokens: null,
+    cost_usd: null,
+  },
+  cumulative: [],
+};
+
+export class FakeClient implements CliClient {
+  readonly id = "fake";
   readonly command = "fake";
-  readonly calls: ProviderCall[] = [];
+  readonly calls: ClientCall[] = [];
+
+  options(): readonly ClientOption[] {
+    return [{ name: "effort", overridable: true }];
+  }
 
   validateOptions(_options: Readonly<Record<string, string>>): void {}
 
-  buildCommand(input: BuildCommandInput): CommandSpec {
+  runCommand(input: BuildCommandInput): CommandSpec {
+    return this.buildCommand(input);
+  }
+
+  /** Records the call and returns the command a subclass wants to run. */
+  protected buildCommand(input: BuildCommandInput): CommandSpec {
     this.calls.push({
       model: input.model,
       workspace: input.workspace,
@@ -33,13 +78,58 @@ export class FakeProvider implements Provider {
     return { argv: [process.execPath, "-e", "process.exit(0)"] };
   }
 
-  parseResponse(stdout: string, _lastMessageFile: string): [string, string | null] {
+  parseRun(stdout: string, lastMessageFile: string): CliRunOutput {
+    const [text, sessionId] = this.parseResponse(stdout, lastMessageFile);
+    return { text, sessionId, source: text === "" ? "none" : "model" };
+  }
+
+  protected parseResponse(stdout: string, _lastMessageFile: string): [string, string | null] {
     const data = JSON.parse(stdout) as { text?: string; sessionId?: string | null };
     return [data.text ?? "", data.sessionId ?? null];
   }
+
+  modelsCommand(): CommandSpec {
+    return { argv: [process.execPath, "-e", "process.stdout.write('{}')"] };
+  }
+
+  parseModels(_stdout: string): CliModelCatalog {
+    return { ids: [], defaultId: null, optionValues: [], valuesFor: () => null };
+  }
+
+  versionCommand(): CommandSpec {
+    return { argv: [process.execPath, "-e", "process.stdout.write('fake/1.0.0')"] };
+  }
+
+  parseVersion(stdout: string): string | null {
+    return stdout.trim() === "" ? null : stdout.trim();
+  }
+
+  createEventParser(): (line: string) => Record<string, unknown> | null {
+    return () => null;
+  }
+
+  extractFailure(_stdout: string, _exitCode: number): RawFailure | null {
+    return null;
+  }
+
+  captureUsage(_stdout: string): UsageCapture | null {
+    return null;
+  }
+
+  readUsage(_capture: UsageCapture): CliUsage {
+    return BLANK_USAGE;
+  }
+
+  optionValuesCommand(_option: string, _model: string): CommandSpec | null {
+    return null;
+  }
+
+  parseOptionValues(_option: string, _stdout: string, _model: string): readonly string[] {
+    return [];
+  }
 }
 
-export class ScriptedProvider extends FakeProvider {
+export class ScriptedClient extends FakeClient {
   private responses: string[];
   private artifacts: Array<string | null>;
 
@@ -49,14 +139,14 @@ export class ScriptedProvider extends FakeProvider {
     this.artifacts = artifacts === undefined ? [] : [...artifacts];
   }
 
-  parseResponse(_stdout: string, _lastMessageFile: string): [string, string | null] {
+  protected override parseResponse(_stdout: string, _lastMessageFile: string): [string, string | null] {
     if (this.artifacts.length > 0) {
       const body = this.artifacts.shift() ?? null;
       const prompt = this.calls.at(-1)?.prompt;
       if (body !== null && prompt) writePromptArtifact(prompt, body);
     }
     const response = this.responses.shift();
-    if (response === undefined) throw new Error("ScriptedProvider has no response left.");
+    if (response === undefined) throw new Error("ScriptedClient has no response left.");
     return [this.writeQuestionFile(response), "native-session-1"];
   }
 
@@ -90,14 +180,14 @@ function writePromptArtifact(prompt: string, body: string): void {
 }
 
 export const FAKE_FLOW_CONFIG = `\
-schema_version: 5
+schema_version: 6
 agents:
   fake-model:
-    provider: fake
-    model: m1
     client:
+      type: fake
       options:
         effort: medium
+    model: m1
 roles:
   planner:
     agent: fake-model

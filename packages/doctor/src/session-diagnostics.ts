@@ -4,11 +4,11 @@ import type { Check } from "./check.js";
 const STDERR_LINES = 5;
 
 /**
- * Recorded provider diagnostics, latest per stage. They describe the past, so they are warnings:
+ * Recorded failure diagnostics, latest per stage. They describe the past, so they are warnings:
  * the cause may already be fixed.
  */
 export function sessionDiagnosticsCheck(workspace: string, sessionId: string): Check {
-  const check: Check = { name: "Provider diagnostics", ok: true, items: [], problems: [], warnings: [] };
+  const check: Check = { name: "Recorded diagnostics", ok: true, items: [], problems: [], warnings: [] };
   for (const entry of readRecordedDiagnostics(workspace, sessionId)) {
     const failure = (entry.data.failure ?? {}) as Record<string, unknown>;
     const parts = ["kind", "origin", "phase", "code"].flatMap((key) => (typeof failure[key] === "string" ? [`${key}=${String(failure[key])}`] : []));
@@ -17,12 +17,12 @@ export function sessionDiagnosticsCheck(workspace: string, sessionId: string): C
     if (typeof state.turn_verdict === "string") parts.push(`verdict=${state.turn_verdict}`);
     const stderr = typeof entry.data.stderr_tail === "string" ? entry.data.stderr_tail : "";
     const lines = stderr.split(/\r?\n/).filter((line) => line.trim().length > 0).slice(-STDERR_LINES);
-    const message = typeof failure.message === "string" ? failure.message : "provider failure recorded";
+    const message = typeof failure.message === "string" ? failure.message : "failure recorded";
     const detail = [message, parts.join(" "), ...lines.map((line) => `stderr: ${line}`), `file: ${entry.relative}`]
       .filter((text) => text.length > 0)
       .join("\n  ");
     check.warnings.push(detail);
   }
-  if (check.warnings.length === 0) check.items.push("No recorded provider diagnostics.");
+  if (check.warnings.length === 0) check.items.push("No recorded diagnostics.");
   return check;
 }

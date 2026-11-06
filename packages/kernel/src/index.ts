@@ -1,26 +1,23 @@
 export type {
-  ProviderInfo,
-  ProviderOption,
-  InterruptOutcome,
-  NewSession,
   BuildCommandInput,
-  Provider,
-  FailureClassification,
-  FailureOrigin,
-  ResponseSource,
-  ProviderClassification,
-  QuotaClassification,
-  UsageCapture,
-  TurnUsage,
-} from "./provider-contract.js";
-export type {
   CliClient,
   CliModelCatalog,
   CliRunOutput,
   CliUsage,
+  ClientInfo,
+  ClientOption,
+  ClientRegistry,
+  FailureClassification,
+  FailureOrigin,
+  InterruptOutcome,
+  NewSession,
+  ProviderClassification,
+  QuotaClassification,
   RawFailure,
+  ResponseSource,
+  TurnUsage,
+  UsageCapture,
 } from "./cli-client.js";
-export { CodexProvider, GrokProvider, defaultProviders, createProviderResolver } from "./provider-contract.js";
 export {
   LOCAL_CONFIG_FILE,
   configPath,
@@ -37,7 +34,7 @@ export {
   field,
   readConfigLayer,
   mergeConfigLayers,
-  resolveEffectiveProvider,
+  resolveEffectiveClient,
   localConfigPath,
   mergeConfig,
   resolveRoleTarget,
@@ -52,7 +49,7 @@ export type {
   ConfigLayer,
   Field,
   ConfigOwner,
-  EffectiveProviderFailure,
+  EffectiveClientFailure,
   MergedConfig,
   AgentDefinitionEntry,
   ModelOverride,
@@ -71,7 +68,22 @@ export {
   yamlScalar,
 } from "./config-edit.js";
 export { SCHEMA_VERSION, migrateConfig, migrateWorkflow, patchWorkflowText } from "./migration.js";
-export type { MigrationProvider, MigrationFn } from "./migration.js";
+export { assertConfigClientEquivalence } from "./migration-config.js";
+export { classifyFailure, createNewSession, normalizeUsage, sessionOptions } from "./client-policy.js";
+export {
+  LEGACY_COMMAND_CLIENT,
+  LEGACY_PROVIDER_CLIENT,
+  clientOfCommand,
+  legacyClientOf,
+  legacyExecutionClient,
+  quotaClientKey,
+} from "./legacy-provider.js";
+export type {
+  LegacyExecutionClient,
+  LegacyExecutionEvidence,
+  LegacyProvenance,
+} from "./legacy-provider.js";
+export type { MigrationLayer, MigrationFn } from "./migration.js";
 export type {
   ConfigChange,
   ConfigView,
@@ -334,8 +346,6 @@ export type {
 } from "./process-ownership.js";
 
 export const KERNEL_PLACEHOLDER = "kernel";
-
-export type { ProviderResolver } from "./provider-contract.js";
 
 export { publishNextSuggestions, resolveNextSuggestions, formatNextCommand } from "./next-handoff.js";
 export { latestDiagnosticsPath, readRecordedDiagnostics } from "./session-diagnostics.js";

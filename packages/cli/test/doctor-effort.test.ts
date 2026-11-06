@@ -4,7 +4,7 @@ import path from "node:path";
 import { expect, test } from "vitest";
 import { stringifyConfig as stringify } from "@nodeint/migent-kernel";
 import { runDoctor } from "../src/commands/doctor.ts";
-import { ProviderCommandFailed, type RunCommand } from "../src/provider.ts";
+import { ClientCommandFailed, type RunCommand } from "../src/client.ts";
 import { capture } from "./support.ts";
 
 const levels = ["low", "medium", "high"];
@@ -13,7 +13,7 @@ const which = (command: string) => `/fake/${command}`;
 function fakeCatalog(argv: string[]): string {
   if (argv[0] === "codex") return JSON.stringify({ models: [{ slug: "test", supported_reasoning_levels: levels }] });
   if (argv[0] === "grok") {
-    if (argv.includes("--reasoning-effort")) throw new ProviderCommandFailed("use one of: low, medium, high");
+    if (argv.includes("--reasoning-effort")) throw new ClientCommandFailed("use one of: low, medium, high");
     return "Available models:\n  - test\n";
   }
   if (argv[0] === "claude") return JSON.stringify({ type: "control_response", response: { response: {
@@ -34,12 +34,12 @@ async function inspect(
   try {
     mkdirSync(path.join(workspace, ".migent", "workflows"), { recursive: true });
     writeFileSync(path.join(workspace, ".migent", "config.yaml"), stringify({
-      schema_version: 5, ...(options.inline ? {} : { agents }),
+      schema_version: 6, ...(options.inline ? {} : { agents }),
       roles: { developer: { agent: options.inline ? Object.values(agents)[0] : Object.keys(agents)[0] } },
     }));
-    if (options.local) writeFileSync(path.join(workspace, ".migent", "config.local.yaml"), stringify({ schema_version: 5, ...options.local }));
+    if (options.local) writeFileSync(path.join(workspace, ".migent", "config.local.yaml"), stringify({ schema_version: 6, ...options.local }));
     writeFileSync(path.join(workspace, ".migent", "workflows", "flow.yaml"), stringify({
-      schema_version: 5, stages: [{ id: "work", role: "developer" }, { id: "again", role: "developer", depends_on: ["work"] }],
+      schema_version: 6, stages: [{ id: "work", role: "developer" }, { id: "again", role: "developer", depends_on: ["work"] }],
     }));
     return await capture(() => runDoctor(workspace, {
       asJson: options.json ?? true, which: options.which ?? which, runCommand: options.run ?? fakeCatalog, home: workspace,
@@ -49,23 +49,23 @@ async function inspect(
   }
 }
 
-for (const provider of ["codex", "grok", "claude", "agy", "opencode"]) {
-  test.each(["hgh", "", " ", null, 123, true, ["high"], { value: "high" }])(`${provider}: invalid effort %j includes valid values once`, async (effort) => {
-    const result = await inspect({ fast: { provider, model: provider === "opencode" ? "custom/test" : "test", effort } });
+for (const client of ["codex", "grok", "claude-code", "agy", "opencode"]) {
+  test.each(["hgh", "", " ", null, 123, true, ["high"], { value: "high" }])(`${client}: invalid effort %j includes valid values once`, async (effort) => {
+    const result = await inspect({ fast: { client: { type: client }, model: client === "opencode" ? "custom/test" : "test", effort } });
     const body = JSON.parse(result.stdout);
     expect(result.value).toBe(1);
     const problems = body.checks.flatMap((check: { problems: string[] }) => check.problems);
-    expect(problems).toEqual([`Invalid agents.fast.effort: ${JSON.stringify(effort)}\nValid values: low, medium, high${provider === "agy" ? ", xhigh, max" : ""}`]);
+    expect(problems).toEqual([`Invalid agents.fast.effort: ${JSON.stringify(effort)}\nValid values: low, medium, high${client === "agy" ? ", xhigh, max" : ""}`]);
   });
-  test(`${provider}: valid effort passes`, async () => {
-    const result = await inspect({ fast: { provider, model: provider === "opencode" ? "custom/test" : "test", effort: "high" } });
+  test(`${client}: valid effort passes`, async () => {
+    const result = await inspect({ fast: { client: { type: client }, model: client === "opencode" ? "custom/test" : "test", effort: "high" } });
     expect(result.value).toBe(0);
     expect(JSON.parse(result.stdout).checks.flatMap((check: { warnings: string[] }) => check.warnings).join(" ")).not.toContain("Could not validate");
   });
 }
 
 test("ordinary output uses the same error and valid-value list", async () => {
-  const result = await inspect({ fast: { provider: "codex", model: "test", effort: "hgh" } }, { json: false });
+  const result = await inspect({ fast: { client: { type: "codex" }, model: "test", effort: "hgh" } }, { json: false });
   expect(result.value).toBe(1);
   expect(result.stdout).toContain('  Invalid agents.fast.effort: "hgh"\n  Valid values: low, medium, high');
   expect(result.stdout).not.toContain("model_reasoning_effort");
@@ -74,17 +74,17 @@ test("ordinary output uses the same error and valid-value list", async () => {
 test("multiple aliases reuse catalog requests and report all invalid values", async () => {
   const calls: string[][] = [];
   const result = await inspect({
-    first: { provider: "codex", model: "test", effort: "bad" },
-    second: { provider: "codex", model: "test", effort: "wrong" },
+    first: { client: { type: "codex" }, model: "test", effort: "bad" },
+    second: { client: { type: "codex" }, model: "test", effort: "wrong" },
   }, { run: (argv) => { calls.push(argv); return fakeCatalog(argv); } });
   expect(result.value).toBe(1);
   expect(JSON.parse(result.stdout).checks[0].problems).toHaveLength(2);
   expect(calls).toHaveLength(1);
 });
 
-test("local effort and an alternate client select the correct catalog", async () => {
+test("local effort uses the selected client's catalog", async () => {
   const calls: string[][] = [];
-  const result = await inspect({ fast: { provider: "byteplus", client: { type: "grok" }, model: "test", effort: "bad" } }, {
+  const result = await inspect({ fast: { client: { type: "grok" }, model: "test", effort: "bad" } }, {
     local: { agents: { fast: { effort: "high" } } },
     run: (argv) => { calls.push(argv); return fakeCatalog(argv); },
   });
@@ -94,7 +94,7 @@ test("local effort and an alternate client select the correct catalog", async ()
 
 test("missing effort never queries effort values", async () => {
   const calls: string[][] = [];
-  const result = await inspect({ fast: { provider: "codex", model: "test" } }, {
+  const result = await inspect({ fast: { client: { type: "codex" }, model: "test" } }, {
     run: (argv) => { calls.push(argv); return fakeCatalog(argv); },
   });
   expect(result.value).toBe(0);
@@ -103,7 +103,7 @@ test("missing effort never queries effort values", async () => {
 });
 
 test.each(["request timed out", "invalid catalog", "CLI unavailable"])("unverifiable effort warns without failing: %s", async (reason) => {
-  const result = await inspect({ fast: { provider: "codex", model: "test", effort: "high" } }, {
+  const result = await inspect({ fast: { client: { type: "codex" }, model: "test", effort: "high" } }, {
     run: () => { throw new Error(reason); },
   });
   expect(result.value).toBe(0);
@@ -114,7 +114,7 @@ test.each(["request timed out", "invalid catalog", "CLI unavailable"])("unverifi
 });
 
 test("empty supported levels means omit effort", async () => {
-  const result = await inspect({ fast: { provider: "codex", model: "test", effort: "high" } }, {
+  const result = await inspect({ fast: { client: { type: "codex" }, model: "test", effort: "high" } }, {
     run: () => JSON.stringify({ models: [{ slug: "test", supported_reasoning_levels: [] }] }),
   });
   expect(result.value).toBe(1);
@@ -124,7 +124,7 @@ test("empty supported levels means omit effort", async () => {
 });
 
 test("absent supported-level metadata means unknown, not unsupported", async () => {
-  const result = await inspect({ fast: { provider: "codex", model: "test", effort: "high" } }, {
+  const result = await inspect({ fast: { client: { type: "codex" }, model: "test", effort: "high" } }, {
     run: () => JSON.stringify({ models: [{ slug: "test" }] }),
   });
   expect(result.value).toBe(0);
@@ -133,7 +133,7 @@ test("absent supported-level metadata means unknown, not unsupported", async () 
 
 
 test("empty effort still fails if supported values cannot be verified", async () => {
-  const result = await inspect({ fast: { provider: "codex", model: "test", effort: "" } }, {
+  const result = await inspect({ fast: { client: { type: "codex" }, model: "test", effort: "" } }, {
     run: () => { throw new Error("request timed out"); },
   });
   expect(result.value).toBe(1);
@@ -145,8 +145,8 @@ test("empty effort still fails if supported values cannot be verified", async ()
 test("catalog failures are cached across aliases", async () => {
   let calls = 0;
   const result = await inspect({
-    first: { provider: "codex", model: "test", effort: "high" },
-    second: { provider: "codex", model: "test", effort: "low" },
+    first: { client: { type: "codex" }, model: "test", effort: "high" },
+    second: { client: { type: "codex" }, model: "test", effort: "low" },
   }, { run: () => { calls++; throw new Error("request timed out"); } });
   expect(result.value).toBe(0);
   expect(calls).toBe(1);
@@ -154,7 +154,7 @@ test("catalog failures are cached across aliases", async () => {
 });
 
 test("a confirmed empty OpenCode variant list is an error, not a warning", async () => {
-  const result = await inspect({ fast: { provider: "opencode", model: "custom/test", effort: "high" } }, {
+  const result = await inspect({ fast: { client: { type: "opencode" }, model: "custom/test", effort: "high" } }, {
     run: (argv) => argv.includes("api")
       ? JSON.stringify({ data: [{ providerID: "custom", id: "test", variants: [] }] })
       : fakeCatalog(argv),
@@ -165,7 +165,7 @@ test("a confirmed empty OpenCode variant list is an error, not a warning", async
 
 
 test("validates the same trimmed identifiers and value used for execution", async () => {
-  const result = await inspect({ fast: { provider: " byteplus ", client: { type: " codex " }, model: " test ", effort: " high " } });
+  const result = await inspect({ fast: { client: { type: " codex " }, model: " test ", effort: " high " } });
   expect(result.value).toBe(0);
   expect(JSON.parse(result.stdout).checks[0].warnings).toEqual([]);
 });
@@ -173,7 +173,7 @@ test("validates the same trimmed identifiers and value used for execution", asyn
 
 test.each(["high", "bad", ""])("doctor checks inline effort %j with its full field path", async (effort) => {
   const calls: string[][] = [];
-  const result = await inspect({ fast: { provider: "codex", model: "test", effort } }, {
+  const result = await inspect({ fast: { client: { type: "codex" }, model: "test", effort } }, {
     inline: true, run: (argv) => { calls.push(argv); return fakeCatalog(argv); },
   });
   const checks = JSON.parse(result.stdout).checks;

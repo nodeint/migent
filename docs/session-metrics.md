@@ -74,7 +74,7 @@ no file and does not appear.
       "stage_id": "implement",
       "stage_attempt": 1,
       "role": "developer",
-      "provider": "claude",
+      "client": "claude-code",
       "model": "sonnet",
       "cli_version": "2.1.304 (Claude Code)",
       "argv": ["claude", "-p"],
@@ -124,7 +124,7 @@ no file and does not appear.
 
 `verify` is null when the stage has no verify commands and no verify events.
 
-A `run_when` skip stays in `executions[]` with status `skipped`, null `provider`
+A `run_when` skip stays in `executions[]` with status `skipped`, null `client`
 and `model`, zero turns, blank usage, `verify: null`, and a `skip` object. `skip`
 is null on every other row. `totals.executions` and a stage's `executions` do not
 count skips; `totals.skipped` and the stage's `skipped` do. A stage that only
@@ -141,20 +141,20 @@ The adapter capture and normalization contract is documented in
 
 Usage is stored raw on the runner's turn event. When a workflow session
 becomes `completed`, Migent normalizes those captures and writes `metrics.json`. A
-later change to an provider does not change that file. The previous capture is
-the latest earlier one in the same session with the same provider and the same
-provider agent id. A cumulative provider
-subtracts it. A per-process provider ignores it. A conversation can span
+later change to a client does not change that file. The previous capture is
+the latest earlier one in the same session with the same client and the same
+client agent id. A cumulative client
+subtracts it. A per-process client ignores it. A conversation can span
 executions, because a verify repair and a route back resume the same agent.
 
-A cancelled or timed-out turn has no capture. For a cumulative provider the
+A cancelled or timed-out turn has no capture. For a cumulative client the
 next turn of that agent absorbs the lost spend through the delta. For a
-per-process provider that spend is gone. `uncaptured_turns` counts runner turns
+per-process client that spend is gone. `uncaptured_turns` counts runner turns
 with no usage plus `provider.cancelled` events.
 
-A field the provider did not report is null. A total sums the known values and
+A field the client did not report is null. A total sums the known values and
 `usage_missing` counts, per field, how many turns did not report it. A session
-that mixes providers with and without cost still has a usable cost total.
+that mixes clients with and without cost still has a usable cost total.
 `input_tokens` excludes cache reads. `reasoning_tokens` sits beside
 `output_tokens` and is not added to it. `cost_usd` is only what claude, grok, and opencode
 report. There is no price table, so a codex or agy execution adds to

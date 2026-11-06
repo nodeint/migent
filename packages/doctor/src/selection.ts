@@ -1,4 +1,4 @@
-import { loadWorkflowCatalog, whichSync, type Provider, type SessionSelection } from "@nodeint/migent-kernel";
+import { loadWorkflowCatalog, whichSync, type ClientRegistry, type SessionSelection } from "@nodeint/migent-kernel";
 import type { ModelEffortCheck } from "./check.js";
 import type { RunCommand, Which } from "./catalog.js";
 import { diagnose } from "./diagnose.js";
@@ -8,10 +8,10 @@ import { stageAgentDefinitions } from "./stage-agents.js";
 import type { Check } from "./check.js";
 
 export interface DiagnoseHooks {
-  providers: Record<string, Provider>;
+  clients: ClientRegistry;
   /** Defaults to the real PATH lookup. */
   which?: Which | null;
-  /** Reads provider catalogs. Without it models are not looked up. */
+  /** Reads client catalogs. Without it models are not looked up. */
   runCommand?: RunCommand | null;
 }
 
@@ -29,15 +29,15 @@ export async function diagnoseSelection(
   const keys = sessionEffortKeys(workspace, selection);
   if (keys.size > 0 && hooks.runCommand != null) {
     const extra = selection.document === null ? [] : stageAgentDefinitions([selection.document]);
-    modelEffortChecks = await checkModels(workspace, hooks.providers, which, hooks.runCommand, keys, extra);
+    modelEffortChecks = await checkModels(workspace, hooks.clients, which, hooks.runCommand, keys, extra);
   }
-  return diagnoseSession(workspace, selection, { providers: hooks.providers, which, modelEffortChecks });
+  return diagnoseSession(workspace, selection, { clients: hooks.clients, which, modelEffortChecks });
 }
 
-/** The checks of `migent doctor`: config, workflows and providers, with every model looked up. */
+/** The checks of `migent doctor`: config, workflows and clients, with every model looked up. */
 export async function diagnoseWorkspace(workspace: string, hooks: DiagnoseHooks & { runCommand: RunCommand }): Promise<Check[]> {
   const which = hooks.which ?? whichSync;
   const documents = Object.values(loadWorkflowCatalog(workspace, { quiet: true }).documents);
-  const modelEffortChecks = await checkModels(workspace, hooks.providers, which, hooks.runCommand, undefined, stageAgentDefinitions(documents));
-  return diagnose(workspace, { providers: hooks.providers, which, modelEffortChecks });
+  const modelEffortChecks = await checkModels(workspace, hooks.clients, which, hooks.runCommand, undefined, stageAgentDefinitions(documents));
+  return diagnose(workspace, { clients: hooks.clients, which, modelEffortChecks });
 }

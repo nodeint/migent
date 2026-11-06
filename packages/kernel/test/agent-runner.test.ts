@@ -2,17 +2,18 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "vitest";
-import { AgentToolRunner, AgentSessionRecord, GrokProvider, createAgentSession, createWorkflowSession } from "../src/index.ts";
+import { AgentToolRunner, AgentSessionRecord, createAgentSession, createWorkflowSession } from "../src/index.ts";
+import { GrokClient } from "../../adapters/src/clients/grok-client.ts";
 import {
-  BlockedProvider,
-  FakeProvider,
-  MissingOutcomeProvider,
-  ScriptedProvider,
+  BlockedClient,
+  FakeClient,
+  MissingOutcomeClient,
+  ScriptedClient,
   repoWorkflowText,
+  registryOf,
   tempDir,
   writePlanReviewSession,
-  writeSessionConfig,
-} from "./support.ts";
+  writeSessionConfig, defaultClients } from "./support.ts";
 
 function executionFile(workspace: string, sessionId: string, executionId: string): string {
   return path.join(
@@ -42,12 +43,12 @@ test("reads legacy native session id as agent id", () => {
 });
 
 test("resume reuses agent id on a new execution", async () => {
-  const provider = new FakeProvider();
-  const runner = new AgentToolRunner({ fake: provider }, 10);
+  const provider = new FakeClient();
+  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
   const tmp = tempDir("migent-runner-");
-  const first = await runner.run({ provider: "fake", model: "m1", prompt: "first prompt", workspace: tmp });
+  const first = await runner.run({ client: "fake", model: "m1", prompt: "first prompt", workspace: tmp });
   const second = await runner.run({
-    provider: "fake",
+    client: "fake",
     model: "m1",
     prompt: "second prompt",
     workspace: tmp,
@@ -62,23 +63,23 @@ test("resume reuses agent id on a new execution", async () => {
 });
 
 test("writes conversation checkpoint", async () => {
-  const runner = new AgentToolRunner({ fake: new FakeProvider() }, 10);
+  const runner = new AgentToolRunner(registryOf({ fake: new FakeClient() }), 10);
   const tmp = tempDir("migent-runner-");
-  const result = await runner.run({ provider: "fake", model: "m1", prompt: "first prompt", workspace: tmp });
+  const result = await runner.run({ client: "fake", model: "m1", prompt: "first prompt", workspace: tmp });
   const executionDirectory = path.dirname(executionFile(tmp, result.session_id, result.execution_id));
   expect(existsSync(path.join(executionDirectory, "conversation.json"))).toBe(true);
   expect(existsSync(path.join(executionDirectory, "session.json"))).toBe(false);
 });
 
 test("resumes from legacy session checkpoint", async () => {
-  const provider = new FakeProvider();
-  const runner = new AgentToolRunner({ fake: provider }, 10);
+  const provider = new FakeClient();
+  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
   const tmp = tempDir("migent-runner-");
-  const first = await runner.run({ provider: "fake", model: "m1", prompt: "first prompt", workspace: tmp });
+  const first = await runner.run({ client: "fake", model: "m1", prompt: "first prompt", workspace: tmp });
   const executionDirectory = path.dirname(executionFile(tmp, first.session_id, first.execution_id));
   renameSync(path.join(executionDirectory, "conversation.json"), path.join(executionDirectory, "session.json"));
   await runner.run({
-    provider: "fake",
+    client: "fake",
     model: "m1",
     prompt: "second prompt",
     workspace: tmp,
@@ -89,10 +90,10 @@ test("resumes from legacy session checkpoint", async () => {
 });
 
 test("rejects a resume execution from another session", async () => {
-  const runner = new AgentToolRunner({ fake: new FakeProvider() }, 10);
+  const runner = new AgentToolRunner(registryOf({ fake: new FakeClient() }), 10);
   const tmp = tempDir("migent-runner-");
   const first = await runner.run({
-    provider: "fake",
+    client: "fake",
     model: "m1",
     prompt: "one",
     workspace: tmp,
@@ -100,7 +101,7 @@ test("rejects a resume execution from another session", async () => {
   });
   await expect(
     runner.run({
-      provider: "fake",
+      client: "fake",
       model: "m1",
       prompt: "two",
       workspace: tmp,
@@ -111,10 +112,10 @@ test("rejects a resume execution from another session", async () => {
 });
 
 test("rejects an option change when resuming", async () => {
-  const runner = new AgentToolRunner({ fake: new FakeProvider() }, 10);
+  const runner = new AgentToolRunner(registryOf({ fake: new FakeClient() }), 10);
   const tmp = tempDir("migent-runner-");
   const first = await runner.run({
-    provider: "fake",
+    client: "fake",
     model: "m1",
     prompt: "first",
     workspace: tmp,
@@ -122,7 +123,7 @@ test("rejects an option change when resuming", async () => {
   });
   await expect(
     runner.run({
-      provider: "fake",
+      client: "fake",
       model: "m1",
       prompt: "second",
       workspace: tmp,
@@ -130,14 +131,14 @@ test("rejects an option change when resuming", async () => {
       resumeExecutionId: first.execution_id,
       options: { effort: "medium" },
     }),
-  ).rejects.toThrow(/different provider, model, or options/);
+  ).rejects.toThrow(/different client, model, or options/);
 });
 
 test("records loop executions without overwriting attempts", async () => {
-  const runner = new AgentToolRunner({ fake: new FakeProvider() }, 10);
+  const runner = new AgentToolRunner(registryOf({ fake: new FakeClient() }), 10);
   const workspace = tempDir("migent-runner-");
   const first = await runner.run({
-    provider: "fake",
+    client: "fake",
     model: "m1",
     prompt: "review",
     workspace,
@@ -145,7 +146,7 @@ test("records loop executions without overwriting attempts", async () => {
     stageId: "review",
   });
   const second = await runner.run({
-    provider: "fake",
+    client: "fake",
     model: "m1",
     prompt: "review again",
     workspace,
@@ -160,10 +161,10 @@ test("records loop executions without overwriting attempts", async () => {
 });
 
 test("blocks a session after a blocked stage outcome", async () => {
-  const runner = new AgentToolRunner({ fake: new BlockedProvider() }, 10);
+  const runner = new AgentToolRunner(registryOf({ fake: new BlockedClient() }), 10);
   const workspace = tempDir("migent-runner-");
   const result = await runner.run({
-    provider: "fake",
+    client: "fake",
     model: "m1",
     prompt: "implement",
     workspace,
@@ -186,7 +187,7 @@ test("blocks a session after a blocked stage outcome", async () => {
   expect(existsSync(path.join(executionDirectory, "failure.md"))).toBe(false);
   await expect(
     runner.run({
-      provider: "fake",
+      client: "fake",
       model: "m1",
       prompt: "review",
       workspace,
@@ -199,8 +200,8 @@ test("blocks a session after a blocked stage outcome", async () => {
 
 test("fails a workflow session without a stage status", async () => {
   const workspace = tempDir("migent-runner-");
-  const result = await new AgentToolRunner({ fake: new MissingOutcomeProvider() }, 10).run({
-    provider: "fake",
+  const result = await new AgentToolRunner(registryOf({ fake: new MissingOutcomeClient() }), 10).run({
+    client: "fake",
     model: "m1",
     prompt: "implement",
     workspace,
@@ -219,8 +220,8 @@ test("fails a workflow session without a stage status", async () => {
   expect(readFileSync(path.join(executionDirectory, "failure.md"), "utf8")).toContain("must start with");
   expect(status.status).toBe("active");
   expect(status).not.toHaveProperty("terminal_execution_id");
-  const retry = await new AgentToolRunner({ fake: new FakeProvider() }, 10).run({
-    provider: "fake",
+  const retry = await new AgentToolRunner(registryOf({ fake: new FakeClient() }), 10).run({
+    client: "fake",
     model: "m1",
     prompt: "implement",
     workspace,
@@ -234,11 +235,11 @@ test("fails a workflow session without a stage status", async () => {
 });
 
 test("rejects provider options before creating a session", async () => {
-  const runner = new AgentToolRunner({ grok: new GrokProvider() }, 10);
+  const runner = new AgentToolRunner(registryOf({ grok: new GrokClient() }), 10);
   const tmp = tempDir("migent-runner-");
   await expect(
     runner.run({
-      provider: "grok",
+      client: "grok",
       model: "grok-4",
       prompt: "prompt",
       workspace: tmp,
@@ -248,31 +249,33 @@ test("rejects provider options before creating a session", async () => {
   expect(existsSync(path.join(tmp, ".migent"))).toBe(false);
 });
 
-test("constructs the default provider registry", async () => {
-  const { defaultProviders } = await import("../src/index.ts");
-  const first = defaultProviders();
-  const second = defaultProviders();
-  expect(new Set(Object.keys(new AgentToolRunner().providers))).toEqual(new Set(["codex", "grok"]));
-  expect(new Set(Object.keys(first))).toEqual(new Set(["codex", "grok"]));
+test("constructs a fresh client registry per lookup", async () => {
+  const { defaultClients } = await import("./support.ts");
+  const first = defaultClients();
+  const second = defaultClients();
+  expect(first.ids()).toEqual(["codex", "grok"]);
+  expect(second.ids()).toEqual(["codex", "grok"]);
   expect(first).not.toBe(second);
-  expect(first.codex).not.toBe(second.codex);
+  expect(first.get("codex")).not.toBe(second.get("codex"));
+  const runner = new AgentToolRunner(registryOf({ fake: new FakeClient() }), 10);
+  expect(runner.registry.ids()).toEqual(["fake"]);
   const tmp = tempDir("migent-runner-");
   await expect(
-    new AgentToolRunner({ fake: new FakeProvider() }, 10).run({
-      provider: "missing",
+    runner.run({
+      client: "missing",
       model: "m1",
       prompt: "prompt",
       workspace: tmp,
     }),
-  ).rejects.toThrow(/Unsupported CLI provider/);
+  ).rejects.toThrow(/Unknown CLI client/);
 });
 
 test("allows another execution on a completed agent session", async () => {
-  const runner = new AgentToolRunner({ fake: new FakeProvider() }, 10);
+  const runner = new AgentToolRunner(registryOf({ fake: new FakeClient() }), 10);
   const workspace = tempDir("migent-runner-");
   const sessionId = createAgentSession(workspace, "reviewer", "review the plan");
   const first = await runner.run({
-    provider: "fake",
+    client: "fake",
     model: "m1",
     prompt: "first",
     workspace,
@@ -283,7 +286,7 @@ test("allows another execution on a completed agent session", async () => {
   const status = readJson(statusPath);
   expect(status.status).toBe("completed");
   const second = await runner.run({
-    provider: "fake",
+    client: "fake",
     model: "m1",
     prompt: "second",
     workspace,
@@ -295,7 +298,7 @@ test("allows another execution on a completed agent session", async () => {
 });
 
 test("refuses another execution on a completed named workflow session", async () => {
-  const runner = new AgentToolRunner({ fake: new FakeProvider() }, 10);
+  const runner = new AgentToolRunner(registryOf({ fake: new FakeClient() }), 10);
   const workspace = tempDir("migent-runner-");
   const workflows = path.join(workspace, ".migent", "workflows");
   mkdirSync(workflows, { recursive: true });
@@ -309,7 +312,7 @@ test("refuses another execution on a completed named workflow session", async ()
   writeFileSync(statusPath, JSON.stringify(status), "utf8");
   await expect(
     runner.run({
-      provider: "fake",
+      client: "fake",
       model: "m1",
       prompt: "again",
       workspace,
@@ -324,16 +327,16 @@ test("refuses another execution on a completed named workflow session", async ()
 test("approved completion publishes the reviewed artifact and the session status becomes completed", async () => {
   const [workspace, sessionId] = writePlanReviewSession();
   const runner = new AgentToolRunner(
-    {
-      fake: new ScriptedProvider(
+    registryOf({
+      fake: new ScriptedClient(
         ["status: complete\n\nplanned", "status: complete\ndecision: approved\n\nlooks good"],
         ["# Plan v1\n", null],
       ),
-    },
+    }),
     10,
   );
   await runner.run({
-    provider: "fake",
+    client: "fake",
     model: "m1",
     prompt: "plan",
     workspace,
@@ -341,7 +344,7 @@ test("approved completion publishes the reviewed artifact and the session status
     stageId: "plan",
   });
   const review = await runner.run({
-    provider: "fake",
+    client: "fake",
     model: "m1",
     prompt: "review",
     workspace,
@@ -359,12 +362,12 @@ test("missing or whitespace-only artifact fails that stage", async () => {
   for (const body of [null, "   \n"] as const) {
     const [workspace, sessionId] = writePlanReviewSession();
     const result = await new AgentToolRunner(
-      {
-        fake: new ScriptedProvider(["status: complete\n\nplanned"], body === null ? null : [body]),
-      },
+      registryOf({
+        fake: new ScriptedClient(["status: complete\n\nplanned"], body === null ? null : [body]),
+      }),
       10,
     ).run({
-      provider: "fake",
+      client: "fake",
       model: "m1",
       prompt: "plan",
       workspace,
@@ -384,16 +387,16 @@ test("missing or whitespace-only artifact fails that stage", async () => {
 test("prose approval without a decision header fails the execution", async () => {
   const [workspace, sessionId] = writePlanReviewSession();
   const runner = new AgentToolRunner(
-    {
-      fake: new ScriptedProvider(
+    registryOf({
+      fake: new ScriptedClient(
         ["status: complete\n\nplanned", "status: complete\n\nApproved."],
         ["# Plan v1\n", null],
       ),
-    },
+    }),
     10,
   );
   await runner.run({
-    provider: "fake",
+    client: "fake",
     model: "m1",
     prompt: "plan",
     workspace,
@@ -401,7 +404,7 @@ test("prose approval without a decision header fails the execution", async () =>
     stageId: "plan",
   });
   const review = await runner.run({
-    provider: "fake",
+    client: "fake",
     model: "m1",
     prompt: "review",
     workspace,
@@ -435,11 +438,11 @@ function turnEvents(workspace: string, sessionId: string): Array<Record<string, 
 }
 
 test("a captured turn records usage, turn, agent id, and argv", async () => {
-  const provider = new FakeProvider();
+  const provider = new FakeClient();
   provider.captureUsage = () => ({ result: { total_cost_usd: 1 } });
-  const runner = new AgentToolRunner({ fake: provider }, 10);
+  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
   const tmp = tempDir("migent-runner-");
-  const result = await runner.run({ provider: "fake", model: "m1", prompt: "measure", workspace: tmp });
+  const result = await runner.run({ client: "fake", model: "m1", prompt: "measure", workspace: tmp });
   const details = turnEvents(tmp, result.session_id)[0]?.details as Record<string, unknown>;
   expect(details.usage).toEqual({ result: { total_cost_usd: 1 } });
   expect(details.turn).toBe(1);
@@ -449,9 +452,9 @@ test("a captured turn records usage, turn, agent id, and argv", async () => {
 });
 
 test("a turn without captureUsage omits usage", async () => {
-  const runner = new AgentToolRunner({ fake: new FakeProvider() }, 10);
+  const runner = new AgentToolRunner(registryOf({ fake: new FakeClient() }), 10);
   const tmp = tempDir("migent-runner-");
-  const result = await runner.run({ provider: "fake", model: "m1", prompt: "plain", workspace: tmp });
+  const result = await runner.run({ client: "fake", model: "m1", prompt: "plain", workspace: tmp });
   const details = turnEvents(tmp, result.session_id)[0]?.details as Record<string, unknown>;
   expect(details).not.toHaveProperty("usage");
   expect(details.turn).toBe(1);
@@ -459,13 +462,13 @@ test("a turn without captureUsage omits usage", async () => {
 });
 
 test("a throwing captureUsage still completes the execution", async () => {
-  const provider = new FakeProvider();
+  const provider = new FakeClient();
   provider.captureUsage = () => {
     throw new Error("usage failed");
   };
-  const runner = new AgentToolRunner({ fake: provider }, 10);
+  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
   const tmp = tempDir("migent-runner-");
-  const result = await runner.run({ provider: "fake", model: "m1", prompt: "plain", workspace: tmp });
+  const result = await runner.run({ client: "fake", model: "m1", prompt: "plain", workspace: tmp });
   const execution = readJson(executionFile(tmp, result.session_id, result.execution_id));
   expect(execution.status).toBe("completed");
   const details = turnEvents(tmp, result.session_id)[0]?.details as Record<string, unknown>;
@@ -503,16 +506,16 @@ completion:
   );
   const sessionId = createWorkflowSession(workspace, "wf", "task");
   const runner = new AgentToolRunner(
-    { fake: new ScriptedProvider(["status: complete\n\ndone", "status: complete\n\ndone", "status: complete\n\ndone"], ["# notes\n", null, null]) },
+    registryOf({ fake: new ScriptedClient(["status: complete\n\ndone", "status: complete\n\ndone", "status: complete\n\ndone"], ["# notes\n", null, null]) }),
     10,
   );
-  await runner.run({ provider: "fake", model: "m1", prompt: "go", workspace, sessionId, stageId: "implement" });
+  await runner.run({ client: "fake", model: "m1", prompt: "go", workspace, sessionId, stageId: "implement" });
   const turns = turnEvents(workspace, sessionId).map((event) => (event.details as { turn: number }).turn);
   expect(turns).toEqual([1, 2, 3]);
 });
 
 test("a progress turn_failed is recorded as a diagnostic, and the runner owns the one turn verdict", async () => {
-  const provider = new FakeProvider();
+  const provider = new FakeClient();
   provider.buildCommand = () => ({
     argv: [
       process.execPath,
@@ -522,10 +525,11 @@ test("a progress turn_failed is recorded as a diagnostic, and the runner owns th
     ],
   });
   provider.parseResponse = () => ["status: complete\n\ndone", "native-session-1"];
-  provider.parseProgressEvent = () => ({ event: "provider.turn_failed", summary: "boom" });
-  const runner = new AgentToolRunner({ fake: provider }, 10);
+  provider.parseRun = () => ({ text: "status: complete\n\ndone", sessionId: "native-session-1", source: "none" });
+  provider.createEventParser = () => () => ({ event: "provider.turn_failed", summary: "boom" });
+  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
   const tmp = tempDir("migent-runner-");
-  const result = await runner.run({ provider: "fake", model: "m1", prompt: "fail", workspace: tmp });
+  const result = await runner.run({ client: "fake", model: "m1", prompt: "fail", workspace: tmp });
   const failed = sessionEvents(tmp, result.session_id).filter((event) => event.event === "provider.turn_failed");
   expect(failed).toHaveLength(1);
   expect(typeof (failed[0]?.details as { turn?: unknown }).turn).toBe("number");
@@ -544,13 +548,13 @@ test("stage_started records git head and dirty state", async () => {
     { cwd: repo, stdio: "ignore" },
   );
   const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8" }).trim();
-  const runner = new AgentToolRunner({ fake: new FakeProvider() }, 10);
-  const first = await runner.run({ provider: "fake", model: "m1", prompt: "one", workspace: repo });
+  const runner = new AgentToolRunner(registryOf({ fake: new FakeClient() }), 10);
+  const first = await runner.run({ client: "fake", model: "m1", prompt: "one", workspace: repo });
   const clean = sessionEvents(repo, first.session_id).find((event) => event.event === "provider.stage_started");
   expect(clean?.details).toMatchObject({ git_head: head, git_dirty: false });
   writeFileSync(path.join(repo, "untracked.txt"), "x\n");
   await runner.run({
-    provider: "fake",
+    client: "fake",
     model: "m1",
     prompt: "two",
     workspace: repo,
@@ -560,8 +564,8 @@ test("stage_started records git head and dirty state", async () => {
   expect(dirty[1]?.details).toMatchObject({ git_head: head, git_dirty: true });
 
   const outside = tempDir("migent-runner-nogit-");
-  const bare = await new AgentToolRunner({ fake: new FakeProvider() }, 10).run({
-    provider: "fake",
+  const bare = await new AgentToolRunner(registryOf({ fake: new FakeClient() }), 10).run({
+    client: "fake",
     model: "m1",
     prompt: "three",
     workspace: outside,
@@ -573,19 +577,21 @@ test("stage_started records git head and dirty state", async () => {
 test("the version command runs once for two executions", async () => {
   const tmp = tempDir("migent-runner-version-");
   const hits = path.join(tmp, "hits.txt");
-  const provider = new FakeProvider();
-  provider.versionCommand = () => [
-    process.execPath,
-    "-e",
-    `require("fs").appendFileSync(${JSON.stringify(hits)}, "1\\n"); process.stdout.write("2.1.304\\n");`,
-  ];
+  const provider = new FakeClient();
+  provider.versionCommand = () => ({
+    argv: [
+      process.execPath,
+      "-e",
+      `require("fs").appendFileSync(${JSON.stringify(hits)}, "1\\n"); process.stdout.write("2.1.304\\n");`,
+    ],
+  });
   provider.parseVersion = (stdout: string) => {
     const line = stdout.trim();
     return line === "" ? null : line;
   };
-  const runner = new AgentToolRunner({ fake: provider }, 10);
-  const first = await runner.run({ provider: "fake", model: "m1", prompt: "one", workspace: tmp });
-  await runner.run({ provider: "fake", model: "m1", prompt: "two", workspace: tmp, sessionId: first.session_id });
+  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
+  const first = await runner.run({ client: "fake", model: "m1", prompt: "one", workspace: tmp });
+  await runner.run({ client: "fake", model: "m1", prompt: "two", workspace: tmp, sessionId: first.session_id });
   const versions = sessionEvents(tmp, first.session_id)
     .filter((event) => event.event === "provider.stage_started")
     .map((event) => (event.details as { cli_version?: unknown }).cli_version);
@@ -593,8 +599,8 @@ test("the version command runs once for two executions", async () => {
   expect(readFileSync(hits, "utf8")).toBe("1\n");
 });
 
-class UnstartableProvider extends FakeProvider {
-  buildCommand(input: Parameters<FakeProvider["buildCommand"]>[0]) {
+class UnstartableProvider extends FakeClient {
+  buildCommand(input: Parameters<FakeClient["buildCommand"]>[0]) {
     super.buildCommand(input);
     return { argv: ["migent-no-such-binary", "--api-key=hunter2", "secret prompt"] };
   }
@@ -605,9 +611,9 @@ class UnstartableProvider extends FakeProvider {
 }
 
 test("a provider that cannot start leaves diagnostics.json without argument values", async () => {
-  const runner = new AgentToolRunner({ fake: new UnstartableProvider() }, 10);
+  const runner = new AgentToolRunner(registryOf({ fake: new UnstartableProvider() }), 10);
   const tmp = tempDir("migent-runner-");
-  const result = await runner.run({ provider: "fake", model: "m1", prompt: "p", workspace: tmp });
+  const result = await runner.run({ client: "fake", model: "m1", prompt: "p", workspace: tmp });
   const file = path.join(path.dirname(executionFile(tmp, result.session_id, result.execution_id)), "diagnostics.json");
   const text = readFileSync(file, "utf8");
   const diagnostics = JSON.parse(text) as Record<string, any>;
@@ -633,10 +639,10 @@ test("MIGENT_DEBUG writes wrapper and executor steps to debug.log for successful
   const previous = process.env.MIGENT_DEBUG;
   process.env.MIGENT_DEBUG = "1";
   try {
-    for (const provider of [new FakeProvider(), new UnstartableProvider()]) {
-      const runner = new AgentToolRunner({ fake: provider }, 10);
+    for (const provider of [new FakeClient(), new UnstartableProvider()]) {
+      const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
       const tmp = tempDir("migent-runner-");
-      const result = await runner.run({ provider: "fake", model: "m1", prompt: "p", workspace: tmp });
+      const result = await runner.run({ client: "fake", model: "m1", prompt: "p", workspace: tmp });
       const log = readFileSync(
         path.join(path.dirname(executionFile(tmp, result.session_id, result.execution_id)), "debug.log"),
         "utf8",
@@ -653,8 +659,8 @@ test("MIGENT_DEBUG writes wrapper and executor steps to debug.log for successful
 }, 30000);
 
 test("no debug.log without MIGENT_DEBUG", async () => {
-  const runner = new AgentToolRunner({ fake: new FakeProvider() }, 10);
+  const runner = new AgentToolRunner(registryOf({ fake: new FakeClient() }), 10);
   const tmp = tempDir("migent-runner-");
-  const result = await runner.run({ provider: "fake", model: "m1", prompt: "p", workspace: tmp });
+  const result = await runner.run({ client: "fake", model: "m1", prompt: "p", workspace: tmp });
   expect(existsSync(path.join(path.dirname(executionFile(tmp, result.session_id, result.execution_id)), "debug.log"))).toBe(false);
 });

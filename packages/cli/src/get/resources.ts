@@ -1,5 +1,4 @@
 import {
-  createProviderResolver,
   getConfigView,
   getAgentView,
   getRoleView,
@@ -9,9 +8,9 @@ import {
   listRoleViews,
   listWorkflowViews,
   ConfigurationError,
-  type ProviderResolver,
+  type ClientRegistry,
 } from "@nodeint/migent-kernel";
-import { providerMap } from "../provider.js";
+import { clientRegistry } from "../client.js";
 import { field, count } from "./columns.js";
 import { MACHINE_RESOURCES } from "./machine-resources.js";
 import { cell, type Column } from "./render.js";
@@ -48,7 +47,7 @@ const PROJECT_RESOURCES: readonly ProjectResource[] = [
     kind: "role",
     names: ["role", "roles"],
     summary: "Roles in the effective config with their agent and description.",
-    columns: [field("NAME", "name"), field("AGENT", "agent"), targetField("PROVIDER", "provider"), targetField("MODEL", "model"), field("DESCRIPTION", "description"), count("PROBLEMS", "problems")],
+    columns: [field("NAME", "name"), field("AGENT", "agent"), targetField("CLIENT", "client"), targetField("MODEL", "model"), field("DESCRIPTION", "description"), count("PROBLEMS", "problems")],
     list: (workspace, resolve) => listRoleViews(workspace, resolve),
     get: (workspace, name, resolve) => getRoleView(workspace, requireName("role", name), resolve),
   },
@@ -56,8 +55,8 @@ const PROJECT_RESOURCES: readonly ProjectResource[] = [
     scope: "project",
     kind: "agent",
     names: ["agent", "agents"],
-    summary: "Agents the project names: provider, model, effort, and CLI client (see `migent get providers` and `migent get clients`).",
-    columns: [field("NAME", "name"), field("PROVIDER", "provider"), field("MODEL", "model"), field("CLIENT", "client"), field("LOCAL", "local"), count("PROBLEMS", "problems")],
+    summary: "Agents the project names: client, model, effort, and CLI client options (see `migent get clients`).",
+    columns: [field("NAME", "name"), field("CLIENT", "client"), field("MODEL", "model"), field("LOCAL", "local"), count("PROBLEMS", "problems")],
     list: (workspace, resolve) => listAgentViews(workspace, resolve),
     get: (workspace, name, resolve) => getAgentView(workspace, requireName("agent", name), resolve),
   },
@@ -81,7 +80,7 @@ export function resourceTypes(): string {
   return RESOURCES.map((resource) => resource.names.slice(0, 2).join("|")).join(", ");
 }
 
-/** Pure lookup: resolving a provider never spawns a CLI. */
-export function providerResolver(): ProviderResolver {
-  return createProviderResolver(providerMap());
+/** Pure lookup: resolving a client never spawns a CLI. */
+export function clientResolver(): ClientRegistry {
+  return clientRegistry();
 }

@@ -1,27 +1,25 @@
 import {
   ConfigurationError,
   checkDocumentSchemaVersion,
-  createProviderResolver,
   mergeConfigLayers,
   parseWorkflowMapping,
   checkWorkflowCatalog,
   catalogEntryFromDocument,
   collectWorkflowDraft,
   loadAgentTarget,
+  resolveEffectiveClient,
   resolveStageSpec,
   type RoleStageSpec,
   type StageTarget,
   unknownWorkflowKeyEntries,
   type ConfigOwner,
   type MergedConfig,
+  type ClientRegistry,
   type WorkflowCatalogEntry,
-  type ProviderInfo,
 } from "@nodeint/migent-kernel";
 import { analyzeConfig } from "./config-check.js";
 import type { Diagnostic } from "./check.js";
-import { withTargetClient } from "./providers.js";
 
-type Providers = Readonly<Record<string, ProviderInfo>>;
 type Mapping = Record<string, unknown>;
 
 const isRecord = (value: unknown): value is Mapping =>
@@ -66,7 +64,7 @@ export interface ConfigDraftInput {
  * exactly as the runtime would. Findings carry the layer that owns the node (`draft` marks the draft's).
  * A missing project layer (scope local) is the caller's error to report.
  */
-export function validateConfigDraft(input: ConfigDraftInput, providers: Providers): Diagnostic[] {
+export function validateConfigDraft(input: ConfigDraftInput, clients: ClientRegistry): Diagnostic[] {
   const out: Diagnostic[] = [];
   out.push(...versionDiagnostics(input.draft, `${input.scope} config`, { layer: input.scope }));
   if (input.companion !== null) {
@@ -77,7 +75,7 @@ export function validateConfigDraft(input: ConfigDraftInput, providers: Provider
   const local = input.scope === "local" ? input.draft : input.companion;
   if (project === null) return out;
   const merged = mergeConfigLayers(project, local);
-  const analysis = analyzeConfig(merged.config, providers, {}, merged.ownerOf);
+  const analysis = analyzeConfig(merged.config, clients, {}, merged.ownerOf);
   for (const item of analysis.diagnostics.items) {
     // The alias waits for this machine's mapping; that describes the machine, not the document.
     out.push(item.code === "agent-unmapped" ? { ...item, severity: "warning" } : item);
@@ -105,7 +103,7 @@ function ownerSource(owner: ConfigOwner): Diagnostic["source"] {
 }
 
 /** Validates an unsaved workflow against the parser, the catalog rules and the effective config. */
-export function validateWorkflowDraft(input: WorkflowDraftInput, providers: Providers): Diagnostic[] {
+export function validateWorkflowDraft(input: WorkflowDraftInput, clients: ClientRegistry): Diagnostic[] {
   const out: Diagnostic[] = [];
   const source = { workflow: input.file };
   out.push(...versionDiagnostics(input.draft, input.file === "" ? "workflow" : input.file, source));
@@ -181,7 +179,7 @@ export function validateWorkflowDraft(input: WorkflowDraftInput, providers: Prov
     const stagePath = (field: string): (string | number)[] => ["stages", index, field];
     let target;
     try {
-      target = resolveStageSpec(config, stage, undefined, createProviderResolver(providers));
+      target = resolveStageSpec(config, stage, undefined, clients);
     } catch (error) {
       if (!(error instanceof ConfigurationError)) throw error;
       const head = error.path?.[0];
@@ -198,7 +196,7 @@ export function validateWorkflowDraft(input: WorkflowDraftInput, providers: Prov
       }
       continue;
     }
-    const failure = optionsFailure(config, stage, target, providers);
+    const failure = optionsFailure(config, stage, target, clients);
     if (failure === null) continue;
     if (failure.path === null) {
       out.push({ severity: "error", code: "options-invalid", message: `${draftId ?? input.file}.${stage.id}: ${failure.message}`, path: stagePath("agent"), source });
@@ -211,7 +209,7 @@ export function validateWorkflowDraft(input: WorkflowDraftInput, providers: Prov
 }
 
 /**
- * Finds where invalid provider options come from by validating one layer at a time:
+ * Finds where invalid client options come from by validating one layer at a time:
  * the agent definition, then the role's inline agent, then the stage's own inline agent.
  * `path` is null when only the stage's options cause the failure.
  */
@@ -219,38 +217,30 @@ function optionsFailure(
   config: Mapping,
   stage: RoleStageSpec,
   target: StageTarget,
-  providers: Providers,
+  clients: ClientRegistry,
 ): { message: string; path: (string | number)[] | null } | null {
   const validate = (candidate: StageTarget): string | null => {
-    const provider = withTargetClient(providers[candidate.provider], candidate.client);
-    if (provider === undefined) return null;
-    try {
-      provider.validateOptions(candidate.options);
-      return null;
-    } catch (error) {
-      if (!(error instanceof Error)) throw error;
-      return error.message;
-    }
+    const bound = resolveEffectiveClient(clients, candidate);
+    return bound.failure?.code === "options-invalid" ? bound.failure.message : null;
   };
   // Options the stage's own values make valid are fine, whatever the lower layers hold.
   const full = validate(target);
   if (full === null) return null;
   // An inline stage agent is a complete definition of its own: its options are the stage's to fix.
   if (stage.agent?.kind === "inline") return { message: full, path: null };
-  const resolver = createProviderResolver(providers);
   const roleDefault = isRecord(config.roles) && isRecord(config.roles[stage.role]) ? config.roles[stage.role] : undefined;
   const selected = stage.agent !== null
     ? (stage.agent.kind === "named" ? stage.agent.name : undefined)
     : (isRecord(roleDefault) ? roleDefault.agent : undefined);
   if (typeof selected === "string") {
     try {
-      const message = validate(loadAgentTarget(config, selected, resolver));
+      const message = validate(loadAgentTarget(config, selected, clients));
       if (message !== null) return { message, path: ["agents", selected, "client", "options"] };
     } catch (error) {
       if (!(error instanceof ConfigurationError)) throw error;
     }
   }
-  const withRole = resolveStageSpec(config, { ...stage, options: {} }, undefined, resolver);
+  const withRole = resolveStageSpec(config, { ...stage, options: {} }, undefined, clients);
   const roleMessage = validate(withRole);
   if (roleMessage !== null) {
     const inline = stage.agent === null && isRecord(roleDefault) && isRecord(roleDefault.agent);

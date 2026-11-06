@@ -1,6 +1,6 @@
 import { spawnProvider } from "./provider-spawn.js";
 import { killProcessTree } from "./process-wrapper.js";
-import type { InterruptOutcome, Provider } from "./provider-contract.js";
+import type { CliClient, InterruptOutcome } from "./cli-client.js";
 
 /** Bounds for one explicit server-side interrupt. The whole cleanup stays within a few seconds. */
 export interface InterruptPolicy {
@@ -95,7 +95,7 @@ function sleep(ms: number): Promise<void> {
  * not have created the session yet; a final `not-found` is not proof that no turn will start.
  */
 export async function interruptSession(
-  provider: Provider,
+  provider: CliClient,
   agentId: string,
   cwd: string,
   policy: InterruptPolicy = DEFAULT_INTERRUPT_POLICY,

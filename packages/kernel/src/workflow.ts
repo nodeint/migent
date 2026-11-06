@@ -106,7 +106,7 @@ export interface WorkflowDocument {
 }
 
 /** Accepted workflow and config document version. */
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 export function isWorkflowV2(workflow: WorkflowDocument | null | undefined): boolean {
   return (workflow?.schemaVersion ?? 1) >= 2;

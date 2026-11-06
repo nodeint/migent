@@ -10,12 +10,12 @@ export const GROK_SESSION = "fake-grok-session";
 export const CODEX_THREAD = "fake-codex-thread";
 
 export const GROK_CONFIG = `\
-schema_version: 5
+schema_version: 6
 agents:
   grok-model:
-    provider: grok
     model: grok-test
     client:
+      type: grok
       options:
         reasoning-effort: low
 roles:
@@ -26,12 +26,12 @@ roles:
 `;
 
 export const CODEX_CONFIG = `\
-schema_version: 5
+schema_version: 6
 agents:
   codex-model:
-    provider: codex
     model: codex-test
     client:
+      type: codex
       options:
         model_reasoning_effort: low
 roles:
@@ -40,7 +40,7 @@ roles:
 `;
 
 export const PLAN_REVIEW = `\
-schema_version: 5
+schema_version: 6
 id: plan
 stages:
   - id: plan
@@ -67,7 +67,7 @@ outputs:
 `;
 
 export const DRAFT_NOTE = `\
-schema_version: 5
+schema_version: 6
 id: draft-note
 stages:
   - id: draft
@@ -78,7 +78,7 @@ stages:
 `;
 
 export const SOLO = `\
-schema_version: 5
+schema_version: 6
 id: solo
 stages:
   - id: write
@@ -101,7 +101,7 @@ const FAKE_ENV = ["MIGENT_FAKE_OUTCOME", "MIGENT_FAKE_SCRIPT", "MIGENT_FAKE_CURS
 
 export function resumedNotes(role: string): string {
   return `\
-schema_version: 5
+schema_version: 6
 id: notes
 stages:
   - id: draft

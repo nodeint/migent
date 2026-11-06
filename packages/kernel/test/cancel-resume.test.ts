@@ -1,16 +1,17 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "vitest";
-import type { BuildCommandInput } from "../src/provider-contract.ts";
+import type { BuildCommandInput } from "../src/cli-client.ts";
 import { AgentToolRunner, SessionLock, SessionStore, StageOutcome, createWorkflowSession, executeNamedWorkflow, raiseCancellation, requestSessionCancel } from "../src/index.ts";
 import { clearInFlightExecution, noteInFlightExecution } from "../src/session-store.ts";
 import type { CommandSpec } from "../src/command-executor.ts";
-import { ScriptedProvider, tempDir } from "./support.ts";
+import { ScriptedClient, tempDir, registryOf } from "./support.ts";
 
 const CONFIG = `\
 agents:
   fake:
-    provider: fake
+    client:
+      type: fake
     model: m1
 roles:
   developer:
@@ -31,7 +32,7 @@ function executionIds(workspace: string, sessionId: string): string[] {
   return readdirSync(path.join(workspace, ".migent", "sessions", sessionId, "executions"));
 }
 
-class HangFirstProvider extends ScriptedProvider {
+class HangFirstProvider extends ScriptedClient {
   private hung = false;
 
   constructor(
@@ -73,7 +74,7 @@ completion:
   stage: implement
 `);
   const provider = new HangFirstProvider(pidFile, [OK]);
-  const runner = new AgentToolRunner({ fake: provider }, 10);
+  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
   const timer = setInterval(() => {
     if (!existsSync(pidFile) || readFileSync(pidFile, "utf8").trim() === "") return;
     clearInterval(timer);
@@ -137,8 +138,8 @@ stages:
 completion:
   stage: implement
 `);
-  const provider = new ScriptedProvider([OK], ["# notes\n"]);
-  const runner = new AgentToolRunner({ fake: provider }, 10);
+  const provider = new ScriptedClient([OK], ["# notes\n"]);
+  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
   const timer = setInterval(() => {
     if (!existsSync(pidFile) || readFileSync(pidFile, "utf8").trim() === "") return;
     clearInterval(timer);
@@ -194,8 +195,8 @@ stages:
 completion:
   stage: implement
 `);
-  const provider = new ScriptedProvider([OK], ["# notes\n"]);
-  const runner = new AgentToolRunner({ fake: provider }, 10);
+  const provider = new ScriptedClient([OK], ["# notes\n"]);
+  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
   const timer = setInterval(() => {
     if (!existsSync(pidFile) || readFileSync(pidFile, "utf8").trim() === "") return;
     clearInterval(timer);
@@ -331,11 +332,11 @@ completion:
     if (noted) clearInFlightExecution(sessionId, noted);
     lock.release();
   }
-  const provider = new ScriptedProvider([OK, OK]);
+  const provider = new ScriptedClient([OK, OK]);
   const result = await executeNamedWorkflow(
     workspace,
     { workflowId: "wf", sessionId },
-    new AgentToolRunner({ fake: provider }, 10),
+    new AgentToolRunner(registryOf({ fake: provider }), 10),
   );
   expect(result.stopReason).toBe("completed");
   expect(result.code).toBe(0);
@@ -346,7 +347,7 @@ completion:
   expect(result.stages.map((stage) => stage.execution_id)).toContain(reviewId);
 }, 30_000);
 
-class HangManyProvider extends ScriptedProvider {
+class HangManyProvider extends ScriptedClient {
   private hung = 0;
 
   constructor(
@@ -393,7 +394,7 @@ stages:
     depends_on: []
 `);
   const provider = new HangManyProvider([pidA, pidB], [OK, OK]);
-  const runner = new AgentToolRunner({ fake: provider }, 10);
+  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
   let signaled = false;
   const timer = setInterval(() => {
     if (signaled || !existsSync(pidA) || !existsSync(pidB)) return;
@@ -452,7 +453,7 @@ completion:
   stage: implement
 `);
   const provider = new HangFirstProvider(pidFile, [OK]);
-  const runner = new AgentToolRunner({ fake: provider }, 10);
+  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
   const directory = path.join(workspace, ".migent", "sessions", sessionId);
   const timer = setInterval(() => {
     if (!existsSync(pidFile) || readFileSync(pidFile, "utf8").trim() === "") return;
@@ -487,7 +488,7 @@ completion:
   stage: implement
 `);
   const provider = new HangFirstProvider(pidFile, [OK]);
-  const runner = new AgentToolRunner({ fake: provider }, 10);
+  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
   const timer = setInterval(() => {
     if (!existsSync(pidFile) || readFileSync(pidFile, "utf8").trim() === "") return;
     clearInterval(timer);
@@ -533,7 +534,7 @@ completion:
   stage: implement
 `);
   const provider = new HangFirstProvider(pidFile, [OK]);
-  const runner = new AgentToolRunner({ fake: provider }, 10);
+  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
   const timer = setInterval(() => {
     if (!existsSync(pidFile) || readFileSync(pidFile, "utf8").trim() === "") return;
     clearInterval(timer);

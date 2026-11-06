@@ -2,8 +2,17 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Provider, BuildCommandInput, ProviderInfo, TurnUsage, UsageCapture } from "../src/provider-contract.ts";
-import type { CommandSpec } from "../src/command-executor.ts";
+import type {
+  BuildCommandInput,
+  CliClient,
+  CliModelCatalog,
+  CliRunOutput,
+  CliUsage,
+  ClientRegistry,
+  CommandSpec,
+  TurnUsage,
+  UsageCapture,
+} from "../src/cli-client.ts";
 import { createWorkflowSession } from "../src/session-records.ts";
 
 const optionKey = /^[A-Za-z][A-Za-z0-9_.-]*$/;
@@ -20,25 +29,22 @@ const grokOptions = new Set([
   "sandbox",
 ]);
 
-export function defaultProviders(): Record<string, ProviderInfo> {
+export function defaultClients(): ClientRegistry {
+  return registryOf({
+    codex: new FakeClient("codex", "codex"),
+    grok: new FakeClient("grok", "grok"),
+  });
+}
+
+export function registryOf(clients: Record<string, CliClient>): ClientRegistry {
   return {
-    codex: {
-      command: "codex",
-      validateOptions(options) {
-        for (const [key, value] of Object.entries(options)) {
-          if (!optionKey.test(key)) throw new Error(`${key} is not a codex option.`);
-          if (value.trim() === "") throw new Error(`${key} is empty.`);
-        }
-      },
-    },
-    grok: {
-      command: "grok",
-      validateOptions(options) {
-        for (const [key, value] of Object.entries(options)) {
-          if (!grokOptions.has(key)) throw new Error(`${key} is not a grok option.`);
-          if (value.trim() === "") throw new Error(`${key} is empty.`);
-        }
-      },
+    ids: () => Object.keys(clients).sort(),
+    get: (id: string): CliClient => {
+      const client = Object.hasOwn(clients, id) ? clients[id] : undefined;
+      if (client === undefined) {
+        throw new Error(`Unknown CLI client: ${id}. Supported: ${Object.keys(clients).join(", ")}.`);
+      }
+      return client;
     },
   };
 }
@@ -48,9 +54,11 @@ export function whichFound(found: ReadonlySet<string>): (command: string) => str
 }
 
 export const SESSION_CONFIG = `\
+schema_version: 6
 agents:
   grok:
-    provider: grok
+    client:
+      type: grok
     model: grok-4
 roles:
   planner:
@@ -67,20 +75,21 @@ export function writeSessionConfig(workspace: string): void {
 }
 
 export const STAGE_CONFIG = `\
+schema_version: 6
 agents:
   grok:
-    provider: grok
-    model: grok-4.6
     client:
+      type: grok
       options:
         reasoning-effort: high
+    model: grok-4.6
   gpt-terra:
-    provider: codex
-    model: gpt-5.6-terra
     client:
+      type: codex
       options:
         model_reasoning_effort: medium
         temperature: "0.2"
+    model: gpt-5.6-terra
 roles:
   developer:
     agent: grok
@@ -89,6 +98,7 @@ roles:
 `;
 
 export const STAGE_WORKFLOW = `\
+schema_version: 6
 id: plan-implement
 stages:
   - id: implement
@@ -98,9 +108,13 @@ stages:
       artifact: implementation-result.md
   - id: review-work
     role: reviewer
-    model: gpt-terra
-    options:
-      model_reasoning_effort: high
+    agent:
+      client:
+        type: codex
+        options:
+          model_reasoning_effort: high
+          temperature: "0.2"
+      model: gpt-5.6-terra
     depends_on:
       - implement
 `;
@@ -133,7 +147,7 @@ export function writeRoleWorkspace(): string {
   return workspace;
 }
 
-export interface ProviderCall {
+export interface ClientCall {
   model: string;
   workspace: string;
   prompt: string;
@@ -143,19 +157,41 @@ export interface ProviderCall {
   options: Record<string, string>;
 }
 
-export class FakeProvider implements Provider {
-  readonly command = "fake";
-  readonly calls: ProviderCall[] = [];
-  captureUsage?: (stdout: string) => UsageCapture | null;
-  normalizeUsage?: (current: UsageCapture, previous: UsageCapture | null) => TurnUsage;
-  versionCommand?: () => string[];
-  parseVersion?: (stdout: string) => string | null;
+/** A CLI client a test fully controls: it launches a node one-liner that prints its reply. */
+export class FakeClient implements CliClient {
+  readonly id: string;
+  readonly command: string;
+  readonly calls: ClientCall[] = [];
+  captureUsage: (stdout: string) => UsageCapture | null = () => null;
+  readUsage: (capture: UsageCapture) => CliUsage = () => ({
+    values: {
+      input_tokens: null,
+      output_tokens: null,
+      reasoning_tokens: null,
+      cache_read_tokens: null,
+      cache_write_tokens: null,
+      cost_usd: null,
+    },
+    cumulative: [],
+  });
+  versionCommand: () => CommandSpec = () => ({ argv: [this.command, "--version"] });
+  parseVersion: (stdout: string) => string | null = (stdout) => stdout.trim() || null;
 
-  providerOptions() {
+  constructor(id = "fake", command = "fake") {
+    this.id = id;
+    this.command = command;
+  }
+
+  options() {
     return [{ name: "effort", prompt: true, allowDefault: true, overridable: true }];
   }
 
-  validateOptions(): void {}
+  validateOptions(options: Readonly<Record<string, string>>): void {
+    for (const [key, value] of Object.entries(options)) {
+      if (!optionKey.test(key)) throw new Error(`${key} is not a ${this.id} option.`);
+      if (value.trim() === "") throw new Error(`${key} is empty.`);
+    }
+  }
 
   buildCommand(input: BuildCommandInput): CommandSpec {
     this.calls.push({
@@ -177,25 +213,72 @@ export class FakeProvider implements Provider {
     };
   }
 
+  runCommand(input: BuildCommandInput): CommandSpec {
+    return this.buildCommand(input);
+  }
+
   parseResponse(stdout: string): [string, string | null] {
     const data = JSON.parse(stdout) as { text: string; sessionId?: string };
     return [data.text, data.sessionId ?? null];
   }
+
+  parseRun(stdout: string, lastMessageFile: string): CliRunOutput {
+    void lastMessageFile;
+    const [text, sessionId] = this.parseResponse(stdout);
+    return { text, sessionId, source: "model" };
+  }
+
+  modelsCommand(): CommandSpec {
+    return { argv: [this.command, "models"] };
+  }
+
+  parseModels(stdout: string): CliModelCatalog {
+    const ids = stdout.split(/\r\n|\n|\r/).map((line) => line.trim()).filter((line) => line !== "");
+    return { ids, defaultId: null, optionValues: [], valuesFor: () => null };
+  }
+
+  createEventParser(): (line: string) => Record<string, unknown> | null {
+    return () => null;
+  }
+
+  eventLabel(line: string): string | null {
+    void line;
+    return null;
+  }
+
+  extractFailure(stdout: string, exitCode: number): ReturnType<CliClient["extractFailure"]> {
+    void stdout;
+    if (exitCode === 0) return null;
+    return { origin: "exit-only", message: `exited ${exitCode}`, exitCode };
+  }
+
+  optionValuesCommand(option: string, model: string): CommandSpec | null {
+    void option;
+    void model;
+    return null;
+  }
+
+  parseOptionValues(option: string, stdout: string, model: string): readonly string[] {
+    void option;
+    void stdout;
+    void model;
+    return [];
+  }
 }
 
-export class BlockedProvider extends FakeProvider {
+export class BlockedClient extends FakeClient {
   override parseResponse(): [string, string | null] {
     return ["status: blocked\nblocker: missing approved design", "native-session-1"];
   }
 }
 
-export class MissingOutcomeProvider extends FakeProvider {
+export class MissingOutcomeClient extends FakeClient {
   override parseResponse(): [string, string | null] {
     return ["implementation report without a status header", "native-session-1"];
   }
 }
 
-export class ScriptedProvider extends FakeProvider {
+export class ScriptedClient extends FakeClient {
   private responses: string[];
   private artifacts: Array<string | null>;
 
@@ -212,7 +295,7 @@ export class ScriptedProvider extends FakeProvider {
       if (body !== null && prompt !== undefined) writePromptArtifact(prompt, body);
     }
     const response = this.responses.shift();
-    if (response === undefined) throw new Error("scripted provider has no response left");
+    if (response === undefined) throw new Error("scripted client has no response left");
     return [this.writeQuestionFile(response), "native-session-1"];
   }
 

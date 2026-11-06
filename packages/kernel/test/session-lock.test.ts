@@ -13,7 +13,7 @@ import {
 } from "../src/index.ts";
 import { CANCEL_REQUEST_FILENAME, requestSessionCancel, setBetweenStaleLockReads } from "../src/session-lock.ts";
 import { createSessionDirectory, createPreparedSession } from "../src/session-records.ts";
-import { ScriptedProvider, tempDir } from "./support.ts";
+import { ScriptedClient, tempDir, registryOf } from "./support.ts";
 
 function sessionDir(): string {
   const dir = path.join(tempDir("migent-lock-"), "s1");
@@ -110,7 +110,7 @@ test("refresh updates the heartbeat with the same nonce", async () => {
   }
 });
 
-const CONFIG = "agents:\n  fake:\n    provider: fake\n    model: m1\nroles:\n  developer:\n    agent: fake\n";
+const CONFIG = "agents:\n  fake:\n    client:\n      type: fake\n    model: m1\nroles:\n  developer:\n    agent: fake\n";
 const WORKFLOW = "id: wf\nstages:\n  - id: implement\n    role: developer\ncompletion:\n  stage: implement\n";
 
 function setup(): { workspace: string; sessionId: string } {
@@ -125,11 +125,11 @@ test("continue on a session another process is running exits 2 and runs nothing"
   const { workspace, sessionId } = setup();
   const dir = path.join(workspace, ".migent", "sessions", sessionId);
   foreignLock(dir);
-  const provider = new ScriptedProvider(["status: complete\n\ndone"]);
+  const provider = new ScriptedClient(["status: complete\n\ndone"]);
   const result = await executeNamedWorkflow(
     workspace,
     { workflowId: "wf", sessionId },
-    new AgentToolRunner({ fake: provider }, 10),
+    new AgentToolRunner(registryOf({ fake: provider }), 10),
   );
   expect(result.code).toBe(2);
   expect(provider.calls).toHaveLength(0);
@@ -138,11 +138,11 @@ test("continue on a session another process is running exits 2 and runs nothing"
 
 test("a finished run releases the session lock", async () => {
   const { workspace, sessionId } = setup();
-  const provider = new ScriptedProvider(["status: complete\n\ndone"]);
+  const provider = new ScriptedClient(["status: complete\n\ndone"]);
   const result = await executeNamedWorkflow(
     workspace,
     { workflowId: "wf", sessionId },
-    new AgentToolRunner({ fake: provider }, 10),
+    new AgentToolRunner(registryOf({ fake: provider }), 10),
   );
   expect(result.code).toBe(0);
   expect(existsSync(path.join(workspace, ".migent", "sessions", sessionId, "session.lock"))).toBe(false);
@@ -152,10 +152,10 @@ test("a second resume of one agent session does not run", async () => {
   const workspace = tempDir("migent-agent-lock-");
   const sessionId = createAgentSession(workspace, "reviewer", "review the plan");
   const dir = path.join(workspace, ".migent", "sessions", sessionId);
-  const provider = new ScriptedProvider(["status: complete\n\ndone"]);
+  const provider = new ScriptedClient(["status: complete\n\ndone"]);
   const lock = SessionLock.acquire(dir, { heartbeatMs: 3_600_000 });
-  const pending = new AgentToolRunner({ fake: provider }, 10).run({
-    provider: "fake",
+  const pending = new AgentToolRunner(registryOf({ fake: provider }), 10).run({
+    client: "fake",
     model: "m1",
     prompt: "review",
     workspace,

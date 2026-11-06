@@ -1,37 +1,49 @@
-import { type HeadlessOption, defaultProviders } from "@nodeint/migent-adapters";
+import { type HeadlessOption, clientIds, createClient } from "@nodeint/migent-adapters";
 import {
-  ProviderCommandFailed,
+  ClientCommandFailed,
+  clientCatalogSource,
   loadOptionValues,
-  type CatalogProvider,
   type CatalogSource,
+  type ClientCatalogInput,
   type RunCommand,
   type Which,
 } from "@nodeint/migent-doctor";
-import { killProcessTree, spawnProvider, spawnProviderSync, type CliModelCatalog, type Provider } from "@nodeint/migent-kernel";
+import {
+  ConfigurationError,
+  killProcessTree,
+  spawnProvider,
+  spawnProviderSync,
+  type CliClient,
+  type CliModelCatalog,
+  type ClientRegistry,
+} from "@nodeint/migent-kernel";
 
 // The catalog helpers belong to the doctor; commands keep importing them from here.
-export { ProviderCommandFailed, asCatalog, knownModel, loadCatalog, loadOptionValues } from "@nodeint/migent-doctor";
-export type { CatalogProvider, CatalogSource, RunCommand, Which } from "@nodeint/migent-doctor";
+export { ClientCommandFailed, asCatalog, knownModel, loadCatalog, loadOptionValues } from "@nodeint/migent-doctor";
+export type { CatalogSource, RunCommand, Which } from "@nodeint/migent-doctor";
 
-export function providerMap(): Record<string, Provider> {
-  return defaultProviders();
+/** The CLI composition root: every client is built from the adapters' own factories. */
+export function clientRegistry(): ClientRegistry {
+  return {
+    ids: () => clientIds(),
+    get: (id: string): CliClient => {
+      if (!clientIds().includes(id)) {
+        throw new ConfigurationError(`Unknown CLI client: ${id}. Supported: ${clientIds().join(", ")}.`);
+      }
+      return createClient(id);
+    },
+  };
 }
 
-export function requireProvider(providers: Record<string, Provider>, provider: string): Provider {
-  const impl = providers[provider];
-  if (impl === undefined) {
-    const supported = Object.keys(providers).sort().join(", ");
-    throw new ProviderCommandFailed(`Unknown provider: ${provider}. Supported: ${supported}.`);
-  }
-  return impl;
+/** The catalog surface of one client; it exposes fewer methods than the adapter. */
+export function catalogSourceOf(client: CliClient): CatalogSource {
+  return clientCatalogSource(client as unknown as ClientCatalogInput);
 }
 
-export function detected(
-  providers: Record<string, Provider>,
-  which: Which,
-): Array<[string, string | null, Provider]> {
-  const rows = Object.entries(providers).filter(([, provider]) => provider.requiresClient !== true).map(
-    ([name, provider]) => [name, which(provider.command), provider] as [string, string | null, Provider],
+/** Every known client with its executable, installed ones first. */
+export function detected(which: Which): Array<[string, string | null, CliClient]> {
+  const rows = clientIds().map(
+    (id) => [id, which(createClient(id).command), createClient(id)] as [string, string | null, CliClient],
   );
   rows.sort((left, right) => {
     const leftMissing = left[1] === null ? 1 : 0;
@@ -47,18 +59,18 @@ export function detected(
 export function parseOptions(pairs: readonly string[]): Record<string, string> {
   const parsed: Record<string, string> = {};
   for (const pair of pairs) {
-    if (!pair.includes("=")) throw new ProviderCommandFailed(`Option must be KEY=VALUE: ${pair}.`);
+    if (!pair.includes("=")) throw new ClientCommandFailed(`Option must be KEY=VALUE: ${pair}.`);
     const index = pair.indexOf("=");
     const name = pair.slice(0, index).trim();
     const value = pair.slice(index + 1).trim();
-    if (name === "" || value === "") throw new ProviderCommandFailed(`Option must be KEY=VALUE: ${pair}.`);
+    if (name === "" || value === "") throw new ClientCommandFailed(`Option must be KEY=VALUE: ${pair}.`);
     parsed[name] = value;
   }
   return parsed;
 }
 
 export async function acceptedOptions(
-  provider: Provider,
+  client: CliClient,
   model: string,
   catalog: CliModelCatalog,
   which: Which,
@@ -66,28 +78,29 @@ export async function acceptedOptions(
   options: Readonly<Record<string, string>>,
 ): Promise<Record<string, string>> {
   if (Object.keys(options).length === 0) return {};
-  provider.validateOptions(options);
+  client.validateOptions(options);
+  const source = clientCatalogSource(client as unknown as ClientCatalogInput);
   const stored: Record<string, string> = {};
   for (const [name, value] of Object.entries(options)) {
-    const values = await loadOptionValues(provider, name, model, catalog, which, runCommand);
+    const values = await loadOptionValues(source, name, model, catalog, which, runCommand);
     if (values === null) {
       stored[name] = value;
       continue;
     }
     if (!values.includes(value)) {
-      if (values.length === 0) throw new ProviderCommandFailed(`${model} does not accept ${name}.`);
-      throw new ProviderCommandFailed(`${name} must be one of: ${values.join(", ")}.`);
+      if (values.length === 0) throw new ClientCommandFailed(`${model} does not accept ${name}.`);
+      throw new ClientCommandFailed(`${name} must be one of: ${values.join(", ")}.`);
     }
     stored[name] = value;
   }
   return stored;
 }
 
-export function runProviderCommand(
+export function runClientCommand(
   argv: string[], input?: string, options: { cwd?: string; timeoutMs?: number } = {},
 ): string {
   const [command, ...args] = argv;
-  if (command === undefined) throw new ProviderCommandFailed("Provider command is empty.");
+  if (command === undefined) throw new ClientCommandFailed("Client command is empty.");
   const completed = spawnProviderSync(command, args, {
     encoding: "utf8",
     timeout: options.timeoutMs ?? 60_000,
@@ -100,17 +113,17 @@ export function runProviderCommand(
   }
   if (completed.status !== 0) {
     const detail = (completed.stderr || completed.stdout || "").trim();
-    throw new ProviderCommandFailed(detail || `${command} exited ${completed.status}.`);
+    throw new ClientCommandFailed(detail || `${command} exited ${completed.status}.`);
   }
   return completed.stdout ?? "";
 }
 
-/** Like `runProviderCommand`, but does not block the event loop, so lookups run side by side. */
-export function runProviderCommandAsync(
+/** Like `runClientCommand`, but does not block the event loop, so lookups run side by side. */
+export function runClientCommandAsync(
   argv: string[], input?: string, options: { cwd?: string; timeoutMs?: number } = {},
 ): Promise<string> {
   const [command, ...args] = argv;
-  if (command === undefined) return Promise.reject(new ProviderCommandFailed("Provider command is empty."));
+  if (command === undefined) return Promise.reject(new ClientCommandFailed("Client command is empty."));
   return new Promise((resolve, reject) => {
     const child = spawnProvider(command, args, {
       ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
@@ -141,22 +154,21 @@ export function runProviderCommandAsync(
     child.on("error", (error) => finish(() => reject(new Error(error.message))));
     child.on("close", (status) => finish(() => {
       if (status === 0) resolve(stdout);
-      else reject(new ProviderCommandFailed((stderr || stdout).trim() || `${command} exited ${status}.`));
+      else reject(new ClientCommandFailed((stderr || stdout).trim() || `${command} exited ${status}.`));
     }));
     child.stdin?.on("error", () => {});
     child.stdin?.end(input);
   });
 }
 
-
 /** Discover native headless CLI options independently of model availability. */
 export async function loadHeadlessOptions(
-  source: Provider | CatalogSource,
+  source: CatalogSource,
   runCommand: RunCommand,
 ): Promise<HeadlessOption[]> {
   const candidate = source as Partial<CatalogSource>;
   if (typeof candidate.optionsCommand !== "function" || typeof candidate.parseOptions !== "function") {
-    throw new ProviderCommandFailed(`${source.command} does not discover headless options.`);
+    throw new ClientCommandFailed(`${source.command} does not discover headless options.`);
   }
   const command = candidate.optionsCommand();
   const help = await runCommand(command.argv, command.stdin ?? undefined);
@@ -166,13 +178,13 @@ export async function loadHeadlessOptions(
 /** Help may be printed on stderr even when the command succeeds (Agy). */
 export const runOptionsCommand: RunCommand = (argv, input) => {
   const [command, ...args] = argv;
-  if (!command) throw new ProviderCommandFailed("Options command is empty.");
+  if (!command) throw new ClientCommandFailed("Options command is empty.");
   const completed = spawnProviderSync(command, args, {
     encoding: "utf8", timeout: 15_000, windowsHide: true,
     ...(input === undefined ? {} : { input }),
   });
   if (completed.error) throw completed.error;
   const output = [completed.stdout, completed.stderr].filter(Boolean).join("\n");
-  if (completed.status !== 0) throw new ProviderCommandFailed(output.trim() || `${command} exited ${completed.status}.`);
+  if (completed.status !== 0) throw new ClientCommandFailed(output.trim() || `${command} exited ${completed.status}.`);
   return output;
 };

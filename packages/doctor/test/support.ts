@@ -1,7 +1,19 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { ProviderInfo } from "@nodeint/migent-kernel";
+import { clientIds, createClient } from "@nodeint/migent-adapters";
+import type {
+  BuildCommandInput,
+  CliClient,
+  CliModelCatalog,
+  CliRunOutput,
+  CliUsage,
+  ClientOption,
+  ClientRegistry,
+  CommandSpec,
+  RawFailure,
+  UsageCapture,
+} from "@nodeint/migent-kernel";
 
 const optionKey = /^[A-Za-z][A-Za-z0-9_.-]*$/;
 
@@ -17,26 +29,124 @@ const grokOptions = new Set([
   "sandbox",
 ]);
 
-export function defaultProviders(): Record<string, ProviderInfo> {
+const BLANK_USAGE: CliUsage = {
+  values: {
+    input_tokens: null,
+    output_tokens: null,
+    reasoning_tokens: null,
+    cache_read_tokens: null,
+    cache_write_tokens: null,
+    cost_usd: null,
+  },
+  cumulative: [],
+};
+
+/** A client for doctor checks: only the metadata the doctor reads carries behavior. */
+class TestClient implements CliClient {
+  readonly optionsList: readonly ClientOption[] = [];
+
+  constructor(
+    readonly id: string,
+    readonly command: string,
+    private readonly validate: (options: Readonly<Record<string, string>>) => void,
+    readonly effortOption?: string,
+  ) {}
+
+  options(): readonly ClientOption[] {
+    return this.optionsList;
+  }
+
+  validateOptions(options: Readonly<Record<string, string>>): void {
+    this.validate(options);
+  }
+
+  runCommand(_input: BuildCommandInput): CommandSpec {
+    throw new Error("doctor tests never run a client turn.");
+  }
+
+  modelsCommand(): CommandSpec {
+    throw new Error("doctor tests never list models.");
+  }
+
+  versionCommand(): CommandSpec {
+    throw new Error("doctor tests never read a version.");
+  }
+
+  parseRun(_stdout: string, _lastMessageFile: string): CliRunOutput {
+    throw new Error("doctor tests never parse a turn.");
+  }
+
+  parseModels(_stdout: string): CliModelCatalog {
+    return { ids: [], defaultId: null, optionValues: [], valuesFor: () => null };
+  }
+
+  parseVersion(_stdout: string): string | null {
+    return null;
+  }
+
+  createEventParser(): (line: string) => Record<string, unknown> | null {
+    return () => null;
+  }
+
+  extractFailure(_stdout: string, _exitCode: number): RawFailure | null {
+    return null;
+  }
+
+  captureUsage(_stdout: string): UsageCapture | null {
+    return null;
+  }
+
+  readUsage(_capture: UsageCapture): CliUsage {
+    return BLANK_USAGE;
+  }
+
+  optionValuesCommand(_option: string, _model: string): CommandSpec | null {
+    return null;
+  }
+
+  parseOptionValues(_option: string, _stdout: string, _model: string): readonly string[] {
+    return [];
+  }
+}
+
+/** A client with no option rules, for tests that only need distinct ids and commands. */
+export function testClient(id: string, command: string): CliClient {
+  return new TestClient(id, command, () => {});
+}
+
+export function clientRegistryOf(clients: Record<string, CliClient>): ClientRegistry {
   return {
-    codex: {
-      command: "codex",
-      validateOptions(options) {
-        for (const [key, value] of Object.entries(options)) {
-          if (!optionKey.test(key)) throw new Error(`${key} is not a codex option.`);
-          if (value.trim() === "") throw new Error(`${key} is empty.`);
-        }
-      },
+    ids: () => Object.keys(clients),
+    get: (id: string): CliClient => {
+      const client = clients[id];
+      if (client === undefined) throw new Error(`Unknown CLI client: ${id}`);
+      return client;
     },
-    grok: {
-      command: "grok",
-      validateOptions(options) {
-        for (const [key, value] of Object.entries(options)) {
-          if (!grokOptions.has(key)) throw new Error(`${key} is not a grok option.`);
-          if (value.trim() === "") throw new Error(`${key} is empty.`);
-        }
-      },
-    },
+  };
+}
+
+export function defaultClients(): ClientRegistry {
+  return clientRegistryOf({
+    codex: new TestClient("codex", "codex", (options) => {
+      for (const [key, value] of Object.entries(options)) {
+        if (!optionKey.test(key)) throw new Error(`${key} is not a codex option.`);
+        if (value.trim() === "") throw new Error(`${key} is empty.`);
+      }
+    }, "model_reasoning_effort"),
+    grok: new TestClient("grok", "grok", (options) => {
+      for (const [key, value] of Object.entries(options)) {
+        if (!grokOptions.has(key)) throw new Error(`${key} is not a grok option.`);
+        if (value.trim() === "") throw new Error(`${key} is empty.`);
+      }
+    }, "reasoning-effort"),
+  });
+}
+
+/** The production registry, for tests that exercise real client parsers. */
+export function adaptersClients(): ClientRegistry {
+  return {
+    ids: () => clientIds(),
+    get: (id: string): CliClient => createClient(id),
   };
 }
 
@@ -45,20 +155,21 @@ export function whichFound(found: ReadonlySet<string>): (command: string) => str
 }
 
 export const STAGE_CONFIG = `\
+schema_version: 6
 agents:
   grok:
-    provider: grok
-    model: grok-4.6
     client:
+      type: grok
       options:
         reasoning-effort: high
+    model: grok-4.6
   gpt-terra:
-    provider: codex
-    model: gpt-5.6-terra
     client:
+      type: codex
       options:
         model_reasoning_effort: medium
         temperature: "0.2"
+    model: gpt-5.6-terra
 roles:
   developer:
     agent: grok
@@ -67,6 +178,7 @@ roles:
 `;
 
 export const STAGE_WORKFLOW = `\
+schema_version: 6
 id: plan-implement
 stages:
   - id: implement
@@ -76,9 +188,7 @@ stages:
       artifact: implementation-result.md
   - id: review-work
     role: reviewer
-    model: gpt-terra
-    options:
-      model_reasoning_effort: high
+    agent: gpt-terra
     depends_on:
       - implement
 `;

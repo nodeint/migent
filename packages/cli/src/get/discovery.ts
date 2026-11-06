@@ -8,9 +8,9 @@ import {
   type RunCommand,
   type Which,
 } from "@nodeint/migent-doctor";
-import { ConfigurationError, whichSync, type CliModelCatalog, type Provider } from "@nodeint/migent-kernel";
+import { ConfigurationError, whichSync, type CliModelCatalog } from "@nodeint/migent-kernel";
 import { cliHooks } from "../hooks.js";
-import { loadHeadlessOptions, providerMap, runOptionsCommand, runProviderCommand } from "../provider.js";
+import { loadHeadlessOptions, runOptionsCommand, runClientCommand } from "../client.js";
 
 /** What one client's discovery returned. Discovery failures never throw. */
 export type DiscoveryOutcome<T> =
@@ -30,7 +30,6 @@ export interface EffortRow {
  * command once each, and every failure becomes a per-client outcome.
  */
 export interface DiscoveryContext {
-  readonly providers: Readonly<Record<string, Provider>>;
   readonly clientIds: readonly string[];
   client(id: string): CliClient;
   pathOf(client: CliClient): string | null;
@@ -47,16 +46,14 @@ function messageOf(error: unknown): string {
 
 export function createDiscoveryContext(
   options: {
-    providers?: Readonly<Record<string, Provider>>;
     which?: Which;
     runCommand?: RunCommand;
     optionsRunner?: RunCommand;
     warn?: (message: string) => void;
   } = {},
 ): DiscoveryContext {
-  const providers = options.providers ?? providerMap();
   const which = options.which ?? cliHooks.which ?? whichSync;
-  const run = cached(options.runCommand ?? cliHooks.runCommand ?? runProviderCommand);
+  const run = cached(options.runCommand ?? cliHooks.runCommand ?? runClientCommand);
   const optionsRun = options.optionsRunner ?? cliHooks.runCommand ?? runOptionsCommand;
   const warn = options.warn ?? ((message: string) => process.stderr.write(`warning: ${message}\n`));
   const ids = registeredClientIds();
@@ -166,5 +163,5 @@ export function createDiscoveryContext(
     return pending;
   };
 
-  return { providers, clientIds: ids, client, pathOf, catalog, effort, efforts, nativeOptions, warn };
+  return { clientIds: ids, client, pathOf, catalog, effort, efforts, nativeOptions, warn };
 }

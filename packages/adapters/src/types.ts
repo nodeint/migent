@@ -4,23 +4,9 @@ export interface CommandSpec {
   stdin?: string | null;
 }
 
-// ============ Các type từ provider-contract.ts ============
+// ============ Các type từ cli-client.ts ============
 
-/** Methods doctor and config resolution call. Migrations are out of scope. */
-export interface ProviderInfo {
-  readonly command: string;
-  readonly effortOption?: string;
-  validateOptions(options: Readonly<Record<string, string>>): void;
-  /** True when the provider has no default CLI client and every model must name one. */
-  readonly requiresClient?: boolean;
-  /** The same provider driving another CLI client, named by its id. Throws on an unknown id. */
-  withClient?(clientId: string): ProviderInfo;
-}
-
-/** Resolve the provider with its selected CLI client already bound. */
-export type ProviderResolver = (providerId: string, clientId?: string) => ProviderInfo;
-
-export interface ProviderOption {
+export interface ClientOption {
   name: string;
   prompt?: boolean;
   allowDefault?: boolean;
@@ -93,35 +79,6 @@ export type FailureClassification = QuotaClassification | ProviderClassification
  */
 export type InterruptOutcome = "interrupted" | "idle" | "not-found" | "failed";
 
-/** Provider CLI surface used by the workflow runner. Not the providers package. */
-export interface Provider extends ProviderInfo {
-  providerOptions?(): readonly ProviderOption[];
-  profileOptions?(options: Readonly<Record<string, string>>): Record<string, string>;
-  createNewSession?(): NewSession;
-  /** Command that stops the server-side turn of `agentId`, for providers whose turn outlives the client. */
-  interruptCommand?(agentId: string): CommandSpec | null;
-  classifyInterrupt?(stdout: string, exitCode: number | null): InterruptOutcome;
-  /** The session identity one output line carries, if any. */
-  sessionIdFromLine?(line: string): string | null;
-  buildCommand(input: BuildCommandInput): CommandSpec;
-  /**
-   * `[text, session id, source]`. A provider that omits `source` cannot attest where its text came from,
-   * so the runner never accepts a failed turn on its reply.
-   */
-  parseResponse(stdout: string, lastMessageFile: string): [string, string | null, ResponseSource?];
-  /** Classify one finished process. Absent means the runner uses its fallback. */
-  classifyFailure?(stdout: string, exitCode: number): FailureClassification | null;
-  parseProgressEvent?(line: string): Record<string, unknown> | null;
-  /** The client's short label for one output line, for the stream summary of a diagnostics record. */
-  eventLabel?(line: string): string | null;
-  captureUsage?(stdout: string): UsageCapture | null;
-  normalizeUsage?(current: UsageCapture, previous: UsageCapture | null): TurnUsage;
-  versionCommand?(): string[];
-  parseVersion?(stdout: string): string | null;
-}
-
-// ============ Các type từ cli-client.ts ============
-
 /** What a client extracted from a failed run, before any provider policy. */
 export interface RawFailure {
   /** `provider-error`: the CLI reported an error. `exit-only`: a non-zero exit and nothing else. */
@@ -160,6 +117,11 @@ export interface CliRunOutput {
 /**
  * The CLI itself: how to invoke it and how to read what it prints. A client
  * knows nothing about migent defaults, usage accounting or failure policy.
+ *
+ * This mirrors the kernel's contract structurally. The adapters package has no
+ * kernel dependency on purpose; the CLI composition root checks the mirror at
+ * compile time. `optionsCommand` and `parseOptions` are the adapter-only
+ * discovery surface.
  */
 export interface CliClient {
   readonly id: string;
@@ -169,7 +131,7 @@ export interface CliClient {
 
   optionsCommand(): CommandSpec;
   parseOptions(help: string): HeadlessOption[];
-  options(): readonly ProviderOption[];
+  options(): readonly ClientOption[];
   validateOptions(options: Readonly<Record<string, string>>): void;
 
   runCommand(input: BuildCommandInput): CommandSpec;

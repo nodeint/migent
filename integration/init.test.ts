@@ -13,9 +13,9 @@ test.each([
   const workspace = tempWorkspace();
   try {
     expect(await runInit(workspace, {
-      plannerProvider: "codex", plannerModel: "codex-test",
-      provider: "codex", model: "codex-test",
-      reviewerProvider: "grok", reviewerModel: "grok-test",
+      plannerClient: "codex", plannerModel: "codex-test",
+      client: "codex", model: "codex-test",
+      reviewerClient: "grok", reviewerModel: "grok-test",
       which: (command) => path.join(PROVIDER_BIN, command),
       runCommand: (argv) => argv[0] === "codex"
         ? JSON.stringify({ models: [{ slug: "codex-test", visibility: "list" }] })

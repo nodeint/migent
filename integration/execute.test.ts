@@ -48,13 +48,14 @@ test("plan review publishes the plan", async () => {
 
 test.each([
   ["alias", CODEX_CONFIG],
-  ["inline", `schema_version: 5
+  ["inline", `schema_version: 6
 roles:
   writer:
     agent:
-      provider: codex
       model: codex-test
       effort: low
+      client:
+        type: codex
 `],
 ])("stage runs through the codex provider with an %s model", async (_kind, config) => {
   const workspace = tempWorkspace();
@@ -424,11 +425,12 @@ test("codex last message overrides stdout", async () => {
 }, 30_000);
 
 const BRANCH_CONFIG = `\
-schema_version: 5
+schema_version: 6
 agents:
   grok-model:
-    provider: grok
     model: grok-test
+    client:
+      type: grok
 roles:
   developer:
     agent: grok-model
@@ -439,7 +441,7 @@ roles:
 `;
 
 const BRANCH_WORKFLOW = `\
-schema_version: 5
+schema_version: 6
 id: implement
 concurrency: 2
 stages:

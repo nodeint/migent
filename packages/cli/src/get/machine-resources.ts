@@ -1,5 +1,5 @@
 import type { CliClient, HeadlessOption } from "@nodeint/migent-adapters";
-import { ConfigurationError, type Provider, type ProviderOption, type View } from "@nodeint/migent-kernel";
+import { ConfigurationError, type ClientOption, type View } from "@nodeint/migent-kernel";
 import { field } from "./columns.js";
 import type { Column } from "./render.js";
 import type { DiscoveryContext, DiscoveryOutcome } from "./discovery.js";
@@ -12,21 +12,6 @@ function requireName(label: string, name: string | null): string {
 
 function capitalized(label: string): string {
   return `${label.charAt(0).toUpperCase()}${label.slice(1)}`;
-}
-
-function defaultClientOf(provider: Provider): string | null {
-  const value = (provider as { clientId?: unknown }).clientId;
-  return typeof value === "string" && value !== "" ? value : null;
-}
-
-function providerView(name: string, provider: Provider): View {
-  return {
-    kind: "provider",
-    name,
-    command: provider.command,
-    default_client: defaultClientOf(provider),
-    requires_client: provider.requiresClient === true,
-  };
 }
 
 function clientView(context: DiscoveryContext, id: string): View {
@@ -47,7 +32,7 @@ function modelView(client: string, model: string, isDefault: boolean): View {
   return { kind: "model", name: model, client, default: isDefault };
 }
 
-function optionView(client: string, option: ProviderOption): View {
+function optionView(client: string, option: ClientOption): View {
   return {
     kind: "option",
     name: option.name,
@@ -160,28 +145,6 @@ function effortCandidates(context: DiscoveryContext, scoped: string | null): Cli
     .map((id) => context.client(id))
     .filter((client) => client.effortOption !== undefined);
 }
-
-const providerResource: MachineResource = {
-  scope: "machine",
-  kind: "provider",
-  names: ["provider", "providers"],
-  summary: "Registered providers with their default CLI client and whether they require one.",
-  acceptsClient: false,
-  acceptsNative: false,
-  columns: [field("NAME", "name"), field("DEFAULT_CLIENT", "default_client"), field("REQUIRES_CLIENT", "requires_client")],
-  list: async (context) =>
-    Object.keys(context.providers)
-      .sort()
-      .map((name) => providerView(name, context.providers[name]!)),
-  get: async (context, query) => {
-    const name = requireName("provider", query.name);
-    const provider = context.providers[name];
-    if (provider === undefined) {
-      throw new ConfigurationError(`Provider not found: ${name}. Available: ${Object.keys(context.providers).sort().join(", ")}.`);
-    }
-    return providerView(name, provider);
-  },
-};
 
 const clientResource: MachineResource = {
   scope: "machine",
@@ -366,7 +329,6 @@ const effortResource: MachineResource = {
 };
 
 export const MACHINE_RESOURCES: readonly MachineResource[] = [
-  providerResource,
   clientResource,
   modelResource,
   optionResource,

@@ -4,17 +4,26 @@ import { afterEach, expect, test } from "vitest";
 import { AgentToolRunner } from "@nodeint/migent-kernel";
 import { cliHooks } from "../src/hooks.ts";
 import { main } from "../src/index.ts";
-import { providerMap } from "../src/provider.ts";
-import { ScriptedProvider, capture, removeWorkspace, repoWorkflowText, writeFakeWorkflowWorkspace } from "./support.ts";
+import { clientRegistry } from "../src/client.ts";
+import { ScriptedClient, capture, registryOf, removeWorkspace, repoWorkflowText, writeFakeWorkflowWorkspace } from "./support.ts";
 
 const PLAN = ["session", "run", "--once", "--workflow", "plan", "--task", "do it"];
 
-/** The planner (stage 1) maps to the fake provider; the reviewer (stage 2) is configurable. */
+/** Every real client plus the fake, so both preflight and the run resolve. */
+function clients(fake: ScriptedClient) {
+  const real = clientRegistry();
+  const map: Record<string, ReturnType<typeof real.get>> = { fake };
+  for (const id of real.ids()) map[id] = real.get(id);
+  return registryOf(map);
+}
+
+/** The planner (stage 1) maps to the fake client; the reviewer (stage 2) is configurable. */
 function config(reviewer: string): string {
-  return `schema_version: 5
+  return `schema_version: 6
 agents:
   good:
-    provider: fake
+    client:
+      type: fake
     model: m1
   later:
 ${reviewer}
@@ -26,15 +35,15 @@ roles:
 `;
 }
 
-const GROK_TYPO = "    provider: grok\n    model: grok-typo";
-const GROK_OK = "    provider: grok\n    model: grok-ok";
+const GROK_TYPO = "    client:\n      type: grok\n    model: grok-typo";
+const GROK_OK = "    client:\n      type: grok\n    model: grok-ok";
 const CATALOG = "Available models:\n  - grok-ok\n";
 
-function setup(reviewer: string): { workspace: string; provider: ScriptedProvider } {
+function setup(reviewer: string): { workspace: string; provider: ScriptedClient } {
   const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
   writeFileSync(path.join(workspace, ".migent", "config.yaml"), config(reviewer), "utf8");
-  const provider = new ScriptedProvider(["status: complete\n\ndone"], ["# Plan\n"]);
-  cliHooks.runner = new AgentToolRunner({ ...providerMap(), fake: provider }, 10);
+  const provider = new ScriptedClient(["status: complete\n\ndone"], ["# Plan\n"]);
+  cliHooks.runner = new AgentToolRunner(clients(provider), 10);
   cliHooks.runCommand = (argv) => {
     if (argv[0] === "grok") return CATALOG;
     throw new Error(`Unexpected command: ${argv.join(" ")}`);
@@ -69,9 +78,9 @@ test("a bad model in a later stage stops --workflow before anything is created",
 });
 
 test.each([
-  ["provider", "    provider: nope\n    model: m1", "is not supported"],
-  ["client", "    provider: grok\n    client: bogus\n    model: grok-ok", "client"],
-  ["option", "    provider: grok\n    model: grok-ok\n    options:\n      bogus_option: x", "options"],
+  ["provider", "    provider: nope\n    model: m1", "provider"],
+  ["client", "    client: bogus\n    model: grok-ok", "client"],
+  ["option", "    client:\n      type: grok\n      options:\n        bogus_option: x\n    model: grok-ok", "options"],
 ])("an unsupported %s stops the run", async (_name, reviewer, message) => {
   const { workspace, provider } = setup(reviewer);
   try {
@@ -94,7 +103,7 @@ test("a prepared session stays prepared and unfrozen until the problem is fixed"
     writeFileSync(path.join(directory, "task.md"), "do it\n", "utf8");
 
     // main() clears cliHooks when it returns, so reinstall them for the next invocation.
-    cliHooks.runner = new AgentToolRunner({ ...providerMap(), fake: provider }, 10);
+    cliHooks.runner = new AgentToolRunner(clients(provider), 10);
     cliHooks.runCommand = (argv) => {
       if (argv[0] === "grok") return CATALOG;
       throw new Error(`Unexpected command: ${argv.join(" ")}`);
@@ -107,7 +116,7 @@ test("a prepared session stays prepared and unfrozen until the problem is fixed"
     expect(provider.calls).toHaveLength(0);
 
     writeFileSync(path.join(workspace, ".migent", "config.yaml"), config(GROK_OK), "utf8");
-    cliHooks.runner = new AgentToolRunner({ ...providerMap(), fake: provider }, 10);
+    cliHooks.runner = new AgentToolRunner(clients(provider), 10);
     cliHooks.runCommand = () => CATALOG;
     const fixed = await capture(() => main(["session", "run", "--once", "--session", sessionId], workspace));
     expect(fixed.value).toBe(0);
@@ -168,8 +177,8 @@ test("session continue does not run the preflight", async () => {
     expect(started.value).toBe(0);
     const sessionId = /session_id: (\S+)/.exec(started.stderr)![1]!;
     writeFileSync(path.join(workspace, ".migent", "config.yaml"), config(GROK_TYPO), "utf8");
-    const second = new ScriptedProvider(["status: complete\n\napproved"]);
-    cliHooks.runner = new AgentToolRunner({ ...providerMap(), fake: second }, 10);
+    const second = new ScriptedClient(["status: complete\n\napproved"]);
+    cliHooks.runner = new AgentToolRunner(clients(second), 10);
     const continued = await capture(() => main(["session", "continue", sessionId, "--once"], workspace));
     expect(continued.stderr).not.toContain("preflight");
     expect(continued.stderr).not.toContain("Preflight failed");

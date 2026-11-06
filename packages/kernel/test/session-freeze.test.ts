@@ -1,5 +1,5 @@
-import { defaultProviders } from "@nodeint/migent-adapters";
-import { createProviderResolver } from "../src/provider-contract.ts";
+import { clientIds, createClient } from "@nodeint/migent-adapters";
+import type { ClientRegistry } from "../src/cli-client.ts";
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test, vi } from "vitest";
@@ -9,10 +9,12 @@ import { readFoldedStatus } from "../src/session-fold.ts";
 import { createAgentSession, createPreparedSession, createWorkflowSession } from "../src/session-records.ts";
 import { WORKFLOW_FREEZE_FILE, loadFrozenWorkflow, readWorkflowFreeze, writeWorkflowFreeze } from "../src/session-freeze.ts";
 import { SessionStore } from "../src/session-store.ts";
-import { ScriptedProvider, tempDir, writeStageWorkspace } from "./support.ts";
+import { ScriptedClient, tempDir, writeStageWorkspace, registryOf } from "./support.ts";
 
 // Each stage spawns a wrapper and a provider process, which is slow on Windows CI.
 vi.setConfig({ testTimeout: 60_000 });
+
+const registry: ClientRegistry = { ids: () => clientIds(), get: (id: string) => createClient(id) };
 
 const ORIGINAL = `\
 id: flow
@@ -50,7 +52,8 @@ completion:
 const FROZEN_CONFIG = `\
 agents:
   fake:
-    provider: fake
+    client:
+      type: fake
     model: frozen-model
 roles:
   developer:
@@ -64,7 +67,8 @@ roles:
 const LIVE_CONFIG = `\
 agents:
   fake:
-    provider: fake
+    client:
+      type: fake
     model: live-model
 roles:
   developer:
@@ -127,9 +131,9 @@ test("an edited workflow still dispatches the frozen stage, model, and role", as
   const directory = sessionDirectory(workspace, sessionId);
   expect(readFoldedStatus(workspace, directory)).toEqual(readStatus(workspace, sessionId));
   editLiveFiles(workspace);
-  const provider = new ScriptedProvider(["status: complete\n\ndone"]);
+  const provider = new ScriptedClient(["status: complete\n\ndone"]);
   const captured = await captureStderr(() =>
-    executeNamedWorkflow(workspace, { sessionId, once: true }, new AgentToolRunner({ fake: provider }, 10)),
+    executeNamedWorkflow(workspace, { sessionId, once: true }, new AgentToolRunner(registryOf({ fake: provider }), 10)),
   );
   expect(captured.value.code).toBe(0);
   expect(new SessionStore(workspace).executionSnapshots(sessionId)[0]?.stageId).toBe("draft");
@@ -148,6 +152,10 @@ test("an edited workflow still dispatches the frozen stage, model, and role", as
   expect(readFoldedStatus(workspace, directory)).toEqual(readStatus(workspace, sessionId));
 });
 
+function noRunRunner(): AgentToolRunner {
+  return new AgentToolRunner(registryOf({ fake: new ScriptedClient([]) }), 10);
+}
+
 test("refresh adopts the edited route and does not change status by itself", async () => {
   const workspace = workspaceWithFlow();
   const sessionId = createWorkflowSession(workspace, "flow", "Write the notes");
@@ -155,7 +163,7 @@ test("refresh adopts the edited route and does not change status by itself", asy
   editLiveFiles(workspace);
   const before = readStatus(workspace, sessionId);
   await expect(
-    executeNamedWorkflow(workspace, { sessionId, once: true, stageId: "review", refreshWorkflow: true }),
+    executeNamedWorkflow(workspace, { sessionId, once: true, stageId: "review", refreshWorkflow: true }, noRunRunner()),
   ).rejects.toThrow(/not the eligible stage/);
   expect(readStatus(workspace, sessionId)).toEqual(before);
   expect(readFoldedStatus(workspace, directory)).toEqual(before);
@@ -171,12 +179,12 @@ test("refresh adopts the edited route and does not change status by itself", asy
   expect(refreshed?.data?.source_sha256).toMatch(/^[a-f0-9]{64}$/);
   expect(refreshed?.data?.hash).not.toBe(refreshed?.data?.previous_hash);
 
-  const provider = new ScriptedProvider(["status: complete\n\ndone"]);
+  const provider = new ScriptedClient(["status: complete\n\ndone"]);
   const captured = await captureStderr(() =>
     executeNamedWorkflow(
       workspace,
       { sessionId, once: true, refreshWorkflow: true },
-      new AgentToolRunner({ fake: provider }, 10),
+      new AgentToolRunner(registryOf({ fake: provider }), 10),
     ),
   );
   expect(captured.stderr).not.toContain("is using its frozen workflow");
@@ -191,17 +199,17 @@ test("a session without a freeze follows the live workflow and refuses refresh",
   const sessionId = createWorkflowSession(workspace, "flow", "Write the notes");
   markSchema1(workspace, sessionId);
   editLiveFiles(workspace);
-  const provider = new ScriptedProvider(["status: complete\n\ndone"]);
+  const provider = new ScriptedClient(["status: complete\n\ndone"]);
   const result = await executeNamedWorkflow(
     workspace,
     { sessionId, once: true },
-    new AgentToolRunner({ fake: provider }, 10),
+    new AgentToolRunner(registryOf({ fake: provider }), 10),
   );
   expect(result.code).toBe(0);
   expect(new SessionStore(workspace).executionSnapshots(sessionId)[0]?.stageId).toBe("intake");
   expect(provider.calls[0]?.model).toBe("live-model");
   await expect(
-    executeNamedWorkflow(workspace, { sessionId, refreshWorkflow: true, once: true }),
+    executeNamedWorkflow(workspace, { sessionId, refreshWorkflow: true, once: true }, noRunRunner()),
   ).rejects.toThrow(`Session ${sessionId} has no frozen workflow.`);
   expect(readFileSync(path.join(sessionDirectory(workspace, sessionId), "manifest.yaml"), "utf8")).not.toContain(
     "schema_version:",
@@ -212,24 +220,24 @@ test("a session without a freeze follows the live workflow and refuses refresh",
 test("refresh while creating a session is rejected before a session exists", async () => {
   const workspace = workspaceWithFlow();
   await expect(
-    executeNamedWorkflow(workspace, { workflowId: "flow", task: "Write the notes", refreshWorkflow: true }),
+    executeNamedWorkflow(workspace, { workflowId: "flow", task: "Write the notes", refreshWorkflow: true }, noRunRunner()),
   ).rejects.toThrow("--refresh-workflow requires an existing session.");
   expect(existsSync(path.join(workspace, ".migent", "sessions"))).toBe(false);
 });
 
 test("refresh names a completed session and leaves the freeze in place", async () => {
   const workspace = workspaceWithFlow();
-  const provider = new ScriptedProvider(["status: complete\n\ndraft", "status: complete\n\nreview"]);
+  const provider = new ScriptedClient(["status: complete\n\ndraft", "status: complete\n\nreview"]);
   const finished = await executeNamedWorkflow(
     workspace,
     { workflowId: "flow", task: "Write the notes" },
-    new AgentToolRunner({ fake: provider }, 10),
+    new AgentToolRunner(registryOf({ fake: provider }), 10),
   );
   expect(finished.status).toBe("completed");
   const freezePath = path.join(sessionDirectory(workspace, finished.sessionId), WORKFLOW_FREEZE_FILE);
   const freeze = readFileSync(freezePath, "utf8");
   await expect(
-    executeNamedWorkflow(workspace, { sessionId: finished.sessionId, refreshWorkflow: true }),
+    executeNamedWorkflow(workspace, { sessionId: finished.sessionId, refreshWorkflow: true }, noRunRunner()),
   ).rejects.toThrow(`Session ${finished.sessionId} is completed.`);
   expect(readFileSync(freezePath, "utf8")).toBe(freeze);
 });
@@ -282,14 +290,14 @@ test("refresh does not start a prepared session", async () => {
   const workspace = workspaceWithFlow();
   const sessionId = createPreparedSession(workspace, "wave-3", "flow");
   const freezePath = path.join(sessionDirectory(workspace, sessionId), WORKFLOW_FREEZE_FILE);
-  await expect(executeNamedWorkflow(workspace, { sessionId, refreshWorkflow: true })).rejects.toThrow(/is prepared/);
+  await expect(executeNamedWorkflow(workspace, { sessionId, refreshWorkflow: true }, noRunRunner())).rejects.toThrow(/is prepared/);
   expect(existsSync(freezePath)).toBe(false);
 });
 
 test("an agent session has no frozen workflow", async () => {
   const workspace = tempDir("migent-freeze-agent-");
   const sessionId = createAgentSession(workspace, "reviewer", "Think");
-  await expect(executeNamedWorkflow(workspace, { sessionId, refreshWorkflow: true })).rejects.toThrow(
+  await expect(executeNamedWorkflow(workspace, { sessionId, refreshWorkflow: true }, noRunRunner())).rejects.toThrow(
     `Session ${sessionId} has no frozen workflow.`,
   );
 });
@@ -298,7 +306,7 @@ test("freezes the targets and native effort of the merged config", () => {
   const workspace = writeStageWorkspace();
   const configPath = path.join(workspace, ".migent", "config.yaml");
   writeFileSync(configPath, readFileSync(configPath, "utf8").replace(
-    "    client:\n      options:\n        reasoning-effort: high", "    effort: low",
+    "      type: grok\n      options:\n        reasoning-effort: high", "      type: grok\n    effort: low",
   ));
   writeFileSync(
     path.join(workspace, ".migent", "config.local.yaml"),
@@ -306,7 +314,7 @@ test("freezes the targets and native effort of the merged config", () => {
     "utf8",
   );
   const sessionDirectory = tempDir("migent-freeze-");
-  writeWorkflowFreeze(sessionDirectory, workspace, loadNamedWorkflow(workspace, "plan-implement"), createProviderResolver(defaultProviders()));
+  writeWorkflowFreeze(sessionDirectory, workspace, loadNamedWorkflow(workspace, "plan-implement"), registry);
   const frozen = readWorkflowFreeze(sessionDirectory);
   expect(frozen?.targets.implement?.model).toBe("grok-local");
   expect(frozen?.targets.implement?.options).toEqual({ "reasoning-effort": "medium" });

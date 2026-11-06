@@ -25,7 +25,7 @@ test("reports the latest recorded diagnostics per stage as warnings", () => {
     expect(check.warnings[0]).toContain("code=EACCES");
     expect(check.warnings[0]).toContain("stderr: b");
     expect(check.warnings[0]).toContain("executions/e2/diagnostics.json");
-    expect(sessionDiagnosticsCheck(workspace, "none").items).toEqual(["No recorded provider diagnostics."]);
+    expect(sessionDiagnosticsCheck(workspace, "none").items).toEqual(["No recorded diagnostics."]);
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }

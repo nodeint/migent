@@ -22,7 +22,7 @@ import {
   type DraftFormat,
   type DraftSourceMap,
 } from "@nodeint/migent-kernel";
-import { providerMap } from "../provider.js";
+import { clientRegistry } from "../client.js";
 import { findWorkspace, invocationCwdPath } from "../workspace.js";
 
 export type AuthoringKind = "config" | "workflow";
@@ -222,7 +222,7 @@ function execute(
   context.text = text;
 
   const workspace = locateWorkspace(scope, kind);
-  const providers = providerMap();
+  const clients = clientRegistry();
   const draftSource = kind === "config" ? { layer: scope } as const : { workflow: options.target ?? "" };
   let draft: Record<string, unknown>;
   try {
@@ -271,7 +271,7 @@ function execute(
         source: { layer: "project" },
       });
     }
-    diagnostics = [...companionProblems, ...validateConfigDraft({ scope, draft, companion }, providers)];
+    diagnostics = [...companionProblems, ...validateConfigDraft({ scope, draft, companion }, clients)];
   } else {
     const id = draft.id;
     const derived = typeof id === "string" && FILE_NAME.test(id) ? `${id}.yaml` : null;
@@ -285,7 +285,7 @@ function execute(
     label = `workflows/${name}`;
     const siblings = readSiblings(workflowsDirectory(workspace), name);
     const config = loadConfigLayers(workspace);
-    diagnostics = validateWorkflowDraft({ draft, file: name, siblings, config }, providers);
+    diagnostics = validateWorkflowDraft({ draft, file: name, siblings, config }, clients);
   }
 
   const invalid = diagnostics.some((item) => item.severity === "error");

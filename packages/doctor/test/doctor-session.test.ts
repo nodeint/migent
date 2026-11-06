@@ -9,7 +9,7 @@ import {
   createPreparedSession,
   createWorkflowSession,
   selectSessionWorkflow,
-  type ProviderInfo,
+  type ClientRegistry,
 } from "@nodeint/migent-kernel";
 import {
   diagnoseSession,
@@ -19,7 +19,7 @@ import {
   type SessionDiagnosis,
 } from "../src/index.ts";
 
-import { defaultProviders, tempDir, whichFound, writeStageWorkspace } from "./support.ts";
+import { clientRegistryOf, defaultClients, tempDir, testClient, whichFound, writeStageWorkspace } from "./support.ts";
 
 const ALL = new Set(["codex", "grok"]);
 
@@ -30,7 +30,7 @@ function run(
 ): SessionDiagnosis {
   const selection = selectSessionWorkflow(workspace, sessionId);
   return diagnoseSession(workspace, selection, {
-    providers: defaultProviders(),
+    clients: defaultClients(),
     which: whichFound(ALL),
     ...options,
   });
@@ -82,7 +82,7 @@ test("a valid prepared draft passes and identifies its source", () => {
     path: `.migent/sessions/${sessionId}/workflow.yaml`,
   });
   expect(check(diagnosis, "session").items).toContain(`source  draft  .migent/sessions/${sessionId}/workflow.yaml`);
-  expect(check(diagnosis, "providers").items).toEqual(["codex  /bin/codex", "grok  /bin/grok"]);
+  expect(check(diagnosis, "clients").items).toEqual(["codex  /bin/codex", "grok  /bin/grok"]);
   expect(check(diagnosis, "bindings").items).toEqual([
     "implement  grok  grok-4.6",
     "review-work  codex  gpt-5.6-terra",
@@ -108,12 +108,15 @@ test("a draft with an unknown role or model, bad options, or a missing executabl
   const original = readFileSync(draft, "utf8");
   writeFileSync(draft, original.replace("role: developer", "role: ghost"), "utf8");
   expect(allProblems(run(workspace, sessionId))).toContain("plan-implement.implement: Missing or invalid roles.ghost.");
-  writeFileSync(draft, original.replace("role: developer", "role: developer\n    options:\n      bogus: x"), "utf8");
-  expect(allProblems(run(workspace, sessionId))).toMatch(/plan-implement\.implement: roles\.developer\.agent\.client\.options: .*bogus/);
+  writeFileSync(draft, original.replace(
+    "    role: developer\n",
+    "    role: developer\n    agent:\n      client:\n        type: grok\n        options:\n          bogus: x\n      model: grok-4.6\n",
+  ), "utf8");
+  expect(allProblems(run(workspace, sessionId))).toMatch(/plan-implement\.implement: stages\.implement\.agent\.client\.options: .*bogus/);
   writeFileSync(draft, original, "utf8");
   const missing = run(workspace, sessionId, { which: whichFound(new Set(["codex"])) });
   expect(missing.ok).toBe(false);
-  expect(check(missing, "providers").problems).toEqual(["grok is not on PATH (stages: implement)"]);
+  expect(check(missing, "clients").problems).toEqual(["grok is not on PATH (stages: implement)"]);
 });
 
 test("an empty draft is rejected", () => {
@@ -139,7 +142,7 @@ test("a draft reports unknown keys as warnings without failing", () => {
   const workspace = writeStageWorkspace();
   const sessionId = createPreparedSession(workspace, "wave", "plan-implement");
   const draft = path.join(sessionDirectory(workspace, sessionId), "workflow.yaml");
-  writeFileSync(draft, readFileSync(draft, "utf8").replace("stages:", "extra_note: 1\nstages:"), "utf8");
+  writeFileSync(draft, "schema_version: 4\nid: plan-implement\nextra_note: 1\nstages:\n  - id: implement\n    role: developer\n    depends_on: []\n", "utf8");
   const diagnosis = run(workspace, sessionId);
   expect(diagnosis.ok).toBe(true);
   expect(check(diagnosis, "workflow").warnings.join("\n")).toContain(`.migent/sessions/${sessionId}/workflow.yaml`);
@@ -207,20 +210,20 @@ test("a freeze missing a pinned role or target is diagnosed per stage", () => {
   expect(problems).toContain("plan-implement.review-work: workflow.frozen.yaml pins no target for stage review-work.");
 });
 
-test("frozen targets with an unsupported provider, client, or option are diagnosed", () => {
+test("frozen targets with an unsupported client or option are diagnosed", () => {
   const workspace = writeStageWorkspace();
   const sessionId = createWorkflowSession(workspace, "plan-implement", "do it");
   editFreeze(workspace, sessionId, (body) => {
-    body.targets.implement.provider = "nope";
-    body.targets["review-work"].client = "other";
+    body.targets.implement.client = "nope";
+    body.targets["review-work"].options = { "not-an-option": "" };
   });
   const problems = allProblems(run(workspace, sessionId));
-  expect(problems).toContain("plan-implement.implement: targets.implement.provider is not supported: nope");
-  expect(problems).toContain("plan-implement.review-work: targets.review-work.client is not supported:");
+  expect(problems).toContain("plan-implement.implement: targets.implement.client is not supported: Unknown CLI client: nope");
+  expect(problems).toMatch(/plan-implement\.review-work: targets\.review-work\.options: .*not-an-option/);
   editFreeze(workspace, sessionId, (body) => {
-    body.targets.implement.provider = "grok";
-    delete body.targets["review-work"].client;
-    body.targets.implement.options = { "not-an-option": "x" };
+    body.targets.implement.client = "grok";
+    body.targets["review-work"].options = {};
+    body.targets.implement.options = { "not-an-option": "" };
   });
   expect(allProblems(run(workspace, sessionId))).toMatch(/plan-implement\.implement: targets\.implement\.options: .*not-an-option/);
 });
@@ -230,8 +233,8 @@ test("a frozen target's missing executable is reported with its stage", () => {
   const sessionId = createWorkflowSession(workspace, "plan-implement", "do it");
   const diagnosis = run(workspace, sessionId, { which: whichFound(new Set(["grok"])) });
   expect(diagnosis.ok).toBe(false);
-  expect(check(diagnosis, "providers").problems).toEqual(["codex is not on PATH (stages: review-work)"]);
-  expect(check(diagnosis, "providers").items).toEqual(["grok  /bin/grok"]);
+  expect(check(diagnosis, "clients").problems).toEqual(["codex is not on PATH (stages: review-work)"]);
+  expect(check(diagnosis, "clients").items).toEqual(["grok  /bin/grok"]);
 });
 
 test("a frozen session pinned from an older workflow schema is accepted", () => {
@@ -303,7 +306,7 @@ test("an invalid session id throws and unknown, role, and metadata problems are 
 });
 
 const VERIFY_ONLY = `\
-schema_version: 5
+schema_version: 6
 id: checks
 stages:
   - id: gate
@@ -322,7 +325,7 @@ test("verify-only workflows need no role, model, or executable", () => {
   const calls: string[] = [];
   const draft = run(workspace, draftId, { which: (command) => { calls.push(command); return null; } });
   expect(draft.ok).toBe(true);
-  expect(check(draft, "providers").items).toEqual([]);
+  expect(check(draft, "clients").items).toEqual([]);
   expect(calls).toEqual([]);
 
   const frozenId = createWorkflowSession(workspace, "checks", "go");
@@ -332,36 +335,29 @@ test("verify-only workflows need no role, model, or executable", () => {
   expect(check(frozen, "bindings").items).toEqual([]);
 });
 
-function clientProviders(): Record<string, ProviderInfo> {
-  const make = (command: string): ProviderInfo => ({
-    command,
-    requiresClient: command === "gateway",
-    validateOptions() {},
-    withClient(client) {
-      if (client !== "alpha" && client !== "beta") throw new Error(`Unknown CLI client: ${client}`);
-      return make(client === "alpha" ? "alpha-cli" : "beta-cli");
-    },
+function namedClients(): ClientRegistry {
+  return clientRegistryOf({
+    alpha: testClient("alpha", "alpha-cli"),
+    beta: testClient("beta", "beta-cli"),
   });
-  return { gateway: make("gateway") };
 }
 
-test("distinct clients of one provider are checked as distinct executables", () => {
+test("distinct clients are checked as distinct executables", () => {
   const workspace = tempDir("migent-doctor-session-");
   mkdirSync(path.join(workspace, ".migent", "workflows"), { recursive: true });
   writeFileSync(
     path.join(workspace, ".migent", "config.yaml"),
     `\
+schema_version: 6
 agents:
   a:
-    provider: gateway
-    model: m1
     client:
       type: alpha
+    model: m1
   b:
-    provider: gateway
-    model: m2
     client:
       type: beta
+    model: m2
 roles:
   developer:
     agent: a
@@ -372,17 +368,17 @@ roles:
   );
   writeFileSync(
     path.join(workspace, ".migent", "workflows", "two.yaml"),
-    "id: two\nstages:\n  - id: one\n    role: developer\n    depends_on: []\n  - id: two\n    role: reviewer\n    depends_on: [one]\n",
+    "schema_version: 6\nid: two\nstages:\n  - id: one\n    role: developer\n    depends_on: []\n  - id: two\n    role: reviewer\n    depends_on: [one]\n",
     "utf8",
   );
   const draftId = createPreparedSession(workspace, "wave", "two", null, undefined);
-  const found = run(workspace, draftId, { providers: clientProviders(), which: whichFound(new Set(["alpha-cli"])) });
-  expect(check(found, "providers").items).toEqual(["gateway (alpha)  /bin/alpha-cli"]);
-  expect(check(found, "providers").problems).toEqual(["beta-cli is not on PATH (stages: two)"]);
+  const found = run(workspace, draftId, { clients: namedClients(), which: whichFound(new Set(["alpha-cli"])) });
+  expect(check(found, "clients").items).toEqual(["alpha  /bin/alpha-cli"]);
+  expect(check(found, "clients").problems).toEqual(["beta-cli is not on PATH (stages: two)"]);
   const frozenId = createWorkflowSession(workspace, "two", "go");
-  const frozen = run(workspace, frozenId, { providers: clientProviders(), which: whichFound(new Set(["alpha-cli", "beta-cli"])) });
+  const frozen = run(workspace, frozenId, { clients: namedClients(), which: whichFound(new Set(["alpha-cli", "beta-cli"])) });
   expect(frozen.ok).toBe(true);
-  expect(check(frozen, "providers").items).toEqual(["gateway (alpha)  /bin/alpha-cli", "gateway (beta)  /bin/beta-cli"]);
+  expect(check(frozen, "clients").items).toEqual(["alpha  /bin/alpha-cli", "beta  /bin/beta-cli"]);
 });
 
 test("effort problems and warnings are scoped to the models the session uses", () => {
@@ -445,16 +441,22 @@ test("a stale freeze on a prepared session does not hide a broken draft", () => 
   expect(check(diagnosis, "session").warnings.join("\n")).toContain("interrupted start");
 });
 
-test("malformed pinned clients are corrupt freeze data", () => {
+test("malformed pinned clients are diagnosed", () => {
   const workspace = writeStageWorkspace();
   const sessionId = createWorkflowSession(workspace, "plan-implement", "do it");
-  for (const client of [42, "", "  "]) {
+  editFreeze(workspace, sessionId, (body) => {
+    body.targets.implement.client = 42;
+  });
+  const corrupt = run(workspace, sessionId);
+  expect(corrupt.ok).toBe(false);
+  expect(allProblems(corrupt)).toContain(WORKFLOW_FREEZE_FILE);
+  expect(allProblems(corrupt)).toContain("targets.implement must name a client and model");
+  for (const client of ["", "  "]) {
     editFreeze(workspace, sessionId, (body) => {
       body.targets.implement.client = client;
     });
     const diagnosis = run(workspace, sessionId);
     expect(diagnosis.ok).toBe(false);
-    expect(allProblems(diagnosis)).toContain(WORKFLOW_FREEZE_FILE);
-    expect(allProblems(diagnosis)).toContain("targets.implement.client must be a non-empty string");
+    expect(allProblems(diagnosis)).toContain("targets.implement.client is required");
   }
 });

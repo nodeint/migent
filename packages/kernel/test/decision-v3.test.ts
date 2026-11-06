@@ -10,7 +10,7 @@ import { parseYamlDocument } from "../src/yaml.ts";
 import { readWorkflowFreeze, writeWorkflowFreeze } from "../src/session-freeze.ts";
 import { AgentToolRunner } from "../src/agent-runner.ts";
 import { executeNamedWorkflow } from "../src/execute.ts";
-import { ScriptedProvider } from "./support.ts";
+import { ScriptedClient, registryOf } from "./support.ts";
 
 const decisions = [
   { approved: { when: "All requirements pass.", navigate: "complete" } },
@@ -117,7 +117,7 @@ ${version === 1 ? "  " : ""}    artifact: draft.md
   // v1 only allowed a single route destination.
   const source = version === 1 ? original.replace("revise: [draft]", "revise: draft") : original;
   const raw = parseYamlDocument(source) as Record<string, unknown>;
-  const notes = migrateWorkflow(raw, {}, {});
+  const notes = migrateWorkflow(raw, {});
   expect(notes.some((note) => note.includes("decision migrated"))).toBe(true);
   const migrated = patchWorkflowText(source, raw);
   expect(migrated).toContain("# project workflow");
@@ -125,24 +125,24 @@ ${version === 1 ? "  " : ""}    artifact: draft.md
   expect(migrated).not.toContain("values:");
   expect(migrated).not.toContain("when:");
   const loaded = parseWorkflowMapping(parseYamlDocument(migrated) as Record<string, unknown>, "migrated.yaml");
-  expect(loaded.schemaVersion).toBe(5);
+  expect(loaded.schemaVersion).toBe(6);
   expect(loaded.stages.review?.routes).toEqual({ approved: "complete", "approved-with-note": "complete", revise: version === 1 ? "draft" : ["draft"] });
   expect(loaded.outputs).toEqual([{ name: "draft", fromStage: "draft", artifact: "draft.md" }]);
   expect(loaded.stages.review?.artifact).toBe("review.md");
-  expect(migrateWorkflow(raw, {}, {})).toEqual([]);
+  expect(migrateWorkflow(raw, {})).toEqual([]);
   expect(patchWorkflowText(migrated, raw)).toBe(migrated);
 });
 
 test("migration rejects inconsistent old decision routes instead of discarding them", () => {
   const raw = mapping({ values: ["approved"], routes: { approved: "complete", revise: "implement" } }, 2);
-  expect(() => migrateWorkflow(raw, {}, {})).toThrow("routes keys must match");
+  expect(() => migrateWorkflow(raw, {})).toThrow("routes keys must match");
 });
 
 test.each([2, 3])("freeze round-trip preserves schema v%i and its decision contract", (version) => {
   const workspace = mkdtempSync(path.join(tmpdir(), "migent-decision-"));
   try {
     mkdirSync(path.join(workspace, ".migent"));
-    writeFileSync(path.join(workspace, ".migent/config.yaml"), "roles:\n  developer:\n    agent: { provider: fake, model: fake }\n  reviewer:\n    agent: { provider: fake, model: fake }\n");
+    writeFileSync(path.join(workspace, ".migent/config.yaml"), "roles:\n  developer:\n    agent: { client: { type: fake }, model: fake }\n  reviewer:\n    agent: { client: { type: fake }, model: fake }\n");
     const raw = version === 3 ? mapping() : mapping({ values: ["approved", "revise"], routes: { approved: "complete", revise: "implement" } }, 2);
     const workflow = parseWorkflowMapping(raw, "virtual.yaml");
     writeWorkflowFreeze(workspace, workspace, workflow);
@@ -161,7 +161,7 @@ test("the agent receives frozen decision criteria on initial, reply, and verify 
   try {
     const workflows = path.join(workspace, ".migent", "workflows");
     mkdirSync(workflows, { recursive: true });
-    writeFileSync(path.join(workspace, ".migent/config.yaml"), "schema_version: 3\nroles:\n  reviewer:\n    agent: { provider: fake, model: fake }\n");
+    writeFileSync(path.join(workspace, ".migent/config.yaml"), "schema_version: 6\nroles:\n  reviewer:\n    agent: { client: { type: fake }, model: fake }\n");
     writeFileSync(path.join(workspace, "verify.cjs"), 'const fs = require("node:fs"); if (!fs.existsSync("verified.flag")) { fs.writeFileSync("verified.flag", ""); process.exit(1); }');
     const source = `schema_version: 3
 id: review
@@ -182,12 +182,12 @@ stages:
 `;
     const file = path.join(workflows, "review.yaml");
     writeFileSync(file, source);
-    const provider = new ScriptedProvider([
+    const provider = new ScriptedClient([
       "status: blocked\nblocker: Need the task clarified.\n\nWaiting.",
       "status: complete\ndecision: approved-with-note\n\nMinor finding retained.",
       "status: complete\ndecision: approved-with-note\n\nVerification fixed; minor finding retained.",
     ], [null, "# Review\nMinor finding retained.\n", null]);
-    const runner = new AgentToolRunner({ fake: provider }, 10);
+    const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
     const first = await executeNamedWorkflow(workspace, { workflowId: "review", task: "Review the work" }, runner);
     expect(first.stopReason).toBe("blocked");
     const frozenFile = path.join(workspace, ".migent/sessions", first.sessionId, "workflow.frozen.yaml");

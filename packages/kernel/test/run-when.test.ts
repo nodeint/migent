@@ -47,7 +47,8 @@ function changes(repo: string, commit: string): string[] {
 
 const CONFIG = `agents:
   fake:
-    provider: fake
+    client:
+      type: fake
     model: m1
 roles:
   developer:

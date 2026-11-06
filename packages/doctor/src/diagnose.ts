@@ -1,12 +1,12 @@
 import path from "node:path";
 import {
   ConfigurationError,
-  createProviderResolver,
   isRoleStage,
   loadWorkflowCatalog,
+  resolveEffectiveClient,
   resolveStageSpec,
   whichSync,
-  type ProviderInfo,
+  type ClientRegistry,
   type WorkflowDocument,
 } from "@nodeint/migent-kernel";
 import {
@@ -19,37 +19,36 @@ import {
   type ModelEffortCheck,
 } from "./check.js";
 import { checkConfig } from "./config-check.js";
-import { withTargetClient } from "./providers.js";
 import { stageAgentKey } from "./stage-agents.js";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-/** The static and PATH checks: config, workflows, providers. Never reads model catalogs. */
+/** The static and PATH checks: config, workflows, clients. Never reads model catalogs. */
 export function diagnose(workspace: string, options: DiagnoseOptions): [Check, Check, Check] {
   const which = options.which ?? whichSync;
   const efforts = options.modelEffortChecks ?? {};
-  const configResult = checkConfig(workspace, options.providers, efforts);
+  const configResult = checkConfig(workspace, options.clients, efforts);
   const workflowCheck = checkWorkflows(
     workspace,
-    options.providers,
+    options.clients,
     configResult.diagnostics,
     configResult.config,
     configResult.unmapped,
     new Set(Object.keys(efforts).filter((key) => efforts[key]?.problem)),
     efforts,
   );
-  const providerCheck = checkProviders(
-    configResult.executableByProvider,
+  const clientCheck = checkClients(
+    configResult.executableByClient,
     configResult.diagnostics.errors.length,
     which,
   );
-  return [configResult.check, workflowCheck, providerCheck];
+  return [configResult.check, workflowCheck, clientCheck];
 }
 
 function checkWorkflows(
   workspace: string,
-  providers: Readonly<Record<string, ProviderInfo>>,
+  clients: ClientRegistry,
   configDiagnostics: DiagnosticList,
   config: Record<string, unknown> | null,
   unmapped: ReadonlySet<string>,
@@ -65,7 +64,7 @@ function checkWorkflows(
     const known = new Set(configDiagnostics.errors.map(identityKey));
     const knownOptionReasons = new Set(configDiagnostics.errors.flatMap((item) => (item.detail === undefined ? [] : [item.detail])));
     for (const document of Object.values(catalog.documents)) {
-      checkStageBindings(config, document, providers, known, knownOptionReasons, unmapped, invalidEffort, efforts, problems, stageWarnings, failedWorkflows);
+      checkStageBindings(config, document, clients, known, knownOptionReasons, unmapped, invalidEffort, efforts, problems, stageWarnings, failedWorkflows);
     }
   }
   const items = Object.keys(catalog.documents).filter((workflowId) => !workflowFailed(workflowId, catalog.problems, failedWorkflows));
@@ -83,7 +82,7 @@ function workflowWarnings(document: WorkflowDocument): string[] {
 function checkStageBindings(
   config: Record<string, unknown>,
   document: WorkflowDocument,
-  providers: Readonly<Record<string, ProviderInfo>>,
+  clients: ClientRegistry,
   known: ReadonlySet<string>,
   knownOptionReasons: ReadonlySet<string>,
   unmapped: ReadonlySet<string>,
@@ -117,7 +116,7 @@ function checkStageBindings(
     }
     let target;
     try {
-      target = resolveStageSpec(config, stage, undefined, createProviderResolver(providers));
+      target = resolveStageSpec(config, stage, undefined, clients);
     } catch (error) {
       if (!(error instanceof ConfigurationError)) throw error;
       const identity = { code: error.code ?? "config-invalid", ...(error.path === undefined ? {} : { path: error.path }), message: error.message };
@@ -127,15 +126,10 @@ function checkStageBindings(
       report(stage.id, error.message);
       continue;
     }
-    const provider = withTargetClient(providers[target.provider], target.client);
-    if (provider === undefined) continue;
-    try {
-      provider.validateOptions(target.options);
-    } catch (error) {
-      if (!(error instanceof Error)) throw error;
-      if (knownOptionReasons.has(error.message)) continue;
-      report(stage.id, error.message);
-    }
+    const bound = resolveEffectiveClient(clients, target);
+    if (bound.failure === undefined) continue;
+    if (bound.failure.code === "options-invalid" && knownOptionReasons.has(bound.failure.message)) continue;
+    report(stage.id, bound.failure.message);
   }
 }
 
@@ -150,24 +144,24 @@ function workflowFailed(workflowId: string, catalogProblems: readonly string[], 
   return catalogProblems.some((problem) => problem.startsWith(prefix) || problem.startsWith(stagePrefix));
 }
 
-function checkProviders(
-  executableByProvider: Readonly<Record<string, string>>,
+function checkClients(
+  executableByClient: Readonly<Record<string, string>>,
   configProblemCount: number,
   which: (command: string) => string | null,
 ): Check {
-  const providers = Object.keys(executableByProvider);
-  if (providers.length === 0) {
-    const problem = configProblemCount > 0 ? "No providers could be resolved from config." : "Config names no providers.";
-    return failed("providers", [problem]);
+  const clients = Object.keys(executableByClient);
+  if (clients.length === 0) {
+    const problem = configProblemCount > 0 ? "No clients could be resolved from config." : "Config names no clients.";
+    return failed("clients", [problem]);
   }
   const items: string[] = [];
   const problems: string[] = [];
-  for (const provider of providers.sort()) {
-    const command = executableByProvider[provider] ?? "";
+  for (const client of clients.sort()) {
+    const command = executableByClient[client] ?? "";
     const found = which(command);
-    if (found) items.push(`${provider}  ${found}`);
+    if (found) items.push(`${client}  ${found}`);
     else problems.push(`${command} is not on PATH`);
   }
-  if (problems.length > 0) return failed("providers", problems, items);
-  return passed("providers", items);
+  if (problems.length > 0) return failed("clients", problems, items);
+  return passed("clients", items);
 }

@@ -10,7 +10,7 @@ import { SessionStore } from "../src/session-store.ts";
 import { watchSnapshot } from "../src/query.ts";
 import { repairSession } from "../src/session-repair.ts";
 import { SessionLock } from "../src/session-lock.ts";
-import { ScriptedProvider } from "./support.ts";
+import { ScriptedClient, registryOf } from "./support.ts";
 
 const scopeQuestion = {
   id: "1", question: "Support existing sessions?", context: "Migration costs more.",
@@ -21,7 +21,7 @@ const question = "status: question\n\n" + JSON.stringify({ schema_version: 1, qu
 function workspace(stages: string, extra = ""): string {
   const root = mkdtempSync(path.join(tmpdir(), "migent-question-"));
   mkdirSync(path.join(root, ".migent/workflows"), { recursive: true });
-  writeFileSync(path.join(root, ".migent/config.yaml"), "schema_version: 3\nroles:\n  planner:\n    agent: { provider: fake, model: fake }\n");
+  writeFileSync(path.join(root, ".migent/config.yaml"), "schema_version: 6\nroles:\n  planner:\n    agent: { client: { type: fake }, model: fake }\n");
   writeFileSync(path.join(root, ".migent/workflows/plan.yaml"), `schema_version: 3\nid: plan\n${extra}stages:\n${stages}`);
   return root;
 }
@@ -43,8 +43,8 @@ test("verify-only stages cannot ask", () => {
 test("question persists through repair, waits without reply, and resumes the conversation with an artifact", async () => {
   const root = workspace("  - id: plan\n    role: planner\n    ask: human\n    produces: { artifact: plan.md }\n", "outputs:\n  - { name: plan, from_stage: plan, artifact: plan.md }\n");
   try {
-    const provider = new ScriptedProvider([question, "status: complete\n\nDone"], ["# Partial plan", null]);
-    const runner = new AgentToolRunner({ fake: provider }, 10);
+    const provider = new ScriptedClient([question, "status: complete\n\nDone"], ["# Partial plan", null]);
+    const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
     const first = await executeNamedWorkflow(root, { workflowId: "plan", task: "Plan" }, runner);
     expect(first.code).toBe(9);
     expect(first.stopReason).toBe("question");
@@ -79,8 +79,8 @@ test("question persists through repair, waits without reply, and resumes the con
 test("blocked takes priority, questions stay visible, and a reply targets only its stage", async () => {
   const root = workspace("  - { id: plan, role: planner, ask: human }\n  - { id: resources, role: planner }\n");
   try {
-    const provider = new ScriptedProvider([question, "status: blocked\nblocker: Missing resource\n", "status: complete\n"]);
-    const runner = new AgentToolRunner({ fake: provider }, 10);
+    const provider = new ScriptedClient([question, "status: blocked\nblocker: Missing resource\n", "status: complete\n"]);
+    const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
     const first = await executeNamedWorkflow(root, { workflowId: "plan", task: "Plan" }, runner);
     expect(first.code).toBe(1);
     const store = new SessionStore(root);
@@ -98,8 +98,8 @@ test("blocked takes priority, questions stay visible, and a reply targets only i
 test("a question stops its dependents but independent stages continue", async () => {
   const root = workspace("  - { id: plan, role: planner, ask: human }\n  - { id: dependent, role: planner, depends_on: [plan] }\n  - { id: independent, role: planner }\n");
   try {
-    const provider = new ScriptedProvider([question, "status: complete\n"]);
-    const first = await executeNamedWorkflow(root, { workflowId: "plan", task: "Plan" }, new AgentToolRunner({ fake: provider }, 10));
+    const provider = new ScriptedClient([question, "status: complete\n"]);
+    const first = await executeNamedWorkflow(root, { workflowId: "plan", task: "Plan" }, new AgentToolRunner(registryOf({ fake: provider }), 10));
     expect(first.code).toBe(9);
     expect(new SessionStore(root).executionSnapshots(first.sessionId).map((row) => row.stageId)).toEqual(["plan", "independent"]);
   } finally { rmSync(root, { recursive: true, force: true }); }
@@ -108,7 +108,7 @@ test("a question stops its dependents but independent stages continue", async ()
 test("a stage without ask cannot question", async () => {
   const root = workspace("  - { id: plan, role: planner }\n");
   try {
-    const result = await executeNamedWorkflow(root, { workflowId: "plan", task: "Plan" }, new AgentToolRunner({ fake: new ScriptedProvider([question]) }, 10));
+    const result = await executeNamedWorkflow(root, { workflowId: "plan", task: "Plan" }, new AgentToolRunner(registryOf({ fake: new ScriptedClient([question]) }), 10));
     expect(result.code).toBe(3);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
@@ -117,8 +117,8 @@ test("question between verify repairs carries the artifact and failure budget", 
   const root = workspace(`  - id: plan\n    role: planner\n    ask: human\n    produces: { artifact: plan.md }\n    max_verify: 2\n    verify:\n      - '${JSON.stringify(process.execPath)} verify.cjs'\n`);
   try {
     writeFileSync(path.join(root, "verify.cjs"), "process.exit(1)");
-    const provider = new ScriptedProvider(["status: complete\n", question, "status: complete\n"], ["# Draft", null, null]);
-    const runner = new AgentToolRunner({ fake: provider }, 10);
+    const provider = new ScriptedClient(["status: complete\n", question, "status: complete\n"], ["# Draft", null, null]);
+    const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
     const first = await executeNamedWorkflow(root, { workflowId: "plan", task: "Plan" }, runner);
     expect(first.code).toBe(9);
     const store = new SessionStore(root);
@@ -139,8 +139,8 @@ test("question between verify repairs carries the artifact and failure budget", 
 test("once returns 9 for a question while independent work is still ready", async () => {
   const root = workspace("  - { id: plan, role: planner, ask: human }\n  - { id: independent, role: planner }\n");
   try {
-    const provider = new ScriptedProvider([question, "status: complete\n"]);
-    const runner = new AgentToolRunner({ fake: provider }, 10);
+    const provider = new ScriptedClient([question, "status: complete\n"]);
+    const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
     const first = await executeNamedWorkflow(root, { workflowId: "plan", task: "Plan", once: true }, runner);
     expect(first.code).toBe(9);
     expect(first.stopReason).toBe("question");
@@ -154,8 +154,8 @@ test("once returns 9 for a question while independent work is still ready", asyn
 test("multiple questions require a target and an answered stage can ask again", async () => {
   const root = workspace("  - { id: plan, role: planner, ask: human }\n  - { id: other, role: planner, ask: human }\n");
   try {
-    const provider = new ScriptedProvider([question, question, question, "status: complete\n"]);
-    const runner = new AgentToolRunner({ fake: provider }, 10);
+    const provider = new ScriptedClient([question, question, question, "status: complete\n"]);
+    const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
     const first = await executeNamedWorkflow(root, { workflowId: "plan", task: "Plan" }, runner);
     await expect(executeNamedWorkflow(root, { sessionId: first.sessionId, reply: "New only" }, runner)).rejects.toThrow("--reply needs --stage");
     expect(provider.calls).toHaveLength(2);
@@ -173,8 +173,8 @@ test("multiple questions require a target and an answered stage can ask again", 
 test("an answer survives interruption before the next execution is created", async () => {
   const root = workspace("  - { id: plan, role: planner, ask: human }\n");
   try {
-    const provider = new ScriptedProvider([question, "status: complete\n"]);
-    const runner = new AgentToolRunner({ fake: provider }, 10);
+    const provider = new ScriptedClient([question, "status: complete\n"]);
+    const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
     const first = await executeNamedWorkflow(root, { workflowId: "plan", task: "Plan" }, runner);
     const lock = SessionLock.acquire(path.join(root, ".migent/sessions", first.sessionId));
     try { new SessionStore(root).resumeQuestion(first.sessionId, "plan", "Saved answer"); }
@@ -189,8 +189,8 @@ test("verification passes after repeated questions without consuming extra failu
   const root = workspace(`  - id: plan\n    role: planner\n    ask: human\n    produces: { artifact: plan.md }\n    max_verify: 2\n    verify:\n      - '${JSON.stringify(process.execPath)} verify.cjs'\n`);
   try {
     writeFileSync(path.join(root, "verify.cjs"), "const fs=require('node:fs'); if (!fs.existsSync('ready')) process.exit(1)");
-    const provider = new ScriptedProvider(["status: complete\n", question, question, "status: complete\n"], ["# Draft", null, null, null]);
-    const runner = new AgentToolRunner({ fake: provider }, 10);
+    const provider = new ScriptedClient(["status: complete\n", question, question, "status: complete\n"], ["# Draft", null, null, null]);
+    const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
     const first = await executeNamedWorkflow(root, { workflowId: "plan", task: "Plan" }, runner);
     await executeNamedWorkflow(root, { sessionId: first.sessionId, reply: "Please clarify" }, runner);
     writeFileSync(path.join(root, "ready"), "yes");
@@ -207,8 +207,8 @@ test("verification passes after repeated questions without consuming extra failu
 test("a reply keeps the questioning execution even when session.resume_from names a dependency", async () => {
   const root = workspace("  - { id: base, role: planner }\n  - id: plan\n    role: planner\n    ask: human\n    depends_on: [base]\n    session: { resume_from: base }\n");
   try {
-    const provider = new ScriptedProvider(["status: complete\n", question, "status: complete\n"]);
-    const runner = new AgentToolRunner({ fake: provider }, 10);
+    const provider = new ScriptedClient(["status: complete\n", question, "status: complete\n"]);
+    const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
     const first = await executeNamedWorkflow(root, { workflowId: "plan", task: "Plan" }, runner);
     await executeNamedWorkflow(root, { sessionId: first.sessionId, reply: "Proceed" }, runner);
     const rows = new SessionStore(root).executionSnapshots(first.sessionId);
@@ -221,8 +221,8 @@ test("a reply keeps the questioning execution even when session.resume_from name
 test("a selected question returns 9 even when another branch is blocked", async () => {
   const root = workspace("  - { id: resources, role: planner }\n  - { id: plan, role: planner, ask: human }\n");
   try {
-    const provider = new ScriptedProvider(["status: blocked\nblocker: Missing resource\n", question]);
-    const runner = new AgentToolRunner({ fake: provider }, 10);
+    const provider = new ScriptedClient(["status: blocked\nblocker: Missing resource\n", question]);
+    const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
     const first = await executeNamedWorkflow(root, { workflowId: "plan", task: "Plan", stageId: "resources" }, runner);
     const result = await executeNamedWorkflow(root, { sessionId: first.sessionId, stageId: "plan" }, runner);
     expect(result.code).toBe(9);
@@ -241,8 +241,8 @@ test("a batch validates single and multiple selections before resuming and recor
       options: [{ label: "Clear" }, { label: "Explain further" }] },
   ] });
   try {
-    const provider = new ScriptedProvider([batch, "status: complete\n"]);
-    const runner = new AgentToolRunner({ fake: provider }, 10);
+    const provider = new ScriptedClient([batch, "status: complete\n"]);
+    const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
     const first = await executeNamedWorkflow(root, { workflowId: "plan", task: "Plan" }, runner);
     const file = path.join(root, ".migent/sessions", first.sessionId, "questions.json");
     expect(JSON.parse(readFileSync(file, "utf8")).questions).toHaveLength(3);
@@ -276,11 +276,11 @@ function lastExecution(root: string, sessionId: string): Record<string, unknown>
 test("an invalid question file gets one correction turn in the same conversation, then the question is registered", async () => {
   const root = workspace(askStage);
   try {
-    const provider = new ScriptedProvider([
+    const provider = new ScriptedClient([
       "status: question\n\nI need an answer.\n<<FILE>>{\"schema_version\":1,\"questions\":[",
       "status: question\n\nFixed.\n<<FILE>>" + validFile,
     ]);
-    const result = await executeNamedWorkflow(root, { workflowId: "plan", task: "Plan" }, new AgentToolRunner({ fake: provider }, 10));
+    const result = await executeNamedWorkflow(root, { workflowId: "plan", task: "Plan" }, new AgentToolRunner(registryOf({ fake: provider }), 10));
     expect(result.code).toBe(9);
     expect(provider.calls).toHaveLength(2);
     expect(provider.calls[1]?.agentId).toBe("native-session-1");
@@ -298,11 +298,11 @@ test("an invalid question file gets one correction turn in the same conversation
 test("a question file that stays invalid fails with a named, recoverable error after one correction", async () => {
   const root = workspace(askStage);
   try {
-    const provider = new ScriptedProvider([
+    const provider = new ScriptedClient([
       "status: question\n\nNo file written.",
       "status: question\n\nStill nothing.\n<<FILE>>{\"schema_version\":2}",
     ]);
-    const result = await executeNamedWorkflow(root, { workflowId: "plan", task: "Plan" }, new AgentToolRunner({ fake: provider }, 10));
+    const result = await executeNamedWorkflow(root, { workflowId: "plan", task: "Plan" }, new AgentToolRunner(registryOf({ fake: provider }), 10));
     expect(provider.calls).toHaveLength(2);
     expect(result.code).not.toBe(9);
     const execution = lastExecution(root, result.sessionId);
@@ -318,8 +318,8 @@ test("a question file that stays invalid fails with a named, recoverable error a
 test("the question file is ignored unless the status is question", async () => {
   const root = workspace(askStage);
   try {
-    const provider = new ScriptedProvider(["status: complete\n\nDone.\n<<FILE>>not json at all"]);
-    const result = await executeNamedWorkflow(root, { workflowId: "plan", task: "Plan" }, new AgentToolRunner({ fake: provider }, 10));
+    const provider = new ScriptedClient(["status: complete\n\nDone.\n<<FILE>>not json at all"]);
+    const result = await executeNamedWorkflow(root, { workflowId: "plan", task: "Plan" }, new AgentToolRunner(registryOf({ fake: provider }), 10));
     expect(result.code).toBe(0);
     expect(lastExecution(root, result.sessionId)).toMatchObject({ status: "completed", outcome: { status: "complete" } });
   } finally { rmSync(root, { recursive: true, force: true }); }
@@ -328,12 +328,12 @@ test("the question file is ignored unless the status is question", async () => {
 test("a leftover question file from an earlier turn is not read as a new question", async () => {
   const root = workspace(askStage);
   try {
-    const provider = new ScriptedProvider([
+    const provider = new ScriptedClient([
       "status: question\n\nAsk.\n<<FILE>>" + validFile,
       "status: question\n\nAsk again without a file.",
       "status: question\n\nStill no file.",
     ]);
-    const runner = new AgentToolRunner({ fake: provider }, 10);
+    const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
     const first = await executeNamedWorkflow(root, { workflowId: "plan", task: "Plan" }, runner);
     expect(first.code).toBe(9);
     const second = await executeNamedWorkflow(root, { sessionId: first.sessionId, reply: "1A" }, runner);

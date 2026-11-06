@@ -183,7 +183,7 @@ section).
 
 ### 8. Docs and changelog
 
-- `docs/cli.md`, `docs/providers.md` (still names `.agents/skills/migent`),
+- `docs/cli.md`, `docs/agents.md` (still names `.agents/skills/migent`),
   `docs/workflows.md`, `README.md`, the `--skill` help text in `program.ts`.
 - Mention `npx skills`, the Node >= 22.20 requirement and the telemetry opt-out.
 - `CHANGELOG.md`, under `## Unreleased`:

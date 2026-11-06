@@ -2,12 +2,13 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "vitest";
 import { AgentToolRunner, executeNamedWorkflow, loadWorkflowDocument } from "../src/index.ts";
-import { ScriptedProvider, tempDir } from "./support.ts";
+import { ScriptedClient, tempDir, registryOf } from "./support.ts";
 
 const CONFIG = `\
 agents:
   fake:
-    provider: fake
+    client:
+      type: fake
     model: m1
 roles:
   developer:
@@ -52,8 +53,8 @@ function execution(workspace: string, sessionId: string, executionId: string): R
 
 test("a passing verify-only stage publishes verify.md and then starts the role stage", async () => {
   const { workspace } = setup([`node -e "process.exit(0)"`]);
-  const provider = new ScriptedProvider([OK], ["# notes\n"]);
-  const runner = new AgentToolRunner({ fake: provider }, 10);
+  const provider = new ScriptedClient([OK], ["# notes\n"]);
+  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
   const result = await executeNamedWorkflow(workspace, { workflowId: "wf", task: "go" }, runner);
   expect(result.code).toBe(0);
   expect(result.status).toBe("completed");
@@ -63,7 +64,7 @@ test("a passing verify-only stage publishes verify.md and then starts the role s
   const names = readFileSync(path.join(executions, "0001-prepare--attempt-01", "execution.json"), "utf8");
   const prepare = JSON.parse(names) as Record<string, unknown>;
   expect(prepare.kind).toBe("verify");
-  expect(prepare.provider).toBeNull();
+  expect(prepare.client).toBeNull();
   expect(prepare.status).toBe("completed");
   expect(existsSync(path.join(executions, "0001-prepare--attempt-01", "prompt.md"))).toBe(false);
   expect(existsSync(path.join(executions, "0001-prepare--attempt-01", "artifacts", "verify.md"))).toBe(true);
@@ -78,8 +79,8 @@ test("a red verify-only stage exits 7 and does not start the role stage", async 
     `node -e "console.error('red'); process.exit(1)"`,
     `node -e "process.exit(2)"`,
   ]);
-  const provider = new ScriptedProvider([OK], ["# notes\n"]);
-  const runner = new AgentToolRunner({ fake: provider }, 10);
+  const provider = new ScriptedClient([OK], ["# notes\n"]);
+  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
   const result = await executeNamedWorkflow(workspace, { workflowId: "wf", task: "go" }, runner);
   expect(result.code).toBe(7);
   expect(result.stopReason).toBe("verify_failed");
@@ -135,8 +136,8 @@ outputs:
 `,
     "utf8",
   );
-  const provider = new ScriptedProvider([OK], ["# notes\n"]);
-  const runner = new AgentToolRunner({ fake: provider }, 10);
+  const provider = new ScriptedClient([OK], ["# notes\n"]);
+  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
   const failed = await executeNamedWorkflow(workspace, { workflowId: "wf", task: "go" }, runner);
   expect(failed.code).toBe(7);
   expect(provider.calls).toHaveLength(0);

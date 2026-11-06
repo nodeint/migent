@@ -1,39 +1,39 @@
-# Providers and agent configuration
+# Agent configuration
 
-An agent describes execution: a provider, a model, an optional effort, and the
-CLI client that runs it with its options. A role describes intent: its
-responsibilities and which agent it uses. `migent init` creates `planner`,
-`reviewer`, and `developer` roles with an independent agent object in each
-`agent`:
+An agent describes execution: a CLI client, a model, an optional effort, and the
+options passed to that client. A role describes intent: its responsibilities and
+which agent it uses. `migent init` creates `planner`, `reviewer`, and `developer`
+roles with an independent agent object in each `agent`:
 
 ```yaml
 # .migent/config.yaml
-schema_version: 5
+schema_version: 6
 roles:
   planner:
     description: Designs the approach and writes the plan.
     agent:
-      provider: codex
       model: gpt-5
       client:
+        type: codex
         options:
           model_reasoning_effort: high
   developer:
     description: Implements the change and verifies it.
     agent:
-      provider: codex
       model: gpt-5
       client:
+        type: codex
         options:
           model_reasoning_effort: medium
   reviewer:
     description: Reviews plans and implementations against the task.
     agent:
-      provider: grok
       model: grok-4
+      client:
+        type: grok
 ```
 
-Use provider/model IDs and option values supported by your installed CLIs.
+Use model IDs and option values supported by your installed CLIs.
 `migent get models` lists each client's model IDs, `migent get efforts` lists the
 thinking levels per model, and `migent doctor` checks the configuration. The
 installed skill's `references/schema-config.yaml` lists configuration fields
@@ -48,14 +48,19 @@ summary shown by `migent get roles`; it is not part of any prompt.
 
 | Field | Required | Meaning |
 | --- | --- | --- |
-| `provider` | yes | Provider ID, such as `codex` or `grok`. |
-| `model` | yes | Model ID for that provider. |
+| `model` | yes | Model ID passed to the client unchanged. |
+| `client.type` | yes | CLI client that runs the model: `agy`, `claude-code`, `codex`, `grok`, or `opencode`. |
 | `effort` | no | Thinking level; see [Agent effort](#agent-effort). |
-| `client.type` | no | CLI client that runs the model. Required by `byteplus`. |
 | `client.options` | no | Native options for the selected client. |
 
 `client` is always a mapping. The earlier forms `client: <id>` and a top-level
 `options` map are not accepted; `migent migrate` moves them.
+
+The historical `provider` field was removed in `schema_version: 6`. A v6 agent
+with `provider` is rejected with a hint to set `client.type` and run
+`migent migrate`. `migent migrate` maps each legacy provider to its client:
+`claude` → `claude-code`, `codex` → `codex`, `grok` → `grok`, `agy` → `agy`, and
+`opencode` → `opencode`. `byteplus` has no default client and must name one.
 
 ## Machine-specific overrides
 
@@ -68,8 +73,9 @@ supply the complete agent definition:
 roles:
   developer:
     agent:
-      provider: codex
       model: another-model-id
+      client:
+        type: codex
 ```
 
 Named agents merge key by key; role agents, scalars, and lists replace shared values. The local
@@ -82,11 +88,12 @@ When several roles or stages need the same settings, define a named entry
 under `agents` and use its name as the role's `agent`:
 
 ```yaml
-schema_version: 5
+schema_version: 6
 agents:
   deep_reasoning:
-    provider: codex
     model: gpt-5
+    client:
+      type: codex
 roles:
   developer:
     agent: deep_reasoning
@@ -104,13 +111,14 @@ separate from role names.
 Put an agent directly in a role when it does not need a shared name:
 
 ```yaml
-schema_version: 5
+schema_version: 6
 roles:
   developer:
     agent:
-      provider: codex
       model: gpt-5
       effort: high
+      client:
+        type: codex
 ```
 
 No `agents` section is needed for inline-only setups. To reuse an agent, set
@@ -122,15 +130,15 @@ Supply the full agent definition or a name; it replaces the shared agent.
 
 ## Options
 
-For the shared client/provider contracts, discovery catalogs, and validation
-boundaries, see [Adapters](adpaters.md). The client-specific settings below
-describe the existing configuration surface.
+For the client contracts, discovery catalogs, and validation boundaries, see
+[Adapters](adpaters.md). The client-specific settings below describe the
+existing configuration surface.
 
-Each provider names its own options and lists the values for the selected
+Each client names its own options and lists the values for the selected
 model. They go in the agent's `client.options`. `migent init` asks for options
-marked as prompts. Leaving one unset keeps the provider default.
+marked as prompts. Leaving one unset keeps the client default.
 
-- Antigravity prompts for `effort` (`low`, `medium`, `high`, `xhigh`, or
+- Antigravity (`agy`) prompts for `effort` (`low`, `medium`, `high`, `xhigh`, or
   `max`) and sends it as `agy --effort`. `mode` is `accept-edits`, `auto`, or
   `plan`. `agent` selects a named agent. `sandbox` and `skip_permissions` are
   `true` or `false`. Other keys are rejected. Leaving `skip_permissions` unset
@@ -145,18 +153,26 @@ marked as prompts. Leaving one unset keeps the provider default.
 - OpenCode accepts `agent`, sent as `--agent`; `thinking`, a boolean string
   controlling display of thinking blocks (`true` sends `--thinking`); and
   `variant`, rendered as a `#variant` suffix on the model ID for OpenCode V2.
-  Only `variant` is overridable and stored on the provider session. None of
+  Only `variant` is overridable and stored on the session. None of
   these options is prompted for. Other keys are rejected.
+- Claude Code accepts `permission_mode`. Migent sets
+  `permission_mode=bypassPermissions` when the option is unset, and generates a
+  session ID for resume.
 
-Only options the provider marks as overridable are part of the provider session.
+Only options the client marks as overridable are part of the session.
 
 ## Schema version
 
 `schema_version` on `.migent/config.yaml` and on each workflow file is the
-document version; the current version is 5. A missing value is version 0. A command that uses those
+document version; the current version is 6. A missing value is version 0. A command that uses those
 files stops while the recorded version is older and tells you to run
 `migent migrate`. That command asks before writing. `migent migrate --yes`
 writes without asking.
+
+Migration is layer-aware: `config.yaml` and `config.local.yaml` are migrated
+against the original merged configuration, and a synthesized client is written
+only into the layer that supplied the legacy provider. Locations with neither a
+provider nor a client are left unchanged for validation to report.
 
 ## Selection and overrides
 
@@ -171,17 +187,18 @@ stages:
   - id: final_check
     role: reviewer
     agent:
-      provider: codex
       model: gpt-5
       effort: high
+      client:
+        type: codex
 ```
 
 A stage's `agent` replaces the role's agent entirely: an inline agent inherits
-nothing from the role, so restate the provider and model even when only the
-effort differs. Stages have no `options` of their own in schema version 5.
+nothing from the role, so restate the client and model even when only the
+effort differs. Stages have no `options` of their own in schema version 6.
 CLI option overrides apply last.
 
-Migent currently includes providers for the headless `agy`, `claude`, `codex`,
+Migent currently includes clients for the headless `agy`, `claude`, `codex`,
 `grok`, and `opencode` CLIs. Those CLIs own authentication, tool use, and agent execution;
 Migent owns selection, prompts, routing, and persistence.
 
@@ -191,9 +208,9 @@ The shared capture and normalization contract is documented in
 [Adapters: Failures and usage](adpaters.md#failures-and-usage).
 The table below records client-specific usage behavior.
 
-| Provider | What it prints | Tokens | Cost |
+| Client | What it prints | Tokens | Cost |
 | --- | --- | --- | --- |
-| claude | last `result` event | per process | `total_cost_usd`, cumulative per conversation. This is a client estimate, not a bill. |
+| claude-code | last `result` event | per process | `total_cost_usd`, cumulative per conversation. This is a client estimate, not a bill. |
 | codex | each `turn.completed` | cumulative per thread. `input_tokens` includes cache reads, and metrics subtract them. | none |
 | grok | `end`, or the last `usage` event when `end` is absent | per process | `total_cost_usd` on `end`, per process. A `usage` event has no cost. |
 | opencode | each printed `step_finish` | per process; sum of `tokens.input`, `tokens.output`, `tokens.reasoning`, `tokens.cache.read`, and `tokens.cache.write`; input is not reduced by cache reads; a missing final `step_finish` undercounts | sum of `part.cost` |
@@ -208,15 +225,16 @@ thinking level without using the CLI-specific option name:
 ```yaml
 agents:
   code_generation:
-    provider: codex
     model: gpt-5
     effort: high
+    client:
+      type: codex
 ```
 
-The alias follows the selected `client`, or the provider's default CLI client:
-Codex uses `model_reasoning_effort`, Grok uses `reasoning-effort`, and Claude
-and Antigravity use `effort`. OpenCode V2 uses `variant`, which the client renders
-as `provider/model#variant` (for example `openai/gpt-5#high`). Available variants
+The alias follows `client.type`: Codex uses `model_reasoning_effort`, Grok uses
+`reasoning-effort`, and Claude Code and Antigravity use `effort`. OpenCode V2
+uses `variant`, which the client renders as `provider/model#variant` (for
+example `openai/gpt-5#high`). Available variants
 depend on the selected model. Do not combine effort or `options.variant` with
 a model ID that already contains a `#variant` suffix.
 Values pass through unchanged and must be supported by the selected client/model.

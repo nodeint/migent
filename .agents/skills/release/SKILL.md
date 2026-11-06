@@ -97,7 +97,7 @@ pnpm test
 reads its version from `packages/cli/package.json`. Do not edit
 `packages/cli/src/version.ts`.
 
-Build and tests must pass locally. Follow the provider isolation guidance in
+Build and tests must pass locally. Follow the client isolation guidance in
 `CONTRIBUTING.md`. Stop and report failures. Stage only the release files
 named above, commit with `Release X.Y.Z`, then push the branch explicitly:
 

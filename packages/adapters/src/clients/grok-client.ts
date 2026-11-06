@@ -6,7 +6,7 @@ import type {
   CliRunOutput,
   CliUsage,
   CommandSpec,
-  ProviderOption,
+  ClientOption,
   RawFailure,
   UsageCapture,
 } from "../types.js";
@@ -34,7 +34,7 @@ function stripDots(value: string): string {
   return value.slice(start, end);
 }
 
-const GROK_OPTIONS: readonly ProviderOption[] = [
+const GROK_OPTIONS: readonly ClientOption[] = [
   { name: GROK_REASONING_OPTION, prompt: true, allowDefault: true, overridable: true },
   { name: "max_turns" },
   { name: "tools" },
@@ -158,7 +158,7 @@ export class GrokClient implements CliClient {
   readonly id = "grok";
   readonly command = "grok";
 
-  options(): readonly ProviderOption[] {
+  options(): readonly ClientOption[] {
     return GROK_OPTIONS;
   }
 

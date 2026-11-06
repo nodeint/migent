@@ -3,15 +3,15 @@ import { mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
-import { ConfigurationError, executeNamedWorkflow, loadWorkflowDocument, SessionLock } from "../src/index.ts";
-import { readFoldedStatus, statusDriftMessage } from "../src/session-fold.ts";
+import { AgentToolRunner, ConfigurationError, executeNamedWorkflow, loadWorkflowDocument, SessionLock } from "../src/index.ts";
+import { readExecutions, readFoldedStatus, statusDriftMessage } from "../src/session-fold.ts";
 import { appendLifecycleEvent, readParsedEvents } from "../src/session-events.ts";
 import { repairSession } from "../src/session-repair.ts";
 import { createAgentSession, createWorkflowSession } from "../src/session-records.ts";
 import { clearInFlightExecution, noteInFlightExecution, SessionStore } from "../src/session-store.ts";
 import { StageOutcome } from "../src/stage-outcome.ts";
 import { freezeSessionTask } from "../src/task-file.ts";
-import { tempDir, writeSessionConfig } from "./support.ts";
+import { defaultClients, tempDir, writeSessionConfig } from "./support.ts";
 
 const PLAN = readFileSync(
   path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "workflows", "plan.yaml"),
@@ -81,7 +81,7 @@ test("the fold matches status.json after each session write", () => {
   const runningStatus = readFileSync(path.join(sessionDirectory(workspace, sessionId), "status.json"), "utf8");
   store.recordProviderEvent(planContext, {
     event: "provider.stage_started",
-    provider: "fake",
+    client: "fake",
     session_id: sessionId,
     execution_id: planContext.executionId,
     stage_id: "plan",
@@ -93,7 +93,7 @@ test("the fold matches status.json after each session write", () => {
   expect(afterStage).not.toBe(runningStatus);
   store.recordProviderEvent(planContext, {
     event: "provider.heartbeat",
-    provider: "fake",
+    client: "fake",
     session_id: sessionId,
     execution_id: planContext.executionId,
     stage_id: "plan",
@@ -102,7 +102,7 @@ test("the fold matches status.json after each session write", () => {
   });
   store.recordProviderEvent(planContext, {
     event: "provider.item_started",
-    provider: "fake",
+    client: "fake",
     session_id: sessionId,
     execution_id: planContext.executionId,
     stage_id: "plan",
@@ -113,7 +113,7 @@ test("the fold matches status.json after each session write", () => {
   const afterHeartbeat = readFileSync(path.join(sessionDirectory(workspace, sessionId), "status.json"), "utf8");
   store.recordProviderEvent(planContext, {
     event: "verify.heartbeat",
-    provider: "fake",
+    client: "fake",
     session_id: sessionId,
     execution_id: planContext.executionId,
     stage_id: "plan",
@@ -302,7 +302,11 @@ test("continue repairs a status.json that missed its event, and refuses a destro
     status: "active",
   };
   writeFileSync(path.join(directory, "status.json"), JSON.stringify(partial), "utf8");
-  const continued = await executeNamedWorkflow(workspace, { sessionId, resetRevisions: true });
+  const continued = await executeNamedWorkflow(
+    workspace,
+    { sessionId, resetRevisions: true },
+    new AgentToolRunner(defaultClients()),
+  );
   expect(continued.stopReason).toBe("completed");
   expect(continued.status).toBe("completed");
   const kept = readStatus(workspace, sessionId);
@@ -312,7 +316,7 @@ test("continue repairs a status.json that missed its event, and refuses a destro
 
   markSchema1(workspace, sessionId);
   writeFileSync(path.join(directory, "status.json"), "{", "utf8");
-  await expect(executeNamedWorkflow(workspace, { sessionId })).rejects.toThrow(/--accept-task/);
+  await expect(executeNamedWorkflow(workspace, { sessionId }, new AgentToolRunner(defaultClients()))).rejects.toThrow(/--accept-task/);
   expect(() => repairSession(workspace, sessionId)).toThrow(ConfigurationError);
   expect(() => repairSession(workspace, sessionId)).toThrow(/task_sha256/);
   const task = readFileSync(path.join(directory, "task.md"), "utf8");
@@ -367,6 +371,7 @@ test("a new running execution does not keep the previous current stage", () => {
   const directory = sessionDirectory(workspace, sessionId);
   const store = new SessionStore(workspace);
   const [record, , context] = store.loadOrCreate("fake", "model", {}, workspace, sessionId, "plan", null, null, "plan");
+  expect(readExecutions(directory).find((execution) => execution.executionId === context.executionId)?.client).toBe("fake");
   appendLifecycleEvent(directory, {
     event: "provider.stage_started",
     timestamp: "2026-10-19T00:00:01+00:00",
@@ -401,6 +406,7 @@ test("a new running execution does not keep the previous current stage", () => {
     timestamp: "2026-10-19T00:00:03+00:00",
     executionId: next.executionId,
     stageId: "review-plan",
+    topLevel: { client: "fake" },
     summary: "new",
   });
   const refreshed = repairSession(workspace, sessionId);
@@ -408,6 +414,7 @@ test("a new running execution does not keep the previous current stage", () => {
     expect.objectContaining({
       execution_id: next.executionId,
       stage_id: "review-plan",
+      client: "fake",
       event: "provider.stage_started",
     }),
   ]);

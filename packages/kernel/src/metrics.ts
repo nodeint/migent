@@ -1,7 +1,9 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { isAtomicTempName, writeJsonAtomic } from "./atomic-file.js";
-import type { Provider, TurnUsage, UsageCapture } from "./provider-contract.js";
+import type { CliClient, ClientRegistry, TurnUsage, UsageCapture } from "./cli-client.js";
+import { normalizeUsage } from "./client-policy.js";
+import { clientOfCommand, legacyClientOf, legacyExecutionClient } from "./legacy-provider.js";
 import { ConfigurationError } from "./errors.js";
 import { listSessionRows, readStatusFileState } from "./query.js";
 import { isRecord } from "./record.js";
@@ -32,6 +34,7 @@ interface ExecutionRow {
   order: number | null;
   stageId: string;
   attempt: number | null;
+  client: string | null;
   provider: string | null;
   model: string | null;
   agentId: string | null;
@@ -56,7 +59,7 @@ interface NormalizedTurn {
 export function sessionMetrics(
   workspace: string,
   sessionId: string,
-  providers: Record<string, Provider>,
+  clients: ClientRegistry,
 ): Record<string, unknown> {
   const sessionDirectory = path.join(workspace, MIGENT_DIRNAME, SESSIONS_DIRNAME, sessionId);
   if (sessionIsCorrupt(sessionDirectory)) return { session_id: sessionId, status: "corrupt" };
@@ -69,12 +72,12 @@ export function sessionMetrics(
     status.workflow_id === "agent"
       ? (typeof status.role === "string" ? status.role : manifestRole(sessionDirectory))
       : null;
-  return sessionObject(sessionId, status, workflow, executions, events, providers, agentRole);
+  return sessionObject(sessionId, status, workflow, executions, events, clients, agentRole);
 }
 
 export function listSessionMetrics(
   workspace: string,
-  providers: Record<string, Provider>,
+  clients: ClientRegistry,
   filters: { workflow: string | null; status: string | null; limit: number | null },
 ): Record<string, unknown>[] {
   let rows = listSessionRows(workspace);
@@ -82,7 +85,7 @@ export function listSessionMetrics(
   if (filters.workflow != null) rows = rows.filter((row) => row[2] === filters.workflow);
   if (filters.status != null) rows = rows.filter((row) => row[3] === filters.status);
   if (filters.limit != null) rows = rows.slice(0, filters.limit);
-  return rows.map((row) => sessionMetrics(workspace, row[1] ?? "", providers));
+  return rows.map((row) => sessionMetrics(workspace, row[1] ?? "", clients));
 }
 
 export function sealedMetricsPath(workspace: string, sessionId: string): string {
@@ -114,10 +117,10 @@ export function readSealedMetrics(
 export function sealSessionMetrics(
   workspace: string,
   sessionId: string,
-  providers: Record<string, Provider>,
+  clients: ClientRegistry,
 ): void {
   if (readSealedMetrics(workspace, sessionId).state !== "missing") return;
-  const metrics = sessionMetrics(workspace, sessionId, providers);
+  const metrics = sessionMetrics(workspace, sessionId, clients);
   if (metrics.status !== "completed") return;
   writeJsonAtomic(sealedMetricsPath(workspace, sessionId), metrics);
 }
@@ -227,6 +230,7 @@ function executionRow(directoryName: string, raw: Record<string, unknown>): Exec
     order: finiteNumber(raw.execution_order),
     stageId: typeof raw.stage_id === "string" ? raw.stage_id : directoryName,
     attempt: finiteNumber(raw.stage_attempt),
+    client: text(raw.client),
     provider: text(raw.provider),
     model: text(raw.model),
     agentId: text(raw.agent_id),
@@ -269,11 +273,11 @@ function sessionObject(
   workflow: WorkflowDocument | null,
   executions: ExecutionRow[],
   events: ParsedEvent[],
-  providers: Record<string, Provider>,
+  clients: ClientRegistry,
   agentRole: string | null,
 ): Record<string, unknown> {
   const known = new Set(executions.map((execution) => execution.id));
-  const turns = normalizeTurns(events, executions, providers).filter((turn) => known.has(turn.executionId));
+  const turns = normalizeTurns(events, executions, clients, status).filter((turn) => known.has(turn.executionId));
   const cancelled = countByExecution(events, "provider.cancelled", known);
   const revisionTargets = revisionMap(executions, workflow);
   const routed = routedFrom(executions, workflow);
@@ -382,7 +386,7 @@ function executionObject(
       stage_id: execution.stageId,
       stage_attempt: execution.attempt,
       role: workflow ? (workflow.stages[execution.stageId]?.role ?? null) : agentRole,
-      provider: execution.provider,
+      client: execution.client ?? legacyClientOf(execution.provider),
       model: execution.model,
       cli_version: text(startedDetails.cli_version),
       argv: stringList(detailsOf(firstTurn).argv),
@@ -439,23 +443,42 @@ function isRunnerTurn(event: ParsedEvent): boolean {
 function normalizeTurns(
   events: ParsedEvent[],
   executions: ExecutionRow[],
-  providers: Record<string, Provider>,
+  clients: ClientRegistry,
+  status: Record<string, unknown>,
 ): NormalizedTurn[] {
-  const providerByExecution = new Map(executions.map((execution) => [execution.id, execution.provider]));
+  const byExecution = new Map(executions.map((execution) => [execution.id, execution]));
+  const executables = executableByExecution(events);
+  const roleSession = status.workflow_id === "agent";
   const previous = new Map<string, UsageCapture>();
   const turns: NormalizedTurn[] = [];
   for (const event of events) {
     if (!isRunnerTurn(event) || event.executionId === null) continue;
     const details = detailsOf(event);
-    const provider = text(event.raw.provider) ?? providerByExecution.get(event.executionId) ?? "";
+    const execution = byExecution.get(event.executionId);
+    // Usage is read with the CLI that actually ran the turn. Legacy records name no
+    // client, so this follows the same evidence policy as resume.
+    const evidence = legacyExecutionClient({
+      recorded: execution?.client ?? text(event.raw.client),
+      provider: execution?.provider ?? text(event.raw.provider),
+      executable: executables.get(event.executionId) ?? null,
+      roleSession,
+    });
+    const clientId = evidence.client;
     const agentId = typeof details.agent_id === "string" ? details.agent_id : null;
-    const key = JSON.stringify([provider, agentId]);
+    const key = JSON.stringify([clientId, agentId]);
     const capture = isRecord(details.usage) ? details.usage : null;
-    const impl = providers[provider.toLowerCase()];
-    let usage = blankUsage();
-    if (capture !== null && impl?.normalizeUsage) {
+    let reader: Pick<CliClient, "readUsage"> | null = null;
+    if (clientId !== null) {
       try {
-        usage = coerceUsage(impl.normalizeUsage(capture, previous.get(key) ?? null));
+        reader = clients.get(clientId);
+      } catch {
+        reader = null;
+      }
+    }
+    let usage = blankUsage();
+    if (capture !== null && reader !== null) {
+      try {
+        usage = coerceUsage(normalizeUsage(reader, capture, previous.get(key) ?? null));
       } catch {
         usage = blankUsage();
       }
@@ -464,6 +487,21 @@ function normalizeTurns(
     turns.push({ executionId: event.executionId, usage, captured: capture !== null });
   }
   return turns;
+}
+
+/** The executable that ran each execution's first recorded turn. */
+function executableByExecution(events: ParsedEvent[]): Map<string, string> {
+  const commands = new Map<string, string>();
+  for (const event of events) {
+    if (event.executionId === null || commands.has(event.executionId)) continue;
+    if (event.event !== "provider.turn_completed" && event.event !== "provider.turn_failed") continue;
+    const argv = detailsOf(event).argv;
+    if (Array.isArray(argv) && typeof argv[0] === "string") {
+      const client = clientOfCommand(argv[0]);
+      if (client !== null) commands.set(event.executionId, argv[0]);
+    }
+  }
+  return commands;
 }
 
 function revisionMap(executions: ExecutionRow[], workflow: WorkflowDocument | null): Map<string, number> {

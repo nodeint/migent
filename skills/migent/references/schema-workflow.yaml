@@ -1,6 +1,6 @@
 # Annotated workflow example. For validation, session drafts, and refresh,
 # see session-workflow.md. For project setup, see setup.md.
-schema_version: 5
+schema_version: 6
 concurrency: 1
 
 # Optional; defaults to the file name without .yaml.
@@ -23,7 +23,7 @@ stages:
     # Optional recipient for questions. Only human is supported; omit to disable questions.
     ask: human
     # Optional agent for this stage: a name from config.yaml, or a complete inline
-    # agent (provider, model, effort, client). Omit to use the role's agent.
+    # agent (model, effort, client). Omit to use the role's agent.
     agent: deep_reasoning
     depends_on: [prepare]
     # Only allowed when a route returns to this stage.
@@ -37,7 +37,7 @@ stages:
     role: reviewer
     depends_on: [draft]
     # Optional: resume a completed role stage listed in depends_on.
-    # Both stages must use compatible provider, model, and conversation options.
+    # Both stages must use compatible client, model, and conversation options.
     session:
       resume_from: draft
     instructions:
@@ -68,9 +68,10 @@ stages:
         - "**/README.md"
     # An inline agent replaces the role's agent entirely.
     agent:
-      provider: codex
       model: gpt-5
       effort: low
+      client:
+        type: codex
     instructions:
       - Review documentation changes.
     # A leaf stage without a decision completes naturally, including when skipped.

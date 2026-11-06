@@ -1,14 +1,14 @@
 import {
   ConfigurationError,
   collectFrozenDrift,
-  createProviderResolver,
   isRoleStage,
   loadRoleResponsibilities,
   loadWorkspaceConfig,
-  resolveEffectiveProvider,
+  resolveEffectiveClient,
   resolveStageSpec,
   whichSync,
-  type ProviderInfo,
+  type ClientInfo,
+  type ClientRegistry,
   type RoleStageSpec,
   type SessionSelection,
   type SessionSource,
@@ -17,7 +17,7 @@ import {
   type WorkflowFreeze,
 } from "@nodeint/migent-kernel";
 import { addUnique, makeCheck, type Check, type DiagnoseOptions } from "./check.js";
-import { failureText } from "./providers.js";
+import { failureText } from "./clients.js";
 import { stageAgentKey } from "./stage-agents.js";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -77,7 +77,7 @@ export function diagnoseSession(
       selection.freeze,
       selection.workflowPath,
       selection.manifestWorkflowId,
-      createProviderResolver(options.providers),
+      options.clients,
       true,
     ).map((detail) => `Frozen workflow differs from the live files: ${detail}`);
   }
@@ -89,8 +89,8 @@ export function diagnoseSession(
   const bindingProblems: string[] = [];
   const bindingWarnings: string[] = [];
   const executables = new Map<string, { labels: Set<string>; stages: string[] }>();
-  const record = (target: StageTarget, effective: ProviderInfo, stageId: string): void => {
-    const name = target.client === undefined ? target.provider : `${target.provider} (${target.client})`;
+  const record = (target: StageTarget, effective: ClientInfo, stageId: string): void => {
+    const name = target.client;
     const entry = executables.get(effective.command) ?? { labels: new Set<string>(), stages: [] };
     entry.labels.add(name);
     entry.stages.push(stageId);
@@ -104,8 +104,8 @@ export function diagnoseSession(
     checkLiveBindings(workspace, stages, document.id, options, bindingProblems, bindingWarnings, record);
   }
   const bindingsCheck = makeCheck("bindings", bindingItems, bindingProblems, bindingWarnings);
-  const providersCheck = checkExecutables(executables, which);
-  return finish(source, [sessionCheck, workflowCheck, bindingsCheck, providersCheck]);
+  const clientsCheck = checkExecutables(executables, which);
+  return finish(source, [sessionCheck, workflowCheck, bindingsCheck, clientsCheck]);
 }
 
 function checkFrozenBindings(
@@ -114,7 +114,7 @@ function checkFrozenBindings(
   workflowId: string,
   options: DiagnoseSessionOptions,
   problems: string[],
-  record: (target: StageTarget, effective: ProviderInfo, stageId: string) => void,
+  record: (target: StageTarget, effective: ClientInfo, stageId: string) => void,
 ): void {
   for (const stage of stages) {
     const where = `${workflowId}.${stage.id}`;
@@ -126,7 +126,7 @@ function checkFrozenBindings(
       addUnique(problems, `${where}: workflow.frozen.yaml pins no target for stage ${stage.id}.`);
       continue;
     }
-    const effective = effectiveProvider(options.providers, target, `targets.${stage.id}`, where, problems, true);
+    const effective = effectiveClient(options.clients, target, `targets.${stage.id}`, where, problems, true);
     if (effective !== null) record(target, effective, stage.id);
   }
 }
@@ -138,7 +138,7 @@ function checkLiveBindings(
   options: DiagnoseSessionOptions,
   problems: string[],
   warnings: string[],
-  record: (target: StageTarget, effective: ProviderInfo, stageId: string) => void,
+  record: (target: StageTarget, effective: ClientInfo, stageId: string) => void,
 ): void {
   let config: Record<string, unknown>;
   try {
@@ -169,38 +169,38 @@ function checkLiveBindings(
       continue;
     }
     if (key !== null && isRecord(config.agents) && isRecord(config.agents[key]) && Object.keys(config.agents[key]).length === 0) {
-      addUnique(problems, `${where}: agents.${key} has no provider and model on this machine. Map it in .migent/config.local.yaml.`);
+      addUnique(problems, `${where}: agents.${key} has no client and model on this machine. Map it in .migent/config.local.yaml.`);
       continue;
     }
     let target: StageTarget;
     try {
-      target = resolveStageSpec(config, stage, undefined, createProviderResolver(options.providers));
+      target = resolveStageSpec(config, stage, undefined, options.clients);
     } catch (error) {
       if (!(error instanceof ConfigurationError)) throw error;
       addUnique(problems, `${where}: ${error.message}`);
       continue;
     }
     const field = stage.agent !== null ? `stages.${stage.id}.agent` : `roles.${stage.role}.agent`;
-    const effective = effectiveProvider(options.providers, target, field, where, problems);
+    const effective = effectiveClient(options.clients, target, field, where, problems);
     if (effective !== null) record(target, effective, stage.id);
   }
 }
 
-/** Binds the target to its provider, reporting a failure as `where: field…`. */
-function effectiveProvider(
-  providers: Readonly<Record<string, ProviderInfo>>,
+/** Binds the target to its client, reporting a failure as `where: field…`. */
+function effectiveClient(
+  clients: ClientRegistry,
   target: StageTarget,
   field: string,
   where: string,
   problems: string[],
   flat = false,
-): ProviderInfo | null {
-  const bound = resolveEffectiveProvider(providers, target);
+): ClientInfo | null {
+  const bound = resolveEffectiveClient(clients, target);
   if (bound.failure !== undefined) {
     addUnique(problems, `${where}: ${failureText(field, bound.failure, flat)}`);
     return null;
   }
-  return bound.provider ?? null;
+  return bound.client ?? null;
 }
 
 function checkExecutables(
@@ -215,7 +215,7 @@ function checkExecutables(
     if (found) items.push(`${[...entry.labels].sort().join(", ")}  ${found}`);
     else problems.push(`${command} is not on PATH (stages: ${entry.stages.join(", ")})`);
   }
-  return makeCheck("providers", items, problems, []);
+  return makeCheck("clients", items, problems, []);
 }
 
 /** The key an effort check is stored under: an agent name, or the role's inline agent field. */

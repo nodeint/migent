@@ -8,16 +8,16 @@ import {
   selectRunWorkflow,
   selectSessionWorkflow,
   whichSync,
-  type Provider,
+  type ClientRegistry,
   type SessionSelection,
 } from "@nodeint/migent-kernel";
 import path from "node:path";
 import { printDoctor } from "./display.js";
 import { cliHooks } from "./hooks.js";
-import { runProviderCommandAsync, type RunCommand, type Which } from "./provider.js";
+import { runClientCommandAsync, type RunCommand, type Which } from "./client.js";
 
 export interface DiagnoseHooks {
-  providers: Record<string, Provider>;
+  clients: ClientRegistry;
   which?: Which | null;
   runCommand?: RunCommand | null;
 }
@@ -33,8 +33,8 @@ export async function diagnoseSelection(
 ): Promise<SessionDiagnosis> {
   const which = hooks.which ?? cliHooks.which ?? whichSync;
   const runCommand = hooks.runCommand ?? cliHooks.runCommand ??
-    ((argv, input) => runProviderCommandAsync(argv, input, { cwd: workspace, timeoutMs: 10_000 }));
-  const resolved: DoctorHooks = { providers: hooks.providers, which, runCommand };
+    ((argv, input) => runClientCommandAsync(argv, input, { cwd: workspace, timeoutMs: 10_000 }));
+  const resolved: DoctorHooks = { clients: hooks.clients, which, runCommand };
   return diagnose(workspace, selection, resolved);
 }
 

@@ -1,4 +1,5 @@
 import type { RunResult } from "./agent-runner.js";
+import type { ClientRegistry } from "./cli-client.js";
 import { AgentSessionRecord, SessionStore, type ExecutionContext } from "./session-store.js";
 import { CancellationRequested } from "./command-executor.js";
 import { ProviderEventReporter } from "./provider-events.js";
@@ -16,12 +17,12 @@ export async function runVerifyOnlyStage(input: {
   sessionId: string;
   stage: VerifyOnlyStageSpec;
   verifyRunner: VerifyRunner;
-  providers?: ConstructorParameters<typeof SessionStore>[2];
+  clients?: ClientRegistry;
   /** Reuse a cancelled execution that has already been reopened. */
   executionId?: string | null;
   onExecution?: (executionId: string) => void;
 }): Promise<RunResult> {
-  const store = new SessionStore(input.workspace, undefined, input.providers);
+  const store = new SessionStore(input.workspace, undefined, input.clients);
   const context = openContext(store, input.sessionId, input.stage.id, input.executionId ?? null);
   input.onExecution?.(context.executionId);
   if (input.executionId == null) log(startLine(input.stage, parseExecutionId(context.executionId)?.attempt ?? null));
@@ -132,7 +133,7 @@ function executionJson(
     failure_reason: failureReason,
     failure_kind: "",
     reset_at: "",
-    provider: "",
+    client: "",
     outcome_status: outcomeStatus,
     outcome_decision: "",
     session_status: typeof sessionStatus.status === "string" ? sessionStatus.status : "",

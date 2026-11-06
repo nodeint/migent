@@ -14,6 +14,7 @@ import {
 } from "./session-ledger.js";
 import { readStatusFileState, type StatusFileState } from "./query.js";
 import { isRecord } from "./record.js";
+import { legacyClientOf } from "./legacy-provider.js";
 import { EXECUTIONS_DIRNAME } from "./runtime.js";
 import {
   CANCELLED_REPLY,
@@ -46,7 +47,7 @@ export interface FoldExecution {
   executionOrder: number;
   stageId: string;
   stageAttempt: number;
-  provider: string;
+  client: string;
   model: string;
   resumesExecutionId: string | null;
   status: string;
@@ -257,7 +258,7 @@ function publishSkippedStages(status: Record<string, unknown>, executions: reado
 interface RunningStage {
   execution_id: string | null;
   stage_id: string | null;
-  provider: unknown;
+  client: unknown;
   event: string;
   summary: string | null;
   updated_at: string | null;
@@ -317,7 +318,7 @@ function applySharedEvent(
       noted.set(event.executionId, {
         execution_id: event.executionId,
         stage_id: event.stageId,
-        provider: event.raw.provider ?? null,
+        client: event.raw.client ?? legacyClientOf(typeof event.raw.provider === "string" ? event.raw.provider : null),
         event: event.event,
         summary: event.summary,
         updated_at: event.timestamp,
@@ -701,7 +702,7 @@ function executionFromRecord(
     executionOrder: asInt(metadata.execution_order),
     stageId: textOr(metadata.stage_id) ?? "",
     stageAttempt: asInt(metadata.stage_attempt),
-    provider: textOr(metadata.provider) ?? "",
+    client: textOr(metadata.client) ?? legacyClientOf(textOr(metadata.provider)) ?? "",
     model: textOr(metadata.model) ?? "",
     resumesExecutionId: textOr(metadata.resumes_execution_id),
     status: textOr(metadata.status) ?? "",

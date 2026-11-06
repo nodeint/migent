@@ -1,29 +1,29 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { AgentToolRunner, type FailureClassification, type RunResult, resetCancellation, raiseCancellation } from "@nodeint/migent-kernel";
+import { AgentToolRunner, type BuildCommandInput, type RawFailure, type RunResult, resetCancellation, raiseCancellation } from "@nodeint/migent-kernel";
 import { expect, test } from "vitest";
 import { dispatchAgent } from "../src/commands/agent.ts";
-import { ScriptedProvider, removeWorkspace, repoWorkflowText, writeFakeWorkflowWorkspace } from "./support.ts";
+import { ScriptedClient, registryOf, removeWorkspace, repoWorkflowText, writeFakeWorkflowWorkspace } from "./support.ts";
 
 const FUTURE = "2099-01-01T00:00:00.000Z";
 const PAST = "2000-01-01T00:00:00.000Z";
 
-class ClassifiedProvider extends ScriptedProvider {
-  private readonly kinds: Array<FailureClassification | null>;
+class ClassifiedProvider extends ScriptedClient {
+  private readonly kinds: Array<RawFailure | null>;
 
-  constructor(responses: string[], kinds: Array<FailureClassification | null>) {
+  constructor(responses: string[], kinds: Array<RawFailure | null>) {
     super(responses);
     this.kinds = [...kinds];
   }
 
-  override classifyFailure(): FailureClassification | null {
+  override extractFailure(): RawFailure | null {
     const next = this.kinds.shift();
     return next === undefined ? null : next;
   }
 }
 
-function quota(resetAt: string | null): FailureClassification {
-  return { kind: "quota", message: "limited", resetAt, window: null };
+function quota(resetAt: string | null): RawFailure {
+  return { origin: "provider-error", message: "limited", exitCode: 1, rateLimit: { resetAt, window: null } };
 }
 
 function workspace(): string {
@@ -31,7 +31,7 @@ function workspace(): string {
 }
 
 function runner(provider: ClassifiedProvider) {
-  return new AgentToolRunner({ fake: provider }, 10);
+  return new AgentToolRunner(registryOf({ fake: provider }), 10);
 }
 
 test("a role quota waits and reruns with the original prompt", async () => {
@@ -82,7 +82,7 @@ test("a role quota that is not later returns 1 without another call", async () =
     const code = await dispatchAgent(root, {
       role: "reviewer",
       prompt: "Review",
-      runner: new AgentToolRunner({ fake: provider }, 10),
+      runner: new AgentToolRunner(registryOf({ fake: provider }), 10),
       waitHooks: {
         now: () => now.value,
         sleep: async () => {
@@ -106,17 +106,17 @@ test("a role quota without reset_at and a provider failure return 1", async () =
       await dispatchAgent(root, {
         role: "reviewer",
         prompt: "Review",
-        runner: new AgentToolRunner({ fake: missing }, 10),
+        runner: new AgentToolRunner(registryOf({ fake: missing }), 10),
         waitHooks: { sleep: async () => { throw new Error("waited"); } },
       }),
     ).toBe(1);
     expect(missing.calls).toHaveLength(1);
-    const provider = new ClassifiedProvider(["status: complete\n\nx"], [{ kind: "provider", message: "down" }]);
+    const provider = new ClassifiedProvider(["status: complete\n\nx"], [{ origin: "provider-error", message: "down", exitCode: 1 }]);
     expect(
       await dispatchAgent(root, {
         role: "reviewer",
         prompt: "Review",
-        runner: new AgentToolRunner({ fake: provider }, 10),
+        runner: new AgentToolRunner(registryOf({ fake: provider }), 10),
         waitHooks: { sleep: async () => { throw new Error("waited"); } },
       }),
     ).toBe(1);
@@ -133,7 +133,7 @@ test("cancel during a role wait returns 130", async () => {
     const code = await dispatchAgent(root, {
       role: "reviewer",
       prompt: "Review",
-      runner: new AgentToolRunner({ fake: provider }, 10),
+      runner: new AgentToolRunner(registryOf({ fake: provider }), 10),
       waitHooks: {
         now: () => Date.parse(PAST),
         sleep: async () => {
@@ -164,7 +164,7 @@ test("a single verify-exhausted role result returns 1", async () => {
     failure_reason: "verify_exhausted",
     failure_kind: "",
     reset_at: "",
-    provider: "fake",
+    client: "fake",
   };
   const runner = {
     run: async () => result,
@@ -178,8 +178,8 @@ test("a single verify-exhausted role result returns 1", async () => {
 
 test("a cancelled role quota reruns with the last user prompt", async () => {
   const root = workspace();
-  class HangProvider extends ScriptedProvider {
-    override buildCommand(input: Parameters<ScriptedProvider["buildCommand"]>[0]) {
+  class HangProvider extends ScriptedClient {
+    override buildCommand(input: BuildCommandInput) {
       super.buildCommand(input);
       return { argv: [process.execPath, "-e", "setTimeout(() => {}, 30000)"] };
     }
@@ -196,7 +196,7 @@ test("a cancelled role quota reruns with the last user prompt", async () => {
     const cancelled = await dispatchAgent(root, {
       role: "reviewer",
       prompt: "Review the saved turn",
-      runner: new AgentToolRunner({ fake: hanging }, 10),
+      runner: new AgentToolRunner(registryOf({ fake: hanging }), 10),
     });
     expect(cancelled).toBe(130);
     resetCancellation();
@@ -209,7 +209,7 @@ test("a cancelled role quota reruns with the last user prompt", async () => {
       role: "reviewer",
       prompt: "this prompt must not be read",
       promptFile: null,
-      runner: new AgentToolRunner({ fake: provider }, 10),
+      runner: new AgentToolRunner(registryOf({ fake: provider }), 10),
       waitHooks: {
         now: () => now.value,
         sleep: async () => {

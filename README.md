@@ -9,7 +9,7 @@
 
 ---
 
-Migent connects coding-agent CLIs from different providers through explicit,
+Migent connects coding-agent CLIs across models and vendors through explicit,
 repository-defined workflows. One model can plan, another can review, and the
 first can revise—while Migent passes artifacts between them and tracks
 the workflow's progress.
@@ -49,7 +49,7 @@ the workflow's progress.
 
 ## What you can do
 
-- **Define roles, choose models.** Define each role's responsibilities and assign a provider and model suited to its work.
+- **Define roles, choose models.** Define each role's responsibilities and assign a client and model suited to its work.
 - **Run a single role.** Ask a planner, developer, or reviewer to work on a task, then continue the conversation in the same session.
 - **Automate workflows.** Connect roles with artifact handoffs, verification checks, and review cycles.
 - **Keep people involved.** Let agents ask questions and continue with your answers.
@@ -60,7 +60,7 @@ the workflow's progress.
 
 ## Why Migent?
 
-Different models bring different strengths, often across different providers
+Different models bring different strengths, often across different vendors
 and coding-agent CLIs. Using them together means coordinating the work yourself.
 
 - **You become the bridge.** Copy plans between conversations, carry review
@@ -73,27 +73,27 @@ and coding-agent CLIs. Using them together means coordinating the work yourself.
 Migent turns that coordination into a repeatable process:
 
 - **Assign roles, choose models.** Run a role independently or connect several
-  into a workflow. Change providers without rewriting the process.
+  into a workflow. Change clients without rewriting the process.
 - **Make handoffs explicit.** Pass artifacts between stages, verify results,
   and route review feedback back for revision.
 - **Keep progress and process.** Inspect and resume saved sessions; version
   roles and workflows alongside your code.
 
-Each provider CLI keeps its own authentication, tools, and execution capabilities.
+Each client CLI keeps its own authentication, tools, and execution capabilities.
 
 ## Supported CLIs
 
-Migent uses each provider's CLI in headless mode. Install and sign in to the
-CLIs used by your configuration.
+Migent uses each client's CLI in headless mode. Install and sign in to the
+CLIs used by your configuration. BytePlus models and other OpenAI-compatible
+backends run through `opencode`.
 
-| Provider           | CLI          |
-| -------------------| -------------|
-| Google Antigravity | `agy`        |
-| Claude             | `claude`     |
-| Codex              | `codex`      |
-| Grok               | `grok`       |
-| BytePlus           | `opencode`   |
-| Others             | `opencode`   |
+| Client       | CLI          |
+| ------------ | ------------ |
+| `agy`        | `agy`        |
+| `claude-code`| `claude`     |
+| `codex`      | `codex`      |
+| `grok`       | `grok`       |
+| `opencode`   | `opencode`   |
 
 ## Editor extension
 
@@ -107,7 +107,7 @@ Use Migent from your editor with the **Migent extension**:
 Before you begin, make sure you have:
 
 - Node.js 22+ installed.
-- The [provider CLIs](#supported-clis) you plan to use. Install them and sign in.
+- The [client CLIs](#supported-clis) you plan to use. Install them and sign in.
 
 ### Install Migent
 
@@ -132,7 +132,7 @@ Then run setup from your project root, either with an AI agent or with the CLI.
    Use the migent skill to set up Migent in this project.
    ```
 
-   The agent handles setup. If you have specific provider or model
+   The agent handles setup. If you have specific client or model
    preferences, mention them for each role in the same prompt.
 
 2. Ask the agent to run a single role, such as the reviewer (optional):
@@ -155,7 +155,7 @@ Then run setup from your project root, either with an AI agent or with the CLI.
 
 ### Option 2: Set up manually
 
-1. Run `migent init` and choose the provider, model, and options for the
+1. Run `migent init` and choose the client, model, and options for the
    developer and reviewer:
 
    ```bash
@@ -211,7 +211,7 @@ migent session show <session-id>
 ```
 
 The `show` command prints the current status, running stages, latest decisions, blockers,
-and published outputs. To watch live stage events and provider activity, run:
+and published outputs. To watch live stage events and client activity, run:
 
 ```bash
 migent session follow <session-id> --exit-when-done
@@ -239,7 +239,7 @@ contains:
 └── executions/
     └── <order>-<stage-id>--attempt-<n>/
         ├── execution.json     # stage attempt status and metadata
-        ├── stream.jsonl       # provider activity and heartbeats
+        ├── stream.jsonl       # client activity and heartbeats
         ├── prompt.md          # prompt sent to the agent
         ├── response.md        # model response only, when the model produced one
         ├── failure.md         # readable failure report, when the execution failed
@@ -254,8 +254,8 @@ layout and recovery commands.
 ## Workflow as code
 
 Workflows live in `.migent/workflows/`. Roles live in `.migent/config.yaml`.
-A role defines responsibilities and selects an agent: a provider, a model, an
-effort, and the CLI client that runs it. A stage assigns work to a role; a
+A role defines responsibilities and selects an agent: a model, an effort, and
+the CLI client that runs it. A stage assigns work to a role; a
 workflow connects those stages.
 Role responsibilities set shared working standards; stage instructions define the task.
 
@@ -264,12 +264,12 @@ Role responsibilities set shared working standards; stage instructions define th
 The following examples show how to write custom workflows. `migent init`
 generates the workflows described in the quickstart.
 
-Set the role's provider and model in its `agent`. Use model IDs available
+Set the role's client and model in its `agent`. Use model IDs available
 from `migent get models` in place of the example IDs.
 
 ```yaml
 # .migent/config.yaml
-schema_version: 5
+schema_version: 6
 roles:
   developer:
     description: Implements the change and verifies it.
@@ -277,15 +277,16 @@ roles:
       - Make focused changes that address root causes and follow project conventions.
       - Preserve unrelated behavior and support changes with relevant checks.
     agent:
-      provider: claude
       model: claude-sonnet-5.5
+      client:
+        type: claude-code
 ```
 
 This workflow asks the developer to implement a task, then checks the result:
 
 ```yaml
 # .migent/workflows/implement.yaml
-schema_version: 5
+schema_version: 6
 stages:
   - id: implement
     role: developer
@@ -306,18 +307,18 @@ migent session run --workflow implement --task "Add a --json flag to the export 
 
 If verification fails, Migent asks the agent to fix the problem and checks again.
 
-To change the developer's provider or model, edit its `agent`. The
+To change the developer's client or model, edit its `agent`. The
 workflow still refers to `developer`. After editing configuration or workflows,
 run `migent doctor` to check them.
 
 ### Add planning and review
 
 For a plan-and-review workflow, define two roles. They can use the same model
-or different providers:
+or different clients:
 
 ```yaml
 # .migent/config.yaml
-schema_version: 5
+schema_version: 6
 roles:
   planner:
     description: Designs the approach and writes the plan.
@@ -325,18 +326,20 @@ roles:
       - Design maintainable architecture grounded in repository evidence.
       - Keep designs proportional to the task; produce plans without changing code.
     agent:
-      provider: claude
       model: claude-opus-5.5
       effort: high
+      client:
+        type: claude-code
   reviewer:
     description: Reviews plans and implementations against the task.
     responsibilities:
       - Assess correctness, completeness, and maintainability using concrete evidence.
       - Report substantive findings with impact and required corrections; do not edit code.
     agent:
-      provider: codex
       model: gpt-6.1-sol
       effort: medium
+      client:
+        type: codex
 ```
 
 The planner produces `plan.md`. The reviewer receives it through `depends_on`
@@ -344,7 +347,7 @@ and decides whether to approve it or send it back for revision:
 
 ```yaml
 # .migent/workflows/plan.yaml
-schema_version: 5
+schema_version: 6
 stages:
   - id: plan
     role: planner
@@ -399,24 +402,24 @@ conversation. `outputs` publishes the final plan when the workflow completes.
   `navigate: [test, docs]` to branch, and `depends_on` to wait for upstream stages.
 - **Run only relevant work.** Use `run_when.changed_paths` to run a stage only
   when matching Git paths have changed.
-- **Tune each stage.** Share named models across roles, set model `effort`, or
-  override a stage's `model` and provider `options`.
+- **Tune each stage.** Share named agents across roles, set model `effort`, or
+  override a stage's `model` and client `options` with an inline agent.
 - **Control context.** Set shared `constraints` for the workflow or use
-  `session.resume_from` to continue an upstream stage's provider conversation.
+  `session.resume_from` to continue an upstream stage's client conversation.
 - **Set check limits.** Use `max_verify` and `verify_timeout` to bound checks;
   omit `role` for a stage that only runs verification commands.
 - **Connect workflows.** Declare `downstream` suggestions that pass published
   outputs to a new workflow when you start it with `--prior`.
 
 See [Writing workflows](docs/workflows.md) and
-[Model configuration](docs/providers.md) for details and examples.
+[Agent configuration](docs/agents.md) for details and examples.
 
 ## Concepts
 
 - **Workflow:** A process made of stages, such as plan, review, and implement.
 - **Stage:** One step with instructions for a role, optional checks, and a next step.
-- **Role:** A kind of work, such as developer or reviewer, with a default provider and model.
-- **Model:** The AI model a role uses, identified by its provider and model ID.
+- **Role:** A kind of work, such as developer or reviewer, with a default client and model.
+- **Model:** The AI model a role uses, identified by its model ID and client.
 - **Artifact:** A file a stage produces for later stages or the user, such as `plan.md`.
 - **Decision:** A stage's choice of what happens next, such as `approved` or `revise`.
 - **Session:** A saved run of a workflow or role that you can inspect and continue.
@@ -439,7 +442,7 @@ See [Writing workflows](docs/workflows.md) and
 ```bash
 migent get workflows   # inspect configured workflows
 migent update          # upgrade the CLI (add --check to only look)
-migent doctor          # check config, workflows, and provider CLIs
+migent doctor          # check config, workflows, and client CLIs
 migent migrate         # upgrade config and workflows to the current schema
 migent skill update    # refresh installed skill copies
 ```

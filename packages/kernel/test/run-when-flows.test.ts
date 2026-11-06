@@ -11,7 +11,7 @@ import {
 } from "../src/index.ts";
 import { repairSession } from "../src/session-repair.ts";
 import { VerifyRunner } from "../src/verify-runner.ts";
-import { ScriptedProvider, tempDir } from "./support.ts";
+import { ScriptedClient, tempDir, registryOf } from "./support.ts";
 
 // Each flow runs several git-backed stages; Windows runners exceed the 10s default.
 vi.setConfig({ testTimeout: 60_000 });
@@ -19,7 +19,8 @@ vi.setConfig({ testTimeout: 60_000 });
 const CONFIG = `\
 agents:
   fake:
-    provider: fake
+    client:
+      type: fake
     model: m1
 roles:
   developer:
@@ -85,7 +86,7 @@ ${RUN_WHEN}    decision:
     depends_on: [docs, review_docs]
 `;
 
-class EditingProvider extends ScriptedProvider {
+class EditingProvider extends ScriptedClient {
   private hooks: Array<(() => void) | null>;
 
   constructor(responses: string[], hooks: Array<(() => void) | null>) {
@@ -160,7 +161,7 @@ test("a skip never runs verify, and repair restores a missing execution.skipped 
   const { repo, sessionId } = workspaceFor(SIMPLE);
   const verifyRunner = new CountingVerifyRunner();
   const provider = new EditingProvider([DONE], [write(repo, "src/x.ts", "x\n")]);
-  const runner = new AgentToolRunner({ fake: provider }, 10, verifyRunner);
+  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10, verifyRunner);
   const result = await executeNamedWorkflow(repo, { workflowId: "flow", sessionId }, runner);
   expect(result.status).toBe("completed");
   expect(verifyRunner.runs).toBe(0);
@@ -179,7 +180,7 @@ test("a skip never runs verify, and repair restores a missing execution.skipped 
 test("--stage is rejected after a skip", async () => {
   const { repo, sessionId } = workspaceFor(PARALLEL);
   const provider = new EditingProvider([DONE, DONE], [write(repo, "src/x.ts", "x\n")]);
-  const runner = new AgentToolRunner({ fake: provider }, 10);
+  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
   const first = await executeNamedWorkflow(repo, { workflowId: "flow", sessionId, once: true }, runner);
   expect(first.stopReason).toBe("stage");
   const second = await executeNamedWorkflow(repo, { workflowId: "flow", sessionId, once: true }, runner);
@@ -194,7 +195,7 @@ test("--stage is rejected after a skip", async () => {
 test("--max-dispatches 1 counts a skip as one dispatch", async () => {
   const { repo, sessionId } = workspaceFor(SIMPLE);
   const provider = new EditingProvider([DONE], [write(repo, "src/x.ts", "x\n")]);
-  const runner = new AgentToolRunner({ fake: provider }, 10);
+  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
   const first = await executeNamedWorkflow(repo, { workflowId: "flow", sessionId, maxDispatches: 1 }, runner);
   expect(first.stopReason).toBe("dispatch_limit");
   expect(provider.calls).toHaveLength(1);
@@ -209,7 +210,7 @@ test("--max-dispatches 1 counts a skip as one dispatch", async () => {
 test("a skip and a provider stage coexist at concurrency 2", async () => {
   const { repo, sessionId } = workspaceFor(PARALLEL);
   const provider = new EditingProvider([DONE, DONE], [write(repo, "src/x.ts", "x\n")]);
-  const runner = new AgentToolRunner({ fake: provider }, 10);
+  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
   const result = await executeNamedWorkflow(repo, { workflowId: "flow", sessionId }, runner);
   expect(result.status).toBe("completed");
   expect(provider.calls).toHaveLength(2);
@@ -223,7 +224,7 @@ test("the baseline survives a blocked stage and its reply", async () => {
     ["status: blocked\nblocker: need input\n\nnope", DONE],
     [write(repo, "src/x.ts", "x\n"), null],
   );
-  const runner = new AgentToolRunner({ fake: provider }, 10);
+  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
   const first = await executeNamedWorkflow(repo, { workflowId: "flow", sessionId }, runner);
   expect(first.status).toBe("blocked");
   const second = await executeNamedWorkflow(
@@ -244,7 +245,7 @@ test("a re-evaluated review is skipped when the changed path was restored, and f
     [DONE, DONE, REVISE, DONE],
     [null, write(repo, "README.md", "readme\n"), null, remove(repo, "README.md")],
   );
-  const runner = new AgentToolRunner({ fake: provider }, 10);
+  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
   const result = await executeNamedWorkflow(repo, { workflowId: "flow", sessionId }, runner);
   expect(result.status).toBe("completed");
   expect(provider.calls).toHaveLength(4);
@@ -263,7 +264,7 @@ test("a re-evaluated review runs again while the changed path is still there", a
     [DONE, DONE, REVISE, DONE, APPROVED, DONE],
     [null, write(repo, "README.md", "readme\n")],
   );
-  const runner = new AgentToolRunner({ fake: provider }, 10);
+  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
   const result = await executeNamedWorkflow(repo, { workflowId: "flow", sessionId }, runner);
   expect(result.status).toBe("completed");
   expect(statuses(repo, sessionId, "review_docs")).toEqual(["completed", "completed"]);

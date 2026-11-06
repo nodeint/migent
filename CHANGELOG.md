@@ -10,6 +10,7 @@
 
 ### Changed
 
+- **Breaking (implementation snapshot, workflow review pending):** Agents select `client.type` directly; configuration and workflows use schema version 6. Run `migent migrate` and replace provider selection flags with client selection flags.
 - **Breaking:** `migent provider list` is removed, including `--json`. It exits 2 and names `migent get providers`, `migent get clients`, `migent get models`, `migent get options`, and `migent get efforts`, and `provider` no longer appears in help. The `{ok, providers}` envelope, `headless_options`, and the exit-1-when-no-models rule are gone; the new lists print a plain array and exit 0, including when every client is skipped or fails.
 
 ### Fixed
