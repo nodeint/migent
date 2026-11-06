@@ -1,8 +1,9 @@
-import { type HeadlessOption, type CommandSpec, defaultProviders } from "@nodeint/migent-adapters";
+import { type HeadlessOption, defaultProviders } from "@nodeint/migent-adapters";
 import {
   ProviderCommandFailed,
   loadOptionValues,
   type CatalogProvider,
+  type CatalogSource,
   type RunCommand,
   type Which,
 } from "@nodeint/migent-doctor";
@@ -10,7 +11,7 @@ import { killProcessTree, spawnProvider, spawnProviderSync, type CliModelCatalog
 
 // The catalog helpers belong to the doctor; commands keep importing them from here.
 export { ProviderCommandFailed, asCatalog, knownModel, loadCatalog, loadOptionValues } from "@nodeint/migent-doctor";
-export type { CatalogProvider, RunCommand, Which } from "@nodeint/migent-doctor";
+export type { CatalogProvider, CatalogSource, RunCommand, Which } from "@nodeint/migent-doctor";
 
 export function providerMap(): Record<string, Provider> {
   return defaultProviders();
@@ -150,19 +151,16 @@ export function runProviderCommandAsync(
 
 /** Discover native headless CLI options independently of model availability. */
 export async function loadHeadlessOptions(
-  provider: Provider,
+  source: Provider | CatalogSource,
   runCommand: RunCommand,
 ): Promise<HeadlessOption[]> {
-  const candidate = provider as Provider & {
-    optionsCommand?: () => CommandSpec;
-    parseOptions?: (help: string) => HeadlessOption[];
-  };
-  if (!candidate.optionsCommand || !candidate.parseOptions) {
-    throw new ProviderCommandFailed(`${provider.command} does not discover headless options.`);
+  const candidate = source as Partial<CatalogSource>;
+  if (typeof candidate.optionsCommand !== "function" || typeof candidate.parseOptions !== "function") {
+    throw new ProviderCommandFailed(`${source.command} does not discover headless options.`);
   }
   const command = candidate.optionsCommand();
   const help = await runCommand(command.argv, command.stdin ?? undefined);
-  return candidate.parseOptions(help);
+  return [...candidate.parseOptions(help)] as HeadlessOption[];
 }
 
 /** Help may be printed on stderr even when the command succeeds (Agy). */

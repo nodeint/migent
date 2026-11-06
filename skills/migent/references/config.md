@@ -7,7 +7,7 @@ Read [schema-config.yaml](schema-config.yaml) before editing; use its documented
 
 | Command | Purpose |
 | --- | --- |
-| `migent provider list --json` | Discover CLI clients, model IDs, and options available on this machine. |
+| `migent get models --json` / `migent get efforts --json` | Discover model IDs and thinking levels available on this machine. |
 | `migent config --json` | Inspect the merged project and local configuration. |
 | `migent get roles --json` / `migent get agents --json` | Look up roles and agents with resolved targets. |
 | `migent doctor --json` | Validate edits; follow diagnostics for invalid settings or missing model mappings. |
@@ -91,5 +91,6 @@ including when a provider uses an explicit `client.type`. Values are non-empty s
 | `codex` | `model_reasoning_effort`; other option keys may contain letters, digits, dots, underscores, and hyphens, starting with a letter. |
 | `opencode` | `agent`, `thinking`, `variant` |
 
-Use `migent provider list --json` for available choices and doctor to validate
-values. To execute a configured role, see [Run one role](role-sessions.md).
+Use `migent get models` and `migent get efforts` for available choices and
+doctor to validate values. To execute a configured role, see
+[Run one role](role-sessions.md).

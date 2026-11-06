@@ -10,22 +10,13 @@ import {
   listWorkflowViews,
   ConfigurationError,
   type ProviderResolver,
-  type View,
 } from "@nodeint/migent-kernel";
 import { providerMap } from "../provider.js";
+import { field, count } from "./columns.js";
+import { MACHINE_RESOURCES } from "./machine-resources.js";
 import { cell, type Column } from "./render.js";
+import type { ProjectResource, Resource } from "./resource-types.js";
 
-export interface Resource {
-  kind: string;
-  /** Accepted type names, singular first. */
-  names: readonly string[];
-  columns: readonly Column[];
-  summary: string;
-  list?(workspace: string, resolve: ProviderResolver): View[];
-  get(workspace: string, name: string | null, resolve: ProviderResolver, session: string | null): View;
-}
-
-const field = (header: string, key: string): Column => ({ header, cell: (view) => cell(view[key]) });
 const targetField = (header: string, key: string): Column => ({
   header,
   cell: (view) => {
@@ -33,18 +24,15 @@ const targetField = (header: string, key: string): Column => ({
     return typeof target === "object" && target !== null ? cell((target as Record<string, unknown>)[key]) : "-";
   },
 });
-const count = (header: string, key: string): Column => ({
-  header,
-  cell: (view) => (Array.isArray(view[key]) ? String((view[key] as unknown[]).length) : "0"),
-});
 
 function requireName(label: string, name: string | null): string {
   if (name === null) throw new ConfigurationError(`Pass a ${label} name.`);
   return name;
 }
 
-export const RESOURCES: readonly Resource[] = [
+const PROJECT_RESOURCES: readonly ProjectResource[] = [
   {
+    scope: "project",
     kind: "workflow",
     names: ["workflow", "workflows", "wf"],
     summary: "Workflows in .migent/workflows, or one session's workflow with --session.",
@@ -56,6 +44,7 @@ export const RESOURCES: readonly Resource[] = [
         : getWorkflowView(workspace, requireName("workflow", name), resolve),
   },
   {
+    scope: "project",
     kind: "role",
     names: ["role", "roles"],
     summary: "Roles in the effective config with their agent and description.",
@@ -64,14 +53,16 @@ export const RESOURCES: readonly Resource[] = [
     get: (workspace, name, resolve) => getRoleView(workspace, requireName("role", name), resolve),
   },
   {
+    scope: "project",
     kind: "agent",
     names: ["agent", "agents"],
-    summary: "Agents the project names: provider, model, effort, and CLI client (not the provider catalog; see `migent provider list`).",
+    summary: "Agents the project names: provider, model, effort, and CLI client (see `migent get providers` and `migent get clients`).",
     columns: [field("NAME", "name"), field("PROVIDER", "provider"), field("MODEL", "model"), field("CLIENT", "client"), field("LOCAL", "local"), count("PROBLEMS", "problems")],
     list: (workspace, resolve) => listAgentViews(workspace, resolve),
     get: (workspace, name, resolve) => getAgentView(workspace, requireName("agent", name), resolve),
   },
   {
+    scope: "project",
     kind: "config",
     names: ["config"],
     summary: "The effective config: config.yaml with config.local.yaml merged over it.",
@@ -79,6 +70,8 @@ export const RESOURCES: readonly Resource[] = [
     get: (workspace) => getConfigView(workspace),
   },
 ];
+
+export const RESOURCES: readonly Resource[] = [...PROJECT_RESOURCES, ...MACHINE_RESOURCES];
 
 export function findResource(type: string): Resource | undefined {
   return RESOURCES.find((resource) => resource.names.includes(type));

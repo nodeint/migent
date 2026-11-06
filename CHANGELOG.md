@@ -5,6 +5,12 @@
 ### Added
 
 - Every abnormal provider turn now leaves `diagnostics.json` (schema version 2): a non-zero exit even when stderr was empty, a provider-reported error at exit 0, and a non-zero exit accepted as a completed turn. It adds `agent_id`, `failure.origin`, `failure.exit_code`, `failure.signal`, `stderr` sizes with a `drain` state, a content-free `stream_summary` (event labels and counts; CLI clients gain an optional `eventLabel()`), and a `result_state` of what the turn left (reply, artifact, `response.md`) next to Migent's own check results and the provider-turn verdict. `execution.json` records `final_turn` for provider executions, and `failure.md` uses it to name the provider failure as the cause only when the diagnostics belong to the turn that ended the execution. `migent doctor --session` also shows origin, turn and verdict (#72).
+- `migent get providers`, `get clients`, `get models [--client <id>]`, `get options [--client <id>] [--native]`, and `get efforts [--client <id>]` expose machine-level discovery as separate resource types, each with a singular lookup, `-o json|yaml|name`, and `--json`. The machine types work outside a project. `get providers` and `get clients` run no subprocess; `get clients` reports PATH findings only. `get models`, `get efforts`, and `get options --native` ask each selected client's own CLI, warn on stderr for a client that is skipped or fails, and still print the other clients' rows and exit 0. A singular model, option, or effort is keyed by (client, name) and asks for `--client` when more than one client matches.
+- The doctor package accepts a client-keyed catalog source in `loadCatalog` and `loadOptionValues`, so catalog discovery uses a client's own command, parser, and stdin instead of a provider with the same name. Existing provider callers are unchanged.
+
+### Changed
+
+- **Breaking:** `migent provider list` is removed, including `--json`. It exits 2 and names `migent get providers`, `migent get clients`, `migent get models`, `migent get options`, and `migent get efforts`, and `provider` no longer appears in help. The `{ok, providers}` envelope, `headless_options`, and the exit-1-when-no-models rule are gone; the new lists print a plain array and exit 0, including when every client is skipped or fails.
 
 ### Fixed
 
@@ -50,7 +56,7 @@
 ### Changed
 
 - `migent init` offers a searchable list of models across installed providers, reuses each catalog during setup, and stores selected effort in the role effort field. Generated instructions remain on single lines.
-- Health checks moved out of the kernel into a new package, `@nodeint/migent-doctor` (CLI → doctor → kernel). The kernel no longer exports `diagnose`, `doctor`, `diagnoseSession`, `sessionEffortKeys`, `sessionDiagnosticsCheck`, `Check`, `DiagnoseOptions`, `ModelEffortCheck`, `DiagnoseSessionOptions`, or `SessionDiagnosis`; import them from the doctor package. Session workflow selection stays in the kernel. The kernel gains `mergeConfigLayers`, `readConfigLayer`, `listModelDefinitions`, and `resolveEffectiveProvider`, and `ConfigurationError` carries optional `code`, `path`, `layer`, and `position`. `migent doctor` output is unchanged.
+- Health checks moved out of the kernel into a new package, `@nodeint/migent-doctor` (CLI â†’ doctor â†’ kernel). The kernel no longer exports `diagnose`, `doctor`, `diagnoseSession`, `sessionEffortKeys`, `sessionDiagnosticsCheck`, `Check`, `DiagnoseOptions`, `ModelEffortCheck`, `DiagnoseSessionOptions`, or `SessionDiagnosis`; import them from the doctor package. Session workflow selection stays in the kernel. The kernel gains `mergeConfigLayers`, `readConfigLayer`, `listModelDefinitions`, and `resolveEffectiveProvider`, and `ConfigurationError` carries optional `code`, `path`, `layer`, and `position`. `migent doctor` output is unchanged.
 - `migent init` stores selected role models in the shared config, starts local configuration with empty model and role overrides, and includes explicit decision criteria and outputs in workflow templates.
 - Decision `when` guidance is optional. Migration no longer generates placeholder guidance, and doctor no longer warns about existing placeholders.
 - A signal-like exit of the wrapper during startup no longer reports a startup failure when a cancellation arrives within a short window; it is reported as a cancellation.

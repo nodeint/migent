@@ -52,7 +52,8 @@ or require an explicit model-level `client` selection.
 `withClient(id)` binds the same provider policy to another client. `command`
 and `effortOption` follow that selected client. A provider without a default
 client reports `requiresClient`; operations needing a client fail until one is
-selected. `provider list` excludes providers that require explicit selection.
+selected. `migent get providers` lists those providers too and marks them
+`requires_client: true`.
 
 ## Building and reading a turn
 
@@ -141,24 +142,47 @@ are fetched on each listing; there is no persistent cache or version-keyed cache
 ## Listing and JSON output
 
 ```bash
-migent provider list --json
+migent get providers --json
+migent get clients --json
+migent get models --client codex --json
+migent get options --native --client codex --json
+migent get efforts --client codex --json
 ```
 
-For each provider, the command reports `name`, `command`, `path`, `available`,
-`models`, `default_model`, `options`, `headless_options`, and `problems`.
-It does not require project configuration.
+The machine types are keyed by CLI client. Each client's own catalog command and
+parser run, including its stdin input, so `claude-code` does not depend on a
+provider whose name equals its client id. They do not require project
+configuration. Each list is a plain array; every view has `kind`, `name`,
+snake_case fields, `null` for absent values, and `problems` where it applies.
 
-`options` remains Migent's configured option metadata: `name`, `prompt`,
-`allow_default`, and `overridable`. `headless_options` is the newly discovered
-native help catalog. It is null when the CLI is absent or discovery fails.
-Help discovery and model discovery run independently: one can succeed when the
-other fails. Help errors are prefixed with `Headless options:` in `problems`.
-The human-readable listing currently displays the existing option metadata.
+| Type | Fields |
+| --- | --- |
+| `provider` | `name`, `command`, `default_client`, `requires_client` |
+| `client` | `name`, `command`, `available`, `path`, `effort_option`, `problems` |
+| `model` | `name`, `client`, `default` |
+| `option` (configured) | `name`, `client`, `source: "configured"`, `prompt`, `allow_default`, `overridable` |
+| `option --native` | `name`, `client`, `source: "native"`, `flags`, `description`, `argument`, `value_mode`, `type`, `choices`, `default` |
+| `effort` | `name` (the model), `client`, `model`, `option`, `values` |
 
-The top-level `ok` is true only when all listed providers have no problems.
-The command exits 0 when any provider returns models and 1 otherwise; exit 0
-therefore does not imply `ok: true`. Per-model option values are not fetched
-for every model during listing.
+`providers` and `clients` run no subprocess. `clients` reports PATH facts only,
+so its `problems` contain `<command> is not on PATH.` and never a catalog or help
+failure. `models`, `options --native`, and `efforts` run the client's discovery
+commands: a client that is not on PATH is skipped without spawning and prints
+`warning: <client>: <command> is not on PATH; skipped.`; a failed command, a
+non-zero exit, or an unreadable catalog prints `warning: <client>: <error>`.
+stdout still carries only the rendered rows, the other clients still print, and
+the command exits 0. These failures never appear in `get clients`.
+
+A singular `model`, `option`, or `effort` lookup identifies a row by (client,
+name). With `--client` it searches only that client and reports why a skipped or
+failed client could not answer. Without it, exactly one match prints; no match
+exits 2 and names the clients searched, skipped, or failed; two or more matches
+exit 2 with the matching clients and a request for `--client`.
+
+`get efforts` probes per-model option values only when the catalog does not
+already carry them. The old `{ok, providers}` envelope, `headless_options`, and
+the exit-1-when-no-models
+rule are gone; see [CLI: Get](cli.md#get) for the per-type commands.
 
 ## Configuration and validation
 

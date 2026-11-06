@@ -5,8 +5,8 @@ Work from the project root. If `.migent/` already exists, use
 
 ## Choose models
 
-Run `migent provider list --json` to discover available providers and models.
-Respect the user's choices when provided. Otherwise, choose a
+Run `migent get models --json` to discover available model IDs for each CLI
+client. Respect the user's choices when provided. Otherwise, choose a
 model and effort for each role independently, based on its responsibilities
 and the available models.
 
