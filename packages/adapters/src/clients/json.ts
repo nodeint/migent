@@ -15,6 +15,12 @@ export function parseJsonObject(line: string): Record<string, unknown> | null {
   }
 }
 
+/** A label from a closed vocabulary: any value the client does not list becomes `other`. */
+export function labelOf(value: unknown, allowed: ReadonlySet<string>): string | null {
+  if (typeof value !== "string" || value === "") return null;
+  return allowed.has(value) ? value : "other";
+}
+
 export function compact(value: string, limit = 160): string {
   const text = value.split(/\s+/).filter((part) => part !== "").join(" ");
   return text.length <= limit ? text : `${text.slice(0, limit - 1)}…`;

@@ -12,7 +12,7 @@ import type {
 } from "../types.js";
 import { ModelCatalog } from "../catalog.js";
 import { readExistingText } from "../read-text.js";
-import { compact, finite, isRecord, parseJsonObject } from "./json.js";
+import { compact, finite, isRecord, labelOf, parseJsonObject } from "./json.js";
 
 const OPTION_KEY = /^[A-Za-z][A-Za-z0-9_.-]*$/;
 const TOML_BARE = /^-?(?:0|[1-9]\d*)(?:\.\d+)?$|^true$|^false$/;
@@ -57,6 +57,13 @@ function itemSummary(item: unknown, itemType: unknown, action: string): string {
 }
 
 export const CODEX_REASONING_OPTION = "model_reasoning_effort";
+
+const CODEX_EVENT_TYPES: ReadonlySet<string> = new Set([
+  "thread.started", "turn.started", "turn.completed", "turn.failed", "item.started", "item.updated", "item.completed", "error",
+]);
+const CODEX_ITEM_TYPES: ReadonlySet<string> = new Set([
+  "agent_message", "reasoning", "command_execution", "file_change", "mcp_tool_call", "web_search", "todo_list", "error",
+]);
 
 export class CodexClient implements CliClient {
   optionsCommand(): CommandSpec {
@@ -220,8 +227,19 @@ export class CodexClient implements CliClient {
     };
   }
 
+  eventLabel(line: string): string | null {
+    const payload = parseJsonObject(line);
+    if (payload === null) return null;
+    const type = labelOf(payload.type, CODEX_EVENT_TYPES);
+    if (type === null) return "other";
+    if (type === "item.started" || type === "item.completed") {
+      const item = labelOf(isRecord(payload.item) ? payload.item.type : undefined, CODEX_ITEM_TYPES);
+      return item === null ? type : `${type}:${item}`;
+    }
+    return type;
+  }
+
   extractFailure(stdout: string, exitCode: number): RawFailure | null {
-    if (exitCode === 0) return null;
     // `turn.failed` and `error` events are the CLI's own error report, even when model text exists too.
     let reported: string | null = null;
     for (const rawLine of stdout.split(/\r\n|\n|\r/)) {
@@ -233,10 +251,13 @@ export class CodexClient implements CliClient {
         reported = typeof message === "string" && message ? message : (reported ?? "");
       } else if (event.type === "error") {
         const message = event.message;
+        // A control-plane warning is not a failed run.
+        if (exitCode === 0 && classifyProviderError(providerErrorMessage(event)).event === "provider.warning") continue;
         reported = typeof message === "string" && message ? message : (reported ?? "");
       }
     }
     if (reported !== null) return { origin: "provider-error", message: reported.trim() || null, exitCode };
+    if (exitCode === 0) return null;
     const text = this.parseRun(stdout, "/migent-no-such-last-message").text.trim();
     return { origin: "exit-only", message: text || null, exitCode };
   }

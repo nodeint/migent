@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { renderProviderDiagnostics } from "./turn-diagnostics.js";
 import { publishNextSuggestions } from "./next-handoff.js";
 import {
   appendFileSync,
@@ -381,7 +382,7 @@ export class SessionStore {
     });
   }
 
-  /** The last wrapper-level failure of this execution. Separate from `execution.json`, which is frozen once the execution ends. */
+  /** The latest abnormal provider turn of this execution (a start failure, a non-zero exit, a provider-reported error). Separate from `execution.json`, which is frozen once the execution ends. */
   saveDiagnostics(context: ExecutionContext, payload: Record<string, unknown>): void {
     mkdirSync(context.directory, { recursive: true });
     writeJsonAtomic(path.join(context.directory, DIAGNOSTICS_FILENAME), payload);
@@ -1329,7 +1330,18 @@ function writeFailureReport(
   if (failureReason !== null) lines.push(`- Failure reason: \`${failureReason}\``);
   if (typeof metadata.completed_at === "string") lines.push(`- Completed at: ${metadata.completed_at}`);
   lines.push("", "## Error", "", "```text", error ?? "No error message was recorded.", "```");
-  if (existsSync(path.join(context.directory, DIAGNOSTICS_FILENAME))) {
+  const diagnostics = readDiagnostics(context.directory);
+  if (diagnostics !== null) {
+    lines.push(
+      "",
+      ...renderProviderDiagnostics({
+        diagnostics,
+        finalTurn: typeof metadata.final_turn === "number" ? metadata.final_turn : null,
+        failureReason,
+        link: DIAGNOSTICS_FILENAME,
+      }),
+    );
+  } else if (existsSync(path.join(context.directory, DIAGNOSTICS_FILENAME))) {
     lines.push("", "## Diagnostics", "", `See [\`${DIAGNOSTICS_FILENAME}\`](${DIAGNOSTICS_FILENAME}).`);
   }
   const verifyReport = verifyFailureReport(context.directory, metadata, failureReason);
@@ -1337,6 +1349,14 @@ function writeFailureReport(
     lines.push("", "## Verify", "", `See [\`${verifyReport}\`](${verifyReport}).`);
   }
   writeFileAtomic(path.join(context.directory, FAILURE_FILENAME), `${lines.join("\n")}\n`);
+}
+
+function readDiagnostics(directory: string): Record<string, unknown> | null {
+  try {
+    return readJsonObject(path.join(directory, DIAGNOSTICS_FILENAME));
+  } catch {
+    return null;
+  }
 }
 
 function verifyFailureReport(

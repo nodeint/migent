@@ -205,6 +205,10 @@ export abstract class ProviderBase implements Provider {
     return this.parseEvent === null ? null : this.parseEvent(line);
   }
 
+  eventLabel(line: string): string | null {
+    return this.client.eventLabel?.(line) ?? null;
+  }
+
   captureUsage(stdout: string): UsageCapture | null {
     return this.client.captureUsage(stdout);
   }

@@ -1,7 +1,8 @@
 # Diagnosing provider failures
 
-When Migent cannot start a provider CLI, or the provider process dies, the
-error message names the cause and the execution keeps a durable trace. This
+When Migent cannot start a provider CLI, the provider process exits non-zero,
+or the provider reports an error, the error message names the cause and the
+execution keeps a durable trace. This
 page explains what is recorded, how to read it, and how to turn on a step-by-step
 trace.
 
@@ -46,47 +47,106 @@ failure.
 
 ## What is recorded
 
-On a wrapper-level failure, Migent writes `diagnostics.json` in the execution
-directory, next to `execution.json`:
+Migent writes `diagnostics.json` in the execution directory, next to
+`execution.json`, for every **abnormal provider turn**:
+
+- a start failure (the wrapper never became ready, or reported a failure);
+- a non-zero exit or signal death, **whether or not stderr had output**;
+- a provider-reported error at exit 0 (an error event, `is_error`, a failed result);
+- a non-zero exit that Migent accepted because the model's reply passed every check
+  an exit-0 reply must pass (`provider.exit_anomaly`, `accepted: true`).
+
+A clean exit-0 turn writes nothing. Cancellation and timeouts are not provider
+failures and write nothing either.
 
 ```text
 .migent/sessions/<session-id>/executions/<order>-<stage-id>--attempt-<n>/
 ├── execution.json
 ├── failure.md              # readable failure report for a failed execution
 ├── response.md             # model output only, when the model produced one
-├── diagnostics.json        # only after a wrapper-level failure
+├── diagnostics.json        # the latest abnormal provider turn
 └── debug.log               # only when MIGENT_DEBUG is on
 ```
 
+### Provider turn versus execution
+
+`diagnostics.json` describes **one provider turn**, the one named by `turn`. It
+never says the execution failed because of that turn. Two verdicts exist:
+
+| Verdict | Meaning | Recorded in |
+| --- | --- | --- |
+| Provider-turn verdict | Did this turn pass the provider-level decision and the reply checks (outcome, artifact, completion outputs). It is fixed when those checks finish and later verify, question-correction or repair turns never change it. | `diagnostics.json` → `result_state.turn_verdict` (`accepted` or `failed`) |
+| Execution verdict | Did the execution as a whole succeed, and if not, at which check on which turn. | `execution.json` → `status`, `error`, `failure_reason`, `final_turn` |
+
+The file holds the **latest** abnormal turn. A later clean turn leaves it alone;
+a later abnormal turn replaces it. Earlier abnormal turns stay traceable through
+their `provider.exit_anomaly` and `provider.turn_failed` events in `events.jsonl`.
+
+`execution.json` records `final_turn` for every provider execution: the last
+provider turn it ran. `failure.md` uses it to place the diagnostics:
+
+| Relation | What `failure.md` shows |
+| --- | --- |
+| Diagnostics are for the final turn and `failed` | **Provider failure**: exit code, signal, origin, stderr size and drain, reply and artifact state, provider session id, and a one-line reading of the evidence. |
+| For the final turn but `accepted` (a later verify or question-file failure ended the execution) | **Earlier in this turn**: the provider exited non-zero, the reply was accepted, the cause is the error above. |
+| For an earlier turn | **Earlier provider anomaly**, stated as not the cause. |
+| `final_turn` is absent (an execution written by an older version) | **Provider diagnostics** pointer; the relation to the failure is stated as unknown. |
+
 `failure.md` is the human-readable companion written for every failed
-execution. It names the stage and provider, repeats the error message, and
-points at `diagnostics.json` or the verify report. Read it before the JSON
-files; `execution.json` and `diagnostics.json` stay the machine-readable sources.
+execution. Read it before the JSON files; `execution.json` and
+`diagnostics.json` stay the machine-readable sources.
 
 `diagnostics.json` is separate because `execution.json` cannot change after an
-execution ends. Each execution keeps the last failure; `turn` says which turn it
-was.
+execution ends.
 
 | Field | Content |
 | --- | --- |
-| `schema_version` | `1`. |
-| `turn` | The provider turn that failed. |
-| `recorded_at` | When the failure was recorded (ISO 8601). |
-| `failure.kind` | `start` (the wrapper never became ready, or reported a failure) or `provider-exit` (the provider exited non-zero and wrote to stderr). |
+| `schema_version` | `2`. Version 1 files (wrapper failures only) are still read. |
+| `turn` | The provider turn this record describes. |
+| `recorded_at` | When the turn ended (ISO 8601). |
+| `agent_id` | The provider session id known for the turn, or `null`. |
+| `failure.kind` | `start` (the wrapper never became ready, or reported a failure), `provider-exit` (the provider exited non-zero or by signal; stderr may be empty), or `provider-error` (the provider reported an error at exit 0). |
+| `failure.origin` | `start`, `provider-error` or `exit-only`, as classified for the turn. |
+| `failure.exit_code`, `failure.signal` | The process exit code and terminating signal, when there were any. The wrapper reports a provider killed by a signal to Migent separately from the shell-style `128 + signal` exit code, so `signal` is set only when a signal was observed: a plain `exit 137` records `signal: null`. It is `null` on Windows. |
 | `failure.phase` | `argv`, `ipc`, `listen`, `spawn`, or `runtime` when the wrapper reported one; otherwise `null`. |
 | `failure.code`, `errno`, `syscall`, `path` | The underlying error, when known. |
 | `failure.message` | The same text as the error message. |
-| `stderr_tail` | The last 8 KB the wrapper wrote to stderr. |
+| `stderr_tail` | The last 8 KB of stderr, read after every pipe closed. May be empty. |
+| `stderr` | `tail_bytes` (size of the retained tail), `total_bytes` (all stderr observed) and `drain`: `closed`, or `grace-expired` when a process still held a pipe open after the short wait, in which case an empty or short tail is not authoritative. |
+| `stream_summary` | The shape of stdout, never its content: `stdout_bytes` and `lines` as received, `non_json_lines`, `events` (label → count), `last_events` (last 10 labels), `labelled` (whether the client names its events), `error_messages` (the classified provider error, truncated to 300 characters). |
+| `result_state` | What this turn left behind; see below. |
 | `command` | `executable` and `argument_count` only. |
 | `cwd` | The working directory the provider was started in. |
 | `endpoint`, `endpoint_length` | The wrapper's socket or pipe, and its length in bytes. |
 | `migent_version`, `node_version`, `platform`, `arch` | The environment. |
 | `timings` | `spawned_at` and `failed_at`. |
 
-`command` never holds the other arguments. They can carry API keys, attached
-option values, or prompt text, and no filter is safe for all providers. The
-provider and model are already in `execution.json`. `stderr_tail` is raw output;
-read it before you share the file.
+`result_state` is scoped to the turn named by `turn`:
+
+| Field | Content |
+| --- | --- |
+| `observed.reply` | `source` (`model`, `error`, `none`, `unknown`), `bytes`, and `status_header`: `present` with the status (`complete`, `question`, `blocked`), `invalid`, `absent`, or `not-applicable` (the text was not model output). An unrecognised status value is never copied. |
+| `observed.artifact` | `present` (with `bytes`), `empty`, `absent`, or `not-applicable` (the stage declares no artifact). Read directly from the declared path. |
+| `observed.response_written` | Whether Migent persisted `response.md` for this turn. Only model-attested replies are. |
+| `observed.conversation_turns` | Assistant messages in the conversation after the turn. |
+| `gates.outcome`, `gates.artifact`, `gates.completion_outputs` | The result of Migent's own checks: `passed`, `failed` (with `reason`), `not-evaluated` (skipped because the provider verdict had already failed) or `not-applicable`. |
+| `turn_verdict` | `accepted` or `failed`. |
+| `reason` | The rejecting reason, the same text as `provider.exit_anomaly.reason` where that event exists. |
+
+`observed` is read without running the checks, so a provider-error turn that left
+a complete reply and an artifact shows `status_header: present`, `artifact:
+present`, `gates.outcome: not-evaluated` and `turn_verdict: failed`. The work may
+be done even though the turn failed; Migent does not accept it.
+
+### What never goes in the file
+
+`stream_summary` holds counts and labels from the CLI client's own vocabulary
+(`text`, `tool_use:completed`, `result:error`). Each client lists its
+labels in a closed vocabulary and any other value counts as `other`; labels are
+also limited to short identifier characters and at most 32 distinct ones per turn. No reply text, tool arguments or prompt text is stored. The
+`command` field keeps only the executable and argument count, because other
+arguments can carry API keys or prompt text. `stderr_tail` is raw output; read it
+before you share the file. A raw stdout tap is not provided.
 
 ## Where to look
 
@@ -103,10 +163,12 @@ migent doctor --session <session-id> --json
 ```
 
 `session show` adds a `diagnostics:` line, a path relative to the session
-directory, when the file exists. It is a pointer only.
+directory, when the file exists. It is a pointer only. The file also exists after
+an **accepted** exit-only turn, so a `completed` execution can have one.
 
 `doctor --session` adds a **Provider diagnostics** check when something was
-recorded. It prints the message, `kind`, `phase`, and `code`, the last five
+recorded. It prints the message, `kind`, `origin`, `phase`, `code`, the `turn`, the
+provider-turn `verdict` (so an accepted anomaly reads as accepted), the last five
 non-empty lines of `stderr_tail`, and the file path. Recorded diagnostics are
 **warnings**, not failures. They describe the past and the cause may already be
 fixed, so the exit code still reflects whether the workflow is valid now.
@@ -141,9 +203,10 @@ sensitive values as stderr. Do not commit it.
 | `exited before it was ready (signal SIGKILL)` | The OS or another process killed the wrapper. | Check memory pressure and `dmesg` or the system log. |
 | `Could not launch …: ENOENT` | The Node binary or wrapper file is missing. | Reinstall Migent and check `node -v`. |
 | `CLI executable not found` | The provider CLI is not on `PATH`. | Run `migent doctor` and install or fix the path. |
-| Execution `completed` although the provider exited non-zero | The provider reported no error and its reply passed every check an exit-0 reply must pass. No `failure.md` is written. | Look for `provider.exit_anomaly` (`exit_code`, `accepted`) in `events.jsonl`. |
+| Execution `completed` although the provider exited non-zero | The provider reported no error and its reply passed every check an exit-0 reply must pass. No `failure.md` is written, but `diagnostics.json` records the turn with `turn_verdict: accepted`. | Read `diagnostics.json`, and `provider.exit_anomaly` (`exit_code`, `accepted`) in `events.jsonl`. |
 | Execution `completed` although the provider was killed on Windows | Windows reports no signal identity: a killed provider looks like exit code 1, so a valid reply can be accepted as an `exit-only` turn. POSIX signal deaths exit as 128 plus the signal and are never accepted. | Check `provider.exit_anomaly` in `events.jsonl`; this is a known limitation. |
-| No `diagnostics.json` after a failure | The run was cancelled, or the failure came from the provider's own output. | Read `failure.md` and `execution.json`; read `response.md` only when the model produced one. |
+| No `diagnostics.json` after a failure | The run was cancelled or timed out, or the failure came from a clean provider turn (for example a missing artifact or a failed verify). | Read `failure.md` and `execution.json`; read `response.md` only when the model produced one. |
+| `diagnostics.json` exists but its `turn` is lower than `final_turn` | An earlier provider turn was abnormal; a later turn ended the execution. | `failure.md` marks it as an earlier anomaly, not the cause. |
 
 When you report a bug, attach `diagnostics.json` and `debug.log` after you check
 them for secrets.
