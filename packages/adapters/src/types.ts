@@ -55,8 +55,22 @@ export interface TurnUsage {
   cost_usd: number | null;
 }
 
+/**
+ * Where a failure was observed. `provider-error`: the CLI protocol reported an error (an error event,
+ * `is_error`, a failed result). `exit-only`: a non-zero exit with no reported error. `start`: no usable
+ * exit code at all (spawn failure, an unpassable argument, signal death).
+ */
+export type FailureOrigin = "provider-error" | "exit-only" | "start";
+
+/**
+ * What the reply text of one run is. `model`: assistant output. `error`: text from an error payload or
+ * unparsed stdout. `none`: no text.
+ */
+export type ResponseSource = "model" | "error" | "none";
+
 export interface QuotaClassification {
   kind: "quota";
+  origin: FailureOrigin;
   message: string;
   /** UTC ISO instant, or null when the provider did not name one. */
   resetAt: string | null;
@@ -65,6 +79,7 @@ export interface QuotaClassification {
 
 export interface ProviderClassification {
   kind: "provider";
+  origin: FailureOrigin;
   message: string;
 }
 
@@ -89,7 +104,11 @@ export interface Provider extends ProviderInfo {
   /** The session identity one output line carries, if any. */
   sessionIdFromLine?(line: string): string | null;
   buildCommand(input: BuildCommandInput): CommandSpec;
-  parseResponse(stdout: string, lastMessageFile: string): [string, string | null];
+  /**
+   * `[text, session id, source]`. A provider that omits `source` cannot attest where its text came from,
+   * so the runner never accepts a failed turn on its reply.
+   */
+  parseResponse(stdout: string, lastMessageFile: string): [string, string | null, ResponseSource?];
   /** Classify one finished process. Absent means the runner uses its fallback. */
   classifyFailure?(stdout: string, exitCode: number): FailureClassification | null;
   parseProgressEvent?(line: string): Record<string, unknown> | null;
@@ -103,6 +122,8 @@ export interface Provider extends ProviderInfo {
 
 /** What a client extracted from a failed run, before any provider policy. */
 export interface RawFailure {
+  /** `provider-error`: the CLI reported an error. `exit-only`: a non-zero exit and nothing else. */
+  origin: "provider-error" | "exit-only";
   message: string | null;
   exitCode: number | null;
   /** Set only when the CLI's own protocol states the limit. */
@@ -129,6 +150,8 @@ export interface CliUsage {
 
 export interface CliRunOutput {
   text: string;
+  /** What `text` is: assistant output, an error payload (or unparsed stdout), or nothing. */
+  source: ResponseSource;
   sessionId: string | null;
 }
 

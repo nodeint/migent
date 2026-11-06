@@ -29,6 +29,8 @@ export type {
   QuotaClassification,
   ProviderClassification,
   FailureClassification,
+  FailureOrigin,
+  ResponseSource,
   Provider,
   RawFailure,
   CliModelCatalog,

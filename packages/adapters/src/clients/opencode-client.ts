@@ -218,10 +218,11 @@ export class OpencodeClient implements CliClient {
       }
     }
     const text = textWithStatusHeader(segments);
-    if (text) return { text, sessionId };
-    if (errorMessage) return { text: errorMessage, sessionId };
-    if (sawEvent) return { text: "", sessionId };
-    return { text: stdout.trim(), sessionId: null };
+    if (text) return { text, sessionId, source: "model" };
+    if (errorMessage) return { text: errorMessage, sessionId, source: "error" };
+    if (sawEvent) return { text: "", sessionId, source: "none" };
+    const raw = stdout.trim();
+    return { text: raw, sessionId: null, source: raw === "" ? "none" : "error" };
   }
 
   parseModels(stdout: string): ModelCatalog {
@@ -278,10 +279,13 @@ export class OpencodeClient implements CliClient {
     for (const payload of events(stdout)) {
       if (payload.type === "error") errorMessage = errorString(payload);
     }
-    if (errorMessage !== null) return { message: errorMessage, exitCode, ...quotaFromMessage(errorMessage) };
+    if (errorMessage !== null) {
+      return { origin: "provider-error", message: errorMessage, exitCode, ...quotaFromMessage(errorMessage) };
+    }
     if (exitCode === 0) return null;
+    // Model text is never read for a rate limit: only the protocol's own error payload names one.
     const message = this.parseRun(stdout, "").text.trim() || null;
-    return { message, exitCode, ...(message === null ? {} : quotaFromMessage(message)) };
+    return { origin: "exit-only", message, exitCode };
   }
 
   captureUsage(stdout: string): UsageCapture | null {

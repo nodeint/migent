@@ -1,8 +1,17 @@
-import type { BuildCommandInput, InterruptOutcome, ProviderOption, TurnUsage, UsageCapture } from "./provider-contract.js";
+import type {
+  BuildCommandInput,
+  InterruptOutcome,
+  ProviderOption,
+  ResponseSource,
+  TurnUsage,
+  UsageCapture,
+} from "./provider-contract.js";
 import type { CommandSpec } from "./command-executor.js";
 
 /** What a client extracted from a failed run, before any provider policy. */
 export interface RawFailure {
+  /** `provider-error`: the CLI reported an error. `exit-only`: a non-zero exit and nothing else. */
+  origin: "provider-error" | "exit-only";
   message: string | null;
   exitCode: number | null;
   /** Set only when the CLI's own protocol states the limit. */
@@ -29,6 +38,8 @@ export interface CliUsage {
 
 export interface CliRunOutput {
   text: string;
+  /** What `text` is: assistant output, an error payload (or unparsed stdout), or nothing. */
+  source: ResponseSource;
   sessionId: string | null;
 }
 

@@ -6,6 +6,7 @@ import type {
   InterruptOutcome,
   NewSession,
   ProviderOption,
+  ResponseSource,
   TurnUsage,
   UsageCapture,
   CommandSpec,
@@ -180,9 +181,9 @@ export abstract class ProviderBase implements Provider {
     return this.client.runCommand(input);
   }
 
-  parseResponse(stdout: string, lastMessageFile: string): [string, string | null] {
-    const { text, sessionId } = this.client.parseRun(stdout, lastMessageFile);
-    return [text, sessionId];
+  parseResponse(stdout: string, lastMessageFile: string): [string, string | null, ResponseSource] {
+    const { text, sessionId, source } = this.client.parseRun(stdout, lastMessageFile);
+    return [text, sessionId, source];
   }
 
   classifyFailure(stdout: string, exitCode: number): FailureClassification | null {
@@ -191,12 +192,13 @@ export abstract class ProviderBase implements Provider {
     if (raw.rateLimit !== undefined) {
       return {
         kind: "quota",
+        origin: raw.origin,
         message: raw.message || "quota",
         resetAt: raw.rateLimit.resetAt,
         window: raw.rateLimit.window,
       };
     }
-    return { kind: "provider", message: raw.message || `CLI exited with code ${exitCode}.` };
+    return { kind: "provider", origin: raw.origin, message: raw.message || `CLI exited with code ${exitCode}.` };
   }
 
   parseProgressEvent(line: string): Record<string, unknown> | null {

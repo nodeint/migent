@@ -132,12 +132,28 @@ Each execution directory contains:
   session-level `status.json`.
 - `prompt.md` and `response.md`: the exact prompt sent for the attempt and the
   response returned by the model. `response.md` is written only when the model
-  produced output; a provider that could not start leaves it absent, and it
-  never holds Migent's error text. A stage with no role writes neither file.
+  produced output (text the adapter labels `model`); a provider that could not
+  start leaves it absent, and it never holds Migent's error text or the
+  provider's own error payload. It is also absent when the provider reported an
+  error, even if the model had written text first. A turn whose process exited
+  non-zero without reporting an error (`exit-only`) keeps the model's reply
+  whether or not Migent accepted the turn. A stage with no role writes neither file.
   A later attempt that continues the same stage's provider agent records the
   continuation prompt. An attempt that continues a `session.resume_from`
   dependency records the full stage prompt. `task.md` in this directory is a
   copy of the session task at the moment the execution was created.
+- Non-zero exit with a usable reply: the exit code alone does not fail a turn.
+  When the process exited non-zero, the provider reported no error, and the
+  reply is model text, the turn goes through the same checks as an exit-0 turn
+  (parsable outcome, stage artifact, completion outputs). If it passes, the turn
+  is accepted: the execution ends `completed`, `failure_kind` and `reset_at` are
+  empty, no quota wait starts, and `events.jsonl` gets one `provider.exit_anomaly`
+  event (`turn`, `provider`, `exit_code`, `signal`, `origin`, `accepted: true`,
+  `reason: null`) next to `provider.turn_completed`. If a check fails, the
+  execution fails with the model's text as its error, and the event has
+  `accepted: false` with the failed check in `reason`. Each provider turn gets
+  one verdict; later question-correction or verify turns are separate turns. A
+  provider error, a start failure, or a signal exit is never accepted.
 - `failure.md`: written when the execution ends `failed`. It is a readable
   report with the stage, attempt, provider, `failure_reason`, the error message,
   and pointers to `diagnostics.json` or the verify report. Structured data stays

@@ -117,6 +117,7 @@ export class CodexClient implements CliClient {
   parseRun(stdout: string, lastMessageFile: string): CliRunOutput {
     let sessionId: string | null = null;
     let lastText: string | null = null;
+    let lastSource: CliRunOutput["source"] = "none";
     for (const rawLine of stdout.split(/\r\n|\n|\r/)) {
       const event = parseJsonObject(rawLine);
       if (event === null) continue;
@@ -128,23 +129,37 @@ export class CodexClient implements CliClient {
         const item = event.item;
         if (isRecord(item) && item.type === "agent_message") {
           const text = item.text;
-          if (typeof text === "string" && text) lastText = text;
+          if (typeof text === "string" && text) {
+            lastText = text;
+            lastSource = "model";
+          }
         }
       } else if (eventType === "turn.failed") {
         const error = event.error;
         const message = isRecord(error) ? error.message : undefined;
-        if (typeof message === "string" && message) lastText = message;
+        if (typeof message === "string" && message) {
+          lastText = message;
+          lastSource = "error";
+        }
       } else if (eventType === "error") {
         const message = event.message;
-        if (typeof message === "string" && message) lastText = message;
+        if (typeof message === "string" && message) {
+          lastText = message;
+          lastSource = "error";
+        }
       }
     }
     const fileText = readExistingText(lastMessageFile);
     if (fileText !== null) {
       const stripped = fileText.trim();
-      if (stripped) lastText = stripped;
+      if (stripped) {
+        lastText = stripped;
+        lastSource = "model";
+      }
     }
-    return { text: lastText !== null ? lastText : stdout.trim(), sessionId };
+    if (lastText !== null) return { text: lastText, sessionId, source: lastSource };
+    const raw = stdout.trim();
+    return { text: raw, sessionId, source: raw === "" ? "none" : "error" };
   }
 
   parseModels(stdout: string): ModelCatalog {
@@ -207,8 +222,23 @@ export class CodexClient implements CliClient {
 
   extractFailure(stdout: string, exitCode: number): RawFailure | null {
     if (exitCode === 0) return null;
+    // `turn.failed` and `error` events are the CLI's own error report, even when model text exists too.
+    let reported: string | null = null;
+    for (const rawLine of stdout.split(/\r\n|\n|\r/)) {
+      const event = parseJsonObject(rawLine);
+      if (event === null) continue;
+      if (event.type === "turn.failed") {
+        const error = event.error;
+        const message = isRecord(error) ? error.message : undefined;
+        reported = typeof message === "string" && message ? message : (reported ?? "");
+      } else if (event.type === "error") {
+        const message = event.message;
+        reported = typeof message === "string" && message ? message : (reported ?? "");
+      }
+    }
+    if (reported !== null) return { origin: "provider-error", message: reported.trim() || null, exitCode };
     const text = this.parseRun(stdout, "/migent-no-such-last-message").text.trim();
-    return { message: text || null, exitCode };
+    return { origin: "exit-only", message: text || null, exitCode };
   }
 
   captureUsage(stdout: string): UsageCapture | null {
