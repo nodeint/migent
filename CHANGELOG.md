@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.4.0
+
 ### Added
 
 - `migent config render|save` and `migent workflow render|save` accept `--preserve-comments`, keeping the target's comments, key order, and line endings. Unchanged data writes the base bytes verbatim; when preservation is impossible the file falls back to canonical YAML with a `comments-not-preserved` warning. `render --preserve-comments` prints exactly the bytes `save --preserve-comments` would write.
@@ -105,16 +107,9 @@
 
 - `migent init` renders role models and sample workflows from packaged project templates.
 
-## 0.3.1
-
-### Fixed
-
-- Release tags are validated on `next`; `main` advances to the exact tagged commit only after all four npm packages and the installed CLI are verified.
-
-- `migent migrate` upgrades and versions `config.local.yaml`, resolves providers across config layers, and preserves shared roles whose default model is supplied locally.
-
 ## Older versions
 
+- [0.3.1](https://github.com/nodeint/migent/releases/tag/v0.3.1)
 - [0.3.0](https://github.com/nodeint/migent/releases/tag/v0.3.0)
 - [0.2.1](https://github.com/nodeint/migent/releases/tag/v0.2.1)
 - [0.2.0](https://github.com/nodeint/migent/releases/tag/v0.2.0)
