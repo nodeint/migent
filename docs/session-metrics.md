@@ -39,6 +39,8 @@ no file and does not appear.
     "verify_seconds": 312.4,
     "turns": 6,
     "uncaptured_turns": 0,
+    "provider_exit_anomalies": 0,
+    "provider_exit_anomalies_accepted": 0,
     "usage": {
       "input_tokens": 9123,
       "output_tokens": 40211,
@@ -95,6 +97,8 @@ no file and does not appear.
       "verify_seconds": 312.4,
       "turns": 3,
       "uncaptured_turns": 0,
+      "provider_exit_anomalies": 0,
+      "provider_exit_anomalies_accepted": 0,
       "usage": {
         "input_tokens": 6,
         "output_tokens": 22010,
@@ -151,6 +155,21 @@ A cancelled or timed-out turn has no capture. For a cumulative provider the
 next turn of that agent absorbs the lost spend through the delta. For a
 per-process provider that spend is gone. `uncaptured_turns` counts runner turns
 with no usage plus `provider.cancelled` events.
+
+### Provider exit anomalies
+
+`provider_exit_anomalies` counts `provider.exit_anomaly` events: provider
+processes that exited non-zero without reporting an error (`origin: exit-only`).
+`provider_exit_anomalies_accepted` is the subset whose reply passed every check
+an exit-0 reply must pass, so the turn ended `completed`. The rejected count is
+the difference. Both appear in `totals` and in each execution row (0 for skipped
+rows). A non-zero count is not an error by itself.
+
+Each event is counted once, with no deduplication by turn number: a resumed
+execution derives its turn number from the conversation, so two real anomalies
+can share one. Sessions sealed before these fields existed lack them. An absent
+field means not recorded, not zero. Events of unknown executions are ignored.
+See [Diagnostics](diagnostics.md) for the per-turn record.
 
 A field the provider did not report is null. A total sums the known values and
 `usage_missing` counts, per field, how many turns did not report it. A session

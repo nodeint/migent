@@ -567,7 +567,16 @@ empty list prints nothing and exits 0. The command does
 not take the session lock.
 
 `session show <session-id>` prints one snapshot and exits 0, including when the
-session is blocked. For a schema 2 session it also prints, on stderr, any drift
+session is blocked. When a provider exited non-zero without reporting an error
+(`provider.exit_anomaly` in `events.jsonl`), the snapshot adds one line per
+affected stage, after the `execution` / `running` line:
+`exit_anomaly  <stage> · <execution> · turn N · exit C · accepted|rejected [· ×count] · <diagnostics path>`.
+It describes the stage's latest anomaly; `×count` is shown above 1 and counts all
+of the stage's executions. The JSON snapshot has the same data as an
+`exit_anomalies` array (`stage_id`, `execution_id`, `turn`, `exit_code`,
+`accepted`, `count`, `diagnostics`), omitted when empty. `diagnostics` is the
+session-relative `diagnostics.json` of that execution, or `null` when absent. See
+[Session metrics](session-metrics.md#provider-exit-anomalies) for the counters. For a schema 2 session it also prints, on stderr, any drift
 between `status.json` and the fold of the session files. `session follow` prints
 that snapshot and then follows events until a signal. It merges `events.jsonl`
 with each execution's `stream.jsonl` in timestamp order. Item traces and
