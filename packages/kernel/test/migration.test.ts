@@ -130,12 +130,12 @@ test("version steps follow each model's provider", () => {
   const grok = new StepProvider();
   const codex = new StepProvider();
   const notes = migrateConfig(config, { grok, codex });
-  expect(notes[0]).toBe("schema_version -> 4");
+  expect(notes[0]).toBe("schema_version -> 5");
   expect(grok.models).toEqual(["grok-4.6"]);
   expect(codex.models).toEqual(["gpt-5.6-terra"]);
   expect(grok.roles).toEqual(["grok"]);
   expect(codex.roles).toEqual(["gpt-terra"]);
-  expect(config.schema_version).toBe(4);
+  expect(config.schema_version).toBe(5);
   const workflow = {
     id: "plan",
     stages: [
@@ -149,7 +149,7 @@ test("version steps follow each model's provider", () => {
 });
 
 test("current version is left alone", () => {
-  const config = { schema_version: "4", models: {}, roles: {} };
+  const config = { schema_version: "5", agents: {}, roles: {} };
   const grok = new StepProvider();
   expect(migrateConfig(config, { grok })).toEqual([]);
   expect(grok.models).toEqual([]);
@@ -162,14 +162,14 @@ test("an unknown provider is skipped and the version still advances", () => {
     roles: {},
   };
   const notes = migrateConfig(config, {});
-  expect(notes).toEqual(["schema_version -> 4"]);
-  expect(mapping(mapping(mapping(config.models).custom).options).thinking).toBe("medium");
-  expect(config.schema_version).toBe(4);
+  expect(notes).toEqual(["schema_version -> 5", "models -> agents", "agents.custom.options -> client.options"]);
+  expect(mapping(mapping(mapping(mapping(config.agents).custom).client).options).thinking).toBe("medium");
+  expect(config.schema_version).toBe(5);
 });
 
 test("newer version is rejected", () => {
-  expect(() => migrateConfig({ schema_version: 5 }, {})).toThrow(
-    new ConfigurationError("config schema_version 5 is newer than this Migent (4)."),
+  expect(() => migrateConfig({ schema_version: 6 }, {})).toThrow(
+    new ConfigurationError("config schema_version 6 is newer than this Migent (5)."),
   );
 });
 
@@ -179,8 +179,9 @@ test("thinking moves to the provider option and keeps the file", () => {
   expect(notes).toContain("models.grok.options.thinking -> reasoning-effort");
   expect(notes).toContain("models.gpt-terra.options.thinking -> model_reasoning_effort");
   expect(notes).toContain("roles.planner.thinking -> options.reasoning-effort");
-  expect(mapping(mapping(config.models).grok).options).toEqual({ "reasoning-effort": "medium" });
-  expect(mapping(mapping(config.models)["gpt-terra"]).options).toEqual({
+  expect(config).not.toHaveProperty("models");
+  expect(mapping(mapping(mapping(config.agents).grok).client).options).toEqual({ "reasoning-effort": "medium" });
+  expect(mapping(mapping(mapping(config.agents)["gpt-terra"]).client).options).toEqual({
     model_reasoning_effort: "medium",
     temperature: "0.2",
   });
@@ -191,8 +192,9 @@ test("thinking moves to the provider option and keeps the file", () => {
   const rewritten = patchConfigText(LEGACY, config);
   const parsed = loadYamlMapping(writeConfig(rewritten));
   expect(parsed.version).toBe("1.0");
-  expect(parsed.schema_version).toBe(4);
-  expect(mapping(mapping(mapping(parsed.models).grok).options)["reasoning-effort"]).toBe("medium");
+  expect(parsed.schema_version).toBe(5);
+  expect(mapping(mapping(mapping(mapping(parsed.agents).grok).client).options)["reasoning-effort"]).toBe("medium");
+  expect(mapping(mapping(parsed.roles).reviewer).agent).toBe("gpt-terra");
   expect(rewritten).not.toContain("thinking");
   expect(rewritten).toContain("# project");
   expect(rewritten).toContain('role: "System Architect & Planner"');
@@ -203,16 +205,21 @@ test("workflow stage keeps instructions and records its version", () => {
   migrateConfig(config, providers());
   const parsed = mapping(parseYamlDocument(WORKFLOW));
   const notes = migrateWorkflow(parsed, config, providers());
-  expect(notes).toContain("stages.plan.thinking -> options.reasoning-effort");
-  expect(notes).toContain("stages.review.options.thinking -> model_reasoning_effort");
+  expect(notes).toContain("stages.review.model -> agent");
+  expect(notes).toContain("stages.review.options.thinking removed");
   const rewritten = patchWorkflowText(WORKFLOW, parsed);
   expect(rewritten).toContain("Keep the word thinking in the prose.");
   expect(rewritten).toContain("# review flow");
   const document = loadWorkflowDocument(writeConfig(rewritten));
-  expect(document.stages.plan?.options).toEqual({ "reasoning-effort": "high" });
-  expect(document.stages.review?.options).toEqual({ model_reasoning_effort: "low" });
-  expect(rewritten).toContain("schema_version: 4");
-  expect(document.schemaVersion).toBe(4);
+  // Version 5 has no stage options: the migrated stages drop them and keep the agent selection.
+  expect(document.stages.plan?.options).toEqual({});
+  expect(document.stages.review?.options).toEqual({});
+  expect(document.stages.review).toMatchObject({ agent: { kind: "named", name: "gpt-terra" } });
+  expect(rewritten).not.toContain("options:");
+  expect(rewritten).not.toContain("model: gpt-terra");
+  expect(rewritten).toContain("agent: gpt-terra");
+  expect(rewritten).toContain("schema_version: 5");
+  expect(document.schemaVersion).toBe(5);
   expect(document.completion).toBeNull();
 });
 
@@ -380,23 +387,24 @@ roles:
       - Do not commit or push. Run the tests that work names and fix failures your change caused before you report complete.
 `;
 
-test("repo plan and implement workflows migrate to version 4", () => {
+test("repo plan and implement workflows migrate to version 5", () => {
   const planBefore = loadWorkflowDocument(writeConfig(PLAN_V1));
   const planParsed = mapping(parseYamlDocument(PLAN_V1));
   const planNotes = migrateWorkflow(planParsed, { models: {}, roles: {} });
-  expect(planNotes).toContain("schema_version -> 4");
+  expect(planNotes).toContain("schema_version -> 5");
   expect(planNotes).toContain("completion removed");
   expect(planNotes).toContain("completion.outputs -> outputs");
   const planText = patchWorkflowText(PLAN_V1, planParsed);
   const planAfter = loadWorkflowDocument(writeConfig(planText));
-  expect(planAfter.schemaVersion).toBe(4);
+  expect(planAfter.schemaVersion).toBe(5);
   expect(planAfter.completion).toBeNull();
   expect(planAfter.concurrency).toBe(1);
   expect(planAfter.requires).toBeNull();
   expect(planAfter.outputs).toEqual([{ name: "plan", fromStage: "plan", artifact: "plan.md" }]);
   expect(planAfter.stages.plan?.instructions).toEqual(planBefore.stages.plan?.instructions);
   expect(planAfter.stages["review-plan"]?.instructions).toEqual(planBefore.stages["review-plan"]?.instructions);
-  expect(planAfter.stages["review-plan"]?.options).toEqual({ "reasoning-effort": "high" });
+  expect(planAfter.stages["review-plan"]?.options).toEqual({});
+  expect(planNotes).toContain("stages.review-plan.options.reasoning-effort removed");
 
   const implementBefore = loadWorkflowDocument(writeConfig(IMPLEMENT_V1));
   const implementParsed = mapping(parseYamlDocument(IMPLEMENT_V1));
@@ -405,7 +413,7 @@ test("repo plan and implement workflows migrate to version 4", () => {
   expect(implementNotes).toContain("completion.outputs -> outputs");
   const implementText = patchWorkflowText(IMPLEMENT_V1, implementParsed);
   const implementAfter = loadWorkflowDocument(writeConfig(implementText));
-  expect(implementAfter.schemaVersion).toBe(4);
+  expect(implementAfter.schemaVersion).toBe(5);
   expect(implementAfter.completion).toBeNull();
   expect(implementAfter.requires).toBeNull();
   expect(implementAfter.outputs).toEqual([
@@ -417,11 +425,164 @@ test("repo plan and implement workflows migrate to version 4", () => {
   );
 });
 
-test("config version 4 changes nothing but the version", () => {
+test("a version 1 config upgrades to version 5 and keeps its layout", () => {
   const parsed = loadYamlMapping(writeConfig(CONFIG_V1));
   const notes = migrateConfig(parsed, {});
-  expect(notes).toEqual(["schema_version -> 4"]);
-  expect(patchConfigText(CONFIG_V1, parsed)).toBe(CONFIG_V1.replace("schema_version: 1\n", "schema_version: 4\n"));
+  expect(notes).toEqual([
+    "schema_version -> 5",
+    "models -> agents",
+    "agents.grok.options -> client.options",
+    "roles.planner.default_model -> agent",
+    "roles.planner.instructions -> responsibilities",
+    "roles.reviewer.default_model -> agent",
+    "roles.reviewer.instructions -> responsibilities",
+    "roles.developer.default_model -> agent",
+    "roles.developer.instructions -> responsibilities",
+  ]);
+  const expected = CONFIG_V1.replace("schema_version: 1\n", "schema_version: 5\n")
+    .replace("models:\n", "agents:\n")
+    .replace("    options:\n      reasoning-effort: high\n", "    client:\n      options:\n        reasoning-effort: high\n")
+    .replaceAll("default_model:", "agent:")
+    .replaceAll("    instructions:\n", "    responsibilities:\n");
+  expect(patchConfigText(CONFIG_V1, parsed)).toBe(expected);
+});
+
+const CONFIG_V4 = `\
+schema_version: 4
+# agents live here
+models:
+  grok: # main
+    provider: grok
+    model: grok-4.6
+    client: opencode # cli
+    options:
+      reasoning-effort: high # keep
+
+  plain:
+    provider: codex
+    model: gpt-5
+roles:
+  dev:
+    default_model: grok
+    instructions:
+      - Do it. # c
+  rev:
+    default_model:
+      provider: codex
+      model: gpt-5
+      options:
+        temperature: "0.2"
+`;
+
+test("a version 4 config moves models, client and options with comments intact", () => {
+  const parsed = loadYamlMapping(writeConfig(CONFIG_V4));
+  const notes = migrateConfig(parsed, {});
+  expect(notes).toEqual([
+    "schema_version -> 5",
+    "models -> agents",
+    "agents.grok.client -> client.type",
+    "agents.grok.options -> client.options",
+    "roles.dev.default_model -> agent",
+    "roles.dev.instructions -> responsibilities",
+    "roles.rev.agent.options -> client.options",
+    "roles.rev.default_model -> agent",
+  ]);
+  const text = patchConfigText(CONFIG_V4, parsed);
+  expect(text).toBe(`\
+schema_version: 5
+# agents live here
+agents:
+  grok: # main
+    provider: grok
+    model: grok-4.6
+    client:
+      type: opencode # cli
+      options:
+        reasoning-effort: high # keep
+
+  plain:
+    provider: codex
+    model: gpt-5
+roles:
+  dev:
+    agent: grok
+    responsibilities:
+      - Do it. # c
+  rev:
+    agent:
+      provider: codex
+      model: gpt-5
+      client:
+        options:
+          temperature: "0.2"
+`);
+  expect(parseYamlDocument(text)).toEqual(parsed);
+});
+
+test("a config that cannot be edited line by line falls back to the canonical rendering", () => {
+  const text = "schema_version: 4\nmodels: { fast: { provider: codex, model: gpt-5, options: { a: b } } }\nroles: {}\n";
+  const parsed = loadYamlMapping(writeConfig(text));
+  migrateConfig(parsed, {});
+  const rewritten = patchConfigText(text, parsed);
+  expect(parseYamlDocument(rewritten)).toEqual({
+    schema_version: 5,
+    agents: { fast: { provider: "codex", model: "gpt-5", client: { options: { a: "b" } } } },
+    roles: {},
+  });
+});
+
+test("a local config with only roles and models migrates on its own", () => {
+  const text = "schema_version: 4\nmodels: {}\nroles:\n  dev:\n    default_model: shared # local pick\n";
+  const parsed = loadYamlMapping(writeConfig(text));
+  migrateConfig(parsed, {});
+  expect(patchConfigText(text, parsed)).toBe("schema_version: 5\nagents: {}\nroles:\n  dev:\n    agent: shared # local pick\n");
+});
+
+const WORKFLOW_V4 = `\
+schema_version: 4
+id: p
+stages:
+  - id: a
+    role: dev
+    model: plain # pick
+    options:
+      effort: high
+    depends_on: []
+  - id: b
+    role: dev
+    options: { effort: low }
+    depends_on: [a]
+  - id: c
+    role: dev
+    depends_on: [b]
+`;
+
+test("a version 4 workflow renames model to agent and drops stage options with a note", () => {
+  const parsed = mapping(parseYamlDocument(WORKFLOW_V4));
+  const notes = migrateWorkflow(parsed, { models: { plain: { provider: "codex", model: "gpt-5" } }, roles: {} }, {});
+  expect(notes).toEqual([
+    "schema_version -> 5",
+    "stages.a.options.effort removed",
+    "stages.a.options removed in schema_version 5; set options on an inline stages.a.agent if the stage still needs them",
+    "stages.a.model -> agent",
+    "stages.b.options.effort removed",
+    "stages.b.options removed in schema_version 5; set options on an inline stages.b.agent if the stage still needs them",
+  ]);
+  expect(patchWorkflowText(WORKFLOW_V4, parsed)).toBe(`\
+schema_version: 5
+id: p
+stages:
+  - id: a
+    role: dev
+    agent: plain # pick
+    depends_on: []
+  - id: b
+    role: dev
+    depends_on: [a]
+  - id: c
+    role: dev
+    depends_on: [b]
+`);
 });
 
 test("a route to complete from another stage or decision is refused", () => {

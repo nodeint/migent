@@ -16,7 +16,7 @@ import {
 } from "./support.ts";
 
 const DOCS_FLOW = `\
-schema_version: 4
+schema_version: 5
 id: docs_flow
 stages:
   - id: implement

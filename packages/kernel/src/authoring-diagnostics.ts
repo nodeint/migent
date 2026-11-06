@@ -5,18 +5,31 @@ import { isRecord } from "./record.js";
  * They never rewrite or reinterpret the author's text.
  */
 
-/** Workflow keys that schema_version 4 reads. */
+/** Workflow keys that schema_version 4 and later read. */
 const WORKFLOW_KEYS = ["schema_version", "id", "stages", "outputs", "concurrency", "constraints", "downstream", "completion", "requires"];
-const STAGE_KEYS = [
-  "id", "description", "role", "depends_on", "instructions", "model", "options", "max_revisions", "max_verify",
+const STAGE_KEYS_COMMON = [
+  "id", "description", "role", "depends_on", "instructions", "max_revisions", "max_verify",
   "verify", "verify_timeout", "produces", "decision", "session", "ask", "run_when",
 ];
+/** Stage keys through schema_version 4 select a model alias and tune options. */
+const STAGE_KEYS_V4 = [...STAGE_KEYS_COMMON, "model", "options"];
+/** Schema_version 5 selects an agent instead. */
+const STAGE_KEYS_V5 = [...STAGE_KEYS_COMMON, "agent"];
+const STAGE_V5_RENAMED: Readonly<Record<string, string>> = {
+  model: "was renamed to {location}.agent in schema_version 5. Run `migent migrate`.",
+  options: "was removed in schema_version 5. Set options on an inline {location}.agent under client.options.",
+};
 const PRODUCES_KEYS = ["artifact"];
 const SESSION_KEYS = ["resume_from"];
 const DECISION_ENTRY_KEYS = ["when", "navigate"];
-const ROLE_KEYS = ["default_model", "instructions", "options"];
+const ROLE_KEYS = ["description", "agent", "responsibilities"];
+const ROLE_V4_RENAMED: Readonly<Record<string, string>> = {
+  default_model: "was renamed to {location}.agent in schema_version 5. Run `migent migrate`.",
+  instructions: "was renamed to {location}.responsibilities in schema_version 5. Run `migent migrate`.",
+  options: "is no longer supported. Move options into the role's agent under client.options.",
+};
 
-/** The next schema version turns unknown keys from warnings into errors. */
+/** From this schema version on, unknown keys are errors instead of warnings. */
 export const UNKNOWN_KEYS_ERROR_SCHEMA_VERSION = 5;
 
 function distance(a: string, b: string): number {
@@ -55,15 +68,19 @@ function unknownKeyEntries(
   valid: readonly string[],
   location: string,
   base: readonly (string | number)[],
+  renamed: Readonly<Record<string, string>> = {},
 ): UnknownKey[] {
   const entries: UnknownKey[] = [];
   for (const key of Object.keys(value)) {
     if (valid.includes(key)) continue;
     const suggestion = closest(key, valid);
     const path = location === "" ? key : `${location}.${key}`;
+    const hint = Object.hasOwn(renamed, key) ? renamed[key]!.replaceAll("{location}", location) : null;
     entries.push({
       code: "unknown-key",
-      message: `${path} is not used by Migent.${suggestion === null ? "" : ` Did you mean ${location === "" ? suggestion : `${location}.${suggestion}`}?`}`,
+      message: hint !== null
+        ? `${path} ${hint}`
+        : `${path} is not used by Migent.${suggestion === null ? "" : ` Did you mean ${location === "" ? suggestion : `${location}.${suggestion}`}?`}`,
       path: [...base, key],
     });
   }
@@ -84,12 +101,15 @@ function unknownKeys(value: Record<string, unknown>, valid: readonly string[], l
 /** Unknown keys at the top level, stages, `produces`, `session` and decision entries, with author-coordinate paths. */
 export function unknownWorkflowKeyEntries(data: Record<string, unknown>): UnknownKey[] {
   const entries = unknownKeyEntries(data, WORKFLOW_KEYS, "", []);
+  const version = typeof data.schema_version === "number" ? data.schema_version : 0;
   if (!Array.isArray(data.stages)) return entries;
   data.stages.forEach((stage, index) => {
     if (!isRecord(stage) || typeof stage.id !== "string") return;
     const location = `stages.${stage.id}`;
     const base = ["stages", index];
-    entries.push(...unknownKeyEntries(stage, STAGE_KEYS, location, base));
+    entries.push(...(version >= 5
+      ? unknownKeyEntries(stage, STAGE_KEYS_V5, location, base, STAGE_V5_RENAMED)
+      : unknownKeyEntries(stage, STAGE_KEYS_V4, location, base)));
     if (isRecord(stage.produces)) entries.push(...unknownKeyEntries(stage.produces, PRODUCES_KEYS, `${location}.produces`, [...base, "produces"]));
     if (isRecord(stage.session)) entries.push(...unknownKeyEntries(stage.session, SESSION_KEYS, `${location}.session`, [...base, "session"]));
     if (!Array.isArray(stage.decision)) return;
@@ -232,7 +252,7 @@ export function unknownRoleKeyEntries(config: Record<string, unknown>): UnknownK
   if (!isRecord(config.roles)) return [];
   return Object.entries(config.roles).flatMap(([name, role]) =>
     isRecord(role)
-      ? unknownKeyEntries(role, ROLE_KEYS, `roles.${name}`, ["roles", name])
+      ? unknownKeyEntries(role, ROLE_KEYS, `roles.${name}`, ["roles", name], ROLE_V4_RENAMED)
       : []);
 }
 

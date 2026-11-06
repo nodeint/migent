@@ -45,7 +45,7 @@ test("standalone role questions wait, list and follow with exit 9, then accept a
 });
 
 test("workflow run prints the pending question and its response after a newer sibling finishes", async () => {
-  const root = writeFakeWorkflowWorkspace({ plan: "schema_version: 4\nid: plan\nstages:\n  - { id: plan, role: planner, ask: human }\n  - { id: docs, role: planner }\n" });
+  const root = writeFakeWorkflowWorkspace({ plan: "schema_version: 5\nid: plan\nstages:\n  - { id: plan, role: planner, ask: human }\n  - { id: docs, role: planner }\n" });
   const provider = new ScriptedProvider([
     question,
     "status: complete\n\nDocs inspected.",
@@ -63,7 +63,7 @@ test("workflow run prints the pending question and its response after a newer si
 });
 
 test("a workflow stage whose question file stays invalid shows the file, the problem and the recovery", async () => {
-  const root = writeFakeWorkflowWorkspace({ plan: "schema_version: 4\nid: plan\nstages:\n  - { id: plan, role: planner, ask: human }\n" });
+  const root = writeFakeWorkflowWorkspace({ plan: "schema_version: 5\nid: plan\nstages:\n  - { id: plan, role: planner, ask: human }\n" });
   const provider = new ScriptedProvider([
     "status: question\n\nNo file.",
     "status: question\n\nStill broken.\n<<FILE>>{\"schema_version\":1,\"questions\":[]}",
@@ -93,7 +93,7 @@ test("a role session whose question file stays invalid prints the diagnostic", a
 });
 
 test("a question-file failure is shown with its stage even when a newer sibling stage succeeds", async () => {
-  const root = writeFakeWorkflowWorkspace({ plan: "schema_version: 4\nid: plan\nstages:\n  - { id: plan, role: planner, ask: human }\n  - { id: docs, role: planner }\n" });
+  const root = writeFakeWorkflowWorkspace({ plan: "schema_version: 5\nid: plan\nstages:\n  - { id: plan, role: planner, ask: human }\n  - { id: docs, role: planner }\n" });
   const provider = new ScriptedProvider([
     "status: question\n\nNo file.",
     "status: question\n\nStill no file.",
@@ -111,7 +111,7 @@ test("a question-file failure is shown with its stage even when a newer sibling 
 });
 
 test("continue with a reply for a named stage keeps running the workflow after that stage", async () => {
-  const root = writeFakeWorkflowWorkspace({ plan: "schema_version: 4\nid: plan\nstages:\n  - { id: plan, role: planner, ask: human }\n  - { id: review_plan, role: planner, depends_on: [plan] }\n" });
+  const root = writeFakeWorkflowWorkspace({ plan: "schema_version: 5\nid: plan\nstages:\n  - { id: plan, role: planner, ask: human }\n  - { id: review_plan, role: planner, depends_on: [plan] }\n" });
   const provider = new ScriptedProvider([
     question,
     "status: complete\n\nPlan written.",

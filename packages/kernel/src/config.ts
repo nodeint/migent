@@ -5,7 +5,7 @@ import { stringify } from "yaml";
 import { z } from "zod";
 import { ConfigurationError } from "./errors.js";
 import { isRecord } from "./record.js";
-import { isRoleStage, loadNamedWorkflow, readOptionMap, type RoleStageSpec } from "./workflow.js";
+import { isRoleStage, loadNamedWorkflow, readOptionMap, type RoleStageSpec, type StageAgent } from "./workflow.js";
 import { parseYamlDocument } from "./yaml.js";
 
 export { documentVersion } from "./record.js";
@@ -124,7 +124,7 @@ export interface MergedConfig {
 
 /**
  * The one definition of how layers combine. `schema_version` always comes from the project layer.
- * A role's `default_model` that the local layer declares replaces the project's wholesale, even when
+ * A role's `agent` that the local layer declares replaces the project's wholesale, even when
  * both are mappings. Any other non-mapping value replaces. Neither input is mutated.
  */
 export function mergeConfigLayers(
@@ -134,12 +134,12 @@ export function mergeConfigLayers(
   if (local == null) return { config: project, ownerOf: () => "project" };
   const { schema_version: _ignored, ...layer } = local;
   const merged = mergeConfig(project, layer);
-  // A role default is a complete selection, including when both values are objects.
+  // A role agent is a complete selection, including when both values are objects.
   if (isRecord(layer.roles) && isRecord(merged.roles)) {
     for (const [name, role] of Object.entries(layer.roles)) {
       const target = merged.roles[name];
-      if (isRecord(role) && isRecord(target) && Object.hasOwn(role, "default_model")) {
-        target.default_model = role.default_model;
+      if (isRecord(role) && isRecord(target) && Object.hasOwn(role, "agent")) {
+        target.agent = role.agent;
       }
     }
   }
@@ -155,7 +155,7 @@ export function mergeConfigLayers(
       if (!baseHas) return "local";
       const baseValue = (base as Record<string, unknown>)[key];
       const overValue = (over as Record<string, unknown>)[key];
-      const wholesale = index === 2 && path[0] === "roles" && key === "default_model";
+      const wholesale = index === 2 && path[0] === "roles" && key === "agent";
       if (wholesale || !isRecord(baseValue) || !isRecord(overValue)) return "local";
       base = baseValue;
       over = overValue;
@@ -191,8 +191,8 @@ export function loadMergedConfig(workspace: string): MergedConfig {
   return mergeConfigLayers(base, loaded);
 }
 
-export interface ModelDefinitionEntry {
-  /** The alias for a `models` entry, or the field path for an inline `roles.*.default_model`. */
+export interface AgentDefinitionEntry {
+  /** The name of an `agents` entry, or the field path for an inline `roles.*.agent`. */
   key: string;
   value: unknown;
   /** Dotted field path, used as the label in messages. */
@@ -201,21 +201,21 @@ export interface ModelDefinitionEntry {
 }
 
 /**
- * Every model definition of an effective config: the `models` entries sorted by alias, then each
- * role's inline `default_model` mapping. A malformed `models` or `roles` yields no entries.
+ * Every agent definition of an effective config: the `agents` entries sorted by name, then each
+ * role's inline `agent` mapping. A malformed `agents` or `roles` yields no entries.
  */
-export function listModelDefinitions(config: Record<string, unknown>): ModelDefinitionEntry[] {
-  const entries: ModelDefinitionEntry[] = [];
-  if (isRecord(config.models)) {
-    for (const alias of Object.keys(config.models).sort()) {
-      entries.push({ key: alias, value: config.models[alias], field: `models.${alias}`, path: ["models", alias] });
+export function listAgentDefinitions(config: Record<string, unknown>): AgentDefinitionEntry[] {
+  const entries: AgentDefinitionEntry[] = [];
+  if (isRecord(config.agents)) {
+    for (const name of Object.keys(config.agents).sort()) {
+      entries.push({ key: name, value: config.agents[name], field: `agents.${name}`, path: ["agents", name] });
     }
   }
   if (isRecord(config.roles)) {
     for (const [name, role] of Object.entries(config.roles)) {
-      if (!isRecord(role) || !isRecord(role.default_model)) continue;
-      const field = `roles.${name}.default_model`;
-      entries.push({ key: field, value: role.default_model, field, path: ["roles", name, "default_model"] });
+      if (!isRecord(role) || !isRecord(role.agent)) continue;
+      const field = `roles.${name}.agent`;
+      entries.push({ key: field, value: role.agent, field, path: ["roles", name, "agent"] });
     }
   }
   return entries;
@@ -306,11 +306,11 @@ export function resolveStageSpec(
   options?: Record<string, string> | null,
   resolveProvider?: ProviderResolver,
 ): StageTarget {
-  const modelField =
-    stage.modelName !== null ? field("stages", stage.id, "model") : field("roles", stage.role, "default_model");
+  const agentField =
+    stage.agent !== null ? field("stages", stage.id, "agent") : field("roles", stage.role, "agent");
   const declared = resolveRoleCascade(config, stage.role, {
-    modelName: stage.modelName,
-    modelField,
+    agent: stage.agent,
+    agentField,
     options: stage.options,
   }, resolveProvider);
   return stageTarget(declared.provider, declared.model, mergeOptions(declared.options, options), declared.client);
@@ -331,41 +331,69 @@ export function resolveRoleTarget(
   const config = loadWorkspaceConfig(workspace);
   if (provider !== null && model !== null) {
     const roles = mapping(config.roles, field("roles"));
-    validateRoleOptions(mapping(roles[role], field("roles", role)), role);
+    validateRoleKeys(mapping(roles[role], field("roles", role)), role);
     return stageTarget(provider, model, { ...(options ?? {}) });
   }
   return resolveRoleCascade(config, role, { options }, resolveProvider);
 }
 
-export function loadModelTarget(
+export function loadAgentTarget(
   config: Record<string, unknown>,
-  modelName: string,
+  agentName: string,
   resolveProvider?: ProviderResolver,
 ): StageTarget {
-  const models = mapping(config.models, field("models"));
-  const alias = field("models", modelName);
-  const modelConfig = mapping(models[modelName], alias);
-  return loadModelDefinition(modelConfig, alias, resolveProvider);
+  rejectLegacyConfigKeys(config);
+  const agents = mapping(config.agents, field("agents"));
+  const label = field("agents", agentName);
+  return loadAgentDefinition(mapping(agents[agentName], label), label, resolveProvider);
 }
 
+const CLIENT_KEYS = ["type", "options"];
+
 /**
- * Named and inline models share exactly the same validation and option handling. `where` is a
+ * Named and inline agents share exactly the same validation and option handling. `where` is a
  * dotted label, or a label with its literal key path when a key may itself contain dots.
  */
-export function loadModelDefinition(
+export function loadAgentDefinition(
   value: unknown,
   where: string | Field,
   resolveProvider?: ProviderResolver,
 ): StageTarget {
   const here = toField(where);
   const label = here.label;
-  const modelConfig = mapping(value, here);
-  const provider = requiredString(modelConfig.provider, child(here, "provider"));
-  const client = optionalString(modelConfig.client, child(here, "client"));
-  const options = readOptions(modelConfig.options, child(here, "options"));
-  if (Object.hasOwn(modelConfig, "effort")) {
+  const agentConfig = mapping(value, here);
+  if (Object.hasOwn(agentConfig, "options")) {
+    throw new ConfigurationError(
+      `${label}.options moved to ${label}.client.options. Run \`migent migrate\`.`,
+      { code: "agent-options-moved", path: [...here.path, "options"] },
+    );
+  }
+  const provider = requiredString(agentConfig.provider, child(here, "provider"));
+  const clientField = child(here, "client");
+  let client: string | undefined;
+  let options: Record<string, string> = {};
+  if (agentConfig.client != null) {
+    if (typeof agentConfig.client === "string") {
+      throw new ConfigurationError(
+        `${clientField.label} must be a mapping: use ${clientField.label}.type. Run \`migent migrate\`.`,
+        { code: "client-not-mapping", path: clientField.path },
+      );
+    }
+    const clientConfig = mapping(agentConfig.client, clientField);
+    for (const key of Object.keys(clientConfig)) {
+      if (!CLIENT_KEYS.includes(key)) {
+        throw new ConfigurationError(`${clientField.label}.${key} is not used by Migent.`, {
+          code: "unknown-key",
+          path: [...clientField.path, key],
+        });
+      }
+    }
+    client = optionalString(clientConfig.type, child(clientField, "type"));
+    options = readOptions(clientConfig.options, child(clientField, "options"));
+  }
+  if (Object.hasOwn(agentConfig, "effort")) {
     const effortField = child(here, "effort");
-    const effort = requiredString(modelConfig.effort, effortField);
+    const effort = requiredString(agentConfig.effort, effortField);
     const details = { code: "effort-unsupported", path: effortField.path };
     if (resolveProvider === undefined) {
       throw new ConfigurationError(`${label}.effort requires a provider resolver.`, details);
@@ -381,43 +409,45 @@ export function loadModelDefinition(
     }
     if (Object.hasOwn(options, option)) {
       throw new ConfigurationError(
-        `${label}.effort conflicts with ${label}.options.${option}; keep only one.`,
+        `${label}.effort conflicts with ${label}.client.options.${option}; keep only one.`,
         { code: "effort-conflict", path: effortField.path },
       );
     }
     options[option] = effort;
   }
-  return stageTarget(provider, requiredString(modelConfig.model, child(here, "model")), options, client);
+  return stageTarget(provider, requiredString(agentConfig.model, child(here, "model")), options, client);
 }
 
 export function resolveRoleCascade(
   config: Record<string, unknown>,
   roleKey: string,
   args?: {
-    modelName?: string | null;
-    modelField?: string | Field | null;
+    agent?: StageAgent | null;
+    agentField?: string | Field | null;
     options?: Record<string, string> | null;
   },
   resolveProvider?: ProviderResolver,
 ): StageTarget {
+  rejectLegacyConfigKeys(config);
   const roles = mapping(config.roles, field("roles"));
   const role = mapping(roles[roleKey], field("roles", roleKey));
-  validateRoleOptions(role, roleKey);
-  const modelField = args?.modelField == null ? field("roles", roleKey, "default_model") : toField(args.modelField);
-  const named = args?.modelName ?? null;
-  const selection = named === null || named === "" ? role.default_model : named;
+  validateRoleKeys(role, roleKey);
+  const agentField = args?.agentField == null ? field("roles", roleKey, "agent") : toField(args.agentField);
+  const stageAgent = args?.agent ?? null;
+  const selection: unknown =
+    stageAgent === null ? role.agent : stageAgent.kind === "named" ? stageAgent.name : stageAgent.value;
   let target: StageTarget;
   if (isRecord(selection)) {
-    target = loadModelDefinition(selection, modelField, resolveProvider);
+    target = loadAgentDefinition(selection, agentField, resolveProvider);
   } else {
-    const alias = requiredString(selection, modelField);
-    if (!isRecord(config.models) || !Object.hasOwn(config.models, alias)) {
-      throw new ConfigurationError(`${modelField.label}: unknown model alias "${alias}" in models.`, {
-        code: "unknown-model-alias",
-        path: modelField.path,
+    const name = requiredString(selection, agentField);
+    if (!isRecord(config.agents) || !Object.hasOwn(config.agents, name)) {
+      throw new ConfigurationError(`${agentField.label}: unknown agent "${name}" in agents.`, {
+        code: "unknown-agent",
+        path: agentField.path,
       });
     }
-    target = loadModelTarget(config, alias, resolveProvider);
+    target = loadAgentTarget(config, name, resolveProvider);
   }
   return stageTarget(
     target.provider,
@@ -427,21 +457,55 @@ export function resolveRoleCascade(
   );
 }
 
-export function validateRoleOptions(role: Record<string, unknown>, roleKey: string): void {
-  if (Object.hasOwn(role, "options")) {
-    throw new ConfigurationError(
-      `roles.${roleKey}.options is no longer supported. Move options into roles.${roleKey}.default_model (inline model) or the referenced models entry.`,
-      { code: "role-options-unsupported", path: ["roles", roleKey, "options"] },
-    );
+/** A v4 top-level key in a current document names its v5 replacement. */
+export function rejectLegacyConfigKeys(config: Record<string, unknown>): void {
+  if (Object.hasOwn(config, "models")) {
+    throw new ConfigurationError("models was renamed to agents in schema_version 5. Run `migent migrate`.", {
+      code: "legacy-key",
+      path: ["models"],
+    });
   }
 }
 
-/** Absent or null instructions are an empty list. A non-list is a configuration error. */
-export function loadRoleInstructions(config: Record<string, unknown>, roleKey: string): string[] {
+/** Keys a role no longer accepts, each with the v5 key that replaces it. */
+export function validateRoleKeys(role: Record<string, unknown>, roleKey: string): void {
+  if (Object.hasOwn(role, "options")) {
+    throw new ConfigurationError(
+      `roles.${roleKey}.options is no longer supported. Move options into roles.${roleKey}.agent (inline agent) or the referenced agents entry, under client.options.`,
+      { code: "role-options-unsupported", path: ["roles", roleKey, "options"] },
+    );
+  }
+  for (const [old, replacement] of [["default_model", "agent"], ["instructions", "responsibilities"]] as const) {
+    if (Object.hasOwn(role, old)) {
+      throw new ConfigurationError(
+        `roles.${roleKey}.${old} was renamed to roles.${roleKey}.${replacement} in schema_version 5. Run \`migent migrate\`.`,
+        { code: "legacy-key", path: ["roles", roleKey, old] },
+      );
+    }
+  }
+}
+
+/** Absent or null responsibilities are an empty list. A non-list is a configuration error. */
+export function loadRoleResponsibilities(config: Record<string, unknown>, roleKey: string): string[] {
   const roles = mapping(config.roles, field("roles"));
   const role = mapping(roles[roleKey], field("roles", roleKey));
-  validateRoleOptions(role, roleKey);
-  return stringItems(role.instructions, field("roles", roleKey, "instructions"));
+  validateRoleKeys(role, roleKey);
+  return stringItems(role.responsibilities, field("roles", roleKey, "responsibilities"));
+}
+
+/** The optional one-line description of a role, or null. */
+export function loadRoleDescription(config: Record<string, unknown>, roleKey: string): string | null {
+  const roles = mapping(config.roles, field("roles"));
+  const role = mapping(roles[roleKey], field("roles", roleKey));
+  if (role.description == null) return null;
+  const description = requiredString(role.description, field("roles", roleKey, "description"));
+  if (/[\r\n]/.test(description)) {
+    throw new ConfigurationError(`roles.${roleKey}.description must be one line.`, {
+      code: "not-one-line",
+      path: ["roles", roleKey, "description"],
+    });
+  }
+  return description;
 }
 
 /**

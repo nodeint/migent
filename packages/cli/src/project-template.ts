@@ -71,14 +71,14 @@ function renderConfig(source: string, models: Record<(typeof ROLES)[number], Mod
     if (!isMap(doc.getIn(["roles", role]))) {
       throw new ConfigurationError(`Project template config.yaml is missing or invalid: roles.${role}.`);
     }
-    if (doc.getIn(["roles", role, "default_model"]) !== `{{${role}.default_model}}`) {
-      throw new ConfigurationError(`Project template config.yaml is missing or invalid: roles.${role}.default_model.`);
+    if (doc.getIn(["roles", role, "agent"]) !== `{{${role}.agent}}`) {
+      throw new ConfigurationError(`Project template config.yaml is missing or invalid: roles.${role}.agent.`);
     }
     const choice = models[role];
     const node: Record<string, unknown> = { provider: choice.provider, model: choice.model };
     if (choice.effort !== undefined) node.effort = choice.effort;
-    if (Object.keys(choice.options).length > 0) node.options = choice.options;
-    doc.setIn(["roles", role, "default_model"], doc.createNode(node));
+    if (Object.keys(choice.options).length > 0) node.client = { options: choice.options };
+    doc.setIn(["roles", role, "agent"], doc.createNode(node));
   }
   return doc.toString({ defaultStringType: "PLAIN", defaultKeyType: "PLAIN", lineWidth: 0 });
 }

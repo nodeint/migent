@@ -24,13 +24,14 @@ export {
   configPath,
   documentVersion,
   hasLocalConfig,
-  loadModelTarget,
-  loadModelDefinition,
-  loadRoleInstructions,
+  loadAgentTarget,
+  loadAgentDefinition,
+  loadRoleResponsibilities,
+  loadRoleDescription,
   loadMergedConfig,
   loadWorkspaceConfig,
   loadYamlMapping,
-  listModelDefinitions,
+  listAgentDefinitions,
   field,
   readConfigLayer,
   mergeConfigLayers,
@@ -42,7 +43,8 @@ export {
   resolveStageSpec,
   resolveStageTarget,
   stringifyConfig,
-  validateRoleOptions,
+  validateRoleKeys,
+  rejectLegacyConfigKeys,
 } from "./config.js";
 export type {
   ConfigLayer,
@@ -50,7 +52,7 @@ export type {
   ConfigOwner,
   EffectiveProviderFailure,
   MergedConfig,
-  ModelDefinitionEntry,
+  AgentDefinitionEntry,
   ModelOverride,
   StageTarget,
 } from "./config.js";
@@ -59,10 +61,11 @@ export {
   assignRoles,
   describeChange,
   inspectConfig,
-  matchingModelName,
+  matchingAgentName,
   patchConfigText,
-  placeRoleModel,
-  upsertModel,
+  placeRoleAgent,
+  upsertAgent,
+  upgradeConfigText,
   yamlScalar,
 } from "./config-edit.js";
 export { SCHEMA_VERSION, migrateConfig, migrateWorkflow, patchWorkflowText } from "./migration.js";
@@ -70,7 +73,7 @@ export type { MigrationProvider, MigrationFn } from "./migration.js";
 export type {
   ConfigChange,
   ConfigView,
-  ModelView,
+  AgentView,
   RoleView,
   StageRef,
   StageShield,
@@ -103,6 +106,7 @@ export {
 } from "./workflow.js";
 export type {
   RoleStageSpec,
+  StageAgent,
   StageSpec,
   VerifyOnlyStageSpec,
   WorkflowCatalog,
@@ -328,14 +332,14 @@ export type { RecordedDiagnostics } from "./session-diagnostics.js";
 export {
   LOCAL_CONFIG_LABEL,
   getConfigView,
-  getModelView,
+  getAgentView,
   getRoleView,
   getSessionWorkflowView,
   getWorkflowView,
-  listModelViews,
+  listAgentViews,
   listRoleViews,
   listWorkflowViews,
-  localModelNames,
+  localAgentNames,
 } from "./views.js";
 export type { View, WorkflowSourceKind } from "./views.js";
 export {

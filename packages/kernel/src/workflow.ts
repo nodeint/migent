@@ -17,6 +17,14 @@ export interface RunWhen {
   changedPaths: string[];
 }
 
+/**
+ * The agent a stage selects: a name in `agents`, or a complete inline definition kept as the raw
+ * mapping for the config loader to validate. `null` means the role's own agent.
+ */
+export type StageAgent =
+  | { kind: "named"; name: string }
+  | { kind: "inline"; value: Record<string, unknown> };
+
 interface StageFields {
   ask?: AskTarget;
   id: string;
@@ -27,7 +35,8 @@ interface StageFields {
   dependsOn: string[];
   resumeFrom: string | null;
   instructions: string[];
-  modelName: string | null;
+  agent: StageAgent | null;
+  /** Stage option layer of schema_version 4 and earlier. Always empty from version 5 on. */
   options: Record<string, string>;
   maxRevisions: number | null;
   routes: Record<string, string | string[]>;
@@ -96,7 +105,7 @@ export interface WorkflowDocument {
 }
 
 /** Accepted workflow and config document version. */
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 export function isWorkflowV2(workflow: WorkflowDocument | null | undefined): boolean {
   return (workflow?.schemaVersion ?? 1) >= 2;
@@ -117,7 +126,12 @@ const stageFieldSchema = {
   dependsOn: z.array(z.string()),
   resumeFrom: z.string().nullable(),
   instructions: z.array(z.string()),
-  modelName: z.string().nullable(),
+  agent: z
+    .discriminatedUnion("kind", [
+      z.object({ kind: z.literal("named"), name: z.string() }),
+      z.object({ kind: z.literal("inline"), value: z.record(z.string(), z.unknown()) }),
+    ])
+    .nullable(),
   options: z.record(z.string(), z.string()),
   maxRevisions: z.number().int().nonnegative().nullable(),
   routes: z.record(z.string(), z.union([z.string(), z.array(z.string()).min(1)])),
@@ -324,7 +338,7 @@ function parseWorkflowMappingUnchecked(data: Record<string, unknown>, source: st
   if (version2 && Object.hasOwn(data, "completion") && data.completion != null) {
     throw new ConfigurationError("schema_version 2 does not allow completion. Run `migent migrate`.");
   }
-  const stages = parseStages(data.stages, version2, schemaVersion >= 3);
+  const stages = parseStages(data.stages, version2, schemaVersion >= 3, schemaVersion >= 5);
   const completion =
     !version2 && isRecord(data.completion) && Object.keys(stages).length > 0
       ? parseCompletion(data.completion, stages)
@@ -517,7 +531,7 @@ function documentId(data: Record<string, unknown>, filePath: string): string {
   return requiredString(data.id, "id");
 }
 
-function parseStages(raw: unknown, version2 = false, version3 = false): Record<string, StageSpec> {
+function parseStages(raw: unknown, version2 = false, version3 = false, version5 = false): Record<string, StageSpec> {
   if (!Array.isArray(raw) || raw.length === 0) return {};
   const stages: Record<string, StageSpec> = {};
   const items: Record<string, unknown>[] = [];
@@ -547,7 +561,7 @@ function parseStages(raw: unknown, version2 = false, version3 = false): Record<s
         dependsOn,
         resumeFrom: null,
         instructions: [],
-        modelName: null,
+        agent: null,
         options: {},
         maxRevisions: null,
         routes: {},
@@ -579,8 +593,8 @@ function parseStages(raw: unknown, version2 = false, version3 = false): Record<s
       dependsOn,
       resumeFrom: stageResumeFrom(item, stageId, dependsOn),
       instructions: stringItems(item.instructions, `stages.${stageId}.instructions`),
-      modelName: optionalStageString(item, "model", stageId),
-      options: stageOptions(item, stageId),
+      agent: version5 ? stageAgent(item, stageId) : legacyStageModel(item, stageId),
+      options: version5 ? {} : stageOptions(item, stageId),
       maxRevisions: stageMaxRevisions(item, stageId),
       routes: {},
       verify,
@@ -931,6 +945,7 @@ const ROLE_ONLY_KEYS = [
   "instructions",
   "model",
   "options",
+  "agent",
   "session",
   "produces",
   "decision",
@@ -1137,6 +1152,23 @@ export function dependencyClosure(stages: Record<string, StageSpec>, stageId: st
     pending.push(...(stages[next]?.dependsOn ?? []));
   }
   return seen;
+}
+
+/** Schema_version 5: `agent` is a name in `agents` or a complete inline definition. */
+function stageAgent(stage: Record<string, unknown>, stageId: string): StageAgent | null {
+  if (!Object.hasOwn(stage, "agent") || stage.agent == null) return null;
+  const raw = stage.agent;
+  if (isRecord(raw)) return { kind: "inline", value: structuredClone(raw) };
+  if (typeof raw !== "string" || raw.trim() === "") {
+    throw new ConfigurationError(`Missing or invalid stages.${stageId}.agent.`);
+  }
+  return { kind: "named", name: raw.trim() };
+}
+
+/** Schema_version 4 and earlier: `model` names an entry of the config's model aliases. */
+function legacyStageModel(stage: Record<string, unknown>, stageId: string): StageAgent | null {
+  const name = optionalStageString(stage, "model", stageId);
+  return name === null ? null : { kind: "named", name };
 }
 
 function stageOptions(stage: Record<string, unknown>, stageId: string): Record<string, string> {

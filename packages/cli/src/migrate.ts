@@ -11,9 +11,13 @@ import {
   migrateConfig,
   migrateWorkflow,
   patchConfigText,
+  parseWorkflowMapping,
   patchWorkflowText,
+  stringifyConfig,
   workflowsDirectory,
+  yamlHasComments,
   type MigrationProvider,
+  ConfigEditError,
   ConfigurationError,
 } from "@nodeint/migent-kernel";
 import { printError, printNotice } from "./display.js";
@@ -131,8 +135,8 @@ function pendingRewrites(workspace: string, providers: Record<string, MigrationP
       if (isRecord(local.roles) && isRecord(effective.roles)) {
         for (const [name, role] of Object.entries(local.roles)) {
           const target = effective.roles[name];
-          if (isRecord(role) && isRecord(target) && Object.hasOwn(role, "default_model")) {
-            target.default_model = role.default_model;
+          for (const key of ["agent", "default_model"]) {
+            if (isRecord(role) && isRecord(target) && Object.hasOwn(role, key)) target[key] = role[key];
           }
         }
       }
@@ -186,11 +190,22 @@ function configRewriteOf(
     return [null, null];
   }
   if (notes.length === 0) return [updated, null];
-  const rewritten = patchConfigText(original, updated);
+  let rewritten: string;
+  try {
+    rewritten = patchConfigText(original, updated);
+  } catch (error) {
+    if (!(error instanceof ConfigEditError)) throw error;
+    // A layout the line patcher cannot edit (flow-style mappings): write the canonical rendering.
+    rewritten = stringifyConfig(updated);
+  }
   if (rewritten === original) return [updated, null];
   const labeled = notes.map((note) =>
     note.startsWith("schema_version") ? `Migrated .migent/${path.basename(filePath)} ${note}` : note,
   );
+  // The text patcher keeps comments; when it cannot (flow-style mappings), say so instead of dropping them silently.
+  if (yamlHasComments(original) && !yamlHasComments(rewritten)) {
+    labeled.push(`.migent/${path.basename(filePath)}: comments could not be preserved by this migration`);
+  }
   return [updated, { path: filePath, text: rewritten, notes: labeled }];
 }
 
@@ -221,12 +236,24 @@ function workflowRewrites(
       continue;
     }
     if (changed.length === 0) continue;
-    const rewritten = patchWorkflowText(original, updated);
+    let rewritten: string;
+    try {
+      rewritten = patchWorkflowText(original, updated);
+    } catch (error) {
+      if (!(error instanceof ConfigurationError)) throw error;
+      // The line patcher cannot edit this layout (flow-style stages, a key on the dash line, empty
+      // entries): write the migrated document as canonical YAML. Comments are reported below.
+      rewritten = stringifyConfig(updated);
+      parseWorkflowMapping(updated, "migrated workflow");
+    }
     if (rewritten === original) continue;
     const relative = `.migent/workflows/${name}`;
     const notes = changed.map((note) =>
       note.startsWith("schema_version") ? `Migrated ${relative} ${note}` : `${relative}: ${note}`,
     );
+    if (yamlHasComments(original) && !yamlHasComments(rewritten)) {
+      notes.push(`${relative}: comments could not be preserved by this migration`);
+    }
     rewrites.push({ path: filePath, text: rewritten, notes });
   }
   return rewrites;

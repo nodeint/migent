@@ -45,15 +45,15 @@ function changes(repo: string, commit: string): string[] {
   return changedPathsSinceBaseline(repo, commit, "test");
 }
 
-const CONFIG = `models:
+const CONFIG = `agents:
   fake:
     provider: fake
     model: m1
 roles:
   developer:
-    default_model: fake
+    agent: fake
   reviewer:
-    default_model: fake
+    agent: fake
 `;
 
 const WORKFLOW = `\

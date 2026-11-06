@@ -1,10 +1,19 @@
 import type { EffectiveProviderFailure, ProviderInfo } from "@nodeint/migent-kernel";
 
 /** The message for a provider-binding failure of the target declared at `field`. */
-export function failureText(field: string, failure: EffectiveProviderFailure): string {
+/** Where a provider failure sits relative to the agent definition: client settings live under `client`. */
+export function failurePath(failure: EffectiveProviderFailure): string[] {
+  if (failure.part === "options") return ["client", "options"];
+  if (failure.part === "client") return ["client", "type"];
+  return ["provider"];
+}
+
+/** `flat` names the resolved target a freeze pins (`client`, `options`), not an agent definition. */
+export function failureText(field: string, failure: EffectiveProviderFailure, flat = false): string {
+  const where = flat ? failure.part : failurePath(failure).join(".");
   return failure.part === "options"
-    ? `${field}.options: ${failure.message}`
-    : `${field}.${failure.part} ${failure.message}`;
+    ? `${field}.${where}: ${failure.message}`
+    : `${field}.${where} ${failure.message}`;
 }
 
 /**

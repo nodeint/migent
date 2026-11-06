@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Changed
+
+- **Schema version 5: "agents".** An agent is a provider, a model, an effort, and a CLI client with its options, and it is called an agent everywhere. Run `migent migrate` to upgrade config and workflow files; comments and layout are kept, and sessions that already started keep running from their frozen copy. The migration makes these changes:
+  - `models` becomes `agents`, and `roles.<role>.default_model` becomes `roles.<role>.agent` (a name in `agents` or a complete inline agent).
+  - `roles.<role>.instructions` becomes `roles.<role>.responsibilities`. A role also accepts an optional one-line `description`, shown by `migent get roles` and not added to prompts.
+  - An agent's `client: <id>` becomes `client.type`, and its `options` become `client.options`. `client` is now always a mapping. `model` stays required on every agent.
+  - A stage's `model` becomes `agent`. It takes a name from `agents` or a complete inline agent, which replaces the role's agent entirely.
+  - **Stage `options` are removed.** The migration deletes them and lists every deleted option in its notes; recreate any you still need as an inline `stages.<id>.agent` with `client.options`.
+  - Unknown workflow keys are errors in schema version 5 (they were warnings). A v4 key in a v5 file is rejected with the key that replaces it.
+- `migent get agents` and `migent get agent <name>` replace `get models` and `get model <alias>`; role views show `agent`, `description`, and `responsibilities`, and the workflow view reports `role_responsibilities`. `migent config --json` reports the local file's `agents`.
+- Kernel and doctor exports follow the new names: `loadAgentTarget`, `loadAgentDefinition`, `listAgentDefinitions`, `loadRoleResponsibilities`, `loadRoleDescription`, `validateRoleKeys`, `upsertAgent`, `placeRoleAgent`, `matchingAgentName`, `getAgentView`, and `listAgentViews`. A parsed role stage carries `agent` (`{ kind: "named" | "inline" }`) instead of `modelName`. Doctor findings use the new paths, for example `agents.<name>.client.options`.
+- Deferred: named and multiple artifacts per stage and the changed `outputs` shape are not part of this change.
+
 ## 0.3.6
 
 ### Added

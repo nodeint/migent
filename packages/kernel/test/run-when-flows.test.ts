@@ -17,15 +17,15 @@ import { ScriptedProvider, tempDir } from "./support.ts";
 vi.setConfig({ testTimeout: 60_000 });
 
 const CONFIG = `\
-models:
+agents:
   fake:
     provider: fake
     model: m1
 roles:
   developer:
-    default_model: fake
+    agent: fake
   reviewer:
-    default_model: fake
+    agent: fake
 `;
 
 const DONE = "status: complete\n\ndone";

@@ -482,13 +482,13 @@ test("corrupt sessions are a short row and a directory without status is skipped
 });
 
 const SEAL_CONFIG = `\
-models:
+agents:
   fake:
     provider: fake
     model: m1
 roles:
   developer:
-    default_model: fake
+    agent: fake
 `;
 
 test("a completed session seals metrics and later normalization leaves the file", async () => {

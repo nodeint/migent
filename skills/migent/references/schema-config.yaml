@@ -1,41 +1,48 @@
 # Annotated configuration example. For editing, local overrides, and client options,
 # see config.md. Model IDs are examples; choose from migent provider list --json.
-schema_version: 4
+schema_version: 5
 
-# Named models can be shared by roles and stages.
+# An agent is a provider, a model, an effort, and a CLI client with its options.
+# Named agents can be shared by roles and stages.
 # Use an available provider and model ID from migent provider list --json.
-models:
+agents:
   deep_reasoning:
     provider: grok
     model: grok-4.7
     # Optional thinking level; use a supported value, or omit for client default.
-    # Do not also set the equivalent provider option or an OpenCode #variant.
+    # Do not also set the equivalent client option or an OpenCode #variant.
     effort: high
 
   code_generation:
     provider: byteplus
-    # Required for byteplus: the CLI client that runs this model.
-    # Other client IDs: agy, claude-code, codex, grok.
-    client: opencode
     model: coding-plan/deepseek-v4-pro
+    client:
+      # Required for byteplus: the CLI client that runs this model.
+      # Other client IDs: agy, claude-code, codex, grok.
+      type: opencode
 
 roles:
   developer:
-    # Inline model object; no named model entry is needed for this role.
-    default_model:
+    # One line; shown by migent get roles. It is not part of the prompt.
+    description: Implements the change and verifies it.
+    # Inline agent object; no named agent entry is needed for this role.
+    agent:
       provider: codex
       model: gpt-5
   planner:
-    default_model:
+    description: Designs the approach and writes the plan.
+    agent:
       provider: grok
       model: grok-4.7
       effort: medium
-      options:
-        max_turns: "10"
-    # Shared instructions for this role.
-    instructions:
+      client:
+        # Native CLI options for this agent.
+        options:
+          max_turns: "10"
+    # What this role is responsible for; rendered into the prompt.
+    responsibilities:
       - Break the task into a reviewable plan.
   reviewer:
-    default_model: deep_reasoning
+    agent: deep_reasoning
 
 # config.local.yaml uses the same fields; merge rules and schema versions are in config.md.

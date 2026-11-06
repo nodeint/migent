@@ -1,6 +1,5 @@
-schema_version: 4
+schema_version: 5
 id: plan-implement
-description: Implement and review production code, then write and review tests.
 
 stages:
   - id: implement

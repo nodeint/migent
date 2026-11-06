@@ -21,7 +21,7 @@ function setup() {
   const workflows = path.join(root, ".migent", "workflows");
   mkdirSync(workflows, { recursive: true });
   writeFileSync(path.join(root, ".migent", "config.yaml"), SESSION_CONFIG);
-  writeFileSync(path.join(workflows, "plan.yaml"), `schema_version: 4
+  writeFileSync(path.join(workflows, "plan.yaml"), `schema_version: 5
 id: plan
 stages:
   - id: draft
@@ -34,7 +34,7 @@ downstream:
     task: Implement the plan
     artifacts: { plan: approved_plan }
 `);
-  writeFileSync(path.join(workflows, "implement.yaml"), "schema_version: 4\nid: implement\nstages:\n  - { id: work, role: developer }\n");
+  writeFileSync(path.join(workflows, "implement.yaml"), "schema_version: 5\nid: implement\nstages:\n  - { id: work, role: developer }\n");
   const prior = createWorkflowSession(root, "plan", "Plan the work");
   const directory = path.join(root, ".migent", "sessions", prior);
   mkdirSync(path.join(directory, "outputs"));
@@ -63,7 +63,7 @@ test("suggestions have explicit mappings and argv, no hashes; source edits do no
 
 test("target loads current workflow and snapshots mapped artifacts with durable provenance", () => {
   const { root, prior, workflows, directory } = setup();
-  writeFileSync(path.join(workflows, "implement.yaml"), "schema_version: 4\nid: implement\nstages:\n  - { id: changed, role: developer }\n");
+  writeFileSync(path.join(workflows, "implement.yaml"), "schema_version: 5\nid: implement\nstages:\n  - { id: changed, role: developer }\n");
   const target = createWorkflowSession(root, "implement", null, prior);
   const targetDir = path.join(root, ".migent", "sessions", target);
   expect(loadFrozenWorkflow(targetDir)?.stages.changed).toBeDefined();
@@ -83,7 +83,7 @@ test("target loads current workflow and snapshots mapped artifacts with durable 
 
 test("fallback --prior passes all outputs, while consumers run standalone", () => {
   const { root, prior, workflows } = setup();
-  writeFileSync(path.join(workflows, "other.yaml"), "schema_version: 4\nid: other\nstages:\n  - { id: work, role: developer }\n");
+  writeFileSync(path.join(workflows, "other.yaml"), "schema_version: 5\nid: other\nstages:\n  - { id: work, role: developer }\n");
   expect(() => createWorkflowSession(root, "other", null, prior)).toThrow(/requires --task/);
   const fallback = createWorkflowSession(root, "other", "Independent task", prior);
   const status = readFoldedStatus(root, path.join(root, ".migent", "sessions", fallback)) as any;
@@ -111,8 +111,8 @@ test("prepare defers handoff snapshots until run, and binding failure stays prep
   expect(existsSync(path.join(targetDir, "workflow.yaml"))).toBe(true);
   expect(existsSync(path.join(targetDir, "handoff"))).toBe(false);
   writeFileSync(path.join(targetDir, "task.md"), "A manually prepared task\n");
-  writeFileSync(path.join(workflows, "implement.yaml"), "schema_version: 4\nid: implement\nstages:\n  - { id: live_change, role: developer }\n");
-  writeFileSync(path.join(targetDir, "workflow.yaml"), "schema_version: 4\nid: implement\nstages:\n  - { id: changed, role: developer }\n");
+  writeFileSync(path.join(workflows, "implement.yaml"), "schema_version: 5\nid: implement\nstages:\n  - { id: live_change, role: developer }\n");
+  writeFileSync(path.join(targetDir, "workflow.yaml"), "schema_version: 5\nid: implement\nstages:\n  - { id: changed, role: developer }\n");
   rmSync(path.join(directory, "outputs", "plan.md"));
   expect(() => activatePreparedSession(root, prepared)).toThrow(/missing or empty/);
   expect(readFoldedStatus(root, targetDir).status).toBe("prepared");
@@ -138,7 +138,7 @@ test("next publication errors preserve completion and can be retried", () => {
 });
 
 test("schema rejects ambiguous or invalid downstream contracts and retains historical requires", () => {
-  const base = { schema_version: 4, id: "plan", stages: [{ id: "draft", role: "planner", produces: { artifact: "plan.md" } }], outputs: [{ name: "plan", from_stage: "draft", artifact: "plan.md" }] };
+  const base = { schema_version: 5, id: "plan", stages: [{ id: "draft", role: "planner", produces: { artifact: "plan.md" } }], outputs: [{ name: "plan", from_stage: "draft", artifact: "plan.md" }] };
   const entry = { workflow: "implement", task: "Implement", artifacts: { plan: "plan" } };
   for (const downstream of [[entry, entry], [{ ...entry, task: "one\ntwo" }], [{ ...entry, workflow: "./implement.yaml" }], [{ ...entry, artifacts: { plan: "missing" } }], [{ ...entry, artifacts: { "bad/name": "plan" } }]]) {
     expect(() => parseWorkflowMapping({ ...base, downstream }, "test.yaml")).toThrow();

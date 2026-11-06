@@ -25,7 +25,7 @@ test("migrate treats a cancelled prompt as a decline", async () => {
   try {
     const root = path.join(workspace, ".migent");
     mkdirSync(path.join(root, "workflows"), { recursive: true });
-    const config = "models:\n  default:\n    provider: grok\n    model: grok-4\nroles:\n  developer:\n    default_model: default\n";
+    const config = "agents:\n  default:\n    provider: grok\n    model: grok-4\nroles:\n  developer:\n    agent: default\n";
     writeFileSync(path.join(root, "config.yaml"), config, "utf8");
     writeFileSync(
       path.join(root, "workflows", "implement.yaml"),

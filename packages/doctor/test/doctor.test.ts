@@ -39,7 +39,7 @@ test("rejects an unsupported provider without checking its command", () => {
     which,
   });
   expect(config.ok).toBe(false);
-  expect(config.problems).toContain("models.grok.provider is not supported: claude");
+  expect(config.problems).toContain("agents.grok.provider is not supported: claude");
   expect(calls).toEqual(["codex"]);
   expect(providers.ok).toBe(true);
   expect(providers.items).toEqual(["codex  /bin/codex"]);
@@ -52,8 +52,8 @@ test("rejects role instructions that are not a list", () => {
   writeFileSync(
     configPath,
     readFileSync(configPath, "utf8").replace(
-      "  developer:\n    default_model: grok\n",
-      "  developer:\n    default_model: grok\n    instructions: nope\n",
+      "  developer:\n    agent: grok\n",
+      "  developer:\n    agent: grok\n    responsibilities: nope\n",
     ),
   );
   const [config] = diagnose(workspace, {
@@ -61,7 +61,7 @@ test("rejects role instructions that are not a list", () => {
     which: whichFound(new Set(["codex", "grok"])),
   });
   expect(config.ok).toBe(false);
-  expect(config.problems).toContain("roles.developer.instructions must be a list.");
+  expect(config.problems).toContain("roles.developer.responsibilities must be a list.");
 });
 
 test("reports a missing provider command", () => {
@@ -160,8 +160,8 @@ test("reports an option the provider rejects", () => {
   writeFileSync(
     configPath,
     readFileSync(configPath, "utf8").replace(
-      "      reasoning-effort: high\n",
-      '      reasoning-effort: high\n      nope: "1"\n',
+      "        reasoning-effort: high\n",
+      '        reasoning-effort: high\n        nope: "1"\n',
     ),
     "utf8",
   );
@@ -170,7 +170,7 @@ test("reports an option the provider rejects", () => {
     which: whichFound(new Set(["codex", "grok"])),
   });
   expect(config.ok).toBe(false);
-  expect(config.problems).toContain("models.grok.options: nope is not a grok option.");
+  expect(config.problems).toContain("agents.grok.client.options: nope is not a grok option.");
   expect(config.problems).toContain("roles.developer: nope is not a grok option.");
   expect(workflows.ok).toBe(true);
 });
@@ -233,7 +233,7 @@ test("warns when config.local.yaml is tracked by git, without failing", () => {
   const workspace = tempDir("migent-doctor-");
   writeStageProject(workspace);
   const local = path.join(workspace, ".migent", "config.local.yaml");
-  writeFileSync(local, "models:\n  grok:\n    model: grok-local\n", "utf8");
+  writeFileSync(local, "agents:\n  grok:\n    model: grok-local\n", "utf8");
   const options = { providers: defaultProviders(), which: whichFound(new Set(["codex", "grok"])) };
 
   const outside = diagnose(workspace, options)[0];
@@ -255,7 +255,7 @@ test("validates the merged config", () => {
   writeStageProject(workspace);
   writeFileSync(
     path.join(workspace, ".migent", "config.local.yaml"),
-    "models:\n  grok:\n    provider: claude\n",
+    "agents:\n  grok:\n    provider: claude\n",
     "utf8",
   );
   const [config] = diagnose(workspace, {
@@ -263,7 +263,7 @@ test("validates the merged config", () => {
     which: whichFound(new Set(["codex", "grok"])),
   });
   expect(config.ok).toBe(false);
-  expect(config.problems).toContain("models.grok.provider is not supported: claude");
+  expect(config.problems).toContain("agents.grok.provider is not supported: claude");
 });
 
 test("names each alias that has no local mapping and how to add it", () => {
@@ -272,7 +272,7 @@ test("names each alias that has no local mapping and how to add it", () => {
   const configPath = path.join(workspace, ".migent", "config.yaml");
   writeFileSync(
     configPath,
-    readFileSync(configPath, "utf8").replace(/models:[\s\S]*?\nroles:/, "models:\n  grok: {}\n  gpt-terra: {}\nroles:"),
+    readFileSync(configPath, "utf8").replace(/agents:[\s\S]*?\nroles:/, "agents:\n  grok: {}\n  gpt-terra: {}\nroles:"),
     "utf8",
   );
   const [config, workflows] = diagnose(workspace, {
@@ -281,14 +281,14 @@ test("names each alias that has no local mapping and how to add it", () => {
   });
   expect(config.ok).toBe(false);
   expect(config.problems).toHaveLength(1);
-  expect(config.problems[0]).toContain("models.gpt-terra, models.grok have no provider and model on this machine.");
+  expect(config.problems[0]).toContain("agents.gpt-terra, agents.grok have no provider and model on this machine.");
   expect(config.problems[0]).toContain(".migent/config.local.yaml");
   expect(config.problems[0]).toContain("  gpt-terra:\n    provider: <provider>\n    model: <model>");
   expect(workflows.problems).toEqual([]);
 
   writeFileSync(
     path.join(workspace, ".migent", "config.local.yaml"),
-    "models:\n  grok:\n    provider: grok\n    model: grok-4\n  gpt-terra:\n    provider: codex\n    model: gpt-5\n",
+    "agents:\n  grok:\n    provider: grok\n    model: grok-4\n  gpt-terra:\n    provider: codex\n    model: gpt-5\n",
     "utf8",
   );
   const [fixed] = diagnose(workspace, {
@@ -338,11 +338,11 @@ test("a model availability problem fails doctor and a warning does not", () => {
   const workspace = tempDir("migent-doctor-");
   writeStageProject(workspace);
   const options = { providers: defaultProviders(), which: whichFound(new Set(["codex", "grok"])) };
-  const problem = 'Invalid models.grok.model: "grok-4x"\nUnknown model: grok-4x.\nDid you mean: grok-4';
+  const problem = 'Invalid agents.grok.model: "grok-4x"\nUnknown model: grok-4x.\nDid you mean: grok-4';
   const [failed] = diagnose(workspace, { ...options, modelEffortChecks: { grok: { problem } } });
   expect(failed.ok).toBe(false);
   expect(failed.problems).toContain(problem);
-  const warning = 'Could not validate models.grok.model: "grok-4"\ngrok is not on PATH';
+  const warning = 'Could not validate agents.grok.model: "grok-4"\ngrok is not on PATH';
   const [warned] = diagnose(workspace, { ...options, modelEffortChecks: { "gpt-terra": { warning } } });
   expect(warned.ok).toBe(true);
   expect(warned.warnings).toContain(warning);
@@ -354,13 +354,13 @@ test("an unmapped alias reports only the no-mapping message, not a model check",
   const configPath = path.join(workspace, ".migent", "config.yaml");
   writeFileSync(
     configPath,
-    readFileSync(configPath, "utf8").replace(/models:[\s\S]*?\nroles:/, "models:\n  grok: {}\n  gpt-terra: {}\nroles:"),
+    readFileSync(configPath, "utf8").replace(/agents:[\s\S]*?\nroles:/, "agents:\n  grok: {}\n  gpt-terra: {}\nroles:"),
     "utf8",
   );
   const [config] = diagnose(workspace, {
     providers: defaultProviders(),
     which: whichFound(new Set(["codex", "grok"])),
-    modelEffortChecks: { grok: { problem: 'Invalid models.grok.model: "x"', warning: 'Could not validate models.grok.model: "x"' } },
+    modelEffortChecks: { grok: { problem: 'Invalid agents.grok.model: "x"', warning: 'Could not validate agents.grok.model: "x"' } },
   });
   expect(config.problems).toHaveLength(1);
   expect(config.problems[0]).toContain("have no provider and model on this machine.");
@@ -371,15 +371,15 @@ test("static validation merges layers like the runtime and reports every problem
   const providers = defaultProviders();
   const diagnostics = validateConfigLayers(
     {
-      project: { models: { x: {} }, roles: { dev: { default_model: "x" }, qa: { default_model: "missing", extra: 1 } } },
-      local: { models: { x: { provider: "nope", model: "m" } } },
+      project: { agents: { x: {} }, roles: { dev: { agent: "x" }, qa: { agent: "missing", extra: 1 } } },
+      local: { agents: { x: { provider: "nope", model: "m" } } },
     },
     providers,
   );
   const errors = diagnostics.filter((item) => item.severity === "error");
   expect(errors.map((item) => item.message)).toEqual([
-    "models.x.provider is not supported: nope",
-    'roles.qa.default_model: unknown model alias "missing" in models.',
+    "agents.x.provider is not supported: nope",
+    'roles.qa.agent: unknown agent "missing" in agents.',
   ]);
   expect(errors[0]!.source).toEqual({ layer: "local" });
   expect(errors[1]!.source).toEqual({ layer: "project" });
@@ -388,40 +388,40 @@ test("static validation merges layers like the runtime and reports every problem
 
 test("static validation accepts a project that only needs a local mapping", () => {
   const diagnostics = validateConfigLayers(
-    { project: { models: { x: {} }, roles: { dev: { default_model: "x" } } } },
+    { project: { agents: { x: {} }, roles: { dev: { agent: "x" } } } },
     defaultProviders(),
   );
-  expect(diagnostics.filter((item) => item.code !== "model-unmapped")).toEqual([]);
+  expect(diagnostics.filter((item) => item.code !== "agent-unmapped")).toEqual([]);
 });
 
 test("an invalid model option is reported once, however many roles use the model", () => {
   const diagnostics = validateConfigLayers(
     {
       project: {
-        models: { x: { provider: "codex", model: "m", options: { a: 3 } } },
-        roles: { dev: { default_model: "x" }, qa: { default_model: "x" } },
+        agents: { x: { provider: "codex", model: "m", client: { options: { a: 3 } } } },
+        roles: { dev: { agent: "x" }, qa: { agent: "x" } },
       },
     },
     defaultProviders(),
   );
   const errors = diagnostics.filter((item) => item.severity === "error");
-  expect(errors.map((item) => item.message)).toEqual(["Missing or invalid models.x.options.a."]);
-  expect(errors[0]!.path).toEqual(["models", "x", "options", "a"]);
+  expect(errors.map((item) => item.message)).toEqual(["Missing or invalid agents.x.client.options.a."]);
+  expect(errors[0]!.path).toEqual(["agents", "x", "client", "options", "a"]);
 });
 
 test("a project-owned bad provider on a dotted alias is not attributed to the merge", () => {
   const diagnostics = validateConfigLayers(
-    { project: { models: { "gpt.5": { provider: "nope" } }, roles: { dev: { default_model: "gpt.5" } } }, local: { models: { "gpt.5": { model: "m" } } } },
+    { project: { agents: { "gpt.5": { provider: "nope" } }, roles: { dev: { agent: "gpt.5" } } }, local: { agents: { "gpt.5": { model: "m" } } } },
     defaultProviders(),
   );
   const error = diagnostics.find((item) => item.code === "provider-unsupported");
-  expect(error?.path).toEqual(["models", "gpt.5", "provider"]);
+  expect(error?.path).toEqual(["agents", "gpt.5", "provider"]);
   expect(error?.source).toEqual({ layer: "project" });
 });
 
 test("an unknown role key containing a dot keeps its whole name in the path", () => {
   const diagnostics = validateConfigLayers(
-    { project: { models: { x: { provider: "codex", model: "m" } }, roles: { dev: { default_model: "x", "a.b": 1 } } } },
+    { project: { agents: { x: { provider: "codex", model: "m" } }, roles: { dev: { agent: "x", "a.b": 1 } } } },
     defaultProviders(),
   );
   expect(diagnostics.find((item) => item.code === "unknown-key")?.path).toEqual(["roles", "dev", "a.b"]);

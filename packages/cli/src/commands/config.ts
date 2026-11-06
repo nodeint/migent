@@ -4,7 +4,7 @@ import {
   configPath,
   hasLocalConfig,
   loadWorkspaceConfig,
-  localModelNames,
+  localAgentNames,
   stringifyConfig,
 } from "@nodeint/migent-kernel";
 
@@ -13,7 +13,7 @@ export function runConfigShow(workspace: string, options: { asJson?: boolean } =
   if (options.asJson === true) {
     const payload = {
       config: loadWorkspaceConfig(workspace),
-      local: local ? { file: LOCAL_LABEL, models: localModelNames(workspace) } : null,
+      local: local ? { file: LOCAL_LABEL, agents: localAgentNames(workspace) } : null,
     };
     process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
     return 0;
@@ -23,8 +23,8 @@ export function runConfigShow(workspace: string, options: { asJson?: boolean } =
     return 0;
   }
   process.stdout.write(stringifyConfig(loadWorkspaceConfig(workspace)));
-  const names = localModelNames(workspace);
-  const detail = names.length > 0 ? ` Local models: ${names.join(", ")}.` : "";
+  const names = localAgentNames(workspace);
+  const detail = names.length > 0 ? ` Local agents: ${names.join(", ")}.` : "";
   process.stderr.write(`Merged with ${LOCAL_LABEL}.${detail}\n`);
   return 0;
 }
@@ -32,7 +32,7 @@ export function runConfigShow(workspace: string, options: { asJson?: boolean } =
 /** The message a removed `config` editing subcommand prints. */
 export function removedConfigCommand(name: string): string {
   return (
-    `\`migent config ${name}\` was removed. Edit .migent/config.yaml (roles and model aliases) or ` +
+    `\`migent config ${name}\` was removed. Edit .migent/config.yaml (roles and agents) or ` +
     `${LOCAL_LABEL} (this machine's provider and model), then run \`migent doctor\`. ` +
     "`migent config` prints the effective config."
   );

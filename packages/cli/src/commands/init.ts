@@ -5,6 +5,8 @@ import type { ModelCatalog } from "@nodeint/migent-adapters";
 import { diagnose } from "@nodeint/migent-doctor";
 import {
   ConfigurationError,
+  loadRoleDescription,
+  loadWorkspaceConfig,
   whichSync,
   type Provider,
   type ProviderOption,
@@ -209,6 +211,7 @@ export async function runInit(
     paths,
     `Planner: ${planner.provider}/${planner.model}. Reviewer: ${reviewer.provider}/${reviewer.model}. Developer: ${developer.provider}/${developer.model}. Workflows: implement, plan.`,
   );
+  printRoleDescriptions(workspace);
   if (interactive) {
     const doctorCode = await runDoctor(workspace, { which: resolve, runCommand: execute });
     if (doctorCode !== 0) writeDoctorProblems(workspace, chosen, resolve);
@@ -217,6 +220,17 @@ export async function runInit(
   }
   printInitNextSteps();
   return 0;
+}
+
+/** Lists each created role with the one-line description the template gives it. */
+function printRoleDescriptions(workspace: string): void {
+  const config = loadWorkspaceConfig(workspace);
+  const lines: string[] = [];
+  for (const role of Object.keys(config.roles as Record<string, unknown>)) {
+    const description = loadRoleDescription(config, role);
+    if (description !== null) lines.push(`  ${role.padEnd(10)} ${description}`);
+  }
+  if (lines.length > 0) process.stdout.write(`Roles:\n${lines.join("\n")}\n`);
 }
 
 function writeDoctorProblems(

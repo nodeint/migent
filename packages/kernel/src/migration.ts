@@ -7,6 +7,7 @@ A missing schema_version is version 0. Writes stay on the text patchers.
 import { stringify } from "yaml";
 import { ConfigEditError, yamlScalar } from "./config-edit.js";
 import { ConfigurationError } from "./errors.js";
+import { liftConfigAgents } from "./migration-config.js";
 import { documentVersion, isRecord } from "./record.js";
 import { SCHEMA_VERSION, parseWorkflowMapping } from "./workflow.js";
 import { parseYamlDocument } from "./yaml.js";
@@ -35,13 +36,26 @@ export function migrateConfig(
   let version = requireCurrent(documentVersion(config), current, "config");
   if (version === current) return [];
   const before = deepCopyRecord(config);
+  let providerStage: Record<string, unknown> | null = null;
+  let structural: string[] = [];
   while (version < current) {
     migrateModels(config, providers, version, context);
     migrateRoles(config, providers, version, context);
+    // Version 4 to 5 renames and reshapes keys for every provider alike.
+    if (version === 4) {
+      providerStage = deepCopyRecord(config);
+      structural = liftConfigAgents(config);
+    }
     version += 1;
   }
   config[SCHEMA_VERSION_FIELD] = current;
-  return documentNotes(before, config, "models", "roles");
+  const notes = [`${SCHEMA_VERSION_FIELD} -> ${String(config[SCHEMA_VERSION_FIELD])}`];
+  // Provider steps ran on the shape they were written for; compare that shape, then list the lift.
+  const compared = providerStage ?? config;
+  notes.push(...namedNotes(before.models ?? before.agents, compared.models ?? compared.agents, "models"));
+  notes.push(...namedNotes(before.roles, compared.roles, "roles"));
+  notes.push(...structural);
+  return notes;
 }
 
 export function migrateWorkflow(
@@ -58,6 +72,7 @@ export function migrateWorkflow(
     if (version === 1) liftWorkflowCompletion(workflow);
     if (version === 2) liftWorkflowDecisions(workflow);
     if (version === 3) delete workflow.requires;
+    if (version === 4) liftWorkflowAgents(workflow);
     version += 1;
   }
   workflow[SCHEMA_VERSION_FIELD] = current;
@@ -91,6 +106,30 @@ function assertMigratedWorkflow(text: string, updated: Readonly<Record<string, u
     throw new ConfigurationError("migration left requires.decision in the workflow.");
   }
   parseWorkflowMapping(parsed, "migrated workflow");
+}
+
+/** Version 5 selects an `agent` per stage; stage `options` no longer exist and are dropped. */
+function liftWorkflowAgents(workflow: Record<string, unknown>): void {
+  if (!Array.isArray(workflow.stages)) return;
+  for (const stage of workflow.stages) {
+    if (!isRecord(stage)) continue;
+    if (Object.hasOwn(stage, "model")) {
+      if (Object.hasOwn(stage, "agent")) {
+        throw new ConfigurationError(`stages.${String(stage.id)} has both model and agent.`);
+      }
+      const lifted: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(stage)) {
+        if (key === "model") {
+          if (value != null) lifted.agent = value;
+        } else {
+          lifted[key] = value;
+        }
+      }
+      for (const key of Object.keys(stage)) delete stage[key];
+      Object.assign(stage, lifted);
+    }
+    delete stage.options;
+  }
 }
 
 /** Version 2 has no completion block and no requires.decision. */
@@ -218,7 +257,10 @@ function migrateRoles(
     if (!isRecord(body)) continue;
     const effectiveRoles = context.roles;
     const effectiveRole = isRecord(effectiveRoles) ? effectiveRoles[name] : null;
-    const provider = roleProvider(context, Object.hasOwn(body, "default_model") ? body : isRecord(effectiveRole) ? effectiveRole : body);
+    const provider = roleProvider(
+      context,
+      Object.hasOwn(body, "default_model") || Object.hasOwn(body, "agent") ? body : isRecord(effectiveRole) ? effectiveRole : body,
+    );
     if (provider === null) continue;
     const impl = providers[provider];
     if (impl === undefined) continue;
@@ -253,15 +295,18 @@ function applyStep(
   if (step !== undefined) step(body);
 }
 
+/** Reads the provider of a role's agent in either document shape: `agent` or the earlier `default_model`. */
 function roleProvider(config: Readonly<Record<string, unknown>>, role: Readonly<Record<string, unknown>>): string | null {
-  const modelName = role.default_model;
-  if (typeof modelName !== "string") return null;
-  return modelProvider(config, modelName);
+  const selection = Object.hasOwn(role, "agent") ? role.agent : role.default_model;
+  if (isRecord(selection)) return providerName(selection.provider);
+  if (typeof selection !== "string") return null;
+  return modelProvider(config, selection);
 }
 
 function stageProvider(config: Readonly<Record<string, unknown>>, stage: Readonly<Record<string, unknown>>): string | null {
-  const modelName = stage.model;
-  if (typeof modelName === "string" && modelName.trim() !== "") return modelProvider(config, modelName);
+  const selection = Object.hasOwn(stage, "agent") ? stage.agent : stage.model;
+  if (isRecord(selection)) return providerName(selection.provider);
+  if (typeof selection === "string" && selection.trim() !== "") return modelProvider(config, selection);
   const roleName = stage.role;
   if (typeof roleName !== "string") return null;
   const roles = config.roles;
@@ -272,7 +317,7 @@ function stageProvider(config: Readonly<Record<string, unknown>>, stage: Readonl
 }
 
 function modelProvider(config: Readonly<Record<string, unknown>>, modelName: string): string | null {
-  const models = config.models;
+  const models = isRecord(config.agents) ? config.agents : config.models;
   if (!isRecord(models)) return null;
   const model = models[modelName.trim()];
   if (!isRecord(model)) return null;
@@ -282,18 +327,6 @@ function modelProvider(config: Readonly<Record<string, unknown>>, modelName: str
 function providerName(value: unknown): string | null {
   if (typeof value !== "string" || value.trim() === "") return null;
   return value.trim();
-}
-
-function documentNotes(
-  before: Readonly<Record<string, unknown>>,
-  after: Readonly<Record<string, unknown>>,
-  modelsKey: string,
-  rolesKey: string,
-): string[] {
-  const notes = [`${SCHEMA_VERSION_FIELD} -> ${String(after[SCHEMA_VERSION_FIELD])}`];
-  notes.push(...namedNotes(before[modelsKey], after[modelsKey], "models"));
-  notes.push(...namedNotes(before[rolesKey], after[rolesKey], "roles"));
-  return notes;
 }
 
 function workflowNotes(before: Readonly<Record<string, unknown>>, after: Readonly<Record<string, unknown>>): string[] {
@@ -323,6 +356,9 @@ function stageNotes(before: Readonly<Record<string, unknown>>, after: Readonly<R
     const updated = afterStages.get(stageId);
     if (updated === undefined) continue;
     notes.push(...bodyNotes(stage, updated, `stages.${stageId}`));
+    if (Object.hasOwn(stage, "model") && Object.hasOwn(updated, "agent") && !Object.hasOwn(updated, "model")) {
+      notes.push(`stages.${stageId}.model -> agent`);
+    }
     if (!deepEqual(stage.decision, updated.decision)) {
       notes.push(`stages.${stageId}.decision migrated (existing criteria remain in stage instructions)`);
     }
@@ -377,6 +413,9 @@ function bodyNotes(
     notes.push(`${label}.thinking -> options.${addedName}`);
   } else {
     notes.push(...removed.map((key) => `${label}.options.${key} removed`));
+    if (label.startsWith("stages.") && removed.length > 0 && !Object.hasOwn(after, "options")) {
+      notes.push(`${label}.options removed in schema_version 5; set options on an inline ${label}.agent if the stage still needs them`);
+    }
     notes.push(...added.map((key) => `${label}.options.${key} set`));
     if (Object.hasOwn(before, "thinking") && !Object.hasOwn(after, "thinking")) {
       notes.push(`${label}.thinking removed`);
@@ -456,6 +495,23 @@ function patchStage(
       ? renderTopLevel("decision", after.decision).map((line) => `${" ".repeat(siblingIndent)}${line}`)
       : [];
     edits.push([span[0], span[1], replacement]);
+  }
+  if (Object.hasOwn(before, "model") && Object.hasOwn(after, "agent") && !Object.hasOwn(after, "model")) {
+    for (const [index, item] of content) {
+      if (item.indent !== siblingIndent || item.key !== "model") continue;
+      const text = lines[start + index] ?? "";
+      const match = /^(\s*)(["']?)model\2(\s*:)/.exec(text);
+      if (match !== null) edits.push([start + index, start + index + 1, [`${match[1]}agent${text.slice(match[0].length - match[3]!.length)}`]]);
+      break;
+    }
+  }
+  if (Object.hasOwn(before, "options") && !Object.hasOwn(after, "options")) {
+    for (const [index, item] of content) {
+      if (item.indent !== siblingIndent || item.key !== "options" || item.rest === "") continue;
+      // A flow-style `options: {..}` has no nested lines to sync; drop the whole entry.
+      edits.push([start + index, optionsEnd(lines, start + index, siblingIndent, end), []]);
+      break;
+    }
   }
   let optionsAt: number | null = null;
   let optionIndent: number | null = null;

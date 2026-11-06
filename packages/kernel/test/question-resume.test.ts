@@ -34,7 +34,7 @@ async function cancelledAsk(responses: string[]) {
   const workspace = tempDir("migent-question-ws-");
   mkdirSync(path.join(workspace, ".migent", "workflows"), { recursive: true });
   writeFileSync(path.join(workspace, ".migent", "config.yaml"), [
-    "schema_version: 3", "roles:", "  planner:", "    default_model: { provider: fake, model: fake }", "",
+    "schema_version: 3", "roles:", "  planner:", "    agent: { provider: fake, model: fake }", "",
   ].join("\n"));
   writeFileSync(path.join(workspace, ".migent", "workflows", "wf.yaml"), [
     "schema_version: 3", "id: wf", "stages:", "  - { id: plan, role: planner, ask: human }", "",

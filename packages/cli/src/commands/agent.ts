@@ -8,7 +8,7 @@ import {
   ProviderEventReporter,
   SessionStore,
   createAgentSession,
-  loadRoleInstructions,
+  loadRoleResponsibilities,
   loadYamlMapping,
   log,
   buildStageReplyPrompt,
@@ -153,7 +153,7 @@ export async function dispatchAgent(
           });
         const question = new SessionStore(workspace).questionStages(resolvedSessionId).find((row) => row.stageId === args.role);
         if (question) input = new SessionStore(workspace).resumeQuestion(resolvedSessionId, args.role, input);
-        const prompt = prependRoleInstructions(loadRoleInstructions(loadWorkspaceConfig(workspace), args.role), input);
+        const prompt = prependRoleInstructions(loadRoleResponsibilities(loadWorkspaceConfig(workspace), args.role), input);
         result = await rerunQuota(
           workspace,
           resolvedSessionId,
@@ -498,7 +498,7 @@ function finishRole(sessionId: string, code: number): number {
 
 function rolePrompt(workspace: string, role: string, text: string): string {
   return prependRoleInstructions(
-    loadRoleInstructions(loadWorkspaceConfig(workspace), role),
+    loadRoleResponsibilities(loadWorkspaceConfig(workspace), role),
     text,
   );
 }

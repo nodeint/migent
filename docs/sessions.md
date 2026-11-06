@@ -62,7 +62,7 @@ The session-level files have distinct purposes:
   change this session, and `--refresh-workflow` rereads the draft.
   Prepared sessions created by an older Migent have no draft and read the
   project workflow.
-- `workflow.frozen.yaml` pins the workflow, role instructions, and resolved
+- `workflow.frozen.yaml` pins the workflow, role responsibilities, and resolved
   stage targets when a workflow session starts. Prepared sessions freeze from
   `workflow.yaml` at `run`. `session continue` and
   `session run --session` keep using that copy when the live files change, and

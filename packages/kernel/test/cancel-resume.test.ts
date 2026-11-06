@@ -8,13 +8,13 @@ import type { CommandSpec } from "../src/command-executor.ts";
 import { ScriptedProvider, tempDir } from "./support.ts";
 
 const CONFIG = `\
-models:
+agents:
   fake:
     provider: fake
     model: m1
 roles:
   developer:
-    default_model: fake
+    agent: fake
 `;
 
 const OK = "status: complete\n\ndone";

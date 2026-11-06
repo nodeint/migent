@@ -1,4 +1,4 @@
-schema_version: 4
+schema_version: 5
 id: plan
 constraints:
   - Plan only. Do not modify source code.

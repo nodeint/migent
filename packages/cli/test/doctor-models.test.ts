@@ -18,17 +18,17 @@ function catalog(argv: string[]): string {
 }
 
 async function inspect(
-  models: Record<string, unknown>,
+  agents: Record<string, unknown>,
   options: { run?: RunCommand; json?: boolean; which?: (command: string) => string | null } = {},
 ) {
   const workspace = mkdtempSync(path.join(tmpdir(), "migent-doctor-models-"));
   try {
     mkdirSync(path.join(workspace, ".migent", "workflows"), { recursive: true });
     writeFileSync(path.join(workspace, ".migent", "config.yaml"), stringify({
-      schema_version: 4, models, roles: { developer: { default_model: Object.keys(models)[0] } },
+      schema_version: 5, agents, roles: { developer: { agent: Object.keys(agents)[0] } },
     }));
     writeFileSync(path.join(workspace, ".migent", "workflows", "flow.yaml"), stringify({
-      schema_version: 4, stages: [{ id: "work", role: "developer" }],
+      schema_version: 5, stages: [{ id: "work", role: "developer" }],
     }));
     return await capture(() => runDoctor(workspace, {
       asJson: options.json ?? true, which: options.which ?? which, runCommand: options.run ?? catalog, home: workspace,
@@ -54,38 +54,38 @@ test("a typo on a reliable catalog fails with the closest matches", async () => 
   const result = await inspect({ fast: { provider: "grok", model: "grok-4x" } });
   expect(result.value).toBe(1);
   expect(problems(result.stdout)).toEqual([
-    'Invalid models.fast.model: "grok-4x"\nUnknown model: grok-4x.\nDid you mean: grok-4',
+    'Invalid agents.fast.model: "grok-4x"\nUnknown model: grok-4x.\nDid you mean: grok-4',
   ]);
 });
 
 test("the human output carries the same message", async () => {
   const result = await inspect({ fast: { provider: "grok", model: "grok-4x" } }, { json: false });
   expect(result.value).toBe(1);
-  expect(result.stdout).toContain('  Invalid models.fast.model: "grok-4x"\n  Unknown model: grok-4x.');
+  expect(result.stdout).toContain('  Invalid agents.fast.model: "grok-4x"\n  Unknown model: grok-4x.');
 });
 
 test("a model missing from a warning-only catalog warns without failing", async () => {
   const result = await inspect({ fast: { provider: "codex", model: "gpt-5x" } });
   expect(result.value).toBe(0);
-  expect(warnings(result.stdout)).toEqual([expect.stringContaining('Could not validate models.fast.model: "gpt-5x"')]);
+  expect(warnings(result.stdout)).toEqual([expect.stringContaining('Could not validate agents.fast.model: "gpt-5x"')]);
 });
 
 test("an unavailable CLI or failing command only warns", async () => {
   const missing = await inspect({ fast: { provider: "grok", model: "grok-4x" } }, { which: () => null });
   expect(problems(missing.stdout).join("\n")).not.toContain("Unknown model");
-  expect(warnings(missing.stdout)[0]).toContain("Could not validate models.fast.model");
+  expect(warnings(missing.stdout)[0]).toContain("Could not validate agents.fast.model");
   const timeout = await inspect({ fast: { provider: "grok", model: "grok-4x" } }, {
     run: () => { throw new Error("request timed out"); },
   });
   expect(timeout.value).toBe(0);
-  expect(warnings(timeout.stdout)).toEqual([expect.stringContaining('Could not validate models.fast.model: "grok-4x"')]);
+  expect(warnings(timeout.stdout)).toEqual([expect.stringContaining('Could not validate agents.fast.model: "grok-4x"')]);
   expect(warnings(timeout.stdout)[0]).toContain("request timed out");
 });
 
 test("an empty catalog only warns", async () => {
   const result = await inspect({ fast: { provider: "grok", model: "grok-4x" } }, { run: () => "Available models:\n" });
   expect(result.value).toBe(0);
-  expect(warnings(result.stdout)[0]).toContain("Could not validate models.fast.model");
+  expect(warnings(result.stdout)[0]).toContain("Could not validate agents.fast.model");
 });
 
 test("each catalog is fetched once, shared with the effort check", async () => {
@@ -111,7 +111,7 @@ test("an unreadable catalog yields one warning per model", async () => {
   });
   expect(result.value).toBe(0);
   expect(warnings(result.stdout)).toHaveLength(1);
-  expect(warnings(result.stdout)[0]).toContain('Could not validate models.fast.model: "gpt-5"');
+  expect(warnings(result.stdout)[0]).toContain('Could not validate agents.fast.model: "gpt-5"');
   expect(warnings(result.stdout)[0]).not.toContain("effort");
 });
 
@@ -137,6 +137,6 @@ test("an unlisted model on a warning-only provider skips its effort check", asyn
   expect(result.value).toBe(0);
   expect(problems(result.stdout)).toEqual([]);
   expect(warnings(result.stdout)).toHaveLength(1);
-  expect(warnings(result.stdout)[0]).toContain('Could not validate models.fast.model: "gpt-5x"');
+  expect(warnings(result.stdout)[0]).toContain('Could not validate agents.fast.model: "gpt-5x"');
   expect(calls).toHaveLength(1);
 });

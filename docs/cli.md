@@ -30,7 +30,7 @@ migent session continue <session-id>
 migent session continue <session-id> --reply "<reply>"
 migent session continue <session-id> --stage <stage> --reply-file <path>
 
-# Adopt the current workflow, models, and role instructions for an existing session.
+# Adopt the current workflow, agents, and role responsibilities for an existing session.
 migent session continue <session-id> --refresh-workflow
 migent session run --session <session-id> --workflow <workflow> --refresh-workflow
 
@@ -129,11 +129,11 @@ provider turn that was cut off is sent again, and a verify that was cut off
 runs again. `completed` sessions stay stopped. The
 existing session history and artifacts remain available to later stages.
 
-A workflow session keeps the workflow, models, and role instructions from when
+A workflow session keeps the workflow, agents, and role responsibilities from when
 it was created, in `workflow.frozen.yaml`. An edit to those files does not
 change that session. `session continue` and `session run --session` warn on
 stderr and keep the frozen copy. `--refresh-workflow` adopts the current
-workflow, models, and role instructions, then resumes. It requires a session
+workflow, agents, and role responsibilities, then resumes. It requires a session
 that has a frozen workflow. A creating run, a session without that file, and a
 completed or cancelled session exit 2. Starting a prepared session with
 `session run --session` does not need the flag: that command reads
@@ -199,7 +199,7 @@ Init always writes both workflows:
 
 ```text
 .migent/
-??? config.yaml        # developer, planner, reviewer with inline models and instructions
+??? config.yaml        # developer, planner, reviewer with inline agents and responsibilities
 ??? .gitignore         # ignores sessions/ and optional config.local.yaml
 ??? workflows/
     ??? implement.yaml # developer implements, reviewer approves or requests revision
@@ -211,7 +211,7 @@ work stage, with `max_revisions: 3`. The implement workflow can run
 independently; it does not require a prior plan session.
 
 There is no preset selection. `config.yaml` contains each role's provider,
-model ID, and selected options directly; no `models` section or
+model ID, and selected options directly; no `agents` section or
 `config.local.yaml` is generated. Commit the configuration and workflows.
 Use the optional local file later for machine-specific overrides.
 
@@ -254,12 +254,12 @@ migent config --json
 `config` prints the effective config and exits 0. Without
 `.migent/config.local.yaml` it prints `.migent/config.yaml` as stored. With it,
 `config` prints the merged config as YAML and writes `Merged with
-.migent/config.local.yaml. Local models: <names>.` to stderr. `--json` prints
-one object, `{"config": {...}, "local": {"file": ..., "models": [...]} | null}`.
+.migent/config.local.yaml. Local agents: <names>.` to stderr. `--json` prints
+one object, `{"config": {...}, "local": {"file": ..., "agents": [...]} | null}`.
 
-`config` is read-only. To change a role, an alias, or the provider and model on
+`config` is read-only. To change a role, an agent, or the provider and model on
 this machine, edit `.migent/config.yaml` or `.migent/config.local.yaml` and run
-`migent doctor`. `doctor` names every alias that has no local mapping and prints
+`migent doctor`. `doctor` names every agent that has no local mapping and prints
 the YAML to add. The `config` subcommands `show`, `model`, and `role` were removed;
 they exit 2 and print this instruction.
 
@@ -286,22 +286,23 @@ migent get workflows
 migent get workflow plan --json
 migent get workflow --session <id> -o yaml
 migent get roles | migent get role <name>
-migent get models | migent get model <alias>
+migent get agents | migent get agent <name>
 migent get config -o json
 ```
 
 `get` looks up what the project defines without reading and merging YAML by
 hand. It is read-only: no writes, no session lock, no subprocesses. Types are
-`workflow`, `role`, `model`, and `config` (plural forms and `wf` also work).
-`models` lists the aliases the project names; `provider list` shows what this
-machine can run.
+`workflow`, `role`, `agent`, and `config` (plural forms and `wf` also work).
+`agents` lists the agents the project names (name, provider, model, client, and
+whether `config.local.yaml` sets it); `roles` shows each role's agent and
+description; `provider list` shows what this machine can run.
 
-- Without a name, `workflows`, `roles`, and `models` print a table; a name prints
+- Without a name, `workflows`, `roles`, and `agents` print a table; a name prints
   that resource as YAML. `-o json` prints an array for a list and an object for
   one resource; `-o yaml` prints the same view as YAML; `-o name` prints one bare
   name per line (not valid for `config`). `--json` is the same as `-o json`.
 - Every view has `kind` and `name`, snake_case fields, `null` for absent values,
-  and `problems` that report an unresolved model or a broken file instead of
+  and `problems` that report an unresolved agent or a broken file instead of
   aborting. `doctor` remains the validator.
 - A workflow view gives each stage its `depends_on`, `decisions`, and resolved
   `target` (`provider`, `model`, `client`, `options`). With `--session <id>` the
@@ -329,7 +330,20 @@ resolve providers from the merged configuration.
 `migrate` prints the pending changes and asks before it writes. `--yes` writes
 without asking, for a caller that has no terminal. Declining leaves the files
 unchanged. The upgrade still runs one version at a time. Each provider defines
-its own function for a model, a role, and a stage at that version.
+its own function for a model, a role, and a stage for the early versions; the
+step from version 4 to 5 is structural and the same for every provider:
+
+- config: `models` becomes `agents`; an agent's `client: <id>` becomes
+  `client.type` and its `options` become `client.options`; a role's
+  `default_model` becomes `agent` and its `instructions` become
+  `responsibilities`.
+- workflows: a stage's `model` becomes `agent`, and stage `options` are
+  **deleted**. The notes list each deleted option, so you can recreate it as an
+  inline `agent` on that stage.
+
+Comments and layout are kept. When a file's layout cannot be edited line by line
+(for example flow-style mappings), the file is rewritten as canonical YAML and
+the notes say its comments could not be preserved.
 
 ## Project skill
 
@@ -346,7 +360,7 @@ anonymous telemetry; Migent sets `DISABLE_TELEMETRY=1` unless you already set it
 `install` needs a scope. In a terminal it asks "Project" or "Global"; otherwise
 pass `--project` or `--global`. `--client` takes a comma-separated list of
 `claude-code`, `codex`, `opencode`, `agy`, `grok`. Without it, project scope
-uses the clients of the models in the merged `.migent/config.yaml` and `config.local.yaml`, and `skills` asks when
+uses the clients of the agents in the merged `.migent/config.yaml` and `config.local.yaml`, and `skills` asks when
 none are known. Project scope writes to the client's project directory
 (`.claude/skills`, `.agents/skills` for codex, opencode and agy, `.grok/skills`);
 global scope writes under your home directory the same way.
@@ -377,7 +391,7 @@ change the exit code.
 
 `doctor --session <id>` checks only the workflow that one workflow session runs,
 and the provider CLIs its stages need. It ignores other workflows, unused roles
-and models, and the installed skill, and it is read-only: it never starts,
+and agents, and the installed skill, and it is read-only: it never starts,
 freezes, or repairs the session. The source it checks matches what the runtime
 uses:
 

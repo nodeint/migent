@@ -4,20 +4,22 @@ import {
   LOCAL_CONFIG_FILE,
   createProviderResolver,
   hasLocalConfig,
-  listModelDefinitions,
+  listAgentDefinitions,
+  loadAgentDefinition,
   loadMergedConfig,
-  loadModelDefinition,
-  loadRoleInstructions,
+  loadRoleDescription,
+  loadRoleResponsibilities,
   mergeConfigLayers,
   resolveEffectiveProvider,
+  rejectLegacyConfigKeys,
   resolveRoleCascade,
   unknownRoleKeyEntries,
-  validateRoleOptions,
+  validateRoleKeys,
   type ConfigOwner,
   type ProviderInfo,
 } from "@nodeint/migent-kernel";
 import { DiagnosticList, failed, passed, type Check, type Diagnostic, type ModelEffortCheck } from "./check.js";
-import { failureText, withTargetClient } from "./providers.js";
+import { failurePath, failureText, withTargetClient } from "./providers.js";
 
 type Providers = Readonly<Record<string, ProviderInfo>>;
 
@@ -28,7 +30,9 @@ export interface ConfigAnalysis {
   executableByProvider: Record<string, string>;
   /** Roles that resolve cleanly, sorted. */
   roleNames: string[];
-  /** Aliases defined as an empty mapping: waiting for a local mapping. */
+  /** One-line descriptions of the roles that declare one. */
+  roleDescriptions: Record<string, string>;
+  /** Agents defined as an empty mapping: waiting for a local mapping. */
   unmapped: ReadonlySet<string>;
 }
 
@@ -61,15 +65,16 @@ export function analyzeConfig(
     error(caught.code ?? "config-invalid", caught.message, caught.path ?? fallbackPath);
   };
 
-  let models: Record<string, unknown>;
+  let agents: Record<string, unknown>;
   let roles: Record<string, unknown>;
-  if (config.models === undefined) {
-    models = {};
-  } else if (!isRecord(config.models)) {
-    error("models-invalid", "Missing or invalid models.", ["models"]);
-    models = {};
+  try { rejectLegacyConfigKeys(config); } catch (caught) { fromError(caught, ["models"]); }
+  if (config.agents === undefined) {
+    agents = {};
+  } else if (!isRecord(config.agents)) {
+    error("agents-invalid", "Missing or invalid agents.", ["agents"]);
+    agents = {};
   } else {
-    models = config.models;
+    agents = config.agents;
   }
   if (!isRecord(config.roles)) {
     error("roles-invalid", "Missing or invalid roles.", ["roles"]);
@@ -80,16 +85,16 @@ export function analyzeConfig(
   }
 
   const unmapped = new Set(
-    Object.keys(models).filter((name) => isRecord(models[name]) && Object.keys(models[name]).length === 0),
+    Object.keys(agents).filter((name) => isRecord(agents[name]) && Object.keys(agents[name]).length === 0),
   );
-  if (unmapped.size > 0) error("model-unmapped", unmappedMessage([...unmapped].sort()), ["models"]);
+  if (unmapped.size > 0) error("agent-unmapped", unmappedMessage([...unmapped].sort()), ["agents"]);
 
   const resolver = createProviderResolver(providers);
   for (const [name, role] of Object.entries(roles)) {
     if (!isRecord(role)) continue;
-    try { validateRoleOptions(role, name); } catch (caught) { fromError(caught, ["roles", name, "options"]); }
+    try { validateRoleKeys(role, name); } catch (caught) { fromError(caught, ["roles", name, "options"]); }
   }
-  for (const entry of listModelDefinitions(config)) {
+  for (const entry of listAgentDefinitions(config)) {
     if (unmapped.has(entry.key)) continue;
     const effortCheck = effortChecks[entry.key];
     if (effortCheck?.problem) error("model-unavailable", effortCheck.problem, entry.path);
@@ -103,7 +108,7 @@ export function analyzeConfig(
     }
     let target;
     try {
-      target = loadModelDefinition(definition, { label: entry.field, path: entry.path }, resolver);
+      target = loadAgentDefinition(definition, { label: entry.field, path: entry.path }, resolver);
     } catch (caught) {
       fromError(caught, entry.path);
       continue;
@@ -117,29 +122,32 @@ export function analyzeConfig(
       error(
         failure.code,
         failureText(entry.field, failure),
-        [...entry.path, failure.part],
+        [...entry.path, ...failurePath(failure)],
         failure.code === "options-invalid" ? failure.message : undefined,
       );
     }
   }
 
   const roleNames: string[] = [];
+  const roleDescriptions: Record<string, string> = {};
   for (const roleKey of Object.keys(roles).sort()) {
     const role = roles[roleKey];
-    const defaultModel = isRecord(role) ? role.default_model : undefined;
-    if (typeof defaultModel === "string" && unmapped.has(defaultModel)) {
+    const roleAgent = isRecord(role) ? role.agent : undefined;
+    if (typeof roleAgent === "string" && unmapped.has(roleAgent)) {
       roleNames.push(roleKey);
       continue;
     }
-    if (typeof defaultModel === "string" && effortChecks[defaultModel]?.problem) {
-      try { loadRoleInstructions(config, roleKey); } catch (caught) { fromError(caught, ["roles", roleKey]); }
+    if (typeof roleAgent === "string" && effortChecks[roleAgent]?.problem) {
+      try { loadRoleResponsibilities(config, roleKey); loadRoleDescription(config, roleKey); } catch (caught) { fromError(caught, ["roles", roleKey]); }
       continue;
     }
-    if (effortChecks[`roles.${roleKey}.default_model`]?.problem) continue;
+    if (effortChecks[`roles.${roleKey}.agent`]?.problem) continue;
     let resolved;
     try {
       resolved = resolveRoleCascade(config, roleKey, { options: null }, resolver);
-      loadRoleInstructions(config, roleKey);
+      loadRoleResponsibilities(config, roleKey);
+      const description = loadRoleDescription(config, roleKey);
+      if (description !== null) roleDescriptions[roleKey] = description;
     } catch (caught) {
       fromError(caught, ["roles", roleKey]);
       continue;
@@ -159,14 +167,14 @@ export function analyzeConfig(
   for (const unknown of unknownRoleKeyEntries(config)) {
     diagnostics.add({ severity: "warning", code: unknown.code, message: unknown.message, path: unknown.path, source: { layer: ownerOf(unknown.path) } });
   }
-  return { diagnostics, executableByProvider, roleNames, unmapped };
+  return { diagnostics, executableByProvider, roleNames, roleDescriptions, unmapped };
 }
 
 function unmappedMessage(aliases: readonly string[]): string {
   const lines = [
-    `${aliases.map((alias) => `models.${alias}`).join(", ")} ${aliases.length === 1 ? "has" : "have"} no provider and model on this machine.`,
+    `${aliases.map((alias) => `agents.${alias}`).join(", ")} ${aliases.length === 1 ? "has" : "have"} no provider and model on this machine.`,
     `Add ${aliases.length === 1 ? "it" : "them"} to .migent/${LOCAL_CONFIG_FILE}, for example:`,
-    "models:",
+    "agents:",
   ];
   for (const alias of aliases) lines.push(`  ${alias}:`, "    provider: <provider>", "    model: <model>");
   return lines.join("\n");
@@ -231,7 +239,7 @@ export function checkConfig(
   ];
   const problems = analysis.diagnostics.errors.map((item) => item.message);
   return {
-    check: problems.length > 0 ? failed("config", problems, [], warnings) : passed("config", analysis.roleNames, warnings),
+    check: problems.length > 0 ? failed("config", problems, [], warnings) : passed("config", analysis.roleNames.map((name) => analysis.roleDescriptions[name] === undefined ? name : `${name}  ${analysis.roleDescriptions[name]}`), warnings),
     executableByProvider: analysis.executableByProvider,
     diagnostics: analysis.diagnostics,
     config,

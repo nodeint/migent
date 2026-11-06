@@ -24,8 +24,8 @@ function writeProject(workspace: string): void {
   const workflows = path.join(workspace, ".migent", "workflows");
   mkdirSync(workflows, { recursive: true });
   const config = `\
-schema_version: 4
-models:
+schema_version: 5
+agents:
   planner-model:
     provider: codex
     model: gpt-5
@@ -34,11 +34,11 @@ models:
     model: grok-4
 roles:
   planner:
-    default_model: planner-model
+    agent: planner-model
   reviewer:
-    default_model: reviewer-model
+    agent: reviewer-model
   developer:
-    default_model: planner-model
+    agent: planner-model
 `;
   writeFileSync(path.join(workspace, ".migent", "config.yaml"), config, "utf8");
   writeFileSync(path.join(workflows, "plan.yaml"), repoWorkflowText("plan"), "utf8");
@@ -87,7 +87,7 @@ test("doctor stops when the schema is outdated", async () => {
   try {
     writeProject(workspace);
     const configPath = path.join(workspace, ".migent", "config.yaml");
-    const original = readFileSync(configPath, "utf8").replace("schema_version: 4\n", "");
+    const original = readFileSync(configPath, "utf8").replace("schema_version: 5\n", "");
     writeFileSync(configPath, original, "utf8");
     const captured = await capture(() => main(["doctor"], workspace));
     expect(captured.value).toBe(2);
@@ -112,7 +112,7 @@ test("doctor exits 2 when the workspace is missing", async () => {
 function writeByteplusProject(workspace: string, client: string | null): void {
   writeProject(workspace);
   const configPath = path.join(workspace, ".migent", "config.yaml");
-  const clientLine = client === null ? "" : `    client: ${client}\n`;
+  const clientLine = client === null ? "" : `    client:\n      type: ${client}\n`;
   const text = readFileSync(configPath, "utf8").replace(
     "roles:\n",
     `  bp-model:\n    provider: byteplus\n    model: seed-1\n${clientLine}roles:\n`,
@@ -133,7 +133,7 @@ test("doctor reports a byteplus model that names no client", async () => {
     const captured = await capture(() => main(["doctor", "--json"], workspace));
     expect(captured.value).toBe(1);
     expect(configProblems(captured.stdout)).toContain(
-      "models.bp-model.client is required: byteplus has no default CLI client.",
+      "agents.bp-model.client.type is required: byteplus has no default CLI client.",
     );
   } finally {
     rmSync(workspace, { recursive: true, force: true });
@@ -160,7 +160,7 @@ test("doctor rejects a byteplus model with an unknown client", async () => {
     cliHooks.which = whichBoth;
     const captured = await capture(() => main(["doctor", "--json"], workspace));
     expect(captured.value).toBe(1);
-    expect(configProblems(captured.stdout).join("\n")).toMatch(/models\.bp-model\.client is not supported: .*Unknown CLI client: nope/);
+    expect(configProblems(captured.stdout).join("\n")).toMatch(/agents\.bp-model\.client\.type is not supported: .*Unknown CLI client: nope/);
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }
@@ -170,7 +170,7 @@ test("doctor prints and returns a tracked config.local.yaml warning without fail
   const workspace = mkdtempSync(path.join(tmpdir(), "migent-cli-"));
   try {
     writeProject(workspace);
-    writeFileSync(path.join(workspace, ".migent", "config.local.yaml"), "schema_version: 4\nmodels: {}\n", "utf8");
+    writeFileSync(path.join(workspace, ".migent", "config.local.yaml"), "schema_version: 5\nagents: {}\n", "utf8");
     execFileSync("git", ["init", "-q"], { cwd: workspace });
     execFileSync("git", ["add", ".migent/config.local.yaml"], { cwd: workspace });
     cliHooks.which = whichBoth;

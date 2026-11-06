@@ -17,17 +17,17 @@ import { parseYamlDocument } from "../src/yaml.ts";
 import { PLAN_REVIEW_WORKFLOW, ScriptedProvider, tempDir } from "./support.ts";
 
 const CONFIG = `\
-models:
+agents:
   fake:
     provider: fake
     model: m1
 roles:
   planner:
-    default_model: fake
+    agent: fake
   reviewer:
-    default_model: fake
+    agent: fake
   developer:
-    default_model: fake
+    agent: fake
 `;
 
 const APPROVED = "status: complete\ndecision: approved\n\nok";
@@ -75,7 +75,7 @@ function mapping(value: unknown): Record<string, unknown> {
 
 function migratedPlan(): string {
   const parsed = mapping(parseYamlDocument(PLAN_REVIEW_WORKFLOW));
-  migrateWorkflow(parsed, { models: {}, roles: {} });
+  migrateWorkflow(parsed, { agents: {}, roles: {} });
   return patchWorkflowText(PLAN_REVIEW_WORKFLOW, parsed);
 }
 

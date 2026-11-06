@@ -7,25 +7,26 @@ import { main } from "../src/index.ts";
 import { capture } from "./support.ts";
 
 const CONFIG = `\
-schema_version: 4
-models:
+schema_version: 5
+agents:
   shared:
     provider: grok
     model: grok-4.6
-    options:
-      max_turns: "4"
+    client:
+      options:
+        max_turns: "4"
   plain:
     provider: grok
     model: grok-4.7
 roles:
   developer:
-    default_model: shared
+    agent: shared
   reviewer:
-    default_model: plain
+    agent: plain
 `;
 
 const WORKFLOW = `\
-schema_version: 4
+schema_version: 5
 id: plan
 stages:
   - id: implement
@@ -33,7 +34,7 @@ stages:
     depends_on: []
   - id: review
     role: reviewer
-    model: shared
+    agent: shared
     depends_on:
       - implement
 `;
@@ -70,8 +71,8 @@ test("get workflow shows stages with resolved targets, and accepts --json", asyn
     expect(captured.value).toBe(0);
     const view = JSON.parse(captured.stdout);
     expect(view).toMatchObject({ kind: "workflow", name: "plan", source: { kind: "project" } });
-    expect(view.stages[0]).toMatchObject({ id: "implement", role: "developer", model: null, target: { provider: "grok", model: "grok-4.6", options: { max_turns: "4" } } });
-    expect(view.stages[1]).toMatchObject({ depends_on: ["implement"], model: "shared", target: { model: "grok-4.6" } });
+    expect(view.stages[0]).toMatchObject({ id: "implement", role: "developer", agent: null, target: { provider: "grok", model: "grok-4.6", options: { max_turns: "4" } } });
+    expect(view.stages[1]).toMatchObject({ depends_on: ["implement"], agent: "shared", target: { model: "grok-4.6" } });
     const yaml = await get(workspace, "workflows", "plan");
     expect(yaml.stdout).toContain("name: plan");
   });
@@ -80,10 +81,31 @@ test("get workflow shows stages with resolved targets, and accepts --json", asyn
 test("get roles and models resolve aliases and usage", async () => {
   await withProject(async (workspace) => {
     const roles = JSON.parse((await get(workspace, "roles", "-o", "json")).stdout);
-    expect(roles[0]).toMatchObject({ name: "developer", default_model: "shared", target: { model: "grok-4.6" }, used_by: [{ workflow: "plan", stage: "implement" }] });
-    const model = JSON.parse((await get(workspace, "model", "shared", "-o", "json")).stdout);
-    expect(model).toMatchObject({ kind: "model", name: "shared", provider: "grok", local: false });
+    expect(roles[0]).toMatchObject({ name: "developer", agent: "shared", target: { model: "grok-4.6" }, used_by: [{ workflow: "plan", stage: "implement" }] });
+    const model = JSON.parse((await get(workspace, "agent", "shared", "-o", "json")).stdout);
+    expect(model).toMatchObject({ kind: "agent", name: "shared", provider: "grok", local: false });
     expect(model.used_by).toEqual([{ role: "developer" }, { workflow: "plan", stage: "review" }]);
+  });
+});
+
+test("get roles prints a table with agent and description, marking inline agents", async () => {
+  await withProject(async (workspace) => {
+    const configPath = path.join(workspace, ".migent", "config.yaml");
+    writeFileSync(
+      configPath,
+      CONFIG.replace(
+        "  reviewer:\n    agent: plain",
+        "  reviewer:\n    description: Checks the work.\n    agent:\n      provider: grok\n      model: grok-4.7",
+      ),
+      "utf8",
+    );
+    const table = await get(workspace, "roles");
+    expect(table.value).toBe(0);
+    expect(table.stdout).toMatch(/^NAME\s+AGENT\s+PROVIDER\s+MODEL\s+DESCRIPTION/);
+    expect(table.stdout).toMatch(/developer\s+shared\s+grok\s+grok-4\.6\s+-/);
+    expect(table.stdout).toMatch(/reviewer\s+\(inline\)\s+grok\s+grok-4\.7\s+Checks the work\./);
+    const agents = await get(workspace, "agents");
+    expect(agents.stdout).toMatch(/^NAME\s+PROVIDER\s+MODEL\s+CLIENT\s+LOCAL/);
   });
 });
 
@@ -91,7 +113,7 @@ test("get config matches the merged config", async () => {
   await withProject(async (workspace) => {
     const view = JSON.parse((await get(workspace, "config", "-o", "json")).stdout);
     const direct = JSON.parse((await capture(() => main(["config", "--json"], workspace))).stdout);
-    expect(view).toMatchObject({ kind: "config", local_file: null, local_models: [] });
+    expect(view).toMatchObject({ kind: "config", local_file: null, local_agents: [] });
     expect(view.config).toEqual(direct.config);
   });
 });
@@ -102,7 +124,7 @@ test("get usage and lookup errors exit 2", async () => {
       [["widgets"], "Unknown resource type"],
       [["workflow", "nope"], "Workflow not found: nope. Available: plan."],
       [["role", "nope"], "Role not found"],
-      [["model", "nope"], "Model not found"],
+      [["agent", "nope"], "Agent not found"],
       [["workflows", "-o", "xml"], "Invalid output format"],
       [["workflows", "--json", "-o", "yaml"], "conflicts"],
       [["config", "-o", "name"], "not valid for config"],
@@ -136,7 +158,7 @@ test("get workflow --session reads a prepared session's draft", async () => {
 test("broken workflow files stay visible in lists and named lookups", async () => {
   await withProject(async (workspace) => {
     const broken = path.join(workspace, ".migent", "workflows", "broken.yaml");
-    writeFileSync(broken, "schema_version: 4\nid: [unclosed\n", "utf8");
+    writeFileSync(broken, "schema_version: 5\nid: [unclosed\n", "utf8");
     const list = JSON.parse((await get(workspace, "workflows", "-o", "json")).stdout) as Array<Record<string, unknown>>;
     const entry = list.find((view) => view.name === "broken");
     expect(entry).toMatchObject({ kind: "workflow", file: ".migent/workflows/broken.yaml" });
@@ -155,7 +177,7 @@ test("broken workflow files stay visible in lists and named lookups", async () =
 
 test("get keeps authoring warnings out of stderr", async () => {
   await withProject(async (workspace) => {
-    writeFileSync(path.join(workspace, ".migent", "workflows", "plan.yaml"), `extra_note: 1\n${WORKFLOW}`, "utf8");
+    writeFileSync(path.join(workspace, ".migent", "workflows", "plan.yaml"), `extra_note: 1\n${WORKFLOW.replace("schema_version: 5", "schema_version: 4").replace("agent: shared", "model: shared")}`, "utf8");
     const list = await get(workspace, "workflows", "-o", "json");
     expect(list.stderr).toBe("");
     const one = await get(workspace, "workflow", "plan", "-o", "json");
@@ -186,12 +208,12 @@ test("a frozen session view pins role instructions and targets against later con
     writeFileSync(path.join(directory, "status.json"), JSON.stringify({ status: "running" }), "utf8");
     writeFileSync(
       path.join(workspace, ".migent", "config.yaml"),
-      CONFIG.replace("grok-4.6", "changed-model").replace("default_model: shared", "default_model: shared\n    instructions:\n      - LIVE INSTRUCTION"),
+      CONFIG.replace("grok-4.6", "changed-model").replace("agent: shared", "agent: shared\n    responsibilities:\n      - LIVE INSTRUCTION"),
       "utf8",
     );
     const view = JSON.parse((await get(workspace, "workflow", "--session", id, "-o", "json")).stdout);
     expect(view.source.kind).toBe("frozen");
-    expect(view.role_instructions).toEqual({ developer: ["PINNED INSTRUCTION"], reviewer: [] });
+    expect(view.role_responsibilities).toEqual({ developer: ["PINNED INSTRUCTION"], reviewer: [] });
     expect(view.stages[0].target.model).toBe("pinned-model");
     const project = JSON.parse((await get(workspace, "workflow", "plan", "-o", "json")).stdout);
     expect(project.stages[0].target.model).toBe("changed-model");
@@ -211,11 +233,11 @@ test("invalid role instructions are reported as workflow problems", async () => 
   await withProject(async (workspace) => {
     writeFileSync(
       path.join(workspace, ".migent", "config.yaml"),
-      CONFIG.replace("  developer:\n    default_model: shared", "  developer:\n    default_model: shared\n    instructions: not-a-list"),
+      CONFIG.replace("  developer:\n    agent: shared", "  developer:\n    agent: shared\n    responsibilities: not-a-list"),
       "utf8",
     );
     const view = JSON.parse((await get(workspace, "workflow", "plan", "-o", "json")).stdout);
     expect(view.problems.join("\n")).toContain("role developer:");
-    expect(view.role_instructions.developer).toEqual([]);
+    expect(view.role_responsibilities.developer).toEqual([]);
   });
 });
