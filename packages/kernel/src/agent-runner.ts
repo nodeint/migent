@@ -602,7 +602,7 @@ export class AgentToolRunner {
         // turn the provider itself reported as failed, stay out, so a resume cannot replay
         // them as if the model had said them.
         const modelResponded =
-          responseText !== "" && (classification === null || (exitOnly && source === "model"));
+          responseText !== "" && source === "model" && (classification === null || exitOnly);
         // An accepted turn is no longer a failure: nothing downstream may see its classification.
         if (exitOnly && anomalyReason === null) classification = null;
         if (modelResponded) record.history.push({ role: "assistant", content: responseText });
@@ -960,8 +960,12 @@ export class AgentToolRunner {
           }
           const event = provider.parseProgressEvent?.(line);
           if (!isRecord(event) || typeof event.event !== "string") return;
+          // The runner alone decides whether a turn failed. A protocol-level failure the CLI
+          // announces mid-stream stays visible as a diagnostic, never as a second verdict.
           eventReporter.emit(
-            event.event,
+            event.event === "provider.turn_failed" || event.event === "provider.turn_completed"
+              ? "provider.error"
+              : event.event,
             typeof event.summary === "string" ? event.summary : null,
             isRecord(event.details) ? event.details : null,
           );

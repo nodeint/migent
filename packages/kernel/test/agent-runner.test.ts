@@ -511,7 +511,7 @@ completion:
   expect(turns).toEqual([1, 2, 3]);
 });
 
-test("progress turn_failed and the runner turn_failed are both recorded", async () => {
+test("a progress turn_failed is recorded as a diagnostic, and the runner owns the one turn verdict", async () => {
   const provider = new FakeProvider();
   provider.buildCommand = () => ({
     argv: [
@@ -527,11 +527,9 @@ test("progress turn_failed and the runner turn_failed are both recorded", async 
   const tmp = tempDir("migent-runner-");
   const result = await runner.run({ provider: "fake", model: "m1", prompt: "fail", workspace: tmp });
   const failed = sessionEvents(tmp, result.session_id).filter((event) => event.event === "provider.turn_failed");
-  expect(failed).toHaveLength(2);
-  expect(failed.filter((event) => {
-    const details = event.details;
-    return typeof details === "object" && details !== null && typeof (details as { turn?: unknown }).turn === "number";
-  })).toHaveLength(1);
+  expect(failed).toHaveLength(1);
+  expect(typeof (failed[0]?.details as { turn?: unknown }).turn).toBe("number");
+  expect(sessionEvents(tmp, result.session_id).filter((event) => event.event === "provider.error")).toHaveLength(1);
 });
 
 test("stage_started records git head and dirty state", async () => {

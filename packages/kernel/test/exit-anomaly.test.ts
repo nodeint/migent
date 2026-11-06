@@ -1,6 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test, vi } from "vitest";
+import { ClaudeProvider } from "../../adapters/src/providers/claude-provider.ts";
+import { CodexProvider } from "../../adapters/src/providers/codex-provider.ts";
 import {
   AgentToolRunner,
   type FailureClassification,
@@ -258,4 +260,73 @@ test("a signal-like exit code is never accepted on its reply", async () => {
   expect(result.execution_status).toBe("failed");
   expect(existsSync(responseFile(result.artifact_directory))).toBe(false);
   expect(named(events(workspace, sessionId), "provider.exit_anomaly")).toHaveLength(0);
+});
+
+test("a provider that kills itself with a signal is never accepted, end to end", async () => {
+  const { workspace, sessionId } = setup(workflowText());
+  class Killed extends ExitProvider {
+    override buildCommand(input: Parameters<ScriptedProvider["buildCommand"]>[0]) {
+      super.buildCommand(input);
+      return { argv: [process.execPath, "-e", "process.stdout.write('hi\\n');process.kill(process.pid,'SIGKILL')"] };
+    }
+  }
+  const provider = new Killed([{ reply: OK, artifact: "# notes\n", exit: 1, source: "model" }]);
+  const result = await runStage(provider, workspace, sessionId);
+  expect(result.execution_status).toBe("failed");
+  expect(existsSync(responseFile(result.artifact_directory))).toBe(false);
+  expect(named(events(workspace, sessionId), "provider.exit_anomaly")).toHaveLength(0);
+});
+
+test("error-sourced text is not persisted even on a clean exit", async () => {
+  const { workspace, sessionId } = setup(workflowText());
+  const provider = new ExitProvider([{ reply: OK, artifact: "# notes\n", exit: 0, source: "error" }]);
+  const result = await runStage(provider, workspace, sessionId);
+  expect(existsSync(responseFile(result.artifact_directory))).toBe(false);
+});
+
+const SOLO = `\
+id: wf
+stages:
+  - id: implement
+    role: developer
+  - id: review
+    role: developer
+    depends_on: [implement]
+completion:
+  stage: review
+`;
+
+test("AC9, real codex: turn.failed yields one turn verdict plus a diagnostic error event", async () => {
+  const { workspace, sessionId } = setup(SOLO);
+  const fixture = '{"type":"turn.failed","error":{"message":"stream broke"}}\n';
+  class FailingCodex extends CodexProvider {
+    override buildCommand() {
+      return { argv: [process.execPath, "-e", "process.stdout.write(process.argv[1]);process.exit(1)", fixture] };
+    }
+  }
+  const runner = new AgentToolRunner({ fake: new FailingCodex() }, 10);
+  const result = await runner.run({ provider: "fake", model: "m1", prompt: "go", workspace, sessionId, stageId: "implement" });
+  expect(result.execution_status).toBe("failed");
+  const list = events(workspace, sessionId);
+  expect(named(list, "provider.turn_failed")).toHaveLength(1);
+  expect(typeof details(named(list, "provider.turn_failed")[0]).turn).toBe("number");
+  expect(named(list, "provider.error")).toHaveLength(1);
+  expect(named(list, "provider.exit_anomaly")).toHaveLength(0);
+});
+
+test("AC9, real claude: an exit-1 reply is one completed verdict and one anomaly", async () => {
+  const { workspace, sessionId } = setup(SOLO);
+  const fixture = '{"type":"result","is_error":false,"result":"status: complete\\n\\ndone","session_id":"s1"}\n';
+  class ExitOneClaude extends ClaudeProvider {
+    override buildCommand() {
+      return { argv: [process.execPath, "-e", "process.stdout.write(process.argv[1]);process.exit(1)", fixture] };
+    }
+  }
+  const runner = new AgentToolRunner({ fake: new ExitOneClaude() }, 10);
+  const result = await runner.run({ provider: "fake", model: "m1", prompt: "go", workspace, sessionId, stageId: "implement" });
+  expect(result.execution_status).toBe("completed");
+  const list = events(workspace, sessionId);
+  expect(named(list, "provider.turn_completed")).toHaveLength(1);
+  expect(named(list, "provider.turn_failed")).toHaveLength(0);
+  expect(named(list, "provider.exit_anomaly")).toHaveLength(1);
 });
