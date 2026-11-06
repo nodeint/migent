@@ -20,7 +20,7 @@ import { ScriptedProvider, tempDir } from "./support.ts";
 vi.setConfig({ testTimeout: 60_000 });
 
 const CONFIG = `\
-models:
+agents:
   alpha:
     provider: alpha
     model: m1
@@ -29,9 +29,9 @@ models:
     model: m1
 roles:
   developer:
-    default_model: alpha
+    agent: alpha
   reviewer:
-    default_model: beta
+    agent: beta
 `;
 
 const FUTURE = "2099-01-01T00:00:00.000Z";

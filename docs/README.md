@@ -10,7 +10,7 @@ must be checked against the current source when changing behavior.
 | --- | --- | --- | --- |
 | [CLI](cli.md) | Commands, flags, exit behavior, init, config inspection, draft authoring, migration, skills, doctor, registry service | Running Migent, changing a command, or checking invocation syntax | `session run`, `prepare`, `continue`, `--stage`, `config`, `get`, `doctor`, `workspace` |
 | [Workflows](workflows.md) | Workflow YAML, stage protocol, artifacts, decisions, routes, conditions, verification, revision limits, concurrency, outputs | Creating or editing a workflow, changing stage execution semantics | `stages`, `needs`, `run_when`, `verify`, `routes`, `outputs`, `downstream` |
-| [Providers and model configuration](providers.md) | Shared/local model configuration, role defaults, named models, options, effort, client-specific settings | Selecting models or changing configuration resolution | `default_model`, `models`, `config.local.yaml`, `client`, `effort`, `options` |
+| [Providers and agent configuration](providers.md) | Shared/local agent configuration, role agents, named agents, client options, effort, client-specific settings | Selecting agents or changing configuration resolution | `agent`, `agents`, `responsibilities`, `config.local.yaml`, `client`, `effort` |
 | [Adapters](adpaters.md) | Shared adapter architecture, client/provider contracts, command building, discovery, parsing, validation boundaries, failure and usage contracts | Implementing a client/provider or changing headless option discovery | `CliClient`, `ProviderBase`, `CommandSpec`, `parseOptions`, `headless_options`, `normalizeUsage` |
 | [Sessions](sessions.md) | Session files, manifests, frozen configuration, execution records, published artifacts, inspect/resume, workflow composition | Understanding persisted state or changing session lifecycle and resume | `manifest.json`, `execution.json`, `status.json`, `workflow.yaml`, `resume_from`, `outputs` |
 | [Session handoff](session-handoff.md) | Cross-workflow suggestions, prior context, artifact snapshots, provenance | Connecting completed producer sessions to new workflows | `next.json`, `--prior`, `handoff/`, `downstream`, `SHA-256` |
@@ -25,7 +25,7 @@ must be checked against the current source when changing behavior.
 | --- | --- | --- |
 | Start, prepare, continue, cancel, or inspect a session | [CLI: Session commands](cli.md#session-commands) | [Sessions](sessions.md) |
 | Change workflow stages, routing, verification, or concurrency | [Workflows](workflows.md) | [Sessions](sessions.md) |
-| Configure a role, model alias, client, or effort | [Providers](providers.md) | [CLI: Init](cli.md#init), [CLI: Config](cli.md#config) |
+| Configure a role, agent, client, or effort | [Providers](providers.md) | [CLI: Init](cli.md#init), [CLI: Config](cli.md#config) |
 | Implement or extend an adapter | [Adapters](adpaters.md) | [Providers](providers.md), [Diagnostics](diagnostics.md) |
 | Parse CLI help or inspect native option JSON | [Adapters: Headless option discovery](adpaters.md#headless-option-discovery) | [Adapters: Listing and JSON output](adpaters.md#listing-and-json-output) |
 | Validate option configuration or change option precedence | [Adapters: Configuration and validation](adpaters.md#configuration-and-validation) | [Providers: Options](providers.md#options) |

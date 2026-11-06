@@ -17,14 +17,15 @@ const models = {
 
 test("renders config models independently and keeps template content", () => {
   const files = renderProject(models);
-  const config = parse(files[0]!.content) as { roles: Record<string, { default_model?: unknown; instructions: string[] }> };
+  const config = parse(files[0]!.content) as { roles: Record<string, { agent?: unknown; responsibilities: string[]; description?: string }> };
   const local = parse(files[1]!.content) as { roles: Record<string, unknown> };
   const template = parse(readFileSync(new URL("config.yaml", root), "utf8")) as typeof config;
-  expect(config.roles.planner?.default_model).toEqual({ provider: "codex", model: "gpt-5", options: { model_reasoning_effort: "high" } });
-  expect(config.roles.reviewer?.default_model).toEqual({ provider: "grok", model: "123" });
-  expect(config.roles.developer?.default_model).toEqual({ provider: "claude", model: "true" });
+  expect(config.roles.planner?.agent).toEqual({ provider: "codex", model: "gpt-5", client: { options: { model_reasoning_effort: "high" } } });
+  expect(config.roles.reviewer?.agent).toEqual({ provider: "grok", model: "123" });
+  expect(config.roles.developer?.agent).toEqual({ provider: "claude", model: "true" });
   for (const role of ["planner", "reviewer", "developer"]) {
-    expect(config.roles[role]?.instructions).toEqual(template.roles[role]?.instructions);
+    expect(config.roles[role]?.responsibilities).toEqual(template.roles[role]?.responsibilities);
+    expect(config.roles[role]?.description).toMatch(/\S/);
     expect(local.roles).toEqual({});
   }
   expect(files[0]!.content).not.toContain("{{");
@@ -72,13 +73,13 @@ test("a template without a role fails with the role path", () => {
   }
 });
 
-test("a template without default_model fails with the full node path", () => {
+test("a template without agent fails with the full node path", () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), "migent-tpl-"));
   try {
     cpSync(new URL(".", root), dir, { recursive: true });
-    const config = readFileSync(path.join(dir, "config.yaml"), "utf8").replace('    default_model: "{{planner.default_model}}"', '    other: value');
+    const config = readFileSync(path.join(dir, "config.yaml"), "utf8").replace('    agent: "{{planner.agent}}"', '    other: value');
     writeFileSync(path.join(dir, "config.yaml"), config);
-    expect(() => renderProject(models, dir)).toThrow(/roles\.planner\.default_model/);
+    expect(() => renderProject(models, dir)).toThrow(/roles\.planner\.agent/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -88,9 +89,9 @@ test("a wrong model placeholder fails with the full node path", () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), "migent-tpl-"));
   try {
     cpSync(new URL(".", root), dir, { recursive: true });
-    const config = readFileSync(path.join(dir, "config.yaml"), "utf8").replace("{{planner.default_model}}", "{{reviewer.default_model}}");
+    const config = readFileSync(path.join(dir, "config.yaml"), "utf8").replace("{{planner.agent}}", "{{reviewer.agent}}");
     writeFileSync(path.join(dir, "config.yaml"), config);
-    expect(() => renderProject(models, dir)).toThrow(/roles\.planner\.default_model/);
+    expect(() => renderProject(models, dir)).toThrow(/roles\.planner\.agent/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

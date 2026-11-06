@@ -14,7 +14,7 @@ configured alias, or omit it for the role default; see
 [schema-workflow.yaml](schema-workflow.yaml). Follow the
 [prepare flow](workflow-sessions.md#prepare-a-longer-task) to validate and start.
 
-Startup freezes the workflow, model targets, and role instructions without a
+Startup freezes the workflow, agent targets, and role responsibilities without a
 refresh flag. Prepared sessions use their own `workflow.yaml`; older sessions
 may reference a project workflow.
 
@@ -27,7 +27,7 @@ model mappings in project or local config. Apply the changes and resume:
 migent session continue <session-id> --refresh-workflow
 ```
 
-Refresh adopts the current workflow, model targets, and role instructions;
+Refresh adopts the current workflow, agent targets, and role responsibilities;
 otherwise frozen settings remain in use. Completed or cancelled sessions cannot
 be refreshed.
 

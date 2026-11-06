@@ -5,7 +5,7 @@ import path from "node:path";
 import { stringify } from "yaml";
 import { writeFileAtomic } from "./atomic-file.js";
 import {
-  loadRoleInstructions,
+  loadRoleResponsibilities,
   loadWorkspaceConfig,
   resolveStageSpec,
   type ModelOverride,
@@ -53,7 +53,7 @@ export function writeWorkflowFreeze(
 ): WrittenFreeze {
   const config = loadWorkspaceConfig(workspace);
   const roles: Record<string, string[]> = {};
-  for (const role of roleNames(workflow)) roles[role] = loadRoleInstructions(config, role);
+  for (const role of roleNames(workflow)) roles[role] = loadRoleResponsibilities(config, role);
   const targets: Record<string, StageTarget> = {};
   for (const stage of Object.values(workflow.stages)) {
     if (!isRoleStage(stage)) continue;
@@ -239,12 +239,12 @@ export function collectFrozenDrift(
     for (const [role, instructions] of Object.entries(freeze.roles)) {
       let current: string[] | null = null;
       try {
-        current = loadRoleInstructions(config, role);
+        current = loadRoleResponsibilities(config, role);
       } catch (error) {
         if (!(error instanceof ConfigurationError)) throw error;
       }
       if (current === null || !sameList(current, instructions)) {
-        details.push(`Role ${role} instructions differ.`);
+        details.push(`Role ${role} responsibilities differ.`);
       }
     }
   }
@@ -303,7 +303,7 @@ function version2WorkflowMapping(workflow: WorkflowDocument): Record<string, unk
     id: workflow.id,
     concurrency: workflow.concurrency ?? 1,
     constraints: workflow.constraints,
-    stages: Object.values(workflow.stages).map((stage) => stageMapping(stage, (workflow.schemaVersion ?? 2) >= 3)),
+    stages: Object.values(workflow.stages).map((stage) => stageMapping(stage, (workflow.schemaVersion ?? 2) >= 3, (workflow.schemaVersion ?? 2) >= 5)),
     requires: workflow.requires === null ? null : { workflow: workflow.requires.workflow },
   };
   const outputs = workflow.outputs ?? [];
@@ -321,7 +321,7 @@ function version2WorkflowMapping(workflow: WorkflowDocument): Record<string, unk
   return mapped;
 }
 
-function stageMapping(stage: StageSpec, version3 = false): Record<string, unknown> {
+function stageMapping(stage: StageSpec, version3 = false, version5 = false): Record<string, unknown> {
   const mapped: Record<string, unknown> = {
     id: stage.id,
     depends_on: stage.dependsOn,
@@ -336,8 +336,11 @@ function stageMapping(stage: StageSpec, version3 = false): Record<string, unknow
       ? stage.decisionValues.map((name) => ({ [name]: { when: stage.decisionInstructions?.[name], navigate: stage.routes[name] } }))
       : { values: stage.decisionValues, routes: stage.routes };
   }
-  if (stage.modelName !== null) mapped.model = stage.modelName;
-  if (Object.keys(stage.options).length > 0) mapped.options = stage.options;
+  if (stage.agent !== null) {
+    const selected = stage.agent.kind === "named" ? stage.agent.name : stage.agent.value;
+    mapped[version5 ? "agent" : "model"] = selected;
+  }
+  if (!version5 && Object.keys(stage.options).length > 0) mapped.options = stage.options;
   if (stage.maxRevisions !== null) mapped.max_revisions = stage.maxRevisions;
   if (stage.resumeFrom !== null) mapped.session = { resume_from: stage.resumeFrom };
   if (stage.runWhen != null) mapped.run_when = { changed_paths: stage.runWhen.changedPaths };

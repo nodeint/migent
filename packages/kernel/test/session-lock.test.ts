@@ -110,7 +110,7 @@ test("refresh updates the heartbeat with the same nonce", async () => {
   }
 });
 
-const CONFIG = "models:\n  fake:\n    provider: fake\n    model: m1\nroles:\n  developer:\n    default_model: fake\n";
+const CONFIG = "agents:\n  fake:\n    provider: fake\n    model: m1\nroles:\n  developer:\n    agent: fake\n";
 const WORKFLOW = "id: wf\nstages:\n  - id: implement\n    role: developer\ncompletion:\n  stage: implement\n";
 
 function setup(): { workspace: string; sessionId: string } {

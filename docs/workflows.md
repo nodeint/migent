@@ -10,8 +10,8 @@ a workflow file also selects that file.
 
 ## Naming
 
-Write every key and id in YAML in `snake_case`: workflow ids, stage ids, and model
-aliases (`review_plan`, `code_generation`). Roles are a single word (`planner`,
+Write every key and id in YAML in `snake_case`: workflow ids, stage ids, and agent
+names (`review_plan`, `code_generation`). Roles are a single word (`planner`,
 `reviewer`). Provider option keys are the exception; use the spelling the provider
 defines, such as `reasoning-effort` for Grok and `model_reasoning_effort` for
 Codex. Execution directories join the order, stage id, and attempt with `-` and
@@ -32,16 +32,40 @@ may produce one named file artifact:
     artifact: plan.md
 ```
 
-Workflow-level `constraints`, the role's `instructions` from
+Workflow-level `constraints`, the role's `responsibilities` from
 `.migent/config.yaml`, and stage `instructions` are included in the provider
-prompt on the first execution of a stage. Role instructions come before stage
+prompt on the first execution of a stage. Role responsibilities come before stage
 instructions. A later execution that continues the same stage's provider agent
 sends only what changed: upstream artifact paths, a route back to this stage,
-or a blocked attempt. It does not repeat the task path, role instructions,
+or a blocked attempt. It does not repeat the task path, role responsibilities,
 stage instructions, constraints, or verify commands. A `session.resume_from`
 visit that continues the named dependency's agent receives the full stage
 prompt again. That includes the first visit and any later visit that was not
 routed back to this stage.
+
+## Agent per stage
+
+A stage normally runs with its role's agent. Set `agent` on a stage to use
+another one: either the name of an entry under `agents` in the config, or a
+complete inline agent.
+
+```yaml
+- id: security_review
+  role: reviewer
+  agent: critical_review        # a name from config.yaml
+- id: final_check
+  role: reviewer
+  agent:                         # a complete agent; nothing is inherited
+    provider: codex
+    model: gpt-5
+    effort: high
+```
+
+An inline agent replaces the role's agent entirely, so it restates the
+provider and model. Schema version 5 has no stage `options`; put native options
+in an inline agent's `client.options`, or in a named agent. `migent migrate`
+renames `model` to `agent` and removes stage `options`, listing every option it
+removes so you can recreate them as an inline agent if needed.
 
 ## Decisions and routes
 
@@ -210,7 +234,7 @@ leaves an output missing. Migent rejects such a workflow when it loads.
 when documentation files changed, and `revise` sends the work back to `docs`.
 
 ```yaml
-schema_version: 4
+schema_version: 5
 id: docs_flow
 stages:
   - id: implement
@@ -409,7 +433,7 @@ configured decision, and still publishes `completion.outputs` then.
 
 ## Downstream handoff
 
-Schema v4 removes `requires`. Every workflow can run independently with a task.
+Schema v4 removed `requires`. Every workflow can run independently with a task.
 A producer can suggest subsequent workflows using its published outputs:
 
 ```yaml
@@ -587,7 +611,7 @@ start while `docs` is still running. The session completes when both reviews
 approve and nothing else can start.
 
 ```yaml
-schema_version: 4
+schema_version: 5
 id: implement
 concurrency: 2
 stages:

@@ -108,8 +108,8 @@ test("session run --workflow dispatches one stage", async () => {
   writeFileSync(
     configPath,
     readFileSync(configPath, "utf8").replace(
-      "  planner:\n    default_model: fake-model\n",
-      "  planner:\n    default_model: fake-model\n    instructions:\n      - Stay inside the task.\n",
+      "  planner:\n    agent: fake-model\n",
+      "  planner:\n    agent: fake-model\n    responsibilities:\n      - Stay inside the task.\n",
     ),
   );
   const provider = new ScriptedProvider(["status: complete\n\nplanned"], ["# Plan\n"]);
@@ -158,8 +158,8 @@ test("session run without --workflow runs one role", async () => {
   writeFileSync(
     configPath,
     readFileSync(configPath, "utf8").replace(
-      "  reviewer:\n    default_model: fake-model\n",
-      "  reviewer:\n    default_model: fake-model\n    instructions:\n      - Judge the change.\n",
+      "  reviewer:\n    agent: fake-model\n",
+      "  reviewer:\n    agent: fake-model\n    responsibilities:\n      - Judge the change.\n",
     ),
   );
   const provider = new ScriptedProvider(["status: complete\n\ndone", "status: complete\n\nagain"]);
@@ -539,7 +539,7 @@ test("session metrics leaves a corrupt sealed file in place", async () => {
 });
 
 const FIXBACK = `\
-schema_version: 4
+schema_version: 5
 id: fixback
 stages:
   - id: implement

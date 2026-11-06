@@ -109,7 +109,7 @@ test("a draft with an unknown role or model, bad options, or a missing executabl
   writeFileSync(draft, original.replace("role: developer", "role: ghost"), "utf8");
   expect(allProblems(run(workspace, sessionId))).toContain("plan-implement.implement: Missing or invalid roles.ghost.");
   writeFileSync(draft, original.replace("role: developer", "role: developer\n    options:\n      bogus: x"), "utf8");
-  expect(allProblems(run(workspace, sessionId))).toMatch(/plan-implement\.implement: roles\.developer\.default_model\.options: .*bogus/);
+  expect(allProblems(run(workspace, sessionId))).toMatch(/plan-implement\.implement: roles\.developer\.agent\.client\.options: .*bogus/);
   writeFileSync(draft, original, "utf8");
   const missing = run(workspace, sessionId, { which: whichFound(new Set(["codex"])) });
   expect(missing.ok).toBe(false);
@@ -163,7 +163,7 @@ test("a frozen session ignores unrelated invalid workspace workflows and config 
   const sessionId = createWorkflowSession(workspace, "plan-implement", "do it");
   writeFileSync(path.join(workspace, ".migent", "workflows", "other.yaml"), "id: other\nstages: nope\n", "utf8");
   const configPath = path.join(workspace, ".migent", "config.yaml");
-  writeFileSync(configPath, `${readFileSync(configPath, "utf8")}  stray:\n    default_model: nothing\n`, "utf8");
+  writeFileSync(configPath, `${readFileSync(configPath, "utf8")}  stray:\n    agent: nothing\n`, "utf8");
   const diagnosis = run(workspace, sessionId);
   expect(diagnosis.ok).toBe(true);
 });
@@ -303,7 +303,7 @@ test("an invalid session id throws and unknown, role, and metadata problems are 
 });
 
 const VERIFY_ONLY = `\
-schema_version: 4
+schema_version: 5
 id: checks
 stages:
   - id: gate
@@ -316,7 +316,7 @@ stages:
 test("verify-only workflows need no role, model, or executable", () => {
   const workspace = tempDir("migent-doctor-session-");
   mkdirSync(path.join(workspace, ".migent", "workflows"), { recursive: true });
-  writeFileSync(path.join(workspace, ".migent", "config.yaml"), "roles:\n  x:\n    default_model: nothing\n", "utf8");
+  writeFileSync(path.join(workspace, ".migent", "config.yaml"), "roles:\n  x:\n    agent: nothing\n", "utf8");
   writeFileSync(path.join(workspace, ".migent", "workflows", "checks.yaml"), VERIFY_ONLY, "utf8");
   const draftId = createPreparedSession(workspace, "wave", "checks");
   const calls: string[] = [];
@@ -351,20 +351,22 @@ test("distinct clients of one provider are checked as distinct executables", () 
   writeFileSync(
     path.join(workspace, ".migent", "config.yaml"),
     `\
-models:
+agents:
   a:
     provider: gateway
     model: m1
-    client: alpha
+    client:
+      type: alpha
   b:
     provider: gateway
     model: m2
-    client: beta
+    client:
+      type: beta
 roles:
   developer:
-    default_model: a
+    agent: a
   reviewer:
-    default_model: b
+    agent: b
 `,
     "utf8",
   );
@@ -389,10 +391,10 @@ test("effort problems and warnings are scoped to the models the session uses", (
   const selection = selectSessionWorkflow(workspace, sessionId);
   expect([...sessionEffortKeys(workspace, selection)].sort()).toEqual(["gpt-terra", "grok"]);
   const diagnosis = run(workspace, sessionId, {
-    modelEffortChecks: { grok: { problem: "Invalid models.grok.effort: \"x\"" }, "gpt-terra": { warning: "Could not validate" } },
+    modelEffortChecks: { grok: { problem: "Invalid agents.grok.effort: \"x\"" }, "gpt-terra": { warning: "Could not validate" } },
   });
   expect(diagnosis.ok).toBe(false);
-  expect(allProblems(diagnosis)).toContain("plan-implement.implement: Invalid models.grok.effort");
+  expect(allProblems(diagnosis)).toContain("plan-implement.implement: Invalid agents.grok.effort");
   expect(check(diagnosis, "bindings").warnings).toEqual(["Could not validate"]);
   const frozenId = createWorkflowSession(workspace, "plan-implement", "go");
   expect(sessionEffortKeys(workspace, selectSessionWorkflow(workspace, frozenId)).size).toBe(0);
@@ -403,16 +405,16 @@ test("model availability problems and warnings are scoped to the session's model
   const sessionId = createPreparedSession(workspace, "wave", "plan-implement");
   const diagnosis = run(workspace, sessionId, {
     modelEffortChecks: {
-      grok: { problem: 'Invalid models.grok.model: "grok-4x"\nUnknown model: grok-4x.' },
-      "gpt-terra": { warning: 'Could not validate models.gpt-terra.model: "gpt-5"' },
-      unused: { problem: 'Invalid models.unused.model: "x"' },
+      grok: { problem: 'Invalid agents.grok.model: "grok-4x"\nUnknown model: grok-4x.' },
+      "gpt-terra": { warning: 'Could not validate agents.gpt-terra.model: "gpt-5"' },
+      unused: { problem: 'Invalid agents.unused.model: "x"' },
     },
   });
   expect(diagnosis.ok).toBe(false);
-  expect(allProblems(diagnosis)).toContain("plan-implement.implement: Invalid models.grok.model");
+  expect(allProblems(diagnosis)).toContain("plan-implement.implement: Invalid agents.grok.model");
   expect(allProblems(diagnosis)).not.toContain("unused");
-  expect(check(diagnosis, "bindings").warnings).toEqual(['Could not validate models.gpt-terra.model: "gpt-5"']);
-  const warned = run(workspace, sessionId, { modelEffortChecks: { grok: { warning: 'Could not validate models.grok.model: "grok-4"' } } });
+  expect(check(diagnosis, "bindings").warnings).toEqual(['Could not validate agents.gpt-terra.model: "gpt-5"']);
+  const warned = run(workspace, sessionId, { modelEffortChecks: { grok: { warning: 'Could not validate agents.grok.model: "grok-4"' } } });
   expect(warned.ok).toBe(true);
 });
 

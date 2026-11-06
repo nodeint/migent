@@ -1,9 +1,10 @@
-import { whichSync, type Provider, type SessionSelection } from "@nodeint/migent-kernel";
+import { loadWorkflowCatalog, whichSync, type Provider, type SessionSelection } from "@nodeint/migent-kernel";
 import type { ModelEffortCheck } from "./check.js";
 import type { RunCommand, Which } from "./catalog.js";
 import { diagnose } from "./diagnose.js";
 import { checkModels } from "./model-check.js";
 import { diagnoseSession, sessionEffortKeys, type SessionDiagnosis } from "./session.js";
+import { stageAgentDefinitions } from "./stage-agents.js";
 import type { Check } from "./check.js";
 
 export interface DiagnoseHooks {
@@ -27,7 +28,8 @@ export async function diagnoseSelection(
   let modelEffortChecks: Record<string, ModelEffortCheck> = {};
   const keys = sessionEffortKeys(workspace, selection);
   if (keys.size > 0 && hooks.runCommand != null) {
-    modelEffortChecks = await checkModels(workspace, hooks.providers, which, hooks.runCommand, keys);
+    const extra = selection.document === null ? [] : stageAgentDefinitions([selection.document]);
+    modelEffortChecks = await checkModels(workspace, hooks.providers, which, hooks.runCommand, keys, extra);
   }
   return diagnoseSession(workspace, selection, { providers: hooks.providers, which, modelEffortChecks });
 }
@@ -35,6 +37,7 @@ export async function diagnoseSelection(
 /** The checks of `migent doctor`: config, workflows and providers, with every model looked up. */
 export async function diagnoseWorkspace(workspace: string, hooks: DiagnoseHooks & { runCommand: RunCommand }): Promise<Check[]> {
   const which = hooks.which ?? whichSync;
-  const modelEffortChecks = await checkModels(workspace, hooks.providers, which, hooks.runCommand);
+  const documents = Object.values(loadWorkflowCatalog(workspace, { quiet: true }).documents);
+  const modelEffortChecks = await checkModels(workspace, hooks.providers, which, hooks.runCommand, undefined, stageAgentDefinitions(documents));
   return diagnose(workspace, { providers: hooks.providers, which, modelEffortChecks });
 }

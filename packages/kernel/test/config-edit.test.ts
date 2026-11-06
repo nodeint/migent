@@ -3,11 +3,11 @@ import {
   ConfigEditError,
   assignRoles,
   inspectConfig,
-  loadRoleInstructions,
+  loadRoleResponsibilities,
   loadYamlMapping,
   patchConfigText,
-  placeRoleModel,
-  upsertModel,
+  placeRoleAgent,
+  upsertAgent,
   type RoleStageSpec,
   type WorkflowDocument,
 } from "../src/index.ts";
@@ -15,23 +15,24 @@ import { writeConfig } from "./support.ts";
 
 const SHARED = `\
 # project models
-models:
+agents:
   shared:
     provider: grok
     model: grok-4.6
-    options:
-      reasoning-effort: medium
-      temperature: "0.2"  # stable
+    client:
+      options:
+        reasoning-effort: medium
+        temperature: "0.2"  # stable
   other:
     provider: codex
     model: gpt-5
 roles:
   developer:
-    default_model: shared
+    agent: shared
   planner:
-    default_model: shared
+    agent: shared
   reviewer:
-    default_model: shared
+    agent: shared
 `;
 
 function stage(input: {
@@ -50,7 +51,7 @@ function stage(input: {
     dependsOn: [],
     resumeFrom: null,
     instructions: [],
-    modelName: input.modelName ?? null,
+    agent: input.modelName === undefined || input.modelName === null ? null : { kind: "named" as const, name: input.modelName },
     options: input.options ?? {},
     maxRevisions: null,
     verify: [],
@@ -94,76 +95,77 @@ function mapping(value: unknown): Record<string, unknown> {
 
 test("assign role keeps the shared model", () => {
   const change = assignRoles(config(), ["reviewer"], "other", { workflows: [workflow()] });
-  const models = mapping(change.config.models);
+  const models = mapping(change.config.agents);
   const roles = mapping(change.config.roles);
   const reviewer = mapping(roles.reviewer);
   expect(change.roles).toEqual(["reviewer"]);
   expect(mapping(models.shared).model).toBe("grok-4.6");
-  expect(mapping(roles.developer).default_model).toBe("shared");
-  expect(mapping(roles.planner).default_model).toBe("shared");
-  expect(reviewer.default_model).toBe("other");
+  expect(mapping(roles.developer).agent).toBe("shared");
+  expect(mapping(roles.planner).agent).toBe("shared");
+  expect(reviewer.agent).toBe("other");
   expect(reviewer).not.toHaveProperty("options");
   expect(change.stagesUpdated).toEqual([["plan", "plain-review"]]);
   expect(change.stagesUnchanged[0]?.stage).toBe("review");
-  expect(change.stagesUnchanged[0]?.ignores).toEqual(["role-model"]);
+  expect(change.stagesUnchanged[0]?.ignores).toEqual(["role-agent"]);
   expect(change.stagesUnchanged.map((item) => item.stage)).toContain("audit");
 });
 
 test("place role model creates a private entry", () => {
-  const change = placeRoleModel(config(), "reviewer", {
+  const change = placeRoleAgent(config(), "reviewer", {
     provider: "grok",
     model: "grok-4.7",
     options: { "reasoning-effort": "high" },
     workflows: [workflow()],
   });
-  const models = mapping(change.config.models);
+  const models = mapping(change.config.agents);
   const roles = mapping(change.config.roles);
   const created = mapping(models.reviewer);
-  expect(change.createdModel).toBe("reviewer");
-  expect(change.reusedModel).toBeNull();
+  expect(change.createdAgent).toBe("reviewer");
+  expect(change.reusedAgent).toBeNull();
   expect(mapping(models.shared).model).toBe("grok-4.6");
   expect(created.model).toBe("grok-4.7");
   expect(mapping(roles.reviewer)).not.toHaveProperty("options");
-  expect(mapping(roles.reviewer).default_model).toBe("reviewer");
-  expect(mapping(created.options)["reasoning-effort"]).toBe("high");
-  expect(mapping(roles.developer).default_model).toBe("shared");
-  expect(change.orphanedModels).toEqual([]);
+  expect(mapping(roles.reviewer).agent).toBe("reviewer");
+  expect(mapping(mapping(created.client).options)["reasoning-effort"]).toBe("high");
+  expect(mapping(roles.developer).agent).toBe("shared");
+  expect(change.orphanedAgents).toEqual([]);
 });
 
 test("place role model reuses an identical entry", () => {
   const text = `\
-models:
+agents:
   plain:
     provider: grok
     model: grok-4.7
   shared:
     provider: grok
     model: grok-4.6
-    options:
-      reasoning-effort: medium
+    client:
+      options:
+        reasoning-effort: medium
 roles:
   developer:
-    default_model: shared
+    agent: shared
   reviewer:
-    default_model: shared
+    agent: shared
 `;
-  const change = placeRoleModel(config(text), "reviewer", { provider: "grok", model: "grok-4.7" });
-  const models = mapping(change.config.models);
-  expect(change.reusedModel).toBe("plain");
-  expect(change.createdModel).toBeNull();
-  expect(mapping(mapping(change.config.roles).reviewer).default_model).toBe("plain");
+  const change = placeRoleAgent(config(text), "reviewer", { provider: "grok", model: "grok-4.7" });
+  const models = mapping(change.config.agents);
+  expect(change.reusedAgent).toBe("plain");
+  expect(change.createdAgent).toBeNull();
+  expect(mapping(mapping(change.config.roles).reviewer).agent).toBe("plain");
   expect(Object.keys(models).sort()).toEqual(["plain", "shared"]);
 });
 
 test("upsert option preserves other options", () => {
-  const change = upsertModel(config(), "shared", {
+  const change = upsertAgent(config(), "shared", {
     options: { "reasoning-effort": "high" },
     workflows: [workflow()],
   });
-  const options = mapping(mapping(mapping(change.config.models).shared).options);
+  const options = mapping(mapping(mapping(mapping(change.config.agents).shared).client).options);
   expect(options["reasoning-effort"]).toBe("high");
   expect(options.temperature).toBe("0.2");
-  expect(change.updatedModel).toBe("shared");
+  expect(change.updatedAgent).toBe("shared");
   expect(change.roles).toEqual(["developer", "planner", "reviewer"]);
   expect(change.stagesUpdated).toContainEqual(["plan", "implement"]);
   const shielded = Object.fromEntries(change.stagesUnchanged.map((item) => [item.stage, item.ignores]));
@@ -171,12 +173,12 @@ test("upsert option preserves other options", () => {
 });
 
 test("clear option removes only that option", () => {
-  const change = upsertModel(config(), "shared", { options: { "reasoning-effort": null } });
-  expect(mapping(mapping(mapping(change.config.models).shared).options)).toEqual({ temperature: "0.2" });
+  const change = upsertAgent(config(), "shared", { options: { "reasoning-effort": null } });
+  expect(mapping(mapping(mapping(mapping(change.config.agents).shared).client).options)).toEqual({ temperature: "0.2" });
 });
 
 test("stage following a model name tracks that model", () => {
-  const change = upsertModel(config(), "shared", {
+  const change = upsertAgent(config(), "shared", {
     provider: "grok",
     model: "grok-4.7",
     workflows: [workflow()],
@@ -187,7 +189,7 @@ test("stage following a model name tracks that model", () => {
 
 test("orphan model is reported and kept", () => {
   const text = `\
-models:
+agents:
   shared:
     provider: grok
     model: grok-4.6
@@ -196,27 +198,27 @@ models:
     model: gpt-5
 roles:
   developer:
-    default_model: shared
+    agent: shared
   reviewer:
-    default_model: review
+    agent: review
 `;
   const change = assignRoles(config(text), ["reviewer"], "shared");
-  expect(change.orphanedModels).toEqual(["review"]);
-  expect(mapping(change.config.models)).toHaveProperty("review");
+  expect(change.orphanedAgents).toEqual(["review"]);
+  expect(mapping(change.config.agents)).toHaveProperty("review");
 });
 
 test("patch keeps role instructions when the model changes", () => {
   const text = SHARED.replace(
-    "  developer:\n    default_model: shared\n",
-    "  developer:\n    default_model: shared\n    instructions:\n      - Write production code.\n",
+    "  developer:\n    agent: shared\n",
+    "  developer:\n    agent: shared\n    instructions:\n      - Write production code.\n",
   );
   const change = assignRoles(config(text), ["developer"], "other");
   const patched = patchConfigText(text, change.config);
   const parsed = loadYamlMapping(writeConfig(patched));
-  expect(loadRoleInstructions(parsed, "developer")).toEqual(["Write production code."]);
-  expect(mapping(mapping(parsed.roles).developer).default_model).toBe("other");
+  expect(loadRoleResponsibilities(parsed, "developer")).toEqual(["Write production code."]);
+  expect(mapping(mapping(parsed.roles).developer).agent).toBe("other");
   const view = inspectConfig(parsed);
-  expect(view.roles.find((role) => role.role === "developer")?.instructions).toEqual([
+  expect(view.roles.find((role) => role.role === "developer")?.responsibilities).toEqual([
     "Write production code.",
   ]);
 });
@@ -228,14 +230,14 @@ test("patch preserves comments and sibling options", () => {
   expect(patched).toContain('temperature: "0.2"  # stable');
   const parsed = loadYamlMapping(writeConfig(patched));
   const roles = mapping(parsed.roles);
-  expect(mapping(roles.developer).default_model).toBe("shared");
-  expect(mapping(roles.reviewer).default_model).toBe("other");
+  expect(mapping(roles.developer).agent).toBe("shared");
+  expect(mapping(roles.reviewer).agent).toBe("other");
   expect(mapping(roles.reviewer)).not.toHaveProperty("options");
-  expect(mapping(mapping(mapping(parsed.models).shared).options).temperature).toBe("0.2");
+  expect(mapping(mapping(mapping(mapping(parsed.agents).shared).client).options).temperature).toBe("0.2");
 });
 
 test("patch adds a model and a role", () => {
-  const created = upsertModel(config(), "fast", {
+  const created = upsertAgent(config(), "fast", {
     provider: "codex",
     model: "gpt-5",
     options: { "reasoning-effort": "low" },
@@ -243,18 +245,18 @@ test("patch adds a model and a role", () => {
   const assigned = assignRoles(created.config, ["security"], "fast");
   const patched = patchConfigText(SHARED, assigned.config);
   const parsed = loadYamlMapping(writeConfig(patched));
-  const models = mapping(parsed.models);
+  const models = mapping(parsed.agents);
   const roles = mapping(parsed.roles);
   expect(mapping(models.fast).provider).toBe("codex");
-  expect(mapping(mapping(models.fast).options)["reasoning-effort"]).toBe("low");
-  expect(mapping(roles.security).default_model).toBe("fast");
+  expect(mapping(mapping(mapping(models.fast).client).options)["reasoning-effort"]).toBe("low");
+  expect(mapping(roles.security).agent).toBe("fast");
   expect(patched).toContain("# project models");
-  expect(mapping(roles.developer).default_model).toBe("shared");
+  expect(mapping(roles.developer).agent).toBe("shared");
 });
 
 test("rejects a partial provider update", () => {
-  expect(() => upsertModel(config(), "shared", { provider: "grok" })).toThrow(ConfigEditError);
-  expect(() => upsertModel(config(), "shared", { provider: "grok" })).toThrow(
+  expect(() => upsertAgent(config(), "shared", { provider: "grok" })).toThrow(ConfigEditError);
+  expect(() => upsertAgent(config(), "shared", { provider: "grok" })).toThrow(
     /both --provider and --model/,
   );
 });
@@ -262,20 +264,20 @@ test("rejects a partial provider update", () => {
 test("new role points at an existing model", () => {
   const change = assignRoles(config(), ["security", "planner"], "other");
   const roles = mapping(change.config.roles);
-  expect(mapping(roles.security).default_model).toBe("other");
-  expect(mapping(roles.planner).default_model).toBe("other");
-  expect(mapping(change.config.models)).not.toHaveProperty("security");
+  expect(mapping(roles.security).agent).toBe("other");
+  expect(mapping(roles.planner).agent).toBe("other");
+  expect(mapping(change.config.agents)).not.toHaveProperty("security");
 });
 
 test("inspect shows the model name and stage override", () => {
   const view = inspectConfig(config(), [workflow()]);
   const reviewer = view.roles.find((role) => role.role === "reviewer");
   expect(reviewer).toBeDefined();
-  expect(reviewer?.modelName).toBe("shared");
+  expect(reviewer?.agentName).toBe("shared");
   expect(reviewer?.options["reasoning-effort"]).toBe("medium");
   expect(reviewer?.sharedWith).toEqual(["developer", "planner"]);
   const overrides = Object.fromEntries(
-    (reviewer?.stages ?? []).map((item) => [item.stage, [item.modelName, item.options]]),
+    (reviewer?.stages ?? []).map((item) => [item.stage, [item.agent, item.options]]),
   );
   expect(overrides.review).toEqual(["other", {}]);
   expect(overrides.audit).toEqual(["shared", { "reasoning-effort": "high" }]);

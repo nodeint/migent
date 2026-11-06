@@ -43,5 +43,6 @@ export function renderOne(view: Record<string, unknown>, format: OutputFormat): 
 export function cell(value: unknown): string {
   if (value === null || value === undefined) return "-";
   if (Array.isArray(value)) return value.length === 0 ? "-" : value.map(String).join(",");
+  if (typeof value === "object" && (value as { inline?: unknown }).inline === true) return "(inline)";
   return String(value);
 }

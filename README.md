@@ -254,27 +254,29 @@ layout and recovery commands.
 ## Workflow as code
 
 Workflows live in `.migent/workflows/`. Roles live in `.migent/config.yaml`.
-A role defines responsibilities and selects a provider and model. A stage assigns
-work to a role; a workflow connects those stages.
-Role instructions set shared working standards; stage instructions define the task.
+A role defines responsibilities and selects an agent: a provider, a model, an
+effort, and the CLI client that runs it. A stage assigns work to a role; a
+workflow connects those stages.
+Role responsibilities set shared working standards; stage instructions define the task.
 
 ### Start with one role and one stage
 
 The following examples show how to write custom workflows. `migent init`
 generates the workflows described in the quickstart.
 
-Set the role's provider and model in `default_model`. Use model IDs available
+Set the role's provider and model in its `agent`. Use model IDs available
 from `migent provider list` in place of the example IDs.
 
 ```yaml
 # .migent/config.yaml
-schema_version: 4
+schema_version: 5
 roles:
   developer:
-    instructions:
+    description: Implements the change and verifies it.
+    responsibilities:
       - Make focused changes that address root causes and follow project conventions.
       - Preserve unrelated behavior and support changes with relevant checks.
-    default_model:
+    agent:
       provider: claude
       model: claude-sonnet-5.5
 ```
@@ -283,7 +285,7 @@ This workflow asks the developer to implement a task, then checks the result:
 
 ```yaml
 # .migent/workflows/implement.yaml
-schema_version: 4
+schema_version: 5
 stages:
   - id: implement
     role: developer
@@ -304,7 +306,7 @@ migent session run --workflow implement --task "Add a --json flag to the export 
 
 If verification fails, Migent asks the agent to fix the problem and checks again.
 
-To change the developer's provider or model, edit its `default_model`. The
+To change the developer's provider or model, edit its `agent`. The
 workflow still refers to `developer`. After editing configuration or workflows,
 run `migent doctor` to check them.
 
@@ -315,21 +317,23 @@ or different providers:
 
 ```yaml
 # .migent/config.yaml
-schema_version: 4
+schema_version: 5
 roles:
   planner:
-    instructions:
+    description: Designs the approach and writes the plan.
+    responsibilities:
       - Design maintainable architecture grounded in repository evidence.
       - Keep designs proportional to the task; produce plans without changing code.
-    default_model:
+    agent:
       provider: claude
       model: claude-opus-5.5
       effort: high
   reviewer:
-    instructions:
+    description: Reviews plans and implementations against the task.
+    responsibilities:
       - Assess correctness, completeness, and maintainability using concrete evidence.
       - Report substantive findings with impact and required corrections; do not edit code.
-    default_model:
+    agent:
       provider: codex
       model: gpt-6.1-sol
       effort: medium
@@ -340,7 +344,7 @@ and decides whether to approve it or send it back for revision:
 
 ```yaml
 # .migent/workflows/plan.yaml
-schema_version: 4
+schema_version: 5
 stages:
   - id: plan
     role: planner

@@ -3,7 +3,7 @@ import {
   collectFrozenDrift,
   createProviderResolver,
   isRoleStage,
-  loadRoleInstructions,
+  loadRoleResponsibilities,
   loadWorkspaceConfig,
   resolveEffectiveProvider,
   resolveStageSpec,
@@ -18,6 +18,7 @@ import {
 } from "@nodeint/migent-kernel";
 import { addUnique, makeCheck, type Check, type DiagnoseOptions } from "./check.js";
 import { failureText } from "./providers.js";
+import { stageAgentKey } from "./stage-agents.js";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -43,7 +44,7 @@ export function sessionEffortKeys(workspace: string, selection: SessionSelection
   }
   for (const stage of Object.values(selection.document.stages)) {
     if (!isRoleStage(stage)) continue;
-    const key = modelKey(config, stage);
+    const key = modelKey(config, stage, selection.document.id);
     if (key !== null) keys.add(key);
   }
   return keys;
@@ -125,7 +126,7 @@ function checkFrozenBindings(
       addUnique(problems, `${where}: workflow.frozen.yaml pins no target for stage ${stage.id}.`);
       continue;
     }
-    const effective = effectiveProvider(options.providers, target, `targets.${stage.id}`, where, problems);
+    const effective = effectiveProvider(options.providers, target, `targets.${stage.id}`, where, problems, true);
     if (effective !== null) record(target, effective, stage.id);
   }
 }
@@ -154,21 +155,21 @@ function checkLiveBindings(
     if (!reportedRoles.has(stage.role)) {
       reportedRoles.add(stage.role);
       try {
-        loadRoleInstructions(config, stage.role);
+        loadRoleResponsibilities(config, stage.role);
       } catch (error) {
         if (!(error instanceof ConfigurationError)) throw error;
         addUnique(problems, `${where}: ${error.message}`);
       }
     }
-    const key = modelKey(config, stage);
+    const key = modelKey(config, stage, workflowId);
     const effort = key === null ? undefined : efforts[key];
     if (effort?.warning) addUnique(warnings, effort.warning);
     if (effort?.problem) {
       addUnique(problems, `${where}: ${effort.problem}`);
       continue;
     }
-    if (key !== null && isRecord(config.models) && isRecord(config.models[key]) && Object.keys(config.models[key]).length === 0) {
-      addUnique(problems, `${where}: models.${key} has no provider and model on this machine. Map it in .migent/config.local.yaml.`);
+    if (key !== null && isRecord(config.agents) && isRecord(config.agents[key]) && Object.keys(config.agents[key]).length === 0) {
+      addUnique(problems, `${where}: agents.${key} has no provider and model on this machine. Map it in .migent/config.local.yaml.`);
       continue;
     }
     let target: StageTarget;
@@ -179,7 +180,7 @@ function checkLiveBindings(
       addUnique(problems, `${where}: ${error.message}`);
       continue;
     }
-    const field = stage.modelName !== null ? `stages.${stage.id}.model` : `roles.${stage.role}.default_model`;
+    const field = stage.agent !== null ? `stages.${stage.id}.agent` : `roles.${stage.role}.agent`;
     const effective = effectiveProvider(options.providers, target, field, where, problems);
     if (effective !== null) record(target, effective, stage.id);
   }
@@ -192,10 +193,11 @@ function effectiveProvider(
   field: string,
   where: string,
   problems: string[],
+  flat = false,
 ): ProviderInfo | null {
   const bound = resolveEffectiveProvider(providers, target);
   if (bound.failure !== undefined) {
-    addUnique(problems, `${where}: ${failureText(field, bound.failure)}`);
+    addUnique(problems, `${where}: ${failureText(field, bound.failure, flat)}`);
     return null;
   }
   return bound.provider ?? null;
@@ -216,13 +218,13 @@ function checkExecutables(
   return makeCheck("providers", items, problems, []);
 }
 
-/** The key an effort check is stored under: a model alias, or the role's inline default_model field. */
-function modelKey(config: Record<string, unknown>, stage: RoleStageSpec): string | null {
-  if (stage.modelName !== null) return stage.modelName;
+/** The key an effort check is stored under: an agent name, or the role's inline agent field. */
+function modelKey(config: Record<string, unknown>, stage: RoleStageSpec, workflowId: string): string | null {
+  if (stage.agent !== null) return stage.agent.kind === "named" ? stage.agent.name : stageAgentKey(workflowId, stage.id);
   const role = isRecord(config.roles) ? config.roles[stage.role] : undefined;
   if (!isRecord(role)) return null;
-  if (typeof role.default_model === "string") return role.default_model;
-  if (isRecord(role.default_model)) return `roles.${stage.role}.default_model`;
+  if (typeof role.agent === "string") return role.agent;
+  if (isRecord(role.agent)) return `roles.${stage.role}.agent`;
   return null;
 }
 

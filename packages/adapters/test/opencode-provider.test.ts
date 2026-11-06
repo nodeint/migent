@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { classifyProviderError, createProviderResolver, loadModelTarget } from "@nodeint/migent-kernel";
+import { classifyProviderError, createProviderResolver, loadAgentTarget } from "@nodeint/migent-kernel";
 import { expect, test } from "vitest";
 import { OpencodeProvider, defaultProviders, providerCommands } from "../src/index.ts";
 
@@ -220,9 +220,9 @@ test("the provider is registered", () => {
 
 test("model effort becomes an OpenCode V2 model variant on new and resumed runs", () => {
   const provider = new OpencodeProvider();
-  const target = loadModelTarget({ models: { fast: {
+  const target = loadAgentTarget({ agents: { fast: {
     provider: "opencode", model: "openai/test", effort: "high",
-    options: { agent: "build", thinking: "true" },
+    client: { options: { agent: "build", thinking: "true" } },
   } } }, "fast", createProviderResolver({ opencode: provider }));
   expect(target.options).toEqual({ variant: "high", agent: "build", thinking: "true" });
   for (const agentId of [null, "ses_x"]) {

@@ -16,9 +16,11 @@ import {
   passed,
   type Check,
   type DiagnoseOptions,
+  type ModelEffortCheck,
 } from "./check.js";
 import { checkConfig } from "./config-check.js";
 import { withTargetClient } from "./providers.js";
+import { stageAgentKey } from "./stage-agents.js";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -35,6 +37,7 @@ export function diagnose(workspace: string, options: DiagnoseOptions): [Check, C
     configResult.config,
     configResult.unmapped,
     new Set(Object.keys(efforts).filter((key) => efforts[key]?.problem)),
+    efforts,
   );
   const providerCheck = checkProviders(
     configResult.executableByProvider,
@@ -51,20 +54,22 @@ function checkWorkflows(
   config: Record<string, unknown> | null,
   unmapped: ReadonlySet<string>,
   invalidEffort: ReadonlySet<string>,
+  efforts: Readonly<Record<string, ModelEffortCheck>>,
 ): Check {
   const catalog = loadWorkflowCatalog(workspace);
   const problems = [...catalog.problems];
   const failedWorkflows = new Set<string>();
+  const stageWarnings: string[] = [];
   if (config !== null) {
     // A stage finding the config check already reported is the same root cause: report it once.
     const known = new Set(configDiagnostics.errors.map(identityKey));
     const knownOptionReasons = new Set(configDiagnostics.errors.flatMap((item) => (item.detail === undefined ? [] : [item.detail])));
     for (const document of Object.values(catalog.documents)) {
-      checkStageBindings(config, document, providers, known, knownOptionReasons, unmapped, invalidEffort, problems, failedWorkflows);
+      checkStageBindings(config, document, providers, known, knownOptionReasons, unmapped, invalidEffort, efforts, problems, stageWarnings, failedWorkflows);
     }
   }
   const items = Object.keys(catalog.documents).filter((workflowId) => !workflowFailed(workflowId, catalog.problems, failedWorkflows));
-  const warnings = Object.values(catalog.documents).flatMap(workflowWarnings);
+  const warnings = [...Object.values(catalog.documents).flatMap(workflowWarnings), ...stageWarnings];
   if (problems.length > 0) return failed("workflows", problems, items, warnings);
   return passed("workflows", items, warnings);
 }
@@ -83,7 +88,9 @@ function checkStageBindings(
   knownOptionReasons: ReadonlySet<string>,
   unmapped: ReadonlySet<string>,
   invalidEffort: ReadonlySet<string>,
+  efforts: Readonly<Record<string, ModelEffortCheck>>,
   problems: string[],
+  warnings: string[],
   failedWorkflows: Set<string>,
 ): void {
   const report = (stageId: string, message: string): void => {
@@ -94,9 +101,20 @@ function checkStageBindings(
   for (const stage of Object.values(document.stages)) {
     if (!isRoleStage(stage)) continue;
     const role = isRecord(config.roles) ? config.roles[stage.role] : undefined;
-    const alias = stage.modelName ?? (isRecord(role) ? role.default_model : undefined);
-    if (stage.modelName === null && invalidEffort.has(`roles.${stage.role}.default_model`)) continue;
+    const alias = stage.agent !== null
+      ? (stage.agent.kind === "named" ? stage.agent.name : undefined)
+      : (isRecord(role) ? role.agent : undefined);
+    if (stage.agent === null && invalidEffort.has(`roles.${stage.role}.agent`)) continue;
     if (typeof alias === "string" && invalidEffort.has(alias)) continue;
+    if (stage.agent?.kind === "inline") {
+      // An inline stage agent is checked like a named one: its model and effort against the catalog.
+      const check = efforts[stageAgentKey(document.id, stage.id)];
+      if (check?.warning && !warnings.includes(check.warning)) warnings.push(check.warning);
+      if (check?.problem) {
+        report(stage.id, check.problem);
+        continue;
+      }
+    }
     let target;
     try {
       target = resolveStageSpec(config, stage, undefined, createProviderResolver(providers));
@@ -105,7 +123,7 @@ function checkStageBindings(
       const identity = { code: error.code ?? "config-invalid", ...(error.path === undefined ? {} : { path: error.path }), message: error.message };
       if (known.has(identityKey(identity))) continue;
       // An unmapped alias is reported once, by the config check.
-      if (error.path?.[0] === "models" && typeof error.path[1] === "string" && unmapped.has(error.path[1])) continue;
+      if (error.path?.[0] === "agents" && typeof error.path[1] === "string" && unmapped.has(error.path[1])) continue;
       report(stage.id, error.message);
       continue;
     }

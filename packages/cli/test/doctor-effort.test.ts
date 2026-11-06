@@ -27,19 +27,19 @@ function fakeCatalog(argv: string[]): string {
 }
 
 async function inspect(
-  models: Record<string, unknown>,
+  agents: Record<string, unknown>,
   options: { run?: RunCommand; json?: boolean; local?: Record<string, unknown>; which?: typeof which; inline?: boolean } = {},
 ) {
   const workspace = mkdtempSync(path.join(tmpdir(), "migent-doctor-effort-"));
   try {
     mkdirSync(path.join(workspace, ".migent", "workflows"), { recursive: true });
     writeFileSync(path.join(workspace, ".migent", "config.yaml"), stringify({
-      schema_version: 4, ...(options.inline ? {} : { models }),
-      roles: { developer: { default_model: options.inline ? Object.values(models)[0] : Object.keys(models)[0] } },
+      schema_version: 5, ...(options.inline ? {} : { agents }),
+      roles: { developer: { agent: options.inline ? Object.values(agents)[0] : Object.keys(agents)[0] } },
     }));
-    if (options.local) writeFileSync(path.join(workspace, ".migent", "config.local.yaml"), stringify({ schema_version: 4, ...options.local }));
+    if (options.local) writeFileSync(path.join(workspace, ".migent", "config.local.yaml"), stringify({ schema_version: 5, ...options.local }));
     writeFileSync(path.join(workspace, ".migent", "workflows", "flow.yaml"), stringify({
-      schema_version: 4, stages: [{ id: "work", role: "developer" }, { id: "again", role: "developer", depends_on: ["work"] }],
+      schema_version: 5, stages: [{ id: "work", role: "developer" }, { id: "again", role: "developer", depends_on: ["work"] }],
     }));
     return await capture(() => runDoctor(workspace, {
       asJson: options.json ?? true, which: options.which ?? which, runCommand: options.run ?? fakeCatalog, home: workspace,
@@ -55,7 +55,7 @@ for (const provider of ["codex", "grok", "claude", "agy", "opencode"]) {
     const body = JSON.parse(result.stdout);
     expect(result.value).toBe(1);
     const problems = body.checks.flatMap((check: { problems: string[] }) => check.problems);
-    expect(problems).toEqual([`Invalid models.fast.effort: ${JSON.stringify(effort)}\nValid values: low, medium, high${provider === "agy" ? ", xhigh, max" : ""}`]);
+    expect(problems).toEqual([`Invalid agents.fast.effort: ${JSON.stringify(effort)}\nValid values: low, medium, high${provider === "agy" ? ", xhigh, max" : ""}`]);
   });
   test(`${provider}: valid effort passes`, async () => {
     const result = await inspect({ fast: { provider, model: provider === "opencode" ? "custom/test" : "test", effort: "high" } });
@@ -67,7 +67,7 @@ for (const provider of ["codex", "grok", "claude", "agy", "opencode"]) {
 test("ordinary output uses the same error and valid-value list", async () => {
   const result = await inspect({ fast: { provider: "codex", model: "test", effort: "hgh" } }, { json: false });
   expect(result.value).toBe(1);
-  expect(result.stdout).toContain('  Invalid models.fast.effort: "hgh"\n  Valid values: low, medium, high');
+  expect(result.stdout).toContain('  Invalid agents.fast.effort: "hgh"\n  Valid values: low, medium, high');
   expect(result.stdout).not.toContain("model_reasoning_effort");
 });
 
@@ -84,8 +84,8 @@ test("multiple aliases reuse catalog requests and report all invalid values", as
 
 test("local effort and an alternate client select the correct catalog", async () => {
   const calls: string[][] = [];
-  const result = await inspect({ fast: { provider: "byteplus", client: "grok", model: "test", effort: "bad" } }, {
-    local: { models: { fast: { effort: "high" } } },
+  const result = await inspect({ fast: { provider: "byteplus", client: { type: "grok" }, model: "test", effort: "bad" } }, {
+    local: { agents: { fast: { effort: "high" } } },
     run: (argv) => { calls.push(argv); return fakeCatalog(argv); },
   });
   expect(result.value).toBe(0);
@@ -109,7 +109,7 @@ test.each(["request timed out", "invalid catalog", "CLI unavailable"])("unverifi
   expect(result.value).toBe(0);
   const config = JSON.parse(result.stdout).checks[0];
   expect(config.problems).toEqual([]);
-  expect(config.warnings).toEqual([expect.stringContaining('Could not validate models.fast.model: "test"')]);
+  expect(config.warnings).toEqual([expect.stringContaining('Could not validate agents.fast.model: "test"')]);
   expect(config.warnings[0]).toContain(reason);
 });
 
@@ -119,7 +119,7 @@ test("empty supported levels means omit effort", async () => {
   });
   expect(result.value).toBe(1);
   expect(JSON.parse(result.stdout).checks[0].problems).toEqual([
-    'Invalid models.fast.effort: "high"\nValid values: none (omit effort)',
+    'Invalid agents.fast.effort: "high"\nValid values: none (omit effort)',
   ]);
 });
 
@@ -128,7 +128,7 @@ test("absent supported-level metadata means unknown, not unsupported", async () 
     run: () => JSON.stringify({ models: [{ slug: "test" }] }),
   });
   expect(result.value).toBe(0);
-  expect(JSON.parse(result.stdout).checks[0].warnings[0]).toContain("Could not validate models.fast.effort");
+  expect(JSON.parse(result.stdout).checks[0].warnings[0]).toContain("Could not validate agents.fast.effort");
 });
 
 
@@ -138,7 +138,7 @@ test("empty effort still fails if supported values cannot be verified", async ()
   });
   expect(result.value).toBe(1);
   const config = JSON.parse(result.stdout).checks[0];
-  expect(config.problems).toEqual(['Invalid models.fast.effort: ""\nValid values: unavailable (could not verify)']);
+  expect(config.problems).toEqual(['Invalid agents.fast.effort: ""\nValid values: unavailable (could not verify)']);
   expect(config.warnings).toHaveLength(1);
 });
 
@@ -160,12 +160,12 @@ test("a confirmed empty OpenCode variant list is an error, not a warning", async
       : fakeCatalog(argv),
   });
   expect(result.value).toBe(1);
-  expect(JSON.parse(result.stdout).checks[0].problems).toEqual(['Invalid models.fast.effort: "high"\nValid values: none (omit effort)']);
+  expect(JSON.parse(result.stdout).checks[0].problems).toEqual(['Invalid agents.fast.effort: "high"\nValid values: none (omit effort)']);
 });
 
 
 test("validates the same trimmed identifiers and value used for execution", async () => {
-  const result = await inspect({ fast: { provider: " byteplus ", client: " codex ", model: " test ", effort: " high " } });
+  const result = await inspect({ fast: { provider: " byteplus ", client: { type: " codex " }, model: " test ", effort: " high " } });
   expect(result.value).toBe(0);
   expect(JSON.parse(result.stdout).checks[0].warnings).toEqual([]);
 });
@@ -179,7 +179,7 @@ test.each(["high", "bad", ""])("doctor checks inline effort %j with its full fie
   const checks = JSON.parse(result.stdout).checks;
   expect(result.value).toBe(effort === "high" ? 0 : 1);
   expect(checks.flatMap((check: { problems: string[] }) => check.problems)).toEqual(effort === "high" ? [] : [
-    `Invalid roles.developer.default_model.effort: ${JSON.stringify(effort)}\nValid values: low, medium, high`,
+    `Invalid roles.developer.agent.effort: ${JSON.stringify(effort)}\nValid values: low, medium, high`,
   ]);
   expect(calls).toHaveLength(1);
 });

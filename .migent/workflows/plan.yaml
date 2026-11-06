@@ -1,4 +1,4 @@
-schema_version: 4
+schema_version: 5
 id: plan
 constraints:
   - Plan only. Do not modify source code.
@@ -17,6 +17,7 @@ stages:
       - Resolve substantive review findings when revising.
     produces:
       artifact: plan.md
+
   - id: review_plan
     role: reviewer
     depends_on:
@@ -27,16 +28,28 @@ stages:
       - Check responsibilities, boundaries, contracts, dependencies, and material trade-offs or risks.
       - Stay at the architecture level. Do not require implementation steps, code-level details, or test procedures.
       - Report all substantive gaps together with their impact and required corrections.
-      - Choose revise for substantive gaps; otherwise choose approved.
+      - Choose revise for substantive gaps, approved-with-comments for non-blocking comments, or approved when no comments remain.
       - Do not revise for style or formatting.
     decision:
       - approved:
-          when: Choose approved according to the stage instructions.
+          when: No substantive gaps or comments remain.
+          navigate: complete
+      - approved-with-comments:
+          when: No substantive gaps remain, but non-blocking comments are recorded in review-comments.md.
           navigate: complete
       - revise:
-          when: Choose revise according to the stage instructions.
+          when: Substantive gaps require correction.
           navigate: plan
+    produces:
+      artifact: review-comments.md
+
 outputs:
   - name: plan
     from_stage: plan
     artifact: plan.md
+  
+downstream:
+  - workflow: implement
+    task: Implement the approved plan.
+    artifacts:
+      plan: plan

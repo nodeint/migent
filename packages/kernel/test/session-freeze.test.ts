@@ -48,31 +48,31 @@ completion:
 `;
 
 const FROZEN_CONFIG = `\
-models:
+agents:
   fake:
     provider: fake
     model: frozen-model
 roles:
   developer:
-    default_model: fake
-    instructions:
+    agent: fake
+    responsibilities:
       - FROZEN_ROLE_LINE
   reviewer:
-    default_model: fake
+    agent: fake
 `;
 
 const LIVE_CONFIG = `\
-models:
+agents:
   fake:
     provider: fake
     model: live-model
 roles:
   developer:
-    default_model: fake
-    instructions:
+    agent: fake
+    responsibilities:
       - LIVE_ROLE_LINE
   reviewer:
-    default_model: fake
+    agent: fake
 `;
 
 function workspaceWithFlow(): string {
@@ -143,7 +143,7 @@ test("an edited workflow still dispatches the frozen stage, model, and role", as
     `[migent] session ${sessionId} is using its frozen workflow. Stage draft model differs.`,
   );
   expect(captured.stderr).toContain(
-    `[migent] session ${sessionId} is using its frozen workflow. Role developer instructions differ.`,
+    `[migent] session ${sessionId} is using its frozen workflow. Role developer responsibilities differ.`,
   );
   expect(readFoldedStatus(workspace, directory)).toEqual(readStatus(workspace, sessionId));
 });
@@ -298,11 +298,11 @@ test("freezes the targets and native effort of the merged config", () => {
   const workspace = writeStageWorkspace();
   const configPath = path.join(workspace, ".migent", "config.yaml");
   writeFileSync(configPath, readFileSync(configPath, "utf8").replace(
-    "    options:\n      reasoning-effort: high", "    effort: low",
+    "    client:\n      options:\n        reasoning-effort: high", "    effort: low",
   ));
   writeFileSync(
     path.join(workspace, ".migent", "config.local.yaml"),
-    "models:\n  grok:\n    model: grok-local\n    effort: medium\n",
+    "agents:\n  grok:\n    model: grok-local\n    effort: medium\n",
     "utf8",
   );
   const sessionDirectory = tempDir("migent-freeze-");

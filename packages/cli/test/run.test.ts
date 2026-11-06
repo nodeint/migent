@@ -684,7 +684,7 @@ test("stage rejects a dispatch ceiling", async () => {
 
 test("stage id resumes the declared source session", async () => {
   const workflow = `\
-schema_version: 4
+schema_version: 5
 id: resume-sample
 stages:
   - id: draft
@@ -737,7 +737,7 @@ stages:
 });
 
 const REVISION_LOOP = `\
-schema_version: 4
+schema_version: 5
 id: loop
 stages:
   - id: plan
@@ -759,7 +759,7 @@ stages:
 `;
 
 const OPEN_LOOP = `\
-schema_version: 4
+schema_version: 5
 id: loop
 stages:
   - id: plan

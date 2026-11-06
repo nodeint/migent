@@ -15,7 +15,7 @@ const providers = defaultProviders();
 const resolver = createProviderResolver(providers);
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
-const model = { provider: "codex", model: "test-model", effort: "high", options: { temperature: "0.2" } };
+const model = { provider: "codex", model: "test-model", effort: "high", client: { options: { temperature: "0.2" } } };
 function workspace(config: unknown, local?: unknown): string {
   const root = mkdtempSync(path.join(tmpdir(), "migent-inline-"));
   roots.push(root);
@@ -26,7 +26,7 @@ function workspace(config: unknown, local?: unknown): string {
 }
 
 test("inline-only role resolution validates models like aliases", () => {
-  const root = workspace({ roles: { dev: { default_model: model } } });
+  const root = workspace({ roles: { dev: { agent: model } } });
   expect(resolveRoleTarget(root, "dev", undefined, resolver)).toEqual({
     provider: "codex", model: "test-model", options: { model_reasoning_effort: "high", temperature: "0.2" },
   });
@@ -35,44 +35,44 @@ test("inline-only role resolution validates models like aliases", () => {
   const view = inspectConfig(config, [], resolver);
   expect(config).toEqual(snapshot);
   expect(describeChange(config, structuredClone(config), [], { resolveProvider: resolver }).roles).toEqual([]);
-  expect(view.models).toEqual([]);
-  expect(view.roles[0]).toMatchObject({ modelName: null, sharedWith: [], options: { model_reasoning_effort: "high" } });
+  expect(view.agents).toEqual([]);
+  expect(view.roles[0]).toMatchObject({ agentName: null, sharedWith: [], options: { model_reasoning_effort: "high" } });
 });
 
 test.each(["shared", model])("local inline selection replaces the whole shared default: %j", (shared) => {
   const local = { provider: "grok", model: "local-model" };
-  const root = workspace({ models: { shared: model }, roles: { dev: { default_model: shared, instructions: ["keep"] } } },
-    { roles: { dev: { default_model: local } } });
+  const root = workspace({ agents: { shared: model }, roles: { dev: { agent: shared, responsibilities: ["keep"] } } },
+    { roles: { dev: { agent: local } } });
   expect(resolveRoleTarget(root, "dev", undefined, resolver)).toEqual({ ...local, options: {} });
-  expect(loadWorkspaceConfig(root).roles).toEqual({ dev: { default_model: local, instructions: ["keep"] } });
+  expect(loadWorkspaceConfig(root).roles).toEqual({ dev: { agent: local, responsibilities: ["keep"] } });
 });
 
 test("local alias replaces an inline default", () => {
-  const root = workspace({ models: { shared: model }, roles: { dev: { default_model: model } } },
-    { roles: { dev: { default_model: "shared" } } });
+  const root = workspace({ agents: { shared: model }, roles: { dev: { agent: model } } },
+    { roles: { dev: { agent: "shared" } } });
   expect(resolveRoleTarget(root, "dev", undefined, resolver).options.model_reasoning_effort).toBe("high");
 });
 
 test.each([
-  [null, "roles.dev.default_model"],
-  [[], "roles.dev.default_model"],
-  [{ model: "test" }, "roles.dev.default_model.provider"],
-  [{ provider: "codex" }, "roles.dev.default_model.model"],
-  [{ ...model, effort: 3 }, "roles.dev.default_model.effort"],
-  [{ ...model, options: { model_reasoning_effort: "low" } }, "conflicts"],
-  [{ ...model, options: { temperature: {} } }, "roles.dev.default_model.options.temperature"],
-  ["test-model", 'roles.dev.default_model: unknown model alias "test-model"'],
+  [null, "roles.dev.agent"],
+  [[], "roles.dev.agent"],
+  [{ model: "test" }, "roles.dev.agent.provider"],
+  [{ provider: "codex" }, "roles.dev.agent.model"],
+  [{ ...model, effort: 3 }, "roles.dev.agent.effort"],
+  [{ ...model, client: { options: { model_reasoning_effort: "low" } } }, "conflicts"],
+  [{ ...model, client: { options: { temperature: {} } } }, "roles.dev.agent.client.options.temperature"],
+  ["test-model", 'roles.dev.agent: unknown agent "test-model"'],
 ])("invalid inline or alias selection points to the field: %j", (selection, error) => {
-  expect(() => resolveRoleCascade({ roles: { dev: { default_model: selection } } }, "dev", undefined, resolver)).toThrow(error);
+  expect(() => resolveRoleCascade({ roles: { dev: { agent: selection } } }, "dev", undefined, resolver)).toThrow(error);
 });
 
 test.each([{}, null, { temperature: "0.2" }])("removed role options are rejected: %j", (options) => {
-  const config = { roles: { dev: { default_model: model, options } } };
+  const config = { roles: { dev: { agent: model, options } } };
   expect(() => resolveRoleCascade(config, "dev", undefined, resolver)).toThrow("roles.dev.options is no longer supported");
 });
 
 test("stage model selection, stage options and CLI options override inline defaults", () => {
-  const config = { models: { other: { provider: "grok", model: "other" } }, roles: { dev: { default_model: model } } };
+  const config = { agents: { other: { provider: "grok", model: "other" } }, roles: { dev: { agent: model } } };
   const workflow = parseWorkflowMapping({ schema_version: 2, stages: [
     { id: "inline", role: "dev", options: { model_reasoning_effort: "low" } },
     { id: "named", role: "dev", model: "other" },
@@ -86,9 +86,9 @@ test("stage model selection, stage options and CLI options override inline defau
 });
 
 test("text patching supports alias and inline transitions and keeps role instructions", () => {
-  let text = "# keep\nroles:\n  dev:\n    default_model: shared\n    instructions:\n      - Keep instructions.\n";
+  let text = "# keep\nroles:\n  dev:\n    agent: shared\n    instructions:\n      - Keep instructions.\n";
   for (const selection of [model, { provider: "grok", model: "local" }, "shared"]) {
-    const updated = { roles: { dev: { default_model: selection, instructions: ["Keep instructions."] } } };
+    const updated = { roles: { dev: { agent: selection, responsibilities: ["Keep instructions."] } } };
     text = patchConfigText(text, updated);
     expect(parseYamlDocument(text)).toEqual(updated);
     expect(text).toContain("# keep");

@@ -30,14 +30,14 @@ migent init --no-input \
 Effort flags are optional. Use values supported by each model; see
 [config.md](config.md).
 
-Init writes role instructions and selected models to `.migent/config.yaml`.
+Init writes role responsibilities and selected agents to `.migent/config.yaml`.
 It also creates an empty `.migent/config.local.yaml` for machine-specific
 overrides; Git ignores the local file.
 
 ## Verify
 
 Run `migent doctor --json` and resolve reported problems. For changes, use
-[config.md](config.md) for models and roles or
+[config.md](config.md) for agents and roles or
 [schema-workflow.yaml](schema-workflow.yaml) for workflows.
 
 ## Update the skill

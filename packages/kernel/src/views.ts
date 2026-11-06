@@ -2,8 +2,9 @@ import path from "node:path";
 import {
   LOCAL_CONFIG_FILE,
   hasLocalConfig,
-  loadModelTarget,
-  loadRoleInstructions,
+  loadAgentTarget,
+  loadRoleDescription,
+  loadRoleResponsibilities,
   loadWorkspaceConfig,
   loadYamlMapping,
   resolveRoleCascade,
@@ -31,11 +32,11 @@ export type View = Record<string, unknown>;
 /** The workspace-relative path of the machine-specific config. */
 export const LOCAL_CONFIG_LABEL = `.migent/${LOCAL_CONFIG_FILE}`;
 
-/** Names of the models entries that `config.local.yaml` sets. */
-export function localModelNames(workspace: string): string[] {
+/** Names of the agents entries that `config.local.yaml` sets. */
+export function localAgentNames(workspace: string): string[] {
   const local = loadYamlMapping(path.join(workspace, ".migent", LOCAL_CONFIG_FILE));
-  const models = local.models;
-  return isRecord(models) ? Object.keys(models).sort() : [];
+  const agents = local.agents;
+  return isRecord(agents) ? Object.keys(agents).sort() : [];
 }
 
 interface Loaded {
@@ -82,7 +83,7 @@ interface WorkflowOrigin {
   session?: string;
   /** Pinned stage targets of a frozen session; they are what will actually run. */
   frozenTargets?: Record<string, StageTarget>;
-  /** Role instructions pinned by a frozen session. */
+  /** Role responsibilities pinned by a frozen session. */
   frozenRoles?: Record<string, string[]>;
   problems?: readonly string[];
 }
@@ -108,7 +109,7 @@ function stageView(stage: StageSpec, config: Loaded, origin: WorkflowOrigin, res
     role: isRoleStage(stage) ? stage.role : null,
     description: stage.description,
     depends_on: [...stage.dependsOn],
-    model: stage.modelName,
+    agent: stage.agent === null ? null : stage.agent.kind === "named" ? stage.agent.name : { inline: true },
     options: { ...stage.options },
     artifact: stage.artifact,
     decisions: stage.decisionValues.map((value) => ({
@@ -136,7 +137,7 @@ function roleNames(document: WorkflowDocument): string[] {
   return names;
 }
 
-function roleInstructions(
+function roleResponsibilities(
   config: Loaded,
   roles: readonly string[],
   origin: WorkflowOrigin,
@@ -151,7 +152,7 @@ function roleInstructions(
     result[role] = [];
     if (config.config === null) continue;
     try {
-      result[role] = loadRoleInstructions(config.config, role);
+      result[role] = loadRoleResponsibilities(config.config, role);
     } catch (error) {
       problems.push(`role ${role}: ${message(error)}`);
     }
@@ -168,7 +169,7 @@ function workflowView(
   const config = tryConfig(workspace);
   const stages = Object.values(document.stages).map((stage) => stageView(stage, config, origin, resolve));
   const instructionProblems: string[] = [];
-  const instructions = roleInstructions(config, roleNames(document), origin, instructionProblems);
+  const responsibilities = roleResponsibilities(config, roleNames(document), origin, instructionProblems);
   const view: View = {
     kind: "workflow",
     name: document.id,
@@ -191,7 +192,7 @@ function workflowView(
       task: next.task,
       artifacts: { ...next.artifacts },
     })),
-    role_instructions: instructions,
+    role_responsibilities: responsibilities,
     warnings: [...(document.warnings ?? [])],
     problems: [...(origin.problems ?? []), ...instructionProblems, ...stages.flatMap((stage) => (stage.problems as string[]).map((p) => `${String(stage.id)}: ${p}`))],
   });
@@ -309,7 +310,7 @@ function projectWorkflows(workspace: string): WorkflowDocument[] {
   return Object.values(loadWorkflowCatalog(workspace, { quiet: true }).documents);
 }
 
-function configRecord(workspace: string, key: "roles" | "models"): { config: Record<string, unknown>; table: Record<string, unknown> } {
+function configRecord(workspace: string, key: "roles" | "agents"): { config: Record<string, unknown>; table: Record<string, unknown> } {
   const config = loadWorkspaceConfig(workspace);
   const table = config[key];
   return { config, table: isRecord(table) ? table : {} };
@@ -324,19 +325,25 @@ function roleView(
   resolve?: ProviderResolver,
 ): View {
   const problems: string[] = [];
-  const selection = isRecord(role) ? role.default_model : undefined;
-  let defaultModel: unknown = null;
-  if (typeof selection === "string") defaultModel = selection;
-  else if (isRecord(selection)) defaultModel = { inline: true };
+  const selection = isRecord(role) ? role.agent : undefined;
+  let agent: unknown = null;
+  if (typeof selection === "string") agent = selection;
+  else if (isRecord(selection)) agent = { inline: true };
   let target: View | null = null;
   try {
     target = targetView(resolveRoleCascade(config, name, undefined, resolve));
   } catch (error) {
     problems.push(message(error));
   }
-  let instructions: string[] = [];
+  let responsibilities: string[] = [];
   try {
-    instructions = loadRoleInstructions(config, name);
+    responsibilities = loadRoleResponsibilities(config, name);
+  } catch (error) {
+    problems.push(message(error));
+  }
+  let description: string | null = null;
+  try {
+    description = loadRoleDescription(config, name);
   } catch (error) {
     problems.push(message(error));
   }
@@ -346,7 +353,7 @@ function roleView(
       if (isRoleStage(stage) && stage.role === name) usedBy.push({ workflow: workflow.id, stage: stage.id });
     }
   }
-  return { kind: "role", name, default_model: defaultModel, target, instructions, used_by: usedBy, problems };
+  return { kind: "role", name, description, agent, target, responsibilities, used_by: usedBy, problems };
 }
 
 export function listRoleViews(workspace: string, resolve?: ProviderResolver): View[] {
@@ -361,9 +368,9 @@ export function getRoleView(workspace: string, name: string, resolve?: ProviderR
   return roleView(workspace, config, name, table[name], projectWorkflows(workspace), resolve);
 }
 
-// ------------------------------------------------------------------- models
+// ------------------------------------------------------------------- agents
 
-function modelView(
+function agentView(
   config: Record<string, unknown>,
   name: string,
   roles: Record<string, unknown>,
@@ -374,27 +381,28 @@ function modelView(
   const problems: string[] = [];
   let target: StageTarget | null = null;
   try {
-    target = loadModelTarget(config, name, resolve);
+    target = loadAgentTarget(config, name, resolve);
   } catch (error) {
     problems.push(message(error));
   }
-  const definition = isRecord(config.models) && isRecord(config.models[name]) ? config.models[name] : {};
+  const definition = isRecord(config.agents) && isRecord(config.agents[name]) ? config.agents[name] : {};
+  const clientConfig = isRecord(definition) && isRecord(definition.client) ? definition.client : {};
   const effort = isRecord(definition) && typeof definition.effort === "string" ? definition.effort : null;
   const usedBy: View[] = [];
   for (const [role, value] of Object.entries(roles)) {
-    if (isRecord(value) && value.default_model === name) usedBy.push({ role });
+    if (isRecord(value) && value.agent === name) usedBy.push({ role });
   }
   for (const workflow of workflows) {
     for (const stage of Object.values(workflow.stages)) {
-      if (isRoleStage(stage) && stage.modelName === name) usedBy.push({ workflow: workflow.id, stage: stage.id });
+      if (isRoleStage(stage) && stage.agent?.kind === "named" && stage.agent.name === name) usedBy.push({ workflow: workflow.id, stage: stage.id });
     }
   }
   return {
-    kind: "model",
+    kind: "agent",
     name,
     provider: target?.provider ?? (isRecord(definition) && typeof definition.provider === "string" ? definition.provider : null),
     model: target?.model ?? (isRecord(definition) && typeof definition.model === "string" ? definition.model : null),
-    client: target?.client ?? (isRecord(definition) && typeof definition.client === "string" ? definition.client : null),
+    client: target?.client ?? (typeof clientConfig.type === "string" ? clientConfig.type : null),
     effort,
     options: target === null ? {} : { ...target.options },
     local: local.has(name),
@@ -403,22 +411,22 @@ function modelView(
   };
 }
 
-function modelViews(workspace: string, resolve?: ProviderResolver): { views: View[] } {
-  const { config, table } = configRecord(workspace, "models");
+function agentViews(workspace: string, resolve?: ProviderResolver): { views: View[] } {
+  const { config, table } = configRecord(workspace, "agents");
   const roles = isRecord(config.roles) ? config.roles : {};
   const workflows = projectWorkflows(workspace);
-  const local = new Set(hasLocalConfig(workspace) ? localModelNames(workspace) : []);
-  return { views: Object.keys(table).map((name) => modelView(config, name, roles, workflows, local, resolve)) };
+  const local = new Set(hasLocalConfig(workspace) ? localAgentNames(workspace) : []);
+  return { views: Object.keys(table).map((name) => agentView(config, name, roles, workflows, local, resolve)) };
 }
 
-export function listModelViews(workspace: string, resolve?: ProviderResolver): View[] {
-  return modelViews(workspace, resolve).views;
+export function listAgentViews(workspace: string, resolve?: ProviderResolver): View[] {
+  return agentViews(workspace, resolve).views;
 }
 
-export function getModelView(workspace: string, name: string, resolve?: ProviderResolver): View {
-  const views = modelViews(workspace, resolve).views;
+export function getAgentView(workspace: string, name: string, resolve?: ProviderResolver): View {
+  const views = agentViews(workspace, resolve).views;
   const found = views.find((view) => view.name === name);
-  if (found === undefined) throw notFound("Model", name, views.map((view) => String(view.name)));
+  if (found === undefined) throw notFound("Agent", name, views.map((view) => String(view.name)));
   return found;
 }
 
@@ -431,7 +439,7 @@ export function getConfigView(workspace: string): View {
     kind: "config",
     name: "config",
     local_file: local ? LOCAL_CONFIG_LABEL : null,
-    local_models: local ? localModelNames(workspace) : [],
+    local_agents: local ? localAgentNames(workspace) : [],
     config: loadWorkspaceConfig(workspace),
   };
 }

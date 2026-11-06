@@ -21,13 +21,13 @@ function project(model: unknown, extra: Record<string, unknown> = {}): string {
   directories.push(workspace);
   mkdirSync(path.join(workspace, ".migent", "workflows"), { recursive: true });
   writeFileSync(path.join(workspace, ".migent", "config.yaml"), stringifyConfig({
-    schema_version: 4,
-    roles: { developer: { default_model: model } },
+    schema_version: 5,
+    roles: { developer: { agent: model } },
     ...extra,
   }));
   writeFileSync(path.join(workspace, ".migent", "workflows", "work.yaml"), stringifyConfig({
-    schema_version: 4,
-    stages: [{ id: "work", role: "developer", options: { model_reasoning_effort: "high" } }],
+    schema_version: 5,
+    stages: [{ id: "work", role: "developer" }],
   }));
   return workspace;
 }
@@ -37,25 +37,36 @@ afterEach(() => {
 });
 
 test("inline defaults support options, effort, clients, and local overrides", () => {
-  const workspace = project({ provider: "byteplus", client: "codex", model: "test", effort: "low" });
+  const workspace = project({ provider: "byteplus", client: { type: "codex" }, model: "test", effort: "low" });
   expect(resolveRoleTarget(workspace, "developer", undefined, resolve)).toEqual({
     provider: "byteplus", client: "codex", model: "test", options: { model_reasoning_effort: "low" },
   });
-  expect(resolveStageTarget(workspace, "work", "work", undefined, resolve).options).toEqual({ model_reasoning_effort: "high" });
+  expect(resolveStageTarget(workspace, "work", "work", undefined, resolve).options).toEqual({ model_reasoning_effort: "low" });
+  // A stage's inline agent replaces the role's wholesale, effort and client included.
+  writeFileSync(path.join(workspace, ".migent", "workflows", "work.yaml"), stringifyConfig({
+    schema_version: 5,
+    stages: [{ id: "work", role: "developer", agent: { provider: "codex", model: "stage", client: { options: { model_reasoning_effort: "high" } } } }],
+  }));
+  expect(resolveStageTarget(workspace, "work", "work", undefined, resolve)).toEqual({
+    provider: "codex", model: "stage", options: { model_reasoning_effort: "high" },
+  });
+  writeFileSync(path.join(workspace, ".migent", "workflows", "work.yaml"), stringifyConfig({
+    schema_version: 5, stages: [{ id: "work", role: "developer" }],
+  }));
   expect(diagnose(workspace, { providers, which }).every((check) => check.ok)).toBe(true);
   expect(clientsFromConfig(workspace)).toEqual(["codex"]);
   writeFileSync(path.join(workspace, ".migent", "config.local.yaml"), stringifyConfig({
-    roles: { developer: { default_model: { provider: "byteplus", client: "codex", model: "local" } } },
+    roles: { developer: { agent: { provider: "byteplus", client: { type: "codex" }, model: "local" } } },
   }));
   expect(resolveRoleTarget(workspace, "developer", undefined, resolve).model).toBe("local");
 });
 
-test("a named stage model overrides an inline role default", () => {
+test("a named stage agent overrides an inline role default", () => {
   const workspace = project({ provider: "codex", model: "inline" }, {
-    models: { alternate: { provider: "codex", model: "named" } },
+    agents: { alternate: { provider: "codex", model: "named" } },
   });
   writeFileSync(path.join(workspace, ".migent", "workflows", "work.yaml"), stringifyConfig({
-    schema_version: 4, stages: [{ id: "work", role: "developer", model: "alternate" }],
+    schema_version: 5, stages: [{ id: "work", role: "developer", agent: "alternate" }],
   }));
   expect(resolveStageTarget(workspace, "work", "work", undefined, resolve)).toMatchObject({ model: "named" });
   expect(resolveStageTarget(workspace, "work", "work", { provider: "grok", model: "cli" }, resolve)).toEqual({
@@ -64,12 +75,12 @@ test("a named stage model overrides an inline role default", () => {
 });
 
 test.each([
-  [{ provider: "unknown", model: "test" }, "roles.developer.default_model.provider is not supported"],
-  [{ provider: "byteplus", model: "test" }, "roles.developer.default_model.client is required"],
-  [{ provider: "byteplus", client: "missing", model: "test" }, "roles.developer.default_model.client is not supported"],
-  [{ provider: "codex" }, "roles.developer.default_model.model"],
-  [{ provider: "codex", model: "test", options: { nested: {} } }, "roles.developer.default_model.options.nested"],
-  [{ provider: "codex", model: "test", effort: "high", options: { model_reasoning_effort: "low" } }, "effort conflicts"],
+  [{ provider: "unknown", model: "test" }, "roles.developer.agent.provider is not supported"],
+  [{ provider: "byteplus", model: "test" }, "roles.developer.agent.client.type is required"],
+  [{ provider: "byteplus", client: { type: "missing" }, model: "test" }, "roles.developer.agent.client.type is not supported"],
+  [{ provider: "codex" }, "roles.developer.agent.model"],
+  [{ provider: "codex", model: "test", client: { options: { nested: {} } } }, "roles.developer.agent.client.options.nested"],
+  [{ provider: "codex", model: "test", effort: "high", client: { options: { model_reasoning_effort: "low" } } }, "effort conflicts"],
 ])("doctor rejects invalid inline models with their field path: %j", (model, problem) => {
   const workspace = project(model);
   const [config] = diagnose(workspace, { providers, which });
@@ -94,7 +105,7 @@ test.each(["high", "typo"])("doctor validates inline effort against the client c
   const checks = JSON.parse(result.stdout).checks;
   if (effort === "typo") {
     expect(checks.flatMap((check: { problems: string[] }) => check.problems)).toEqual([
-      'Invalid roles.developer.default_model.effort: "typo"\nValid values: low, medium, high',
+      'Invalid roles.developer.agent.effort: "typo"\nValid values: low, medium, high',
     ]);
   }
 });

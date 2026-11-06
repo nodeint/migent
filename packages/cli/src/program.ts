@@ -105,7 +105,7 @@ export function createProgram(status: CliStatus, options: { quietErrors?: boolea
   const config = program
     .command("config")
     .description("Print the effective config: .migent/config.yaml with .migent/config.local.yaml merged over it.")
-    .option("--json", "Print one JSON object with the merged config and the local file's model names.");
+    .option("--json", "Print one JSON object with the merged config and the local file's agent names.");
   config.action((options: OptionValues) =>
     settle(status, () => runConfigShow(findWorkspace(invocationCwdPath()), { asJson: options.json === true })),
   );
@@ -158,7 +158,7 @@ export function createProgram(status: CliStatus, options: { quietErrors?: boolea
 
   program
     .command("get [type] [name]")
-    .description("Look up workflows, roles, model aliases, or the effective config (read-only).")
+    .description("Look up workflows, roles, agents, or the effective config (read-only).")
     .option("-o, --output <format>", "Output format: json, yaml, or name. Default is a table or YAML.")
     .option("--json", "Same as -o json.")
     .option("--session <id>", "For workflows: the workflow this session runs (draft, frozen, or live).")
@@ -172,7 +172,7 @@ ${exitText(["Exit 0 on success, including an empty list.", "Exit 2 on a usage or
   migent get workflow plan --json
   migent get workflow --session <id> -o yaml
   migent get roles -o name
-  migent get model <alias>
+  migent get agent <name>
 `,
     )
     .action((type: string | undefined, name: string | undefined, options: OptionValues, command: Command) => {
@@ -834,7 +834,7 @@ function addDispatchOptions(command: Command, onceDescription: string): void {
     .option("--verbose", VERBOSE_HELP)
     .option(
       "--refresh-workflow",
-      "Use the current workflow, models, and role instructions for this session. Requires an existing session that has a frozen workflow. A prepared-session start reads its recorded workflow source instead and does not need this flag.",
+      "Use the current workflow, agents, and role responsibilities for this session. Requires an existing session that has a frozen workflow. A prepared-session start reads its recorded workflow source instead and does not need this flag.",
     );
 }
 

@@ -125,7 +125,7 @@ ${version === 1 ? "  " : ""}    artifact: draft.md
   expect(migrated).not.toContain("values:");
   expect(migrated).not.toContain("when:");
   const loaded = parseWorkflowMapping(parseYamlDocument(migrated) as Record<string, unknown>, "migrated.yaml");
-  expect(loaded.schemaVersion).toBe(4);
+  expect(loaded.schemaVersion).toBe(5);
   expect(loaded.stages.review?.routes).toEqual({ approved: "complete", "approved-with-note": "complete", revise: version === 1 ? "draft" : ["draft"] });
   expect(loaded.outputs).toEqual([{ name: "draft", fromStage: "draft", artifact: "draft.md" }]);
   expect(loaded.stages.review?.artifact).toBe("review.md");
@@ -142,7 +142,7 @@ test.each([2, 3])("freeze round-trip preserves schema v%i and its decision contr
   const workspace = mkdtempSync(path.join(tmpdir(), "migent-decision-"));
   try {
     mkdirSync(path.join(workspace, ".migent"));
-    writeFileSync(path.join(workspace, ".migent/config.yaml"), "roles:\n  developer:\n    default_model: { provider: fake, model: fake }\n  reviewer:\n    default_model: { provider: fake, model: fake }\n");
+    writeFileSync(path.join(workspace, ".migent/config.yaml"), "roles:\n  developer:\n    agent: { provider: fake, model: fake }\n  reviewer:\n    agent: { provider: fake, model: fake }\n");
     const raw = version === 3 ? mapping() : mapping({ values: ["approved", "revise"], routes: { approved: "complete", revise: "implement" } }, 2);
     const workflow = parseWorkflowMapping(raw, "virtual.yaml");
     writeWorkflowFreeze(workspace, workspace, workflow);
@@ -161,7 +161,7 @@ test("the agent receives frozen decision criteria on initial, reply, and verify 
   try {
     const workflows = path.join(workspace, ".migent", "workflows");
     mkdirSync(workflows, { recursive: true });
-    writeFileSync(path.join(workspace, ".migent/config.yaml"), "schema_version: 3\nroles:\n  reviewer:\n    default_model: { provider: fake, model: fake }\n");
+    writeFileSync(path.join(workspace, ".migent/config.yaml"), "schema_version: 3\nroles:\n  reviewer:\n    agent: { provider: fake, model: fake }\n");
     writeFileSync(path.join(workspace, "verify.cjs"), 'const fs = require("node:fs"); if (!fs.existsSync("verified.flag")) { fs.writeFileSync("verified.flag", ""); process.exit(1); }');
     const source = `schema_version: 3
 id: review

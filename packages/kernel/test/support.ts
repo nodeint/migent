@@ -48,17 +48,17 @@ export function whichFound(found: ReadonlySet<string>): (command: string) => str
 }
 
 export const SESSION_CONFIG = `\
-models:
+agents:
   grok:
     provider: grok
     model: grok-4
 roles:
   planner:
-    default_model: grok
+    agent: grok
   reviewer:
-    default_model: grok
+    agent: grok
   developer:
-    default_model: grok
+    agent: grok
 `;
 
 export function writeSessionConfig(workspace: string): void {
@@ -67,23 +67,25 @@ export function writeSessionConfig(workspace: string): void {
 }
 
 export const STAGE_CONFIG = `\
-models:
+agents:
   grok:
     provider: grok
     model: grok-4.6
-    options:
-      reasoning-effort: high
+    client:
+      options:
+        reasoning-effort: high
   gpt-terra:
     provider: codex
     model: gpt-5.6-terra
-    options:
-      model_reasoning_effort: medium
-      temperature: "0.2"
+    client:
+      options:
+        model_reasoning_effort: medium
+        temperature: "0.2"
 roles:
   developer:
-    default_model: grok
+    agent: grok
   reviewer:
-    default_model: gpt-terra
+    agent: gpt-terra
 `;
 
 export const STAGE_WORKFLOW = `\

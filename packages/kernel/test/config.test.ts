@@ -6,8 +6,8 @@ import path from "node:path";
 import { expect, test } from "vitest";
 import {
   ConfigurationError,
-  loadRoleInstructions,
-  loadModelTarget,
+  loadRoleResponsibilities,
+  loadAgentTarget,
   loadWorkspaceConfig,
   loadYamlMapping,
   mergeConfig,
@@ -98,7 +98,7 @@ test("ignores a stray model field", () => {
   writeFileSync(
     config,
     readFileSync(config, "utf8").replace(
-      "    options:\n      reasoning-effort: high\n",
+      "    client:\n      options:\n        reasoning-effort: high\n",
       "    note: hello\n",
     ),
     "utf8",
@@ -110,9 +110,9 @@ test("ignores a stray model field", () => {
 
 test("preserves model options without role options", () => {
   const parsed = loadYamlMapping(writeConfig(STAGE_CONFIG));
-  const models = parsed.models as { "gpt-terra": { options: Record<string, string> } };
+  const agents = parsed.agents as { "gpt-terra": { client: { options: Record<string, string> } } };
   const roles = parsed.roles as { reviewer: { options: Record<string, string> } };
-  expect(models["gpt-terra"].options).toEqual({
+  expect(agents["gpt-terra"].client.options).toEqual({
     model_reasoning_effort: "medium",
     temperature: "0.2",
   });
@@ -123,33 +123,33 @@ test("loads role instructions and rejects a non-list", () => {
   const config = loadYamlMapping(
     writeConfig(
       STAGE_CONFIG.replace(
-        "  developer:\n    default_model: grok\n",
-        "  developer:\n    default_model: grok\n    instructions:\n      - Write production code.\n      - Leave tests to the reviewer.\n",
+        "  developer:\n    agent: grok\n",
+        "  developer:\n    agent: grok\n    responsibilities:\n      - Write production code.\n      - Leave tests to the reviewer.\n",
       ),
     ),
   );
-  expect(loadRoleInstructions(config, "developer")).toEqual([
+  expect(loadRoleResponsibilities(config, "developer")).toEqual([
     "Write production code.",
     "Leave tests to the reviewer.",
   ]);
-  expect(loadRoleInstructions(config, "reviewer")).toEqual([]);
+  expect(loadRoleResponsibilities(config, "reviewer")).toEqual([]);
   const bad = loadYamlMapping(
     writeConfig(
-      "models:\n  grok:\n    provider: grok\n    model: grok-4\n" +
-        "roles:\n  developer:\n    default_model: grok\n    instructions: nope\n",
+      "agents:\n  grok:\n    provider: grok\n    model: grok-4\n" +
+        "roles:\n  developer:\n    agent: grok\n    responsibilities: nope\n",
     ),
   );
-  expect(() => loadRoleInstructions(bad, "developer")).toThrow(
-    /roles\.developer\.instructions must be a list\./,
+  expect(() => loadRoleResponsibilities(bad, "developer")).toThrow(
+    /roles\.developer\.responsibilities must be a list\./,
   );
   const blank = loadYamlMapping(
     writeConfig(
-      "models:\n  grok:\n    provider: grok\n    model: grok-4\n" +
-        "roles:\n  developer:\n    default_model: grok\n    instructions:\n      - \" \"\n",
+      "agents:\n  grok:\n    provider: grok\n    model: grok-4\n" +
+        "roles:\n  developer:\n    agent: grok\n    responsibilities:\n      - \" \"\n",
     ),
   );
-  expect(() => loadRoleInstructions(blank, "developer")).toThrow(
-    /Missing or invalid roles\.developer\.instructions\[0\]\./,
+  expect(() => loadRoleResponsibilities(blank, "developer")).toThrow(
+    /Missing or invalid roles\.developer\.responsibilities\[0\]\./,
   );
 });
 
@@ -158,14 +158,14 @@ test("rejects a non-scalar model option", () => {
   const config = path.join(workspace, ".migent", "config.yaml");
   writeFileSync(
     config,
-    "models:\n  grok:\n    provider: grok\n    model: grok-4\n" +
-      "    options:\n      reasoning-effort:\n        default: high\n" +
-      "roles:\n  developer:\n    default_model: grok\n",
+    "agents:\n  grok:\n    provider: grok\n    model: grok-4\n" +
+      "    client:\n      options:\n        reasoning-effort:\n          default: high\n" +
+      "roles:\n  developer:\n    agent: grok\n",
     "utf8",
   );
   expect(() => resolveRoleTarget(workspace, "developer", undefined, resolveProvider)).toThrow(ConfigurationError);
   expect(() => resolveRoleTarget(workspace, "developer", undefined, resolveProvider)).toThrow(
-    /Missing or invalid models\.grok\.options\.reasoning-effort\./,
+    /Missing or invalid agents\.grok\.client\.options\.reasoning-effort\./,
   );
 });
 
@@ -205,23 +205,23 @@ test("cli override skips the role cascade", () => {
 test("mergeConfig merges mappings and replaces scalars and lists", () => {
   const base = {
     schema_version: 2,
-    models: { a: { provider: "grok", model: "m1", options: { x: "1", y: "2" } } },
-    roles: { dev: { default_model: "a", instructions: ["one", "two"] } },
+    agents: { a: { provider: "grok", model: "m1", client: { options: { x: "1", y: "2" } } } },
+    roles: { dev: { agent: "a", responsibilities: ["one", "two"] } },
   };
   const snapshot = structuredClone(base);
   const local = {
-    models: { a: { model: "m2", options: { y: "3" } }, b: { provider: "codex", model: "m3" } },
-    roles: { dev: { instructions: ["only"] } },
+    agents: { a: { model: "m2", client: { options: { y: "3" } } }, b: { provider: "codex", model: "m3" } },
+    roles: { dev: { responsibilities: ["only"] } },
   };
   const localSnapshot = structuredClone(local);
   const merged = mergeConfig(base, local);
   expect(merged).toEqual({
     schema_version: 2,
-    models: {
-      a: { provider: "grok", model: "m2", options: { x: "1", y: "3" } },
+    agents: {
+      a: { provider: "grok", model: "m2", client: { options: { x: "1", y: "3" } } },
       b: { provider: "codex", model: "m3" },
     },
-    roles: { dev: { default_model: "a", instructions: ["only"] } },
+    roles: { dev: { agent: "a", responsibilities: ["only"] } },
   });
   expect(base).toEqual(snapshot);
   expect(local).toEqual(localSnapshot);
@@ -240,16 +240,17 @@ test("config.local.yaml overrides role and stage resolution", () => {
     path.join(workspace, ".migent", "config.local.yaml"),
     [
       "schema_version: 99",
-      "models:",
+      "agents:",
       "  grok:",
       "    model: grok-local",
       "roles:",
       "  reviewer:",
-      "    default_model:",
+      "    agent:",
       "      provider: codex",
       "      model: local-reviewer",
-      "      options:",
-      "        model_reasoning_effort: low",
+      "      client:",
+      "        options:",
+      "          model_reasoning_effort: low",
       "",
     ].join("\n"),
     "utf8",
@@ -268,7 +269,7 @@ test("a malformed config.local.yaml names the file", () => {
   writeFileSync(local, "- not-a-map\n", "utf8");
   expect(() => resolveRoleTarget(workspace, "developer", undefined, resolveProvider)).toThrow(ConfigurationError);
   expect(() => resolveRoleTarget(workspace, "developer", undefined, resolveProvider)).toThrow("config.local.yaml");
-  writeFileSync(local, "models: [unclosed\n", "utf8");
+  writeFileSync(local, "agents: [unclosed\n", "utf8");
   expect(() => loadWorkspaceConfig(workspace)).toThrow(ConfigurationError);
 });
 
@@ -284,38 +285,38 @@ test.each([
   ["byteplus", "codex", "model_reasoning_effort"],
   ["codex", "grok", "reasoning-effort"],
 ])("resolves model effort for %s with client %s", (provider, client, option) => {
-  const target = loadModelTarget({ models: { fast: { provider, client, model: "test", effort: " xhigh ", options: { tools: "read" } } } }, "fast", resolveProvider);
+  const target = loadAgentTarget({ agents: { fast: { provider, client: { ...(client === undefined ? {} : { type: client }), options: { tools: "read" } }, model: "test", effort: " xhigh " } } }, "fast", resolveProvider);
   expect(target.options).toEqual({ [option!]: "xhigh", tools: "read" });
 });
 
 test.each([null, "", " ", 3, true])("rejects invalid model effort %s", (effort) => {
-  expect(() => loadModelTarget({ models: { fast: { provider: "codex", model: "test", effort } } }, "fast", resolveProvider)).toThrow(/models.fast.effort/);
+  expect(() => loadAgentTarget({ agents: { fast: { provider: "codex", model: "test", effort } } }, "fast", resolveProvider)).toThrow(/agents.fast.effort/);
 });
 
 test.each([
   { provider: "byteplus" },
-  { provider: "codex", client: "unknown" },
+  { provider: "codex", client: { type: "unknown" } },
 ])("rejects unsupported effort client %s", (mapping) => {
-  expect(() => loadModelTarget({ models: { fast: { ...mapping, model: "test", effort: "high" } } }, "fast", resolveProvider)).toThrow(/models.fast.effort/);
+  expect(() => loadAgentTarget({ agents: { fast: { ...mapping, model: "test", effort: "high" } } }, "fast", resolveProvider)).toThrow(/agents.fast.effort/);
 });
 
 test.each(["codex", "grok", "claude", "agy", "opencode"])("rejects model effort conflicts for %s", (provider) => {
   const option = provider === "codex" ? "model_reasoning_effort" : provider === "grok" ? "reasoning-effort" : provider === "opencode" ? "variant" : "effort";
-  expect(() => loadModelTarget({ models: { fast: { provider, model: "test", effort: "high", options: { [option]: "low" } } } }, "fast", resolveProvider)).toThrow(/conflicts with models.fast.options/);
+  expect(() => loadAgentTarget({ agents: { fast: { provider, model: "test", effort: "high", client: { options: { [option]: "low" } } } } }, "fast", resolveProvider)).toThrow(/conflicts with agents.fast.client.options/);
 });
 
 test("local model effort replaces shared effort", () => {
   const workspace = writeStageWorkspace();
   const config = loadWorkspaceConfig(workspace);
-  const models = config.models as Record<string, Record<string, unknown>>;
-  const alias = Object.keys(models).find((name) => models[name]!.provider === "grok")!;
-  const model = models[alias]!;
-  delete (model.options as Record<string, string>)["reasoning-effort"];
+  const agents = config.agents as Record<string, Record<string, unknown>>;
+  const alias = Object.keys(agents).find((name) => agents[name]!.provider === "grok")!;
+  const model = agents[alias]!;
+  delete ((model.client as Record<string, unknown>).options as Record<string, string>)["reasoning-effort"];
   model.effort = "low";
   const roles = config.roles as Record<string, Record<string, unknown>>;
   writeFileSync(path.join(workspace, ".migent", "config.yaml"), stringify(config));
-  writeFileSync(path.join(workspace, ".migent", "config.local.yaml"), stringify({ models: { [alias]: { effort: "medium" } } }));
-  expect(loadModelTarget(loadWorkspaceConfig(workspace), alias, resolveProvider).options["reasoning-effort"]).toBe("medium");
+  writeFileSync(path.join(workspace, ".migent", "config.local.yaml"), stringify({ agents: { [alias]: { effort: "medium" } } }));
+  expect(loadAgentTarget(loadWorkspaceConfig(workspace), alias, resolveProvider).options["reasoning-effort"]).toBe("medium");
   expect(resolveStageTarget(workspace, "plan-implement", "implement", undefined, resolveProvider).options["reasoning-effort"]).toBe("medium");
 });
 
@@ -324,8 +325,8 @@ test("stage native effort overrides the model alias", () => {
   const workspace = writeStageWorkspace();
   const configPath = path.join(workspace, ".migent", "config.yaml");
   writeFileSync(configPath, readFileSync(configPath, "utf8").replace(
-    '    options:\n      model_reasoning_effort: medium\n      temperature: "0.2"',
-    '    effort: low\n    options:\n      temperature: "0.2"',
+    '    client:\n      options:\n        model_reasoning_effort: medium\n        temperature: "0.2"',
+    '    effort: low\n    client:\n      options:\n        temperature: "0.2"',
   ));
   expect(resolveRoleTarget(workspace, "reviewer", undefined, resolveProvider).options.model_reasoning_effort).toBe("low");
   expect(resolveStageTarget(workspace, "plan-implement", "review-work", undefined, resolveProvider).options.model_reasoning_effort).toBe("high");
@@ -334,10 +335,10 @@ test("stage native effort overrides the model alias", () => {
 
 test("rejects effort conflicts introduced by local config merge", () => {
   const merged = mergeConfig(
-    { models: { fast: { provider: "codex", model: "test", effort: "high" } } },
-    { models: { fast: { options: { model_reasoning_effort: "low" } } } },
+    { agents: { fast: { provider: "codex", model: "test", effort: "high" } } },
+    { agents: { fast: { client: { options: { model_reasoning_effort: "low" } } } } },
   );
-  expect(() => loadModelTarget(merged, "fast", resolveProvider)).toThrow(/conflicts with models.fast.options.model_reasoning_effort/);
+  expect(() => loadAgentTarget(merged, "fast", resolveProvider)).toThrow(/conflicts with agents.fast.client.options.model_reasoning_effort/);
 });
 
 
@@ -351,8 +352,8 @@ test("resolves effort through an injected provider without knowing provider or c
       },
     },
   });
-  expect(loadModelTarget({ models: { fast: { provider: "custom", model: "m", effort: "high" } } }, "fast", resolveCustom).options)
+  expect(loadAgentTarget({ agents: { fast: { provider: "custom", model: "m", effort: "high" } } }, "fast", resolveCustom).options)
     .toEqual({ custom_thinking_level: "high" });
-  expect(loadModelTarget({ models: { fast: { provider: "custom", client: "alternate", model: "m", effort: "max" } } }, "fast", resolveCustom).options)
+  expect(loadAgentTarget({ agents: { fast: { provider: "custom", client: { type: "alternate" }, model: "m", effort: "max" } } }, "fast", resolveCustom).options)
     .toEqual({ alternate_level: "max" });
 });

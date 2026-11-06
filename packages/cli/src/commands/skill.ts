@@ -102,7 +102,7 @@ export async function updateSkill(options: SkillOptions = {}): Promise<number> {
   return 0;
 }
 
-/** Migent client ids used by the models in `.migent/config.yaml`. */
+/** Migent client ids used by the agents in `.migent/config.yaml`. */
 export function clientsFromConfig(workspace: string, providers: Record<string, Provider> = providerMap()): string[] {
   const configPath = path.join(workspace, ".migent", "config.yaml");
   if (!isFile(configPath)) return [];
@@ -112,12 +112,12 @@ export function clientsFromConfig(workspace: string, providers: Record<string, P
   } catch {
     return [];
   }
-  const definitions: unknown[] = typeof config.models === "object" && config.models !== null
-    ? Object.values(config.models) : [];
+  const definitions: unknown[] = typeof config.agents === "object" && config.agents !== null
+    ? Object.values(config.agents) : [];
   if (typeof config.roles === "object" && config.roles !== null) {
     for (const role of Object.values(config.roles)) {
-      if (typeof role === "object" && role !== null && "default_model" in role) {
-        definitions.push(role.default_model);
+      if (typeof role === "object" && role !== null && "agent" in role) {
+        definitions.push(role.agent);
       }
     }
   }
@@ -125,7 +125,8 @@ export function clientsFromConfig(workspace: string, providers: Record<string, P
   for (const model of definitions) {
     if (typeof model !== "object" || model === null) continue;
     const { provider, client } = model as { provider?: unknown; client?: unknown };
-    const id = typeof client === "string" ? client : typeof provider === "string" ? providerClient(providers[provider]) : null;
+    const clientType = typeof client === "object" && client !== null ? (client as { type?: unknown }).type : undefined;
+    const id = typeof clientType === "string" ? clientType : typeof provider === "string" ? providerClient(providers[provider]) : null;
     if (typeof id === "string" && findTarget(id) !== undefined) found.add(id);
   }
   return [...found];

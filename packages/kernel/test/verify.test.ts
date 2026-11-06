@@ -21,13 +21,13 @@ import { clearInFlightExecution, clearInFlightExecutions, noteInFlightExecution 
 import { ScriptedProvider, tempDir } from "./support.ts";
 
 const CONFIG = `\
-models:
+agents:
   fake:
     provider: fake
     model: m1
 roles:
   developer:
-    default_model: fake
+    agent: fake
 `;
 
 // Fails while the counter file holds fewer than `failures` runs, then passes.

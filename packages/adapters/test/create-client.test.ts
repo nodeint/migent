@@ -1,4 +1,4 @@
-import { createProviderResolver, loadModelTarget } from "@nodeint/migent-kernel";
+import { createProviderResolver, loadAgentTarget } from "@nodeint/migent-kernel";
 import { expect, test } from "vitest";
 import { AgyProvider, ByteplusProvider, ClaudeProvider, createClient } from "../src/index.ts";
 
@@ -38,7 +38,7 @@ test("byteplus has no default client and is bound through withClient", () => {
 test("model effort follows the bound client through to Grok command arguments", () => {
   const provider = new ClaudeProvider().withClient("grok");
   const resolveProvider = createProviderResolver({ custom: provider });
-  const target = loadModelTarget({ models: { fast: { provider: "custom", model: "test", effort: "high" } } }, "fast", resolveProvider);
+  const target = loadAgentTarget({ agents: { fast: { provider: "custom", model: "test", effort: "high" } } }, "fast", resolveProvider);
   const command = provider.buildCommand({
     model: target.model, options: target.options, workspace: ".", prompt: "test",
     agentId: null, newAgentId: null, promptFile: "prompt.md", lastMessageFile: "last.md",

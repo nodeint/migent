@@ -11,8 +11,8 @@ const PLAN = ["session", "run", "--once", "--workflow", "plan", "--task", "do it
 
 /** The planner (stage 1) maps to the fake provider; the reviewer (stage 2) is configurable. */
 function config(reviewer: string): string {
-  return `schema_version: 4
-models:
+  return `schema_version: 5
+agents:
   good:
     provider: fake
     model: m1
@@ -20,9 +20,9 @@ models:
 ${reviewer}
 roles:
   planner:
-    default_model: good
+    agent: good
   reviewer:
-    default_model: later
+    agent: later
 `;
 }
 
@@ -57,7 +57,7 @@ test("a bad model in a later stage stops --workflow before anything is created",
   try {
     const result = await capture(() => main(PLAN, workspace));
     expect(result.value).toBe(2);
-    expect(result.stderr).toContain('Invalid models.later.model: "grok-typo"');
+    expect(result.stderr).toContain('Invalid agents.later.model: "grok-typo"');
     expect(result.stderr).toContain("plan.review-plan:");
     expect(result.stderr).toContain("--skip-preflight");
     expect(result.stdout).toBe("");
@@ -101,7 +101,7 @@ test("a prepared session stays prepared and unfrozen until the problem is fixed"
     };
     const failed = await capture(() => main(["session", "run", "--once", "--session", sessionId], workspace));
     expect(failed.value).toBe(2);
-    expect(failed.stderr).toContain('Invalid models.later.model: "grok-typo"');
+    expect(failed.stderr).toContain('Invalid agents.later.model: "grok-typo"');
     expect(existsSync(path.join(directory, "workflow.frozen.yaml"))).toBe(false);
     expect((JSON.parse(readFileSync(path.join(directory, "status.json"), "utf8")) as { status: string }).status).toBe("prepared");
     expect(provider.calls).toHaveLength(0);
@@ -127,7 +127,7 @@ test("warnings go to stderr and do not block the run", async () => {
     };
     const result = await capture(() => main(PLAN, workspace));
     expect(result.value).toBe(0);
-    expect(result.stderr).toContain("preflight warning: Could not validate models.later.model");
+    expect(result.stderr).toContain("preflight warning: Could not validate agents.later.model");
     expect(result.stderr).toContain("preflight ok");
     expect(result.stdout).not.toContain("preflight");
     expect(provider.calls).toHaveLength(1);
@@ -154,7 +154,7 @@ test("--skip-preflight bypasses a failing check and says so", async () => {
     const result = await capture(() => main([...PLAN, "--skip-preflight"], workspace));
     expect(result.value).toBe(0);
     expect(result.stderr).toContain("preflight skipped (--skip-preflight)");
-    expect(result.stderr).not.toContain("Invalid models.later.model");
+    expect(result.stderr).not.toContain("Invalid agents.later.model");
     expect(provider.calls).toHaveLength(1);
   } finally {
     removeWorkspace(workspace);

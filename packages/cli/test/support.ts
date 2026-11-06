@@ -90,20 +90,21 @@ function writePromptArtifact(prompt: string, body: string): void {
 }
 
 export const FAKE_FLOW_CONFIG = `\
-schema_version: 4
-models:
+schema_version: 5
+agents:
   fake-model:
     provider: fake
     model: m1
-    options:
-      effort: medium
+    client:
+      options:
+        effort: medium
 roles:
   planner:
-    default_model: fake-model
+    agent: fake-model
   reviewer:
-    default_model: fake-model
+    agent: fake-model
   developer:
-    default_model: fake-model
+    agent: fake-model
 `;
 
 const FIXTURES = fileURLToPath(new URL("./fixtures/workflows/", import.meta.url));

@@ -10,37 +10,38 @@ export const GROK_SESSION = "fake-grok-session";
 export const CODEX_THREAD = "fake-codex-thread";
 
 export const GROK_CONFIG = `\
-schema_version: 4
-models:
+schema_version: 5
+agents:
   grok-model:
     provider: grok
     model: grok-test
-    options:
-      reasoning-effort: low
+    client:
+      options:
+        reasoning-effort: low
 roles:
   planner:
-    default_model: grok-model
+    agent: grok-model
   reviewer:
-    default_model: grok-model
+    agent: grok-model
 `;
 
 export const CODEX_CONFIG = `\
-schema_version: 4
-models:
+schema_version: 5
+agents:
   codex-model:
     provider: codex
     model: codex-test
-    options:
-      model_reasoning_effort: low
+    client:
+      options:
+        model_reasoning_effort: low
 roles:
   writer:
-    default_model: codex-model
+    agent: codex-model
 `;
 
 export const PLAN_REVIEW = `\
-schema_version: 4
+schema_version: 5
 id: plan
-description: Write and approve a plan before implementation.
 stages:
   - id: plan
     role: planner
@@ -66,7 +67,7 @@ outputs:
 `;
 
 export const DRAFT_NOTE = `\
-schema_version: 4
+schema_version: 5
 id: draft-note
 stages:
   - id: draft
@@ -77,7 +78,7 @@ stages:
 `;
 
 export const SOLO = `\
-schema_version: 4
+schema_version: 5
 id: solo
 stages:
   - id: write
@@ -100,7 +101,7 @@ const FAKE_ENV = ["MIGENT_FAKE_OUTCOME", "MIGENT_FAKE_SCRIPT", "MIGENT_FAKE_CURS
 
 export function resumedNotes(role: string): string {
   return `\
-schema_version: 4
+schema_version: 5
 id: notes
 stages:
   - id: draft

@@ -6,8 +6,9 @@ import { defaultProviders, GrokProvider } from "@nodeint/migent-adapters";
 import {
   createProviderResolver,
   documentVersion,
-  loadModelTarget,
-  loadRoleInstructions,
+  loadAgentTarget,
+  loadRoleDescription,
+  loadRoleResponsibilities,
   loadWorkflowDocument,
   loadYamlMapping,
   resolveRoleTarget,
@@ -20,17 +21,23 @@ const CONFIG_PARSER = fileURLToPath(new URL("../../kernel/src/config.ts", import
 const RECORD_PARSER = fileURLToPath(new URL("../../kernel/src/record.ts", import.meta.url));
 
 const CONFIG_KEYS = [
-  "default_model",
+  "agent",
+  "agents",
+  "client",
+  "description",
   "effort",
-  "instructions",
   "model",
-  "models",
   "options",
   "provider",
+  "responsibilities",
   "roles",
   "schema_version",
+  "type",
 ];
+// Keys the parser still names only to reject them with a pointer to the v5 replacement.
+const LEGACY_CONFIG_KEYS = ["models"];
 const WORKFLOW_KEYS = [
+  "agent",
   "artifact",
   "artifacts",
   "ask",
@@ -78,12 +85,17 @@ test("config reference parses and names every key the config parser reads", () =
     mkdirSync(path.dirname(configPath), { recursive: true });
     writeFileSync(configPath, text, "utf8");
     const config = loadYamlMapping(configPath);
-    expect(documentVersion(config)).toBe(4);
-    expect(loadModelTarget(config, "deep_reasoning", createProviderResolver(defaultProviders()))).toEqual({
+    expect(documentVersion(config)).toBe(5);
+    expect(loadAgentTarget(config, "deep_reasoning", createProviderResolver(defaultProviders()))).toEqual({
       provider: "grok",
       model: "grok-4.7",
       options: { "reasoning-effort": "high" },
     });
+    expect(loadAgentTarget(config, "code_generation", createProviderResolver(defaultProviders()))).toMatchObject({
+      provider: "byteplus",
+      client: "opencode",
+    });
+    expect(loadRoleDescription(config, "planner")).toBe("Designs the approach and writes the plan.");
     expect(resolveRoleTarget(workspace, "planner", undefined, createProviderResolver(defaultProviders()))).toEqual({
       provider: "grok",
       model: "grok-4.7",
@@ -95,13 +107,13 @@ test("config reference parses and names every key the config parser reads", () =
       options: { "reasoning-effort": "high" },
     });
     expect(text).toContain("config.local.yaml");
-    expect(loadRoleInstructions(config, "planner")).toEqual(["Break the task into a reviewable plan."]);
-    expect(loadRoleInstructions(config, "reviewer")).toEqual([]);
+    expect(loadRoleResponsibilities(config, "planner")).toEqual(["Break the task into a reviewable plan."]);
+    expect(loadRoleResponsibilities(config, "reviewer")).toEqual([]);
     new GrokProvider().validateOptions({ "reasoning-effort": "high" });
     new GrokProvider().validateOptions({ "reasoning-effort": "medium" });
     const configParser = `${readFileSync(CONFIG_PARSER, "utf8")}\n${readFileSync(RECORD_PARSER, "utf8")}`;
-    expect(parserKeys(configParser, "config")).toEqual(CONFIG_KEYS);
-    expect(yamlKeys(text)).toEqual([...CONFIG_KEYS, "client", "code_generation", "deep_reasoning", "developer", "planner", "max_turns", "reviewer"].sort());
+    expect(parserKeys(configParser, "config").filter((key) => !LEGACY_CONFIG_KEYS.includes(key))).toEqual(CONFIG_KEYS);
+    expect(yamlKeys(text)).toEqual([...CONFIG_KEYS, "code_generation", "deep_reasoning", "developer", "planner", "max_turns", "reviewer"].sort());
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }
@@ -111,8 +123,8 @@ test("workflow reference parses and names every key the workflow parser reads", 
   const text = readFileSync(path.join(TEMPLATES, "schema-workflow.yaml"), "utf8");
   const filePath = path.join(TEMPLATES, "schema-workflow.yaml");
   const document = loadWorkflowDocument(filePath);
-  expect(documentVersion(loadYamlMapping(filePath))).toBe(4);
-  expect(document.schemaVersion).toBe(4);
+  expect(documentVersion(loadYamlMapping(filePath))).toBe(5);
+  expect(document.schemaVersion).toBe(5);
   expect(document.concurrency).toBe(1);
   expect(document.id).toBe("reference");
   expect(document.constraints).toEqual(["Stay within the task."]);
@@ -130,8 +142,8 @@ test("workflow reference parses and names every key the workflow parser reads", 
     kind: "role",
     role: "planner",
     description: null,
-    modelName: "deep_reasoning",
-    options: { "reasoning-effort": "high" },
+    agent: { kind: "named", name: "deep_reasoning" },
+    options: {},
     dependsOn: ["prepare"],
     maxRevisions: 2,
     instructions: ["Write the draft."],
@@ -155,6 +167,7 @@ test("workflow reference parses and names every key the workflow parser reads", 
     role: "reviewer",
     description: null,
     dependsOn: ["review"],
+    agent: { kind: "inline", value: { provider: "codex", model: "gpt-5", effort: "low" } },
     instructions: ["Review documentation changes."],
     verify: [],
     decisionValues: [],
@@ -166,17 +179,18 @@ test("workflow reference parses and names every key the workflow parser reads", 
   const scanned = new Set(parserKeys(readFileSync(WORKFLOW_PARSER, "utf8"), "workflow"));
   scanned.add("schema_version");
   expect([...scanned].sort()).toEqual(WORKFLOW_KEYS);
-  const sampleKeys = WORKFLOW_KEYS.filter((key) => !["completion", "requires", "stage", "values", "routes"].includes(key));
-  expect(yamlKeys(text)).toEqual([...sampleKeys, "approved", "plan", "reasoning-effort", "revise"].sort());
+  const sampleKeys = WORKFLOW_KEYS.filter((key) => !["completion", "requires", "stage", "values", "routes", "options"].includes(key));
+  expect(yamlKeys(text)).toEqual([...sampleKeys, "approved", "effort", "plan", "provider", "revise"].sort());
 });
 
 function parserKeys(source: string, kind: "config" | "workflow"): string[] {
   const keys = new Set<string>();
   for (const match of source.matchAll(/Object\.hasOwn\(\w+, "([^"]+)"\)/g)) keys.add(match[1] ?? "");
   if (kind === "config") {
-    for (const match of source.matchAll(/\bconfig\.(models|roles)\b/g)) keys.add(match[1] ?? "");
-    for (const match of source.matchAll(/\bmodelConfig\.(provider|model|options)\b/g)) keys.add(match[1] ?? "");
-    for (const match of source.matchAll(/\brole\.(default_model|options|instructions)\b/g)) keys.add(match[1] ?? "");
+    for (const match of source.matchAll(/\bconfig\.(agents|roles)\b/g)) keys.add(match[1] ?? "");
+    for (const match of source.matchAll(/\bagentConfig\.(provider|model|client)\b/g)) keys.add(match[1] ?? "");
+    for (const match of source.matchAll(/\bclientConfig\.(type|options)\b/g)) keys.add(match[1] ?? "");
+    for (const match of source.matchAll(/\brole\.(agent|description|responsibilities)\b/g)) keys.add(match[1] ?? "");
   } else {
     for (const match of source.matchAll(/(?:requiredString|stringItems|filename)\(\w+\.(\w+)/g)) keys.add(match[1] ?? "");
     for (const match of source.matchAll(/optionalStageString\(\w+, "([^"]+)"/g)) keys.add(match[1] ?? "");

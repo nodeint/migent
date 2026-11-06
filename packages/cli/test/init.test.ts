@@ -95,22 +95,27 @@ test("writes inline role models and both working presets", async () => {
     const workflow = readFileSync(path.join(workspace, ".migent", "workflows", "implement.yaml"), "utf8");
     const gitignore = readFileSync(path.join(workspace, ".migent", ".gitignore"), "utf8");
     expect(captured.value).toBe(0);
-    expect(config).toContain("schema_version: 4");
-    expect(config).toContain("default_model");
-    expect(workflow).toContain("schema_version: 4");
+    expect(captured.stdout).toContain("Roles:");
+    expect(captured.stdout).toMatch(/planner\s+Designs the approach/);
+    expect(config).toContain("schema_version: 5");
+    expect(config).toContain("agent");
+    expect(workflow).toContain("schema_version: 5");
     expect(loadWorkspaceConfig(workspace)).toMatchObject({
-      schema_version: 4,
+      schema_version: 5,
       roles: {
-        developer: { default_model: { provider: "codex", model: "gpt-5" } },
-        planner: { default_model: { provider: "codex", model: "gpt-5" } },
-        reviewer: { default_model: { provider: "codex", model: "gpt-5" } },
+        developer: { agent: { provider: "codex", model: "gpt-5" } },
+        planner: { agent: { provider: "codex", model: "gpt-5" } },
+        reviewer: { agent: { provider: "codex", model: "gpt-5" } },
       },
     });
-    const roles = loadWorkspaceConfig(workspace).roles as Record<string, { instructions: string[] }>;
+    const roles = loadWorkspaceConfig(workspace).roles as Record<string, { responsibilities: string[]; description: string }>;
     expect(Object.keys(roles).sort()).toEqual(["developer", "planner", "reviewer"]);
-    for (const role of Object.values(roles)) expect(role.instructions.length).toBeGreaterThan(0);
-    expect(roles.planner?.instructions.join("\n")).toContain("do not modify project files");
-    expect(roles.reviewer?.instructions.join("\n")).toContain("Do not modify project files");
+    for (const role of Object.values(roles)) {
+      expect(role.responsibilities.length).toBeGreaterThan(0);
+      expect(role.description).toMatch(/\S/);
+    }
+    expect(roles.planner?.responsibilities.join("\n")).toContain("do not modify project files");
+    expect(roles.reviewer?.responsibilities.join("\n")).toContain("Do not modify project files");
     const localConfig = readFileSync(path.join(workspace, ".migent", "config.local.yaml"), "utf8");
     expect(localConfig).not.toContain("{{");
     expect(localConfig).toContain("roles: {}");
@@ -202,12 +207,12 @@ test("a lone config.local.yaml is a conflict and is left unchanged", async () =>
     const root = path.join(workspace, ".migent");
     mkdirSync(root);
     const local = path.join(root, "config.local.yaml");
-    writeFileSync(local, "models: {}\n", "utf8");
+    writeFileSync(local, "agents: {}\n", "utf8");
     const captured = await capture(() =>
       runInit(workspace, { provider: "codex", model: "gpt-5", plannerProvider: "codex", plannerModel: "gpt-5", reviewerProvider: "codex", reviewerModel: "gpt-5", runCommand, which: which(new Set(["codex"])) }),
     );
     expect(captured.value).toBe(1);
-    expect(readFileSync(local, "utf8")).toBe("models: {}\n");
+    expect(readFileSync(local, "utf8")).toBe("agents: {}\n");
     expect(existsSync(path.join(root, "config.yaml"))).toBe(false);
     expect(captured.stderr).toContain(".migent/config.local.yaml");
   } finally {
@@ -233,7 +238,7 @@ test("planner has its own model and each workflow uses the reviewer model", asyn
     const resolve = createProviderResolver(defaultProviders());
     expect(resolveStageTarget(workspace, "plan", "plan", undefined, resolve)).toMatchObject({ provider: "grok", model: "grok-4.6" });
     expect(resolveStageTarget(workspace, "plan", "review_plan", undefined, resolve)).toMatchObject({ provider: "grok", model: "grok-4.7" });
-    expect(config).not.toContain("models:");
+    expect(config).not.toContain("agents:");
     expect(config).toContain("planner:");
     expect(workflow).toContain("role: planner");
     expect(resolveStageTarget(workspace, "implement", "review_work", undefined, resolve)).toMatchObject({ provider: "grok", model: "grok-4.7" });

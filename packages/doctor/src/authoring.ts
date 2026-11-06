@@ -6,7 +6,7 @@ import {
   mergeConfigLayers,
   parseWorkflowMapping,
   checkWorkflowCatalog,
-  loadModelTarget,
+  loadAgentTarget,
   resolveStageSpec,
   type RoleStageSpec,
   type StageTarget,
@@ -79,7 +79,7 @@ export function validateConfigDraft(input: ConfigDraftInput, providers: Provider
   const analysis = analyzeConfig(merged.config, providers, {}, merged.ownerOf);
   for (const item of analysis.diagnostics.items) {
     // The alias waits for this machine's mapping; that describes the machine, not the document.
-    out.push(item.code === "model-unmapped" ? { ...item, severity: "warning" } : item);
+    out.push(item.code === "agent-unmapped" ? { ...item, severity: "warning" } : item);
   }
   return out;
 }
@@ -186,8 +186,8 @@ export function validateWorkflowDraft(input: WorkflowDraftInput, providers: Prov
       const head = error.path?.[0];
       const missingRole = error.code === "missing-or-invalid" && error.path?.join(".") === `roles.${stage.role}`;
       if (head === "stages" || missingRole) {
-        // The stage's own reference (its explicit model, or a role that does not exist) is the workflow's to fix.
-        const field = missingRole ? "role" : "model";
+        // The stage's own reference (its explicit agent, or a role that does not exist) is the workflow's to fix.
+        const field = missingRole ? "role" : "agent";
         out.push({ severity: "error", code: missingRole ? "unknown-role" : (error.code ?? "workflow-invalid"), message: `${document.id}.${stage.id}: ${error.message}`, path: stagePath(field), source });
       } else if (error.path !== undefined) {
         // A fault in the config, including a model inherited from the role's default: the config owns the fix.
@@ -200,7 +200,7 @@ export function validateWorkflowDraft(input: WorkflowDraftInput, providers: Prov
     const failure = optionsFailure(config, stage, target, providers);
     if (failure === null) continue;
     if (failure.path === null) {
-      out.push({ severity: "error", code: "options-invalid", message: `${document.id}.${stage.id}: ${failure.message}`, path: stagePath("options"), source });
+      out.push({ severity: "error", code: "options-invalid", message: `${document.id}.${stage.id}: ${failure.message}`, path: stagePath("agent"), source });
     } else {
       // The options come from the model or role definition: the config layer that owns it fixes them.
       out.push({ severity: "error", code: "options-invalid", message: `${document.id}.${stage.id}: ${failure.message}`, path: failure.path, source: ownerSource(ownerOf(failure.path)) });
@@ -211,7 +211,7 @@ export function validateWorkflowDraft(input: WorkflowDraftInput, providers: Prov
 
 /**
  * Finds where invalid provider options come from by validating one layer at a time:
- * the model definition, then the role's options on top, then the stage's own options.
+ * the agent definition, then the role's inline agent, then the stage's own inline agent.
  * `path` is null when only the stage's options cause the failure.
  */
 function optionsFailure(
@@ -234,13 +234,17 @@ function optionsFailure(
   // Options the stage's own values make valid are fine, whatever the lower layers hold.
   const full = validate(target);
   if (full === null) return null;
+  // An inline stage agent is a complete definition of its own: its options are the stage's to fix.
+  if (stage.agent?.kind === "inline") return { message: full, path: null };
   const resolver = createProviderResolver(providers);
   const roleDefault = isRecord(config.roles) && isRecord(config.roles[stage.role]) ? config.roles[stage.role] : undefined;
-  const selected = stage.modelName ?? (isRecord(roleDefault) ? roleDefault.default_model : undefined);
+  const selected = stage.agent !== null
+    ? (stage.agent.kind === "named" ? stage.agent.name : undefined)
+    : (isRecord(roleDefault) ? roleDefault.agent : undefined);
   if (typeof selected === "string") {
     try {
-      const message = validate(loadModelTarget(config, selected, resolver));
-      if (message !== null) return { message, path: ["models", selected, "options"] };
+      const message = validate(loadAgentTarget(config, selected, resolver));
+      if (message !== null) return { message, path: ["agents", selected, "client", "options"] };
     } catch (error) {
       if (!(error instanceof ConfigurationError)) throw error;
     }
@@ -248,8 +252,8 @@ function optionsFailure(
   const withRole = resolveStageSpec(config, { ...stage, options: {} }, undefined, resolver);
   const roleMessage = validate(withRole);
   if (roleMessage !== null) {
-    const inline = stage.modelName === null && isRecord(roleDefault) && isRecord(roleDefault.default_model);
-    return { message: roleMessage, path: inline ? ["roles", stage.role, "default_model"] : ["roles", stage.role, "options"] };
+    const inline = stage.agent === null && isRecord(roleDefault) && isRecord(roleDefault.agent);
+    return { message: roleMessage, path: inline ? ["roles", stage.role, "agent"] : ["roles", stage.role, "options"] };
   }
   return { message: full, path: null };
 }
