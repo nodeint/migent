@@ -141,6 +141,8 @@ sensitive values as stderr. Do not commit it.
 | `exited before it was ready (signal SIGKILL)` | The OS or another process killed the wrapper. | Check memory pressure and `dmesg` or the system log. |
 | `Could not launch …: ENOENT` | The Node binary or wrapper file is missing. | Reinstall Migent and check `node -v`. |
 | `CLI executable not found` | The provider CLI is not on `PATH`. | Run `migent doctor` and install or fix the path. |
+| Execution `completed` although the provider exited non-zero | The provider reported no error and its reply passed every check an exit-0 reply must pass. No `failure.md` is written. | Look for `provider.exit_anomaly` (`exit_code`, `accepted`) in `events.jsonl`. |
+| Execution `completed` although the provider was killed on Windows | Windows reports no signal identity: a killed provider looks like exit code 1, so a valid reply can be accepted as an `exit-only` turn. POSIX signal deaths exit as 128 plus the signal and are never accepted. | Check `provider.exit_anomaly` in `events.jsonl`; this is a known limitation. |
 | No `diagnostics.json` after a failure | The run was cancelled, or the failure came from the provider's own output. | Read `failure.md` and `execution.json`; read `response.md` only when the model produced one. |
 
 When you report a bug, attach `diagnostics.json` and `debug.log` after you check

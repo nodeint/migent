@@ -122,6 +122,7 @@ export interface StageContext {
   upstream: readonly { stageId: string; path: string; verify: boolean; updated: boolean }[];
   routed: unknown;
   blocked: unknown;
+  failed?: unknown;
   prior: unknown;
 }
 

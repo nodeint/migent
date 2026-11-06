@@ -65,6 +65,7 @@ function continuationContext(
     upstream: upstreamArtifacts(input.workflow, dependsOn, input.snapshots, input.stageId),
     routed: routedResultContext(input.workflow, input.stageId, input.snapshots),
     blocked: previousBlockedAttempt(input.stageId, input.snapshots),
+    failed: previousFailedAttempt(input.stageId, input.snapshots),
   };
 }
 
@@ -147,6 +148,21 @@ function previousBlockedAttempt(stageId: string, snapshots: readonly ExecutionSn
   const blocker = readOutcomeBlocker(path.join(executionDirectory, "execution.json"));
   const responsePath = path.join(executionDirectory, "response.md");
   return { executionId: latest.executionId, blocker, response: isFile(responsePath) ? resolvePath(responsePath) : null };
+}
+
+/**
+ * The latest attempt of the stage failed without a named failure reason and still left a reply. Its
+ * work may be partly done, so the next prompt points at the reply and asks for the state to be re-checked.
+ */
+function previousFailedAttempt(stageId: string, snapshots: readonly ExecutionSnapshot[]) {
+  let latest: ExecutionSnapshot | null = null;
+  for (const snapshot of snapshots) {
+    if (snapshot.stageId !== stageId) continue;
+    if (latest === null || snapshot.executionOrder > latest.executionOrder) latest = snapshot;
+  }
+  if (latest === null || latest.status !== "failed" || latest.failureReason) return null;
+  const responsePath = path.join(path.dirname(latest.artifactDirectory), "response.md");
+  return isFile(responsePath) ? { response: resolvePath(responsePath) } : null;
 }
 
 function readOutcomeBlocker(filePath: string): string | null {

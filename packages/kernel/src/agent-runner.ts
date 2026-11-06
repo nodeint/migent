@@ -5,6 +5,7 @@ import {
   defaultProviders,
   type Provider,
   type FailureClassification,
+  type ResponseSource,
   type NewSession,
   type UsageCapture,
 } from "./provider-contract.js";
@@ -496,8 +497,10 @@ export class AgentToolRunner {
         let parsedProviderId: string | null;
         let argv: string[] = [];
         let usage: UsageCapture | null = null;
+        let parsedSource: ResponseSource | undefined;
+        let exitCode: number | null = null;
         try {
-          [responseText, parsedProviderId, invokeError, argv, usage, classification] = await this.runTurn(
+          [responseText, parsedProviderId, invokeError, argv, usage, classification, parsedSource, exitCode] = await this.runTurn(
             provider,
             model,
             workspacePath,
@@ -521,15 +524,26 @@ export class AgentToolRunner {
           argv,
         };
         if (usage !== null) turnDetails.usage = usage;
-        eventReporter.emit(
-          invokeError === null ? "provider.turn_completed" : "provider.turn_failed",
-          invokeError === null ? "completed" : invokeError,
-          turnDetails,
-        );
         record.model = model;
         record.options = profile;
         record.workspace = workspacePath;
         outcome = null;
+        // A provider that does not attest the source of its text is trusted only on a clean exit.
+        const source: ResponseSource = parsedSource ?? (classification === null ? "model" : "none");
+        const exitOnly = classification?.origin === "exit-only";
+        // A non-zero exit alone does not decide the turn. A reply the model wrote still goes
+        // through every gate an exit-0 turn passes; the provider's own error text never does.
+        const candidate = exitOnly && source === "model" && responseText.trim() !== "";
+        const exitMessage = invokeError;
+        let anomalyReason: string | null = null;
+        if (candidate) {
+          invokeError = null;
+        } else if (exitOnly) {
+          anomalyReason = responseText.trim() === "" ? "no reply" : "reply is not model output";
+          invokeError = responseText.trim() === "" ? exitMessage : responseText;
+        }
+        // The turn event follows the provider verdict only; later gates never rename it.
+        let turnError = invokeError;
         if (invokeError === null) {
           try {
             outcome = resolveStageOutcome(responseText, {
@@ -553,13 +567,44 @@ export class AgentToolRunner {
             invokeError = `Completion outputs missing or empty: ${missing.join(", ")}.`;
           }
         }
+        if (candidate && invokeError !== null) {
+          // Rejected: the error is the model text itself, the failed gate is the recorded reason.
+          anomalyReason = invokeError;
+          invokeError = responseText;
+          turnError = invokeError;
+        }
+        eventReporter.emit(
+          turnError === null ? "provider.turn_completed" : "provider.turn_failed",
+          turnError === null ? "completed" : turnError,
+          turnDetails,
+        );
+        if (exitOnly) {
+          eventReporter.emit(
+            "provider.exit_anomaly",
+            invokeError === null || anomalyReason === null
+              ? `exit ${exitCode} with a usable reply; accepted`
+              : `exit ${exitCode}; rejected: ${anomalyReason}`,
+            {
+              turn,
+              provider: eventReporter.provider,
+              exit_code: exitCode,
+              signal: null,
+              origin: "exit-only",
+              accepted: anomalyReason === null,
+              reason: anomalyReason,
+            },
+          );
+        }
         const needsVerify =
           verifyCommands.length > 0 && invokeError === null && outcome?.status === "complete";
         record.status = needsVerify ? "running" : invokeError === null && questionError === null ? "completed" : "failed";
-        // Only a real model reply belongs in the conversation. A provider that never
-        // produced output, or that failed with a classified error, leaves this turn
-        // absent, so a resume cannot replay an error as if the model had said it.
-        const modelResponded = responseText !== "" && classification === null;
+        // Only a real model reply belongs in the conversation. Error text, and the reply of a
+        // turn the provider itself reported as failed, stay out, so a resume cannot replay
+        // them as if the model had said them.
+        const modelResponded =
+          responseText !== "" && source === "model" && (classification === null || exitOnly);
+        // An accepted turn is no longer a failure: nothing downstream may see its classification.
+        if (exitOnly && anomalyReason === null) classification = null;
         if (modelResponded) record.history.push({ role: "assistant", content: responseText });
         store.save(record, context);
         if (modelResponded) {
@@ -826,7 +871,18 @@ export class AgentToolRunner {
     store: SessionStore,
     context: ExecutionContext,
     turn: number,
-  ): Promise<[string, string | null, string | null, string[], UsageCapture | null, FailureClassification | null]> {
+  ): Promise<
+    [
+      string,
+      string | null,
+      string | null,
+      string[],
+      UsageCapture | null,
+      FailureClassification | null,
+      ResponseSource | undefined,
+      number | null,
+    ]
+  > {
     const tmp = mkdtempSync(path.join(tmpdir(), "migent_"));
     try {
       const promptFile = path.join(tmp, "prompt.txt");
@@ -904,8 +960,12 @@ export class AgentToolRunner {
           }
           const event = provider.parseProgressEvent?.(line);
           if (!isRecord(event) || typeof event.event !== "string") return;
+          // The runner alone decides whether a turn failed. A protocol-level failure the CLI
+          // announces mid-stream stays visible as a diagnostic, never as a second verdict.
           eventReporter.emit(
-            event.event,
+            event.event === "provider.turn_failed" || event.event === "provider.turn_completed"
+              ? "provider.error"
+              : event.event,
             typeof event.summary === "string" ? event.summary : null,
             isRecord(event.details) ? event.details : null,
           );
@@ -921,7 +981,7 @@ export class AgentToolRunner {
       });
       const { stdout, error: executorError, exitCode, failure } = result;
       if (failure) store.saveDiagnostics(context, diagnosticsPayload(failure, turn));
-      const [responseText, parsedProviderId] = provider.parseResponse(stdout, lastMessageFile);
+      const [responseText, parsedProviderId, parsedSource] = provider.parseResponse(stdout, lastMessageFile);
       if (parsedProviderId) reportMismatch(parsedProviderId);
       const classification = classifyFinishedProcess(provider, stdout, exitCode, executorError);
       let invokeError = executorError;
@@ -935,7 +995,7 @@ export class AgentToolRunner {
           usage = null;
         }
       }
-      return [responseText, parsedProviderId, invokeError, spec.argv, usage, classification];
+      return [responseText, parsedProviderId, invokeError, spec.argv, usage, classification, parsedSource, exitCode];
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -976,9 +1036,14 @@ function classifyFinishedProcess(
   exitCode: number | null,
   executorError: string | null,
 ): FailureClassification | null {
-  if (exitCode === null) return { kind: "provider", message: executorError ?? "" };
-  if (provider.classifyFailure) return provider.classifyFailure(stdout, exitCode);
-  if (exitCode !== 0) return { kind: "provider", message: `CLI exited with code ${exitCode}.` };
+  if (exitCode === null) return { kind: "provider", origin: "start", message: executorError ?? "" };
+  if (provider.classifyFailure) {
+    const classified = provider.classifyFailure(stdout, exitCode);
+    // Signal death (negative, or the shell's 128 + signal) is not a normal exit: its reply never counts.
+    const signalled = exitCode < 0 || (exitCode > 128 && exitCode <= 128 + 64);
+    return classified !== null && signalled ? { ...classified, origin: "start" } : classified;
+  }
+  if (exitCode !== 0) return { kind: "provider", origin: "exit-only", message: `CLI exited with code ${exitCode}.` };
   return null;
 }
 

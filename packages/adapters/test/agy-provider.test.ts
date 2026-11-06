@@ -78,6 +78,7 @@ test("reports a failed result", () => {
   expect(provider.parseResponse(stream(failed), "/tmp/unused")).toEqual([
     "invalid model selection",
     null,
+    "error",
   ]);
   expect(provider.parseProgressEvent(JSON.stringify(failed))).toEqual({
     event: "provider.turn_failed",

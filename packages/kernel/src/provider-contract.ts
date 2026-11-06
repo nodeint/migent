@@ -64,8 +64,22 @@ export interface TurnUsage {
   cost_usd: number | null;
 }
 
+/**
+ * Where a failure was observed. `provider-error`: the CLI protocol reported an error (an error event,
+ * `is_error`, a failed result). `exit-only`: a non-zero exit with no reported error. `start`: no usable
+ * exit code at all (spawn failure, an unpassable argument, signal death).
+ */
+export type FailureOrigin = "provider-error" | "exit-only" | "start";
+
+/**
+ * What the reply text of one run is. `model`: assistant output. `error`: text from an error payload or
+ * unparsed stdout. `none`: no text.
+ */
+export type ResponseSource = "model" | "error" | "none";
+
 export interface QuotaClassification {
   kind: "quota";
+  origin: FailureOrigin;
   message: string;
   /** UTC ISO instant, or null when the provider did not name one. */
   resetAt: string | null;
@@ -74,6 +88,7 @@ export interface QuotaClassification {
 
 export interface ProviderClassification {
   kind: "provider";
+  origin: FailureOrigin;
   message: string;
 }
 
@@ -98,7 +113,11 @@ export interface Provider extends ProviderInfo {
   /** The session identity one output line carries, if any. */
   sessionIdFromLine?(line: string): string | null;
   buildCommand(input: BuildCommandInput): CommandSpec;
-  parseResponse(stdout: string, lastMessageFile: string): [string, string | null];
+  /**
+   * `[text, session id, source]`. A provider that omits `source` cannot attest where its text came from,
+   * so the runner never accepts a failed turn on its reply.
+   */
+  parseResponse(stdout: string, lastMessageFile: string): [string, string | null, ResponseSource?];
   /** Classify one finished process. Absent means the runner uses its fallback. */
   classifyFailure?(stdout: string, exitCode: number): FailureClassification | null;
   parseProgressEvent?(line: string): Record<string, unknown> | null;
@@ -138,7 +157,7 @@ export class CodexProvider implements Provider {
     throw new Error("codex provider is not available in the kernel.");
   }
 
-  parseResponse(): [string, string | null] {
+  parseResponse(): [string, string | null, ResponseSource?] {
     throw new Error("codex provider is not available in the kernel.");
   }
 }
@@ -171,7 +190,7 @@ export class GrokProvider implements Provider {
     throw new Error("grok provider is not available in the kernel.");
   }
 
-  parseResponse(): [string, string | null] {
+  parseResponse(): [string, string | null, ResponseSource?] {
     throw new Error("grok provider is not available in the kernel.");
   }
 }

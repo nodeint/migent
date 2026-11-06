@@ -6,6 +6,8 @@ export type {
   BuildCommandInput,
   Provider,
   FailureClassification,
+  FailureOrigin,
+  ResponseSource,
   ProviderClassification,
   QuotaClassification,
   UsageCapture,

@@ -65,8 +65,12 @@ how to encode these inputs for its CLI. The runner launches the process.
 and delegates to the client. A provider can apply its defaults before delegation.
 Keep argument boundaries in the argv array; do not construct a shell command.
 
-`parseRun(stdout, lastMessageFile)` returns final text and a session ID.
-`parseResponse()` exposes that result to the runner as a tuple. Clients may read
+`parseRun(stdout, lastMessageFile)` returns final text, a session ID, and a
+`source` describing the text: `model` (assistant output, including a last-message
+file), `error` (an error payload, or raw stdout when nothing parsed as protocol
+events), or `none`. Raw stdout is never `model`. `parseResponse()` exposes that
+result to the runner as a `[text, sessionId, source]` tuple; a provider that
+omits `source` cannot attest its text, so a failed turn is never accepted on it. Clients may read
 the last-message file when their protocol uses it. Progress is separate:
 `createEventParser()` returns a per-run function that consumes output lines and
 returns a normalized event or null. Stateful parsers must not leak state across runs.
@@ -181,8 +185,16 @@ must retain responsibility for that mapping and encoding.
 ## Failures and usage
 
 `extractFailure(stdout, exitCode)` returns native failure facts or null for a
-successful run. A nonzero exit must produce a failure. A protocol can identify
-rate limits with an optional reset time and window. `ProviderBase.classifyFailure()`
+successful run. A nonzero exit must produce a failure fact, which the runner may
+still accept (see below). Every failure carries an `origin`: `provider-error`
+when the CLI protocol reported an error (an error event, `is_error`, a failed
+result), even if model text exists too; `exit-only` for a non-zero exit with no
+reported error. The runner adds `start` when there is no usable exit code or the
+process died from a signal. Only `exit-only` can be accepted: when its reply has
+`source: model` and passes the checks an exit-0 reply passes, the turn completes
+and Migent records `provider.exit_anomaly`. Never derive a rate limit from model
+text; only the protocol or an error payload may state one. A protocol can
+identify rate limits with an optional reset time and window. `ProviderBase.classifyFailure()`
 turns those facts into `quota` or `provider` failures; it does not infer a reset
 time absent from the CLI protocol. Runner process-start diagnostics are separate
 from failures reported by a running CLI; see [Diagnostics](diagnostics.md).

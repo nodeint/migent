@@ -111,25 +111,34 @@ test("a later thought segment does not displace a status header segment", () => 
 
 test("parseResponse falls back to the error string, then to raw stdout", () => {
   const provider = new OpencodeProvider();
-  expect(provider.parseResponse(fixture("error-exit0.jsonl"), "")).toEqual(["Invalid API key", "ses_er"]);
+  expect(provider.parseResponse(fixture("error-exit0.jsonl"), "")).toEqual(["Invalid API key", "ses_er", "error"]);
   const typeOnly = stream({ type: "error", sessionID: "s", error: { type: "provider.auth" } });
-  expect(provider.parseResponse(typeOnly, "")).toEqual(["provider.auth", "s"]);
-  expect(provider.parseResponse(stream({ type: "error" }), "")).toEqual(["opencode reported an error.", null]);
-  expect(provider.parseResponse(stream({ type: "step_start", sessionID: "s" }), "")).toEqual(["", "s"]);
-  expect(provider.parseResponse("  plain output \n", "")).toEqual(["plain output", null]);
+  expect(provider.parseResponse(typeOnly, "")).toEqual(["provider.auth", "s", "error"]);
+  expect(provider.parseResponse(stream({ type: "error" }), "")).toEqual(["opencode reported an error.", null, "error"]);
+  expect(provider.parseResponse(stream({ type: "step_start", sessionID: "s" }), "")).toEqual(["", "s", "none"]);
+  expect(provider.parseResponse("  plain output \n", "")).toEqual(["plain output", null, "error"]);
 });
 
 test("classifyFailure treats any error event as a provider failure", () => {
   const provider = new OpencodeProvider();
   expect(provider.classifyFailure(fixture("error-exit0.jsonl"), 0)).toEqual({
     kind: "provider",
+    origin: "provider-error",
     message: "Invalid API key",
   });
   expect(provider.classifyFailure(fixture("error-exit0.jsonl"), 1)?.kind).toBe("provider");
-  expect(provider.classifyFailure("", 1)).toEqual({ kind: "provider", message: "CLI exited with code 1." });
+  expect(provider.classifyFailure("", 1)).toEqual({
+    kind: "provider",
+    origin: "exit-only",
+    message: "CLI exited with code 1.",
+  });
   expect(provider.classifyFailure(fixture("success.jsonl"), 0)).toBeNull();
   const twice = stream({ type: "error", message: "first" }, { type: "error", message: "second" });
-  expect(provider.classifyFailure(twice, 0)).toEqual({ kind: "provider", message: "second" });
+  expect(provider.classifyFailure(twice, 0)).toEqual({
+    kind: "provider",
+    origin: "provider-error",
+    message: "second",
+  });
 });
 
 test("parseProgressEvent maps tool statuses", () => {

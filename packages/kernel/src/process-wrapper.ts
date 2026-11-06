@@ -2,7 +2,7 @@ import { type ChildProcess, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { unlinkSync } from "node:fs";
 import { createServer, type Server } from "node:net";
-import { tmpdir } from "node:os";
+import { constants as osConstants, tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 // `.ts` so `node process-wrapper.ts` resolves it from source; tsc rewrites it to `.js`.
@@ -246,7 +246,9 @@ async function main(argv: string[]): Promise<void> {
     started.on("exit", (code, signal) => {
       if (stopping) return;
       debug(`provider exit code=${code} signal=${signal}`);
-      exit(signal ? 1 : (code ?? 1));
+      // A signal death keeps its identity as the shell's 128 + signal, so the owner can tell it from an exit.
+      const number = signal ? osConstants.signals[signal] : undefined;
+      exit(signal ? 128 + (number ?? 0) : (code ?? 1));
     });
   });
   process.send({ type: WRAPPER_READY });

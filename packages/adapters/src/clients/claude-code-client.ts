@@ -192,6 +192,7 @@ export class ClaudeCodeClient implements CliClient {
     let sessionId: string | null = null;
     let lastText: string | null = null;
     let resultText: string | null = null;
+    let resultIsError = false;
     let sawEvent = false;
     for (const rawLine of stdout.split(/\r\n|\n|\r/)) {
       const payload = parseJsonObject(rawLine);
@@ -206,16 +207,19 @@ export class ClaudeCodeClient implements CliClient {
       } else if (eventType === "result") {
         if (payload.is_error === true) {
           resultText = claudeResultError(payload);
+          resultIsError = true;
         } else {
           const result = payload.result;
           if (typeof result === "string" && result.trim()) resultText = result.trim();
+          resultIsError = false;
         }
       }
     }
-    if (resultText !== null) return { text: resultText, sessionId };
-    if (lastText !== null) return { text: lastText, sessionId };
-    if (sawEvent) return { text: "", sessionId };
-    return { text: stdout.trim(), sessionId: null };
+    if (resultText !== null) return { text: resultText, sessionId, source: resultIsError ? "error" : "model" };
+    if (lastText !== null) return { text: lastText, sessionId, source: "model" };
+    if (sawEvent) return { text: "", sessionId, source: "none" };
+    const raw = stdout.trim();
+    return { text: raw, sessionId: null, source: raw === "" ? "none" : "error" };
   }
 
   parseModels(stdout: string): ModelCatalog {
@@ -320,9 +324,10 @@ export class ClaudeCodeClient implements CliClient {
       }
     }
     if (rateLimit !== null) {
-      return { message: human || providerMessage, exitCode, rateLimit };
+      return { origin: "provider-error", message: human || providerMessage, exitCode, rateLimit };
     }
-    if (exitCode !== 0 || sawError) return { message: providerMessage, exitCode };
+    if (sawError) return { origin: "provider-error", message: providerMessage, exitCode };
+    if (exitCode !== 0) return { origin: "exit-only", message: providerMessage, exitCode };
     return null;
   }
 

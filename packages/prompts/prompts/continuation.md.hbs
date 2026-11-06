@@ -16,4 +16,8 @@ Read these responses and use their decision and feedback when working on this st
 The previous attempt of this stage ended blocked. The blocker was handled outside this session. Continue this stage.
 {{#if blocked.blocker}}
 - Blocker: {{blocked.blocker}}{{/if}}{{#if blocked.response}}
-- Response: `{{blocked.response}}`{{/if}}{{/if}}
+- Response: `{{blocked.response}}`{{/if}}{{/if}}{{#if failed}}
+
+## Previous attempt
+
+The previous attempt of this stage ended abnormally: the provider process failed before the stage was accepted. Its response is `{{failed.response}}`. Re-confirm the state of the artifacts and the workspace before redoing any work.{{/if}}

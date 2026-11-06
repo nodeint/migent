@@ -224,10 +224,11 @@ export class GrokClient implements CliClient {
       }
     }
     const text = textWithStatusHeader(segments);
-    if (text) return { text, sessionId };
-    if (errorMessage) return { text: errorMessage, sessionId };
-    if (sawEvent) return { text: "", sessionId };
-    return { text: stdout.trim(), sessionId: null };
+    if (text) return { text, sessionId, source: "model" };
+    if (errorMessage) return { text: errorMessage, sessionId, source: "error" };
+    if (sawEvent) return { text: "", sessionId, source: "none" };
+    const raw = stdout.trim();
+    return { text: raw, sessionId: null, source: raw === "" ? "none" : "error" };
   }
 
   parseModels(stdout: string): ModelCatalog {
@@ -294,8 +295,16 @@ export class GrokClient implements CliClient {
 
   extractFailure(stdout: string, exitCode: number): RawFailure | null {
     if (exitCode === 0) return null;
+    let errorMessage: string | null = null;
+    for (const rawLine of stdout.split(/\r\n|\n|\r/)) {
+      const payload = parseJsonObject(rawLine);
+      if (payload?.type !== "error") continue;
+      const message = payload.message;
+      errorMessage = typeof message === "string" && message ? message : (errorMessage ?? "grok reported an error.");
+    }
+    if (errorMessage !== null) return { origin: "provider-error", message: errorMessage.trim() || null, exitCode };
     const text = this.parseRun(stdout, "").text.trim();
-    return { message: text || null, exitCode };
+    return { origin: "exit-only", message: text || null, exitCode };
   }
 
   captureUsage(stdout: string): UsageCapture | null {

@@ -233,6 +233,7 @@ export class AgyClient implements CliClient {
     void lastMessageFile;
     let sessionId: string | null = null;
     let text: string | null = null;
+    let source: CliRunOutput["source"] = "none";
     let sawEvent = false;
     for (const rawLine of stdout.split(/\r\n|\n|\r/)) {
       const payload = parseJsonObject(rawLine);
@@ -247,13 +248,16 @@ export class AgyClient implements CliClient {
       if (result.status === "SUCCESS") {
         const response = result.response;
         text = typeof response === "string" ? response.trim() : "";
+        source = text === "" ? "none" : "model";
       } else {
         text = failureText(result);
+        source = "error";
       }
     }
-    if (text !== null) return { text, sessionId };
-    if (sawEvent) return { text: "", sessionId };
-    return { text: stdout.trim(), sessionId: null };
+    if (text !== null) return { text, sessionId, source };
+    if (sawEvent) return { text: "", sessionId, source: "none" };
+    const raw = stdout.trim();
+    return { text: raw, sessionId: null, source: raw === "" ? "none" : "error" };
   }
 
   parseModels(stdout: string): ModelCatalog {
@@ -322,7 +326,14 @@ export class AgyClient implements CliClient {
   extractFailure(stdout: string, exitCode: number): RawFailure | null {
     if (exitCode === 0) return null;
     const text = this.parseRun(stdout, "").text.trim();
-    return { message: text || null, exitCode };
+    // A non-SUCCESS result is the CLI's own error report; anything else is a bare exit.
+    let reported = false;
+    for (const rawLine of stdout.split(/\r\n|\n|\r/)) {
+      const payload = parseJsonObject(rawLine);
+      const result = payload === null ? null : resultBody(payload);
+      if (result !== null && result.status !== "SUCCESS") reported = true;
+    }
+    return { origin: reported ? "provider-error" : "exit-only", message: text || null, exitCode };
   }
 
   captureUsage(stdout: string): UsageCapture | null {

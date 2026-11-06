@@ -486,6 +486,16 @@ reply as the new attempt's prompt body and does not repeat the blocker. The
 earlier execution stays blocked. A cancelled session is resumed
 on that same execution. `completed` sessions are not resumed.
 
+A provider process that exits non-zero does not by itself fail a stage. If the
+provider reported no error and its reply passes the checks an exit-0 reply must
+pass (a parsable outcome, the stage artifact, completion outputs), the turn is
+accepted and then follows the normal path: an unusable question file still gets
+its single correction turn, and `verify` commands still run and repair as usual.
+See [Sessions](sessions.md) for the `provider.exit_anomaly` event. When a stage
+is continued after an attempt that failed this way and left a `response.md`, the
+new prompt references that file and says the attempt ended abnormally, so the
+agent re-confirms the artifacts and workspace before redoing work.
+
 If the stage declares decisions, a completed response must include one of their
 names in the `decision` header. The decision instructions are included on each
 turn, including resume, reply, and repair after verification fails.

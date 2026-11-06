@@ -86,6 +86,7 @@ test("reports a failed result", () => {
   expect(provider.parseResponse(stream(failed), "/tmp/unused")).toEqual([
     "API overloaded",
     "sess-3",
+    "error",
   ]);
   expect(provider.parseProgressEvent(JSON.stringify(failed))).toEqual({
     event: "provider.turn_failed",

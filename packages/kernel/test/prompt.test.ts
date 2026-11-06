@@ -375,6 +375,24 @@ test("a blocked attempt is named in the next prompt", () => {
   expect(prompt).toContain("handled outside this session");
 });
 
+test("AC6: a continue prompt after an abnormal attempt points at its reply", () => {
+  const root = tempDir("migent-prompt-");
+  const artifacts = path.join(root, "exec", "artifacts");
+  mkdirSync(artifacts, { recursive: true });
+  const response = path.join(path.dirname(artifacts), "response.md");
+  writeFileSync(response, "I stopped half way", "utf8");
+  const input = {
+    workflow: workflowFile("plan-implement"),
+    stageId: "implement",
+    workspace: root,
+  };
+  const prompt = buildStageResumePrompt({ ...input, snapshots: [snapshot("implement", 1, artifacts, { status: "failed" })] });
+  expect(prompt).toContain("ended abnormally");
+  expect(prompt).toContain(resolved(response));
+  const none = buildStageResumePrompt({ ...input, snapshots: [{ ...snapshot("implement", 1, artifacts, { status: "failed" }), failureReason: "verify_exhausted" }] });
+  expect(none).not.toContain("ended abnormally");
+});
+
 test("a stage reply is only the reply text", () => {
   expect(buildStageReplyPrompt("use docs/api.yaml")).toBe("## Human reply\n\nuse docs/api.yaml");
 });

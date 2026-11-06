@@ -19,6 +19,7 @@ test("claude quota uses the rate limit window and ignores a later unified window
   const failure = new ClaudeProvider().classifyFailure(QUOTA, 1);
   expect(failure).toEqual({
     kind: "quota",
+    origin: "provider-error",
     message: "You've hit your session limit · resets 12:30pm (Asia/Saigon)",
     resetAt: "2026-10-21T05:30:00.000Z",
     window: "five_hour",
@@ -47,6 +48,7 @@ test("opencode classifies an error event as provider, even at exit 0", () => {
   const provider = new OpencodeProvider();
   expect(provider.classifyFailure('{"type":"error","message":"nope"}', 0)).toEqual({
     kind: "provider",
+    origin: "provider-error",
     message: "nope",
   });
   expect(provider.classifyFailure('{"type":"step_start"}', 0)).toBeNull();
@@ -58,6 +60,7 @@ test("opencode classifies a usage quota error as quota with its reset instant", 
     "You have exceeded the 5-hour usage quota. It will reset at 2026-10-22 18:43:08 +0800 CST. Request id: 1";
   expect(new OpencodeProvider().classifyFailure(JSON.stringify({ type: "error", message }), 1)).toEqual({
     kind: "quota",
+    origin: "provider-error",
     message,
     resetAt: "2026-10-22T10:43:08.000Z",
     window: "5h",
