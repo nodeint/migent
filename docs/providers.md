@@ -34,9 +34,10 @@ roles:
 ```
 
 Use provider/model IDs and option values supported by your installed CLIs.
-`migent provider list` lists available choices; `migent doctor` checks the
-configuration. The installed skill's `references/schema-config.yaml` lists
-configuration fields (`migent skill path` locates the bundled skill).
+`migent get models` lists each client's model IDs, `migent get efforts` lists the
+thinking levels per model, and `migent doctor` checks the configuration. The
+installed skill's `references/schema-config.yaml` lists configuration fields
+(`migent skill path` locates the bundled skill).
 
 `roles.<name>.responsibilities` is an optional list included before stage
 instructions in every prompt for that role. A standalone role run includes

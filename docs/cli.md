@@ -293,27 +293,69 @@ migent get workflow --session <id> -o yaml
 migent get roles | migent get role <name>
 migent get agents | migent get agent <name>
 migent get config -o json
+
+migent get providers | migent get provider <name>
+migent get clients | migent get client <id>
+migent get models [--client <id>]
+migent get model <id> [--client <id>]
+migent get options [--client <id>]
+migent get options --native [--client <id>]
+migent get option <name> [--client <id>] [--native]
+migent get efforts [--client <id>]
+migent get effort <model> [--client <id>]
 ```
 
-`get` looks up what the project defines without reading and merging YAML by
-hand. It is read-only: no writes, no session lock, no subprocesses. Types are
-`workflow`, `role`, `agent`, and `config` (plural forms and `wf` also work).
+`get` looks up what the project defines or what this machine can run without
+reading and merging YAML by hand. It is read-only: no writes and no session
+lock. Plural forms and `wf` also work.
+
+Project types `workflow`, `role`, `agent`, and `config` read `.migent/`.
 `agents` lists the agents the project names (name, provider, model, client, and
 whether `config.local.yaml` sets it); `roles` shows each role's agent and
-description; `provider list` shows what this machine can run.
+description; `workflows` lists the files in `.migent/workflows/`.
 
-- Without a name, `workflows`, `roles`, and `agents` print a table; a name prints
-  that resource as YAML. `-o json` prints an array for a list and an object for
-  one resource; `-o yaml` prints the same view as YAML; `-o name` prints one bare
-  name per line (not valid for `config`). `--json` is the same as `-o json`.
+Machine types `provider`, `client`, `model`, `option`, and `effort` work
+outside a project:
+
+- `providers` lists registered providers with `default_client` and
+  `requires_client`. `clients` lists registered CLI clients with `command`,
+  `available`, `path`, `effort_option`, and `problems` that hold PATH findings
+  only. Neither runs a subprocess, and a missing client is a row with
+  `available: false`, not an error.
+- `models` lists the model IDs each client's CLI reports, with the client's
+  default model. `options` lists Migent's configured option metadata per client;
+  `--native` lists the CLI's parsed headless help catalog instead. `efforts`
+  lists the effort values per client and model under the client's native option
+  name; a client without an effort option contributes no rows.
+- `models`, `options --native`, and `efforts` are the only `get` types that run
+  a subprocess, because they ask the client's own CLI for catalog data. A client
+  that is not on PATH is skipped without spawning and prints
+  `warning: <client>: <command> is not on PATH; skipped.` A failed discovery
+  prints its own `warning: <client>: <error>`, and the other clients still
+  print. stdout carries only the rendered rows.
+- `--client <id>` limits `models`, `options`, and `efforts` to one client and is
+  a usage error for the other types; an unknown id exits 2 and lists the valid
+  ids. `--native` is valid only for `options`.
+
+Models, options, and efforts are keyed by CLI client. A singular lookup without
+`--client` searches every candidate client and never picks one silently: no
+match exits 2 and names the clients searched, skipped, or failed; two or more
+matches exit 2 and ask for `--client`. `get option effort` without `--client`
+is usually ambiguous. `-o name` prints bare names, so a name shared by clients
+appears once per client.
+
+- Without a name, a list type prints a table; a name prints that resource as
+  YAML. `-o json` prints an array for a list and an object for one resource;
+  `-o yaml` prints the same view as YAML; `-o name` prints one bare name per
+  line (not valid for `config`). `--json` is the same as `-o json`.
 - Every view has `kind` and `name`, snake_case fields, `null` for absent values,
-  and `problems` that report an unresolved agent or a broken file instead of
-  aborting. `doctor` remains the validator.
+  and `problems` that report an unresolved agent, a broken file, or a missing
+  client instead of aborting. `doctor` remains the validator.
 - A workflow view gives each stage its `depends_on`, `decisions`, and resolved
   `target` (`provider`, `model`, `client`, `options`). With `--session <id>` the
   `source.kind` is `draft`, `frozen` (targets are the pinned ones), or `live`.
-- Exit 0 on success, including an empty list. Exit 2 on a usage error, an unknown
-  or not-found name, or a configuration error.
+- Exit 0 on success, including an empty list or a discovery warning. Exit 2 on a
+  usage error, an unknown or not-found name, or a configuration error.
 
 `get config` carries the same merged config as `migent config --json` and is not
 redacted: `.migent/` config is not a secret store.
@@ -435,16 +477,13 @@ migent doctor --session <id> --json
 
 ## Providers
 
-```bash
-migent provider list
-migent provider list --json
-```
+`migent provider list` was removed. Use `migent get providers`, `migent get
+clients`, `migent get models`, `migent get options`, or `migent get efforts`.
+The old command, including `--json`, exits 2 and names those replacements.
 
-`provider list` reports registered providers with a default CLI client, executable
-availability, model IDs, configured option metadata, and the native headless
-option catalog. It works without project configuration.
-
-For discovery behavior, JSON fields, error handling, and exit status, see
+`get models` lists the model IDs each CLI client reports and `get efforts`
+lists thinking levels per model, so the combined dump is no longer needed. For
+discovery behavior, JSON fields, error handling, and exit status, see
 [Adapters: Listing and JSON output](adpaters.md#listing-and-json-output).
 
 ## Workspace registry
