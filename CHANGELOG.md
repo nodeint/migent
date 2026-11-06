@@ -4,6 +4,7 @@
 
 ### Added
 
+- Exit-only provider anomalies (non-zero exit, no provider error) are now visible without opening executions: `metrics.json` counts `provider_exit_anomalies` and `provider_exit_anomalies_accepted` in `totals` and per execution, and `session show` / `session follow` print an `exit_anomaly` line per affected stage (`exit_anomalies` in JSON) that points to `diagnostics.json` (#73).
 - Every abnormal provider turn now leaves `diagnostics.json` (schema version 2): a non-zero exit even when stderr was empty, a provider-reported error at exit 0, and a non-zero exit accepted as a completed turn. It adds `agent_id`, `failure.origin`, `failure.exit_code`, `failure.signal`, `stderr` sizes with a `drain` state, a content-free `stream_summary` (event labels and counts; CLI clients gain an optional `eventLabel()`), and a `result_state` of what the turn left (reply, artifact, `response.md`) next to Migent's own check results and the provider-turn verdict. `execution.json` records `final_turn` for provider executions, and `failure.md` uses it to name the provider failure as the cause only when the diagnostics belong to the turn that ended the execution. `migent doctor --session` also shows origin, turn and verdict (#72).
 
 ### Fixed

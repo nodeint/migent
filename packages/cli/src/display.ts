@@ -179,6 +179,8 @@ export function printWatchSnapshot(snapshot: Record<string, unknown>): void {
       lines.push(["execution", value]);
     }
   }
+  const exitAnomalies = Array.isArray(snapshot.exit_anomalies) ? snapshot.exit_anomalies.filter(isRecord) : [];
+  for (const anomaly of exitAnomalies) lines.push(["exit_anomaly", formatExitAnomaly(anomaly)]);
   if (typeof snapshot.blocker === "string" && snapshot.blocker) lines.push(["blocked", snapshot.blocker]);
   const questions = Array.isArray(snapshot.questions) ? snapshot.questions.filter(isRecord) : [];
   for (const item of questions) lines.push(["question", formatQuestion(item)]);
@@ -266,4 +268,14 @@ export function printProviders(rows: readonly ProviderRow[]): void {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function formatExitAnomaly(anomaly: Record<string, unknown>): string {
+  const parts = [String(anomaly.stage_id ?? ""), String(anomaly.execution_id ?? "")];
+  if (typeof anomaly.turn === "number") parts.push(`turn ${anomaly.turn}`);
+  if (typeof anomaly.exit_code === "number") parts.push(`exit ${anomaly.exit_code}`);
+  parts.push(anomaly.accepted === true ? "accepted" : "rejected");
+  if (typeof anomaly.count === "number" && anomaly.count > 1) parts.push(`×${anomaly.count}`);
+  if (typeof anomaly.diagnostics === "string" && anomaly.diagnostics) parts.push(anomaly.diagnostics);
+  return parts.join(" · ");
 }

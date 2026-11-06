@@ -165,6 +165,9 @@ migent doctor --session <session-id> --json
 `session show` adds a `diagnostics:` line, a path relative to the session
 directory, when the file exists. It is a pointer only. The file also exists after
 an **accepted** exit-only turn, so a `completed` execution can have one.
+An exit-only turn also adds an `exit_anomaly` line (`exit_anomalies` in JSON), and
+`metrics.json` counts it under `provider_exit_anomalies`; see
+[CLI](cli.md#session-commands) and [Session metrics](session-metrics.md#provider-exit-anomalies).
 
 `doctor --session` adds a **Provider diagnostics** check when something was
 recorded. It prints the message, `kind`, `origin`, `phase`, `code`, the `turn`, the
