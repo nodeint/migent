@@ -4,10 +4,20 @@
 //   wrapper -> owner  {type: "ready"}   once the liveness endpoint is listening
 //   owner -> wrapper  {type: "start"}   after the owner has recorded the endpoint
 //   wrapper -> owner  {type: "failed"}  when the wrapper itself cannot go on
+//   wrapper -> owner  {type: "exited"}  the provider was ended by a signal; `signal` names it
 
 export const WRAPPER_READY = "ready";
 export const WRAPPER_START = "start";
 export const WRAPPER_FAILED = "failed";
+export const WRAPPER_EXITED = "exited";
+
+/** The signal that ended the provider, when the wrapper reported one. Unchecked shapes are ignored. */
+export function parseExitedSignal(message: unknown): string | null {
+  if (!message || typeof message !== "object") return null;
+  const value = message as Record<string, unknown>;
+  if (value.type !== WRAPPER_EXITED) return null;
+  return typeof value.signal === "string" && /^SIG[A-Z0-9]{1,12}$/.test(value.signal) ? value.signal : null;
+}
 
 /** The wrapper phase that failed. `ipc` can only ever reach the owner through stderr. */
 export type WrapperPhase = "argv" | "ipc" | "listen" | "spawn" | "runtime";

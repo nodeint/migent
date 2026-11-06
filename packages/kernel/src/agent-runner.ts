@@ -9,9 +9,15 @@ import {
   type NewSession,
   type UsageCapture,
 } from "./provider-contract.js";
-import { CancellationRequested, CommandExecutor, DEFAULT_TIMEOUT_SEC, type ExecutionFailure, type StopReason } from "./command-executor.js";
+import { CancellationRequested, CommandExecutor, DEFAULT_TIMEOUT_SEC, type ExecutionFailure, type ProcessFacts, type StopReason } from "./command-executor.js";
 import { DEFAULT_INTERRUPT_POLICY, type InterruptPolicy, type InterruptReport, interruptSession, isSettled } from "./provider-interrupt.js";
-import { KERNEL_VERSION } from "./package-version.js";
+import {
+  StreamSummarizer,
+  buildTurnDiagnostics,
+  observeTurn,
+  truncateText,
+  type Gates,
+} from "./turn-diagnostics.js";
 import { spawnProviderSync } from "./provider-spawn.js";
 import { buildVerifyRepairPrompt } from "./prompt.js";
 import { VERIFY_EXHAUSTED } from "./selection.js";
@@ -472,6 +478,11 @@ export class AgentToolRunner {
       if (reason !== null) fields.failure_reason = reason;
       return fields;
     };
+    // The last provider turn this execution ran; failure.md joins diagnostics.json to it.
+    const finalFields = (extra: Record<string, unknown> | null): Record<string, unknown> => ({
+      ...(extra ?? {}),
+      final_turn: turn,
+    });
     const outcomeFields = (): Record<string, unknown> | null => {
       if (failureReason === QUESTION_FILE_INVALID) {
         return { ...(extraFields() ?? {}), failure_reason: QUESTION_FILE_INVALID };
@@ -494,13 +505,9 @@ export class AgentToolRunner {
         // correction turn keeps the invalid file so the agent can repair it.
         if (!keepQuestionFile) rmSync(questionFile, { force: true });
         keepQuestionFile = false;
-        let parsedProviderId: string | null;
-        let argv: string[] = [];
-        let usage: UsageCapture | null = null;
-        let parsedSource: ResponseSource | undefined;
-        let exitCode: number | null = null;
+        let turnResult: TurnResult;
         try {
-          [responseText, parsedProviderId, invokeError, argv, usage, classification, parsedSource, exitCode] = await this.runTurn(
+          turnResult = await this.runTurn(
             provider,
             model,
             workspacePath,
@@ -516,8 +523,20 @@ export class AgentToolRunner {
         } catch (error) {
           return markCancelled(error);
         }
+        const { argv, usage, source: parsedSource, exitCode } = turnResult;
+        responseText = turnResult.responseText;
+        invokeError = turnResult.invokeError;
+        classification = turnResult.classification;
+        // An abnormal provider turn leaves a record whatever the gates decide: a failed start or
+        // exit, or a provider-reported error at exit 0. A timeout or an unpassable argument has neither.
+        const recordsTurn = turnResult.failure !== undefined || (exitCode === 0 && classification !== null);
+        const gates: Gates = {
+          outcome: { state: "not-evaluated" },
+          artifact: { state: "not-evaluated" },
+          completion_outputs: { state: "not-evaluated" },
+        };
 
-        record.agentId = parsedProviderId || record.agentId;
+        record.agentId = turnResult.providerId || record.agentId;
         const turnDetails: Record<string, unknown> = {
           turn,
           agent_id: record.agentId,
@@ -549,22 +568,37 @@ export class AgentToolRunner {
             outcome = resolveStageOutcome(responseText, {
               required: sessionId !== null, decisionValues, ask, questionFile,
             });
+            gates.outcome = { state: "passed", ...(outcome === null ? {} : { status: outcome.status }) };
           } catch (error) {
-            if (error instanceof QuestionFileError) questionError = error;
-            else if (error instanceof Error) invokeError = error.message;
-            else throw error;
+            if (error instanceof QuestionFileError) {
+              questionError = error;
+              gates.outcome = { state: "failed", reason: `question file unusable (${error.kind})` };
+            } else if (error instanceof Error) {
+              invokeError = error.message;
+              gates.outcome = { state: "failed", reason: truncateText(error.message) };
+            } else throw error;
           }
+        }
+        if (artifactName === null) gates.artifact = { state: "not-applicable" };
+        else if (gates.outcome.state !== "not-evaluated" && outcome?.status !== "complete") {
+          gates.artifact = { state: "not-applicable" };
         }
         if (invokeError === null && outcome?.status === "complete" && artifactName) {
           const artifactPath = path.join(context.artifactDirectory, artifactName);
           if (!nonemptyArtifact(artifactPath)) {
             invokeError = `Stage artifact missing or empty: ${artifactName}.`;
-          }
+            gates.artifact = { state: "failed", reason: invokeError };
+          } else gates.artifact = { state: "passed" };
         }
-        if (invokeError === null && outcome !== null && !isWorkflowV2(frozenDocument(context))) {
-          const missing = store.missingCompletionOutputs(context, outcome);
-          if (missing.length > 0) {
-            invokeError = `Completion outputs missing or empty: ${missing.join(", ")}.`;
+        if (invokeError === null && outcome !== null) {
+          if (isWorkflowV2(frozenDocument(context))) {
+            gates.completion_outputs = { state: "not-applicable" };
+          } else {
+            const missing = store.missingCompletionOutputs(context, outcome);
+            if (missing.length > 0) {
+              invokeError = `Completion outputs missing or empty: ${missing.join(", ")}.`;
+              gates.completion_outputs = { state: "failed", reason: invokeError };
+            } else gates.completion_outputs = { state: "passed" };
           }
         }
         if (candidate && invokeError !== null) {
@@ -603,6 +637,7 @@ export class AgentToolRunner {
         // them as if the model had said them.
         const modelResponded =
           responseText !== "" && source === "model" && (classification === null || exitOnly);
+        const recordedClassification = classification;
         // An accepted turn is no longer a failure: nothing downstream may see its classification.
         if (exitOnly && anomalyReason === null) classification = null;
         if (modelResponded) record.history.push({ role: "assistant", content: responseText });
@@ -614,6 +649,36 @@ export class AgentToolRunner {
         if (verifyCommands.length > 0 && outcome?.status === "complete") {
           store.saveTurnOutcome(context, turn, outcome);
         }
+        if (recordsTurn) {
+          // The only writer of diagnostics.json: once this turn's gates have run, before any verify or follow-up turn.
+          const accepted = exitOnly && anomalyReason === null;
+          const reason = exitOnly ? (anomalyReason === null ? null : truncateText(anomalyReason)) : truncateText(recordedClassification?.message ?? exitMessage ?? "provider failure");
+          const errors = recordedClassification?.origin === "provider-error" ? [recordedClassification.message] : [];
+          const stream = turnResult.summarizer.finish(
+            { bytes: turnResult.facts?.stdoutBytes ?? 0, lines: turnResult.facts?.stdoutLines ?? 0 },
+            errors,
+          );
+          store.saveDiagnostics(context, buildTurnDiagnostics({
+            turn,
+            agentId: record.agentId || null,
+            ...(turnResult.failure ? { failure: turnResult.failure } : {}),
+            ...(turnResult.facts ? { facts: turnResult.facts } : {}),
+            classification: recordedClassification,
+            stream,
+            resultState: {
+              observed: observeTurn({
+                source: parsedSource,
+                responseText,
+                artifactPath: artifactName ? path.join(context.artifactDirectory, artifactName) : null,
+                responseWritten: modelResponded,
+                conversationTurns: record.history.filter((item) => item.role === "assistant").length,
+              }),
+              gates,
+              turn_verdict: accepted ? "accepted" : "failed",
+              reason,
+            },
+          }));
+        }
         if (questionError !== null) {
           const next = this.questionRetry(questionError, questionCorrection, turn, state, eventReporter);
           if (next === null) {
@@ -622,7 +687,7 @@ export class AgentToolRunner {
             failureReason = QUESTION_FILE_INVALID;
             record.status = "failed";
             store.save(record, context);
-            store.saveExecution(context, record, "failed", invokeError, null, false, outcomeFields());
+            store.saveExecution(context, record, "failed", invokeError, null, false, finalFields(outcomeFields()));
             break;
           }
           ({ correction: questionCorrection, prompt: currentPrompt } = next);
@@ -633,7 +698,7 @@ export class AgentToolRunner {
           continue;
         }
         if (!needsVerify || outcome === null) {
-          store.saveExecution(context, record, record.status, invokeError, outcome, false, outcomeFields());
+          store.saveExecution(context, record, record.status, invokeError, outcome, false, finalFields(outcomeFields()));
           break;
         }
       }
@@ -645,7 +710,7 @@ export class AgentToolRunner {
           failureDetail = questionFailureMessage(questionError);
           record.status = "failed";
           store.save(record, context);
-          store.saveExecution(context, record, "failed", failureDetail, null, false, outcomeFields());
+          store.saveExecution(context, record, "failed", failureDetail, null, false, finalFields(outcomeFields()));
           break;
         }
         ({ correction: questionCorrection, prompt: currentPrompt } = next);
@@ -658,7 +723,7 @@ export class AgentToolRunner {
       if (invokeError !== null || outcome === null || outcome.status !== "complete" || verifyCommands.length === 0) {
         record.status = invokeError === null && outcome !== null ? "completed" : "failed";
         store.save(record, context);
-        store.saveExecution(context, record, record.status, invokeError, outcome, false, outcomeFields());
+        store.saveExecution(context, record, record.status, invokeError, outcome, false, finalFields(outcomeFields()));
         break;
       }
 
@@ -708,14 +773,14 @@ export class AgentToolRunner {
       if (result.infraError !== null) {
         record.status = "failed";
         store.save(record, context);
-        store.saveExecution(context, record, "failed", result.infraError, null, false, extraFields());
+        store.saveExecution(context, record, "failed", result.infraError, null, false, finalFields(extraFields()));
         break;
       }
       if (result.passed) {
         eventReporter.emit("verify.passed", "all commands passed", { turn, report: lastReport });
         record.status = "completed";
         store.save(record, context);
-        store.saveExecution(context, record, "completed", null, outcome, false, extraFields());
+        store.saveExecution(context, record, "completed", null, outcome, false, finalFields(extraFields()));
         store.publishVerifyReport(context, turn);
         break;
       }
@@ -741,7 +806,7 @@ export class AgentToolRunner {
           `Verify failed ${red} times.`,
           null,
           false,
-          extraFields(failureReason),
+          finalFields(extraFields(failureReason)),
         );
         outcome = null;
         break;
@@ -871,18 +936,7 @@ export class AgentToolRunner {
     store: SessionStore,
     context: ExecutionContext,
     turn: number,
-  ): Promise<
-    [
-      string,
-      string | null,
-      string | null,
-      string[],
-      UsageCapture | null,
-      FailureClassification | null,
-      ResponseSource | undefined,
-      number | null,
-    ]
-  > {
+  ): Promise<TurnResult> {
     const tmp = mkdtempSync(path.join(tmpdir(), "migent_"));
     try {
       const promptFile = path.join(tmp, "prompt.txt");
@@ -943,6 +997,7 @@ export class AgentToolRunner {
         }
         return attempted;
       };
+      const summarizer = new StreamSummarizer(provider.eventLabel !== undefined);
       const result = await this.executor.run(spec, workspace, {
         onDebug: debugStep,
         // Only a provider with a server-side interrupt gets hooks, and so the exit grace period.
@@ -953,6 +1008,7 @@ export class AgentToolRunner {
               onStopped: (reason: StopReason) => cleanup("after", reason),
             }),
         onOutput: (line) => {
+          summarizer.add(line, provider.eventLabel?.(line) ?? null);
           const reported = provider.sessionIdFromLine?.(line) ?? null;
           if (reported !== null && !knownIds.has(reported)) {
             knownIds.add(reported);
@@ -980,7 +1036,6 @@ export class AgentToolRunner {
         },
       });
       const { stdout, error: executorError, exitCode, failure } = result;
-      if (failure) store.saveDiagnostics(context, diagnosticsPayload(failure, turn));
       const [responseText, parsedProviderId, parsedSource] = provider.parseResponse(stdout, lastMessageFile);
       if (parsedProviderId) reportMismatch(parsedProviderId);
       const classification = classifyFinishedProcess(provider, stdout, exitCode, executorError);
@@ -995,39 +1050,38 @@ export class AgentToolRunner {
           usage = null;
         }
       }
-      return [responseText, parsedProviderId, invokeError, spec.argv, usage, classification, parsedSource, exitCode];
+      return {
+        responseText,
+        providerId: parsedProviderId,
+        invokeError,
+        argv: spec.argv,
+        usage,
+        classification,
+        source: parsedSource,
+        exitCode,
+        ...(failure ? { failure } : {}),
+        ...(result.process ? { facts: result.process } : {}),
+        summarizer,
+      };
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
   }
 }
 
-function diagnosticsPayload(failure: ExecutionFailure, turn: number): Record<string, unknown> {
-  return {
-    schema_version: 1,
-    turn,
-    recorded_at: failure.failedAt,
-    failure: {
-      kind: failure.kind,
-      phase: failure.phase,
-      code: failure.code,
-      errno: failure.errno,
-      syscall: failure.syscall,
-      path: failure.path,
-      message: failure.message,
-    },
-    stderr_tail: failure.stderrTail,
-    // Only the executable and the argument count: other tokens may carry secrets or prompt text.
-    command: { executable: failure.executable, argument_count: failure.argCount },
-    cwd: failure.cwd,
-    endpoint: failure.endpoint,
-    endpoint_length: Buffer.byteLength(failure.endpoint),
-    migent_version: KERNEL_VERSION,
-    node_version: process.version,
-    platform: process.platform,
-    arch: process.arch,
-    timings: { spawned_at: failure.spawnedAt, failed_at: failure.failedAt },
-  };
+/** What one provider process turn produced, for the turn loop. Internal. */
+interface TurnResult {
+  responseText: string;
+  providerId: string | null;
+  invokeError: string | null;
+  argv: string[];
+  usage: UsageCapture | null;
+  classification: FailureClassification | null;
+  source: ResponseSource | undefined;
+  exitCode: number | null;
+  failure?: ExecutionFailure;
+  facts?: ProcessFacts;
+  summarizer: StreamSummarizer;
 }
 
 function classifyFinishedProcess(

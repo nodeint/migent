@@ -30,3 +30,27 @@ test("reports the latest recorded diagnostics per stage as warnings", () => {
     rmSync(workspace, { recursive: true, force: true });
   }
 });
+
+test("shows the origin, turn and verdict so an accepted anomaly reads as accepted", () => {
+  const workspace = mkdtempSync(path.join(tmpdir(), "migent-diag-"));
+  try {
+    const dir = path.join(workspace, ".migent", "sessions", "s1", "executions", "e1");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, "execution.json"), JSON.stringify({ stage_id: "plan", execution_order: 1 }));
+    writeFileSync(
+      path.join(dir, "diagnostics.json"),
+      JSON.stringify({
+        turn: 2,
+        failure: { kind: "provider-exit", origin: "exit-only", message: "CLI exited with code 1." },
+        stderr_tail: "",
+        result_state: { turn_verdict: "accepted" },
+      }),
+    );
+    const [warning] = sessionDiagnosticsCheck(workspace, "s1").warnings;
+    expect(warning).toContain("origin=exit-only");
+    expect(warning).toContain("turn=2");
+    expect(warning).toContain("verdict=accepted");
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});

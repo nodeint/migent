@@ -2,7 +2,13 @@
 
 ## Unreleased
 
+### Added
+
+- Every abnormal provider turn now leaves `diagnostics.json` (schema version 2): a non-zero exit even when stderr was empty, a provider-reported error at exit 0, and a non-zero exit accepted as a completed turn. It adds `agent_id`, `failure.origin`, `failure.exit_code`, `failure.signal`, `stderr` sizes with a `drain` state, a content-free `stream_summary` (event labels and counts; CLI clients gain an optional `eventLabel()`), and a `result_state` of what the turn left (reply, artifact, `response.md`) next to Migent's own check results and the provider-turn verdict. `execution.json` records `final_turn` for provider executions, and `failure.md` uses it to name the provider failure as the cause only when the diagnostics belong to the turn that ended the execution. `migent doctor --session` also shows origin, turn and verdict (#72).
+
 ### Fixed
+
+- Stderr is read after the provider's pipes close, so lines written just before a non-zero exit are no longer lost (#72).
 
 - A provider process that exits non-zero without reporting an error no longer fails a stage whose reply passes the checks an exit-0 reply must pass. The turn is recorded `completed`, keeps `response.md`, and logs a `provider.exit_anomaly` event. Provider-reported errors, start failures and signal exits still fail, and a rejected turn's error is now the model's own text. A `continue` prompt after such a failed attempt references its reply (#71).
 

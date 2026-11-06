@@ -199,6 +199,18 @@ turns those facts into `quota` or `provider` failures; it does not infer a reset
 time absent from the CLI protocol. Runner process-start diagnostics are separate
 from failures reported by a running CLI; see [Diagnostics](diagnostics.md).
 
+A client may implement the optional `eventLabel(line)` capability. It returns a
+short label from the CLI's own vocabulary (`text`, `item.completed:agent_message`,
+`result:error`) for one output line, or `null` when the line is not an event.
+`ProviderBase.eventLabel()` exposes it. The runner counts labels into the
+`stream_summary` of `diagnostics.json`, so a client that omits it gets counts
+without labels. A label must come from a closed vocabulary the client lists (event and subtype
+names); `labelOf(value, allowed)` in `clients/json.ts` maps any other value to
+`other`, so a payload that merely looks like an identifier is never a label. The
+kernel additionally limits label length, characters and number of distinct labels.
+`extractFailure` also reports a protocol error at exit 0 (an error event, a failed
+result); a control-plane warning is not one.
+
 `captureUsage()` selects the CLI's usage payload and stores it as a raw capture.
 `readUsage()` translates it into nullable token and cost fields and identifies
 which fields are cumulative across the conversation. `normalizeUsage()` subtracts

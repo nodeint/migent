@@ -11,7 +11,7 @@ import type {
   UsageCapture,
 } from "../types.js";
 import { ModelCatalog } from "../catalog.js";
-import { compact, finite, isRecord, parseJsonObject, picked } from "./json.js";
+import { compact, finite, isRecord, labelOf, parseJsonObject, picked } from "./json.js";
 
 // `claude` has no models subcommand; the stream-json `initialize` control
 // request answers with the model list the CLI itself offers.
@@ -124,6 +124,10 @@ export function claudeResultError(payload: Record<string, unknown>): string | nu
   if (typeof subtype === "string" && subtype) return `claude failed: ${subtype}`;
   return null;
 }
+
+const CLAUDE_EVENT_TYPES: ReadonlySet<string> = new Set([
+  "system", "assistant", "user", "result", "rate_limit_event", "stream_event", "control_request", "control_response",
+]);
 
 export class ClaudeCodeClient implements CliClient {
   optionsCommand(): CommandSpec {
@@ -291,6 +295,20 @@ export class ClaudeCodeClient implements CliClient {
       }
       return null;
     };
+  }
+
+  eventLabel(line: string): string | null {
+    const payload = parseJsonObject(line);
+    if (payload === null) return null;
+    const type = labelOf(payload.type, CLAUDE_EVENT_TYPES);
+    if (type === null) return "other";
+    if (type === "result") return payload.is_error === true ? "result:error" : "result";
+    if (type === "assistant" || type === "user") {
+      const kinds = new Set(contentBlocks(payload).map((block) => block.type));
+      const kind = ["tool_use", "tool_result", "text", "thinking"].find((name) => kinds.has(name));
+      return kind === undefined ? type : `${type}:${kind}`;
+    }
+    return type;
   }
 
   extractFailure(stdout: string, exitCode: number): RawFailure | null {

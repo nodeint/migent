@@ -112,6 +112,8 @@ export interface Provider extends ProviderInfo {
   /** Classify one finished process. Absent means the runner uses its fallback. */
   classifyFailure?(stdout: string, exitCode: number): FailureClassification | null;
   parseProgressEvent?(line: string): Record<string, unknown> | null;
+  /** The client's short label for one output line, for the stream summary of a diagnostics record. */
+  eventLabel?(line: string): string | null;
   captureUsage?(stdout: string): UsageCapture | null;
   normalizeUsage?(current: UsageCapture, previous: UsageCapture | null): TurnUsage;
   versionCommand?(): string[];
@@ -184,6 +186,11 @@ export interface CliClient {
   parseVersion(stdout: string): string | null;
   /** One parser per run: it may keep state between lines. */
   createEventParser(): (line: string) => Record<string, unknown> | null;
+  /**
+   * A short label for one output line from this client's own vocabulary (for example `text` or
+   * `result:error`), or `null` when the line is not an event. Never a piece of the line's content.
+   */
+  eventLabel?(line: string): string | null;
   /** `null` means the run succeeded. A non-zero exit never yields `null`. */
   extractFailure(stdout: string, exitCode: number): RawFailure | null;
   /** The CLI's own usage figures, unmodified. */

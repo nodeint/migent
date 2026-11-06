@@ -80,7 +80,7 @@ function parseDecision(
   return decision;
 }
 
-function leadingHeaders(response: string): Map<string, string> {
+export function leadingHeaders(response: string): Map<string, string> {
   const headers = new Map<string, string>();
   for (const line of response.split(/\r\n|\n|\r/)) {
     if (line.trim() === "") break;

@@ -32,7 +32,7 @@ show use `session_id` for that session.
 └── executions/
     └── <order>-<stage-id>--attempt-<n>/
         ├── execution.json
-        ├── diagnostics.json              # only after a provider wrapper failure; see diagnostics.md
+        ├── diagnostics.json              # the latest abnormal provider turn; see diagnostics.md
         ├── debug.log                     # only when MIGENT_DEBUG is on
         ├── stream.jsonl                  # provider item traces and provider heartbeats
         ├── conversation.json             # provider conversation checkpoint
@@ -114,8 +114,11 @@ The session-level files have distinct purposes:
 Each execution directory contains:
 
 - `execution.json`: execution identity, order, stage and attempt, provider and
-  model, lifecycle status, timestamps, and the parsed stage outcome. A stage
-  with no role records `kind: verify`, and `provider` and `model` are null.
+  model, lifecycle status, timestamps, and the parsed stage outcome. A provider
+  execution also records `final_turn`, the last provider turn it ran, on every
+  terminal save; `failure.md` uses it to tell whether `diagnostics.json` explains
+  the failure. An execution written by an older version has no `final_turn`. A
+  stage with no role records `kind: verify`, and `provider` and `model` are null.
 - `turns/NN/`: written when a stage runs `verify`. A role stage holds
   `response.md`, `outcome.json` for a complete turn, `verify.md`, and
   `commands/MM.log`. A stage with no role writes `turns/01/verify.md` and
@@ -156,8 +159,11 @@ Each execution directory contains:
   provider error, a start failure, or a signal exit is never accepted.
 - `failure.md`: written when the execution ends `failed`. It is a readable
   report with the stage, attempt, provider, `failure_reason`, the error message,
-  and pointers to `diagnostics.json` or the verify report. Structured data stays
-  in `execution.json` (`error`, `failure_reason`) and `diagnostics.json`.
+  and pointers to `diagnostics.json` or the verify report. When `diagnostics.json`
+  describes the execution's `final_turn` and that turn failed, the report states
+  it as the cause; an earlier or accepted turn is labelled as such. Structured
+  data stays in `execution.json` (`error`, `failure_reason`, `final_turn`) and
+  `diagnostics.json`.
 - `artifacts/`: files written by that stage. These are per-attempt working
   artifacts; only explicitly configured outputs are copied to the
   session-level `outputs/` directory.

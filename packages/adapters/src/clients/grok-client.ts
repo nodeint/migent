@@ -11,7 +11,7 @@ import type {
   UsageCapture,
 } from "../types.js";
 import { ModelCatalog } from "../catalog.js";
-import { compact, finite, isRecord, parseJsonObject, picked } from "./json.js";
+import { compact, finite, isRecord, labelOf, parseJsonObject, picked } from "./json.js";
 
 const PERMISSION_MODES = [
   "default",
@@ -140,6 +140,10 @@ function toolDetails(payload: Record<string, unknown>): Record<string, unknown> 
   if (typeof toolName === "string" && toolName) return { item_type: toolName };
   return {};
 }
+
+const GROK_EVENT_TYPES: ReadonlySet<string> = new Set([
+  "text", "thought", "message", "messages_changed", "tool_call", "tool_call_update", "usage", "end", "error",
+]);
 
 export class GrokClient implements CliClient {
   optionsCommand(): CommandSpec {
@@ -293,16 +297,23 @@ export class GrokClient implements CliClient {
     };
   }
 
+  eventLabel(line: string): string | null {
+    const payload = parseJsonObject(line);
+    if (payload === null) return null;
+    return labelOf(payload.type, GROK_EVENT_TYPES) ?? "other";
+  }
+
   extractFailure(stdout: string, exitCode: number): RawFailure | null {
-    if (exitCode === 0) return null;
     let errorMessage: string | null = null;
     for (const rawLine of stdout.split(/\r\n|\n|\r/)) {
       const payload = parseJsonObject(rawLine);
       if (payload?.type !== "error") continue;
+      if (exitCode === 0 && classifyProviderError(providerErrorMessage(payload)).event === "provider.warning") continue;
       const message = payload.message;
       errorMessage = typeof message === "string" && message ? message : (errorMessage ?? "grok reported an error.");
     }
     if (errorMessage !== null) return { origin: "provider-error", message: errorMessage.trim() || null, exitCode };
+    if (exitCode === 0) return null;
     const text = this.parseRun(stdout, "").text.trim();
     return { origin: "exit-only", message: text || null, exitCode };
   }

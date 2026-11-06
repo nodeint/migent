@@ -13,7 +13,7 @@ import type {
   UsageCapture,
 } from "../types.js";
 import { ModelCatalog } from "../catalog.js";
-import { compact, finite, isRecord, parseJsonObject } from "./json.js";
+import { compact, finite, isRecord, labelOf, parseJsonObject } from "./json.js";
 
 const OPENCODE_OPTIONS: readonly ProviderOption[] = [
   { name: "agent" },
@@ -112,6 +112,10 @@ export function lookup(source: unknown, path: readonly string[]): unknown {
   }
   return value;
 }
+
+const OPENCODE_EVENT_TYPES: ReadonlySet<string> = new Set([
+  "step_start", "step_finish", "text", "reasoning", "tool_use", "error",
+]);
 
 export class OpencodeClient implements CliClient {
   optionsCommand(): CommandSpec {
@@ -271,6 +275,12 @@ export class OpencodeClient implements CliClient {
           : `${tool ?? "tool"} ${action}`;
       return { event, summary, details: tool === null ? {} : { item_type: tool } };
     };
+  }
+
+  eventLabel(line: string): string | null {
+    const payload = parseJsonObject(line);
+    if (payload === null) return null;
+    return labelOf(payload.type, OPENCODE_EVENT_TYPES) ?? "other";
   }
 
   extractFailure(stdout: string, exitCode: number): RawFailure | null {

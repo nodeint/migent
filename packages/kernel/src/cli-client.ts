@@ -70,6 +70,11 @@ export interface CliClient {
   parseVersion(stdout: string): string | null;
   /** One parser per run: it may keep state between lines. */
   createEventParser(): (line: string) => Record<string, unknown> | null;
+  /**
+   * A short label for one output line from this client's own vocabulary (for example `text` or
+   * `result:error`), or `null` when the line is not an event. Never a piece of the line's content.
+   */
+  eventLabel?(line: string): string | null;
   /** `null` means the run succeeded. A non-zero exit never yields `null`. */
   extractFailure(stdout: string, exitCode: number): RawFailure | null;
   /** The CLI's own usage figures, unmodified. */

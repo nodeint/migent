@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { UnpassableArgument, spawnProvider } from "./provider-spawn.ts";
 import {
   UNPASSABLE_ARGUMENT_CODE,
+  WRAPPER_EXITED,
   WRAPPER_FAILED,
   WRAPPER_READY,
   WRAPPER_START,
@@ -248,7 +249,19 @@ async function main(argv: string[]): Promise<void> {
       debug(`provider exit code=${code} signal=${signal}`);
       // A signal death keeps its identity as the shell's 128 + signal, so the owner can tell it from an exit.
       const number = signal ? osConstants.signals[signal] : undefined;
-      exit(signal ? 128 + (number ?? 0) : (code ?? 1));
+      const status = signal ? 128 + (number ?? 0) : (code ?? 1);
+      if (!signal || !process.send || !process.connected) return exit(status);
+      // Say which signal it was, separately from the exit code: a plain `exit 137` is not a SIGKILL.
+      const fallback = setTimeout(() => exit(status), 500);
+      try {
+        process.send({ type: WRAPPER_EXITED, signal }, () => {
+          clearTimeout(fallback);
+          exit(status);
+        });
+      } catch {
+        clearTimeout(fallback);
+        exit(status);
+      }
     });
   });
   process.send({ type: WRAPPER_READY });

@@ -12,7 +12,7 @@ import type {
   UsageCapture,
 } from "../types.js";
 import { ModelCatalog } from "../catalog.js";
-import { compact, emptyUsage, finite, isRecord, parseJsonObject, picked } from "./json.js";
+import { compact, emptyUsage, finite, isRecord, labelOf, parseJsonObject, picked } from "./json.js";
 
 // `agy models` lists slugs, not effort levels. `--help` fixes the enum.
 export const AGY_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
@@ -170,6 +170,9 @@ function sumSteps(steps: unknown[]): TurnUsage {
   };
 }
 
+const AGY_EVENTS: ReadonlySet<string> = new Set(["init", "status", "step_update", "result"]);
+const AGY_STEP_TYPES: ReadonlySet<string> = new Set(["agent_response", "system_message", "user_input", "tool"]);
+
 export class AgyClient implements CliClient {
   optionsCommand(): CommandSpec {
     return { argv: [this.command, "-p", "--help"] };
@@ -323,8 +326,23 @@ export class AgyClient implements CliClient {
     };
   }
 
+  eventLabel(line: string): string | null {
+    const payload = parseJsonObject(line);
+    if (payload === null) return null;
+    const event = labelOf(payload.event, AGY_EVENTS);
+    if (event === null) return "other";
+    if (event === "result") {
+      const result = resultBody(payload);
+      return result !== null && result.status !== "SUCCESS" ? "result:error" : "result";
+    }
+    if (event === "step_update" && isRecord(payload.step_update)) {
+      const kind = labelOf(payload.step_update.step_type, AGY_STEP_TYPES);
+      return kind === null ? event : `${event}:${kind}`;
+    }
+    return event;
+  }
+
   extractFailure(stdout: string, exitCode: number): RawFailure | null {
-    if (exitCode === 0) return null;
     const text = this.parseRun(stdout, "").text.trim();
     // A non-SUCCESS result is the CLI's own error report; anything else is a bare exit.
     let reported = false;
@@ -333,6 +351,7 @@ export class AgyClient implements CliClient {
       const result = payload === null ? null : resultBody(payload);
       if (result !== null && result.status !== "SUCCESS") reported = true;
     }
+    if (exitCode === 0 && !reported) return null;
     return { origin: reported ? "provider-error" : "exit-only", message: text || null, exitCode };
   }
 
