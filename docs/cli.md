@@ -269,15 +269,20 @@ they exit 2 and print this instruction.
 migent config validate|render|save <draft|-> [--scope project|local] [--format yaml|json] [--json]
 migent workflow validate|render|save <draft|-> [--target <file>.yaml] [--format yaml|json] [--json]
 migent {config|workflow} save ... [--base-hash <sha256>]
+migent {config|workflow} render|save ... [--preserve-comments]
 ```
 
-These check an unsaved draft with the rules the runtime uses. A config draft is merged with the other layer on disk. A workflow draft is checked against the sibling workflows and the effective config.
+These check an unsaved draft with the rules the runtime uses. A config draft is merged with the other layer on disk; a companion layer that cannot be read adds its own diagnostic and the draft is still checked. A workflow draft is checked against the sibling workflows and the effective config.
 
-- `render` prints canonical YAML (`yaml` stringify, key order kept). `save` writes exactly those bytes. Comments are not preserved; replacing a file that has comments adds a `comments-dropped` warning.
-- `save` without `--base-hash` only creates a file (exclusive hard link; it never overwrites). With `--base-hash` the file must exist and its raw-byte SHA-256 must match, or the save is a `stale-base` conflict. Both run under a file lock. An editor that writes between the hash check and the rename can still be overwritten.
-- A local config draft must carry the current `schema_version`.
+Validation reports every independent problem in the draft in one run, each with its own `path`. A failed field does not hide other fields or entries, and a problem in one stage does not produce follow-on errors from the checks that read it. A syntax error in the draft still stops validation at the first error.
+
+- `render` prints canonical YAML (`yaml` stringify, key order kept). `save` writes exactly those bytes. Without `--preserve-comments`, comments are not preserved; replacing a file that has comments adds a `comments-dropped` warning.
+- `save --preserve-comments` keeps the target's comments, key order, and line-ending style. When the draft's data equals the target's, the target's bytes are written back exactly, including whitespace, quoting, and the final newline. After an edit, comments on kept nodes and the order of kept keys survive while the serializer may normalize other formatting (blank lines, quoting, the final newline); keys absent from the draft are removed. When preservation is impossible (for example the target uses anchors, aliases, merge keys, or custom tags, or the result would not match the draft), the file is written in canonical form with a `comments-not-preserved` warning, plus `comments-dropped` when the old file had comments. The written data always equals the draft's data.
+- `render --preserve-comments` prints exactly the bytes `save --preserve-comments` would write to the same target.
+- `save` without `--base-hash` only creates a file (exclusive hard link; it never overwrites). With `--base-hash` the file must exist and its raw-byte SHA-256 must match, or the save is a `stale-base` conflict. Both run under a file lock. An editor that writes between the hash check and the rename can still be overwritten. With `--preserve-comments`, the hash is checked before rendering, so a stale base writes nothing.
+- A local config draft must carry the current `schema_version`. `--preserve-comments` applies only to `render` and `save`.
 - Exit codes: 0 ok (warnings allowed), 1 invalid draft, 2 invocation or I/O error, 3 conflict (`stale-base`, `already-exists`).
-- `--json` prints one envelope: `schema_version`, `command`, `valid`, `diagnostics`, and `rendered`, `file`, `hash`, `written` where they apply. Each diagnostic has `severity`, `code`, `message`, and optionally `source` (`project`, `local`, `effective`, `workflow`), `file`, `draft`, `path` (strings and list indices), `line`, `column`.
+- `--json` prints one envelope: `schema_version`, `command`, `valid`, `diagnostics`, and `rendered`, `file`, `hash`, `written` where they apply. Each diagnostic has `severity`, `code`, `message`, and optionally `source` (`project`, `local`, `effective`, `workflow`), `file`, `draft`, `path` (strings and list indices), `line`, `column`. A draft diagnostic whose `path` resolves in the draft text also carries `end_line` and `end_column`; both are one-based and the end is exclusive. A missing key, or a problem in a file other than the draft, has no position.
 
 ## Get
 

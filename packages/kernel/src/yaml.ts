@@ -6,10 +6,18 @@ export function parseYamlDocument(text: string): unknown {
     return parse(text);
   } catch (error) {
     if (error instanceof YAMLParseError) {
-      const [position] = error.linePos ?? [];
+      const [position, end] = error.linePos ?? [];
       throw new ConfigurationError(error.message, {
         code: error.code === "DUPLICATE_KEY" ? "duplicate-key" : "yaml-syntax",
-        ...(position === undefined ? {} : { position: { line: position.line, column: position.col } }),
+        ...(position === undefined
+          ? {}
+          : {
+              position: {
+                line: position.line,
+                column: position.col,
+                ...(end === undefined ? {} : { end: { line: end.line, column: end.col } }),
+              },
+            }),
       });
     }
     throw error;

@@ -2,8 +2,13 @@
 
 ## Unreleased
 
+### Added
+
+- `migent config render|save` and `migent workflow render|save` accept `--preserve-comments`, keeping the target's comments, key order, and line endings. Unchanged data writes the base bytes verbatim; when preservation is impossible the file falls back to canonical YAML with a `comments-not-preserved` warning. `render --preserve-comments` prints exactly the bytes `save --preserve-comments` would write.
+
 ### Changed
 
+- `migent config validate|render|save` and `migent workflow validate|render|save` report every independent draft diagnostic in one run instead of stopping at the first, including multiple entries in one stage. Each diagnostic keeps its own `path`, and a draft diagnostic whose path resolves in the draft text now carries one-based, exclusive `end_line`/`end_column`. An unreadable companion config layer or an unrelated broken workflow field no longer hides other findings, because each graph rule gates only on the fields and dependency chain its finding needs. Without `--preserve-comments`, saved bytes and `comments-dropped` warnings are unchanged.
 - **Schema version 5: "agents".** An agent is a provider, a model, an effort, and a CLI client with its options, and it is called an agent everywhere. Run `migent migrate` to upgrade config and workflow files; comments and layout are kept, and sessions that already started keep running from their frozen copy. The migration makes these changes:
   - `models` becomes `agents`, and `roles.<role>.default_model` becomes `roles.<role>.agent` (a name in `agents` or a complete inline agent).
   - `roles.<role>.instructions` becomes `roles.<role>.responsibilities`. A role also accepts an optional one-line `description`, shown by `migent get roles` and not added to prompts.

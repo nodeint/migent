@@ -55,6 +55,8 @@ test("syntax errors carry a position; strict JSON rejects trailing commas", asyn
   expect(yaml.code).toBe(1);
   expect(yaml.json.diagnostics[0]).toMatchObject({ code: "yaml-syntax", source: "project" });
   expect(yaml.json.diagnostics[0].line).toBeTypeOf("number");
+  expect(yaml.json.diagnostics[0].end_line).toBeTypeOf("number");
+  expect(yaml.json.diagnostics[0].end_column).toBeGreaterThanOrEqual(yaml.json.diagnostics[0].column);
   const json = await run(["config", "validate", "@draft", "--format", "json", "--json"], '{"schema_version": 4,}');
   expect(json.json.diagnostics[0].code).toBe("json-syntax");
   const dup = await run(["config", "validate", "@draft", "--format", "json", "--json"], '{"a": 1, "a": 2}');
@@ -145,7 +147,8 @@ test("workflow validation applies catalog and companion schema rules", async () 
   expect(broken.json.diagnostics.map((d: { code: string }) => d.code)).toContain("no-stages");
   const missing = await run(["workflow", "validate", "@draft", "--format", "yaml", "--json"], downstream.replace("workflow: empty", "workflow: nowhere"));
   expect(missing.code).toBe(1);
-  expect(missing.json.diagnostics.find((d: { code: string }) => d.code === "unknown-downstream")).toMatchObject({ code: "unknown-downstream", path: ["downstream"], draft: true });
+  const missingDownstream = missing.json.diagnostics.find((d: { code: string }) => d.code === "unknown-downstream");
+  expect(missingDownstream).toMatchObject({ code: "unknown-downstream", path: ["downstream", 0, "workflow"], draft: true, line: 8, column: 15, end_line: 8, end_column: 22 });
   writeFileSync(path.join(root, ".migent", "config.local.yaml"), "schema_version: 999\n");
   const newer = await run(["workflow", "validate", "@draft", "--format", "yaml", "--json"], WORKFLOW);
   expect(newer.code).toBe(1);
@@ -158,7 +161,7 @@ test("parser errors carry codes and index paths; syntax errors mark the draft", 
   const unknown = await run(["workflow", "validate", "@draft", "--format", "yaml", "--json"], WORKFLOW.replace("depends_on: []", "depends_on: []\n    colour: red"));
   // From schema_version 5 an unknown key is an error, not a warning.
   expect(unknown.code).toBe(1);
-  expect(unknown.json.diagnostics[0]).toMatchObject({ code: "unknown-key", severity: "error" });
+  expect(unknown.json.diagnostics[0]).toMatchObject({ code: "unknown-key", severity: "error", path: ["stages", 0, "colour"], line: 7, column: 5, end_line: 7, end_column: 11 });
   const renamed = await run(["workflow", "validate", "@draft", "--format", "yaml", "--json"], WORKFLOW.replace("depends_on: []", "depends_on: []\n    model: shared"));
   expect(renamed.code).toBe(1);
   expect(JSON.stringify(renamed.json.diagnostics)).toContain("stages.implement.model was renamed to stages.implement.agent in schema_version 5");
@@ -224,6 +227,11 @@ test("paths use the draft's own coordinates for routes and for a stage named id"
   expect(route.path).toEqual(["stages", 0, "decision", 0, "approved", "navigate"]);
   const afterVerify = await check(head + "  - id: v\n    verify: [\"true\"]\n    depends_on: []\n  - id: a\n    role: developer\n    depends_on: [v]\n    decision:\n      - approved:\n          navigate: ghost\n");
   expect(afterVerify.path).toEqual(["stages", 1, "decision", 0, "approved", "navigate"]);
+  // The path keeps the author's spelling, so it resolves against the draft and carries a range.
+  const upper = await check(head + "  - id: a\n    role: developer\n    depends_on: []\n    decision:\n      - APPROVED:\n          navigate: ghost\n");
+  expect(upper.path).toEqual(["stages", 0, "decision", 0, "APPROVED", "navigate"]);
+  expect(upper.line).toBeTypeOf("number");
+  expect(upper.end_line).toBeTypeOf("number");
   const named = await check(head + "  - id: id\n    role: developer\n    depends_on: []\n    session:\n      resume_from: 1\n");
   expect(named.path).toEqual(["stages", 0, "session", "resume_from"]);
 });
@@ -249,4 +257,137 @@ test("an intentionally empty shared agent is a warning, not an error", async () 
   const res = await run(["config", "validate", "@draft", "--format", "yaml", "--json"], draft);
   expect(res.code).toBe(0);
   expect(res.json.diagnostics.find((d: { code: string }) => d.code === "agent-unmapped")).toMatchObject({ severity: "warning" });
+});
+
+const MULTI_ERROR = `schema_version: 5
+id: build
+stages:
+  - id: implement
+    role: developer
+    depends_on: []
+    ask: bot
+    max_revisions: nope
+  - id: review
+    depends_on: [implement]
+downstream:
+  - workflow: nowhere
+    task: go
+`;
+
+test("workflow validate reports every independent error with its own path", async () => {
+  const res = await run(["workflow", "validate", "@draft", "--format", "yaml", "--json"], MULTI_ERROR);
+  expect(res.code).toBe(1);
+  expect(res.json.diagnostics.map((d: { path: unknown[] }) => d.path)).toEqual([
+    ["stages", 0, "ask"],
+    ["stages", 0, "max_revisions"],
+    ["stages", 1, "role"],
+    ["downstream", 0, "workflow"],
+  ]);
+  expect(res.json.diagnostics.map((d: { message: string }) => d.message)).toEqual([
+    "stages.implement.ask must be human.",
+    "stages.implement.max_revisions must be a non-negative integer.",
+    "stages.review.role is required.",
+    "build: downstream workflow nowhere is not in .migent/workflows.",
+  ]);
+});
+
+test("draft diagnostics carry an exclusive end position, and missing keys carry none", async () => {
+  const res = await run(["workflow", "validate", "@draft", "--format", "yaml", "--json"], MULTI_ERROR);
+  const ask = res.json.diagnostics[0];
+  expect(ask).toMatchObject({ line: 7, column: 10, end_line: 7, end_column: 13 });
+  expect(res.json.diagnostics[2].line).toBeUndefined();
+  expect(res.json.diagnostics[2].end_line).toBeUndefined();
+  const json = await run(
+    ["workflow", "validate", "@draft", "--format", "json", "--json"],
+    '{"schema_version": 5, "id": "build", "stages": [{"id": "a", "role": "ghost", "depends_on": []}]}',
+  );
+  expect(json.json.diagnostics[0]).toMatchObject({ path: ["stages", 0, "role"], line: 1 });
+  expect(json.json.diagnostics[0].end_column).toBeGreaterThan(json.json.diagnostics[0].column);
+});
+
+const COMMENTS = "# keep me\r\nschema_version: 5\r\nid: build\r\nstages:\r\n  - id: implement # the stage\r\n    role: developer\r\n    depends_on: []\r\n";
+
+test("save --preserve-comments writes the base bytes when the data is unchanged", async () => {
+  const target = path.join(root, ".migent", "workflows", "build.yaml");
+  writeFileSync(target, COMMENTS);
+  const res = await run(["workflow", "save", "@draft", "--format", "yaml", "--json", "--preserve-comments", "--base-hash", sha256Hex(COMMENTS)], WORKFLOW);
+  expect(res.code).toBe(0);
+  expect(res.json.diagnostics).toEqual([]);
+  expect(readFileSync(target, "utf8")).toBe(COMMENTS);
+});
+
+test("save --preserve-comments keeps comments and line endings across an edit, and removes dropped keys", async () => {
+  const target = path.join(root, ".migent", "workflows", "build.yaml");
+  const base = `${COMMENTS}    description: gone\r\n`;
+  writeFileSync(target, base);
+  const edited = `${WORKFLOW}    description: added\n`;
+  const res = await run(["workflow", "save", "@draft", "--format", "yaml", "--json", "--preserve-comments", "--base-hash", sha256Hex(base)], edited);
+  expect(res.code).toBe(0);
+  const saved = readFileSync(target, "utf8");
+  expect(saved).toContain("# keep me");
+  expect(saved).toContain("# the stage");
+  expect(saved).toContain("description: added");
+  expect(saved).not.toContain("description: gone");
+  expect(saved).toContain("\r\n");
+  expect(saved.indexOf("# keep me")).toBeLessThan(saved.indexOf("schema_version"));
+
+  const rendered = await run(["workflow", "render", "@draft", "--format", "yaml", "--json", "--preserve-comments"], edited);
+  expect(rendered.code).toBe(0);
+  expect(rendered.json.rendered).toBe(saved);
+});
+
+test("a stale base with --preserve-comments leaves the file untouched", async () => {
+  const target = path.join(root, ".migent", "workflows", "build.yaml");
+  writeFileSync(target, COMMENTS);
+  const res = await run(["workflow", "save", "@draft", "--format", "yaml", "--json", "--preserve-comments", "--base-hash", "0".repeat(64)], WORKFLOW);
+  expect(res.code).toBe(3);
+  expect(res.json.diagnostics.at(-1).code).toBe("stale-base");
+  expect(readFileSync(target, "utf8")).toBe(COMMENTS);
+});
+
+test("comments that cannot be preserved fall back with a warning and write the draft's data", async () => {
+  const target = path.join(root, ".migent", "workflows", "build.yaml");
+  const base = "# note\r\nschema_version: 5\r\nid: &build build\r\nstages:\r\n  - id: implement\r\n    role: developer\r\n    depends_on: []\r\n";
+  writeFileSync(target, base);
+  const edited = `${WORKFLOW}    description: added\n`;
+  const res = await run(["workflow", "save", "@draft", "--format", "yaml", "--json", "--preserve-comments", "--base-hash", sha256Hex(base)], edited);
+  expect(res.code).toBe(0);
+  expect(res.json.diagnostics.map((d: { code: string }) => d.code)).toEqual(["comments-not-preserved", "comments-dropped"]);
+  const saved = readFileSync(target, "utf8");
+  expect(saved).not.toContain("# note");
+  expect(saved).toContain("description: added");
+  expect(saved).toContain("id: build");
+});
+
+test("config validate collects the companion layer failure and the draft's own errors", async () => {
+  const draft = `schema_version: 5
+agents:
+  fast:
+    provider: grok
+    model: grok-4.6
+  slow:
+    provider: nope
+    model: ghost
+roles:
+  developer:
+    agent: fast
+    responsibilities: nope
+  reviewer:
+    agent: missing
+`;
+  writeFileSync(path.join(root, ".migent", "config.local.yaml"), "schema_version: [\n");
+  const res = await run(["config", "validate", "@draft", "--format", "yaml", "--json"], draft);
+  expect(res.code).toBe(1);
+  expect(res.json.diagnostics.map((d: { code: string; source: string; draft: boolean }) => [d.code, d.source, d.draft])).toEqual([
+    ["yaml-syntax", "local", false],
+    ["provider-unsupported", "project", true],
+    ["not-a-list", "project", true],
+    ["unknown-agent", "project", true],
+  ]);
+});
+
+test("--preserve-comments is rejected for validate", async () => {
+  const res = await run(["workflow", "validate", "@draft", "--format", "yaml", "--json", "--preserve-comments"], WORKFLOW);
+  expect(res.code).toBe(2);
+  expect(res.json.diagnostics[0].code).toBe("invalid-invocation");
 });

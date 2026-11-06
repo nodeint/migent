@@ -8,6 +8,7 @@ import {
 } from "@nodeint/migent-doctor";
 import {
   ConfigurationError,
+  buildDraftSourceMap,
   configPath,
   mergeConfigLayers,
   loadYamlMapping,
@@ -19,6 +20,7 @@ import {
   writeFileConditional,
   yamlHasComments,
   type DraftFormat,
+  type DraftSourceMap,
 } from "@nodeint/migent-kernel";
 import { providerMap } from "../provider.js";
 import { findWorkspace, invocationCwdPath } from "../workspace.js";
@@ -36,6 +38,8 @@ export interface AuthoringOptions {
   target?: string;
   baseHash?: string;
   asJson?: boolean;
+  /** Keep the target's comments, key order and line endings on render/save. */
+  preserveComments?: boolean;
   /** Test seam for stdin. */
   readStdin?: () => string;
 }
@@ -55,6 +59,9 @@ interface PublicDiagnostic {
   message: string;
   line?: number;
   column?: number;
+  /** Exclusive end of the range, one-based, when known. */
+  end_line?: number;
+  end_column?: number;
 }
 
 interface Context {
@@ -62,6 +69,10 @@ interface Context {
   scope: "project" | "local" | null;
   /** Workflow basename of the draft, when known. */
   file: string | null;
+  /** The draft text, for resolving diagnostic ranges. */
+  text: string | null;
+  /** Built once per run from `text`. */
+  source: DraftSourceMap | null;
 }
 
 function publicDiagnostic(item: Diagnostic, context: Context): PublicDiagnostic {
@@ -79,6 +90,7 @@ function publicDiagnostic(item: Diagnostic, context: Context): PublicDiagnostic 
       draft = context.scope !== null && (source === "effective" || source === context.scope);
     }
   }
+  const position = item.position ?? (draft === true ? draftRangeOf(item, context) : undefined);
   return {
     ...(source === undefined ? {} : { source }),
     ...(file === undefined ? {} : { file }),
@@ -87,8 +99,23 @@ function publicDiagnostic(item: Diagnostic, context: Context): PublicDiagnostic 
     severity: item.severity,
     code: item.code,
     message: item.message,
-    ...(item.position === undefined ? {} : { line: item.position.line, column: item.position.column }),
+    ...(position === undefined ? {} : { line: position.line, column: position.column }),
+    ...(position?.end === undefined
+      ? {}
+      : { end_line: position.end.line, end_column: position.end.column }),
   };
+}
+
+/** Range of a draft node. Key-level codes point at the key; every other code points at the value. */
+function draftRangeOf(item: Diagnostic, context: Context): Diagnostic["position"] {
+  if (item.path === undefined || context.text === null) return undefined;
+  context.source ??= buildDraftSourceMap(context.text);
+  const range = item.code === "unknown-key" && !item.code.includes("legacy")
+    ? context.source.keyRangeOf(item.path)
+    : context.source.rangeOf(item.path);
+  return range === null
+    ? undefined
+    : { line: range.start.line, column: range.start.column, end: range.end };
 }
 
 function plain(code: string, message: string, severity: "error" | "warning" = "error"): Diagnostic {
@@ -121,7 +148,7 @@ class Finish extends Error {
 
 export function runAuthoring(options: AuthoringOptions): number {
   const command = `${options.kind}.${options.mode}`;
-  const context: Context = { scope: null, file: null };
+  const context: Context = { scope: null, file: null, text: null, source: null };
   const emit = (exit: number, items: Diagnostic[], extra: Record<string, unknown> = {}): number => {
     const diagnostics = items.map((item) => publicDiagnostic(item, context));
     const valid = !items.some((item) => item.severity === "error");
@@ -174,6 +201,9 @@ function execute(
     throw invocation("--base-hash must be a lowercase SHA-256 hex digest.");
   }
   if (options.baseHash !== undefined && mode !== "save") throw invocation("--base-hash applies only to save.");
+  if (options.preserveComments === true && mode === "validate") {
+    throw invocation("--preserve-comments applies only to render and save.");
+  }
   if (options.target !== undefined && kind !== "workflow") throw invocation("--target applies only to workflow.");
   if (options.target !== undefined && !(FILE_NAME.test(options.target) && options.target.endsWith(".yaml"))) {
     throw invocation("--target must be a plain *.yaml file name.");
@@ -189,6 +219,7 @@ function execute(
     const reason = error instanceof Error ? error.message : String(error);
     throw new Finish(EXIT_IO, [plain("draft-unreadable", `Unable to read draft: ${reason}`)]);
   }
+  context.text = text;
 
   const workspace = locateWorkspace(scope, kind);
   const providers = providerMap();
@@ -216,29 +247,31 @@ function execute(
     label = scope === "project" ? "config.yaml" : "config.local.yaml";
     const other = scope === "project" ? "local" : "project";
     const otherPath = scope === "project" ? localConfigPath(workspace) : configPath(workspace);
+    // A companion layer that does not load is one finding; the draft is still validated without it.
+    const companionProblems: Diagnostic[] = [];
     let companion: Record<string, unknown> | null = null;
     if (existsSync(otherPath)) {
       try {
         companion = loadYamlMapping(otherPath, other);
       } catch (error) {
         if (!(error instanceof ConfigurationError)) throw error;
-        throw new Finish(EXIT_INVALID, [{
+        companionProblems.push({
           severity: "error",
           code: error.code ?? "config-invalid",
           message: error.message,
           source: { layer: other },
           ...(error.position === undefined ? {} : { position: error.position }),
-        }]);
+        });
       }
     } else if (scope === "local") {
-      throw new Finish(EXIT_INVALID, [{
+      companionProblems.push({
         severity: "error",
         code: "config-missing",
         message: "Missing .migent/config.yaml; the local config is validated against it.",
         source: { layer: "project" },
-      }]);
+      });
     }
-    diagnostics = validateConfigDraft({ scope, draft, companion }, providers);
+    diagnostics = [...companionProblems, ...validateConfigDraft({ scope, draft, companion }, providers)];
   } else {
     const id = draft.id;
     const derived = typeof id === "string" && FILE_NAME.test(id) ? `${id}.yaml` : null;
@@ -258,12 +291,32 @@ function execute(
   const invalid = diagnostics.some((item) => item.severity === "error");
   if (mode === "validate" || invalid) return emit(invalid ? EXIT_INVALID : 0, diagnostics);
 
-  const rendered = renderAuthoringYaml(draft);
-  if (mode === "render") return emit(0, diagnostics, { rendered });
+  // The base is the target's current bytes. `save` only has a base when it is replacing a file.
+  const preserve = options.preserveComments === true;
+  let base: string | null = null;
+  if (preserve) {
+    if (mode === "render") {
+      base = readExisting(destination);
+    } else if (options.baseHash !== undefined) {
+      const current = readExisting(destination);
+      const currentHash = current === null ? null : sha256Hex(current);
+      if (currentHash !== options.baseHash) {
+        return emit(EXIT_CONFLICT, [...diagnostics, plain("stale-base", currentHash === null
+          ? `${label} does not exist, so the base hash cannot match.`
+          : `${label} changed since the base hash was taken.`)], { file: label, ...(currentHash === null ? {} : { current_hash: currentHash }) });
+      }
+      base = current;
+    }
+  }
+  const rendered = renderAuthoringYaml(draft, base ?? undefined);
+  const preservation = preserve && base !== null && !rendered.preserved
+    ? [plain("comments-not-preserved", `${label}: comments were not preserved (${rendered.reason ?? "the file could not be kept in place"}).`, "warning")]
+    : [];
+  if (mode === "render") return emit(0, [...diagnostics, ...preservation], { rendered: rendered.text });
 
   let result;
   try {
-    result = writeFileConditional(destination, rendered, options.baseHash ?? null);
+    result = writeFileConditional(destination, rendered.text, options.baseHash ?? null);
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     return emit(EXIT_IO, [...diagnostics, plain("write-failed", `Unable to write ${label}: ${reason}`)]);
@@ -278,11 +331,22 @@ function execute(
     case "create-unsupported":
       return emit(EXIT_IO, [...diagnostics, plain("create-unsupported", `Cannot create ${label} safely (${result.reason}). Create the file another way, then save with --base-hash.`)], { file: label });
     case "written": {
-      const warnings = result.previous !== null && yamlHasComments(result.previous)
+      const dropped = result.previous !== null && yamlHasComments(result.previous) && !(preserve && rendered.preserved);
+      const warnings = dropped
         ? [plain("comments-dropped", `${label} had comments; the saved file does not keep them.`, "warning")]
         : [];
-      return emit(0, [...diagnostics, ...warnings], { file: label, hash: result.hash, written: true });
+      return emit(0, [...diagnostics, ...preservation, ...warnings], { file: label, hash: result.hash, written: true });
     }
+  }
+}
+
+/** The target's current text, or null when it does not exist. */
+function readExisting(file: string): string | null {
+  try {
+    return readFileSync(file, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
   }
 }
 

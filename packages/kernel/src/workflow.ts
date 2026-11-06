@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { UNKNOWN_KEYS_ERROR_SCHEMA_VERSION, unknownWorkflowKeys, stageErrorPath, workflowErrorPath, workflowRuleCode } from "./authoring-diagnostics.js";
+import { UNKNOWN_KEYS_ERROR_SCHEMA_VERSION, unknownWorkflowKeyEntries, unknownWorkflowKeys, stageErrorPath, workflowErrorPath, workflowRuleCode } from "./authoring-diagnostics.js";
+import type { UnknownKey } from "./authoring-diagnostics.js";
 import path from "node:path";
 import { z } from "zod";
 import type { AskTarget } from "./stage-outcome.js";
@@ -218,7 +219,7 @@ export function loadWorkflowCatalog(workspace: string, options: LoadWorkflowOpti
   const { loaded, problems } = readWorkflowDirectory(workspace, options);
   if (loaded.length === 0) return { documents: {}, problems };
   const checked = checkWorkflowCatalog(
-    loaded.map((entry) => ({ file: path.basename(entry.path), document: entry.document })),
+    loaded.map((entry) => catalogEntryFromDocument(path.basename(entry.path), entry.document)),
     unreadableWorkflowIds(problems),
   );
   return { documents: checked.documents, problems: [...problems, ...checked.problems.map((problem) => problem.message)] };
@@ -230,22 +231,56 @@ export interface CatalogProblem {
   message: string;
   workflow: string;
   files?: string[];
+  /** Author-coordinate path of the node the problem is about, when the rule can name one. */
+  path?: (string | number)[];
+}
+
+/** A catalog fact the draft parser may not have been able to read. */
+export type CatalogFact<T> = { known: true; value: T } | { known: false };
+
+/**
+ * One workflow as the catalog rules see it. `document` is set when the workflow parsed completely;
+ * the draft leaves it null and exposes only the parts it could read. Unknown parts skip the rules
+ * that read them, so a broken draft never produces a follow-on catalog finding.
+ */
+export interface WorkflowCatalogEntry {
+  file: string;
+  document: WorkflowDocument | null;
+  id: CatalogFact<string>;
+  stagesDeclared: boolean;
+  requires: CatalogFact<WorkflowRequires | null>;
+  /** `index` is the entry's position in the author's list, kept when earlier entries were unreadable. */
+  downstream: ReadonlyArray<{ workflow: CatalogFact<string>; index?: number }>;
+}
+
+/** Adapts a parsed document to a fully known catalog entry. */
+export function catalogEntryFromDocument(file: string, document: WorkflowDocument): WorkflowCatalogEntry {
+  return {
+    file,
+    document,
+    id: { known: true, value: document.id },
+    stagesDeclared: Object.keys(document.stages).length > 0,
+    requires: { known: true, value: document.requires },
+    downstream: (document.downstream ?? []).map((entry) => ({ workflow: { known: true, value: entry.workflow } })),
+  };
 }
 
 /**
- * The cross-file rules of the catalog over workflows already parsed: duplicate ids, empty stages,
- * `requires` and `downstream`. Pure; `failedIds` names workflows that could not be parsed.
+ * The cross-file rules of the catalog: duplicate ids, empty stages, `requires` and `downstream`.
+ * Pure; `failedIds` names workflows that could not be parsed. Rules skip the facts an entry does not
+ * know, so the results for fully parsed documents are unchanged.
  */
 export function checkWorkflowCatalog(
-  entries: ReadonlyArray<{ file: string; document: WorkflowDocument }>,
+  entries: ReadonlyArray<WorkflowCatalogEntry>,
   failedIds: ReadonlySet<string> = new Set(),
 ): { documents: Record<string, WorkflowDocument>; problems: CatalogProblem[] } {
   const failed = new Set(failedIds);
   const problems: CatalogProblem[] = [];
-  const grouped = new Map<string, Array<{ file: string; document: WorkflowDocument }>>();
+  const grouped = new Map<string, WorkflowCatalogEntry[]>();
   for (const entry of entries) {
-    const list = grouped.get(entry.document.id);
-    if (list === undefined) grouped.set(entry.document.id, [entry]);
+    if (!entry.id.known) continue;
+    const list = grouped.get(entry.id.value);
+    if (list === undefined) grouped.set(entry.id.value, [entry]);
     else list.push(entry);
   }
   const documents: Record<string, WorkflowDocument> = {};
@@ -256,25 +291,38 @@ export function checkWorkflowCatalog(
       failed.add(workflowId);
       continue;
     }
-    const document = group[0]!.document;
-    documents[workflowId] = document;
-    if (Object.keys(document.stages).length === 0) {
-      problems.push({ code: "no-stages", message: `${document.id}: declares no stages.`, workflow: workflowId });
+    const entry = group[0]!;
+    if (entry.document !== null) documents[workflowId] = entry.document;
+    if (!entry.stagesDeclared) {
+      problems.push({ code: "no-stages", message: `${workflowId}: declares no stages.`, workflow: workflowId });
     }
   }
-  for (const [workflowId, document] of Object.entries(documents)) {
-    if (document.requires !== null) {
+  for (const [workflowId, group] of grouped) {
+    if (group.length > 1) continue;
+    const entry = group[0]!;
+    if (entry.requires.known && entry.requires.value !== null && !isDraftEntry(entries, entry.requires.value.workflow)) {
       const messages: string[] = [];
-      checkRequires(workflowId, document.requires, documents, failed, messages);
+      checkRequires(workflowId, entry.requires.value, documents, failed, messages);
       for (const message of messages) problems.push({ code: "requires-invalid", message, workflow: workflowId });
     }
-    for (const next of document.downstream ?? []) {
-      if (!Object.hasOwn(documents, next.workflow)) {
-        problems.push({ code: "unknown-downstream", message: `${workflowId}: downstream workflow ${next.workflow} is not in .migent/workflows.`, workflow: workflowId });
+    for (const [index, next] of entry.downstream.entries()) {
+      if (!next.workflow.known) continue;
+      if (!Object.hasOwn(documents, next.workflow.value) && !isDraftEntry(entries, next.workflow.value)) {
+        problems.push({
+          code: "unknown-downstream",
+          message: `${workflowId}: downstream workflow ${next.workflow.value} is not in .migent/workflows.`,
+          workflow: workflowId,
+          path: ["downstream", next.index ?? index, "workflow"],
+        });
       }
     }
   }
   return { documents, problems };
+}
+
+/** True when `workflowId` names an entry the catalog could not fully parse (for example the draft). */
+function isDraftEntry(entries: readonly WorkflowCatalogEntry[], workflowId: string): boolean {
+  return entries.some((entry) => entry.document === null && entry.id.known && entry.id.value === workflowId);
 }
 
 export function loadWorkflowDocument(filePath: string, options: LoadWorkflowOptions = {}): WorkflowDocument {
@@ -791,14 +839,8 @@ function stageResumeFrom(
   stageId: string,
   dependsOn: readonly string[],
 ): string | null {
-  if (!Object.hasOwn(stage, "session") || stage.session == null) return null;
-  const session = stage.session;
-  if (isRecord(session) && Object.keys(session).length === 0) return null;
-  if (!isRecord(session)) {
-    throw new ConfigurationError(`stages.${stageId}.session must be a mapping.`);
-  }
-  if (!Object.hasOwn(session, "resume_from") || session.resume_from == null) return null;
-  const value = requiredString(session.resume_from, `stages.${stageId}.session.resume_from`);
+  const value = stageResumeFromUnchecked(stage, stageId);
+  if (value === null) return null;
   if (!dependsOn.includes(value)) {
     throw new ConfigurationError(
       `stages.${stageId}.session.resume_from must be a dependency: ${value}`,
@@ -1245,4 +1287,1090 @@ function isDir(filePath: string): boolean {
   } catch {
     return false;
   }
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Collecting draft parse
+ *
+ * The authoring path reports every independent problem instead of stopping at the first. The rules
+ * are shared with `parseWorkflowMapping`: each field is read by the same helper, but a failure is
+ * recorded and the next field is read. The full `WorkflowDocument` is still built by
+ * `parseWorkflowMapping`, so runtime parsing and its messages are unchanged.
+ * ---------------------------------------------------------------------------------------------- */
+
+/** One problem found while collecting a workflow draft. `path` uses author coordinates. */
+export interface DraftProblem {
+  code: string;
+  message: string;
+  path?: (string | number)[];
+}
+
+/** One leaf value: written, omitted (its default applies), or unreadable. */
+export type DraftUnit<T> =
+  | { state: "valid"; value: T }
+  | { state: "absent"; value: T }
+  | { state: "invalid" };
+
+/** One stage as far as the draft could be read. `spec` is set when every field parsed. */
+export interface DraftStage {
+  index: number;
+  id: string;
+  kind: "role" | "verify" | null;
+  role: DraftUnit<string>;
+  options: DraftUnit<Record<string, string>>;
+  dependsOn: DraftUnit<string[]>;
+  verify: DraftUnit<string[]>;
+  maxRevisions: DraftUnit<number | null>;
+  maxVerify: DraftUnit<number>;
+  verifyTimeoutSec: DraftUnit<number | null>;
+  artifact: DraftUnit<string | null>;
+  resumeFrom: DraftUnit<string | null>;
+  runWhen: DraftUnit<RunWhen | null>;
+  routes: DraftUnit<Record<string, string | string[]>>;
+  /** The stage's agent selection: empty for schema <=4 when `model` is absent. */
+  agent: DraftUnit<StageAgent | null>;
+  spec: StageSpec | null;
+  /** A role spec that config resolution can read when role, agent and options are readable. */
+  roleStage: RoleStageSpec | null;
+}
+
+export interface DraftDownstreamEntry {
+  index: number;
+  workflow: DraftUnit<string>;
+}
+
+/** The result of collecting a workflow draft. Nothing here changes runtime parsing. */
+export interface WorkflowDraftParse {
+  problems: DraftProblem[];
+  /** The full document, set only when nothing is incomplete. */
+  document: WorkflowDocument | null;
+  id: DraftUnit<string>;
+  schemaVersion: number;
+  stagesDeclared: boolean;
+  declaredStageIds: Set<string>;
+  stages: DraftStage[];
+  requires: DraftUnit<WorkflowRequires | null>;
+  downstream: DraftDownstreamEntry[];
+  outputNames: Set<string>;
+  /** True when every output entry parsed. */
+  outputsComplete: boolean;
+  unknownKeys: UnknownKey[];
+  catalogEntry: WorkflowCatalogEntry;
+}
+
+class DraftProblems {
+  readonly items: DraftProblem[] = [];
+
+  add(error: unknown, fallbackPath?: readonly (string | number)[]): void {
+    if (error instanceof z.ZodError) {
+      this.items.push({
+        code: "invalid-value",
+        message: error.issues.map((issue) => issue.message).join("; "),
+        ...(fallbackPath === undefined ? {} : { path: [...fallbackPath] }),
+      });
+      return;
+    }
+    if (!(error instanceof ConfigurationError)) throw error;
+    const path = error.path ?? fallbackPath;
+    this.items.push({
+      code: error.code ?? workflowRuleCode(error.message),
+      message: error.message,
+      ...(path === undefined ? {} : { path: [...path] }),
+    });
+  }
+
+  addMessage(code: string, message: string, path: readonly (string | number)[]): void {
+    this.items.push({ code, message, path: [...path] });
+  }
+}
+
+function draftUnit<T>(
+  read: () => T,
+  problems: DraftProblems,
+  fallbackPath?: readonly (string | number)[],
+): DraftUnit<T> {
+  try {
+    return { state: "valid", value: read() };
+  } catch (error) {
+    problems.add(error, fallbackPath);
+    return { state: "invalid" };
+  }
+}
+
+/** Placeholder stages for route parsing: only membership is read, never a field. */
+function declaredStagePlaceholders(ids: Iterable<string>): Record<string, StageSpec> {
+  const stages = Object.create(null) as Record<string, StageSpec>;
+  for (const id of ids) stages[id] = null as unknown as StageSpec;
+  return stages;
+}
+
+/** Author-coordinate path for a message raised after the per-stage reads. */
+function draftPathFor(message: string, data: Record<string, unknown>): (string | number)[] {
+  return workflowErrorPath(message, data) ?? ["stages"];
+}
+
+interface CollectedDecision {
+  values: DraftUnit<string[]>;
+  instructions: Record<string, string>;
+  routes: DraftUnit<Record<string, string | string[]>>;
+}
+
+/** Reads the schema >= 3 decision list entry by entry, then resolves its routes one by one. */
+function collectDecisionV3(
+  item: Record<string, unknown>,
+  stageId: string,
+  index: number,
+  declaredIds: ReadonlySet<string>,
+  problems: DraftProblems,
+): CollectedDecision {
+  const field = `stages.${stageId}.decision`;
+  const raw = item.decision;
+  if (raw == null) {
+    return { values: { state: "absent", value: [] }, instructions: {}, routes: { state: "absent", value: {} } };
+  }
+  const invalid: CollectedDecision = {
+    values: { state: "invalid" },
+    instructions: {},
+    routes: { state: "invalid" },
+  };
+  if (!Array.isArray(raw) || raw.length === 0) {
+    problems.addMessage(
+      "invalid-decision",
+      `${field} must be a non-empty list in schema_version 3. Run \`migent migrate\` for older workflows.`,
+      ["stages", index, "decision"],
+    );
+    return invalid;
+  }
+  let valid = true;
+  const values: string[] = [];
+  const instructions: Record<string, string> = {};
+  const routesRaw: Record<string, unknown> = Object.create(null);
+  const entryIndexByName = new Map<string, number>();
+  const rawNameByName = new Map<string, string>();
+  raw.forEach((entry, entryIndex) => {
+    const entryPath: (string | number)[] = ["stages", index, "decision", entryIndex];
+    if (!isRecord(entry) || Object.keys(entry).length !== 1) {
+      problems.addMessage("invalid-decision", `${field} entries must each declare exactly one decision.`, entryPath);
+      valid = false;
+      return;
+    }
+    const rawName = Object.keys(entry)[0]!;
+    const name = rawName.trim().toLowerCase();
+    if (name === "") {
+      problems.addMessage("invalid-value", `Missing or invalid ${field}.`, entryPath);
+      valid = false;
+      return;
+    }
+    if (Object.hasOwn(routesRaw, name)) {
+      problems.addMessage("invalid-decision", `Duplicate decision value on ${field}: ${name}`, entryPath);
+      valid = false;
+      return;
+    }
+    const body = entry[rawName];
+    if (!isRecord(body)) {
+      problems.addMessage("invalid-decision", `${field}.${name} must be a mapping.`, [...entryPath, rawName]);
+      valid = false;
+      return;
+    }
+    let entryValid = true;
+    for (const key of Object.keys(body)) {
+      if (key !== "when" && key !== "navigate") {
+        problems.addMessage("invalid-decision", `${field}.${name}.${key} is not allowed.`, [...entryPath, rawName, key]);
+        entryValid = false;
+      }
+    }
+    if (body.when !== undefined) {
+      if (typeof body.when !== "string" || body.when.trim() === "") {
+        problems.addMessage("invalid-value", `Missing or invalid ${field}.${name}.when.`, [...entryPath, rawName, "when"]);
+        entryValid = false;
+      } else {
+        instructions[name] = body.when.trim();
+      }
+    }
+    if (body.navigate == null) {
+      problems.addMessage("missing-required", `${field}.${name}.navigate is required.`, [...entryPath, rawName, "navigate"]);
+      entryValid = false;
+    }
+    if (!entryValid) {
+      valid = false;
+      return;
+    }
+    values.push(name);
+    entryIndexByName.set(name, entryIndex);
+    rawNameByName.set(name, rawName);
+    routesRaw[name] = body.navigate;
+  });
+  // Readable entries keep their route checks even when another entry is malformed.
+  const routes = collectRouteTargets(field, routesRaw, entryIndexByName, rawNameByName, index, declaredIds, problems);
+  return {
+    values: valid ? { state: "valid", value: values } : { state: "invalid" },
+    instructions,
+    routes: valid ? routes : { state: "invalid" },
+  };
+}
+
+/** Resolves each route on its own, so one bad target does not hide the others. */
+function collectRouteTargets(
+  field: string,
+  routes: Record<string, unknown>,
+  entryIndexByName: ReadonlyMap<string, number>,
+  rawNameByName: ReadonlyMap<string, string>,
+  index: number,
+  declaredIds: ReadonlySet<string>,
+  problems: DraftProblems,
+): DraftUnit<Record<string, string | string[]>> {
+  const placeholders = declaredStagePlaceholders(declaredIds);
+  const parsed: Record<string, string | string[]> = {};
+  let valid = true;
+  for (const [rawKey, rawTarget] of Object.entries(routes)) {
+    const key = rawKey.trim().toLowerCase();
+    const entryIndex = entryIndexByName.get(key);
+    // The path keeps the author's key spelling, so it resolves in the draft text.
+    const written = rawNameByName.get(key) ?? rawKey;
+    const routePath: (string | number)[] =
+      entryIndex === undefined
+        ? ["stages", index, "decision"]
+        : ["stages", index, "decision", entryIndex, written, "navigate"];
+    if (key === "") {
+      problems.addMessage("invalid-value", `Missing or invalid ${field}.routes.`, routePath);
+      valid = false;
+      continue;
+    }
+    try {
+      // Schema >= 3 routes follow the runtime: a list is a fan-out, a scalar must be a stage.
+      const target = routeTarget(rawTarget, `${field}.routes.${key}`, placeholders, true);
+      if (typeof target === "string" && target !== "complete" && !declaredIds.has(target)) {
+        throw new ConfigurationError(`${field}.routes.${key} is not a declared stage: ${target}`);
+      }
+      parsed[key] = target;
+    } catch (error) {
+      problems.add(error, routePath);
+      valid = false;
+    }
+  }
+  return valid ? { state: "valid", value: parsed } : { state: "invalid" };
+}
+
+function collectStage(
+  rawItem: unknown,
+  index: number,
+  version2: boolean,
+  version3: boolean,
+  version5: boolean,
+  declaredIds: ReadonlySet<string>,
+  problems: DraftProblems,
+): DraftStage | null {
+  if (!isRecord(rawItem)) {
+    problems.addMessage("invalid-value", "Workflow stage must be a mapping.", ["stages", index]);
+    return null;
+  }
+  const before = problems.items.length;
+  const report = (message: string): void => {
+    problems.addMessage(workflowRuleCode(message), message, stageErrorPath(message, index, rawItem));
+  };
+  const read = <T>(fn: () => T): DraftUnit<T> => {
+    try {
+      return { state: "valid", value: fn() };
+    } catch (error) {
+      problems.add(error, stageErrorPath(error instanceof Error ? error.message : String(error), index, rawItem));
+      return { state: "invalid" };
+    }
+  };
+
+  const idUnit = read(() => requiredString(rawItem.id, "stages.id"));
+  if (idUnit.state !== "valid") return null;
+  const stageId = idUnit.value;
+
+  const description = read(() => stageDescription(rawItem, stageId));
+  const dependsOn = read(() => stageDependsOn(rawItem, stageId));
+  const verify = read(() => stageVerify(rawItem, stageId));
+  const runWhen = read(() =>
+    stageRunWhen(rawItem, stageId, version2, verify.state === "invalid" ? [] : verify.value),
+  );
+
+  const hasRole = stageHasRole(rawItem);
+  const verifyOnly =
+    !hasRole && version2 && verify.state !== "invalid" && verify.value.length > 0;
+  const role: DraftUnit<string> = hasRole
+    ? read(() => requiredString(rawItem.role, `stages.${stageId}.role`))
+    : { state: "absent", value: "" };
+  if (!hasRole && !verifyOnly) report(`stages.${stageId}.role is required.`);
+  const kind: DraftStage["kind"] = hasRole ? "role" : verifyOnly ? "verify" : null;
+  if (kind === "verify") {
+    if (Object.hasOwn(rawItem, "ask")) report(`stages.${stageId}.ask requires a role.`);
+    for (const key of ROLE_ONLY_KEYS) {
+      if (Object.hasOwn(rawItem, key) && rawItem[key] != null) report(`stages.${stageId}.${key} requires a role.`);
+    }
+  }
+
+  const roleFields = kind === "role";
+  // `produces` stays readable without a role: output checks must not report a false missing artifact.
+  // A verify-only stage with `produces` is invalid on its own, so dependent checks skip it.
+  const artifact: DraftUnit<string | null> =
+    kind === "verify" && Object.hasOwn(rawItem, "produces") && rawItem.produces != null
+      ? { state: "invalid" }
+      : read(() => stageArtifact(rawItem, stageId));
+  if (
+    roleFields &&
+    verify.state !== "invalid" &&
+    artifact.state !== "invalid" &&
+    verify.value.length > 0 &&
+    artifact.value === VERIFY_ARTIFACT
+  ) {
+    report(`stages.${stageId}.produces.artifact cannot be ${VERIFY_ARTIFACT} on a stage with verify.`);
+  }
+  const ask: DraftUnit<AskTarget> = roleFields && Object.hasOwn(rawItem, "ask")
+    ? read(() => stageAsk(rawItem, stageId))
+    : ({ state: "absent", value: "human" } as const);
+  const decision: CollectedDecision = roleFields
+    ? version3
+      ? collectDecisionV3(rawItem, stageId, index, declaredIds, problems)
+      : {
+          values: read(() => stageDecisionValues(rawItem, stageId)),
+          instructions: {},
+          routes: { state: "invalid" },
+        }
+    : { values: { state: "absent", value: [] }, instructions: {}, routes: { state: "absent", value: {} } };
+  if (roleFields && !version3) {
+    decision.routes =
+      decision.values.state === "invalid"
+        ? { state: "invalid" }
+        : read(() =>
+            stageRoutes(
+              rawItem,
+              stageId,
+              decision.values.state === "invalid" ? [] : decision.values.value,
+              declaredStagePlaceholders(declaredIds),
+              version2,
+            ),
+          );
+  }
+  const instructions: DraftUnit<string[]> = roleFields
+    ? read(() => stringItems(rawItem.instructions, `stages.${stageId}.instructions`))
+    : { state: "absent", value: [] };
+  const agentUnit: DraftUnit<StageAgent | null> = roleFields
+    ? read(() => (version5 ? stageAgent(rawItem, stageId) : legacyStageModel(rawItem, stageId)))
+    : { state: "absent", value: null };
+  const options: DraftUnit<Record<string, string>> = roleFields && !version5
+    ? read(() => stageOptions(rawItem, stageId))
+    : { state: "absent", value: {} };
+  const maxRevisions: DraftUnit<number | null> = roleFields
+    ? read(() => stageMaxRevisions(rawItem, stageId))
+    : { state: "absent", value: null };
+  const maxVerify = read(() =>
+    verify.state === "invalid"
+      ? Object.hasOwn(rawItem, "max_verify") && rawItem.max_verify != null
+        ? positiveInteger(rawItem.max_verify, `stages.${stageId}.max_verify`)
+        : kind === "verify" ? 0 : 3
+      : stageMaxVerify(rawItem, stageId, verify.value),
+  );
+  const verifyTimeoutSec = read(() =>
+    verify.state === "invalid"
+      ? Object.hasOwn(rawItem, "verify_timeout") && rawItem.verify_timeout != null
+        ? positiveInteger(rawItem.verify_timeout, `stages.${stageId}.verify_timeout`)
+        : null
+      : stageVerifyTimeout(rawItem, stageId, verify.value),
+  );
+  const resumeFrom = read(() =>
+    dependsOn.state === "invalid"
+      ? stageResumeFromUnchecked(rawItem, stageId)
+      : stageResumeFrom(rawItem, stageId, dependsOn.value),
+  );
+
+  const clean = problems.items.length === before;
+  let spec: StageSpec | null = null;
+  if (clean && kind !== null) {
+    const common = {
+      id: stageId,
+      description: description.state === "invalid" ? null : description.value,
+      dependsOn: dependsOn.state === "invalid" ? [] : dependsOn.value,
+      resumeFrom: resumeFrom.state === "invalid" ? null : resumeFrom.value,
+      instructions: instructions.state === "invalid" ? [] : instructions.value,
+      agent: agentUnit.state === "invalid" ? null : agentUnit.value,
+      options: options.state === "invalid" ? {} : options.value,
+      maxRevisions: maxRevisions.state === "invalid" ? null : maxRevisions.value,
+      routes: decision.routes.state === "invalid" ? {} : decision.routes.value,
+      verify: verify.state === "invalid" ? [] : verify.value,
+      maxVerify: maxVerify.state === "invalid" ? 3 : maxVerify.value,
+      verifyTimeoutSec: verifyTimeoutSec.state === "invalid" ? null : verifyTimeoutSec.value,
+      runWhen: runWhen.state === "invalid" ? null : runWhen.value,
+      artifact: artifact.state === "invalid" ? null : artifact.value,
+      decisionValues: decision.values.state === "invalid" ? [] : decision.values.value,
+      ...(version3 && Object.keys(decision.instructions).length > 0
+        ? { decisionInstructions: decision.instructions }
+        : {}),
+      ...(kind === "role" && ask.state === "valid" ? { ask: ask.value } : {}),
+    };
+    try {
+      spec = stageSpecSchema.parse(
+        kind === "role"
+          ? { ...common, kind: "role", role: role.state === "invalid" ? "" : role.value }
+          : { ...common, kind: "verify", role: null, verify: verify.state === "invalid" ? [] : verify.value, maxVerify: 0 },
+      ) as StageSpec;
+    } catch (error) {
+      if (error instanceof ConfigurationError) {
+        problems.add(error, stageErrorPath(error.message, index, rawItem));
+      } else {
+        problems.addMessage(
+          "invalid-value",
+          error instanceof Error ? error.message : String(error),
+          ["stages", index],
+        );
+      }
+      spec = null;
+    }
+  }
+
+  const roleStage: RoleStageSpec | null =
+    kind === "role" && role.state !== "invalid" && agentUnit.state !== "invalid" && options.state !== "invalid"
+      ? {
+          kind: "role",
+          id: stageId,
+          description: description.state === "invalid" ? null : description.value,
+          artifact: artifact.state === "invalid" ? null : artifact.value,
+          decisionValues: decision.values.state === "invalid" ? [] : decision.values.value,
+          dependsOn: dependsOn.state === "invalid" ? [] : dependsOn.value,
+          resumeFrom: resumeFrom.state === "invalid" ? null : resumeFrom.value,
+          instructions: instructions.state === "invalid" ? [] : instructions.value,
+          agent: agentUnit.value,
+          options: options.value,
+          maxRevisions: maxRevisions.state === "invalid" ? null : maxRevisions.value,
+          routes: decision.routes.state === "invalid" ? {} : decision.routes.value,
+          verify: verify.state === "invalid" ? [] : verify.value,
+          maxVerify: maxVerify.state === "invalid" ? 3 : maxVerify.value,
+          verifyTimeoutSec: verifyTimeoutSec.state === "invalid" ? null : verifyTimeoutSec.value,
+          runWhen: runWhen.state === "invalid" ? null : runWhen.value,
+          role: role.value,
+          ...(ask.state === "valid" ? { ask: ask.value } : {}),
+        }
+      : null;
+
+  return {
+    index,
+    id: stageId,
+    kind,
+    role,
+    agent: agentUnit,
+    options,
+    dependsOn,
+    verify,
+    maxRevisions,
+    maxVerify,
+    verifyTimeoutSec,
+    artifact,
+    resumeFrom,
+    runWhen,
+    routes: decision.routes,
+    spec,
+    roleStage,
+  };
+}
+
+interface CollectedOutputs {
+  sectionValid: boolean;
+  /** True when every output entry parsed. */
+  complete: boolean;
+  names: Set<string>;
+  values: WorkflowOutput[];
+  /** Raw list index of each value, for author-coordinate paths. */
+  indexes: number[];
+}
+
+function collectOutputs(
+  raw: unknown,
+  stages: readonly DraftStage[],
+  declaredIds: ReadonlySet<string>,
+  problems: DraftProblems,
+  field = "outputs",
+  basePath: readonly (string | number)[] = [field],
+): CollectedOutputs {
+  const result: CollectedOutputs = { sectionValid: true, complete: true, names: new Set(), values: [], indexes: [] };
+  let rawItems: unknown = raw === false ? [] : raw;
+  if (rawItems == null || (isRecord(rawItems) && Object.keys(rawItems).length === 0)) rawItems = [];
+  if (!Array.isArray(rawItems)) {
+    problems.addMessage("invalid-value", `${field} must be a list.`, [...basePath]);
+    return { sectionValid: false, complete: false, names: result.names, values: [], indexes: [] };
+  }
+  const artifactOf = (stageId: string): DraftUnit<string | null> | null =>
+    stages.find((stage) => stage.id === stageId)?.artifact ?? null;
+  rawItems.forEach((item, index) => {
+    const entryPath: (string | number)[] = [...basePath, index];
+    if (!isRecord(item)) {
+      problems.addMessage("invalid-value", `${field} item must be a mapping.`, entryPath);
+      result.complete = false;
+      return;
+    }
+    let entryValid = true;
+    const read = <T>(fn: () => T, suffix: string): T | null => {
+      try {
+        return fn();
+      } catch (error) {
+        problems.add(error, [...entryPath, suffix]);
+        entryValid = false;
+        result.complete = false;
+        return null;
+      }
+    };
+    const name = read(() => filename(item.name, `${field}.name`), "name");
+    const fromStage = read(() => requiredString(item.from_stage, `${field}.from_stage`), "from_stage");
+    const artifact = read(() => filename(item.artifact, `${field}.artifact`), "artifact");
+    if (name !== null) {
+      if (result.names.has(name)) {
+        problems.addMessage("invalid-value", `Duplicate ${field} name: ${name}`, [...entryPath, "name"]);
+        entryValid = false;
+      }
+      result.names.add(name);
+    }
+    if (fromStage !== null) {
+      if (!declaredIds.has(fromStage)) {
+        problems.addMessage(
+          "unknown-stage",
+          `${field}.from_stage is not a declared stage: ${fromStage}`,
+          [...entryPath, "from_stage"],
+        );
+        entryValid = false;
+      } else {
+        const source = artifactOf(fromStage);
+        if (source !== null && source.state !== "invalid" && name !== null && artifact !== null) {
+          if (source.value === null) {
+            problems.addMessage(
+              "invalid-artifact",
+              `${field} ${pyRepr(name)} references stage ${fromStage} which does not produce an artifact.`,
+              entryPath,
+            );
+            entryValid = false;
+          } else if (source.value !== artifact) {
+            problems.addMessage(
+              "invalid-artifact",
+              `${field} ${pyRepr(name)} artifact ${pyRepr(artifact)} does not match stages.${fromStage}.produces.artifact ${pyRepr(source.value)}.`,
+              [...entryPath, "artifact"],
+            );
+            entryValid = false;
+          }
+        }
+      }
+    }
+    if (!entryValid) result.complete = false;
+    if (entryValid && name !== null && fromStage !== null && artifact !== null) {
+      result.values.push({ name, fromStage, artifact });
+      result.indexes.push(index);
+    }
+  });
+  return result;
+}
+
+function collectDownstream(
+  raw: unknown,
+  outputs: CollectedOutputs,
+  problems: DraftProblems,
+): { sectionValid: boolean; entries: DraftDownstreamEntry[] } {
+  const field = "downstream";
+  if (raw === undefined) return { sectionValid: true, entries: [] };
+  if (!Array.isArray(raw)) {
+    problems.addMessage("invalid-value", `${field} must be a list.`, [field]);
+    return { sectionValid: false, entries: [] };
+  }
+  const entries: DraftDownstreamEntry[] = [];
+  const seen = new Set<string>();
+  raw.forEach((entry, index) => {
+    const entryPath: (string | number)[] = [field, index];
+    if (!isRecord(entry)) {
+      problems.addMessage("invalid-value", `${field} entries must be mappings.`, entryPath);
+      return;
+    }
+    for (const key of Object.keys(entry)) {
+      if (!["workflow", "task", "artifacts"].includes(key)) {
+        problems.addMessage(
+          "invalid-downstream",
+          `Unknown downstream field: ${key}.`,
+          [...entryPath, key],
+        );
+      }
+    }
+    let workflow: DraftUnit<string> = { state: "invalid" };
+    if (typeof entry.workflow === "string" && entry.workflow.trim() !== "") {
+      const value = entry.workflow.trim();
+      if (isPathReference(value)) {
+        problems.addMessage(
+          "invalid-downstream",
+          "downstream.workflow must be a workflow id, not a path.",
+          [...entryPath, "workflow"],
+        );
+      } else if (seen.has(value)) {
+        problems.addMessage("invalid-downstream", `Duplicate downstream workflow: ${value}.`, [...entryPath, "workflow"]);
+      } else {
+        seen.add(value);
+        workflow = { state: "valid", value };
+      }
+    } else {
+      problems.addMessage("missing-required", "Missing or invalid downstream.workflow.", [...entryPath, "workflow"]);
+    }
+    if (typeof entry.task !== "string" || entry.task.trim() === "") {
+      problems.addMessage("missing-required", "Missing or invalid downstream.task.", [...entryPath, "task"]);
+    } else if (/[\r\n]/.test(entry.task)) {
+      problems.addMessage("invalid-downstream", "downstream.task must be a single line.", [...entryPath, "task"]);
+    }
+    const mapping = entry.artifacts === undefined ? {} : entry.artifacts;
+    if (!isRecord(mapping)) {
+      problems.addMessage("invalid-downstream", "downstream.artifacts must be a mapping.", [...entryPath, "artifacts"]);
+    } else {
+      for (const [name, source] of Object.entries(mapping)) {
+        const artifactPath = [...entryPath, "artifacts", name];
+        if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(name) || name === "__proto__" || name === "constructor" || name === "prototype") {
+          problems.addMessage("invalid-downstream", `Invalid downstream artifact name: ${name}.`, artifactPath);
+          continue;
+        }
+        if (typeof source !== "string" || source.trim() === "") {
+          problems.addMessage("missing-required", `Missing or invalid downstream.artifacts.${name}.`, artifactPath);
+          continue;
+        }
+        const output = source.trim();
+        if (outputs.sectionValid && !outputs.names.has(output)) {
+          problems.addMessage(
+            "invalid-artifact",
+            `downstream.artifacts.${name}: unknown output ${output}.`,
+            artifactPath,
+          );
+        }
+      }
+    }
+    entries.push({ index, workflow });
+  });
+  return { sectionValid: true, entries };
+}
+
+/** Reads `session.resume_from` without the dependency rule, for stages whose depends_on is unreadable. */
+function stageResumeFromUnchecked(stage: Record<string, unknown>, stageId: string): string | null {
+  if (!Object.hasOwn(stage, "session") || stage.session == null) return null;
+  const session = stage.session;
+  if (isRecord(session) && Object.keys(session).length === 0) return null;
+  if (!isRecord(session)) {
+    throw new ConfigurationError(`stages.${stageId}.session must be a mapping.`);
+  }
+  if (!Object.hasOwn(session, "resume_from") || session.resume_from == null) return null;
+  return requiredString(session.resume_from, `stages.${stageId}.session.resume_from`);
+}
+
+/** Reads a string list for a top-level field, reporting each bad item on its own. */
+function collectStringItems(raw: unknown, field: string, problems: DraftProblems): void {
+  if (raw == null) return;
+  if (!Array.isArray(raw)) {
+    problems.addMessage("invalid-value", `${field} must be a list.`, [field]);
+    return;
+  }
+  raw.forEach((item, index) => {
+    draftUnit(() => requiredString(item, `${field}[${index}]`), problems, [field, index]);
+  });
+}
+
+interface CollectedCompletion {
+  /** The declared completion stage, when it is readable, for the verify-path points. */
+  stage: string | null;
+}
+
+/** Reads `completion` as its own unit set, so a broken stage does not hide its errors. */
+function collectCompletion(
+  raw: Record<string, unknown>,
+  stages: readonly DraftStage[],
+  declaredIds: ReadonlySet<string>,
+  problems: DraftProblems,
+): CollectedCompletion {
+  const stage = draftUnit(() => requiredString(raw.stage, "completion.stage"), problems, ["completion", "stage"]);
+  let stageId: string | null = null;
+  if (stage.state === "valid") {
+    if (declaredIds.has(stage.value)) {
+      stageId = stage.value;
+    } else {
+      problems.addMessage(
+        "unknown-stage",
+        `completion.stage is not a declared stage: ${stage.value}`,
+        ["completion", "stage"],
+      );
+    }
+  }
+  if (raw.decision != null) {
+    draftUnit(() => requiredString(raw.decision, "completion.decision"), problems, ["completion", "decision"]);
+  }
+  collectOutputs(raw.outputs ?? [], stages, declaredIds, problems, "completion.outputs", ["completion", "outputs"]);
+  return { stage: stageId };
+}
+
+/** A stage view carrying only the fields the cross-stage rules read. */
+function graphStageOf(stage: DraftStage): StageSpec {
+  return {
+    kind: "verify",
+    role: null,
+    id: stage.id,
+    description: null,
+    artifact: stage.artifact.state === "valid" ? stage.artifact.value : null,
+    decisionValues: [],
+    dependsOn: stage.dependsOn.state === "valid" ? stage.dependsOn.value : [],
+    resumeFrom: null,
+    instructions: [],
+    agent: null,
+    options: {},
+    maxRevisions: stage.maxRevisions.state === "valid" ? stage.maxRevisions.value : null,
+    routes: stage.routes.state === "valid" ? stage.routes.value : {},
+    verify: stage.verify.state === "valid" ? stage.verify.value : [],
+    maxVerify: 0,
+    verifyTimeoutSec: null,
+    runWhen: stage.runWhen.state === "valid" ? stage.runWhen.value : null,
+  };
+}
+
+/** True when every stage `stageId` depends on, transitively, was collected with a readable list. */
+function dependencyClosureKnown(
+  stagesById: ReadonlyMap<string, DraftStage>,
+  declaredIds: ReadonlySet<string>,
+  stageId: string,
+): boolean {
+  const pending = [stageId];
+  const seen = new Set<string>();
+  while (pending.length > 0) {
+    const next = pending.pop()!;
+    if (seen.has(next)) continue;
+    seen.add(next);
+    // A declared stage without a collected unit, or an unknown edge, leaves the closure unproven.
+    if (!declaredIds.has(next)) return false;
+    const stage = stagesById.get(next);
+    if (stage === undefined) return false;
+    if (stage.dependsOn.state !== "valid") return false;
+    pending.push(...stage.dependsOn.value);
+  }
+  return true;
+}
+
+/** Stages a skip of `stageId` definitely leaves unreached, using only edges the draft made readable. */
+function definiteConditionalReach(
+  stages: readonly DraftStage[],
+  graph: Record<string, StageSpec>,
+  declaredIds: ReadonlySet<string>,
+  stageId: string,
+): Set<string> {
+  const byId = new Map(stages.map((stage) => [stage.id, stage]));
+  // A route target is forward only when the member's whole dependency chain is readable.
+  const closureKnown = (id: string): boolean => dependencyClosureKnown(byId, declaredIds, id);
+  const reach = new Set<string>([stageId]);
+  const pending = [stageId];
+  while (pending.length > 0) {
+    const member = pending.pop()!;
+    const found: string[] = [];
+    for (const other of stages) {
+      if (other.dependsOn.state !== "valid") continue;
+      if (other.dependsOn.value.includes(member)) found.push(other.id);
+    }
+    const stage = byId.get(member);
+    if (stage !== undefined && stage.routes.state === "valid" && closureKnown(member)) {
+      const closure = dependencyClosure(graph, member);
+      for (const value of Object.values(stage.routes.value)) {
+        for (const target of routeTargets(value)) {
+          if (target !== "complete" && !closure.has(target)) found.push(target);
+        }
+      }
+    }
+    for (const next of found) {
+      if (reach.has(next) || !byId.has(next)) continue;
+      reach.add(next);
+      pending.push(next);
+    }
+  }
+  return reach;
+}
+
+/** The runtime's cross-stage rules over whatever each stage could read. A rule is skipped only when a
+ * unit it reads is unreadable — never because an unrelated field or stage failed.
+ */
+function collectGraphProblems(
+  stages: readonly DraftStage[],
+  rawStageCount: number,
+  declaredStageIds: ReadonlySet<string>,
+  completionStage: string | null,
+  outputs: CollectedOutputs,
+  version2: boolean,
+  problems: DraftProblems,
+): void {
+  // An unreadable id or a duplicate leaves some stage's fields unknown, but each check below reads only
+  // what its own finding needs, so the rest of the graph is still checked.
+  const structurallyComplete = stages.length === rawStageCount;
+  const routesComplete = !stages.some((stage) => stage.routes.state === "invalid");
+  const dependsComplete = !stages.some((stage) => stage.dependsOn.state === "invalid");
+  const stagesById = new Map(stages.map((stage) => [stage.id, stage]));
+  const graph: Record<string, StageSpec> = Object.create(null);
+  for (const stage of stages) graph[stage.id] = graphStageOf(stage);
+
+  // A missing route set or an uncollected stage could hide the route back, so both must be readable.
+  if (routesComplete && structurallyComplete) {
+    const targets = new Set<string>();
+    for (const stage of Object.values(graph)) {
+      for (const value of Object.values(stage.routes)) {
+        for (const target of routeTargets(value)) if (target !== "complete") targets.add(target);
+      }
+    }
+    for (const stage of stages) {
+      if (stage.maxRevisions.state === "invalid" || stage.maxRevisions.value === null) continue;
+      if (targets.has(stage.id)) continue;
+      problems.addMessage(
+        "invalid-value",
+        `stages.${stage.id}.max_revisions requires a route back to ${stage.id}.`,
+        ["stages", stage.index, "max_revisions"],
+      );
+    }
+  }
+
+  // Conditional reach uses only readable edges; anything found this way is definitely reached, so an
+  // unrelated broken `depends_on`, unreadable stage, or malformed route elsewhere hides nothing.
+  const reachedBy = new Map<string, string>();
+  for (const source of stages) {
+    if (source.runWhen.state !== "valid" || source.runWhen.value === null) continue;
+    for (const member of definiteConditionalReach(stages, graph, declaredStageIds, source.id)) {
+      if (!reachedBy.has(member)) reachedBy.set(member, source.id);
+    }
+  }
+  for (const stage of stages) {
+    const source = reachedBy.get(stage.id);
+    if (source === undefined) continue;
+    if (stage.verify.state === "invalid") continue;
+    if (stage.verify.state === "valid" && stage.verify.value.length === 0) continue;
+    problems.addMessage(
+      "invalid-value",
+      `stages.${stage.id}.verify is reached through run_when stage ${source}; a skip would bypass this verify.`,
+      ["stages", stage.index, "verify"],
+    );
+  }
+  outputs.values.forEach((output, at) => {
+    const source = reachedBy.get(output.fromStage);
+    if (source === undefined) return;
+    const origin =
+      source === output.fromStage
+        ? `run_when stage ${source}`
+        : `stages.${output.fromStage}, which is reached through run_when stage ${source}`;
+    problems.addMessage(
+      "invalid-artifact",
+      `outputs ${pyRepr(output.name)} comes from ${origin}; a skip would leave it missing.`,
+      ["outputs", outputs.indexes[at] ?? at, "from_stage"],
+    );
+  });
+
+  // Each completion point is checked against its own dependency closure. A malformed `depends_on` or an
+  // uncollected stage elsewhere cannot make a point's path unknown, and an unreadable point's own chain
+  // is the only reason to skip that point.
+  const points = new Set<string>();
+  if (
+    !version2 &&
+    completionStage !== null &&
+    dependencyClosureKnown(stagesById, declaredStageIds, completionStage)
+  ) {
+    points.add(completionStage);
+  }
+  for (const stage of stages) {
+    if (stage.routes.state === "invalid") continue;
+    if (!Object.values(stage.routes.value).some((value) => routeTargets(value).includes("complete"))) continue;
+    if (!dependencyClosureKnown(stagesById, declaredStageIds, stage.id)) continue;
+    points.add(stage.id);
+  }
+  // A leaf is only provable when every dependency list and every stage is readable, and the candidate's
+  // own routes are readable too (an absent route set means it has none).
+  if (version2 && dependsComplete && structurallyComplete) {
+    for (const stage of stages) {
+      if (stage.routes.state === "invalid") continue;
+      if (isLeafStage(graph, graph[stage.id]!)) points.add(stage.id);
+    }
+  }
+  if (points.size === 0) return;
+  for (const stage of stages) {
+    if (stage.verify.state !== "valid" || stage.verify.value.length === 0) continue;
+    for (const point of points) {
+      if (point === stage.id || dependencyClosure(graph, point).has(stage.id)) continue;
+      problems.addMessage(
+        "invalid-value",
+        `stages.${stage.id}.verify is not on every path to complete: ${point} does not depend on ${stage.id}.`,
+        ["stages", stage.index, "verify"],
+      );
+    }
+  }
+}
+
+/**
+ * Collects every independent problem of a workflow mapping. The rules are the runtime's; only the
+ * failure handling differs. `document` is set only when nothing is incomplete, and it always comes
+ * from `parseWorkflowMapping` so runtime parsing stays the one authority.
+ */
+export function collectWorkflowDraft(data: Record<string, unknown>, source: string): WorkflowDraftParse {
+  const problems = new DraftProblems();
+  const idUnit = draftUnit(() => documentId(data, source), problems, ["id"]);
+  const versionUnit = draftUnit(() => documentVersion(data), problems, ["schema_version"]);
+  const unknownKeys = unknownWorkflowKeyEntries(data);
+  const emptyResult = (schemaVersion: number): WorkflowDraftParse => ({
+    problems: problems.items,
+    document: null,
+    id: idUnit,
+    schemaVersion,
+    stagesDeclared: false,
+    declaredStageIds: new Set(),
+    stages: [],
+    requires: { state: "invalid" },
+    downstream: [],
+    outputNames: new Set(),
+    outputsComplete: false,
+    unknownKeys,
+    catalogEntry: {
+      file: source,
+      document: null,
+      id: idUnit.state === "invalid" ? { known: false } : { known: true, value: idUnit.value },
+      stagesDeclared: false,
+      requires: { known: false },
+      downstream: [],
+    },
+  });
+  if (idUnit.state === "invalid" || versionUnit.state === "invalid") return emptyResult(0);
+  const schemaVersion = versionUnit.value;
+  const version2 = schemaVersion >= 2;
+  const version3 = schemaVersion >= 3;
+  const version5 = schemaVersion >= 5;
+  if (schemaVersion > SCHEMA_VERSION) {
+    problems.addMessage(
+      "schema-newer",
+      `workflow schema_version ${schemaVersion} is newer than this Migent (${SCHEMA_VERSION}).`,
+      ["schema_version"],
+    );
+    return emptyResult(schemaVersion);
+  }
+  if (unknownKeys.length > 0 && schemaVersion >= UNKNOWN_KEYS_ERROR_SCHEMA_VERSION) {
+    for (const entry of unknownKeys) problems.addMessage(entry.code, entry.message, entry.path);
+  }
+  if (schemaVersion >= 4 && Object.hasOwn(data, "requires")) {
+    const message = "requires was removed in schema_version 4. Run `migent migrate`; use --prior for context and downstream for suggestions.";
+    problems.addMessage(workflowRuleCode(message), message, ["requires"]);
+  }
+  if (schemaVersion < 4 && Object.hasOwn(data, "downstream")) {
+    const message = "downstream requires schema_version 4.";
+    problems.addMessage(workflowRuleCode(message), message, ["downstream"]);
+  }
+  if (version2 && Object.hasOwn(data, "completion") && data.completion != null) {
+    const message = "schema_version 2 does not allow completion. Run `migent migrate`.";
+    problems.addMessage(workflowRuleCode(message), message, ["completion"]);
+  }
+
+  const rawStages: unknown[] = Array.isArray(data.stages) ? data.stages : [];
+  const stagesDeclared = rawStages.length > 0;
+  const declaredStageIds = new Set<string>();
+  const duplicateIndexes = new Set<number>();
+  rawStages.forEach((item, index) => {
+    if (!isRecord(item)) return;
+    let value: string;
+    try {
+      value = requiredString(item.id, "stages.id");
+    } catch {
+      return;
+    }
+    if (declaredStageIds.has(value)) duplicateIndexes.add(index);
+    declaredStageIds.add(value);
+  });
+
+  const stages: DraftStage[] = [];
+  rawStages.forEach((item, index) => {
+    if (duplicateIndexes.has(index)) {
+      const id = isRecord(item) && typeof item.id === "string" ? item.id.trim() : "";
+      problems.addMessage("duplicate-stage-id", `Duplicate stage id: ${id}`, ["stages", index, "id"]);
+      return;
+    }
+    const stage = collectStage(item, index, version2, version3, version5, declaredStageIds, problems);
+    if (stage !== null) stages.push(stage);
+  });
+
+  const outputs: CollectedOutputs = version2
+    ? collectOutputs(data.outputs, stages, declaredStageIds, problems)
+    : { sectionValid: true, complete: true, names: new Set(), values: [], indexes: [] };
+  const downstream = schemaVersion >= 4
+    ? collectDownstream(data.downstream, outputs, problems)
+    : { sectionValid: true, entries: [] };
+  const requires: DraftUnit<WorkflowRequires | null> =
+    schemaVersion >= 4
+      ? Object.hasOwn(data, "requires")
+        ? { state: "invalid" }
+        : { state: "absent", value: null }
+      : draftUnit(() => parseRequires(data.requires, version2), problems, ["requires"]);
+  // Top-level fields are leaf units of their own: they are read even when a stage is unreadable.
+  if (version2) draftUnit(() => parseConcurrency(data), problems, ["concurrency"]);
+  collectStringItems(data.constraints, "constraints", problems);
+  const completion =
+    !version2 && isRecord(data.completion) && declaredStageIds.size > 0
+      ? collectCompletion(data.completion, stages, declaredStageIds, problems)
+      : { stage: null };
+
+  const stagesById = new Map(stages.map((stage) => [stage.id, stage]));
+  for (const stage of stages) {
+    if (stage.dependsOn.state === "invalid") continue;
+    for (const dependency of stage.dependsOn.value) {
+      if (!declaredStageIds.has(dependency)) {
+        const message = `stages.${stage.id}.depends_on is not a declared stage: ${dependency}`;
+        problems.addMessage("unknown-stage", message, ["stages", stage.index, "depends_on"]);
+      }
+    }
+    if (stage.resumeFrom.state === "invalid" || stage.resumeFrom.value === null) continue;
+    const target = stagesById.get(stage.resumeFrom.value);
+    if (target !== undefined && target.kind === "verify") {
+      const message = `stages.${stage.id}.session.resume_from must name a role stage: ${stage.resumeFrom.value}.`;
+      problems.addMessage("invalid-value", message, ["stages", stage.index, "session", "resume_from"]);
+    }
+  }
+
+  collectGraphProblems(stages, rawStages.length, declaredStageIds, completion.stage, outputs, version2, problems);
+
+  if (problems.items.length === 0) {
+    try {
+      return {
+        ...emptyResult(schemaVersion),
+        document: parseWorkflowMapping(data, source),
+        stagesDeclared,
+        declaredStageIds,
+        stages,
+        requires,
+        downstream: downstream.entries,
+        outputNames: outputs.names,
+        outputsComplete: outputs.complete,
+        catalogEntry: catalogEntryOfDraft(source, idUnit, stagesDeclared, requires, downstream.entries),
+      };
+    } catch (error) {
+      problems.add(error, draftPathFor(error instanceof Error ? error.message : String(error), data));
+    }
+  }
+
+  return {
+    problems: problems.items,
+    document: null,
+    id: idUnit,
+    schemaVersion,
+    stagesDeclared,
+    declaredStageIds,
+    stages,
+    requires,
+    downstream: downstream.entries,
+    outputNames: outputs.names,
+    outputsComplete: outputs.complete,
+    unknownKeys,
+    catalogEntry: catalogEntryOfDraft(source, idUnit, stagesDeclared, requires, downstream.entries),
+  };
+}
+
+function catalogEntryOfDraft(
+  file: string,
+  id: DraftUnit<string>,
+  stagesDeclared: boolean,
+  requires: DraftUnit<WorkflowRequires | null>,
+  downstream: readonly DraftDownstreamEntry[],
+): WorkflowCatalogEntry {
+  return {
+    file,
+    document: null,
+    id: id.state === "invalid" ? { known: false } : { known: true, value: id.value },
+    stagesDeclared,
+    requires: requires.state === "invalid" ? { known: false } : { known: true, value: requires.value },
+    downstream: downstream.map((entry) => ({
+      index: entry.index,
+      workflow: entry.workflow.state === "invalid"
+        ? { known: false }
+        : { known: true, value: entry.workflow.value },
+    })),
+  };
 }
