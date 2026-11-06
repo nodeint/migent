@@ -15,7 +15,6 @@ import { runInit } from "./commands/init.js";
 import { runSessionMetrics, runSessions } from "./commands/sessions.js";
 import { parsePort, runServiceStart, runServiceStatus, runServiceStop } from "./commands/service.js";
 import { installSkill, printSkillPath, updateSkill, type SkillOptions } from "./commands/skill.js";
-import { runProviderList } from "./commands/provider.js";
 import { runRegister, runRemove, runWorkspaceList } from "./commands/workspace-registry.js";
 import { printError } from "./display.js";
 import { LOOP_EXITS, STAGE_EXITS } from "./exits.js";
@@ -30,6 +29,8 @@ const PROGRESS_HELP =
   "Print each tool call when it finishes. The default prints one line when a stage starts and one when it finishes.";
 const VERBOSE_HELP =
   "Accepted for compatibility. Stage lines already include the attempt and the time. The response stays in the execution directory.";
+const PROVIDER_LIST_REMOVED =
+  "provider list has been removed. Use `migent get providers`, `migent get clients`, `migent get models`, `migent get options`, or `migent get efforts`.";
 
 export interface CliStatus {
   code: number;
@@ -160,21 +161,29 @@ export function createProgram(status: CliStatus, options: { quietErrors?: boolea
 
   program
     .command("get [type] [name]")
-    .description("Look up workflows, roles, agents, or the effective config (read-only).")
+    .description("Look up workflows, roles, agents, the effective config, and this machine's providers, clients, models, options, and efforts (read-only).")
     .option("-o, --output <format>", "Output format: json, yaml, or name. Default is a table or YAML.")
     .option("--json", "Same as -o json.")
     .option("--session <id>", "For workflows: the workflow this session runs (draft, frozen, or live).")
+    .option("--client <id>", "For models, options, and efforts: limit to one CLI client.")
+    .option("--native", "For options: list the CLI's native headless options discovered from its help.")
     .addHelpText(
       "after",
       `
 Types:
 ${getHelpTypes()}
+Models, options, and efforts are keyed by CLI client. Without --client, a name both clients
+use is ambiguous and exits 2; pass --client to choose one.
 ${exitText(["Exit 0 on success, including an empty list.", "Exit 2 on a usage or configuration error, or when the name is not found."])}Examples:
   migent get workflows
   migent get workflow plan --json
   migent get workflow --session <id> -o yaml
   migent get roles -o name
   migent get agent <name>
+  migent get clients
+  migent get models --client claude-code -o json
+  migent get options --native --client codex
+  migent get effort high --client agy
 `,
     )
     .action((type: string | undefined, name: string | undefined, options: OptionValues, command: Command) => {
@@ -185,10 +194,12 @@ ${exitText(["Exit 0 on success, including an empty list.", "Exit 2 on a usage or
         return;
       }
       return settle(status, () =>
-        runGet(findWorkspace(invocationCwdPath()), type, name ?? null, {
+        runGet(invocationCwdPath(), type, name ?? null, {
           output: optionalText(options.output) ?? undefined,
           json: options.json === true,
           session: optionalText(options.session) ?? undefined,
+          client: optionalText(options.client) ?? undefined,
+          native: options.native === true,
         }),
       );
     });
@@ -232,23 +243,21 @@ ${exitText([
       ),
     );
 
-  const provider = program.command("provider").description("List registered provider providers and their models.");
+  // Removed in favour of per-type `get` commands. Hidden so it no longer appears in help.
+  const provider = program.command("provider", { hidden: true });
   provider
-    .command("list")
-    .description("List each registered provider, whether its CLI is on PATH, and the models it reports.")
-    .option("--json", "Print the provider list as one JSON object.")
-    .addHelpText(
-      "after",
-      exitText([
-        "Exit 0 when the command ran and at least one provider returned models.",
-        "Exit 1 when no provider returned any models.",
-        "A missing optional CLI is not an error.",
-      ]),
-    )
-    .action((options: OptionValues) =>
-      settle(status, () => runProviderList({ asJson: options.json === true })),
-    );
-  showHelpWhenBare(status, provider);
+    .command("list", { hidden: true })
+    .allowUnknownOption()
+    .allowExcessArguments()
+    .helpOption(false)
+    .action(() => settle(status, () => {
+      printError(PROVIDER_LIST_REMOVED);
+      return 2;
+    }));
+  provider.action(() => settle(status, () => {
+    printError(PROVIDER_LIST_REMOVED);
+    return 2;
+  }));
 
   program
     .command("migrate")

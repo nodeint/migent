@@ -1,15 +1,22 @@
 import { printError } from "../display.js";
+import { createDiscoveryContext } from "../get/discovery.js";
 import { OUTPUT_FORMATS, renderList, renderOne, type OutputFormat } from "../get/render.js";
 import { RESOURCES, findResource, providerResolver, resourceTypes } from "../get/resources.js";
+import { findWorkspace } from "../workspace.js";
 
 export interface GetOptions {
   output?: string | undefined;
   json?: boolean;
   session?: string | undefined;
+  client?: string | undefined;
+  native?: boolean;
 }
 
-/** Read-only lookup of what the project defines. Exit 0 on success, 2 on a usage or configuration error. */
-export function runGet(workspace: string, type: string, name: string | null, options: GetOptions): number {
+/**
+ * Read-only lookup. Project types read the workspace; machine types read the
+ * host and may run discovery. Exit 0 on success, 2 on a usage or configuration error.
+ */
+export async function runGet(cwd: string, type: string, name: string | null, options: GetOptions): Promise<number> {
   const resource = findResource(type);
   if (resource === undefined) {
     printError(`Unknown resource type: ${type}. Valid types: ${resourceTypes()}.`);
@@ -33,13 +40,42 @@ export function runGet(workspace: string, type: string, name: string | null, opt
     printError("--session is only valid for workflows.");
     return 2;
   }
-  const resolve = providerResolver();
+  const client = options.client ?? null;
+  const native = options.native === true;
+  if (native && resource.kind !== "option") {
+    printError("--native is only valid for options.");
+    return 2;
+  }
+  if (resource.scope === "project") {
+    if (client !== null) {
+      printError("--client is only valid for models, options, and efforts.");
+      return 2;
+    }
+  } else if (client !== null && !resource.acceptsClient) {
+    printError(`--client is not valid for ${resource.kind}s.`);
+    return 2;
+  }
+
   const output = format as OutputFormat;
-  if (resource.list !== undefined && name === null && session === null) {
-    process.stdout.write(renderList(resource.list(workspace, resolve), output, resource.columns));
+  if (resource.scope === "project") {
+    const workspace = findWorkspace(cwd);
+    const resolve = providerResolver();
+    if (resource.list !== undefined && name === null && session === null) {
+      process.stdout.write(renderList(resource.list(workspace, resolve), output, resource.columns));
+      return 0;
+    }
+    process.stdout.write(renderOne(resource.get(workspace, name, resolve, session), output));
     return 0;
   }
-  process.stdout.write(renderOne(resource.get(workspace, name, resolve, session), output));
+
+  const context = createDiscoveryContext();
+  const query = { name, client, native };
+  const columns = resource.columnsFor?.(query) ?? resource.columns;
+  if (resource.list !== undefined && name === null) {
+    process.stdout.write(renderList(await resource.list(context, query), output, columns));
+    return 0;
+  }
+  process.stdout.write(renderOne(await resource.get(context, query), output));
   return 0;
 }
 

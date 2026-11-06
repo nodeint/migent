@@ -265,7 +265,7 @@ The following examples show how to write custom workflows. `migent init`
 generates the workflows described in the quickstart.
 
 Set the role's provider and model in its `agent`. Use model IDs available
-from `migent provider list` in place of the example IDs.
+from `migent get models` in place of the example IDs.
 
 ```yaml
 # .migent/config.yaml

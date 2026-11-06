@@ -15,8 +15,17 @@ export { checkModelEfforts } from "./effort-check.js";
 export {
   ProviderCommandFailed,
   asCatalog,
+  cached,
+  clientCatalogSource,
   knownModel,
   loadCatalog,
   loadOptionValues,
 } from "./catalog.js";
-export type { CatalogProvider, RunCommand, Which } from "./catalog.js";
+export type {
+  CatalogProvider,
+  CatalogSource,
+  ClientCatalogInput,
+  HeadlessOptionFact,
+  RunCommand,
+  Which,
+} from "./catalog.js";
