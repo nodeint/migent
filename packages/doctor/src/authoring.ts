@@ -2,10 +2,11 @@ import {
   ConfigurationError,
   checkDocumentSchemaVersion,
   createProviderResolver,
-  isRoleStage,
   mergeConfigLayers,
   parseWorkflowMapping,
   checkWorkflowCatalog,
+  catalogEntryFromDocument,
+  collectWorkflowDraft,
   loadAgentTarget,
   resolveStageSpec,
   type RoleStageSpec,
@@ -13,7 +14,7 @@ import {
   unknownWorkflowKeyEntries,
   type ConfigOwner,
   type MergedConfig,
-  type WorkflowDocument,
+  type WorkflowCatalogEntry,
   type ProviderInfo,
 } from "@nodeint/migent-kernel";
 import { analyzeConfig } from "./config-check.js";
@@ -99,12 +100,6 @@ export interface WorkflowDraftInput {
   config: ConfigLoad | ConfigurationError;
 }
 
-function stageIndexOf(draft: Mapping, stageId: string): number | null {
-  if (!Array.isArray(draft.stages)) return null;
-  const index = draft.stages.findIndex((stage) => isRecord(stage) && stage.id === stageId);
-  return index === -1 ? null : index;
-}
-
 function ownerSource(owner: ConfigOwner): Diagnostic["source"] {
   return { layer: owner };
 }
@@ -114,22 +109,24 @@ export function validateWorkflowDraft(input: WorkflowDraftInput, providers: Prov
   const out: Diagnostic[] = [];
   const source = { workflow: input.file };
   out.push(...versionDiagnostics(input.draft, input.file === "" ? "workflow" : input.file, source));
-  let document;
-  try {
-    document = parseWorkflowMapping(input.draft, input.file);
-  } catch (error) {
-    if (!(error instanceof ConfigurationError)) throw error;
-    out.push(fromError(error, source, "workflow-invalid"));
-    return dedupe(out);
+  // Every independent problem of the draft, not just the first one.
+  const parsed = collectWorkflowDraft(input.draft, input.file);
+  for (const problem of parsed.problems) {
+    out.push({
+      severity: "error",
+      code: problem.code,
+      message: problem.message,
+      ...(problem.path === undefined ? {} : { path: problem.path }),
+      source,
+    });
   }
-  if ((document.warnings ?? []).length > 0) {
-    for (const entry of unknownWorkflowKeyEntries(input.draft)) {
-      out.push({ severity: "warning", code: entry.code, message: entry.message, path: entry.path, source });
-    }
+  // Unknown keys are independent of every other rule; a newer schema turns them into errors above.
+  for (const entry of unknownWorkflowKeyEntries(input.draft)) {
+    out.push({ severity: "warning", code: entry.code, message: entry.message, path: entry.path, source });
   }
 
   // Siblings go through the same parser and catalog rules the runtime applies to the directory.
-  const entries: Array<{ file: string; document: WorkflowDocument }> = [];
+  const entries: WorkflowCatalogEntry[] = [];
   const failedIds = new Set<string>();
   for (const sibling of input.siblings) {
     const sibSource = { workflow: sibling.file };
@@ -138,7 +135,7 @@ export function validateWorkflowDraft(input: WorkflowDraftInput, providers: Prov
       error = sibling.error;
     } else {
       try {
-        entries.push({ file: sibling.file, document: parseWorkflowMapping(sibling.document, sibling.file) });
+        entries.push(catalogEntryFromDocument(sibling.file, parseWorkflowMapping(sibling.document, sibling.file)));
       } catch (caught) {
         if (!(caught instanceof ConfigurationError)) throw caught;
         error = caught;
@@ -149,17 +146,19 @@ export function validateWorkflowDraft(input: WorkflowDraftInput, providers: Prov
       out.push({ ...fromError(error, sibSource, "workflow-invalid"), severity: "warning", message: `${sibling.file}: ${error.message}` });
     }
   }
-  entries.push({ file: input.file, document });
-  const fileOf = (workflowId: string): string | undefined => entries.find((entry) => entry.document.id === workflowId)?.file;
+  entries.push(parsed.catalogEntry);
+  const draftId = parsed.id.state === "invalid" ? null : parsed.id.value;
+  const fileOf = (workflowId: string): string | undefined =>
+    entries.find((entry) => entry.id.known && entry.id.value === workflowId)?.file;
   const draftPaths: Record<string, string> = { "duplicate-id": "id", "unknown-downstream": "downstream", "no-stages": "stages", "requires-invalid": "requires" };
   for (const problem of checkWorkflowCatalog(entries, failedIds).problems) {
-    const concerns = problem.workflow === document.id || (problem.files?.includes(input.file) ?? false);
+    const concerns = problem.workflow === draftId || (problem.files?.includes(input.file) ?? false);
     const where = concerns ? source : { workflow: fileOf(problem.workflow) ?? input.file };
     out.push({
       severity: concerns ? "error" : "warning",
       code: problem.code,
       message: problem.message,
-      ...(concerns ? { path: [draftPaths[problem.code] ?? "id"] } : {}),
+      ...(concerns ? { path: problem.path ?? [draftPaths[problem.code] ?? "id"] } : {}),
       source: where,
     });
   }
@@ -174,10 +173,12 @@ export function validateWorkflowDraft(input: WorkflowDraftInput, providers: Prov
     ...(layers.local === null ? [] : versionDiagnostics(layers.local, "local config", { layer: "local" })),
   ];
   if (layerVersions.length > 0) return dedupe([...out, ...layerVersions]);
-  for (const stage of Object.values(document.stages)) {
-    if (!isRoleStage(stage)) continue;
-    const index = stageIndexOf(input.draft, stage.id);
-    const stagePath = (field: string): (string | number)[] => (index === null ? [] : ["stages", index, field]);
+  // Only stages whose role, agent and options are readable take part in config resolution.
+  for (const stageDraft of parsed.stages) {
+    const stage = stageDraft.roleStage;
+    if (stage === null) continue;
+    const index = stageDraft.index;
+    const stagePath = (field: string): (string | number)[] => ["stages", index, field];
     let target;
     try {
       target = resolveStageSpec(config, stage, undefined, createProviderResolver(providers));
@@ -188,22 +189,22 @@ export function validateWorkflowDraft(input: WorkflowDraftInput, providers: Prov
       if (head === "stages" || missingRole) {
         // The stage's own reference (its explicit agent, or a role that does not exist) is the workflow's to fix.
         const field = missingRole ? "role" : "agent";
-        out.push({ severity: "error", code: missingRole ? "unknown-role" : (error.code ?? "workflow-invalid"), message: `${document.id}.${stage.id}: ${error.message}`, path: stagePath(field), source });
+        out.push({ severity: "error", code: missingRole ? "unknown-role" : (error.code ?? "workflow-invalid"), message: `${draftId ?? input.file}.${stage.id}: ${error.message}`, path: stagePath(field), source });
       } else if (error.path !== undefined) {
         // A fault in the config, including a model inherited from the role's default: the config owns the fix.
         out.push({ severity: "error", code: error.code ?? "config-invalid", message: error.message, path: error.path, source: ownerSource(ownerOf(error.path)) });
       } else {
-        out.push({ severity: "error", code: error.code ?? "workflow-invalid", message: `${document.id}.${stage.id}: ${error.message}`, path: stagePath("role"), source });
+        out.push({ severity: "error", code: error.code ?? "workflow-invalid", message: `${draftId ?? input.file}.${stage.id}: ${error.message}`, path: stagePath("role"), source });
       }
       continue;
     }
     const failure = optionsFailure(config, stage, target, providers);
     if (failure === null) continue;
     if (failure.path === null) {
-      out.push({ severity: "error", code: "options-invalid", message: `${document.id}.${stage.id}: ${failure.message}`, path: stagePath("agent"), source });
+      out.push({ severity: "error", code: "options-invalid", message: `${draftId ?? input.file}.${stage.id}: ${failure.message}`, path: stagePath("agent"), source });
     } else {
       // The options come from the model or role definition: the config layer that owns it fixes them.
-      out.push({ severity: "error", code: "options-invalid", message: `${document.id}.${stage.id}: ${failure.message}`, path: failure.path, source: ownerSource(ownerOf(failure.path)) });
+      out.push({ severity: "error", code: "options-invalid", message: `${draftId ?? input.file}.${stage.id}: ${failure.message}`, path: failure.path, source: ownerSource(ownerOf(failure.path)) });
     }
   }
   return dedupe(out);

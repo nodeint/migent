@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { ConfigOwner, ProviderInfo } from "@nodeint/migent-kernel";
+import type { ConfigOwner, ProviderInfo, SourcePosition } from "@nodeint/migent-kernel";
 
 export interface Check {
   name: string;
@@ -43,7 +43,8 @@ export interface Diagnostic {
   detail?: string;
   /** Which layer supplies the offending node, derived from the merge. */
   source?: { layer: ConfigOwner } | { workflow: string };
-  position?: { line: number; column: number };
+  /** One-based start and exclusive end of the offending node. */
+  position?: SourcePosition;
 }
 
 /** Identity of a finding independent of its wording: the rule and where it applies. */

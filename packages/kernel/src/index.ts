@@ -87,7 +87,7 @@ export {
 } from "./session-selection.js";
 export type { SessionSelection, SessionSource, SessionWorkflowKind } from "./session-selection.js";
 export { ConfigurationError, OutputsMissing } from "./errors.js";
-export type { ConfigurationErrorDetails } from "./errors.js";
+export type { ConfigurationErrorDetails, SourcePosition } from "./errors.js";
 export { unknownRoleKeyEntries, unknownWorkflowKeyEntries } from "./authoring-diagnostics.js";
 export type { UnknownKey } from "./authoring-diagnostics.js";
 export { WORKFLOW_FREEZE_FILE, collectFrozenDrift } from "./session-freeze.js";
@@ -100,19 +100,28 @@ export {
   isRoleStage,
   parseWorkflowMapping,
   checkWorkflowCatalog,
+  catalogEntryFromDocument,
+  collectWorkflowDraft,
   loadWorkflowDocument,
   stageArtifactName,
   workflowsDirectory,
 } from "./workflow.js";
 export type {
+  CatalogFact,
+  DraftDownstreamEntry,
+  DraftProblem,
+  DraftStage,
+  DraftUnit,
   RoleStageSpec,
   StageAgent,
   StageSpec,
   VerifyOnlyStageSpec,
   WorkflowCatalog,
+  WorkflowCatalogEntry,
   WorkflowCompletion,
   WorkflowDocument,
   WorkflowDownstream,
+  WorkflowDraftParse,
   WorkflowOutput,
   WorkflowRequires,
 } from "./workflow.js";
@@ -350,6 +359,8 @@ export {
   yamlHasComments,
 } from "./authoring.js";
 export type { CatalogProblem } from "./workflow.js";
-export type { DraftFormat, SchemaVersionStatus } from "./authoring.js";
+export type { AuthoringRender, DraftFormat, SchemaVersionStatus } from "./authoring.js";
+export { buildDraftSourceMap } from "./draft-source.js";
+export type { DraftRange, DraftSourceMap } from "./draft-source.js";
 export { writeFileConditional } from "./conditional-write.js";
 export type { ConditionalWrite } from "./conditional-write.js";

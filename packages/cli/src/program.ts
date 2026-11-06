@@ -117,6 +117,7 @@ export function createProgram(status: CliStatus, options: { quietErrors?: boolea
       .option("--json", "Print one JSON envelope with the diagnostics.");
     if (kind === "config") sub.option("--scope <scope>", "Layer the draft replaces: project or local.", "project");
     if (kind === "workflow") sub.option("--target <file>", "Workflow file name under .migent/workflows/ (default <id>.yaml).");
+    if (mode !== "validate") sub.option("--preserve-comments", "Keep the target's comments, key order and line endings.");
     if (mode === "save") sub.option("--base-hash <sha256>", "SHA-256 of the file being replaced. Without it, save only creates a new file.");
     sub.action((draft: string, _local: OptionValues, self: Command) => {
       // `config --json` is also declared on the parent, which consumes the flag first.
@@ -130,6 +131,7 @@ export function createProgram(status: CliStatus, options: { quietErrors?: boolea
           ...(typeof options.format === "string" ? { format: options.format } : {}),
           ...(typeof options.target === "string" ? { target: options.target } : {}),
           ...(typeof options.baseHash === "string" ? { baseHash: options.baseHash } : {}),
+          preserveComments: options.preserveComments === true,
           asJson: options.json === true,
         }),
       );
