@@ -23,7 +23,7 @@ import { defaultClients, tempDir } from "./support.ts";
 const resolver = defaultClients();
 
 const CONFIG = {
-  schema_version: 6,
+  schema_version: 7,
   agents: {
     fast: { client: { type: "codex", options: { temperature: "0.2" } }, model: "gpt-5" },
     other: { client: { type: "grok" }, model: "grok-4" },
@@ -35,7 +35,7 @@ const CONFIG = {
 
 function stageOf(extra: Record<string, unknown> = {}): RoleStageSpec {
   const workflow = parseWorkflowMapping(
-    { schema_version: 6, id: "w", stages: [{ id: "s", role: "dev", depends_on: [], ...extra }] },
+    { schema_version: 7, id: "w", stages: [{ id: "s", role: "dev", depends_on: [], ...extra }] },
     "test",
   );
   const stage = workflow.stages.s;
@@ -43,8 +43,8 @@ function stageOf(extra: Record<string, unknown> = {}): RoleStageSpec {
   return stage;
 }
 
-test("the current schema version is 6", () => {
-  expect(SCHEMA_VERSION).toBe(6);
+test("the current schema version is 7", () => {
+  expect(SCHEMA_VERSION).toBe(7);
 });
 
 test("a v6 stage selects an agent by name or with a complete inline definition", () => {
@@ -60,7 +60,7 @@ test("a v6 stage rejects the v4 model and options keys with their replacements",
   expect(() => stageOf({ model: "fast" })).toThrow("stages.s.model was renamed to stages.s.agent in schema_version 5");
   expect(() => stageOf({ options: { a: "b" } })).toThrow("stages.s.options was removed in schema_version 5");
   const entries = unknownWorkflowKeyEntries({
-    schema_version: 6,
+    schema_version: 7,
     stages: [{ id: "s", role: "dev", model: "fast" }],
   });
   expect(entries.map((entry) => entry.path)).toEqual([["stages", 0, "model"]]);

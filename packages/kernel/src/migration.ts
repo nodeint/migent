@@ -11,7 +11,7 @@ import { ConfigurationError } from "./errors.js";
 import { liftConfigAgents, liftConfigClients, liftWorkflowClients, type ConfigLayerKind } from "./migration-config.js";
 import { applyLegacyMigration, type MigrationKind } from "./migration-legacy.js";
 import { documentVersion, isRecord } from "./record.js";
-import { SCHEMA_VERSION, parseWorkflowMapping } from "./workflow.js";
+import { SCHEMA_VERSION, conditionalStages, parseWorkflowMapping } from "./workflow.js";
 import { parseYamlDocument } from "./yaml.js";
 import { renderAuthoringYaml } from "./authoring.js";
 
@@ -87,7 +87,9 @@ export function migrateWorkflow(
   let version = requireCurrent(documentVersion(workflow), current, "workflow");
   if (version === current) return [];
   const before = deepCopyRecord(workflow);
+  const semanticNotes: string[] = [];
   while (version < current) {
+    if (version === 6) semanticNotes.push(...liftWorkflowArtifacts(workflow));
     migrateStages(workflow, config, version);
     if (version === 1) liftWorkflowCompletion(workflow);
     if (version === 2) liftWorkflowDecisions(workflow);
@@ -97,7 +99,91 @@ export function migrateWorkflow(
     version += 1;
   }
   workflow[SCHEMA_VERSION_FIELD] = current;
-  return workflowNotes(before, workflow);
+  return [...workflowNotes(before, workflow), ...semanticNotes];
+}
+
+const ARTIFACT_ID = /^[A-Za-z][A-Za-z0-9_-]*$/;
+const AMBIGUOUS_SCALAR = /^(null|true|false|yes|no|on|off|y|n)$/i;
+
+/** An artifact id as a YAML flow scalar; words YAML may read as null or boolean stay strings. */
+function artifactIdScalar(id: string): string {
+  return AMBIGUOUS_SCALAR.test(id) ? JSON.stringify(id) : yamlScalar(id);
+}
+
+/**
+ * Schema 7 replaces `produces.artifact` plus top-level `outputs` with a registry. The whole workflow is
+ * analysed first; any refusal throws before the document is changed, so nothing is written.
+ * Returns the semantic changes the author must know about.
+ */
+function liftWorkflowArtifacts(workflow: Record<string, unknown>): string[] {
+  const rawStages = Array.isArray(workflow.stages) ? workflow.stages : [];
+  const hasProduces = rawStages.some((stage) => isRecord(stage) && Object.hasOwn(stage, "produces"));
+  if (!hasProduces && !Object.hasOwn(workflow, "outputs")) return [];
+  const probe = deepCopyRecord(workflow);
+  probe[SCHEMA_VERSION_FIELD] = 6;
+  const parsed = parseWorkflowMapping(probe, "migrating workflow");
+  const conditional = conditionalStages(parsed.stages);
+  const outputs = parsed.outputs ?? [];
+  const problems: string[] = [];
+  const notes: string[] = [];
+  const plans: Array<{ stage: Record<string, unknown>; stageId: string; id: string; file: string; required: boolean }> = [];
+  const byId = new Map<string, string>();
+  const byFile = new Map<string, string>();
+  const aliasTarget = new Map<string, string>();
+  for (const raw of rawStages) {
+    if (!isRecord(raw) || typeof raw.id !== "string") continue;
+    const stageId = raw.id.trim();
+    const spec = parsed.stages[stageId];
+    const file = spec?.artifacts[0]?.file;
+    if (spec === undefined || file === undefined) continue;
+    const named = outputs.filter((output) => output.fromStage === stageId);
+    const id = named[0]?.name ?? stageId;
+    if (!ARTIFACT_ID.test(id)) {
+      problems.push(`stages.${stageId}: cannot derive an artifact id from ${named[0] === undefined ? "the stage id" : `output ${JSON.stringify(id)}`}; rename it to letters, digits, "_" or "-" and start with a letter.`);
+      continue;
+    }
+    const clash = byId.get(id);
+    if (clash !== undefined) {
+      problems.push(`stages.${stageId} and stages.${clash} both derive the artifact id ${id}; rename one output or stage.`);
+      continue;
+    }
+    const sameFile = byFile.get(file);
+    if (sameFile !== undefined) {
+      problems.push(`stages.${stageId} and stages.${sameFile} both write ${file}; schema 7 publishes every artifact into outputs/, so rename one file.`);
+      continue;
+    }
+    byId.set(id, stageId);
+    byFile.set(file, stageId);
+    const required = !conditional.has(stageId);
+    plans.push({ stage: raw, stageId, id, file, required });
+    for (const alias of named.slice(1)) aliasTarget.set(alias.name, id);
+    if (named.length === 0) notes.push(`stages.${stageId}.produces.artifact is now published as artifact ${id} (it was unpublished in schema 6)`);
+    if (!required) notes.push(`artifact ${id} comes from a run_when stage: it is now published when produced and declared required: false, so a turn may complete without ${file}`);
+    for (const alias of named.slice(1)) notes.push(`output alias ${alias.name} merged into artifact ${id}; downstream runs without a mapping now receive one context name`);
+  }
+  if (problems.length > 0) {
+    throw new ConfigurationError(`Cannot migrate artifacts to schema_version 7:\n- ${problems.join("\n- ")}`);
+  }
+  const registry: Record<string, unknown> = {};
+  for (const plan of plans) {
+    registry[plan.id] = plan.required ? { file: plan.file } : { file: plan.file, required: false };
+    delete plan.stage.produces;
+    plan.stage.artifacts = [plan.id];
+  }
+  for (const raw of rawStages) {
+    if (isRecord(raw) && Object.hasOwn(raw, "produces")) delete raw.produces;
+  }
+  if (Object.keys(registry).length > 0) workflow.artifacts = registry;
+  delete workflow.outputs;
+  if (Array.isArray(workflow.downstream)) {
+    for (const entry of workflow.downstream) {
+      if (!isRecord(entry) || !isRecord(entry.artifacts)) continue;
+      for (const [name, value] of Object.entries(entry.artifacts)) {
+        if (typeof value === "string" && aliasTarget.has(value)) entry.artifacts[name] = aliasTarget.get(value);
+      }
+    }
+  }
+  return notes;
 }
 
 export function patchWorkflowText(original: string, updated: Readonly<Record<string, unknown>>): string {
@@ -507,6 +593,12 @@ function patchStage(
     if (!result.preserved) throw new ConfigEditError(`Cannot preserve the stage agent: ${result.reason}.`);
     edits.push([span[0], span[1], result.text.trimEnd().split("\n").map((line) => `${" ".repeat(siblingIndent)}${line}`)]);
   }
+  if (Object.hasOwn(before, "produces") && !Object.hasOwn(after, "produces")) {
+    const span = nestedKeySpan(lines, { start, end }, "produces");
+    if (span === null) throw new ConfigEditError("Cannot locate the stage produces to migrate.");
+    const ids = Array.isArray(after.artifacts) ? after.artifacts : [];
+    edits.push([span[0], span[1], ids.length > 0 ? [`${" ".repeat(siblingIndent)}artifacts: [${ids.map((id) => artifactIdScalar(String(id))).join(", ")}]`] : []]);
+  }
   if (!deepEqual(before.decision, after.decision)) {
     const span = nestedKeySpan(lines, { start, end }, "decision");
     if (span === null) throw new ConfigEditError("Cannot locate the stage decision to migrate.");
@@ -775,6 +867,10 @@ function syncDocumentShape(
     if (key === "stages" || !Object.hasOwn(after, key)) continue;
     const previous = before[key];
     const next = after[key];
+    if (key === "downstream" && !deepEqual(previous, next)) {
+      edits.push([span.start, span.end, renderTopLevel(key, next)]);
+      continue;
+    }
     if (!isRecord(previous) || !isRecord(next)) continue;
     const removed = Object.keys(previous).filter((nested) => !Object.hasOwn(next, nested));
     if (removed.length === 0) continue;

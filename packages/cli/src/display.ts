@@ -195,8 +195,11 @@ export function printWatchSnapshot(snapshot: Record<string, unknown>): void {
   if (typeof snapshot.diagnostics === "string" && snapshot.diagnostics) lines.push(["diagnostics", snapshot.diagnostics]);
   lines.push(["updated_at", formatWatchTimestamp(snapshot.updated_at)]);
   const outputs = snapshot.outputs;
-  if (isRecord(outputs) && Object.keys(outputs).length > 0) lines.push(["outputs", Object.keys(outputs).join(", ")]);
-  else lines.push(["outputs", "none"]);
+  const missing = Array.isArray(snapshot.outputs_not_produced) ? snapshot.outputs_not_produced.map(String) : [];
+  const published = isRecord(outputs) ? Object.keys(outputs) : [];
+  if (published.length > 0 || missing.length > 0) {
+    lines.push(["outputs", [...published, ...missing.map((name) => `${name} (not produced)`)].join(", ")]);
+  } else lines.push(["outputs", "none"]);
   lines.push(["events_cursor", String(snapshot.events_cursor ?? 0)]);
   for (const [label, value] of lines) process.stdout.write(`${label}  ${value}\n`);
 }

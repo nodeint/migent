@@ -97,11 +97,11 @@ test("writes inline role models and both working presets", async () => {
     expect(captured.value).toBe(0);
     expect(captured.stdout).toContain("Roles:");
     expect(captured.stdout).toMatch(/planner\s+Designs the approach/);
-    expect(config).toContain("schema_version: 6");
+    expect(config).toContain("schema_version: 7");
     expect(config).toContain("agent");
-    expect(workflow).toContain("schema_version: 6");
+    expect(workflow).toContain("schema_version: 7");
     expect(loadWorkspaceConfig(workspace)).toMatchObject({
-      schema_version: 6,
+      schema_version: 7,
       roles: {
         developer: { agent: { model: "gpt-5", client: { type: "codex" } } },
         planner: { agent: { model: "gpt-5", client: { type: "codex" } } },

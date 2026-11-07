@@ -16,13 +16,15 @@ import {
 } from "./support.ts";
 
 const DOCS_FLOW = `\
-schema_version: 6
+schema_version: 7
 id: docs_flow
+artifacts:
+  implementation:
+    file: implementation.md
 stages:
   - id: implement
     role: planner
-    produces:
-      artifact: implementation.md
+    artifacts: [implementation]
   - id: review_docs
     role: reviewer
     depends_on: [implement]
@@ -30,10 +32,6 @@ stages:
       changed_paths:
         - "docs/**/*"
         - "**/README.md"
-outputs:
-  - name: implementation
-    from_stage: implement
-    artifact: implementation.md
 `;
 
 function git(cwd: string, ...args: string[]): void {

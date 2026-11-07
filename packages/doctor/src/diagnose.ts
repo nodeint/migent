@@ -19,6 +19,7 @@ import {
   type ModelEffortCheck,
 } from "./check.js";
 import { checkConfig } from "./config-check.js";
+import { optionalArtifactMappings } from "./artifact-notes.js";
 import { stageAgentKey } from "./stage-agents.js";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -76,7 +77,10 @@ function checkWorkflows(
 /** Parse-time unknown keys in the workflow. */
 function workflowWarnings(document: WorkflowDocument): string[] {
   const label = document.source === null ? document.id : path.basename(document.source);
-  return [...(document.warnings ?? [])].map((message) => `${label}: ${message}`);
+  return [
+    ...(document.warnings ?? []),
+    ...optionalArtifactMappings(document).map((item) => item.message),
+  ].map((message) => `${label}: ${message}`);
 }
 
 function checkStageBindings(

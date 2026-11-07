@@ -48,7 +48,7 @@ function turn(prompt: string, stageId: string, kind: TurnKind) {
   const stage = workflow.stages[stageId]!;
   return renderProviderPrompt(prompt, {
     contract: true, turn: kind, decisionValues: stage.decisionValues, decisionInstructions: stage.decisionInstructions,
-    ask: stage.ask ?? null, questionFile: "<QFILE>", artifactDirectory: "<ART>", artifactName: stage.artifact ?? null,
+    ask: stage.ask ?? null, questionFile: "<QFILE>", artifactDirectory: "<ART>", artifactName: stage.artifacts[0]?.file ?? null,
     taskFile: "<SESSION>/task.md", sessionDirectory: "<SESSION>",
   });
 }

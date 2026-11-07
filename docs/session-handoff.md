@@ -37,7 +37,12 @@ session recreates the file and prints suggestions without dispatching any stages
 
 `--prior` always identifies a completed source session. A suggestion matching the
 target workflow supplies the default task and mapped artifacts. Explicit `--task`
-overrides the suggestion. If none matches, `--task` is required and all published
+overrides the suggestion. A mapping to an optional artifact (`required: false`)
+selects it only when it was published; an absent one is left out of that
+suggestion and of the `--prior` context instead of failing. A suggestion whose
+required mapping cannot resolve is omitted from `next.json` with a warning
+without hiding the others, and `--prior` for that target reports the error.
+If none matches, `--task` is required and all published
 outputs become context under their original output names. A standalone run needs
 only its own task; no `--prior` or mandatory input declaration is required.
 

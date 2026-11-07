@@ -264,7 +264,7 @@ from `migent get models` in place of the example IDs.
 
 ```yaml
 # .migent/config.yaml
-schema_version: 6
+schema_version: 7
 roles:
   developer:
     description: Implements the change and verifies it.
@@ -281,7 +281,7 @@ This workflow asks the developer to implement a task, then checks the result:
 
 ```yaml
 # .migent/workflows/implement.yaml
-schema_version: 6
+schema_version: 7
 stages:
   - id: implement
     role: developer
@@ -313,7 +313,7 @@ or different clients:
 
 ```yaml
 # .migent/config.yaml
-schema_version: 6
+schema_version: 7
 roles:
   planner:
     description: Designs the approach and writes the plan.
@@ -342,7 +342,10 @@ and decides whether to approve it or send it back for revision:
 
 ```yaml
 # .migent/workflows/plan.yaml
-schema_version: 6
+schema_version: 7
+artifacts:
+  approved_plan:
+    file: plan.md
 stages:
   - id: plan
     role: planner
@@ -352,8 +355,7 @@ stages:
       - Define scope, component boundaries, contracts, and key trade-offs in plan.md.
       - Ask the user when scope or requirements are unclear.
       - Resolve substantive review findings when revising the plan.
-    produces:
-      artifact: plan.md
+    artifacts: [approved_plan]
 
   - id: review_plan
     role: reviewer
@@ -368,11 +370,6 @@ stages:
       - revise:
           when: Scope, feasibility, or architectural issues require corrections.
           navigate: plan
-
-outputs:
-  - name: approved_plan
-    from_stage: plan
-    artifact: plan.md
 ```
 
 Run this workflow with:

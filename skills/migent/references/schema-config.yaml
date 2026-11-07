@@ -1,6 +1,6 @@
 # Annotated configuration example. For editing, local overrides, and client options,
 # see config.md. Model IDs are examples; choose from migent get models --json.
-schema_version: 6
+schema_version: 7
 
 # An agent is a model, an effort, and a CLI client with its options.
 # Named agents can be shared by roles and stages.

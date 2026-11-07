@@ -24,6 +24,7 @@ import {
   type StageSpec,
   type WorkflowCompletion,
   type WorkflowDocument,
+  type StageArtifact,
 } from "./workflow.js";
 import { parseYamlDocument } from "./yaml.js";
 
@@ -301,7 +302,7 @@ function version2WorkflowMapping(workflow: WorkflowDocument): Record<string, unk
     id: workflow.id,
     concurrency: workflow.concurrency ?? 1,
     constraints: workflow.constraints,
-    stages: Object.values(workflow.stages).map((stage) => stageMapping(stage, (workflow.schemaVersion ?? 2) >= 3, (workflow.schemaVersion ?? 2) >= 5)),
+    stages: Object.values(workflow.stages).map((stage) => stageMapping(stage, (workflow.schemaVersion ?? 2) >= 3, (workflow.schemaVersion ?? 2) >= 5, (workflow.schemaVersion ?? 2) >= 7)),
     requires: workflow.requires === null ? null : { workflow: workflow.requires.workflow },
   };
   const outputs = workflow.outputs ?? [];
@@ -309,7 +310,12 @@ function version2WorkflowMapping(workflow: WorkflowDocument): Record<string, unk
     delete mapped.requires;
     if (workflow.downstream?.length) mapped.downstream = workflow.downstream;
   }
-  if (outputs.length > 0) {
+  if ((workflow.schemaVersion ?? 2) >= 7) {
+    const registry = workflow.artifacts ?? [];
+    if (registry.length > 0) {
+      mapped.artifacts = Object.fromEntries(registry.map((artifact) => [artifact.id, artifactMapping(artifact)]));
+    }
+  } else if (outputs.length > 0) {
     mapped.outputs = outputs.map((output) => ({
       name: output.name,
       from_stage: output.fromStage,
@@ -319,7 +325,14 @@ function version2WorkflowMapping(workflow: WorkflowDocument): Record<string, unk
   return mapped;
 }
 
-function stageMapping(stage: StageSpec, version3 = false, version5 = false): Record<string, unknown> {
+function artifactMapping(artifact: StageArtifact): Record<string, unknown> {
+  const mapped: Record<string, unknown> = { file: artifact.file };
+  if (artifact.description !== null) mapped.description = artifact.description;
+  if (!artifact.required) mapped.required = false;
+  return mapped;
+}
+
+function stageMapping(stage: StageSpec, version3 = false, version5 = false, version7 = false): Record<string, unknown> {
   const mapped: Record<string, unknown> = {
     id: stage.id,
     depends_on: stage.dependsOn,
@@ -328,10 +341,21 @@ function stageMapping(stage: StageSpec, version3 = false, version5 = false): Rec
   if (stage.ask !== undefined) mapped.ask = stage.ask;
   if (stage.description !== null) mapped.description = stage.description;
   if (stage.instructions.length > 0) mapped.instructions = stage.instructions;
-  if (stage.artifact !== null) mapped.produces = { artifact: stage.artifact };
+  if (version7) {
+    if (stage.artifacts.length > 0) mapped.artifacts = stage.artifacts.map((artifact) => artifact.id);
+  } else if (stage.artifacts[0] !== undefined) mapped.produces = { artifact: stage.artifacts[0].file };
   if (stage.decisionValues.length > 0) {
     mapped.decision = version3
-      ? stage.decisionValues.map((name) => ({ [name]: { when: stage.decisionInstructions?.[name], navigate: stage.routes[name] } }))
+      ? stage.decisionValues.map((name) => {
+          const body: Record<string, unknown> = { when: stage.decisionInstructions?.[name], navigate: stage.routes[name] };
+          const added = stage.decisionArtifacts[name] ?? [];
+          if (version7 && added.length > 0) {
+            body.artifacts = added.every((artifact) => artifact.scope === "published")
+              ? added.map((artifact) => artifact.id)
+              : Object.fromEntries(added.map((artifact) => [artifact.id, artifactMapping(artifact)]));
+          }
+          return { [name]: body };
+        })
       : { values: stage.decisionValues, routes: stage.routes };
   }
   if (stage.agent !== null) {

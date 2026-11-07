@@ -125,10 +125,10 @@ ${version === 1 ? "  " : ""}    artifact: draft.md
   expect(migrated).not.toContain("values:");
   expect(migrated).not.toContain("when:");
   const loaded = parseWorkflowMapping(parseYamlDocument(migrated) as Record<string, unknown>, "migrated.yaml");
-  expect(loaded.schemaVersion).toBe(6);
+  expect(loaded.schemaVersion).toBe(7);
   expect(loaded.stages.review?.routes).toEqual({ approved: "complete", "approved-with-note": "complete", revise: version === 1 ? "draft" : ["draft"] });
-  expect(loaded.outputs).toEqual([{ name: "draft", fromStage: "draft", artifact: "draft.md" }]);
-  expect(loaded.stages.review?.artifact).toBe("review.md");
+  expect(loaded.artifacts?.map((item) => item.id)).toEqual(["draft", "review"]);
+  expect(loaded.stages.review?.artifacts.map((item) => item.file)).toEqual(["review.md"]);
   expect(migrateWorkflow(raw, {})).toEqual([]);
   expect(patchWorkflowText(migrated, raw)).toBe(migrated);
 });
@@ -161,7 +161,7 @@ test("the agent receives frozen decision criteria on initial, reply, and verify 
   try {
     const workflows = path.join(workspace, ".migent", "workflows");
     mkdirSync(workflows, { recursive: true });
-    writeFileSync(path.join(workspace, ".migent/config.yaml"), "schema_version: 6\nroles:\n  reviewer:\n    agent: { client: { type: fake }, model: fake }\n");
+    writeFileSync(path.join(workspace, ".migent/config.yaml"), "schema_version: 7\nroles:\n  reviewer:\n    agent: { client: { type: fake }, model: fake }\n");
     writeFileSync(path.join(workspace, "verify.cjs"), 'const fs = require("node:fs"); if (!fs.existsSync("verified.flag")) { fs.writeFileSync("verified.flag", ""); process.exit(1); }');
     const source = `schema_version: 3
 id: review

@@ -40,6 +40,8 @@ export interface ProviderPromptOptions {
   questionFile?: string | null;
   artifactDirectory?: string;
   artifactName?: string | null;
+  /** Every file the stage writes; `decision` is set for files only a given decision requires. */
+  artifactFiles?: readonly { file: string; description: string | null; required: boolean; decision: string | null }[];
   /** Artifact directory of the execution this turn continues, when it differs from `artifactDirectory`. */
   previousArtifactDirectory?: string | null;
   previousVerifyReport?: string | null;
@@ -65,7 +67,18 @@ function envelope(options: ProviderPromptOptions) {
   // The single place that tells the agent what to do this turn.
   const doLines: string[] = [];
   if (mode !== null) doLines.push(directive(options.turn ?? null, taskFile !== null));
-  if (artifactName) doLines.push(`Write the artifact as \`${artifactName}\` in the artifacts directory.`);
+  const files = options.artifactFiles ?? [];
+  const multi = files.length > 1 || files.some((item) => item.decision !== null || item.description !== null);
+  if (artifactName && !multi) doLines.push(`Write the artifact as \`${artifactName}\` in the artifacts directory.`);
+  if (multi) {
+    doLines.push("Write these artifacts in the artifacts directory:");
+    for (const item of files) {
+      const when = item.decision === null ? "" : ` (with \`decision: ${item.decision}\`)`;
+      const kind = item.required ? "" : " [optional]";
+      const note = item.description === null ? "" : `: ${item.description}`;
+      doLines.push(`- \`${item.file}\`${when}${kind}${note}`);
+    }
+  }
   if (mode === "reminder") {
     const decision = decisions.length > 0 ? `, with \`decision: ${decisionLabel}\` when complete` : "";
     doLines.push(`Same response contract and stage instructions as before: start with \`status: ${statusLabel}\`${decision}.`);
@@ -119,7 +132,7 @@ export interface StageContext {
   stage: { id: string; role: string; instructions: readonly string[]; verify: readonly string[] };
   roleInstructions: readonly string[];
   constraints: readonly string[];
-  upstream: readonly { stageId: string; path: string; verify: boolean; updated: boolean }[];
+  upstream: readonly { stageId: string; path: string; verify: boolean; description: string | null; updated: boolean }[];
   routed: unknown;
   blocked: unknown;
   failed?: unknown;

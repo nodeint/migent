@@ -39,7 +39,7 @@ import { AgentSessionRecord, SessionStore, stringOptions, type ExecutionContext 
 import { StageOutcome } from "./stage-outcome.js";
 import { resolveStageOutcome, type OutcomeContext } from "./outcome-resolver.js";
 import { QuestionFileError, type Question } from "./questions.js";
-import { isWorkflowV2, loadNamedWorkflow, loadStage, type StageSpec } from "./workflow.js";
+import { allStageArtifacts, isWorkflowV2, loadNamedWorkflow, loadStage, stageArtifactsFor, type StageArtifact, type StageSpec } from "./workflow.js";
 
 export interface RunResult {
   questions?: Question[];
@@ -199,7 +199,8 @@ export class AgentToolRunner {
     const stage = sessionId === null ? null : loadRunStage(store, context.sessionId, stageId);
     const decisionValues = stage?.decisionValues ?? [];
     const ask = stage?.ask ?? (stage === null ? "human" : null);
-    const artifactName = stage?.artifact ?? null;
+    const artifactFiles = stage === null ? [] : allStageArtifacts(stage);
+    const artifactName = artifactFiles[0]?.artifact.file ?? null;
     const verifyCommands = stage?.verify ?? [];
     const previous = request.resumeExecutionId
       ? store.executionSnapshots(context.sessionId).find((row) => row.executionId === request.resumeExecutionId && row.stageId === stageId && row.outcomeStatus === "question")
@@ -211,14 +212,14 @@ export class AgentToolRunner {
     // Answering a question on the same agent: the conversation already holds the contract and stage instructions.
     const sameConversation = previous !== undefined && agentId !== null && agentId !== ""
       && previousMetadata?.response_protocol === RESPONSE_PROTOCOL;
-    if (previous && artifactName) store.carryVerifyArtifact(previous.artifactDirectory, context, artifactName);
-    if (request.resumeExecutionId && verifyCommands.length > 0 && artifactName) {
-      this.carryExhaustedArtifact(store, context, request.resumeExecutionId, artifactName);
+    if (previous) for (const item of artifactFiles) store.carryVerifyArtifact(previous.artifactDirectory, context, item.artifact.file);
+    if (request.resumeExecutionId && verifyCommands.length > 0) {
+      for (const item of artifactFiles) this.carryExhaustedArtifact(store, context, request.resumeExecutionId, item.artifact.file);
     }
     turnPrompt = renderProviderPrompt(turnPrompt, { ...sessionPaths(context, sessionId),
       contract: sessionId === null ? false : sameConversation ? "reminder" : "full", turn: request.turn ?? null, decisionValues, decisionInstructions: stage?.decisionInstructions, ask,
       questionFile: questionRequestPath(context),
-      artifactDirectory: context.artifactDirectory, artifactName,
+      artifactDirectory: context.artifactDirectory, artifactName, artifactFiles: promptArtifactFiles(artifactFiles),
       previousArtifactDirectory: previous?.artifactDirectory ?? null,
       previousVerifyReport: previous && progress?.lastReport
         ? path.resolve(path.dirname(previous.artifactDirectory), progress.lastReport) : null,
@@ -294,7 +295,8 @@ export class AgentToolRunner {
     const stage = loadRunStage(store, sessionId, stageId);
     const decisionValues = stage?.decisionValues ?? [];
     const ask = stage?.ask ?? (stage === null ? "human" : null);
-    const artifactName = stage?.artifact ?? null;
+    const artifactFiles = stage === null ? [] : allStageArtifacts(stage);
+    const artifactName = artifactFiles[0]?.artifact.file ?? null;
     const verifyCommands = stage?.verify ?? [];
     const eventReporter = new ProviderEventReporter(store, context, clientId, model, this.itemProgress);
     const progress = verifyProgress(metadata);
@@ -328,7 +330,7 @@ export class AgentToolRunner {
           ? last.content
           : flattenHistory(record.history as Array<{ role: string; content: string }>);
         const contract = agentId && metadata.response_protocol === RESPONSE_PROTOCOL ? "reminder" : "full";
-        currentPrompt = renderProviderPrompt(currentPrompt, { ...sessionPaths(context, sessionId), contract, turn: storedTurn(metadata), decisionValues, decisionInstructions: stage?.decisionInstructions, ask, questionFile, artifactDirectory: context.artifactDirectory, artifactName });
+        currentPrompt = renderProviderPrompt(currentPrompt, { ...sessionPaths(context, sessionId), contract, turn: storedTurn(metadata), decisionValues, decisionInstructions: stage?.decisionInstructions, ask, questionFile, artifactDirectory: context.artifactDirectory, artifactName, artifactFiles: promptArtifactFiles(artifactFiles) });
       }
       return this.driveTurns({
         client,
@@ -570,10 +572,12 @@ export class AgentToolRunner {
         else if (gates.outcome.state !== "not-evaluated" && outcome?.status !== "complete") {
           gates.artifact = { state: "not-applicable" };
         }
-        if (invokeError === null && outcome?.status === "complete" && artifactName) {
-          const artifactPath = path.join(context.artifactDirectory, artifactName);
-          if (!nonemptyArtifact(artifactPath)) {
-            invokeError = `Stage artifact missing or empty: ${artifactName}.`;
+        if (invokeError === null && outcome?.status === "complete" && stage !== null && artifactName) {
+          const missing = stageArtifactsFor(stage, outcome.decision ?? null)
+            .filter((item) => item.required && !nonemptyArtifact(path.join(context.artifactDirectory, item.file)))
+            .map((item) => item.file);
+          if (missing.length > 0) {
+            invokeError = `Stage artifact missing or empty: ${missing.join(", ")}.`;
             gates.artifact = { state: "failed", reason: invokeError };
           } else gates.artifact = { state: "passed" };
         }
@@ -827,7 +831,7 @@ export class AgentToolRunner {
         : flattenHistory(record.history as Array<{ role: string; content: string }>);
       currentPrompt = renderProviderPrompt(currentPrompt, { ...sessionPaths(context, sessionId),
         contract: currentAgentId ? "reminder" : "full", turn: "repair", decisionValues, decisionInstructions: stage?.decisionInstructions, ask, questionFile,
-        artifactDirectory: context.artifactDirectory, artifactName,
+        artifactDirectory: context.artifactDirectory, artifactName, artifactFiles: promptArtifactFiles(stage === null ? [] : allStageArtifacts(stage)),
       });
     }
     const sessionStatus = store.readSessionStatus(context.sessionId);
@@ -887,6 +891,7 @@ export class AgentToolRunner {
     const prompt = renderProviderPrompt(base, { ...sessionPaths(context, sessionId),
       contract: record.agentId ? "reminder" : "full", turn: "correction", decisionValues, decisionInstructions: stage?.decisionInstructions, ask,
       questionFile: error.file, artifactDirectory: context.artifactDirectory, artifactName,
+      artifactFiles: promptArtifactFiles(stage === null ? [] : allStageArtifacts(stage)),
     });
     return { correction: used, prompt };
   }
@@ -1284,4 +1289,15 @@ function gitOutput(workspace: string, args: string[]): string | null {
   });
   if (result.error || result.status !== 0) return null;
   return result.stdout;
+}
+
+function promptArtifactFiles(
+  files: ReadonlyArray<{ artifact: StageArtifact; decision: string | null }>,
+): Array<{ file: string; description: string | null; required: boolean; decision: string | null }> {
+  return files.map(({ artifact, decision }) => ({
+    file: artifact.file,
+    description: artifact.description,
+    required: artifact.required,
+    decision,
+  }));
 }

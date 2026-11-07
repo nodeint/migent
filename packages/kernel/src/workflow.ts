@@ -30,7 +30,10 @@ interface StageFields {
   ask?: AskTarget;
   id: string;
   description: string | null;
-  artifact: string | null;
+  /** Stage-level artifacts the stage writes on every `complete`. */
+  artifacts: StageArtifact[];
+  /** Artifacts a decision adds, keyed by decision name (schema 7 only). */
+  decisionArtifacts: Record<string, StageArtifact[]>;
   decisionValues: string[];
   decisionInstructions?: Record<string, string>;
   dependsOn: string[];
@@ -65,10 +68,44 @@ export function isRoleStage(stage: StageSpec): stage is RoleStageSpec {
   return stage.kind === "role";
 }
 
+/** One file a stage writes into its artifacts directory. */
+export interface StageArtifact {
+  id: string;
+  file: string;
+  description: string | null;
+  required: boolean;
+  /** `published` artifacts come from the registry; `local` ones are defined inline on a decision. */
+  scope: "published" | "local";
+}
+
+/** A top-level (published) artifact of a schema 7 workflow and its single producer. */
+export interface ArtifactSpec extends StageArtifact {
+  producer: { stage: string; decision: string | null };
+}
+
 export interface WorkflowOutput {
   name: string;
   fromStage: string;
   artifact: string;
+  /** Schema 7 only: guaranteed at completion. Absent means required. */
+  required?: boolean;
+  /** Schema 7 only: the decision that produces it; null for stage-level artifacts. */
+  decision?: string | null;
+}
+
+/** Files a `complete` turn of `stage` writes: stage-level plus those of the chosen decision. */
+export function stageArtifactsFor(stage: StageSpec, decision: string | null): StageArtifact[] {
+  const chosen = decision === null ? undefined : stage.decisionArtifacts[decision.toLowerCase()];
+  return chosen === undefined ? stage.artifacts : [...stage.artifacts, ...chosen];
+}
+
+/** Every file a stage may write, with the decision that adds it (null for stage-level). */
+export function allStageArtifacts(stage: StageSpec): Array<{ artifact: StageArtifact; decision: string | null }> {
+  const all: Array<{ artifact: StageArtifact; decision: string | null }> = stage.artifacts.map((artifact) => ({ artifact, decision: null }));
+  for (const [decision, list] of Object.entries(stage.decisionArtifacts)) {
+    for (const artifact of list) all.push({ artifact, decision });
+  }
+  return all;
 }
 
 export interface WorkflowCompletion {
@@ -86,7 +123,8 @@ export interface WorkflowRequires {
 export interface WorkflowDownstream {
   workflow: string;
   task: string;
-  artifacts: Record<string, string>;
+  /** Absent means every published artifact is passed under its own id. */
+  artifacts?: Record<string, string>;
 }
 
 export interface WorkflowDocument {
@@ -100,13 +138,15 @@ export interface WorkflowDocument {
   schemaVersion?: number;
   concurrency?: number;
   outputs?: WorkflowOutput[];
+  /** Schema 7 artifact registry, in declaration order. */
+  artifacts?: ArtifactSpec[];
   downstream?: WorkflowDownstream[];
   /** Authoring diagnostics from parsing; not part of the document schema. */
   warnings?: string[];
 }
 
 /** Accepted workflow and config document version. */
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 export function isWorkflowV2(workflow: WorkflowDocument | null | undefined): boolean {
   return (workflow?.schemaVersion ?? 1) >= 2;
@@ -117,11 +157,20 @@ export interface WorkflowCatalog {
   problems: string[];
 }
 
+const stageArtifactSchema = z.object({
+  id: z.string(),
+  file: z.string(),
+  description: z.string().nullable(),
+  required: z.boolean(),
+  scope: z.enum(["published", "local"]),
+});
+
 const stageFieldSchema = {
   ask: z.literal("human").optional(),
   id: z.string(),
   description: z.string().nullable(),
-  artifact: z.string().nullable(),
+  artifacts: z.array(stageArtifactSchema),
+  decisionArtifacts: z.record(z.string(), z.array(stageArtifactSchema)),
   decisionValues: z.array(z.string()),
   decisionInstructions: z.record(z.string(), z.string()).optional(),
   dependsOn: z.array(z.string()),
@@ -161,6 +210,12 @@ const workflowOutputSchema = z.object({
   name: z.string(),
   fromStage: z.string(),
   artifact: z.string(),
+  required: z.boolean().optional(),
+  decision: z.string().nullable().optional(),
+});
+
+const artifactSpecSchema = stageArtifactSchema.extend({
+  producer: z.object({ stage: z.string(), decision: z.string().nullable() }),
 });
 
 const workflowCompletionSchema = z.object({
@@ -184,7 +239,8 @@ const workflowDocumentSchema = z.object({
   schemaVersion: z.number().int().nonnegative().optional(),
   concurrency: z.number().int().positive().optional(),
   outputs: z.array(workflowOutputSchema).optional(),
-  downstream: z.array(z.object({ workflow: z.string(), task: z.string(), artifacts: z.record(z.string(), z.string()) })).optional(),
+  artifacts: z.array(artifactSpecSchema).optional(),
+  downstream: z.array(z.object({ workflow: z.string(), task: z.string(), artifacts: z.record(z.string(), z.string()).optional() })).optional(),
 });
 
 export function workflowsDirectory(workspace: string): string {
@@ -411,13 +467,35 @@ function parseWorkflowMappingUnchecked(data: Record<string, unknown>, source: st
   if (version2 && Object.hasOwn(data, "completion") && data.completion != null) {
     throw new ConfigurationError("schema_version 2 does not allow completion. Run `migent migrate`.");
   }
-  const stages = parseStages(data.stages, version2, schemaVersion >= 3, schemaVersion >= 5);
+  const version7 = schemaVersion >= 7;
+  if (version7 && Object.hasOwn(data, "outputs")) {
+    throw new ConfigurationError("outputs was removed in schema_version 7. Declare artifacts and run `migent migrate`.");
+  }
+  if (!version7 && Object.hasOwn(data, "artifacts")) {
+    throw new ConfigurationError("artifacts requires schema_version 7.");
+  }
+  const stages = parseStages(data.stages, version2, schemaVersion >= 3, schemaVersion >= 5, version7);
   const completion =
     !version2 && isRecord(data.completion) && Object.keys(stages).length > 0
       ? parseCompletion(data.completion, stages)
       : null;
-  const outputs = version2 ? parseTopLevelOutputs(data.outputs, stages) : undefined;
-  validateConditionalStages(stages, outputs ?? []);
+  let registry: ArtifactSpec[] | undefined;
+  let outputs: WorkflowOutput[] | undefined;
+  if (version7) {
+    const built = buildArtifactsV7(data, conditionalStages(stages));
+    const first = built.problems[0];
+    if (first !== undefined) throw new ConfigurationError(first.message, { code: first.code, path: first.path });
+    for (const [stageId, found] of built.perStage) {
+      stages[stageId]!.artifacts = found.artifacts;
+      stages[stageId]!.decisionArtifacts = found.decisionArtifacts;
+    }
+    registry = built.registry;
+    outputs = registry.map(outputOfArtifact);
+    validateConditionalStages(stages, []);
+  } else {
+    outputs = version2 ? parseTopLevelOutputs(data.outputs, stages) : undefined;
+    validateConditionalStages(stages, outputs ?? []);
+  }
   const concurrency = version2 ? parseConcurrency(data) : undefined;
   validateVerifyPaths(stages, completion, version2);
   const document: WorkflowDocument = workflowDocumentSchema.parse({
@@ -430,6 +508,7 @@ function parseWorkflowMappingUnchecked(data: Record<string, unknown>, source: st
     schemaVersion,
     ...(concurrency === undefined ? {} : { concurrency }),
     ...(outputs === undefined ? {} : { outputs }),
+    ...(registry === undefined ? {} : { artifacts: registry }),
     ...(schemaVersion >= 4 ? { downstream: parseDownstream(data.downstream, outputs ?? []) } : {}),
   });
   if (unknown.length > 0) document.warnings = unknown;
@@ -454,6 +533,7 @@ function parseDownstream(raw: unknown, outputs: readonly WorkflowOutput[]): Work
     const mapping = entry.artifacts === undefined ? {} : entry.artifacts;
     if (!isRecord(mapping)) throw new ConfigurationError("downstream.artifacts must be a mapping.");
     const artifacts: Record<string, string> = {};
+    const mapped = entry.artifacts !== undefined;
     for (const [name, source] of Object.entries(mapping)) {
       if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(name) || name === "__proto__" || name === "constructor" || name === "prototype") {
         throw new ConfigurationError(`Invalid downstream artifact name: ${name}.`);
@@ -462,7 +542,7 @@ function parseDownstream(raw: unknown, outputs: readonly WorkflowOutput[]): Work
       if (!outputs.some((item) => item.name === output)) throw new ConfigurationError(`downstream.artifacts.${name}: unknown output ${output}.`);
       artifacts[name] = output;
     }
-    return { workflow, task, artifacts };
+    return mapped ? { workflow, task, artifacts } : { workflow, task };
   });
 }
 
@@ -487,7 +567,7 @@ export function stageArtifactName(
   stageId: string,
 ): string | null {
   const stage = loadStage(workspace, workflowPath, stageId);
-  return stage === null ? null : stage.artifact;
+  return stage === null ? null : (stage.artifacts[0]?.file ?? null);
 }
 
 interface LoadedWorkflow {
@@ -604,7 +684,7 @@ function documentId(data: Record<string, unknown>, filePath: string): string {
   return requiredString(data.id, "id");
 }
 
-function parseStages(raw: unknown, version2 = false, version3 = false, version5 = false): Record<string, StageSpec> {
+function parseStages(raw: unknown, version2 = false, version3 = false, version5 = false, version7 = false): Record<string, StageSpec> {
   if (!Array.isArray(raw) || raw.length === 0) return {};
   const stages: Record<string, StageSpec> = {};
   const items: Record<string, unknown>[] = [];
@@ -612,7 +692,7 @@ function parseStages(raw: unknown, version2 = false, version3 = false, version5 
   for (const [index, rawItem] of raw.entries()) {
     try {
     if (!isRecord(rawItem)) throw new ConfigurationError("Workflow stage must be a mapping.");
-    const item = version3 ? normalizeStageDecision(rawItem) : rawItem;
+    const item = version3 ? normalizeStageDecision(rawItem, version7) : rawItem;
     const stageId = requiredString(item.id, "stages.id");
     if (Object.hasOwn(stages, stageId)) throw new ConfigurationError(`Duplicate stage id: ${stageId}`);
     const description = stageDescription(item, stageId);
@@ -629,7 +709,8 @@ function parseStages(raw: unknown, version2 = false, version3 = false, version5 
         id: stageId,
         description,
         role: null,
-        artifact: null,
+        artifacts: [],
+        decisionArtifacts: {},
         decisionValues: [],
         dependsOn,
         resumeFrom: null,
@@ -648,6 +729,9 @@ function parseStages(raw: unknown, version2 = false, version3 = false, version5 
       continue;
     }
     const role = requiredString(item.role, `stages.${stageId}.role`);
+    if (version7 && Object.hasOwn(item, "produces")) {
+      throw new ConfigurationError(`stages.${stageId}.produces was removed in schema_version 7. Declare top-level artifacts and run \`migent migrate\`.`);
+    }
     const artifact = stageArtifact(item, stageId);
     if (verify.length > 0 && artifact === VERIFY_ARTIFACT) {
       throw new ConfigurationError(
@@ -660,7 +744,8 @@ function parseStages(raw: unknown, version2 = false, version3 = false, version5 
       description,
       role,
       ...(Object.hasOwn(item, "ask") ? { ask: stageAsk(item, stageId) } : {}),
-      artifact,
+      artifacts: artifact === null ? [] : [{ id: stageId, file: artifact, description: null, required: true, scope: "local" }],
+      decisionArtifacts: {},
       decisionValues: stageDecisionValues(item, stageId),
       ...(version3 && isRecord(item.decision) ? { decisionInstructions: item.decision.instructions } : {}),
       dependsOn,
@@ -875,7 +960,7 @@ function stageResumeFrom(
 }
 
 /** Normalize the public v3 list into the scheduler's decision names and routes. */
-function normalizeStageDecision(stage: Record<string, unknown>): Record<string, unknown> {
+function normalizeStageDecision(stage: Record<string, unknown>, version7 = false): Record<string, unknown> {
   if (stage.decision == null) return stage;
   const field = `stages.${String(stage.id)}.decision`;
   if (!Array.isArray(stage.decision) || stage.decision.length === 0) {
@@ -894,7 +979,9 @@ function normalizeStageDecision(stage: Record<string, unknown>): Record<string, 
     const body = entry[rawName];
     if (!isRecord(body)) throw new ConfigurationError(`${field}.${name} must be a mapping.`);
     for (const key of Object.keys(body)) {
-      if (key !== "when" && key !== "navigate") throw new ConfigurationError(`${field}.${name}.${key} is not allowed.`);
+      if (key !== "when" && key !== "navigate" && !(version7 && key === "artifacts")) {
+        throw new ConfigurationError(`${field}.${name}.${key} is not allowed.`);
+      }
     }
     if (body.when !== undefined) instructions[name] = requiredString(body.when, `${field}.${name}.when`);
     if (body.navigate == null) throw new ConfigurationError(`${field}.${name}.navigate is required.`);
@@ -1101,20 +1188,262 @@ function parseOutputItems(
       throw new ConfigurationError(`${field}.from_stage is not a declared stage: ${fromStage}`);
     }
     const source = stages[fromStage]!;
-    if (source.artifact === null) {
+    const sourceFile = source.artifacts[0]?.file ?? null;
+    if (sourceFile === null) {
       throw new ConfigurationError(
         `${field} ${pyRepr(name)} references stage ${fromStage} which does not produce an artifact.`,
       );
     }
-    if (source.artifact !== artifact) {
+    if (sourceFile !== artifact) {
       throw new ConfigurationError(
-        `${field} ${pyRepr(name)} artifact ${pyRepr(artifact)} does not match stages.${fromStage}.produces.artifact ${pyRepr(source.artifact)}.`,
+        `${field} ${pyRepr(name)} artifact ${pyRepr(artifact)} does not match stages.${fromStage}.produces.artifact ${pyRepr(sourceFile)}.`,
       );
     }
     seen.add(name);
+    source.artifacts[0]!.scope = "published";
     outputs.push(workflowOutputSchema.parse({ name, fromStage, artifact }));
   }
   return outputs;
+}
+
+
+function legacyArtifacts(stageId: string, artifact: DraftUnit<string | null>): StageArtifact[] {
+  return artifact.state === "valid" && artifact.value !== null
+    ? [{ id: stageId, file: artifact.value, description: null, required: true, scope: "local" }]
+    : [];
+}
+
+function outputOfArtifact(artifact: ArtifactSpec): WorkflowOutput {
+  return {
+    name: artifact.id,
+    fromStage: artifact.producer.stage,
+    artifact: artifact.file,
+    required: artifact.required,
+    decision: artifact.producer.decision,
+  };
+}
+
+interface ArtifactProblem {
+  code: string;
+  message: string;
+  path: (string | number)[];
+}
+
+interface ArtifactBuild {
+  registry: ArtifactSpec[];
+  perStage: Map<string, { artifacts: StageArtifact[]; decisionArtifacts: Record<string, StageArtifact[]> }>;
+  problems: ArtifactProblem[];
+}
+
+const ARTIFACT_ID = /^[A-Za-z][A-Za-z0-9_-]*$/;
+const ARTIFACT_KEYS = ["file", "description", "required"];
+
+/**
+ * Reads the schema 7 artifact declarations from the raw mapping: the top-level registry, stage
+ * references and decision artifacts. It collects every problem it can name, so the strict parser
+ * reports the first and the draft collector reports all. `conditional` maps each stage in a
+ * `run_when` reach to the stage that reaches it.
+ */
+function buildArtifactsV7(data: Record<string, unknown>, conditional: ReadonlyMap<string, string>): ArtifactBuild {
+  const problems: ArtifactProblem[] = [];
+  const fail = (message: string, at: (string | number)[]): void => {
+    problems.push({ code: "invalid-artifact", message, path: at });
+  };
+  const readDefinition = (
+    id: string,
+    body: unknown,
+    label: string,
+    at: (string | number)[],
+  ): StageArtifact | null => {
+    if (!ARTIFACT_ID.test(id)) {
+      fail(`Invalid ${label} id: ${pyRepr(id)}.`, at);
+      return null;
+    }
+    if (!isRecord(body)) {
+      fail(`${label} must be a mapping.`, at);
+      return null;
+    }
+    let ok = true;
+    for (const key of Object.keys(body)) {
+      if (!ARTIFACT_KEYS.includes(key)) {
+        fail(`${label}.${key} is not allowed.`, [...at, key]);
+        ok = false;
+      }
+    }
+    let file = "";
+    try {
+      file = filename(body.file, `${label}.file`);
+      if (file === VERIFY_ARTIFACT) throw new ConfigurationError(`${label}.file cannot be ${VERIFY_ARTIFACT}.`);
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error), [...at, "file"]);
+      ok = false;
+    }
+    let description: string | null = null;
+    if (body.description !== undefined && body.description !== null) {
+      if (typeof body.description !== "string" || body.description.trim() === "") {
+        fail(`Missing or invalid ${label}.description.`, [...at, "description"]);
+        ok = false;
+      } else description = body.description.trim();
+    }
+    let required = true;
+    if (body.required !== undefined && body.required !== null) {
+      if (typeof body.required !== "boolean") {
+        fail(`${label}.required must be true or false.`, [...at, "required"]);
+        ok = false;
+      } else required = body.required;
+    }
+    return ok ? { id, file, description, required, scope: "published" } : null;
+  };
+
+  const declared = new Map<string, StageArtifact>();
+  const rawRegistry = data.artifacts;
+  if (rawRegistry !== undefined && rawRegistry !== null) {
+    if (!isRecord(rawRegistry)) fail("artifacts must be a mapping.", ["artifacts"]);
+    else {
+      const files = new Map<string, string>();
+      for (const [id, body] of Object.entries(rawRegistry)) {
+        const definition = readDefinition(id, body, `artifacts.${id}`, ["artifacts", id]);
+        if (definition === null) continue;
+        const clash = files.get(definition.file);
+        if (clash !== undefined) {
+          fail(`artifacts.${id}.file ${pyRepr(definition.file)} is already used by artifacts.${clash}; outputs share one directory.`, ["artifacts", id, "file"]);
+          continue;
+        }
+        files.set(definition.file, id);
+        declared.set(id, definition);
+      }
+    }
+  }
+
+  const producers = new Map<string, { stage: string; decision: string | null }[]>();
+  const perStage: ArtifactBuild["perStage"] = new Map();
+  const rawStages = Array.isArray(data.stages) ? data.stages : [];
+  rawStages.forEach((rawStage, index) => {
+    if (!isRecord(rawStage) || typeof rawStage.id !== "string" || rawStage.id.trim() === "") return;
+    const stageId = rawStage.id.trim();
+    const stageField = `stages.${stageId}`;
+    const hasRole = stageHasRole(rawStage);
+    const stageAt: (string | number)[] = ["stages", index];
+    const entry = { artifacts: [] as StageArtifact[], decisionArtifacts: {} as Record<string, StageArtifact[]> };
+    perStage.set(stageId, entry);
+    const filesInStage = new Map<string, string>();
+    const localIds = new Set<string>();
+    const noteFile = (artifact: StageArtifact, at: (string | number)[]): boolean => {
+      const clash = filesInStage.get(artifact.file);
+      if (clash !== undefined) {
+        fail(`${stageField}: file ${pyRepr(artifact.file)} of ${artifact.id} is already used by ${clash}.`, at);
+        return false;
+      }
+      filesInStage.set(artifact.file, artifact.id);
+      return true;
+    };
+    const reference = (id: unknown, field: string, at: (string | number)[], decision: string | null): StageArtifact | null => {
+      if (typeof id !== "string" || id.trim() === "") {
+        fail(`Missing or invalid ${field}.`, at);
+        return null;
+      }
+      const name = id.trim();
+      const found = declared.get(name);
+      if (found === undefined) {
+        fail(`${field}: unknown artifact ${name}.`, at);
+        return null;
+      }
+      const list = producers.get(name) ?? [];
+      list.push({ stage: stageId, decision });
+      producers.set(name, list);
+      if (decision !== null && found.required) {
+        fail(`${field}: artifact ${name} is referenced from a decision and must declare required: false.`, at);
+      }
+      if (found.required && conditional.has(stageId)) {
+        const source = conditional.get(stageId)!;
+        const origin = source === stageId ? `run_when stage ${source}` : `${stageField}, which is reached through run_when stage ${source}`;
+        fail(`${field}: required artifact ${name} comes from ${origin}; a skip would leave it missing. Declare required: false.`, at);
+      }
+      return found;
+    };
+
+    if (rawStage.artifacts !== undefined && rawStage.artifacts !== null) {
+      const at = [...stageAt, "artifacts"];
+      if (!Array.isArray(rawStage.artifacts)) fail(`${stageField}.artifacts must be a list of artifact ids.`, at);
+      else if (!hasRole && rawStage.artifacts.length > 0) fail(`${stageField}.artifacts requires a role.`, at);
+      else {
+        const seen = new Set<string>();
+        rawStage.artifacts.forEach((id, position) => {
+          const itemAt = [...at, position];
+          const found = reference(id, `${stageField}.artifacts[${position}]`, itemAt, null);
+          if (found === null) return;
+          if (seen.has(found.id)) {
+            fail(`Duplicate ${stageField}.artifacts item: ${found.id}`, itemAt);
+            return;
+          }
+          seen.add(found.id);
+          if (noteFile(found, itemAt)) entry.artifacts.push(found);
+        });
+      }
+    }
+
+    if (!Array.isArray(rawStage.decision)) return;
+    rawStage.decision.forEach((rawEntry, entryIndex) => {
+      if (!isRecord(rawEntry) || Object.keys(rawEntry).length !== 1) return;
+      const rawName = Object.keys(rawEntry)[0]!;
+      const name = rawName.trim().toLowerCase();
+      const body = rawEntry[rawName];
+      if (!isRecord(body) || body.artifacts === undefined || body.artifacts === null) return;
+      const field = `${stageField}.decision.${name}.artifacts`;
+      const at: (string | number)[] = [...stageAt, "decision", entryIndex, rawName, "artifacts"];
+      if (!hasRole) {
+        fail(`${field} requires a role.`, at);
+        return;
+      }
+      const list: StageArtifact[] = [];
+      if (Array.isArray(body.artifacts)) {
+        const seen = new Set<string>();
+        body.artifacts.forEach((id, position) => {
+          const itemAt = [...at, position];
+          const found = reference(id, `${field}[${position}]`, itemAt, name);
+          if (found === null) return;
+          if (seen.has(found.id)) {
+            fail(`Duplicate ${field} item: ${found.id}`, itemAt);
+            return;
+          }
+          seen.add(found.id);
+          if (noteFile(found, itemAt)) list.push(found);
+        });
+      } else if (isRecord(body.artifacts)) {
+        for (const [id, definitionBody] of Object.entries(body.artifacts)) {
+          const itemAt = [...at, id];
+          const definition = readDefinition(id, definitionBody, `${field}.${id}`, itemAt);
+          if (definition === null) continue;
+          if (declared.has(id) || localIds.has(id)) {
+            fail(`${field}.${id}: artifact id collides with ${declared.has(id) ? "a top-level artifact" : "another inline artifact of this stage"}.`, itemAt);
+            continue;
+          }
+          localIds.add(id);
+          const local: StageArtifact = { ...definition, scope: "local" };
+          if (noteFile(local, [...itemAt, "file"])) list.push(local);
+        }
+      } else {
+        fail(`${field} must be a list of artifact ids or a mapping of inline artifacts.`, at);
+      }
+      entry.decisionArtifacts[name] = list;
+    });
+  });
+
+  const registry: ArtifactSpec[] = [];
+  for (const [id, artifact] of declared) {
+    const found = producers.get(id) ?? [];
+    if (found.length === 0) {
+      fail(`artifacts.${id} is not produced by any stage; reference it from a stage or decision.`, ["artifacts", id]);
+      continue;
+    }
+    if (found.length > 1) {
+      const where = found.map((item) => (item.decision === null ? item.stage : `${item.stage}.${item.decision}`)).join(", ");
+      fail(`artifacts.${id} has more than one producer: ${where}.`, ["artifacts", id]);
+      continue;
+    }
+    registry.push({ ...artifact, producer: found[0]! });
+  }
+  return { registry, perStage, problems };
 }
 
 function parseCompletion(
@@ -1447,6 +1776,7 @@ function collectDecisionV3(
   index: number,
   declaredIds: ReadonlySet<string>,
   problems: DraftProblems,
+  version7 = false,
 ): CollectedDecision {
   const field = `stages.${stageId}.decision`;
   const raw = item.decision;
@@ -1499,7 +1829,7 @@ function collectDecisionV3(
     }
     let entryValid = true;
     for (const key of Object.keys(body)) {
-      if (key !== "when" && key !== "navigate") {
+      if (key !== "when" && key !== "navigate" && !(version7 && key === "artifacts")) {
         problems.addMessage("invalid-decision", `${field}.${name}.${key} is not allowed.`, [...entryPath, rawName, key]);
         entryValid = false;
       }
@@ -1582,6 +1912,7 @@ function collectStage(
   version2: boolean,
   version3: boolean,
   version5: boolean,
+  version7: boolean,
   declaredIds: ReadonlySet<string>,
   problems: DraftProblems,
 ): DraftStage | null {
@@ -1631,8 +1962,11 @@ function collectStage(
   const roleFields = kind === "role";
   // `produces` stays readable without a role: output checks must not report a false missing artifact.
   // A verify-only stage with `produces` is invalid on its own, so dependent checks skip it.
-  const artifact: DraftUnit<string | null> =
-    kind === "verify" && Object.hasOwn(rawItem, "produces") && rawItem.produces != null
+  const artifact: DraftUnit<string | null> = version7
+    ? Object.hasOwn(rawItem, "produces")
+      ? (report(`stages.${stageId}.produces was removed in schema_version 7. Declare top-level artifacts and run \`migent migrate\`.`), { state: "invalid" } as const)
+      : { state: "valid", value: null }
+    : kind === "verify" && Object.hasOwn(rawItem, "produces") && rawItem.produces != null
       ? { state: "invalid" }
       : read(() => stageArtifact(rawItem, stageId));
   if (
@@ -1649,7 +1983,7 @@ function collectStage(
     : ({ state: "absent", value: "human" } as const);
   const decision: CollectedDecision = roleFields
     ? version3
-      ? collectDecisionV3(rawItem, stageId, index, declaredIds, problems)
+      ? collectDecisionV3(rawItem, stageId, index, declaredIds, problems, version7)
       : {
           values: read(() => stageDecisionValues(rawItem, stageId)),
           instructions: {},
@@ -1719,7 +2053,8 @@ function collectStage(
       maxVerify: maxVerify.state === "invalid" ? 3 : maxVerify.value,
       verifyTimeoutSec: verifyTimeoutSec.state === "invalid" ? null : verifyTimeoutSec.value,
       runWhen: runWhen.state === "invalid" ? null : runWhen.value,
-      artifact: artifact.state === "invalid" ? null : artifact.value,
+      artifacts: legacyArtifacts(stageId, artifact),
+      decisionArtifacts: {},
       decisionValues: decision.values.state === "invalid" ? [] : decision.values.value,
       ...(version3 && Object.keys(decision.instructions).length > 0
         ? { decisionInstructions: decision.instructions }
@@ -1752,7 +2087,8 @@ function collectStage(
           kind: "role",
           id: stageId,
           description: description.state === "invalid" ? null : description.value,
-          artifact: artifact.state === "invalid" ? null : artifact.value,
+          artifacts: legacyArtifacts(stageId, artifact),
+          decisionArtifacts: {},
           decisionValues: decision.values.state === "invalid" ? [] : decision.values.value,
           dependsOn: dependsOn.state === "invalid" ? [] : dependsOn.value,
           resumeFrom: resumeFrom.state === "invalid" ? null : resumeFrom.value,
@@ -2020,6 +2356,20 @@ function collectCompletion(
   return { stage: stageId };
 }
 
+/** The conditional (`run_when`) membership the draft can prove from readable edges. */
+function draftConditionalStages(stages: readonly DraftStage[], declaredIds: ReadonlySet<string>): Map<string, string> {
+  const graph: Record<string, StageSpec> = Object.create(null);
+  for (const stage of stages) graph[stage.id] = graphStageOf(stage);
+  const members = new Map<string, string>();
+  for (const source of stages) {
+    if (source.runWhen.state !== "valid" || source.runWhen.value === null) continue;
+    for (const member of definiteConditionalReach(stages, graph, declaredIds, source.id)) {
+      if (!members.has(member)) members.set(member, source.id);
+    }
+  }
+  return members;
+}
+
 /** A stage view carrying only the fields the cross-stage rules read. */
 function graphStageOf(stage: DraftStage): StageSpec {
   return {
@@ -2027,7 +2377,8 @@ function graphStageOf(stage: DraftStage): StageSpec {
     role: null,
     id: stage.id,
     description: null,
-    artifact: stage.artifact.state === "valid" ? stage.artifact.value : null,
+    artifacts: [],
+    decisionArtifacts: {},
     decisionValues: [],
     dependsOn: stage.dependsOn.state === "valid" ? stage.dependsOn.value : [],
     resumeFrom: null,
@@ -2252,6 +2603,7 @@ export function collectWorkflowDraft(data: Record<string, unknown>, source: stri
   const version2 = schemaVersion >= 2;
   const version3 = schemaVersion >= 3;
   const version5 = schemaVersion >= 5;
+  const version7 = schemaVersion >= 7;
   if (schemaVersion > SCHEMA_VERSION) {
     problems.addMessage(
       "schema-newer",
@@ -2299,13 +2651,25 @@ export function collectWorkflowDraft(data: Record<string, unknown>, source: stri
       problems.addMessage("duplicate-stage-id", `Duplicate stage id: ${id}`, ["stages", index, "id"]);
       return;
     }
-    const stage = collectStage(item, index, version2, version3, version5, declaredStageIds, problems);
+    const stage = collectStage(item, index, version2, version3, version5, version7, declaredStageIds, problems);
     if (stage !== null) stages.push(stage);
   });
 
-  const outputs: CollectedOutputs = version2
+  let outputs: CollectedOutputs = version2 && !version7
     ? collectOutputs(data.outputs, stages, declaredStageIds, problems)
     : { sectionValid: true, complete: true, names: new Set(), values: [], indexes: [] };
+  if (version7) {
+    if (Object.hasOwn(data, "outputs")) {
+      const message = "outputs was removed in schema_version 7. Declare artifacts and run `migent migrate`.";
+      problems.addMessage("invalid-artifact", message, ["outputs"]);
+    }
+    const built = buildArtifactsV7(data, draftConditionalStages(stages, declaredStageIds));
+    for (const problem of built.problems) problems.addMessage(problem.code, problem.message, problem.path);
+    const names = new Set(Object.keys(isRecord(data.artifacts) ? data.artifacts : {}));
+    outputs = { sectionValid: isRecord(data.artifacts) || data.artifacts == null, complete: built.problems.length === 0, names, values: [], indexes: [] };
+  } else if (Object.hasOwn(data, "artifacts")) {
+    problems.addMessage("invalid-artifact", "artifacts requires schema_version 7.", ["artifacts"]);
+  }
   const downstream = schemaVersion >= 4
     ? collectDownstream(data.downstream, outputs, problems)
     : { sectionValid: true, entries: [] };

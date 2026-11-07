@@ -54,7 +54,7 @@ export function whichFound(found: ReadonlySet<string>): (command: string) => str
 }
 
 export const SESSION_CONFIG = `\
-schema_version: 6
+schema_version: 7
 agents:
   grok:
     client:
@@ -75,7 +75,7 @@ export function writeSessionConfig(workspace: string): void {
 }
 
 export const STAGE_CONFIG = `\
-schema_version: 6
+schema_version: 7
 agents:
   grok:
     client:
@@ -98,14 +98,16 @@ roles:
 `;
 
 export const STAGE_WORKFLOW = `\
-schema_version: 6
+schema_version: 7
 id: plan-implement
+artifacts:
+  implement:
+    file: implementation-result.md
 stages:
   - id: implement
     role: developer
     depends_on: []
-    produces:
-      artifact: implementation-result.md
+    artifacts: [implement]
   - id: review-work
     role: reviewer
     agent:
@@ -280,9 +282,9 @@ export class MissingOutcomeClient extends FakeClient {
 
 export class ScriptedClient extends FakeClient {
   private responses: string[];
-  private artifacts: Array<string | null>;
+  private artifacts: Array<string | null | { body: string; only: string[] }>;
 
-  constructor(responses: string[], artifacts?: Array<string | null> | null) {
+  constructor(responses: string[], artifacts?: Array<string | null | { body: string; only: string[] }> | null) {
     super();
     this.responses = [...responses];
     this.artifacts = artifacts ? [...artifacts] : [];
@@ -290,9 +292,12 @@ export class ScriptedClient extends FakeClient {
 
   override parseResponse(): [string, string | null] {
     if (this.artifacts.length > 0) {
-      const body = this.artifacts.shift() ?? null;
+      const next = this.artifacts.shift() ?? null;
       const prompt = this.calls.at(-1)?.prompt;
-      if (body !== null && prompt !== undefined) writePromptArtifact(prompt, body);
+      if (next !== null && prompt !== undefined) {
+        if (typeof next === "string") writePromptArtifact(prompt, next);
+        else writePromptArtifact(prompt, next.body, next.only);
+      }
     }
     const response = this.responses.shift();
     if (response === undefined) throw new Error("scripted client has no response left");
@@ -319,13 +324,22 @@ export class ScriptedClient extends FakeClient {
   }
 }
 
-function writePromptArtifact(prompt: string, body: string): void {
+function writePromptArtifact(prompt: string, body: string, only?: readonly string[]): void {
   // The latest Execution block wins: replayed history can hold earlier ones.
   const directory = [...prompt.matchAll(/^- Artifacts: `(.+)`$/gm)].at(-1)?.[1];
-  const name = [...prompt.matchAll(/^Write the artifact as `(.+?)`/gm)].at(-1)?.[1];
-  if (!directory || !name) return;
+  const names = promptArtifactNames(prompt).filter((name) => only === undefined || only.includes(name));
+  if (!directory || names.length === 0) return;
   mkdirSync(directory, { recursive: true });
-  writeFileSync(path.join(directory, name), body, "utf8");
+  for (const name of names) writeFileSync(path.join(directory, name), body, "utf8");
+}
+
+/** File names the latest prompt asks for: the single-artifact line or the multi-file list. */
+function promptArtifactNames(prompt: string): string[] {
+  const single = [...prompt.matchAll(/^Write the artifact as `(.+?)`/gm)].at(-1)?.[1];
+  if (single) return [single];
+  const at = prompt.lastIndexOf("Write these artifacts in the artifacts directory:");
+  if (at < 0) return [];
+  return [...prompt.slice(at).split("\n").slice(1).join("\n").matchAll(/^- `(.+?)`/gm)].map((match) => match[1]!);
 }
 
 export const PLAN_REVIEW_WORKFLOW = `\

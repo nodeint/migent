@@ -18,6 +18,7 @@ import {
 } from "@nodeint/migent-kernel";
 import { addUnique, makeCheck, type Check, type DiagnoseOptions } from "./check.js";
 import { failureText } from "./clients.js";
+import { optionalArtifactMappings } from "./artifact-notes.js";
 import { stageAgentKey } from "./stage-agents.js";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -229,7 +230,10 @@ function modelKey(config: Record<string, unknown>, stage: RoleStageSpec, workflo
 }
 
 function authoringWarnings(document: WorkflowDocument, label: string): string[] {
-  return [...(document.warnings ?? [])].map((message) => `${label}: ${message}`);
+  return [
+    ...(document.warnings ?? []),
+    ...optionalArtifactMappings(document).map((item) => item.message),
+  ].map((message) => `${label}: ${message}`);
 }
 
 function finish(source: SessionSource | null, checks: Check[]): SessionDiagnosis {

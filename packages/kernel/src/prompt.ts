@@ -1,10 +1,10 @@
 import { buildStageReplyPrompt, prependRoleInstructions, renderStageContinue, renderStageStart, renderVerifyRepair } from "@nodeint/migent-prompts";
 import { readFileSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
-import type { ExecutionSnapshot } from "./outputs.js";
+import { isArtifactSchema, nonemptyArtifact, type ExecutionSnapshot } from "./outputs.js";
 import { isRecord } from "./record.js";
-import { latestCompleteByStage, relevantRouterSnapshots } from "./selection.js";
-import { isRoleStage, isWorkflowV2, routeListsStage, VERIFY_ARTIFACT, type WorkflowDocument } from "./workflow.js";
+import { currentCompleteByStage, latestCompleteByStage, relevantRouterSnapshots } from "./selection.js";
+import { isRoleStage, isWorkflowV2, routeListsStage, stageArtifactsFor, VERIFY_ARTIFACT, type StageSpec, type WorkflowDocument } from "./workflow.js";
 
 export function buildStagePrompt(input: {
   workflow: WorkflowDocument;
@@ -89,29 +89,45 @@ function upstreamArtifacts(
   dependsOn: readonly string[],
   snapshots: readonly ExecutionSnapshot[],
   stageId: string,
-): { stageId: string; path: string; verify: boolean; updated: boolean }[] {
-  const complete = latestCompleteByStage(snapshots);
+): UpstreamLine[] {
+  const v7 = isArtifactSchema(workflow);
+  const complete = v7 ? currentCompleteByStage(workflow, snapshots) : latestCompleteByStage(snapshots);
   const ownOrder = complete[stageId]?.executionOrder ?? 0; // 0: first visit, nothing counts as updated
-  const lines: { stageId: string; path: string; verify: boolean; updated: boolean }[] = [];
+  const lines: UpstreamLine[] = [];
   for (const depId of dependsOn) {
     const dep = workflow.stages[depId];
     if (dep === undefined) continue;
     const snapshot = complete[depId];
     if (snapshot === undefined) continue;
-    if (dep.artifact) {
-      const artifactPath = resolvePath(path.join(snapshot.artifactDirectory, dep.artifact));
-      lines.push({ stageId: depId, path: artifactPath, verify: false, updated: ownOrder > 0 && snapshot.executionOrder > ownOrder });
+    for (const artifact of producedArtifacts(dep, snapshot, v7)) {
+      const artifactPath = resolvePath(path.join(snapshot.artifactDirectory, artifact.file));
+      if (v7 && !nonemptyArtifact(artifactPath)) continue;
+      lines.push({ stageId: depId, path: artifactPath, verify: false, description: artifact.description, updated: ownOrder > 0 && snapshot.executionOrder > ownOrder });
     }
     if (dep.verify.length > 0) {
       const reportPath = resolvePath(path.join(snapshot.artifactDirectory, VERIFY_ARTIFACT));
-      lines.push({ stageId: depId, path: reportPath, verify: true, updated: ownOrder > 0 && snapshot.executionOrder > ownOrder });
+      lines.push({ stageId: depId, path: reportPath, verify: true, description: null, updated: ownOrder > 0 && snapshot.executionOrder > ownOrder });
     }
   }
   return lines;
 }
 
+interface UpstreamLine {
+  stageId: string;
+  path: string;
+  verify: boolean;
+  description: string | null;
+  updated: boolean;
+}
+
+/** Stage-level files plus those of the decision the execution chose (schema 7 only adds decision files). */
+function producedArtifacts(stage: StageSpec, snapshot: ExecutionSnapshot, v7: boolean) {
+  return v7 ? stageArtifactsFor(stage, snapshot.outcomeDecision) : stage.artifacts;
+}
+
 function routedResultContext(workflow: WorkflowDocument, stageId: string, snapshots: readonly ExecutionSnapshot[]) {
-  const complete = latestCompleteByStage(snapshots);
+  // Schema 7 never reads a completion that a later skip superseded.
+  const complete = isArtifactSchema(workflow) ? currentCompleteByStage(workflow, snapshots) : latestCompleteByStage(snapshots);
   const previous = complete[stageId];
   const previousOrder = previous ? previous.executionOrder : 0;
   let routed: readonly ExecutionSnapshot[];
@@ -132,9 +148,41 @@ function routedResultContext(workflow: WorkflowDocument, stageId: string, snapsh
     if (!isFile(response)) throw new Error(`Routed stage response is missing: ${response}`);
     return { stageId: decision.stageId, decision: decision.outcomeDecision, path: response };
   });
-  const artifactName = workflow.stages[stageId]?.artifact;
-  const artifact = previous && artifactName ? resolvePath(path.join(previous.artifactDirectory, artifactName)) : null;
-  return { decisions, stageId, previousArtifact: artifact && isFile(artifact) ? artifact : null };
+  const v7 = isArtifactSchema(workflow);
+  const own = workflow.stages[stageId];
+  const previousArtifacts = previous && own
+    ? own.artifacts
+        .map((item) => resolvePath(path.join(previous.artifactDirectory, item.file)))
+        .filter((file) => (v7 ? nonemptyArtifact(file) : isFile(file)))
+    : [];
+  // Schema 7: the routers' artifacts reach the destination under the same rule as dependents.
+  const routedArtifacts: { stageId: string; path: string; verify: boolean; description: string | null }[] = [];
+  if (v7) {
+    const seen = new Set<string>(own?.dependsOn ?? []);
+    for (const decision of routed) {
+      const router = workflow.stages[decision.stageId];
+      if (router === undefined || seen.has(router.id)) continue;
+      for (const item of stageArtifactsFor(router, decision.outcomeDecision)) {
+        const file = resolvePath(path.join(decision.artifactDirectory, item.file));
+        if (nonemptyArtifact(file)) routedArtifacts.push({ stageId: router.id, path: file, verify: false, description: item.description });
+      }
+      if (router.verify.length > 0) {
+        routedArtifacts.push({
+          stageId: router.id,
+          path: resolvePath(path.join(decision.artifactDirectory, VERIFY_ARTIFACT)),
+          verify: true,
+          description: null,
+        });
+      }
+    }
+  }
+  return {
+    decisions,
+    stageId,
+    previousArtifact: previousArtifacts[0] ?? null,
+    previousArtifacts,
+    routedArtifacts,
+  };
 }
 
 function previousBlockedAttempt(stageId: string, snapshots: readonly ExecutionSnapshot[]) {

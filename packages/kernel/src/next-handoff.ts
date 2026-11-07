@@ -44,35 +44,63 @@ export function completedPriorStatus(workspace: string, sessionId: string): Reco
   return read.status;
 }
 
-/** Derived from the completed source's frozen declaration, never from a mutable next.json. */
-export function resolveNextSuggestions(workspace: string, sessionId: string): NextSuggestion[] {
+interface SuggestionResult {
+  suggestions: NextSuggestion[];
+  /** Failures by downstream workflow id: one broken entry never hides the others. */
+  errors: Map<string, ConfigurationError>;
+}
+
+function resolveSuggestionEntries(workspace: string, sessionId: string): SuggestionResult {
   const directory = sessionDirectory(workspace, sessionId);
   const status = completedPriorStatus(workspace, sessionId);
   const workflow = loadFrozenWorkflow(directory);
   const outputs = isRecord(status.outputs) ? status.outputs : {};
-  return (workflow?.downstream ?? []).map((entry) => {
+  const optional = new Set((workflow?.artifacts ?? []).filter((artifact) => !artifact.required).map((artifact) => artifact.id));
+  const result: SuggestionResult = { suggestions: [], errors: new Map() };
+  for (const entry of workflow?.downstream ?? []) {
     const artifacts: NextSuggestion["artifacts"] = {};
-    for (const [name, output] of Object.entries(entry.artifacts)) {
+    let failure: ConfigurationError | null = null;
+    // Omitted `artifacts` passes every published output under its own name.
+    const mapping: Record<string, string> = entry.artifacts ?? Object.fromEntries(Object.keys(outputs).map((name) => [name, name]));
+    for (const [name, output] of Object.entries(mapping)) {
       const record = outputs[output];
       if (!isRecord(record) || typeof record.path !== "string" || !record.path) {
-        throw new ConfigurationError(`Prior session ${sessionId} has no published output ${output}.`);
+        // A mapping to an optional artifact selects it only when it was published.
+        if (optional.has(output)) continue;
+        failure = new ConfigurationError(`Prior session ${sessionId} has no published output ${output}.`);
+        break;
       }
       artifacts[name] = { output, path: record.path };
     }
-    return {
+    if (failure !== null) {
+      result.errors.set(entry.workflow, failure);
+      continue;
+    }
+    result.suggestions.push({
       workflow: entry.workflow,
       task: entry.task,
       artifacts,
       argv: ["migent", "session", "run", "--workflow", entry.workflow, "--prior", sessionId],
-    };
-  });
+    });
+  }
+  return result;
+}
+
+/** Derived from the completed source's frozen declaration, never from a mutable next.json. */
+export function resolveNextSuggestions(workspace: string, sessionId: string): NextSuggestion[] {
+  const { suggestions, errors } = resolveSuggestionEntries(workspace, sessionId);
+  const first = errors.values().next();
+  if (!first.done) throw first.value;
+  return suggestions;
 }
 
 /** Publication failure cannot undo a successfully completed workflow. Safe to retry. */
 export function publishNextSuggestions(workspace: string, sessionId: string): { path: string | null; next: NextSuggestion[] } {
   let next: NextSuggestion[] = [];
   try {
-    next = resolveNextSuggestions(workspace, sessionId);
+    const resolved = resolveSuggestionEntries(workspace, sessionId);
+    for (const [workflow, error] of resolved.errors) log(`next.json omits ${workflow}: ${error.message}`);
+    next = resolved.suggestions;
     if (next.length === 0) return { path: null, next };
     const filePath = path.join(sessionDirectory(workspace, sessionId), "next.json");
     writeJsonAtomic(filePath, { schema_version: 1, source_session_id: sessionId, next });
@@ -86,7 +114,10 @@ export function publishNextSuggestions(workspace: string, sessionId: string): { 
 export function resolveHandoff(workspace: string, workflowId: string, priorSessionId?: string | null): ResolvedHandoff | null {
   if (!priorSessionId) return null;
   const status = completedPriorStatus(workspace, priorSessionId);
-  const suggestion = resolveNextSuggestions(workspace, priorSessionId).find((entry) => entry.workflow === workflowId);
+  const resolved = resolveSuggestionEntries(workspace, priorSessionId);
+  const failure = resolved.errors.get(workflowId);
+  if (failure !== undefined) throw failure;
+  const suggestion = resolved.suggestions.find((entry) => entry.workflow === workflowId);
   const outputs = isRecord(status.outputs) ? status.outputs : {};
   const mappings = suggestion?.artifacts ?? Object.fromEntries(Object.keys(outputs).map((name) => [name, { output: name }]));
   const artifacts: ResolvedHandoff["artifacts"] = {};

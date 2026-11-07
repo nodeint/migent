@@ -1,3 +1,4 @@
+import { OPTIONAL_MAPPING_CODE, optionalArtifactMappings } from "./artifact-notes.js";
 import {
   ConfigurationError,
   checkDocumentSchemaVersion,
@@ -123,6 +124,11 @@ export function validateWorkflowDraft(input: WorkflowDraftInput, clients: Client
       ...(problem.path === undefined ? {} : { path: problem.path }),
       source,
     });
+  }
+  // A mapping to an optional artifact is best-effort context; say so where the author wrote it.
+  const optionalMappings = parsed.document === null ? [] : optionalArtifactMappings(parsed.document);
+  for (const item of optionalMappings) {
+    out.push({ severity: "warning", code: OPTIONAL_MAPPING_CODE, message: item.message, path: item.path, source });
   }
   // Unknown keys are independent of every other rule; a newer schema turns them into errors above.
   for (const entry of unknownWorkflowKeyEntries(input.draft)) {

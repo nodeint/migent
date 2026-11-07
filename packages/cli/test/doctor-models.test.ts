@@ -25,10 +25,10 @@ async function inspect(
   try {
     mkdirSync(path.join(workspace, ".migent", "workflows"), { recursive: true });
     writeFileSync(path.join(workspace, ".migent", "config.yaml"), stringify({
-      schema_version: 6, agents, roles: { developer: { agent: Object.keys(agents)[0] } },
+      schema_version: 7, agents, roles: { developer: { agent: Object.keys(agents)[0] } },
     }));
     writeFileSync(path.join(workspace, ".migent", "workflows", "flow.yaml"), stringify({
-      schema_version: 6, stages: [{ id: "work", role: "developer" }],
+      schema_version: 7, stages: [{ id: "work", role: "developer" }],
     }));
     return await capture(() => runDoctor(workspace, {
       asJson: options.json ?? true, which: options.which ?? which, runCommand: options.run ?? catalog, home: workspace,

@@ -173,14 +173,23 @@ export class ScriptedClient extends FakeClient {
 function writePromptArtifact(prompt: string, body: string): void {
   // The latest Execution block wins: replayed history can hold earlier ones.
   const directory = [...prompt.matchAll(/^- Artifacts: `(.+)`$/gm)].at(-1)?.[1];
-  const name = [...prompt.matchAll(/^Write the artifact as `(.+?)`/gm)].at(-1)?.[1];
-  if (!directory || !name) return;
+  const names = promptArtifactNames(prompt);
+  if (!directory || names.length === 0) return;
   mkdirSync(directory, { recursive: true });
-  writeFileSync(path.join(directory, name), body, "utf8");
+  for (const name of names) writeFileSync(path.join(directory, name), body, "utf8");
+}
+
+/** File names the latest prompt asks for: the single-artifact line or the multi-file list. */
+function promptArtifactNames(prompt: string): string[] {
+  const single = [...prompt.matchAll(/^Write the artifact as `(.+?)`/gm)].at(-1)?.[1];
+  if (single) return [single];
+  const at = prompt.lastIndexOf("Write these artifacts in the artifacts directory:");
+  if (at < 0) return [];
+  return [...prompt.slice(at).split("\n").slice(1).join("\n").matchAll(/^- `(.+?)`/gm)].map((match) => match[1]!);
 }
 
 export const FAKE_FLOW_CONFIG = `\
-schema_version: 6
+schema_version: 7
 agents:
   fake-model:
     client:

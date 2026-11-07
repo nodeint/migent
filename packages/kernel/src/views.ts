@@ -21,6 +21,7 @@ import {
   loadWorkflowCatalog,
   type StageSpec,
   type WorkflowDocument,
+  type StageArtifact,
 } from "./workflow.js";
 
 /**
@@ -110,7 +111,11 @@ function stageView(stage: StageSpec, config: Loaded, origin: WorkflowOrigin, res
     depends_on: [...stage.dependsOn],
     agent: stage.agent === null ? null : stage.agent.kind === "named" ? stage.agent.name : { inline: true },
     options: { ...stage.options },
-    artifact: stage.artifact,
+    artifact: stage.artifacts[0]?.file ?? null,
+    artifacts: stage.artifacts.map(artifactView),
+    decision_artifacts: Object.fromEntries(
+      Object.entries(stage.decisionArtifacts).map(([name, list]) => [name, list.map(artifactView)]),
+    ),
     decisions: stage.decisionValues.map((value) => ({
       value,
       when: stage.decisionInstructions?.[value] ?? null,
@@ -180,6 +185,13 @@ function workflowView(
     concurrency: document.concurrency ?? 1,
     constraints: [...document.constraints],
     stages,
+    artifacts: (document.artifacts ?? []).map((artifact) => ({
+      id: artifact.id,
+      file: artifact.file,
+      description: artifact.description,
+      required: artifact.required,
+      producer: { ...artifact.producer },
+    })),
     outputs: (document.outputs ?? []).map((output) => ({
       name: output.name,
       from_stage: output.fromStage,
@@ -189,7 +201,7 @@ function workflowView(
     downstream: (document.downstream ?? []).map((next) => ({
       workflow: next.workflow,
       task: next.task,
-      artifacts: { ...next.artifacts },
+      artifacts: next.artifacts === undefined ? null : { ...next.artifacts },
     })),
     role_responsibilities: responsibilities,
     warnings: [...(document.warnings ?? [])],
@@ -439,5 +451,15 @@ export function getConfigView(workspace: string): View {
     local_file: local ? LOCAL_CONFIG_LABEL : null,
     local_agents: local ? localAgentNames(workspace) : [],
     config: loadWorkspaceConfig(workspace),
+  };
+}
+
+function artifactView(artifact: StageArtifact): Record<string, unknown> {
+  return {
+    id: artifact.id,
+    file: artifact.file,
+    description: artifact.description,
+    required: artifact.required,
+    scope: artifact.scope,
   };
 }

@@ -48,7 +48,7 @@ test("plan review publishes the plan", async () => {
 
 test.each([
   ["alias", CODEX_CONFIG],
-  ["inline", `schema_version: 6
+  ["inline", `schema_version: 7
 roles:
   writer:
     agent:
@@ -425,7 +425,7 @@ test("codex last message overrides stdout", async () => {
 }, 30_000);
 
 const BRANCH_CONFIG = `\
-schema_version: 6
+schema_version: 7
 agents:
   grok-model:
     model: grok-test
@@ -441,15 +441,17 @@ roles:
 `;
 
 const BRANCH_WORKFLOW = `\
-schema_version: 6
+schema_version: 7
 id: implement
 concurrency: 2
+artifacts:
+  implementation:
+    file: implementation.md
 stages:
   - id: implement
     role: developer
     depends_on: []
-    produces:
-      artifact: implementation.md
+    artifacts: [implementation]
   - id: review
     role: reviewer
     depends_on: [implement]
@@ -486,10 +488,6 @@ stages:
       - revise:
           when: Choose revise according to the task.
           navigate: docs
-outputs:
-  - name: implementation
-    from_stage: implement
-    artifact: implementation.md
 `;
 
 function implementStep(text: string, extra: Record<string, unknown> = {}): Record<string, unknown> {

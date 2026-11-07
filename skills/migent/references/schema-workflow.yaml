@@ -1,6 +1,6 @@
 # Annotated workflow example. For validation, session drafts, and refresh,
 # see session-workflow.md. For project setup, see setup.md.
-schema_version: 6
+schema_version: 7
 concurrency: 1
 
 # Optional; defaults to the file name without .yaml.
@@ -8,6 +8,21 @@ id: reference
 
 constraints:
   - Stay within the task.
+
+# Files the workflow produces. Every entry is published to the session's outputs/ when the
+# session completes. Reference each from exactly one stage or decision below.
+artifacts:
+  draft:
+    # Plain file name, unique across this registry; cannot be verify.md.
+    file: draft.md
+    # Optional; shown to the producer and to later stages.
+    description: The draft for review.
+    # Optional; defaults to true. A required artifact must exist when the session completes,
+    # so it cannot come from a decision or from a run_when stage.
+    required: true
+  draft-notes:
+    file: draft-notes.md
+    required: false
 
 stages:
   - id: prepare
@@ -30,8 +45,8 @@ stages:
     max_revisions: 2
     instructions:
       - Write the draft.
-    produces:
-      artifact: draft.md
+    # Artifact ids this stage writes on every complete.
+    artifacts: [draft]
 
   - id: review
     role: reviewer
@@ -53,9 +68,16 @@ stages:
       # navigate accepts a stage ID, complete, or a non-empty list of stage IDs.
       - approved:
           navigate: check_docs
+          artifacts: [draft-notes]
       - revise:
           when: Required fixes remain. List each fix and its impact.
           navigate: draft
+          # Either a list of registry ids (these must be required: false), or a mapping of
+          # artifacts local to this decision. Local artifacts are never published.
+          artifacts:
+            fixes:
+              file: fixes.md
+              description: Required fixes with their impact.
 
   - id: check_docs
     role: reviewer
@@ -76,15 +98,9 @@ stages:
       - Review documentation changes.
     # A leaf stage without a decision completes naturally, including when skipped.
 
-# Publish a file matching the source stage's produces.artifact.
-# Stage artifacts cannot be named verify.md.
-outputs:
-  - name: draft
-    from_stage: draft
-    artifact: draft.md
-
 # Optional suggestions, available after successful completion. No automatic dispatch.
-# Each target workflow appears once. Keys name context at the destination; values name outputs above.
+# Each target workflow appears once. Keys name context at the destination; values name artifact ids above.
+# Omit artifacts to pass every published artifact under its own id.
 downstream:
   - workflow: implement
     task: Implement the approved draft.

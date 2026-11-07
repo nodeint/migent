@@ -7,7 +7,7 @@ roles with an independent agent object in each `agent`:
 
 ```yaml
 # .migent/config.yaml
-schema_version: 6
+schema_version: 7
 roles:
   planner:
     description: Designs the approach and writes the plan.
@@ -88,7 +88,7 @@ When several roles or stages need the same settings, define a named entry
 under `agents` and use its name as the role's `agent`:
 
 ```yaml
-schema_version: 6
+schema_version: 7
 agents:
   deep_reasoning:
     model: gpt-5
@@ -111,7 +111,7 @@ separate from role names.
 Put an agent directly in a role when it does not need a shared name:
 
 ```yaml
-schema_version: 6
+schema_version: 7
 roles:
   developer:
     agent:
@@ -164,7 +164,7 @@ Only options the client marks as overridable are part of the session.
 ## Schema version
 
 `schema_version` on `.migent/config.yaml` and on each workflow file is the
-document version; the current version is 6. A missing value is version 0. A command that uses those
+document version; the current version is 7. A missing value is version 0. A command that uses those
 files stops while the recorded version is older and tells you to run
 `migent migrate`. That command asks before writing. `migent migrate --yes`
 writes without asking.

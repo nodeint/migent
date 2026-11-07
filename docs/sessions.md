@@ -108,7 +108,10 @@ The session-level files have distinct purposes:
   prompt or conversation, and stores `skip` (reason, baseline commit, patterns, number of
   changed paths). `status.json` gains `baseline` (`commit`, `captured_at`, optional `error`) and,
   while a stage's latest execution is a skip, `skipped_stages` (`stage_id`, `execution_id`).
-- `outputs/` contains the artifacts named by the workflow. A version 2 workflow
+- `outputs/` contains the artifacts named by the workflow. A schema 7 workflow
+  copies every top-level `artifacts` entry that resolves when the run is quiet;
+  required entries must resolve, optional ones are copied only when present, and
+  decision-local artifacts are never copied. A version 2 to 6 workflow
   copies top-level `outputs` when the run is quiet and every artifact resolves.
   A version 1 workflow still copies `completion.outputs` when the completion
   stage makes its decision. The directory is created only then, and only when
@@ -186,16 +189,19 @@ reads that file when resuming, but all new checkpoints are written as
 ## Published outputs
 
 A published output is copied from a successful stage artifact to
-`outputs/<artifact-file>`, keeping the artifact name and its suffix. A version 2
-workflow names those artifacts at the top level and publishes them once, when
-the session completes:
+`outputs/<artifact-file>`, keeping the artifact name and its suffix. A schema 7
+workflow declares those artifacts in the top-level `artifacts` registry and
+publishes them once, when the session completes (the persisted `outputs/`
+directory and `status.json.outputs` keep their names):
 
 ```yaml
-outputs:
-  - name: plan
-    from_stage: plan
-    artifact: plan.md
+artifacts:
+  plan:
+    file: plan.md
 ```
+
+A version 2 to 6 workflow lists them as top-level `outputs` entries (`name`,
+`from_stage`, `artifact`) instead.
 
 A version 1 workflow still uses `completion.outputs` and publishes when the
 completion stage makes its decision. Either form publishes:

@@ -684,22 +684,25 @@ test("stage rejects a dispatch ceiling", async () => {
 
 test("stage id resumes the declared source session", async () => {
   const workflow = `\
-schema_version: 6
+schema_version: 7
 id: resume-sample
+artifacts:
+  draft:
+    file: draft.md
+  revise-draft:
+    file: revision.md
 stages:
   - id: draft
     role: developer
     depends_on: []
-    produces:
-      artifact: draft.md
+    artifacts: [draft]
   - id: revise-draft
     role: developer
     session:
       resume_from: draft
     depends_on:
       - draft
-    produces:
-      artifact: revision.md
+    artifacts: [revise-draft]
 `;
   const workspace = writeFakeWorkflowWorkspace({ "resume-sample": workflow });
   try {
@@ -737,14 +740,16 @@ stages:
 });
 
 const REVISION_LOOP = `\
-schema_version: 6
+schema_version: 7
 id: loop
+artifacts:
+  plan:
+    file: plan.md
 stages:
   - id: plan
     role: planner
     max_revisions: 0
-    produces:
-      artifact: plan.md
+    artifacts: [plan]
   - id: review-plan
     role: reviewer
     depends_on:
@@ -759,13 +764,15 @@ stages:
 `;
 
 const OPEN_LOOP = `\
-schema_version: 6
+schema_version: 7
 id: loop
+artifacts:
+  plan:
+    file: plan.md
 stages:
   - id: plan
     role: planner
-    produces:
-      artifact: plan.md
+    artifacts: [plan]
   - id: review-plan
     role: reviewer
     depends_on:

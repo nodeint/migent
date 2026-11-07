@@ -21,7 +21,7 @@ const question = "status: question\n\n" + JSON.stringify({ schema_version: 1, qu
 function workspace(stages: string, extra = ""): string {
   const root = mkdtempSync(path.join(tmpdir(), "migent-question-"));
   mkdirSync(path.join(root, ".migent/workflows"), { recursive: true });
-  writeFileSync(path.join(root, ".migent/config.yaml"), "schema_version: 6\nroles:\n  planner:\n    agent: { client: { type: fake }, model: fake }\n");
+  writeFileSync(path.join(root, ".migent/config.yaml"), "schema_version: 7\nroles:\n  planner:\n    agent: { client: { type: fake }, model: fake }\n");
   writeFileSync(path.join(root, ".migent/workflows/plan.yaml"), `schema_version: 3\nid: plan\n${extra}stages:\n${stages}`);
   return root;
 }

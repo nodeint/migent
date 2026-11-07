@@ -6,10 +6,10 @@ import { isRecord } from "./record.js";
  */
 
 /** Workflow keys that schema_version 4 and later read. */
-const WORKFLOW_KEYS = ["schema_version", "id", "stages", "outputs", "concurrency", "constraints", "downstream", "completion", "requires"];
+const WORKFLOW_KEYS = ["schema_version", "id", "stages", "outputs", "artifacts", "concurrency", "constraints", "downstream", "completion", "requires"];
 const STAGE_KEYS_COMMON = [
   "id", "description", "role", "depends_on", "instructions", "max_revisions", "max_verify",
-  "verify", "verify_timeout", "produces", "decision", "session", "ask", "run_when",
+  "verify", "verify_timeout", "produces", "artifacts", "decision", "session", "ask", "run_when",
 ];
 /** Stage keys through schema_version 4 select a model alias and tune options. */
 const STAGE_KEYS_V4 = [...STAGE_KEYS_COMMON, "model", "options"];
@@ -21,7 +21,7 @@ const STAGE_V5_RENAMED: Readonly<Record<string, string>> = {
 };
 const PRODUCES_KEYS = ["artifact"];
 const SESSION_KEYS = ["resume_from"];
-const DECISION_ENTRY_KEYS = ["when", "navigate"];
+const DECISION_ENTRY_KEYS = ["when", "navigate", "artifacts"];
 const ROLE_KEYS = ["description", "agent", "responsibilities"];
 const ROLE_V4_RENAMED: Readonly<Record<string, string>> = {
   default_model: "was renamed to {location}.agent in schema_version 5. Run `migent migrate`.",

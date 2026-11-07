@@ -19,7 +19,8 @@ function stage(id: string, role: string, extra: Partial<RoleStageSpec> = {}): Ro
     description: null,
     id,
     role,
-    artifact: null,
+    artifacts: [],
+    decisionArtifacts: {},
     decisionValues: [],
     dependsOn: [],
     resumeFrom: null,
@@ -41,7 +42,7 @@ function planReview(): WorkflowDocument {
   return {
     id: "plan",
     stages: {
-      plan: stage("plan", "planner", { artifact: "plan.md" }),
+      plan: stage("plan", "planner", { artifacts: [{ id: "plan", file: "plan.md", description: null, required: true, scope: "local" }] }),
       "review-plan": stage("review-plan", "reviewer", {
         decisionValues: ["approved", "revise"],
       }),

@@ -26,7 +26,8 @@ function stage(id: string, role: string, extra: Partial<RoleStageSpec> = {}): Ro
     description: null,
     id,
     role,
-    artifact: null,
+    artifacts: [],
+    decisionArtifacts: {},
     decisionValues: [],
     dependsOn: [],
     resumeFrom: null,
@@ -95,11 +96,11 @@ test("populated prompt matches the template snapshot", () => {
   const workflow: WorkflowDocument = {
     id: "sample",
     stages: {
-      plan: stage("plan", "planner", { artifact: "plan.md" }),
+      plan: stage("plan", "planner", { artifacts: [{ id: "plan", file: "plan.md", description: null, required: true, scope: "local" }] }),
       implement: stage("implement", "developer", {
         dependsOn: ["plan"],
         instructions: ["Implement production code only.", "Do not add or modify test code."],
-        artifact: "implementation-result.md",
+        artifacts: [{ id: "implement", file: "implementation-result.md", description: null, required: true, scope: "local" }],
       }),
     },
     completion: null,

@@ -374,7 +374,7 @@ class SlowSiblingProvider extends FakeClient {
 
 test("a failed stage is named even when a concurrent sibling finishes last", async () => {
   const workspace = writeFakeWorkflowWorkspace({
-    concurrent: `schema_version: 6
+    concurrent: `schema_version: 7
 concurrency: 2
 id: concurrent
 stages:
@@ -425,7 +425,7 @@ class QuotaThenCompleteProvider extends ScriptedClient {
 
 test("a failed attempt is named after the session recovers and completes", async () => {
   const workspace = writeFakeWorkflowWorkspace({
-    solo: `schema_version: 6
+    solo: `schema_version: 7
 id: solo
 stages:
   - id: work

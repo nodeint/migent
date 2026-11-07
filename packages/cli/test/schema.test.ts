@@ -49,6 +49,7 @@ const WORKFLOW_KEYS = [
   "depends_on",
   "description",
   "downstream",
+  "file",
   "from_stage",
   "id",
   "instructions",
@@ -85,10 +86,10 @@ test("config reference parses and names every key the config parser reads", () =
     mkdirSync(path.dirname(configPath), { recursive: true });
     writeFileSync(configPath, text, "utf8");
     const reference = loadYamlMapping(configPath);
-    expect(documentVersion(reference)).toBe(6);
+    expect(documentVersion(reference)).toBe(7);
     const config = structuredClone(reference);
-    migrateConfig(config, 6, config, { layer: "project", clientIds: clientIds() });
-    expect(documentVersion(config)).toBe(6);
+    migrateConfig(config, 7, config, { layer: "project", clientIds: clientIds() });
+    expect(documentVersion(config)).toBe(7);
     writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
     const clients = clientRegistry();
     expect(loadAgentTarget(config, "deep_reasoning", clients)).toEqual({
@@ -128,8 +129,8 @@ test("workflow reference parses and names every key the workflow parser reads", 
   const text = readFileSync(path.join(TEMPLATES, "schema-workflow.yaml"), "utf8");
   const filePath = path.join(TEMPLATES, "schema-workflow.yaml");
   const document = loadWorkflowDocument(filePath);
-  expect(documentVersion(loadYamlMapping(filePath))).toBe(6);
-  expect(document.schemaVersion).toBe(6);
+  expect(documentVersion(loadYamlMapping(filePath))).toBe(7);
+  expect(document.schemaVersion).toBe(7);
   expect(document.concurrency).toBe(1);
   expect(document.id).toBe("reference");
   expect(document.constraints).toEqual(["Stay within the task."]);
@@ -152,7 +153,7 @@ test("workflow reference parses and names every key the workflow parser reads", 
     dependsOn: ["prepare"],
     maxRevisions: 2,
     instructions: ["Write the draft."],
-    artifact: "draft.md",
+    artifacts: [{ id: "draft", file: "draft.md", description: "The draft for review.", required: true, scope: "published" }],
     resumeFrom: null,
     verify: [],
   });
@@ -176,16 +177,16 @@ test("workflow reference parses and names every key the workflow parser reads", 
     instructions: ["Review documentation changes."],
     verify: [],
     decisionValues: [],
-    artifact: null,
+    artifacts: [],
     runWhen: { changedPaths: ["docs/**/*", "**/README.md"] },
   });
   expect(document.completion).toBeNull();
-  expect(document.outputs).toEqual([{ name: "draft", fromStage: "draft", artifact: "draft.md" }]);
+  expect(document.outputs?.map((output) => output.name)).toEqual(["draft", "draft-notes"]);
   const scanned = new Set(parserKeys(readFileSync(WORKFLOW_PARSER, "utf8"), "workflow"));
   scanned.add("schema_version");
   expect([...scanned].sort()).toEqual(WORKFLOW_KEYS);
-  const sampleKeys = WORKFLOW_KEYS.filter((key) => !["completion", "requires", "stage", "values", "routes", "options"].includes(key));
-  expect(yamlKeys(text)).toEqual([...sampleKeys, "approved", "client", "effort", "plan", "revise", "type"].sort());
+  const sampleKeys = WORKFLOW_KEYS.filter((key) => !["completion", "requires", "stage", "values", "routes", "options", "artifact", "from_stage", "name", "outputs", "produces"].includes(key));
+  expect(yamlKeys(text)).toEqual([...sampleKeys, "approved", "client", "draft", "draft-notes", "effort", "fixes", "plan", "required", "revise", "type"].sort());
 });
 
 function parserKeys(source: string, kind: "config" | "workflow"): string[] {
