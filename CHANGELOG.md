@@ -2,8 +2,11 @@
 
 ## Unreleased
 
+## 0.5.0
+
 ### Changed
 
+- The README lists supported CLIs with links to their project pages.
 - **Breaking:** Agents select a CLI through `client.type`; the provider abstraction is removed and configuration/workflows use schema version 6. Run `migent migrate` to preserve existing client selections and options. Replace provider selection flags with `--client` and use `migent get clients` instead of `get providers`.
 - Role sessions honor the configured client. Claude Code's session identity and default `permission_mode=bypassPermissions` follow `claude-code`; quota waits are grouped by client.
 
@@ -102,25 +105,9 @@
 
 - A session no longer stays stuck in `running` when `migent session run` is killed right after a stage starts. Each execution now records its host and owner pid when it is created, not only after the provider spawns, so `migent session continue` can tell the owner is gone, fail the orphaned execution, and resume instead of refusing with "has an unverified live provider process". Executions created by earlier versions still need manual recovery (#51).
 
-## 0.3.4
-
-### Added
-
-- `migent update` upgrades Migent to the latest published version with the package manager that installed it (npm, pnpm, yarn, or bun), or prints the command when it cannot tell. `--check` (or `--dry-run`) only reports; `--json` prints one object. After an upgrade it suggests `migent migrate` and `migent skill update` (#46).
-
-### Changed
-
-- Stage prompts are restructured as Markdown sections, ordered stable to variable: the response contract (status table, decisions, question rules) first, then the stage (`Role` and `Stage` instructions as separate lists, with stage lines already in the role list dropped, then constraints and verify), then upstream and routing context, then an `Execution` block with the task, session, question file and artifact paths, and a closing `Do` that is the only instruction for the turn. The instruction follows what the turn is (start, revisit, human reply, answers, verify repair, question-file correction); the kind is saved as `turn_kind` in `execution.json` so a resumed turn keeps it. The header format is shown as a block, and prompts no longer mention routing or execution IDs. The contract states that `recommended` holds the option letters Migent assigns (#44).
-
-- Answers to stage questions are structured: every answer is numbered, echoes its question and selection kind, always has `Selected:` (option ID and label, or `none`), and adds `Free text:` only when given (#44).
-
-- A turn that goes back to the same agent under the same response protocol (answering its questions, a verify repair, a question-file correction) no longer resends the full contract. It sends the new `Execution` paths, the previous artifact directory when resuming a question, and a short status reminder (#44).
-
-### Fixed
-
-- `migent session continue <session> --stage <stage> --reply` keeps running the workflow after the answered stage. Before, it dispatched only that stage, like `--once`, and left downstream stages undispatched. `--stage` without `--reply` still dispatches one stage.
-
 ## Older versions
+
+- [0.3.4](https://github.com/nodeint/migent/releases/tag/v0.3.4)
 
 - [0.3.3](https://github.com/nodeint/migent/releases/tag/v0.3.3)
 - [0.3.1](https://github.com/nodeint/migent/releases/tag/v0.3.1)
