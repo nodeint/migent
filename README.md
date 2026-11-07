@@ -23,29 +23,28 @@ the workflow's progress.
 
 ## Contents
 
-- [Migent](#migent)
-  - [Contents](#contents)
-  - [What you can do](#what-you-can-do)
-  - [Why Migent?](#why-migent)
-  - [Supported CLIs](#supported-clis)
-  - [Editor extension](#editor-extension)
-  - [Quickstart](#quickstart)
-    - [Install Migent](#install-migent)
-    - [Option 1: Set up with an AI agent](#option-1-set-up-with-an-ai-agent)
-    - [Option 2: Set up manually](#option-2-set-up-manually)
-    - [Project files](#project-files)
-    - [Tracking](#tracking)
-  - [Workflow as code](#workflow-as-code)
-    - [Start with one role and one stage](#start-with-one-role-and-one-stage)
-    - [Add planning and review](#add-planning-and-review)
-    - [Beyond sequential workflows](#beyond-sequential-workflows)
-  - [Concepts](#concepts)
-  - [Roadmap](#roadmap)
-    - [In progress](#in-progress)
-    - [Planned](#planned)
-  - [Update Migent](#update-migent)
-  - [Documentation](#documentation)
-  - [License](#license)
+- [Contents](#contents)
+- [What you can do](#what-you-can-do)
+- [Why Migent?](#why-migent)
+- [Supported CLIs](#supported-clis)
+- [Editor extension](#editor-extension)
+- [Quickstart](#quickstart)
+  - [Install Migent](#install-migent)
+  - [Option 1: Set up with an AI agent](#option-1-set-up-with-an-ai-agent)
+  - [Option 2: Set up manually](#option-2-set-up-manually)
+  - [Project files](#project-files)
+  - [Tracking](#tracking)
+- [Workflow as code](#workflow-as-code)
+  - [Start with one role and one stage](#start-with-one-role-and-one-stage)
+  - [Add planning and review](#add-planning-and-review)
+  - [Beyond sequential workflows](#beyond-sequential-workflows)
+- [Concepts](#concepts)
+- [Roadmap](#roadmap)
+  - [In progress](#in-progress)
+  - [Planned](#planned)
+- [Update Migent](#update-migent)
+- [Documentation](#documentation)
+- [License](#license)
 
 ## What you can do
 
@@ -83,17 +82,13 @@ Each client CLI keeps its own authentication, tools, and execution capabilities.
 
 ## Supported CLIs
 
-Migent uses each client's CLI in headless mode. Install and sign in to the
-CLIs used by your configuration. BytePlus models and other OpenAI-compatible
-backends run through `opencode`.
+Install and sign in to the CLIs you use with Migent:
 
-| Client       | CLI          |
-| ------------ | ------------ |
-| `agy`        | `agy`        |
-| `claude-code`| `claude`     |
-| `codex`      | `codex`      |
-| `grok`       | `grok`       |
-| `opencode`   | `opencode`   |
+- [`agy`](https://github.com/google-antigravity/antigravity-cli)
+- [`claude`](https://code.claude.com/docs/en/overview)
+- [`codex`](https://developers.openai.com/codex/cli)
+- [`grok`](https://docs.x.ai/build/overview)
+- [`opencode`](https://opencode.ai/)
 
 ## Editor extension
 
