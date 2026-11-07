@@ -113,7 +113,7 @@ export function executionCommands(events: readonly ParsedEvent[]): Map<string, s
   return commands;
 }
 
-/** The shared execution reader for resume, status repair and legacy quota waits. */
+/** The shared execution reader for resume and status repair. */
 export function readExecutionClient(
   sessionDirectory: string,
   executionId: string,
@@ -151,14 +151,6 @@ export function clientOfCommand(command: string | null | undefined): string | nu
   if (typeof command !== "string" || command.trim() === "") return null;
   const base = path.basename(command.trim()).replace(/\.(?:exe|cmd|bat|ps1)$/i, "").toLowerCase();
   return Object.hasOwn(LEGACY_COMMAND_CLIENT, base) ? LEGACY_COMMAND_CLIENT[base]! : null;
-}
-
-/** The client lookup key for a quota wait: recorded client, else a legacy bucket. */
-export function quotaClientKey(client: string | null | undefined, provider: string | null | undefined): string {
-  const recorded = nonempty(client);
-  if (recorded !== null) return recorded;
-  const legacy = nonempty(provider);
-  return legacy === null ? "" : `legacy:${legacy}`;
 }
 
 function nonempty(value: string | null | undefined): string | null {

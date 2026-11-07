@@ -478,7 +478,12 @@ export class AgentToolRunner {
       }
       if (classification?.kind !== "quota") return extraFields();
       failureReason = "quota";
-      return { ...(extraFields() ?? {}), failure_reason: "quota", retry_at: classification.resetAt };
+      return {
+        ...(extraFields() ?? {}),
+        failure_reason: "quota",
+        retry_at: classification.resetAt,
+        ...(classification.window ? { quota_window: classification.window } : {}),
+      };
     };
     while (true) {
       let invokeError: string | null = null;
@@ -603,6 +608,18 @@ export class AgentToolRunner {
           turnError === null ? "completed" : turnError,
           turnDetails,
         );
+        if (classification?.kind === "quota") {
+          const resetAt = classification.resetAt ?? "";
+          eventReporter.emit(
+            "provider.quota",
+            [classification.message, resetAt].filter((item) => item !== "").join(" "),
+            {
+              retry_at: resetAt,
+              client: eventReporter.client,
+              ...(classification.window ? { window: classification.window } : {}),
+            },
+          );
+        }
         if (exitOnly) {
           eventReporter.emit(
             "provider.exit_anomaly",

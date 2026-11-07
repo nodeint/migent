@@ -13,11 +13,11 @@ is not necessarily complete; retain its ID when resolving the cause and retrying
 | 5 | Dispatch limit | Continue if more stages are appropriate. |
 | 6 | Agent stage failed verification | Read the response, fix the cause, and continue. |
 | 7 | Verification-only stage failed | Read the verify report, fix the workspace, and continue. |
-| 8 | Client quota reached with `--once` or `--stage` | Resolve the quota or wait for availability before continuing. |
+| 8 | Client quota reached with `--once` or `--stage` | The stage failed on a client quota. Check the reported reset time, then continue. Migent does not wait or retry. |
 | 9 | Questions pending | Follow [Answer questions and blockers](session-replies.md). |
 | 130 | Cancelled | Ask before resuming; follow [resume behavior](session-resume.md). |
 
-`session continue` retries immediately without waiting for a recorded retry time.
+`session continue` reruns a failed stage immediately, including one that failed on quota; it ignores the recorded reset time.
 If diagnostics report an outdated schema, run `migent migrate --yes`, then validate again.
 
 ## Control execution limits

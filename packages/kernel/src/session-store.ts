@@ -1353,6 +1353,12 @@ function writeFailureReport(
     lines.push(`- Client: \`${client ?? "unknown"}/${model ?? "unknown"}\``);
   }
   if (failureReason !== null) lines.push(`- Failure reason: \`${failureReason}\``);
+  if (failureReason === "quota") {
+    const resetAt = textField(metadata.retry_at);
+    const window = textField(metadata.quota_window);
+    if (resetAt !== null) lines.push(`- Quota resets at: ${resetAt}`);
+    if (window !== null) lines.push(`- Quota window: \`${window}\``);
+  }
   if (typeof metadata.completed_at === "string") lines.push(`- Completed at: ${metadata.completed_at}`);
   lines.push("", "## Error", "", "```text", error ?? "No error message was recorded.", "```");
   const diagnostics = readDiagnostics(context.directory);

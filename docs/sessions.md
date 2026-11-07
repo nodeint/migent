@@ -156,7 +156,7 @@ Each execution directory contains:
   reply is model text, the turn goes through the same checks as an exit-0 turn
   (parsable outcome, stage artifact, completion outputs). If it passes, the turn
   is accepted: the execution ends `completed`, `failure_kind` and `reset_at` are
-  empty, no quota wait starts, and `events.jsonl` gets one `provider.exit_anomaly`
+  empty, and `events.jsonl` gets one `provider.exit_anomaly`
   event (`turn`, `client`, `exit_code`, `signal`, `origin`, `accepted: true`,
   `reason: null`) next to `provider.turn_completed`. If a check fails, the
   execution fails with the model's text as its error, and the event has

@@ -93,14 +93,15 @@ Exit 6 is only for a cancelled role session that reopened more than one
 execution and one of them exhausted verify. A single role result uses 0, 1,
 and 130.
 
-A failed stage stays stopped. `session continue` runs that stage again and
-does not sleep until an old `retry_at`. Exit 3 is `stage_failed`: the command
-stopped on that failure and did not wait. Exit 8 is `quota` for `--once` and
-`--stage`: the client named a reset time and the command did not wait.
-Cancelling during a wait is exit 130. That disarms the timer. The quota
-execution stays `failed`, and the session stays `active` when nothing else
-was in flight. The next `session continue` runs the stage and does not sleep
-until the recorded `retry_at`.
+A failed stage stays stopped. `session continue` runs that stage again.
+Exit 3 is `stage_failed`: the command stopped on that failure. A client quota
+is a failure like any other: Migent records `failure_reason: quota`, the reset
+time as `retry_at` (informational only), the known window as `quota_window`, and a
+`provider.quota` event. `failure.md` and `session watch`/`session show` list every stage whose latest execution failed on quota with its message, reset
+time and window. Migent
+neither sleeps nor retries. Exit 8 is `quota` for `--once` and `--stage`; a
+full run reports a quota failure as exit 3. `session continue` runs the stage
+again immediately, without regard to `retry_at`.
 
 Workflow `session run` and `session continue` default to 20 stage dispatches
 per command. Configure that guard with:

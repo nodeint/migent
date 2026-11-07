@@ -120,12 +120,46 @@ export function watchSnapshot(
   if (isRecord(status.handoff)) snapshot.handoff = status.handoff;
   snapshot.skipped_stages = Array.isArray(status.skipped_stages) ? status.skipped_stages.filter(isRecord) : [];
   if (execution && isRecord(execution.skip)) snapshot.skip = execution.skip;
+  const quotaFailures = unresolvedQuotaFailures(sessionDirectory);
+  if (quotaFailures.length > 0) snapshot.quota_failures = quotaFailures;
   if (typeof status.title === "string" && status.title !== "") snapshot.title = status.title;
   const diagnostics = latestDiagnosticsPathIn(sessionDirectory);
   if (diagnostics !== null) snapshot.diagnostics = diagnostics;
   const exitAnomalies = exitAnomalySummaries(sessionDirectory);
   if (exitAnomalies.length > 0) snapshot.exit_anomalies = exitAnomalies;
   return snapshot;
+}
+
+/** Stages whose latest execution failed on a client quota. A later execution of the stage resolves it. */
+function unresolvedQuotaFailures(sessionDirectory: string): Record<string, unknown>[] {
+  const root = path.join(sessionDirectory, "executions");
+  let names: string[];
+  try {
+    names = readdirSync(root);
+  } catch {
+    return [];
+  }
+  const latest = new Map<string, { order: number; executionId: string; metadata: Record<string, unknown> }>();
+  for (const name of names) {
+    const metadata = readExecutionFile(path.join(root, name, "execution.json"));
+    if (metadata === null) continue;
+    const stageId = typeof metadata.stage_id === "string" && metadata.stage_id !== "" ? metadata.stage_id : name;
+    const order = typeof metadata.execution_order === "number" ? metadata.execution_order : 0;
+    const current = latest.get(stageId);
+    if (current === undefined || order >= current.order) latest.set(stageId, { order, executionId: name, metadata });
+  }
+  const failures: Record<string, unknown>[] = [];
+  for (const [stageId, { executionId, metadata }] of [...latest.entries()].sort((a, b) => a[1].order - b[1].order)) {
+    if (metadata.status !== "failed" || metadata.failure_reason !== "quota") continue;
+    failures.push({
+      stage_id: stageId,
+      execution_id: executionId,
+      message: typeof metadata.error === "string" ? metadata.error : null,
+      reset_at: typeof metadata.retry_at === "string" && metadata.retry_at !== "" ? metadata.retry_at : null,
+      window: typeof metadata.quota_window === "string" ? metadata.quota_window : null,
+    });
+  }
+  return failures;
 }
 
 /** One entry per stage that recorded an exit-only anomaly: its latest anomaly and the stage's count. */

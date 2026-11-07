@@ -192,6 +192,16 @@ export function printWatchSnapshot(snapshot: Record<string, unknown>): void {
     lines.push(["outcome", outcome.status]);
     if (typeof outcome.decision === "string" && outcome.decision) lines.push(["decision", outcome.decision]);
   }
+  const quotaFailures = Array.isArray(snapshot.quota_failures) ? snapshot.quota_failures.filter(isRecord) : [];
+  for (const quota of quotaFailures) {
+    const parts = [
+      typeof quota.stage_id === "string" ? quota.stage_id : "",
+      typeof quota.message === "string" ? quota.message : "",
+      typeof quota.reset_at === "string" ? `resets at ${quota.reset_at}` : "",
+      typeof quota.window === "string" ? `window ${quota.window}` : "",
+    ].filter((item) => item !== "");
+    lines.push(["quota", parts.join(" · ") || "reported"]);
+  }
   if (typeof snapshot.diagnostics === "string" && snapshot.diagnostics) lines.push(["diagnostics", snapshot.diagnostics]);
   lines.push(["updated_at", formatWatchTimestamp(snapshot.updated_at)]);
   const outputs = snapshot.outputs;
