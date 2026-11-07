@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync
 import path from "node:path";
 import { expect, test, vi } from "vitest";
 import { AgentToolRunner, SessionStore } from "../src/index.ts";
-import { readExecutionClient, quotaClientKey } from "../src/legacy-provider.ts";
+import { readExecutionClient } from "../src/legacy-provider.ts";
 import { readExecutions } from "../src/session-fold.ts";
 import { FakeClient, registryOf, tempDir } from "./support.ts";
 
@@ -70,13 +70,13 @@ test("cancelled batch is validated before reopening any execution", () => {
 
 test.each([
   { commands: ["opencode"], expected: "opencode" },
-  { commands: [], expected: "legacy:codex" },
-  { commands: ["opencode", "codex"], expected: "legacy:codex" },
-])("legacy quota evidence uses every turn: $commands", ({ commands, expected }) => {
+  { commands: [], expected: null },
+  { commands: ["opencode", "codex"], expected: null },
+])("legacy client evidence uses every turn: $commands", ({ commands, expected }) => {
   const { workspace, directory, metadata } = fixture(commands);
   try {
     const client = readExecutionClient(directory, ID, metadata).client;
-    expect(quotaClientKey(client, metadata.provider)).toBe(expected);
+    expect(client).toBe(expected);
     expect(readExecutions(directory)[0]?.client).toBe(client ?? "");
   } finally {
     rmSync(workspace, { recursive: true, force: true });

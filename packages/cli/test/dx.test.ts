@@ -423,7 +423,7 @@ class QuotaThenCompleteProvider extends ScriptedClient {
   }
 }
 
-test("a failed attempt is named after the session recovers and completes", async () => {
+test("a quota failure is not retried and session continue completes it", async () => {
   const workspace = writeFakeWorkflowWorkspace({
     solo: `schema_version: 7
 id: solo
@@ -433,23 +433,27 @@ stages:
 `,
   });
   try {
-    cliHooks.runner = new AgentToolRunner(registryOf({
-        fake: new QuotaThenCompleteProvider([
-          "status: complete\n\nlimited",
-          "status: complete\n\nwork done",
-        ]),
-      }), 10);
+    const provider = new QuotaThenCompleteProvider([
+      "status: complete\n\nlimited",
+      "status: complete\n\nwork done",
+    ]);
+    cliHooks.runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
     const run = await capture(() =>
       main(["session", "run", "--workflow", "solo", "--task", "Write"], workspace),
     );
-    expect(run.value).toBe(0);
+    expect(run.value).toBe(3);
     const sessionId = sessionIdFrom(run.stderr);
-    const executions = readdirSync(
-      path.join(workspace, ".migent", "sessions", sessionId, "executions"),
-    ).sort();
-    expect(executions).toHaveLength(2);
-    expect(run.stderr).toContain(`failure: executions/${executions[0]}/failure.md`);
-    expect(run.stderr).toContain("completed");
+    const executionsDir = path.join(workspace, ".migent", "sessions", sessionId, "executions");
+    expect(readdirSync(executionsDir)).toHaveLength(1);
+    const failed = readdirSync(executionsDir)[0]!;
+    expect(run.stderr).toContain(`failure: executions/${failed}/failure.md`);
+    expect(provider.calls).toHaveLength(1);
+    cliHooks.runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
+    const continued = await capture(() => main(["session", "continue", sessionId], workspace));
+    expect(continued.value).toBe(0);
+    expect(provider.calls).toHaveLength(2);
+    expect(readdirSync(executionsDir)).toHaveLength(2);
+    expect(continued.stderr).toContain("completed");
   } finally {
     removeWorkspace(workspace);
   }

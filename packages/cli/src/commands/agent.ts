@@ -4,7 +4,6 @@ import {
   AgentToolRunner,
   CancellationRequested,
   ConfigurationError,
-  ProviderEventReporter,
   SessionStore,
   createAgentSession,
   loadRoleResponsibilities,
@@ -20,9 +19,7 @@ import {
   legacyClientOf,
   loadWorkspaceConfig,
   resolveRoleTarget,
-  waitUntil,
   type RunResult,
-  type WaitHooks,
   type TurnKind,
 } from "@nodeint/migent-kernel";
 import { printAgent, printError, printNotice, printResumeCommand, printReplyCommand } from "../display.js";
@@ -46,7 +43,6 @@ export async function dispatchAgent(
     promptStdin?: boolean;
     asJson?: boolean;
     runner?: AgentToolRunner | null;
-    waitHooks?: WaitHooks;
   },
 ): Promise<number> {
   requireCurrentSchema(workspace);
@@ -103,18 +99,6 @@ export async function dispatchAgent(
     let result: Awaited<ReturnType<AgentToolRunner["run"]>> | undefined;
     let resumedMany: Array<Awaited<ReturnType<AgentToolRunner["run"]>>> | null = null;
     try {
-      const waitedUntil = new Map<string, string>();
-      const rerun = (prompt: string, resumeId: string) =>
-        runner.run({
-          client: target.client,
-          model: target.model,
-          options: { ...target.options },
-          prompt,
-          workspace,
-          sessionId: resolvedSessionId,
-          resumeExecutionId: resumeId,
-          stageId: args.role,
-        });
       if (resumeCancelled) {
         const reopened = new SessionStore(workspace).reopenCancelledExecutions(resolvedSessionId);
         for (const item of reopened) {
@@ -129,22 +113,8 @@ export async function dispatchAgent(
         if (continued.length === 0) {
           throw new ConfigurationError(`Session ${resolvedSessionId} is cancelled without an execution.`);
         }
-        const finished: RunResult[] = [];
-        for (const item of continued) {
-          finished.push(
-            await rerunQuota(
-              workspace,
-              resolvedSessionId,
-              item,
-              (current) => lastUserPrompt(workspace, resolvedSessionId, current.execution_id),
-              rerun,
-              waitedUntil,
-              args.waitHooks,
-            ),
-          );
-        }
-        if (finished.length === 1) result = finished[0];
-        else resumedMany = finished;
+        if (continued.length === 1) result = continued[0];
+        else resumedMany = continued;
       } else {
         let input = resolvePrompt({
             prompt: args.prompt ?? null,
@@ -154,24 +124,16 @@ export async function dispatchAgent(
         const question = new SessionStore(workspace).questionStages(resolvedSessionId).find((row) => row.stageId === args.role);
         if (question) input = new SessionStore(workspace).resumeQuestion(resolvedSessionId, args.role, input);
         const prompt = prependRoleInstructions(loadRoleResponsibilities(loadWorkspaceConfig(workspace), args.role), input);
-        result = await rerunQuota(
+        result = await runner.run({
+          client: target.client,
+          model: target.model,
+          options: { ...target.options },
+          prompt,
           workspace,
-          resolvedSessionId,
-          await runner.run({
-            client: target.client,
-            model: target.model,
-            options: { ...target.options },
-            prompt,
-            workspace,
-            sessionId: resolvedSessionId,
-            resumeExecutionId,
-            stageId: args.role,
-          }),
-          () => prompt,
-          rerun,
-          waitedUntil,
-          args.waitHooks,
-        );
+          sessionId: resolvedSessionId,
+          resumeExecutionId,
+          stageId: args.role,
+        });
       }
     } catch (error) {
       if (error instanceof CancellationRequested) {
@@ -206,7 +168,7 @@ export async function dispatchAgent(
 
 export async function continueAgent(
   workspace: string,
-  args: { sessionId: string; reply: string | null; runner?: AgentToolRunner | null; waitHooks?: WaitHooks },
+  args: { sessionId: string; reply: string | null; runner?: AgentToolRunner | null },
 ): Promise<number> {
   requireCurrentSchema(workspace);
   requireAgentSession(workspace, args.sessionId);
@@ -280,7 +242,6 @@ export async function continueAgent(
           profile,
           runner,
           false,
-          args.waitHooks,
         );
       }
       let prompt: string;
@@ -313,28 +274,17 @@ export async function continueAgent(
       } else {
         throw new ConfigurationError(`Session ${args.sessionId} is ${sessionStatus || "unknown"}.`);
       }
-      const waitedUntil = new Map<string, string>();
-      const rerun = (nextPrompt: string, resumeId: string) =>
-        runner.run({
-          client: profile.client,
-          model: profile.model,
-          options: { ...profile.options },
-          prompt: nextPrompt,
-          turn,
-          workspace,
-          sessionId: args.sessionId,
-          resumeExecutionId: resumeId,
-          stageId: role,
-        });
-      const result = await rerunQuota(
+      const result = await runner.run({
+        client: profile.client,
+        model: profile.model,
+        options: { ...profile.options },
+        prompt,
+        turn,
         workspace,
-        args.sessionId,
-        await rerun(prompt, resumeId),
-        () => prompt,
-        rerun,
-        waitedUntil,
-        args.waitHooks,
-      );
+        sessionId: args.sessionId,
+        resumeExecutionId: resumeId,
+        stageId: role,
+      });
       printAgent({ ...result }, role, profile.client, profile.model, workspace);
       return finishRole(args.sessionId, result.outcome_status === "complete" ? 0 : result.outcome_status === "question" ? 9 : 1);
     } catch (error) {
@@ -361,24 +311,11 @@ async function runCancelledRole(
   profile: { client: string; model: string; options: Record<string, string> },
   runner: AgentToolRunner,
   asJson: boolean,
-  waitHooks?: WaitHooks,
 ): Promise<number> {
   const reopened = new SessionStore(workspace).reopenCancelledExecutions(sessionId);
   for (const item of reopened) {
     log(`session ${sessionId} was cancelled during ${item.executionId}. Resuming that execution.`);
   }
-  const waitedUntil = new Map<string, string>();
-  const rerun = (prompt: string, resumeId: string) =>
-    runner.run({
-      client: profile.client,
-      model: profile.model,
-      options: { ...profile.options },
-      prompt,
-      workspace,
-      sessionId,
-      resumeExecutionId: resumeId,
-      stageId: role,
-    });
   const settled = await Promise.allSettled(
     reopened.map((item) => runner.continueCancelled(workspace, sessionId, item.executionId)),
   );
@@ -388,20 +325,7 @@ async function runCancelledRole(
   if (continued.length === 0) {
     throw new ConfigurationError(`Session ${sessionId} is cancelled without an execution.`);
   }
-  const finished: RunResult[] = [];
-  for (const item of continued) {
-    finished.push(
-      await rerunQuota(
-        workspace,
-        sessionId,
-        item,
-        (current) => lastUserPrompt(workspace, sessionId, current.execution_id),
-        rerun,
-        waitedUntil,
-        waitHooks,
-      ),
-    );
-  }
+  const finished: RunResult[] = continued;
   if (finished.length === 1) {
     const result = finished[0];
     if (result === undefined) throw new Error("Agent run produced no result.");
@@ -415,60 +339,6 @@ async function runCancelledRole(
   }
   if (finished.some((item) => item.failure_reason === "verify_exhausted")) return finishRole(sessionId, 6);
   return finishRole(sessionId, finished.every((item) => item.outcome_status === "complete") ? 0 : 1);
-}
-
-async function rerunQuota(
-  workspace: string,
-  sessionId: string,
-  initial: RunResult,
-  promptFor: (result: RunResult) => string,
-  run: (prompt: string, resumeExecutionId: string) => Promise<RunResult>,
-  waitedUntil: Map<string, string>,
-  hooks?: WaitHooks,
-): Promise<RunResult> {
-  let current = initial;
-  let armed: string | null = null;
-  while (current.failure_kind === "quota" && current.reset_at !== "") {
-    if (armed !== null && !laterInstant(current.reset_at, armed)) return current;
-    const resetAt = current.reset_at;
-    const client = current.client;
-    const shared = waitedUntil.get(client);
-    const now = hooks?.now ?? Date.now;
-    const past = !Number.isFinite(Date.parse(resetAt)) || now() >= Date.parse(resetAt);
-    if (!past && (shared === undefined || laterInstant(resetAt, shared))) {
-      emitRoleQuota(workspace, sessionId, current);
-      await waitUntil(resetAt, hooks).promise;
-    }
-    waitedUntil.set(client, resetAt);
-    armed = resetAt;
-    current = await run(promptFor(current), current.execution_id);
-  }
-  return current;
-}
-
-function laterInstant(next: string, previous: string): boolean {
-  const left = Date.parse(next);
-  const right = Date.parse(previous);
-  if (Number.isFinite(left) && Number.isFinite(right)) return left > right;
-  return next > previous;
-}
-
-function emitRoleQuota(workspace: string, sessionId: string, result: RunResult): void {
-  const store = new SessionStore(workspace);
-  const context = store.executionContext(sessionId, result.execution_id);
-  if (context === null) return;
-  let model = "";
-  try {
-    const metadata = JSON.parse(readFileSync(path.join(context.directory, "execution.json"), "utf8")) as unknown;
-    if (isRecord(metadata) && typeof metadata.model === "string") model = metadata.model;
-  } catch {
-    model = "";
-  }
-  const summary = [result.response, result.reset_at].filter((item) => item !== "").join(" ");
-  new ProviderEventReporter(store, context, result.client, model).emit("provider.quota", summary, {
-    retry_at: result.reset_at,
-    client: result.client,
-  });
 }
 
 function lastUserPrompt(workspace: string, sessionId: string, executionId: string): string {

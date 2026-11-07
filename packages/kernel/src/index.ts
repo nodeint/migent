@@ -76,7 +76,6 @@ export {
   clientOfCommand,
   legacyClientOf,
   legacyExecutionClient,
-  quotaClientKey,
 } from "./legacy-provider.js";
 export type {
   LegacyExecutionClient,
@@ -306,7 +305,6 @@ export {
   raiseCancellation,
   resetCancellation,
   stopProcessGroup,
-  waitUntil,
 } from "./command-executor.js";
 export type {
   CommandResult,
@@ -315,8 +313,6 @@ export type {
   RunOptions,
   StartFailure,
   StartResult,
-  WaitHandle,
-  WaitHooks,
 } from "./command-executor.js";
 export { describeStartFailure } from "./command-executor.js";
 export { DIAGNOSTICS_FILENAME, FAILURE_FILENAME, DEBUG_LOG_FILENAME } from "./session-store.js";

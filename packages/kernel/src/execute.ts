@@ -1,6 +1,5 @@
 import type { TurnKind } from "@nodeint/migent-prompts";
 import type { ClientRegistry } from "./cli-client.js";
-import { quotaClientKey, readExecutionClient } from "./legacy-provider.js";
 import { createHash } from "node:crypto";
 import { AgentToolRunner, type RunResult } from "./agent-runner.js";
 import { writeFileAtomic, writeJsonAtomic } from "./atomic-file.js";
@@ -9,8 +8,6 @@ import {
   cancellationSignal,
   raiseCancellation,
   resetCancellation,
-  waitUntil,
-  type WaitHooks,
 } from "./command-executor.js";
 import { loadRoleResponsibilities, loadWorkspaceConfig, resolveStageTarget } from "./config.js";
 import { ConfigurationError, OutputsMissing } from "./errors.js";
@@ -99,7 +96,6 @@ export interface ExecuteRequest {
   resetRevisions?: boolean;
   /** `session continue` writes `from: failed` before dispatch. A plain run leaves this false. */
   continueFailed?: boolean;
-  waitHooks?: WaitHooks;
   startPrepared?: boolean;
   refreshWorkflow?: boolean;
   /**
@@ -114,14 +110,6 @@ export interface ExecuteRequest {
 interface PendingStageReply {
   stageId: string;
   text: string | null;
-}
-
-interface QuotaWait {
-  stageId: string;
-  client: string;
-  resetAt: string;
-  executionId: string;
-  response: string;
 }
 
 export interface ExecuteResult {
@@ -381,7 +369,6 @@ async function executeLocked(
   const tasks = new Map<string, Promise<unknown>>();
   try {
     const stageJsons: Array<Record<string, unknown>> = [];
-    const seedWaits: QuotaWait[] = [];
     if (stageReply !== null) {
       // Send the reply before a cancelled sibling can end the command or fold the session blocked.
       const replySnapshots = store.executionSnapshots(sessionId);
@@ -462,7 +449,6 @@ async function executeLocked(
         if (continued.some((item) => item.failure_kind === "quota") && (once || stageId !== null)) {
           return executeFinal(status, "quota", stageJsons);
         }
-        seedWaits.push(...waitsFromRuns(reopened, continued));
         // A cancelled session stops here for one stage. A blocked sibling still needs dispatch.
         if (!reopenLatestCancelled && (once || stageId !== null || TERMINAL_SESSION_STATUSES.has(after))) {
           const stopReason = TERMINAL_SESSION_STATUSES.has(after) ? after : "stage";
@@ -486,8 +472,6 @@ async function executeLocked(
             reopened
               .filter((item, index) => continued[index]?.failure_reason === VERIFY_FAILED)
               .map((item) => item.stageId),
-            seedWaits,
-            request.waitHooks,
           );
           rest.stages = [...stageJsons, ...rest.stages];
           return rest;
@@ -512,10 +496,6 @@ async function executeLocked(
       }
       if (stopReason === "stage" && stageJsons.some((item) => item.outcome_status !== "complete" && item.execution_status !== "skipped")) result.code = stageJsons.some((item) => item.outcome_status === "question") ? 9 : 1;
       return result;
-    }
-    if (replySent && replyResult !== undefined && stageReply !== null) {
-      const replyWait = waitFromStage(stageReply.stageId, replyResult, workspace, sessionId);
-      if (replyWait) seedWaits.push(replyWait);
     }
     const replyDispatches = replySent ? 1 : 0;
     const replyVerifyTried = replyExhausted && stageReply !== null ? [stageReply.stageId] : [];
@@ -544,8 +524,6 @@ async function executeLocked(
           replyDispatches,
           replyVerifyTried,
           [],
-          seedWaits,
-          request.waitHooks,
         );
     if (stageJsons.length > 0) continued.stages = [...stageJsons, ...continued.stages];
     return continued;
@@ -747,8 +725,6 @@ async function runExecuteLoop(
   alreadyDispatched = 0,
   verifyTriedSeed: readonly string[] = [],
   verifyOnlyTriedSeed: readonly string[] = [],
-  waits: readonly QuotaWait[] = [],
-  waitHooks?: WaitHooks,
 ): Promise<ExecuteResult> {
   if (isWorkflowV2(workflow)) {
     return runVersion2Pool(
@@ -764,16 +740,11 @@ async function runExecuteLoop(
       alreadyDispatched,
       verifyTriedSeed,
       verifyOnlyTriedSeed,
-      waits,
-      waitHooks,
     );
   }
   const stages: Array<Record<string, unknown>> = [];
   let dispatched = alreadyDispatched;
-  const acted = new Map<string, string>();
-  const pending = [...waits];
-  let forced: string | null = null;
-  const accept = async (stage: Record<string, unknown>, stageId: string): Promise<ExecuteResult | null> => {
+  const accept = (stage: Record<string, unknown>): ExecuteResult | null => {
     stages.push(stage);
     if (stage.failure_reason === VERIFY_FAILED) {
       return executeFinal(store.readSessionStatus(sessionId), VERIFY_FAILED, stages);
@@ -781,51 +752,11 @@ async function runExecuteLoop(
     if (stage.failure_reason === VERIFY_EXHAUSTED) {
       return executeFinal(store.readSessionStatus(sessionId), VERIFY_EXHAUSTED, stages);
     }
-    const step = quotaStep(stage, acted, dispatched, maxDispatches, waitHooks, workspace, sessionId);
-    if (step === "limit") return executeFinal(store.readSessionStatus(sessionId), "dispatch_limit", stages);
-    const wait = step === "wait" || step === "dispatch" ? waitFromStage(stageId, stage, workspace, sessionId) : null;
-    if (wait && step === "wait") {
-      emitQuota(workspace, store, sessionId, wait);
-      await waitUntil(wait.resetAt, waitHooks).promise;
-    }
-    if (wait) forced = stageId;
+    return null;
     return null;
   };
   while (true) {
     cancellationSignal().throwIfCancelled();
-    if (forced !== null) {
-      if (maxDispatches !== null && dispatched >= maxDispatches) {
-        return executeFinal(store.readSessionStatus(sessionId), "dispatch_limit", stages);
-      }
-      const stageId = forced;
-      forced = null;
-      const status = store.readSessionStatus(sessionId);
-      const snapshots = store.executionSnapshots(sessionId);
-      dispatched += 1;
-      const dispatchedStage = await trackDispatch(sessionId, tasks, (note) =>
-        dispatchExecuteStage(workspace, workflow, workflowId, sessionId, stageId, status, snapshots, runner, note, reply),
-      );
-      const stopped = await accept(dispatchedStage, stageId);
-      if (stopped) return stopped;
-      continue;
-    }
-    if (pending.length > 0) {
-      const item = pending.shift()!;
-      const previous = acted.get(item.client);
-      if (previous !== undefined && !laterInstant(item.resetAt, previous)) {
-        // The unmarked failure stops the loop on the next selection.
-      } else if (maxDispatches !== null && dispatched >= maxDispatches) {
-        return executeFinal(store.readSessionStatus(sessionId), "dispatch_limit", stages);
-      } else {
-        acted.set(item.client, item.resetAt);
-        if (!instantReached(item.resetAt, waitHooks)) {
-          emitQuota(workspace, store, sessionId, item);
-          await waitUntil(item.resetAt, waitHooks).promise;
-        }
-        forced = item.stageId;
-        continue;
-      }
-    }
     store.reapOrphanedExecutions(sessionId, "raise");
     const snapshots = store.executionSnapshots(sessionId);
     const status = store.readSessionStatus(sessionId);
@@ -852,7 +783,7 @@ async function runExecuteLoop(
         reply,
       ),
     );
-    const stopped = await accept(dispatchedStage, selected.stageId);
+    const stopped = accept(dispatchedStage);
     if (stopped) return stopped;
   }
 }
@@ -870,20 +801,13 @@ async function runVersion2Pool(
   alreadyDispatched = 0,
   verifyTriedSeed: readonly string[] = [],
   verifyOnlyTriedSeed: readonly string[] = [],
-  waits: readonly QuotaWait[] = [],
-  waitHooks?: WaitHooks,
 ): Promise<ExecuteResult> {
   const stages: Array<Record<string, unknown>> = [];
   let dispatched = alreadyDispatched;
   const verifyTried = new Set<string>(verifyTriedSeed);
   const verifyOnlyTried = new Set<string>(verifyOnlyTriedSeed);
-  const flights: Array<{ kind: "run" | "wait"; promise: Promise<void>; settled: boolean }> = [];
+  const flights: Array<{ promise: Promise<void>; settled: boolean }> = [];
   const errors: unknown[] = [];
-  const parked = new Map<string, ParkedWait>();
-  const acted = new Map<string, string>();
-  const directQueue: string[] = [];
-  let quotaCeiling = false;
-  let seeded = false;
   const concurrency = workflow.concurrency ?? 1;
   const observe = async (): Promise<void> => {
     const error = errors[0];
@@ -895,86 +819,12 @@ async function runVersion2Pool(
       if (flights[index]!.settled) flights.splice(index, 1);
     }
   };
-  const clientOf = (stageId: string): string | null => {
-    const stageSpec = workflow.stages[stageId];
-    if (stageSpec === undefined || !isRoleStage(stageSpec)) return null;
-    const sessionDirectory = path.join(workspace, ".migent", "sessions", sessionId);
-    const freeze = readWorkflowFreeze(sessionDirectory);
-    const target = freeze
-      ? frozenStageTarget(freeze, stageId)
-      : resolveStageTarget(workspace, workflowId, stageId, undefined, runner.registry);
-    return target.client;
-  };
-  const attachWait = (park: ParkedWait): void => {
-    const handle = waitUntil(park.resetAt, waitHooks);
-    park.handle = handle;
-    const flight = { kind: "wait" as const, promise: Promise.resolve(), settled: false };
-    flight.promise = handle.promise
-      .then((outcome) => {
-        if (park.abandon) return;
-        if (outcome === "replaced") {
-          attachWait(park);
-          return;
-        }
-        directQueue.push(...park.stageIds);
-      })
-      .catch((error: unknown) => {
-        errors.push(error);
-      })
-      .finally(() => {
-        flight.settled = true;
-      });
-    flights.push(flight);
-  };
-  const arm = (wait: QuotaWait): void => {
-    emitQuota(workspace, store, sessionId, wait);
-    const park: ParkedWait = { ...wait, handle: null, abandon: false, stageIds: new Set([wait.stageId]) };
-    parked.set(wait.client, park);
-    acted.set(wait.client, wait.resetAt);
-    attachWait(park);
-  };
-  const noteQuota = (stage: Record<string, unknown>, stageId: string, resetAtLaunch: string | undefined): void => {
-    if (stage.failure_kind !== "quota") return;
-    const resetAt = typeof stage.reset_at === "string" ? stage.reset_at : "";
-    const client = quotaKey(workspace, sessionId, stage);
-    if (resetAt === "") return;
-    if (maxDispatches !== null && dispatched >= maxDispatches) {
-      quotaCeiling = true;
-      return;
-    }
-    // A failed retry of this window stops; a sibling already in flight still gets its retry.
-    if (resetAtLaunch !== undefined && !laterInstant(resetAt, resetAtLaunch)) return;
-    const park = parked.get(client);
-    if (park?.handle && !park.abandon) {
-      park.stageIds.add(stageId);
-      if (laterInstant(resetAt, park.resetAt)) {
-        park.resetAt = resetAt;
-        park.stageId = stageId;
-        park.executionId = typeof stage.execution_id === "string" ? stage.execution_id : park.executionId;
-        park.response = typeof stage.response === "string" ? stage.response : park.response;
-        acted.set(client, resetAt);
-        park.handle.replace(resetAt);
-      }
-      return;
-    }
-    const wait = waitFromStage(stageId, stage, workspace, sessionId);
-    if (wait === null) return;
-    if (instantReached(resetAt, waitHooks)) {
-      acted.set(client, resetAt);
-      directQueue.push(stageId);
-      return;
-    }
-    arm(wait);
-  };
   const startStage = (
     stageId: string,
     status: Record<string, unknown>,
     snapshots: readonly ExecutionSnapshot[],
   ): void => {
-    const client = clientOf(stageId);
-    const resetAtLaunch = client === null ? undefined : acted.get(client);
-    if (client) parked.delete(client);
-    const flight = { kind: "run" as const, promise: Promise.resolve(), settled: false };
+    const flight = { promise: Promise.resolve(), settled: false };
     flight.promise = trackDispatch(sessionId, tasks, (note) =>
       dispatchExecuteStage(
         workspace,
@@ -993,7 +843,6 @@ async function runVersion2Pool(
         stages.push(stage);
         if (stage.failure_reason === VERIFY_EXHAUSTED) verifyTried.add(stageId);
         if (stage.failure_reason === VERIFY_FAILED) verifyOnlyTried.add(stageId);
-        noteQuota(stage, stageId, resetAtLaunch);
       })
       .catch((error: unknown) => {
         errors.push(error);
@@ -1006,17 +855,9 @@ async function runVersion2Pool(
   };
   const settleCeiling = async (): Promise<ExecuteResult | null> => {
     if (maxDispatches === null || dispatched < maxDispatches) return null;
-    const hadWaits = [...parked.values()].some((park) => park.handle !== null && !park.abandon);
-    for (const park of parked.values()) {
-      if (park.handle === null || park.abandon) continue;
-      park.abandon = true;
-      park.handle.replace(park.resetAt);
-    }
-    directQueue.length = 0;
-    await Promise.allSettled(flights.filter((flight) => flight.kind === "run").map((flight) => flight.promise));
+    await Promise.allSettled(flights.map((flight) => flight.promise));
     await observe();
     const endStatus = store.readSessionStatus(sessionId);
-    if (hadWaits || quotaCeiling) return executeFinal(endStatus, "dispatch_limit", stages);
     const endSnapshots = store.executionSnapshots(sessionId);
     const endSession = text(endStatus.status);
     const endBaselines = revisionBaselines(endStatus);
@@ -1038,33 +879,6 @@ async function runVersion2Pool(
   while (true) {
     cancellationSignal().throwIfCancelled();
     await observe();
-    if (!seeded) {
-      seeded = true;
-      const roomAtStart = maxDispatches === null || dispatched < maxDispatches;
-      if (!roomAtStart) quotaCeiling = waits.length > 0;
-      else {
-        for (const item of waits) {
-          const existing = parked.get(item.client);
-          if (existing?.handle) existing.stageIds.add(item.stageId);
-          if (existing?.handle && !laterInstant(item.resetAt, existing.resetAt)) continue;
-          if (existing?.handle) {
-            existing.resetAt = item.resetAt;
-            existing.stageId = item.stageId;
-            existing.executionId = item.executionId;
-            existing.response = item.response;
-            acted.set(item.client, item.resetAt);
-            existing.handle.replace(item.resetAt);
-            continue;
-          }
-          if (instantReached(item.resetAt, waitHooks)) {
-            acted.set(item.client, item.resetAt);
-            directQueue.push(item.stageId);
-          } else {
-            arm(item);
-          }
-        }
-      }
-    }
     store.reapOrphanedExecutions(sessionId, "raise");
     let snapshots = store.executionSnapshots(sessionId);
     let status = store.readSessionStatus(sessionId);
@@ -1073,19 +887,6 @@ async function runVersion2Pool(
       await Promise.allSettled(flights.map((flight) => flight.promise));
       return executeFinal(status, "cancelled", []);
     }
-    while (directQueue.length > 0) {
-      if (maxDispatches !== null && dispatched >= maxDispatches) {
-        quotaCeiling = true;
-        directQueue.length = 0;
-        break;
-      }
-      if (flights.filter((flight) => flight.kind === "run" && !flight.settled).length >= concurrency) break;
-      startStage(directQueue.shift()!, status, snapshots);
-    }
-    // Direct retries create running executions before the normal ready-stage walk.
-    snapshots = store.executionSnapshots(sessionId);
-    status = store.readSessionStatus(sessionId);
-    sessionStatus = text(status.status);
     const capped = await settleCeiling();
     if (capped) return capped;
     const baselines = revisionBaselines(status);
@@ -1098,10 +899,7 @@ async function runVersion2Pool(
       resumes,
       verifyTried,
       verifyOnlyTried,
-    ).filter((stageId) => {
-      const client = clientOf(stageId);
-      return client === null || !parked.has(client);
-    });
+);
     const running = runningStageIds(snapshots);
     const ceiling = maxDispatches === null ? Number.POSITIVE_INFINITY : maxDispatches;
     const room = ceiling - dispatched;
@@ -1128,12 +926,6 @@ async function runVersion2Pool(
     }
     await Promise.race(flights.map((flight) => flight.promise));
   }
-}
-
-interface ParkedWait extends QuotaWait {
-  handle: { promise: Promise<"reached" | "replaced">; replace(retryAt: string): void } | null;
-  abandon: boolean;
-  stageIds: Set<string>;
 }
 
 function runningStageIds(snapshots: readonly ExecutionSnapshot[]): string[] {
@@ -1553,103 +1345,6 @@ function runResultJson(result: RunResult): Record<string, unknown> {
     response: result.response,
     execution_status: result.execution_status ?? "",
   };
-}
-
-function waitsFromRuns(
-  rows: readonly { stageId: string }[],
-  results: readonly RunResult[],
-): QuotaWait[] {
-  const waits: QuotaWait[] = [];
-  for (let index = 0; index < rows.length; index += 1) {
-    const result = results[index];
-    const row = rows[index];
-    if (!result || !row || result.failure_kind !== "quota" || result.reset_at === "") continue;
-    waits.push({
-      stageId: row.stageId,
-      client: result.client,
-      resetAt: result.reset_at,
-      executionId: result.execution_id,
-      response: result.response,
-    });
-  }
-  return waits;
-}
-
-function quotaKey(workspace: string, sessionId: string, stage: Record<string, unknown>): string {
-  if (text(stage.client) !== "") return quotaClientKey(text(stage.client), text(stage.provider));
-  const sessionDirectory = path.join(workspace, ".migent", "sessions", sessionId);
-  const executionId = text(stage.execution_id);
-  let metadata: Record<string, unknown> = stage;
-  try {
-    const raw: unknown = JSON.parse(readFileSync(path.join(sessionDirectory, "executions", executionId, "execution.json"), "utf8"));
-    if (isRecord(raw)) metadata = raw;
-  } catch {
-    // Old result rows may outlive their execution files; keep their legacy bucket.
-  }
-  const decided = readExecutionClient(sessionDirectory, executionId, metadata);
-  return quotaClientKey(decided.client, text(metadata.provider) || text(stage.provider));
-}
-
-function waitFromStage(stageId: string, stage: Record<string, unknown>, workspace: string, sessionId: string): QuotaWait | null {
-  if (stage.failure_kind !== "quota" || typeof stage.reset_at !== "string" || stage.reset_at === "") return null;
-  return {
-    stageId,
-    client: quotaKey(workspace, sessionId, stage),
-    resetAt: stage.reset_at,
-    executionId: typeof stage.execution_id === "string" ? stage.execution_id : "",
-    response: typeof stage.response === "string" ? stage.response : "",
-  };
-}
-
-function quotaStep(
-  stage: Record<string, unknown>,
-  acted: Map<string, string>,
-  dispatched: number,
-  maxDispatches: number | null,
-  hooks: WaitHooks | undefined,
-  workspace: string,
-  sessionId: string,
-): "none" | "limit" | "stop" | "wait" | "dispatch" {
-  if (stage.failure_kind !== "quota") return "none";
-  const resetAt = typeof stage.reset_at === "string" ? stage.reset_at : "";
-  const client = quotaKey(workspace, sessionId, stage);
-  if (resetAt === "") return "stop";
-  if (maxDispatches !== null && dispatched >= maxDispatches) return "limit";
-  const previous = acted.get(client);
-  if (previous !== undefined && !laterInstant(resetAt, previous)) return "stop";
-  acted.set(client, resetAt);
-  return instantReached(resetAt, hooks) ? "dispatch" : "wait";
-}
-
-function instantReached(resetAt: string, hooks: WaitHooks | undefined): boolean {
-  const now = hooks?.now ?? Date.now;
-  const target = Date.parse(resetAt);
-  return !Number.isFinite(target) || now() >= target;
-}
-
-function laterInstant(next: string, previous: string): boolean {
-  const left = Date.parse(next);
-  const right = Date.parse(previous);
-  if (Number.isFinite(left) && Number.isFinite(right)) return left > right;
-  return next > previous;
-}
-
-function emitQuota(workspace: string, store: SessionStore, sessionId: string, wait: QuotaWait): void {
-  if (wait.executionId === "") return;
-  const context = store.executionContext(sessionId, wait.executionId);
-  if (context === null) return;
-  let model = "";
-  try {
-    const metadata = JSON.parse(readFileSync(path.join(context.directory, "execution.json"), "utf8")) as unknown;
-    if (isRecord(metadata) && typeof metadata.model === "string") model = metadata.model;
-  } catch {
-    model = "";
-  }
-  const summary = [wait.response, wait.resetAt].filter((item) => item !== "").join(" ");
-  new ProviderEventReporter(store, context, wait.client, model).emit("provider.quota", summary, {
-    retry_at: wait.resetAt,
-    client: wait.client,
-  });
 }
 
 function latestSnapshotForStage(
