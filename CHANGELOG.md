@@ -15,6 +15,8 @@
 
 ### Fixed
 
+- Schema v6 migration preserves shared client defaults when local configuration selects another client. Legacy metrics use execution evidence for both the client field and usage parsing.
+
 - Stderr is read after the provider's pipes close, so lines written just before a non-zero exit are no longer lost (#72).
 
 - A provider process that exits non-zero without reporting an error no longer fails a stage whose reply passes the checks an exit-0 reply must pass. The turn is recorded `completed`, keeps `response.md`, and logs a `provider.exit_anomaly` event. Provider-reported errors, start failures and signal exits still fail, and a rejected turn's error is now the model's own text. A `continue` prompt after such a failed attempt references its reply (#71).

@@ -3,7 +3,7 @@ import path from "node:path";
 import { isAtomicTempName, writeJsonAtomic } from "./atomic-file.js";
 import type { CliClient, ClientRegistry, TurnUsage, UsageCapture } from "./cli-client.js";
 import { normalizeUsage } from "./client-policy.js";
-import { clientOfCommand, legacyClientOf, legacyExecutionClient } from "./legacy-provider.js";
+import { clientOfCommand, legacyExecutionClient } from "./legacy-provider.js";
 import { ConfigurationError } from "./errors.js";
 import { listSessionRows, readStatusFileState } from "./query.js";
 import { isRecord } from "./record.js";
@@ -277,7 +277,8 @@ function sessionObject(
   agentRole: string | null,
 ): Record<string, unknown> {
   const known = new Set(executions.map((execution) => execution.id));
-  const turns = normalizeTurns(events, executions, clients, status).filter((turn) => known.has(turn.executionId));
+  const executionClients = resolveExecutionClients(events, executions, status);
+  const turns = normalizeTurns(events, executionClients, clients).filter((turn) => known.has(turn.executionId));
   const cancelled = countByExecution(events, "provider.cancelled", known);
   const revisionTargets = revisionMap(executions, workflow);
   const routed = routedFrom(executions, workflow);
@@ -290,6 +291,7 @@ function sessionObject(
       workflow,
       routed.get(execution.id) ?? null,
       agentRole,
+      executionClients.get(execution.id) ?? null,
     ),
   );
   const sessionTotals = newUsageTotals();
@@ -352,6 +354,7 @@ function executionObject(
   workflow: WorkflowDocument | null,
   routedFromId: string | null,
   agentRole: string | null,
+  client: string | null,
 ): {
   public: Record<string, unknown>;
   turns: number;
@@ -386,7 +389,7 @@ function executionObject(
       stage_id: execution.stageId,
       stage_attempt: execution.attempt,
       role: workflow ? (workflow.stages[execution.stageId]?.role ?? null) : agentRole,
-      client: execution.client ?? legacyClientOf(execution.provider),
+      client,
       model: execution.model,
       cli_version: text(startedDetails.cli_version),
       argv: stringList(detailsOf(firstTurn).argv),
@@ -440,30 +443,37 @@ function isRunnerTurn(event: ParsedEvent): boolean {
   return typeof detailsOf(event).turn === "number";
 }
 
-function normalizeTurns(
+function resolveExecutionClients(
   events: ParsedEvent[],
   executions: ExecutionRow[],
-  clients: ClientRegistry,
   status: Record<string, unknown>,
-): NormalizedTurn[] {
-  const byExecution = new Map(executions.map((execution) => [execution.id, execution]));
+): Map<string, string | null> {
   const executables = executableByExecution(events);
   const roleSession = status.workflow_id === "agent";
+  return new Map(executions.map((execution) => {
+    const client = legacyExecutionClient({
+      recorded: execution.client,
+      provider: execution.provider,
+      executable: executables.get(execution.id) ?? null,
+      roleSession,
+    }).client;
+    return [execution.id, client];
+  }));
+}
+
+function normalizeTurns(
+  events: ParsedEvent[],
+  executionClients: ReadonlyMap<string, string | null>,
+  clients: ClientRegistry,
+): NormalizedTurn[] {
   const previous = new Map<string, UsageCapture>();
   const turns: NormalizedTurn[] = [];
   for (const event of events) {
     if (!isRunnerTurn(event) || event.executionId === null) continue;
     const details = detailsOf(event);
-    const execution = byExecution.get(event.executionId);
     // Usage is read with the CLI that actually ran the turn. Legacy records name no
     // client, so this follows the same evidence policy as resume.
-    const evidence = legacyExecutionClient({
-      recorded: execution?.client ?? text(event.raw.client),
-      provider: execution?.provider ?? text(event.raw.provider),
-      executable: executables.get(event.executionId) ?? null,
-      roleSession,
-    });
-    const clientId = evidence.client;
+    const clientId = executionClients.get(event.executionId) ?? null;
     const agentId = typeof details.agent_id === "string" ? details.agent_id : null;
     const key = JSON.stringify([clientId, agentId]);
     const capture = isRecord(details.usage) ? details.usage : null;

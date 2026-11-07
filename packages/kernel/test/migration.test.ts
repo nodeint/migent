@@ -798,6 +798,24 @@ test("both layers naming a provider keep their own client and the local one wins
   expect(migrated.notes.local).toContain("agents.shared.provider codex -> client.type codex");
 });
 
+test("a local explicit client preserves the shared provider's standalone default", () => {
+  const migrated = migrateLayers(
+    v5Layer({ shared: { provider: "claude", model: "opus" } }),
+    v5Layer({ shared: { client: { type: "opencode" } } }),
+  );
+  expect(mapping(migrated.project.agents).shared).toEqual({ model: "opus", client: { type: "claude-code" } });
+  expect(mapping(migrated.effective.agents).shared).toEqual({ model: "opus", client: { type: "opencode" } });
+});
+
+test("a local role replacement preserves the shared role's standalone default", () => {
+  const migrated = migrateLayers(
+    { schema_version: 5, roles: { developer: { agent: { provider: "claude", model: "opus" } } } },
+    { schema_version: 5, roles: { developer: { agent: { model: "router/alias", client: { type: "opencode" } } } } },
+  );
+  expect(mapping(mapping(migrated.project.roles).developer).agent).toEqual({ model: "opus", client: { type: "claude-code" } });
+  expect(mapping(mapping(migrated.effective.roles).developer).agent).toEqual({ model: "router/alias", client: { type: "opencode" } });
+});
+
 test("an explicit client in the shared layer wins over the local provider", () => {
   const migrated = migrateLayers(
     v5Layer({ shared: { provider: "claude", client: { type: "opencode" } } }),

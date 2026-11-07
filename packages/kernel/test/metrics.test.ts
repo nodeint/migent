@@ -94,7 +94,7 @@ interface ExecInput {
   order: number;
   stage: string;
   status: string;
-  client?: string;
+  client?: string | null;
   provider?: string;
   createdAt?: string;
   completedAt?: string | null;
@@ -123,7 +123,7 @@ function writeSession(
         execution_order: execution.order,
         stage_id: execution.stage,
         stage_attempt: execution.order,
-        client: execution.client ?? execution.provider ?? "fake",
+        client: execution.client === null ? undefined : execution.client ?? execution.provider ?? "fake",
         provider: execution.provider ?? null,
         model: "m1",
         agent_id: "agent-1",
@@ -279,6 +279,29 @@ test("verify red then red then pass", () => {
   expect(execution?.verify_seconds).toBe(5);
   expect((metrics.totals as Record<string, unknown>).verify_seconds).toBe(5);
   expect((metrics.totals as Record<string, unknown>).verify_red).toBe(2);
+});
+
+test.each([
+  { workflow: "legacy", provider: "codex", command: "opencode", expected: "opencode" },
+  { workflow: "legacy", provider: "byteplus", command: "opencode", expected: "opencode" },
+  { workflow: "agent", provider: "claude", command: "claude", expected: "claude-code" },
+  { workflow: "agent", provider: "codex", command: "opencode", expected: null },
+  { workflow: "legacy", provider: "codex", command: "unknown", expected: null },
+])("legacy metrics use execution evidence: $workflow/$provider/$command", ({ workflow, provider, command, expected }) => {
+  const workspace = tempDir("migent-metrics-");
+  const client = new FakeClient();
+  client.readUsage = cumulative;
+  writeSession(
+    workspace,
+    "legacy",
+    { workflow_id: workflow, status: "completed", updated_at: at(2) },
+    [{ id: "0001", order: 1, stage: "agent", status: "completed", client: null, provider }],
+    [turn(1, "0001", { total: 100 }, command)],
+  );
+  const metrics = sessionMetrics(workspace, "legacy", registryOf({ opencode: client, "claude-code": client }));
+  const execution = (metrics.executions as Array<Record<string, unknown>>)[0]!;
+  expect(execution.client).toBe(expected);
+  expect((execution.usage as TurnUsage).input_tokens).toBe(expected === null ? null : 100);
 });
 
 test("a cumulative provider deltas across executions that share an agent", () => {

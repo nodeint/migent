@@ -187,9 +187,11 @@ function liftBody(body: Record<string, unknown>, label: string, context: LiftBod
     context.notes.push(`${label}.provider dropped (explicit client ${explicit})`);
     return;
   }
-  // The merged view may already select a client from the other layer; this layer stays partial.
+  // Local providers yield to explicit clients in the merged view. A project
+  // default must survive for project-alone use; only an unresolvable project
+  // provider relies on a client supplied by the local layer.
   const mergedExplicit = explicitClient(context.mergedBody);
-  if (mergedExplicit !== null) {
+  if (mergedExplicit !== null && (context.layer === "local" || legacyClientOf(provider) === null)) {
     delete body.provider;
     const source = context.layer === "local" ? "config.yaml" : "config.local.yaml";
     context.notes.push(`${label}.provider dropped (client from ${source})`);
