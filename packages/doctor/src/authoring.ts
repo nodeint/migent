@@ -98,6 +98,12 @@ export interface WorkflowDraftInput {
   siblings: ReadonlyArray<{ file: string; document: Mapping } | { file: string; error: ConfigurationError }>;
   /** The effective config and its layers, or the error that stopped it loading. */
   config: ConfigLoad | ConfigurationError;
+  /**
+   * Set when the draft belongs to a session instead of the project catalog. `file` is then the draft's
+   * own path, `siblings` are all project workflows (the draft's template included), and the draft is
+   * checked against them without becoming one of them. `expectedId` is the id the session recorded.
+   */
+  session?: { expectedId: string };
 }
 
 function ownerSource(owner: ConfigOwner): Diagnostic["source"] {
@@ -146,13 +152,24 @@ export function validateWorkflowDraft(input: WorkflowDraftInput, providers: Prov
       out.push({ ...fromError(error, sibSource, "workflow-invalid"), severity: "warning", message: `${sibling.file}: ${error.message}` });
     }
   }
-  entries.push(parsed.catalogEntry);
+  if (input.session === undefined) entries.push(parsed.catalogEntry);
   const draftId = parsed.id.state === "invalid" ? null : parsed.id.value;
+  if (input.session !== undefined && draftId !== null && draftId !== input.session.expectedId) {
+    out.push({
+      severity: "error",
+      code: "session-workflow-id-mismatch",
+      message: `Session workflow id is ${input.session.expectedId}, not ${draftId}. Do not change id in the session draft.`,
+      path: ["id"],
+      source,
+    });
+  }
   const fileOf = (workflowId: string): string | undefined =>
     entries.find((entry) => entry.id.known && entry.id.value === workflowId)?.file;
   const draftPaths: Record<string, string> = { "duplicate-id": "id", "unknown-downstream": "downstream", "no-stages": "stages", "requires-invalid": "requires" };
-  for (const problem of checkWorkflowCatalog(entries, failedIds).problems) {
-    const concerns = problem.workflow === draftId || (problem.files?.includes(input.file) ?? false);
+  const catalog = checkWorkflowCatalog(entries, failedIds, input.session === undefined ? null : parsed.catalogEntry);
+  for (const problem of catalog.problems) {
+    const concerns = problem.external === true || (input.session === undefined &&
+      (problem.workflow === draftId || (problem.files?.includes(input.file) ?? false)));
     const where = concerns ? source : { workflow: fileOf(problem.workflow) ?? input.file };
     out.push({
       severity: concerns ? "error" : "warning",

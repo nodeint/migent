@@ -136,6 +136,8 @@ export {
   sessionLockAlive,
 } from "./session-lock.js";
 export type { CancelRequestResult } from "./session-lock.js";
+export { locateSessionDirectory, resolveSessionDraft } from "./session-draft.js";
+export type { SessionDraft } from "./session-draft.js";
 export { repairSession, repairSessionUnlocked } from "./session-repair.js";
 export type { RepairOptions } from "./session-repair.js";
 export {
