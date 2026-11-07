@@ -14,7 +14,7 @@ import {
 } from "./session-ledger.js";
 import { readStatusFileState, type StatusFileState } from "./query.js";
 import { isRecord } from "./record.js";
-import { legacyClientOf } from "./legacy-provider.js";
+import { executionClientReader } from "./legacy-provider.js";
 import { EXECUTIONS_DIRNAME } from "./runtime.js";
 import {
   CANCELLED_REPLY,
@@ -318,7 +318,7 @@ function applySharedEvent(
       noted.set(event.executionId, {
         execution_id: event.executionId,
         stage_id: event.stageId,
-        client: event.raw.client ?? legacyClientOf(typeof event.raw.provider === "string" ? event.raw.provider : null),
+        client: event.raw.client ?? null,
         event: event.event,
         summary: event.summary,
         updated_at: event.timestamp,
@@ -409,7 +409,7 @@ function publishRunningStages(
       if (left.executionId > right.executionId) return 1;
       return 0;
     })
-    .map((execution) => noted.get(execution.executionId)!);
+    .map((execution) => ({ ...noted.get(execution.executionId)!, client: execution.client || null }));
   if (rows.length > 0) status.running_stages = rows;
 }
 
@@ -670,6 +670,7 @@ export function readExecutions(sessionDirectory: string): FoldExecution[] {
     return [];
   }
   const executions: FoldExecution[] = [];
+  const clientOf = executionClientReader(sessionDirectory);
   for (const entry of entries) {
     if (!entry.isDirectory() || isAtomicTempName(entry.name)) continue;
     const filePath = path.join(directory, entry.name, "execution.json");
@@ -686,7 +687,7 @@ export function readExecutions(sessionDirectory: string): FoldExecution[] {
       throw new ConfigurationError(`Execution file is corrupt: ${filePath}.`);
     }
     if (!isRecord(parsed)) throw new ConfigurationError(`Execution file is corrupt: ${filePath}.`);
-    executions.push(executionFromRecord(sessionDirectory, entry.name, parsed));
+    executions.push(executionFromRecord(sessionDirectory, entry.name, parsed, clientOf(entry.name, parsed).client));
   }
   return executions;
 }
@@ -695,6 +696,7 @@ function executionFromRecord(
   sessionDirectory: string,
   executionId: string,
   metadata: Record<string, unknown>,
+  client: string | null,
 ): FoldExecution {
   const outcome = isRecord(metadata.outcome) ? metadata.outcome : null;
   return {
@@ -702,7 +704,7 @@ function executionFromRecord(
     executionOrder: asInt(metadata.execution_order),
     stageId: textOr(metadata.stage_id) ?? "",
     stageAttempt: asInt(metadata.stage_attempt),
-    client: textOr(metadata.client) ?? legacyClientOf(textOr(metadata.provider)) ?? "",
+    client: client ?? "",
     model: textOr(metadata.model) ?? "",
     resumesExecutionId: textOr(metadata.resumes_execution_id),
     status: textOr(metadata.status) ?? "",

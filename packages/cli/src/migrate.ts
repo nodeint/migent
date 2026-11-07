@@ -3,6 +3,7 @@ import path from "node:path";
 import { confirm as clackConfirm, isCancel } from "@clack/prompts";
 import {
   SCHEMA_VERSION,
+  documentVersion,
   checkDocumentSchemaVersion,
   loadYamlMapping,
   loadWorkspaceConfig,
@@ -105,16 +106,22 @@ async function accepted(confirm: ((message: string) => boolean | Promise<boolean
 function pendingRewrites(workspace: string, clientIds: readonly string[]): Rewrite[] {
   const configPath = path.join(workspace, ".migent", "config.yaml");
   if (!isFile(configPath)) return [];
-  // The v5 merged view, read before any layer is rewritten.
-  const context = loadWorkspaceConfig(workspace);
+  const originalContext = loadWorkspaceConfig(workspace);
   const projectOriginal = readConfigOriginal(configPath);
   if (projectOriginal === null) return [];
   const localPath = localConfigPath(workspace);
   const localOriginal = isFile(localPath) ? readConfigOriginal(localPath) : null;
+  // Older layers must reach v5 before the client lift inspects their merged shape.
+  const projectV5 = structuredClone(projectOriginal);
+  const localV5 = localOriginal === null ? null : structuredClone(localOriginal);
+  for (const layer of [projectV5, localV5]) {
+    if (layer !== null && documentVersion(layer) < 5) migrateConfig(layer, 5, originalContext);
+  }
+  const context = mergeConfigLayers(projectV5, localV5).config;
   const [config, configRewrite] = configRewriteOf(configPath, projectOriginal, context, clientIds, {
     layer: "project",
-    project: projectOriginal,
-    local: localOriginal,
+    project: projectV5,
+    local: localV5,
   });
   if (config === null) return [];
   const rewrites: Rewrite[] = [];
@@ -123,15 +130,15 @@ function pendingRewrites(workspace: string, clientIds: readonly string[]): Rewri
   if (localOriginal !== null) {
     const [local, rewrite] = configRewriteOf(localPath, localOriginal, context, clientIds, {
       layer: "local",
-      project: projectOriginal,
-      local: localOriginal,
+      project: projectV5,
+      local: localV5,
     });
     if (rewrite !== null) rewrites.push(rewrite);
     if (local !== null) effective = mergeConfigLayers(config, local).config;
   }
   // Both views must keep the client every location had in the original v5 documents.
   assertConfigClientEquivalence({
-    originalProject: projectOriginal,
+    originalProject: projectV5,
     originalMerged: context,
     updatedProject: config,
     updatedMerged: effective,

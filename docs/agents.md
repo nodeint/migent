@@ -173,6 +173,9 @@ Migration is layer-aware: `config.yaml` and `config.local.yaml` are migrated
 against the original merged configuration, and a synthesized client is written
 only into the layer that supplied the legacy provider. Locations with neither a
 provider nor a client are left unchanged for validation to report.
+Documents older than v5 first reach the v5 shape before client equivalence is
+checked. Inline role and stage agents keep comments on their retained fields;
+the migrated YAML is checked against the intended document before it is written.
 
 ## Selection and overrides
 

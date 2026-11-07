@@ -13,6 +13,7 @@ import { applyLegacyMigration, type MigrationKind } from "./migration-legacy.js"
 import { documentVersion, isRecord } from "./record.js";
 import { SCHEMA_VERSION, parseWorkflowMapping } from "./workflow.js";
 import { parseYamlDocument } from "./yaml.js";
+import { renderAuthoringYaml } from "./authoring.js";
 
 export { SCHEMA_VERSION };
 
@@ -126,6 +127,9 @@ function assertMigratedWorkflow(text: string, updated: Readonly<Record<string, u
     throw new ConfigurationError("migration left requires.decision in the workflow.");
   }
   parseWorkflowMapping(parsed, "migrated workflow");
+  if (!deepEqual(parsed, updated)) {
+    throw new ConfigEditError("Workflow text does not match the migrated document.");
+  }
 }
 
 /** Version 5 selects an `agent` per stage; stage `options` no longer exist and are dropped. */
@@ -495,6 +499,14 @@ function patchStage(
   const firstIndent = first[1].indent;
   const siblingIndent = siblingIndentOf(content, firstIndent);
   const unit = siblingIndent > firstIndent ? siblingIndent - firstIndent : 2;
+  if (!deepEqual(before.agent, after.agent) && Object.hasOwn(after, "agent") && !Object.hasOwn(before, "model")) {
+    const span = nestedKeySpan(lines, { start, end }, "agent");
+    if (span === null) throw new ConfigEditError("Cannot locate the stage agent to migrate.");
+    const base = lines.slice(span[0], span[1]).map((line) => line.slice(siblingIndent)).join("\n");
+    const result = renderAuthoringYaml({ agent: after.agent }, base);
+    if (!result.preserved) throw new ConfigEditError(`Cannot preserve the stage agent: ${result.reason}.`);
+    edits.push([span[0], span[1], result.text.trimEnd().split("\n").map((line) => `${" ".repeat(siblingIndent)}${line}`)]);
+  }
   if (!deepEqual(before.decision, after.decision)) {
     const span = nestedKeySpan(lines, { start, end }, "decision");
     if (span === null) throw new ConfigEditError("Cannot locate the stage decision to migrate.");

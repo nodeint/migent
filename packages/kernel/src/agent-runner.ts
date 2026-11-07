@@ -10,7 +10,6 @@ import type {
   UsageCapture,
 } from "./cli-client.js";
 import { classifyFailure, createNewSession, sessionOptions } from "./client-policy.js";
-import { legacyExecutionClient, type LegacyExecutionEvidence } from "./legacy-provider.js";
 import { CancellationRequested, CommandExecutor, DEFAULT_TIMEOUT_SEC, type ExecutionFailure, type ProcessFacts, type StopReason } from "./command-executor.js";
 import { DEFAULT_INTERRUPT_POLICY, type InterruptPolicy, type InterruptReport, interruptSession, isSettled } from "./provider-interrupt.js";
 import {
@@ -35,9 +34,8 @@ import {
 } from "./runtime.js";
 import { renderProtocolUpdate, renderQuestionCorrection, type TurnKind } from "@nodeint/migent-prompts";
 import { ProviderEventReporter } from "./provider-events.js";
-import { loadFrozenWorkflow, frozenStageTarget, readWorkflowFreeze } from "./session-freeze.js";
+import { loadFrozenWorkflow } from "./session-freeze.js";
 import { AgentSessionRecord, SessionStore, stringOptions, type ExecutionContext } from "./session-store.js";
-import { readParsedEvents } from "./session-events.js";
 import { StageOutcome } from "./stage-outcome.js";
 import { resolveStageOutcome, type OutcomeContext } from "./outcome-resolver.js";
 import { QuestionFileError, type Question } from "./questions.js";
@@ -177,19 +175,9 @@ export class AgentToolRunner {
       executionOrder,
       request.prompt,
       request.resumeExecutionId ?? null,
+      (record) => validateSessionProfile(record.client, record.model, record.options, clientId, request.model, profile),
     );
     request.onExecution?.(context.executionId);
-    if (!isNew) {
-      record.client = this.resumeClient(store, context.sessionId, request.resumeExecutionId ?? null, stageId);
-      validateSessionProfile(
-        record.client,
-        record.model,
-        record.options,
-        clientId,
-        request.model,
-        profile,
-      );
-    }
     const newSession = isNew ? createNewSession(client) : null;
     if (newSession?.agentId) record.agentId = newSession.agentId;
     record.history.push({ role: "user", content: request.prompt });
@@ -288,7 +276,7 @@ export class AgentToolRunner {
       throw new Error(`Execution ${executionId} is ${String(metadata.status)}, not running.`);
     }
     const stageId = typeof metadata.stage_id === "string" ? metadata.stage_id : "agent";
-    const clientId = this.executionClient(store, sessionId, executionId, metadata, stageId);
+    const clientId = store.executionClient(sessionId, executionId);
     const model = typeof metadata.model === "string" ? metadata.model : "";
     const client = this.registry.get(clientId);
     const resolvedOptions = stringOptions(metadata.options);
@@ -924,54 +912,6 @@ export class AgentToolRunner {
     return version;
   }
 
-  /**
-   * The CLI that ran the execution being resumed. A legacy record has no `client`, so
-   * the client comes from recorded evidence (turn argv, or the role-session code path);
-   * no evidence, or a conflict, refuses resume rather than guessing.
-   */
-  private resumeClient(
-    store: SessionStore,
-    sessionId: string,
-    resumeExecutionId: string | null,
-    stageId: string,
-  ): string {
-    if (resumeExecutionId === null) {
-      throw new ConfigurationError(`Session ${sessionId} has no execution to resume. Start a new attempt.`);
-    }
-    const context = store.executionContext(sessionId, resumeExecutionId);
-    if (context === null) {
-      throw new ConfigurationError(`Execution ${resumeExecutionId} was not found in session ${sessionId}.`);
-    }
-    const metadata = readJsonObject(path.join(context.directory, "execution.json"));
-    const priorStage = typeof metadata.stage_id === "string" ? metadata.stage_id : stageId;
-    return this.executionClient(store, sessionId, resumeExecutionId, metadata, priorStage);
-  }
-
-  private executionClient(
-    store: SessionStore,
-    sessionId: string,
-    executionId: string,
-    metadata: Record<string, unknown>,
-    stageId: string,
-  ): string {
-    const sessionDirectory = path.join(store.sessionsDirectory, sessionId);
-    const status = store.readSessionStatus(sessionId);
-    const evidence: LegacyExecutionEvidence = {
-      recorded: textValue(metadata.client),
-      provider: textValue(metadata.provider),
-      executable: executionExecutable(sessionDirectory, executionId),
-      frozen: frozenClient(sessionDirectory, stageId),
-      roleSession: status.workflow_id === "agent",
-    };
-    const decided = legacyExecutionClient(evidence);
-    if (decided.client === null) {
-      throw new ConfigurationError(
-        `Cannot resume execution ${executionId}: ${decided.reason}. Start a new attempt.`,
-      );
-    }
-    return decided.client;
-  }
-
   private async runTurn(
     client: CliClient,
     model: string,
@@ -1143,43 +1083,6 @@ function classifyFinishedProcess(
   // Signal death (negative, or the shell's 128 + signal) is not a normal exit: its reply never counts.
   const signalled = exitCode < 0 || (exitCode > 128 && exitCode <= 128 + 64);
   return classified !== null && signalled ? { ...classified, origin: "start" } : classified;
-}
-
-function textValue(value: unknown): string | null {
-  return typeof value === "string" && value.trim() !== "" ? value : null;
-}
-
-/** `argv[0]` of the first recorded runner turn, proof of the executable that ran. */
-function executionExecutable(sessionDirectory: string, executionId: string): string | null {
-  for (const event of readParsedEvents(path.join(sessionDirectory, "events.jsonl"))) {
-    if (event.executionId !== executionId) continue;
-    if (event.event !== "provider.turn_completed" && event.event !== "provider.turn_failed") continue;
-    const details = isRecord(event.raw.details) ? event.raw.details : {};
-    const argv = details.argv;
-    if (Array.isArray(argv) && typeof argv[0] === "string" && argv[0] !== "") return argv[0];
-  }
-  return null;
-}
-
-/** A frozen target only corroborates evidence; the freeze is never proof on its own. */
-function frozenClient(sessionDirectory: string, stageId: string): string | null {
-  try {
-    const freeze = readWorkflowFreeze(sessionDirectory);
-    if (freeze === null) return null;
-    const target = frozenStageTarget(freeze, stageId);
-    return target.client.trim() === "" ? null : target.client;
-  } catch {
-    return null;
-  }
-}
-
-function readJsonObject(filePath: string): Record<string, unknown> {
-  try {
-    const parsed = JSON.parse(readFileSync(filePath, "utf8")) as unknown;
-    return isRecord(parsed) ? parsed : {};
-  } catch {
-    return {};
-  }
 }
 
 function loadRunStage(store: SessionStore, sessionId: string, stageId: string): StageSpec | null {

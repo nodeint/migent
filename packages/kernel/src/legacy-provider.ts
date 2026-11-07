@@ -1,4 +1,7 @@
 import path from "node:path";
+import { readFileSync } from "node:fs";
+import { isRecord } from "./record.js";
+import { readParsedEvents, type ParsedEvent } from "./session-events.js";
 
 /**
  * The only place provider IDs are interpreted after the client refactor.
@@ -50,6 +53,8 @@ export interface LegacyExecutionEvidence {
   provider?: string | null;
   /** `argv[0]` of the execution's turn events, the executable Migent launched. */
   executable?: string | null;
+  /** All recorded turn executables; each must agree with the other evidence. */
+  executables?: readonly string[];
   /** A frozen target's client, used only to corroborate other evidence. */
   frozen?: string | null;
   /** True for a `session run --role` execution, whose runner always used the provider's own client. */
@@ -65,8 +70,10 @@ export function legacyExecutionClient(evidence: LegacyExecutionEvidence): Legacy
   const candidates: Array<{ client: string; provenance: LegacyProvenance }> = [];
   const recorded = nonempty(evidence.recorded);
   if (recorded !== null) candidates.push({ client: recorded, provenance: "recorded" });
-  const executable = clientOfCommand(evidence.executable);
-  if (executable !== null) candidates.push({ client: executable, provenance: "executable" });
+  for (const command of [evidence.executable, ...(evidence.executables ?? [])]) {
+    const executable = clientOfCommand(command);
+    if (executable !== null) candidates.push({ client: executable, provenance: "executable" });
+  }
   if (evidence.roleSession === true) {
     const roleClient = legacyClientOf(evidence.provider);
     if (roleClient !== null) candidates.push({ client: roleClient, provenance: "code-path" });
@@ -88,6 +95,55 @@ export function legacyExecutionClient(evidence: LegacyExecutionEvidence): Legacy
   }
   const strongest = candidates.find((candidate) => candidate.client === client) as { provenance: LegacyProvenance };
   return { client, provenance: strongest.provenance };
+}
+
+/** Keep evidence from every runner turn, including a later turn on a different CLI. */
+export function executionCommands(events: readonly ParsedEvent[]): Map<string, string[]> {
+  const commands = new Map<string, string[]>();
+  for (const event of events) {
+    if (event.executionId === null) continue;
+    if (event.event !== "provider.turn_completed" && event.event !== "provider.turn_failed") continue;
+    const details = isRecord(event.raw.details) ? event.raw.details : {};
+    const argv = details.argv;
+    if (!Array.isArray(argv) || typeof argv[0] !== "string" || argv[0] === "") continue;
+    const own = commands.get(event.executionId) ?? [];
+    if (!own.includes(argv[0])) own.push(argv[0]);
+    commands.set(event.executionId, own);
+  }
+  return commands;
+}
+
+/** The shared execution reader for resume, status repair and legacy quota waits. */
+export function readExecutionClient(
+  sessionDirectory: string,
+  executionId: string,
+  metadata: Record<string, unknown>,
+  frozen?: string | null,
+): LegacyExecutionClient {
+  return executionClientReader(sessionDirectory)(executionId, metadata, frozen);
+}
+
+/** Read a session's history once when folding many execution records. */
+export function executionClientReader(sessionDirectory: string): (
+  executionId: string,
+  metadata: Record<string, unknown>,
+  frozen?: string | null,
+) => LegacyExecutionClient {
+  const commands = executionCommands(readParsedEvents(path.join(sessionDirectory, "events.jsonl")));
+  let roleSession = false;
+  try {
+    const status: unknown = JSON.parse(readFileSync(path.join(sessionDirectory, "status.json"), "utf8"));
+    roleSession = isRecord(status) && status.workflow_id === "agent";
+  } catch {
+    // A missing status cannot prove a role-session code path.
+  }
+  return (executionId, metadata, frozen) => legacyExecutionClient({
+    recorded: typeof metadata.client === "string" ? metadata.client : null,
+    provider: typeof metadata.provider === "string" ? metadata.provider : null,
+    executables: commands.get(executionId),
+    roleSession,
+    frozen,
+  });
 }
 
 /** Map one recorded executable to a client. Accepts a full path and a Windows suffix. */

@@ -1,9 +1,10 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test, vi } from "vitest";
 import { ClaudeCodeClient } from "../../adapters/src/clients/claude-code-client.ts";
 import {
   AgentToolRunner,
+  type BuildCommandInput,
   type FailureClassification,
   SessionStore,
   STATUS_PROVIDER_EVENTS,
@@ -129,6 +130,38 @@ test("waitUntil reaches, replaces, and cancels", async () => {
   });
   await expect(cancelled.promise).rejects.toThrow(/signal 2/);
   resetCancellation();
+});
+
+test("quota retries reserve concurrency before another ready sibling starts", async () => {
+  const workflow = PAIR.replace("concurrency: 1", "concurrency: 2") + "  - id: c\n    role: developer\n    depends_on: []\n";
+  const workspace = workspaceFor(workflow);
+  class ConcurrentClient extends ClassifiedProvider {
+    active = 0;
+    peak = 0;
+    override buildCommand(input: BuildCommandInput) {
+      this.peak = Math.max(this.peak, ++this.active);
+      return super.buildCommand(input);
+    }
+    override parseRun(stdout: string, file: string) {
+      try { return super.parseRun(stdout, file); }
+      finally { this.active -= 1; }
+    }
+  }
+  try {
+    writeFileSync(path.join(workspace, ".migent", "config.yaml"), CONFIG.replace("type: beta", "type: alpha"));
+    const client = new ConcurrentClient(Array(5).fill("status: complete\n\ndone"), [quota(FUTURE), quota(FUTURE), null, null, null]);
+    let now = Date.parse(PAST);
+    const result = await executeNamedWorkflow(workspace, {
+      workflowId: "wf", task: "Respect retry concurrency", maxDispatches: 8,
+      waitHooks: { now: () => now, sleep: async () => { await new Promise((resolve) => setTimeout(resolve, 100)); now = Date.parse(FUTURE); } },
+    }, new AgentToolRunner(registryOf({ alpha: client }), 10));
+    expect(result.stopReason).toBe("completed");
+    expect(client.calls).toHaveLength(5);
+    expect(client.peak).toBe(2);
+  } finally {
+    resetCancellation();
+    rmSync(workspace, { recursive: true, force: true });
+  }
 });
 
 test("a provider failure does not wait, and continue dispatches once", async () => {
@@ -418,3 +451,34 @@ test("a cancel marker wakes a quota wait and stops the session", async () => {
   expect(result.stopReason).toBe("cancelled");
   expect(existsSync(path.join(sessions, result.sessionId, "session.lock"))).toBe(false);
 }, 30_000);
+
+test.each([false, true])("concurrent quota siblings sharing a client each retry once (repeat quota: %s)", async (repeatQuota) => {
+  const workspace = workspaceFor(PAIR.replace("concurrency: 1", "concurrency: 2"));
+  try {
+    const configPath = path.join(workspace, ".migent", "config.yaml");
+    writeFileSync(configPath, CONFIG.replace("type: beta", "type: alpha"));
+    const provider = new ClassifiedProvider(
+      Array(4).fill("status: complete\n\ndone"),
+      [quota(FUTURE), quota(FUTURE), ...(repeatQuota ? [quota(FUTURE), quota(FUTURE)] : [null, null])],
+    );
+    let now = Date.parse(PAST);
+    const runner = new AgentToolRunner(registryOf({ alpha: provider }), 10);
+    const result = await executeNamedWorkflow(workspace, {
+      workflowId: "wf", task: "Retry both quota siblings", maxDispatches: 8,
+      waitHooks: {
+        now: () => now,
+        sleep: async () => {
+          // Both first attempts are already running when the account reports its limit.
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          now = Date.parse(FUTURE);
+        },
+      },
+    }, runner);
+    expect(provider.calls).toHaveLength(4);
+    expect(result.stopReason).toBe(repeatQuota ? "stage_failed" : "completed");
+    expect(result.code).toBe(repeatQuota ? 3 : 0);
+  } finally {
+    resetCancellation();
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});

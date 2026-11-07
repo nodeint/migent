@@ -6,6 +6,7 @@ import { isRecord } from "./record.js";
 import { isRoleStage, type RoleStageSpec, type WorkflowDocument } from "./workflow.js";
 import { liftConfigAgents } from "./migration-config.js";
 import { parseYamlDocument } from "./yaml.js";
+import { renderAuthoringYaml } from "./authoring.js";
 
 const NAME = /^[A-Za-z][A-Za-z0-9._-]*$/;
 const PLAIN_SCALAR = /^[A-Za-z0-9][A-Za-z0-9._+-]*$/;
@@ -327,6 +328,8 @@ export function patchConfigText(original: string, updated: Record<string, unknow
   if (isLegacyShape(current)) {
     // Lift a schema_version 4 document to the v5 structure first, so the sync below sees one shape.
     original = upgradeConfigText(original, current);
+    updated = deepCopyRecord(updated);
+    liftConfigAgents(updated);
     current = parseYamlDocument(original);
     if (!isRecord(current)) throw new ConfigEditError("Invalid configuration: expected a mapping.");
   }
@@ -349,6 +352,9 @@ export function patchConfigText(original: string, updated: Record<string, unknow
   }
   let text = lines.join("\n");
   if (original.endsWith("\n") || original === "") text += "\n";
+  if (!deepEqual(parseYamlDocument(text), updated)) {
+    throw new ConfigEditError("Config text does not match the updated document.");
+  }
   return text;
 }
 
@@ -382,6 +388,10 @@ function syncAgents(
     if (section === null) throw new ConfigEditError("Cannot edit agents in this file.");
     const block = childBlock(section, key);
     if (block === null) throw new ConfigEditError(`Cannot edit agents.${key} in this file.`);
+    if (Object.keys(body).length === 0 && isRecord(currentAgents[key]) && Object.keys(currentAgents[key]).length > 0) {
+      edits.push([block.line, block.end, [withValue(lines[block.line] ?? "", "{}")]]);
+      continue;
+    }
     if (Object.hasOwn(body, "model")) syncScalar(lines, block, "model", body.model, `agents.${key}.model`, edits);
     syncAgentClient(lines, block, key, currentAgents[key], body, unit, edits);
     dropRemovedScalars(block, currentAgents[key], body, edits);
@@ -417,9 +427,21 @@ function syncRoles(
       const found = childBlock(block, "agent");
       if (!found) throw new ConfigEditError(`Cannot edit roles.${key}.agent in this file.`);
       if (!isRecord(previous) || !deepEqual(previous.agent, body.agent)) {
-        const rendered = stringify({ agent: body.agent }, { lineWidth: 0 }).trimEnd()
-          .split("\n").map((line) => " ".repeat(block.indent + unit) + line);
-        edits.push([found.line, found.end, rendered]);
+        if (isRecord(previous) && isRecord(previous.agent) && isRecord(body.agent)) {
+          // Reuse the field patchers so unchanged values keep their comments and order.
+          if (body.agent.model !== previous.agent.model) {
+            syncScalar(lines, found, "model", body.agent.model, `roles.${key}.agent.model`, edits);
+          }
+          syncAgentClient(lines, found, key, previous.agent, body.agent, unit, edits);
+          dropRemovedScalars(found, previous.agent, body.agent, edits);
+        } else {
+          const indent = block.indent + unit;
+          const base = lines.slice(found.line, found.end).map((line) => line.slice(indent)).join("\n");
+          const result = renderAuthoringYaml({ agent: body.agent }, base);
+          if (!result.preserved) throw new ConfigEditError(`Cannot preserve roles.${key}.agent: ${result.reason}.`);
+          const rendered = result.text.trimEnd().split("\n").map((line) => " ".repeat(indent) + line);
+          edits.push([found.line, found.end, rendered]);
+        }
       }
     } else if (Object.hasOwn(body, "agent")) {
       syncScalar(lines, block, "agent", body.agent, `roles.${key}.agent`, edits);

@@ -1,11 +1,12 @@
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { loadYamlMapping } from "@nodeint/migent-kernel";
+import { loadYamlMapping, loadWorkspaceConfig, loadAgentTarget, loadNamedWorkflow, resolveStageSpec } from "@nodeint/migent-kernel";
 import { expect, test } from "vitest";
 import { main } from "../src/index.ts";
 import { requireCurrentSchema, runMigrate } from "../src/migrate.ts";
 import { capture } from "./support.ts";
+import { clientRegistry } from "../src/client.ts";
 
 const CONFIG = `\
 schema_version: 6
@@ -303,6 +304,52 @@ test.each([
     expect(migrated.stages[0]).not.toHaveProperty("options");
     expect(migrated.stages[0]?.agent).toBe("fast");
     expect(() => requireCurrentSchema(workspace)).not.toThrow();
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("migrate normalizes v4 layers before preserving an inherited explicit client", async () => {
+  const workspace = tempDir();
+  const root = path.join(workspace, ".migent");
+  mkdirSync(root);
+  try {
+    writeFileSync(path.join(root, "config.yaml"), "schema_version: 4\nmodels:\n  coder:\n    provider: claude\n    model: router/alias\n    client: opencode\nroles:\n  developer:\n    default_model: coder\n");
+    writeFileSync(path.join(root, "config.local.yaml"), "schema_version: 4\nmodels:\n  coder:\n    provider: codex\n");
+    await capture(() => runMigrate(workspace, { assumeYes: true }));
+    expect(loadAgentTarget(loadWorkspaceConfig(workspace), "coder")).toEqual({ client: "opencode", model: "router/alias", options: {} });
+    expect(loadYamlMapping(path.join(root, "config.local.yaml")).agents).toEqual({ coder: {} });
+    const again = await capture(() => runMigrate(workspace, { assumeYes: true }));
+    expect(again.stdout).toContain("Schema is current.");
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("migrate writes inline workflow agents and keeps model and option comments", async () => {
+  const workspace = tempDir();
+  const root = path.join(workspace, ".migent");
+  mkdirSync(path.join(root, "workflows"), { recursive: true });
+  try {
+    const agent = "      provider: codex\n      # Pinned model\n      model: router/alias # Keep this note\n      client:\n        options:\n          # Account tuning\n          model_reasoning_effort: high\n";
+    const configPath = path.join(root, "config.yaml");
+    const workflowPath = path.join(root, "workflows", "wf.yaml");
+    writeFileSync(configPath, `# Project note\nschema_version: 5\nroles:\n  developer:\n    agent:\n${agent}`);
+    writeFileSync(workflowPath, `# Workflow note\nschema_version: 5\nid: wf\nstages:\n  - id: work\n    role: developer\n    agent:\n${agent}`);
+    await capture(() => runMigrate(workspace, { assumeYes: true }));
+    const config = loadWorkspaceConfig(workspace);
+    const document = loadNamedWorkflow(workspace, "wf");
+    expect(resolveStageSpec(config, document.stages.work!, undefined, clientRegistry())).toEqual({
+      client: "codex", model: "router/alias", options: { model_reasoning_effort: "high" },
+    });
+    for (const file of [configPath, workflowPath]) {
+      const text = readFileSync(file, "utf8");
+      expect(text).not.toContain("provider:");
+      expect(text).toContain("# Pinned model");
+      expect(text).toContain("# Keep this note");
+      expect(text).toContain("# Account tuning");
+      expect(loadYamlMapping(file).schema_version).toBe(6);
+    }
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }

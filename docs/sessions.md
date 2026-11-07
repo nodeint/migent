@@ -322,8 +322,8 @@ actually ran the turn:
 
 | Legacy case | Resume / continue |
 | --- | --- |
-| Workflow execution with turn events | yes, with the client recorded in the turn's `details.argv[0]` |
-| Workflow execution with no turn events | refused: there is no evidence and the stage can be rerun |
+| Workflow execution with turn events | yes, when every recorded turn's `details.argv[0]` agrees on the client |
+| Workflow execution with no turn events | refused: there is no evidence; start a new session to rerun the stage |
 | Execution whose evidence conflicts, for example `argv[0]` differs from the frozen target or the client the caller requested | refused, and nothing is spawned |
 | Role session with a default-client provider | yes, through the legacy provider → client mapping |
 | Role session for `byteplus` | refused: it never had a client |
@@ -335,6 +335,10 @@ model string, and the options. A conflict or missing evidence prints
 `Cannot resume execution <id>: <reason>. Start a new attempt.` Unsealed legacy
 metrics parse usage with the launched client; a sealed `metrics.json` is never
 recomputed and keeps its `provider` key.
+Provenance and profile checks run before a new attempt is created. Continuing
+a cancelled batch validates every execution before reopening any of them.
+An old execution whose turns used different CLIs cannot resume; its metrics
+still parse each turn with that turn's own executable when known.
 
 ## Metrics
 

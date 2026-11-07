@@ -406,10 +406,14 @@ that execution. Other branches keep starting. A quota with a reset time parks
 the client that reported it until the instant, and other clients may start. The
 wait is keyed by client ID: stages that share a client share one wait, and
 stages on different clients wait independently. A legacy wait recorded without a
-client takes its key from the provider in the old status or results; with no
-evidence it stays `legacy:<provider>` and never joins another group. The key is
-the only selector Migent has, so two clients that reach the same account can
-still each fail once and park separately.
+client takes its key from recorded turn executables, or the role-session code
+path. With missing or conflicting evidence it stays `legacy:<provider>` and
+never joins another group. A shared wait keeps every stage that reported quota
+while in flight and retries them after reset, within the concurrency limit.
+A retry reporting the same or an earlier reset stops that stage. The client
+key cannot identify a shared backend account, so different clients may fail
+and park independently; several already running stages can report quota
+before their client is parked.
 The run ends when nothing is running and nothing can start. The exit code and
 `stop_reason` take the first reason in this order: `blocked`, `question`, `verify_failed`,
 `verify_exhausted`, `stage_failed`, `revisions_exhausted`. A route to `complete` ends that

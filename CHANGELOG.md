@@ -15,6 +15,8 @@
 
 ### Fixed
 
+- Client migration writes inline workflow agents, preserves role-agent comments and inherited v4 client selections, and checks the written document. Resume validates every turn's client evidence before creating or reopening executions. Shared quota waits retry all affected stages once per reset window, and legacy waits and metrics use recorded client evidence.
+
 - Schema v6 migration preserves shared client defaults when local configuration selects another client. Legacy metrics use execution evidence for both the client field and usage parsing.
 
 - Stderr is read after the provider's pipes close, so lines written just before a non-zero exit are no longer lost (#72).

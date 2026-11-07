@@ -3,7 +3,7 @@ import path from "node:path";
 import { isAtomicTempName, writeJsonAtomic } from "./atomic-file.js";
 import type { CliClient, ClientRegistry, TurnUsage, UsageCapture } from "./cli-client.js";
 import { normalizeUsage } from "./client-policy.js";
-import { clientOfCommand, legacyExecutionClient } from "./legacy-provider.js";
+import { clientOfCommand, executionCommands, legacyExecutionClient } from "./legacy-provider.js";
 import { ConfigurationError } from "./errors.js";
 import { listSessionRows, readStatusFileState } from "./query.js";
 import { isRecord } from "./record.js";
@@ -448,13 +448,13 @@ function resolveExecutionClients(
   executions: ExecutionRow[],
   status: Record<string, unknown>,
 ): Map<string, string | null> {
-  const executables = executableByExecution(events);
+  const executables = executionCommands(events);
   const roleSession = status.workflow_id === "agent";
   return new Map(executions.map((execution) => {
     const client = legacyExecutionClient({
       recorded: execution.client,
       provider: execution.provider,
-      executable: executables.get(execution.id) ?? null,
+      executables: executables.get(execution.id),
       roleSession,
     }).client;
     return [execution.id, client];
@@ -473,7 +473,10 @@ function normalizeTurns(
     const details = detailsOf(event);
     // Usage is read with the CLI that actually ran the turn. Legacy records name no
     // client, so this follows the same evidence policy as resume.
-    const clientId = executionClients.get(event.executionId) ?? null;
+    const argv = details.argv;
+    const command = Array.isArray(argv) && typeof argv[0] === "string" ? argv[0] : null;
+    // A conflicting history cannot be resumed, but each turn still proves its own output format.
+    const clientId = clientOfCommand(command) ?? executionClients.get(event.executionId) ?? null;
     const agentId = typeof details.agent_id === "string" ? details.agent_id : null;
     const key = JSON.stringify([clientId, agentId]);
     const capture = isRecord(details.usage) ? details.usage : null;
@@ -494,24 +497,9 @@ function normalizeTurns(
       }
     }
     if (capture !== null) previous.set(key, capture);
-    turns.push({ executionId: event.executionId, usage, captured: capture !== null });
+    turns.push({ executionId: event.executionId, usage, captured: capture !== null && reader !== null });
   }
   return turns;
-}
-
-/** The executable that ran each execution's first recorded turn. */
-function executableByExecution(events: ParsedEvent[]): Map<string, string> {
-  const commands = new Map<string, string>();
-  for (const event of events) {
-    if (event.executionId === null || commands.has(event.executionId)) continue;
-    if (event.event !== "provider.turn_completed" && event.event !== "provider.turn_failed") continue;
-    const argv = detailsOf(event).argv;
-    if (Array.isArray(argv) && typeof argv[0] === "string") {
-      const client = clientOfCommand(argv[0]);
-      if (client !== null) commands.set(event.executionId, argv[0]);
-    }
-  }
-  return commands;
 }
 
 function revisionMap(executions: ExecutionRow[], workflow: WorkflowDocument | null): Map<string, number> {

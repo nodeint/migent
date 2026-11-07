@@ -150,7 +150,10 @@ executions, because a verify repair and a route back resume the same agent.
 A cancelled or timed-out turn has no capture. For a cumulative client the
 next turn of that agent absorbs the lost spend through the delta. For a
 per-process client that spend is gone. `uncaptured_turns` counts runner turns
-with no usage plus `provider.cancelled` events.
+with no usage or no identifiable client to read the capture, plus
+`provider.cancelled` events. A legacy execution with conflicting client
+evidence has `client: null`; each turn with a known executable still uses its
+own client's usage parser.
 
 A field the client did not report is null. A total sums the known values and
 `usage_missing` counts, per field, how many turns did not report it. A session

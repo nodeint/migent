@@ -13,14 +13,14 @@ import {
 } from "node:fs";
 import path from "node:path";
 import type { ClientRegistry } from "./cli-client.js";
-import { legacyClientOf } from "./legacy-provider.js";
+import { legacyClientOf, readExecutionClient } from "./legacy-provider.js";
 import type { SkipDetails } from "./run-when.js";
 import { writeFileAtomic, writeJsonAtomic } from "./atomic-file.js";
 import { ConfigurationError, OutputsMissing } from "./errors.js";
 import { sealSessionMetrics } from "./metrics.js";
 import { appendLifecycleEvent, appendRecordedEvent, CANCELLED_REPLY, readParsedEvents, reservedExecutionOrders, reservedStageAttempts, skipsStatusWrite } from "./session-events.js";
 import { commitFoldedStatus, readSessionManifest } from "./session-fold.js";
-import { loadFrozenWorkflow } from "./session-freeze.js";
+import { loadFrozenWorkflow, readWorkflowFreeze } from "./session-freeze.js";
 import { assertSessionLockHeld } from "./session-lock.js";
 import { corruptStatusMessage, readStatusFileState } from "./query.js";
 import { STATUS_PROVIDER_EVENTS } from "./event-kinds.js";
@@ -226,6 +226,7 @@ export class SessionStore {
     executionOrder: number | null,
     prompt: string,
     resumeExecutionId: string | null = null,
+    validateResume?: (record: AgentSessionRecord) => void,
   ): [AgentSessionRecord, boolean, ExecutionContext] {
     if (resumeExecutionId !== null && sessionId === null) {
       throw new Error("Resuming an execution requires a session.");
@@ -257,6 +258,9 @@ export class SessionStore {
       ];
     }
     const raw = JSON.parse(readFileSync(previous.conversationReadPath, "utf8")) as unknown;
+    const record = AgentSessionRecord.fromJson(raw, client, model, workspace);
+    record.client = this.executionClient(sessionId as string, previous.executionId);
+    validateResume?.(record);
     const context = this.createExecution(
       client,
       model,
@@ -268,7 +272,23 @@ export class SessionStore {
       prompt,
       previous.executionId,
     );
-    return [AgentSessionRecord.fromJson(raw, client, model, workspace), false, context];
+    return [record, false, context];
+  }
+
+  /** Resolve and validate provenance before any resume changes persisted state. */
+  executionClient(sessionId: string, executionId: string): string {
+    const context = this.executionContext(sessionId, executionId);
+    if (context === null) throw new ConfigurationError(`Execution ${executionId} was not found in session ${sessionId}.`);
+    const metadata = readJsonObject(path.join(context.directory, "execution.json"));
+    const sessionDirectory = path.join(this.sessionsDirectory, sessionId);
+    const freeze = readWorkflowFreeze(sessionDirectory);
+    const stageId = typeof metadata.stage_id === "string" ? metadata.stage_id : "";
+    const frozen = freeze?.targets[stageId]?.client;
+    const decided = readExecutionClient(sessionDirectory, executionId, metadata, frozen);
+    if (decided.client === null) {
+      throw new ConfigurationError(`Cannot resume execution ${executionId}: ${decided.reason}. Start a new attempt.`);
+    }
+    return decided.client;
   }
 
   /** Start a verify-only execution. It has no prompt and no provider conversation. */
@@ -667,11 +687,18 @@ export class SessionStore {
       if (latestPerStage) return [];
       throw new ConfigurationError(`Session ${sessionId} is cancelled without an execution.`);
     }
+    const records = new Map<string, AgentSessionRecord>();
     for (const item of cancelled) {
       if (item.metadata.kind === "verify") continue;
       if (!existsSync(item.context.conversationReadPath)) {
         throw new ConfigurationError(`Execution ${item.context.executionId} has no conversation to resume.`);
       }
+      const client = this.executionClient(sessionId, item.context.executionId);
+      const raw: unknown = JSON.parse(readFileSync(item.context.conversationReadPath, "utf8"));
+      const model = typeof item.metadata.model === "string" ? item.metadata.model : "";
+      const record = AgentSessionRecord.fromJson(raw, client, model, this.workspace);
+      record.client = client;
+      records.set(item.context.executionId, record);
     }
     const reopened: { executionId: string; stageId: string }[] = [];
     const timestamp = utcNow();
@@ -682,10 +709,7 @@ export class SessionStore {
       metadata.completed_at = null;
       writeJsonAtomic(path.join(context.directory, "execution.json"), metadata);
       if (metadata.kind !== "verify") {
-        const client = textField(metadata.client) ?? legacyClientOf(textField(metadata.provider)) ?? "";
-        const model = typeof metadata.model === "string" ? metadata.model : "";
-        const raw = JSON.parse(readFileSync(context.conversationReadPath, "utf8")) as unknown;
-        const record = AgentSessionRecord.fromJson(raw, client, model, this.workspace);
+        const record = records.get(context.executionId)!;
         record.status = "running";
         this.save(record, context);
       }

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "vitest";
 import {
@@ -301,7 +301,9 @@ test.each([
   const metrics = sessionMetrics(workspace, "legacy", registryOf({ opencode: client, "claude-code": client }));
   const execution = (metrics.executions as Array<Record<string, unknown>>)[0]!;
   expect(execution.client).toBe(expected);
-  expect((execution.usage as TurnUsage).input_tokens).toBe(expected === null ? null : 100);
+  const parsed = command === "unknown" ? null : 100;
+  expect((execution.usage as TurnUsage).input_tokens).toBe(parsed);
+  expect(execution.uncaptured_turns).toBe(command === "unknown" ? 1 : 0);
 });
 
 test("a cumulative provider deltas across executions that share an agent", () => {
@@ -586,4 +588,24 @@ test("a corrupt metrics file is reported and left in place", () => {
   expect(readSealedMetrics(workspace, "kept")).toEqual({ state: "corrupt" });
   expect(readFileSync(file, "utf8")).toBe("not-json");
   expect(listSealedMetrics(workspace, { workflow: null, status: null, limit: null })).toEqual([]);
+});
+
+test("mixed legacy CLI turns use their own parsers without inventing an execution client", () => {
+  const workspace = tempDir("migent-metrics-mixed-");
+  try {
+    const codex = new FakeClient();
+    const opencode = new FakeClient();
+    codex.readUsage = (capture) => ({ values: { ...blank(), input_tokens: Number(capture.codex) }, cumulative: [] });
+    opencode.readUsage = (capture) => ({ values: { ...blank(), input_tokens: Number(capture.opencode) }, cumulative: [] });
+    writeSession(workspace, "legacy", { workflow_id: "legacy", status: "active" },
+      [{ id: "0001", order: 1, stage: "work", status: "failed", client: null, provider: "codex" }],
+      [turn(1, "0001", { opencode: 10 }, "opencode"), turn(2, "0001", { codex: 25 }, "codex")]);
+    const metrics = sessionMetrics(workspace, "legacy", registryOf({ codex, opencode }));
+    const execution = (metrics.executions as Array<Record<string, unknown>>)[0]!;
+    expect(execution.client).toBeNull();
+    expect((execution.usage as TurnUsage).input_tokens).toBe(35);
+    expect(execution.uncaptured_turns).toBe(0);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
 });
