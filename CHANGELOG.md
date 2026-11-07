@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- `migent session complete <session-id>` marks a stopped workflow session completed without dispatching another stage. Takes the session lock and applies to `active`, `blocked`, `question`, or `cancelled` sessions. Rejects `prepared` and role sessions, and any session a live process is running. Completes manually by appending `session.completed` (with `data.manual: true`) to the event log; the fold derives this and survives `session repair`. Publishes outputs by normal rules (schema 7: artifact registry, schema 2–6: top-level outputs, v1: completion.outputs), records `published_by_execution_id: "manual"`, seals metrics.json, and writes next.json. Warns on stderr about each missing required artifact but completes anyway. Idempotent on already-completed sessions. Exit 0 on success or already-completed; exit 2 when the session is missing, prepared, a role, running (with live lock), or unreadable. A completed session's `status.json` records `completion_method`: `"manual"` for this command (with `manual_completion` holding the timestamp and previous status), and `"agent"` when stage executions completed it; sessions completed earlier gain `"agent"` the next time their status is folded, for example by `migent session repair`.
+
 ## 0.5.1
 
 ### Changed

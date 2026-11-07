@@ -8,6 +8,7 @@ import { getHelpTypes, runGet } from "./commands/get.js";
 import { runDoctor } from "./commands/doctor.js";
 import { executeWorkflow } from "./commands/execute.js";
 import { cancelSession } from "./commands/cancel.js";
+import { completeSession } from "./commands/complete.js";
 import { prepareWorkflowSession } from "./commands/prepare.js";
 import { repairWorkflowSession } from "./commands/repair.js";
 import { runUpdate } from "./commands/update.js";
@@ -488,6 +489,25 @@ function registerSessionCommand(program: Command, status: CliStatus): void {
         }
         return cancelSession(findWorkspace(invocationCwdPath()), id, { waitSeconds: wait, asJson: options.json === true });
       }),
+    );
+
+  session
+    .command("complete")
+    .description("Mark a stopped workflow session completed without running another stage.")
+    .argument("<session>", "Session to complete.")
+    .option("--json", "Print {session_id, status, already_completed, outputs, missing_outputs, next} on stdout.")
+    .addHelpText(
+      "after",
+      `${exitText([
+        "Exit 0 when the session is completed, or already was.",
+        "Exit 2 when the session does not exist, is a role session, is prepared, or is running (run migent session cancel first).",
+      ])}Completion is terminal. Examples:
+  migent session complete <session>
+  migent session complete <session> --json
+`,
+    )
+    .action((id: string, options: OptionValues) =>
+      settle(status, () => completeSession(findWorkspace(invocationCwdPath()), id, options.json === true)),
     );
 
   session

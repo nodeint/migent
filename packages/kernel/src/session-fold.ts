@@ -82,8 +82,32 @@ export function sessionSchemaVersion(document: Record<string, unknown> | null): 
 
 export function foldStatus(inputs: FoldInputs): Record<string, unknown> {
   const status = inputs.schemaVersion >= 2 ? foldSchema2(inputs) : foldV1(inputs);
+  applyManualCompletion(status, inputs.events);
   addPathOnlyOutputs(status, inputs.outputFiles);
   return status;
+}
+
+/**
+ * The last human `session.completed` (`data.manual: true`, no execution). It is terminal: the fold
+ * derives it from the log, so status.json survives a repair.
+ */
+export function manualCompletionEvent(events: readonly ParsedEvent[]): ParsedEvent | null {
+  let found: ParsedEvent | null = null;
+  for (const event of events) {
+    if (event.event === "session.completed" && event.executionId === null && event.data.manual === true) found = event;
+  }
+  return found;
+}
+
+function applyManualCompletion(status: Record<string, unknown>, events: readonly ParsedEvent[]): void {
+  const event = manualCompletionEvent(events);
+  if (event === null) return;
+  status.status = "completed";
+  status.completion_method = "manual";
+  applyTerminalFields(status, "completed", null, null);
+  delete status.questions;
+  status.manual_completion = { completed_at: event.timestamp, from: textOr(event.data.from) };
+  status.updated_at = later(textOr(status.updated_at), event.timestamp);
 }
 
 export function readSessionManifest(sessionDirectory: string): SessionManifest {
@@ -131,6 +155,7 @@ export function commitFoldedStatus(workspace: string, sessionDirectory: string):
 /** A stable machine-readable list of every question and answer, across execution boundaries. */
 export function writeQuestionsFile(sessionDirectory: string, inputs: FoldInputs): void {
   const latest = new Set(latestPerStage(statusExecutionsFromFolds(inputs.executions)).map((row) => row.executionId));
+  const manuallyCompleted = manualCompletionEvent(inputs.events) !== null;
   const questions = inputs.executions.flatMap((execution) => {
     if (execution.outcome?.status !== "question") return [];
     const reply = [...inputs.events].reverse().find((event) =>
@@ -140,7 +165,7 @@ export function writeQuestionsFile(sessionDirectory: string, inputs: FoldInputs)
     return storedQuestions(execution.outcome).map((question) => ({
       ...question, execution_id: execution.executionId, stage_id: execution.stageId,
       recipient: inputs.workflow?.stages[execution.stageId]?.ask ?? "human",
-      status: reply ? "answered" : latest.has(execution.executionId) ? "pending" : "superseded",
+      status: reply ? "answered" : latest.has(execution.executionId) && !manuallyCompleted ? "pending" : "superseded",
       answer: answers.find((answer) => answer.question_id === question.id) ?? null,
       ...(reply ? { answered_at: reply.timestamp } : {}),
     }));
@@ -337,8 +362,12 @@ function applySchema2Execution(
   if (event.event === "workflow.refreshed") return false;
   if (!event.executionId) {
     if (event.event.startsWith("session.") && event.event !== "session.created" && event.event !== "session.activated") {
-      status.status = event.event.slice("session.".length);
-      applyTerminalFields(status, event.event.slice("session.".length), null, textOr(event.data.reason));
+      const sessionStatus = event.event.slice("session.".length);
+      status.status = sessionStatus;
+      if (sessionStatus === "completed" && event.data.manual !== true) {
+        status.completion_method = "agent";
+      }
+      applyTerminalFields(status, sessionStatus, null, textOr(event.data.reason));
       return true;
     }
     return false;
@@ -424,6 +453,9 @@ function publishExecutionStatus(
   const rows = statusExecutionsFromFolds(inputs.executions);
   const sessionStatus = sessionStatusFromExecutions(rows, status, inputs.workflow);
   status.status = sessionStatus;
+  if (sessionStatus === "completed" && !status.completion_method) {
+    status.completion_method = "agent";
+  }
   if (inputs.schemaVersion < 2) {
     noteLatest(status, latest.executionId, latest.status, latest.stageId);
     recordLatestDecision(status, decisionOfOutcome(latest.outcome));

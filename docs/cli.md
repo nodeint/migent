@@ -565,6 +565,8 @@ migent session repair <session-id>
 migent session repair <session-id> --accept-task
 migent session cancel <session-id>
 migent session cancel <session-id> --wait 60 --json
+migent session complete <session-id>
+migent session complete <session-id> --json
 ```
 
 `session cancel` stops a session that another process is running, without a
@@ -577,6 +579,37 @@ stopped, 1 when it is still running after the wait, 2 when the session does not
 exist, no live process holds its lock, or the lock belongs to another machine.
 A session that is not running is left unchanged. `--json` prints
 `{"session_id", "cancelled", "status"}`.
+
+`session complete <session-id>` marks a stopped workflow session `completed` when
+you judge the work is done, without dispatching another stage. It takes the
+session lock, so it refuses a session that a live process is running; run
+`migent session cancel <session-id>` first. It applies to a workflow session in
+status `active` (no live lock), `blocked`, `question`, or `cancelled`. A role
+session and a `prepared` session exit 2; start a prepared session with
+`migent session run --session <session-id>`. Completion is terminal:
+`session continue` leaves the session stopped, and there is no command to reopen
+it. Calling it on a `completed` session exits 0, reports that it is already
+completed, and changes nothing.
+
+It publishes the outputs a normal completion would, from the current completed
+executions, seals `metrics.json`, and writes `next.json`. A required artifact
+that cannot be resolved or is empty does not stop the completion: the command
+completes the session and warns. Human output goes to stderr:
+
+```text
+[migent] Session <id> completed manually.
+[migent] warning: required artifact missing: <name>
+[migent] artifact: <absolute-path>
+[migent] next: <path to next.json>
+[migent] migent session run --workflow <workflow> --prior <id>
+```
+
+With `--json`, stdout carries exactly one object: `session_id`, `status`,
+`already_completed`, `outputs` (a list of `{name, path}` with absolute paths),
+`missing_outputs`, and `next` (`{path, suggestions}`, where `path` is null when
+no `next.json` exists). Exit 0 on success and when already completed. Exit 2 when
+the session does not exist, is a role session, is `prepared`, a live process
+holds its lock, or its state is unreadable (repair it first).
 
 `session list` lists recorded runs, newest first. A row with a title prints that
 title before the session id. A row without one prints the id. `--workflow` and `--status`

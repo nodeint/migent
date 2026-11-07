@@ -275,6 +275,7 @@ export {
   ExecutionContext,
   SessionStore,
 } from "./session-store.js";
+export type { ManualCompletionResult } from "./session-store.js";
 export { AgentToolRunner } from "./agent-runner.js";
 export { VerifyRunner, formatVerifyReport } from "./verify-runner.js";
 export type { VerifyRunResult, VerifyCommandResult } from "./verify-runner.js";

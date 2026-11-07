@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { renderProviderDiagnostics } from "./turn-diagnostics.js";
-import { publishNextSuggestions } from "./next-handoff.js";
+import { publishNextSuggestions, type NextSuggestion } from "./next-handoff.js";
 import {
   appendFileSync,
   copyFileSync,
@@ -21,7 +21,9 @@ import { sealSessionMetrics } from "./metrics.js";
 import { appendLifecycleEvent, appendRecordedEvent, CANCELLED_REPLY, readParsedEvents, reservedExecutionOrders, reservedStageAttempts, skipsStatusWrite } from "./session-events.js";
 import { commitFoldedStatus, readSessionManifest } from "./session-fold.js";
 import { loadFrozenWorkflow, readWorkflowFreeze } from "./session-freeze.js";
-import { assertSessionLockHeld } from "./session-lock.js";
+import { assertSessionLockHeld, SessionLock, SessionLockHeldError } from "./session-lock.js";
+import { publishManualCompletion } from "./manual-completion.js";
+import { assertSessionId } from "./session-selection.js";
 import { corruptStatusMessage, readStatusFileState } from "./query.js";
 import { STATUS_PROVIDER_EVENTS } from "./event-kinds.js";
 import {
@@ -197,6 +199,16 @@ export function clearInFlightExecutions(sessionId: string): void {
 export const DIAGNOSTICS_FILENAME = "diagnostics.json";
 export const FAILURE_FILENAME = "failure.md";
 export const DEBUG_LOG_FILENAME = "debug.log";
+
+export interface ManualCompletionResult {
+  alreadyCompleted: boolean;
+  /** Status before the completion. */
+  from: string;
+  /** `status.outputs` after the completion. */
+  outputs: Record<string, unknown>;
+  missingOutputs: string[];
+  next: { path: string | null; next: NextSuggestion[] };
+}
 
 export class SessionStore {
   readonly workspace: string;
@@ -1050,6 +1062,84 @@ export class SessionStore {
     if (plan.outputsMissing.length > 0) throw new OutputsMissing(plan.outputsMissing);
   }
 
+  /**
+   * A human marks a stopped workflow session completed. Takes the session lock, so a live run is refused.
+   * Publishes what a normal completion would, seals metrics, and writes next.json. Terminal and idempotent.
+   */
+  completeManually(sessionId: string): ManualCompletionResult {
+    assertSessionId(sessionId);
+    const sessionDirectory = path.join(this.sessionsDirectory, sessionId);
+    if (!isDirectory(sessionDirectory)) throw new ConfigurationError(`Session ${sessionId} does not exist.`);
+    const lock = SessionLock.tryAcquire(sessionDirectory);
+    if (lock === null) {
+      throw new SessionLockHeldError(
+        `Session ${sessionId} is being run by another process. Stop it first with: migent session cancel ${sessionId}`,
+      );
+    }
+    try {
+      return this.completeManuallyLocked(sessionId, sessionDirectory);
+    } finally {
+      lock.release();
+    }
+  }
+
+  private completeManuallyLocked(sessionId: string, sessionDirectory: string): ManualCompletionResult {
+    const read = readStatusFileState(path.join(sessionDirectory, "status.json"));
+    if (read.state !== "ok") {
+      const reason = read.state === "corrupt" ? "has an unreadable status.json" : "has no status.json";
+      throw new ConfigurationError(`Session ${sessionId} ${reason}. Run: migent session repair ${sessionId}`);
+    }
+    const previous = read.status;
+    const manifest = readSessionManifest(sessionDirectory);
+    if (previous.workflow_id === "agent" || manifest.workflowId === "agent") {
+      throw new ConfigurationError(`Session ${sessionId} is a role session. Only workflow sessions can be completed manually.`);
+    }
+    const from = typeof previous.status === "string" ? previous.status : "";
+    if (from === "completed") {
+      const outputs = isRecord(previous.outputs) ? previous.outputs : {};
+      return { alreadyCompleted: true, from, outputs, missingOutputs: [], next: existingNext(sessionDirectory) };
+    }
+    if (from === "prepared") {
+      throw new ConfigurationError(
+        `Session ${sessionId} is prepared and has not run. Start it with: migent session run --session ${sessionId}`,
+      );
+    }
+    if (from !== "active" && from !== "blocked" && from !== "question" && from !== "cancelled") {
+      throw new ConfigurationError(`Session ${sessionId} has status ${from || "unknown"} and cannot be completed.`);
+    }
+    const workflow = this.loadWorkflow(previous);
+    if (workflow === null && previous.workflow_id !== "agent") {
+      throw new ConfigurationError(
+        `Session ${sessionId} has no readable workflow. Check the frozen workflow or the live definition. Run: migent doctor --session ${sessionId}`,
+      );
+    }
+    const plan = publishManualCompletion(sessionDirectory, workflow, this.snapshotList(sessionId));
+    const timestamp = utcNow();
+    if (plan.outputs.length > 0) {
+      appendLifecycleEvent(sessionDirectory, { event: "outputs.published", timestamp, data: { outputs: plan.outputs } });
+    }
+    const data: Record<string, unknown> = {
+      manual: true,
+      from,
+      reason: plan.missing.length > 0
+        ? `Marked completed manually; missing required outputs: ${plan.missing.join(", ")}`
+        : "Marked completed manually",
+    };
+    if (plan.missing.length > 0) data.missing_outputs = plan.missing;
+    appendLifecycleEvent(sessionDirectory, { event: "session.completed", timestamp, data });
+    this.rewriteManifestStatus(sessionDirectory, "completed");
+    const folded = commitFoldedStatus(this.workspace, sessionDirectory);
+    if (this.metricsClients !== null) sealSessionMetrics(this.workspace, sessionId, this.metricsClients);
+    const next = publishNextSuggestions(this.workspace, sessionId);
+    return {
+      alreadyCompleted: false,
+      from,
+      outputs: isRecord(folded.outputs) ? folded.outputs : {},
+      missingOutputs: plan.missing,
+      next,
+    };
+  }
+
   private reapExecution(context: ExecutionContext, onLiveOwner: string): void {
     const filePath = path.join(context.directory, "execution.json");
     this.withExecutionLock(filePath, () => {
@@ -1431,6 +1521,18 @@ function snapshotsIncludingSave(
   return included;
 }
 
+/** The next.json already on disk, read without rewriting it. */
+function existingNext(sessionDirectory: string): { path: string | null; next: NextSuggestion[] } {
+  const filePath = path.join(sessionDirectory, "next.json");
+  try {
+    const parsed = JSON.parse(readFileSync(filePath, "utf8")) as unknown;
+    if (isRecord(parsed) && Array.isArray(parsed.next)) return { path: filePath, next: parsed.next as NextSuggestion[] };
+  } catch {
+    // No usable next.json.
+  }
+  return { path: null, next: [] };
+}
+
 function textField(value: unknown): string | null {
   return typeof value === "string" && value ? value : null;
 }
@@ -1444,6 +1546,14 @@ function verifyReportPath(directory: string, verify: unknown): string | null {
 
 function nonempty(value: unknown): string | null {
   return typeof value === "string" && value !== "" ? value : null;
+}
+
+function isDirectory(directory: string): boolean {
+  try {
+    return statSync(directory).isDirectory();
+  } catch {
+    return false;
+  }
 }
 
 function asInt(value: unknown): number {
