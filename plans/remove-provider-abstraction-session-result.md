@@ -1,21 +1,3 @@
-> Snapshot of failed Migent session `62bf398b-c346-4a5b-8a32-3bf19b90688a`.
-> The report below is the implementing agent's account, not a completed workflow verdict.
-> Execution `0001-implement--attempt-01` failed on 2026-11-06 because
-> `Stage artifact missing or empty: implement.md.` The agent wrote this report at
-> the session root instead of the execution's artifacts directory. Review never ran.
-> The approved plan is preserved in `plans/remove-provider-abstraction.md`.
-> This snapshot branches from session baseline `ef8c264`; newer `origin/next`
-> changes have not been integrated. Live CLI execution remains unverified.
->
-> Independent snapshot verification on 2026-11-06: `pnpm build` passed;
-> `pnpm test` with real client CLIs excluded from PATH passed all 111 files,
-> 1,245 tests, with 3 skipped (71.41 seconds). `git diff --check` passed.
-> Build includes the TypeScript check; no separate lint or gate script is defined.
-> No independent pre-change baseline was run by the monitoring agent; baseline
-> comparisons below are the implementing agent's report.
-
-status: complete (agent-reported; session failed)
-
 # Implementation report: remove the provider abstraction
 
 ## Summary
