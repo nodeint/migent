@@ -33,6 +33,7 @@ must be checked against the current source when changing behavior.
 | Diagnose unavailable models or CLIs | [CLI: Doctor](cli.md#doctor) | [Adapters: Model and version discovery](adpaters.md#model-and-version-discovery), [Diagnostics](diagnostics.md) |
 | Explain frozen settings or resumed conversations | [Sessions](sessions.md) | [Adapters: Sessions and interruption](adpaters.md#sessions-and-interruption) |
 | Pass artifacts between independent workflows | [Session handoff](session-handoff.md) | [Workflows: Downstream handoff](workflows.md#downstream-handoff) |
+| Mark a stopped workflow session done without another stage | [CLI: Inspect sessions](cli.md#inspect-sessions) | [Sessions: Manual completion](sessions.md#manual-completion) |
 | Answer an agent question or unblock a run | [Human interaction](human-in-the-loop.md) | [CLI: Session commands](cli.md#session-commands) |
 | Diagnose missing tokens, partial costs, or cumulative usage | [Session metrics](session-metrics.md) | [Adapters: Failures and usage](adpaters.md#failures-and-usage) |
 | Investigate a failed process start or client exit | [Diagnostics](diagnostics.md) | [Adapters: Failures and usage](adpaters.md#failures-and-usage) |

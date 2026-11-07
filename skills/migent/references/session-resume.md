@@ -22,6 +22,7 @@ state (`manifest.yaml`, `status.json`, `workflow.frozen.yaml`, `events.jsonl`, o
 | Role active | Continue to resend the last prompt. |
 | Role blocked | Continue with `--reply "<reply>"` for the user's answer; without it, the agent is told to continue. |
 | Role completed | Leave stopped unless the user supplies a new turn with `--reply`. |
+| Workflow stopped and the user says the work is done | Only on the user's explicit decision, `migent session complete <session-id>`. It is terminal (no reopen), refuses a running session (run `session cancel` first), and warns on stderr about each missing required artifact. A role or prepared session cannot be completed this way. |
 | Corrupt | Report the diagnostic; do not edit generated state to resume. |
 
 For a long reply, use `--reply-file <path>`. Do not use `--once` or `--stage` with

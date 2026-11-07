@@ -302,8 +302,57 @@ sends the saved reply. A newer `--reply` replaces it. Without `--reply`,
 turn again, except one a reply already replaced. When a cancelled stage waits
 beside a blocked stage or pending question, `--reply` needs `--stage` to pick
 the target. Replying to the cancelled stage leaves the blocked stage blocked.
+## Completion method
+
+Every completed session records how it completed:
+- `completion_method: "agent"`: normal agent-driven completion (execution reached decision or quiescence)
+- `completion_method: "manual"`: human-initiated completion via `migent session complete`
+
+```json
+{ "status": "completed", "completion_method": "manual" }
+```
+
+This enables audit queries (e.g., `jq '.completion_method' *.json | grep manual`) and distinguishes deliberate human decisions from automatic workflow outcomes. Future versions could add `migent session reopen` if manual completions need reversal.
+
 `completed` sessions stay stopped. `session continue --once`
 advances one stage and does not reset revision counts.
+
+## Manual completion
+
+`migent session complete <session-id>` lets a person mark a stopped workflow
+session `completed` without running another stage (see
+[CLI](cli.md#inspect-sessions)). It runs under the session lock and applies to
+`active` (no live lock), `blocked`, `question`, and `cancelled` sessions. It
+appends `outputs.published` (when anything is published) and a session-level
+`session.completed` to `events.jsonl`; the latter has no execution id and
+carries `data.manual: true`, `data.from` (the previous status), `data.reason`,
+and optionally `data.missing_outputs`.
+
+The completion_method field indicates completion cause (manual vs agent).
+
+The fold derives manual completion from that event, so `status.json` stays
+`completed` after `session repair`. It clears the blocked and question fields,
+omits `questions`, and records `manual_completion`:
+
+```json
+{ "status": "completed", "manual_completion": { "completed_at": "2026-11-07T12:00:00+00:00", "from": "blocked" } }
+```
+
+`questions.json` keeps the history, and an unanswered question is marked
+`superseded` rather than `pending`.
+
+Outputs resolve by the normal rules: schema 7 resolves the artifact registry
+against the skip-aware current completions; schema 2 to 6 publish the top-level
+`outputs`, and version 1 publishes `completion.outputs`, each from a completed
+execution with a non-empty artifact. A manually published output records
+`published_by_execution_id: "manual"`; `source_execution_id` still names the
+producing execution. A required artifact that cannot be resolved is listed in
+`data.missing_outputs` and warned about, and the session still completes.
+
+The command then seals `metrics.json` and writes `next.json`, as a normal
+completion does. The session stays terminal: `session continue` does not
+dispatch, and no command reopens it. An execution left `running` by a crashed
+process is not reconciled by this command.
 
 A session with status `prepared` is not resumed by `session continue`. Write
 `task.md`, adjust `workflow.yaml` if needed, then run
