@@ -37,7 +37,6 @@ checks must pass against the current `next` base before merging.
 ## Verify
 
 Run the tests for the packages you changed, and `pnpm gate` when it exists.
-If you changed `skills/migent/`, apply the same change to `.agents/skills/migent/`;
 `packages/cli/test/skill-sync.test.ts` compares the two. Do not edit `dist/`.
 A user-visible change adds a line under `## Unreleased` in `CHANGELOG.md`.
 Report any test that fails and stop.

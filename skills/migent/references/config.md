@@ -22,7 +22,7 @@ Set a role's agent with an inline object:
 
 ```yaml
 # .migent/config.yaml (or config.local.yaml for a local override)
-schema_version: 6
+schema_version: 7
 roles:
   developer:
     agent:
@@ -35,7 +35,7 @@ For shared named agents, preserve the project's existing names:
 
 ```yaml
 # .migent/config.local.yaml
-schema_version: 6
+schema_version: 7
 agents:
   code_generation:
     model: gpt-5
@@ -49,7 +49,7 @@ models. Resolve doctor errors before running.
 The local file accepts the same keys. Mappings merge recursively, except a role's
 `agent`, which replaces the entire selection: supply a complete agent object or
 name. Scalars and lists replace shared values. To remove an option, delete it
-wherever set in both files. Keep `schema_version: 6` in each file; use
+wherever set in both files. Keep `schema_version: 7` in each file; use
 `migent migrate --yes` when diagnostics report an outdated schema.
 
 ## Change a role or agent

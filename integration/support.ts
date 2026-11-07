@@ -10,7 +10,7 @@ export const GROK_SESSION = "fake-grok-session";
 export const CODEX_THREAD = "fake-codex-thread";
 
 export const GROK_CONFIG = `\
-schema_version: 6
+schema_version: 7
 agents:
   grok-model:
     model: grok-test
@@ -26,7 +26,7 @@ roles:
 `;
 
 export const CODEX_CONFIG = `\
-schema_version: 6
+schema_version: 7
 agents:
   codex-model:
     model: codex-test
@@ -40,15 +40,17 @@ roles:
 `;
 
 export const PLAN_REVIEW = `\
-schema_version: 6
+schema_version: 7
 id: plan
+artifacts:
+  plan:
+    file: plan.md
 stages:
   - id: plan
     role: planner
     max_revisions: 3
     depends_on: []
-    produces:
-      artifact: plan.md
+    artifacts: [plan]
   - id: review-plan
     role: reviewer
     depends_on:
@@ -60,32 +62,32 @@ stages:
       - revise:
           when: Choose revise according to the task.
           navigate: plan
-outputs:
-  - name: plan
-    from_stage: plan
-    artifact: plan.md
 `;
 
 export const DRAFT_NOTE = `\
-schema_version: 6
+schema_version: 7
 id: draft-note
+artifacts:
+  draft:
+    file: note.md
 stages:
   - id: draft
     role: writer
     depends_on: []
-    produces:
-      artifact: note.md
+    artifacts: [draft]
 `;
 
 export const SOLO = `\
-schema_version: 6
+schema_version: 7
 id: solo
+artifacts:
+  write:
+    file: note.md
 stages:
   - id: write
     role: planner
     depends_on: []
-    produces:
-      artifact: note.md
+    artifacts: [write]
 `;
 
 export const FAKE_SCRIPT = ".migent-fake.json";
@@ -101,26 +103,25 @@ const FAKE_ENV = ["MIGENT_FAKE_OUTCOME", "MIGENT_FAKE_SCRIPT", "MIGENT_FAKE_CURS
 
 export function resumedNotes(role: string): string {
   return `\
-schema_version: 6
+schema_version: 7
 id: notes
+artifacts:
+  draft:
+    file: draft.md
+  follow:
+    file: follow.md
 stages:
   - id: draft
     role: ${role}
     depends_on: []
-    produces:
-      artifact: draft.md
+    artifacts: [draft]
   - id: follow
     role: ${role}
     session:
       resume_from: draft
     depends_on:
       - draft
-    produces:
-      artifact: follow.md
-outputs:
-  - name: draft
-    from_stage: draft
-    artifact: draft.md
+    artifacts: [follow]
 `;
 }
 

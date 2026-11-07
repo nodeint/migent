@@ -2,14 +2,15 @@
 
 ## Upstream artifacts
 {{#each upstream}}
-- {{stageId}}{{#if verify}} verify report{{/if}}: `{{path}}`{{#if updated}} (updated since your last visit){{/if}}{{/each}}{{/if}}{{#if routed}}
+- {{stageId}}{{#if verify}} verify report{{/if}}: `{{path}}`{{#if description}} ({{description}}){{/if}}{{#if updated}} (updated since your last visit){{/if}}{{/each}}{{/if}}{{#if routed}}
 
 ## Routing decision
 
 Read these responses and use their decision and feedback when working on this stage.
 {{#each routed.decisions}}
-- {{stageId}} (`{{decision}}`): `{{path}}`{{/each}}{{#if routed.previousArtifact}}
-- Your previous artifact: `{{routed.previousArtifact}}`{{/if}}{{/if}}{{#if blocked}}
+- {{stageId}} (`{{decision}}`): `{{path}}`{{/each}}{{#each routed.routedArtifacts}}
+- {{stageId}}{{#if verify}} verify report{{else}} artifact{{/if}}: `{{path}}`{{#if description}} ({{description}}){{/if}}{{/each}}{{#each routed.previousArtifacts}}
+- Your previous artifact: `{{this}}`{{/each}}{{/if}}{{#if blocked}}
 
 ## Previous attempt
 

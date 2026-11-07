@@ -1,12 +1,14 @@
-schema_version: 6
+schema_version: 7
 id: plan
+artifacts:
+  plan:
+    file: plan.md
 stages:
   - id: plan
     role: planner
     max_revisions: 3
     depends_on: []
-    produces:
-      artifact: plan.md
+    artifacts: [plan]
   - id: review-plan
     role: reviewer
     depends_on:
@@ -18,10 +20,6 @@ stages:
       - revise:
           when: Choose revise according to the task.
           navigate: plan
-outputs:
-  - name: plan
-    from_stage: plan
-    artifact: plan.md
 constraints:
   - Do not write implementation code.
   - Do not infer decisions from review prose.

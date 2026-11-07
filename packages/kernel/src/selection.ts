@@ -1,4 +1,4 @@
-import { missingWorkflowOutputNames, type ExecutionSnapshot } from "./outputs.js";
+import { isArtifactSchema, missingWorkflowOutputNames, type ExecutionSnapshot } from "./outputs.js";
 import { pyRepr } from "./record.js";
 import {
   conditionalReach,
@@ -96,13 +96,22 @@ export function version2GraphQuiet(
   return sequentialCandidates(workflow, snapshots, sessionStatus).length === 0;
 }
 
+/** Missing output names under the workflow's schema: v7 reads the skip-aware current completions. */
+export function missingOutputNames(workflow: WorkflowDocument, snapshots: readonly ExecutionSnapshot[]): string[] {
+  return missingWorkflowOutputNames(
+    workflow,
+    snapshots,
+    isArtifactSchema(workflow) ? currentCompleteByStage(workflow, snapshots) : undefined,
+  );
+}
+
 export function missingOutputProducers(
   workflow: WorkflowDocument,
   snapshots: readonly ExecutionSnapshot[],
   sessionStatus: string,
 ): string[] {
   if (!isWorkflowV2(workflow) || !version2GraphQuiet(workflow, snapshots, sessionStatus)) return [];
-  const missing = new Set(missingWorkflowOutputNames(workflow, snapshots));
+  const missing = new Set(missingOutputNames(workflow, snapshots));
   const producers: string[] = [];
   for (const output of workflow.outputs ?? []) {
     if (!missing.has(output.name) || producers.includes(output.fromStage)) continue;
@@ -758,7 +767,7 @@ export function version2IdleReason(
   resumes?: readonly BlockResume[] | null,
 ): string {
   if (version2GraphQuiet(workflow, snapshots, sessionStatus)) {
-    if (missingWorkflowOutputNames(workflow, snapshots).length > 0) return "outputs_missing";
+    if (missingOutputNames(workflow, snapshots).length > 0) return "outputs_missing";
     return "completed";
   }
   for (const stageId of Object.keys(workflow.stages)) {

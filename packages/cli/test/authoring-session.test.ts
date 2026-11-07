@@ -15,7 +15,7 @@ import { main } from "../src/index.ts";
 import { setInvocationCwd } from "../src/workspace.ts";
 import { capture, FakeClient, registryOf } from "./support.ts";
 
-const CONFIG = `schema_version: 6
+const CONFIG = `schema_version: 7
 agents:
   fast:
     client:
@@ -26,7 +26,7 @@ roles:
     agent: fast
 `;
 
-const WORKFLOW = `schema_version: 6
+const WORKFLOW = `schema_version: 7
 id: build
 stages:
   - id: implement
@@ -151,7 +151,7 @@ test("a changed id is a mismatch with the recorded workflow id", async () => {
 
 test("document, binding and downstream errors point at the session draft", async () => {
   const id = prepare();
-  const document = await run(["workflow", "validate", "@draft", "--session", id, "--format", "yaml", "--json"], EDITED.replace("schema_version: 6", "schema_version: 6\nbogus: 1"));
+  const document = await run(["workflow", "validate", "@draft", "--session", id, "--format", "yaml", "--json"], EDITED.replace("schema_version: 7", "schema_version: 6\nbogus: 1"));
   expect(document.json.diagnostics.some((d: { code: string; severity: string }) => d.severity === "warning" || d.severity === "error")).toBe(true);
 
   const binding = await run(["workflow", "validate", "@draft", "--session", id, "--format", "yaml", "--json"], EDITED.replace("role: developer\n    depends_on:\n      - implement", "role: ghost\n    depends_on:\n      - implement"));

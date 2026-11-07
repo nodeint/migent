@@ -139,11 +139,45 @@ export function selectSourceExecution(
   return selected;
 }
 
-/** Latest complete execution of from_stage, including the execution being saved. */
+export function isArtifactSchema(workflow: WorkflowDocument): boolean {
+  return (workflow.schemaVersion ?? 1) >= 7;
+}
+
+/**
+ * Schema 7 resolution: each registry artifact comes from its producer's current eligible completion,
+ * and a decision artifact only when that completion chose the producing decision. `current` is the
+ * scheduler's skip-aware view. Unresolved artifacts have a null source.
+ */
+export function resolveArtifactSources(
+  workflow: WorkflowDocument,
+  current: Readonly<Record<string, ExecutionSnapshot>>,
+): Array<{ name: string; file: string; required: boolean; source: ExecutionSnapshot | null }> {
+  return (workflow.artifacts ?? []).map((artifact) => {
+    const execution = current[artifact.producer.stage];
+    const chosen = execution?.outcomeDecision?.toLowerCase() ?? null;
+    const source =
+      execution !== undefined && (artifact.producer.decision === null || chosen === artifact.producer.decision)
+        ? execution
+        : null;
+    return { name: artifact.id, file: artifact.file, required: artifact.required, source };
+  });
+}
+
+/**
+ * Names of outputs the workflow cannot supply. Version 2-6: latest complete execution of from_stage,
+ * including the execution being saved. Version 7: required artifacts without a current eligible source
+ * (`current` is required then).
+ */
 export function missingWorkflowOutputNames(
   workflow: WorkflowDocument,
   snapshots: readonly ExecutionSnapshot[],
+  current?: Readonly<Record<string, ExecutionSnapshot>>,
 ): string[] {
+  if (isArtifactSchema(workflow)) {
+    return resolveArtifactSources(workflow, current ?? {})
+      .filter((item) => item.required && (item.source === null || !nonemptyArtifact(path.join(item.source.artifactDirectory, item.file))))
+      .map((item) => item.name);
+  }
   const missing: string[] = [];
   for (const output of workflow.outputs ?? []) {
     const source = selectSourceExecution(snapshots, output.fromStage, Number.POSITIVE_INFINITY);

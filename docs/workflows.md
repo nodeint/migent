@@ -19,18 +19,69 @@ Codex. Execution directories join the order, stage id, and attempt with `-` and
 
 ## Stages and artifacts
 
-`depends_on` makes successful upstream artifacts available to a stage. A stage
-may produce one named file artifact:
+`depends_on` makes successful upstream artifacts available to a stage. From
+schema version 7, every file a workflow produces is declared once in a
+top-level `artifacts` registry, and a stage lists the ids it writes:
 
 ```yaml
-- id: plan
-  role: planner
-  depends_on: []
-  instructions:
-    - Write an implementation plan.
-  produces:
-    artifact: plan.md
+schema_version: 7
+artifacts:
+  plan:
+    description: The architecture plan for the task.
+    file: plan.md            # plain file name, unique in the registry
+    required: true           # default; see "Artifacts" below
+stages:
+  - id: plan
+    role: planner
+    depends_on: []
+    instructions:
+      - Write an implementation plan.
+    artifacts: [plan]
 ```
+
+### Artifacts
+
+| Field | Meaning |
+| :--- | :--- |
+| `file` | Required. A plain file name, not `verify.md`, unique across the registry because every artifact is published into `outputs/`. |
+| `description` | Optional. Shown to the producing stage and to stages that receive the file. |
+| `required` | Optional, default `true`. A required artifact is guaranteed at completion: the producer's `complete` turn fails when the file is missing or empty, and a quiet run that cannot resolve it is held (`outputs_missing`) and the producer reruns. `required: false` artifacts are published only when present and never hold completion. |
+
+Every registry artifact is published when the session completes. Each one has
+exactly one producer: one stage's `artifacts` list or one decision. A registry
+entry that nothing references is an error. `produces` and top-level `outputs`
+are rejected in schema 7; run `migent migrate`.
+
+**Decision artifacts.** A decision may carry `artifacts` in either form, never
+mixed:
+
+```yaml
+decision:
+  - approved-with-comments:
+      navigate: complete
+      artifacts: [plan-comments]        # registry ids; these must be required: false
+  - revise:
+      navigate: plan
+      artifacts:                        # decision-local, never published
+        review:
+          file: review.md
+          description: Blocking findings.
+```
+
+A decision artifact exists only when that decision is chosen; the file is
+gated on that decision's `complete` turn. Registry artifacts referenced from a
+decision must be `required: false`, because the run can finish through another
+decision. A local artifact's `required` (default `true`) gates only the turn
+that chose the decision. Local artifacts reach the stages that depend on or
+are routed from the decision stage, but are not published. Within one stage,
+file names across stage-level and decision artifacts must be unique.
+
+**Which execution supplies a file.** Publication and prompts read the
+producer's current eligible completion: the latest complete execution that no
+later `run_when` skip supersedes. A decision artifact resolves only when that
+execution chose the producing decision, so comments from an earlier round are
+never reused. Stages that depend on, or are routed from, an upstream stage see
+its stage-level artifacts plus those of the decision it chose.
 
 Workflow-level `constraints`, the role's `responsibilities` from
 `.migent/config.yaml`, and stage `instructions` are included in the client
@@ -227,21 +278,23 @@ A stage that the skip can leave without a current completion is part of the
 conditional set: the `run_when` stage, every stage that depends on a member, and
 every forward route target of a member (a target that is not already in the
 member's dependency closure). Routes back are not forward targets. No stage in
-the conditional set may have `verify`, and no top-level `outputs` entry may
-come from the conditional set, so a skip never bypasses verify and never
-leaves an output missing. Migent rejects such a workflow when it loads.
+the conditional set may have `verify`, and no `required` artifact may
+come from the conditional set (declare `required: false`), so a skip never
+bypasses verify and never leaves a guaranteed artifact missing. Migent rejects such a workflow when it loads.
 
 **Example.** `docs` answers `updated` or `no-docs`. `review_docs` runs only
 when documentation files changed, and `revise` sends the work back to `docs`.
 
 ```yaml
-schema_version: 6
+schema_version: 7
 id: docs_flow
+artifacts:
+  implementation:
+    file: implementation.md
 stages:
   - id: implement
     role: developer
-    produces:
-      artifact: implementation.md
+    artifacts: [implementation]
   - id: docs
     role: developer
     depends_on: [implement]
@@ -266,10 +319,6 @@ stages:
       - revise:
           when: Required fixes remain. List each fix and its impact.
           navigate: docs
-outputs:
-  - name: implementation
-    from_stage: implement
-    artifact: implementation.md
 ```
 
 `no-docs` means that no documentation change needs review, not merely that the
@@ -424,20 +473,21 @@ completion stage.
 
 ## Completion outputs
 
-A version 2 workflow publishes top-level `outputs` when the run is quiet:
-nothing is running, nothing is ready or waiting on a ready or running stage,
-no stage is blocked, waiting for an answer, or exhausted, at least one execution completed, and every
-output resolves. Each output is the latest complete artifact of `from_stage`.
-A missing artifact exits 2, leaves the session active, and publishes nothing.
-`session continue` reruns the producer. An output cannot come from a `run_when`
-stage, its dependents, or its forward route targets.
+A version 2 or later workflow publishes when the run is quiet: nothing is
+running, nothing is ready or waiting on a ready or running stage, no stage is
+blocked, waiting for an answer, or exhausted, at least one execution
+completed, and every guaranteed output resolves.
 
-```yaml
-outputs:
-  - name: implementation
-    from_stage: implement
-    artifact: implementation.md
-```
+Schema 7 publishes every registry artifact that resolves from its producer's
+current eligible completion (see [Artifacts](#artifacts)). Required artifacts
+must resolve; optional ones are copied only when present. A missing required
+artifact exits 2, leaves the session active, and publishes nothing;
+`session continue` reruns the producer. Schemas 2 to 6 publish the top-level
+`outputs` list (`name`, `from_stage`, `artifact`), each the latest complete
+artifact of `from_stage`; an output cannot come from a `run_when` stage, its
+dependents, or its forward route targets. `migent migrate` converts that list
+to the registry; see [CLI: Migrate](cli.md#migrate) for the semantic changes it
+reports.
 
 A version 1 workflow still completes when its `completion` stage makes the
 configured decision, and still publishes `completion.outputs` then.
@@ -457,7 +507,9 @@ downstream:
 
 `workflow` is an ID, not a path, and must be unique within `downstream`.
 `task` is a nonempty one-line task. Optional `artifacts` maps destination
-context names to output names declared in this workflow. Context names start
+context names to artifact ids declared in this workflow (output names before
+schema 7). Omitting `artifacts` passes every published artifact under its own
+id. Context names start
 with a letter and contain letters, digits or underscores. Unknown fields,
 missing output references, duplicate target workflows and invalid names are errors.
 Doctor reports missing target workflows; completion does not load or freeze them.
@@ -632,15 +684,17 @@ start while `docs` is still running. The session completes when both reviews
 approve and nothing else can start.
 
 ```yaml
-schema_version: 6
+schema_version: 7
 id: implement
 concurrency: 2
+artifacts:
+  implementation:
+    file: implementation.md
 stages:
   - id: implement
     role: developer
     depends_on: []
-    produces:
-      artifact: implementation.md
+    artifacts: [implementation]
   - id: review
     role: reviewer
     depends_on: [implement]
@@ -676,9 +730,4 @@ stages:
           navigate: complete
       - revise:
           when: Required fixes remain. List each fix and its impact.
-          navigate: docs
-outputs:
-  - name: implementation
-    from_stage: implement
-    artifact: implementation.md
-```
+          navigate: docs```

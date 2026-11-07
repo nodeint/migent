@@ -21,11 +21,11 @@ async function inspect(roleExtra: Record<string, unknown>, stageAgent: unknown) 
   try {
     mkdirSync(path.join(workspace, ".migent", "workflows"), { recursive: true });
     writeFileSync(path.join(workspace, ".migent", "config.yaml"), stringify({
-      schema_version: 6,
+      schema_version: 7,
       roles: { developer: { agent: { client: { type: "grok" }, model: "grok-4" }, ...roleExtra } },
     }));
     writeFileSync(path.join(workspace, ".migent", "workflows", "flow.yaml"), stringify({
-      schema_version: 6,
+      schema_version: 7,
       stages: [{ id: "work", role: "developer", ...(stageAgent === undefined ? {} : { agent: stageAgent }) }],
     }));
     const result = await capture(() => runDoctor(workspace, { asJson: true, which, runCommand: catalog, home: workspace }));

@@ -19,7 +19,7 @@ function clients(fake: ScriptedClient) {
 
 /** The planner (stage 1) maps to the fake client; the reviewer (stage 2) is configurable. */
 function config(reviewer: string): string {
-  return `schema_version: 6
+  return `schema_version: 7
 agents:
   good:
     client:

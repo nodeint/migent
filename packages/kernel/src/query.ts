@@ -5,6 +5,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { isRecord } from "./record.js";
 import { MIGENT_DIRNAME, SESSIONS_DIRNAME } from "./runtime.js";
+import { loadFrozenWorkflow } from "./session-freeze.js";
 
 export function readStatusFile(filePath: string): Record<string, unknown> {
   let text: string;
@@ -62,6 +63,17 @@ export function readExecutionFile(filePath: string): Record<string, unknown> | n
   }
 }
 
+/** Optional registry artifacts of the frozen workflow that the session did not publish (schema 7). */
+function optionalNotProduced(sessionDirectory: string, outputs: Record<string, unknown>): string[] {
+  try {
+    return (loadFrozenWorkflow(sessionDirectory)?.artifacts ?? [])
+      .filter((artifact) => !artifact.required && !Object.hasOwn(outputs, artifact.id))
+      .map((artifact) => artifact.id);
+  } catch {
+    return [];
+  }
+}
+
 export function watchSnapshot(
   sessionDirectory: string,
   executionId?: string | null,
@@ -100,6 +112,7 @@ export function watchSnapshot(
     blocker: status.blocker ?? null,
     updated_at: status.updated_at ?? null,
     outputs,
+    outputs_not_produced: optionalNotProduced(sessionDirectory, outputs),
     running_stages: Array.isArray(status.running_stages) ? status.running_stages.filter(isRecord) : [],
     events_cursor: cursor,
   };

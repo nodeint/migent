@@ -1,6 +1,11 @@
-schema_version: 6
+schema_version: 7
 id: plan-implement
 
+artifacts:
+  implementation-result:
+    file: implementation-result.md
+  test-result:
+    file: test-result.md
 stages:
   - id: implement
     role: developer
@@ -9,8 +14,7 @@ stages:
     instructions:
       - Implement production code only.
       - Do not add or modify test code.
-    produces:
-      artifact: implementation-result.md
+    artifacts: [implementation-result]
 
   - id: review-work
     role: reviewer
@@ -40,8 +44,7 @@ stages:
       - Do not modify production code.
       - Write only high-value tests for meaningful behavior, decision branches, failure boundaries, or regression risks.
       - Do not add low-value tests for coverage alone, trivial implementation details, boilerplate, or duplicate assertions.
-    produces:
-      artifact: test-result.md
+    artifacts: [test-result]
 
   - id: review-tests
     role: reviewer
@@ -62,11 +65,3 @@ stages:
       - revise:
           when: Choose revise according to the task.
           navigate: write-tests
-
-outputs:
-  - name: implementation-result
-    from_stage: implement
-    artifact: implementation-result.md
-  - name: test-result
-    from_stage: write-tests
-    artifact: test-result.md

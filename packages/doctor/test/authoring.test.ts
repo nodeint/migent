@@ -4,7 +4,7 @@ import { validateConfigDraft, validateWorkflowDraft, type ConfigLoad } from "../
 import { defaultClients } from "./support.ts";
 
 const CONFIG = {
-  schema_version: 6,
+  schema_version: 7,
   agents: {
     fast: { client: { type: "grok" }, model: "grok-4.6" },
   },
@@ -26,7 +26,7 @@ function workflow(draft: Record<string, unknown>, config: ConfigLoad = load(CONF
 
 test("a workflow draft reports every independent error with its own path", () => {
   const out = workflow({
-    schema_version: 6,
+    schema_version: 7,
     id: "build",
     stages: [
       { id: "implement", role: "developer", depends_on: [], ask: "bot", max_revisions: "nope" },
@@ -45,7 +45,7 @@ test("a workflow draft reports every independent error with its own path", () =>
 test("an invalid unit never causes follow-on errors in the checks that read it", () => {
   // Every declared stage has a problem, but the stages list itself is not empty.
   const allInvalid = workflow({
-    schema_version: 6,
+    schema_version: 7,
     id: "build",
     stages: [
       { id: "a", depends_on: [] },
@@ -56,7 +56,7 @@ test("an invalid unit never causes follow-on errors in the checks that read it",
 
   // A target whose stage is declared but has invalid fields still exists.
   const dependency = workflow({
-    schema_version: 6,
+    schema_version: 7,
     id: "build",
     stages: [
       { id: "a", role: "developer", depends_on: [] },
@@ -68,7 +68,7 @@ test("an invalid unit never causes follow-on errors in the checks that read it",
 
   // Each downstream entry is checked on its own.
   const downstream = workflow({
-    schema_version: 6,
+    schema_version: 7,
     id: "build",
     stages: [{ id: "a", role: "developer", depends_on: [] }],
     downstream: [{ task: "go" }, { workflow: "nowhere", task: "go" }, { workflow: "elsewhere", task: "go" }],
@@ -85,7 +85,7 @@ test("a config draft reports every independent error", () => {
     {
       scope: "project",
       draft: {
-        schema_version: 6,
+        schema_version: 7,
         agents: {
           fast: { client: { type: "grok" }, model: "grok-4.6" },
           slow: { client: { type: "nope" }, model: "ghost" },
@@ -116,7 +116,7 @@ test("a companion layer with its own problem does not hide the draft's errors", 
   const out = validateConfigDraft(
     {
       scope: "project",
-      draft: { schema_version: 6, agents: {}, roles: { developer: { agent: "missing" } } },
+      draft: { schema_version: 7, agents: {}, roles: { developer: { agent: "missing" } } },
       companion: { schema_version: 999, agents: { fast: { client: { type: "grok" }, model: "grok-4.6" } } },
     },
     defaultClients(),

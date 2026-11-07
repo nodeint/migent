@@ -155,7 +155,7 @@ export function whichFound(found: ReadonlySet<string>): (command: string) => str
 }
 
 export const STAGE_CONFIG = `\
-schema_version: 6
+schema_version: 7
 agents:
   grok:
     client:
@@ -178,14 +178,16 @@ roles:
 `;
 
 export const STAGE_WORKFLOW = `\
-schema_version: 6
+schema_version: 7
 id: plan-implement
+artifacts:
+  implement:
+    file: implementation-result.md
 stages:
   - id: implement
     role: developer
     depends_on: []
-    produces:
-      artifact: implementation-result.md
+    artifacts: [implement]
   - id: review-work
     role: reviewer
     agent: gpt-terra

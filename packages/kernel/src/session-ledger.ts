@@ -1,7 +1,8 @@
 import path from "node:path";
 import {
-  missingWorkflowOutputNames,
+  isArtifactSchema,
   publishOutputFiles,
+  resolveArtifactSources,
   selectSourceExecution,
   sessionStatusAfterExecution,
   shouldPublishOutputs,
@@ -9,7 +10,7 @@ import {
 } from "./outputs.js";
 import { isRecord } from "./record.js";
 import { sessionChangeReason } from "./session-events.js";
-import { readyOutsideStoppedBranches, version2GraphQuiet } from "./selection.js";
+import { currentCompleteByStage, missingOutputNames, readyOutsideStoppedBranches, version2GraphQuiet } from "./selection.js";
 import { StageOutcome } from "./stage-outcome.js";
 import { isWorkflowV2, type WorkflowDocument } from "./workflow.js";
 
@@ -113,7 +114,7 @@ export function sessionStatusFromExecutions(
     const sessionStatus = typeof previousStatus.status === "string" ? previousStatus.status : "active";
     // Quiescence, not one stage's decision. A missing output keeps the session active.
     if (!version2GraphQuiet(workflow, snapshots, sessionStatus)) return "active";
-    if (missingWorkflowOutputNames(workflow, snapshots).length > 0) return "active";
+    if (missingOutputNames(workflow, snapshots).length > 0) return "active";
     return "completed";
   }
   if (completed) return "completed";
@@ -319,9 +320,16 @@ function publishVersion2(input: {
   if (!version2GraphQuiet(input.workflow, input.snapshots, sessionStatus)) {
     return { outputs: [], outputsMissing: [] };
   }
-  const missing = missingWorkflowOutputNames(input.workflow, input.snapshots);
+  const missing = missingOutputNames(input.workflow, input.snapshots);
   if (missing.length > 0) return { outputs: [], outputsMissing: missing };
   const sources: Record<string, readonly [string, string]> = {};
+  if (isArtifactSchema(input.workflow)) {
+    for (const item of resolveArtifactSources(input.workflow, currentCompleteByStage(input.workflow, input.snapshots))) {
+      if (item.source === null) continue;
+      sources[item.name] = [path.join(item.source.artifactDirectory, item.file), item.source.executionId];
+    }
+    return { outputs: publishedOutputs(input.sessionDirectory, sources, input.executionId), outputsMissing: [] };
+  }
   for (const output of input.workflow.outputs ?? []) {
     const source = selectSourceExecution(input.snapshots, output.fromStage, Number.POSITIVE_INFINITY);
     if (source === null) continue;

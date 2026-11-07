@@ -14,8 +14,11 @@ Add `ask: human` to each stage that may ask questions. The role must already be
 configured in `.migent/config.yaml`.
 
 ```yaml
-schema_version: 6
+schema_version: 7
 id: plan
+artifacts:
+  plan:
+    file: plan.md
 stages:
   - id: plan
     role: planner
@@ -23,12 +26,7 @@ stages:
     instructions:
       - Read task.md and the relevant code, then write plan.md.
       - Ask the user when the task leaves a scope or behavior decision unresolved.
-    produces:
-      artifact: plan.md
-outputs:
-  - name: plan
-    from_stage: plan
-    artifact: plan.md
+    artifacts: [plan]
 ```
 
 `ask` selects the recipient. Currently its only supported value is `human`.

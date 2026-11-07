@@ -24,7 +24,7 @@ function writeProject(workspace: string): void {
   const workflows = path.join(workspace, ".migent", "workflows");
   mkdirSync(workflows, { recursive: true });
   const config = `\
-schema_version: 6
+schema_version: 7
 agents:
   planner-model:
     client:
@@ -89,7 +89,7 @@ test("doctor stops when the schema is outdated", async () => {
   try {
     writeProject(workspace);
     const configPath = path.join(workspace, ".migent", "config.yaml");
-    const original = readFileSync(configPath, "utf8").replace("schema_version: 6\n", "");
+    const original = readFileSync(configPath, "utf8").replace("schema_version: 7\n", "");
     writeFileSync(configPath, original, "utf8");
     const captured = await capture(() => main(["doctor"], workspace));
     expect(captured.value).toBe(2);
@@ -172,7 +172,7 @@ test("doctor prints and returns a tracked config.local.yaml warning without fail
   const workspace = mkdtempSync(path.join(tmpdir(), "migent-cli-"));
   try {
     writeProject(workspace);
-    writeFileSync(path.join(workspace, ".migent", "config.local.yaml"), "schema_version: 6\nagents: {}\n", "utf8");
+    writeFileSync(path.join(workspace, ".migent", "config.local.yaml"), "schema_version: 7\nagents: {}\n", "utf8");
     execFileSync("git", ["init", "-q"], { cwd: workspace });
     execFileSync("git", ["add", ".migent/config.local.yaml"], { cwd: workspace });
     cliHooks.which = whichBoth;

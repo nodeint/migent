@@ -390,7 +390,8 @@ without asking, for a caller that has no terminal. Declining leaves the files
 unchanged. The upgrade still runs one version at a time. The early versions
 keep their historical, provider-keyed `thinking` steps; the step from version 4
 to 5 is structural for every client, and version 5 to 6 replaces `provider`
-with `client.type`:
+with `client.type`. Version 6 to 7 replaces `produces` and top-level `outputs`
+with the artifact registry:
 
 - config: `models` becomes `agents`; an agent's `client: <id>` becomes
   `client.type` and its `options` become `client.options`; a role's
@@ -400,6 +401,18 @@ with `client.type`:
 - workflows: a stage's `model` becomes `agent`, and stage `options` are
   **deleted**. The notes list each deleted option, so you can recreate it as an
   inline `agent` on that stage.
+- workflows, 6 to 7: each `produces.artifact` becomes a top-level `artifacts`
+  entry referenced from the stage by id, and `outputs` is removed. The id is the
+  first output name that names the artifact, else the stage id. Migration
+  analyses the whole workflow first and **writes nothing** when it must refuse:
+  two stages that would publish the same file name (rename one file), or an id
+  that collides or is not a valid artifact id. Otherwise it reports each
+  semantic change: an artifact that no v6 output named is now published; an
+  artifact in a `run_when` stage becomes `required: false`, is published when
+  produced, and its producer gate is relaxed; and several outputs aliasing one
+  artifact merge into one (`downstream.artifacts` values are rewritten to that
+  id, while the destination context names are kept, so a run without a mapping
+  now receives one context name instead of one per alias).
 
 Comments and layout are kept. When a file's layout cannot be edited line by line
 (for example flow-style mappings), the file is rewritten as canonical YAML and
