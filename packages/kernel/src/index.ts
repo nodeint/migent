@@ -105,6 +105,7 @@ export type { ConfigurationErrorDetails, SourcePosition } from "./errors.js";
 export { unknownRoleKeyEntries, unknownWorkflowKeyEntries } from "./authoring-diagnostics.js";
 export type { UnknownKey } from "./authoring-diagnostics.js";
 export { WORKFLOW_FREEZE_FILE, collectFrozenDrift } from "./session-freeze.js";
+export { parseYamlDocument } from "./yaml.js";
 export type { WorkflowFreeze } from "./session-freeze.js";
 export {
   isWorkflowV2,

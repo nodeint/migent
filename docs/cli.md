@@ -387,7 +387,10 @@ unchanged for validation to report.
 
 `migrate` prints the pending changes and asks before it writes. `--yes` writes
 without asking, for a caller that has no terminal. Declining leaves the files
-unchanged. The upgrade still runs one version at a time. The early versions
+unchanged. Session files follow the same
+steps: each `.migent/sessions/<id>/workflow.yaml` draft and the `workflow` in
+`workflow.frozen.yaml` are migrated, and the freeze's `source_sha256` is updated
+when its draft is rewritten. The upgrade still runs one version at a time. The early versions
 keep their historical, provider-keyed `thinking` steps; the step from version 4
 to 5 is structural for every client, and version 5 to 6 replaces `provider`
 with `client.type`. Version 6 to 7 replaces `produces` and top-level `outputs`

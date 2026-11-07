@@ -7,6 +7,7 @@
 - **Breaking:** Workflows use schema version 7. A top-level `artifacts` registry (`file`, `description`, `required`) replaces `stages[].produces` and top-level `outputs`; stages list artifact ids, and a decision may reference registry ids or define decision-local artifacts. Run `migent migrate`; it refuses without writing when two stages would publish the same file name or an id cannot be derived, and reports artifacts that are now published, `run_when` artifacts that become `required: false`, and merged output aliases.
 - Every registry artifact is published when the session completes. Required artifacts are guaranteed and hold completion until they exist; optional ones are copied only when present. Sources are the producer's current eligible completion, so a skipped stage or an unselected decision never supplies a stale file.
 - Prompts list every file a stage writes, with descriptions, and give dependents and routed stages the artifacts of the decision that was chosen. `downstream[].artifacts` is optional and, when omitted, passes every published artifact under its id. A mapping to an optional artifact is best-effort; doctor notes it, and `session show` lists absent optional artifacts as not produced.
+- `migent migrate` also upgrades each session's `workflow.yaml` draft and `workflow.frozen.yaml` pin, under the session lock. It skips symlinked session directories and files, and refuses to write if a session is running or a file changed since planning.
 - The bundled `plan` workflow records non-blocking review comments as `plan-comments.md`.
 
 ## 0.5.0
