@@ -9,7 +9,7 @@ export const PRESETS = ["implement", "plan"] as const;
 const ROLES = ["planner", "reviewer", "developer"] as const;
 
 export interface ModelChoice {
-  provider: string;
+  client: string;
   model: string;
   effort?: string;
   options: Record<string, string>;
@@ -75,9 +75,11 @@ function renderConfig(source: string, models: Record<(typeof ROLES)[number], Mod
       throw new ConfigurationError(`Project template config.yaml is missing or invalid: roles.${role}.agent.`);
     }
     const choice = models[role];
-    const node: Record<string, unknown> = { provider: choice.provider, model: choice.model };
+    const node: Record<string, unknown> = {
+      model: choice.model,
+      client: { type: choice.client, ...(Object.keys(choice.options).length > 0 ? { options: choice.options } : {}) },
+    };
     if (choice.effort !== undefined) node.effort = choice.effort;
-    if (Object.keys(choice.options).length > 0) node.client = { options: choice.options };
     doc.setIn(["roles", role, "agent"], doc.createNode(node));
   }
   return doc.toString({ defaultStringType: "PLAIN", defaultKeyType: "PLAIN", lineWidth: 0 });

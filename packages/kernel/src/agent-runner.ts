@@ -1,14 +1,15 @@
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import {
-  defaultProviders,
-  type Provider,
-  type FailureClassification,
-  type ResponseSource,
-  type NewSession,
-  type UsageCapture,
-} from "./provider-contract.js";
+import type {
+  CliClient,
+  ClientRegistry,
+  FailureClassification,
+  NewSession,
+  ResponseSource,
+  UsageCapture,
+} from "./cli-client.js";
+import { classifyFailure, createNewSession, sessionOptions } from "./client-policy.js";
 import { CancellationRequested, CommandExecutor, DEFAULT_TIMEOUT_SEC, type ExecutionFailure, type ProcessFacts, type StopReason } from "./command-executor.js";
 import { DEFAULT_INTERRUPT_POLICY, type InterruptPolicy, type InterruptReport, interruptSession, isSettled } from "./provider-interrupt.js";
 import {
@@ -59,16 +60,15 @@ export interface RunResult {
   failure_kind: string;
   /** UTC ISO instant for a quota failure. Empty otherwise. */
   reset_at: string;
-  provider: string;
+  client: string;
   /** Final status of this execution, e.g. `failed` when the provider exited non-zero without a classified failure. */
   execution_status?: string;
 }
 
 export interface RunRequest {
-  provider: string;
+  /** CLI client id, resolved through the runner's registry. */
+  client: string;
   model: string;
-  /** CLI client id to drive the model with. Absent means the provider's own. */
-  client?: string | null;
   prompt: string;
   /** What the prompt is; it picks the closing instruction and is kept for resume. */
   turn?: TurnKind | null;
@@ -131,7 +131,7 @@ function storedCorrection(metadata: Record<string, unknown>): QuestionCorrection
 }
 
 export class AgentToolRunner {
-  readonly providers: Record<string, Provider>;
+  readonly registry: ClientRegistry;
   readonly executor: CommandExecutor;
   readonly verifyRunner: VerifyRunner;
   itemProgress = false;
@@ -139,12 +139,12 @@ export class AgentToolRunner {
   private readonly cliVersions = new Map<string, string | null>();
 
   constructor(
-    providers?: Record<string, Provider>,
+    registry: ClientRegistry,
     timeoutSec: number | null = DEFAULT_TIMEOUT_SEC,
     verifyRunner: VerifyRunner = new VerifyRunner(),
   ) {
     this.verifyRunner = verifyRunner;
-    this.providers = providers ?? defaultProviders();
+    this.registry = registry;
     this.executor = new CommandExecutor(timeoutSec);
   }
 
@@ -156,21 +156,16 @@ export class AgentToolRunner {
     if (executionOrder !== null && executionOrder < 1) {
       throw new Error("Execution order must be at least 1.");
     }
-    const providerKey = request.provider.toLowerCase();
-    const base = this.providers[providerKey];
-    if (base === undefined) {
-      const supported = Object.keys(this.providers).sort().join(", ");
-      throw new Error(`Unsupported CLI provider: ${request.provider}. Supported: ${supported}`);
-    }
-    const provider = withClient(base, request.client ?? null);
+    const clientId = request.client;
+    const client = this.registry.get(clientId);
     const resolvedOptions = { ...(request.options ?? {}) };
-    provider.validateOptions(resolvedOptions);
-    const profile = profileOptions(provider, resolvedOptions);
-    const store = new SessionStore(workspacePath, undefined, this.providers);
+    client.validateOptions(resolvedOptions);
+    const profile = sessionOptions(client, resolvedOptions);
+    const store = new SessionStore(workspacePath, undefined, this.registry);
     const sessionId = request.sessionId ?? null;
     const stageId = request.stageId ?? "agent";
     const [record, isNew, context] = store.loadOrCreate(
-      providerKey,
+      clientId,
       request.model,
       profile,
       workspacePath,
@@ -180,19 +175,10 @@ export class AgentToolRunner {
       executionOrder,
       request.prompt,
       request.resumeExecutionId ?? null,
+      (record) => validateSessionProfile(record.client, record.model, record.options, clientId, request.model, profile),
     );
     request.onExecution?.(context.executionId);
-    if (!isNew) {
-      validateSessionProfile(
-        record.provider,
-        record.model,
-        record.options,
-        providerKey,
-        request.model,
-        profile,
-      );
-    }
-    const newSession = isNew ? (provider.createNewSession?.() ?? { agentId: null }) : null;
+    const newSession = isNew ? createNewSession(client) : null;
     if (newSession?.agentId) record.agentId = newSession.agentId;
     record.history.push({ role: "user", content: request.prompt });
     record.status = "running";
@@ -201,7 +187,7 @@ export class AgentToolRunner {
     const eventReporter = new ProviderEventReporter(
       store,
       context,
-      providerKey,
+      clientId,
       request.model,
       this.itemProgress,
     );
@@ -240,14 +226,15 @@ export class AgentToolRunner {
     store.savePrompt(context, turnPrompt);
     store.saveExecutionProgress(context, record, { response_protocol: RESPONSE_PROTOCOL, turn_kind: request.turn ?? null });
     const started: Record<string, unknown> = {
-      cli_version: this.cachedCliVersion(provider, providerKey, workspacePath),
+      cli_version: this.cachedCliVersion(client, clientId, workspacePath),
       ...readGitFacts(workspacePath),
     };
     if (Object.keys(profile).length > 0) started.options = profile;
-    eventReporter.emit("provider.stage_started", `${providerKey}/${request.model}`, started);
+    eventReporter.emit("provider.stage_started", `${clientId}/${request.model}`, started);
 
     return this.driveTurns({
-      provider,
+      client,
+      clientId,
       model: request.model,
       workspacePath,
       resolvedOptions,
@@ -280,7 +267,7 @@ export class AgentToolRunner {
   /** Finish a cancelled execution that has been reopened in place. Does not create an attempt. */
   async continueCancelled(workspace: string, sessionId: string, executionId: string): Promise<RunResult> {
     const workspacePath = resolveWorkspace(workspace);
-    const store = new SessionStore(workspacePath, undefined, this.providers);
+    const store = new SessionStore(workspacePath, undefined, this.registry);
     const context = store.executionContext(sessionId, executionId);
     if (context === null) throw new Error(`Execution ${executionId} was not found in session ${sessionId}.`);
     const metadata = JSON.parse(readFileSync(path.join(context.directory, "execution.json"), "utf8")) as unknown;
@@ -288,31 +275,28 @@ export class AgentToolRunner {
     if (metadata.status !== "running") {
       throw new Error(`Execution ${executionId} is ${String(metadata.status)}, not running.`);
     }
-    const providerKey = typeof metadata.provider === "string" ? metadata.provider.toLowerCase() : "";
+    const stageId = typeof metadata.stage_id === "string" ? metadata.stage_id : "agent";
+    const clientId = store.executionClient(sessionId, executionId);
     const model = typeof metadata.model === "string" ? metadata.model : "";
-    const provider = this.providers[providerKey];
-    if (provider === undefined) {
-      const supported = Object.keys(this.providers).sort().join(", ");
-      throw new Error(`Unsupported CLI provider: ${String(metadata.provider)}. Supported: ${supported}`);
-    }
+    const client = this.registry.get(clientId);
     const resolvedOptions = stringOptions(metadata.options);
-    provider.validateOptions(resolvedOptions);
-    const profile = profileOptions(provider, resolvedOptions);
+    client.validateOptions(resolvedOptions);
+    const profile = sessionOptions(client, resolvedOptions);
     const record = AgentSessionRecord.fromJson(
       JSON.parse(readFileSync(context.conversationReadPath, "utf8")) as unknown,
-      providerKey,
+      clientId,
       model,
       workspacePath,
     );
+    record.client = clientId;
     record.status = "running";
     store.save(record, context);
-    const stageId = typeof metadata.stage_id === "string" ? metadata.stage_id : "agent";
     const stage = loadRunStage(store, sessionId, stageId);
     const decisionValues = stage?.decisionValues ?? [];
     const ask = stage?.ask ?? (stage === null ? "human" : null);
     const artifactName = stage?.artifact ?? null;
     const verifyCommands = stage?.verify ?? [];
-    const eventReporter = new ProviderEventReporter(store, context, providerKey, model, this.itemProgress);
+    const eventReporter = new ProviderEventReporter(store, context, clientId, model, this.itemProgress);
     const progress = verifyProgress(metadata);
     const correction = storedCorrection(metadata);
     const questionFile = questionRequestPath(context);
@@ -347,7 +331,8 @@ export class AgentToolRunner {
         currentPrompt = renderProviderPrompt(currentPrompt, { ...sessionPaths(context, sessionId), contract, turn: storedTurn(metadata), decisionValues, decisionInstructions: stage?.decisionInstructions, ask, questionFile, artifactDirectory: context.artifactDirectory, artifactName });
       }
       return this.driveTurns({
-        provider,
+        client,
+        clientId,
         model,
         workspacePath,
         resolvedOptions,
@@ -388,7 +373,8 @@ export class AgentToolRunner {
       else throw error;
     }
     return this.driveTurns({
-      provider,
+      client,
+      clientId,
       model,
       workspacePath,
       resolvedOptions,
@@ -419,7 +405,8 @@ export class AgentToolRunner {
 
   private async driveTurns(state: TurnDrive): Promise<RunResult> {
     const {
-      provider,
+      client,
+      clientId,
       model,
       workspacePath,
       resolvedOptions,
@@ -508,7 +495,7 @@ export class AgentToolRunner {
         let turnResult: TurnResult;
         try {
           turnResult = await this.runTurn(
-            provider,
+            client,
             model,
             workspacePath,
             currentPrompt,
@@ -536,7 +523,7 @@ export class AgentToolRunner {
           completion_outputs: { state: "not-evaluated" },
         };
 
-        record.agentId = turnResult.providerId || record.agentId;
+        record.agentId = turnResult.sessionId || record.agentId;
         const turnDetails: Record<string, unknown> = {
           turn,
           agent_id: record.agentId,
@@ -620,7 +607,7 @@ export class AgentToolRunner {
               : `exit ${exitCode}; rejected: ${anomalyReason}`,
             {
               turn,
-              provider: eventReporter.provider,
+              client: eventReporter.client,
               exit_code: exitCode,
               signal: null,
               origin: "exit-only",
@@ -861,7 +848,7 @@ export class AgentToolRunner {
       ...(failureDetail === "" ? {} : { failure_detail: failureDetail }),
       failure_kind: classification?.kind ?? "",
       reset_at: classification?.kind === "quota" && classification.resetAt ? classification.resetAt : "",
-      provider: eventReporter.provider,
+      client: eventReporter.client,
       execution_status: record.status,
     };
   }
@@ -917,15 +904,16 @@ export class AgentToolRunner {
     store.carryVerifyArtifact(previous.artifactDirectory, context, artifactName);
   }
 
-  private cachedCliVersion(provider: Provider, providerKey: string, workspace: string): string | null {
-    if (this.cliVersions.has(providerKey)) return this.cliVersions.get(providerKey) ?? null;
-    const version = readCliVersion(provider, workspace);
-    this.cliVersions.set(providerKey, version);
+  private cachedCliVersion(client: CliClient, clientId: string, workspace: string): string | null {
+    const key = clientId.toLowerCase();
+    if (this.cliVersions.has(key)) return this.cliVersions.get(key) ?? null;
+    const version = readCliVersion(client, workspace);
+    this.cliVersions.set(key, version);
     return version;
   }
 
   private async runTurn(
-    provider: Provider,
+    client: CliClient,
     model: string,
     workspace: string,
     prompt: string,
@@ -942,7 +930,7 @@ export class AgentToolRunner {
       const promptFile = path.join(tmp, "prompt.txt");
       const lastMessageFile = path.join(tmp, "last_message.txt");
       writeFileSync(promptFile, prompt, "utf8");
-      const spec = provider.buildCommand({
+      const spec = client.runCommand({
         model,
         workspace,
         prompt,
@@ -952,6 +940,8 @@ export class AgentToolRunner {
         lastMessageFile,
         options,
       });
+      // One parser per turn: a client's parser may keep state between lines.
+      const parseEvent = client.createEventParser();
       const debugStep = debugEnabled()
         ? (step: string, fromWrapper = false) => {
             const line = `${new Date().toISOString()} turn=${turn} ${fromWrapper ? "wrapper: " : ""}${step}`;
@@ -960,8 +950,8 @@ export class AgentToolRunner {
             store.appendDebugLog(context, line);
           }
         : null;
-      // Every id this turn may own on the provider's server: the one Migent holds, and any
-      // different one the provider reports. Cleanup targets all of them.
+      // Every id this turn may own on the CLI's server: the one Migent holds, and any
+      // different one the CLI reports. Cleanup targets all of them.
       const expectedId = agentId || newSession?.agentId || null;
       const knownIds = new Set<string>(expectedId ? [expectedId] : []);
       const reports = new Map<string, InterruptReport>();
@@ -980,7 +970,7 @@ export class AgentToolRunner {
         for (const id of [...knownIds]) {
           // After the process is gone, only sessions not yet seen interrupted are asked again.
           if (phase === "after" && reports.get(id)?.outcome === "interrupted") continue;
-          const report = await interruptSession(provider, id, workspace, this.interruptPolicy);
+          const report = await interruptSession(client, id, workspace, this.interruptPolicy);
           if (report === null) continue;
           attempted = true;
           reports.set(id, report);
@@ -997,24 +987,24 @@ export class AgentToolRunner {
         }
         return attempted;
       };
-      const summarizer = new StreamSummarizer(provider.eventLabel !== undefined);
+      const summarizer = new StreamSummarizer(client.eventLabel !== undefined);
       const result = await this.executor.run(spec, workspace, {
         onDebug: debugStep,
-        // Only a provider with a server-side interrupt gets hooks, and so the exit grace period.
-        ...(provider.interruptCommand === undefined
+        // Only a client with a server-side interrupt gets hooks, and so the exit grace period.
+        ...(client.interruptCommand === undefined
           ? {}
           : {
               onInterrupt: (reason: StopReason) => cleanup("before", reason),
               onStopped: (reason: StopReason) => cleanup("after", reason),
             }),
         onOutput: (line) => {
-          summarizer.add(line, provider.eventLabel?.(line) ?? null);
-          const reported = provider.sessionIdFromLine?.(line) ?? null;
+          summarizer.add(line, client.eventLabel?.(line) ?? null);
+          const reported = client.sessionIdFromLine?.(line) ?? null;
           if (reported !== null && !knownIds.has(reported)) {
             knownIds.add(reported);
             reportMismatch(reported);
           }
-          const event = provider.parseProgressEvent?.(line);
+          const event = parseEvent(line);
           if (!isRecord(event) || typeof event.event !== "string") return;
           // The runner alone decides whether a turn failed. A protocol-level failure the CLI
           // announces mid-stream stays visible as a diagnostic, never as a second verdict.
@@ -1036,28 +1026,26 @@ export class AgentToolRunner {
         },
       });
       const { stdout, error: executorError, exitCode, failure } = result;
-      const [responseText, parsedProviderId, parsedSource] = provider.parseResponse(stdout, lastMessageFile);
-      if (parsedProviderId) reportMismatch(parsedProviderId);
-      const classification = classifyFinishedProcess(provider, stdout, exitCode, executorError);
+      const parsed = client.parseRun(stdout, lastMessageFile);
+      if (parsed.sessionId) reportMismatch(parsed.sessionId);
+      const classification = classifyFinishedProcess(client, stdout, exitCode, executorError);
       let invokeError = executorError;
       if (exitCode === 0 && classification !== null) invokeError = classification.message;
       let usage: UsageCapture | null = null;
-      if (provider.captureUsage) {
-        try {
-          const captured = provider.captureUsage(stdout);
-          usage = isRecord(captured) ? captured : null;
-        } catch {
-          usage = null;
-        }
+      try {
+        const captured = client.captureUsage(stdout);
+        usage = isRecord(captured) ? captured : null;
+      } catch {
+        usage = null;
       }
       return {
-        responseText,
-        providerId: parsedProviderId,
+        responseText: parsed.text,
+        sessionId: parsed.sessionId,
         invokeError,
         argv: spec.argv,
         usage,
         classification,
-        source: parsedSource,
+        source: parsed.source,
         exitCode,
         ...(failure ? { failure } : {}),
         ...(result.process ? { facts: result.process } : {}),
@@ -1069,10 +1057,10 @@ export class AgentToolRunner {
   }
 }
 
-/** What one provider process turn produced, for the turn loop. Internal. */
+/** What one CLI process turn produced, for the turn loop. Internal. */
 interface TurnResult {
   responseText: string;
-  providerId: string | null;
+  sessionId: string | null;
   invokeError: string | null;
   argv: string[];
   usage: UsageCapture | null;
@@ -1085,20 +1073,16 @@ interface TurnResult {
 }
 
 function classifyFinishedProcess(
-  provider: Provider,
+  client: CliClient,
   stdout: string,
   exitCode: number | null,
   executorError: string | null,
 ): FailureClassification | null {
   if (exitCode === null) return { kind: "provider", origin: "start", message: executorError ?? "" };
-  if (provider.classifyFailure) {
-    const classified = provider.classifyFailure(stdout, exitCode);
-    // Signal death (negative, or the shell's 128 + signal) is not a normal exit: its reply never counts.
-    const signalled = exitCode < 0 || (exitCode > 128 && exitCode <= 128 + 64);
-    return classified !== null && signalled ? { ...classified, origin: "start" } : classified;
-  }
-  if (exitCode !== 0) return { kind: "provider", origin: "exit-only", message: `CLI exited with code ${exitCode}.` };
-  return null;
+  const classified = classifyFailure(client, stdout, exitCode);
+  // Signal death (negative, or the shell's 128 + signal) is not a normal exit: its reply never counts.
+  const signalled = exitCode < 0 || (exitCode > 128 && exitCode <= 128 + 64);
+  return classified !== null && signalled ? { ...classified, origin: "start" } : classified;
 }
 
 function loadRunStage(store: SessionStore, sessionId: string, stageId: string): StageSpec | null {
@@ -1121,38 +1105,23 @@ function loadRunStage(store: SessionStore, sessionId: string, stageId: string): 
   }
 }
 
-function withClient(provider: Provider, client: string | null): Provider {
-  if (client === null) return provider;
-  if (provider.withClient === undefined) throw new Error(`Provider ${provider.command} cannot switch CLI client.`);
-  return provider.withClient(client) as Provider;
-}
-
-function profileOptions(provider: Provider, options: Record<string, string>): Record<string, string> {
-  if (provider.profileOptions) return { ...provider.profileOptions(options) };
-  const names = new Set(
-    (provider.providerOptions?.() ?? []).filter((item) => item.overridable).map((item) => item.name),
-  );
-  const profile: Record<string, string> = {};
-  for (const [key, value] of Object.entries(options)) {
-    if (names.has(key)) profile[key] = value;
-  }
-  return profile;
-}
-
 function validateSessionProfile(
-  previousProvider: string,
+  previousClient: string,
   previousModel: string,
   previousOptions: Record<string, string>,
-  provider: string,
+  client: string,
   model: string,
   options: Record<string, string>,
 ): void {
   if (
-    previousProvider !== provider ||
+    previousClient !== client ||
     previousModel !== model ||
     !sameOptions(previousOptions, options)
   ) {
-    throw new Error("Cannot resume an agent session with a different provider, model, or options.");
+    throw new ConfigurationError(
+      `Cannot resume an agent session with a different client, model, or options: ` +
+        `recorded ${previousClient}/${previousModel}, requested ${client}/${model}. Start a new attempt.`,
+    );
   }
 }
 
@@ -1201,7 +1170,8 @@ interface PendingVerify {
 }
 
 interface TurnDrive {
-  provider: Provider;
+  client: CliClient;
+  clientId: string;
   model: string;
   workspacePath: string;
   resolvedOptions: Record<string, string>;
@@ -1286,18 +1256,17 @@ function savedOutcome(
   return resolveStageOutcome(responseText, context2);
 }
 
-function readCliVersion(provider: Provider, workspace: string): string | null {
-  if (!provider.versionCommand) return null;
-  const argv = provider.versionCommand();
-  const command = argv[0];
+function readCliVersion(client: CliClient, workspace: string): string | null {
+  const spec = client.versionCommand();
+  const command = spec.argv[0];
   if (command === undefined) return null;
-  const result = spawnProviderSync(command, argv.slice(1), {
+  const result = spawnProviderSync(command, spec.argv.slice(1), {
     encoding: "utf8",
     timeout: 10_000,
     cwd: workspace,
   });
-  if (result.error || result.status !== 0 || !provider.parseVersion) return null;
-  return provider.parseVersion(result.stdout ?? "");
+  if (result.error || result.status !== 0) return null;
+  return client.parseVersion(result.stdout ?? "");
 }
 
 function readGitFacts(workspace: string): { git_head: string | null; git_dirty: boolean | null } {

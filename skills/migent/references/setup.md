@@ -18,13 +18,13 @@ The default workflows use three roles:
 - **Reviewer:** checks the plan or implementation and identifies required fixes.
 - **Developer:** implements and verifies the work.
 
-Use the selected provider and model IDs:
+Use the selected client and model IDs:
 
 ```bash
 migent init --no-input \
-  --planner-provider <provider> --planner-model <model> --planner-effort <effort> \
-  --reviewer-provider <provider> --reviewer-model <model> --reviewer-effort <effort> \
-  --developer-provider <provider> --developer-model <model> --developer-effort <effort>
+  --planner-client <client> --planner-model <model> --planner-effort <effort> \
+  --reviewer-client <client> --reviewer-model <model> --reviewer-effort <effort> \
+  --developer-client <client> --developer-model <model> --developer-effort <effort>
 ```
 
 Effort flags are optional. Use values supported by each model; see

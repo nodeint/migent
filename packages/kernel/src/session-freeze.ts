@@ -1,4 +1,5 @@
-import type { ProviderResolver } from "./provider-contract.js";
+import type { ClientRegistry } from "./cli-client.js";
+import { legacyClientOf } from "./legacy-provider.js";
 import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import path from "node:path";
@@ -49,7 +50,7 @@ export function writeWorkflowFreeze(
   sessionDirectory: string,
   workspace: string,
   workflow: WorkflowDocument,
-  resolveProvider?: ProviderResolver,
+  resolveClient?: ClientRegistry,
 ): WrittenFreeze {
   const config = loadWorkspaceConfig(workspace);
   const roles: Record<string, string[]> = {};
@@ -57,7 +58,7 @@ export function writeWorkflowFreeze(
   const targets: Record<string, StageTarget> = {};
   for (const stage of Object.values(workflow.stages)) {
     if (!isRoleStage(stage)) continue;
-    const target = resolveStageSpec(config, stage, undefined, resolveProvider);
+    const target = resolveStageSpec(config, stage, undefined, resolveClient);
     targets[stage.id] = copyTarget(target);
   }
   const sourceSha256 = sourceFileHash(workflow.source);
@@ -65,7 +66,7 @@ export function writeWorkflowFreeze(
   const workflowBody = workflowMapping(workflow);
   parseWorkflowMapping(workflowBody, filePath);
   const text = stringify(
-    { source_sha256: sourceSha256, workflow: workflowBody, roles, targets },
+    { schema_version: 2, source_sha256: sourceSha256, workflow: workflowBody, roles, targets },
     { lineWidth: 0 },
   );
   writeFileAtomic(filePath, text);
@@ -106,7 +107,7 @@ export function readWorkflowFreeze(sessionDirectory: string): WorkflowFreeze | n
     sourceSha256,
     workflow,
     roles: readRoles(parsed.roles, filePath),
-    targets: readTargets(parsed.targets, filePath),
+    targets: readTargets(parsed.targets, filePath, parsed.schema_version),
   };
 }
 
@@ -119,16 +120,16 @@ export function frozenStageTarget(
   stageId: string,
   override?: ModelOverride,
 ): StageTarget {
-  const provider = override?.provider ?? null;
+  const client = override?.client ?? null;
   const model = override?.model ?? null;
   const options = override?.options ?? null;
-  if ((provider === null) !== (model === null)) {
+  if ((client === null) !== (model === null)) {
     throw new ConfigurationError(
-      "Pass both --provider and --model to override the resolved stage model, or omit both.",
+      "Pass both --client and --model to override the resolved stage model, or omit both.",
     );
   }
-  if (provider !== null && model !== null) {
-    return { provider, model, options: { ...(options ?? {}) } };
+  if (client !== null && model !== null) {
+    return { client, model, options: { ...(options ?? {}) } };
   }
   const target = freeze.targets[stageId];
   if (target === undefined) throw new ConfigurationError(`Stage not found: ${stageId}`);
@@ -137,9 +138,7 @@ export function frozenStageTarget(
 }
 
 function copyTarget(target: StageTarget, options: Record<string, string> = target.options): StageTarget {
-  const copy: StageTarget = { provider: target.provider, model: target.model, options: { ...options } };
-  if (target.client !== undefined) copy.client = target.client;
-  return copy;
+  return { client: target.client, model: target.model, options: { ...options } };
 }
 
 export function frozenRoleInstructions(freeze: WorkflowFreeze, role: string): string[] {
@@ -171,12 +170,12 @@ export function warnIfFrozenDrift(
   sessionId: string,
   workflowPath: string | null,
   workflowId: string | null,
-  resolveProvider?: ProviderResolver,
+  resolveClient?: ClientRegistry,
 ): void {
   const sessionDirectory = path.join(workspace, ".migent", "sessions", sessionId);
   const freeze = readWorkflowFreeze(sessionDirectory);
   if (freeze === null) return;
-  for (const detail of collectFrozenDrift(workspace, freeze, workflowPath, workflowId, resolveProvider, false)) {
+  for (const detail of collectFrozenDrift(workspace, freeze, workflowPath, workflowId, resolveClient, false)) {
     note(sessionId, detail);
   }
 }
@@ -190,7 +189,7 @@ export function collectFrozenDrift(
   freeze: WorkflowFreeze,
   workflowPath: string | null,
   workflowId: string | null,
-  resolveProvider: ProviderResolver | undefined,
+  resolveClient: ClientRegistry | undefined,
   quiet: boolean,
 ): string[] {
   const details: string[] = [];
@@ -230,7 +229,7 @@ export function collectFrozenDrift(
   if (live !== null && config !== null) {
     for (const [stageId, target] of Object.entries(freeze.targets)) {
       const stage = live.stages[stageId];
-      if (stage === undefined || !sameTarget(target, liveTarget(config, stage, resolveProvider))) {
+      if (stage === undefined || !sameTarget(target, liveTarget(config, stage, resolveClient))) {
         details.push(`Stage ${stageId} model differs.`);
       }
     }
@@ -251,10 +250,10 @@ export function collectFrozenDrift(
   return details;
 }
 
-function liveTarget(config: Record<string, unknown>, stage: StageSpec, resolveProvider?: ProviderResolver): StageTarget | null {
+function liveTarget(config: Record<string, unknown>, stage: StageSpec, resolveClient?: ClientRegistry): StageTarget | null {
   if (!isRoleStage(stage)) return null;
   try {
-    return resolveStageSpec(config, stage, undefined, resolveProvider);
+    return resolveStageSpec(config, stage, undefined, resolveClient);
   } catch (error) {
     if (error instanceof ConfigurationError) return null;
     throw error;
@@ -267,9 +266,8 @@ function note(sessionId: string, detail: string): void {
 
 function sameTarget(frozen: StageTarget, live: StageTarget | null): boolean {
   if (live === null) return false;
-  return frozen.provider === live.provider &&
+  return frozen.client === live.client &&
     frozen.model === live.model &&
-    frozen.client === live.client &&
     sameMap(frozen.options, live.options);
 }
 
@@ -385,29 +383,46 @@ function readRoles(value: unknown, filePath: string): Record<string, string[]> {
   return roles;
 }
 
-function readTargets(value: unknown, filePath: string): Record<string, StageTarget> {
+function readTargets(value: unknown, filePath: string, schemaVersion: unknown): Record<string, StageTarget> {
   if (!isRecord(value)) throw corrupt(filePath, "targets must be a mapping");
+  const legacy = typeof schemaVersion !== "number" || schemaVersion < 2;
   const targets: Record<string, StageTarget> = {};
   for (const [stageId, raw] of Object.entries(value)) {
-    if (!isRecord(raw) || typeof raw.provider !== "string" || typeof raw.model !== "string") {
-      throw corrupt(filePath, `targets.${stageId} must name a provider and model`);
+    if (!isRecord(raw) || typeof raw.model !== "string") {
+      throw corrupt(filePath, `targets.${stageId} must name a client and model`);
     }
-    if (raw.provider.trim() === "" || raw.model.trim() === "") {
-      throw corrupt(filePath, `targets.${stageId} must name a provider and model`);
+    const client = legacy ? legacyTargetClient(raw, filePath, stageId) : raw.client;
+    if (typeof client !== "string") {
+      throw corrupt(filePath, `targets.${stageId} must name a client and model`);
+    }
+    if (raw.model.trim() === "") {
+      throw corrupt(filePath, `targets.${stageId} must name a client and model`);
     }
     targets[stageId] = {
-      provider: raw.provider,
+      client,
       model: raw.model,
       options: readOptionStrings(raw.options, filePath, stageId),
     };
-    if (raw.client != null) {
-      if (typeof raw.client !== "string" || raw.client.trim() === "") {
-        throw corrupt(filePath, `targets.${stageId}.client must be a non-empty string`);
-      }
-      targets[stageId].client = raw.client;
-    }
   }
   return targets;
+}
+
+/** Freeze schema_version 1 named a provider and optionally the client that actually ran. */
+function legacyTargetClient(
+  raw: Record<string, unknown>,
+  filePath: string,
+  stageId: string,
+): string | null {
+  if (raw.client != null) {
+    if (typeof raw.client !== "string" || raw.client.trim() === "") {
+      throw corrupt(filePath, `targets.${stageId}.client must be a non-empty string`);
+    }
+    return raw.client;
+  }
+  if (typeof raw.provider !== "string" || raw.provider.trim() === "") {
+    throw corrupt(filePath, `targets.${stageId} must name a provider and model`);
+  }
+  return legacyClientOf(raw.provider) ?? "";
 }
 
 function readOptionStrings(value: unknown, filePath: string, stageId: string): Record<string, string> {

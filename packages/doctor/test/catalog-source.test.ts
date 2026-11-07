@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
-import { ClaudeCodeClient, ClaudeProvider } from "@nodeint/migent-adapters";
+import { ClaudeCodeClient, GrokClient } from "@nodeint/migent-adapters";
+import type { CliModelCatalog } from "@nodeint/migent-kernel";
 import { clientCatalogSource, loadCatalog, loadOptionValues } from "../src/catalog.ts";
 
 const CATALOG = JSON.stringify({
@@ -29,19 +30,14 @@ test("a client catalog source sends the client's own stdin and argv", async () =
   expect(seen?.input).toContain("migent-models");
 });
 
-test("a provider catalog source keeps the same behavior", async () => {
-  const provider = new ClaudeProvider();
-  const client = new ClaudeCodeClient();
-  let providerInput: string | undefined;
-  const catalog = await loadCatalog(provider, () => "/bin/claude", (argv) => {
-    void argv;
-    providerInput = provider.modelCatalogInput();
-    return CATALOG;
+test("a client option-values command keeps the shared loader behavior", async () => {
+  const client = new GrokClient();
+  const catalog: CliModelCatalog = { ids: ["grok-4"], defaultId: null, optionValues: [], valuesFor: () => null };
+  let seen: string[] | undefined;
+  const values = await loadOptionValues(clientCatalogSource(client), "reasoning-effort", "grok-4", catalog, () => "/bin/grok", (argv) => {
+    seen = argv;
+    return "use one of: low, high";
   });
-  expect(catalog.ids).toContain("opus");
-  expect(providerInput).toBe(client.modelsCommand().stdin);
-  expect(await loadOptionValues(provider, "effort", "opus", catalog, () => "/bin/claude", () => CATALOG)).toEqual([
-    "low",
-    "high",
-  ]);
+  expect(values).toEqual(["low", "high"]);
+  expect(seen).toEqual(client.optionValuesCommand("reasoning-effort", "grok-4")?.argv);
 });

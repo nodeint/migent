@@ -1,4 +1,4 @@
-import type { ProviderInfo, ProviderResolver } from "./provider-contract.js";
+import type { ClientInfo, ClientRegistry } from "./cli-client.js";
 import { readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { stringify } from "yaml";
@@ -11,24 +11,22 @@ import { parseYamlDocument } from "./yaml.js";
 export { documentVersion } from "./record.js";
 
 export interface StageTarget {
-  provider: string;
+  /** CLI client id, resolved through the registry. Always present on an effective agent. */
+  client: string;
   model: string;
   options: Record<string, string>;
-  /** CLI client id the provider should drive this model with. Absent means the provider's own. */
-  client?: string;
 }
 
 export interface ModelOverride {
-  provider?: string | null;
+  client?: string | null;
   model?: string | null;
   options?: Record<string, string> | null;
 }
 
 const stageTargetSchema = z.object({
-  provider: z.string(),
+  client: z.string(),
   model: z.string(),
   options: z.record(z.string(), z.string()),
-  client: z.string().optional(),
 });
 
 const mappingSchema = z.record(z.string(), z.unknown());
@@ -221,55 +219,48 @@ export function listAgentDefinitions(config: Record<string, unknown>): AgentDefi
   return entries;
 }
 
-export interface EffectiveProviderFailure {
-  code: "provider-unsupported" | "client-required" | "client-unsupported" | "options-invalid";
+export interface EffectiveClientFailure {
+  code: "client-required" | "client-unsupported" | "options-invalid";
   /** Text that follows the field label, e.g. `is not supported: x`. For options it is the bare reason. */
   message: string;
   /** Which part of the target failed, relative to its field. */
-  part: "provider" | "client" | "options";
+  part: "client" | "options";
 }
 
 /**
- * Binds a target to its provider and CLI client and validates its options against that provider.
- * Uses provider metadata only: no process is spawned and PATH is not consulted. A failure other than
- * `options-invalid` leaves `provider` unset.
+ * Binds a target to its CLI client and validates its options against that client.
+ * Uses client metadata only: no process is spawned and PATH is not consulted. A failure other than
+ * `options-invalid` leaves `client` unset.
  */
-export function resolveEffectiveProvider(
-  providers: Readonly<Record<string, ProviderInfo>>,
+export function resolveEffectiveClient(
+  registry: ClientRegistry,
   target: StageTarget,
-): { provider?: ProviderInfo; failure?: EffectiveProviderFailure } {
-  const provider = Object.hasOwn(providers, target.provider) ? providers[target.provider] : undefined;
-  if (provider === undefined) {
-    return { failure: { code: "provider-unsupported", part: "provider", message: `is not supported: ${target.provider}` } };
-  }
-  if (provider.requiresClient === true && target.client === undefined) {
+): { client?: ClientInfo; failure?: EffectiveClientFailure } {
+  if (target.client.trim() === "") {
     return {
-      failure: { code: "client-required", part: "client", message: `is required: ${target.provider} has no default CLI client.` },
+      failure: { code: "client-required", part: "client", message: "is required: the agent names no client.type." },
     };
   }
-  let effective = provider;
-  if (target.client !== undefined) {
-    try {
-      if (provider.withClient === undefined) throw new Error(`${target.provider} cannot switch CLI client.`);
-      effective = provider.withClient(target.client);
-    } catch (error) {
-      return {
-        failure: {
-          code: "client-unsupported",
-          part: "client",
-          message: `is not supported: ${error instanceof Error ? error.message : String(error)}`,
-        },
-      };
-    }
+  let client: ClientInfo;
+  try {
+    client = registry.get(target.client);
+  } catch (error) {
+    return {
+      failure: {
+        code: "client-unsupported",
+        part: "client",
+        message: `is not supported: ${error instanceof Error ? error.message : String(error)}`,
+      },
+    };
   }
   try {
-    effective.validateOptions(target.options);
+    client.validateOptions(target.options);
   } catch (error) {
     if (!(error instanceof Error)) throw error;
-    // The provider is still bound, so callers can report its executable next to the options problem.
-    return { provider: effective, failure: { code: "options-invalid", part: "options", message: error.message } };
+    // The client is still bound, so callers can report its executable next to the options problem.
+    return { client, failure: { code: "options-invalid", part: "options", message: error.message } };
   }
-  return { provider: effective };
+  return { client };
 }
 
 export function stringifyConfig(config: Record<string, unknown>): string {
@@ -281,30 +272,30 @@ export function resolveStageTarget(
   workflowId: string,
   stageId: string,
   override?: ModelOverride,
-  resolveProvider?: ProviderResolver,
+  registry?: ClientRegistry,
 ): StageTarget {
-  const { provider, model, options } = normalizeOverride(override);
-  if ((provider === null) !== (model === null)) {
+  const { client, model, options } = normalizeOverride(override);
+  if ((client === null) !== (model === null)) {
     throw new ConfigurationError(
-      "Pass both --provider and --model to override the resolved stage model, or omit both.",
+      "Pass both --client and --model to override the resolved stage model, or omit both.",
     );
   }
-  if (provider !== null && model !== null) {
-    return stageTarget(provider, model, { ...(options ?? {}) });
+  if (client !== null && model !== null) {
+    return stageTarget(client, model, { ...(options ?? {}) });
   }
   const workflow = loadNamedWorkflow(workspace, workflowId);
   const stage = workflow.stages[stageId];
   if (stage === undefined) throw new ConfigurationError(`Stage not found: ${stageId}`);
   if (!isRoleStage(stage)) throw new ConfigurationError(`Stage ${stageId} has no role.`);
   const config = loadWorkspaceConfig(workspace);
-  return resolveStageSpec(config, stage, options, resolveProvider);
+  return resolveStageSpec(config, stage, options, registry);
 }
 
 export function resolveStageSpec(
   config: Record<string, unknown>,
   stage: RoleStageSpec,
   options?: Record<string, string> | null,
-  resolveProvider?: ProviderResolver,
+  registry?: ClientRegistry,
 ): StageTarget {
   const agentField =
     stage.agent !== null ? field("stages", stage.id, "agent") : field("roles", stage.role, "agent");
@@ -312,40 +303,40 @@ export function resolveStageSpec(
     agent: stage.agent,
     agentField,
     options: stage.options,
-  }, resolveProvider);
-  return stageTarget(declared.provider, declared.model, mergeOptions(declared.options, options), declared.client);
+  }, registry);
+  return stageTarget(declared.client, declared.model, mergeOptions(declared.options, options));
 }
 
 export function resolveRoleTarget(
   workspace: string,
   role: string,
   override?: ModelOverride,
-  resolveProvider?: ProviderResolver,
+  registry?: ClientRegistry,
 ): StageTarget {
-  const { provider, model, options } = normalizeOverride(override);
-  if ((provider === null) !== (model === null)) {
+  const { client, model, options } = normalizeOverride(override);
+  if ((client === null) !== (model === null)) {
     throw new ConfigurationError(
-      "Pass both --provider and --model to override the resolved model, or omit both.",
+      "Pass both --client and --model to override the resolved model, or omit both.",
     );
   }
   const config = loadWorkspaceConfig(workspace);
-  if (provider !== null && model !== null) {
+  if (client !== null && model !== null) {
     const roles = mapping(config.roles, field("roles"));
     validateRoleKeys(mapping(roles[role], field("roles", role)), role);
-    return stageTarget(provider, model, { ...(options ?? {}) });
+    return stageTarget(client, model, { ...(options ?? {}) });
   }
-  return resolveRoleCascade(config, role, { options }, resolveProvider);
+  return resolveRoleCascade(config, role, { options }, registry);
 }
 
 export function loadAgentTarget(
   config: Record<string, unknown>,
   agentName: string,
-  resolveProvider?: ProviderResolver,
+  registry?: ClientRegistry,
 ): StageTarget {
   rejectLegacyConfigKeys(config);
   const agents = mapping(config.agents, field("agents"));
   const label = field("agents", agentName);
-  return loadAgentDefinition(mapping(agents[agentName], label), label, resolveProvider);
+  return loadAgentDefinition(mapping(agents[agentName], label), label, registry);
 }
 
 const CLIENT_KEYS = ["type", "options"];
@@ -357,7 +348,7 @@ const CLIENT_KEYS = ["type", "options"];
 export function loadAgentDefinition(
   value: unknown,
   where: string | Field,
-  resolveProvider?: ProviderResolver,
+  registry?: ClientRegistry,
 ): StageTarget {
   const here = toField(where);
   const label = here.label;
@@ -368,7 +359,12 @@ export function loadAgentDefinition(
       { code: "agent-options-moved", path: [...here.path, "options"] },
     );
   }
-  const provider = requiredString(agentConfig.provider, child(here, "provider"));
+  if (Object.hasOwn(agentConfig, "provider")) {
+    throw new ConfigurationError(
+      `${label}.provider was removed in schema_version 6; set ${label}.client.type. Run \`migent migrate\`.`,
+      { code: "legacy-key", path: [...here.path, "provider"] },
+    );
+  }
   const clientField = child(here, "client");
   let client: string | undefined;
   let options: Record<string, string> = {};
@@ -391,16 +387,22 @@ export function loadAgentDefinition(
     client = optionalString(clientConfig.type, child(clientField, "type"));
     options = readOptions(clientConfig.options, child(clientField, "options"));
   }
+  if (client === undefined) {
+    throw new ConfigurationError(
+      `Missing ${clientField.label}.type. Set the agent's CLI client (for example, ${clientField.label}.type: opencode).`,
+      { code: "client-required", path: [...clientField.path, "type"] },
+    );
+  }
   if (Object.hasOwn(agentConfig, "effort")) {
     const effortField = child(here, "effort");
     const effort = requiredString(agentConfig.effort, effortField);
     const details = { code: "effort-unsupported", path: effortField.path };
-    if (resolveProvider === undefined) {
-      throw new ConfigurationError(`${label}.effort requires a provider resolver.`, details);
+    if (registry === undefined) {
+      throw new ConfigurationError(`${label}.effort requires a client registry.`, details);
     }
     let option: string | undefined;
     try {
-      option = resolveProvider(provider, client).effortOption;
+      option = registry.get(client).effortOption;
     } catch (error) {
       throw new ConfigurationError(`${label}.effort: ${error instanceof Error ? error.message : String(error)}`, details);
     }
@@ -415,7 +417,7 @@ export function loadAgentDefinition(
     }
     options[option] = effort;
   }
-  return stageTarget(provider, requiredString(agentConfig.model, child(here, "model")), options, client);
+  return stageTarget(client, requiredString(agentConfig.model, child(here, "model")), options);
 }
 
 export function resolveRoleCascade(
@@ -426,7 +428,7 @@ export function resolveRoleCascade(
     agentField?: string | Field | null;
     options?: Record<string, string> | null;
   },
-  resolveProvider?: ProviderResolver,
+  registry?: ClientRegistry,
 ): StageTarget {
   rejectLegacyConfigKeys(config);
   const roles = mapping(config.roles, field("roles"));
@@ -438,7 +440,7 @@ export function resolveRoleCascade(
     stageAgent === null ? role.agent : stageAgent.kind === "named" ? stageAgent.name : stageAgent.value;
   let target: StageTarget;
   if (isRecord(selection)) {
-    target = loadAgentDefinition(selection, agentField, resolveProvider);
+    target = loadAgentDefinition(selection, agentField, registry);
   } else {
     const name = requiredString(selection, agentField);
     if (!isRecord(config.agents) || !Object.hasOwn(config.agents, name)) {
@@ -447,13 +449,12 @@ export function resolveRoleCascade(
         path: agentField.path,
       });
     }
-    target = loadAgentTarget(config, name, resolveProvider);
+    target = loadAgentTarget(config, name, registry);
   }
   return stageTarget(
-    target.provider,
+    target.client,
     target.model,
     mergeOptions(target.options, args?.options),
-    target.client,
   );
 }
 
@@ -575,21 +576,20 @@ function mergeOptions(
 }
 
 function stageTarget(
-  provider: string,
+  client: string,
   model: string,
   options: Record<string, string>,
-  client?: string,
 ): StageTarget {
-  return stageTargetSchema.parse(client === undefined ? { provider, model, options } : { provider, model, options, client });
+  return stageTargetSchema.parse({ client, model, options });
 }
 
 function normalizeOverride(override?: ModelOverride): {
-  provider: string | null;
+  client: string | null;
   model: string | null;
   options: Record<string, string> | null;
 } {
   return {
-    provider: override?.provider ?? null,
+    client: override?.client ?? null,
     model: override?.model ?? null,
     options: override?.options ?? null,
   };

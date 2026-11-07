@@ -6,17 +6,18 @@ import { afterEach, beforeEach, expect, test } from "vitest";
 import { main } from "../src/index.ts";
 import { capture } from "./support.ts";
 
-const CONFIG = `schema_version: 5
+const CONFIG = `schema_version: 6
 agents:
   fast:
-    provider: grok
+    client:
+      type: grok
     model: grok-4.6
 roles:
   developer:
     agent: fast
 `;
 
-const WORKFLOW = `schema_version: 5
+const WORKFLOW = `schema_version: 6
 id: build
 stages:
   - id: implement
@@ -64,32 +65,32 @@ test("syntax errors carry a position; strict JSON rejects trailing commas", asyn
 });
 
 test("a local draft needs schema_version and a project config", async () => {
-  const local = await run(["config", "validate", "@draft", "--scope", "local", "--format", "yaml", "--json"], "agents:\n  fast:\n    provider: grok\n    model: grok-4.7\n");
+  const local = await run(["config", "validate", "@draft", "--scope", "local", "--format", "yaml", "--json"], "agents:\n  fast:\n    model: grok-4.7\n");
   expect(local.code).toBe(1);
   expect(local.json.diagnostics.map((d: { code: string }) => d.code)).toContain("schema-outdated");
-  const fine = await run(["config", "validate", "@draft", "--scope", "local", "--format", "yaml", "--json"], "schema_version: 5\nagents:\n  fast:\n    provider: grok\n    model: grok-4.7\n");
+  const fine = await run(["config", "validate", "@draft", "--scope", "local", "--format", "yaml", "--json"], "schema_version: 6\nagents:\n  fast:\n    client:\n      type: grok\n    model: grok-4.7\n");
   expect(fine.code).toBe(0);
 });
 
 test("render and save write the same bytes, and save guards conflicts", async () => {
   const rendered = await run(["config", "render", "@draft", "--format", "yaml", "--json"], CONFIG);
   const target = path.join(root, ".migent", "config.local.yaml");
-  const created = await run(["config", "save", "@draft", "--scope", "local", "--format", "yaml", "--json"], "schema_version: 5\n# note\nagents:\n  fast:\n    provider: grok\n    model: grok-4.7\n");
+  const created = await run(["config", "save", "@draft", "--scope", "local", "--format", "yaml", "--json"], "schema_version: 6\n# note\nagents:\n  fast:\n    client:\n      type: grok\n    model: grok-4.7\n");
   expect(created.code).toBe(0);
   expect(created.json).toMatchObject({ written: true, file: "config.local.yaml" });
   expect(created.json.hash).toBe(sha256Hex(readFileSync(target, "utf8")));
   expect(rendered.json.rendered).toBe(CONFIG);
 
-  const again = await run(["config", "save", "@draft", "--scope", "local", "--format", "yaml", "--json"], "schema_version: 5\n");
+  const again = await run(["config", "save", "@draft", "--scope", "local", "--format", "yaml", "--json"], "schema_version: 6\n");
   expect(again.code).toBe(3);
   expect(again.json.diagnostics.at(-1).code).toBe("already-exists");
 
-  const stale = await run(["config", "save", "@draft", "--scope", "local", "--format", "yaml", "--json", "--base-hash", "0".repeat(64)], "schema_version: 5\n");
+  const stale = await run(["config", "save", "@draft", "--scope", "local", "--format", "yaml", "--json", "--base-hash", "0".repeat(64)], "schema_version: 6\n");
   expect(stale.code).toBe(3);
   expect(stale.json.diagnostics.at(-1).code).toBe("stale-base");
 
   const before = created.json.hash as string;
-  const replaced = await run(["config", "save", "@draft", "--scope", "local", "--format", "yaml", "--json", "--base-hash", before], "schema_version: 5\n");
+  const replaced = await run(["config", "save", "@draft", "--scope", "local", "--format", "yaml", "--json", "--base-hash", before], "schema_version: 6\n");
   expect(replaced.code).toBe(0);
   expect(replaced.json.hash).not.toBe(before);
   expect(readdirSync(path.join(root, ".migent")).filter((name) => name.endsWith(".tmp") || name.endsWith(".lock"))).toEqual([]);
@@ -137,11 +138,11 @@ test("invocation errors are reported in the envelope", async () => {
 
 test("workflow validation applies catalog and companion schema rules", async () => {
   const wf = (dir: string) => path.join(root, ".migent", "workflows", dir);
-  writeFileSync(wf("empty.yaml"), "schema_version: 5\nid: empty\nstages: []\n");
+  writeFileSync(wf("empty.yaml"), "schema_version: 6\nid: empty\nstages: []\n");
   const downstream = WORKFLOW + "downstream:\n  - workflow: empty\n    task: go\n";
   const empty = await run(["workflow", "validate", "@draft", "--format", "yaml", "--json"], downstream);
   expect(empty.json.diagnostics[0]).toMatchObject({ code: "no-stages", severity: "warning", source: "workflow", file: "empty.yaml", draft: false });
-  writeFileSync(wf("broken.yaml"), "schema_version: 5\nid: broken\nstages: 123\n");
+  writeFileSync(wf("broken.yaml"), "schema_version: 6\nid: broken\nstages: 123\n");
   const broken = await run(["workflow", "validate", "@draft", "--format", "yaml", "--json"], downstream.replace("workflow: empty", "workflow: broken"));
   // Like the runtime, a sibling whose stages are not a list is a workflow with no stages.
   expect(broken.json.diagnostics.map((d: { code: string }) => d.code)).toContain("no-stages");
@@ -182,7 +183,7 @@ test("usage errors with --json use the envelope", async () => {
 test("parser paths use exact stage ids and data-backed field paths", async () => {
   const check = async (text: string) => (await run(["workflow", "validate", "@draft", "--format", "yaml", "--json"], text)).json.diagnostics[0];
   const stage = (id: string, extra = "") => `  - id: ${id}\n    role: developer\n    depends_on: []\n${extra}`;
-  const head = "schema_version: 5\nid: build\nstages:\n";
+  const head = "schema_version: 6\nid: build\nstages:\n";
   expect(await check(head + stage("a") + stage("a"))).toMatchObject({ code: "duplicate-stage-id", path: ["stages", 1, "id"] });
   expect(await check(head + stage("a") + "  - role: developer\n    depends_on: []\n")).toMatchObject({ path: ["stages", 1, "id"] });
   const dotted = await check(head + stage("a") + stage("a.b", "    session:\n      resume_from: 1\n"));
@@ -211,7 +212,7 @@ test("parent-level --json still yields an envelope for usage errors", async () =
 
 test("an ambiguous or blank stage id never sends the path to another stage", async () => {
   const check = async (text: string) => (await run(["workflow", "validate", "@draft", "--format", "yaml", "--json"], text)).json.diagnostics[0];
-  const head = "schema_version: 5\nid: build\nstages:\n";
+  const head = "schema_version: 6\nid: build\nstages:\n";
   const stage = (id: string, extra = "") => `  - id: ${JSON.stringify(id)}\n    role: developer\n    depends_on: []\n${extra}`;
   const first = await check(head + stage("a", "    session:\n      resume_from: 1\n") + stage("a.options"));
   expect(first.path).toEqual(["stages", 0, "session", "resume_from"]);
@@ -222,7 +223,7 @@ test("an ambiguous or blank stage id never sends the path to another stage", asy
 
 test("paths use the draft's own coordinates for routes and for a stage named id", async () => {
   const check = async (text: string) => (await run(["workflow", "validate", "@draft", "--format", "yaml", "--json"], text)).json.diagnostics[0];
-  const head = "schema_version: 5\nid: build\nstages:\n";
+  const head = "schema_version: 6\nid: build\nstages:\n";
   const route = await check(head + "  - id: a\n    role: developer\n    depends_on: []\n    decision:\n      - approved:\n          navigate: ghost\n");
   expect(route.path).toEqual(["stages", 0, "decision", 0, "approved", "navigate"]);
   const afterVerify = await check(head + "  - id: v\n    verify: [\"true\"]\n    depends_on: []\n  - id: a\n    role: developer\n    depends_on: [v]\n    decision:\n      - approved:\n          navigate: ghost\n");
@@ -236,18 +237,18 @@ test("paths use the draft's own coordinates for routes and for a stage named id"
   expect(named.path).toEqual(["stages", 0, "session", "resume_from"]);
 });
 
-test("provider option errors keep the origin of the bad options", async () => {
-  const local = (options: string) => writeFileSync(path.join(root, ".migent", "config.local.yaml"), `schema_version: 5\nagents:\n  fast:\n    client:\n      options:\n        ${options}\n`);
+test("client option errors keep the origin of the bad options", async () => {
+  const local = (options: string) => writeFileSync(path.join(root, ".migent", "config.local.yaml"), `schema_version: 6\nagents:\n  fast:\n    client:\n      options:\n        ${options}\n`);
   const validate = async (text: string) => (await run(["workflow", "validate", "@draft", "--format", "yaml", "--json"], text)).json.diagnostics;
   local("max_turns: abc");
   const plain = (await validate(WORKFLOW)).find((d: { code: string }) => d.code === "options-invalid");
   expect(plain).toMatchObject({ source: "local", draft: false, path: ["agents", "fast", "client", "options"] });
-  const withOwn = (await validate(WORKFLOW.replace("depends_on: []", "depends_on: []\n    agent:\n      provider: grok\n      model: grok-4.7\n      client:\n        options:\n          max_turns: \"3\"")))
+  const withOwn = (await validate(WORKFLOW.replace("depends_on: []", "depends_on: []\n    agent:\n      client:\n        type: grok\n        options:\n          max_turns: \"3\"\n      model: grok-4.7")))
     .find((d: { code: string }) => d.code === "options-invalid");
   // The stage overrides the bad value, so nothing is wrong any more.
   expect(withOwn).toBeUndefined();
   local("max_turns: \"3\"");
-  const own = (await validate(WORKFLOW.replace("depends_on: []", "depends_on: []\n    agent:\n      provider: grok\n      model: grok-4.7\n      client:\n        options:\n          max_turns: abc")))
+  const own = (await validate(WORKFLOW.replace("depends_on: []", "depends_on: []\n    agent:\n      client:\n        type: grok\n        options:\n          max_turns: abc\n      model: grok-4.7")))
     .find((d: { code: string }) => d.code === "options-invalid");
   expect(own).toMatchObject({ source: "workflow", draft: true, path: ["stages", 0, "agent"] });
 });
@@ -259,7 +260,7 @@ test("an intentionally empty shared agent is a warning, not an error", async () 
   expect(res.json.diagnostics.find((d: { code: string }) => d.code === "agent-unmapped")).toMatchObject({ severity: "warning" });
 });
 
-const MULTI_ERROR = `schema_version: 5
+const MULTI_ERROR = `schema_version: 6
 id: build
 stages:
   - id: implement
@@ -299,13 +300,13 @@ test("draft diagnostics carry an exclusive end position, and missing keys carry 
   expect(res.json.diagnostics[2].end_line).toBeUndefined();
   const json = await run(
     ["workflow", "validate", "@draft", "--format", "json", "--json"],
-    '{"schema_version": 5, "id": "build", "stages": [{"id": "a", "role": "ghost", "depends_on": []}]}',
+    '{"schema_version": 6, "id": "build", "stages": [{"id": "a", "role": "ghost", "depends_on": []}]}',
   );
   expect(json.json.diagnostics[0]).toMatchObject({ path: ["stages", 0, "role"], line: 1 });
   expect(json.json.diagnostics[0].end_column).toBeGreaterThan(json.json.diagnostics[0].column);
 });
 
-const COMMENTS = "# keep me\r\nschema_version: 5\r\nid: build\r\nstages:\r\n  - id: implement # the stage\r\n    role: developer\r\n    depends_on: []\r\n";
+const COMMENTS = "# keep me\r\nschema_version: 6\r\nid: build\r\nstages:\r\n  - id: implement # the stage\r\n    role: developer\r\n    depends_on: []\r\n";
 
 test("save --preserve-comments writes the base bytes when the data is unchanged", async () => {
   const target = path.join(root, ".migent", "workflows", "build.yaml");
@@ -347,7 +348,7 @@ test("a stale base with --preserve-comments leaves the file untouched", async ()
 
 test("comments that cannot be preserved fall back with a warning and write the draft's data", async () => {
   const target = path.join(root, ".migent", "workflows", "build.yaml");
-  const base = "# note\r\nschema_version: 5\r\nid: &build build\r\nstages:\r\n  - id: implement\r\n    role: developer\r\n    depends_on: []\r\n";
+  const base = "# note\r\nschema_version: 6\r\nid: &build build\r\nstages:\r\n  - id: implement\r\n    role: developer\r\n    depends_on: []\r\n";
   writeFileSync(target, base);
   const edited = `${WORKFLOW}    description: added\n`;
   const res = await run(["workflow", "save", "@draft", "--format", "yaml", "--json", "--preserve-comments", "--base-hash", sha256Hex(base)], edited);
@@ -360,13 +361,15 @@ test("comments that cannot be preserved fall back with a warning and write the d
 });
 
 test("config validate collects the companion layer failure and the draft's own errors", async () => {
-  const draft = `schema_version: 5
+  const draft = `schema_version: 6
 agents:
   fast:
-    provider: grok
+    client:
+      type: grok
     model: grok-4.6
   slow:
-    provider: nope
+    client:
+      type: nope
     model: ghost
 roles:
   developer:
@@ -380,7 +383,7 @@ roles:
   expect(res.code).toBe(1);
   expect(res.json.diagnostics.map((d: { code: string; source: string; draft: boolean }) => [d.code, d.source, d.draft])).toEqual([
     ["yaml-syntax", "local", false],
-    ["provider-unsupported", "project", true],
+    ["client-unsupported", "project", true],
     ["not-a-list", "project", true],
     ["unknown-agent", "project", true],
   ]);

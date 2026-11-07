@@ -4,7 +4,7 @@ import { AgentToolRunner, raiseCancellation, type BuildCommandInput, type Comman
 import { expect, test } from "vitest";
 import { cliHooks } from "../src/hooks.ts";
 import { main } from "../src/index.ts";
-import { ScriptedProvider, capture, removeWorkspace, repoWorkflowText, writeFakeWorkflowWorkspace } from "./support.ts";
+import { ScriptedClient, capture, registryOf, removeWorkspace, repoWorkflowText, writeFakeWorkflowWorkspace } from "./support.ts";
 
 const SPLIT = "Pass --workflow for a workflow run, or --role for an agent run.";
 
@@ -112,8 +112,8 @@ test("session run --workflow dispatches one stage", async () => {
       "  planner:\n    agent: fake-model\n    responsibilities:\n      - Stay inside the task.\n",
     ),
   );
-  const provider = new ScriptedProvider(["status: complete\n\nplanned"], ["# Plan\n"]);
-  cliHooks.runner = new AgentToolRunner({ fake: provider }, 10);
+  const provider = new ScriptedClient(["status: complete\n\nplanned"], ["# Plan\n"]);
+  cliHooks.runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
   try {
     const captured = await capture(() =>
       main(["session", "run", "--workflow", "plan", "--task", "Write a plan", "--once"], workspace),
@@ -162,9 +162,9 @@ test("session run without --workflow runs one role", async () => {
       "  reviewer:\n    agent: fake-model\n    responsibilities:\n      - Judge the change.\n",
     ),
   );
-  const provider = new ScriptedProvider(["status: complete\n\ndone", "status: complete\n\nagain"]);
+  const provider = new ScriptedClient(["status: complete\n\ndone", "status: complete\n\nagain"]);
   try {
-    cliHooks.runner = new AgentToolRunner({ fake: provider }, 10);
+    cliHooks.runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
     const captured = await capture(() =>
       main(["session", "run", "--role", "reviewer", "--prompt", "Review the latest changes", "--json"], workspace),
     );
@@ -175,7 +175,7 @@ test("session run without --workflow runs one role", async () => {
       "## Role\n\n- Judge the change.\n\nReview the latest changes",
     );
 
-    cliHooks.runner = new AgentToolRunner({ fake: provider }, 10);
+    cliHooks.runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
     const again = await capture(() =>
       main(
         ["session", "run", "--role", "reviewer", "--session", payload.session_id, "--prompt", "Summarize the risks", "--json"],
@@ -224,7 +224,7 @@ test("session prepare starts through session run --workflow", async () => {
     expect(mismatch.value).toBe(2);
     expect(mismatch.stderr).toContain("does not match");
 
-    cliHooks.runner = new AgentToolRunner({ fake: new ScriptedProvider(["status: complete\n\nplanned"], ["# Plan\n"]) }, 10);
+    cliHooks.runner = new AgentToolRunner(registryOf({ fake: new ScriptedClient(["status: complete\n\nplanned"], ["# Plan\n"]) }), 10);
     const started = await capture(() =>
       main(["session", "run", "--session", sessionId, "--workflow", "plan", "--once"], workspace),
     );
@@ -249,8 +249,8 @@ test("session run --session alone starts a prepared session from its edited work
     expect(draft).toContain("role: planner");
     writeFileSync(draftPath, draft.replace("role: planner", "role: planner\n    instructions:\n      - Edited before the first run."));
 
-    const provider = new ScriptedProvider(["status: complete\n\nplanned"], ["# Plan\n"]);
-    cliHooks.runner = new AgentToolRunner({ fake: provider }, 10);
+    const provider = new ScriptedClient(["status: complete\n\nplanned"], ["# Plan\n"]);
+    cliHooks.runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
     const started = await capture(() => main(["session", "run", "--session", sessionId, "--once"], workspace));
     expect(started.value).toBe(0);
     expect(provider.calls[0]?.prompt).toContain("Edited before the first run.");
@@ -281,7 +281,7 @@ test("session run --session accepts a matching --workflow and rejects a differen
     expect(mismatch.value).toBe(2);
     expect(mismatch.stderr).toContain("Workflow plan-implement does not match session plan.");
 
-    cliHooks.runner = new AgentToolRunner({ fake: new ScriptedProvider(["status: complete\n\nplanned"], ["# Plan\n"]) }, 10);
+    cliHooks.runner = new AgentToolRunner(registryOf({ fake: new ScriptedClient(["status: complete\n\nplanned"], ["# Plan\n"]) }), 10);
     const matching = await capture(() =>
       main(["session", "run", "--session", sessionId, "--workflow", "plan", "--once"], workspace),
     );
@@ -389,7 +389,7 @@ function resumeCommand(stderr: string): string | undefined {
   return lines[label + 1];
 }
 
-class CancelOnCommand extends ScriptedProvider {
+class CancelOnCommand extends ScriptedClient {
   override buildCommand(input: BuildCommandInput): CommandSpec {
     super.buildCommand(input);
     raiseCancellation(2);
@@ -400,7 +400,7 @@ class CancelOnCommand extends ScriptedProvider {
 test("session continue retries an active role session with its last prompt", async () => {
   const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
   try {
-    cliHooks.runner = new AgentToolRunner({ fake: new ScriptedProvider(["not a status header"]) }, 10);
+    cliHooks.runner = new AgentToolRunner(registryOf({ fake: new ScriptedClient(["not a status header"]) }), 10);
     const failed = await capture(() =>
       main(["session", "run", "--role", "reviewer", "--prompt", "Review the change", "--json"], workspace),
     );
@@ -408,8 +408,8 @@ test("session continue retries an active role session with its last prompt", asy
     expect(failed.value).toBe(1);
     expect(resumeCommand(failed.stderr)).toBe(`migent session continue ${payload.session_id}`);
 
-    const retried = new ScriptedProvider(["status: complete\n\ndone"]);
-    cliHooks.runner = new AgentToolRunner({ fake: retried }, 10);
+    const retried = new ScriptedClient(["status: complete\n\ndone"]);
+    cliHooks.runner = new AgentToolRunner(registryOf({ fake: retried }), 10);
     const resumed = await capture(() => main(["session", "continue", payload.session_id], workspace));
     expect(resumed.value).toBe(0);
     expect(retried.calls[0]?.prompt).toContain("Review the change");
@@ -423,7 +423,7 @@ test("session continue resumes a role session with the same command", async () =
   const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
   try {
     cliHooks.runner = new AgentToolRunner(
-      { fake: new ScriptedProvider(["status: blocked\nblocker: missing design\n\nneed a decision"]) },
+      registryOf({ fake: new ScriptedClient(["status: blocked\nblocker: missing design\n\nneed a decision"]) }),
       10,
     );
     const blocked = await capture(() =>
@@ -434,8 +434,8 @@ test("session continue resumes a role session with the same command", async () =
     expect(blockedPayload.outcome_status).toBe("blocked");
     expect(resumeCommand(blocked.stderr)).toBe(`migent session continue ${blockedPayload.session_id}`);
 
-    const continued = new ScriptedProvider(["status: complete\n\ndone"]);
-    cliHooks.runner = new AgentToolRunner({ fake: continued }, 10);
+    const continued = new ScriptedClient(["status: complete\n\ndone"]);
+    cliHooks.runner = new AgentToolRunner(registryOf({ fake: continued }), 10);
     const resumed = await capture(() => main(["session", "continue", blockedPayload.session_id], workspace));
     expect(resumed.value).toBe(0);
     expect(resumed.stdout).toContain("complete");
@@ -458,7 +458,7 @@ test("session continue resumes a role session with the same command", async () =
 test("session continue resumes a cancelled role session and leaves a completed one stopped", async () => {
   const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
   try {
-    cliHooks.runner = new AgentToolRunner({ fake: new CancelOnCommand([]) }, 10);
+    cliHooks.runner = new AgentToolRunner(registryOf({ fake: new CancelOnCommand([]) }), 10);
     const cancelled = await capture(() =>
       main(["session", "run", "--role", "reviewer", "--prompt", "Review the saved turn", "--json"], workspace),
     );
@@ -466,22 +466,22 @@ test("session continue resumes a cancelled role session and leaves a completed o
     const sessionId = resumeCommand(cancelled.stderr)?.slice("migent session continue ".length);
     expect(sessionId).toBeTruthy();
 
-    const resumedProvider = new ScriptedProvider(["status: complete\n\ndone"]);
-    cliHooks.runner = new AgentToolRunner({ fake: resumedProvider }, 10);
+    const resumedProvider = new ScriptedClient(["status: complete\n\ndone"]);
+    cliHooks.runner = new AgentToolRunner(registryOf({ fake: resumedProvider }), 10);
     const resumed = await capture(() => main(["session", "continue", String(sessionId)], workspace));
     expect(resumed.value).toBe(0);
     expect(resumedProvider.calls[0]?.prompt).toContain("Review the saved turn");
     expect(resumed.stderr).not.toContain("Resume with:");
 
-    const idle = new ScriptedProvider(["status: complete\n\nshould not run"]);
-    cliHooks.runner = new AgentToolRunner({ fake: idle }, 10);
+    const idle = new ScriptedClient(["status: complete\n\nshould not run"]);
+    cliHooks.runner = new AgentToolRunner(registryOf({ fake: idle }), 10);
     const again = await capture(() => main(["session", "continue", String(sessionId)], workspace));
     expect(again.value).toBe(0);
     expect(again.stderr).toContain(`Session ${sessionId} is completed.`);
     expect(idle.calls).toEqual([]);
 
-    const replied = new ScriptedProvider(["status: complete\n\nnext"]);
-    cliHooks.runner = new AgentToolRunner({ fake: replied }, 10);
+    const replied = new ScriptedClient(["status: complete\n\nnext"]);
+    cliHooks.runner = new AgentToolRunner(registryOf({ fake: replied }), 10);
     const next = await capture(() =>
       main(["session", "continue", String(sessionId), "--reply", "Look at the risks"], workspace),
     );
@@ -539,7 +539,7 @@ test("session metrics leaves a corrupt sealed file in place", async () => {
 });
 
 const FIXBACK = `\
-schema_version: 5
+schema_version: 6
 id: fixback
 stages:
   - id: implement
@@ -573,7 +573,7 @@ stages:
           navigate: implement
 `;
 
-class ShowDuringRevisitProvider extends ScriptedProvider {
+class ShowDuringRevisitProvider extends ScriptedClient {
   shown: Promise<{ value: number; stdout: string }> | null = null;
   sessionId = "";
 
@@ -616,7 +616,7 @@ test("session show reports active while a routed-back stage runs", async () => {
     const sessionId = (JSON.parse(prepared.stdout) as { session_id: string }).session_id;
     provider.sessionId = sessionId;
     writeFileSync(path.join(workspace, ".migent", "sessions", sessionId, "task.md"), "Fix back.\n", "utf8");
-    cliHooks.runner = new AgentToolRunner({ fake: provider }, 10);
+    cliHooks.runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
     const run = await capture(() =>
       main(["session", "run", "--session", sessionId, "--workflow", "fixback"], workspace),
     );

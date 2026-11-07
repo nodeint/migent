@@ -16,7 +16,7 @@ import {
 } from "./support.ts";
 
 const DOCS_FLOW = `\
-schema_version: 5
+schema_version: 6
 id: docs_flow
 stages:
   - id: implement
@@ -78,7 +78,7 @@ test("a stage with no matching change is skipped and shows in show and metrics",
     expect(totals.skipped).toBe(1);
     expect(totals.executions).toBe(1);
     const row = asRecords((metrics[0] ?? {}).executions).find((item) => item.status === "skipped");
-    expect(row).toMatchObject({ turns: 0, provider: null, model: null });
+    expect(row).toMatchObject({ turns: 0, client: null, model: null });
   } finally {
     removeWorkspace(workspace);
   }

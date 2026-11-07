@@ -17,14 +17,15 @@ const SHARED = `\
 # project models
 agents:
   shared:
-    provider: grok
-    model: grok-4.6
     client:
+      type: grok
       options:
         reasoning-effort: medium
         temperature: "0.2"  # stable
+    model: grok-4.6
   other:
-    provider: codex
+    client:
+      type: codex
     model: gpt-5
 roles:
   developer:
@@ -112,7 +113,7 @@ test("assign role keeps the shared model", () => {
 
 test("place role model creates a private entry", () => {
   const change = placeRoleAgent(config(), "reviewer", {
-    provider: "grok",
+    client: "grok",
     model: "grok-4.7",
     options: { "reasoning-effort": "high" },
     workflows: [workflow()],
@@ -135,21 +136,22 @@ test("place role model reuses an identical entry", () => {
   const text = `\
 agents:
   plain:
-    provider: grok
+    client:
+      type: grok
     model: grok-4.7
   shared:
-    provider: grok
-    model: grok-4.6
     client:
+      type: grok
       options:
         reasoning-effort: medium
+    model: grok-4.6
 roles:
   developer:
     agent: shared
   reviewer:
     agent: shared
 `;
-  const change = placeRoleAgent(config(text), "reviewer", { provider: "grok", model: "grok-4.7" });
+  const change = placeRoleAgent(config(text), "reviewer", { client: "grok", model: "grok-4.7" });
   const models = mapping(change.config.agents);
   expect(change.reusedAgent).toBe("plain");
   expect(change.createdAgent).toBeNull();
@@ -179,7 +181,7 @@ test("clear option removes only that option", () => {
 
 test("stage following a model name tracks that model", () => {
   const change = upsertAgent(config(), "shared", {
-    provider: "grok",
+    client: "grok",
     model: "grok-4.7",
     workflows: [workflow()],
   });
@@ -191,10 +193,12 @@ test("orphan model is reported and kept", () => {
   const text = `\
 agents:
   shared:
-    provider: grok
+    client:
+      type: grok
     model: grok-4.6
   review:
-    provider: codex
+    client:
+      type: codex
     model: gpt-5
 roles:
   developer:
@@ -238,7 +242,7 @@ test("patch preserves comments and sibling options", () => {
 
 test("patch adds a model and a role", () => {
   const created = upsertAgent(config(), "fast", {
-    provider: "codex",
+    client: "codex",
     model: "gpt-5",
     options: { "reasoning-effort": "low" },
   });
@@ -247,17 +251,17 @@ test("patch adds a model and a role", () => {
   const parsed = loadYamlMapping(writeConfig(patched));
   const models = mapping(parsed.agents);
   const roles = mapping(parsed.roles);
-  expect(mapping(models.fast).provider).toBe("codex");
+  expect(mapping(mapping(models.fast).client).type).toBe("codex");
   expect(mapping(mapping(mapping(models.fast).client).options)["reasoning-effort"]).toBe("low");
   expect(mapping(roles.security).agent).toBe("fast");
   expect(patched).toContain("# project models");
   expect(mapping(roles.developer).agent).toBe("shared");
 });
 
-test("rejects a partial provider update", () => {
-  expect(() => upsertAgent(config(), "shared", { provider: "grok" })).toThrow(ConfigEditError);
-  expect(() => upsertAgent(config(), "shared", { provider: "grok" })).toThrow(
-    /both --provider and --model/,
+test("rejects a partial client update", () => {
+  expect(() => upsertAgent(config(), "shared", { client: "grok" })).toThrow(ConfigEditError);
+  expect(() => upsertAgent(config(), "shared", { client: "grok" })).toThrow(
+    /both --client and --model/,
   );
 });
 

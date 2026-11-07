@@ -1,10 +1,11 @@
-schema_version: 5
+schema_version: 6
 roles:
   planner:
     agent:
-      provider: claude
       model: opus
       effort: medium
+      client:
+        type: claude-code
     responsibilities:
       - "Read the task, relevant code, and project instructions before planning."
       - "Write only planning artifacts; do not modify project files or implement code."
@@ -13,9 +14,10 @@ roles:
       - "Ground decisions in repository evidence. State assumptions, trade-offs, risks, and unresolved questions."
   reviewer:
     agent:
-      provider: codex
       model: gpt-6.1-sol
       effort: medium
+      client:
+        type: codex
     responsibilities:
       - "Read the task, project instructions, and the work under review."
       - "Assess correctness, completeness, scope, and maintainability using evidence appropriate to the work."
@@ -25,9 +27,10 @@ roles:
       - "Approve only when the work meets the task and stage criteria. Do not block on personal preference."
   developer:
     agent:
-      provider: claude
       model: sonnet
       effort: medium
+      client:
+        type: claude-code
     responsibilities:
       - "Read the task, relevant code, and project instructions before making changes."
       - "Address the root cause with the smallest change that meets the task. Follow project conventions."

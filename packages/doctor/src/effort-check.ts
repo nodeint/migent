@@ -1,11 +1,25 @@
-import { createProviderResolver, listAgentDefinitions, loadWorkspaceConfig, type AgentDefinitionEntry, type Provider } from "@nodeint/migent-kernel";
+import {
+  listAgentDefinitions,
+  loadWorkspaceConfig,
+  type AgentDefinitionEntry,
+  type CliClient,
+  type ClientRegistry,
+} from "@nodeint/migent-kernel";
 import type { ModelEffortCheck } from "./check.js";
-import { cached, loadCatalog, loadOptionValues, type RunCommand, type Which } from "./catalog.js";
+import {
+  cached,
+  clientCatalogSource,
+  loadCatalog,
+  loadOptionValues,
+  type ClientCatalogInput,
+  type RunCommand,
+  type Which,
+} from "./catalog.js";
 
 /** Catalog lookup is asynchronous and needs the machine, so it stays out of the static checks. */
 export async function checkModelEfforts(
   workspace: string,
-  providers: Record<string, Provider>,
+  clients: ClientRegistry,
   which: Which,
   runCommand: RunCommand,
   only?: ReadonlySet<string>,
@@ -18,25 +32,26 @@ export async function checkModelEfforts(
   try { config = loadWorkspaceConfig(workspace); } catch { return {}; }
   const definitions = [...listAgentDefinitions(config), ...extra];
   const run = cached(runCommand);
-  const resolveProvider = createProviderResolver(providers);
   const results = await Promise.all(definitions.map(async ({ key: alias, value: model, field: modelField }) => {
     if (only !== undefined && !only.has(alias)) return null;
     if (skip?.has(alias)) return null;
     if (!isRecord(model) || !Object.hasOwn(model, "effort")) return null;
-    if (typeof model.provider !== "string" || !model.provider.trim() || typeof model.model !== "string" || !model.model.trim()) return null;
+    if (typeof model.model !== "string" || !model.model.trim()) return null;
     if (clientUnusable(model)) return null;
+    const type = clientType(model);
+    if (type === undefined) return null; // The structural check explains the missing client.
     const field = `${modelField}.effort`;
     const value = JSON.stringify(model.effort);
     const invalidType = typeof model.effort !== "string" || model.effort.trim() === "";
     let values: readonly string[] | null = null;
     let warning: string | undefined;
     try {
-      const provider = resolveProvider(model.provider.trim(), clientType(model)) as Provider;
-      if (provider.requiresClient) return null; // The structural check explains the missing client.
-      if (provider.effortOption === undefined) values = [];
+      const client: CliClient = clients.get(type);
+      const source = clientCatalogSource(client as unknown as ClientCatalogInput);
+      if (client.effortOption === undefined) values = [];
       else {
-        const catalog = await loadCatalog(provider, which, run);
-        values = await loadOptionValues(provider, provider.effortOption, model.model.trim(), catalog, which, run);
+        const catalog = await loadCatalog(source, which, run);
+        values = await loadOptionValues(source, client.effortOption, model.model.trim(), catalog, which, run);
         if (values === null) throw new Error(`The selected CLI does not list effort values for ${model.model}.`);
       }
     } catch (error) {

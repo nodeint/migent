@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Changed
+
+- **Breaking:** Agents select a CLI through `client.type`; the provider abstraction is removed and configuration/workflows use schema version 6. Run `migent migrate` to preserve existing client selections and options. Replace provider selection flags with `--client` and use `migent get clients` instead of `get providers`.
+- Role sessions honor the configured client. Claude Code's session identity and default `permission_mode=bypassPermissions` follow `claude-code`; quota waits are grouped by client.
+
+### Fixed
+
+- Migration preserves layered client selections from v4/v5, writes inline workflow agents, keeps comments on retained role/stage fields, and verifies the resulting YAML before writing.
+- Legacy resume checks every turn's client evidence before creating or reopening executions, refusing missing or conflicting evidence without sending native IDs to another CLI. Metrics parse each turn with its launched client and count captures with no identifiable client as uncaptured.
+- Shared quota waits retry all affected stages after reset within the concurrency limit, stop repeated quota failures for the same window, and resolve legacy wait keys from execution evidence.
+
 ## 0.4.1
 
 ### Added

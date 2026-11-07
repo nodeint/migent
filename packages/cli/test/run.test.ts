@@ -8,7 +8,7 @@ import { listSessions } from "../src/commands/sessions.ts";
 import { followSession } from "../src/commands/watch.ts";
 import { cliHooks } from "../src/hooks.ts";
 import { main } from "../src/index.ts";
-import { ScriptedProvider, capture, removeWorkspace, repoWorkflowText, writeFakeWorkflowWorkspace } from "./support.ts";
+import { ScriptedClient, capture, registryOf, removeWorkspace, repoWorkflowText, writeFakeWorkflowWorkspace } from "./support.ts";
 
 type Row = Record<string, unknown>;
 
@@ -91,10 +91,10 @@ function stopReasonFor(code: number, status: string): string {
   return "stage";
 }
 
-async function runExecute(workspace: string, argv: string[], provider: ScriptedProvider): Promise<[number, Row[], string]> {
+async function runExecute(workspace: string, argv: string[], provider: ScriptedClient): Promise<[number, Row[], string]> {
   const hinted = sessionIdFromOutput("", argv);
   const before = hinted === null ? new Map<string, string>() : executionTexts(workspace, hinted);
-  cliHooks.runner = new AgentToolRunner({ fake: provider }, 10);
+  cliHooks.runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
   const captured = await capture(() => main(argv, workspace));
   const sessionId = sessionIdFromOutput(captured.stderr, argv);
   if (sessionId === null) throw new Error(captured.stderr);
@@ -330,7 +330,7 @@ test("session filters select the newest match and reject bad flags", async () =>
 test("execute completes plan review and publishes plan", async () => {
   const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
   try {
-    const provider = new ScriptedProvider(
+    const provider = new ScriptedClient(
       ["status: complete\n\nplanned", "status: complete\ndecision: approved\n\nok"],
       ["# Plan\n", null],
     );
@@ -358,7 +358,7 @@ test("execute completes plan review and publishes plan", async () => {
 test("execute reruns plan then review after revise", async () => {
   const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
   try {
-    const provider = new ScriptedProvider(
+    const provider = new ScriptedClient(
       [
         "status: complete\n\nplanned v1",
         "status: complete\ndecision: revise\n\nneeds work",
@@ -428,7 +428,7 @@ test("execute uses a downstream suggestion through --prior then completes plan i
     const [priorCode, priorObjects, priorStderr] = await runExecute(
       workspace,
       ["session", "run", "--workflow", "plan", "--task", "Write a plan"],
-      new ScriptedProvider(
+      new ScriptedClient(
         ["status: complete\n\nplanned", "status: complete\ndecision: approved\n\nok"],
         ["# Plan\n", null],
       ),
@@ -439,7 +439,7 @@ test("execute uses a downstream suggestion through --prior then completes plan i
     expect(priorStderr).toContain(`migent session run --workflow plan-implement --prior ${priorId}`);
     const next = JSON.parse(readFileSync(path.join(workspace, ".migent", "sessions", priorId, "next.json"), "utf8"));
     expect(next.next[0].artifacts.approved_plan.output).toBe("plan");
-    const provider = new ScriptedProvider(
+    const provider = new ScriptedClient(
       [
         "status: complete\n\nimplemented",
         "status: complete\ndecision: approved\n\nok",
@@ -485,7 +485,7 @@ test("execute uses a downstream suggestion through --prior then completes plan i
 test("continue redispatches a blocked session, leaves completed sessions stopped, and finalizes a cancelled execution in place", async () => {
   const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
   try {
-    const blockedProvider = new ScriptedProvider(
+    const blockedProvider = new ScriptedClient(
       ["status: complete\n\nplanned", "status: blocked\nblocker: missing design\n\nnope"],
       ["# Plan\n", null],
     );
@@ -494,14 +494,14 @@ test("continue redispatches a blocked session, leaves completed sessions stopped
     expect(objects.at(-1)?.stop_reason).toBe("blocked");
     const sessionId = String(objects.at(-1)?.session_id);
     const before = executions(workspace, sessionId);
-    const retry = new ScriptedProvider(["status: complete\ndecision: approved\n\nok"], [null]);
+    const retry = new ScriptedClient(["status: complete\ndecision: approved\n\nok"], [null]);
     const [code2, objects2] = await runExecute(workspace, ["session", "continue", sessionId, "--once"], retry);
     expect(code2).toBe(0);
     expect(objects2.at(-1)?.session_status).toBe("completed");
     expect(retry.calls).toHaveLength(1);
     expect(retry.calls[0]?.prompt).toContain("missing design");
     expect(executions(workspace, sessionId).length).toBe(before.length + 1);
-    const idle = new ScriptedProvider(["status: complete\ndecision: approved\n\nok"], [null]);
+    const idle = new ScriptedClient(["status: complete\ndecision: approved\n\nok"], [null]);
     const [code3, objects3] = await runExecute(workspace, ["session", "continue", sessionId], idle);
     expect(code3).toBe(0);
     expect(objects3.at(-1)?.stop_reason).toBe("completed");
@@ -515,19 +515,19 @@ test("continue redispatches a blocked session, leaves completed sessions stopped
     const [doneCode, doneObjects] = await runExecute(
       completedWorkspace,
       ["session", "run", "--workflow", "plan", "--task", "Write a plan"],
-      new ScriptedProvider(
+      new ScriptedClient(
         ["status: complete\n\nplanned", "status: complete\ndecision: approved\n\nok"],
         ["# Plan\n", null],
       ),
     );
     expect(doneCode).toBe(0);
     const completedId = String(doneObjects.at(-1)?.session_id);
-    const unused = new ScriptedProvider(["status: complete\n\nnope"], ["# x\n"]);
+    const unused = new ScriptedClient(["status: complete\n\nnope"], ["# x\n"]);
     const [code3, objects3] = await runExecute(completedWorkspace, ["session", "continue", completedId], unused);
     expect(code3).toBe(0);
     expect(objects3.at(-1)?.stop_reason).toBe("completed");
     expect(unused.calls).toEqual([]);
-    const unusedStage = new ScriptedProvider(["status: complete\n\nnope"], ["# x\n"]);
+    const unusedStage = new ScriptedClient(["status: complete\n\nnope"], ["# x\n"]);
     const [codeStage, objectsStage] = await runExecute(completedWorkspace, ["session", "continue", completedId, "--once"], unusedStage);
     expect(codeStage).toBe(0);
     expect(objectsStage.at(-1)?.stop_reason).toBe("completed");
@@ -549,7 +549,7 @@ test("continue redispatches a blocked session, leaves completed sessions stopped
     execution.status = "cancelled";
     writeFileSync(executionPath, JSON.stringify(execution), "utf8");
     const before = executions(completedWorkspace, cancelledId);
-    const unused2 = new ScriptedProvider(["status: complete\n\nnope"], ["# x\n"]);
+    const unused2 = new ScriptedClient(["status: complete\n\nnope"], ["# x\n"]);
     const [code4, objects4] = await runExecute(completedWorkspace, ["session", "continue", cancelledId], unused2);
     expect(code4).toBe(0);
     expect(objects4.at(-1)?.stop_reason).toBe("completed");
@@ -564,7 +564,7 @@ test("continue redispatches a blocked session, leaves completed sessions stopped
 test("a failed stage stays active and continue --once dispatches it once", async () => {
   const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
   try {
-    const provider = new ScriptedProvider(["status: complete\n\nplanned", "not a header"], ["# Plan\n", null]);
+    const provider = new ScriptedClient(["status: complete\n\nplanned", "not a header"], ["# Plan\n", null]);
     const [code, objects] = await runExecute(
       workspace,
       ["session", "run", "--workflow", "plan", "--task", "Write a plan"],
@@ -577,7 +577,7 @@ test("a failed stage stays active and continue --once dispatches it once", async
     const [stageCode, stageObjects] = await runExecute(
       workspace,
       ["session", "continue", sessionId, "--once"],
-      new ScriptedProvider(["status: complete\ndecision: approved\n\nok"], [null]),
+      new ScriptedClient(["status: complete\ndecision: approved\n\nok"], [null]),
     );
     expect(stageCode).toBe(0);
     expect(stageObjects[0]?.outcome_decision).toBe("approved");
@@ -594,12 +594,12 @@ test("continue dispatches a failed stage once", async () => {
     const [code, objects] = await runExecute(
       workspace,
       ["session", "run", "--workflow", "plan", "--task", "Write a plan"],
-      new ScriptedProvider(["status: complete\n\nplanned", "not a header"], ["# Plan\n", null]),
+      new ScriptedClient(["status: complete\n\nplanned", "not a header"], ["# Plan\n", null]),
     );
     expect(code).toBe(3);
     expect(objects.at(-1)?.stop_reason).toBe("stage_failed");
     const sessionId = String(objects.at(-1)?.session_id);
-    const second = new ScriptedProvider(["status: complete\ndecision: approved\n\nok"], [null]);
+    const second = new ScriptedClient(["status: complete\ndecision: approved\n\nok"], [null]);
     const [code2, objects2] = await runExecute(workspace, ["session", "continue", sessionId], second);
     expect(code2).toBe(0);
     expect(objects2.at(-1)?.stop_reason).toBe("completed");
@@ -612,7 +612,7 @@ test("continue dispatches a failed stage once", async () => {
 test("stage id runs the first stage and stops", async () => {
   const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
   try {
-    const provider = new ScriptedProvider(
+    const provider = new ScriptedClient(
       ["status: complete\n\nplanned", "status: complete\ndecision: approved\n\nshould not run"],
       ["# Plan\n", null],
     );
@@ -634,7 +634,7 @@ test("stage id runs the first stage and stops", async () => {
 test("stage id of a later stage creates no session", async () => {
   const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
   try {
-    const provider = new ScriptedProvider(["status: complete\ndecision: approved\n\nok"], [null]);
+    const provider = new ScriptedClient(["status: complete\ndecision: approved\n\nok"], [null]);
     const [code, objects] = await runExecute(
       workspace,
       ["session", "run", "--workflow", "plan", "--task", "Write a plan", "--once"],
@@ -651,7 +651,7 @@ test("stage id of a later stage creates no session", async () => {
 test("stage id follows eligibility after the first stage", async () => {
   const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
   try {
-    const first = new ScriptedProvider(["status: complete\n\nplanned"], ["# Plan\n"]);
+    const first = new ScriptedClient(["status: complete\n\nplanned"], ["# Plan\n"]);
     const [code, objects] = await runExecute(
       workspace,
       ["session", "run", "--workflow", "plan", "--task", "Write a plan", "--once"],
@@ -659,7 +659,7 @@ test("stage id follows eligibility after the first stage", async () => {
     );
     expect(code).toBe(0);
     const sessionId = String(objects.at(-1)?.session_id);
-    const review = new ScriptedProvider(
+    const review = new ScriptedClient(
       ["status: complete\ndecision: revise\n\nneeds work", "status: complete\n\nshould not run"],
       [null, "# Plan\n"],
     );
@@ -684,7 +684,7 @@ test("stage rejects a dispatch ceiling", async () => {
 
 test("stage id resumes the declared source session", async () => {
   const workflow = `\
-schema_version: 5
+schema_version: 6
 id: resume-sample
 stages:
   - id: draft
@@ -706,11 +706,11 @@ stages:
     const [code, objects] = await runExecute(
       workspace,
       ["session", "run", "--workflow", "resume-sample", "--task", "Draft", "--once"],
-      new ScriptedProvider(["status: complete\n\ndraft"], ["# draft\n"]),
+      new ScriptedClient(["status: complete\n\ndraft"], ["# draft\n"]),
     );
     expect(code).toBe(0);
     const sessionId = String(objects.at(-1)?.session_id);
-    const second = new ScriptedProvider(["status: complete\n\nrevised"], ["# revision\n"]);
+    const second = new ScriptedClient(["status: complete\n\nrevised"], ["# revision\n"]);
     const [code2, objects2] = await runExecute(workspace, ["session", "continue", sessionId, "--once"], second);
     expect(code2).toBe(0);
     const resumed = JSON.parse(
@@ -737,7 +737,7 @@ stages:
 });
 
 const REVISION_LOOP = `\
-schema_version: 5
+schema_version: 6
 id: loop
 stages:
   - id: plan
@@ -759,7 +759,7 @@ stages:
 `;
 
 const OPEN_LOOP = `\
-schema_version: 5
+schema_version: 6
 id: loop
 stages:
   - id: plan
@@ -785,7 +785,7 @@ test("continue resets revision count and stage keeps new limit", async () => {
     const [code, objects] = await runExecute(
       workspace,
       ["session", "run", "--workflow", "loop", "--task", "Write a plan"],
-      new ScriptedProvider(
+      new ScriptedClient(
         [
           "status: complete\n\ninitial plan",
           "status: complete\ndecision: revise\n\nrevise",
@@ -803,7 +803,7 @@ test("continue resets revision count and stage keeps new limit", async () => {
     expect(revisionPrompt).toContain(path.join(root, String(objects[1]?.execution_id), "response.md"));
     expect(revisionPrompt).toContain(path.join(root, String(objects[0]?.execution_id), "artifacts", "plan.md"));
 
-    const second = new ScriptedProvider(["status: complete\n\nsecond revision"], ["# Second revision\n"]);
+    const second = new ScriptedClient(["status: complete\n\nsecond revision"], ["# Second revision\n"]);
     const [limited, limitedObjects] = await runExecute(
       workspace,
       ["session", "continue", sessionId, "--max-dispatches", "1"],
@@ -817,15 +817,15 @@ test("continue resets revision count and stage keeps new limit", async () => {
     ) as { revision_baselines?: Record<string, number> };
     expect(status.revision_baselines).toEqual({ plan: 2, "review-plan": 2 });
 
-    const reviewer = new ScriptedProvider(["status: complete\ndecision: revise\n\nrevise again"]);
+    const reviewer = new ScriptedClient(["status: complete\ndecision: revise\n\nrevise again"]);
     expect((await runExecute(workspace, ["session", "continue", sessionId, "--once"], reviewer))[0]).toBe(0);
-    const stopped = new ScriptedProvider(["status: complete\n\nshould not run"]);
+    const stopped = new ScriptedClient(["status: complete\n\nshould not run"]);
     const [stoppedCode, stoppedObjects] = await runExecute(workspace, ["session", "continue", sessionId, "--once"], stopped);
     expect(stoppedCode).toBe(4);
     expect(stoppedObjects.at(-1)?.stop_reason).toBe("revisions_exhausted");
     expect(stopped.calls).toEqual([]);
 
-    const last = new ScriptedProvider(
+    const last = new ScriptedClient(
       ["status: complete\n\nthird revision", "status: complete\ndecision: approved\n\napproved"],
       ["# Third revision\n", null],
     );
@@ -841,7 +841,7 @@ test("continue resets revision count and stage keeps new limit", async () => {
 test("revise stops before another plan and later commands stop too", async () => {
   const workspace = writeFakeWorkflowWorkspace({ loop: REVISION_LOOP });
   try {
-    const provider = new ScriptedProvider(
+    const provider = new ScriptedClient(
       [
         "status: complete\n\nplanned",
         "status: complete\ndecision: revise\n\nagain",
@@ -860,7 +860,7 @@ test("revise stops before another plan and later commands stop too", async () =>
     expect(objects.slice(0, -1).map((item) => item.outcome_decision)).toEqual(["", "revise"]);
     expect(provider.calls).toHaveLength(2);
     const sessionId = String(objects.at(-1)?.session_id);
-    const idle = new ScriptedProvider(["status: complete\n\nnope"], ["# Plan\n"]);
+    const idle = new ScriptedClient(["status: complete\n\nnope"], ["# Plan\n"]);
     const [continueCode, continueObjects] = await runExecute(
       workspace,
       ["session", "continue", sessionId, "--max-dispatches", "10"],
@@ -869,7 +869,7 @@ test("revise stops before another plan and later commands stop too", async () =>
     expect(continueCode).toBe(4);
     expect(continueObjects.at(-1)?.stop_reason).toBe("revisions_exhausted");
     expect(idle.calls).toEqual([]);
-    const stage = new ScriptedProvider(["status: complete\n\nnope"], ["# Plan\n"]);
+    const stage = new ScriptedClient(["status: complete\n\nnope"], ["# Plan\n"]);
     const [stageCode, stageObjects] = await runExecute(workspace, ["session", "continue", sessionId, "--once"], stage);
     expect(stageCode).toBe(4);
     expect(stageObjects.at(-1)?.stop_reason).toBe("revisions_exhausted");
@@ -883,7 +883,7 @@ test("revise stops before another plan and later commands stop too", async () =>
 test("dispatch ceiling stops before the next stage", async () => {
   const workspace = writeFakeWorkflowWorkspace({ loop: OPEN_LOOP });
   try {
-    const provider = new ScriptedProvider(
+    const provider = new ScriptedClient(
       [
         "status: complete\n\nplanned",
         "status: complete\ndecision: revise\n\nagain",
@@ -920,7 +920,7 @@ test("default dispatch ceiling matches the constant", async () => {
         artifacts.push(null);
       }
     }
-    const provider = new ScriptedProvider(responses, artifacts);
+    const provider = new ScriptedClient(responses, artifacts);
     const [code, objects] = await runExecute(workspace, ["session", "run", "--workflow", "loop", "--task", "Write a plan"], provider);
     expect(code).toBe(5);
     expect(objects.at(-1)?.stop_reason).toBe("dispatch_limit");
@@ -933,7 +933,7 @@ test("default dispatch ceiling matches the constant", async () => {
 test("unlimited dispatches runs past the default ceiling", async () => {
   const workspace = writeFakeWorkflowWorkspace({ loop: OPEN_LOOP });
   try {
-    const provider = new ScriptedProvider(
+    const provider = new ScriptedClient(
       ["status: complete\n\nplanned", "status: complete\ndecision: approved\n\nok"],
       ["# Plan\n", null],
     );
@@ -975,12 +975,12 @@ test("continue rejects flags that start a session", async () => {
   expect(captured.stderr).toContain("--task");
 });
 
-test("role override requires both provider and model", async () => {
+test("role override requires both client and model", async () => {
   const captured = await capture(() =>
-    main(["session", "run", "--role", "developer", "--provider", "grok", "--prompt", "x"]),
+    main(["session", "run", "--role", "developer", "--client", "grok", "--prompt", "x"]),
   );
   expect(captured.value).toBe(2);
-  expect(captured.stderr).toContain("--provider");
+  expect(captured.stderr).toContain("--client");
   expect(captured.stderr).toContain("--model");
 });
 

@@ -8,8 +8,6 @@ import {
   loadRoleDescription,
   loadWorkspaceConfig,
   whichSync,
-  type Provider,
-  type ProviderOption,
 } from "@nodeint/migent-kernel";
 import { PromptCancelled } from "../errors.js";
 import { exists, isDirectory, isFile } from "../fs-utils.js";
@@ -25,23 +23,23 @@ import { renderProject, type ModelChoice, type RenderedFile } from "../project-t
 import { runDoctor } from "./doctor.js";
 import {
   acceptedOptions,
-  providerMap,
   asCatalog,
+  catalogSourceOf,
+  clientRegistry,
   detected,
   knownModel,
   loadCatalog,
   loadOptionValues,
   parseOptions,
-  requireProvider,
-  runProviderCommandAsync,
+  runClientCommandAsync,
   type RunCommand,
   type Which,
-} from "../provider.js";
+} from "../client.js";
 
-const INIT_EXAMPLE = "Example: migent init --planner-provider codex --planner-model gpt-5 --reviewer-provider grok --reviewer-model grok-4.7 --developer-provider codex --developer-model gpt-5 --no-input";
+const INIT_EXAMPLE = "Example: migent init --planner-client codex --planner-model gpt-5 --reviewer-client grok --reviewer-model grok-4.7 --client codex --developer-model gpt-5 --no-input";
 
 
-export interface ModelSelection { provider: string; model: string }
+export interface ModelSelection { client: string; model: string }
 
 export interface Prompter {
   selectModel(models: readonly ModelSelection[], message: string): ModelSelection | Promise<ModelSelection>;
@@ -51,36 +49,36 @@ export interface Prompter {
 export async function runInit(
   workspace: string,
   options: {
-    provider?: string | null;
+    client?: string | null;
     model?: string | null;
     effort?: string | null;
     options?: readonly string[];
-    plannerProvider?: string | null;
+    plannerClient?: string | null;
     plannerModel?: string | null;
     plannerEffort?: string | null;
     plannerOptions?: readonly string[];
-    reviewerProvider?: string | null;
+    reviewerClient?: string | null;
     reviewerModel?: string | null;
     reviewerEffort?: string | null;
     reviewerOptions?: readonly string[];
     interactive?: boolean;
-    providers?: Record<string, Provider> | null;
+    clients?: import("@nodeint/migent-kernel").ClientRegistry | null;
     which?: Which | null;
     prompter?: Prompter | null;
     runCommand?: RunCommand | null;
   } = {},
 ): Promise<number> {
-  const provider = options.provider ?? null;
+  const client = options.client ?? null;
   const model = options.model ?? null;
-  const plannerProvider = options.plannerProvider ?? null;
+  const plannerClient = options.plannerClient ?? null;
   const plannerModel = options.plannerModel ?? null;
-  const reviewerProvider = options.reviewerProvider ?? null;
+  const reviewerClient = options.reviewerClient ?? null;
   const reviewerModel = options.reviewerModel ?? null;
   const interactive = options.interactive ?? false;
-  const chosen = options.providers ?? providerMap();
+  const chosen = options.clients ?? clientRegistry();
   const resolve = options.which ?? cliHooks.which ?? whichSync;
   const prompt = options.prompter ?? new ClackPrompter();
-  const runCommand = options.runCommand ?? cliHooks.runCommand ?? runProviderCommandAsync;
+  const runCommand = options.runCommand ?? cliHooks.runCommand ?? runClientCommandAsync;
   const commands = new Map<string, Promise<string>>();
   const execute: RunCommand = (argv, input) => {
     const key = JSON.stringify([argv, input]);
@@ -96,34 +94,35 @@ export async function runInit(
   const reviewerOptionPairs = options.reviewerOptions ?? [];
   const classified = classify(workspace, chosen, resolve);
   if (classified.state === "ready") {
-    if (provider !== null || model !== null || options.effort != null || optionPairs.length > 0 ||
-        plannerProvider !== null || plannerModel !== null || options.plannerEffort != null || plannerOptionPairs.length > 0 ||
-        reviewerProvider !== null || reviewerModel !== null || options.reviewerEffort != null || reviewerOptionPairs.length > 0) {
+    if (client !== null || model !== null || options.effort != null || optionPairs.length > 0 ||
+        plannerClient !== null || plannerModel !== null || options.plannerEffort != null || plannerOptionPairs.length > 0 ||
+        reviewerClient !== null || reviewerModel !== null || options.reviewerEffort != null || reviewerOptionPairs.length > 0) {
       printError("Already initialized; ignoring model selection flags.");
     }
     printAlreadyInitialized();
     printInitNextSteps();
     return 0;
   }
-  for (const [role, selectedProvider, selectedModel, pairs, effort, prefix] of [
-    ["planner", plannerProvider, plannerModel, plannerOptionPairs, options.plannerEffort, "planner-"],
-    ["reviewer", reviewerProvider, reviewerModel, reviewerOptionPairs, options.reviewerEffort, "reviewer-"],
-    ["developer", provider, model, optionPairs, options.effort, "developer-"],
+  for (const [role, selectedClient, selectedModel, pairs, effort, prefix] of [
+    ["planner", plannerClient, plannerModel, plannerOptionPairs, options.plannerEffort, "planner-"],
+    ["reviewer", reviewerClient, reviewerModel, reviewerOptionPairs, options.reviewerEffort, "reviewer-"],
+    ["developer", client, model, optionPairs, options.effort, "developer-"],
   ] as const) {
-    const flags = `--${prefix}provider and --${prefix}model`;
-    if ((selectedProvider === null) !== (selectedModel === null)) {
+    const clientFlag = role === "developer" ? "--client" : `--${prefix}client`;
+    const flags = `${clientFlag} and --${prefix}model`;
+    if ((selectedClient === null) !== (selectedModel === null)) {
       printError(`Pass both ${flags} for ${role}, or omit both.\n${INIT_EXAMPLE}`);
       return 2;
     }
-    if (pairs.length > 0 && selectedProvider === null) {
+    if (pairs.length > 0 && selectedClient === null) {
       printError(`Pass ${flags} with --${prefix}option.`);
       return 2;
     }
-    if (effort != null && selectedProvider === null) {
+    if (effort != null && selectedClient === null) {
       printError(`Pass ${flags} with --${prefix}effort.`);
       return 2;
     }
-    if (selectedProvider === null && !interactive) {
+    if (selectedClient === null && !interactive) {
       printError(`Pass ${flags} for ${role} when init is not interactive.\n${INIT_EXAMPLE}`);
       return 2;
     }
@@ -136,30 +135,30 @@ export async function runInit(
   const getCatalog = (name: string): Promise<ModelCatalog> => {
     let catalog = catalogs.get(name);
     if (!catalog) {
-      catalog = loadCatalog(requireProvider(chosen, name), resolve, execute);
+      catalog = loadCatalog(catalogSourceOf(chosen.get(name)), resolve, execute);
       catalogs.set(name, catalog);
     }
     return catalog;
   };
   let models: ModelSelection[] = [];
-  if ([plannerProvider, reviewerProvider, provider].some((value) => value === null)) {
+  if ([plannerClient, reviewerClient, client].some((value) => value === null)) {
     const loading = options.prompter ? null : spinner();
-    loading?.start("Loading models from installed providers...");
-    const rows = detected(chosen, resolve).filter(([, found]) => found !== null);
+    loading?.start("Loading models from installed clients...");
+    const rows = detected(resolve).filter(([, found]) => found !== null);
     const results = await Promise.allSettled(rows.map(async ([name]) => ({ name, catalog: await getCatalog(name) })));
     loading?.stop("Model catalogs loaded.");
     const failures: string[] = [];
     for (const [index, result] of results.entries()) {
       if (result.status === "fulfilled") {
         const { name, catalog } = result.value;
-        models.push(...catalog.ids.map((id) => ({ provider: name, model: id })));
+        models.push(...catalog.ids.map((id) => ({ client: name, model: id })));
       } else {
         failures.push(`${rows[index]?.[0]}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`);
       }
     }
     for (const failure of failures) process.stderr.write(`Could not load models for ${failure}\n`);
     if (models.length === 0) {
-      printError("No models available from installed providers.");
+      printError("No models available from installed clients.");
       return 2;
     }
   }
@@ -169,7 +168,7 @@ export async function runInit(
   try {
     planner = await choices(chosen, resolve, prompt, {
       role: "Planner",
-      provider: plannerProvider,
+      client: plannerClient,
       model: plannerModel,
       options: parseOptions(plannerOptionPairs),
       effort: options.plannerEffort ?? null,
@@ -178,7 +177,7 @@ export async function runInit(
     });
     reviewer = await choices(chosen, resolve, prompt, {
       role: "Reviewer",
-      provider: reviewerProvider,
+      client: reviewerClient,
       model: reviewerModel,
       options: parseOptions(reviewerOptionPairs),
       effort: options.reviewerEffort ?? null,
@@ -187,7 +186,7 @@ export async function runInit(
     });
     developer = await choices(chosen, resolve, prompt, {
       role: "Developer",
-      provider,
+      client,
       model,
       options: parseOptions(optionPairs),
       effort: options.effort ?? null,
@@ -209,7 +208,7 @@ export async function runInit(
   const paths = writeProject(workspace, files);
   printCreated(
     paths,
-    `Planner: ${planner.provider}/${planner.model}. Reviewer: ${reviewer.provider}/${reviewer.model}. Developer: ${developer.provider}/${developer.model}. Workflows: implement, plan.`,
+    `Planner: ${planner.client}/${planner.model}. Reviewer: ${reviewer.client}/${reviewer.model}. Developer: ${developer.client}/${developer.model}. Workflows: implement, plan.`,
   );
   printRoleDescriptions(workspace);
   if (interactive) {
@@ -235,22 +234,22 @@ function printRoleDescriptions(workspace: string): void {
 
 function writeDoctorProblems(
   workspace: string,
-  providers: Record<string, Provider>,
+  clients: import("@nodeint/migent-kernel").ClientRegistry,
   which: Which,
 ): void {
-  const problems = diagnose(workspace, { providers, which }).flatMap((check) => check.problems);
+  const problems = diagnose(workspace, { clients, which }).flatMap((check) => check.problems);
   if (problems.length === 0) return;
   process.stderr.write("Doctor reported problems:\n");
   for (const problem of problems) process.stderr.write(`${problem}\n`);
 }
 
 async function choices(
-  providers: Record<string, Provider>,
+  clients: import("@nodeint/migent-kernel").ClientRegistry,
   which: Which,
   prompt: Prompter,
   args: {
     role: string;
-    provider: string | null;
+    client: string | null;
     model: string | null;
     options: Record<string, string>;
     effort: string | null;
@@ -259,19 +258,19 @@ async function choices(
     getCatalog: (name: string) => Promise<ModelCatalog>;
   },
 ): Promise<ModelChoice> {
-  let provider = args.provider;
+  let client = args.client;
   let model = args.model;
   let effort = args.effort;
   let stored: Record<string, string>;
-  if (provider === null) {
+  if (client === null) {
     const selected = await prompt.selectModel(args.models, `${args.role} model`);
-    if (!args.models.some((item) => item.provider === selected.provider && item.model === selected.model)) {
-      throw new ConfigurationError("Unknown provider or model.");
+    if (!args.models.some((item) => item.client === selected.client && item.model === selected.model)) {
+      throw new ConfigurationError("Unknown client or model.");
     }
-    provider = selected.provider;
+    client = selected.client;
     model = selected.model;
-    const impl = requireProvider(providers, provider);
-    const catalog = await args.getCatalog(provider);
+    const impl = clients.get(client);
+    const catalog = await args.getCatalog(client);
     stored = await promptOptions(impl, model, catalog, which, args.runCommand, prompt);
     // The prompt stores effort as a native option; keep it in the dedicated `effort` field instead.
     const promptedOption = impl.effortOption;
@@ -280,12 +279,12 @@ async function choices(
       delete stored[promptedOption];
     }
   } else {
-    const impl = requireProvider(providers, provider);
+    const impl = clients.get(client);
     if (model === null) throw new ConfigurationError("Model is required.");
-    const catalog = await args.getCatalog(provider);
+    const catalog = await args.getCatalog(client);
     model = knownModel(model, catalog);
     const effortOption = impl.effortOption;
-    if (args.effort !== null && !effortOption) throw new ConfigurationError(`${args.role} provider does not support effort.`);
+    if (args.effort !== null && !effortOption) throw new ConfigurationError(`${args.role} client does not support effort.`);
     if (args.effort !== null && effortOption && Object.hasOwn(args.options, effortOption)) {
       throw new ConfigurationError(`${args.role} effort conflicts with option ${effortOption}; use only one.`);
     }
@@ -299,13 +298,13 @@ async function choices(
     if (args.effort !== null && effortOption) delete stored[effortOption];
   }
   if (model.trim() === "") throw new ConfigurationError("Model is required.");
-  const primary = { provider, model: model.trim(), options: stored, ...(effort !== null ? { effort } : {}) };
+  const primary = { client, model: model.trim(), options: stored, ...(effort !== null ? { effort } : {}) };
   return primary;
 }
 
 function classify(
   workspace: string,
-  providers: Record<string, Provider>,
+  clients: import("@nodeint/migent-kernel").ClientRegistry,
   which: Which,
 ): { state: "create" | "ready" | "conflict"; conflicts: string[] } {
   const root = path.join(workspace, ".migent");
@@ -329,7 +328,7 @@ function classify(
     ? readdirSync(workflows).filter((name) => name.endsWith(".yaml") && isFile(path.join(workflows, name)))
     : [];
   if (isFile(config) && yamlFiles.length > 0) {
-    const checks = diagnose(workspace, { providers, which });
+    const checks = diagnose(workspace, { clients, which });
     const byName = new Map(checks.map((check) => [check.name, check]));
     if (byName.get("config")?.ok && byName.get("workflows")?.ok) return { state: "ready", conflicts: [] };
   }
@@ -346,7 +345,7 @@ function writeProject(workspace: string, files: readonly RenderedFile[]): string
 }
 
 async function promptOptions(
-  provider: Provider,
+  client: import("@nodeint/migent-kernel").CliClient,
   model: string,
   catalog: ModelCatalog,
   which: Which,
@@ -354,9 +353,9 @@ async function promptOptions(
   prompt: Prompter,
 ): Promise<Record<string, string>> {
   const stored: Record<string, string> = {};
-  for (const spec of providerOptions(provider)) {
+  for (const spec of clientOptions(client)) {
     if (!spec.prompt) continue;
-    const values = await loadOptionValues(provider, spec.name, model, catalog, which, runCommand);
+    const values = await loadOptionValues(catalogSourceOf(client), spec.name, model, catalog, which, runCommand);
     if (values === null || values.length === 0) continue;
     const picked = await prompt.selectOption(spec.name, values, spec.allowDefault ?? false);
     if (picked) stored[spec.name] = picked;
@@ -364,16 +363,16 @@ async function promptOptions(
   return stored;
 }
 
-function providerOptions(provider: Provider): readonly ProviderOption[] {
-  return asCatalog(provider).providerOptions();
+function clientOptions(client: import("@nodeint/migent-kernel").CliClient) {
+  return asCatalog(catalogSourceOf(client)).clientOptions();
 }
 
 class ClackPrompter implements Prompter {
   async selectModel(models: readonly ModelSelection[], message: string): Promise<ModelSelection> {
     const result = await autocomplete({
       message,
-      placeholder: "Search provider or model...",
-      options: models.map((item, index) => ({ value: String(index), label: `${item.provider} / ${item.model}` })),
+      placeholder: "Search client or model...",
+      options: models.map((item, index) => ({ value: String(index), label: `${item.client} / ${item.model}` })),
       filter: (search, option) => (option.label ?? "").toLowerCase().includes(search.toLowerCase()),
     });
     if (isCancel(result)) throw new PromptCancelled();
@@ -385,7 +384,7 @@ class ClackPrompter implements Prompter {
   async selectOption(name: string, values: readonly string[], allowDefault: boolean): Promise<string> {
     if (values.length === 0) return "";
     const options = [
-      ...(allowDefault ? [{ value: "", label: "provider default" }] : []),
+      ...(allowDefault ? [{ value: "", label: "client default" }] : []),
       ...values.map((value) => ({ value, label: value })),
     ];
     const result = await clackSelect({

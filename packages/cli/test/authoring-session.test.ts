@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   SessionLock,
+  AgentToolRunner,
   appendLifecycleEvent,
   activatePreparedSession,
   createPreparedSession,
@@ -12,19 +13,20 @@ import {
 import { afterEach, beforeEach, expect, test } from "vitest";
 import { main } from "../src/index.ts";
 import { setInvocationCwd } from "../src/workspace.ts";
-import { capture } from "./support.ts";
+import { capture, FakeClient, registryOf } from "./support.ts";
 
-const CONFIG = `schema_version: 5
+const CONFIG = `schema_version: 6
 agents:
   fast:
-    provider: grok
+    client:
+      type: grok
     model: grok-4.6
 roles:
   developer:
     agent: fast
 `;
 
-const WORKFLOW = `schema_version: 5
+const WORKFLOW = `schema_version: 6
 id: build
 stages:
   - id: implement
@@ -149,7 +151,7 @@ test("a changed id is a mismatch with the recorded workflow id", async () => {
 
 test("document, binding and downstream errors point at the session draft", async () => {
   const id = prepare();
-  const document = await run(["workflow", "validate", "@draft", "--session", id, "--format", "yaml", "--json"], EDITED.replace("schema_version: 5", "schema_version: 5\nbogus: 1"));
+  const document = await run(["workflow", "validate", "@draft", "--session", id, "--format", "yaml", "--json"], EDITED.replace("schema_version: 6", "schema_version: 6\nbogus: 1"));
   expect(document.json.diagnostics.some((d: { code: string; severity: string }) => d.severity === "warning" || d.severity === "error")).toBe(true);
 
   const binding = await run(["workflow", "validate", "@draft", "--session", id, "--format", "yaml", "--json"], EDITED.replace("role: developer\n    depends_on:\n      - implement", "role: ghost\n    depends_on:\n      - implement"));
@@ -373,7 +375,7 @@ test("startup adopts a saved prepared draft; a started session keeps its freeze 
   expect(again.code).toBe(0);
   expect(read(frozen)).toBe(frozenBefore);
   await expect(
-    executeNamedWorkflow(root, { sessionId: prepared, once: true, stageId: "nope", refreshWorkflow: true }),
+    executeNamedWorkflow(root, { sessionId: prepared, once: true, stageId: "nope", refreshWorkflow: true }, new AgentToolRunner(registryOf({ grok: new FakeClient() }))),
   ).rejects.toThrow();
   expect(read(frozen)).toContain("id: extra");
   expect(read(frozen)).not.toBe(frozenBefore);

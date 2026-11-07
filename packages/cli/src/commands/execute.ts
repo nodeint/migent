@@ -16,7 +16,7 @@ import { printResumeCommand, printReplyCommand, formatQuestion } from "../displa
 import { cliHooks } from "../hooks.js";
 import { requireCurrentSchema } from "../migrate.js";
 import { runPreflight } from "../preflight.js";
-import { providerMap } from "../provider.js";
+import { clientRegistry } from "../client.js";
 import { text } from "../text.js";
 
 export interface ExecuteWorkflowOptions {
@@ -44,7 +44,7 @@ export async function executeWorkflow(workspace: string, options: ExecuteWorkflo
   const sessionId = text(options.sessionId);
   const creating = !startPrepared && (options.action === "start" || (once && sessionId === null));
   const maxDispatches = options.maxDispatches === undefined ? DEFAULT_MAX_DISPATCHES : options.maxDispatches;
-  const runner = options.runner ?? cliHooks.runner ?? new AgentToolRunner(providerMap());
+  const runner = options.runner ?? cliHooks.runner ?? new AgentToolRunner(clientRegistry());
   runner.itemProgress = options.itemProgress === true;
   const result = await executeNamedWorkflow(
     workspace,
@@ -65,7 +65,7 @@ export async function executeWorkflow(workspace: string, options: ExecuteWorkflo
           process.stderr.write("preflight skipped (--skip-preflight)\n");
           return true;
         }
-        return runPreflight(workspace, target, { providers: runner.providers });
+        return runPreflight(workspace, target, { clients: runner.registry });
       },
       reply: options.reply ?? null,
       replyStageId: options.replyStageId ?? null,

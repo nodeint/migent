@@ -1,4 +1,4 @@
-import type { ProviderResolver } from "./provider-contract.js";
+import type { ClientRegistry } from "./cli-client.js";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
 import { stringify } from "yaml";
@@ -114,7 +114,7 @@ export function createWorkflowSession(
   workflowId: string,
   task: string | null | undefined,
   priorSessionId?: string | null,
-  resolveProvider?: ProviderResolver,
+  resolveClient?: ClientRegistry,
 ): string {
   const workflow = loadNamedWorkflow(workspace, workflowId);
   const resolvedId = workflow.id;
@@ -145,7 +145,7 @@ export function createWorkflowSession(
       if (snapshot) manifestLines.push(`handoff: ${JSON.stringify(snapshot)}`);
       writeFileAtomic(path.join(sessionDirectory, "manifest.yaml"), `${manifestLines.join("\n")}\n`);
       writeTaskFile(taskFilePath(workspace, sessionId), taskSummary);
-      const frozen = writeWorkflowFreeze(sessionDirectory, workspace, workflow, resolveProvider);
+      const frozen = writeWorkflowFreeze(sessionDirectory, workspace, workflow, resolveClient);
       appendSessionCreated(sessionDirectory, createdAt, {
         workflow_id: resolvedId,
         workflow_path: workflowRelativePath,
@@ -170,7 +170,7 @@ export function createPreparedSession(
   title: string,
   workflowId: string,
   priorSessionId?: string | null,
-  resolveProvider?: ProviderResolver,
+  resolveClient?: ClientRegistry,
 ): string {
   const sessionTitle = title.trim();
   assertSessionTitle(sessionTitle);
@@ -215,7 +215,7 @@ export function createPreparedSession(
   return sessionId;
 }
 
-export function activatePreparedSession(workspace: string, sessionId: string, resolveProvider?: ProviderResolver): void {
+export function activatePreparedSession(workspace: string, sessionId: string, resolveClient?: ClientRegistry): void {
   requireTaskBody(workspace, sessionId);
   const sessionDirectory = path.join(workspace, ".migent", "sessions", sessionId);
   const statusPath = path.join(sessionDirectory, "status.json");
@@ -237,7 +237,7 @@ export function activatePreparedSession(workspace: string, sessionId: string, re
   const handoff = resolveHandoff(workspace, workflow.id, prior);
   withSessionLock(sessionDirectory, () => {
     const snapshot = snapshotHandoff(sessionDirectory, handoff);
-    const frozen = writeWorkflowFreeze(sessionDirectory, workspace, workflow, resolveProvider);
+    const frozen = writeWorkflowFreeze(sessionDirectory, workspace, workflow, resolveClient);
     appendLifecycleEvent(sessionDirectory, {
       event: "handoff.bound", timestamp: utcNow(), data: { handoff: snapshot, hash: frozen.hash },
     });

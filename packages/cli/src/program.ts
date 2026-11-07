@@ -30,7 +30,9 @@ const PROGRESS_HELP =
 const VERBOSE_HELP =
   "Accepted for compatibility. Stage lines already include the attempt and the time. The response stays in the execution directory.";
 const PROVIDER_LIST_REMOVED =
-  "provider list has been removed. Use `migent get providers`, `migent get clients`, `migent get models`, `migent get options`, or `migent get efforts`.";
+  "provider list has been removed. Use `migent get clients`, `migent get models`, `migent get options`, or `migent get efforts`.";
+
+const CLIENT_MAPPING = "claude→claude-code, codex→codex, grok→grok, agy→agy, opencode→opencode";
 
 export interface CliStatus {
   code: number;
@@ -52,22 +54,26 @@ export function createProgram(status: CliStatus, options: { quietErrors?: boolea
   const init = program
     .command("init")
     .description("Set up planner, reviewer, and developer models with implement and plan workflows.")
-    .option("--planner-provider <provider>", "Planner provider. Pass with --planner-model.")
-    .option("--planner-model <model>", "Planner model ID. Pass with --planner-provider.")
+    .option("--planner-client <client>", "Planner CLI client. Pass with --planner-model.")
+    .option("--planner-model <model>", "Planner model ID. Pass with --planner-client.")
     .option("--planner-effort <effort>", "Planner model effort.")
     .option("--planner-option <pair>", "Planner model option, KEY=VALUE.", collect, [])
-    .option("--reviewer-provider <provider>", "Reviewer provider. Pass with --reviewer-model.")
-    .option("--reviewer-model <model>", "Reviewer model ID. Pass with --reviewer-provider.")
+    .option("--reviewer-client <client>", "Reviewer CLI client. Pass with --reviewer-model.")
+    .option("--reviewer-model <model>", "Reviewer model ID. Pass with --reviewer-client.")
     .option("--reviewer-effort <effort>", "Reviewer model effort.")
     .option("--reviewer-option <pair>", "Reviewer model option, KEY=VALUE.", collect, [])
-    .option("--developer-provider <provider>", "Developer provider. Pass with --developer-model.")
-    .option("--developer-model <model>", "Developer model ID. Pass with --developer-provider.")
+    .option("--developer-client <client>", "Developer CLI client. Pass with --developer-model.")
+    .option("--developer-model <model>", "Developer model ID. Pass with --developer-client.")
     .option("--developer-effort <effort>", "Developer model effort.")
     .option("--developer-option <pair>", "Developer model option, KEY=VALUE.", collect, [])
-    .option("--provider <provider>", "Alias for --developer-provider.")
+    .option("--client <client>", "Alias for --developer-client.")
     .option("--model <model>", "Alias for --developer-model.")
     .option("--effort <effort>", "Alias for --developer-effort.")
     .option("--option <pair>", "Alias for --developer-option, KEY=VALUE.", collect, [])
+    .addOption(new Option("--planner-provider <provider>").hideHelp())
+    .addOption(new Option("--reviewer-provider <provider>").hideHelp())
+    .addOption(new Option("--developer-provider <provider>").hideHelp())
+    .addOption(new Option("--provider <provider>").hideHelp())
     .addOption(new Option("--skill").hideHelp())
     .option("--no-input", "Do not prompt. Same as MIGENT_NO_INPUT=1.");
   init.action((options: OptionValues) =>
@@ -76,25 +82,37 @@ export function createProgram(status: CliStatus, options: { quietErrors?: boolea
         printError("init --skill has been removed. Run `migent init`, then `migent skill install --project`.");
         return 2;
       }
-      for (const [name, legacy] of [["developerProvider", "provider"], ["developerModel", "model"], ["developerEffort", "effort"]] as const) {
+      for (const [legacy, replacement] of [
+        ["plannerProvider", "--planner-client"],
+        ["reviewerProvider", "--reviewer-client"],
+        ["developerProvider", "--developer-client"],
+        ["provider", "--client"],
+      ] as const) {
+        if (options[legacy] !== undefined) {
+          const flag = `--${legacy.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`;
+          printError(`${flag} has been removed; use ${replacement} <id> (${CLIENT_MAPPING}).`);
+          return 2;
+        }
+      }
+      for (const [name, legacy] of [["developerClient", "client"], ["developerModel", "model"], ["developerEffort", "effort"]] as const) {
         if (options[name] !== undefined && options[legacy] !== undefined) {
           printError(`Use only one of --${name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)} and --${legacy}.`);
           return 2;
         }
       }
-      const provider = optionalText(options.developerProvider ?? options.provider);
+      const client = optionalText(options.developerClient ?? options.client);
       const model = optionalText(options.developerModel ?? options.model);
       const interactive = !inputDisabled(options) && Boolean(process.stdin.isTTY);
       return runInit(invocationCwdPath(), {
-        provider,
+        client,
         model,
         effort: optionalText(options.developerEffort ?? options.effort),
         options: [...stringList(options.developerOption), ...stringList(options.option)],
-        plannerProvider: optionalText(options.plannerProvider),
+        plannerClient: optionalText(options.plannerClient),
         plannerModel: optionalText(options.plannerModel),
         plannerEffort: optionalText(options.plannerEffort),
         plannerOptions: stringList(options.plannerOption),
-        reviewerProvider: optionalText(options.reviewerProvider),
+        reviewerClient: optionalText(options.reviewerClient),
         reviewerModel: optionalText(options.reviewerModel),
         reviewerEffort: optionalText(options.reviewerEffort),
         reviewerOptions: stringList(options.reviewerOption),
@@ -165,7 +183,7 @@ export function createProgram(status: CliStatus, options: { quietErrors?: boolea
 
   program
     .command("get [type] [name]")
-    .description("Look up workflows, roles, agents, the effective config, and this machine's providers, clients, models, options, and efforts (read-only).")
+    .description("Look up workflows, roles, agents, the effective config, and this machine's clients, models, options, and efforts (read-only).")
     .option("-o, --output <format>", "Output format: json, yaml, or name. Default is a table or YAML.")
     .option("--json", "Same as -o json.")
     .option("--session <id>", "For workflows: the workflow this session runs (draft, frozen, or live).")
@@ -210,7 +228,7 @@ ${exitText(["Exit 0 on success, including an empty list.", "Exit 2 on a usage or
 
   program
     .command("doctor")
-    .description("Check config, workflows, and provider CLIs, or one session's workflow.")
+    .description("Check config, workflows, and client CLIs, or one session's workflow.")
     .option("--json", "Print the checks as one JSON object.")
     .option("--session <id>", "Check only the workflow this session runs: its draft, frozen copy, or live source. Read-only.")
     .addHelpText(
@@ -400,9 +418,10 @@ function registerSessionCommand(program: Command, status: CliStatus): void {
   run
     .option("--skip-preflight", "Workflow mode: start without the doctor checks that run over the whole workflow first. Use when a check is wrong or the run is urgent.")
     .option("--role <role>", "Role to run. Omit --workflow.")
-    .option("--provider <provider>", "Provider for this role. Pass with --model, or omit both.")
-    .option("--model <model>", "Native model id for this role. Pass with --provider, or omit both.")
-    .option("--option <pair>", "KEY=VALUE overriding one provider option for this turn.", collect, [])
+    .option("--client <client>", "CLI client for this role. Pass with --model, or omit both.")
+    .option("--model <model>", "Native model id for this role. Pass with --client, or omit both.")
+    .option("--option <pair>", "KEY=VALUE overriding one client option for this turn.", collect, [])
+    .addOption(new Option("--provider <provider>").hideHelp())
     .option("--prompt <prompt>", "Prompt text for a role run.")
     .option("--file <file>", "Read the role prompt from this file.")
     .option("--stdin", "Read the role prompt from stdin.")
@@ -659,6 +678,7 @@ function runSessionCommand(options: OptionValues): number | Promise<number> {
 function roleFlagsPresent(options: OptionValues): boolean {
   return (
     options.role !== undefined ||
+    options.client !== undefined ||
     options.provider !== undefined ||
     options.model !== undefined ||
     stringList(options.option).length > 0 ||
@@ -892,10 +912,14 @@ async function runAgent(options: OptionValues, sessionId: string | null): Promis
     printError("Pass --role.");
     return 2;
   }
-  const provider = optionalText(options.provider);
+  if (options.provider !== undefined) {
+    printError(`--provider has been removed; use --client <id> (${CLIENT_MAPPING}).`);
+    return 2;
+  }
+  const client = optionalText(options.client);
   const model = optionalText(options.model);
-  if ((provider === null) !== (model === null)) {
-    printError("Pass both --provider and --model, or omit both.");
+  if ((client === null) !== (model === null)) {
+    printError("Pass both --client and --model, or omit both.");
     return 2;
   }
   const prompt = optionalText(options.prompt);
@@ -910,7 +934,7 @@ async function runAgent(options: OptionValues, sessionId: string | null): Promis
     role,
     task: optionalText(options.task),
     sessionId,
-    provider,
+    client,
     model,
     options: stringList(options.option),
     prompt,

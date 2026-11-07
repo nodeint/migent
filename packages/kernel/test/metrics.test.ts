@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "vitest";
 import {
@@ -11,8 +11,8 @@ import {
   sealedMetricsPath,
   sessionMetrics,
 } from "../src/index.ts";
-import type { TurnUsage, UsageCapture } from "../src/provider-contract.ts";
-import { FakeProvider, ScriptedProvider, tempDir } from "./support.ts";
+import type { TurnUsage, UsageCapture } from "../src/cli-client.ts";
+import { FakeClient, ScriptedClient, tempDir, registryOf } from "./support.ts";
 
 const PLAN = `\
 id: plan
@@ -84,11 +84,9 @@ function blank(): TurnUsage {
   };
 }
 
-function cumulative(current: UsageCapture, previous: UsageCapture | null): TurnUsage {
+function cumulative(current: UsageCapture): { values: TurnUsage; cumulative: string[] } {
   const total = typeof current.total === "number" ? current.total : 0;
-  const prior = previous !== null && typeof previous.total === "number" ? previous.total : 0;
-  const delta = total - prior;
-  return { ...blank(), input_tokens: delta < 0 ? null : delta };
+  return { values: { ...blank(), input_tokens: total }, cumulative: ["input_tokens"] };
 }
 
 interface ExecInput {
@@ -96,6 +94,7 @@ interface ExecInput {
   order: number;
   stage: string;
   status: string;
+  client?: string | null;
   provider?: string;
   createdAt?: string;
   completedAt?: string | null;
@@ -124,7 +123,8 @@ function writeSession(
         execution_order: execution.order,
         stage_id: execution.stage,
         stage_attempt: execution.order,
-        provider: execution.provider ?? "fake",
+        client: execution.client === null ? undefined : execution.client ?? execution.provider ?? "fake",
+        provider: execution.provider ?? null,
         model: "m1",
         agent_id: "agent-1",
         resumes_execution_id: null,
@@ -218,7 +218,7 @@ test("counts a revision and keeps routed_from across a failed retry", () => {
       event(2, "revisions.reset", null),
     ],
   );
-  const metrics = sessionMetrics(workspace, sessionId, { fake: new FakeProvider() });
+  const metrics = sessionMetrics(workspace, sessionId, registryOf({ fake: new FakeClient() }));
   const stages = metrics.stages as Record<string, Record<string, unknown>>;
   const executions = metrics.executions as Array<Record<string, unknown>>;
   expect(Object.keys(stages)).toEqual(["plan", "review"]);
@@ -246,7 +246,7 @@ test("a failed attempt then a success is not a revision", () => {
     ],
     [event(1, "session.created", null, { data: {} })],
   );
-  const metrics = sessionMetrics(workspace, "retry", {});
+  const metrics = sessionMetrics(workspace, "retry", registryOf({}));
   const stage = (metrics.stages as Record<string, Record<string, unknown>>).implement;
   expect(stage).toMatchObject({ failed: 1, revisions: 0, executions: 2 });
 });
@@ -268,7 +268,7 @@ test("verify red then red then pass", () => {
       event(6, "verify.passed", executionId, { timestamp: at(5) }),
     ],
   );
-  const metrics = sessionMetrics(workspace, "verify", {});
+  const metrics = sessionMetrics(workspace, "verify", registryOf({}));
   const execution = (metrics.executions as Array<Record<string, unknown>>)[0];
   expect(execution?.verify).toEqual({
     runs: 3,
@@ -281,10 +281,35 @@ test("verify red then red then pass", () => {
   expect((metrics.totals as Record<string, unknown>).verify_red).toBe(2);
 });
 
+test.each([
+  { workflow: "legacy", provider: "codex", command: "opencode", expected: "opencode" },
+  { workflow: "legacy", provider: "byteplus", command: "opencode", expected: "opencode" },
+  { workflow: "agent", provider: "claude", command: "claude", expected: "claude-code" },
+  { workflow: "agent", provider: "codex", command: "opencode", expected: null },
+  { workflow: "legacy", provider: "codex", command: "unknown", expected: null },
+])("legacy metrics use execution evidence: $workflow/$provider/$command", ({ workflow, provider, command, expected }) => {
+  const workspace = tempDir("migent-metrics-");
+  const client = new FakeClient();
+  client.readUsage = cumulative;
+  writeSession(
+    workspace,
+    "legacy",
+    { workflow_id: workflow, status: "completed", updated_at: at(2) },
+    [{ id: "0001", order: 1, stage: "agent", status: "completed", client: null, provider }],
+    [turn(1, "0001", { total: 100 }, command)],
+  );
+  const metrics = sessionMetrics(workspace, "legacy", registryOf({ opencode: client, "claude-code": client }));
+  const execution = (metrics.executions as Array<Record<string, unknown>>)[0]!;
+  expect(execution.client).toBe(expected);
+  const parsed = command === "unknown" ? null : 100;
+  expect((execution.usage as TurnUsage).input_tokens).toBe(parsed);
+  expect(execution.uncaptured_turns).toBe(command === "unknown" ? 1 : 0);
+});
+
 test("a cumulative provider deltas across executions that share an agent", () => {
   const workspace = tempDir("migent-metrics-");
-  const provider = new FakeProvider();
-  provider.normalizeUsage = cumulative;
+  const provider = new FakeClient();
+  provider.readUsage = cumulative;
   writeSession(
     workspace,
     "cost",
@@ -295,7 +320,7 @@ test("a cumulative provider deltas across executions that share an agent", () =>
     ],
     [turn(1, "0001", { total: 100 }), turn(2, "0002", { total: 140 })],
   );
-  const metrics = sessionMetrics(workspace, "cost", { fake: provider });
+  const metrics = sessionMetrics(workspace, "cost", registryOf({ fake: provider }));
   const executions = metrics.executions as Array<Record<string, unknown>>;
   expect((executions[0]?.usage as TurnUsage).input_tokens).toBe(100);
   expect((executions[1]?.usage as TurnUsage).input_tokens).toBe(40);
@@ -305,8 +330,8 @@ test("a cumulative provider deltas across executions that share an agent", () =>
 
 test("a cancelled turn's spend is in the next delta", () => {
   const workspace = tempDir("migent-metrics-");
-  const provider = new FakeProvider();
-  provider.normalizeUsage = cumulative;
+  const provider = new FakeClient();
+  provider.readUsage = cumulative;
   writeSession(
     workspace,
     "cancel",
@@ -321,7 +346,7 @@ test("a cancelled turn's spend is in the next delta", () => {
       turn(3, "0002", { total: 180 }),
     ],
   );
-  const metrics = sessionMetrics(workspace, "cancel", { fake: provider });
+  const metrics = sessionMetrics(workspace, "cancel", registryOf({ fake: provider }));
   const executions = metrics.executions as Array<Record<string, unknown>>;
   const totals = metrics.totals as Record<string, unknown>;
   expect((executions[1]?.usage as TurnUsage).input_tokens).toBe(80);
@@ -332,21 +357,21 @@ test("a cancelled turn's spend is in the next delta", () => {
 
 test("cost totals keep the known sum and count the gap", () => {
   const workspace = tempDir("migent-metrics-");
-  const priced = new FakeProvider();
-  priced.normalizeUsage = () => ({ ...blank(), input_tokens: 10, cost_usd: 1.5 });
-  const free = new FakeProvider();
-  free.normalizeUsage = () => ({ ...blank(), input_tokens: 4 });
+  const priced = new FakeClient();
+  priced.readUsage = () => ({ values: { ...blank(), input_tokens: 10, cost_usd: 1.5 }, cumulative: [] });
+  const free = new FakeClient();
+  free.readUsage = () => ({ values: { ...blank(), input_tokens: 4 }, cumulative: [] });
   writeSession(
     workspace,
     "mix",
     { workflow_id: "agent", status: "completed", updated_at: at(2) },
     [
-      { id: "0001", order: 1, stage: "agent", status: "completed", provider: "priced" },
-      { id: "0002", order: 2, stage: "agent", status: "completed", provider: "free" },
+      { id: "0001", order: 1, stage: "agent", status: "completed", client: "priced" },
+      { id: "0002", order: 2, stage: "agent", status: "completed", client: "free" },
     ],
     [turn(1, "0001", { ok: true }, "priced"), turn(2, "0002", { ok: true }, "free")],
   );
-  const totals = sessionMetrics(workspace, "mix", { priced, free }).totals as {
+  const totals = sessionMetrics(workspace, "mix", registryOf({ priced, free })).totals as {
     usage: TurnUsage;
     usage_missing: Record<string, number>;
     cost_partial: boolean;
@@ -370,7 +395,7 @@ test("a progress turn_failed does not count as a turn", () => {
       turn(2, "0001", null),
     ],
   );
-  const totals = sessionMetrics(workspace, "dup", { fake: new FakeProvider() }).totals as Record<string, unknown>;
+  const totals = sessionMetrics(workspace, "dup", registryOf({ fake: new FakeClient() })).totals as Record<string, unknown>;
   expect(totals.turns).toBe(1);
   expect(totals.uncaptured_turns).toBe(1);
 });
@@ -390,7 +415,7 @@ test("a session recorded before usage captures still has a row", () => {
     [{ id: "0001", order: 1, stage: "implement", status: "completed", createdAt: at(0), completedAt: at(10) }],
     [event(1, "provider.turn_completed", "0001")],
   );
-  const metrics = sessionMetrics(workspace, "old", { fake: new FakeProvider() });
+  const metrics = sessionMetrics(workspace, "old", registryOf({ fake: new FakeClient() }));
   const totals = metrics.totals as { turns: number; wall_seconds: number; usage: TurnUsage; usage_missing: Record<string, number> };
   expect(totals.turns).toBe(1);
   expect(totals.wall_seconds).toBe(10);
@@ -417,7 +442,7 @@ test("a missing workflow leaves revisions null", () => {
     [{ id: "0001", order: 1, stage: "plan", status: "completed", createdAt: at(0), completedAt: at(10) }],
     [event(1, "session.created", null, { data: { hash: "abc" } })],
   );
-  const metrics = sessionMetrics(workspace, "gone", {});
+  const metrics = sessionMetrics(workspace, "gone", registryOf({}));
   expect(metrics.workflow_id).toBe("plan");
   expect((metrics.totals as Record<string, unknown>).revisions).toBeNull();
   expect((metrics.stages as Record<string, Record<string, unknown>>).plan?.revisions).toBeNull();
@@ -434,7 +459,7 @@ test("a running execution has no wall time", () => {
     [{ id: "0001", order: 1, stage: "agent", status: "running", createdAt: at(0), completedAt: null }],
     [],
   );
-  const metrics = sessionMetrics(workspace, "run", {});
+  const metrics = sessionMetrics(workspace, "run", registryOf({}));
   const execution = (metrics.executions as Array<Record<string, unknown>>)[0];
   expect(execution?.completed_at).toBeNull();
   expect(execution?.wall_seconds).toBeNull();
@@ -472,8 +497,8 @@ test("corrupt sessions are a short row and a directory without status is skipped
     [],
     [event(1, "session.created", null)],
   );
-  expect(sessionMetrics(workspace, "broken", {})).toEqual({ session_id: "broken", status: "corrupt" });
-  expect(sessionMetrics(workspace, "bad-exec", {})).toEqual({ session_id: "bad-exec", status: "corrupt" });
+  expect(sessionMetrics(workspace, "broken", registryOf({}))).toEqual({ session_id: "broken", status: "corrupt" });
+  expect(sessionMetrics(workspace, "bad-exec", registryOf({}))).toEqual({ session_id: "bad-exec", status: "corrupt" });
   const listed = listSessionMetrics(workspace, {}, { workflow: null, status: null, limit: null });
   expect(listed.map((row) => row.session_id)).toEqual(["newer", "bad-exec", "older", "broken"]);
   expect(listed.some((row) => row.session_id === "nostatus")).toBe(false);
@@ -484,7 +509,8 @@ test("corrupt sessions are a short row and a directory without status is skipped
 const SEAL_CONFIG = `\
 agents:
   fake:
-    provider: fake
+    client:
+      type: fake
     model: m1
 roles:
   developer:
@@ -496,13 +522,13 @@ test("a completed session seals metrics and later normalization leaves the file"
   mkdirSync(path.join(workspace, ".migent", "workflows"), { recursive: true });
   writeFileSync(path.join(workspace, ".migent", "config.yaml"), SEAL_CONFIG, "utf8");
   writeFileSync(path.join(workspace, ".migent", "workflows", "once.yaml"), ONCE, "utf8");
-  const provider = new ScriptedProvider(["status: complete\n\ndone"], ["# notes\n"]);
+  const provider = new ScriptedClient(["status: complete\n\ndone"], ["# notes\n"]);
   provider.captureUsage = () => ({ total: 4 });
-  provider.normalizeUsage = () => ({ ...blank(), input_tokens: 4 });
+  provider.readUsage = () => ({ values: { ...blank(), input_tokens: 4 }, cumulative: [] });
   const result = await executeNamedWorkflow(
     workspace,
     { workflowId: "once", task: "write notes" },
-    new AgentToolRunner({ fake: provider }, 10),
+    new AgentToolRunner(registryOf({ fake: provider }), 10),
   );
   expect(result.status).toBe("completed");
   const file = sealedMetricsPath(workspace, result.sessionId);
@@ -514,8 +540,8 @@ test("a completed session seals metrics and later normalization leaves the file"
   expect(sealed.totals.usage.input_tokens).toBe(4);
   expect(readSealedMetrics(workspace, result.sessionId)).toEqual({ state: "ok", metrics: sealed });
 
-  provider.normalizeUsage = () => ({ ...blank(), input_tokens: 99 });
-  const derived = sessionMetrics(workspace, result.sessionId, { fake: provider });
+  provider.readUsage = () => ({ values: { ...blank(), input_tokens: 99 }, cumulative: [] });
+  const derived = sessionMetrics(workspace, result.sessionId, registryOf({ fake: provider }));
   expect((derived.totals as { usage: TurnUsage }).usage.input_tokens).toBe(99);
   expect(JSON.parse(readFileSync(file, "utf8"))).toEqual(sealed);
   expect(listSealedMetrics(workspace, { workflow: "once", status: "completed", limit: null })).toEqual([sealed]);
@@ -524,8 +550,8 @@ test("a completed session seals metrics and later normalization leaves the file"
 test("an agent session does not seal metrics", async () => {
   const workspace = tempDir("migent-metrics-agent-");
   const sessionId = createAgentSession(workspace, "reviewer", "review the plan");
-  const result = await new AgentToolRunner({ fake: new FakeProvider() }, 10).run({
-    provider: "fake",
+  const result = await new AgentToolRunner(registryOf({ fake: new FakeClient() }), 10).run({
+    client: "fake",
     model: "m1",
     prompt: "review",
     workspace,
@@ -544,7 +570,7 @@ test("a blocked session has no sealed metrics and is omitted from the list", asy
   const result = await executeNamedWorkflow(
     workspace,
     { workflowId: "once", task: "write notes" },
-    new AgentToolRunner({ fake: new ScriptedProvider(["status: blocked\nblocker: gate"]) }, 10),
+    new AgentToolRunner(registryOf({ fake: new ScriptedClient(["status: blocked\nblocker: gate"]) }), 10),
   );
   expect(result.status).toBe("blocked");
   expect(existsSync(sealedMetricsPath(workspace, result.sessionId))).toBe(false);
@@ -562,4 +588,24 @@ test("a corrupt metrics file is reported and left in place", () => {
   expect(readSealedMetrics(workspace, "kept")).toEqual({ state: "corrupt" });
   expect(readFileSync(file, "utf8")).toBe("not-json");
   expect(listSealedMetrics(workspace, { workflow: null, status: null, limit: null })).toEqual([]);
+});
+
+test("mixed legacy CLI turns use their own parsers without inventing an execution client", () => {
+  const workspace = tempDir("migent-metrics-mixed-");
+  try {
+    const codex = new FakeClient();
+    const opencode = new FakeClient();
+    codex.readUsage = (capture) => ({ values: { ...blank(), input_tokens: Number(capture.codex) }, cumulative: [] });
+    opencode.readUsage = (capture) => ({ values: { ...blank(), input_tokens: Number(capture.opencode) }, cumulative: [] });
+    writeSession(workspace, "legacy", { workflow_id: "legacy", status: "active" },
+      [{ id: "0001", order: 1, stage: "work", status: "failed", client: null, provider: "codex" }],
+      [turn(1, "0001", { opencode: 10 }, "opencode"), turn(2, "0001", { codex: 25 }, "codex")]);
+    const metrics = sessionMetrics(workspace, "legacy", registryOf({ codex, opencode }));
+    const execution = (metrics.executions as Array<Record<string, unknown>>)[0]!;
+    expect(execution.client).toBeNull();
+    expect((execution.usage as TurnUsage).input_tokens).toBe(35);
+    expect(execution.uncaptured_turns).toBe(0);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
 });

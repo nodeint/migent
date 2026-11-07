@@ -1,6 +1,6 @@
 import type { AgentToolRunner } from "@nodeint/migent-kernel";
 import type { SkillRunner } from "./commands/skill.js";
-import type { RunCommand } from "./provider.js";
+import type { RunCommand } from "./client.js";
 
 /** Test seams. Production leaves all of them null. */
 export const cliHooks: {

@@ -48,7 +48,7 @@ migent session run --role reviewer --session <session-id> --prompt "Summarize th
 The id comes from the file's `id` field, or from the file name when `id` is omitted.
 `session run` uses the workflow engine when `--workflow` is present. It runs
 one role when `--workflow` is omitted. Passing `--workflow` together with
-`--role`, a prompt, `--provider`, `--model`, `--option`, or `--json` is an error.
+`--role`, a prompt, `--client`, `--model`, `--option`, or `--json` is an error.
 Passing `--once`, `--prior`, `--max-dispatches`,
 `--unlimited-dispatches`, `--progress`, `--verbose`, `--refresh-workflow`, or
 `--skip-preflight` without `--workflow` is an error.
@@ -82,7 +82,7 @@ the text from `prepare`.
 On a role run, `--task` is the label for a new session and is stored as the title.
 The session id is a UUID. `--task` cannot be
 combined with `--session`. Pass one of `--prompt`, `--file`, or `--stdin`.
-`--provider` and `--model` are passed together. `--json` prints one result
+`--client` and `--model` are passed together. `--json` prints one result
 object. Without `--json` the result is a table. Exit 0 means the outcome is
 complete. Exit 1 means it is not. Exit 130 means the run was cancelled.
 A stopped role session prints `migent session continue <session-id>` on
@@ -96,7 +96,7 @@ and 130.
 A failed stage stays stopped. `session continue` runs that stage again and
 does not sleep until an old `retry_at`. Exit 3 is `stage_failed`: the command
 stopped on that failure and did not wait. Exit 8 is `quota` for `--once` and
-`--stage`: the provider named a reset time and the command did not wait.
+`--stage`: the client named a reset time and the command did not wait.
 Cancelling during a wait is exit 130. That disarms the timer. The quota
 execution stays `failed`, and the session stays `active` when nothing else
 was in flight. The next `session continue` runs the stage and does not sleep
@@ -125,7 +125,7 @@ has an artifact. The reply does not repeat the blocker. `--reply` and
 than one stage is blocked, `--stage` names the one that receives the reply.
 Only that stage is resumed. The others stay blocked. A later stage in the same
 command does not receive the reply. A cancelled session is resumed on that same execution: a
-provider turn that was cut off is sent again, and a verify that was cut off
+client turn that was cut off is sent again, and a verify that was cut off
 runs again. `completed` sessions stay stopped. The
 existing session history and artifacts remain available to later stages.
 
@@ -144,7 +144,7 @@ start. `session continue` still rejects a prepared session,
 and `session run --session` remains the command that starts it.
 
 A workflow run leaves stdout empty. Stderr is plain lines. A stage start line
-names the stage, attempt, clock time, provider, and model. A stage finish line
+names the stage, attempt, clock time, client, and model. A stage finish line
 names the stage, attempt, duration, outcome, and decision. A completed session
 adds `completed · <duration>` and, when the workflow published files, one
 `artifact: <absolute-path>` line per file. The path starts at the filesystem
@@ -153,9 +153,9 @@ report is not printed. Every execution that ended failed prints
 `failure: executions/<id>/failure.md`, including an attempt that a later retry
 recovered from. Exit 1, 3, 6, and 8 also print
 `response: executions/<id>/response.md` when the model produced a response;
-when the provider never started there is no response line.
+when the client never started there is no response line.
 Exit 7 prints `verify: executions/<id>/turns/01/verify.md`. `--verbose` does not print the
-report. Stderr also has the session id when the session is created, and provider
+report. Stderr also has the session id when the session is created, and client
 errors. When a workflow or role session stops before it is completed, including blocked,
 cancelled, and `--once` while later workflow stages remain, stderr ends with:
 
@@ -166,7 +166,7 @@ migent session continue <session-id>
 
 The second line is the command. A completed session does not print it.
 `--progress` also prints each tool call once,
-when it finishes. Item traces and provider heartbeats are appended to
+when it finishes. Item traces and client heartbeats are appended to
 `executions/<id>/stream.jsonl`. `session follow` merges that file with
 `events.jsonl` in timestamp order. Nothing switches
 format because a terminal is attached. `--json` selects machine output where a
@@ -177,11 +177,11 @@ exit codes.
 
 ```bash
 migent init
-migent init --no-input --planner-provider codex --planner-model gpt-5 --reviewer-provider grok --reviewer-model grok-4.7 --provider codex --model gpt-5
+migent init --no-input --planner-client codex --planner-model gpt-5 --reviewer-client grok --reviewer-model grok-4.7 --client codex --model gpt-5
 ```
 
-In a terminal, choose a provider and model for the planner, then the reviewer,
-then the developer. Each selection can include the provider's prompted options.
+In a terminal, choose a client and model for the planner, then the reviewer,
+then the developer. Each selection can include the client's prompted options.
 All three roles are configured independently and can use the same model.
 Each role includes instructions for its responsibilities. Init saves these
 selections and creates the
@@ -210,23 +210,23 @@ Both workflows route `approved` to completion and `revise` back to the
 work stage, with `max_revisions: 3`. The implement workflow can run
 independently; it does not require a prior plan session.
 
-There is no preset selection. `config.yaml` contains each role's provider,
+There is no preset selection. `config.yaml` contains each role's client,
 model ID, and selected options directly; no `agents` section or
 `config.local.yaml` is generated. Commit the configuration and workflows.
 Use the optional local file later for machine-specific overrides.
 
 | Flag | Input / purpose |
 | --- | --- |
-| `--planner-provider`, `--planner-model` | Planner provider and model ID; pass together. |
+| `--planner-client`, `--planner-model` | Planner CLI client and model ID; pass together. |
 | `--planner-option KEY=VALUE` | Planner model option; repeat for multiple options. |
-| `--reviewer-provider`, `--reviewer-model` | Reviewer provider and model ID; pass together. |
+| `--reviewer-client`, `--reviewer-model` | Reviewer CLI client and model ID; pass together. |
 | `--reviewer-option KEY=VALUE` | Reviewer model option; repeat for multiple options. |
-| `--provider`, `--model` | Developer provider and model ID; pass together. |
+| `--client`, `--model` | Developer CLI client and model ID; pass together. |
 | `--option KEY=VALUE` | Developer model option; repeat for multiple options. |
 | `--no-input` | Disable prompts; also set by `MIGENT_NO_INPUT=1`. All three role selections are required. |
 
-Model IDs and prompted option values come from the selected provider CLI.
-Omit options to keep provider defaults. Invalid selections exit 2 before
+Model IDs and prompted option values come from the selected client CLI.
+Omit options to keep client defaults. Invalid selections exit 2 before
 writing project files. Missing flags include a complete command example.
 
 Init never starts an agent. It prints the chosen models, created files,
@@ -257,7 +257,7 @@ migent config --json
 .migent/config.local.yaml. Local agents: <names>.` to stderr. `--json` prints
 one object, `{"config": {...}, "local": {"file": ..., "agents": [...]} | null}`.
 
-`config` is read-only. To change a role, an agent, or the provider and model on
+`config` is read-only. To change a role, an agent, or the client and model on
 this machine, edit `.migent/config.yaml` or `.migent/config.local.yaml` and run
 `migent doctor`. `doctor` names every agent that has no local mapping and prints
 the YAML to add. The `config` subcommands `show`, `model`, and `role` were removed;
@@ -306,7 +306,6 @@ migent get roles | migent get role <name>
 migent get agents | migent get agent <name>
 migent get config -o json
 
-migent get providers | migent get provider <name>
 migent get clients | migent get client <id>
 migent get models [--client <id>]
 migent get model <id> [--client <id>]
@@ -322,17 +321,16 @@ reading and merging YAML by hand. It is read-only: no writes and no session
 lock. Plural forms and `wf` also work.
 
 Project types `workflow`, `role`, `agent`, and `config` read `.migent/`.
-`agents` lists the agents the project names (name, provider, model, client, and
+`agents` lists the agents the project names (name, client, model, and
 whether `config.local.yaml` sets it); `roles` shows each role's agent and
 description; `workflows` lists the files in `.migent/workflows/`.
 
-Machine types `provider`, `client`, `model`, `option`, and `effort` work
+Machine types `client`, `model`, `option`, and `effort` work
 outside a project:
 
-- `providers` lists registered providers with `default_client` and
-  `requires_client`. `clients` lists registered CLI clients with `command`,
+- `clients` lists registered CLI clients with `command`,
   `available`, `path`, `effort_option`, and `problems` that hold PATH findings
-  only. Neither runs a subprocess, and a missing client is a row with
+  only. It runs no subprocess, and a missing client is a row with
   `available: false`, not an error.
 - `models` lists the model IDs each client's CLI reports, with the client's
   default model. `options` lists Migent's configured option metadata per client;
@@ -364,7 +362,7 @@ appears once per client.
   and `problems` that report an unresolved agent, a broken file, or a missing
   client instead of aborting. `doctor` remains the validator.
 - A workflow view gives each stage its `depends_on`, `decisions`, and resolved
-  `target` (`provider`, `model`, `client`, `options`). With `--session <id>` the
+  `target` (`client`, `model`, `options`). With `--session <id>` the
   `source.kind` is `draft`, `frozen` (targets are the pinned ones), or `live`.
 - Exit 0 on success, including an empty list or a discovery warning. Exit 2 on a
   usage error, an unknown or not-found name, or a configuration error.
@@ -383,19 +381,22 @@ migent migrate --yes
 stop when `schema_version` is older than this Migent and print
 `Schema is outdated. Run migent migrate.` A missing `schema_version` is
 version 0. Both `.migent/config.yaml` and an existing
-`.migent/config.local.yaml` are checked and migrated independently. Workflows
-resolve providers from the merged configuration.
+`.migent/config.local.yaml` are migrated independently against the original
+merged configuration. Locations with neither a legacy provider nor a client stay
+unchanged for validation to report.
 
 `migrate` prints the pending changes and asks before it writes. `--yes` writes
 without asking, for a caller that has no terminal. Declining leaves the files
-unchanged. The upgrade still runs one version at a time. Each provider defines
-its own function for a model, a role, and a stage for the early versions; the
-step from version 4 to 5 is structural and the same for every provider:
+unchanged. The upgrade still runs one version at a time. The early versions
+keep their historical, provider-keyed `thinking` steps; the step from version 4
+to 5 is structural for every client, and version 5 to 6 replaces `provider`
+with `client.type`:
 
 - config: `models` becomes `agents`; an agent's `client: <id>` becomes
   `client.type` and its `options` become `client.options`; a role's
   `default_model` becomes `agent` and its `instructions` become
-  `responsibilities`.
+  `responsibilities`; `provider` becomes `client.type`, or is dropped when the
+  other config layer supplies the client.
 - workflows: a stage's `model` becomes `agent`, and stage `options` are
   **deleted**. The notes list each deleted option, so you can recreate it as an
   inline `agent` on that stage.
@@ -440,8 +441,8 @@ migent doctor --session <session-id> [--json]
 ```
 
 `doctor` checks `.migent/config.yaml`, every file in `.migent/workflows/`,
-and whether each provider CLI named in config is on `PATH`. It also checks
-that each configured model name exists by asking the provider CLI for its model
+and whether each client CLI named in config is on `PATH`. It also checks
+that each configured model name exists by asking the client CLI for its model
 list (see [Model availability](#model-availability)). It does not check login,
 quota, or account entitlement. Exit 0 when every check passes, and exit 1
 when a check fails. If git tracks `.migent/config.local.yaml`, `doctor` prints
@@ -449,7 +450,7 @@ a `warning:` line (and a `warnings` entry with `--json`); a warning does not
 change the exit code.
 
 `doctor --session <id>` checks only the workflow that one workflow session runs,
-and the provider CLIs its stages need. It ignores other workflows, unused roles
+and the client CLIs its stages need. It ignores other workflows, unused roles
 and agents, and the installed skill, and it is read-only: it never starts,
 freezes, or repairs the session. The source it checks matches what the runtime
 uses:
@@ -464,19 +465,19 @@ uses:
 - An older session without a freeze: its recorded workflow file (source `live`).
 
 Output has the checks `session` (id, workflow id, source kind, path), `workflow`,
-`bindings`, and `providers`. With `--json` the object also has
+`bindings`, and `clients`. With `--json` the object also has
 `"session": {"id", "workflow_id", "source", "path"}`; `source` and `path` are
 `null` when none could be determined. Exit 0 when every check passes and exit 1
 when one fails, including an unknown session, a role session (it has no
 workflow), a missing or corrupt manifest or freeze, a broken workflow, or a
-missing provider CLI. Exit 2 for an invalid session id (such as `../x`) or an
+missing client CLI. Exit 2 for an invalid session id (such as `../x`) or an
 outdated config schema for a draft or live source.
 
 ### Model availability
 
-`doctor` checks that each configured model name exists by asking the provider
+`doctor` checks that each configured model name exists by asking the client
 CLI for its model list. A missing name is a problem for `opencode`, `grok`, and
-`agy`, and a warning for other providers. An unreadable list is a warning.
+`agy`, and a warning for other clients. An unreadable list is a warning.
 
 ```bash
 # Edit .migent/sessions/<id>/workflow.yaml, then validate it before starting
@@ -487,11 +488,11 @@ migent session run --session <id>
 migent doctor --session <id> --json
 ```
 
-## Providers
+## Removed provider commands
 
-`migent provider list` was removed. Use `migent get providers`, `migent get
+`migent provider list` and `migent get providers` were removed. Use `migent get
 clients`, `migent get models`, `migent get options`, or `migent get efforts`.
-The old command, including `--json`, exits 2 and names those replacements.
+The old commands, including `--json`, exit 2 and name those replacements.
 
 `get models` lists the model IDs each CLI client reports and `get efforts`
 lists thinking levels per model, so the combined dump is no longer needed. For

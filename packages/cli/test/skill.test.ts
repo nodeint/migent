@@ -99,7 +99,7 @@ test("install global with several clients, deduplicating the agent list", async 
 
 test("install defaults the clients to the ones in the config", async () => {
   const workspace = workspaceOf(
-    "agents:\n  a:\n    provider: grok\n    model: m\n  b:\n    provider: byteplus\n    model: m\n    client:\n      type: claude-code\nroles: {}\n",
+    "agents:\n  a:\n    client:\n      type: grok\n    model: m\n  b:\n    client:\n      type: claude-code\n    model: m\nroles: {}\n",
   );
   expect(clientsFromConfig(workspace).sort()).toEqual(["claude-code", "grok"]);
   const { calls, run } = recorder();
@@ -246,9 +246,9 @@ test("scanner reports a shared directory once with all its clients", () => {
 
 
 test("install detects clients from local inline role defaults without models", async () => {
-  const workspace = workspaceOf("roles:\n  developer:\n    agent:\n      provider: codex\n      model: test\n  reviewer:\n    agent:\n      provider: grok\n      model: test\n");
+  const workspace = workspaceOf("roles:\n  developer:\n    agent:\n      client:\n        type: codex\n      model: test\n  reviewer:\n    agent:\n      client:\n        type: grok\n      model: test\n");
   writeFileSync(path.join(workspace, ".migent", "config.local.yaml"),
-    "roles:\n  developer:\n    agent:\n      provider: byteplus\n      client:\n        type: claude-code\n      model: local\n");
+    "roles:\n  developer:\n    agent:\n      client:\n        type: claude-code\n      model: local\n");
   expect(clientsFromConfig(workspace).sort()).toEqual(["claude-code", "grok"]);
   const { calls, run } = recorder();
   expect(await installSkill({ workspace, scope: "project", run, which: withNpx, interactive: false })).toBe(0);

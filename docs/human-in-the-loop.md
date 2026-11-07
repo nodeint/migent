@@ -14,7 +14,7 @@ Add `ask: human` to each stage that may ask questions. The role must already be
 configured in `.migent/config.yaml`.
 
 ```yaml
-schema_version: 5
+schema_version: 6
 id: plan
 stages:
   - id: plan
@@ -229,7 +229,7 @@ request file** whose absolute path appears in its response contract
 ends its response with `status: question`. The response body is an ordinary
 report; Migent never reads questions from it. Migent reads the file only when
 the status is `question` and ignores it for any other status. Migent removes a
-leftover file before each provider turn so an old file is never read as a new
+leftover file before each client turn so an old file is never read as a new
 question. The file is not `questions.json`, which Migent writes from the
 validated outcome.
 
@@ -281,7 +281,7 @@ in the execution directory for diagnosis.
 ## Resume and verification
 
 After an answer, Migent creates a new execution and continues the same
-provider conversation. It carries forward the declared working artifact and
+client conversation. It carries forward the declared working artifact and
 passes the normalized answers, including selected option labels or free text.
 The answer is saved before dispatch so it can be recovered if dispatch is
 interrupted before the next execution is created.

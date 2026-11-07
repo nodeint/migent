@@ -22,23 +22,25 @@ Set a role's agent with an inline object:
 
 ```yaml
 # .migent/config.yaml (or config.local.yaml for a local override)
-schema_version: 5
+schema_version: 6
 roles:
   developer:
     agent:
-      provider: codex
       model: gpt-5
+      client:
+        type: codex
 ```
 
 For shared named agents, preserve the project's existing names:
 
 ```yaml
 # .migent/config.local.yaml
-schema_version: 5
+schema_version: 6
 agents:
   code_generation:
-    provider: codex
     model: gpt-5
+    client:
+      type: codex
 ```
 
 Replace example names and model IDs with the project's choices and available
@@ -47,13 +49,13 @@ models. Resolve doctor errors before running.
 The local file accepts the same keys. Mappings merge recursively, except a role's
 `agent`, which replaces the entire selection: supply a complete agent object or
 name. Scalars and lists replace shared values. To remove an option, delete it
-wherever set in both files. Keep `schema_version: 5` in each file; use
+wherever set in both files. Keep `schema_version: 6` in each file; use
 `migent migrate --yes` when diagnostics report an outdated schema.
 
 ## Change a role or agent
 
-- Change `agents.<name>.provider`, `model`, or `client` to update every role or
-  stage using that named agent. Use the local file for machine-only changes.
+- Change `agents.<name>.client.type`, `model`, or `client.options` to update every
+  role or stage using that named agent. Use the local file for machine-only changes.
 - Set `roles.<role>.agent` to an inline object or a configured agent name.
   Set a workflow stage's `agent` to a name, or to a complete inline agent, to
   override that default.
@@ -62,8 +64,8 @@ wherever set in both files. Keep `schema_version: 5` in each file; use
   Put native options in the agent's `client.options`;
   `roles.<role>.options` and stage `options` are no longer supported.
 - Keep existing agent and role names and the client's spelling for option keys.
-  A provider requiring an explicit CLI client, such as BytePlus, also needs
-  `client.type`.
+  A model with no default client, such as a BytePlus model, also needs an
+  explicit `client.type`.
 
 Started workflows retain frozen settings. To adopt edits, follow
 [session configuration changes](session-workflow.md).
@@ -81,7 +83,7 @@ be verified.
 ## Client options
 
 Options go in the agent's `client.options` and follow the selected CLI client,
-including when a provider uses an explicit `client.type`. Values are non-empty strings; keep the client's key spelling.
+whether it is implied by the model or named explicitly. Values are non-empty strings; keep the client's key spelling.
 
 | Client | Option keys |
 | --- | --- |

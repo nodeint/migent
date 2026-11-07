@@ -1,12 +1,12 @@
 import { expect, test } from "vitest";
 import { mergeConfigLayers } from "@nodeint/migent-kernel";
 import { validateConfigDraft, validateWorkflowDraft, type ConfigLoad } from "../src/index.ts";
-import { defaultProviders } from "./support.ts";
+import { defaultClients } from "./support.ts";
 
 const CONFIG = {
-  schema_version: 5,
+  schema_version: 6,
   agents: {
-    fast: { provider: "grok", model: "grok-4.6" },
+    fast: { client: { type: "grok" }, model: "grok-4.6" },
   },
   roles: {
     developer: { agent: "fast" },
@@ -20,13 +20,13 @@ function load(project: Record<string, unknown>, local: Record<string, unknown> |
 function workflow(draft: Record<string, unknown>, config: ConfigLoad = load(CONFIG)) {
   return validateWorkflowDraft(
     { draft, file: "build.yaml", siblings: [], config },
-    defaultProviders(),
+    defaultClients(),
   );
 }
 
 test("a workflow draft reports every independent error with its own path", () => {
   const out = workflow({
-    schema_version: 5,
+    schema_version: 6,
     id: "build",
     stages: [
       { id: "implement", role: "developer", depends_on: [], ask: "bot", max_revisions: "nope" },
@@ -45,7 +45,7 @@ test("a workflow draft reports every independent error with its own path", () =>
 test("an invalid unit never causes follow-on errors in the checks that read it", () => {
   // Every declared stage has a problem, but the stages list itself is not empty.
   const allInvalid = workflow({
-    schema_version: 5,
+    schema_version: 6,
     id: "build",
     stages: [
       { id: "a", depends_on: [] },
@@ -56,7 +56,7 @@ test("an invalid unit never causes follow-on errors in the checks that read it",
 
   // A target whose stage is declared but has invalid fields still exists.
   const dependency = workflow({
-    schema_version: 5,
+    schema_version: 6,
     id: "build",
     stages: [
       { id: "a", role: "developer", depends_on: [] },
@@ -68,7 +68,7 @@ test("an invalid unit never causes follow-on errors in the checks that read it",
 
   // Each downstream entry is checked on its own.
   const downstream = workflow({
-    schema_version: 5,
+    schema_version: 6,
     id: "build",
     stages: [{ id: "a", role: "developer", depends_on: [] }],
     downstream: [{ task: "go" }, { workflow: "nowhere", task: "go" }, { workflow: "elsewhere", task: "go" }],
@@ -85,10 +85,10 @@ test("a config draft reports every independent error", () => {
     {
       scope: "project",
       draft: {
-        schema_version: 5,
+        schema_version: 6,
         agents: {
-          fast: { provider: "grok", model: "grok-4.6" },
-          slow: { provider: "nope", model: "ghost" },
+          fast: { client: { type: "grok" }, model: "grok-4.6" },
+          slow: { client: { type: "nope" }, model: "ghost" },
         },
         roles: {
           developer: { agent: "fast", responsibilities: "nope" },
@@ -97,11 +97,11 @@ test("a config draft reports every independent error", () => {
       },
       companion: null,
     },
-    defaultProviders(),
+    defaultClients(),
   );
   const errors = out.filter((item) => item.severity === "error");
   expect(errors.map((item) => [item.code, item.path])).toEqual([
-    ["provider-unsupported", ["agents", "slow", "provider"]],
+    ["client-unsupported", ["agents", "slow", "client", "type"]],
     ["not-a-list", ["roles", "developer", "responsibilities"]],
     ["unknown-agent", ["roles", "reviewer", "agent"]],
   ]);
@@ -116,10 +116,10 @@ test("a companion layer with its own problem does not hide the draft's errors", 
   const out = validateConfigDraft(
     {
       scope: "project",
-      draft: { schema_version: 5, agents: {}, roles: { developer: { agent: "missing" } } },
-      companion: { schema_version: 999, agents: { fast: { provider: "grok", model: "grok-4.6" } } },
+      draft: { schema_version: 6, agents: {}, roles: { developer: { agent: "missing" } } },
+      companion: { schema_version: 999, agents: { fast: { client: { type: "grok" }, model: "grok-4.6" } } },
     },
-    defaultProviders(),
+    defaultClients(),
   );
   expect(out.filter((item) => item.severity === "error").map((item) => [item.code, item.path])).toEqual([
     ["schema-newer", ["schema_version"]],

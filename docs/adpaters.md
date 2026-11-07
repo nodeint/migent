@@ -3,22 +3,21 @@
 Adapters connect Migent to headless coding-agent CLIs. The implementation lives
 in `packages/adapters`; it is an internal library with no stable public API.
 This document describes the shared architecture and contracts. Model configuration
-belongs in [Providers and model configuration](providers.md), workflow behavior
+belongs in [Agent configuration](agents.md), workflow behavior
 in [Workflows](workflows.md), and process troubleshooting in
 [Diagnostics](diagnostics.md).
 
 ## Responsibilities and boundaries
 
-The adapter layer has two parts:
-
 - A **CLI client** knows the executable, command syntax, discovery commands,
-  output protocol, session identifiers, and usage fields printed by that CLI.
-- A **provider** applies Migent policy over a selected client: defaults, option
-  persistence, failure classification, and cumulative usage normalization.
+  output protocol, session identifiers, failure facts, and usage fields printed
+  by that CLI.
+- **Migent policy** sits above the client in the kernel: it selects default
+  session options, maps failure facts to `quota` or the historical `provider`
+  failure kind, and normalizes cumulative usage.
 
-`ProviderBase` delegates protocol work to its bound `CliClient`. Provider
-subclasses add policy. Parsing native CLI output belongs in the client;
-shared text parsing helpers belong in `src/utils`.
+Each `CliClient` owns its protocol completely. Parsing native CLI output belongs
+in the client; shared text parsing helpers belong in `src/utils`.
 
 The CLI owns authentication, tool execution, and its conversation history.
 Migent owns model selection, prompt construction, workflow routing, process
@@ -29,52 +28,50 @@ workflow stages or execute subprocesses themselves.
 
 | Location | Responsibility |
 | --- | --- |
-| `src/types.ts` | Adapter contracts and normalized data types |
-| `src/clients/` | Client command builders and protocol parsers |
-| `src/providers/` | Provider policy, client binding, and provider registration |
+| `src/types.ts` | Adapter contracts and normalized data types (a structural mirror of the kernel contract) |
+| `src/clients/` | Client command builders, protocol parsers, and the client registry |
 | `src/utils/` | Reusable parsing helpers without client selection logic |
 | `src/options/` | Captured headless help samples |
 | `src/catalog.ts` | Model catalog and model-specific option values |
-| `src/index.ts` | Exports and default provider registration |
+| `src/index.ts` | Exports and `clientIds()` / `createClient()` |
 | `test/` | Contract tests and protocol fixtures |
 
-The kernel also defines the runner-facing provider contracts. Changes to shared
-contract shapes must remain structurally compatible across these packages.
-The doctor loads model catalogs; the CLI currently orchestrates headless option
-discovery. Neither operation belongs inside a pure text parser.
+The kernel defines the runner-facing client contract in
+`packages/kernel/src/cli-client.ts`. Changes to shared contract shapes must
+remain structurally compatible across these packages. The adapter
+`CliClient` keeps the adapter-only discovery methods `optionsCommand` and
+`parseOptions`. The doctor loads model catalogs; the CLI orchestrates headless
+option discovery. Neither operation belongs inside a pure text parser.
 
 ## Client selection
 
-`createClient(id)` resolves a registered client and rejects an unknown ID.
-`clientIds()` returns the registered IDs. A provider can have a default client
-or require an explicit model-level `client` selection.
+`createClient(id)` builds a fresh registered client and rejects an unknown ID.
+`clientIds()` returns the registered IDs, sorted. Every agent names its client
+explicitly through `client.type`; there is no implicit default.
 
-`withClient(id)` binds the same provider policy to another client. `command`
-and `effortOption` follow that selected client. A provider without a default
-client reports `requiresClient`; operations needing a client fail until one is
-selected. `migent get providers` lists those providers too and marks them
-`requires_client: true`.
+The kernel resolves an agent to a `{client, model, options}` target through a
+registry lookup. A missing or unknown client is a configuration error, not a
+silent fallback. `migent get clients` lists the available clients.
+
 
 ## Building and reading a turn
 
 `runCommand(input)` returns a `CommandSpec` with `argv` and optional `stdin`.
 Its input includes the model, workspace, prompt, prior or new agent ID, prompt
 file, last-message file, and resolved string-valued options. The client chooses
-how to encode these inputs for its CLI. The runner launches the process.
-
-`ProviderBase.buildCommand()` creates a fresh event parser, validates options,
-and delegates to the client. A provider can apply its defaults before delegation.
+how to encode these inputs for its CLI. It validates its own options and applies
+its defaults before building the command. The runner launches the process.
 Keep argument boundaries in the argv array; do not construct a shell command.
 
 `parseRun(stdout, lastMessageFile)` returns final text, a session ID, and a
 `source` describing the text: `model` (assistant output, including a last-message
 file), `error` (an error payload, or raw stdout when nothing parsed as protocol
-events), or `none`. Raw stdout is never `model`. `parseResponse()` exposes that
-result to the runner as a `[text, sessionId, source]` tuple; a provider that
-omits `source` cannot attest its text, so a failed turn is never accepted on it. Clients may read
+events), or `none`. Raw stdout is never `model`. A client that returns no
+attested `model` text cannot complete a failed turn. Clients may read
 the last-message file when their protocol uses it. Progress is separate:
 `createEventParser()` returns a per-run function that consumes output lines and
 returns a normalized event or null. Stateful parsers must not leak state across runs.
+
 
 ## Sessions and interruption
 
@@ -142,7 +139,6 @@ are fetched on each listing; there is no persistent cache or version-keyed cache
 ## Listing and JSON output
 
 ```bash
-migent get providers --json
 migent get clients --json
 migent get models --client codex --json
 migent get options --native --client codex --json
@@ -151,20 +147,19 @@ migent get efforts --client codex --json
 
 The machine types are keyed by CLI client. Each client's own catalog command and
 parser run, including its stdin input, so `claude-code` does not depend on a
-provider whose name equals its client id. They do not require project
+legacy provider entry. They do not require project
 configuration. Each list is a plain array; every view has `kind`, `name`,
 snake_case fields, `null` for absent values, and `problems` where it applies.
 
 | Type | Fields |
 | --- | --- |
-| `provider` | `name`, `command`, `default_client`, `requires_client` |
 | `client` | `name`, `command`, `available`, `path`, `effort_option`, `problems` |
 | `model` | `name`, `client`, `default` |
 | `option` (configured) | `name`, `client`, `source: "configured"`, `prompt`, `allow_default`, `overridable` |
 | `option --native` | `name`, `client`, `source: "native"`, `flags`, `description`, `argument`, `value_mode`, `type`, `choices`, `default` |
 | `effort` | `name` (the model), `client`, `model`, `option`, `values` |
 
-`providers` and `clients` run no subprocess. `clients` reports PATH facts only,
+`clients` runs no subprocess. It reports PATH facts only,
 so its `problems` contain `<command> is not on PATH.` and never a catalog or help
 failure. `models`, `options --native`, and `efforts` run the client's discovery
 commands: a client that is not on PATH is skipped without spawning and prints
@@ -186,14 +181,14 @@ rule are gone; see [CLI: Get](cli.md#get) for the per-type commands.
 
 ## Configuration and validation
 
-Model options form the base settings. Stage options override matching keys;
-command-line overrides apply last. The model-level `effort` alias resolves to
-the selected client's `effortOption`. An alias and its native option cannot both
-be set on a model. See [model configuration](providers.md#model-effort).
+Model options form the base settings; command-line overrides apply last. The
+agent-level `effort` alias resolves to the selected client's `effortOption`. An
+alias and its native option cannot both be set on an agent. See
+[Agent effort](agents.md#agent-effort).
 
 The existing `options()` metadata controls prompting, default selection, and
-which settings `profileOptions()` retains on a provider session. These are
-Migent policies, not facts that a CLI help parser can determine.
+which settings `sessionOptions()` retains on a session. These are Migent
+policies, not facts that a CLI help parser can determine.
 
 `validateOptions()` currently remains client-owned. Configuration resolution and
 the runner call it; interactive configuration also checks discovered per-model
@@ -218,15 +213,16 @@ process died from a signal. Only `exit-only` can be accepted: when its reply has
 `source: model` and passes the checks an exit-0 reply passes, the turn completes
 and Migent records `provider.exit_anomaly`. Never derive a rate limit from model
 text; only the protocol or an error payload may state one. A protocol can
-identify rate limits with an optional reset time and window. `ProviderBase.classifyFailure()`
-turns those facts into `quota` or `provider` failures; it does not infer a reset
-time absent from the CLI protocol. Runner process-start diagnostics are separate
+identify rate limits with an optional reset time and window. The kernel's
+`classifyFailure(client, stdout, exitCode)` turns those facts into `quota` or
+`provider` failures; it does not infer a reset time absent from the CLI
+protocol. Runner process-start diagnostics are separate
 from failures reported by a running CLI; see [Diagnostics](diagnostics.md).
 
 A client may implement the optional `eventLabel(line)` capability. It returns a
 short label from the CLI's own vocabulary (`text`, `item.completed:agent_message`,
 `result:error`) for one output line, or `null` when the line is not an event.
-`ProviderBase.eventLabel()` exposes it. The runner counts labels into the
+The runner counts labels into the
 `stream_summary` of `diagnostics.json`, so a client that omits it gets counts
 without labels. A label must come from a closed vocabulary the client lists (event and subtype
 names); `labelOf(value, allowed)` in `clients/json.ts` maps any other value to
@@ -253,9 +249,8 @@ partial totals, and uncaptured turns are described in [Session metrics](session-
 ## Extending and verifying adapters
 
 Implement the CLI contract in a client, reuse parsing helpers where appropriate,
-and register the client factory. Add provider policy only when defaults or
-accounting require it. Register a provider separately when it should appear in
-the default provider map.
+and register the client factory in `clients/registry.ts`. Add kernel policy in
+`client-policy.ts` only when defaults or accounting require it.
 
 Use captured help and protocol fixtures to test parsing without authentication
 or model execution. Cover wrapped text, aliases, optional arguments, metadata,

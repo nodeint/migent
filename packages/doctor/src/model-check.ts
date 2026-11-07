@@ -1,10 +1,24 @@
-import { createProviderResolver, listAgentDefinitions, loadWorkspaceConfig, type AgentDefinitionEntry, type Provider } from "@nodeint/migent-kernel";
+import {
+  listAgentDefinitions,
+  loadWorkspaceConfig,
+  type AgentDefinitionEntry,
+  type CliClient,
+  type ClientRegistry,
+} from "@nodeint/migent-kernel";
 import type { ModelEffortCheck } from "./check.js";
-import { cached, knownModel, loadCatalog, type RunCommand, type Which } from "./catalog.js";
+import {
+  cached,
+  clientCatalogSource,
+  knownModel,
+  loadCatalog,
+  type ClientCatalogInput,
+  type RunCommand,
+  type Which,
+} from "./catalog.js";
 import { checkModelEfforts } from "./effort-check.js";
 
 /**
- * A name missing from the catalog is a hard error only for these provider CLIs, keyed by command.
+ * A name missing from the catalog is a hard error only for these client CLIs, keyed by command.
  * Each prints every model it can run:
  * - opencode: `opencode models` lists every provider/model pair it can route to.
  * - grok: `grok models` prints the full "Available models" list.
@@ -14,21 +28,21 @@ import { checkModelEfforts } from "./effort-check.js";
  *   resolved ids, but omits older or pinned full ids that `--model` still accepts.
  * - codex: the catalog drops entries whose visibility is not "list" (hidden models still run) and
  *   depends on the signed-in account.
- * An unknown provider command defaults to warning-only.
+ * An unknown client command defaults to warning-only.
  */
 const RELIABLE_CATALOGS: ReadonlySet<string> = new Set(["opencode", "grok", "agy"]);
 
 /** opencode accepts `provider/model#variant`; the catalog lists only `provider/model`. */
-function catalogName(provider: Provider, model: string): string {
+function catalogName(client: CliClient, model: string): string {
   const hash = model.indexOf("#");
-  return provider.command === "opencode" && hash > 0 ? model.slice(0, hash) : model;
+  return client.command === "opencode" && hash > 0 ? model.slice(0, hash) : model;
 }
 
 /** Checks model availability, then efforts (skipped for unknown models), and merges both per key. */
 /** Name check and effort check, behind one entry. */
 export async function checkModels(
   workspace: string,
-  providers: Record<string, Provider>,
+  clients: ClientRegistry,
   which: Which,
   runCommand: RunCommand,
   only?: ReadonlySet<string>,
@@ -37,10 +51,10 @@ export async function checkModels(
   const run = cached(runCommand);
   const unreadable = new Set<string>();
   const missed = new Set<string>();
-  const availability = await checkModelAvailability(workspace, providers, which, run, only, unreadable, missed, extra);
+  const availability = await checkModelAvailability(workspace, clients, which, run, only, unreadable, missed, extra);
   // One root cause, one message: skip the effort check for any model the catalog does not list.
   const skip = new Set([...missed, ...Object.keys(availability).filter((key) => availability[key]?.problem)]);
-  const efforts = await checkModelEfforts(workspace, providers, which, run, only, skip, extra);
+  const efforts = await checkModelEfforts(workspace, clients, which, run, only, skip, extra);
   const merged: Record<string, ModelEffortCheck> = {};
   for (const key of new Set([...Object.keys(availability), ...Object.keys(efforts)])) {
     const problem = [availability[key]?.problem, efforts[key]?.problem].filter((item) => item !== undefined);
@@ -57,11 +71,11 @@ export async function checkModels(
 
 export async function checkModelAvailability(
   workspace: string,
-  providers: Record<string, Provider>,
+  clients: ClientRegistry,
   which: Which,
   runCommand: RunCommand,
   only?: ReadonlySet<string>,
-  /** Receives the keys whose provider catalog could not be read. */
+  /** Receives the keys whose client catalog could not be read. */
   unreadable: Set<string> = new Set(),
   /** Receives the keys the catalog was read for but does not list, whatever the severity. */
   missed: Set<string> = new Set(),
@@ -72,33 +86,34 @@ export async function checkModelAvailability(
   try { config = loadWorkspaceConfig(workspace); } catch { return {}; }
   const definitions = [...listAgentDefinitions(config), ...extra];
   const run = cached(runCommand);
-  const resolveProvider = createProviderResolver(providers);
   const results = await Promise.all(definitions.map(async ({ key: alias, value: model, field: modelField }) => {
     if (only !== undefined && !only.has(alias)) return null;
     // Unmapped agents (empty definitions) are reported by the structural check.
     if (!isRecord(model) || Object.keys(model).length === 0) return null;
-    if (typeof model.provider !== "string" || !model.provider.trim() || typeof model.model !== "string" || !model.model.trim()) return null;
+    if (typeof model.model !== "string" || !model.model.trim()) return null;
     if (clientUnusable(model)) return null;
+    const type = clientType(model);
+    if (type === undefined) return null; // The structural check explains the missing client.
     const field = `${modelField}.model`;
     const name = model.model.trim();
     const value = JSON.stringify(model.model);
-    let provider: Provider;
+    let client: CliClient;
     try {
-      provider = resolveProvider(model.provider.trim(), clientType(model)) as Provider;
-    } catch { return null; } // The structural check explains an unsupported provider or client.
-    if (provider.requiresClient) return null;
-    const lookup = catalogName(provider, name);
+      client = clients.get(type);
+    } catch { return null; } // The structural check explains an unsupported client.
+    const source = clientCatalogSource(client as unknown as ClientCatalogInput);
+    const lookup = catalogName(client, name);
     const check: ModelEffortCheck = {};
     try {
-      const catalog = await loadCatalog(provider, which, run);
+      const catalog = await loadCatalog(source, which, run);
       try { knownModel(lookup, catalog); return null; } catch (error) {
         missed.add(alias);
-        if (RELIABLE_CATALOGS.has(provider.command)) {
+        if (RELIABLE_CATALOGS.has(client.command)) {
           const near = closest(lookup, catalog.ids);
           const hint = near.length > 0 ? `\nDid you mean: ${near.join(", ")}` : "";
           check.problem = `Invalid ${field}: ${value}\n${error instanceof Error ? error.message : String(error)}${hint}`;
         } else {
-          check.warning = `Could not validate ${field}: ${value}\n${provider.command} does not list ${name}; its model list may be incomplete.`;
+          check.warning = `Could not validate ${field}: ${value}\n${client.command} does not list ${name}; its model list may be incomplete.`;
         }
       }
     } catch (error) {

@@ -1,6 +1,6 @@
 import { statSync } from "node:fs";
 import type { ExecutionFailure, ProcessFacts } from "./command-executor.js";
-import type { FailureClassification, ResponseSource } from "./provider-contract.js";
+import type { FailureClassification, ResponseSource } from "./cli-client.js";
 import { KERNEL_VERSION } from "./package-version.js";
 import { isRecord } from "./record.js";
 import { leadingHeaders, outcomeStatuses } from "./stage-outcome.js";

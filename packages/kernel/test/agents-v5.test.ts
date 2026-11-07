@@ -5,7 +5,6 @@ import { stringify } from "yaml";
 import {
   ConfigurationError,
   SCHEMA_VERSION,
-  createProviderResolver,
   getAgentView,
   getRoleView,
   listAgentDefinitions,
@@ -19,15 +18,15 @@ import {
 import { parseWorkflowMapping, type RoleStageSpec } from "../src/workflow.ts";
 import { readWorkflowFreeze, writeWorkflowFreeze } from "../src/session-freeze.ts";
 import { loadNamedWorkflow } from "../src/workflow.ts";
-import { defaultProviders, tempDir } from "./support.ts";
+import { defaultClients, tempDir } from "./support.ts";
 
-const resolver = createProviderResolver(defaultProviders());
+const resolver = defaultClients();
 
 const CONFIG = {
-  schema_version: 5,
+  schema_version: 6,
   agents: {
-    fast: { provider: "codex", model: "gpt-5", client: { options: { temperature: "0.2" } } },
-    other: { provider: "grok", model: "grok-4" },
+    fast: { client: { type: "codex", options: { temperature: "0.2" } }, model: "gpt-5" },
+    other: { client: { type: "grok" }, model: "grok-4" },
   },
   roles: {
     dev: { description: "Builds it.", agent: "fast", responsibilities: ["Write code."] },
@@ -36,7 +35,7 @@ const CONFIG = {
 
 function stageOf(extra: Record<string, unknown> = {}): RoleStageSpec {
   const workflow = parseWorkflowMapping(
-    { schema_version: 5, id: "w", stages: [{ id: "s", role: "dev", depends_on: [], ...extra }] },
+    { schema_version: 6, id: "w", stages: [{ id: "s", role: "dev", depends_on: [], ...extra }] },
     "test",
   );
   const stage = workflow.stages.s;
@@ -44,24 +43,24 @@ function stageOf(extra: Record<string, unknown> = {}): RoleStageSpec {
   return stage;
 }
 
-test("the current schema version is 5", () => {
-  expect(SCHEMA_VERSION).toBe(5);
+test("the current schema version is 6", () => {
+  expect(SCHEMA_VERSION).toBe(6);
 });
 
-test("a v5 stage selects an agent by name or with a complete inline definition", () => {
+test("a v6 stage selects an agent by name or with a complete inline definition", () => {
   expect(stageOf().agent).toBeNull();
   expect(stageOf({ agent: " other " }).agent).toEqual({ kind: "named", name: "other" });
-  const inline = { provider: "codex", model: "gpt-5", effort: "low" };
+  const inline = { client: { type: "codex" }, model: "gpt-5", effort: "low" };
   expect(stageOf({ agent: inline }).agent).toEqual({ kind: "inline", value: inline });
   expect(() => stageOf({ agent: 3 })).toThrow("Missing or invalid stages.s.agent.");
   expect(() => stageOf({ agent: "" })).toThrow("Missing or invalid stages.s.agent.");
 });
 
-test("a v5 stage rejects the v4 model and options keys with their replacements", () => {
+test("a v6 stage rejects the v4 model and options keys with their replacements", () => {
   expect(() => stageOf({ model: "fast" })).toThrow("stages.s.model was renamed to stages.s.agent in schema_version 5");
   expect(() => stageOf({ options: { a: "b" } })).toThrow("stages.s.options was removed in schema_version 5");
   const entries = unknownWorkflowKeyEntries({
-    schema_version: 5,
+    schema_version: 6,
     stages: [{ id: "s", role: "dev", model: "fast" }],
   });
   expect(entries.map((entry) => entry.path)).toEqual([["stages", 0, "model"]]);
@@ -78,35 +77,35 @@ test("a v4 workflow keeps reading model and options for frozen sessions", () => 
 
 test("stage agent resolution: named, inline, then the role's own", () => {
   const dev = resolveStageSpec(CONFIG, stageOf(), undefined, resolver);
-  expect(dev).toEqual({ provider: "codex", model: "gpt-5", options: { temperature: "0.2" } });
+  expect(dev).toEqual({ client: "codex", model: "gpt-5", options: { temperature: "0.2" } });
   expect(resolveStageSpec(CONFIG, stageOf({ agent: "other" }), undefined, resolver)).toEqual({
-    provider: "grok", model: "grok-4", options: {},
+    client: "grok", model: "grok-4", options: {},
   });
   // The inline agent replaces the role's wholesale: nothing is inherited from it.
-  expect(resolveStageSpec(CONFIG, stageOf({ agent: { provider: "grok", model: "x" } }), undefined, resolver)).toEqual({
-    provider: "grok", model: "x", options: {},
+  expect(resolveStageSpec(CONFIG, stageOf({ agent: { client: { type: "grok" }, model: "x" } }), undefined, resolver)).toEqual({
+    client: "grok", model: "x", options: {},
   });
   expect(() => resolveStageSpec(CONFIG, stageOf({ agent: "ghost" }), undefined, resolver)).toThrow(
     'stages.s.agent: unknown agent "ghost" in agents.',
   );
-  expect(() => resolveStageSpec(CONFIG, stageOf({ agent: { provider: "codex" } }), undefined, resolver)).toThrow(
+  expect(() => resolveStageSpec(CONFIG, stageOf({ agent: { client: { type: "codex" } } }), undefined, resolver)).toThrow(
     "Missing or invalid stages.s.agent.model.",
   );
 });
 
 test("client is a mapping with type and options", () => {
   const target = (client: unknown) => resolveRoleCascade(
-    { agents: { a: { provider: "byteplus", model: "m", client } }, roles: { dev: { agent: "a" } } },
+    { agents: { a: { client, model: "m" } }, roles: { dev: { agent: "a" } } },
     "dev", undefined, resolver,
   );
   expect(target({ type: "codex", options: { temperature: "0.2" } })).toEqual({
-    provider: "byteplus", model: "m", client: "codex", options: { temperature: "0.2" },
+    client: "codex", model: "m", options: { temperature: "0.2" },
   });
   expect(() => target("codex")).toThrow("agents.a.client must be a mapping: use agents.a.client.type");
   expect(() => target({ type: "codex", extra: 1 })).toThrow("agents.a.client.extra is not used by Migent.");
 });
 
-test("v4 keys in a v5 config name their replacements", () => {
+test("v4 keys in a v6 config name their replacements", () => {
   const code = (config: Record<string, unknown>): string | undefined => {
     try {
       resolveRoleCascade(config, "dev", undefined, resolver);
@@ -120,8 +119,11 @@ test("v4 keys in a v5 config name their replacements", () => {
   expect(code({ roles: { dev: { agent: "a", instructions: ["x"] } } })).toContain(
     "roles.dev.instructions was renamed to roles.dev.responsibilities",
   );
-  expect(code({ agents: { a: { provider: "codex", model: "m", options: { x: "y" } } }, roles: { dev: { agent: "a" } } })).toContain(
+  expect(code({ agents: { a: { client: { type: "codex" }, model: "m", options: { x: "y" } } }, roles: { dev: { agent: "a" } } })).toContain(
     "agents.a.options moved to agents.a.client.options",
+  );
+  expect(code({ agents: { a: { provider: "codex", model: "m" } }, roles: { dev: { agent: "a" } } })).toContain(
+    "agents.a.provider was removed in schema_version 6; set agents.a.client.type",
   );
   const keys = unknownRoleKeyEntries({ roles: { dev: { default_model: "a", instructions: [], options: {} } } });
   expect(keys.map((entry) => entry.message)).toEqual([
@@ -141,7 +143,7 @@ test("role description and responsibilities are separate accessors", () => {
 test("definitions list named agents and inline role agents", () => {
   const entries = listAgentDefinitions({
     agents: { b: {}, a: {} },
-    roles: { dev: { agent: { provider: "x" } }, qa: { agent: "a" } },
+    roles: { dev: { agent: { client: { type: "x" } } }, qa: { agent: "a" } },
   });
   expect(entries.map((entry) => entry.field)).toEqual(["agents.a", "agents.b", "roles.dev.agent"]);
 });
@@ -162,13 +164,13 @@ test("a frozen v4 body keeps model and options; a v5 body writes agent", () => {
   expect(v4?.workflow.schemaVersion).toBe(4);
   expect(v4?.workflow.stages.s).toMatchObject({ agent: { kind: "named", name: "other" }, options: { max_turns: "3" } });
   // The pin is the resolved target, so a later config change cannot reach a frozen session.
-  expect(v4?.targets.s).toEqual({ provider: "grok", model: "grok-4", options: { max_turns: "3" } });
-  const v5 = write(5, { agent: { provider: "codex", model: "gpt-5", client: { options: { temperature: "0.5" } } } });
+  expect(v4?.targets.s).toEqual({ client: "grok", model: "grok-4", options: { max_turns: "3" } });
+  const v5 = write(5, { agent: { client: { type: "codex", options: { temperature: "0.5" } }, model: "gpt-5" } });
   expect(v5?.workflow.schemaVersion).toBe(5);
   expect(v5?.workflow.stages.s).toMatchObject({
-    agent: { kind: "inline", value: { provider: "codex", model: "gpt-5", client: { options: { temperature: "0.5" } } } },
+    agent: { kind: "inline", value: { client: { type: "codex", options: { temperature: "0.5" } }, model: "gpt-5" } },
   });
-  expect(v5?.targets.s).toEqual({ provider: "codex", model: "gpt-5", options: { temperature: "0.5" } });
+  expect(v5?.targets.s).toEqual({ client: "codex", model: "gpt-5", options: { temperature: "0.5" } });
 });
 
 test("get views name the agent, its client, and the role description", () => {
@@ -176,11 +178,11 @@ test("get views name the agent, its client, and the role description", () => {
   mkdirSync(path.join(workspace, ".migent", "workflows"), { recursive: true });
   writeFileSync(path.join(workspace, ".migent", "config.yaml"), stringify({
     ...CONFIG,
-    agents: { ...CONFIG.agents, bp: { provider: "byteplus", model: "m", client: { type: "codex" } } },
+    agents: { ...CONFIG.agents, bp: { client: { type: "codex" }, model: "m" } },
   }));
   writeFileSync(path.join(workspace, ".migent", "config.local.yaml"), stringify({ agents: { other: { model: "grok-local" } } }));
   const agent = getAgentView(workspace, "bp", resolver);
-  expect(agent).toMatchObject({ kind: "agent", name: "bp", provider: "byteplus", client: "codex", local: false });
+  expect(agent).toMatchObject({ kind: "agent", name: "bp", client: "codex", local: false });
   expect(getAgentView(workspace, "other", resolver)).toMatchObject({ local: true, model: "grok-local" });
   expect(getRoleView(workspace, "dev", resolver)).toMatchObject({
     kind: "role", name: "dev", description: "Builds it.", agent: "fast", responsibilities: ["Write code."],

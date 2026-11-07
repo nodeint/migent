@@ -1,7 +1,7 @@
 import { printError } from "../display.js";
 import { createDiscoveryContext } from "../get/discovery.js";
 import { OUTPUT_FORMATS, renderList, renderOne, type OutputFormat } from "../get/render.js";
-import { RESOURCES, findResource, providerResolver, resourceTypes } from "../get/resources.js";
+import { RESOURCES, findResource, clientResolver, resourceTypes } from "../get/resources.js";
 import { findWorkspace } from "../workspace.js";
 
 export interface GetOptions {
@@ -17,6 +17,10 @@ export interface GetOptions {
  * host and may run discovery. Exit 0 on success, 2 on a usage or configuration error.
  */
 export async function runGet(cwd: string, type: string, name: string | null, options: GetOptions): Promise<number> {
+  if (type === "provider" || type === "providers") {
+    printError("get providers has been removed; use `migent get clients`.");
+    return 2;
+  }
   const resource = findResource(type);
   if (resource === undefined) {
     printError(`Unknown resource type: ${type}. Valid types: ${resourceTypes()}.`);
@@ -59,7 +63,7 @@ export async function runGet(cwd: string, type: string, name: string | null, opt
   const output = format as OutputFormat;
   if (resource.scope === "project") {
     const workspace = findWorkspace(cwd);
-    const resolve = providerResolver();
+    const resolve = clientResolver();
     if (resource.list !== undefined && name === null && session === null) {
       process.stdout.write(renderList(resource.list(workspace, resolve), output, resource.columns));
       return 0;

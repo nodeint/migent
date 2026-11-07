@@ -104,7 +104,7 @@ export function printSessions(rows: readonly string[][]): void {
 export function printAgent(
   result: Record<string, unknown>,
   role: string,
-  provider: string,
+  client: string,
   model: string,
   workspace: string | null = null,
 ): void {
@@ -113,7 +113,7 @@ export function printAgent(
   if (decision) outcome = `${outcome} ${decision}`;
   const rows: Array<[string, string]> = [
     ["role", role],
-    ["model", `${provider}/${model}`],
+    ["model", `${client}/${model}`],
     ["outcome", outcome],
     ["session", String(result.session_id ?? "")],
     ["execution", String(result.execution_id ?? "")],

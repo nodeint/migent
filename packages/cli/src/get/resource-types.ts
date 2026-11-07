@@ -1,4 +1,4 @@
-import type { ProviderResolver, View } from "@nodeint/migent-kernel";
+import type { ClientRegistry, View } from "@nodeint/migent-kernel";
 import type { DiscoveryContext } from "./discovery.js";
 import type { Column } from "./render.js";
 
@@ -16,8 +16,8 @@ export interface ProjectResource {
   names: readonly string[];
   columns: readonly Column[];
   summary: string;
-  list?(workspace: string, resolve: ProviderResolver): View[];
-  get(workspace: string, name: string | null, resolve: ProviderResolver, session: string | null): View;
+  list?(workspace: string, resolve: ClientRegistry): View[];
+  get(workspace: string, name: string | null, resolve: ClientRegistry, session: string | null): View;
 }
 
 export interface MachineResource {

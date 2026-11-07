@@ -1,11 +1,12 @@
 import { stringify } from "yaml";
-import type { ProviderResolver } from "./provider-contract.js";
+import type { ClientRegistry } from "./cli-client.js";
 import { loadAgentTarget, loadRoleDescription, loadRoleResponsibilities, resolveRoleCascade, resolveStageSpec } from "./config.js";
 import { ConfigurationError } from "./errors.js";
 import { isRecord } from "./record.js";
 import { isRoleStage, type RoleStageSpec, type WorkflowDocument } from "./workflow.js";
 import { liftConfigAgents } from "./migration-config.js";
 import { parseYamlDocument } from "./yaml.js";
+import { renderAuthoringYaml } from "./authoring.js";
 
 const NAME = /^[A-Za-z][A-Za-z0-9._-]*$/;
 const PLAIN_SCALAR = /^[A-Za-z0-9][A-Za-z0-9._+-]*$/;
@@ -27,7 +28,7 @@ export interface StageRef {
 
 export interface AgentView {
   key: string;
-  provider: string;
+  client: string;
   model: string;
   options: Record<string, string>;
   roles: readonly string[];
@@ -38,7 +39,7 @@ export interface RoleView {
   role: string;
   description: string | null;
   agentName: string | null;
-  provider: string;
+  client: string;
   model: string;
   options: Record<string, string>;
   responsibilities: readonly string[];
@@ -84,20 +85,20 @@ type Binding = [unknown, [string, string][]];
 export function inspectConfig(
   config: Record<string, unknown>,
   workflows: readonly WorkflowDocument[] = [],
-  resolveProvider?: ProviderResolver,
+  registry?: ClientRegistry,
 ): ConfigView {
   const agents = agentsOf(config);
   const roles = rolesOf(config);
   const agentViews: AgentView[] = [];
   for (const key of Object.keys(agents)) {
-    const target = loadAgentTarget(config, key, resolveProvider);
+    const target = loadAgentTarget(config, key, registry);
     const usedBy = Object.keys(roles).filter((name) => {
       const role = roles[name];
       return isRecord(role) && role.agent === key;
     });
     agentViews.push({
       key,
-      provider: target.provider,
+      client: target.client,
       model: target.model,
       options: { ...target.options },
       roles: usedBy,
@@ -108,7 +109,7 @@ export function inspectConfig(
   for (const [name, role] of Object.entries(roles)) {
     if (!isRecord(role)) throw new ConfigurationError(`Missing or invalid roles.${name}.`);
     const agentName = typeof role.agent === "string" ? role.agent : null;
-    const target = resolveRoleCascade(config, name, undefined, resolveProvider);
+    const target = resolveRoleCascade(config, name, undefined, registry);
     const shared = Object.keys(roles).filter((other) => {
       if (other === name) return false;
       const otherRole = roles[other];
@@ -118,7 +119,7 @@ export function inspectConfig(
       role: name,
       description: loadRoleDescription(config, name),
       agentName,
-      provider: target.provider,
+      client: target.client,
       model: target.model,
       options: { ...target.options },
       responsibilities: loadRoleResponsibilities(config, name),
@@ -133,25 +134,25 @@ export function upsertAgent(
   config: Record<string, unknown>,
   key: string,
   args: {
-    provider?: string | null;
+    client?: string | null;
     model?: string | null;
     options?: Record<string, string | null>;
     workflows?: readonly WorkflowDocument[];
-    resolveProvider?: ProviderResolver;
+    registry?: ClientRegistry;
   } = {},
 ): ConfigChange {
-  const provider = args.provider === undefined ? null : args.provider;
+  const client = args.client === undefined ? null : args.client;
   const model = args.model === undefined ? null : args.model;
   const options = args.options === undefined ? UNSET : args.options;
-  if ((provider === null) !== (model === null)) {
-    throw new ConfigEditError("Pass both --provider and --model, or omit both.");
+  if ((client === null) !== (model === null)) {
+    throw new ConfigEditError("Pass both --client and --model, or omit both.");
   }
   const updated = copyConfig(config);
   const agents = agentsOf(updated);
   const exists = Object.hasOwn(agents, key);
   if (!exists) requireName(key, "name");
-  if (!exists && provider === null) {
-    throw new ConfigEditError("Pass --provider and --model to add an agent.");
+  if (!exists && client === null) {
+    throw new ConfigEditError("Pass --client and --model to add an agent.");
   }
   let body: Record<string, unknown>;
   if (exists) {
@@ -162,19 +163,19 @@ export function upsertAgent(
     body = {};
     agents[key] = body;
   }
-  if (provider !== null && model !== null) {
-    body.provider = plain(provider, "--provider");
+  if (client !== null && model !== null) {
+    setAgentClient(body, plain(client, "--client"));
     body.model = plain(model, "--model");
   }
   if (options !== UNSET) applyAgentOptions(body, key, options);
-  return describeChange(config, updated, args.workflows ?? [], { resolveProvider: args.resolveProvider });
+  return describeChange(config, updated, args.workflows ?? [], { registry: args.registry });
 }
 
 export function assignRoles(
   config: Record<string, unknown>,
   roles: readonly string[],
   agentName: string,
-  args: { workflows?: readonly WorkflowDocument[]; resolveProvider?: ProviderResolver } = {},
+  args: { workflows?: readonly WorkflowDocument[]; registry?: ClientRegistry } = {},
 ): ConfigChange {
   const names = roleNames(roles);
   const updated = copyConfig(config);
@@ -191,32 +192,32 @@ export function assignRoles(
     if (!isRecord(role)) throw new ConfigurationError(`Missing or invalid roles.${name}.`);
     role.agent = agentName;
   }
-  return describeChange(config, updated, args.workflows ?? [], { resolveProvider: args.resolveProvider });
+  return describeChange(config, updated, args.workflows ?? [], { registry: args.registry });
 }
 
 export function placeRoleAgent(
   config: Record<string, unknown>,
   role: string,
   args: {
-    provider: string;
+    client: string;
     model: string;
     options?: Record<string, string | null>;
     workflows?: readonly WorkflowDocument[];
-    resolveProvider?: ProviderResolver;
+    registry?: ClientRegistry;
   },
 ): ConfigChange {
   requireName(role, "role");
-  const providerName = plain(args.provider, "--provider");
+  const clientName = plain(args.client, "--client");
   const modelId = plain(args.model, "--model");
   const options = args.options === undefined ? UNSET : args.options;
   const workflows = args.workflows ?? [];
   const updated = copyConfig(config);
   const agents = agentsOf(updated);
-  const definition: Record<string, unknown> = { provider: providerName, model: modelId };
+  const definition: Record<string, unknown> = { client: { type: clientName }, model: modelId };
   if (options !== UNSET) applyAgentOptions(definition, role, options);
   let match = matchingAgentName(updated, {
-    provider: providerName, model: modelId, options: optionsDict(definition, role),
-  }, args.resolveProvider);
+    client: clientName, model: modelId, options: optionsDict(definition, role),
+  }, args.registry);
   let created: string | null = null;
   let reused: string | null = null;
   if (match === null) {
@@ -234,28 +235,28 @@ export function placeRoleAgent(
     if (!isRecord(body)) throw new ConfigurationError(`Missing or invalid roles.${role}.`);
     body.agent = match;
   }
-  const change = describeChange(config, updated, workflows, { reusedAgent: reused, resolveProvider: args.resolveProvider });
+  const change = describeChange(config, updated, workflows, { reusedAgent: reused, registry: args.registry });
   if (created !== null) return { ...change, createdAgent: created, reusedAgent: null };
   return change;
 }
 
 export function matchingAgentName(
   config: Record<string, unknown>,
-  args: { provider: string; model: string; options: Record<string, string> },
-  resolveProvider?: ProviderResolver,
+  args: { client: string; model: string; options: Record<string, string> },
+  registry?: ClientRegistry,
 ): string | null {
   const agents = agentsOf(config);
   const wanted = { ...args.options };
   for (const key of Object.keys(agents)) {
     let target;
     try {
-      target = loadAgentTarget(config, key, resolveProvider);
+      target = loadAgentTarget(config, key, registry);
     } catch (error) {
       if (error instanceof ConfigurationError) continue;
       throw error;
     }
     if (
-      target.provider === args.provider &&
+      target.client === args.client &&
       target.model === args.model &&
       recordEqual(target.options, wanted)
     ) {
@@ -269,7 +270,7 @@ export function describeChange(
   before: Record<string, unknown>,
   after: Record<string, unknown>,
   workflows: readonly WorkflowDocument[] = [],
-  args: { reusedAgent?: string | null; resolveProvider?: ProviderResolver } = {},
+  args: { reusedAgent?: string | null; registry?: ClientRegistry } = {},
 ): ConfigChange {
   const afterCopy = deepCopyRecord(after);
   const beforeRoles = mappingOrEmpty(before.roles);
@@ -279,7 +280,7 @@ export function describeChange(
   const changedRoles = orderedKeys(afterRoles, beforeRoles).filter(
     (name) =>
       !bindingsEqual(binding(beforeRoles[name]), binding(afterRoles[name])) ||
-      !resolvedEqual(resolvedRole(before, name, args.resolveProvider), resolvedRole(afterCopy, name, args.resolveProvider)),
+      !resolvedEqual(resolvedRole(before, name, args.registry), resolvedRole(afterCopy, name, args.registry)),
   );
   const created = Object.keys(afterAgents).filter((key) => !Object.hasOwn(beforeAgents, key));
   const updated = Object.keys(afterAgents).filter(
@@ -296,8 +297,8 @@ export function describeChange(
   for (const document of workflows) {
     for (const stage of Object.values(document.stages)) {
       if (!isRoleStage(stage)) continue;
-      const beforeTarget = resolvedStage(before, stage, args.resolveProvider);
-      const afterTarget = resolvedStage(afterCopy, stage, args.resolveProvider);
+      const beforeTarget = resolvedStage(before, stage, args.registry);
+      const afterTarget = resolvedStage(afterCopy, stage, args.registry);
       if (!resolvedEqual(beforeTarget, afterTarget)) {
         stagesUpdated.push([document.id, stage.id]);
         continue;
@@ -327,6 +328,8 @@ export function patchConfigText(original: string, updated: Record<string, unknow
   if (isLegacyShape(current)) {
     // Lift a schema_version 4 document to the v5 structure first, so the sync below sees one shape.
     original = upgradeConfigText(original, current);
+    updated = deepCopyRecord(updated);
+    liftConfigAgents(updated);
     current = parseYamlDocument(original);
     if (!isRecord(current)) throw new ConfigEditError("Invalid configuration: expected a mapping.");
   }
@@ -349,6 +352,9 @@ export function patchConfigText(original: string, updated: Record<string, unknow
   }
   let text = lines.join("\n");
   if (original.endsWith("\n") || original === "") text += "\n";
+  if (!deepEqual(parseYamlDocument(text), updated)) {
+    throw new ConfigEditError("Config text does not match the updated document.");
+  }
   return text;
 }
 
@@ -382,9 +388,12 @@ function syncAgents(
     if (section === null) throw new ConfigEditError("Cannot edit agents in this file.");
     const block = childBlock(section, key);
     if (block === null) throw new ConfigEditError(`Cannot edit agents.${key} in this file.`);
-    if (Object.hasOwn(body, "provider")) syncScalar(lines, block, "provider", body.provider, `agents.${key}.provider`, edits);
+    if (Object.keys(body).length === 0 && isRecord(currentAgents[key]) && Object.keys(currentAgents[key]).length > 0) {
+      edits.push([block.line, block.end, [withValue(lines[block.line] ?? "", "{}")]]);
+      continue;
+    }
     if (Object.hasOwn(body, "model")) syncScalar(lines, block, "model", body.model, `agents.${key}.model`, edits);
-    syncOptions(lines, block, currentAgents[key], body, key, unit, edits);
+    syncAgentClient(lines, block, key, currentAgents[key], body, unit, edits);
     dropRemovedScalars(block, currentAgents[key], body, edits);
   }
   if (fresh.length === 0) return;
@@ -418,9 +427,21 @@ function syncRoles(
       const found = childBlock(block, "agent");
       if (!found) throw new ConfigEditError(`Cannot edit roles.${key}.agent in this file.`);
       if (!isRecord(previous) || !deepEqual(previous.agent, body.agent)) {
-        const rendered = stringify({ agent: body.agent }, { lineWidth: 0 }).trimEnd()
-          .split("\n").map((line) => " ".repeat(block.indent + unit) + line);
-        edits.push([found.line, found.end, rendered]);
+        if (isRecord(previous) && isRecord(previous.agent) && isRecord(body.agent)) {
+          // Reuse the field patchers so unchanged values keep their comments and order.
+          if (body.agent.model !== previous.agent.model) {
+            syncScalar(lines, found, "model", body.agent.model, `roles.${key}.agent.model`, edits);
+          }
+          syncAgentClient(lines, found, key, previous.agent, body.agent, unit, edits);
+          dropRemovedScalars(found, previous.agent, body.agent, edits);
+        } else {
+          const indent = block.indent + unit;
+          const base = lines.slice(found.line, found.end).map((line) => line.slice(indent)).join("\n");
+          const result = renderAuthoringYaml({ agent: body.agent }, base);
+          if (!result.preserved) throw new ConfigEditError(`Cannot preserve roles.${key}.agent: ${result.reason}.`);
+          const rendered = result.text.trimEnd().split("\n").map((line) => " ".repeat(indent) + line);
+          edits.push([found.line, found.end, rendered]);
+        }
       }
     } else if (Object.hasOwn(body, "agent")) {
       syncScalar(lines, block, "agent", body.agent, `roles.${key}.agent`, edits);
@@ -488,27 +509,53 @@ function syncScalar(
   edits.push([found.line, found.line + 1, [withValue(lines[found.line] ?? "", value)]]);
 }
 
-function syncOptions(
+function syncAgentClient(
   lines: string[],
   parent: Block,
+  key: string,
   beforeBody: unknown,
   afterBody: Record<string, unknown>,
-  key: string,
   unit: number,
   edits: Edit[],
 ): void {
   const before = optionsDict(beforeBody, key);
   const after = optionsDict(afterBody, key);
-  if (recordEqual(before, after)) return;
-  const field = `agents.${key}.client.options`;
+  const afterClient = isRecord(afterBody.client) ? afterBody.client : {};
+  const type = typeof afterClient.type === "string" && afterClient.type.trim() !== ""
+    ? afterClient.type.trim()
+    : undefined;
+  const beforeClient = isRecord(beforeBody) && isRecord(beforeBody.client) ? beforeBody.client : {};
+  const beforeType = typeof beforeClient.type === "string" && beforeClient.type.trim() !== ""
+    ? beforeClient.type.trim()
+    : undefined;
+  if (recordEqual(before, after) && type === beforeType) return;
   const client = childBlock(parent, "client");
   if (client !== null) {
-    if (client.value.trim() !== "") throw new ConfigEditError(`Cannot edit ${field} in this file.`);
-    syncOptionMap(lines, client, before, after, field, unit, edits);
+    if (client.value.trim() !== "") throw new ConfigEditError(`Cannot edit agents.${key}.client in this file.`);
+    if (type !== undefined) syncClientType(lines, client, type, key, unit, edits);
+    syncOptionMap(lines, client, before, after, `agents.${key}.client.options`, unit, edits);
     return;
   }
-  if (Object.keys(after).length === 0) return;
-  edits.push([parent.end, parent.end, clientLines(undefined, after, parent.indent + unit, unit)]);
+  if (type === undefined && Object.keys(after).length === 0) return;
+  edits.push([parent.end, parent.end, clientLines(type, after, parent.indent + unit, unit)]);
+}
+
+function syncClientType(
+  lines: string[],
+  client: Block,
+  value: string,
+  key: string,
+  unit: number,
+  edits: Edit[],
+): void {
+  const found = childBlock(client, "type");
+  if (found === null) {
+    const indent = " ".repeat(client.indent + unit);
+    edits.push([client.line + 1, client.line + 1, [`${indent}type: ${yamlScalar(value)}`]]);
+    return;
+  }
+  if (scalarText(found.value) === value) return;
+  edits.push([found.line, found.line + 1, [withValue(lines[found.line] ?? "", value)]]);
 }
 
 function syncRoleOptions(
@@ -599,13 +646,13 @@ function agentLines(key: string, body: Record<string, unknown>, indent: number, 
   const child = " ".repeat(indent + unit);
   const lines = [
     `${parent}${key}:`,
-    `${child}provider: ${yamlScalar(stringValue(body.provider, `agents.${key}.provider`))}`,
     `${child}model: ${yamlScalar(stringValue(body.model, `agents.${key}.model`))}`,
   ];
   const client = isRecord(body.client) ? body.client : {};
   const type = typeof client.type === "string" && client.type.trim() !== "" ? client.type.trim() : undefined;
+  if (type === undefined) throw new ConfigEditError(`agents.${key} needs client.type before it can be written.`);
   const options = optionsDict(body, key);
-  if (type !== undefined || Object.keys(options).length > 0) lines.push(...clientLines(type, options, indent + unit, unit));
+  lines.push(...clientLines(type, options, indent + unit, unit));
   return lines;
 }
 
@@ -841,22 +888,22 @@ function references(config: Record<string, unknown>, workflows: readonly Workflo
   return found;
 }
 
-function resolvedRole(config: Record<string, unknown>, role: string, resolveProvider?: ProviderResolver): ResolvedTarget | null {
+function resolvedRole(config: Record<string, unknown>, role: string, registry?: ClientRegistry): ResolvedTarget | null {
   const roles = config.roles;
   if (!isRecord(roles) || !Object.hasOwn(roles, role)) return null;
   try {
-    const target = resolveRoleCascade(config, role, undefined, resolveProvider);
-    return [target.provider, target.model, sortedItems(target.options)];
+    const target = resolveRoleCascade(config, role, undefined, registry);
+    return [target.client, target.model, sortedItems(target.options)];
   } catch (error) {
     if (error instanceof ConfigurationError) return null;
     throw error;
   }
 }
 
-function resolvedStage(config: Record<string, unknown>, stage: RoleStageSpec, resolveProvider?: ProviderResolver): ResolvedTarget | null {
+function resolvedStage(config: Record<string, unknown>, stage: RoleStageSpec, registry?: ClientRegistry): ResolvedTarget | null {
   try {
-    const target = resolveStageSpec(config, stage, undefined, resolveProvider);
-    return [target.provider, target.model, sortedItems(target.options)];
+    const target = resolveStageSpec(config, stage, undefined, registry);
+    return [target.client, target.model, sortedItems(target.options)];
   } catch (error) {
     if (error instanceof ConfigurationError) return null;
     throw error;
@@ -878,7 +925,13 @@ function signature(body: unknown): unknown[] {
         .map(([key, value]) => [String(key), String(value)] as [string, string])
         .sort(comparePair)
     : [];
-  return [body.provider ?? null, body.model ?? null, client.type ?? null, rendered];
+  return [body.model ?? null, client.type ?? null, rendered];
+}
+
+function setAgentClient(body: Record<string, unknown>, type: string): void {
+  const client = isRecord(body.client) ? body.client : {};
+  const { type: _previous, ...rest } = client;
+  body.client = { type, ...rest };
 }
 
 function applyAgentOptions(body: Record<string, unknown>, key: string, updates: unknown): void {

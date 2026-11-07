@@ -8,11 +8,11 @@ import { loadWorkflowDocument } from "@nodeint/migent-kernel";
 import { renderProject, projectTemplateDirectory, type ModelChoice } from "../src/project-template.js";
 
 const root = new URL("../../../templates/", import.meta.url);
-const choice = (provider: string, model: string, options: Record<string, string> = {}): ModelChoice => ({ provider, model, options });
+const choice = (client: string, model: string, options: Record<string, string> = {}): ModelChoice => ({ client, model, options });
 const models = {
   planner: choice("codex", "gpt-5", { model_reasoning_effort: "high" }),
   reviewer: choice("grok", "123"),
-  developer: choice("claude", "true"),
+  developer: choice("claude-code", "true"),
 };
 
 test("renders config models independently and keeps template content", () => {
@@ -20,9 +20,9 @@ test("renders config models independently and keeps template content", () => {
   const config = parse(files[0]!.content) as { roles: Record<string, { agent?: unknown; responsibilities: string[]; description?: string }> };
   const local = parse(files[1]!.content) as { roles: Record<string, unknown> };
   const template = parse(readFileSync(new URL("config.yaml", root), "utf8")) as typeof config;
-  expect(config.roles.planner?.agent).toEqual({ provider: "codex", model: "gpt-5", client: { options: { model_reasoning_effort: "high" } } });
-  expect(config.roles.reviewer?.agent).toEqual({ provider: "grok", model: "123" });
-  expect(config.roles.developer?.agent).toEqual({ provider: "claude", model: "true" });
+  expect(config.roles.planner?.agent).toEqual({ model: "gpt-5", client: { type: "codex", options: { model_reasoning_effort: "high" } } });
+  expect(config.roles.reviewer?.agent).toEqual({ model: "123", client: { type: "grok" } });
+  expect(config.roles.developer?.agent).toEqual({ model: "true", client: { type: "claude-code" } });
   for (const role of ["planner", "reviewer", "developer"]) {
     expect(config.roles[role]?.responsibilities).toEqual(template.roles[role]?.responsibilities);
     expect(config.roles[role]?.description).toMatch(/\S/);

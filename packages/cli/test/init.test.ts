@@ -2,10 +2,10 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { diagnose } from "@nodeint/migent-doctor";
-import { createProviderResolver, loadWorkflowDocument, loadWorkspaceConfig, resolveStageTarget } from "@nodeint/migent-kernel";
-import { defaultProviders } from "@nodeint/migent-adapters";
+import { loadWorkflowDocument, loadWorkspaceConfig, resolveStageTarget } from "@nodeint/migent-kernel";
 import { afterEach, expect, test } from "vitest";
 import { cliHooks } from "../src/hooks.ts";
+import { clientRegistry } from "../src/client.ts";
 import { runInit, type Prompter, type ModelSelection } from "../src/commands/init.ts";
 import { main } from "../src/index.ts";
 import { capture } from "./support.ts";
@@ -54,10 +54,10 @@ class ScriptedPrompt implements Prompter {
   }
 
   selectModel(models: readonly ModelSelection[]): ModelSelection {
-    const provider = this.answers[this.index++] ?? "";
+    const client = this.answers[this.index++] ?? "";
     const model = this.answers[this.index++] ?? "";
-    const selected = models.find((item) => (!provider || item.provider === provider) && (!model || item.model === model));
-    if (!selected) throw new Error(`Unknown model: ${provider}/${model}.`);
+    const selected = models.find((item) => (!client || item.client === client) && (!model || item.model === model));
+    if (!selected) throw new Error(`Unknown model: ${client}/${model}.`);
     return selected;
   }
 
@@ -82,10 +82,10 @@ test("writes inline role models and both working presets", async () => {
   try {
     const captured = await capture(() =>
       runInit(workspace, {
-        provider: "codex",
+        client: "codex",
         model: "gpt-5",
-        plannerProvider: "codex", plannerModel: "gpt-5",
-        reviewerProvider: "codex",
+        plannerClient: "codex", plannerModel: "gpt-5",
+        reviewerClient: "codex",
         reviewerModel: "gpt-5",
         runCommand,
         which: which(new Set(["codex", "grok"])),
@@ -97,15 +97,15 @@ test("writes inline role models and both working presets", async () => {
     expect(captured.value).toBe(0);
     expect(captured.stdout).toContain("Roles:");
     expect(captured.stdout).toMatch(/planner\s+Designs the approach/);
-    expect(config).toContain("schema_version: 5");
+    expect(config).toContain("schema_version: 6");
     expect(config).toContain("agent");
-    expect(workflow).toContain("schema_version: 5");
+    expect(workflow).toContain("schema_version: 6");
     expect(loadWorkspaceConfig(workspace)).toMatchObject({
-      schema_version: 5,
+      schema_version: 6,
       roles: {
-        developer: { agent: { provider: "codex", model: "gpt-5" } },
-        planner: { agent: { provider: "codex", model: "gpt-5" } },
-        reviewer: { agent: { provider: "codex", model: "gpt-5" } },
+        developer: { agent: { model: "gpt-5", client: { type: "codex" } } },
+        planner: { agent: { model: "gpt-5", client: { type: "codex" } } },
+        reviewer: { agent: { model: "gpt-5", client: { type: "codex" } } },
       },
     });
     const roles = loadWorkspaceConfig(workspace).roles as Record<string, { responsibilities: string[]; description: string }>;
@@ -122,11 +122,11 @@ test("writes inline role models and both working presets", async () => {
     expect(workflow).toContain("id: implement");
     expect(workflow).toContain("role: developer");
     expect(gitignore).toBe("sessions/\nconfig.local.yaml\n");
-    const providers = defaultProviders();
-    expect(diagnose(workspace, { providers, which: which(new Set(["codex"])) }).every((check) => check.ok)).toBe(true);
+    const clients = clientRegistry();
+    expect(diagnose(workspace, { clients, which: which(new Set(["codex"])) }).every((check) => check.ok)).toBe(true);
     for (const [flow, stage] of [["implement", "implement"], ["implement", "review_work"], ["plan", "plan"], ["plan", "review_plan"]] as const) {
-      expect(resolveStageTarget(workspace, flow, stage, undefined, createProviderResolver(providers))).toEqual({
-        provider: "codex", model: "gpt-5", options: {},
+      expect(resolveStageTarget(workspace, flow, stage, undefined, clients)).toEqual({
+        client: "codex", model: "gpt-5", options: {},
       });
     }
     expect(captured.stdout).toContain(".migent/workflows/plan.yaml");
@@ -148,10 +148,10 @@ test("refuses a partial project and leaves it unchanged", async () => {
     writeFileSync(config, "partial: true\n", "utf8");
     const captured = await capture(() =>
       runInit(workspace, {
-        provider: "codex",
+        client: "codex",
         model: "gpt-5",
-        plannerProvider: "codex", plannerModel: "gpt-5",
-        reviewerProvider: "codex",
+        plannerClient: "codex", plannerModel: "gpt-5",
+        reviewerClient: "codex",
         reviewerModel: "gpt-5",
         runCommand,
         which: which(new Set(["codex"])),
@@ -171,10 +171,10 @@ test("reports an existing valid project without changing it", async () => {
   try {
     expect(
       await runInit(workspace, {
-        provider: "codex",
+        client: "codex",
         model: "gpt-5",
-        plannerProvider: "codex", plannerModel: "gpt-5",
-        reviewerProvider: "codex",
+        plannerClient: "codex", plannerModel: "gpt-5",
+        reviewerClient: "codex",
         reviewerModel: "gpt-5",
         runCommand,
         which: which(new Set(["codex"])),
@@ -184,10 +184,10 @@ test("reports an existing valid project without changing it", async () => {
     const original = readFileSync(config, "utf8");
     const captured = await capture(() =>
       runInit(workspace, {
-        provider: "grok",
+        client: "grok",
         model: "grok-4",
-        plannerProvider: "codex", plannerModel: "gpt-5",
-        reviewerProvider: "codex",
+        plannerClient: "codex", plannerModel: "gpt-5",
+        reviewerClient: "codex",
         reviewerModel: "gpt-5",
         runCommand,
         which: which(new Set()),
@@ -209,7 +209,7 @@ test("a lone config.local.yaml is a conflict and is left unchanged", async () =>
     const local = path.join(root, "config.local.yaml");
     writeFileSync(local, "agents: {}\n", "utf8");
     const captured = await capture(() =>
-      runInit(workspace, { provider: "codex", model: "gpt-5", plannerProvider: "codex", plannerModel: "gpt-5", reviewerProvider: "codex", reviewerModel: "gpt-5", runCommand, which: which(new Set(["codex"])) }),
+      runInit(workspace, { client: "codex", model: "gpt-5", plannerClient: "codex", plannerModel: "gpt-5", reviewerClient: "codex", reviewerModel: "gpt-5", runCommand, which: which(new Set(["codex"])) }),
     );
     expect(captured.value).toBe(1);
     expect(readFileSync(local, "utf8")).toBe("agents: {}\n");
@@ -224,10 +224,10 @@ test("planner has its own model and each workflow uses the reviewer model", asyn
   const workspace = tempDir();
   try {
     const code = await runInit(workspace, {
-      provider: "codex",
+      client: "codex",
       model: "gpt-5",
-      plannerProvider: "grok", plannerModel: "grok-4.6",
-      reviewerProvider: "grok",
+      plannerClient: "grok", plannerModel: "grok-4.6",
+      reviewerClient: "grok",
       reviewerModel: "grok-4.7",
       runCommand,
       which: which(new Set(["codex", "grok"])),
@@ -235,13 +235,13 @@ test("planner has its own model and each workflow uses the reviewer model", asyn
     const config = readFileSync(path.join(workspace, ".migent", "config.yaml"), "utf8");
     const workflow = readFileSync(path.join(workspace, ".migent", "workflows", "plan.yaml"), "utf8");
     expect(code).toBe(0);
-    const resolve = createProviderResolver(defaultProviders());
-    expect(resolveStageTarget(workspace, "plan", "plan", undefined, resolve)).toMatchObject({ provider: "grok", model: "grok-4.6" });
-    expect(resolveStageTarget(workspace, "plan", "review_plan", undefined, resolve)).toMatchObject({ provider: "grok", model: "grok-4.7" });
+    const resolve = clientRegistry();
+    expect(resolveStageTarget(workspace, "plan", "plan", undefined, resolve)).toMatchObject({ client: "grok", model: "grok-4.6" });
+    expect(resolveStageTarget(workspace, "plan", "review_plan", undefined, resolve)).toMatchObject({ client: "grok", model: "grok-4.7" });
     expect(config).not.toContain("agents:");
     expect(config).toContain("planner:");
     expect(workflow).toContain("role: planner");
-    expect(resolveStageTarget(workspace, "implement", "review_work", undefined, resolve)).toMatchObject({ provider: "grok", model: "grok-4.7" });
+    expect(resolveStageTarget(workspace, "implement", "review_work", undefined, resolve)).toMatchObject({ client: "grok", model: "grok-4.7" });
     expect(workflow).toContain("id: plan");
     expect(loadWorkflowDocument(path.join(workspace, ".migent", "workflows", "plan.yaml")).stages.review_plan?.routes.revise).toBe("plan");
     expect(workflow).toBe(readFileSync(new URL("../../../templates/workflows/plan.yaml", import.meta.url), "utf8"));
@@ -251,7 +251,7 @@ test("planner has its own model and each workflow uses the reviewer model", asyn
   }
 });
 
-test("interactive prefers an installed provider", async () => {
+test("interactive prefers an installed client", async () => {
   const workspace = tempDir();
   try {
     const captured = await capture(() =>
@@ -264,9 +264,9 @@ test("interactive prefers an installed provider", async () => {
     );
     const config = readFileSync(path.join(workspace, ".migent", "config.yaml"), "utf8");
     expect(captured.value).toBe(0);
-    expect(captured.stdout).toContain("providers");
+    expect(captured.stdout).toContain("clients");
     expect(captured.stdout).toContain("ok");
-    expect(config).toContain("provider: grok");
+    expect(config).toContain("type: grok");
     expect(config).toContain("model: grok-4.7");
     expect(config).not.toContain("codex");
   } finally {
@@ -278,10 +278,10 @@ test("writes an option only when it is passed", async () => {
   const workspace = tempDir();
   try {
     const code = await runInit(workspace, {
-      provider: "codex",
+      client: "codex",
       model: "gpt-5",
-      plannerProvider: "codex", plannerModel: "gpt-5",
-      reviewerProvider: "codex",
+      plannerClient: "codex", plannerModel: "gpt-5",
+      reviewerClient: "codex",
       reviewerModel: "gpt-5",
       options: ["model_reasoning_effort=high"],
       runCommand,
@@ -295,15 +295,15 @@ test("writes an option only when it is passed", async () => {
   }
 });
 
-test("rejects a model the provider cli did not list", async () => {
+test("rejects a model the client cli did not list", async () => {
   const workspace = tempDir();
   try {
     const captured = await capture(() =>
       runInit(workspace, {
-        provider: "codex",
+        client: "codex",
         model: "hidden",
-        plannerProvider: "codex", plannerModel: "gpt-5",
-        reviewerProvider: "codex",
+        plannerClient: "codex", plannerModel: "gpt-5",
+        reviewerClient: "codex",
         reviewerModel: "gpt-5",
         runCommand,
         which: which(new Set(["codex"])),
@@ -317,15 +317,15 @@ test("rejects a model the provider cli did not list", async () => {
   }
 });
 
-test("rejects an option value the provider does not list", async () => {
+test("rejects an option value the client does not list", async () => {
   const workspace = tempDir();
   try {
     const captured = await capture(() =>
       runInit(workspace, {
-        provider: "codex",
+        client: "codex",
         model: "gpt-5",
-        plannerProvider: "codex", plannerModel: "gpt-5",
-        reviewerProvider: "codex",
+        plannerClient: "codex", plannerModel: "gpt-5",
+        reviewerClient: "codex",
         reviewerModel: "gpt-5",
         options: ["model_reasoning_effort=max"],
         runCommand,
@@ -345,9 +345,9 @@ test("init succeeds without npx and suggests a separate skill command", async ()
   const { calls } = skillRecorder(1);
   try {
     const result = await capture(() => runInit(workspace, {
-      provider: "codex", model: "gpt-5",
-      plannerProvider: "codex", plannerModel: "gpt-5",
-      reviewerProvider: "codex", reviewerModel: "gpt-5",
+      client: "codex", model: "gpt-5",
+      plannerClient: "codex", plannerModel: "gpt-5",
+      reviewerClient: "codex", reviewerModel: "gpt-5",
       runCommand, which: which(new Set(["codex"])),
     }));
     expect(result.value).toBe(0);
@@ -367,9 +367,9 @@ test.each(["missing npx", "installer failure"])("skill %s after init preserves t
   const { calls } = skillRecorder(1);
   try {
     const initialized = await capture(() => runInit(workspace, {
-      provider: "codex", model: "gpt-5", options: ["model_reasoning_effort=low"],
-      plannerProvider: "codex", plannerModel: "gpt-5",
-      reviewerProvider: "grok", reviewerModel: "grok-4.7", reviewerOptions: ["reasoning-effort=high"],
+      client: "codex", model: "gpt-5", options: ["model_reasoning_effort=low"],
+      plannerClient: "codex", plannerModel: "gpt-5",
+      reviewerClient: "grok", reviewerModel: "grok-4.7", reviewerOptions: ["reasoning-effort=high"],
       runCommand, which: which(new Set(["codex", "grok"])),
     }));
     expect(initialized.value, initialized.stderr).toBe(0);
@@ -423,16 +423,16 @@ test("init --skill reports the replacement before prompting or writing files and
   }
 });
 
-test("init exits 0 when doctor later reports a missing provider", async () => {
+test("init exits 0 when doctor later reports a missing client", async () => {
   const workspace = tempDir();
   try {
     let seen = 0;
     const captured = await capture(() =>
       runInit(workspace, {
-        provider: "codex",
+        client: "codex",
         model: "gpt-5",
-        plannerProvider: "codex", plannerModel: "gpt-5",
-        reviewerProvider: "codex",
+        plannerClient: "codex", plannerModel: "gpt-5",
+        reviewerClient: "codex",
         reviewerModel: "gpt-5",
         runCommand,
         which: (command) => {
@@ -457,10 +457,10 @@ test("already initialized ignores model selection flags", async () => {
   try {
     expect(
       await runInit(workspace, {
-        provider: "codex",
+        client: "codex",
         model: "gpt-5",
-        plannerProvider: "codex", plannerModel: "gpt-5",
-        reviewerProvider: "codex",
+        plannerClient: "codex", plannerModel: "gpt-5",
+        reviewerClient: "codex",
         reviewerModel: "gpt-5",
         runCommand,
         which: which(new Set(["codex"])),
@@ -468,10 +468,10 @@ test("already initialized ignores model selection flags", async () => {
     ).toBe(0);
     const captured = await capture(() =>
       runInit(workspace, {
-        provider: "grok",
+        client: "grok",
         model: "grok-4",
-        plannerProvider: "codex", plannerModel: "gpt-5",
-        reviewerProvider: "codex",
+        plannerClient: "codex", plannerModel: "gpt-5",
+        reviewerClient: "codex",
         reviewerModel: "gpt-5",
         options: ["reasoning=high"],
         runCommand,
@@ -486,14 +486,14 @@ test("already initialized ignores model selection flags", async () => {
   }
 });
 
-test("requires provider and model when not interactive", async () => {
+test("requires client and model when not interactive", async () => {
   const workspace = tempDir();
   try {
     const first = await capture(() => main(["init"], workspace));
     expect(first.value).toBe(2);
     expect(existsSync(path.join(workspace, ".migent"))).toBe(false);
-    expect(first.stderr).toContain("Pass --planner-provider and --planner-model for planner when init is not interactive.");
-    const second = await capture(() => main(["init", "--provider", "codex"], workspace));
+    expect(first.stderr).toContain("Pass --planner-client and --planner-model for planner when init is not interactive.");
+    const second = await capture(() => main(["init", "--client", "codex"], workspace));
     expect(second.value).toBe(2);
     expect(second.stderr).toContain("--developer-model");
     const previous = process.env.MIGENT_NO_INPUT;
@@ -501,7 +501,7 @@ test("requires provider and model when not interactive", async () => {
     try {
       const third = await capture(() => main(["init"], workspace));
       expect(third.value).toBe(2);
-      expect(third.stderr).toContain("Pass --planner-provider and --planner-model for planner when init is not interactive.");
+      expect(third.stderr).toContain("Pass --planner-client and --planner-model for planner when init is not interactive.");
     } finally {
       if (previous === undefined) delete process.env.MIGENT_NO_INPUT;
       else process.env.MIGENT_NO_INPUT = previous;
@@ -516,7 +516,7 @@ test("initializes over an empty .migent directory", async () => {
   try {
     mkdirSync(path.join(workspace, ".migent"));
     const captured = await capture(() =>
-      runInit(workspace, { provider: "codex", model: "gpt-5", plannerProvider: "codex", plannerModel: "gpt-5", reviewerProvider: "codex", reviewerModel: "gpt-5", runCommand, which: which(new Set(["codex"])) }),
+      runInit(workspace, { client: "codex", model: "gpt-5", plannerClient: "codex", plannerModel: "gpt-5", reviewerClient: "codex", reviewerModel: "gpt-5", runCommand, which: which(new Set(["codex"])) }),
     );
     expect(captured.value).toBe(0);
     expect(existsSync(path.join(workspace, ".migent", "config.yaml"))).toBe(true);
@@ -530,7 +530,7 @@ test("initializes over an empty .migent/workflows directory", async () => {
   try {
     mkdirSync(path.join(workspace, ".migent", "workflows"), { recursive: true });
     const captured = await capture(() =>
-      runInit(workspace, { provider: "codex", model: "gpt-5", plannerProvider: "codex", plannerModel: "gpt-5", reviewerProvider: "codex", reviewerModel: "gpt-5", runCommand, which: which(new Set(["codex"])) }),
+      runInit(workspace, { client: "codex", model: "gpt-5", plannerClient: "codex", plannerModel: "gpt-5", reviewerClient: "codex", reviewerModel: "gpt-5", runCommand, which: which(new Set(["codex"])) }),
     );
     expect(captured.value).toBe(0);
     expect(existsSync(path.join(workspace, ".migent", "workflows", "implement.yaml"))).toBe(true);
@@ -544,10 +544,10 @@ test("init runs only catalog listing commands, never an inference call", async (
   try {
     const seen: string[][] = [];
     const code = await runInit(workspace, {
-      provider: "codex",
+      client: "codex",
       model: "gpt-5",
-      plannerProvider: "codex", plannerModel: "gpt-5",
-      reviewerProvider: "codex",
+      plannerClient: "codex", plannerModel: "gpt-5",
+      reviewerClient: "codex",
       reviewerModel: "gpt-5",
       runCommand: (argv) => {
         seen.push(argv);
@@ -569,21 +569,21 @@ test("non-interactive CLI requires all three role models and accepts the same mo
   cliHooks.which = which(new Set(["codex"]));
   cliHooks.runCommand = runCommand;
   try {
-    const missing = await capture(() => main(["init", "--no-input", "--provider", "codex", "--model", "gpt-5"], workspace));
+    const missing = await capture(() => main(["init", "--no-input", "--client", "codex", "--model", "gpt-5"], workspace));
     expect(missing.value).toBe(2);
-    expect(missing.stderr).toContain("--planner-provider and --planner-model");
+    expect(missing.stderr).toContain("--planner-client and --planner-model");
     expect(existsSync(path.join(workspace, ".migent"))).toBe(false);
     cliHooks.which = which(new Set(["codex"]));
     cliHooks.runCommand = runCommand;
     const result = await capture(() => main([
-      "init", "--no-input", "--provider", "codex", "--model", "gpt-5",
-      "--planner-provider", "codex", "--planner-model", "gpt-5",
+      "init", "--no-input", "--client", "codex", "--model", "gpt-5",
+      "--planner-client", "codex", "--planner-model", "gpt-5",
       "--planner-option", "model_reasoning_effort=medium",
-      "--reviewer-provider", "codex", "--reviewer-model", "gpt-5",
+      "--reviewer-client", "codex", "--reviewer-model", "gpt-5",
       "--option", "model_reasoning_effort=low", "--reviewer-option", "model_reasoning_effort=high",
     ], workspace));
     expect(result.value, result.stderr).toBe(0);
-    const resolve = createProviderResolver(defaultProviders());
+    const resolve = clientRegistry();
     expect(resolveStageTarget(workspace, "plan", "plan", undefined, resolve).options).toEqual({ model_reasoning_effort: "medium" });
     expect(resolveStageTarget(workspace, "plan", "review_plan", undefined, resolve).options).toEqual({ model_reasoning_effort: "high" });
     expect(resolveStageTarget(workspace, "implement", "implement", undefined, resolve).options).toEqual({ model_reasoning_effort: "low" });
@@ -596,13 +596,13 @@ test("init accepts independent effort flags and rejects conflicting or invalid v
   const workspace = tempDir();
   cliHooks.which = which(new Set(["codex"]));
   cliHooks.runCommand = runCommand;
-  const args = ["init", "--no-input", "--provider", "codex", "--model", "gpt-5",
-    "--planner-provider", "codex", "--planner-model", "gpt-5",
-    "--reviewer-provider", "codex", "--reviewer-model", "gpt-5"];
+  const args = ["init", "--no-input", "--client", "codex", "--model", "gpt-5",
+    "--planner-client", "codex", "--planner-model", "gpt-5",
+    "--reviewer-client", "codex", "--reviewer-model", "gpt-5"];
   try {
-    const aliases = await capture(() => main([...args, "--developer-provider", "codex"], workspace));
+    const aliases = await capture(() => main([...args, "--developer-client", "codex"], workspace));
     expect(aliases.value).toBe(2);
-    expect(aliases.stderr).toContain("Use only one of --developer-provider and --provider");
+    expect(aliases.stderr).toContain("Use only one of --developer-client and --client");
     cliHooks.which = which(new Set(["codex"]));
     cliHooks.runCommand = runCommand;
     const conflict = await capture(() => main([...args, "--effort", "high", "--option", "model_reasoning_effort=low"], workspace));
@@ -615,14 +615,14 @@ test("init accepts independent effort flags and rejects conflicting or invalid v
     expect(existsSync(path.join(workspace, ".migent"))).toBe(false);
     cliHooks.which = which(new Set(["codex"]));
     cliHooks.runCommand = runCommand;
-    const developerArgs = args.map((arg) => arg === "--provider" ? "--developer-provider" : arg === "--model" ? "--developer-model" : arg);
+    const developerArgs = args.map((arg) => arg === "--client" ? "--developer-client" : arg === "--model" ? "--developer-model" : arg);
     const result = await capture(() => main([...developerArgs, "--planner-effort", "medium", "--reviewer-effort", "high", "--developer-effort", "low"], workspace));
     expect(result.value, result.stderr).toBe(0);
     const local = readFileSync(path.join(workspace, ".migent", "config.yaml"), "utf8");
     expect(local).toContain("effort: medium");
     expect(local).toContain("effort: high");
     expect(local).toContain("effort: low");
-    const resolve = createProviderResolver(defaultProviders());
+    const resolve = clientRegistry();
     expect(resolveStageTarget(workspace, "plan", "plan", undefined, resolve).options.model_reasoning_effort).toBe("medium");
     expect(resolveStageTarget(workspace, "plan", "review_plan", undefined, resolve).options.model_reasoning_effort).toBe("high");
     expect(resolveStageTarget(workspace, "implement", "implement", undefined, resolve).options.model_reasoning_effort).toBe("low");
@@ -649,15 +649,15 @@ test("interactive init saves each role independently without installing the skil
     expect(messages).toEqual(["Planner model", "Reviewer model", "Developer model"]);
     expect(Object.keys(loadWorkspaceConfig(workspace).roles)).toEqual(["planner", "reviewer", "developer"]);
     expect(result.stdout).toContain("migent skill install --project");
-    const resolve = createProviderResolver(defaultProviders());
+    const resolve = clientRegistry();
     expect(resolveStageTarget(workspace, "implement", "implement", undefined, resolve)).toEqual({
-      provider: "codex", model: "gpt-5", options: { model_reasoning_effort: "xhigh" },
+      client: "codex", model: "gpt-5", options: { model_reasoning_effort: "xhigh" },
     });
     expect(resolveStageTarget(workspace, "plan", "review_plan", undefined, resolve)).toEqual({
-      provider: "grok", model: "grok-4.7", options: { "reasoning-effort": "high" },
+      client: "grok", model: "grok-4.7", options: { "reasoning-effort": "high" },
     });
     expect(resolveStageTarget(workspace, "plan", "plan", undefined, resolve)).toEqual({
-      provider: "codex", model: "gpt-5", options: { model_reasoning_effort: "low" },
+      client: "codex", model: "gpt-5", options: { model_reasoning_effort: "low" },
     });
     expect(calls).toEqual([]);
   } finally {
@@ -666,18 +666,18 @@ test("interactive init saves each role independently without installing the skil
 });
 
 test.each([
-  { plannerProvider: "codex", plannerModel: "hidden" },
-  { plannerProvider: "codex" },
+  { plannerClient: "codex", plannerModel: "hidden" },
+  { plannerClient: "codex" },
   { plannerModel: "gpt-5" },
   { plannerOptions: ["model_reasoning_effort=high"] },
-  { plannerProvider: "codex", plannerModel: "gpt-5", plannerOptions: ["model_reasoning_effort=max"] },
+  { plannerClient: "codex", plannerModel: "gpt-5", plannerOptions: ["model_reasoning_effort=max"] },
 ])("invalid planner selection leaves the project unwritten: %j", async (planner) => {
   const workspace = tempDir();
   try {
     const result = await capture(() => runInit(workspace, {
       ...planner,
-      reviewerProvider: "codex", reviewerModel: "gpt-5",
-      provider: "codex", model: "gpt-5",
+      reviewerClient: "codex", reviewerModel: "gpt-5",
+      client: "codex", model: "gpt-5",
       runCommand, which: which(new Set(["codex"])),
     }));
     expect(result.value).toBe(2);
@@ -688,16 +688,16 @@ test.each([
 });
 
 test.each([
-  { reviewerProvider: "codex", reviewerModel: "hidden" },
-  { reviewerProvider: "codex" },
+  { reviewerClient: "codex", reviewerModel: "hidden" },
+  { reviewerClient: "codex" },
   { reviewerModel: "gpt-5" },
   { reviewerOptions: ["model_reasoning_effort=high"] },
 ])("invalid reviewer selection leaves the project unwritten: %j", async (reviewer) => {
   const workspace = tempDir();
   try {
     const result = await capture(() => runInit(workspace, {
-      plannerProvider: "codex", plannerModel: "gpt-5",
-      provider: "codex", model: "gpt-5", ...reviewer,
+      plannerClient: "codex", plannerModel: "gpt-5",
+      client: "codex", model: "gpt-5", ...reviewer,
       runCommand, which: which(new Set(["codex"])),
     }));
     expect(result.value).toBe(2);
@@ -708,7 +708,7 @@ test.each([
 });
 
 
-test("interactive init loads each available catalog once and tolerates a failed provider", async () => {
+test("interactive init loads each available catalog once and tolerates a failed client", async () => {
   const workspace = tempDir();
   const catalogCalls: string[] = [];
   const modelsSeen: ModelSelection[][] = [];
@@ -733,7 +733,7 @@ test("interactive init loads each available catalog once and tolerates a failed 
     expect(catalogCalls.filter((name) => name === "codex")).toHaveLength(1);
     expect(catalogCalls.filter((name) => name === "grok")).toHaveLength(1);
     expect(modelsSeen).toHaveLength(3);
-    expect(modelsSeen.every((models) => models.some((item) => item.provider === "codex" && item.model === "gpt-5"))).toBe(true);
+    expect(modelsSeen.every((models) => models.some((item) => item.client === "codex" && item.model === "gpt-5"))).toBe(true);
     expect(result.stderr).toContain("offline");
   } finally {
     rmSync(workspace, { recursive: true, force: true });

@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, test } from "vitest";
-import { ProviderCommandFailed } from "../src/provider.js";
+import { ClientCommandFailed } from "../src/client.js";
 import { cliHooks } from "../src/hooks.ts";
 import { main } from "../src/index.ts";
 import { capture } from "./support.ts";
@@ -61,10 +61,10 @@ function fakeRunner(calls: string[][] = []): (argv: string[]) => string {
     const help = helpFor(argv);
     if (help !== null) return help;
     if (argv[0] === "grok" && argv.includes("--reasoning-effort")) {
-      throw new ProviderCommandFailed("grok: invalid effort; use one of: low, medium.");
+      throw new ClientCommandFailed("grok: invalid effort; use one of: low, medium.");
     }
     const catalog = catalogFor(argv[0] ?? "");
-    if (catalog === null) throw new ProviderCommandFailed(`unexpected command: ${argv.join(" ")}`);
+    if (catalog === null) throw new ClientCommandFailed(`unexpected command: ${argv.join(" ")}`);
     return catalog;
   };
 }
@@ -91,20 +91,15 @@ async function run(
   return capture(() => main(["get", ...argv], workspace));
 }
 
-test("get providers lists every registered provider without running a command", async () => {
+test("get providers reports the removal without running a command", async () => {
   const workspace = tempDir();
   try {
-    const captured = await run(workspace, nothingOnPath, ["providers", "-o", "json"]);
-    expect(captured.value).toBe(0);
-    const rows = JSON.parse(captured.stdout) as Array<Record<string, unknown>>;
-    expect(rows.map((row) => row.name)).toEqual(["agy", "byteplus", "claude", "codex", "grok", "opencode"]);
-    expect(rows.find((row) => row.name === "byteplus")).toMatchObject({ default_client: null, requires_client: true });
-    expect(rows.find((row) => row.name === "claude")).toMatchObject({ default_client: "claude-code", requires_client: false });
-    const one = await run(workspace, nothingOnPath, ["provider", "byteplus", "-o", "json"]);
-    expect(one.value).toBe(0);
-    expect(JSON.parse(one.stdout)).toMatchObject({ kind: "provider", name: "byteplus", requires_client: true });
-    const table = await run(workspace, nothingOnPath, ["providers"]);
-    expect(table.stdout).toMatch(/^NAME\s+DEFAULT_CLIENT\s+REQUIRES_CLIENT/);
+    for (const argv of [["providers", "-o", "json"], ["provider", "byteplus", "-o", "json"]]) {
+      const captured = await run(workspace, nothingOnPath, argv);
+      expect(captured.value, argv.join(" ")).toBe(2);
+      expect(captured.stdout).toBe("");
+      expect(captured.stderr).toContain("get providers has been removed; use `migent get clients`.");
+    }
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }
@@ -170,9 +165,9 @@ test("a failing catalog warns with the error and keeps stdout clean", async () =
   const hooks: TestHooks = {
     which: (command) => `/bin/${command}`,
     runCommand: (argv) => {
-      if (argv[0] === "codex") throw new ProviderCommandFailed("codex exploded");
+      if (argv[0] === "codex") throw new ClientCommandFailed("codex exploded");
       if (argv[0] === "grok") return GROK_CATALOG;
-      throw new ProviderCommandFailed(`${argv[0]} unavailable`);
+      throw new ClientCommandFailed(`${argv[0]} unavailable`);
     },
   };
   try {
@@ -389,7 +384,7 @@ test("get effort asks for --client when two clients report the same model", asyn
         });
       }
       if (argv[0] === "grok" && argv.includes("--reasoning-effort")) {
-        throw new ProviderCommandFailed("grok: invalid effort; use one of: low, medium.");
+        throw new ClientCommandFailed("grok: invalid effort; use one of: low, medium.");
       }
       return ["Available models:", "* shared", ""].join("\n");
     },
@@ -408,7 +403,7 @@ test("machine types reject flags they do not take and unknown client ids", async
   const workspace = tempDir();
   try {
     const cases: Array<[string[], string]> = [
-      [["providers", "--client", "codex"], "--client is not valid for providers"],
+      [["providers", "--client", "codex"], "get providers has been removed"],
       [["clients", "--client", "codex"], "--client is not valid for clients"],
       [["models", "--client", "nope"], "Unknown client: nope. Valid clients:"],
       [["options", "--native", "--client", "nope"], "Unknown client: nope"],
@@ -429,7 +424,7 @@ test("machine types work outside a project while project types still need one", 
   const workspace = tempDir();
   try {
     expect((await run(workspace, allOnPath, ["clients"])).value).toBe(0);
-    expect((await run(workspace, allOnPath, ["providers"])).value).toBe(0);
+    expect((await run(workspace, allOnPath, ["providers"])).value).toBe(2);
     const project = await run(workspace, allOnPath, ["workflows"]);
     expect(project.value).toBe(2);
     expect(project.stderr).toContain(".migent");

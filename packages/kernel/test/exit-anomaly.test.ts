@@ -1,25 +1,27 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test, vi } from "vitest";
-import { ClaudeProvider } from "../../adapters/src/providers/claude-provider.ts";
-import { CodexProvider } from "../../adapters/src/providers/codex-provider.ts";
+import { ClaudeCodeClient } from "../../adapters/src/clients/claude-code-client.ts";
+import { CodexClient } from "../../adapters/src/clients/codex-client.ts";
 import {
   AgentToolRunner,
-  type FailureClassification,
+  type CliRunOutput,
   type FailureOrigin,
+  type RawFailure,
   type ResponseSource,
   createWorkflowSession,
   sessionMetrics,
 } from "../src/index.ts";
 import { watchSnapshot } from "../src/query.ts";
-import { ScriptedProvider, tempDir } from "./support.ts";
+import { ScriptedClient, tempDir, registryOf } from "./support.ts";
 
 vi.setConfig({ testTimeout: 60_000 });
 
 const CONFIG = `\
 agents:
   fake:
-    provider: fake
+    client:
+      type: fake
     model: m1
 roles:
   developer:
@@ -35,7 +37,7 @@ interface Turn {
 }
 
 /** A provider whose process exits with a scripted code and whose classifier reports a scripted origin. */
-class ExitProvider extends ScriptedProvider {
+class ExitProvider extends ScriptedClient {
   private readonly turns: Turn[];
   private current: Turn | null = null;
 
@@ -44,25 +46,25 @@ class ExitProvider extends ScriptedProvider {
     this.turns = [...turns];
   }
 
-  override buildCommand(input: Parameters<ScriptedProvider["buildCommand"]>[0]) {
+  override buildCommand(input: Parameters<ScriptedClient["buildCommand"]>[0]) {
     const spec = super.buildCommand(input);
     this.current = this.turns.shift() ?? null;
     const code = this.current?.exit ?? 0;
     return { argv: [process.execPath, "-e", `process.exit(${code})`] };
   }
 
-  override parseResponse(): [string, string | null, ResponseSource?] {
-    const [text, id] = super.parseResponse();
-    const source = this.current?.source;
-    return source === undefined ? [text, id] : [text, id, source];
+  override parseRun(_stdout: string): CliRunOutput {
+    const [text, sessionId] = this.parseResponse();
+    // A turn with no declared source does not attest where its text came from.
+    return { text, sessionId, source: this.current?.source ?? "none" };
   }
 
-  classifyFailure(_stdout: string, exitCode: number): FailureClassification | null {
+  override extractFailure(_stdout: string, exitCode: number): RawFailure | null {
     if (exitCode === 0) return null;
     return {
-      kind: "provider",
       origin: this.current?.origin ?? "exit-only",
       message: `provider message ${exitCode}`,
+      exitCode,
     };
   }
 }
@@ -94,9 +96,9 @@ function setup(workflow: string): { workspace: string; sessionId: string } {
 }
 
 async function runStage(provider: ExitProvider, workspace: string, sessionId: string, extra = {}) {
-  const runner = new AgentToolRunner({ fake: provider }, 10);
+  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
   return runner.run({
-    provider: "fake",
+    client: "fake",
     model: "m1",
     prompt: "go",
     workspace,
@@ -268,7 +270,7 @@ test("a signal-like exit code is never accepted on its reply", async () => {
 test.skipIf(process.platform === "win32")("a provider that kills itself with a signal is never accepted, end to end", async () => {
   const { workspace, sessionId } = setup(workflowText());
   class Killed extends ExitProvider {
-    override buildCommand(input: Parameters<ScriptedProvider["buildCommand"]>[0]) {
+    override buildCommand(input: Parameters<ScriptedClient["buildCommand"]>[0]) {
       super.buildCommand(input);
       return { argv: [process.execPath, "-e", "process.stdout.write('hi\\n');process.kill(process.pid,'SIGKILL')"] };
     }
@@ -302,13 +304,13 @@ completion:
 test("AC9, real codex: turn.failed yields one turn verdict plus a diagnostic error event", async () => {
   const { workspace, sessionId } = setup(SOLO);
   const fixture = '{"type":"turn.failed","error":{"message":"stream broke"}}\n';
-  class FailingCodex extends CodexProvider {
-    override buildCommand() {
+  class FailingCodex extends CodexClient {
+    override runCommand() {
       return { argv: [process.execPath, "-e", "process.stdout.write(process.argv[1]);process.exit(1)", fixture] };
     }
   }
-  const runner = new AgentToolRunner({ fake: new FailingCodex() }, 10);
-  const result = await runner.run({ provider: "fake", model: "m1", prompt: "go", workspace, sessionId, stageId: "implement" });
+  const runner = new AgentToolRunner(registryOf({ fake: new FailingCodex() }), 10);
+  const result = await runner.run({ client: "fake", model: "m1", prompt: "go", workspace, sessionId, stageId: "implement" });
   expect(result.execution_status).toBe("failed");
   const list = events(workspace, sessionId);
   expect(named(list, "provider.turn_failed")).toHaveLength(1);
@@ -320,13 +322,13 @@ test("AC9, real codex: turn.failed yields one turn verdict plus a diagnostic err
 test("AC9, real claude: an exit-1 reply is one completed verdict and one anomaly", async () => {
   const { workspace, sessionId } = setup(SOLO);
   const fixture = '{"type":"result","is_error":false,"result":"status: complete\\n\\ndone","session_id":"s1"}\n';
-  class ExitOneClaude extends ClaudeProvider {
-    override buildCommand() {
+  class ExitOneClaude extends ClaudeCodeClient {
+    override runCommand() {
       return { argv: [process.execPath, "-e", "process.stdout.write(process.argv[1]);process.exit(1)", fixture] };
     }
   }
-  const runner = new AgentToolRunner({ fake: new ExitOneClaude() }, 10);
-  const result = await runner.run({ provider: "fake", model: "m1", prompt: "go", workspace, sessionId, stageId: "implement" });
+  const runner = new AgentToolRunner(registryOf({ fake: new ExitOneClaude() }), 10);
+  const result = await runner.run({ client: "fake", model: "m1", prompt: "go", workspace, sessionId, stageId: "implement" });
   expect(result.execution_status).toBe("completed");
   const list = events(workspace, sessionId);
   expect(named(list, "provider.turn_completed")).toHaveLength(1);

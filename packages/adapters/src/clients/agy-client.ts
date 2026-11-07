@@ -6,7 +6,7 @@ import type {
   CliRunOutput,
   CliUsage,
   CommandSpec,
-  ProviderOption,
+  ClientOption,
   RawFailure,
   TurnUsage,
   UsageCapture,
@@ -19,7 +19,7 @@ export const AGY_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 const AGY_MODES = ["accept-edits", "auto", "plan"] as const;
 const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 
-const AGY_OPTIONS: readonly ProviderOption[] = [
+const AGY_OPTIONS: readonly ClientOption[] = [
   { name: "effort", prompt: true, allowDefault: true, overridable: true },
   { name: "mode" },
   { name: "agent" },
@@ -186,7 +186,7 @@ export class AgyClient implements CliClient {
   readonly id = "agy";
   readonly command = "agy";
 
-  options(): readonly ProviderOption[] {
+  options(): readonly ClientOption[] {
     return AGY_OPTIONS;
   }
 

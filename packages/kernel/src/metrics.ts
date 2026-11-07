@@ -1,7 +1,9 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { isAtomicTempName, writeJsonAtomic } from "./atomic-file.js";
-import type { Provider, TurnUsage, UsageCapture } from "./provider-contract.js";
+import type { CliClient, ClientRegistry, TurnUsage, UsageCapture } from "./cli-client.js";
+import { normalizeUsage } from "./client-policy.js";
+import { clientOfCommand, executionCommands, legacyExecutionClient } from "./legacy-provider.js";
 import { ConfigurationError } from "./errors.js";
 import { listSessionRows, readStatusFileState } from "./query.js";
 import { exitAnomaliesOf } from "./exit-anomaly.js";
@@ -33,6 +35,7 @@ interface ExecutionRow {
   order: number | null;
   stageId: string;
   attempt: number | null;
+  client: string | null;
   provider: string | null;
   model: string | null;
   agentId: string | null;
@@ -57,7 +60,7 @@ interface NormalizedTurn {
 export function sessionMetrics(
   workspace: string,
   sessionId: string,
-  providers: Record<string, Provider>,
+  clients: ClientRegistry,
 ): Record<string, unknown> {
   const sessionDirectory = path.join(workspace, MIGENT_DIRNAME, SESSIONS_DIRNAME, sessionId);
   if (sessionIsCorrupt(sessionDirectory)) return { session_id: sessionId, status: "corrupt" };
@@ -70,12 +73,12 @@ export function sessionMetrics(
     status.workflow_id === "agent"
       ? (typeof status.role === "string" ? status.role : manifestRole(sessionDirectory))
       : null;
-  return sessionObject(sessionId, status, workflow, executions, events, providers, agentRole);
+  return sessionObject(sessionId, status, workflow, executions, events, clients, agentRole);
 }
 
 export function listSessionMetrics(
   workspace: string,
-  providers: Record<string, Provider>,
+  clients: ClientRegistry,
   filters: { workflow: string | null; status: string | null; limit: number | null },
 ): Record<string, unknown>[] {
   let rows = listSessionRows(workspace);
@@ -83,7 +86,7 @@ export function listSessionMetrics(
   if (filters.workflow != null) rows = rows.filter((row) => row[2] === filters.workflow);
   if (filters.status != null) rows = rows.filter((row) => row[3] === filters.status);
   if (filters.limit != null) rows = rows.slice(0, filters.limit);
-  return rows.map((row) => sessionMetrics(workspace, row[1] ?? "", providers));
+  return rows.map((row) => sessionMetrics(workspace, row[1] ?? "", clients));
 }
 
 export function sealedMetricsPath(workspace: string, sessionId: string): string {
@@ -115,10 +118,10 @@ export function readSealedMetrics(
 export function sealSessionMetrics(
   workspace: string,
   sessionId: string,
-  providers: Record<string, Provider>,
+  clients: ClientRegistry,
 ): void {
   if (readSealedMetrics(workspace, sessionId).state !== "missing") return;
-  const metrics = sessionMetrics(workspace, sessionId, providers);
+  const metrics = sessionMetrics(workspace, sessionId, clients);
   if (metrics.status !== "completed") return;
   writeJsonAtomic(sealedMetricsPath(workspace, sessionId), metrics);
 }
@@ -228,6 +231,7 @@ function executionRow(directoryName: string, raw: Record<string, unknown>): Exec
     order: finiteNumber(raw.execution_order),
     stageId: typeof raw.stage_id === "string" ? raw.stage_id : directoryName,
     attempt: finiteNumber(raw.stage_attempt),
+    client: text(raw.client),
     provider: text(raw.provider),
     model: text(raw.model),
     agentId: text(raw.agent_id),
@@ -270,11 +274,12 @@ function sessionObject(
   workflow: WorkflowDocument | null,
   executions: ExecutionRow[],
   events: ParsedEvent[],
-  providers: Record<string, Provider>,
+  clients: ClientRegistry,
   agentRole: string | null,
 ): Record<string, unknown> {
   const known = new Set(executions.map((execution) => execution.id));
-  const turns = normalizeTurns(events, executions, providers).filter((turn) => known.has(turn.executionId));
+  const executionClients = resolveExecutionClients(events, executions, status);
+  const turns = normalizeTurns(events, executionClients, clients).filter((turn) => known.has(turn.executionId));
   const cancelled = countByExecution(events, "provider.cancelled", known);
   const anomalies = new Map<string, { total: number; accepted: number }>();
   for (const anomaly of exitAnomaliesOf(events)) {
@@ -296,6 +301,7 @@ function sessionObject(
       workflow,
       routed.get(execution.id) ?? null,
       agentRole,
+      executionClients.get(execution.id) ?? null,
     ),
   );
   const sessionTotals = newUsageTotals();
@@ -365,6 +371,7 @@ function executionObject(
   workflow: WorkflowDocument | null,
   routedFromId: string | null,
   agentRole: string | null,
+  client: string | null,
 ): {
   public: Record<string, unknown>;
   turns: number;
@@ -401,7 +408,7 @@ function executionObject(
       stage_id: execution.stageId,
       stage_attempt: execution.attempt,
       role: workflow ? (workflow.stages[execution.stageId]?.role ?? null) : agentRole,
-      provider: execution.provider,
+      client,
       model: execution.model,
       cli_version: text(startedDetails.cli_version),
       argv: stringList(detailsOf(firstTurn).argv),
@@ -457,32 +464,61 @@ function isRunnerTurn(event: ParsedEvent): boolean {
   return typeof detailsOf(event).turn === "number";
 }
 
-function normalizeTurns(
+function resolveExecutionClients(
   events: ParsedEvent[],
   executions: ExecutionRow[],
-  providers: Record<string, Provider>,
+  status: Record<string, unknown>,
+): Map<string, string | null> {
+  const executables = executionCommands(events);
+  const roleSession = status.workflow_id === "agent";
+  return new Map(executions.map((execution) => {
+    const client = legacyExecutionClient({
+      recorded: execution.client,
+      provider: execution.provider,
+      executables: executables.get(execution.id),
+      roleSession,
+    }).client;
+    return [execution.id, client];
+  }));
+}
+
+function normalizeTurns(
+  events: ParsedEvent[],
+  executionClients: ReadonlyMap<string, string | null>,
+  clients: ClientRegistry,
 ): NormalizedTurn[] {
-  const providerByExecution = new Map(executions.map((execution) => [execution.id, execution.provider]));
   const previous = new Map<string, UsageCapture>();
   const turns: NormalizedTurn[] = [];
   for (const event of events) {
     if (!isRunnerTurn(event) || event.executionId === null) continue;
     const details = detailsOf(event);
-    const provider = text(event.raw.provider) ?? providerByExecution.get(event.executionId) ?? "";
+    // Usage is read with the CLI that actually ran the turn. Legacy records name no
+    // client, so this follows the same evidence policy as resume.
+    const argv = details.argv;
+    const command = Array.isArray(argv) && typeof argv[0] === "string" ? argv[0] : null;
+    // A conflicting history cannot be resumed, but each turn still proves its own output format.
+    const clientId = clientOfCommand(command) ?? executionClients.get(event.executionId) ?? null;
     const agentId = typeof details.agent_id === "string" ? details.agent_id : null;
-    const key = JSON.stringify([provider, agentId]);
+    const key = JSON.stringify([clientId, agentId]);
     const capture = isRecord(details.usage) ? details.usage : null;
-    const impl = providers[provider.toLowerCase()];
-    let usage = blankUsage();
-    if (capture !== null && impl?.normalizeUsage) {
+    let reader: Pick<CliClient, "readUsage"> | null = null;
+    if (clientId !== null) {
       try {
-        usage = coerceUsage(impl.normalizeUsage(capture, previous.get(key) ?? null));
+        reader = clients.get(clientId);
+      } catch {
+        reader = null;
+      }
+    }
+    let usage = blankUsage();
+    if (capture !== null && reader !== null) {
+      try {
+        usage = coerceUsage(normalizeUsage(reader, capture, previous.get(key) ?? null));
       } catch {
         usage = blankUsage();
       }
     }
     if (capture !== null) previous.set(key, capture);
-    turns.push({ executionId: event.executionId, usage, captured: capture !== null });
+    turns.push({ executionId: event.executionId, usage, captured: capture !== null && reader !== null });
   }
   return turns;
 }

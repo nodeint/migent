@@ -2,7 +2,6 @@ import { spawnSync } from "node:child_process";
 import {
   ConfigurationError,
   LOCAL_CONFIG_FILE,
-  createProviderResolver,
   hasLocalConfig,
   listAgentDefinitions,
   loadAgentDefinition,
@@ -10,24 +9,22 @@ import {
   loadRoleDescription,
   loadRoleResponsibilities,
   mergeConfigLayers,
-  resolveEffectiveProvider,
+  resolveEffectiveClient,
   rejectLegacyConfigKeys,
   resolveRoleCascade,
   unknownRoleKeyEntries,
   validateRoleKeys,
+  type ClientRegistry,
   type ConfigOwner,
-  type ProviderInfo,
 } from "@nodeint/migent-kernel";
 import { DiagnosticList, failed, passed, type Check, type Diagnostic, type ModelEffortCheck } from "./check.js";
-import { failurePath, failureText, withTargetClient } from "./providers.js";
-
-type Providers = Readonly<Record<string, ProviderInfo>>;
+import { failurePath, failureText } from "./clients.js";
 
 /** What the structural rules found in one effective config. Pure: no files, PATH or catalogs. */
 export interface ConfigAnalysis {
   diagnostics: DiagnosticList;
-  /** Executable per provider that at least one definition resolves to. */
-  executableByProvider: Record<string, string>;
+  /** Executable per client that at least one definition resolves to. */
+  executableByClient: Record<string, string>;
   /** Roles that resolve cleanly, sorted. */
   roleNames: string[];
   /** One-line descriptions of the roles that declare one. */
@@ -45,12 +42,12 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
  */
 export function analyzeConfig(
   config: Record<string, unknown>,
-  providers: Providers,
+  clients: ClientRegistry,
   effortChecks: Readonly<Record<string, ModelEffortCheck>>,
   ownerOf: (path: readonly (string | number)[]) => ConfigOwner,
 ): ConfigAnalysis {
   const diagnostics = new DiagnosticList();
-  const executableByProvider: Record<string, string> = {};
+  const executableByClient: Record<string, string> = {};
   const error = (code: string, message: string, path?: readonly (string | number)[], detail?: string): void => {
     diagnostics.add({
       severity: "error",
@@ -89,7 +86,6 @@ export function analyzeConfig(
   );
   if (unmapped.size > 0) error("agent-unmapped", unmappedMessage([...unmapped].sort()), ["agents"]);
 
-  const resolver = createProviderResolver(providers);
   for (const [name, role] of Object.entries(roles)) {
     if (!isRecord(role)) continue;
     try { validateRoleKeys(role, name); } catch (caught) { fromError(caught, ["roles", name, "options"]); }
@@ -108,14 +104,14 @@ export function analyzeConfig(
     }
     let target;
     try {
-      target = loadAgentDefinition(definition, { label: entry.field, path: entry.path }, resolver);
+      target = loadAgentDefinition(definition, { label: entry.field, path: entry.path }, clients);
     } catch (caught) {
       fromError(caught, entry.path);
       continue;
     }
-    const bound = resolveEffectiveProvider(providers, target);
-    if (bound.provider !== undefined && !Object.hasOwn(executableByProvider, target.provider)) {
-      executableByProvider[target.provider] = bound.provider.command;
+    const bound = resolveEffectiveClient(clients, target);
+    if (bound.client !== undefined && !Object.hasOwn(executableByClient, target.client)) {
+      executableByClient[target.client] = bound.client.command;
     }
     if (bound.failure !== undefined) {
       const { failure } = bound;
@@ -144,7 +140,7 @@ export function analyzeConfig(
     if (effortChecks[`roles.${roleKey}.agent`]?.problem) continue;
     let resolved;
     try {
-      resolved = resolveRoleCascade(config, roleKey, { options: null }, resolver);
+      resolved = resolveRoleCascade(config, roleKey, { options: null }, clients);
       loadRoleResponsibilities(config, roleKey);
       const description = loadRoleDescription(config, roleKey);
       if (description !== null) roleDescriptions[roleKey] = description;
@@ -152,14 +148,16 @@ export function analyzeConfig(
       fromError(caught, ["roles", roleKey]);
       continue;
     }
-    const roleProvider = withTargetClient(providers[resolved.provider], resolved.client);
-    if (roleProvider !== undefined) {
-      try {
-        roleProvider.validateOptions(resolved.options);
-      } catch (caught) {
-        if (!(caught instanceof Error)) throw caught;
-        error("options-invalid", `roles.${roleKey}: ${caught.message}`, ["roles", roleKey], caught.message);
-      }
+    const bound = resolveEffectiveClient(clients, resolved);
+    if (bound.failure !== undefined) {
+      const where = `roles.${roleKey}`;
+      const detail = failurePath(bound.failure).join(".");
+      error(
+        bound.failure.code,
+        bound.failure.part === "options" ? `${where}: ${bound.failure.message}` : `${where}.${detail} ${bound.failure.message}`,
+        ["roles", roleKey, ...failurePath(bound.failure)],
+        bound.failure.code === "options-invalid" ? bound.failure.message : undefined,
+      );
     }
     roleNames.push(roleKey);
   }
@@ -167,16 +165,16 @@ export function analyzeConfig(
   for (const unknown of unknownRoleKeyEntries(config)) {
     diagnostics.add({ severity: "warning", code: unknown.code, message: unknown.message, path: unknown.path, source: { layer: ownerOf(unknown.path) } });
   }
-  return { diagnostics, executableByProvider, roleNames, roleDescriptions, unmapped };
+  return { diagnostics, executableByClient, roleNames, roleDescriptions, unmapped };
 }
 
 function unmappedMessage(aliases: readonly string[]): string {
   const lines = [
-    `${aliases.map((alias) => `agents.${alias}`).join(", ")} ${aliases.length === 1 ? "has" : "have"} no provider and model on this machine.`,
+    `${aliases.map((alias) => `agents.${alias}`).join(", ")} ${aliases.length === 1 ? "has" : "have"} no client and model on this machine.`,
     `Add ${aliases.length === 1 ? "it" : "them"} to .migent/${LOCAL_CONFIG_FILE}, for example:`,
     "agents:",
   ];
-  for (const alias of aliases) lines.push(`  ${alias}:`, "    provider: <provider>", "    model: <model>");
+  for (const alias of aliases) lines.push(`  ${alias}:`, "    client:", "      type: <client>", "    model: <model>");
   return lines.join("\n");
 }
 
@@ -188,16 +186,16 @@ function unmappedMessage(aliases: readonly string[]): string {
  */
 export function validateConfigLayers(
   layers: { project: Record<string, unknown>; local?: Record<string, unknown> | null },
-  providers: Providers,
+  clients: ClientRegistry,
 ): Diagnostic[] {
   const merged = mergeConfigLayers(layers.project, layers.local);
-  const analysis = analyzeConfig(merged.config, providers, {}, merged.ownerOf);
+  const analysis = analyzeConfig(merged.config, clients, {}, merged.ownerOf);
   return analysis.diagnostics.items;
 }
 
 export interface ConfigCheckResult {
   check: Check;
-  executableByProvider: Record<string, string>;
+  executableByClient: Record<string, string>;
   /** Errors found; empty when the config could not be loaded only if `config` is null. */
   diagnostics: DiagnosticList;
   config: Record<string, unknown> | null;
@@ -206,7 +204,7 @@ export interface ConfigCheckResult {
 
 export function checkConfig(
   workspace: string,
-  providers: Providers,
+  clients: ClientRegistry,
   effortChecks: Readonly<Record<string, ModelEffortCheck>>,
 ): ConfigCheckResult {
   let merged;
@@ -225,14 +223,14 @@ export function checkConfig(
     });
     return {
       check: failed("config", [caught.message], [], trackedLocalConfigWarnings(workspace)),
-      executableByProvider: {},
+      executableByClient: {},
       diagnostics,
       config: null,
       unmapped: new Set(),
     };
   }
   const { config, ownerOf } = merged;
-  const analysis = analyzeConfig(config, providers, effortChecks, ownerOf);
+  const analysis = analyzeConfig(config, clients, effortChecks, ownerOf);
   const warnings = [
     ...trackedLocalConfigWarnings(workspace),
     ...analysis.diagnostics.warnings.map((warning) => warning.message),
@@ -240,7 +238,7 @@ export function checkConfig(
   const problems = analysis.diagnostics.errors.map((item) => item.message);
   return {
     check: problems.length > 0 ? failed("config", problems, [], warnings) : passed("config", analysis.roleNames.map((name) => analysis.roleDescriptions[name] === undefined ? name : `${name}  ${analysis.roleDescriptions[name]}`), warnings),
-    executableByProvider: analysis.executableByProvider,
+    executableByClient: analysis.executableByClient,
     diagnostics: analysis.diagnostics,
     config,
     unmapped: analysis.unmapped,

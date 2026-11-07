@@ -1,8 +1,9 @@
 # Sessions and workflow composition
 
 Migent stores local execution state under `.migent/sessions/`. A session
-records stage executions, provider events, decisions, artifacts, and published
-outputs.
+records stage executions, client events, decisions, artifacts, and published
+outputs. Event kinds keep their historical `provider.*` names; they describe the
+agent CLI that ran the turn.
 
 Do not commit this directory. Commit `.migent/config.yaml` and
 `.migent/workflows/` instead. `.migent/config.local.yaml` is a per-machine
@@ -32,10 +33,10 @@ show use `session_id` for that session.
 └── executions/
     └── <order>-<stage-id>--attempt-<n>/
         ├── execution.json
-        ├── diagnostics.json              # the latest abnormal provider turn; see diagnostics.md
+        ├── diagnostics.json              # the latest abnormal client turn; see diagnostics.md
         ├── debug.log                     # only when MIGENT_DEBUG is on
-        ├── stream.jsonl                  # provider item traces and provider heartbeats
-        ├── conversation.json             # provider conversation checkpoint
+        ├── stream.jsonl                  # client item traces and heartbeats (`provider.*` events)
+        ├── conversation.json             # client conversation checkpoint
         ├── prompt.md
         ├── task.md                       # copy of the session task at dispatch
         ├── response.md                   # model response, only when the model produced one
@@ -80,7 +81,7 @@ The session-level files have distinct purposes:
   the latest execution and stage state, and records decisions, blockers, and
   published outputs when applicable. `session show` reads this file.
   `running_stages` lists each running execution in execution order. Each entry
-  has `execution_id`, `stage_id`, `provider`, `event`, `summary`, and
+  has `execution_id`, `stage_id`, `client`, `event`, `summary`, and
   `updated_at`. The field is absent when nothing is running.
   `blocked_by_execution_id` is the first blocked execution.
   `blocked_by_execution_ids` lists every blocked execution.
@@ -93,9 +94,9 @@ The session-level files have distinct purposes:
   complete line in this file and in every `stream.jsonl`. `session show` can
   print a prepared session before the first stage. `session follow --cursor`
   is a byte offset into this file. Stream lines are matched by timestamp.
-- `executions/<id>/stream.jsonl` holds `provider.item_*` and `provider.heartbeat`
-  for that execution. Other provider events, including `verify.heartbeat`, stay
-  in `events.jsonl`.
+- `executions/<id>/stream.jsonl` holds the client's `provider.item_*` and
+  `provider.heartbeat` events for that execution. Other client events, including
+  `verify.heartbeat`, stay in `events.jsonl`.
 - `baseline.captured` is logged once, just before the session's first execution. It holds the Git commit
   that `HEAD` pointed at (or null and the reason) and feeds `status.baseline`. A `run_when` stage compares
   the working tree with it. A session that already had executions never gets one.
@@ -115,12 +116,12 @@ The session-level files have distinct purposes:
 
 Each execution directory contains:
 
-- `execution.json`: execution identity, order, stage and attempt, provider and
-  model, lifecycle status, timestamps, and the parsed stage outcome. A provider
-  execution also records `final_turn`, the last provider turn it ran, on every
+- `execution.json`: execution identity, order, stage and attempt, client and
+  model, lifecycle status, timestamps, and the parsed stage outcome. A client
+  execution also records `final_turn`, the last client turn it ran, on every
   terminal save; `failure.md` uses it to tell whether `diagnostics.json` explains
   the failure. An execution written by an older version has no `final_turn`. A
-  stage with no role records `kind: verify`, and `provider` and `model` are null.
+  stage with no role records `kind: verify`, and `client` and `model` are null.
 - `turns/NN/`: written when a stage runs `verify`. A role stage holds
   `response.md`, `outcome.json` for a complete turn, `verify.md`, and
   `commands/MM.log`. A stage with no role writes `turns/01/verify.md` and
@@ -130,37 +131,37 @@ Each execution directory contains:
   (`verify_exhausted`, or `question_file_invalid` when the question request file
   stays unusable after one correction turn). A stage with no role records `failure_reason:
   verify_failed` when the list fails.
-- `conversation.json`: provider conversation checkpoint used when resuming a
-  provider session. It stores the provider and model, native agent ID, options
+- `conversation.json`: client conversation checkpoint used when resuming a
+  client session. It stores the client and model, native agent ID, options
   setting, lifecycle status, and fallback message history. A stage with no
   role does not write this file. This is separate from the Migent
   session-level `status.json`.
 - `prompt.md` and `response.md`: the exact prompt sent for the attempt and the
   response returned by the model. `response.md` is written only when the model
-  produced output (text the adapter labels `model`); a provider that could not
+  produced output (text the adapter labels `model`); a client that could not
   start leaves it absent, and it never holds Migent's error text or the
-  provider's own error payload. It is also absent when the provider reported an
+  client's own error payload. It is also absent when the client reported an
   error, even if the model had written text first. A turn whose process exited
   non-zero without reporting an error (`exit-only`) keeps the model's reply
   whether or not Migent accepted the turn. A stage with no role writes neither file.
-  A later attempt that continues the same stage's provider agent records the
+  A later attempt that continues the same stage's client session records the
   continuation prompt. An attempt that continues a `session.resume_from`
   dependency records the full stage prompt. `task.md` in this directory is a
   copy of the session task at the moment the execution was created.
 - Non-zero exit with a usable reply: the exit code alone does not fail a turn.
-  When the process exited non-zero, the provider reported no error, and the
+  When the process exited non-zero, the client reported no error, and the
   reply is model text, the turn goes through the same checks as an exit-0 turn
   (parsable outcome, stage artifact, completion outputs). If it passes, the turn
   is accepted: the execution ends `completed`, `failure_kind` and `reset_at` are
   empty, no quota wait starts, and `events.jsonl` gets one `provider.exit_anomaly`
-  event (`turn`, `provider`, `exit_code`, `signal`, `origin`, `accepted: true`,
+  event (`turn`, `client`, `exit_code`, `signal`, `origin`, `accepted: true`,
   `reason: null`) next to `provider.turn_completed`. If a check fails, the
   execution fails with the model's text as its error, and the event has
-  `accepted: false` with the failed check in `reason`. Each provider turn gets
+  `accepted: false` with the failed check in `reason`. Each client turn gets
   one verdict; later question-correction or verify turns are separate turns. A
-  provider error, a start failure, or a signal exit is never accepted.
+  client error, a start failure, or a signal exit is never accepted.
 - `failure.md`: written when the execution ends `failed`. It is a readable
-  report with the stage, attempt, provider, `failure_reason`, the error message,
+  report with the stage, attempt, client, `failure_reason`, the error message,
   and pointers to `diagnostics.json` or the verify report. When `diagnostics.json`
   describes the execution's `final_turn` and that turn failed, the report states
   it as the cause; an earlier or accepted turn is labelled as such. Structured
@@ -266,7 +267,7 @@ and the snapshot. `session follow` follows execution events until a signal, or
 until the session stops when `--exit-when-done` is set. `session continue`
 resumes an active workflow session from its recorded state and resets revision
 counts. A stage that failed `verify` with no role runs that list again in a
-new execution and does not open a provider. A blocked session is resumed the
+new execution and does not start a client. A blocked session is resumed the
 same way: continue dispatches that stage again, and the new prompt includes
 the blocker and the previous response.
 `session continue <session-id> --reply "<reply>"` uses the reply as that prompt
@@ -275,15 +276,15 @@ stage is blocked, `--stage` selects the stage. The other blocked stages stay
 blocked.
 A cancelled session is resumed on that same execution. `session continue`
 does this for a role session too. A cancelled role execution sends a cut-off
-provider turn again, or reruns verify when the reply was already saved. A
-cancelled stage with no role reruns its verify list in place and does not open
-a provider. An active role session sends its last prompt again. `--reply` on
+client turn again, or reruns verify when the reply was already saved. A
+cancelled stage with no role reruns its verify list in place and does not start
+a client. An active role session sends its last prompt again. `--reply` on
 a role session is the next user turn. A completed role session stays stopped
 unless `--reply` is set.
 To redirect a stopped agent instead, pass `--reply "<text>"` (or `--reply-file`)
 to `session continue`. This works for a workflow stage and for a role session.
 The cancelled execution stays `cancelled` with its partial stream. The reply is
-sent as a new execution (next attempt) that continues the same provider
+sent as a new execution (next attempt) that continues the same client
 conversation. Its prompt starts with a line saying the previous turn was
 stopped by the human before it finished, then the reply. Edits the cut-off turn
 already made to the workspace are not rolled back. A verify that was cut off is
@@ -314,13 +315,40 @@ It does not leave `task_sha256` empty. `session continue` does not accept the fl
 Repair does not rebuild a missing `workflow.frozen.yaml`. Without that file the
 session uses the live workflow and config.
 
+## Legacy sessions
+
+Sessions written before schema version 6 store the removed `provider` field.
+Read-only inspection (`session show`, `session follow`, doctor session, and
+metrics) always works. Resume and continue need evidence of the CLI that
+actually ran the turn:
+
+| Legacy case | Resume / continue |
+| --- | --- |
+| Workflow execution with turn events | yes, when every recorded turn's `details.argv[0]` agrees on the client |
+| Workflow execution with no turn events | refused: there is no evidence; start a new session to rerun the stage |
+| Execution whose evidence conflicts, for example `argv[0]` differs from the frozen target or the client the caller requested | refused, and nothing is spawned |
+| Role session with a default-client provider | yes, through the legacy provider → client mapping |
+| Role session for `byteplus` | refused: it never had a client |
+
+Turn events have carried `argv` since they were introduced; an older event
+without it is treated as having no evidence. When evidence exists,
+`session continue` uses that client and keeps the native conversation ID, the
+model string, and the options. A conflict or missing evidence prints
+`Cannot resume execution <id>: <reason>. Start a new attempt.` Unsealed legacy
+metrics parse usage with the launched client; a sealed `metrics.json` is never
+recomputed and keeps its `provider` key.
+Provenance and profile checks run before a new attempt is created. Continuing
+a cancelled batch validates every execution before reopening any of them.
+An old execution whose turns used different CLIs cannot resume; its metrics
+still parse each turn with that turn's own executable when known.
+
 ## Metrics
 
 `migent session metrics` prints the `metrics.json` written when a workflow
 session completes. See [Session metrics](session-metrics.md) for the command,
 the JSON shape, and how usage, cost, and timing are computed.
 
-## Artifact dependency versus provider-session resume
+## Artifact dependency versus client-session resume
 
 `depends_on` gives a stage the output of an upstream stage:
 
@@ -328,7 +356,7 @@ the JSON shape, and how usage, cost, and timing are computed.
 depends_on: [plan]
 ```
 
-`session.resume_from` additionally continues the provider's prior conversational
+`session.resume_from` additionally continues the client's prior conversational
 session instead of starting a new one:
 
 ```yaml
@@ -338,16 +366,16 @@ session:
 ```
 
 The resumed stage therefore receives both the declared upstream context and the
-provider's conversation history. `resume_from` must name one of the stage's
+client's conversation history. `resume_from` must name one of the stage's
 dependencies.
 
-A stage keeps one provider agent for every visit. The next execution continues
+A stage keeps one client agent for every visit. The next execution continues
 that agent when the stage runs again, including a failed attempt, a blocked
 result, a verify repair, a route back, and a newer dependency. A route back's
 prompt points at the routing stage's response and the previous artifact.
 
 `session.resume_from` is the exception. The stage continues the named
-dependency's provider agent instead of keeping its own. That applies on the
+dependency's client session instead of keeping its own. That applies on the
 first visit, and on a later visit that was not routed back. A verify repair
 and a failed retry of a routed visit continue the execution already in
 progress.

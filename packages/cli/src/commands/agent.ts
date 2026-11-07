@@ -2,7 +2,6 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import {
   AgentToolRunner,
-  createProviderResolver,
   CancellationRequested,
   ConfigurationError,
   ProviderEventReporter,
@@ -18,6 +17,7 @@ import {
   repairSessionUnlocked,
   SessionLock,
   stringOptions,
+  legacyClientOf,
   loadWorkspaceConfig,
   resolveRoleTarget,
   waitUntil,
@@ -29,7 +29,7 @@ import { printAgent, printError, printNotice, printResumeCommand, printReplyComm
 import { cliHooks } from "../hooks.js";
 import { requireCurrentSchema } from "../migrate.js";
 import { bindCancellationSignals } from "../signals.js";
-import { providerMap, parseOptions } from "../provider.js";
+import { clientRegistry, parseOptions } from "../client.js";
 import { resolvePrompt } from "../workspace.js";
 
 export async function dispatchAgent(
@@ -38,7 +38,7 @@ export async function dispatchAgent(
     role: string;
     task?: string | null;
     sessionId?: string | null;
-    provider?: string | null;
+    client?: string | null;
     model?: string | null;
     options?: readonly string[];
     prompt?: string | null;
@@ -50,13 +50,13 @@ export async function dispatchAgent(
   },
 ): Promise<number> {
   requireCurrentSchema(workspace);
-  const runner = args.runner ?? cliHooks.runner ?? new AgentToolRunner(providerMap());
+  const runner = args.runner ?? cliHooks.runner ?? new AgentToolRunner(clientRegistry());
   const parsed = parseOptions(args.options ?? []);
   const target = resolveRoleTarget(workspace, args.role, {
-    provider: args.provider ?? null,
+    client: args.client ?? null,
     model: args.model ?? null,
     options: Object.keys(parsed).length > 0 ? parsed : null,
-  }, createProviderResolver(runner.providers));
+  }, runner.registry);
   const [resolvedSessionId, createdSession] = resolveSession(workspace, args.sessionId ?? null, args.role, args.task ?? null);
   if (createdSession) log(`session_id: ${resolvedSessionId}`);
   let lock: SessionLock;
@@ -98,7 +98,7 @@ export async function dispatchAgent(
       Object.entries(target.options)
         .map(([key, value]) => `${key}: ${value}`)
         .join(", ") || "default";
-    printNotice(`agent ${args.role} · ${target.provider}/${target.model} (${optionLabel}).`);
+    printNotice(`agent ${args.role} · ${target.client}/${target.model} (${optionLabel}).`);
     const unbind = bindCancellationSignals(lock);
     let result: Awaited<ReturnType<AgentToolRunner["run"]>> | undefined;
     let resumedMany: Array<Awaited<ReturnType<AgentToolRunner["run"]>>> | null = null;
@@ -106,7 +106,7 @@ export async function dispatchAgent(
       const waitedUntil = new Map<string, string>();
       const rerun = (prompt: string, resumeId: string) =>
         runner.run({
-          provider: target.provider,
+          client: target.client,
           model: target.model,
           options: { ...target.options },
           prompt,
@@ -158,7 +158,7 @@ export async function dispatchAgent(
           workspace,
           resolvedSessionId,
           await runner.run({
-            provider: target.provider,
+            client: target.client,
             model: target.model,
             options: { ...target.options },
             prompt,
@@ -190,7 +190,7 @@ export async function dispatchAgent(
     if (resumedMany !== null) {
       if (args.asJson) process.stdout.write(`${JSON.stringify(resumedMany)}\n`);
       else {
-        for (const item of resumedMany) printAgent({ ...item }, args.role, target.provider, target.model, workspace);
+        for (const item of resumedMany) printAgent({ ...item }, args.role, target.client, target.model, workspace);
       }
       if (resumedMany.some((item) => item.failure_reason === "verify_exhausted")) {
         return finishRole(resolvedSessionId, 6);
@@ -199,7 +199,7 @@ export async function dispatchAgent(
     }
     if (result === undefined) throw new Error("Agent run produced no result.");
     if (args.asJson) process.stdout.write(`${JSON.stringify(result)}\n`);
-    else printAgent({ ...result }, args.role, target.provider, target.model, workspace);
+    else printAgent({ ...result }, args.role, target.client, target.model, workspace);
     return finishRole(resolvedSessionId, result.outcome_status === "complete" ? 0 : result.outcome_status === "question" ? 9 : 1);
   }
 }
@@ -268,10 +268,10 @@ export async function continueAgent(
       Object.entries(profile.options)
         .map(([key, value]) => `${key}: ${value}`)
         .join(", ") || "default";
-    printNotice(`agent ${role} · ${profile.provider}/${profile.model} (${optionLabel}).`);
+    printNotice(`agent ${role} · ${profile.client}/${profile.model} (${optionLabel}).`);
     const unbind = bindCancellationSignals(lock);
     try {
-      const runner = args.runner ?? cliHooks.runner ?? new AgentToolRunner(providerMap());
+      const runner = args.runner ?? cliHooks.runner ?? new AgentToolRunner(clientRegistry());
       if (sessionStatus === "cancelled") {
         return await runCancelledRole(
           workspace,
@@ -316,7 +316,7 @@ export async function continueAgent(
       const waitedUntil = new Map<string, string>();
       const rerun = (nextPrompt: string, resumeId: string) =>
         runner.run({
-          provider: profile.provider,
+          client: profile.client,
           model: profile.model,
           options: { ...profile.options },
           prompt: nextPrompt,
@@ -335,7 +335,7 @@ export async function continueAgent(
         waitedUntil,
         args.waitHooks,
       );
-      printAgent({ ...result }, role, profile.provider, profile.model, workspace);
+      printAgent({ ...result }, role, profile.client, profile.model, workspace);
       return finishRole(args.sessionId, result.outcome_status === "complete" ? 0 : result.outcome_status === "question" ? 9 : 1);
     } catch (error) {
       if (error instanceof CancellationRequested) {
@@ -358,7 +358,7 @@ async function runCancelledRole(
   workspace: string,
   sessionId: string,
   role: string,
-  profile: { provider: string; model: string; options: Record<string, string> },
+  profile: { client: string; model: string; options: Record<string, string> },
   runner: AgentToolRunner,
   asJson: boolean,
   waitHooks?: WaitHooks,
@@ -370,7 +370,7 @@ async function runCancelledRole(
   const waitedUntil = new Map<string, string>();
   const rerun = (prompt: string, resumeId: string) =>
     runner.run({
-      provider: profile.provider,
+      client: profile.client,
       model: profile.model,
       options: { ...profile.options },
       prompt,
@@ -406,12 +406,12 @@ async function runCancelledRole(
     const result = finished[0];
     if (result === undefined) throw new Error("Agent run produced no result.");
     if (asJson) process.stdout.write(`${JSON.stringify(result)}\n`);
-    else printAgent({ ...result }, role, profile.provider, profile.model, workspace);
+    else printAgent({ ...result }, role, profile.client, profile.model, workspace);
     return finishRole(sessionId, result.outcome_status === "complete" ? 0 : result.outcome_status === "question" ? 9 : 1);
   }
   if (asJson) process.stdout.write(`${JSON.stringify(finished)}\n`);
   else {
-    for (const item of finished) printAgent({ ...item }, role, profile.provider, profile.model, workspace);
+    for (const item of finished) printAgent({ ...item }, role, profile.client, profile.model, workspace);
   }
   if (finished.some((item) => item.failure_reason === "verify_exhausted")) return finishRole(sessionId, 6);
   return finishRole(sessionId, finished.every((item) => item.outcome_status === "complete") ? 0 : 1);
@@ -431,15 +431,15 @@ async function rerunQuota(
   while (current.failure_kind === "quota" && current.reset_at !== "") {
     if (armed !== null && !laterInstant(current.reset_at, armed)) return current;
     const resetAt = current.reset_at;
-    const provider = current.provider;
-    const shared = waitedUntil.get(provider);
+    const client = current.client;
+    const shared = waitedUntil.get(client);
     const now = hooks?.now ?? Date.now;
     const past = !Number.isFinite(Date.parse(resetAt)) || now() >= Date.parse(resetAt);
     if (!past && (shared === undefined || laterInstant(resetAt, shared))) {
       emitRoleQuota(workspace, sessionId, current);
       await waitUntil(resetAt, hooks).promise;
     }
-    waitedUntil.set(provider, resetAt);
+    waitedUntil.set(client, resetAt);
     armed = resetAt;
     current = await run(promptFor(current), current.execution_id);
   }
@@ -465,9 +465,9 @@ function emitRoleQuota(workspace: string, sessionId: string, result: RunResult):
     model = "";
   }
   const summary = [result.response, result.reset_at].filter((item) => item !== "").join(" ");
-  new ProviderEventReporter(store, context, result.provider, model).emit("provider.quota", summary, {
+  new ProviderEventReporter(store, context, result.client, model).emit("provider.quota", summary, {
     retry_at: result.reset_at,
-    provider: result.provider,
+    client: result.client,
   });
 }
 
@@ -506,18 +506,17 @@ function rolePrompt(workspace: string, role: string, text: string): string {
 function executionProfile(
   directory: string,
   executionId: string,
-): { provider: string; model: string; options: Record<string, string> } {
+): { client: string; model: string; options: Record<string, string> } {
   const raw = JSON.parse(readFileSync(path.join(directory, "execution.json"), "utf8")) as unknown;
-  if (
-    !isRecord(raw) ||
-    typeof raw.provider !== "string" ||
-    raw.provider === "" ||
-    typeof raw.model !== "string" ||
-    raw.model === ""
-  ) {
-    throw new ConfigurationError(`Execution ${executionId} has no provider.`);
+  const client = isRecord(raw)
+    ? typeof raw.client === "string" && raw.client !== ""
+      ? raw.client
+      : legacyClientOf(typeof raw.provider === "string" ? raw.provider : null)
+    : null;
+  if (!isRecord(raw) || client === null || typeof raw.model !== "string" || raw.model === "") {
+    throw new ConfigurationError(`Execution ${executionId} has no client.`);
   }
-  return { provider: raw.provider, model: raw.model, options: stringOptions(raw.options) };
+  return { client, model: raw.model, options: stringOptions(raw.options) };
 }
 
 function executionBlocker(directory: string): string | null {

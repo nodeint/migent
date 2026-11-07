@@ -156,7 +156,7 @@ git:
 **Problem.**
 
 - Nothing checks which files a stage changed.
-- Provider permission options differ by adapter, and the Grok default approves every tool call.
+- Client permission options differ by adapter, and the Grok default approves every tool call.
 
 **Why it is needed.**
 
@@ -187,7 +187,7 @@ deny_commands:
 **Acceptance.**
 
 - A stage that edits a denied path cannot complete, and the next prompt names that path.
-- `doctor` fails when a provider in use cannot enforce `deny_commands` and the workflow requires it.
+- `doctor` fails when a client in use cannot enforce `deny_commands` and the workflow requires it.
 
 **Workaround without it.**
 
@@ -206,7 +206,7 @@ deny_commands:
 
 **Why it is needed.**
 
-- A stuck provider process hangs the session forever, and an unattended run never reports it.
+- A stuck client process hangs the session forever, and an unattended run never reports it.
 - A plan and review loop with no `max_revisions` can spend all 20 dispatches on one disagreement.
 - Wave 5 sessions are long and expensive, so the owner needs a hard ceiling before starting them.
 
@@ -230,7 +230,7 @@ deny_commands:
 
 - A free-text review can say "gate passes" without running it.
 - When the reviewer shares a model family with the developer, it tends to share the same blind spots.
-- Migent already parses provider stream events, so it can see whether a command really ran.
+- Migent already parses client stream events, so it can see whether a command really ran.
 
 **Proposal.**
 
@@ -246,7 +246,7 @@ deny_commands:
 
 ### 7. `for_each` stages over a list
 
-**Problem.** One implementation stage is one provider agent run, which has context and turn limits.
+**Problem.** One implementation stage is one client agent run, which has context and turn limits.
 
 **Why it is needed.**
 
@@ -265,7 +265,7 @@ deny_commands:
     - Migrate plugin {item} to the nodeint API.
 ```
 
-- Each item runs as its own execution with a fresh provider context on the same branch.
+- Each item runs as its own execution with a fresh client context on the same branch.
 - With requirement 2, each item is committed on its own.
 - A short summary of earlier items is passed to later ones.
 - A per-item `run` check, from requirement 1, can be scoped to that package while the full gate runs once at the end.

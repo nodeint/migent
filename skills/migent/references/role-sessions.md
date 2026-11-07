@@ -17,5 +17,5 @@ failure, and 130 cancelled. For resume behavior, see
 | `--file <path>`, `--stdin` | Supply a longer prompt. |
 | `--task <label>` | Label a new session; cannot be combined with `--session`. |
 | `--session <id>` | Send a new prompt to an earlier role session. Use `session continue` to resume stopped work. |
-| `--provider`, `--model` | Override the role for this turn; pass together. |
-| `--option KEY=VALUE` | Override a provider option for this turn. |
+| `--client`, `--model` | Override the role's client and model for this turn; pass together. |
+| `--option KEY=VALUE` | Override a client option for this turn. |

@@ -6,12 +6,12 @@ import {
   raiseCancellation,
   type BuildCommandInput,
   type CommandSpec,
-  type FailureClassification,
+  type RawFailure,
 } from "@nodeint/migent-kernel";
 import { expect, test, vi } from "vitest";
 import { cliHooks } from "../src/hooks.ts";
 import { main } from "../src/index.ts";
-import { ScriptedProvider, FakeProvider, capture, removeWorkspace, repoWorkflowText, writeFakeWorkflowWorkspace } from "./support.ts";
+import { ScriptedClient, FakeClient, capture, registryOf, removeWorkspace, repoWorkflowText, writeFakeWorkflowWorkspace } from "./support.ts";
 
 // Each stage spawns a wrapper and a provider process, which is slow on Windows CI.
 vi.setConfig({ testTimeout: 60_000 });
@@ -65,10 +65,7 @@ function sessionIdFrom(stderr: string): string {
 test("start --once and continue --once match a single stage", async () => {
   const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
   try {
-    cliHooks.runner = new AgentToolRunner(
-      { fake: new ScriptedProvider(["status: complete\n\nplanned", "status: complete\ndecision: approved\n\nshould not run"], ["# Plan\n", null]) },
-      10,
-    );
+    cliHooks.runner = new AgentToolRunner(registryOf({ fake: new ScriptedClient(["status: complete\n\nplanned", "status: complete\ndecision: approved\n\nshould not run"], ["# Plan\n", null]) }), 10);
     const started = await capture(() => main(["session", "run", "--workflow", "plan", "--task", "Write a plan", "--once"], workspace));
     expect(started.value).toBe(0);
     expect(started.stdout).toBe("");
@@ -78,10 +75,7 @@ test("start --once and continue --once match a single stage", async () => {
     expect(started.stderr).not.toContain("planned");
     const sessionId = sessionIdFrom(started.stderr);
 
-    cliHooks.runner = new AgentToolRunner(
-      { fake: new ScriptedProvider(["status: complete\ndecision: revise\n\nneeds work", "status: complete\n\nshould not run"], [null, "# Plan\n"]) },
-      10,
-    );
+    cliHooks.runner = new AgentToolRunner(registryOf({ fake: new ScriptedClient(["status: complete\ndecision: revise\n\nneeds work", "status: complete\n\nshould not run"], [null, "# Plan\n"]) }), 10);
     const continued = await capture(() => main(["session", "continue", sessionId, "--once", "--verbose"], workspace));
     expect(continued.value).toBe(0);
     expect(continued.stdout).toBe("");
@@ -95,27 +89,26 @@ test("start --once and continue --once match a single stage", async () => {
   }
 });
 
-class ItemProvider extends ScriptedProvider {
+class ItemProvider extends ScriptedClient {
   override buildCommand(input: BuildCommandInput): CommandSpec {
     super.buildCommand(input);
     return { argv: [process.execPath, "-e", "console.log('ITEM_START');console.log('ITEM_DONE');console.log('HEARTBEAT')"] };
   }
 
-  parseProgressEvent(line: string): Record<string, unknown> | null {
-    if (line === "ITEM_START") return { event: "provider.item_started", summary: "command started: echo hi" };
-    if (line === "ITEM_DONE") return { event: "provider.item_completed", summary: "command completed: echo hi" };
-    if (line === "HEARTBEAT") return { event: "provider.heartbeat", summary: "running for 30s" };
-    return null;
+  createEventParser(): (line: string) => Record<string, unknown> | null {
+    return (line) => {
+      if (line === "ITEM_START") return { event: "provider.item_started", summary: "command started: echo hi" };
+      if (line === "ITEM_DONE") return { event: "provider.item_completed", summary: "command completed: echo hi" };
+      if (line === "HEARTBEAT") return { event: "provider.heartbeat", summary: "running for 30s" };
+      return null;
+    };
   }
 }
 
 test("start keeps tool traces out of the coordinator result", async () => {
   const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
   try {
-    cliHooks.runner = new AgentToolRunner(
-      { fake: new ItemProvider(["status: complete\n\nUNIQUE_PLAN_BODY"], ["# Plan\n"]) },
-      10,
-    );
+    cliHooks.runner = new AgentToolRunner(registryOf({ fake: new ItemProvider(["status: complete\n\nUNIQUE_PLAN_BODY"], ["# Plan\n"]) }), 10);
     const started = await capture(() => main(["session", "run", "--workflow", "plan", "--task", "Write a plan", "--once"], workspace));
     expect(started.value).toBe(0);
     expect(started.stdout).toBe("");
@@ -139,10 +132,7 @@ test("start keeps tool traces out of the coordinator result", async () => {
     expect(stream).toContain("provider.item_completed");
     expect(stream).toContain("provider.heartbeat");
 
-    cliHooks.runner = new AgentToolRunner(
-      { fake: new ItemProvider(["status: complete\ndecision: revise\n\nUNIQUE_REVIEW"], [null]) },
-      10,
-    );
+    cliHooks.runner = new AgentToolRunner(registryOf({ fake: new ItemProvider(["status: complete\ndecision: revise\n\nUNIQUE_REVIEW"], [null]) }), 10);
     const verbose = await capture(() =>
       main(["session", "continue", sessionIdFrom(started.stderr), "--once", "--progress", "--verbose"], workspace),
     );
@@ -168,22 +158,19 @@ test("continue --once does not reset revision counts", async () => {
   const workflow = repoWorkflowText("plan").replace("max_revisions: 3", "max_revisions: 0");
   const workspace = writeFakeWorkflowWorkspace({ plan: workflow });
   try {
-    cliHooks.runner = new AgentToolRunner(
-      {
-        fake: new ScriptedProvider(
+    cliHooks.runner = new AgentToolRunner(registryOf({
+        fake: new ScriptedClient(
           ["status: complete\n\nplanned", "status: complete\ndecision: revise\n\nrevise"],
           ["# Plan\n", null],
         ),
-      },
-      10,
-    );
+      }), 10);
     const started = await capture(() => main(["session", "run", "--workflow", "plan", "--task", "Write a plan"], workspace));
     expect(started.value).toBe(4);
     expect(started.stdout).toBe("");
     const sessionId = sessionIdFrom(started.stderr);
     expect(resumeCommand(started.stderr)).toBe(`migent session continue ${sessionId}`);
 
-    cliHooks.runner = new AgentToolRunner({ fake: new ScriptedProvider(["status: complete\n\nshould not run"], [null]) }, 10);
+    cliHooks.runner = new AgentToolRunner(registryOf({ fake: new ScriptedClient(["status: complete\n\nshould not run"], [null]) }), 10);
     const once = await capture(() => main(["session", "continue", sessionId, "--once"], workspace));
     expect(once.value).toBe(4);
     expect(once.stdout).toBe("");
@@ -219,15 +206,12 @@ function resumeCommand(stderr: string): string | undefined {
 test("a stopped session prints the continue command", async () => {
   const blockedWorkspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
   try {
-    cliHooks.runner = new AgentToolRunner(
-      {
-        fake: new ScriptedProvider(
+    cliHooks.runner = new AgentToolRunner(registryOf({
+        fake: new ScriptedClient(
           ["status: complete\n\nplanned", "status: blocked\nblocker: missing design\n\nnope"],
           ["# Plan\n", null],
         ),
-      },
-      10,
-    );
+      }), 10);
     const blocked = await capture(() => main(["session", "run", "--workflow", "plan", "--task", "Write a plan"], blockedWorkspace));
     expect(blocked.value).toBe(1);
     expect(blocked.stdout).toBe("");
@@ -243,10 +227,7 @@ test("a stopped session prints the continue command", async () => {
 
   const onceWorkspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
   try {
-    cliHooks.runner = new AgentToolRunner(
-      { fake: new ScriptedProvider(["status: complete\n\nplanned"], ["# Plan\n"]) },
-      10,
-    );
+    cliHooks.runner = new AgentToolRunner(registryOf({ fake: new ScriptedClient(["status: complete\n\nplanned"], ["# Plan\n"]) }), 10);
     const once = await capture(() =>
       main(["session", "run", "--workflow", "plan", "--task", "Write a plan", "--once"], onceWorkspace),
     );
@@ -260,15 +241,12 @@ test("a stopped session prints the continue command", async () => {
 
   const doneWorkspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
   try {
-    cliHooks.runner = new AgentToolRunner(
-      {
-        fake: new ScriptedProvider(
+    cliHooks.runner = new AgentToolRunner(registryOf({
+        fake: new ScriptedClient(
           ["status: complete\n\nplanned", "status: complete\ndecision: approved\n\nok"],
           ["# Plan\n", null],
         ),
-      },
-      10,
-    );
+      }), 10);
     const done = await capture(() => main(["session", "run", "--workflow", "plan", "--task", "Write a plan"], doneWorkspace));
     expect(done.value).toBe(0);
     expect(done.stdout).toBe("");
@@ -287,7 +265,7 @@ test("a stopped session prints the continue command", async () => {
   }
 });
 
-class CancelOnCommand extends ScriptedProvider {
+class CancelOnCommand extends ScriptedClient {
   override buildCommand(input: BuildCommandInput): CommandSpec {
     super.buildCommand(input);
     raiseCancellation(2);
@@ -298,7 +276,7 @@ class CancelOnCommand extends ScriptedProvider {
 test("a cancelled session prints the continue command", async () => {
   const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
   try {
-    cliHooks.runner = new AgentToolRunner({ fake: new CancelOnCommand([], []) }, 10);
+    cliHooks.runner = new AgentToolRunner(registryOf({ fake: new CancelOnCommand([], []) }), 10);
     const cancelled = await capture(() => main(["session", "run", "--workflow", "plan", "--task", "Write a plan"], workspace));
     expect(cancelled.value).toBe(130);
     expect(cancelled.stdout).toBe("");
@@ -353,7 +331,7 @@ test("session inspect help names list, show, and follow", async () => {
   expect(follow.stdout).toContain("--exit-when-done");
 });
 
-class UnstartableProvider extends FakeProvider {
+class UnstartableProvider extends FakeClient {
   override buildCommand(input: BuildCommandInput): CommandSpec {
     super.buildCommand(input);
     return { argv: ["migent-no-such-binary-xyz"] };
@@ -367,7 +345,7 @@ class UnstartableProvider extends FakeProvider {
 test("a stage that never ran the model points at failure.md, not response.md", async () => {
   const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
   try {
-    cliHooks.runner = new AgentToolRunner({ fake: new UnstartableProvider() }, 10);
+    cliHooks.runner = new AgentToolRunner(registryOf({ fake: new UnstartableProvider() }), 10);
     const failed = await capture(() =>
       main(["session", "run", "--workflow", "plan", "--task", "Write a plan", "--once"], workspace),
     );
@@ -379,7 +357,7 @@ test("a stage that never ran the model points at failure.md, not response.md", a
   }
 });
 
-class SlowSiblingProvider extends FakeProvider {
+class SlowSiblingProvider extends FakeClient {
   override buildCommand(input: BuildCommandInput): CommandSpec {
     super.buildCommand(input);
     if (input.prompt.includes("## Stage: b ")) {
@@ -396,7 +374,7 @@ class SlowSiblingProvider extends FakeProvider {
 
 test("a failed stage is named even when a concurrent sibling finishes last", async () => {
   const workspace = writeFakeWorkflowWorkspace({
-    concurrent: `schema_version: 5
+    concurrent: `schema_version: 6
 concurrency: 2
 id: concurrent
 stages:
@@ -407,7 +385,7 @@ stages:
 `,
   });
   try {
-    cliHooks.runner = new AgentToolRunner({ fake: new SlowSiblingProvider() }, 10);
+    cliHooks.runner = new AgentToolRunner(registryOf({ fake: new SlowSiblingProvider() }), 10);
     const run = await capture(() =>
       main(["session", "run", "--workflow", "concurrent", "--task", "Review changes"], workspace),
     );
@@ -429,20 +407,25 @@ stages:
   }
 });
 
-class QuotaThenCompleteProvider extends ScriptedProvider {
-  private readonly kinds: Array<FailureClassification | null> = [
-    { kind: "quota", message: "limited", resetAt: "2000-01-01T00:00:00.000Z", window: null },
+class QuotaThenCompleteProvider extends ScriptedClient {
+  private readonly failures: Array<RawFailure | null> = [
+    {
+      origin: "provider-error",
+      message: "limited",
+      exitCode: 1,
+      rateLimit: { resetAt: "2000-01-01T00:00:00.000Z", window: null },
+    },
     null,
   ];
 
-  override classifyFailure(): FailureClassification | null {
-    return this.kinds.shift() ?? null;
+  override extractFailure(): RawFailure | null {
+    return this.failures.shift() ?? null;
   }
 }
 
 test("a failed attempt is named after the session recovers and completes", async () => {
   const workspace = writeFakeWorkflowWorkspace({
-    solo: `schema_version: 5
+    solo: `schema_version: 6
 id: solo
 stages:
   - id: work
@@ -450,15 +433,12 @@ stages:
 `,
   });
   try {
-    cliHooks.runner = new AgentToolRunner(
-      {
+    cliHooks.runner = new AgentToolRunner(registryOf({
         fake: new QuotaThenCompleteProvider([
           "status: complete\n\nlimited",
           "status: complete\n\nwork done",
         ]),
-      },
-      10,
-    );
+      }), 10);
     const run = await capture(() =>
       main(["session", "run", "--workflow", "solo", "--task", "Write"], workspace),
     );

@@ -1,11 +1,11 @@
-import { activatePreparedSession, createProviderResolver, loadYamlMapping } from "@nodeint/migent-kernel";
-import { defaultProviders } from "@nodeint/migent-adapters";
+import { activatePreparedSession, loadYamlMapping } from "@nodeint/migent-kernel";
 import { cpSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, expect, test } from "vitest";
+import { clientRegistry } from "../src/client.ts";
 import { cliHooks } from "../src/hooks.ts";
 import { main } from "../src/index.ts";
 import { capture, repoWorkflowText } from "./support.ts";
@@ -24,13 +24,15 @@ function writeProject(workspace: string): void {
   const workflows = path.join(workspace, ".migent", "workflows");
   mkdirSync(workflows, { recursive: true });
   const config = `\
-schema_version: 5
+schema_version: 6
 agents:
   planner-model:
-    provider: codex
+    client:
+      type: codex
     model: gpt-5
   reviewer-model:
-    provider: grok
+    client:
+      type: grok
     model: grok-4
 roles:
   planner:
@@ -62,7 +64,7 @@ test("doctor passes from a project subdirectory", async () => {
   }
 });
 
-test("doctor json fails when a provider command is missing", async () => {
+test("doctor json fails when a client command is missing", async () => {
   const workspace = mkdtempSync(path.join(tmpdir(), "migent-cli-"));
   try {
     writeProject(workspace);
@@ -74,9 +76,9 @@ test("doctor json fails when a provider command is missing", async () => {
     };
     expect(captured.value).toBe(1);
     expect(payload.ok).toBe(false);
-    const providers = payload.checks.find((check) => check.name === "providers");
-    expect(providers?.problems).toEqual(["grok is not on PATH"]);
-    expect(providers?.items).toContain("codex  /bin/codex");
+    const clients = payload.checks.find((check) => check.name === "clients");
+    expect(clients?.problems).toEqual(["grok is not on PATH"]);
+    expect(clients?.items).toContain("codex  /bin/codex");
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }
@@ -87,7 +89,7 @@ test("doctor stops when the schema is outdated", async () => {
   try {
     writeProject(workspace);
     const configPath = path.join(workspace, ".migent", "config.yaml");
-    const original = readFileSync(configPath, "utf8").replace("schema_version: 5\n", "");
+    const original = readFileSync(configPath, "utf8").replace("schema_version: 6\n", "");
     writeFileSync(configPath, original, "utf8");
     const captured = await capture(() => main(["doctor"], workspace));
     expect(captured.value).toBe(2);
@@ -109,13 +111,13 @@ test("doctor exits 2 when the workspace is missing", async () => {
   }
 });
 
-function writeByteplusProject(workspace: string, client: string | null): void {
+function writeClientlessProject(workspace: string, client: string | null): void {
   writeProject(workspace);
   const configPath = path.join(workspace, ".migent", "config.yaml");
   const clientLine = client === null ? "" : `    client:\n      type: ${client}\n`;
   const text = readFileSync(configPath, "utf8").replace(
     "roles:\n",
-    `  bp-model:\n    provider: byteplus\n    model: seed-1\n${clientLine}roles:\n`,
+    `  bp-model:\n${clientLine}    model: seed-1\nroles:\n`,
   );
   writeFileSync(configPath, text, "utf8");
 }
@@ -125,25 +127,25 @@ function configProblems(stdout: string): string[] {
   return payload.checks.find((check) => check.name === "config")?.problems ?? [];
 }
 
-test("doctor reports a byteplus model that names no client", async () => {
+test("doctor reports an agent that names no client", async () => {
   const workspace = mkdtempSync(path.join(tmpdir(), "migent-cli-"));
   try {
-    writeByteplusProject(workspace, null);
+    writeClientlessProject(workspace, null);
     cliHooks.which = whichBoth;
     const captured = await capture(() => main(["doctor", "--json"], workspace));
     expect(captured.value).toBe(1);
     expect(configProblems(captured.stdout)).toContain(
-      "agents.bp-model.client.type is required: byteplus has no default CLI client.",
+      "Missing agents.bp-model.client.type. Set the agent's CLI client (for example, agents.bp-model.client.type: opencode).",
     );
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }
 });
 
-test("doctor accepts a byteplus model with a client and checks that client's command", async () => {
+test("doctor accepts an agent with a client and checks that client's command", async () => {
   const workspace = mkdtempSync(path.join(tmpdir(), "migent-cli-"));
   try {
-    writeByteplusProject(workspace, "codex");
+    writeClientlessProject(workspace, "codex");
     cliHooks.which = whichBoth;
     const captured = await capture(() => main(["doctor", "--json"], workspace));
     expect(captured.value).toBe(0);
@@ -153,10 +155,10 @@ test("doctor accepts a byteplus model with a client and checks that client's com
   }
 });
 
-test("doctor rejects a byteplus model with an unknown client", async () => {
+test("doctor rejects an agent with an unknown client", async () => {
   const workspace = mkdtempSync(path.join(tmpdir(), "migent-cli-"));
   try {
-    writeByteplusProject(workspace, "nope");
+    writeClientlessProject(workspace, "nope");
     cliHooks.which = whichBoth;
     const captured = await capture(() => main(["doctor", "--json"], workspace));
     expect(captured.value).toBe(1);
@@ -170,7 +172,7 @@ test("doctor prints and returns a tracked config.local.yaml warning without fail
   const workspace = mkdtempSync(path.join(tmpdir(), "migent-cli-"));
   try {
     writeProject(workspace);
-    writeFileSync(path.join(workspace, ".migent", "config.local.yaml"), "schema_version: 5\nagents: {}\n", "utf8");
+    writeFileSync(path.join(workspace, ".migent", "config.local.yaml"), "schema_version: 6\nagents: {}\n", "utf8");
     execFileSync("git", ["init", "-q"], { cwd: workspace });
     execFileSync("git", ["add", ".migent/config.local.yaml"], { cwd: workspace });
     cliHooks.which = whichBoth;
@@ -238,12 +240,12 @@ test("doctor and session prepare resolve model effort through adapter clients", 
     expect(prepared.value).toBe(0);
     const { session_id } = JSON.parse(prepared.stdout) as { session_id: string };
     writeFileSync(path.join(workspace, ".migent", "sessions", session_id, "task.md"), "Check effort at start\n");
-    activatePreparedSession(workspace, session_id, createProviderResolver(defaultProviders()));
+    activatePreparedSession(workspace, session_id, clientRegistry());
     const frozen = loadYamlMapping(path.join(workspace, ".migent", "sessions", session_id, "workflow.frozen.yaml"));
-    const targets = Object.values(frozen.targets as Record<string, { provider: string; options: Record<string, string> }>);
+    const targets = Object.values(frozen.targets as Record<string, { client: string; options: Record<string, string> }>);
     expect(targets).toEqual(expect.arrayContaining([
-      expect.objectContaining({ provider: "codex", options: { model_reasoning_effort: "high" } }),
-      expect.objectContaining({ provider: "grok", options: { "reasoning-effort": "medium" } }),
+      expect.objectContaining({ client: "codex", options: { model_reasoning_effort: "high" } }),
+      expect.objectContaining({ client: "grok", options: { "reasoning-effort": "medium" } }),
     ]));
   } finally {
     rmSync(workspace, { recursive: true, force: true });
@@ -294,7 +296,7 @@ test("doctor --session validates a prepared draft in text and JSON without writi
       source: "draft",
       path: `.migent/sessions/${sessionId}/workflow.yaml`,
     });
-    expect(payload.checks.map((check) => check.name)).toEqual(["session", "workflow", "bindings", "providers"]);
+    expect(payload.checks.map((check) => check.name)).toEqual(["session", "workflow", "bindings", "clients"]);
     expect(treeText(path.join(workspace, ".migent"))).toBe(before);
   } finally {
     rmSync(workspace, { recursive: true, force: true });
@@ -310,9 +312,9 @@ test("doctor --session exits 1 for a broken draft and a missing executable", asy
     cliHooks.which = (command) => (command === "codex" ? "/bin/codex" : null);
     const missing = await capture(() => main(["doctor", "--session", sessionId, "--json"], workspace));
     expect(missing.value).toBe(1);
-    const providers = (JSON.parse(missing.stdout) as { checks: Array<{ name: string; problems: string[] }> }).checks
-      .find((check) => check.name === "providers");
-    expect(providers?.problems.join("\n")).toContain("grok is not on PATH (stages:");
+    const clients = (JSON.parse(missing.stdout) as { checks: Array<{ name: string; problems: string[] }> }).checks
+      .find((check) => check.name === "clients");
+    expect(clients?.problems.join("\n")).toContain("grok is not on PATH (stages:");
     writeFileSync(draft, "id: plan\nstages: nope\n", "utf8");
     cliHooks.which = whichBoth;
     const broken = await capture(() => main(["doctor", "--session", sessionId], workspace));
@@ -329,7 +331,7 @@ test("doctor --session validates a frozen session without live workflows or an u
     writeProject(workspace);
     const sessionId = await prepareSession(workspace);
     writeFileSync(path.join(workspace, ".migent", "sessions", sessionId, "task.md"), "Task\n");
-    activatePreparedSession(workspace, sessionId, createProviderResolver(defaultProviders()));
+    activatePreparedSession(workspace, sessionId, clientRegistry());
     rmSync(path.join(workspace, ".migent", "workflows"), { recursive: true });
     mkdirSync(path.join(workspace, ".migent", "workflows"));
     writeFileSync(path.join(workspace, ".migent", "workflows", "bad.yaml"), "id: bad\nstages: nope\n");

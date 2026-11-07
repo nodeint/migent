@@ -2,29 +2,29 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, test } from "vitest";
-import { ProviderCommandFailed, runProviderCommandAsync } from "../src/provider.ts";
+import { ClientCommandFailed, runClientCommandAsync } from "../src/client.ts";
 
 const sleeper = (ms: number, text: string): string[] => [process.execPath, "-e", `setTimeout(() => process.stdout.write(${JSON.stringify(text)}), ${ms})`];
 
-test("distinct provider lookups overlap instead of running one after another", async () => {
+test("distinct client lookups overlap instead of running one after another", async () => {
   const started = Date.now();
   const outputs = await Promise.all([
-    runProviderCommandAsync(sleeper(1500, "a")),
-    runProviderCommandAsync(sleeper(1500, "b")),
-    runProviderCommandAsync(sleeper(1500, "c")),
+    runClientCommandAsync(sleeper(1500, "a")),
+    runClientCommandAsync(sleeper(1500, "b")),
+    runClientCommandAsync(sleeper(1500, "c")),
   ]);
   expect(outputs).toEqual(["a", "b", "c"]);
   expect(Date.now() - started).toBeLessThan(3500);
 });
 
 test("a lookup past its timeout is rejected", async () => {
-  await expect(runProviderCommandAsync(sleeper(10_000, "x"), undefined, { timeoutMs: 300 })).rejects.toThrow(/timed out/);
+  await expect(runClientCommandAsync(sleeper(10_000, "x"), undefined, { timeoutMs: 300 })).rejects.toThrow(/timed out/);
 });
 
 test("a failing lookup reports its stderr; stdin reaches the command", async () => {
-  await expect(runProviderCommandAsync([process.execPath, "-e", "console.error('nope'); process.exit(3)"]))
-    .rejects.toBeInstanceOf(ProviderCommandFailed);
-  const echoed = await runProviderCommandAsync([process.execPath, "-e", "process.stdin.pipe(process.stdout)"], "hello");
+  await expect(runClientCommandAsync([process.execPath, "-e", "console.error('nope'); process.exit(3)"]))
+    .rejects.toBeInstanceOf(ClientCommandFailed);
+  const echoed = await runClientCommandAsync([process.execPath, "-e", "process.stdin.pipe(process.stdout)"], "hello");
   expect(echoed).toBe("hello");
 });
 
@@ -37,7 +37,7 @@ function alive(pid: number): boolean {
   }
 }
 
-test("a timeout ends descendants of the provider, including behind a Windows shim", async () => {
+test("a timeout ends descendants of the client, including behind a Windows shim", async () => {
   const directory = mkdtempSync(path.join(tmpdir(), "migent-timeout-"));
   const pidFile = path.join(directory, "grandchild.pid");
   const script = path.join(directory, "provider.js");
@@ -55,7 +55,7 @@ test("a timeout ends descendants of the provider, including behind a Windows shi
   }
   let grandchild = 0;
   try {
-    await expect(runProviderCommandAsync(argv, undefined, { timeoutMs: 1500 })).rejects.toThrow(/timed out/);
+    await expect(runClientCommandAsync(argv, undefined, { timeoutMs: 1500 })).rejects.toThrow(/timed out/);
     grandchild = Number(readFileSync(pidFile, "utf8"));
     expect(grandchild).toBeGreaterThan(0);
     for (let attempt = 0; attempt < 40 && alive(grandchild); attempt++) await new Promise((resolve) => setTimeout(resolve, 100));

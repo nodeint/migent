@@ -13,7 +13,7 @@ import {
 } from "./config.js";
 import { selectSessionWorkflow } from "./session-selection.js";
 import { ConfigurationError } from "./errors.js";
-import type { ProviderResolver } from "./provider-contract.js";
+import type { ClientRegistry } from "./cli-client.js";
 import { isRecord } from "./record.js";
 import {
   isRoleStage,
@@ -60,9 +60,8 @@ function message(error: unknown): string {
 
 function targetView(target: StageTarget): View {
   return {
-    provider: target.provider,
+    client: target.client,
     model: target.model,
-    client: target.client ?? null,
     options: { ...target.options },
   };
 }
@@ -88,7 +87,7 @@ interface WorkflowOrigin {
   problems?: readonly string[];
 }
 
-function stageView(stage: StageSpec, config: Loaded, origin: WorkflowOrigin, resolve?: ProviderResolver): View {
+function stageView(stage: StageSpec, config: Loaded, origin: WorkflowOrigin, resolve?: ClientRegistry): View {
   const problems: string[] = [];
   let target: View | null = null;
   if (isRoleStage(stage)) {
@@ -164,7 +163,7 @@ function workflowView(
   workspace: string,
   document: WorkflowDocument,
   origin: WorkflowOrigin,
-  resolve?: ProviderResolver,
+  resolve?: ClientRegistry,
 ): View {
   const config = tryConfig(workspace);
   const stages = Object.values(document.stages).map((stage) => stageView(stage, config, origin, resolve));
@@ -259,7 +258,7 @@ function notFound(label: string, name: string, available: readonly string[]): Co
 }
 
 /** The project workflow file named `name` (an id). A file that cannot be parsed throws. */
-export function getWorkflowView(workspace: string, name: string, resolve?: ProviderResolver): View {
+export function getWorkflowView(workspace: string, name: string, resolve?: ClientRegistry): View {
   const catalog = loadWorkflowCatalog(workspace, { quiet: true });
   if (!Object.hasOwn(catalog.documents, name)) {
     const failed = catalog.problems.find(
@@ -278,7 +277,7 @@ export function getSessionWorkflowView(
   workspace: string,
   sessionId: string,
   name: string | null,
-  resolve?: ProviderResolver,
+  resolve?: ClientRegistry,
 ): View {
   const selection = selectSessionWorkflow(workspace, sessionId);
   const document = selection.document;
@@ -322,7 +321,7 @@ function roleView(
   name: string,
   role: unknown,
   workflows: readonly WorkflowDocument[],
-  resolve?: ProviderResolver,
+  resolve?: ClientRegistry,
 ): View {
   const problems: string[] = [];
   const selection = isRecord(role) ? role.agent : undefined;
@@ -356,13 +355,13 @@ function roleView(
   return { kind: "role", name, description, agent, target, responsibilities, used_by: usedBy, problems };
 }
 
-export function listRoleViews(workspace: string, resolve?: ProviderResolver): View[] {
+export function listRoleViews(workspace: string, resolve?: ClientRegistry): View[] {
   const { config, table } = configRecord(workspace, "roles");
   const workflows = projectWorkflows(workspace);
   return Object.entries(table).map(([name, role]) => roleView(workspace, config, name, role, workflows, resolve));
 }
 
-export function getRoleView(workspace: string, name: string, resolve?: ProviderResolver): View {
+export function getRoleView(workspace: string, name: string, resolve?: ClientRegistry): View {
   const { config, table } = configRecord(workspace, "roles");
   if (!Object.hasOwn(table, name)) throw notFound("Role", name, Object.keys(table));
   return roleView(workspace, config, name, table[name], projectWorkflows(workspace), resolve);
@@ -376,7 +375,7 @@ function agentView(
   roles: Record<string, unknown>,
   workflows: readonly WorkflowDocument[],
   local: ReadonlySet<string>,
-  resolve?: ProviderResolver,
+  resolve?: ClientRegistry,
 ): View {
   const problems: string[] = [];
   let target: StageTarget | null = null;
@@ -400,7 +399,6 @@ function agentView(
   return {
     kind: "agent",
     name,
-    provider: target?.provider ?? (isRecord(definition) && typeof definition.provider === "string" ? definition.provider : null),
     model: target?.model ?? (isRecord(definition) && typeof definition.model === "string" ? definition.model : null),
     client: target?.client ?? (typeof clientConfig.type === "string" ? clientConfig.type : null),
     effort,
@@ -411,7 +409,7 @@ function agentView(
   };
 }
 
-function agentViews(workspace: string, resolve?: ProviderResolver): { views: View[] } {
+function agentViews(workspace: string, resolve?: ClientRegistry): { views: View[] } {
   const { config, table } = configRecord(workspace, "agents");
   const roles = isRecord(config.roles) ? config.roles : {};
   const workflows = projectWorkflows(workspace);
@@ -419,11 +417,11 @@ function agentViews(workspace: string, resolve?: ProviderResolver): { views: Vie
   return { views: Object.keys(table).map((name) => agentView(config, name, roles, workflows, local, resolve)) };
 }
 
-export function listAgentViews(workspace: string, resolve?: ProviderResolver): View[] {
+export function listAgentViews(workspace: string, resolve?: ClientRegistry): View[] {
   return agentViews(workspace, resolve).views;
 }
 
-export function getAgentView(workspace: string, name: string, resolve?: ProviderResolver): View {
+export function getAgentView(workspace: string, name: string, resolve?: ClientRegistry): View {
   const views = agentViews(workspace, resolve).views;
   const found = views.find((view) => view.name === name);
   if (found === undefined) throw notFound("Agent", name, views.map((view) => String(view.name)));

@@ -26,7 +26,7 @@ import {
   type DraftFormat,
   type DraftSourceMap,
 } from "@nodeint/migent-kernel";
-import { providerMap } from "../provider.js";
+import { clientRegistry } from "../client.js";
 import { findWorkspace, invocationCwdPath } from "../workspace.js";
 
 export type AuthoringKind = "config" | "workflow";
@@ -257,7 +257,7 @@ function executeDraft(
     // Under the lock for a save, so the status it checks cannot change before the write.
     session = resolveSessionDraft(workspace, options.session, { forSave: mode === "save" });
   }
-  const providers = providerMap();
+  const clients = clientRegistry();
   const draftSource = kind === "config" ? { layer: scope } as const : { workflow: session?.relativePath ?? options.target ?? "" };
   let draft: Record<string, unknown>;
   try {
@@ -306,7 +306,7 @@ function executeDraft(
         source: { layer: "project" },
       });
     }
-    diagnostics = [...companionProblems, ...validateConfigDraft({ scope, draft, companion }, providers)];
+    diagnostics = [...companionProblems, ...validateConfigDraft({ scope, draft, companion }, clients)];
   } else {
     const config = loadConfigLayers(workspace);
     if (session !== null) {
@@ -314,7 +314,7 @@ function executeDraft(
       destination = session.draftPath;
       label = session.relativePath;
       const siblings = readSiblings(workflowsDirectory(workspace), "");
-      diagnostics = validateWorkflowDraft({ draft, file: session.relativePath, siblings, config, session: { expectedId: session.workflowId } }, providers);
+      diagnostics = validateWorkflowDraft({ draft, file: session.relativePath, siblings, config, session: { expectedId: session.workflowId } }, clients);
     } else {
       const id = draft.id;
       const derived = typeof id === "string" && FILE_NAME.test(id) ? `${id}.yaml` : null;
@@ -327,7 +327,7 @@ function executeDraft(
       destination = path.join(workflowsDirectory(workspace), name);
       label = `workflows/${name}`;
       const siblings = readSiblings(workflowsDirectory(workspace), name);
-      diagnostics = validateWorkflowDraft({ draft, file: name, siblings, config }, providers);
+      diagnostics = validateWorkflowDraft({ draft, file: name, siblings, config }, clients);
     }
   }
 

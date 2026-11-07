@@ -33,7 +33,7 @@ export function runConfigShow(workspace: string, options: { asJson?: boolean } =
 export function removedConfigCommand(name: string): string {
   return (
     `\`migent config ${name}\` was removed. Edit .migent/config.yaml (roles and agents) or ` +
-    `${LOCAL_LABEL} (this machine's provider and model), then run \`migent doctor\`. ` +
+    `${LOCAL_LABEL} (this machine's client and model), then run \`migent doctor\`. ` +
     "`migent config` prints the effective config."
   );
 }

@@ -1,24 +1,24 @@
 # Annotated configuration example. For editing, local overrides, and client options,
 # see config.md. Model IDs are examples; choose from migent get models --json.
-schema_version: 5
+schema_version: 6
 
-# An agent is a provider, a model, an effort, and a CLI client with its options.
+# An agent is a model, an effort, and a CLI client with its options.
 # Named agents can be shared by roles and stages.
-# Use an available provider and model ID from migent get models --json.
+# Use an available model ID from migent get models --json.
 agents:
   deep_reasoning:
-    provider: grok
     model: grok-4.7
+    client:
+      type: grok
     # Optional thinking level; use a supported value, or omit for client default.
     # Do not also set the equivalent client option or an OpenCode #variant.
     effort: high
 
   code_generation:
-    provider: byteplus
     model: coding-plan/deepseek-v4-pro
     client:
-      # Required for byteplus: the CLI client that runs this model.
-      # Other client IDs: agy, claude-code, codex, grok.
+      # Required when the model has no default client, such as a BytePlus model.
+      # Other client IDs: agy, claude-code, codex, grok, opencode.
       type: opencode
 
 roles:
@@ -27,15 +27,16 @@ roles:
     description: Implements the change and verifies it.
     # Inline agent object; no named agent entry is needed for this role.
     agent:
-      provider: codex
       model: gpt-5
+      client:
+        type: codex
   planner:
     description: Designs the approach and writes the plan.
     agent:
-      provider: grok
       model: grok-4.7
       effort: medium
       client:
+        type: grok
         # Native CLI options for this agent.
         options:
           max_turns: "10"

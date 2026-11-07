@@ -1,16 +1,17 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "vitest";
-import type { BuildCommandInput, InterruptOutcome, NewSession } from "../src/provider-contract.ts";
+import type { BuildCommandInput, CliRunOutput, InterruptOutcome } from "../src/cli-client.ts";
 import { interruptSession } from "../src/provider-interrupt.ts";
 import { AgentToolRunner, createWorkflowSession, executeNamedWorkflow, raiseCancellation } from "../src/index.ts";
 import type { CommandSpec } from "../src/command-executor.ts";
-import { FakeProvider, tempDir } from "./support.ts";
+import { FakeClient, tempDir, registryOf } from "./support.ts";
 
 const CONFIG = `\
 agents:
   fake:
-    provider: fake
+    client:
+      type: fake
     model: m1
 roles:
   developer:
@@ -38,7 +39,7 @@ function setup(): { workspace: string; sessionId: string } {
 }
 
 /** Hangs like a client of a shared server; the interrupt command logs whether the client still lives. */
-class ServerProvider extends FakeProvider {
+class ServerProvider extends FakeClient {
   readonly pidFile: string;
   readonly interruptLog: string;
   outcomes: InterruptOutcome[] = [];
@@ -51,12 +52,12 @@ class ServerProvider extends FakeProvider {
     this.interruptLog = path.join(root, "interrupts.log");
   }
 
-  createNewSession(): NewSession {
-    return { agentId: PRE_ID };
+  newSessionId(): string | null {
+    return PRE_ID;
   }
 
-  override buildCommand(input: BuildCommandInput): CommandSpec {
-    if (!this.hang) return super.buildCommand(input);
+  override runCommand(input: BuildCommandInput): CommandSpec {
+    if (!this.hang) return super.runCommand(input);
     this.calls.push({ ...input, options: { ...input.options } });
     const announce =
       this.reportedId === null ? "" : `console.log(JSON.stringify({sessionID:${JSON.stringify(this.reportedId)}}));`;
@@ -70,8 +71,8 @@ class ServerProvider extends FakeProvider {
     return { argv: [process.execPath, "-e", code] };
   }
 
-  override parseResponse(stdout: string): [string, string | null] {
-    return this.hang ? [stdout, null] : super.parseResponse(stdout);
+  override parseRun(stdout: string, lastMessageFile: string): CliRunOutput {
+    return this.hang ? { text: stdout, sessionId: null, source: "model" } : super.parseRun(stdout, lastMessageFile);
   }
 
   interruptCommand(agentId: string): CommandSpec {
@@ -101,7 +102,7 @@ class ServerProvider extends FakeProvider {
 }
 
 function fastRunner(provider: ServerProvider, timeoutSec: number | null = 30): AgentToolRunner {
-  const runner = new AgentToolRunner({ fake: provider }, timeoutSec);
+  const runner = new AgentToolRunner(registryOf({ fake: provider }), timeoutSec);
   runner.executor.interruptExitGraceMs = 100;
   runner.interruptPolicy = { attempts: 3, retryDelayMs: 20, commandTimeoutMs: 5000 };
   return runner;
@@ -281,7 +282,7 @@ test("a provider without an interrupt command is stopped without the exit grace 
   const provider = new ServerProvider(tempDir("migent-interrupt-nograce-"));
   (provider as { interruptCommand?: unknown }).interruptCommand = undefined;
   // Production grace setting, not the shortened one the other tests use.
-  const runner = new AgentToolRunner({ fake: provider }, 30);
+  const runner = new AgentToolRunner(registryOf({ fake: provider }), 30);
   expect(runner.executor.interruptExitGraceMs).toBe(3000);
   const stop = cancelWhenStarted(provider);
   const startedAt = Date.now();

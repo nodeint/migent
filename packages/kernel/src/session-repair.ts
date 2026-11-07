@@ -161,7 +161,7 @@ function reconcileDrafts(inputs: FoldInputs): EventDraft[] {
         data: {
           execution_order: execution.executionOrder,
           stage_attempt: execution.stageAttempt,
-          provider: execution.provider,
+          client: execution.client,
           model: execution.model,
           resumes_execution_id: execution.resumesExecutionId,
         },

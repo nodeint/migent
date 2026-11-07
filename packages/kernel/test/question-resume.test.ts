@@ -1,17 +1,17 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "vitest";
-import type { BuildCommandInput } from "../src/provider-contract.ts";
+import type { BuildCommandInput } from "../src/cli-client.ts";
 import { AgentToolRunner, createWorkflowSession, executeNamedWorkflow, raiseCancellation } from "../src/index.ts";
 import type { CommandSpec } from "../src/command-executor.ts";
-import { ScriptedProvider, tempDir } from "./support.ts";
+import { ScriptedClient, tempDir, registryOf } from "./support.ts";
 
 const valid = JSON.stringify({ schema_version: 1, questions: [{
   question: "Include old sessions?", context: "Migration costs more.", selection: "single",
   options: [{ label: "New only" }, { label: "Include old" }],
 }] });
 
-class HangFirstProvider extends ScriptedProvider {
+class HangFirstProvider extends ScriptedClient {
   private hung = false;
   constructor(private readonly pidFile: string, responses: string[]) { super(responses); }
 
@@ -34,14 +34,14 @@ async function cancelledAsk(responses: string[]) {
   const workspace = tempDir("migent-question-ws-");
   mkdirSync(path.join(workspace, ".migent", "workflows"), { recursive: true });
   writeFileSync(path.join(workspace, ".migent", "config.yaml"), [
-    "schema_version: 3", "roles:", "  planner:", "    agent: { provider: fake, model: fake }", "",
+    "schema_version: 6", "roles:", "  planner:", "    agent: { client: { type: fake }, model: fake }", "",
   ].join("\n"));
   writeFileSync(path.join(workspace, ".migent", "workflows", "wf.yaml"), [
     "schema_version: 3", "id: wf", "stages:", "  - { id: plan, role: planner, ask: human }", "",
   ].join("\n"));
   const sessionId = createWorkflowSession(workspace, "wf", "Finish the notes");
   const provider = new HangFirstProvider(pidFile, responses);
-  const runner = new AgentToolRunner({ fake: provider }, 10);
+  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
   const timer = setInterval(() => {
     if (!existsSync(pidFile) || readFileSync(pidFile, "utf8").trim() === "") return;
     clearInterval(timer);

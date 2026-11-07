@@ -8,14 +8,14 @@ import type {
   CliUsage,
   CommandSpec,
   InterruptOutcome,
-  ProviderOption,
+  ClientOption,
   RawFailure,
   UsageCapture,
 } from "../types.js";
 import { ModelCatalog } from "../catalog.js";
 import { compact, finite, isRecord, labelOf, parseJsonObject } from "./json.js";
 
-const OPENCODE_OPTIONS: readonly ProviderOption[] = [
+const OPENCODE_OPTIONS: readonly ClientOption[] = [
   { name: "agent" },
   { name: "thinking" },
   { name: "variant", overridable: true },
@@ -130,7 +130,7 @@ export class OpencodeClient implements CliClient {
   readonly id = "opencode";
   readonly command = "opencode";
 
-  options(): readonly ProviderOption[] {
+  options(): readonly ClientOption[] {
     return OPENCODE_OPTIONS;
   }
 

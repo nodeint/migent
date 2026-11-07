@@ -1,16 +1,19 @@
 /** Upgrade config and workflow documents from the version they record.
 
-Providers supply the model, role, and stage rewrite for each version step.
-This module walks those steps and writes the resulting schema_version.
-A missing schema_version is version 0. Writes stay on the text patchers.
+Version steps are built into this module. The v0 "thinking" tables live in
+`migration-legacy.ts`, keyed by the historical provider ID. This module walks
+the steps and writes the resulting schema_version. A missing schema_version is
+version 0. Writes stay on the text patchers.
 */
 import { stringify } from "yaml";
 import { ConfigEditError, yamlScalar } from "./config-edit.js";
 import { ConfigurationError } from "./errors.js";
-import { liftConfigAgents } from "./migration-config.js";
+import { liftConfigAgents, liftConfigClients, liftWorkflowClients, type ConfigLayerKind } from "./migration-config.js";
+import { applyLegacyMigration, type MigrationKind } from "./migration-legacy.js";
 import { documentVersion, isRecord } from "./record.js";
 import { SCHEMA_VERSION, parseWorkflowMapping } from "./workflow.js";
 import { parseYamlDocument } from "./yaml.js";
+import { renderAuthoringYaml } from "./authoring.js";
 
 export { SCHEMA_VERSION };
 
@@ -18,20 +21,27 @@ const SCHEMA_VERSION_FIELD = "schema_version";
 
 export type MigrationFn = (entry: Record<string, unknown>) => void;
 
-/** Provider migration tables. Keys are the version being left. */
-export interface MigrationProvider {
-  readonly modelMigrations: Readonly<Record<number, MigrationFn>>;
-  readonly roleMigrations: Readonly<Record<number, MigrationFn>>;
-  readonly stageMigrations: Readonly<Record<number, MigrationFn>>;
+export interface MigrationLayer {
+  layer?: ConfigLayerKind;
+  /** The original v5 project + local merge, before any rewrite. */
+  merged?: Readonly<Record<string, unknown>>;
+  /** The other layer, for the project/local decision in the v5 to v6 lift. */
+  other?: Readonly<Record<string, unknown>> | null;
+  /** Client ids named when a provider has no resolvable default client. */
+  clientIds?: readonly string[];
+  /** The project layer as it will be written, for a local lift's surviving view. */
+  project?: Record<string, unknown>;
+  /** The local layer as it will be written, for a project lift's surviving view. */
+  local?: Record<string, unknown> | null;
 }
 
 type Edit = [number, number, string[]];
 
 export function migrateConfig(
   config: Record<string, unknown>,
-  providers: Readonly<Record<string, MigrationProvider>>,
   current = SCHEMA_VERSION,
   context: Readonly<Record<string, unknown>> = config,
+  layers: MigrationLayer = {},
 ): string[] {
   let version = requireCurrent(documentVersion(config), current, "config");
   if (version === current) return [];
@@ -39,18 +49,28 @@ export function migrateConfig(
   let providerStage: Record<string, unknown> | null = null;
   let structural: string[] = [];
   while (version < current) {
-    migrateModels(config, providers, version, context);
-    migrateRoles(config, providers, version, context);
+    migrateModels(config, version, context);
+    migrateRoles(config, version, context);
     // Version 4 to 5 renames and reshapes keys for every provider alike.
     if (version === 4) {
       providerStage = deepCopyRecord(config);
       structural = liftConfigAgents(config);
     }
+    if (version === 5) {
+      structural.push(...liftConfigClients({
+        layer: layers.layer ?? "project",
+        layerConfig: config,
+        project: layers.project ?? config,
+        local: layers.local ?? null,
+        merged: layers.merged ?? context,
+        clientIds: layers.clientIds ?? [],
+      }));
+    }
     version += 1;
   }
   config[SCHEMA_VERSION_FIELD] = current;
   const notes = [`${SCHEMA_VERSION_FIELD} -> ${String(config[SCHEMA_VERSION_FIELD])}`];
-  // Provider steps ran on the shape they were written for; compare that shape, then list the lift.
+  // Provider steps ran on the shape they were written for; compare that shape, then list the lifts.
   const compared = providerStage ?? config;
   notes.push(...namedNotes(before.models ?? before.agents, compared.models ?? compared.agents, "models"));
   notes.push(...namedNotes(before.roles, compared.roles, "roles"));
@@ -61,18 +81,19 @@ export function migrateConfig(
 export function migrateWorkflow(
   workflow: Record<string, unknown>,
   config: Readonly<Record<string, unknown>>,
-  providers: Readonly<Record<string, MigrationProvider>>,
   current = SCHEMA_VERSION,
+  clientIds: readonly string[] = [],
 ): string[] {
   let version = requireCurrent(documentVersion(workflow), current, "workflow");
   if (version === current) return [];
   const before = deepCopyRecord(workflow);
   while (version < current) {
-    migrateStages(workflow, config, providers, version);
+    migrateStages(workflow, config, version);
     if (version === 1) liftWorkflowCompletion(workflow);
     if (version === 2) liftWorkflowDecisions(workflow);
     if (version === 3) delete workflow.requires;
     if (version === 4) liftWorkflowAgents(workflow);
+    if (version === 5) liftWorkflowClients(workflow, config, clientIds);
     version += 1;
   }
   workflow[SCHEMA_VERSION_FIELD] = current;
@@ -106,6 +127,9 @@ function assertMigratedWorkflow(text: string, updated: Readonly<Record<string, u
     throw new ConfigurationError("migration left requires.decision in the workflow.");
   }
   parseWorkflowMapping(parsed, "migrated workflow");
+  if (!deepEqual(parsed, updated)) {
+    throw new ConfigEditError("Workflow text does not match the migrated document.");
+  }
 }
 
 /** Version 5 selects an `agent` per stage; stage `options` no longer exist and are dropped. */
@@ -229,7 +253,6 @@ function requireCurrent(version: number, current: number, label: string): number
 
 function migrateModels(
   config: Record<string, unknown>,
-  providers: Readonly<Record<string, MigrationProvider>>,
   version: number,
   context: Readonly<Record<string, unknown>>,
 ): void {
@@ -238,16 +261,12 @@ function migrateModels(
   for (const [name, body] of Object.entries(models)) {
     if (!isRecord(body)) continue;
     const provider = providerName(body.provider) ?? modelProvider(context, name);
-    if (provider === null) continue;
-    const impl = providers[provider];
-    if (impl === undefined) continue;
-    applyStep(impl.modelMigrations, body, version);
+    applyLegacyMigration("model", provider, version, body);
   }
 }
 
 function migrateRoles(
   config: Record<string, unknown>,
-  providers: Readonly<Record<string, MigrationProvider>>,
   version: number,
   context: Readonly<Record<string, unknown>>,
 ): void {
@@ -261,17 +280,13 @@ function migrateRoles(
       context,
       Object.hasOwn(body, "default_model") || Object.hasOwn(body, "agent") ? body : isRecord(effectiveRole) ? effectiveRole : body,
     );
-    if (provider === null) continue;
-    const impl = providers[provider];
-    if (impl === undefined) continue;
-    applyStep(impl.roleMigrations, body, version);
+    applyLegacyMigration("role", provider, version, body);
   }
 }
 
 function migrateStages(
   workflow: Record<string, unknown>,
   config: Readonly<Record<string, unknown>>,
-  providers: Readonly<Record<string, MigrationProvider>>,
   version: number,
 ): void {
   const stages = workflow.stages;
@@ -279,33 +294,21 @@ function migrateStages(
   for (const stage of stages) {
     if (!isRecord(stage)) continue;
     const provider = stageProvider(config, stage);
-    if (provider === null) continue;
-    const impl = providers[provider];
-    if (impl === undefined) continue;
-    applyStep(impl.stageMigrations, stage, version);
+    applyLegacyMigration("stage", provider, version, stage);
   }
-}
-
-function applyStep(
-  migrations: Readonly<Record<number, MigrationFn>> | undefined,
-  body: Record<string, unknown>,
-  version: number,
-): void {
-  const step = migrations?.[version];
-  if (step !== undefined) step(body);
 }
 
 /** Reads the provider of a role's agent in either document shape: `agent` or the earlier `default_model`. */
 function roleProvider(config: Readonly<Record<string, unknown>>, role: Readonly<Record<string, unknown>>): string | null {
   const selection = Object.hasOwn(role, "agent") ? role.agent : role.default_model;
-  if (isRecord(selection)) return providerName(selection.provider);
+  if (isRecord(selection)) return bodyProvider(selection);
   if (typeof selection !== "string") return null;
   return modelProvider(config, selection);
 }
 
 function stageProvider(config: Readonly<Record<string, unknown>>, stage: Readonly<Record<string, unknown>>): string | null {
   const selection = Object.hasOwn(stage, "agent") ? stage.agent : stage.model;
-  if (isRecord(selection)) return providerName(selection.provider);
+  if (isRecord(selection)) return bodyProvider(selection);
   if (typeof selection === "string" && selection.trim() !== "") return modelProvider(config, selection);
   const roleName = stage.role;
   if (typeof roleName !== "string") return null;
@@ -321,7 +324,15 @@ function modelProvider(config: Readonly<Record<string, unknown>>, modelName: str
   if (!isRecord(models)) return null;
   const model = models[modelName.trim()];
   if (!isRecord(model)) return null;
-  return providerName(model.provider);
+  return bodyProvider(model);
+}
+
+/** A body's own `provider`, else the legacy provider its `client.type` was lifted from. */
+function bodyProvider(body: Readonly<Record<string, unknown>>): string | null {
+  const provider = providerName(body.provider);
+  if (provider !== null) return provider;
+  const client = body.client;
+  return providerName(isRecord(client) ? client.type : client);
 }
 
 function providerName(value: unknown): string | null {
@@ -488,6 +499,14 @@ function patchStage(
   const firstIndent = first[1].indent;
   const siblingIndent = siblingIndentOf(content, firstIndent);
   const unit = siblingIndent > firstIndent ? siblingIndent - firstIndent : 2;
+  if (!deepEqual(before.agent, after.agent) && Object.hasOwn(after, "agent") && !Object.hasOwn(before, "model")) {
+    const span = nestedKeySpan(lines, { start, end }, "agent");
+    if (span === null) throw new ConfigEditError("Cannot locate the stage agent to migrate.");
+    const base = lines.slice(span[0], span[1]).map((line) => line.slice(siblingIndent)).join("\n");
+    const result = renderAuthoringYaml({ agent: after.agent }, base);
+    if (!result.preserved) throw new ConfigEditError(`Cannot preserve the stage agent: ${result.reason}.`);
+    edits.push([span[0], span[1], result.text.trimEnd().split("\n").map((line) => `${" ".repeat(siblingIndent)}${line}`)]);
+  }
   if (!deepEqual(before.decision, after.decision)) {
     const span = nestedKeySpan(lines, { start, end }, "decision");
     if (span === null) throw new ConfigEditError("Cannot locate the stage decision to migrate.");

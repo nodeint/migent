@@ -3,12 +3,11 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { confirm as clackConfirm, isCancel, select as clackSelect } from "@clack/prompts";
-import { loadWorkspaceConfig, whichSync, type Provider } from "@nodeint/migent-kernel";
+import { loadWorkspaceConfig, whichSync } from "@nodeint/migent-kernel";
 import { PromptCancelled } from "../errors.js";
 import { printError } from "../display.js";
 import { isDirectory, isFile } from "../fs-utils.js";
 import { cliHooks } from "../hooks.js";
-import { providerMap } from "../provider.js";
 import { scanInstalledSkills } from "../skill-scan.js";
 import { findTarget, SKILL_TARGETS, type SkillScope, type SkillTarget } from "../skill-targets.js";
 
@@ -103,7 +102,7 @@ export async function updateSkill(options: SkillOptions = {}): Promise<number> {
 }
 
 /** Migent client ids used by the agents in `.migent/config.yaml`. */
-export function clientsFromConfig(workspace: string, providers: Record<string, Provider> = providerMap()): string[] {
+export function clientsFromConfig(workspace: string): string[] {
   const configPath = path.join(workspace, ".migent", "config.yaml");
   if (!isFile(configPath)) return [];
   let config: Record<string, unknown>;
@@ -124,18 +123,12 @@ export function clientsFromConfig(workspace: string, providers: Record<string, P
   const found = new Set<string>();
   for (const model of definitions) {
     if (typeof model !== "object" || model === null) continue;
-    const { provider, client } = model as { provider?: unknown; client?: unknown };
+    const client = (model as { client?: unknown }).client;
     const clientType = typeof client === "object" && client !== null ? (client as { type?: unknown }).type : undefined;
-    const id = typeof clientType === "string" ? clientType : typeof provider === "string" ? providerClient(providers[provider]) : null;
+    const id = typeof clientType === "string" ? clientType : null;
     if (typeof id === "string" && findTarget(id) !== undefined) found.add(id);
   }
   return [...found];
-}
-
-/** Migent client id a provider drives, when it has one. */
-export function providerClient(provider: Provider | undefined): string | null {
-  const id = (provider as { clientId?: unknown } | undefined)?.clientId;
-  return typeof id === "string" ? id : null;
 }
 
 /** Directory the client reads project skills from, for prompt text. */

@@ -1,5 +1,5 @@
 import type { TurnKind } from "@nodeint/migent-prompts";
-import { createProviderResolver, type ProviderResolver } from "./provider-contract.js";
+import type { ClientRegistry } from "./cli-client.js";
 import path from "node:path";
 import { AgentToolRunner, type RunResult } from "./agent-runner.js";
 import { resolveStageTarget, type StageTarget } from "./config.js";
@@ -26,7 +26,7 @@ export interface StageDispatchRequest {
   task?: string | null;
   sessionId?: string | null;
   priorSessionId?: string | null;
-  provider?: string | null;
+  client?: string | null;
   model?: string | null;
   options?: Record<string, string> | null;
   stageAttempt?: number | null;
@@ -47,7 +47,7 @@ export class StageDispatchResult {
     readonly failureReason = "",
     readonly failureKind = "",
     readonly resetAt = "",
-    readonly provider = "",
+    readonly client = "",
     readonly executionStatus = "",
   ) {}
 
@@ -61,7 +61,7 @@ export class StageDispatchResult {
       failure_reason: this.failureReason,
       failure_kind: this.failureKind,
       reset_at: this.resetAt,
-      provider: this.provider,
+      client: this.client,
       outcome_status: this.outcomeStatus,
       outcome_decision: this.outcomeDecision,
       session_status: this.sessionStatus,
@@ -74,20 +74,20 @@ export class StageDispatchResult {
 export async function dispatchNamedStage(
   workspace: string,
   request: StageDispatchRequest,
-  runner?: AgentToolRunner,
+  runner: AgentToolRunner,
   resolved?: { workflow: WorkflowDocument; target: StageTarget } | null,
   onExecution?: (executionId: string) => void,
 ): Promise<StageDispatchResult> {
-  const activeRunner = runner ?? new AgentToolRunner();
-  const resolveProvider = createProviderResolver(activeRunner.providers);
-  let loaded = resolved ?? loadDispatchTarget(workspace, request, resolveProvider);
+  const activeRunner = runner;
+  const registry = activeRunner.registry;
+  let loaded = resolved ?? loadDispatchTarget(workspace, request, registry);
   let workflow = loaded.workflow;
   let target = loaded.target;
   let sessionId = request.sessionId ?? null;
   if (sessionId === null) {
-    sessionId = createWorkflowSession(workspace, workflow.id, request.task, request.priorSessionId, resolveProvider);
+    sessionId = createWorkflowSession(workspace, workflow.id, request.task, request.priorSessionId, registry);
     if (!resolved) {
-      loaded = loadDispatchTarget(workspace, { ...request, sessionId }, resolveProvider);
+      loaded = loadDispatchTarget(workspace, { ...request, sessionId }, registry);
       workflow = loaded.workflow;
       target = loaded.target;
     }
@@ -111,9 +111,8 @@ export async function dispatchNamedStage(
         resolveResumeExecution(workspace, workflow, sessionId, request.stageId))
       : ownAgent;
   const result = await activeRunner.run({
-    provider: target.provider,
+    client: target.client,
     model: target.model,
-    client: target.client ?? null,
     options: { ...target.options },
     prompt: request.prompt,
     turn: request.turn ?? null,
@@ -170,10 +169,10 @@ export function resolveResumeExecution(
 function loadDispatchTarget(
   workspace: string,
   request: StageDispatchRequest,
-  resolveProvider: ProviderResolver,
+  registry: ClientRegistry,
 ): { workflow: WorkflowDocument; target: StageTarget } {
   const sessionId = request.sessionId ?? null;
-  const override = { provider: request.provider, model: request.model, options: request.options };
+  const override = { client: request.client, model: request.model, options: request.options };
   if (sessionId) {
     const freeze = readWorkflowFreeze(path.join(workspace, ".migent", "sessions", sessionId));
     if (freeze) {
@@ -183,7 +182,7 @@ function loadDispatchTarget(
   const workflow = loadNamedWorkflow(workspace, request.workflowId);
   return {
     workflow,
-    target: resolveStageTarget(workspace, workflow.id, request.stageId, override, resolveProvider),
+    target: resolveStageTarget(workspace, workflow.id, request.stageId, override, registry),
   };
 }
 
@@ -201,7 +200,7 @@ function resultFromRun(result: RunResult, sessionId: string): StageDispatchResul
     result.failure_reason || "",
     result.failure_kind || "",
     result.reset_at || "",
-    result.provider || "",
+    result.client || "",
     result.execution_status || "",
   );
 }

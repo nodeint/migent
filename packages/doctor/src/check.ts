@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { ConfigOwner, ProviderInfo, SourcePosition } from "@nodeint/migent-kernel";
+import type { ClientRegistry, ConfigOwner, SourcePosition } from "@nodeint/migent-kernel";
 
 export interface Check {
   name: string;
@@ -23,7 +23,7 @@ export interface ModelEffortCheck {
 }
 
 export interface DiagnoseOptions {
-  providers: Readonly<Record<string, ProviderInfo>>;
+  clients: ClientRegistry;
   which?: (command: string) => string | null;
   modelEffortChecks?: Readonly<Record<string, ModelEffortCheck>>;
 }
@@ -39,7 +39,7 @@ export interface Diagnostic {
   message: string;
   /** Field path in the effective config, when the finding belongs to one. */
   path?: readonly (string | number)[];
-  /** The underlying reason, for findings whose message adds a label (e.g. provider option errors). */
+  /** The underlying reason, for findings whose message adds a label (e.g. client option errors). */
   detail?: string;
   /** Which layer supplies the offending node, derived from the merge. */
   source?: { layer: ConfigOwner } | { workflow: string };

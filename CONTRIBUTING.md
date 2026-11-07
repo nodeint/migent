@@ -15,11 +15,11 @@ behavior is documented in [README.md](README.md) and [docs/](docs/).
 |---|---|---|
 | `packages/prompts` | `@nodeint/migent-prompts` | Prompt templates and renderers |
 | `packages/kernel` | `@nodeint/migent-kernel` | Workflow engine, config, session store, libc bindings |
-| `packages/doctor` | `@nodeint/migent-doctor` | Health checks and diagnostics: config, workflows, providers, sessions, model availability |
-| `packages/adapters` | `@nodeint/migent-adapters` | Antigravity, BytePlus, Claude, Codex, Grok, and OpenCode providers |
+| `packages/doctor` | `@nodeint/migent-doctor` | Health checks and diagnostics: config, workflows, clients, sessions, model availability |
+| `packages/adapters` | `@nodeint/migent-adapters` | Antigravity, Claude, Codex, Grok, and OpenCode clients |
 | `packages/registry` | `@nodeint/migent-registry` | Machine-local workspace registry service |
 | `packages/cli` | `@nodeint/migent` | The `migent` command |
-| `integration/` | — | End-to-end tests against fake provider binaries |
+| `integration/` | — | End-to-end tests against fake client binaries |
 
 Users install only `@nodeint/migent`. The other packages have no stable
 API and are published only because the CLI depends on them. Import them by
@@ -47,15 +47,15 @@ pnpm vitest run packages/cli/test/config.test.ts -t "keeps the model name"
 
 ## Writing tests
 
-- **Never call a real provider CLI.** Pass the test's fake `which` *and*
+- **Never call a real client CLI.** Pass the test's fake `which` *and*
   `runCommand` to every command entry point. A missing `runCommand` falls back
   to `spawnSync` on whatever `codex` or `grok` is on `PATH`: it passes on a
   developer machine and fails on CI.
 - Integration tests put `integration/fixtures/bin` on `PATH` instead. Each fake
-  provider there is a `sh` shim and a `.cmd` shim around
+  client there is a `sh` shim and a `.cmd` shim around
   `integration/fixtures/fake-provider.mjs`, so Windows runs exercise the same
   `.cmd` path as npm-installed CLIs.
-- Before pushing, run the suite with provider CLIs off `PATH` to catch the
+- Before pushing, run the suite with client CLIs off `PATH` to catch the
   above:
 
   ```bash
@@ -71,14 +71,14 @@ fail on another, mostly around processes. Process and lock code uses Node
 built-ins and `proper-lockfile` only; do not add native dependencies or libc
 calls.
 
-- **Liveness comes from local endpoints, not pids.** The provider wrapper and
+- **Liveness comes from local endpoints, not pids.** The client wrapper and
   the registry service each listen on a Unix socket (a named pipe on Windows)
   for as long as they run. Another process proves one is alive by connecting;
   the OS frees the endpoint when the process dies, so pid reuse cannot fool
   it. Keep socket paths under 100 bytes; `wrapperEndpoint` and
   `serviceEndpointPath` fall back to a short path in the temp directory.
 - **Owner death arrives over IPC.** Children that must not outlive their
-  parent (the provider wrapper, the registry child before it is published) get
+  parent (the client wrapper, the registry child before it is published) get
   an `ipc` stdio slot and act on `disconnect`, which fires even when the
   parent is killed with SIGKILL.
 - **Stop process trees with `killProcessTree`.** On POSIX it signals the

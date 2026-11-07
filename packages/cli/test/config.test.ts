@@ -1,24 +1,26 @@
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { loadYamlMapping } from "@nodeint/migent-kernel";
+import { loadYamlMapping, loadWorkspaceConfig, loadAgentTarget, loadNamedWorkflow, resolveStageSpec } from "@nodeint/migent-kernel";
 import { expect, test } from "vitest";
 import { main } from "../src/index.ts";
 import { requireCurrentSchema, runMigrate } from "../src/migrate.ts";
 import { capture } from "./support.ts";
+import { clientRegistry } from "../src/client.ts";
 
 const CONFIG = `\
-schema_version: 5
+schema_version: 6
 agents:
   shared:
-    provider: grok
-    model: grok-4.6
     client:
+      type: grok
       options:
         reasoning-effort: medium
         max_turns: "4"
+    model: grok-4.6
   plain:
-    provider: grok
+    client:
+      type: grok
     model: grok-4.7
 roles:
   developer:
@@ -28,7 +30,7 @@ roles:
 `;
 
 const WORKFLOW = `\
-schema_version: 5
+schema_version: 6
 id: plan
 stages:
   - id: implement
@@ -88,7 +90,7 @@ test("removed config subcommands exit 2 and name the replacement", async () => {
     project(workspace);
     const configPath = path.join(workspace, ".migent", "config.yaml");
     const before = readFileSync(configPath, "utf8");
-    for (const argv of [["config", "show"], ["config", "model", "shared", "--provider", "grok"], ["config", "role", "developer"]]) {
+    for (const argv of [["config", "show"], ["config", "model", "shared", "--client", "grok"], ["config", "role", "developer"]]) {
       const captured = await capture(() => main(argv, workspace));
       expect(captured.value).toBe(2);
       expect(captured.stderr).toContain("was removed");
@@ -167,10 +169,11 @@ roles:
     const migrated = await capture(() => runMigrate(workspace, { assumeYes: true }));
     const config = loadYamlMapping(configPath);
     expect(migrated.value).toBe(0);
-    expect(migrated.stdout).toContain("Upgraded schema to version 5.");
-    const agents = config.agents as { grok: { client: { options: Record<string, string> } } };
+    expect(migrated.stdout).toContain("Upgraded schema to version 6.");
+    const agents = config.agents as { grok: { client: { type: string; options: Record<string, string> } } };
     const roles = config.roles as { developer: Record<string, unknown> & { options: Record<string, string> } };
     expect(config).not.toHaveProperty("models");
+    expect(agents.grok.client.type).toBe("grok");
     expect(agents.grok.client.options["reasoning-effort"]).toBe("medium");
     expect(roles.developer.options["reasoning-effort"]).toBe("high");
     expect(roles.developer).not.toHaveProperty("thinking");
@@ -184,7 +187,7 @@ test("migrate asks before writing and yes skips the question", async () => {
   try {
     project(workspace);
     const configPath = path.join(workspace, ".migent", "config.yaml");
-    const original = readFileSync(configPath, "utf8").replace("schema_version: 5\n", "");
+    const original = readFileSync(configPath, "utf8").replace("schema_version: 6\n", "");
     writeFileSync(configPath, original, "utf8");
     const declined = await capture(() => runMigrate(workspace, { confirm: () => false }));
     const refused = await capture(() => main(["migrate"], workspace));
@@ -196,7 +199,7 @@ test("migrate asks before writing and yes skips the question", async () => {
     const upgraded = await main(["migrate", "--yes"], workspace);
     expect(upgraded).toBe(0);
     const loaded = loadYamlMapping(configPath);
-    expect(String(loaded.schema_version)).toBe("5");
+    expect(String(loaded.schema_version)).toBe("6");
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }
@@ -223,11 +226,11 @@ test("migrate lists deleted stage options and says when comments cannot be kept"
     expect(notes).toContain("stages.implement.options.max_turns removed");
     expect(notes).toContain(".migent/config.yaml: comments could not be preserved by this migration");
     expect(readFileSync(path.join(root, "workflows", "plan.yaml"), "utf8")).toBe(
-      "schema_version: 5\nid: plan\nstages:\n  - id: implement\n    role: developer\n    depends_on: []\n",
+      "schema_version: 6\nid: plan\nstages:\n  - id: implement\n    role: developer\n    depends_on: []\n",
     );
     expect(loadYamlMapping(path.join(root, "config.yaml"))).toEqual({
-      schema_version: 5,
-      agents: { fast: { provider: "grok", model: "grok-4.6" } },
+      schema_version: 6,
+      agents: { fast: { client: { type: "grok" }, model: "grok-4.6" } },
       roles: { developer: { agent: "fast" } },
     });
   } finally {
@@ -266,12 +269,12 @@ test("migrate versions both config layers and preserves roles without a default"
     expect(() => requireCurrentSchema(workspace)).not.toThrow();
     expect(result.value).toBe(0);
     expect(readFileSync(path.join(root, "config.yaml"), "utf8")).toBe(
-      "schema_version: 5\nagents: {}\nroles:\n  architect:\n    responsibilities:\n      - Plan the work.\n",
+      "schema_version: 6\nagents: {}\nroles:\n  architect:\n    responsibilities:\n      - Plan the work.\n",
     );
     const migrated = loadYamlMapping(path.join(root, "config.local.yaml"));
-    expect(migrated.schema_version).toBe(5);
+    expect(migrated.schema_version).toBe(6);
     expect(migrated.agents).toEqual({
-      local: { provider: "codex", model: "test", client: { options: { model_reasoning_effort: "high" } } },
+      local: { client: { type: "codex", options: { model_reasoning_effort: "high" } }, model: "test" },
     });
     expect(migrated.roles).toEqual({ architect: { agent: "local" } });
     expect(readFileSync(path.join(root, "config.local.yaml"), "utf8")).toContain("# Machine settings");
@@ -296,11 +299,57 @@ test.each([
     const result = await capture(() => runMigrate(workspace, { assumeYes: true }));
     expect(result.value).toBe(0);
     const migrated = loadYamlMapping(path.join(root, "workflows", "plan.yaml")) as { schema_version: number; stages: Array<Record<string, unknown>> };
-    expect(migrated.schema_version).toBe(5);
+    expect(migrated.schema_version).toBe(6);
     expect(migrated.stages[0]).not.toHaveProperty("model");
     expect(migrated.stages[0]).not.toHaveProperty("options");
     expect(migrated.stages[0]?.agent).toBe("fast");
     expect(() => requireCurrentSchema(workspace)).not.toThrow();
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("migrate normalizes v4 layers before preserving an inherited explicit client", async () => {
+  const workspace = tempDir();
+  const root = path.join(workspace, ".migent");
+  mkdirSync(root);
+  try {
+    writeFileSync(path.join(root, "config.yaml"), "schema_version: 4\nmodels:\n  coder:\n    provider: claude\n    model: router/alias\n    client: opencode\nroles:\n  developer:\n    default_model: coder\n");
+    writeFileSync(path.join(root, "config.local.yaml"), "schema_version: 4\nmodels:\n  coder:\n    provider: codex\n");
+    await capture(() => runMigrate(workspace, { assumeYes: true }));
+    expect(loadAgentTarget(loadWorkspaceConfig(workspace), "coder")).toEqual({ client: "opencode", model: "router/alias", options: {} });
+    expect(loadYamlMapping(path.join(root, "config.local.yaml")).agents).toEqual({ coder: {} });
+    const again = await capture(() => runMigrate(workspace, { assumeYes: true }));
+    expect(again.stdout).toContain("Schema is current.");
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("migrate writes inline workflow agents and keeps model and option comments", async () => {
+  const workspace = tempDir();
+  const root = path.join(workspace, ".migent");
+  mkdirSync(path.join(root, "workflows"), { recursive: true });
+  try {
+    const agent = "      provider: codex\n      # Pinned model\n      model: router/alias # Keep this note\n      client:\n        options:\n          # Account tuning\n          model_reasoning_effort: high\n";
+    const configPath = path.join(root, "config.yaml");
+    const workflowPath = path.join(root, "workflows", "wf.yaml");
+    writeFileSync(configPath, `# Project note\nschema_version: 5\nroles:\n  developer:\n    agent:\n${agent}`);
+    writeFileSync(workflowPath, `# Workflow note\nschema_version: 5\nid: wf\nstages:\n  - id: work\n    role: developer\n    agent:\n${agent}`);
+    await capture(() => runMigrate(workspace, { assumeYes: true }));
+    const config = loadWorkspaceConfig(workspace);
+    const document = loadNamedWorkflow(workspace, "wf");
+    expect(resolveStageSpec(config, document.stages.work!, undefined, clientRegistry())).toEqual({
+      client: "codex", model: "router/alias", options: { model_reasoning_effort: "high" },
+    });
+    for (const file of [configPath, workflowPath]) {
+      const text = readFileSync(file, "utf8");
+      expect(text).not.toContain("provider:");
+      expect(text).toContain("# Pinned model");
+      expect(text).toContain("# Keep this note");
+      expect(text).toContain("# Account tuning");
+      expect(loadYamlMapping(file).schema_version).toBe(6);
+    }
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }

@@ -12,14 +12,15 @@ import {
   statSync,
 } from "node:fs";
 import path from "node:path";
-import type { Provider } from "./provider-contract.js";
+import type { ClientRegistry } from "./cli-client.js";
+import { legacyClientOf, readExecutionClient } from "./legacy-provider.js";
 import type { SkipDetails } from "./run-when.js";
 import { writeFileAtomic, writeJsonAtomic } from "./atomic-file.js";
 import { ConfigurationError, OutputsMissing } from "./errors.js";
 import { sealSessionMetrics } from "./metrics.js";
 import { appendLifecycleEvent, appendRecordedEvent, CANCELLED_REPLY, readParsedEvents, reservedExecutionOrders, reservedStageAttempts, skipsStatusWrite } from "./session-events.js";
 import { commitFoldedStatus, readSessionManifest } from "./session-fold.js";
-import { loadFrozenWorkflow } from "./session-freeze.js";
+import { loadFrozenWorkflow, readWorkflowFreeze } from "./session-freeze.js";
 import { assertSessionLockHeld } from "./session-lock.js";
 import { corruptStatusMessage, readStatusFileState } from "./query.js";
 import { STATUS_PROVIDER_EVENTS } from "./event-kinds.js";
@@ -80,7 +81,7 @@ export function stringOptions(value: unknown): Record<string, string> {
 }
 
 export class AgentSessionRecord {
-  provider: string;
+  client: string;
   model: string;
   workspace: string;
   agentId: string | null;
@@ -89,7 +90,7 @@ export class AgentSessionRecord {
   history: Array<Record<string, string>>;
 
   constructor(
-    provider: string,
+    client: string,
     model: string,
     workspace: string,
     agentId: string | null = null,
@@ -97,7 +98,7 @@ export class AgentSessionRecord {
     status = "new",
     history: Array<Record<string, string>> = [],
   ) {
-    this.provider = provider;
+    this.client = client;
     this.model = model;
     this.workspace = workspace;
     this.agentId = agentId;
@@ -108,13 +109,13 @@ export class AgentSessionRecord {
 
   static fromJson(
     raw: unknown,
-    provider: string,
+    client: string,
     model: string,
     workspace: string,
   ): AgentSessionRecord {
     if (Array.isArray(raw)) {
       return new AgentSessionRecord(
-        provider,
+        client,
         model,
         workspace,
         null,
@@ -123,10 +124,10 @@ export class AgentSessionRecord {
         raw as Array<Record<string, string>>,
       );
     }
-    if (!isRecord(raw)) return new AgentSessionRecord(provider, model, workspace);
+    if (!isRecord(raw)) return new AgentSessionRecord(client, model, workspace);
     const history = Array.isArray(raw.history) ? (raw.history as Array<Record<string, string>>) : [];
     return new AgentSessionRecord(
-      nonempty(raw.provider) ?? provider,
+      nonempty(raw.client) ?? legacyClientOf(nonempty(raw.provider)) ?? client,
       nonempty(raw.model) ?? model,
       nonempty(raw.workspace) ?? workspace,
       nonempty(raw.agent_id) ?? nonempty(raw.native_session_id),
@@ -138,7 +139,7 @@ export class AgentSessionRecord {
 
   toJson(): Record<string, unknown> {
     return {
-      provider: this.provider,
+      client: this.client,
       model: this.model,
       workspace: this.workspace,
       agent_id: this.agentId,
@@ -201,21 +202,21 @@ export class SessionStore {
   readonly workspace: string;
   readonly sessionsDirectory: string;
   readonly processInspector: ProcessInspector;
-  readonly metricsProviders: Record<string, Provider> | null;
+  readonly metricsClients: ClientRegistry | null;
 
   constructor(
     workspace: string,
     processInspector?: ProcessInspector,
-    metricsProviders?: Record<string, Provider>,
+    metricsClients?: ClientRegistry,
   ) {
     this.workspace = workspace;
     this.sessionsDirectory = path.join(workspace, MIGENT_DIRNAME, SESSIONS_DIRNAME);
     this.processInspector = processInspector ?? new SystemProcessInspector();
-    this.metricsProviders = metricsProviders ?? null;
+    this.metricsClients = metricsClients ?? null;
   }
 
   loadOrCreate(
-    provider: string,
+    client: string,
     model: string,
     options: Record<string, string> | null,
     workspace: string,
@@ -225,6 +226,7 @@ export class SessionStore {
     executionOrder: number | null,
     prompt: string,
     resumeExecutionId: string | null = null,
+    validateResume?: (record: AgentSessionRecord) => void,
   ): [AgentSessionRecord, boolean, ExecutionContext] {
     if (resumeExecutionId !== null && sessionId === null) {
       throw new Error("Resuming an execution requires a session.");
@@ -240,7 +242,7 @@ export class SessionStore {
     }
     if (previous === null) {
       const context = this.createExecution(
-        provider,
+        client,
         model,
         options,
         sessionId,
@@ -250,14 +252,17 @@ export class SessionStore {
         prompt,
       );
       return [
-        new AgentSessionRecord(provider, model, workspace, null, { ...(options ?? {}) }),
+        new AgentSessionRecord(client, model, workspace, null, { ...(options ?? {}) }),
         true,
         context,
       ];
     }
     const raw = JSON.parse(readFileSync(previous.conversationReadPath, "utf8")) as unknown;
+    const record = AgentSessionRecord.fromJson(raw, client, model, workspace);
+    record.client = this.executionClient(sessionId as string, previous.executionId);
+    validateResume?.(record);
     const context = this.createExecution(
-      provider,
+      client,
       model,
       options,
       sessionId,
@@ -267,7 +272,23 @@ export class SessionStore {
       prompt,
       previous.executionId,
     );
-    return [AgentSessionRecord.fromJson(raw, provider, model, workspace), false, context];
+    return [record, false, context];
+  }
+
+  /** Resolve and validate provenance before any resume changes persisted state. */
+  executionClient(sessionId: string, executionId: string): string {
+    const context = this.executionContext(sessionId, executionId);
+    if (context === null) throw new ConfigurationError(`Execution ${executionId} was not found in session ${sessionId}.`);
+    const metadata = readJsonObject(path.join(context.directory, "execution.json"));
+    const sessionDirectory = path.join(this.sessionsDirectory, sessionId);
+    const freeze = readWorkflowFreeze(sessionDirectory);
+    const stageId = typeof metadata.stage_id === "string" ? metadata.stage_id : "";
+    const frozen = freeze?.targets[stageId]?.client;
+    const decided = readExecutionClient(sessionDirectory, executionId, metadata, frozen);
+    if (decided.client === null) {
+      throw new ConfigurationError(`Cannot resume execution ${executionId}: ${decided.reason}. Start a new attempt.`);
+    }
+    return decided.client;
   }
 
   /** Start a verify-only execution. It has no prompt and no provider conversation. */
@@ -666,11 +687,18 @@ export class SessionStore {
       if (latestPerStage) return [];
       throw new ConfigurationError(`Session ${sessionId} is cancelled without an execution.`);
     }
+    const records = new Map<string, AgentSessionRecord>();
     for (const item of cancelled) {
       if (item.metadata.kind === "verify") continue;
       if (!existsSync(item.context.conversationReadPath)) {
         throw new ConfigurationError(`Execution ${item.context.executionId} has no conversation to resume.`);
       }
+      const client = this.executionClient(sessionId, item.context.executionId);
+      const raw: unknown = JSON.parse(readFileSync(item.context.conversationReadPath, "utf8"));
+      const model = typeof item.metadata.model === "string" ? item.metadata.model : "";
+      const record = AgentSessionRecord.fromJson(raw, client, model, this.workspace);
+      record.client = client;
+      records.set(item.context.executionId, record);
     }
     const reopened: { executionId: string; stageId: string }[] = [];
     const timestamp = utcNow();
@@ -681,10 +709,7 @@ export class SessionStore {
       metadata.completed_at = null;
       writeJsonAtomic(path.join(context.directory, "execution.json"), metadata);
       if (metadata.kind !== "verify") {
-        const provider = typeof metadata.provider === "string" ? metadata.provider : "";
-        const model = typeof metadata.model === "string" ? metadata.model : "";
-        const raw = JSON.parse(readFileSync(context.conversationReadPath, "utf8")) as unknown;
-        const record = AgentSessionRecord.fromJson(raw, provider, model, this.workspace);
+        const record = records.get(context.executionId)!;
         record.status = "running";
         this.save(record, context);
       }
@@ -802,7 +827,7 @@ export class SessionStore {
       stage_id: stageId,
       stage_attempt: attempt,
       kind: "skip",
-      provider: null,
+      client: null,
       model: null,
       options: {},
       agent_id: null,
@@ -836,7 +861,7 @@ export class SessionStore {
       data: {
         execution_order: order,
         stage_attempt: attempt,
-        provider: "",
+        client: "",
         model: "",
         resumes_execution_id: null,
         kind: "skip",
@@ -1017,9 +1042,9 @@ export class SessionStore {
     if (
       plan.sessionStatus === "completed" &&
       previousStatus.workflow_id !== "agent" &&
-      this.metricsProviders !== null
+      this.metricsClients !== null
     ) {
-      sealSessionMetrics(this.workspace, context.sessionId, this.metricsProviders);
+      sealSessionMetrics(this.workspace, context.sessionId, this.metricsClients);
     }
     if (plan.sessionStatus === "completed") publishNextSuggestions(this.workspace, context.sessionId);
     if (plan.outputsMissing.length > 0) throw new OutputsMissing(plan.outputsMissing);
@@ -1047,7 +1072,7 @@ export class SessionStore {
     locked: boolean,
   ): void {
     let record = new AgentSessionRecord(
-      typeof metadata.provider === "string" ? metadata.provider : "unknown",
+      textField(metadata.client) ?? legacyClientOf(textField(metadata.provider)) ?? "unknown",
       typeof metadata.model === "string" ? metadata.model : "unknown",
       this.workspace,
       typeof metadata.agent_id === "string" ? metadata.agent_id : null,
@@ -1057,7 +1082,7 @@ export class SessionStore {
     const conversationPath = context.conversationReadPath;
     if (existsSync(conversationPath)) {
       const raw = JSON.parse(readFileSync(conversationPath, "utf8")) as unknown;
-      record = AgentSessionRecord.fromJson(raw, record.provider, record.model, record.workspace);
+      record = AgentSessionRecord.fromJson(raw, record.client, record.model, record.workspace);
       record.status = "failed";
       this.save(record, context);
     }
@@ -1131,7 +1156,7 @@ export class SessionStore {
   }
 
   private createExecution(
-    provider: string,
+    client: string,
     model: string,
     options: Record<string, string> | null,
     sessionId: string | null,
@@ -1178,7 +1203,7 @@ export class SessionStore {
       stage_id: stageId,
       stage_attempt: attempt,
       ...(verifyOnly ? { kind: "verify" } : {}),
-      provider: verifyOnly ? null : provider,
+      client: verifyOnly ? null : client,
       model: verifyOnly ? null : model,
       options: { ...(options ?? {}) },
       agent_id: null,
@@ -1197,7 +1222,7 @@ export class SessionStore {
       data: {
         execution_order: order,
         stage_attempt: attempt,
-        provider,
+        client,
         model,
         resumes_execution_id: resumesExecutionId,
       },
@@ -1313,7 +1338,7 @@ function writeFailureReport(
 ): void {
   const stageId = textField(metadata.stage_id) ?? "agent";
   const attempt = typeof metadata.stage_attempt === "number" ? metadata.stage_attempt : null;
-  const provider = textField(metadata.provider);
+  const client = textField(metadata.client) ?? legacyClientOf(textField(metadata.provider));
   const model = textField(metadata.model);
   const failureReason = textField(metadata.failure_reason);
   const lines = [
@@ -1324,8 +1349,8 @@ function writeFailureReport(
     `- Stage: \`${stageId}\`${attempt === null ? "" : ` (attempt ${attempt})`}`,
   ];
   if (metadata.kind === "verify") lines.push("- Kind: verify-only");
-  if (provider !== null || model !== null) {
-    lines.push(`- Provider: \`${provider ?? "unknown"}/${model ?? "unknown"}\``);
+  if (client !== null || model !== null) {
+    lines.push(`- Client: \`${client ?? "unknown"}/${model ?? "unknown"}\``);
   }
   if (failureReason !== null) lines.push(`- Failure reason: \`${failureReason}\``);
   if (typeof metadata.completed_at === "string") lines.push(`- Completed at: ${metadata.completed_at}`);
