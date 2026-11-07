@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.4.1
+
 ### Added
 
 - `migent workflow validate|render|save --session <id>` validates, renders, and saves the editable `workflow.yaml` of an existing prepared or stopped session. The draft may share its id with its project template, must keep the session's recorded id, and is checked against live config bindings and downstream references. `save` takes the session lock, needs the draft's `--base-hash`, and writes only the draft: a prepared session adopts it at start, a started session after `--refresh-workflow`.
@@ -107,26 +109,9 @@
 
 - `migent session continue <session> --stage <stage> --reply` keeps running the workflow after the answered stage. Before, it dispatched only that stage, like `--once`, and left downstream stages undispatched. `--stage` without `--reply` still dispatches one stage.
 
-## 0.3.3
-
-### Added
-
-- `migent doctor` warns about workflow and role keys Migent does not use, with a suggested key, and about decision `when` text left as the migration placeholder.
-
-- `migent session continue --reply` redirects a stopped (cancelled) workflow stage or role session. The reply runs as a new execution in the same conversation.
-
-### Changed
-
-- Agents ask questions by writing a JSON document to a request file whose path is in the response contract, then answering `status: question`. The response body is a normal report and is never parsed for questions, which removes the contradiction between "the body is JSON" and "use a blank line before the report body". An unusable file gets one correction turn, then the stage fails with `question_file_invalid` and an error that names the file, the problem and how to recover. `parseStageOutcome` from `@nodeint/migent-kernel` now reads response headers only; `resolveStageOutcome` loads the question file. Inline JSON in the response is no longer accepted.
-
-- Prompt templates and renderers live in the new `@nodeint/migent-prompts` package and render from packaged Markdown templates while preserving workflow and conversation behavior.
-
-- Stage prompts state status meanings once, describe the verify gate as engine behavior, name the artifact once, and render answered questions as readable Q/A text. Re-entry prompts name the task, the stage's previous response, and upstream artifacts updated since its last visit.
-
-- `migent init` renders role models and sample workflows from packaged project templates.
-
 ## Older versions
 
+- [0.3.3](https://github.com/nodeint/migent/releases/tag/v0.3.3)
 - [0.3.1](https://github.com/nodeint/migent/releases/tag/v0.3.1)
 - [0.3.0](https://github.com/nodeint/migent/releases/tag/v0.3.0)
 - [0.2.1](https://github.com/nodeint/migent/releases/tag/v0.2.1)
