@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { lstatSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { confirm as clackConfirm, isCancel } from "@clack/prompts";
 import {
@@ -17,6 +17,11 @@ import {
   patchWorkflowText,
   stringifyConfig,
   workflowsDirectory,
+  WORKFLOW_FREEZE_FILE,
+  SessionLock,
+  SessionLockHeldError,
+  parseYamlDocument,
+  sha256Hex,
   yamlHasComments,
   ConfigEditError,
   ConfigurationError,
@@ -34,6 +39,8 @@ interface Rewrite {
   path: string;
   text: string;
   notes: string[];
+  /** Session files only: the session directory to lock and the text the plan was made from. */
+  session?: { directory: string; original: string };
 }
 
 /** `configOnly` skips `.migent/workflows/`, for a check that never reads the project catalog. */
@@ -79,7 +86,33 @@ export async function runMigrate(
   if (!options.assumeYes && !(await accepted(options.confirm ?? null))) {
     return options.confirm == null && !process.stdin.isTTY ? 2 : 0;
   }
-  for (const rewrite of rewrites) writeFileSync(rewrite.path, rewrite.text, "utf8");
+  const locks: SessionLock[] = [];
+  try {
+    // Session files change only under the session lock, and only if they still match the plan.
+    for (const directory of [...new Set(rewrites.flatMap((item) => (item.session ? [item.session.directory] : [])))]) {
+      const lock = SessionLock.acquire(directory);
+      locks.push(lock);
+    }
+    for (const rewrite of rewrites) {
+      if (rewrite.session === undefined) continue;
+      let current: string | null = null;
+      try {
+        if (lstatSync(rewrite.path).isFile()) current = readFileSync(rewrite.path, "utf8");
+      } catch {
+        // Treated as changed below.
+      }
+      if (current !== rewrite.session.original) {
+        throw new ConfigurationError(`${path.relative(workspace, rewrite.path)} changed during migration. Nothing was written; run \`migent migrate\` again.`);
+      }
+    }
+    for (const rewrite of rewrites) writeFileSync(rewrite.path, rewrite.text, "utf8");
+  } catch (error) {
+    if (!(error instanceof SessionLockHeldError || error instanceof ConfigurationError)) throw error;
+    printError(`${error.message} Nothing was written.`);
+    return 2;
+  } finally {
+    for (const lock of locks) lock.release();
+  }
   process.stdout.write(`Upgraded schema to version ${SCHEMA_VERSION}.\n`);
   return 0;
 }
@@ -144,6 +177,7 @@ function pendingRewrites(workspace: string, clientIds: readonly string[]): Rewri
     updatedMerged: effective,
   });
   rewrites.push(...workflowRewrites(workspace, effective, clientIds));
+  rewrites.push(...sessionRewrites(workspace, effective, clientIds));
   return rewrites;
 }
 
@@ -269,6 +303,143 @@ function workflowRewrites(
 }
 
 
+
+/** Session `workflow.yaml` drafts and `workflow.frozen.yaml` pins follow the same migration as project workflows. */
+function isRealDirectory(target: string): boolean {
+  try {
+    return lstatSync(target).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function isRegularFile(target: string): boolean {
+  try {
+    return lstatSync(target).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/** The sessions root must really be `<workspace>/.migent/sessions`; a symlinked parent fails this. */
+function realSessionsRoot(workspace: string, root: string): string | null {
+  try {
+    const realRoot = realpathSync(root);
+    return realRoot === path.join(realpathSync(workspace), ".migent", "sessions") ? realRoot : null;
+  } catch {
+    return null;
+  }
+}
+
+function isDirectChild(realRoot: string, target: string): boolean {
+  try {
+    return path.dirname(realpathSync(target)) === realRoot;
+  } catch {
+    return false;
+  }
+}
+
+function sessionRewrites(
+  workspace: string,
+  config: Record<string, unknown>,
+  clientIds: readonly string[],
+): Rewrite[] {
+  const root = path.join(workspace, ".migent", "sessions");
+  const realRoot = realSessionsRoot(workspace, root);
+  if (realRoot === null || !isRealDirectory(root)) return [];
+  const rewrites: Rewrite[] = [];
+  for (const id of readdirSync(root).sort()) {
+    const directory = path.join(root, id);
+    // A symlinked session directory or file could point outside the workspace; leave it alone.
+    if (!isRealDirectory(directory) || !isDirectChild(realRoot, directory)) continue;
+    const draftPath = path.join(directory, "workflow.yaml");
+    const label = `.migent/sessions/${id}`;
+    let draftText: string | null = null;
+    let newDraftText: string | null = null;
+    if (isRegularFile(draftPath)) {
+      draftText = readFileSync(draftPath, "utf8");
+      const result = migratedText(draftText, config, clientIds, `${label}/workflow.yaml`);
+      if (result !== null) {
+        newDraftText = result.text;
+        rewrites.push({ path: draftPath, text: result.text, notes: result.notes, session: { directory, original: draftText } });
+      }
+    }
+    const frozenPath = path.join(directory, WORKFLOW_FREEZE_FILE);
+    if (!isRegularFile(frozenPath)) continue;
+    const frozenText = readFileSync(frozenPath, "utf8");
+    let document: Record<string, unknown>;
+    try {
+      const parsed = parseYamlDocument(frozenText);
+      if (!isRecord(parsed)) continue;
+      document = parsed;
+    } catch {
+      continue;
+    }
+    const body = document.workflow;
+    if (!isRecord(body)) continue;
+    let notes: string[];
+    try {
+      notes = migrateWorkflow(body, config, SCHEMA_VERSION, clientIds);
+    } catch (error) {
+      if (error instanceof ConfigurationError) throw error;
+      continue;
+    }
+    if (notes.length === 0) continue;
+    // The pin records the draft's hash; keep it matching when the draft is rewritten alongside.
+    if (draftText !== null && newDraftText !== null && document.source_sha256 === sha256Hex(draftText)) {
+      document.source_sha256 = sha256Hex(newDraftText);
+    }
+    rewrites.push({
+      path: frozenPath,
+      text: stringifyConfig(document),
+      session: { directory, original: frozenText },
+      notes: notes.map((note) =>
+        note.startsWith("schema_version") ? `Migrated ${label}/${WORKFLOW_FREEZE_FILE} ${note}` : `${label}/${WORKFLOW_FREEZE_FILE}: ${note}`,
+      ),
+    });
+  }
+  return rewrites;
+}
+
+function migratedText(
+  original: string,
+  config: Record<string, unknown>,
+  clientIds: readonly string[],
+  relative: string,
+): { text: string; notes: string[] } | null {
+  let parsed: unknown;
+  try {
+    parsed = parseYamlDocument(original);
+  } catch {
+    return null;
+  }
+  if (!isRecord(parsed)) return null;
+  const updated = structuredClone(parsed);
+  let changed: string[];
+  try {
+    changed = migrateWorkflow(updated, config, SCHEMA_VERSION, clientIds);
+  } catch (error) {
+    if (error instanceof ConfigurationError) throw error;
+    return null;
+  }
+  if (changed.length === 0) return null;
+  let text: string;
+  try {
+    text = patchWorkflowText(original, updated);
+  } catch (error) {
+    if (!(error instanceof ConfigurationError)) throw error;
+    text = stringifyConfig(updated);
+    parseWorkflowMapping(updated, "migrated workflow");
+  }
+  if (text === original) return null;
+  const notes = changed.map((note) =>
+    note.startsWith("schema_version") ? `Migrated ${relative} ${note}` : `${relative}: ${note}`,
+  );
+  if (yamlHasComments(original) && !yamlHasComments(text)) {
+    notes.push(`${relative}: comments could not be preserved by this migration`);
+  }
+  return { text, notes };
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
