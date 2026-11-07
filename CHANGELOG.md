@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.5.1
+
 ### Changed
 
 - **Breaking:** A client quota failure is no longer handled automatically. Migent still detects it and records `failure_reason: quota`, the reset time (`retry_at`), the window (`quota_window`), and the `provider.quota` event (also shown in `failure.md`, and in `session watch`/`session show` for each stage whose latest execution failed on quota), but the stage now fails like any other: no client parking, shared waits, sleeping, or automatic retry after reset, and role sessions no longer wait and rerun. Full runs report it as `stage_failed` (exit 3); `--once` and `--stage` still exit 8. `session continue` reruns the stage.
@@ -95,30 +97,10 @@
 - OpenCode sessions retain their identity before provider startup. Cancellation and timeout explicitly interrupt the server-side turn before local process cleanup, retry early session-creation races, and warn when remote cleanup cannot be confirmed.
 - `response.md` holds only the model's response. A provider that cannot start leaves it absent instead of writing the error text there. A failed turn also no longer stores Migent's error as an assistant message in `conversation.json`, so a later resume cannot replay that error as something the model said.
 
-## 0.3.5
-
-### Added
-
-- `migent doctor --session <id>` validates the workflow one session runs without starting it: a prepared session's editable `workflow.yaml`, a started session's `workflow.frozen.yaml` with its pinned roles and targets, or an older session's live workflow. It checks only that workflow and its provider CLIs, is read-only, reports the checked source and path (`--json` adds a `session` object), and warns when a frozen session differs from live files.
-
-- `migent session prepare` now writes an empty `task.md` and an editable `workflow.yaml` in the session directory. The draft is the session's workflow source, so a prepared session can be adjusted without changing `.migent/workflows/`; `session run --session` validates the draft, requires its `id` to match, and freezes it when the session starts.
-
-- `migent session run --session <id>` starts a prepared workflow session from its recorded workflow, so `--workflow` is optional. A given `--workflow` must still match the session's workflow id. Creating a session still requires `--workflow`.
-
-### Changed
-
-- The README explains role sessions, workflow capabilities, and the roadmap, with expanded setup and workflow examples, role instructions, human questions, and published outputs.
-
-- The Migent skill now provides a command guide with usage scenarios and routes detailed workflow, role, resume, reply, and configuration tasks to focused references.
-
-### Fixed
-
-- A session no longer stays stuck in `running` when `migent session run` is killed right after a stage starts. Each execution now records its host and owner pid when it is created, not only after the provider spawns, so `migent session continue` can tell the owner is gone, fail the orphaned execution, and resume instead of refusing with "has an unverified live provider process". Executions created by earlier versions still need manual recovery (#51).
-
 ## Older versions
 
+- [0.3.5](https://github.com/nodeint/migent/releases/tag/v0.3.5)
 - [0.3.4](https://github.com/nodeint/migent/releases/tag/v0.3.4)
-
 - [0.3.3](https://github.com/nodeint/migent/releases/tag/v0.3.3)
 - [0.3.1](https://github.com/nodeint/migent/releases/tag/v0.3.1)
 - [0.3.0](https://github.com/nodeint/migent/releases/tag/v0.3.0)
