@@ -233,6 +233,8 @@ export interface CatalogProblem {
   files?: string[];
   /** Author-coordinate path of the node the problem is about, when the rule can name one. */
   path?: (string | number)[];
+  /** The problem concerns the external entry passed to `checkWorkflowCatalog`, whatever id it shares. */
+  external?: true;
 }
 
 /** A catalog fact the draft parser may not have been able to read. */
@@ -273,6 +275,7 @@ export function catalogEntryFromDocument(file: string, document: WorkflowDocumen
 export function checkWorkflowCatalog(
   entries: ReadonlyArray<WorkflowCatalogEntry>,
   failedIds: ReadonlySet<string> = new Set(),
+  external: WorkflowCatalogEntry | null = null,
 ): { documents: Record<string, WorkflowDocument>; problems: CatalogProblem[] } {
   const failed = new Set(failedIds);
   const problems: CatalogProblem[] = [];
@@ -299,25 +302,47 @@ export function checkWorkflowCatalog(
   }
   for (const [workflowId, group] of grouped) {
     if (group.length > 1) continue;
-    const entry = group[0]!;
-    if (entry.requires.known && entry.requires.value !== null && !isDraftEntry(entries, entry.requires.value.workflow)) {
-      const messages: string[] = [];
-      checkRequires(workflowId, entry.requires.value, documents, failed, messages);
-      for (const message of messages) problems.push({ code: "requires-invalid", message, workflow: workflowId });
+    checkEntryReferences(group[0]!, workflowId, entries, documents, failed, problems, false);
+  }
+  // An external entry (a session draft) is checked against the catalog but is never part of it, so it
+  // may share an id with a catalog workflow without a duplicate-id finding.
+  if (external !== null) {
+    const workflowId = external.id.known ? external.id.value : "";
+    if (external.id.known && !external.stagesDeclared) {
+      problems.push({ code: "no-stages", message: `${workflowId}: declares no stages.`, workflow: workflowId, external: true });
     }
-    for (const [index, next] of entry.downstream.entries()) {
-      if (!next.workflow.known) continue;
-      if (!Object.hasOwn(documents, next.workflow.value) && !isDraftEntry(entries, next.workflow.value)) {
-        problems.push({
-          code: "unknown-downstream",
-          message: `${workflowId}: downstream workflow ${next.workflow.value} is not in .migent/workflows.`,
-          workflow: workflowId,
-          path: ["downstream", next.index ?? index, "workflow"],
-        });
-      }
-    }
+    checkEntryReferences(external, workflowId, entries, documents, failed, problems, true);
   }
   return { documents, problems };
+}
+
+function checkEntryReferences(
+  entry: WorkflowCatalogEntry,
+  workflowId: string,
+  entries: readonly WorkflowCatalogEntry[],
+  documents: Record<string, WorkflowDocument>,
+  failed: Set<string>,
+  problems: CatalogProblem[],
+  external: boolean,
+): void {
+  const mark = external ? { external: true as const } : {};
+  if (entry.requires.known && entry.requires.value !== null && !isDraftEntry(entries, entry.requires.value.workflow)) {
+    const messages: string[] = [];
+    checkRequires(workflowId, entry.requires.value, documents, failed, messages);
+    for (const message of messages) problems.push({ code: "requires-invalid", message, workflow: workflowId, ...mark });
+  }
+  for (const [index, next] of entry.downstream.entries()) {
+    if (!next.workflow.known) continue;
+    if (!Object.hasOwn(documents, next.workflow.value) && !isDraftEntry(entries, next.workflow.value)) {
+      problems.push({
+        code: "unknown-downstream",
+        message: `${workflowId}: downstream workflow ${next.workflow.value} is not in .migent/workflows.`,
+        workflow: workflowId,
+        path: ["downstream", next.index ?? index, "workflow"],
+        ...mark,
+      });
+    }
+  }
 }
 
 /** True when `workflowId` names an entry the catalog could not fully parse (for example the draft). */

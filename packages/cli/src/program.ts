@@ -135,7 +135,10 @@ export function createProgram(status: CliStatus, options: { quietErrors?: boolea
       .option("--format <format>", "Draft format: yaml or json. Required for stdin (`-`).")
       .option("--json", "Print one JSON envelope with the diagnostics.");
     if (kind === "config") sub.option("--scope <scope>", "Layer the draft replaces: project or local.", "project");
-    if (kind === "workflow") sub.option("--target <file>", "Workflow file name under .migent/workflows/ (default <id>.yaml).");
+    if (kind === "workflow") {
+      sub.option("--target <file>", "Workflow file name under .migent/workflows/ (default <id>.yaml).");
+      sub.option("--session <id>", "Use the editable workflow draft of an existing session (.migent/sessions/<id>/workflow.yaml) instead of a project workflow. Excludes --target. Save only updates the draft; a prepared session adopts it at start, a started session after `session continue --refresh-workflow`.");
+    }
     if (mode !== "validate") sub.option("--preserve-comments", "Keep the target's comments, key order and line endings.");
     if (mode === "save") sub.option("--base-hash <sha256>", "SHA-256 of the file being replaced. Without it, save only creates a new file.");
     sub.action((draft: string, _local: OptionValues, self: Command) => {
@@ -149,6 +152,7 @@ export function createProgram(status: CliStatus, options: { quietErrors?: boolea
           ...(typeof options.scope === "string" ? { scope: options.scope } : {}),
           ...(typeof options.format === "string" ? { format: options.format } : {}),
           ...(typeof options.target === "string" ? { target: options.target } : {}),
+          ...(typeof options.session === "string" ? { session: options.session } : {}),
           ...(typeof options.baseHash === "string" ? { baseHash: options.baseHash } : {}),
           preserveComments: options.preserveComments === true,
           asJson: options.json === true,

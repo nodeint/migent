@@ -6,6 +6,7 @@ import { normalizeUsage } from "./client-policy.js";
 import { clientOfCommand, executionCommands, legacyExecutionClient } from "./legacy-provider.js";
 import { ConfigurationError } from "./errors.js";
 import { listSessionRows, readStatusFileState } from "./query.js";
+import { exitAnomaliesOf } from "./exit-anomaly.js";
 import { isRecord } from "./record.js";
 import { EXECUTIONS_DIRNAME, MIGENT_DIRNAME, SESSIONS_DIRNAME } from "./runtime.js";
 import { readParsedEvents, streamFiles, type ParsedEvent } from "./session-events.js";
@@ -280,6 +281,14 @@ function sessionObject(
   const executionClients = resolveExecutionClients(events, executions, status);
   const turns = normalizeTurns(events, executionClients, clients).filter((turn) => known.has(turn.executionId));
   const cancelled = countByExecution(events, "provider.cancelled", known);
+  const anomalies = new Map<string, { total: number; accepted: number }>();
+  for (const anomaly of exitAnomaliesOf(events)) {
+    if (!known.has(anomaly.executionId)) continue;
+    const count = anomalies.get(anomaly.executionId) ?? { total: 0, accepted: 0 };
+    count.total += 1;
+    if (anomaly.accepted) count.accepted += 1;
+    anomalies.set(anomaly.executionId, count);
+  }
   const revisionTargets = revisionMap(executions, workflow);
   const routed = routedFrom(executions, workflow);
   const executionObjects = executions.map((execution) =>
@@ -288,6 +297,7 @@ function sessionObject(
       events,
       turns,
       cancelled.get(execution.id) ?? 0,
+      anomalies.get(execution.id) ?? { total: 0, accepted: 0 },
       workflow,
       routed.get(execution.id) ?? null,
       agentRole,
@@ -298,7 +308,11 @@ function sessionObject(
   let turnsCount = 0;
   let uncaptured = 0;
   let verifyMs = 0;
+  let anomalyTotal = 0;
+  let anomalyAccepted = 0;
   for (const execution of executionObjects) {
+    anomalyTotal += execution.anomalies.total;
+    anomalyAccepted += execution.anomalies.accepted;
     turnsCount += execution.turns as number;
     uncaptured += execution.uncaptured_turns as number;
     verifyMs += execution.verifyMs as number;
@@ -331,6 +345,8 @@ function sessionObject(
       verify_seconds: roundSeconds(verifyMs),
       turns: turnsCount,
       uncaptured_turns: uncaptured,
+      provider_exit_anomalies: anomalyTotal,
+      provider_exit_anomalies_accepted: anomalyAccepted,
       usage: usageObject(sessionTotals),
       usage_missing: missingObject(sessionTotals),
       cost_partial: sessionTotals.seen.cost_usd && sessionTotals.missing.cost_usd > 0,
@@ -351,6 +367,7 @@ function executionObject(
   events: ParsedEvent[],
   turns: NormalizedTurn[],
   cancelled: number,
+  anomalies: { total: number; accepted: number },
   workflow: WorkflowDocument | null,
   routedFromId: string | null,
   agentRole: string | null,
@@ -359,6 +376,7 @@ function executionObject(
   public: Record<string, unknown>;
   turns: number;
   uncaptured_turns: number;
+  anomalies: { total: number; accepted: number };
   usage: TurnUsage;
   usage_missing: Record<UsageField, number>;
   verifyMs: number;
@@ -379,6 +397,7 @@ function executionObject(
   return {
     turns: ownTurns.length,
     uncaptured_turns: uncaptured,
+    anomalies,
     usage: usageObject(totals),
     usage_missing: missingObject(totals),
     verifyMs: verify.milliseconds,
@@ -410,6 +429,8 @@ function executionObject(
       verify_seconds: roundSeconds(verify.milliseconds),
       turns: ownTurns.length,
       uncaptured_turns: uncaptured,
+      provider_exit_anomalies: anomalies.total,
+      provider_exit_anomalies_accepted: anomalies.accepted,
       usage: usageObject(totals),
       usage_missing: missingObject(totals),
       verify: verify.public,

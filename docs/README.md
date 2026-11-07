@@ -36,7 +36,7 @@ must be checked against the current source when changing behavior.
 | Answer an agent question or unblock a run | [Human interaction](human-in-the-loop.md) | [CLI: Session commands](cli.md#session-commands) |
 | Diagnose missing tokens, partial costs, or cumulative usage | [Session metrics](session-metrics.md) | [Adapters: Failures and usage](adpaters.md#failures-and-usage) |
 | Investigate a failed process start or client exit | [Diagnostics](diagnostics.md) | [Adapters: Failures and usage](adpaters.md#failures-and-usage) |
-| Validate, render, or save draft configuration/workflows | [CLI: Authoring drafts](cli.md#authoring-drafts) | [Agent configuration](agents.md), [Workflows](workflows.md) |
+| Validate, render, or save draft configuration/workflows, including a session's `workflow.yaml` | [CLI: Authoring drafts](cli.md#authoring-drafts) | [CLI: Session drafts](cli.md#session-drafts), [Sessions](sessions.md), [Agent configuration](agents.md), [Workflows](workflows.md) |
 | Find proposals rather than implemented behavior | [Backlog](backlogs.md) | Verify current source before relying on a proposal |
 
 ## Reading and maintenance rules

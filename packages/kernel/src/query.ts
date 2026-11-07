@@ -1,5 +1,7 @@
+import { readExitAnomalies } from "./exit-anomaly.js";
+import { parseExecutionId } from "./session-events.js";
 import { latestDiagnosticsPathIn } from "./session-diagnostics.js";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { isRecord } from "./record.js";
 import { MIGENT_DIRNAME, SESSIONS_DIRNAME } from "./runtime.js";
@@ -108,7 +110,32 @@ export function watchSnapshot(
   if (typeof status.title === "string" && status.title !== "") snapshot.title = status.title;
   const diagnostics = latestDiagnosticsPathIn(sessionDirectory);
   if (diagnostics !== null) snapshot.diagnostics = diagnostics;
+  const exitAnomalies = exitAnomalySummaries(sessionDirectory);
+  if (exitAnomalies.length > 0) snapshot.exit_anomalies = exitAnomalies;
   return snapshot;
+}
+
+/** One entry per stage that recorded an exit-only anomaly: its latest anomaly and the stage's count. */
+function exitAnomalySummaries(sessionDirectory: string): Record<string, unknown>[] {
+  const byStage = new Map<string, { latest: ReturnType<typeof readExitAnomalies>[number]; stageId: string; count: number }>();
+  for (const anomaly of readExitAnomalies(sessionDirectory)) {
+    const stageId = anomaly.stageId ?? parseExecutionId(anomaly.executionId)?.stageId ?? anomaly.executionId;
+    const current = byStage.get(stageId);
+    byStage.set(stageId, { latest: anomaly, stageId, count: (current?.count ?? 0) + 1 });
+  }
+  return [...byStage.values()].map(({ latest, stageId, count }) => {
+    const relative = path.posix.join("executions", latest.executionId, "diagnostics.json");
+    const present = existsSync(path.join(sessionDirectory, "executions", latest.executionId, "diagnostics.json"));
+    return {
+      stage_id: stageId,
+      execution_id: latest.executionId,
+      turn: latest.turn,
+      exit_code: latest.exitCode,
+      accepted: latest.accepted,
+      count,
+      diagnostics: present ? relative : null,
+    };
+  });
 }
 
 export function listSessionRows(workspace: string): string[][] {

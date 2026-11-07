@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test, vi } from "vitest";
 import { ClaudeCodeClient } from "../../adapters/src/clients/claude-code-client.ts";
@@ -10,7 +10,9 @@ import {
   type RawFailure,
   type ResponseSource,
   createWorkflowSession,
+  sessionMetrics,
 } from "../src/index.ts";
+import { watchSnapshot } from "../src/query.ts";
 import { ScriptedClient, tempDir, registryOf } from "./support.ts";
 
 vi.setConfig({ testTimeout: 60_000 });
@@ -332,4 +334,133 @@ test("AC9, real claude: an exit-1 reply is one completed verdict and one anomaly
   expect(named(list, "provider.turn_completed")).toHaveLength(1);
   expect(named(list, "provider.turn_failed")).toHaveLength(0);
   expect(named(list, "provider.exit_anomaly")).toHaveLength(1);
+});
+
+function sessionDirectory(workspace: string, sessionId: string): string {
+  return path.join(workspace, ".migent", "sessions", sessionId);
+}
+
+function counters(value: unknown): Record<string, unknown> {
+  const record = value as Record<string, unknown>;
+  return {
+    total: record.provider_exit_anomalies,
+    accepted: record.provider_exit_anomalies_accepted,
+  };
+}
+
+test("metrics: an accepted exit-only turn counts once in the execution row and the totals", async () => {
+  const { workspace, sessionId } = setup(workflowText());
+  const provider = new ExitProvider([{ reply: OK, artifact: "# notes\n", exit: 1, source: "model" }]);
+  const result = await runStage(provider, workspace, sessionId);
+  const metrics = sessionMetrics(workspace, sessionId, {});
+  expect(counters(metrics.totals)).toEqual({ total: 1, accepted: 1 });
+  const rows = metrics.executions as Array<Record<string, unknown>>;
+  expect(rows.map((row) => [row.execution_id, counters(row)])).toEqual([
+    [result.execution_id, { total: 1, accepted: 1 }],
+  ]);
+  expect(counters(sessionMetrics(workspace, sessionId, {}).totals)).toEqual({ total: 1, accepted: 1 });
+});
+
+test("metrics: a rejected exit-only turn counts in the total and not in the accepted subset", async () => {
+  const { workspace, sessionId } = setup(workflowText());
+  await runStage(new ExitProvider([{ reply: "no header", exit: 1, source: "model" }]), workspace, sessionId);
+  const metrics = sessionMetrics(workspace, sessionId, {});
+  expect(counters(metrics.totals)).toEqual({ total: 1, accepted: 0 });
+});
+
+test("metrics: clean turns and provider errors record zero anomalies", async () => {
+  const { workspace, sessionId } = setup(workflowText());
+  await runStage(new ExitProvider([{ reply: OK, artifact: "# notes\n", exit: 0, source: "model" }]), workspace, sessionId);
+  await runStage(
+    new ExitProvider([{ reply: OK, exit: 1, origin: "provider-error", source: "model" }]),
+    workspace,
+    sessionId,
+  );
+  expect(counters(sessionMetrics(workspace, sessionId, {}).totals)).toEqual({ total: 0, accepted: 0 });
+});
+
+test("metrics: a resumed execution counts each anomaly once, even on a shared turn number", async () => {
+  const { workspace, sessionId } = setup(workflowText());
+  const provider = new ExitProvider([
+    { reply: OK, artifact: "# notes\n", exit: 1, source: "model" },
+    { reply: OK, artifact: "# notes\n", exit: 1, source: "model" },
+  ]);
+  const first = await runStage(provider, workspace, sessionId);
+  const second = await runStage(provider, workspace, sessionId, { resumeExecutionId: first.execution_id });
+  const metrics = sessionMetrics(workspace, sessionId, {});
+  expect(counters(metrics.totals)).toEqual({ total: 2, accepted: 2 });
+  const rows = metrics.executions as Array<Record<string, unknown>>;
+  expect(rows.map((row) => [row.execution_id, counters(row)])).toEqual([
+    [first.execution_id, { total: 1, accepted: 1 }],
+    [second.execution_id, { total: 1, accepted: 1 }],
+  ]);
+});
+
+test("snapshot: lists the stage's latest anomaly with its diagnostics pointer", async () => {
+  const { workspace, sessionId } = setup(workflowText());
+  const first = await runStage(
+    new ExitProvider([{ reply: OK, artifact: "# notes\n", exit: 1, source: "model" }]),
+    workspace,
+    sessionId,
+  );
+  const second = await runStage(
+    new ExitProvider([{ reply: "no header", exit: 2, source: "model" }]),
+    workspace,
+    sessionId,
+    { resumeExecutionId: first.execution_id },
+  );
+  const directory = sessionDirectory(workspace, sessionId);
+  const snapshot = watchSnapshot(directory);
+  const entries = snapshot.exit_anomalies as Array<Record<string, unknown>>;
+  expect(entries).toHaveLength(1);
+  expect(entries[0]).toMatchObject({
+    stage_id: "implement",
+    execution_id: second.execution_id,
+    exit_code: 2,
+    accepted: false,
+    count: 2,
+  });
+  const pointer = entries[0]?.diagnostics;
+  expect(pointer).toBe(`executions/${second.execution_id}/diagnostics.json`);
+  expect(existsSync(path.join(directory, String(pointer)))).toBe(true);
+});
+
+test("snapshot: the key is absent when no anomaly was recorded", async () => {
+  const { workspace, sessionId } = setup(workflowText());
+  await runStage(new ExitProvider([{ reply: OK, artifact: "# notes\n", exit: 0, source: "model" }]), workspace, sessionId);
+  expect(watchSnapshot(sessionDirectory(workspace, sessionId))).not.toHaveProperty("exit_anomalies");
+});
+
+test("metrics: two anomalies of one execution on the same turn number are both counted, and stay stable", async () => {
+  const { workspace, sessionId } = setup(workflowText());
+  const result = await runStage(
+    new ExitProvider([{ reply: OK, artifact: "# notes\n", exit: 1, source: "model" }]),
+    workspace,
+    sessionId,
+  );
+  // A resumed execution derives its turn number from the conversation, so a later anomaly can reuse
+  // the turn of an earlier one. Replay that shape: same execution id, same turn, next sequence number.
+  const log = path.join(sessionDirectory(workspace, sessionId), "events.jsonl");
+  const original = named(events(workspace, sessionId), "provider.exit_anomaly")[0];
+  expect(original).toBeDefined();
+  const lastSeq = Math.max(...events(workspace, sessionId).map((item) => Number(item.seq)));
+  const repeat = {
+    ...original,
+    seq: lastSeq + 1,
+    details: { ...details(original), accepted: false, reason: "replayed on the same turn" },
+  };
+  appendFileSync(log, `${JSON.stringify(repeat)}\n`, "utf8");
+  const anomalies = named(events(workspace, sessionId), "provider.exit_anomaly");
+  expect(anomalies.map((item) => [item.execution_id, details(item).turn])).toEqual([
+    [result.execution_id, 1],
+    [result.execution_id, 1],
+  ]);
+  for (let reread = 0; reread < 2; reread += 1) {
+    const metrics = sessionMetrics(workspace, sessionId, {});
+    expect(counters(metrics.totals)).toEqual({ total: 2, accepted: 1 });
+    const rows = metrics.executions as Array<Record<string, unknown>>;
+    expect(rows.map((row) => counters(row))).toEqual([{ total: 2, accepted: 1 }]);
+  }
+  const entry = (watchSnapshot(sessionDirectory(workspace, sessionId)).exit_anomalies as Array<Record<string, unknown>>)[0];
+  expect(entry).toMatchObject({ count: 2, accepted: false });
 });

@@ -2,22 +2,32 @@
 
 ## Unreleased
 
+### Changed
+
+- **Breaking:** Agents select a CLI through `client.type`; the provider abstraction is removed and configuration/workflows use schema version 6. Run `migent migrate` to preserve existing client selections and options. Replace provider selection flags with `--client` and use `migent get clients` instead of `get providers`.
+- Role sessions honor the configured client. Claude Code's session identity and default `permission_mode=bypassPermissions` follow `claude-code`; quota waits are grouped by client.
+
+### Fixed
+
+- Migration preserves layered client selections from v4/v5, writes inline workflow agents, keeps comments on retained role/stage fields, and verifies the resulting YAML before writing.
+- Legacy resume checks every turn's client evidence before creating or reopening executions, refusing missing or conflicting evidence without sending native IDs to another CLI. Metrics parse each turn with its launched client and count captures with no identifiable client as uncaptured.
+- Shared quota waits retry all affected stages after reset within the concurrency limit, stop repeated quota failures for the same window, and resolve legacy wait keys from execution evidence.
+
+## 0.4.1
+
 ### Added
 
+- `migent workflow validate|render|save --session <id>` validates, renders, and saves the editable `workflow.yaml` of an existing prepared or stopped session. The draft may share its id with its project template, must keep the session's recorded id, and is checked against live config bindings and downstream references. `save` takes the session lock, needs the draft's `--base-hash`, and writes only the draft: a prepared session adopts it at start, a started session after `--refresh-workflow`.
+- Exit-only provider anomalies (non-zero exit, no provider error) are now visible without opening executions: `metrics.json` counts `provider_exit_anomalies` and `provider_exit_anomalies_accepted` in `totals` and per execution, and `session show` / `session follow` print an `exit_anomaly` line per affected stage (`exit_anomalies` in JSON) that points to `diagnostics.json` (#73).
 - Every abnormal provider turn now leaves `diagnostics.json` (schema version 2): a non-zero exit even when stderr was empty, a provider-reported error at exit 0, and a non-zero exit accepted as a completed turn. It adds `agent_id`, `failure.origin`, `failure.exit_code`, `failure.signal`, `stderr` sizes with a `drain` state, a content-free `stream_summary` (event labels and counts; CLI clients gain an optional `eventLabel()`), and a `result_state` of what the turn left (reply, artifact, `response.md`) next to Migent's own check results and the provider-turn verdict. `execution.json` records `final_turn` for provider executions, and `failure.md` uses it to name the provider failure as the cause only when the diagnostics belong to the turn that ended the execution. `migent doctor --session` also shows origin, turn and verdict (#72).
 - `migent get providers`, `get clients`, `get models [--client <id>]`, `get options [--client <id>] [--native]`, and `get efforts [--client <id>]` expose machine-level discovery as separate resource types, each with a singular lookup, `-o json|yaml|name`, and `--json`. The machine types work outside a project. `get providers` and `get clients` run no subprocess; `get clients` reports PATH findings only. `get models`, `get efforts`, and `get options --native` ask each selected client's own CLI, warn on stderr for a client that is skipped or fails, and still print the other clients' rows and exit 0. A singular model, option, or effort is keyed by (client, name) and asks for `--client` when more than one client matches.
 - The doctor package accepts a client-keyed catalog source in `loadCatalog` and `loadOptionValues`, so catalog discovery uses a client's own command, parser, and stdin instead of a provider with the same name. Existing provider callers are unchanged.
 
 ### Changed
 
-- **Breaking (implementation snapshot, workflow review pending):** Agents select `client.type` directly; configuration and workflows use schema version 6. Run `migent migrate` and replace provider selection flags with client selection flags.
 - **Breaking:** `migent provider list` is removed, including `--json`. It exits 2 and names `migent get providers`, `migent get clients`, `migent get models`, `migent get options`, and `migent get efforts`, and `provider` no longer appears in help. The `{ok, providers}` envelope, `headless_options`, and the exit-1-when-no-models rule are gone; the new lists print a plain array and exit 0, including when every client is skipped or fails.
 
 ### Fixed
-
-- Client migration writes inline workflow agents, preserves role-agent comments and inherited v4 client selections, and checks the written document. Resume validates every turn's client evidence before creating or reopening executions. Shared quota waits retry all affected stages once per reset window, and legacy waits and metrics use recorded client evidence.
-
-- Schema v6 migration preserves shared client defaults when local configuration selects another client. Legacy metrics use execution evidence for both the client field and usage parsing.
 
 - Stderr is read after the provider's pipes close, so lines written just before a non-zero exit are no longer lost (#72).
 
@@ -110,26 +120,9 @@
 
 - `migent session continue <session> --stage <stage> --reply` keeps running the workflow after the answered stage. Before, it dispatched only that stage, like `--once`, and left downstream stages undispatched. `--stage` without `--reply` still dispatches one stage.
 
-## 0.3.3
-
-### Added
-
-- `migent doctor` warns about workflow and role keys Migent does not use, with a suggested key, and about decision `when` text left as the migration placeholder.
-
-- `migent session continue --reply` redirects a stopped (cancelled) workflow stage or role session. The reply runs as a new execution in the same conversation.
-
-### Changed
-
-- Agents ask questions by writing a JSON document to a request file whose path is in the response contract, then answering `status: question`. The response body is a normal report and is never parsed for questions, which removes the contradiction between "the body is JSON" and "use a blank line before the report body". An unusable file gets one correction turn, then the stage fails with `question_file_invalid` and an error that names the file, the problem and how to recover. `parseStageOutcome` from `@nodeint/migent-kernel` now reads response headers only; `resolveStageOutcome` loads the question file. Inline JSON in the response is no longer accepted.
-
-- Prompt templates and renderers live in the new `@nodeint/migent-prompts` package and render from packaged Markdown templates while preserving workflow and conversation behavior.
-
-- Stage prompts state status meanings once, describe the verify gate as engine behavior, name the artifact once, and render answered questions as readable Q/A text. Re-entry prompts name the task, the stage's previous response, and upstream artifacts updated since its last visit.
-
-- `migent init` renders role models and sample workflows from packaged project templates.
-
 ## Older versions
 
+- [0.3.3](https://github.com/nodeint/migent/releases/tag/v0.3.3)
 - [0.3.1](https://github.com/nodeint/migent/releases/tag/v0.3.1)
 - [0.3.0](https://github.com/nodeint/migent/releases/tag/v0.3.0)
 - [0.2.1](https://github.com/nodeint/migent/releases/tag/v0.2.1)

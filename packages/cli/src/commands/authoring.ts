@@ -10,7 +10,11 @@ import {
   ConfigurationError,
   buildDraftSourceMap,
   configPath,
+  locateSessionDirectory,
   mergeConfigLayers,
+  resolveSessionDraft,
+  SessionLock,
+  type SessionDraft,
   loadYamlMapping,
   localConfigPath,
   parseDraftText,
@@ -36,6 +40,8 @@ export interface AuthoringOptions {
   scope?: string;
   format?: string;
   target?: string;
+  /** Id of an existing session whose editable workflow draft is the destination. */
+  session?: string;
   baseHash?: string;
   asJson?: boolean;
   /** Keep the target's comments, key order and line endings on render/save. */
@@ -185,6 +191,21 @@ function execute(
   context: Context,
   emit: (exit: number, items: Diagnostic[], extra?: Record<string, unknown>) => number,
 ): number {
+  // A session save holds the session lock from before it reads mutable session state until the write ends.
+  const held: { lock: SessionLock | null } = { lock: null };
+  try {
+    return executeDraft(options, context, emit, held);
+  } finally {
+    held.lock?.release();
+  }
+}
+
+function executeDraft(
+  options: AuthoringOptions,
+  context: Context,
+  emit: (exit: number, items: Diagnostic[], extra?: Record<string, unknown>) => number,
+  held: { lock: SessionLock | null },
+): number {
   const { kind, mode } = options;
   const invocation = (message: string): Finish => new Finish(EXIT_IO, [plain("invalid-invocation", message)]);
 
@@ -205,6 +226,8 @@ function execute(
     throw invocation("--preserve-comments applies only to render and save.");
   }
   if (options.target !== undefined && kind !== "workflow") throw invocation("--target applies only to workflow.");
+  if (options.session !== undefined && kind !== "workflow") throw invocation("--session applies only to workflow.");
+  if (options.session !== undefined && options.target !== undefined) throw invocation("--session and --target are mutually exclusive.");
   if (options.target !== undefined && !(FILE_NAME.test(options.target) && options.target.endsWith(".yaml"))) {
     throw invocation("--target must be a plain *.yaml file name.");
   }
@@ -222,14 +245,26 @@ function execute(
   context.text = text;
 
   const workspace = locateWorkspace(scope, kind);
+  let session: SessionDraft | null = null;
+  if (options.session !== undefined) {
+    if (mode === "save") {
+      const directory = locateSessionDirectory(workspace, options.session);
+      held.lock = SessionLock.tryAcquire(directory);
+      if (held.lock === null) {
+        throw new Finish(EXIT_CONFLICT, [plain("session-locked", `Session ${options.session} is locked by a running process; try again when it stops.`)]);
+      }
+    }
+    // Under the lock for a save, so the status it checks cannot change before the write.
+    session = resolveSessionDraft(workspace, options.session, { forSave: mode === "save" });
+  }
   const clients = clientRegistry();
-  const draftSource = kind === "config" ? { layer: scope } as const : { workflow: options.target ?? "" };
+  const draftSource = kind === "config" ? { layer: scope } as const : { workflow: session?.relativePath ?? options.target ?? "" };
   let draft: Record<string, unknown>;
   try {
     draft = parseDraftText(text, format);
   } catch (error) {
     if (!(error instanceof ConfigurationError)) throw error;
-    if (kind === "workflow") context.file = options.target ?? "";
+    if (kind === "workflow") context.file = session?.relativePath ?? options.target ?? "";
     throw new Finish(EXIT_INVALID, [{
       severity: "error",
       code: error.code ?? "syntax",
@@ -273,19 +308,27 @@ function execute(
     }
     diagnostics = [...companionProblems, ...validateConfigDraft({ scope, draft, companion }, clients)];
   } else {
-    const id = draft.id;
-    const derived = typeof id === "string" && FILE_NAME.test(id) ? `${id}.yaml` : null;
-    const file = options.target ?? derived;
-    context.file = file ?? "";
-    if (file === null && mode === "save") {
-      throw new Finish(EXIT_INVALID, [{ severity: "error", code: "invalid-value", message: "Cannot derive a file name from id; pass --target.", path: ["id"], source: { workflow: "" } }]);
-    }
-    const name = file ?? "";
-    destination = path.join(workflowsDirectory(workspace), name);
-    label = `workflows/${name}`;
-    const siblings = readSiblings(workflowsDirectory(workspace), name);
     const config = loadConfigLayers(workspace);
-    diagnostics = validateWorkflowDraft({ draft, file: name, siblings, config }, clients);
+    if (session !== null) {
+      context.file = session.relativePath;
+      destination = session.draftPath;
+      label = session.relativePath;
+      const siblings = readSiblings(workflowsDirectory(workspace), "");
+      diagnostics = validateWorkflowDraft({ draft, file: session.relativePath, siblings, config, session: { expectedId: session.workflowId } }, clients);
+    } else {
+      const id = draft.id;
+      const derived = typeof id === "string" && FILE_NAME.test(id) ? `${id}.yaml` : null;
+      const file = options.target ?? derived;
+      context.file = file ?? "";
+      if (file === null && mode === "save") {
+        throw new Finish(EXIT_INVALID, [{ severity: "error", code: "invalid-value", message: "Cannot derive a file name from id; pass --target.", path: ["id"], source: { workflow: "" } }]);
+      }
+      const name = file ?? "";
+      destination = path.join(workflowsDirectory(workspace), name);
+      label = `workflows/${name}`;
+      const siblings = readSiblings(workflowsDirectory(workspace), name);
+      diagnostics = validateWorkflowDraft({ draft, file: name, siblings, config }, clients);
+    }
   }
 
   const invalid = diagnostics.some((item) => item.severity === "error");

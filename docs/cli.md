@@ -267,7 +267,7 @@ they exit 2 and print this instruction.
 
 ```
 migent config validate|render|save <draft|-> [--scope project|local] [--format yaml|json] [--json]
-migent workflow validate|render|save <draft|-> [--target <file>.yaml] [--format yaml|json] [--json]
+migent workflow validate|render|save <draft|-> [--target <file>.yaml | --session <id>] [--format yaml|json] [--json]
 migent {config|workflow} save ... [--base-hash <sha256>]
 migent {config|workflow} render|save ... [--preserve-comments]
 ```
@@ -281,7 +281,19 @@ Validation reports every independent problem in the draft in one run, each with 
 - `render --preserve-comments` prints exactly the bytes `save --preserve-comments` would write to the same target.
 - `save` without `--base-hash` only creates a file (exclusive hard link; it never overwrites). With `--base-hash` the file must exist and its raw-byte SHA-256 must match, or the save is a `stale-base` conflict. Both run under a file lock. An editor that writes between the hash check and the rename can still be overwritten. With `--preserve-comments`, the hash is checked before rendering, so a stale base writes nothing.
 - A local config draft must carry the current `schema_version`. `--preserve-comments` applies only to `render` and `save`.
-- Exit codes: 0 ok (warnings allowed), 1 invalid draft, 2 invocation or I/O error, 3 conflict (`stale-base`, `already-exists`).
+- Exit codes: 0 ok (warnings allowed), 1 invalid draft, 2 invocation or I/O error, 3 conflict (`stale-base`, `already-exists`, `session-locked`).
+
+### Session drafts
+
+`workflow validate|render|save ... --session <id>` works on the editable `workflow.yaml` of an existing session instead of a project workflow. It excludes `--target`, applies to `workflow` only, and changes nothing without the flag. The destination is always `.migent/sessions/<id>/workflow.yaml`; a session is never created, and a missing draft is never created.
+
+- The session must be a workflow session whose manifest records its own `workflow.yaml` as `workflow_path` (as `session prepare` does). An invalid id, an unknown session, a symlinked session directory or draft, a role session, a session that runs a project workflow file, and missing or corrupt manifest or status all exit 2 with a structured diagnostic (`invalid-session-id`, `session-not-found`, `session-not-workflow`, `session-source-unsupported`, `session-metadata-missing`, `session-metadata-corrupt`, `session-draft-missing`, `session-draft-invalid`). Nothing falls back to the project workflow or the frozen copy.
+- The draft is checked like a project draft (schema, document rules, live config bindings, all findings at once, source ranges), except that it is not a catalog entry: it may share its `id` with its project template without a `duplicate-id` finding, while its `downstream` and `requires` references are still checked against the project workflows. Its `id` must equal the session's recorded workflow id (`session-workflow-id-mismatch`, with the draft position). Diagnostics and `file` name `.migent/sessions/<id>/workflow.yaml`, with `draft: true`.
+- `render --preserve-comments` and `save --preserve-comments` use the session draft as the formatting base. Replacing the draft needs its current raw-byte `--base-hash`; without one the save is an `already-exists` conflict, and a stale hash is `stale-base`. A rejected save leaves the draft unchanged.
+- `save` takes the session lock before it reads session state and holds it through validation and the write. A held lock exits 3 with `session-locked`. `validate` and `render` are read-only: no lock, no repair, no freeze.
+- `save` accepts a `prepared` session, and a started session that is not `completed` or `cancelled`, has a `workflow.frozen.yaml`, and whose lock is free (`active`, `blocked`, `question`). A terminal session exits 2 with `session-terminal`; other states with `session-not-savable`. The persisted status alone never proves a session is stopped: the lock decides.
+- **Saving is not applying.** `save` writes only the draft and returns its new `hash`. It does not start or resume the session, rewrite `workflow.frozen.yaml`, touch the manifest, events, or executions, or change `.migent/workflows/`. A prepared session reads the draft at `session run --session <id>`. A started session keeps its freeze until `session continue <id> --refresh-workflow`.
+- `get workflow --session` and `doctor --session` report the effective workflow, which is the frozen copy once the session has started. They do not return the draft and its hash; use the hash returned by `save` (or the SHA-256 of the file's bytes) as the next `--base-hash`.
 - `--json` prints one envelope: `schema_version`, `command`, `valid`, `diagnostics`, and `rendered`, `file`, `hash`, `written` where they apply. Each diagnostic has `severity`, `code`, `message`, and optionally `source` (`project`, `local`, `effective`, `workflow`), `file`, `draft`, `path` (strings and list indices), `line`, `column`. A draft diagnostic whose `path` resolves in the draft text also carries `end_line` and `end_column`; both are one-based and the end is exclusive. A missing key, or a problem in a file other than the draft, has no position.
 
 ## Get
@@ -568,7 +580,16 @@ empty list prints nothing and exits 0. The command does
 not take the session lock.
 
 `session show <session-id>` prints one snapshot and exits 0, including when the
-session is blocked. For a schema 2 session it also prints, on stderr, any drift
+session is blocked. When a provider exited non-zero without reporting an error
+(`provider.exit_anomaly` in `events.jsonl`), the snapshot adds one line per
+affected stage, after the `execution` / `running` line:
+`exit_anomaly  <stage> · <execution> · turn N · exit C · accepted|rejected [· ×count] · <diagnostics path>`.
+It describes the stage's latest anomaly; `×count` is shown above 1 and counts all
+of the stage's executions. The JSON snapshot has the same data as an
+`exit_anomalies` array (`stage_id`, `execution_id`, `turn`, `exit_code`,
+`accepted`, `count`, `diagnostics`), omitted when empty. `diagnostics` is the
+session-relative `diagnostics.json` of that execution, or `null` when absent. See
+[Session metrics](session-metrics.md#provider-exit-anomalies) for the counters. For a schema 2 session it also prints, on stderr, any drift
 between `status.json` and the fold of the session files. `session follow` prints
 that snapshot and then follows events until a signal. It merges `events.jsonl`
 with each execution's `stream.jsonl` in timestamp order. Item traces and
