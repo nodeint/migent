@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.5.2
+
 ### Added
 
 - `migent session complete <session-id>` marks a stopped workflow session completed without dispatching another stage. Takes the session lock and applies to `active`, `blocked`, `question`, or `cancelled` sessions. Rejects `prepared` and role sessions, and any session a live process is running. Completes manually by appending `session.completed` (with `data.manual: true`) to the event log; the fold derives this and survives `session repair`. Publishes outputs by normal rules (schema 7: artifact registry, schema 2–6: top-level outputs, v1: completion.outputs), records `published_by_execution_id: "manual"`, seals metrics.json, and writes next.json. Warns on stderr about each missing required artifact but completes anyway. Idempotent on already-completed sessions. Exit 0 on success or already-completed; exit 2 when the session is missing, prepared, a role, running (with live lock), or unreadable. A completed session's `status.json` records `completion_method`: `"manual"` for this command (with `manual_completion` holding the timestamp and previous status), and `"agent"` when stage executions completed it; sessions completed earlier gain `"agent"` the next time their status is folded, for example by `migent session repair`.
@@ -72,37 +74,9 @@
 - Kernel and doctor exports follow the new names: `loadAgentTarget`, `loadAgentDefinition`, `listAgentDefinitions`, `loadRoleResponsibilities`, `loadRoleDescription`, `validateRoleKeys`, `upsertAgent`, `placeRoleAgent`, `matchingAgentName`, `getAgentView`, and `listAgentViews`. A parsed role stage carries `agent` (`{ kind: "named" | "inline" }`) instead of `modelName`. Doctor findings use the new paths, for example `agents.<name>.client.options`.
 - Deferred: named and multiple artifacts per stage and the changed `outputs` shape are not part of this change.
 
-## 0.3.6
-
-### Added
-
-- `migent provider list --json` includes a native headless option catalog discovered from each installed CLI, with flag aliases, descriptions, argument metadata, choices, defaults, and per-provider discovery errors. Added adapter contracts and a documentation map.
-
-- `migent config validate|render|save <draft|->` and `migent workflow validate|render|save <draft|->` validate unsaved YAML or JSON drafts against the workspace's config layers and workflow references. `render` prints canonical YAML; `save` writes the same bytes atomically, creates files without overwriting by default, and requires a matching raw-content SHA-256 via `--base-hash` for updates. Comments are not preserved; replacing a commented file reports a warning. `--json` returns versioned results with structured diagnostics, field paths, and source locations where available (#62).
-- `migent get <type> [name]` is a read-only lookup of workflows, roles, model aliases, and the effective config (`-o json|yaml|name`, `--json`). `migent get workflow --session <id>` shows the draft, frozen, or live workflow a session runs, with each stage's resolved provider and model. See `docs/cli.md`.
-- `migent init` accepts `--planner-effort`, `--reviewer-effort`, and `--developer-effort` to configure effort separately for each role. Developer flags also have explicit `--developer-` names; the existing short names remain aliases.
-- Provider wrapper startup failures now explain themselves. The wrapper reports its own failures (arguments, IPC, listen, provider spawn, runtime) to the owner, and the error names the cause with a short stderr excerpt instead of "did not start". A failed turn writes `diagnostics.json` in the execution directory (executable and argument count only, never other arguments). `MIGENT_DEBUG=1` adds a step trace on stderr and in `debug.log`. `migent doctor --session <id>` lists recorded diagnostics as warnings and now accepts role sessions.
-- Every failed execution writes `failure.md`: a readable report with the stage, attempt, provider, `failure_reason`, the error message, and pointers to `diagnostics.json` or the verify report. CLI output names each one as `failure: executions/<id>/failure.md`, including an attempt that a later retry recovered from.
-
-- `migent doctor` checks that each configured model name exists in the provider's model list.
-- `migent session run` runs the `doctor --session` checks before a workflow session starts and exits 2 on a problem. `--skip-preflight` bypasses it.
-
-### Changed
-
-- `migent init` offers a searchable list of models across installed providers, reuses each catalog during setup, and stores selected effort in the role effort field. Generated instructions remain on single lines.
-- Health checks moved out of the kernel into a new package, `@nodeint/migent-doctor` (CLI â†’ doctor â†’ kernel). The kernel no longer exports `diagnose`, `doctor`, `diagnoseSession`, `sessionEffortKeys`, `sessionDiagnosticsCheck`, `Check`, `DiagnoseOptions`, `ModelEffortCheck`, `DiagnoseSessionOptions`, or `SessionDiagnosis`; import them from the doctor package. Session workflow selection stays in the kernel. The kernel gains `mergeConfigLayers`, `readConfigLayer`, `listModelDefinitions`, and `resolveEffectiveProvider`, and `ConfigurationError` carries optional `code`, `path`, `layer`, and `position`. `migent doctor` output is unchanged.
-- `migent init` stores selected role models in the shared config, starts local configuration with empty model and role overrides, and includes explicit decision criteria and outputs in workflow templates.
-- Decision `when` guidance is optional. Migration no longer generates placeholder guidance, and doctor no longer warns about existing placeholders.
-- A signal-like exit of the wrapper during startup no longer reports a startup failure when a cancellation arrives within a short window; it is reported as a cancellation.
-- `CommandExecutor.run` now takes an options object and returns `{ stdout, error, exitCode, failure? }` instead of a tuple. Callers of the exported class must update.
-
-### Fixed
-
-- OpenCode sessions retain their identity before provider startup. Cancellation and timeout explicitly interrupt the server-side turn before local process cleanup, retry early session-creation races, and warn when remote cleanup cannot be confirmed.
-- `response.md` holds only the model's response. A provider that cannot start leaves it absent instead of writing the error text there. A failed turn also no longer stores Migent's error as an assistant message in `conversation.json`, so a later resume cannot replay that error as something the model said.
-
 ## Older versions
 
+- [0.3.6](https://github.com/nodeint/migent/releases/tag/v0.3.6)
 - [0.3.5](https://github.com/nodeint/migent/releases/tag/v0.3.5)
 - [0.3.4](https://github.com/nodeint/migent/releases/tag/v0.3.4)
 - [0.3.3](https://github.com/nodeint/migent/releases/tag/v0.3.3)
