@@ -2,10 +2,9 @@
 name: release
 description: >
   Release Migent through a release pull request: update the changelog, bump all
-  workspace packages, build and test, then tag the merged release commit.
-  Watch release.yml stage packages and create the GitHub Release.
-  The user approves staged packages on npm; then fast-forward main to the tag. Use when the user asks to release,
-  tag a version, push the release tag, or runs /release.
+  workspace packages, build and test, then squash-merge it. Watch release.yml
+  tag the commit, fast-forward main, publish to npm, and create the GitHub
+  Release. Use when the user asks to release, tag a version, or runs /release.
 metadata:
   short-description: "Release Migent on npm"
 ---
@@ -15,8 +14,7 @@ metadata:
 Follow the release pull request flow and pitfalls in `CONTRIBUTING.md`.
 Never commit directly to `main` or `next`, push feature/release changes directly
 to either branch, bypass branch protection, or tag an unmerged release branch.
-The only direct update to `main` is the authorized post-publication fast-forward
-to the exact release tag described below.
+`main` is advanced only by `release.yml`, never by hand.
 
 Work from the repository root. Reply in the user's language.
 
@@ -25,13 +23,14 @@ Work from the repository root. Reply in the user's language.
 Use the version the user names. If they do not name one, propose the next
 patch after the highest of `packages/*/package.json` and the `v*` tags and
 confirm the version before publishing. An explicit request to release a named
-version authorizes preparing and pushing a release PR and tagging the merged
-release commit. Merge only when the user has explicitly authorized the merge.
+version authorizes preparing and pushing a release PR. Merging that PR tags,
+publishes to npm, and advances `main`, so merge only when the user has
+explicitly authorized the merge.
 Do not ask again for actions already authorized.
 
-Before publishing, check the migration prerequisites in `CONTRIBUTING.md`.
-Stop if the release workflow still requires tags to be on `main`; do not
-advance `main` early to satisfy an obsolete check.
+Before merging, check the migration prerequisites in `CONTRIBUTING.md`: the
+npm trusted publishers allow `npm publish` and the `main` ruleset lets the
+GitHub Actions app update `main`. Stop if they do not.
 
 ## Prepare the release branch
 
@@ -107,36 +106,18 @@ gh pr create --draft --base next --head release/X.Y.Z --title "Release X.Y.Z" --
 ```
 
 Wait for all three CI jobs to pass. Mark the PR ready when green. If merging
-has not been authorized, report the PR URL and stop before merging or tagging.
-After authorization, squash-merge the green PR; never bypass required checks.
-
-## Tag the merged release
-
-Fetch origin after merging. Find the merged release commit on `origin/next`
-using the PR's merge commit, not a commit with a similar subject. Verify its
-package versions are `X.Y.Z` and its changelog contains that release.
-Stop if the PR is unmerged or the tag already exists. Never force-push or move
-a tag. Create a lightweight tag on that exact merged commit:
-
-```bash
-git tag vX.Y.Z <merged-release-sha>
-git push origin refs/tags/vX.Y.Z:refs/tags/vX.Y.Z
-```
-
-Pushing the tag starts publishing.
+has not been authorized, report the PR URL and stop before merging.
+After authorization, squash-merge the green PR with the subject
+`Release X.Y.Z (#N)`; the workflow acts only on that subject. Never bypass
+required checks.
 
 ## Watch release.yml
 
-Watch `.github/workflows/release.yml` until that run finishes. The workflow
-checks that the tag is on `origin/next` and that every package version matches
-the tag. It takes the `## X.Y.Z` section of `CHANGELOG.md` as the notes, then
-builds, tests, packs, and runs `npm stage publish` with GitHub OIDC. There is no
-npm token in the repo. After staging it creates the GitHub Release with those
-notes. Say the run succeeded only when its conclusion is success, and include
-the run URL.
+Merging pushes to `next` and starts `.github/workflows/release.yml`. Do not
+create or push the tag yourself. Find the run for the merge commit and watch it:
 
 ```bash
-gh run list --workflow release.yml --branch vX.Y.Z \
+gh run list --workflow release.yml --branch next --commit <merge-sha> \
   --json databaseId,status,conclusion,url
 gh run watch <databaseId> --exit-status
 gh release view vX.Y.Z
@@ -144,28 +125,21 @@ gh release view vX.Y.Z
 
 If the run list is empty, wait 30 seconds and list again, up to five times.
 
-If `release.yml` fails, leave `main` and the tag where they are. Tell the user to reject
-the staged versions and release the next patch, as `CONTRIBUTING.md` describes.
+The workflow checks the package versions against the subject, takes the
+`## X.Y.Z` section of `CHANGELOG.md` as the notes, builds and tests, tags the
+commit, fast-forwards `main` to it, runs `npm publish` in dependency order with
+GitHub OIDC (no npm token), installs the published CLI, then creates the GitHub
+Release. Nobody approves packages on npm. Say the run succeeded only when its
+conclusion is success, and include the run URL.
 
-On success, report the GitHub Release URL and say the packages are staged. The
-user approves them on npm. Do not approve packages on the user’s behalf.
-Staging and the GitHub Release alone do not mean the version is public.
+If the run fails, report the failing step. Do not move the tag or force `main`.
+Once the tag exists, `main` is already at the release commit. Rerun the failed
+run (`gh run rerun <id> --failed`) after the cause is fixed; each step skips
+work already done. If the version cannot be completed, release the next patch.
 
-## Verify publication and synchronize main
+## Verify
 
-After the user confirms npm approval, verify all workspace packages expose `X.Y.Z`
-and installing `@nodeint/migent@X.Y.Z` reports that version, following
-`CONTRIBUTING.md`. If verification fails or publication is incomplete, leave
-`main` unchanged and report the blocker.
-
-Fetch the release tag, `origin/main`, and `origin/next`. Verify the tag points
-to the PR’s merged release SHA, that SHA is on `origin/next`, and `origin/main`
-is its ancestor. Fast-forward `main` only to that exact SHA using the guarded
-procedure in `CONTRIBUTING.md`, never to the latest `next` HEAD. Do not
-force-push or create a separate merge/squash commit.
-
-Explicit authorization to finish the release merge includes this final
-synchronization; otherwise obtain authorization before updating remote main.
-If hooks or protection block the update, report the configuration blocker
-without bypassing it. Verify remote `main` equals the tagged SHA and report
-the version, tag, publication checks, and synchronization result.
+After a successful run, confirm `origin/main` equals the tag's commit and
+`migent --version` from `npm i -g --prefer-online @nodeint/migent@X.Y.Z`
+reports `X.Y.Z`. Report the version, tag, run URL, GitHub Release URL, and the
+`main` result.

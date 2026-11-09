@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.5.3
+
 ### Added
 
 - `client.type` is optional on an agent. When omitted, Migent runs each installed client's model-list command and uses the one client that lists the agent's `model` (OpenCode's `#variant` suffix is ignored), on every resolution and with no cache on disk. `effort` maps to the inferred client. No client listing the model is a `client-not-found` error, and several clients listing it is a `client-ambiguous` error; doctor reports both and a run refuses to start. `client.type` stays required when `client.options` is set (even an empty mapping). Inference is slower and depends on the machine's installed CLIs; set `client.type` to avoid both. Started sessions keep their frozen client.
@@ -58,28 +60,9 @@
 
 - A provider process that exits non-zero without reporting an error no longer fails a stage whose reply passes the checks an exit-0 reply must pass. The turn is recorded `completed`, keeps `response.md`, and logs a `provider.exit_anomaly` event. Provider-reported errors, start failures and signal exits still fail, and a rejected turn's error is now the model's own text. A `continue` prompt after such a failed attempt references its reply (#71).
 
-## 0.4.0
-
-### Added
-
-- `migent config render|save` and `migent workflow render|save` accept `--preserve-comments`, keeping the target's comments, key order, and line endings. Unchanged data writes the base bytes verbatim; when preservation is impossible the file falls back to canonical YAML with a `comments-not-preserved` warning. `render --preserve-comments` prints exactly the bytes `save --preserve-comments` would write.
-
-### Changed
-
-- `migent config validate|render|save` and `migent workflow validate|render|save` report every independent draft diagnostic in one run instead of stopping at the first, including multiple entries in one stage. Each diagnostic keeps its own `path`, and a draft diagnostic whose path resolves in the draft text now carries one-based, exclusive `end_line`/`end_column`. An unreadable companion config layer or an unrelated broken workflow field no longer hides other findings, because each graph rule gates only on the fields and dependency chain its finding needs. Without `--preserve-comments`, saved bytes and `comments-dropped` warnings are unchanged.
-- **Schema version 5: "agents".** An agent is a provider, a model, an effort, and a CLI client with its options, and it is called an agent everywhere. Run `migent migrate` to upgrade config and workflow files; comments and layout are kept, and sessions that already started keep running from their frozen copy. The migration makes these changes:
-  - `models` becomes `agents`, and `roles.<role>.default_model` becomes `roles.<role>.agent` (a name in `agents` or a complete inline agent).
-  - `roles.<role>.instructions` becomes `roles.<role>.responsibilities`. A role also accepts an optional one-line `description`, shown by `migent get roles` and not added to prompts.
-  - An agent's `client: <id>` becomes `client.type`, and its `options` become `client.options`. `client` is now always a mapping. `model` stays required on every agent.
-  - A stage's `model` becomes `agent`. It takes a name from `agents` or a complete inline agent, which replaces the role's agent entirely.
-  - **Stage `options` are removed.** The migration deletes them and lists every deleted option in its notes; recreate any you still need as an inline `stages.<id>.agent` with `client.options`.
-  - Unknown workflow keys are errors in schema version 5 (they were warnings). A v4 key in a v5 file is rejected with the key that replaces it.
-- `migent get agents` and `migent get agent <name>` replace `get models` and `get model <alias>`; role views show `agent`, `description`, and `responsibilities`, and the workflow view reports `role_responsibilities`. `migent config --json` reports the local file's `agents`.
-- Kernel and doctor exports follow the new names: `loadAgentTarget`, `loadAgentDefinition`, `listAgentDefinitions`, `loadRoleResponsibilities`, `loadRoleDescription`, `validateRoleKeys`, `upsertAgent`, `placeRoleAgent`, `matchingAgentName`, `getAgentView`, and `listAgentViews`. A parsed role stage carries `agent` (`{ kind: "named" | "inline" }`) instead of `modelName`. Doctor findings use the new paths, for example `agents.<name>.client.options`.
-- Deferred: named and multiple artifacts per stage and the changed `outputs` shape are not part of this change.
-
 ## Older versions
 
+- [0.4.0](https://github.com/nodeint/migent/releases/tag/v0.4.0)
 - [0.3.6](https://github.com/nodeint/migent/releases/tag/v0.3.6)
 - [0.3.5](https://github.com/nodeint/migent/releases/tag/v0.3.5)
 - [0.3.4](https://github.com/nodeint/migent/releases/tag/v0.3.4)
