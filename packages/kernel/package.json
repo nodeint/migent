@@ -1,6 +1,6 @@
 {
   "name": "@nodeint/migent-kernel",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "description": "Workflow engine, configuration, and session store for Migent.",
   "keywords": [
     "ai",
@@ -44,8 +44,8 @@
   },
   "dependencies": {
     "@nodeint/migent-contracts": "workspace:*",
-    "@nodeint/migent-workflow": "workspace:*",
     "@nodeint/migent-prompts": "workspace:*",
+    "@nodeint/migent-workflow": "workspace:*",
     "cross-spawn": "^7.0.6",
     "proper-lockfile": "^4.1.2",
     "which": "^7.0.0",
