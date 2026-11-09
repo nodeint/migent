@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/cli/prepare.json",
+  "type": "object",
+  "required": [
+    "session_id",
+    "title",
+    "status",
+    "task_path",
+    "workflow_path"
+  ],
+  "properties": {
+    "session_id": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "const": "prepared"
+    },
+    "task_path": {
+      "type": "string"
+    },
+    "workflow_path": {
+      "type": "string"
+    }
+  },
+  "title": "session prepare"
+}

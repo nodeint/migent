@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/cli/get-agent.json",
+  "type": "object",
+  "required": [
+    "kind",
+    "name",
+    "client",
+    "model",
+    "effort",
+    "local",
+    "options",
+    "used_by",
+    "problems"
+  ],
+  "properties": {
+    "kind": {
+      "type": "string",
+      "const": "agent"
+    },
+    "name": {
+      "type": "string"
+    },
+    "client": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "model": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "effort": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "local": {
+      "type": "boolean"
+    },
+    "options": {
+      "type": "object",
+      "patternProperties": {
+        "^.*$": {
+          "type": "string"
+        }
+      }
+    },
+    "used_by": {
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "role"
+            ],
+            "properties": {
+              "role": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "stage",
+              "workflow"
+            ],
+            "properties": {
+              "stage": {
+                "type": "string"
+              },
+              "workflow": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "problems": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "title": "get agent(s) -o json"
+}

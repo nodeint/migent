@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/exit/exit-code.json",
+  "type": "object",
+  "required": [
+    "code",
+    "name",
+    "descriptions"
+  ],
+  "properties": {
+    "code": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 255,
+      "description": "The process exit code."
+    },
+    "name": {
+      "type": "string",
+      "description": "Stable name. The stop reason where one exists."
+    },
+    "descriptions": {
+      "type": "object",
+      "patternProperties": {
+        "^.*$": {
+          "type": "string"
+        }
+      },
+      "propertyNames": {
+        "enum": [
+          "run",
+          "run_once",
+          "role_run",
+          "preflight",
+          "authoring",
+          "doctor",
+          "get",
+          "complete"
+        ]
+      },
+      "description": "Per command family: the text that follows `Exit <code> `."
+    }
+  },
+  "title": "Exit code",
+  "description": "One exit code and what it means for each command family."
+}

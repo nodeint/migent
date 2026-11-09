@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/common/stage-outcome.json",
+  "type": "object",
+  "required": [
+    "status"
+  ],
+  "properties": {
+    "status": {
+      "type": "string"
+    },
+    "blocker": {
+      "type": "string"
+    },
+    "decision": {
+      "type": "string"
+    },
+    "question": {
+      "type": "string"
+    },
+    "questions": {
+      "type": "array",
+      "items": {
+        "$ref": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/common/question.json"
+      }
+    }
+  },
+  "title": "Stage outcome"
+}

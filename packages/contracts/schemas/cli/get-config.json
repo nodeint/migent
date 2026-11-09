@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/cli/get-config.json",
+  "type": "object",
+  "required": [
+    "kind",
+    "name",
+    "config",
+    "local_file",
+    "local_agents"
+  ],
+  "properties": {
+    "kind": {
+      "type": "string",
+      "const": "config"
+    },
+    "name": {
+      "type": "string",
+      "const": "config"
+    },
+    "config": {
+      "type": "object",
+      "patternProperties": {
+        "^.*$": {}
+      }
+    },
+    "local_file": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "local_agents": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "title": "get config -o json"
+}

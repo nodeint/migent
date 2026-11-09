@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/common/session-status.json",
+  "anyOf": [
+    {
+      "type": "string",
+      "const": "active"
+    },
+    {
+      "type": "string",
+      "const": "prepared"
+    },
+    {
+      "type": "string",
+      "const": "completed"
+    },
+    {
+      "type": "string",
+      "const": "blocked"
+    },
+    {
+      "type": "string",
+      "const": "question"
+    },
+    {
+      "type": "string",
+      "const": "cancelled"
+    },
+    {
+      "type": "string",
+      "const": "corrupt"
+    }
+  ],
+  "title": "Session status"
+}

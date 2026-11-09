@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/cli/get-client.json",
+  "type": "object",
+  "required": [
+    "kind",
+    "name",
+    "command",
+    "available",
+    "path",
+    "effort_option",
+    "problems"
+  ],
+  "properties": {
+    "kind": {
+      "type": "string",
+      "const": "client"
+    },
+    "name": {
+      "type": "string"
+    },
+    "command": {
+      "type": "string"
+    },
+    "available": {
+      "type": "boolean"
+    },
+    "path": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "effort_option": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "problems": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "title": "get client(s) -o json"
+}

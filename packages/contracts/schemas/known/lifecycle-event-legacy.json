@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/known/lifecycle-event-legacy.json",
+  "type": "object",
+  "required": [
+    "event"
+  ],
+  "properties": {
+    "v": {
+      "type": "number",
+      "const": 1
+    },
+    "event": {
+      "type": "string"
+    }
+  },
+  "title": "Lifecycle event (unversioned or v1)"
+}

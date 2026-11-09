@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/common/next-suggestion.json",
+  "type": "object",
+  "required": [
+    "workflow",
+    "task",
+    "artifacts",
+    "argv",
+    "command"
+  ],
+  "properties": {
+    "workflow": {
+      "type": "string"
+    },
+    "task": {
+      "type": "string"
+    },
+    "artifacts": {
+      "type": "object",
+      "patternProperties": {
+        "^.*$": {
+          "type": "object",
+          "required": [
+            "output",
+            "path"
+          ],
+          "properties": {
+            "output": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "argv": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "command": {
+      "type": "string",
+      "description": "The argv rendered as a shell command line."
+    }
+  },
+  "title": "Next workflow suggestion"
+}

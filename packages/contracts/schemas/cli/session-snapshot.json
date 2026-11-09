@@ -1,0 +1,441 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/cli/session-snapshot.json",
+  "type": "object",
+  "required": [
+    "session_id",
+    "workflow_id",
+    "status",
+    "updated_at",
+    "events_cursor",
+    "execution_id",
+    "execution_status",
+    "latest_execution_id",
+    "latest_execution_status",
+    "outcome",
+    "questions",
+    "outputs",
+    "outputs_not_produced",
+    "running_stages",
+    "skipped_stages",
+    "blocked_by_execution_ids",
+    "blocker",
+    "baseline"
+  ],
+  "properties": {
+    "session_id": {
+      "type": "string"
+    },
+    "workflow_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "status": {
+      "type": "string"
+    },
+    "updated_at": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "events_cursor": {
+      "type": "number"
+    },
+    "execution_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "execution_status": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "latest_execution_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "latest_execution_status": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "outcome": {
+      "anyOf": [
+        {
+          "$ref": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/common/stage-outcome.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "questions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "question",
+          "context",
+          "selection",
+          "options",
+          "execution_id",
+          "stage_id",
+          "recipient"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "question": {
+            "type": "string"
+          },
+          "context": {
+            "type": "string"
+          },
+          "selection": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "single"
+              },
+              {
+                "type": "string",
+                "const": "multiple"
+              }
+            ]
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "label"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "recommended": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "execution_id": {
+            "type": "string"
+          },
+          "stage_id": {
+            "type": "string"
+          },
+          "recipient": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "outputs": {
+      "type": "object",
+      "patternProperties": {
+        "^.*$": {
+          "$ref": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/common/output-ref.json"
+        }
+      }
+    },
+    "outputs_not_produced": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "running_stages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "execution_id",
+          "stage_id",
+          "client",
+          "event",
+          "summary",
+          "updated_at"
+        ],
+        "properties": {
+          "execution_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stage_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "client": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "event": {
+            "type": "string"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "skipped_stages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "stage_id",
+          "execution_id"
+        ],
+        "properties": {
+          "stage_id": {
+            "type": "string"
+          },
+          "execution_id": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "blocked_by_execution_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "blocker": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "baseline": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "commit",
+            "captured_at"
+          ],
+          "properties": {
+            "commit": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "captured_at": {
+              "type": "string"
+            },
+            "error": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "title": {
+      "type": "string"
+    },
+    "handoff": {
+      "type": "object",
+      "patternProperties": {
+        "^.*$": {}
+      }
+    },
+    "skip": {
+      "type": "object",
+      "patternProperties": {
+        "^.*$": {}
+      }
+    },
+    "quota_failures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "stage_id",
+          "execution_id",
+          "message",
+          "reset_at",
+          "window"
+        ],
+        "properties": {
+          "stage_id": {
+            "type": "string"
+          },
+          "execution_id": {
+            "type": "string"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reset_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "window": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "diagnostics": {
+      "type": "string"
+    },
+    "exit_anomalies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "stage_id",
+          "execution_id",
+          "turn",
+          "exit_code",
+          "accepted",
+          "count",
+          "diagnostics"
+        ],
+        "properties": {
+          "stage_id": {
+            "type": "string"
+          },
+          "execution_id": {
+            "type": "string"
+          },
+          "turn": {},
+          "exit_code": {},
+          "accepted": {
+            "type": "boolean"
+          },
+          "count": {
+            "type": "number"
+          },
+          "diagnostics": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "title": "session show --json"
+}

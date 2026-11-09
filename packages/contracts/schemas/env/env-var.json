@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/env/env-var.json",
+  "anyOf": [
+    {
+      "type": "object",
+      "required": [
+        "name",
+        "description",
+        "processes",
+        "kind",
+        "enabling_values"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "processes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Processes that honor the variable."
+        },
+        "kind": {
+          "type": "string",
+          "const": "flag"
+        },
+        "enabling_values": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "title": "Flag variable"
+    },
+    {
+      "type": "object",
+      "required": [
+        "name",
+        "description",
+        "processes",
+        "kind",
+        "default"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "processes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Processes that honor the variable."
+        },
+        "kind": {
+          "type": "string",
+          "const": "path"
+        },
+        "default": {
+          "type": "string"
+        }
+      },
+      "title": "Path override variable"
+    },
+    {
+      "type": "object",
+      "required": [
+        "name",
+        "description",
+        "processes",
+        "kind",
+        "default_value",
+        "child"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "processes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Processes that honor the variable."
+        },
+        "kind": {
+          "type": "string",
+          "const": "child_default"
+        },
+        "default_value": {
+          "type": "string"
+        },
+        "child": {
+          "type": "string"
+        }
+      },
+      "title": "Child default variable"
+    }
+  ],
+  "title": "Environment variable"
+}

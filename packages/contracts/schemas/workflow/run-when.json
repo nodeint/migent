@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/workflow/run-when.json",
+  "type": "object",
+  "required": [
+    "changed_paths"
+  ],
+  "properties": {
+    "changed_paths": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "\\S",
+        "description": "A string with a non-blank value."
+      },
+      "minItems": 1,
+      "description": "Glob patterns. The stage runs only when a changed path matches."
+    }
+  },
+  "title": "Run condition",
+  "description": "Runs the stage only when the session changed matching files.",
+  "additionalProperties": false
+}

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/workflow/session.json",
+  "type": "object",
+  "properties": {
+    "resume_from": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "\\S",
+          "description": "A string with a non-blank value."
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "title": "Stage session",
+  "description": "Continue the client session of a dependency.",
+  "additionalProperties": false
+}

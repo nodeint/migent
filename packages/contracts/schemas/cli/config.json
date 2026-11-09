@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/cli/config.json",
+  "type": "object",
+  "required": [
+    "config",
+    "local"
+  ],
+  "properties": {
+    "config": {
+      "type": "object",
+      "patternProperties": {
+        "^.*$": {}
+      }
+    },
+    "local": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "file",
+            "agents"
+          ],
+          "properties": {
+            "file": {
+              "type": "string"
+            },
+            "agents": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "title": "config --json",
+  "description": "Effective config and the local overlay."
+}

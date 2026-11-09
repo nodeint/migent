@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/common/output-ref.json",
+  "type": "object",
+  "properties": {
+    "path": {
+      "type": "string"
+    },
+    "source_execution_id": {
+      "type": "string"
+    },
+    "published_by_execution_id": {
+      "type": "string"
+    }
+  },
+  "title": "Published output reference"
+}

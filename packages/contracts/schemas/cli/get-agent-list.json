@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/cli/get-agent-list.json",
+  "type": "array",
+  "items": {
+    "$ref": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/cli/get-agent.json"
+  },
+  "title": "List of https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/cli/get-agent.json"
+}

@@ -1,0 +1,227 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/workflow/stage.json",
+  "type": "object",
+  "required": [
+    "id"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "\\S",
+      "description": "A string with a non-blank value."
+    },
+    "description": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^\\s*\\S([^\\r\\n]*\\S)?\\s*$",
+          "description": "A single non-blank line."
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "role": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "\\S",
+          "description": "A string with a non-blank value."
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "depends_on": {
+      "anyOf": [
+        {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "\\S",
+            "description": "A string with a non-blank value."
+          },
+          "description": "Stage ids that must complete first."
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "instructions": {
+      "anyOf": [
+        {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "\\S",
+            "description": "A string with a non-blank value."
+          },
+          "description": "Instructions added to the stage prompt."
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "agent": {
+      "anyOf": [
+        {
+          "$ref": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/config/role-agent.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "ask": {
+      "type": "string",
+      "const": "human",
+      "description": "`human` lets the stage ask the user a question."
+    },
+    "max_revisions": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 0
+        },
+        {
+          "type": "string",
+          "pattern": "^\\s*\\d+\\s*$"
+        }
+      ],
+      "description": "A whole number, written as an integer or a digit string."
+    },
+    "verify": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^\\s*\\S([^\\r\\n]*\\S)?\\s*$",
+              "description": "A single non-blank line."
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^\\s*\\S([^\\r\\n]*\\S)?\\s*$",
+                "description": "A single non-blank line."
+              },
+              "minItems": 1
+            }
+          ],
+          "description": "Shell command or commands run after the stage."
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "max_verify": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "string",
+              "pattern": "^\\s*0*[1-9]\\d*\\s*$"
+            }
+          ],
+          "description": "A whole number of at least 1, written as an integer or a digit string."
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "verify_timeout": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "string",
+              "pattern": "^\\s*0*[1-9]\\d*\\s*$"
+            }
+          ],
+          "description": "A whole number of at least 1, written as an integer or a digit string."
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "artifacts": {
+      "anyOf": [
+        {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "\\S",
+            "description": "A string with a non-blank value."
+          },
+          "description": "Registry artifact ids the stage produces."
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "decision": {
+      "anyOf": [
+        {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "patternProperties": {
+              "^.*$": {
+                "$ref": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/workflow/decision-entry.json"
+              }
+            },
+            "minProperties": 1,
+            "maxProperties": 1,
+            "description": "Exactly one decision value, mapped to its body."
+          },
+          "minItems": 1,
+          "description": "Decision values and their routes."
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "session": {
+      "anyOf": [
+        {
+          "$ref": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/workflow/session.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "run_when": {
+      "anyOf": [
+        {
+          "$ref": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/workflow/run-when.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "title": "Workflow stage",
+  "description": "One stage of a workflow.",
+  "additionalProperties": false
+}

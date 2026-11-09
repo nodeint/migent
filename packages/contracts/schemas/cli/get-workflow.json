@@ -1,0 +1,234 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/cli/get-workflow.json",
+  "type": "object",
+  "required": [
+    "kind",
+    "name",
+    "file",
+    "source",
+    "concurrency",
+    "constraints",
+    "stages",
+    "artifacts",
+    "outputs",
+    "requires",
+    "downstream",
+    "role_responsibilities",
+    "warnings",
+    "problems"
+  ],
+  "properties": {
+    "kind": {
+      "type": "string",
+      "const": "workflow"
+    },
+    "name": {
+      "type": "string"
+    },
+    "file": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "kind",
+        "path"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "session": {
+      "type": "string"
+    },
+    "concurrency": {
+      "type": "number"
+    },
+    "constraints": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "stages": {
+      "type": "array",
+      "items": {
+        "$ref": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/common/stage-view.json"
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "file",
+          "description",
+          "required",
+          "producer"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "producer": {
+            "type": "object",
+            "required": [
+              "stage",
+              "decision"
+            ],
+            "properties": {
+              "stage": {
+                "type": "string"
+              },
+              "decision": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "outputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "from_stage",
+          "artifact"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "from_stage": {
+            "type": "string"
+          },
+          "artifact": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "requires": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "workflow"
+          ],
+          "properties": {
+            "workflow": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "downstream": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "workflow",
+          "task",
+          "artifacts"
+        ],
+        "properties": {
+          "workflow": {
+            "type": "string"
+          },
+          "task": {
+            "type": "string"
+          },
+          "artifacts": {
+            "anyOf": [
+              {
+                "type": "object",
+                "patternProperties": {
+                  "^.*$": {
+                    "type": "string"
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "role_responsibilities": {
+      "type": "object",
+      "patternProperties": {
+        "^.*$": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "problems": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "title": "get workflow <name> -o json"
+}

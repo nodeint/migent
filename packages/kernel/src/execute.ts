@@ -67,7 +67,7 @@ import type { ExecutionSnapshot } from "./outputs.js";
 
 export const DEFAULT_MAX_DISPATCHES = 20;
 
-const EXECUTE_EXIT_CODES: Record<string, number> = {
+export const EXECUTE_EXIT_CODES:Record<string, number> = {
   completed: 0,
   blocked: 1,
   question: 9,

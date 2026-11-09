@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/known/lifecycle-event-v2.json",
+  "type": "object",
+  "required": [
+    "v",
+    "seq",
+    "event",
+    "timestamp",
+    "data"
+  ],
+  "properties": {
+    "v": {
+      "type": "number",
+      "const": 2
+    },
+    "seq": {
+      "type": "number"
+    },
+    "event": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string"
+    },
+    "data": {
+      "type": "object",
+      "patternProperties": {
+        "^.*$": {}
+      }
+    }
+  },
+  "title": "Lifecycle event (v2)"
+}

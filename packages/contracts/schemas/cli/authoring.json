@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/cli/authoring.json",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "command",
+    "valid",
+    "diagnostics"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "number",
+      "const": 1
+    },
+    "command": {
+      "type": "string",
+      "description": "config|workflow . validate|render|save."
+    },
+    "valid": {
+      "type": "boolean"
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": {
+        "$ref": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/common/diagnostic.json"
+      }
+    },
+    "rendered": {
+      "type": "string",
+      "description": "render: the canonical text."
+    },
+    "file": {
+      "type": "string",
+      "description": "save: the target label."
+    },
+    "hash": {
+      "type": "string",
+      "description": "save: SHA-256 of the written file."
+    },
+    "written": {
+      "type": "boolean"
+    },
+    "current_hash": {
+      "type": "string",
+      "description": "save conflict: hash on disk."
+    }
+  },
+  "title": "config|workflow validate|render|save --json",
+  "description": "Versioned authoring envelope; also used for invocation errors."
+}

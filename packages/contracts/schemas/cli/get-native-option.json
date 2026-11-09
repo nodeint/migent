@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/cli/get-native-option.json",
+  "type": "object",
+  "required": [
+    "kind",
+    "name",
+    "client",
+    "source",
+    "flags",
+    "description",
+    "argument",
+    "value_mode",
+    "type",
+    "choices",
+    "default"
+  ],
+  "properties": {
+    "kind": {
+      "type": "string",
+      "const": "option"
+    },
+    "name": {
+      "type": "string"
+    },
+    "client": {
+      "type": "string"
+    },
+    "source": {
+      "type": "string",
+      "const": "native"
+    },
+    "flags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "description": {
+      "type": "string"
+    },
+    "argument": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "value_mode": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string"
+    },
+    "choices": {
+      "anyOf": [
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "default": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "title": "get options --native -o json"
+}

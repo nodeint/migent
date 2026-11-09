@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/cli/service-status.json",
+  "anyOf": [
+    {
+      "$ref": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/cli/service-running.json"
+    },
+    {
+      "$ref": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/cli/service-stopped.json"
+    }
+  ],
+  "title": "service status --json"
+}

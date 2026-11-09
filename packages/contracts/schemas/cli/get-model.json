@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/cli/get-model.json",
+  "type": "object",
+  "required": [
+    "kind",
+    "name",
+    "client",
+    "default"
+  ],
+  "properties": {
+    "kind": {
+      "type": "string",
+      "const": "model"
+    },
+    "name": {
+      "type": "string"
+    },
+    "client": {
+      "type": "string"
+    },
+    "default": {
+      "type": "boolean"
+    }
+  },
+  "title": "get model(s) -o json"
+}

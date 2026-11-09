@@ -33,6 +33,8 @@ roles:
         type: grok
 ```
 
+The generated [config field reference](reference/config.md) lists every field.
+
 Use model IDs and option values supported by your installed CLIs.
 `migent get models` lists each client's model IDs, `migent get efforts` lists the
 thinking levels per model, and `migent doctor` checks the configuration. The

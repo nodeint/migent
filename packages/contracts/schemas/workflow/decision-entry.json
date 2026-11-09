@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/workflow/decision-entry.json",
+  "type": "object",
+  "required": [
+    "navigate"
+  ],
+  "properties": {
+    "when": {
+      "type": "string",
+      "pattern": "\\S",
+      "description": "A string with a non-blank value."
+    },
+    "navigate": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "\\S",
+          "description": "A string with a non-blank value."
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "\\S",
+            "description": "A string with a non-blank value."
+          },
+          "minItems": 1
+        }
+      ],
+      "description": "A stage id, `complete`, or a list of stage ids to run next."
+    },
+    "artifacts": {
+      "anyOf": [
+        {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "\\S",
+            "description": "A string with a non-blank value."
+          }
+        },
+        {
+          "type": "object",
+          "patternProperties": {
+            "^.*$": {
+              "$ref": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/workflow/artifact.json"
+            }
+          },
+          "propertyNames": {
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"
+          }
+        }
+      ],
+      "description": "Artifacts produced under this decision: registry ids, or a mapping of inline artifact definitions."
+    }
+  },
+  "title": "Decision entry",
+  "description": "The body of one decision value: when to choose it and where to go next.",
+  "additionalProperties": false
+}

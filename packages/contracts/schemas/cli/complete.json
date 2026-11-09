@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/cli/complete.json",
+  "type": "object",
+  "required": [
+    "session_id",
+    "status",
+    "already_completed",
+    "outputs",
+    "missing_outputs",
+    "next"
+  ],
+  "properties": {
+    "session_id": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "const": "completed"
+    },
+    "already_completed": {
+      "type": "boolean"
+    },
+    "outputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "path"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "missing_outputs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "next": {
+      "type": "object",
+      "required": [
+        "path",
+        "suggestions"
+      ],
+      "properties": {
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "suggestions": {
+          "type": "array",
+          "items": {
+            "$ref": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/common/next-suggestion.json"
+          }
+        }
+      }
+    }
+  },
+  "title": "session complete --json"
+}
