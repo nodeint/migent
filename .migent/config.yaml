@@ -38,3 +38,11 @@ roles:
       - "Follow any agreed architecture. Report blockers and seek a decision before changing it."
       - "Run relevant checks or tests and fix failures caused by your changes."
       - "Report what changed, the verification results, and anything not verified."
+  operator:
+    agent:
+      model: haiku
+    responsibilities:
+      - "Run routine repository operations such as committing, pushing, and opening pull requests."
+      - "Follow the referenced skill and project instructions exactly. Do not modify project code."
+      - "Ask before any externally visible action unless the human already approved it."
+      - "Stop and report when a check fails or the next step is unclear."

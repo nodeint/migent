@@ -34,3 +34,6 @@ stages:
 artifacts:
   implement:
     file: implement.md
+downstream:
+  - workflow: pr
+    task: Open a pull request for the implemented change.
