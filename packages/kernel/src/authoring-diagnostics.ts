@@ -1,3 +1,4 @@
+import { ROLE_KEYS } from "./config-structure.js";
 import { isRecord } from "./record.js";
 
 /**
@@ -22,7 +23,6 @@ const STAGE_V5_RENAMED: Readonly<Record<string, string>> = {
 const PRODUCES_KEYS = ["artifact"];
 const SESSION_KEYS = ["resume_from"];
 const DECISION_ENTRY_KEYS = ["when", "navigate", "artifacts"];
-const ROLE_KEYS = ["description", "agent", "responsibilities"];
 const ROLE_V4_RENAMED: Readonly<Record<string, string>> = {
   default_model: "was renamed to {location}.agent in schema_version 5. Run `migent migrate`.",
   instructions: "was renamed to {location}.responsibilities in schema_version 5. Run `migent migrate`.",

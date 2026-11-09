@@ -1,6 +1,9 @@
 import { spawnSync } from "node:child_process";
 import {
   ConfigurationError,
+  buildStructuralIndex,
+  containerIssues,
+  isAgentPlaceholder,
   LOCAL_CONFIG_FILE,
   hasLocalConfig,
   listAgentDefinitions,
@@ -16,6 +19,7 @@ import {
   validateRoleKeys,
   type ClientRegistry,
   type ConfigOwner,
+  type StructuralIndex,
 } from "@nodeint/migent-kernel";
 import { DiagnosticList, failed, passed, type Check, type Diagnostic, type ModelEffortCheck } from "./check.js";
 import { failurePath, failureText } from "./clients.js";
@@ -62,27 +66,15 @@ export function analyzeConfig(
     error(caught.code ?? "config-invalid", caught.message, caught.path ?? fallbackPath);
   };
 
-  let agents: Record<string, unknown>;
-  let roles: Record<string, unknown>;
   try { rejectLegacyConfigKeys(config); } catch (caught) { fromError(caught, ["models"]); }
-  if (config.agents === undefined) {
-    agents = {};
-  } else if (!isRecord(config.agents)) {
-    error("agents-invalid", "Missing or invalid agents.", ["agents"]);
-    agents = {};
-  } else {
-    agents = config.agents;
-  }
-  if (!isRecord(config.roles)) {
-    error("roles-invalid", "Missing or invalid roles.", ["roles"]);
-    roles = {};
-  } else {
-    roles = config.roles;
-    if (Object.keys(roles).length === 0) error("roles-empty", "roles is empty.", ["roles"]);
-  }
+  for (const issue of containerIssues(config)) fromError(issue);
+  const agents: Record<string, unknown> = isRecord(config.agents) ? config.agents : {};
+  const roles: Record<string, unknown> = isRecord(config.roles) ? config.roles : {};
+  if (isRecord(config.roles) && Object.keys(roles).length === 0) error("roles-empty", "roles is empty.", ["roles"]);
 
+  const structure: StructuralIndex = buildStructuralIndex(config);
   const unmapped = new Set(
-    Object.keys(agents).filter((name) => isRecord(agents[name]) && Object.keys(agents[name]).length === 0),
+    Object.keys(agents).filter((name) => isAgentPlaceholder(agents[name])),
   );
   if (unmapped.size > 0) error("agent-unmapped", unmappedMessage([...unmapped].sort()), ["agents"]);
 
@@ -98,13 +90,16 @@ export function analyzeConfig(
       diagnostics.add({ severity: "warning", code: "model-unverified", message: effortCheck.warning, path: entry.path });
     }
     let definition = entry.value;
+    // A model the environment rejects drops its effort, so the index verdict on `effort` no longer applies.
+    let verdicts: StructuralIndex | undefined = structure;
     if (effortCheck?.problem && isRecord(definition)) {
       const { effort: _effort, ...rest } = definition;
       definition = rest;
+      verdicts = undefined;
     }
     let target;
     try {
-      target = loadAgentDefinition(definition, { label: entry.field, path: entry.path }, clients);
+      target = loadAgentDefinition(definition, { label: entry.field, path: entry.path }, clients, verdicts);
     } catch (caught) {
       fromError(caught, entry.path);
       continue;
@@ -134,15 +129,15 @@ export function analyzeConfig(
       continue;
     }
     if (typeof roleAgent === "string" && effortChecks[roleAgent]?.problem) {
-      try { loadRoleResponsibilities(config, roleKey); loadRoleDescription(config, roleKey); } catch (caught) { fromError(caught, ["roles", roleKey]); }
+      try { loadRoleResponsibilities(config, roleKey, structure); loadRoleDescription(config, roleKey, structure); } catch (caught) { fromError(caught, ["roles", roleKey]); }
       continue;
     }
     if (effortChecks[`roles.${roleKey}.agent`]?.problem) continue;
     let resolved;
     try {
-      resolved = resolveRoleCascade(config, roleKey, { options: null }, clients);
-      loadRoleResponsibilities(config, roleKey);
-      const description = loadRoleDescription(config, roleKey);
+      resolved = resolveRoleCascade(config, roleKey, { options: null }, clients, structure);
+      loadRoleResponsibilities(config, roleKey, structure);
+      const description = loadRoleDescription(config, roleKey, structure);
       if (description !== null) roleDescriptions[roleKey] = description;
     } catch (caught) {
       fromError(caught, ["roles", roleKey]);

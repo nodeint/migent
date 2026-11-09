@@ -19,6 +19,7 @@ import { clientRegistry } from "../src/client.ts";
 const TEMPLATES = fileURLToPath(new URL("../../../skills/migent/references/", import.meta.url));
 const WORKFLOW_PARSER = fileURLToPath(new URL("../../kernel/src/workflow.ts", import.meta.url));
 const CONFIG_PARSER = fileURLToPath(new URL("../../kernel/src/config.ts", import.meta.url));
+const CONFIG_STRUCTURE = fileURLToPath(new URL("../../kernel/src/config-structure.ts", import.meta.url));
 const RECORD_PARSER = fileURLToPath(new URL("../../kernel/src/record.ts", import.meta.url));
 
 const CONFIG_KEYS = [
@@ -117,7 +118,7 @@ test("config reference parses and names every key the config parser reads", () =
     expect(loadRoleResponsibilities(config, "reviewer")).toEqual([]);
     new GrokClient().validateOptions({ "reasoning-effort": "high" });
     new GrokClient().validateOptions({ "reasoning-effort": "medium" });
-    const configParser = `${readFileSync(CONFIG_PARSER, "utf8")}\n${readFileSync(RECORD_PARSER, "utf8")}`;
+    const configParser = `${readFileSync(CONFIG_PARSER, "utf8")}\n${readFileSync(CONFIG_STRUCTURE, "utf8")}\n${readFileSync(RECORD_PARSER, "utf8")}`;
     expect(parserKeys(configParser, "config").filter((key) => !LEGACY_CONFIG_KEYS.includes(key))).toEqual(CONFIG_KEYS);
     expect(yamlKeys(text)).toEqual([...CONFIG_KEYS, "code_generation", "deep_reasoning", "developer", "planner", "max_turns", "reviewer"].sort());
   } finally {

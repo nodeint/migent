@@ -555,3 +555,29 @@ test("every CLI output contract was exercised by a real command", () => {
   const missing = CLI_CONTRACTS.filter((entry) => !emitted.has(String(entry.schema.$id))).map((entry) => entry.key);
   expect(missing).toEqual([]);
 });
+
+test("config validate --json: multi-error drafts keep diagnostic precedence", async () => {
+  const drafts = [
+    // unknown agent wins over malformed responsibilities in the same role
+    "schema_version: 7\nroles:\n  developer:\n    agent: missing\n    responsibilities: 3\n",
+    // one invalid named agent shared by several roles reports once
+    "schema_version: 7\nagents:\n  a:\n    model: 3\nroles:\n  one:\n    agent: a\n  two:\n    agent: a\n",
+    // invalid named agent used by a role whose other fields are also invalid
+    "schema_version: 7\nagents:\n  a:\n    model: 3\nroles:\n  one:\n    agent: a\n    responsibilities: 3\n    description: 4\n",
+    // malformed inline role agent next to an invalid named agent
+    "schema_version: 7\nagents:\n  a:\n    model: 3\nroles:\n  one:\n    agent:\n      client: oops\n  two:\n    agent: a\n",
+    // empty placeholder is the only diagnostic
+    "schema_version: 7\nagents:\n  x: {}\nroles:\n  r:\n    agent: x\n",
+    // bad client options and unknown client key
+    "schema_version: 7\nroles:\n  r:\n    agent:\n      model: m\n      client:\n        type: codex\n        options:\n          1a: x\n",
+    "schema_version: 7\nroles:\n  r:\n    agent:\n      model: m\n      client:\n        type: codex\n        extra: 1\n",
+    // agents is not a mapping, roles empty, legacy role key
+    "schema_version: 7\nagents: 3\nroles: {}\n",
+    "schema_version: 7\nroles:\n  r:\n    instructions: [a]\n    agent: nope\n",
+  ];
+  const results = [];
+  for (const draft of drafts) {
+    results.push({ draft, ...(await json(["config", "validate", "@draft", "--format", "yaml", "--json"], draft)) });
+  }
+  expect(results).toMatchSnapshot();
+});

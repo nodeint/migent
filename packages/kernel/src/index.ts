@@ -377,3 +377,4 @@ export { buildDraftSourceMap } from "./draft-source.js";
 export type { DraftRange, DraftSourceMap } from "./draft-source.js";
 export { writeFileConditional } from "./conditional-write.js";
 export type { ConditionalWrite } from "./conditional-write.js";
+export { containerIssues, isAgentPlaceholder, buildStructuralIndex, type StructuralIndex } from "./config-structure.js";

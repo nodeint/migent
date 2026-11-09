@@ -23,9 +23,11 @@ behavior is documented in [README.md](README.md) and [docs/](docs/).
 | `integration/` | — | End-to-end tests against fake client binaries |
 
 Users install `@nodeint/migent`. `@nodeint/migent-contracts` is the public
-data contract: its schemas describe the CLI's JSON output, additive changes are
+data contract: its schemas describe the CLI's JSON output and the structure of
+the config files, additive changes are
 allowed in minor releases, and a breaking wire change needs a major release.
-It is a leaf package that depends only on `typebox`. The other packages have no
+It is a leaf package that depends only on `typebox`; the kernel depends on it
+to validate config structure. The other packages have no
 stable API and are published only because the CLI depends on them. Import them by
 package name (`@nodeint/migent-kernel`), never by relative path across package
 boundaries.
