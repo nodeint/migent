@@ -37,6 +37,7 @@ import { ProviderEventReporter } from "./provider-events.js";
 import { loadFrozenWorkflow } from "./session-freeze.js";
 import { AgentSessionRecord, SessionStore, stringOptions, type ExecutionContext } from "./session-store.js";
 import { StageOutcome } from "./stage-outcome.js";
+import { platformHome } from "./env.js";
 import { resolveStageOutcome, type OutcomeContext } from "./outcome-resolver.js";
 import { QuestionFileError, type Question } from "./questions.js";
 import { allStageArtifacts, isWorkflowV2, loadNamedWorkflow, loadStage, stageArtifactsFor, type StageArtifact, type StageSpec } from "./workflow.js";
@@ -1170,8 +1171,8 @@ function resolveWorkspace(workspace: string): string {
 }
 
 function expandHome(target: string): string {
-  if (target === "~") return process.env.HOME || target;
-  if (target.startsWith("~/")) return path.join(process.env.HOME || "", target.slice(2));
+  if (target === "~") return platformHome() || target;
+  if (target.startsWith("~/")) return path.join(platformHome() || "", target.slice(2));
   return target;
 }
 

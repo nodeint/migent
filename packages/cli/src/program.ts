@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { Command, Option, type OptionValues } from "commander";
-import { ConfigurationError, DEFAULT_MAX_DISPATCHES, requireAgentSession } from "@nodeint/migent-kernel";
+import { ConfigurationError, DEFAULT_MAX_DISPATCHES, noInputRequested, requireAgentSession } from "@nodeint/migent-kernel";
 import { continueAgent, dispatchAgent } from "./commands/agent.js";
 import { runAuthoring, type AuthoringKind, type AuthoringMode } from "./commands/authoring.js";
 import { removedConfigCommand, runConfigShow } from "./commands/config.js";
@@ -998,5 +998,5 @@ function integerFlag(raw: string, flag: string): number {
 }
 
 function inputDisabled(options: OptionValues): boolean {
-  return options.noInput === true || process.env.MIGENT_NO_INPUT === "1";
+  return options.noInput === true || noInputRequested();
 }
