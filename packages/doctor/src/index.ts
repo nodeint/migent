@@ -16,12 +16,16 @@ export {
   ClientCommandFailed,
   asCatalog,
   cached,
+  catalogLookupName,
   clientCatalogSource,
+  clientsListingModel,
   knownModel,
   loadCatalog,
+  loadCatalogSync,
   loadOptionValues,
 } from "./catalog.js";
 export type {
+  CatalogOutcome,
   CatalogSource,
   ClientCatalogInput,
   HeadlessOptionFact,

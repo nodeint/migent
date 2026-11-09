@@ -5,6 +5,7 @@ import {
   type CliClient,
   type ClientRegistry,
 } from "@nodeint/migent-kernel";
+import { agentClientType } from "./client-type.js";
 import type { ModelEffortCheck } from "./check.js";
 import {
   cached,
@@ -38,7 +39,7 @@ export async function checkModelEfforts(
     if (!isRecord(model) || !Object.hasOwn(model, "effort")) return null;
     if (typeof model.model !== "string" || !model.model.trim()) return null;
     if (clientUnusable(model)) return null;
-    const type = clientType(model);
+    const type = agentClientType(model, clients);
     if (type === undefined) return null; // The structural check explains the missing client.
     const field = `${modelField}.effort`;
     const value = JSON.stringify(model.effort);
@@ -70,12 +71,6 @@ export async function checkModelEfforts(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-/** The CLI client id of an agent definition (`client.type`), undefined when absent or not a usable string. */
-function clientType(definition: Record<string, unknown>): string | undefined {
-  const client = definition.client;
-  return isRecord(client) && typeof client.type === "string" && client.type.trim() !== "" ? client.type.trim() : undefined;
 }
 
 /** True when `client` is present but is not a mapping with a usable `type`: the structural check explains it. */

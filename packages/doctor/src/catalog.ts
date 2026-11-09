@@ -73,28 +73,91 @@ export function asCatalog(source: CatalogSource): CatalogSource {
   return candidate as CatalogSource;
 }
 
-export async function loadCatalog(
-  source: CatalogSource,
-  which: Which,
-  runCommand: RunCommand,
-): Promise<CliModelCatalog> {
+function requireOnPath(source: CatalogSource, which: Which): CatalogSource {
   if (which(source.command) === null) {
     throw new ClientCommandFailed(
       `${source.command} is not on PATH, so its models could not be listed.`,
     );
   }
-  const catalogSource = asCatalog(source);
+  return asCatalog(source);
+}
+
+function runFailure(source: CatalogSource, error: unknown): ClientCommandFailed {
+  if (error instanceof ClientCommandFailed) return error;
+  const reason = error instanceof Error ? error.message : String(error);
+  return new ClientCommandFailed(`Could not list ${source.command} models: ${reason}`);
+}
+
+function parseCatalog(source: CatalogSource, stdout: string): CliModelCatalog {
+  const catalog = source.parseModelCatalog(stdout);
+  if (catalog.ids.length === 0) throw new ClientCommandFailed(`${source.command} returned no models.`);
+  return catalog;
+}
+
+export async function loadCatalog(
+  source: CatalogSource,
+  which: Which,
+  runCommand: RunCommand,
+): Promise<CliModelCatalog> {
+  const catalogSource = requireOnPath(source, which);
   let stdout: string;
   try {
     stdout = await runCommand(catalogSource.modelCatalogCommand(), catalogSource.modelCatalogInput?.());
   } catch (error) {
-    if (error instanceof ClientCommandFailed) throw error;
-    const reason = error instanceof Error ? error.message : String(error);
-    throw new ClientCommandFailed(`Could not list ${source.command} models: ${reason}`);
+    throw runFailure(source, error);
   }
-  const catalog = catalogSource.parseModelCatalog(stdout);
-  if (catalog.ids.length === 0) throw new ClientCommandFailed(`${source.command} returned no models.`);
-  return catalog;
+  return parseCatalog(catalogSource, stdout);
+}
+
+/** Same steps and messages as `loadCatalog`, for callers that cannot await (config resolution). */
+export function loadCatalogSync(
+  source: CatalogSource,
+  which: Which,
+  runCommand: (argv: string[], input?: string) => string,
+): CliModelCatalog {
+  const catalogSource = requireOnPath(source, which);
+  let stdout: string;
+  try {
+    stdout = runCommand(catalogSource.modelCatalogCommand(), catalogSource.modelCatalogInput?.());
+  } catch (error) {
+    throw runFailure(source, error);
+  }
+  return parseCatalog(catalogSource, stdout);
+}
+
+/** One client's catalog outcome: its model ids, not on PATH, or a failure. */
+export type CatalogOutcome =
+  | { status: "loaded"; ids: readonly string[] }
+  | { status: "skipped" }
+  | { status: "failed"; reason: string };
+
+/** The same lookup name `model-check` uses: opencode's `#variant` suffix is not in its catalog. */
+export function catalogLookupName(command: string, model: string): string {
+  const hash = model.indexOf("#");
+  return command === "opencode" && hash > 0 ? model.slice(0, hash) : model;
+}
+
+/** Pure lookup policy: which clients list `model`, given every client's catalog outcome. */
+export function clientsListingModel(
+  model: string,
+  clients: ReadonlyArray<{ id: string; command: string; outcome: CatalogOutcome }>,
+): {
+  matches: string[];
+  searched: string[];
+  skipped: string[];
+  failed: Array<{ client: string; reason: string }>;
+} {
+  const result = { matches: [] as string[], searched: [] as string[], skipped: [] as string[], failed: [] as Array<{ client: string; reason: string }> };
+  const name = model.trim();
+  for (const { id, command, outcome } of clients) {
+    if (outcome.status === "skipped") result.skipped.push(id);
+    else if (outcome.status === "failed") result.failed.push({ client: id, reason: outcome.reason });
+    else {
+      result.searched.push(id);
+      if (outcome.ids.includes(catalogLookupName(command, name))) result.matches.push(id);
+    }
+  }
+  return result;
 }
 
 export function knownModel(model: string, catalog: CliModelCatalog): string {

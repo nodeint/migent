@@ -7,6 +7,7 @@ export type {
   ClientInfo,
   ClientOption,
   ClientRegistry,
+  ModelClientLookup,
   FailureClassification,
   FailureOrigin,
   InterruptOutcome,

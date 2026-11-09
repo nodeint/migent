@@ -134,8 +134,9 @@ test("doctor reports an agent that names no client", async () => {
     cliHooks.which = whichBoth;
     const captured = await capture(() => main(["doctor", "--json"], workspace));
     expect(captured.value).toBe(1);
-    expect(configProblems(captured.stdout)).toContain(
-      "Missing agents.bp-model.client.type. Set the agent's CLI client (for example, agents.bp-model.client.type: opencode).",
+    // With no client.type, the client is inferred from the model; no client lists seed-1 here.
+    expect(configProblems(captured.stdout).join("\n")).toMatch(
+      /No client lists model seed-1 .*set agents\.bp-model\.client\.type\./,
     );
   } finally {
     rmSync(workspace, { recursive: true, force: true });

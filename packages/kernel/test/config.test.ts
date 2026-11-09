@@ -357,3 +357,60 @@ test("resolves effort through an injected client without knowing client names", 
   expect(loadAgentTarget({ agents: { fast: { client: { type: "alternate" }, model: "m", effort: "max" } } }, "fast", custom).options)
     .toEqual({ alternate_level: "max" });
 });
+
+function inferenceWorkspace(agent: string): string {
+  const workspace = writeRoleWorkspace();
+  writeFileSync(
+    path.join(workspace, ".migent", "config.yaml"),
+    `schema_version: 7\nroles:\n  developer:\n    agent:\n${agent}`,
+    "utf8",
+  );
+  return workspace;
+}
+
+function lookupRegistry(lookup: { matches: string[]; searched?: string[]; skipped?: string[] }): ClientRegistry {
+  return {
+    ...registry,
+    clientsForModel: () => ({ searched: [], skipped: [], failed: [], ...lookup }),
+  };
+}
+
+test("infers the client from the model and maps effort to its native option", () => {
+  const workspace = inferenceWorkspace("      model: gpt-5\n      effort: high\n");
+  const target = resolveRoleTarget(workspace, "developer", undefined, lookupRegistry({ matches: ["codex"] }));
+  expect([target.client, target.model, target.options.model_reasoning_effort]).toEqual(["codex", "gpt-5", "high"]);
+});
+
+test("an explicit client.type starts no model lookup", () => {
+  const workspace = inferenceWorkspace("      model: gpt-5\n      client:\n        type: codex\n");
+  const guarded: ClientRegistry = {
+    ...registry,
+    clientsForModel: () => {
+      throw new Error("lookup must not run");
+    },
+  };
+  expect(resolveRoleTarget(workspace, "developer", undefined, guarded).client).toBe("codex");
+});
+
+test("reports a model no client lists and a model several clients list", () => {
+  const workspace = inferenceWorkspace("      model: gpt-5\n");
+  expect(() =>
+    resolveRoleTarget(workspace, "developer", undefined, lookupRegistry({ matches: [], searched: ["codex"], skipped: ["grok"] })),
+  ).toThrow(/No client lists model gpt-5 \(searched: codex; not on PATH: grok\)/);
+  expect(() => resolveRoleTarget(workspace, "developer", undefined, lookupRegistry({ matches: ["codex", "agy"] }))).toThrow(
+    /Model gpt-5 is listed by several clients \(codex, agy\)/,
+  );
+});
+
+test("client.options without client.type is rejected, and a registry without lookup keeps client.type required", () => {
+  const withOptions = inferenceWorkspace("      model: gpt-5\n      client:\n        options:\n          a: b\n");
+  expect(() => resolveRoleTarget(withOptions, "developer", undefined, lookupRegistry({ matches: ["codex"] }))).toThrow(
+    /client\.type is required when .*client\.options is set/,
+  );
+  const empty = inferenceWorkspace("      model: gpt-5\n      client:\n        options: {}\n");
+  expect(() => resolveRoleTarget(empty, "developer", undefined, lookupRegistry({ matches: ["codex"] }))).toThrow(
+    /client\.type is required when .*client\.options is set/,
+  );
+  const plain = inferenceWorkspace("      model: gpt-5\n");
+  expect(() => resolveRoleTarget(plain, "developer", undefined, registry)).toThrow(/Missing roles\.developer\.agent\.client\.type/);
+});

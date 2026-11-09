@@ -5,10 +5,11 @@ import {
   resolveRoleTarget, resolveStageTarget, stringifyConfig,
 } from "@nodeint/migent-kernel";
 import { diagnose } from "@nodeint/migent-doctor";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test } from "vitest";
 import { clientRegistry } from "../src/client.ts";
 import { runDoctor } from "../src/commands/doctor.ts";
 import { clientsFromConfig } from "../src/commands/skill.ts";
+import { cliHooks } from "../src/hooks.ts";
 import { capture } from "./support.ts";
 
 const directories: string[] = [];
@@ -32,7 +33,25 @@ function project(model: unknown, extra: Record<string, unknown> = {}): string {
   return workspace;
 }
 
+// Never reach the developer's real client CLIs: every model list is injected.
+const levels = ["low", "medium", "high"];
+let catalogs: Record<string, string> = {};
+beforeEach(() => {
+  catalogs = {};
+  cliHooks.which = (command) => `/fake/${command}`;
+  cliHooks.runCommand = (argv) => {
+    const output = catalogs[argv[0]!];
+    if (output === undefined) throw new Error("offline");
+    return output;
+  };
+});
+
+const codexModels = (...slugs: string[]): string =>
+  JSON.stringify({ models: slugs.map((slug) => ({ slug, supported_reasoning_levels: levels })) });
+
 afterEach(() => {
+  cliHooks.which = null;
+  cliHooks.runCommand = null;
   for (const workspace of directories.splice(0)) rmSync(workspace, { recursive: true, force: true });
 });
 
@@ -76,7 +95,8 @@ test("a named stage agent overrides an inline role default", () => {
 });
 
 test.each([
-  [{ model: "test" }, "Missing roles.developer.agent.client.type"],
+  [{ model: "test" }, "No client lists model test"],
+  [{ client: { options: {} }, model: "test" }, "client.type is required when roles.developer.agent.client.options is set"],
   [{ client: { type: "missing" }, model: "test" }, "roles.developer.agent.client.type is not supported"],
   [{ client: { type: "codex" } }, "roles.developer.agent.model"],
   [{ client: { type: "codex", options: { nested: {} } }, model: "test" }, "roles.developer.agent.client.options.nested"],
@@ -107,5 +127,35 @@ test.each(["high", "typo"])("doctor validates inline effort against the client c
     expect(checks.flatMap((check: { problems: string[] }) => check.problems)).toEqual([
       'Invalid roles.developer.agent.effort: "typo"\nValid values: low, medium, high',
     ]);
+  }
+});
+
+test("a clientless agent resolves to the one client that lists its model", () => {
+  catalogs.codex = codexModels("only-codex");
+  const workspace = project({ model: "only-codex", effort: "high" });
+  expect(diagnose(workspace, { clients: clientRegistry(), which }).every((check) => check.ok)).toBe(true);
+  expect(resolveRoleTarget(workspace, "developer", undefined, clientRegistry())).toEqual({
+    client: "codex", model: "only-codex", options: { model_reasoning_effort: "high" },
+  });
+});
+
+test("doctor reports a model that several clients list", () => {
+  catalogs.codex = codexModels("shared");
+  catalogs.grok = "Available models:\n  - shared\n";
+  const workspace = project({ model: "shared" });
+  const [config] = diagnose(workspace, { clients: clientRegistry(), which });
+  expect(config.ok).toBe(false);
+  expect(config.problems.join("\n")).toMatch(/Model shared is listed by several clients \(codex, grok\)/);
+  expect(() => resolveRoleTarget(workspace, "developer", undefined, clientRegistry())).toThrow(/several clients/);
+});
+
+test.each(["high", "typo"])("doctor validates effort against the inferred client: %s", async (effort) => {
+  catalogs.codex = codexModels("only-codex");
+  const workspace = project({ model: "only-codex", effort });
+  const result = await capture(() => runDoctor(workspace, { asJson: true, which, home: workspace }));
+  expect(result.value).toBe(effort === "high" ? 0 : 1);
+  if (effort === "typo") {
+    const problems = JSON.parse(result.stdout).checks.flatMap((check: { problems: string[] }) => check.problems);
+    expect(problems).toEqual(['Invalid roles.developer.agent.effort: "typo"\nValid values: low, medium, high']);
   }
 });

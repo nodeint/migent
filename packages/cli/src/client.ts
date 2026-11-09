@@ -2,7 +2,10 @@ import { type HeadlessOption, clientIds, createClient } from "@nodeint/migent-ad
 import {
   ClientCommandFailed,
   clientCatalogSource,
+  clientsListingModel,
+  loadCatalogSync,
   loadOptionValues,
+  type CatalogOutcome,
   type CatalogSource,
   type ClientCatalogInput,
   type RunCommand,
@@ -11,19 +14,51 @@ import {
 import {
   ConfigurationError,
   killProcessTree,
+  whichSync,
   spawnProvider,
   spawnProviderSync,
   type CliClient,
   type CliModelCatalog,
   type ClientRegistry,
+  type ModelClientLookup,
 } from "@nodeint/migent-kernel";
+import { cliHooks } from "./hooks.js";
 
 // The catalog helpers belong to the doctor; commands keep importing them from here.
 export { ClientCommandFailed, asCatalog, knownModel, loadCatalog, loadOptionValues } from "@nodeint/migent-doctor";
 export type { CatalogSource, RunCommand, Which } from "@nodeint/migent-doctor";
 
-/** The CLI composition root: every client is built from the adapters' own factories. */
+/**
+ * The CLI composition root: every client is built from the adapters' own factories. Model-to-client
+ * inference lists each installed client's models synchronously, once per registry instance, and only
+ * when an agent omits `client.type`.
+ */
 export function clientRegistry(): ClientRegistry {
+  const outcomes = new Map<string, CatalogOutcome>();
+  const outcomeOf = (id: string): CatalogOutcome => {
+    const known = outcomes.get(id);
+    if (known !== undefined) return known;
+    const which = cliHooks.which ?? whichSync;
+    const injected = cliHooks.runCommand;
+    const run = (argv: string[], input?: string): string => {
+      if (injected === null) return runClientCommand(argv, input);
+      const out = injected(argv, input);
+      if (typeof out !== "string") throw new ClientCommandFailed("Model lookup needs a synchronous command runner.");
+      return out;
+    };
+    const client = createClient(id);
+    let outcome: CatalogOutcome;
+    if (which(client.command) === null) outcome = { status: "skipped" };
+    else {
+      try {
+        outcome = { status: "loaded", ids: loadCatalogSync(catalogSourceOf(client), which, run).ids };
+      } catch (error) {
+        outcome = { status: "failed", reason: error instanceof Error ? error.message : String(error) };
+      }
+    }
+    outcomes.set(id, outcome);
+    return outcome;
+  };
   return {
     ids: () => clientIds(),
     get: (id: string): CliClient => {
@@ -32,6 +67,11 @@ export function clientRegistry(): ClientRegistry {
       }
       return createClient(id);
     },
+    clientsForModel: (model: string): ModelClientLookup =>
+      clientsListingModel(
+        model,
+        clientIds().map((id) => ({ id, command: createClient(id).command, outcome: outcomeOf(id) })),
+      ),
   };
 }
 

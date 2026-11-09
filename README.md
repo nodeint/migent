@@ -272,9 +272,7 @@ roles:
       - Make focused changes that address root causes and follow project conventions.
       - Preserve unrelated behavior and support changes with relevant checks.
     agent:
-      model: claude-sonnet-5.5
-      client:
-        type: claude-code
+      model: sonnet
 ```
 
 This workflow asks the developer to implement a task, then checks the result:
@@ -321,10 +319,8 @@ roles:
       - Design maintainable architecture grounded in repository evidence.
       - Keep designs proportional to the task; produce plans without changing code.
     agent:
-      model: claude-opus-5.5
+      model: opus
       effort: high
-      client:
-        type: claude-code
   reviewer:
     description: Reviews plans and implementations against the task.
     responsibilities:
@@ -333,8 +329,6 @@ roles:
     agent:
       model: gpt-6.1-sol
       effort: medium
-      client:
-        type: codex
 ```
 
 The planner produces `plan.md`. The reviewer receives it through `depends_on`

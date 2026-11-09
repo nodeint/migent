@@ -46,12 +46,18 @@ option discovery. Neither operation belongs inside a pure text parser.
 ## Client selection
 
 `createClient(id)` builds a fresh registered client and rejects an unknown ID.
-`clientIds()` returns the registered IDs, sorted. Every agent names its client
-explicitly through `client.type`; there is no implicit default.
+`clientIds()` returns the registered IDs, sorted. An agent names its client
+through `client.type`. When `client.type` is omitted, the kernel asks the registry's
+optional `clientsForModel(model)` which clients list the model and uses the one match.
+The CLI composition root implements it with the doctor's synchronous catalog loader
+(`loadCatalogSync`, which shares the PATH check, parsing, and error messages with the async
+`loadCatalog`) and the lookup policy `clientsListingModel` (exact match; opencode's `#variant`
+suffix is stripped). Each registry instance lists a client's models at most once, and only when an
+agent omits `client.type`. The kernel spawns nothing itself.
 
 The kernel resolves an agent to a `{client, model, options}` target through a
-registry lookup. A missing or unknown client is a configuration error, not a
-silent fallback. `migent get clients` lists the available clients.
+registry lookup. A missing, unknown, unlisted (`client-not-found`), or ambiguous (`client-ambiguous`)
+client is a configuration error, not a silent fallback. `migent get clients` lists the available clients.
 
 
 ## Building and reading a turn

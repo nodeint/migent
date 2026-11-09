@@ -8,6 +8,7 @@ import {
 import type { ModelEffortCheck } from "./check.js";
 import {
   cached,
+  catalogLookupName,
   clientCatalogSource,
   knownModel,
   loadCatalog,
@@ -15,6 +16,7 @@ import {
   type RunCommand,
   type Which,
 } from "./catalog.js";
+import { agentClientType } from "./client-type.js";
 import { checkModelEfforts } from "./effort-check.js";
 
 /**
@@ -32,10 +34,8 @@ import { checkModelEfforts } from "./effort-check.js";
  */
 const RELIABLE_CATALOGS: ReadonlySet<string> = new Set(["opencode", "grok", "agy"]);
 
-/** opencode accepts `provider/model#variant`; the catalog lists only `provider/model`. */
 function catalogName(client: CliClient, model: string): string {
-  const hash = model.indexOf("#");
-  return client.command === "opencode" && hash > 0 ? model.slice(0, hash) : model;
+  return catalogLookupName(client.command, model);
 }
 
 /** Checks model availability, then efforts (skipped for unknown models), and merges both per key. */
@@ -92,7 +92,7 @@ export async function checkModelAvailability(
     if (!isRecord(model) || Object.keys(model).length === 0) return null;
     if (typeof model.model !== "string" || !model.model.trim()) return null;
     if (clientUnusable(model)) return null;
-    const type = clientType(model);
+    const type = agentClientType(model, clients);
     if (type === undefined) return null; // The structural check explains the missing client.
     const field = `${modelField}.model`;
     const name = model.model.trim();
@@ -159,12 +159,6 @@ function distance(left: string, right: string): number {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-/** The CLI client id of an agent definition (`client.type`), undefined when absent or not a usable string. */
-function clientType(definition: Record<string, unknown>): string | undefined {
-  const client = definition.client;
-  return isRecord(client) && typeof client.type === "string" && client.type.trim() !== "" ? client.type.trim() : undefined;
 }
 
 /** True when `client` is present but is not a mapping with a usable `type`: the structural check explains it. */
