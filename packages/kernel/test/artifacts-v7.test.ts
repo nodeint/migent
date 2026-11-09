@@ -2,10 +2,11 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, expect, test } from "vitest";
-import { collectWorkflowDraft, migrateWorkflow, parseWorkflowMapping, patchWorkflowText } from "../src/index.ts";
+import { migrateWorkflow, patchWorkflowText } from "../src/index.ts";
+import { collectWorkflowDraft, parseWorkflowMapping } from "@nodeint/migent-workflow";
 import { missingWorkflowOutputNames, resolveArtifactSources, type ExecutionSnapshot } from "../src/outputs.ts";
 import { currentCompleteByStage } from "../src/selection.ts";
-import { parseYamlDocument } from "../src/yaml.ts";
+import { parseYamlDocument } from "@nodeint/migent-workflow";
 
 const roots: string[] = [];
 afterEach(() => {

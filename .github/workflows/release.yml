@@ -118,7 +118,7 @@ jobs:
         run: |
           cd "$RUNNER_TEMP/release"
           version="${{ steps.plan.outputs.version }}"
-          for name in migent-contracts migent-prompts migent-kernel migent-doctor migent-adapters migent-registry migent; do
+          for name in migent-contracts migent-workflow migent-prompts migent-kernel migent-doctor migent-adapters migent-registry migent; do
             if npm view "@nodeint/$name@$version" version --prefer-online >/dev/null 2>&1; then
               echo "@nodeint/$name@$version is already public"
             else

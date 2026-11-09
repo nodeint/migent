@@ -1,21 +1,14 @@
 import { expect, test } from "vitest";
-import {
-  revisionResumeExecution,
-  revisionStop,
-  stageAgentExecution,
-  stageDispatchError,
-  readyStages,
-  type ExecutionSnapshot,
-  type WorkflowDocument,
-} from "../src/index.ts";
+import { revisionResumeExecution, revisionStop, stageAgentExecution, stageDispatchError, readyStages, type ExecutionSnapshot } from "../src/index.ts";
+import { type WorkflowDocument } from "@nodeint/migent-workflow";
 import {
   currentCompleteByStage,
   latestCompleteByStage,
   schedulableStageIds,
   version2GraphQuiet,
 } from "../src/selection.ts";
-import { parseWorkflowMapping } from "../src/workflow.ts";
-import { parseYamlDocument } from "../src/yaml.ts";
+import { parseWorkflowMapping } from "@nodeint/migent-workflow";
+import { parseYamlDocument } from "@nodeint/migent-workflow";
 
 function workflowFrom(text: string): WorkflowDocument {
   return parseWorkflowMapping(parseYamlDocument(text) as Record<string, unknown>, "t.yaml");

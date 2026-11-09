@@ -1,16 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "vitest";
-import {
-  missingCompletionOutputNames,
-  nonemptyArtifact,
-  parseStageOutcome,
-  publishOutputFiles,
-  shouldPublishOutputs,
-  StageOutcome,
-  type RoleStageSpec,
-  type WorkflowDocument,
-} from "../src/index.ts";
+import { missingCompletionOutputNames, nonemptyArtifact, parseStageOutcome, publishOutputFiles, shouldPublishOutputs, StageOutcome } from "../src/index.ts";
+import { type RoleStageSpec, type WorkflowDocument } from "@nodeint/migent-workflow";
 import { tempDir } from "./support.ts";
 
 function stage(id: string, role: string, extra: Partial<RoleStageSpec> = {}): RoleStageSpec {

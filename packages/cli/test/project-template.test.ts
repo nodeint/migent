@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { expect, test } from "vitest";
 import { parse } from "yaml";
-import { loadWorkflowDocument } from "@nodeint/migent-kernel";
+import { loadWorkflowDocument } from "@nodeint/migent-workflow";
 import { renderProject, projectTemplateDirectory, type ModelChoice } from "../src/project-template.js";
 
 const root = new URL("../../../templates/", import.meta.url);

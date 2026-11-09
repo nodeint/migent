@@ -10,7 +10,7 @@ import {
 } from "./outputs.js";
 import { currentCompleteByStage } from "./selection.js";
 import type { LedgerOutput } from "./session-ledger.js";
-import { isWorkflowV2, type WorkflowDocument } from "./workflow.js";
+import { isWorkflowV2, type WorkflowDocument } from "@nodeint/migent-workflow";
 
 /** `published_by_execution_id` for outputs published by `migent session complete`. */
 export const MANUAL_PUBLISHER = "manual";

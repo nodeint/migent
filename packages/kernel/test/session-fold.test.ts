@@ -3,7 +3,8 @@ import { mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
-import { AgentToolRunner, ConfigurationError, executeNamedWorkflow, loadWorkflowDocument, SessionLock } from "../src/index.ts";
+import { AgentToolRunner, ConfigurationError, executeNamedWorkflow, SessionLock } from "../src/index.ts";
+import { loadWorkflowDocument } from "@nodeint/migent-workflow";
 import { readExecutions, readFoldedStatus, statusDriftMessage } from "../src/session-fold.ts";
 import { appendLifecycleEvent, readParsedEvents } from "../src/session-events.ts";
 import { repairSession } from "../src/session-repair.ts";

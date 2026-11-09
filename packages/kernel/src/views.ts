@@ -14,7 +14,7 @@ import {
 import { selectSessionWorkflow } from "./session-selection.js";
 import { ConfigurationError } from "./errors.js";
 import type { ClientRegistry } from "./cli-client.js";
-import { isRecord } from "./record.js";
+import { isRecord } from "@nodeint/migent-workflow";
 import {
   isRoleStage,
   loadNamedWorkflow,
@@ -22,7 +22,7 @@ import {
   type StageSpec,
   type WorkflowDocument,
   type StageArtifact,
-} from "./workflow.js";
+} from "@nodeint/migent-workflow";
 
 /**
  * Read-only views of what a project defines. They are the public contract of `migent get`: plain,

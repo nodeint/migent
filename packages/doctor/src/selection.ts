@@ -1,4 +1,5 @@
-import { loadWorkflowCatalog, whichSync, type ClientRegistry, type SessionSelection } from "@nodeint/migent-kernel";
+import { whichSync, type ClientRegistry, type SessionSelection } from "@nodeint/migent-kernel";
+import { loadWorkflowCatalog } from "@nodeint/migent-workflow";
 import type { ModelEffortCheck } from "./check.js";
 import type { RunCommand, Which } from "./catalog.js";
 import { diagnose } from "./diagnose.js";

@@ -7,8 +7,8 @@ import { ConfigurationError } from "./errors.js";
 import { storedQuestions } from "./questions.js";
 import { sessionStatusAfterExecution } from "./outputs.js";
 import { sessionStatusFromExecutions, type StatusExecution } from "./session-ledger.js";
-import { isRecord } from "./record.js";
-import { isWorkflowV2 } from "./workflow.js";
+import { isRecord } from "@nodeint/migent-workflow";
+import { isWorkflowV2 } from "@nodeint/migent-workflow";
 import { utcNow } from "./runtime.js";
 import {
   appendLifecycleEvent,

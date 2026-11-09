@@ -3,7 +3,7 @@ import { parseExecutionId } from "./session-events.js";
 import { latestDiagnosticsPathIn } from "./session-diagnostics.js";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
-import { isRecord } from "./record.js";
+import { isRecord } from "@nodeint/migent-workflow";
 import { MIGENT_DIRNAME, SESSIONS_DIRNAME } from "./runtime.js";
 import { loadFrozenWorkflow } from "./session-freeze.js";
 

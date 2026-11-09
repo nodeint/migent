@@ -1,27 +1,8 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
-import {
-  failedStageCount,
-  revisionResumeExecution,
-  stageAgentExecution,
-  stagePromptAlreadyDelivered,
-  verifyExhaustedExecution,
-  loadWorkflowDocument,
-  nextStage,
-  readyStages,
-  runnableNow,
-  NextStage,
-  NextStageError,
-  revisionStop,
-  stageDispatchError,
-  Stop,
-  type ExecutionSnapshot,
-  type NextStageResult,
-  type RoleStageSpec,
-  type WorkflowDocument,
-  type VerifyOnlyStageSpec,
-} from "../src/index.ts";
+import { failedStageCount, revisionResumeExecution, stageAgentExecution, stagePromptAlreadyDelivered, verifyExhaustedExecution, nextStage, readyStages, runnableNow, NextStage, NextStageError, revisionStop, stageDispatchError, Stop, type ExecutionSnapshot, type NextStageResult } from "../src/index.ts";
+import { loadWorkflowDocument, type RoleStageSpec, type WorkflowDocument, type VerifyOnlyStageSpec } from "@nodeint/migent-workflow";
 import { schedulableStageIds, version2GraphQuiet, version2IdleReason } from "../src/selection.ts";
 
 const fixtures = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "workflows");

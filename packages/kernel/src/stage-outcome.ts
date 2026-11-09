@@ -2,8 +2,8 @@ import type { Question } from "./questions.js";
 
 export const outcomeStatuses = new Set(["complete", "blocked", "question"]);
 
-/** The recipient is separate from the question outcome; more recipients can be added later. */
-export type AskTarget = "human";
+import type { AskTarget } from "@nodeint/migent-workflow";
+export type { AskTarget };
 
 export class StageOutcome {
   constructor(

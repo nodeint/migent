@@ -13,7 +13,7 @@ import {
   type StatusExecution,
 } from "./session-ledger.js";
 import { readStatusFileState, type StatusFileState } from "./query.js";
-import { isRecord } from "./record.js";
+import { isRecord } from "@nodeint/migent-workflow";
 import { executionClientReader } from "./legacy-provider.js";
 import { EXECUTIONS_DIRNAME } from "./runtime.js";
 import {
@@ -26,8 +26,8 @@ import {
 import { loadFrozenWorkflow } from "./session-freeze.js";
 import { StageOutcome } from "./stage-outcome.js";
 import { storedQuestions } from "./questions.js";
-import { loadNamedWorkflow, loadWorkflowDocument, type WorkflowDocument } from "./workflow.js";
-import { parseYamlDocument } from "./yaml.js";
+import { loadNamedWorkflow, loadWorkflowDocument, type WorkflowDocument } from "@nodeint/migent-workflow";
+import { parseYamlDocument } from "@nodeint/migent-workflow";
 
 export interface SessionManifest {
   sessionId: string;

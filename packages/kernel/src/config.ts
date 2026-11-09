@@ -12,11 +12,11 @@ import {
   type StructuralIndex,
 } from "./config-structure.js";
 import { ConfigurationError } from "./errors.js";
-import { isRecord } from "./record.js";
-import { isRoleStage, loadNamedWorkflow, type RoleStageSpec, type StageAgent } from "./workflow.js";
-import { parseYamlDocument } from "./yaml.js";
+import { isRecord } from "@nodeint/migent-workflow";
+import { isRoleStage, loadNamedWorkflow, type RoleStageSpec, type StageAgent } from "@nodeint/migent-workflow";
+import { parseYamlDocument } from "@nodeint/migent-workflow";
 
-export { documentVersion } from "./record.js";
+export { documentVersion } from "@nodeint/migent-workflow";
 
 export interface StageTarget {
   /** CLI client id, resolved through the registry. Always present on an effective agent. */

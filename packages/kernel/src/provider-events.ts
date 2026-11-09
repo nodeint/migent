@@ -1,4 +1,4 @@
-import { isRecord } from "./record.js";
+import { isRecord } from "@nodeint/migent-workflow";
 import { logProgress, utcNow } from "./runtime.js";
 import type { ExecutionContext, SessionStore } from "./session-store.js";
 import { STATUS_PROVIDER_EVENTS } from "./event-kinds.js";

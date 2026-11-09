@@ -3,24 +3,18 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { GrokClient, clientIds } from "@nodeint/migent-adapters";
-import {
-  documentVersion,
-  loadAgentTarget,
-  loadRoleDescription,
-  loadRoleResponsibilities,
-  loadWorkflowDocument,
-  loadYamlMapping,
-  migrateConfig,
-  resolveRoleTarget,
-} from "@nodeint/migent-kernel";
+import { documentVersion, loadAgentTarget, loadRoleDescription, loadRoleResponsibilities, loadYamlMapping, migrateConfig, resolveRoleTarget } from "@nodeint/migent-kernel";
+import { loadWorkflowDocument } from "@nodeint/migent-workflow";
 import { expect, test } from "vitest";
 import { clientRegistry } from "../src/client.ts";
 
 const TEMPLATES = fileURLToPath(new URL("../../../skills/migent/references/", import.meta.url));
-const WORKFLOW_PARSER = fileURLToPath(new URL("../../kernel/src/workflow.ts", import.meta.url));
+const WORKFLOW_SRC = fileURLToPath(new URL("../../workflow/src/", import.meta.url));
+/** Modules that were `workflow.ts` before it was split; the key scan reads them together. */
+const WORKFLOW_PARSER_MODULES = ["model", "schema", "graph", "stage-fields", "artifacts", "parse", "catalog", "load", "draft/problems", "draft/stage", "draft/outputs", "draft/graph", "draft/index"];
 const CONFIG_PARSER = fileURLToPath(new URL("../../kernel/src/config.ts", import.meta.url));
 const CONFIG_STRUCTURE = fileURLToPath(new URL("../../kernel/src/config-structure.ts", import.meta.url));
-const RECORD_PARSER = fileURLToPath(new URL("../../kernel/src/record.ts", import.meta.url));
+const RECORD_PARSER = fileURLToPath(new URL("../../workflow/src/record.ts", import.meta.url));
 
 const CONFIG_KEYS = [
   "agent",
@@ -183,7 +177,7 @@ test("workflow reference parses and names every key the workflow parser reads", 
   });
   expect(document.completion).toBeNull();
   expect(document.outputs?.map((output) => output.name)).toEqual(["draft", "draft-notes"]);
-  const scanned = new Set(parserKeys(readFileSync(WORKFLOW_PARSER, "utf8"), "workflow"));
+  const scanned = new Set(parserKeys(WORKFLOW_PARSER_MODULES.map((name) => readFileSync(`${WORKFLOW_SRC}${name}.ts`, "utf8")).join("\n"), "workflow"));
   scanned.add("schema_version");
   expect([...scanned].sort()).toEqual(WORKFLOW_KEYS);
   const sampleKeys = WORKFLOW_KEYS.filter((key) => !["completion", "requires", "stage", "values", "routes", "options", "artifact", "from_stage", "name", "outputs", "produces"].includes(key));

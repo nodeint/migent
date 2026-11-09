@@ -2,7 +2,7 @@ import { statSync } from "node:fs";
 import type { ExecutionFailure, ProcessFacts } from "./command-executor.js";
 import type { FailureClassification, ResponseSource } from "./cli-client.js";
 import { KERNEL_VERSION } from "./package-version.js";
-import { isRecord } from "./record.js";
+import { isRecord } from "@nodeint/migent-workflow";
 import { leadingHeaders, outcomeStatuses } from "./stage-outcome.js";
 
 /** Schema of `diagnostics.json`. 2: `provider-exit` no longer implies stderr; adds `provider-error`, `stream_summary`, `result_state`. */

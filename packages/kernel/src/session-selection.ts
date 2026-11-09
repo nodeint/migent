@@ -2,7 +2,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { ZodError } from "zod";
 import { ConfigurationError } from "./errors.js";
-import { isRecord } from "./record.js";
+import { isRecord } from "@nodeint/migent-workflow";
 import { readStatusFileState } from "./query.js";
 import { readSessionManifest } from "./session-fold.js";
 import {
@@ -14,8 +14,8 @@ import {
   loadNamedWorkflow,
   parseWorkflowMapping,
   type WorkflowDocument,
-} from "./workflow.js";
-import { parseYamlDocument } from "./yaml.js";
+} from "@nodeint/migent-workflow";
+import { parseYamlDocument } from "@nodeint/migent-workflow";
 
 export type SessionWorkflowKind = "draft" | "live" | "frozen";
 

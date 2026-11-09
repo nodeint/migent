@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
-import { conditionalReach, conditionalStages, parseWorkflowMapping } from "../src/workflow.ts";
-import { parseYamlDocument } from "../src/yaml.ts";
+import { conditionalReach, conditionalStages, parseWorkflowMapping } from "../src/index.ts";
+import { parseYamlDocument } from "../src/index.ts";
 
 function parseText(text: string) {
   return parseWorkflowMapping(parseYamlDocument(text) as Record<string, unknown>, "t.yaml");

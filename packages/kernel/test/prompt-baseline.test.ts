@@ -5,7 +5,7 @@ import { expect, test } from "vitest";
 import type { ExecutionSnapshot } from "../src/outputs.ts";
 import { buildStagePrompt, buildStageReplyPrompt, buildStageResumePrompt, buildVerifyRepairPrompt } from "../src/prompt.ts";
 import { flattenHistory, renderProviderPrompt } from "../src/runtime.ts";
-import { parseWorkflowMapping } from "../src/workflow.ts";
+import { parseWorkflowMapping } from "@nodeint/migent-workflow";
 import type { TurnKind } from "../src/index.ts";
 
 // Neutral fixture: no role or stage instructions, so every prompt line below comes from the engine.

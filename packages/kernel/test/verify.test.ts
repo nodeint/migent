@@ -3,20 +3,8 @@ import { hostname } from "node:os";
 import path from "node:path";
 import { expect, test } from "vitest";
 import { ENDPOINT_UNKNOWN, PID_GONE, type ProcessInspector } from "../src/process-ownership.ts";
-import {
-  AgentToolRunner,
-  ConfigurationError,
-  SessionLock,
-  SessionStore,
-  StageOutcome,
-  VerifyRunner,
-  createWorkflowSession,
-  executeNamedWorkflow,
-  raiseCancellation,
-  resetCancellation,
-  loadWorkflowDocument,
-  buildStagePrompt,
-} from "../src/index.ts";
+import { AgentToolRunner, ConfigurationError, SessionLock, SessionStore, StageOutcome, VerifyRunner, createWorkflowSession, executeNamedWorkflow, raiseCancellation, resetCancellation, buildStagePrompt } from "../src/index.ts";
+import { loadWorkflowDocument } from "@nodeint/migent-workflow";
 import { clearInFlightExecution, clearInFlightExecutions, noteInFlightExecution } from "../src/session-store.ts";
 import { ScriptedClient, tempDir, registryOf } from "./support.ts";
 

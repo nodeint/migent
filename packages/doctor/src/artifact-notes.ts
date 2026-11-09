@@ -1,4 +1,4 @@
-import type { WorkflowDocument } from "@nodeint/migent-kernel";
+import type { WorkflowDocument } from "@nodeint/migent-workflow";
 
 /** Code of the informational finding for a downstream mapping to an optional artifact. */
 export const OPTIONAL_MAPPING_CODE = "downstream-optional-artifact";

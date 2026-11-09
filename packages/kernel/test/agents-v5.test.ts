@@ -2,22 +2,11 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "vitest";
 import { stringify } from "yaml";
-import {
-  ConfigurationError,
-  SCHEMA_VERSION,
-  getAgentView,
-  getRoleView,
-  listAgentDefinitions,
-  loadRoleDescription,
-  loadRoleResponsibilities,
-  resolveRoleCascade,
-  resolveStageSpec,
-  unknownRoleKeyEntries,
-  unknownWorkflowKeyEntries,
-} from "../src/index.ts";
-import { parseWorkflowMapping, type RoleStageSpec } from "../src/workflow.ts";
+import { ConfigurationError, getAgentView, getRoleView, listAgentDefinitions, loadRoleDescription, loadRoleResponsibilities, resolveRoleCascade, resolveStageSpec, unknownRoleKeyEntries } from "../src/index.ts";
+import { SCHEMA_VERSION, unknownWorkflowKeyEntries } from "@nodeint/migent-workflow";
+import { parseWorkflowMapping, type RoleStageSpec } from "@nodeint/migent-workflow";
 import { readWorkflowFreeze, writeWorkflowFreeze } from "../src/session-freeze.ts";
-import { loadNamedWorkflow } from "../src/workflow.ts";
+import { loadNamedWorkflow } from "@nodeint/migent-workflow";
 import { defaultClients, tempDir } from "./support.ts";
 
 const resolver = defaultClients();

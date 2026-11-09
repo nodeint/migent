@@ -13,7 +13,7 @@ import {
   type StageTarget,
 } from "./config.js";
 import { ConfigurationError } from "./errors.js";
-import { isRecord } from "./record.js";
+import { isRecord } from "@nodeint/migent-workflow";
 import { log } from "./runtime.js";
 import {
   isRoleStage,
@@ -25,8 +25,8 @@ import {
   type WorkflowCompletion,
   type WorkflowDocument,
   type StageArtifact,
-} from "./workflow.js";
-import { parseYamlDocument } from "./yaml.js";
+} from "@nodeint/migent-workflow";
+import { parseYamlDocument } from "@nodeint/migent-workflow";
 
 export const WORKFLOW_FREEZE_FILE = "workflow.frozen.yaml";
 

@@ -9,7 +9,7 @@ import {
 import path from "node:path";
 import { fsyncPath, renameWithRetry } from "./atomic-file.js";
 import { StageOutcome } from "./stage-outcome.js";
-import type { WorkflowDocument } from "./workflow.js";
+import type { WorkflowDocument } from "@nodeint/migent-workflow";
 
 const asciiSpace = new Set([0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x20]);
 

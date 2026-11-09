@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
 import { isMap, isNode, isSeq, parseDocument, stringify, visit, type Document, type Node as YamlNode, type Pair, type YAMLMap, type YAMLSeq } from "yaml";
 import { ConfigurationError } from "./errors.js";
-import { documentVersion, isRecord } from "./record.js";
-import { SCHEMA_VERSION } from "./workflow.js";
-import { parseYamlDocument } from "./yaml.js";
+import { documentVersion, isRecord } from "@nodeint/migent-workflow";
+import { SCHEMA_VERSION } from "@nodeint/migent-workflow";
+import { parseYamlDocument } from "@nodeint/migent-workflow";
 
 export type DraftFormat = "yaml" | "json";
 

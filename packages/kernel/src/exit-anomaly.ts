@@ -1,5 +1,5 @@
 import path from "node:path";
-import { isRecord } from "./record.js";
+import { isRecord } from "@nodeint/migent-workflow";
 import { readParsedEvents, type ParsedEvent } from "./session-events.js";
 
 export const EXIT_ANOMALY_EVENT = "provider.exit_anomaly";

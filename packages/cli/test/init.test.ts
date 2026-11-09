@@ -2,7 +2,8 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { diagnose } from "@nodeint/migent-doctor";
-import { loadWorkflowDocument, loadWorkspaceConfig, resolveStageTarget } from "@nodeint/migent-kernel";
+import { loadWorkspaceConfig, resolveStageTarget } from "@nodeint/migent-kernel";
+import { loadWorkflowDocument } from "@nodeint/migent-workflow";
 import { afterEach, expect, test } from "vitest";
 import { cliHooks } from "../src/hooks.ts";
 import { clientRegistry } from "../src/client.ts";

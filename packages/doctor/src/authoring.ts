@@ -1,23 +1,6 @@
 import { OPTIONAL_MAPPING_CODE, optionalArtifactMappings } from "./artifact-notes.js";
-import {
-  ConfigurationError,
-  checkDocumentSchemaVersion,
-  mergeConfigLayers,
-  parseWorkflowMapping,
-  checkWorkflowCatalog,
-  catalogEntryFromDocument,
-  collectWorkflowDraft,
-  loadAgentTarget,
-  resolveEffectiveClient,
-  resolveStageSpec,
-  type RoleStageSpec,
-  type StageTarget,
-  unknownWorkflowKeyEntries,
-  type ConfigOwner,
-  type MergedConfig,
-  type ClientRegistry,
-  type WorkflowCatalogEntry,
-} from "@nodeint/migent-kernel";
+import { ConfigurationError, checkDocumentSchemaVersion, mergeConfigLayers, loadAgentTarget, resolveEffectiveClient, resolveStageSpec, type StageTarget, type ConfigOwner, type MergedConfig, type ClientRegistry } from "@nodeint/migent-kernel";
+import { parseWorkflowMapping, checkWorkflowCatalog, catalogEntryFromDocument, collectWorkflowDraft, type RoleStageSpec, unknownWorkflowKeyEntries, type WorkflowCatalogEntry } from "@nodeint/migent-workflow";
 import { analyzeConfig } from "./config-check.js";
 import type { Diagnostic } from "./check.js";
 

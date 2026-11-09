@@ -1,20 +1,9 @@
 import { expect, test } from "vitest";
-import {
-  ConfigurationError,
-  SCHEMA_VERSION,
-  assertConfigClientEquivalence,
-  documentVersion,
-  loadWorkflowDocument,
-  loadYamlMapping,
-  mergeConfigLayers,
-  migrateConfig,
-  migrateWorkflow,
-  patchConfigText,
-  patchWorkflowText,
-} from "../src/index.ts";
+import { ConfigurationError, assertConfigClientEquivalence, loadYamlMapping, mergeConfigLayers, migrateConfig, migrateWorkflow, patchConfigText, patchWorkflowText } from "../src/index.ts";
+import { SCHEMA_VERSION, documentVersion, loadWorkflowDocument } from "@nodeint/migent-workflow";
 import { applyLegacyMigration } from "../src/migration-legacy.ts";
-import { parseWorkflowMapping } from "../src/workflow.ts";
-import { parseYamlDocument } from "../src/yaml.ts";
+import { parseWorkflowMapping } from "@nodeint/migent-workflow";
+import { parseYamlDocument } from "@nodeint/migent-workflow";
 import { writeConfig } from "./support.ts";
 
 const LEGACY = `\

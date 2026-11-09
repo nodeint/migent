@@ -8,7 +8,7 @@ import {
   loadRoleResponsibilities,
   resolveRoleCascade,
 } from "../src/index.ts";
-import { parseYamlDocument } from "../src/yaml.ts";
+import { parseYamlDocument } from "@nodeint/migent-workflow";
 import { defaultClients } from "./support.ts";
 
 const merge = (project: Record<string, unknown>, local?: Record<string, unknown>) => mergeConfigLayers(project, local);

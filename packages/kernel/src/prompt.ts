@@ -2,9 +2,9 @@ import { buildStageReplyPrompt, prependRoleInstructions, renderStageContinue, re
 import { readFileSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import { isArtifactSchema, nonemptyArtifact, type ExecutionSnapshot } from "./outputs.js";
-import { isRecord } from "./record.js";
+import { isRecord } from "@nodeint/migent-workflow";
 import { currentCompleteByStage, latestCompleteByStage, relevantRouterSnapshots } from "./selection.js";
-import { isRoleStage, isWorkflowV2, routeListsStage, stageArtifactsFor, VERIFY_ARTIFACT, type StageSpec, type WorkflowDocument } from "./workflow.js";
+import { isRoleStage, isWorkflowV2, routeListsStage, stageArtifactsFor, VERIFY_ARTIFACT, type StageSpec, type WorkflowDocument } from "@nodeint/migent-workflow";
 
 export function buildStagePrompt(input: {
   workflow: WorkflowDocument;

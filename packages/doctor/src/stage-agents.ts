@@ -1,4 +1,5 @@
-import { isRoleStage, type AgentDefinitionEntry, type WorkflowDocument } from "@nodeint/migent-kernel";
+import { type AgentDefinitionEntry } from "@nodeint/migent-kernel";
+import { isRoleStage, type WorkflowDocument } from "@nodeint/migent-workflow";
 
 /** The key an availability or effort check of a stage's inline agent is stored under. */
 export function stageAgentKey(workflowId: string, stageId: string): string {

@@ -4,7 +4,7 @@ import path from "node:path";
 import { expect, test } from "vitest";
 import { AgentToolRunner } from "../src/agent-runner.ts";
 import { executeNamedWorkflow } from "../src/execute.ts";
-import { parseWorkflowMapping } from "../src/workflow.ts";
+import { parseWorkflowMapping } from "@nodeint/migent-workflow";
 import { parseStageOutcome } from "../src/stage-outcome.ts";
 import { SessionStore } from "../src/session-store.ts";
 import { watchSnapshot } from "../src/query.ts";

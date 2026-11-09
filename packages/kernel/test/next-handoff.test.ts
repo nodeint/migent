@@ -7,7 +7,7 @@ import { formatNextCommand, publishNextSuggestions, resolveHandoff } from "../sr
 import { activatePreparedSession, createPreparedSession, createWorkflowSession } from "../src/session-records.ts";
 import { loadFrozenWorkflow } from "../src/session-freeze.ts";
 import { readFoldedStatus } from "../src/session-fold.ts";
-import { parseWorkflowMapping } from "../src/workflow.ts";
+import { parseWorkflowMapping } from "@nodeint/migent-workflow";
 import { SESSION_CONFIG } from "./support.ts";
 
 const roots: string[] = [];

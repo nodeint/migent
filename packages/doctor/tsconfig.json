@@ -13,6 +13,9 @@
   "references": [
     {
       "path": "../kernel"
+    },
+    {
+      "path": "../workflow"
     }
   ]
 }
