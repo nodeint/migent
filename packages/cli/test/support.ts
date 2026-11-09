@@ -14,6 +14,7 @@ import type {
   RawFailure,
   UsageCapture,
 } from "@nodeint/migent-kernel";
+import { raiseCancellation } from "@nodeint/migent-kernel";
 
 export interface ClientCall {
   model: string;
@@ -248,5 +249,14 @@ export async function capture(
   } finally {
     process.stdout.write = out;
     process.stderr.write = err;
+  }
+}
+
+/** A scripted client whose first turn raises a cancellation, so the session stays resumable. */
+export class CancelOnCommand extends ScriptedClient {
+  override buildCommand(input: BuildCommandInput): CommandSpec {
+    super.buildCommand(input);
+    raiseCancellation(2);
+    return { argv: [process.execPath, "-e", "process.exit(0)"] };
   }
 }

@@ -1,3 +1,5 @@
+import { SessionFollowRecord, SessionSnapshot, SessionSnapshotLine, type Static } from "@nodeint/migent-contracts";
+import { writeJson } from "../emit.js";
 import { openSync, readFileSync, readSync, closeSync, statSync } from "node:fs";
 import path from "node:path";
 import {
@@ -140,15 +142,15 @@ function printSnapshot(
 ): Record<string, unknown> {
   const snapshot = watchSnapshot(sessionDirectory, executionId);
   if (eventsCursor !== undefined) snapshot.events_cursor = eventsCursor;
-  if (jsonLines) process.stdout.write(`${JSON.stringify(snapshotJson(snapshot))}\n`);
+  if (jsonLines) writeJson(eventsCursor === undefined ? SessionSnapshot : SessionSnapshotLine, snapshotJson(snapshot));
   else printWatchSnapshot(snapshot);
   return snapshot;
 }
 
-function snapshotJson(snapshot: Record<string, unknown>): Record<string, unknown> {
+function snapshotJson(snapshot: Record<string, unknown>): Static<typeof SessionSnapshot> {
   const body = { ...snapshot };
   delete body.task;
-  return body;
+  return body as Static<typeof SessionSnapshot>;
 }
 
 function emitWatchEvent(line: string, executionId: string | null, jsonLines: boolean): void {
@@ -161,7 +163,7 @@ function emitWatchEvent(line: string, executionId: string | null, jsonLines: boo
   if (!isRecord(event)) return;
   if (executionId !== null && event.execution_id !== executionId) return;
   if (jsonLines) {
-    process.stdout.write(`${JSON.stringify(event)}\n`);
+    writeJson(SessionFollowRecord, event);
     return;
   }
   printWatchEvent(event);

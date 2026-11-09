@@ -1,3 +1,5 @@
+import { WorkspaceList, WorkspaceMutation, type Static } from "@nodeint/migent-contracts";
+import { writeJson } from "../emit.js";
 import { realpathSync } from "node:fs";
 import path from "node:path";
 import { ServiceError, callService, endpointFromHome, ensureRegistryHome, startDetached } from "@nodeint/migent-registry";
@@ -57,7 +59,7 @@ export async function runWorkspaceList(asJson: boolean): Promise<number> {
     return 1;
   }
   if (asJson) {
-    process.stdout.write(`${JSON.stringify({ workspaces: rows })}\n`);
+    writeJson(WorkspaceList, { workspaces: rows as Static<typeof WorkspaceList>["workspaces"] });
   } else {
     for (const row of rows) {
       const record = row && typeof row === "object" ? (row as Record<string, unknown>) : {};
@@ -99,7 +101,7 @@ async function finish(
     return 1;
   }
   if (status === 200 || status === 201) {
-    process.stdout.write(`${JSON.stringify(payload)}\n`);
+    writeJson(WorkspaceMutation, payload as Static<typeof WorkspaceMutation>);
     if (method === "POST") {
       const id = typeof payload.id === "string" && payload.id !== "" ? payload.id : "workspace";
       process.stderr.write(`Registered ${id}.\n`);

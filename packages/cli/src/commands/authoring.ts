@@ -1,3 +1,5 @@
+import { AuthoringEnvelope } from "@nodeint/migent-contracts";
+import { writeJson } from "../emit.js";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import {
@@ -142,8 +144,8 @@ export function authoringCommandOf(argv: readonly string[]): string | null {
 
 /** A usage error in the versioned envelope. */
 export function printInvocationEnvelope(command: string, message: string): void {
-  const diagnostics = [{ severity: "error", code: "invalid-invocation", message }];
-  process.stdout.write(`${JSON.stringify({ schema_version: 1, command, valid: false, diagnostics })}\n`);
+  const diagnostics = [{ severity: "error" as const, code: "invalid-invocation", message }];
+  writeJson(AuthoringEnvelope, { schema_version: 1, command, valid: false, diagnostics });
 }
 
 class Finish extends Error {
@@ -159,8 +161,8 @@ export function runAuthoring(options: AuthoringOptions): number {
     const diagnostics = items.map((item) => publicDiagnostic(item, context));
     const valid = !items.some((item) => item.severity === "error");
     if (options.asJson === true) {
-      const envelope = { schema_version: 1, command, valid, diagnostics, ...extra };
-      process.stdout.write(`${JSON.stringify(envelope)}\n`);
+      const envelope = { schema_version: 1 as const, command, valid, diagnostics, ...extra };
+      writeJson(AuthoringEnvelope, envelope);
     } else {
       for (const item of diagnostics) {
         const where = item.path === undefined ? "" : ` ${item.path.join(".")}`;

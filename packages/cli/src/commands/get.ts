@@ -65,21 +65,22 @@ export async function runGet(cwd: string, type: string, name: string | null, opt
     const workspace = findWorkspace(cwd);
     const resolve = clientResolver();
     if (resource.list !== undefined && name === null && session === null) {
-      process.stdout.write(renderList(resource.list(workspace, resolve), output, resource.columns));
+      process.stdout.write(renderList(resource.list(workspace, resolve), output, resource.columns, resource.listContract));
       return 0;
     }
-    process.stdout.write(renderOne(resource.get(workspace, name, resolve, session), output));
+    process.stdout.write(renderOne(resource.get(workspace, name, resolve, session), output, resource.contract));
     return 0;
   }
 
   const context = createDiscoveryContext();
   const query = { name, client, native };
   const columns = resource.columnsFor?.(query) ?? resource.columns;
+  const contracts = resource.contractFor?.(query) ?? { one: resource.contract, item: resource.listContract };
   if (resource.list !== undefined && name === null) {
-    process.stdout.write(renderList(await resource.list(context, query), output, columns));
+    process.stdout.write(renderList(await resource.list(context, query), output, columns, contracts.item));
     return 0;
   }
-  process.stdout.write(renderOne(await resource.get(context, query), output));
+  process.stdout.write(renderOne(await resource.get(context, query), output, contracts.one));
   return 0;
 }
 

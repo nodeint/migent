@@ -1,10 +1,10 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { AgentToolRunner, raiseCancellation, type BuildCommandInput, type CommandSpec } from "@nodeint/migent-kernel";
+import { AgentToolRunner, type BuildCommandInput, type CommandSpec } from "@nodeint/migent-kernel";
 import { expect, test } from "vitest";
 import { cliHooks } from "../src/hooks.ts";
 import { main } from "../src/index.ts";
-import { ScriptedClient, capture, registryOf, removeWorkspace, repoWorkflowText, writeFakeWorkflowWorkspace } from "./support.ts";
+import { CancelOnCommand, ScriptedClient, capture, registryOf, removeWorkspace, repoWorkflowText, writeFakeWorkflowWorkspace } from "./support.ts";
 
 const SPLIT = "Pass --workflow for a workflow run, or --role for an agent run.";
 
@@ -387,14 +387,6 @@ function resumeCommand(stderr: string): string | undefined {
   const label = lines.lastIndexOf("Resume with:");
   if (label === -1) return undefined;
   return lines[label + 1];
-}
-
-class CancelOnCommand extends ScriptedClient {
-  override buildCommand(input: BuildCommandInput): CommandSpec {
-    super.buildCommand(input);
-    raiseCancellation(2);
-    return { argv: [process.execPath, "-e", "process.exit(0)"] };
-  }
 }
 
 test("session continue retries an active role session with its last prompt", async () => {

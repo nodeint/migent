@@ -1,3 +1,5 @@
+import { ServiceStatus, type Static } from "@nodeint/migent-contracts";
+import { writeJson } from "../emit.js";
 import { ConfigurationError } from "@nodeint/migent-kernel";
 import {
   ServiceError,
@@ -52,7 +54,7 @@ export async function runServiceStop(): Promise<number> {
 export async function runServiceStatus(asJson: boolean): Promise<number> {
   const report = await serviceApi.serviceStatus(registryHomePath());
   if (asJson) {
-    process.stdout.write(`${JSON.stringify(report)}\n`);
+    writeJson(ServiceStatus, report as Static<typeof ServiceStatus>);
   } else if (report.state === "running") {
     process.stdout.write("running\n");
     process.stdout.write(`${String(report.host)}:${String(report.port)} pid=${String(report.pid)}\n`);

@@ -1,4 +1,6 @@
 import { stringify } from "yaml";
+import { listOf, type Static, type TSchema } from "@nodeint/migent-contracts";
+import { serializeJson } from "../emit.js";
 
 export type OutputFormat = "human" | "json" | "yaml" | "name";
 export const OUTPUT_FORMATS: readonly string[] = ["json", "yaml", "name"];
@@ -26,16 +28,23 @@ function names(views: readonly Record<string, unknown>[]): string {
 }
 
 /** Renders a list of views in the requested format. */
-export function renderList(views: readonly Record<string, unknown>[], format: OutputFormat, columns: readonly Column[]): string {
-  if (format === "json") return `${JSON.stringify(views, null, 2)}\n`;
+export function renderList<S extends TSchema>(
+  items: readonly Static<S>[],
+  format: OutputFormat,
+  columns: readonly Column[],
+  itemContract: S,
+): string {
+  if (format === "json") return `${serializeJson(listOf(itemContract), [...items], true)}\n`;
+  const views = items as readonly Record<string, unknown>[];
   if (format === "yaml") return views.length === 0 ? "[]\n" : yamlText(views);
   if (format === "name") return names(views);
   return views.length === 0 ? "" : table(views, columns);
 }
 
 /** Renders one view. The human format is the YAML view. */
-export function renderOne(view: Record<string, unknown>, format: OutputFormat): string {
-  if (format === "json") return `${JSON.stringify(view, null, 2)}\n`;
+export function renderOne<S extends TSchema>(item: Static<S>, format: OutputFormat, contract: S): string {
+  if (format === "json") return `${serializeJson(contract, item, true)}\n`;
+  const view = item as Record<string, unknown>;
   if (format === "name") return `${String(view.name)}\n`;
   return yamlText(view);
 }

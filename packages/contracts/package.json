@@ -1,0 +1,48 @@
+{
+  "name": "@nodeint/migent-contracts",
+  "version": "0.5.3",
+  "description": "Public data contracts (TypeBox schemas) for Migent.",
+  "keywords": [
+    "ai",
+    "agents",
+    "workflow",
+    "contracts",
+    "migent"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/nodeint/migent/tree/main/packages/contracts#readme",
+  "bugs": {
+    "url": "https://github.com/nodeint/migent/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nodeint/migent.git",
+    "directory": "packages/contracts"
+  },
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "prepack": "pnpm -w run build && cp ../../LICENSE ."
+  },
+  "dependencies": {
+    "typebox": "^1.4.4"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4"
+  }
+}

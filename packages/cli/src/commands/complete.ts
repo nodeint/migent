@@ -1,3 +1,5 @@
+import { CompleteResult } from "@nodeint/migent-contracts";
+import { writeJson } from "../emit.js";
 import path from "node:path";
 import {
   ConfigurationError,
@@ -31,19 +33,17 @@ export function completeSession(workspace: string, sessionId: string, asJson: bo
     return { name, path: path.resolve(directory, relative) };
   });
   if (asJson) {
-    process.stdout.write(
-      `${JSON.stringify({
-        session_id: sessionId,
-        status: "completed",
-        already_completed: result.alreadyCompleted,
-        outputs,
-        missing_outputs: result.missingOutputs,
-        next: {
-          path: result.next.path,
-          suggestions: result.next.next.map((suggestion) => ({ ...suggestion, command: formatNextCommand(suggestion.argv) })),
-        },
-      })}\n`,
-    );
+    writeJson(CompleteResult, {
+      session_id: sessionId,
+      status: "completed",
+      already_completed: result.alreadyCompleted,
+      outputs,
+      missing_outputs: result.missingOutputs,
+      next: {
+        path: result.next.path,
+        suggestions: result.next.next.map((suggestion) => ({ ...suggestion, command: formatNextCommand(suggestion.argv) })),
+      },
+    });
     return 0;
   }
   log(result.alreadyCompleted ? `Session ${sessionId} is already completed.` : `Session ${sessionId} completed manually.`);
