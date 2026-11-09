@@ -1,0 +1,1814 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`config --json 1`] = `
+{
+  "code": 0,
+  "stderr": "",
+  "stdout": {
+    "config": {
+      "agents": {
+        "planner-model": {
+          "client": {
+            "type": "codex",
+          },
+          "model": "gpt-5",
+        },
+        "reviewer-model": {
+          "client": {
+            "type": "grok",
+          },
+          "model": "grok-4",
+        },
+      },
+      "roles": {
+        "planner": {
+          "agent": "planner-model",
+        },
+        "reviewer": {
+          "agent": "reviewer-model",
+        },
+      },
+      "schema_version": 7,
+    },
+    "local": null,
+  },
+}
+`;
+
+exports[`config and workflow validate/render --json: valid and invalid drafts 1`] = `
+[
+  {
+    "argv": [
+      "config",
+      "validate",
+      "--format",
+      "yaml",
+      "--json",
+    ],
+    "code": 0,
+    "draft": "schema_version: 7
+agents:
+  planner-model:
+    client:
+      type: codex
+    model: gpt-5
+  reviewer-model:
+    client:
+      type: grok
+    model: grok-4
+roles:
+  planner:
+    agent: planner-model
+  reviewer:
+    agent: reviewer-model
+",
+    "stderr": "",
+    "stdout": {
+      "command": "config.validate",
+      "diagnostics": [],
+      "schema_version": 1,
+      "valid": true,
+    },
+  },
+  {
+    "argv": [
+      "config",
+      "validate",
+      "--format",
+      "yaml",
+      "--json",
+    ],
+    "code": 1,
+    "draft": "schema_version: 7
+agents:
+  planner-model:
+    client:
+      type: codex
+    model: gpt-5
+  reviewer-model:
+    client:
+      type: grok
+    model: grok-4
+roles:
+  planner:
+    agent: planner-model
+  reviewer:
+    agent: nope
+",
+    "stderr": "",
+    "stdout": {
+      "command": "config.validate",
+      "diagnostics": [
+        {
+          "code": "unknown-agent",
+          "column": 12,
+          "draft": true,
+          "end_column": 16,
+          "end_line": 15,
+          "line": 15,
+          "message": "roles.reviewer.agent: unknown agent "nope" in agents.",
+          "path": [
+            "roles",
+            "reviewer",
+            "agent",
+          ],
+          "severity": "error",
+          "source": "project",
+        },
+      ],
+      "schema_version": 1,
+      "valid": false,
+    },
+  },
+  {
+    "argv": [
+      "config",
+      "validate",
+      "--format",
+      "yaml",
+      "--json",
+    ],
+    "code": 1,
+    "draft": "a: [
+",
+    "stderr": "",
+    "stdout": {
+      "command": "config.validate",
+      "diagnostics": [
+        {
+          "code": "yaml-syntax",
+          "column": 1,
+          "draft": true,
+          "end_column": 2,
+          "end_line": 2,
+          "line": 2,
+          "message": "Flow sequence in block collection must be sufficiently indented and end with a ] at line 2, column 1:
+
+a: [
+
+^
+",
+          "severity": "error",
+          "source": "project",
+        },
+      ],
+      "schema_version": 1,
+      "valid": false,
+    },
+  },
+  {
+    "argv": [
+      "config",
+      "validate",
+      "--format",
+      "json",
+      "--json",
+    ],
+    "code": 1,
+    "draft": "{"a": 1, "a": 2}",
+    "stderr": "",
+    "stdout": {
+      "command": "config.validate",
+      "diagnostics": [
+        {
+          "code": "duplicate-key",
+          "column": 10,
+          "draft": true,
+          "end_column": 11,
+          "end_line": 1,
+          "line": 1,
+          "message": "Map keys must be unique at line 1, column 10:
+
+{"a": 1, "a": 2}
+         ^
+",
+          "severity": "error",
+          "source": "project",
+        },
+      ],
+      "schema_version": 1,
+      "valid": false,
+    },
+  },
+  {
+    "argv": [
+      "config",
+      "validate",
+      "--format",
+      "yaml",
+      "--json",
+    ],
+    "code": 1,
+    "draft": "schema_version: 7
+roles: 3
+",
+    "stderr": "",
+    "stdout": {
+      "command": "config.validate",
+      "diagnostics": [
+        {
+          "code": "roles-invalid",
+          "column": 8,
+          "draft": true,
+          "end_column": 9,
+          "end_line": 2,
+          "line": 2,
+          "message": "Missing or invalid roles.",
+          "path": [
+            "roles",
+          ],
+          "severity": "error",
+          "source": "project",
+        },
+      ],
+      "schema_version": 1,
+      "valid": false,
+    },
+  },
+  {
+    "argv": [
+      "config",
+      "validate",
+      "--format",
+      "yaml",
+      "--json",
+    ],
+    "code": 1,
+    "draft": "schema_version: 7
+unknown_key: 1
+",
+    "stderr": "",
+    "stdout": {
+      "command": "config.validate",
+      "diagnostics": [
+        {
+          "code": "roles-invalid",
+          "draft": true,
+          "message": "Missing or invalid roles.",
+          "path": [
+            "roles",
+          ],
+          "severity": "error",
+          "source": "project",
+        },
+      ],
+      "schema_version": 1,
+      "valid": false,
+    },
+  },
+  {
+    "argv": [
+      "config",
+      "validate",
+      "--scope",
+      "local",
+      "--format",
+      "yaml",
+      "--json",
+    ],
+    "code": 1,
+    "draft": "agents:
+  planner-model:
+    model: x
+",
+    "stderr": "",
+    "stdout": {
+      "command": "config.validate",
+      "diagnostics": [
+        {
+          "code": "schema-outdated",
+          "draft": true,
+          "message": "local config: schema_version is v0; this Migent uses the current version. Run \`migent migrate\`.",
+          "path": [
+            "schema_version",
+          ],
+          "severity": "error",
+          "source": "local",
+        },
+      ],
+      "schema_version": 1,
+      "valid": false,
+    },
+  },
+  {
+    "argv": [
+      "config",
+      "render",
+      "--format",
+      "yaml",
+      "--json",
+    ],
+    "code": 0,
+    "draft": "schema_version: 7
+agents:
+  planner-model:
+    client:
+      type: codex
+    model: gpt-5
+  reviewer-model:
+    client:
+      type: grok
+    model: grok-4
+roles:
+  planner:
+    agent: planner-model
+  reviewer:
+    agent: reviewer-model
+",
+    "stderr": "",
+    "stdout": {
+      "command": "config.render",
+      "diagnostics": [],
+      "rendered": "schema_version: 7
+agents:
+  planner-model:
+    client:
+      type: codex
+    model: gpt-5
+  reviewer-model:
+    client:
+      type: grok
+    model: grok-4
+roles:
+  planner:
+    agent: planner-model
+  reviewer:
+    agent: reviewer-model
+",
+      "schema_version": 1,
+      "valid": true,
+    },
+  },
+  {
+    "argv": [
+      "workflow",
+      "validate",
+      "--format",
+      "yaml",
+      "--json",
+    ],
+    "code": 0,
+    "draft": "schema_version: 7
+id: plan
+stages:
+  - id: draft
+    role: planner
+  - id: review
+    role: reviewer
+    depends_on: [draft]
+",
+    "stderr": "",
+    "stdout": {
+      "command": "workflow.validate",
+      "diagnostics": [],
+      "schema_version": 1,
+      "valid": true,
+    },
+  },
+  {
+    "argv": [
+      "workflow",
+      "validate",
+      "--format",
+      "yaml",
+      "--json",
+    ],
+    "code": 1,
+    "draft": "schema_version: 7
+id: broken
+stages:
+  - id: draft
+    role: nobody
+    depends_on: [missing]
+",
+    "stderr": "",
+    "stdout": {
+      "command": "workflow.validate",
+      "diagnostics": [
+        {
+          "code": "unknown-stage",
+          "column": 17,
+          "draft": true,
+          "end_column": 26,
+          "end_line": 6,
+          "file": "broken.yaml",
+          "line": 6,
+          "message": "stages.draft.depends_on is not a declared stage: missing",
+          "path": [
+            "stages",
+            0,
+            "depends_on",
+          ],
+          "severity": "error",
+          "source": "workflow",
+        },
+        {
+          "code": "unknown-role",
+          "column": 11,
+          "draft": true,
+          "end_column": 17,
+          "end_line": 5,
+          "file": "broken.yaml",
+          "line": 5,
+          "message": "broken.draft: Missing or invalid roles.nobody.",
+          "path": [
+            "stages",
+            0,
+            "role",
+          ],
+          "severity": "error",
+          "source": "workflow",
+        },
+      ],
+      "schema_version": 1,
+      "valid": false,
+    },
+  },
+  {
+    "argv": [
+      "workflow",
+      "validate",
+      "--format",
+      "yaml",
+      "--json",
+    ],
+    "code": 1,
+    "draft": "schema_version: 7
+id: x
+stages: {}
+",
+    "stderr": "",
+    "stdout": {
+      "command": "workflow.validate",
+      "diagnostics": [
+        {
+          "code": "no-stages",
+          "column": 9,
+          "draft": true,
+          "end_column": 11,
+          "end_line": 3,
+          "file": "x.yaml",
+          "line": 3,
+          "message": "x: declares no stages.",
+          "path": [
+            "stages",
+          ],
+          "severity": "error",
+          "source": "workflow",
+        },
+      ],
+      "schema_version": 1,
+      "valid": false,
+    },
+  },
+  {
+    "argv": [
+      "workflow",
+      "validate",
+      "--format",
+      "yaml",
+      "--json",
+    ],
+    "code": 0,
+    "draft": "schema_version: 7
+id: x
+stages:
+  - { id: a, role: planner, depends_on: [b] }
+  - { id: b, role: planner, depends_on: [a] }
+",
+    "stderr": "",
+    "stdout": {
+      "command": "workflow.validate",
+      "diagnostics": [],
+      "schema_version": 1,
+      "valid": true,
+    },
+  },
+  {
+    "argv": [
+      "workflow",
+      "validate",
+      "--format",
+      "yaml",
+      "--json",
+    ],
+    "code": 1,
+    "draft": "schema_version: 7
+id: x
+stages:
+  - { id: a, role: planner, bogus: true }
+",
+    "stderr": "",
+    "stdout": {
+      "command": "workflow.validate",
+      "diagnostics": [
+        {
+          "code": "unknown-key",
+          "column": 29,
+          "draft": true,
+          "end_column": 34,
+          "end_line": 4,
+          "file": "x.yaml",
+          "line": 4,
+          "message": "stages.a.bogus is not used by Migent.",
+          "path": [
+            "stages",
+            0,
+            "bogus",
+          ],
+          "severity": "error",
+          "source": "workflow",
+        },
+        {
+          "code": "unknown-key",
+          "column": 29,
+          "draft": true,
+          "end_column": 34,
+          "end_line": 4,
+          "file": "x.yaml",
+          "line": 4,
+          "message": "stages.a.bogus is not used by Migent.",
+          "path": [
+            "stages",
+            0,
+            "bogus",
+          ],
+          "severity": "warning",
+          "source": "workflow",
+        },
+      ],
+      "schema_version": 1,
+      "valid": false,
+    },
+  },
+  {
+    "argv": [
+      "workflow",
+      "render",
+      "--format",
+      "yaml",
+      "--json",
+    ],
+    "code": 0,
+    "draft": "schema_version: 7
+id: plan
+stages:
+  - id: draft
+    role: planner
+  - id: review
+    role: reviewer
+    depends_on: [draft]
+",
+    "stderr": "",
+    "stdout": {
+      "command": "workflow.render",
+      "diagnostics": [],
+      "rendered": "schema_version: 7
+id: plan
+stages:
+  - id: draft
+    role: planner
+  - id: review
+    role: reviewer
+    depends_on:
+      - draft
+",
+      "schema_version": 1,
+      "valid": true,
+    },
+  },
+]
+`;
+
+exports[`config save and workflow save --json 1`] = `
+{
+  "code": 0,
+  "stderr": "",
+  "stdout": {
+    "command": "config.save",
+    "diagnostics": [],
+    "file": "config.local.yaml",
+    "hash": "9af16728c6db44db2a72111376a5ffc5e520b1f981a32d21449fcc26efd0c706",
+    "schema_version": 1,
+    "valid": true,
+    "written": true,
+  },
+}
+`;
+
+exports[`config save and workflow save --json 2`] = `
+{
+  "code": 0,
+  "stderr": "",
+  "stdout": {
+    "command": "config.save",
+    "diagnostics": [],
+    "file": "config.local.yaml",
+    "hash": "9af16728c6db44db2a72111376a5ffc5e520b1f981a32d21449fcc26efd0c706",
+    "schema_version": 1,
+    "valid": true,
+    "written": true,
+  },
+}
+`;
+
+exports[`config save and workflow save --json 3`] = `
+{
+  "code": 3,
+  "stderr": "",
+  "stdout": {
+    "command": "config.save",
+    "current_hash": "9af16728c6db44db2a72111376a5ffc5e520b1f981a32d21449fcc26efd0c706",
+    "diagnostics": [
+      {
+        "code": "stale-base",
+        "message": "config.local.yaml changed since the base hash was taken.",
+        "severity": "error",
+      },
+    ],
+    "file": "config.local.yaml",
+    "schema_version": 1,
+    "valid": false,
+  },
+}
+`;
+
+exports[`config save and workflow save --json 4`] = `
+{
+  "code": 1,
+  "stderr": "",
+  "stdout": {
+    "command": "config.save",
+    "diagnostics": [
+      {
+        "code": "unknown-agent",
+        "column": 12,
+        "draft": true,
+        "end_column": 16,
+        "end_line": 15,
+        "line": 15,
+        "message": "roles.reviewer.agent: unknown agent "nope" in agents.",
+        "path": [
+          "roles",
+          "reviewer",
+          "agent",
+        ],
+        "severity": "error",
+        "source": "project",
+      },
+    ],
+    "schema_version": 1,
+    "valid": false,
+  },
+}
+`;
+
+exports[`config save and workflow save --json 5`] = `
+{
+  "code": 0,
+  "stderr": "",
+  "stdout": {
+    "command": "workflow.save",
+    "diagnostics": [],
+    "file": "workflows/saved.yaml",
+    "hash": "c5e54f146cbe2733f20651bf52bea524fa784dec4b206eb157a77c8a176e6512",
+    "schema_version": 1,
+    "valid": true,
+    "written": true,
+  },
+}
+`;
+
+exports[`config save and workflow save --json 6`] = `
+{
+  "code": 3,
+  "stderr": "",
+  "stdout": {
+    "command": "workflow.save",
+    "diagnostics": [
+      {
+        "code": "already-exists",
+        "message": "workflows/saved.yaml already exists; pass --base-hash to replace it.",
+        "severity": "error",
+      },
+    ],
+    "file": "workflows/saved.yaml",
+    "schema_version": 1,
+    "valid": false,
+  },
+}
+`;
+
+exports[`config save and workflow save --json 7`] = `
+{
+  "code": 1,
+  "stderr": "",
+  "stdout": {
+    "command": "workflow.save",
+    "diagnostics": [
+      {
+        "code": "unknown-stage",
+        "column": 17,
+        "draft": true,
+        "end_column": 26,
+        "end_line": 6,
+        "file": "broken.yaml",
+        "line": 6,
+        "message": "stages.draft.depends_on is not a declared stage: missing",
+        "path": [
+          "stages",
+          0,
+          "depends_on",
+        ],
+        "severity": "error",
+        "source": "workflow",
+      },
+      {
+        "code": "unknown-role",
+        "column": 11,
+        "draft": true,
+        "end_column": 17,
+        "end_line": 5,
+        "file": "broken.yaml",
+        "line": 5,
+        "message": "broken.draft: Missing or invalid roles.nobody.",
+        "path": [
+          "stages",
+          0,
+          "role",
+        ],
+        "severity": "error",
+        "source": "workflow",
+      },
+    ],
+    "schema_version": 1,
+    "valid": false,
+  },
+}
+`;
+
+exports[`doctor --json 1`] = `
+{
+  "code": 0,
+  "stderr": "",
+  "stdout": {
+    "checks": [
+      {
+        "items": [
+          "planner",
+          "reviewer",
+        ],
+        "name": "config",
+        "ok": true,
+        "problems": [],
+        "warnings": [
+          "Could not validate agents.planner-model.model: "gpt-5"
+Could not list codex models: offline",
+          "Could not validate agents.reviewer-model.model: "grok-4"
+Could not list grok models: offline",
+        ],
+      },
+      {
+        "items": [
+          "plan",
+        ],
+        "name": "workflows",
+        "ok": true,
+        "problems": [],
+        "warnings": [],
+      },
+      {
+        "items": [
+          "codex  /fake/codex",
+          "grok  /fake/grok",
+        ],
+        "name": "clients",
+        "ok": true,
+        "problems": [],
+        "warnings": [],
+      },
+      {
+        "items": [],
+        "name": "skill",
+        "ok": true,
+        "problems": [],
+        "warnings": [
+          "Migent skill is not installed; run \`migent skill install\`.",
+        ],
+      },
+    ],
+    "ok": true,
+  },
+}
+`;
+
+exports[`doctor --session --json checks a prepared session's draft workflow 1`] = `
+{
+  "code": 0,
+  "stderr": "",
+  "stdout": {
+    "checks": [
+      {
+        "items": [
+          "session  <uuid>",
+          "workflow  plan",
+          "source  draft  .migent/sessions/<uuid>/workflow.yaml",
+        ],
+        "name": "session",
+        "ok": true,
+        "problems": [],
+        "warnings": [],
+      },
+      {
+        "items": [
+          "plan",
+        ],
+        "name": "workflow",
+        "ok": true,
+        "problems": [],
+        "warnings": [],
+      },
+      {
+        "items": [
+          "draft  codex  gpt-5",
+          "review  grok  grok-4",
+        ],
+        "name": "bindings",
+        "ok": true,
+        "problems": [],
+        "warnings": [
+          "Could not validate agents.planner-model.model: "gpt-5"
+Could not list codex models: offline",
+          "Could not validate agents.reviewer-model.model: "grok-4"
+Could not list grok models: offline",
+        ],
+      },
+      {
+        "items": [
+          "codex  /fake/codex",
+          "grok  /fake/grok",
+        ],
+        "name": "clients",
+        "ok": true,
+        "problems": [],
+        "warnings": [],
+      },
+    ],
+    "ok": true,
+    "session": {
+      "id": "<uuid>",
+      "path": ".migent/sessions/<uuid>/workflow.yaml",
+      "source": "draft",
+      "workflow_id": "plan",
+    },
+  },
+}
+`;
+
+exports[`doctor --session --json checks a prepared session's draft workflow 2`] = `
+{
+  "code": 1,
+  "stderr": "",
+  "stdout": {
+    "checks": [
+      {
+        "items": [
+          "session  missing",
+        ],
+        "name": "session",
+        "ok": false,
+        "problems": [
+          "Session not found: missing.",
+        ],
+        "warnings": [],
+      },
+    ],
+    "ok": false,
+    "session": {
+      "id": "missing",
+      "path": null,
+      "source": null,
+      "workflow_id": null,
+    },
+  },
+}
+`;
+
+exports[`get --json 1`] = `
+{
+  "code": 0,
+  "stderr": "",
+  "stdout": [
+    {
+      "file": ".migent/workflows/plan.yaml",
+      "kind": "workflow",
+      "name": "plan",
+      "problems": [],
+      "roles": [
+        "planner",
+        "reviewer",
+      ],
+      "stages": [
+        "draft",
+        "review",
+      ],
+    },
+  ],
+  "type": "workflows",
+}
+`;
+
+exports[`get --json 2`] = `
+{
+  "code": 0,
+  "stderr": "",
+  "stdout": [
+    {
+      "agent": "planner-model",
+      "description": null,
+      "kind": "role",
+      "name": "planner",
+      "problems": [],
+      "responsibilities": [],
+      "target": {
+        "client": "codex",
+        "model": "gpt-5",
+        "options": {},
+      },
+      "used_by": [
+        {
+          "stage": "draft",
+          "workflow": "plan",
+        },
+      ],
+    },
+    {
+      "agent": "reviewer-model",
+      "description": null,
+      "kind": "role",
+      "name": "reviewer",
+      "problems": [],
+      "responsibilities": [],
+      "target": {
+        "client": "grok",
+        "model": "grok-4",
+        "options": {},
+      },
+      "used_by": [
+        {
+          "stage": "review",
+          "workflow": "plan",
+        },
+      ],
+    },
+  ],
+  "type": "roles",
+}
+`;
+
+exports[`get --json 3`] = `
+{
+  "code": 0,
+  "stderr": "",
+  "stdout": [
+    {
+      "client": "codex",
+      "effort": null,
+      "kind": "agent",
+      "local": false,
+      "model": "gpt-5",
+      "name": "planner-model",
+      "options": {},
+      "problems": [],
+      "used_by": [
+        {
+          "role": "planner",
+        },
+      ],
+    },
+    {
+      "client": "grok",
+      "effort": null,
+      "kind": "agent",
+      "local": false,
+      "model": "grok-4",
+      "name": "reviewer-model",
+      "options": {},
+      "problems": [],
+      "used_by": [
+        {
+          "role": "reviewer",
+        },
+      ],
+    },
+  ],
+  "type": "agents",
+}
+`;
+
+exports[`get --json 4`] = `
+{
+  "code": 0,
+  "stderr": "",
+  "stdout": {
+    "config": {
+      "agents": {
+        "planner-model": {
+          "client": {
+            "type": "codex",
+          },
+          "model": "gpt-5",
+        },
+        "reviewer-model": {
+          "client": {
+            "type": "grok",
+          },
+          "model": "grok-4",
+        },
+      },
+      "roles": {
+        "planner": {
+          "agent": "planner-model",
+        },
+        "reviewer": {
+          "agent": "reviewer-model",
+        },
+      },
+      "schema_version": 7,
+    },
+    "kind": "config",
+    "local_agents": [],
+    "local_file": null,
+    "name": "config",
+  },
+  "type": "config",
+}
+`;
+
+exports[`get --json 5`] = `
+{
+  "code": 0,
+  "stderr": "",
+  "stdout": {
+    "artifacts": [],
+    "concurrency": 1,
+    "constraints": [],
+    "downstream": [],
+    "file": ".migent/workflows/plan.yaml",
+    "kind": "workflow",
+    "name": "plan",
+    "outputs": [],
+    "problems": [],
+    "requires": null,
+    "role_responsibilities": {
+      "planner": [],
+      "reviewer": [],
+    },
+    "source": {
+      "kind": "project",
+      "path": ".migent/workflows/plan.yaml",
+    },
+    "stages": [
+      {
+        "agent": null,
+        "artifact": null,
+        "artifacts": [],
+        "ask": null,
+        "decision_artifacts": {},
+        "decisions": [],
+        "depends_on": [],
+        "description": null,
+        "id": "draft",
+        "max_revisions": null,
+        "max_verify": 3,
+        "options": {},
+        "problems": [],
+        "resume_from": null,
+        "role": "planner",
+        "run_when": null,
+        "target": {
+          "client": "codex",
+          "model": "gpt-5",
+          "options": {},
+        },
+        "verify": [],
+        "verify_timeout": null,
+      },
+      {
+        "agent": null,
+        "artifact": null,
+        "artifacts": [],
+        "ask": null,
+        "decision_artifacts": {},
+        "decisions": [],
+        "depends_on": [
+          "draft",
+        ],
+        "description": null,
+        "id": "review",
+        "max_revisions": null,
+        "max_verify": 3,
+        "options": {},
+        "problems": [],
+        "resume_from": null,
+        "role": "reviewer",
+        "run_when": null,
+        "target": {
+          "client": "grok",
+          "model": "grok-4",
+          "options": {},
+        },
+        "verify": [],
+        "verify_timeout": null,
+      },
+    ],
+    "warnings": [],
+  },
+}
+`;
+
+exports[`get --json 6`] = `
+{
+  "code": 0,
+  "stderr": "",
+  "stdout": {
+    "agent": "planner-model",
+    "description": null,
+    "kind": "role",
+    "name": "planner",
+    "problems": [],
+    "responsibilities": [],
+    "target": {
+      "client": "codex",
+      "model": "gpt-5",
+      "options": {},
+    },
+    "used_by": [
+      {
+        "stage": "draft",
+        "workflow": "plan",
+      },
+    ],
+  },
+}
+`;
+
+exports[`get --json 7`] = `
+{
+  "code": 0,
+  "stderr": "",
+  "stdout": {
+    "client": "codex",
+    "effort": null,
+    "kind": "agent",
+    "local": false,
+    "model": "gpt-5",
+    "name": "planner-model",
+    "options": {},
+    "problems": [],
+    "used_by": [
+      {
+        "role": "planner",
+      },
+    ],
+  },
+}
+`;
+
+exports[`get clients/models/options/efforts --json with a fake codex catalog 1`] = `
+{
+  "argv": [
+    "get",
+    "clients",
+    "-o",
+    "json",
+  ],
+  "code": 0,
+  "stderr": "",
+  "stdout": [
+    {
+      "available": false,
+      "command": "agy",
+      "effort_option": "effort",
+      "kind": "client",
+      "name": "agy",
+      "path": null,
+      "problems": [
+        "agy is not on PATH.",
+      ],
+    },
+    {
+      "available": false,
+      "command": "claude",
+      "effort_option": "effort",
+      "kind": "client",
+      "name": "claude-code",
+      "path": null,
+      "problems": [
+        "claude is not on PATH.",
+      ],
+    },
+    {
+      "available": true,
+      "command": "codex",
+      "effort_option": "model_reasoning_effort",
+      "kind": "client",
+      "name": "codex",
+      "path": "/bin/codex",
+      "problems": [],
+    },
+    {
+      "available": false,
+      "command": "grok",
+      "effort_option": "reasoning-effort",
+      "kind": "client",
+      "name": "grok",
+      "path": null,
+      "problems": [
+        "grok is not on PATH.",
+      ],
+    },
+    {
+      "available": false,
+      "command": "opencode",
+      "effort_option": "variant",
+      "kind": "client",
+      "name": "opencode",
+      "path": null,
+      "problems": [
+        "opencode is not on PATH.",
+      ],
+    },
+  ],
+}
+`;
+
+exports[`get clients/models/options/efforts --json with a fake codex catalog 2`] = `
+{
+  "argv": [
+    "get",
+    "client",
+    "codex",
+    "-o",
+    "json",
+  ],
+  "code": 0,
+  "stderr": "",
+  "stdout": {
+    "available": true,
+    "command": "codex",
+    "effort_option": "model_reasoning_effort",
+    "kind": "client",
+    "name": "codex",
+    "path": "/bin/codex",
+    "problems": [],
+  },
+}
+`;
+
+exports[`get clients/models/options/efforts --json with a fake codex catalog 3`] = `
+{
+  "argv": [
+    "get",
+    "models",
+    "--client",
+    "codex",
+    "-o",
+    "json",
+  ],
+  "code": 0,
+  "stderr": "",
+  "stdout": [
+    {
+      "client": "codex",
+      "default": false,
+      "kind": "model",
+      "name": "gpt-5",
+    },
+  ],
+}
+`;
+
+exports[`get clients/models/options/efforts --json with a fake codex catalog 4`] = `
+{
+  "argv": [
+    "get",
+    "options",
+    "--client",
+    "codex",
+    "-o",
+    "json",
+  ],
+  "code": 0,
+  "stderr": "",
+  "stdout": [
+    {
+      "allow_default": true,
+      "client": "codex",
+      "kind": "option",
+      "name": "model_reasoning_effort",
+      "overridable": true,
+      "prompt": true,
+      "source": "configured",
+    },
+  ],
+}
+`;
+
+exports[`get clients/models/options/efforts --json with a fake codex catalog 5`] = `
+{
+  "argv": [
+    "get",
+    "efforts",
+    "--client",
+    "codex",
+    "-o",
+    "json",
+  ],
+  "code": 0,
+  "stderr": "",
+  "stdout": [
+    {
+      "client": "codex",
+      "kind": "effort",
+      "model": "gpt-5",
+      "name": "gpt-5",
+      "option": "model_reasoning_effort",
+      "values": [
+        "low",
+        "high",
+      ],
+    },
+  ],
+}
+`;
+
+exports[`get clients/models/options/efforts --json with a fake codex catalog 6`] = `
+{
+  "argv": [
+    "get",
+    "effort",
+    "gpt-5",
+    "--client",
+    "codex",
+    "-o",
+    "json",
+  ],
+  "code": 0,
+  "stderr": "",
+  "stdout": {
+    "client": "codex",
+    "kind": "effort",
+    "model": "gpt-5",
+    "name": "gpt-5",
+    "option": "model_reasoning_effort",
+    "values": [
+      "low",
+      "high",
+    ],
+  },
+}
+`;
+
+exports[`get options --native --json parses the CLI help 1`] = `
+{
+  "code": 0,
+  "stderr": "",
+  "stdout": [
+    {
+      "argument": "<MODEL>",
+      "choices": null,
+      "client": "codex",
+      "default": null,
+      "description": "Model to use",
+      "flags": [
+        "--model",
+      ],
+      "kind": "option",
+      "name": "model",
+      "source": "native",
+      "type": "string",
+      "value_mode": "required",
+    },
+    {
+      "argument": "<MODE>",
+      "choices": null,
+      "client": "codex",
+      "default": null,
+      "description": "Sandbox policy",
+      "flags": [
+        "-s",
+        "--sandbox",
+      ],
+      "kind": "option",
+      "name": "sandbox",
+      "source": "native",
+      "type": "string",
+      "value_mode": "required",
+    },
+    {
+      "argument": null,
+      "choices": null,
+      "client": "codex",
+      "default": null,
+      "description": "Print events",
+      "flags": [
+        "--json",
+      ],
+      "kind": "option",
+      "name": "json",
+      "source": "native",
+      "type": "boolean",
+      "value_mode": "none",
+    },
+  ],
+}
+`;
+
+exports[`service status and workspace list --json with a running service 1`] = `
+{
+  "code": 0,
+  "stderr": "",
+  "stdout": {
+    "host": "127.0.0.1",
+    "pid": 0,
+    "port": 47321,
+    "state": "running",
+  },
+}
+`;
+
+exports[`service status and workspace list --json with a running service 2`] = `
+{
+  "code": 0,
+  "stderr": "",
+  "stdout": {
+    "workspaces": [
+      {
+        "available": true,
+        "id": "ws_abc",
+        "name": "demo",
+        "path": "/tmp/demo",
+      },
+    ],
+  },
+}
+`;
+
+exports[`service status and workspace list --json without a running service 1`] = `
+{
+  "code": 1,
+  "stderr": "",
+  "stdout": {
+    "state": "stopped",
+  },
+}
+`;
+
+exports[`service status and workspace list --json without a running service 2`] = `
+{
+  "code": 1,
+  "stderr": "migent: Registry service is not running.
+",
+  "stdout": [],
+}
+`;
+
+exports[`session complete --json and session follow --json on a stopped session 1`] = `
+{
+  "code": 0,
+  "stderr": "[migent] Watching session <uuid>.
+",
+  "stdout": {
+    "baseline": null,
+    "blocked_by_execution_ids": [],
+    "blocker": null,
+    "events_cursor": 0,
+    "execution_id": "0001-draft--attempt-01",
+    "execution_status": "completed",
+    "latest_execution_id": "0001-draft--attempt-01",
+    "latest_execution_status": "completed",
+    "outcome": {
+      "status": "complete",
+    },
+    "outputs": {},
+    "outputs_not_produced": [],
+    "questions": [],
+    "running_stages": [],
+    "session_id": "<uuid>",
+    "skipped_stages": [],
+    "status": "active",
+    "title": "Write a plan",
+    "updated_at": "<time>",
+    "workflow_id": "partial",
+  },
+}
+`;
+
+exports[`session complete --json and session follow --json on a stopped session 2`] = `
+{
+  "code": 0,
+  "stderr": "",
+  "stdout": {
+    "already_completed": false,
+    "missing_outputs": [
+      "notes",
+    ],
+    "next": {
+      "path": "<root>/.migent/sessions/<uuid>/next.json",
+      "suggestions": [
+        {
+          "argv": [
+            "migent",
+            "session",
+            "run",
+            "--workflow",
+            "implement",
+            "--prior",
+            "<uuid>",
+          ],
+          "artifacts": {
+            "plan": {
+              "output": "plan",
+              "path": "outputs/plan.md",
+            },
+          },
+          "command": "migent session run --workflow implement --prior <uuid>",
+          "task": "Implement the plan",
+          "workflow": "implement",
+        },
+      ],
+    },
+    "outputs": [
+      {
+        "name": "plan",
+        "path": "<root>/.migent/sessions/<uuid>/outputs/plan.md",
+      },
+    ],
+    "session_id": "<uuid>",
+    "status": "completed",
+  },
+}
+`;
+
+exports[`session complete --json and session follow --json on a stopped session 3`] = `
+{
+  "code": 0,
+  "stderr": "",
+  "stdout": {
+    "already_completed": true,
+    "missing_outputs": [],
+    "next": {
+      "path": "<root>/.migent/sessions/<uuid>/next.json",
+      "suggestions": [
+        {
+          "argv": [
+            "migent",
+            "session",
+            "run",
+            "--workflow",
+            "implement",
+            "--prior",
+            "<uuid>",
+          ],
+          "artifacts": {
+            "plan": {
+              "output": "plan",
+              "path": "outputs/plan.md",
+            },
+          },
+          "command": "migent session run --workflow implement --prior <uuid>",
+          "task": "Implement the plan",
+          "workflow": "implement",
+        },
+      ],
+    },
+    "outputs": [
+      {
+        "name": "plan",
+        "path": "<root>/.migent/sessions/<uuid>/outputs/plan.md",
+      },
+    ],
+    "session_id": "<uuid>",
+    "status": "completed",
+  },
+}
+`;
+
+exports[`session complete --json and session follow --json on a stopped session 4`] = `
+{
+  "code": 0,
+  "stderr": "[migent] Watching session <uuid>.
+",
+  "stdout": {
+    "baseline": null,
+    "blocked_by_execution_ids": [],
+    "blocker": null,
+    "events_cursor": 0,
+    "execution_id": "0001-draft--attempt-01",
+    "execution_status": "completed",
+    "latest_execution_id": "0001-draft--attempt-01",
+    "latest_execution_status": "completed",
+    "outcome": {
+      "status": "complete",
+    },
+    "outputs": {
+      "plan": {
+        "path": "outputs/plan.md",
+        "published_by_execution_id": "manual",
+        "source_execution_id": "0001-draft--attempt-01",
+      },
+    },
+    "outputs_not_produced": [],
+    "questions": [],
+    "running_stages": [],
+    "session_id": "<uuid>",
+    "skipped_stages": [],
+    "status": "completed",
+    "title": "Write a plan",
+    "updated_at": "<time>",
+    "workflow_id": "partial",
+  },
+}
+`;
+
+exports[`session list/show/metrics --json 1`] = `
+{
+  "code": 0,
+  "stderr": "",
+  "stdout": [
+    {
+      "decision": "approved",
+      "execution": "0001",
+      "outputs": "plan",
+      "session": "s1",
+      "status": "completed",
+      "title": "s1",
+      "workflow": "plan",
+    },
+  ],
+}
+`;
+
+exports[`session list/show/metrics --json 2`] = `
+{
+  "code": 0,
+  "stderr": "",
+  "stdout": {
+    "decision": "approved",
+    "execution": "0001",
+    "outputs": "plan",
+    "session": "s1",
+    "status": "completed",
+    "title": "s1",
+    "workflow": "plan",
+  },
+}
+`;
+
+exports[`session list/show/metrics --json 3`] = `
+{
+  "code": 0,
+  "stderr": "",
+  "stdout": {
+    "baseline": null,
+    "blocked_by_execution_ids": [],
+    "blocker": null,
+    "events_cursor": 0,
+    "execution_id": "0001",
+    "execution_status": null,
+    "latest_execution_id": "0001",
+    "latest_execution_status": null,
+    "outcome": null,
+    "outputs": {
+      "plan": {},
+    },
+    "outputs_not_produced": [],
+    "questions": [],
+    "running_stages": [],
+    "session_id": "s1",
+    "skipped_stages": [],
+    "status": "completed",
+    "updated_at": "<time>",
+    "workflow_id": "plan",
+  },
+}
+`;
+
+exports[`session metrics and cancel --json success payloads 1`] = `
+{
+  "code": 0,
+  "stderr": "",
+  "stdout": {
+    "session_id": "wave-3",
+    "status": "completed",
+    "totals": {
+      "usage": {
+        "input_tokens": 4,
+      },
+    },
+    "workflow_id": "plan",
+  },
+}
+`;
+
+exports[`session metrics and cancel --json success payloads 2`] = `
+{
+  "code": 0,
+  "stderr": "",
+  "stdout": {
+    "session_id": "wave-3",
+    "status": "completed",
+    "totals": {
+      "usage": {
+        "input_tokens": 4,
+      },
+    },
+    "workflow_id": "plan",
+  },
+}
+`;
+
+exports[`session metrics and cancel --json success payloads 3`] = `
+{
+  "code": 0,
+  "stderr": "",
+  "stdout": {
+    "cancelled": true,
+    "session_id": "s1",
+    "status": "active",
+  },
+}
+`;
+
+exports[`session run --role --json prints the role result 1`] = `
+{
+  "code": 0,
+  "stderr": "[migent] session_id: <uuid>
+[migent] agent planner · fake/m1 (effort: medium).
+",
+  "stdout": {
+    "agent_id": "native-session-1",
+    "artifact_directory": "<root>/.migent/sessions/<uuid>/executions/0001-planner--attempt-01/artifacts",
+    "client": "fake",
+    "execution_id": "0001-planner--attempt-01",
+    "execution_status": "completed",
+    "failure_kind": "",
+    "failure_reason": "",
+    "options": {
+      "effort": "medium",
+    },
+    "outcome_decision": "",
+    "outcome_status": "complete",
+    "reset_at": "",
+    "response": "status: complete
+
+role answer",
+    "session_id": "<uuid>",
+    "session_status": "completed",
+  },
+}
+`;
+
+exports[`session run --workflow completes and publishes outputs 1`] = `
+{
+  "code": 0,
+  "stderr": "preflight skipped (--skip-preflight)
+[migent] session_id: <uuid>
+[migent] stage draft · attempt 1 · <clock> · fake/m1 (effort: medium).
+[migent] stage draft · attempt 1 · <dur> · complete.
+[migent] completed · <dur>
+[migent] artifact: <root>/.migent/sessions/<uuid>/outputs/plan.md
+[migent] next: <root>/.migent/sessions/<uuid>/next.json
+[migent] migent session run --workflow implement --prior <uuid>
+",
+  "stdout": [],
+}
+`;
+
+exports[`update --check --json 1`] = `
+{
+  "code": 0,
+  "stderr": "",
+  "stdout": {
+    "command": "npm install -g @nodeint/migent@latest",
+    "current": "<version>",
+    "latest": "99.0.0",
+    "update_available": true,
+    "updated": false,
+  },
+}
+`;
+
+exports[`update --check --json 2`] = `
+{
+  "code": 0,
+  "stderr": "",
+  "stdout": {
+    "current": "<version>",
+    "latest": "0.0.1",
+    "update_available": false,
+    "updated": false,
+  },
+}
+`;

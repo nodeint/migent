@@ -1,0 +1,17 @@
+schema_version: 7
+id: pr
+stages:
+  - id: open_pr
+    role: operator
+    depends_on: []
+    ask: human
+    instructions:
+      - Follow .agents/skills/create-pr/SKILL.md for branch, commit, push, and pull request rules.
+      - Use the prior implement report for the commit message and the pull request title and body; link the related issue.
+      - Stage files by name. Add a CHANGELOG line under Unreleased for a user-visible change.
+      - Ask the human before pushing and opening the pull request; do not push without approval.
+      - Do not merge. Report the branch, commit, pull request URL, and CI result.
+    artifacts: [pr]
+artifacts:
+  pr:
+    file: pr.md
