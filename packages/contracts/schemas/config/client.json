@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/config/client.json",
+  "type": "object",
+  "properties": {
+    "type": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "\\S",
+          "description": "A string with a non-blank value."
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "options": {
+      "anyOf": [
+        {
+          "$ref": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/config/client-options.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "title": "Client selection",
+  "description": "The CLI client that runs the model. `type` is required when `options` is set.",
+  "additionalProperties": false
+}

@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/config/role.json",
+  "type": "object",
+  "properties": {
+    "description": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "\\S",
+          "description": "A string with a non-blank value."
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "agent": {
+      "$ref": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/config/role-agent.json"
+    },
+    "responsibilities": {
+      "anyOf": [
+        {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "\\S",
+            "description": "A string with a non-blank value."
+          },
+          "description": "Instructions included before stage instructions in every prompt for the role."
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "title": "Role",
+  "description": "A role: its intent and the agent it uses."
+}

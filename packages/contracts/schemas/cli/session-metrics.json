@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/cli/session-metrics.json",
+  "type": "object",
+  "patternProperties": {
+    "^.*$": {}
+  },
+  "title": "session metrics <id> --json",
+  "description": "Any JSON object, forwarded from metrics.json. See the known-shape schemas for what a file may look like."
+}

@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/workflow/artifact.json",
+  "type": "object",
+  "required": [
+    "file"
+  ],
+  "properties": {
+    "file": {
+      "type": "string",
+      "pattern": "^\\s*(?!\\.{1,2}\\s*$)[^/\\\\\\s][^/\\\\]*$",
+      "description": "File name inside the session's output directory. No path separators."
+    },
+    "description": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "\\S",
+          "description": "A string with a non-blank value."
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "required": {
+      "anyOf": [
+        {
+          "type": "boolean",
+          "description": "Default `true`. A required artifact must exist when its producer completes."
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "title": "Workflow artifact",
+  "description": "An artifact definition.",
+  "additionalProperties": false
+}

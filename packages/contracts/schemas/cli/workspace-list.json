@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/cli/workspace-list.json",
+  "type": "object",
+  "required": [
+    "workspaces"
+  ],
+  "properties": {
+    "workspaces": {
+      "type": "array",
+      "items": {
+        "$ref": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/cli/workspace.json"
+      }
+    }
+  },
+  "title": "workspace list --json"
+}

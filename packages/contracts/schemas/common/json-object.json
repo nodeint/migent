@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/common/json-object.json",
+  "type": "object",
+  "patternProperties": {
+    "^.*$": {}
+  },
+  "title": "JSON object",
+  "description": "Any JSON object. No property is declared."
+}

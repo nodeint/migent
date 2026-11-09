@@ -74,7 +74,7 @@ const StageArtifactView = Type.Object({
 const Route = Type.Union([Type.String(), Type.Array(Type.String())]);
 const ArtifactProducer = Type.Object({ stage: Type.String(), decision: nullable(Type.String()) });
 
-const StageView = Type.Object(
+export const StageView = Type.Object(
   {
     id: Type.String(),
     role: nullable(Type.String()),

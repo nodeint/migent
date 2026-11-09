@@ -18,7 +18,7 @@ import { parsePort, runServiceStart, runServiceStatus, runServiceStop } from "./
 import { installSkill, printSkillPath, updateSkill, type SkillOptions } from "./commands/skill.js";
 import { runRegister, runRemove, runWorkspaceList } from "./commands/workspace-registry.js";
 import { printError } from "./display.js";
-import { LOOP_EXITS, STAGE_EXITS } from "./exits.js";
+import { LOOP_EXITS, PREFLIGHT_EXIT, ROLE_EXITS, STAGE_EXITS } from "./exits.js";
 import { runMigrate } from "./migrate.js";
 import { optionalText, rawText, text } from "./text.js";
 import { PACKAGE_VERSION } from "./version.js";
@@ -394,16 +394,6 @@ ${exitText([
   });
   return program;
 }
-
-const PREFLIGHT_EXIT = "Exit 2 when the preflight check finds a problem. Nothing is created or frozen. Pass --skip-preflight to bypass it.";
-
-const ROLE_EXITS = [
-  "Exit 0 when the outcome is complete, or the role session is already completed.",
-  "Exit 1 when the outcome is not complete.",
-  "Exit 2 on a configuration error.",
-  "Exit 6 when a cancelled role session reopened more than one execution and one exhausted verify.",
-  "Exit 130 when cancelled. session continue resumes that execution.",
-];
 
 const RUN_SPLIT = "Pass --workflow for a workflow run, or --role for an agent run.";
 

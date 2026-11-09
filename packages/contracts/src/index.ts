@@ -3,6 +3,7 @@ export * from "./cli-output.js";
 export * from "./config.js";
 export * from "./workflow.js";
 export * from "./env.js";
+export * from "./exits.js";
 export * from "./known-shapes.js";
 export * from "./index-registry.js";
 export * from "./validate.js";

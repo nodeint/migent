@@ -2,6 +2,8 @@
 
 Run commands from the configured project or any of its subdirectories.
 
+Generated tables: [exit codes](reference/exit-codes.md), [`--json` output fields](reference/cli-output.md), [environment variables](reference/env.md).
+
 ## Session commands
 
 ```bash

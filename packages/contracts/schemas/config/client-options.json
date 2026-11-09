@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/config/client-options.json",
+  "type": "object",
+  "patternProperties": {
+    "^.*$": {
+      "type": "string",
+      "pattern": "\\S",
+      "description": "A string with a non-blank value."
+    }
+  },
+  "propertyNames": {
+    "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+  },
+  "title": "Client options",
+  "description": "Native options for the selected client. Keys are option names; values are non-blank strings."
+}

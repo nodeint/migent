@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/config/inline-agent.json",
+  "type": "object",
+  "required": [
+    "model"
+  ],
+  "properties": {
+    "model": {
+      "type": "string",
+      "pattern": "\\S",
+      "description": "A string with a non-blank value."
+    },
+    "effort": {
+      "type": "string",
+      "pattern": "\\S",
+      "description": "A string with a non-blank value."
+    },
+    "client": {
+      "anyOf": [
+        {
+          "$ref": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/config/client.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "title": "Inline agent",
+  "description": "A complete agent definition."
+}

@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/cli/workspace-mutation.json",
+  "type": "object",
+  "required": [
+    "id",
+    "name",
+    "path",
+    "available"
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    },
+    "available": {
+      "type": "boolean"
+    },
+    "registered_at": {
+      "type": "string"
+    },
+    "updated_at": {
+      "type": "string"
+    },
+    "tool": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "title": "workspace register|remove",
+  "description": "The registry's workspace record, passed through."
+}

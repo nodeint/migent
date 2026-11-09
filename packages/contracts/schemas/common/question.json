@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/common/question.json",
+  "type": "object",
+  "required": [
+    "id",
+    "question",
+    "context",
+    "selection",
+    "options"
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "question": {
+      "type": "string"
+    },
+    "context": {
+      "type": "string"
+    },
+    "selection": {
+      "anyOf": [
+        {
+          "type": "string",
+          "const": "single"
+        },
+        {
+          "type": "string",
+          "const": "multiple"
+        }
+      ]
+    },
+    "options": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "label"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "recommended": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "title": "Question an agent asked"
+}

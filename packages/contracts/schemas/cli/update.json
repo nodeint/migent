@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/cli/update.json",
+  "type": "object",
+  "required": [
+    "current",
+    "latest",
+    "update_available",
+    "updated"
+  ],
+  "properties": {
+    "current": {
+      "type": "string"
+    },
+    "latest": {
+      "type": "string"
+    },
+    "update_available": {
+      "type": "boolean"
+    },
+    "updated": {
+      "type": "boolean"
+    },
+    "command": {
+      "type": "string"
+    },
+    "next": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "title": "update --json"
+}

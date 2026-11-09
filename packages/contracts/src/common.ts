@@ -1,7 +1,7 @@
 import Type, { type Static, type TSchema } from "typebox";
 
-/** Base for every `$id`. Final host is decided before schemas are published (epic #97, PR 6). */
-export const SCHEMA_BASE = "https://migent.dev/schemas";
+/** Base for every `$id`. Equals the raw URL of the generated files in `packages/contracts/schemas` on `main`. */
+export const SCHEMA_BASE = "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas";
 
 export const id = (path: string): string => `${SCHEMA_BASE}/${path}.json`;
 

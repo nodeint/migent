@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/common/diagnostic.json",
+  "type": "object",
+  "required": [
+    "severity",
+    "code",
+    "message"
+  ],
+  "properties": {
+    "severity": {
+      "$ref": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/common/severity.json"
+    },
+    "code": {
+      "type": "string",
+      "description": "Stable machine-readable code."
+    },
+    "message": {
+      "type": "string"
+    },
+    "source": {
+      "type": "string",
+      "description": "project, local, effective, or workflow."
+    },
+    "file": {
+      "type": "string"
+    },
+    "draft": {
+      "type": "boolean"
+    },
+    "path": {
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "number"
+          }
+        ]
+      }
+    },
+    "line": {
+      "type": "number"
+    },
+    "column": {
+      "type": "number"
+    },
+    "end_line": {
+      "type": "number"
+    },
+    "end_column": {
+      "type": "number"
+    }
+  },
+  "title": "Diagnostic",
+  "description": "One authoring diagnostic."
+}

@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/cli/get-effort.json",
+  "type": "object",
+  "required": [
+    "kind",
+    "name",
+    "client",
+    "model",
+    "option",
+    "values"
+  ],
+  "properties": {
+    "kind": {
+      "type": "string",
+      "const": "effort"
+    },
+    "name": {
+      "type": "string"
+    },
+    "client": {
+      "type": "string"
+    },
+    "model": {
+      "type": "string"
+    },
+    "option": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "values": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "title": "get effort(s) -o json"
+}

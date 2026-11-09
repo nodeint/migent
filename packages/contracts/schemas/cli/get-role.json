@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/cli/get-role.json",
+  "type": "object",
+  "required": [
+    "kind",
+    "name",
+    "agent",
+    "description",
+    "responsibilities",
+    "target",
+    "used_by",
+    "problems"
+  ],
+  "properties": {
+    "kind": {
+      "type": "string",
+      "const": "role"
+    },
+    "name": {
+      "type": "string"
+    },
+    "agent": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "description": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "responsibilities": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "target": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "client",
+            "model",
+            "options"
+          ],
+          "properties": {
+            "client": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "options": {
+              "type": "object",
+              "patternProperties": {
+                "^.*$": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "used_by": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "stage",
+          "workflow"
+        ],
+        "properties": {
+          "stage": {
+            "type": "string"
+          },
+          "workflow": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "problems": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "title": "get role(s) -o json"
+}

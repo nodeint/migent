@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/config/role-agent.json",
+  "anyOf": [
+    {
+      "type": "string",
+      "pattern": "\\S",
+      "description": "A string with a non-blank value."
+    },
+    {
+      "$ref": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/config/inline-agent.json"
+    }
+  ],
+  "title": "Role agent",
+  "description": "The name of an `agents` entry, or a complete inline agent."
+}

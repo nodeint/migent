@@ -10,7 +10,19 @@ agents may be partial, because layers merge) and `EffectiveConfig` describes the
 contracts and are not part of `CLI_CONTRACTS`. They validate structure only; error codes, semantic
 rules (client registry, effort, model availability) stay in `@nodeint/migent-kernel`.
 The environment catalog (`ENV_CATALOG`) describes `MIGENT_DEBUG`, `MIGENT_NO_INPUT`, `MIGENT_HOME`, and
-`DISABLE_TELEMETRY`; only those four are a contract. Workflow contracts follow in later releases.
+`DISABLE_TELEMETRY`; only those four are a contract. `WorkflowDocumentInput` describes an authored
+workflow file at the current `schema_version`. `EXIT_CATALOG` describes every exit code per command family.
+
+- **Input vs. output contracts.** Config and workflow contracts are input contracts. Workflow objects are
+  closed: an unknown key is an error. Config is closed only where the schema says so (`ClientSelection`,
+  `AgentPlaceholder`); `ConfigLayer`, `InlineAgent`, and the other config objects accept unknown keys, and
+  the kernel rejects the ones it does not know. Output contracts stay open.
+- **Schema files.** `pnpm generate` writes one JSON Schema file per `$id` to `schemas/<id path>.json`
+  (shipped in this package, importable as `@nodeint/migent-contracts/schemas/…`). `$id` is the raw GitHub URL
+  of that file on `main`. Nested identified schemas are `$ref`s to their own files, so the files are not
+  self-contained: load the directory, or resolve `$ref` by `$id`. A schema added on `next` is not served at
+  its URL until a release moves `main`; the npm copy has no such gap.
+- **Reference tables.** The same command writes [`docs/reference/`](../../docs/reference/).
 
 - **Leaf package.** Its only runtime dependency is `typebox`. It imports no other Migent package.
 - **Open objects.** Consumers must ignore unknown fields. Adding a field is not a breaking change.

@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/config/agent-placeholder.json",
+  "type": "object",
+  "properties": {},
+  "title": "Unmapped agent",
+  "description": "An empty entry that a local config file maps to a client and model.",
+  "additionalProperties": false
+}

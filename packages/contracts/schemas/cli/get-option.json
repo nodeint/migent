@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/cli/get-option.json",
+  "type": "object",
+  "required": [
+    "kind",
+    "name",
+    "client",
+    "source",
+    "prompt",
+    "allow_default",
+    "overridable"
+  ],
+  "properties": {
+    "kind": {
+      "type": "string",
+      "const": "option"
+    },
+    "name": {
+      "type": "string"
+    },
+    "client": {
+      "type": "string"
+    },
+    "source": {
+      "type": "string",
+      "const": "configured"
+    },
+    "prompt": {
+      "type": "boolean"
+    },
+    "allow_default": {
+      "type": "boolean"
+    },
+    "overridable": {
+      "type": "boolean"
+    }
+  },
+  "title": "get option(s) -o json"
+}

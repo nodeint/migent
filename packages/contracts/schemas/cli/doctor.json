@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/cli/doctor.json",
+  "type": "object",
+  "required": [
+    "ok",
+    "checks"
+  ],
+  "properties": {
+    "ok": {
+      "type": "boolean"
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "$ref": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/common/check.json"
+      }
+    },
+    "session": {
+      "type": "object",
+      "required": [
+        "id",
+        "workflow_id",
+        "source",
+        "path"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "workflow_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "title": "doctor --json",
+  "description": "Checks; `session` is present with --session."
+}

@@ -2,3 +2,6 @@
 *.cmd text eol=crlf
 
 .githooks/* text eol=lf
+
+packages/contracts/schemas/** text eol=lf
+docs/reference/** text eol=lf

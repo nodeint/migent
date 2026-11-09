@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/common/severity.json",
+  "anyOf": [
+    {
+      "type": "string",
+      "const": "error"
+    },
+    {
+      "type": "string",
+      "const": "warning"
+    }
+  ],
+  "title": "Diagnostic severity"
+}

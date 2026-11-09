@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/cli/role-run.json",
+  "type": "object",
+  "required": [
+    "agent_id",
+    "options",
+    "session_id",
+    "execution_id",
+    "artifact_directory",
+    "outcome_status",
+    "outcome_decision",
+    "session_status",
+    "response",
+    "failure_reason",
+    "failure_kind",
+    "reset_at",
+    "client"
+  ],
+  "properties": {
+    "agent_id": {
+      "type": "string"
+    },
+    "options": {
+      "type": "object",
+      "patternProperties": {
+        "^.*$": {
+          "type": "string"
+        }
+      }
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "execution_id": {
+      "type": "string"
+    },
+    "artifact_directory": {
+      "type": "string"
+    },
+    "outcome_status": {
+      "type": "string"
+    },
+    "outcome_decision": {
+      "type": "string"
+    },
+    "session_status": {
+      "type": "string"
+    },
+    "response": {
+      "type": "string"
+    },
+    "failure_reason": {
+      "type": "string"
+    },
+    "failure_detail": {
+      "type": "string"
+    },
+    "failure_kind": {
+      "type": "string"
+    },
+    "reset_at": {
+      "type": "string"
+    },
+    "client": {
+      "type": "string"
+    },
+    "execution_status": {
+      "type": "string"
+    },
+    "questions": {
+      "type": "array",
+      "items": {
+        "$ref": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/common/question.json"
+      }
+    },
+    "questions_file": {
+      "type": "string"
+    }
+  },
+  "title": "session run --role --json"
+}

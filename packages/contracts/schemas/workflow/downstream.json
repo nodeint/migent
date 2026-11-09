@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/workflow/downstream.json",
+  "type": "object",
+  "required": [
+    "workflow",
+    "task"
+  ],
+  "properties": {
+    "workflow": {
+      "type": "string",
+      "pattern": "\\S",
+      "description": "A string with a non-blank value."
+    },
+    "task": {
+      "type": "string",
+      "pattern": "^[^\\r\\n]*\\S[^\\r\\n]*$",
+      "description": "A single non-blank line."
+    },
+    "artifacts": {
+      "type": "object",
+      "patternProperties": {
+        "^.*$": {
+          "type": "string",
+          "pattern": "\\S",
+          "description": "A string with a non-blank value."
+        }
+      },
+      "description": "Downstream artifact name mapped to a registry artifact id."
+    }
+  },
+  "title": "Downstream suggestion",
+  "description": "A workflow to suggest after this one completes.",
+  "additionalProperties": false
+}

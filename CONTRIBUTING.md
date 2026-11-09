@@ -56,6 +56,12 @@ pnpm vitest run packages/cli/test/config.test.ts -t "keeps the model name"
 Read `process.env` only in `packages/kernel/src/env.ts` (a test enforces this), and describe every new
 Migent variable in the `ENV_CATALOG` of `@nodeint/migent-contracts`.
 
+## Contracts and generated files
+
+After changing a contract (a schema, `ENV_CATALOG`, or `EXIT_CATALOG`), run `pnpm generate` and commit
+`packages/contracts/schemas/` and `docs/reference/`. A test fails when they are stale. Exit codes are
+owned by `@nodeint/migent-contracts` (`EXIT_CATALOG`); the CLI builds its help text from it.
+
 ## Writing tests
 
 - **Never call a real client CLI.** Pass the test's fake `which` *and*

@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/cli/session-metrics-line.json",
+  "type": "object",
+  "patternProperties": {
+    "^.*$": {}
+  },
+  "title": "session metrics --json line",
+  "description": "One line per sealed session; any JSON object."
+}
