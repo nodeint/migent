@@ -1,4 +1,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
+import { DOCUMENT_FIELD_SCHEMAS, RUN_WHEN_KEYS, downstreamProblems, runWhenPathsMissing, stageMappingProblem, downstreamListProblem, downstreamArtifactSourceProblem, STAGE_FIELD_SCHEMAS, containerError, decisionBodyProblems, decisionEntryProblem, decisionListProblem, requireContainer, requireValid, stageField } from "./workflow-structure.js";
+import type { TSchema } from "@nodeint/migent-contracts";
+import { NonBlankString, WorkflowDecisionItem, ARTIFACT_ID_PATTERN, WorkflowLine, WorkflowStage, WorkflowDownstream, WorkflowArtifact, WorkflowDecisionEntry, WorkflowRunWhen, isValid, schemaIssues } from "@nodeint/migent-contracts";
 import { UNKNOWN_KEYS_ERROR_SCHEMA_VERSION, unknownWorkflowKeyEntries, unknownWorkflowKeys, stageErrorPath, workflowErrorPath, workflowRuleCode } from "./authoring-diagnostics.js";
 import type { UnknownKey } from "./authoring-diagnostics.js";
 import path from "node:path";
@@ -517,21 +520,25 @@ function parseWorkflowMappingUnchecked(data: Record<string, unknown>, source: st
 
 function parseDownstream(raw: unknown, outputs: readonly WorkflowOutput[]): WorkflowDownstream[] {
   if (raw === undefined) return [];
-  if (!Array.isArray(raw)) throw new ConfigurationError("downstream must be a list.");
+  if (raw === null) throw new ConfigurationError("downstream must be a list.");
+  requireContainer(DOCUMENT_FIELD_SCHEMAS.downstream, raw, "downstream");
+  const entries = raw as unknown[];
   const seen = new Set<string>();
-  return raw.map((entry) => {
-    if (!isRecord(entry)) throw new ConfigurationError("downstream entries must be mappings.");
-    for (const key of Object.keys(entry)) {
-      if (!["workflow", "task", "artifacts"].includes(key)) throw new ConfigurationError(`Unknown downstream field: ${key}.`);
+  return entries.map((entry) => {
+    const structural = downstreamProblems(entry);
+    if (structural.some((problem) => problem.kind === "entry") || !isRecord(entry)) throw new ConfigurationError("downstream entries must be mappings.");
+    for (const problem of structural) {
+      if (problem.kind === "key") throw new ConfigurationError(`Unknown downstream field: ${problem.key}.`);
     }
     const workflow = requiredString(entry.workflow, "downstream.workflow");
     if (isPathReference(workflow)) throw new ConfigurationError("downstream.workflow must be a workflow id, not a path.");
     if (seen.has(workflow)) throw new ConfigurationError(`Duplicate downstream workflow: ${workflow}.`);
     seen.add(workflow);
+    if (structural.some((problem) => problem.kind === "task-missing")) throw new ConfigurationError("Missing or invalid downstream.task.");
+    if (structural.some((problem) => problem.kind === "task-line")) throw new ConfigurationError("downstream.task must be a single line.");
     const task = requiredString(entry.task, "downstream.task");
-    if (typeof entry.task === "string" && /[\r\n]/.test(entry.task)) throw new ConfigurationError("downstream.task must be a single line.");
-    const mapping = entry.artifacts === undefined ? {} : entry.artifacts;
-    if (!isRecord(mapping)) throw new ConfigurationError("downstream.artifacts must be a mapping.");
+    if (structural.some((problem) => problem.kind === "artifacts")) throw new ConfigurationError("downstream.artifacts must be a mapping.");
+    const mapping = entry.artifacts === undefined ? {} : (entry.artifacts as Record<string, unknown>);
     const artifacts: Record<string, string> = {};
     const mapped = entry.artifacts !== undefined;
     for (const [name, source] of Object.entries(mapping)) {
@@ -666,13 +673,8 @@ function resolveWorkflowPath(workspace: string, reference: string): string | nul
 
 function parseConcurrency(data: Record<string, unknown>): number {
   if (!Object.hasOwn(data, "concurrency") || data.concurrency == null) return 1;
-  const raw = data.concurrency;
-  let value = raw;
-  if (typeof value === "string" && /^\d+$/.test(value.trim())) value = Number(value.trim());
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
-    throw new ConfigurationError("concurrency must be a positive integer.");
-  }
-  return value;
+  requireValid(DOCUMENT_FIELD_SCHEMAS.concurrency, data.concurrency, "concurrency must be a positive integer.");
+  return Number(typeof data.concurrency === "string" ? data.concurrency.trim() : data.concurrency);
 }
 
 function documentId(data: Record<string, unknown>, filePath: string): string {
@@ -691,7 +693,7 @@ function parseStages(raw: unknown, version2 = false, version3 = false, version5 
   const rawItems: unknown[] = [];
   for (const [index, rawItem] of raw.entries()) {
     try {
-    if (!isRecord(rawItem)) throw new ConfigurationError("Workflow stage must be a mapping.");
+    if (stageMappingProblem(rawItem) || !isRecord(rawItem)) throw new ConfigurationError("Workflow stage must be a mapping.");
     const item = version3 ? normalizeStageDecision(rawItem, version7) : rawItem;
     const stageId = requiredString(item.id, "stages.id");
     if (Object.hasOwn(stages, stageId)) throw new ConfigurationError(`Duplicate stage id: ${stageId}`);
@@ -801,16 +803,19 @@ function stageRunWhen(
   const field = `stages.${stageId}.run_when`;
   if (!version2) throw new ConfigurationError(`${field} requires schema_version 2.`);
   const runWhen = stage.run_when;
-  if (!isRecord(runWhen)) throw new ConfigurationError(`${field} must be a mapping.`);
-  for (const key of Object.keys(runWhen)) {
-    if (key !== "changed_paths") throw new ConfigurationError(`${field}.${key} is not supported.`);
+  requireContainer(STAGE_FIELD_SCHEMAS.run_when, runWhen, field);
+  const runWhenMap = runWhen as Record<string, unknown>;
+  for (const key of Object.keys(runWhenMap)) {
+    if (!RUN_WHEN_KEYS.includes(key)) throw new ConfigurationError(`${field}.${key} is not supported.`);
   }
-  if (!Object.hasOwn(runWhen, "changed_paths") || runWhen.changed_paths == null) {
+  // Reading the value only; whether it is required (absent or null) is the contract's verdict.
+  const rawPaths = Object.hasOwn(runWhenMap, "changed_paths") ? runWhenMap.changed_paths : undefined;
+  if (runWhenPathsMissing(runWhenMap, "changed_paths")) {
     throw new ConfigurationError(`${field}.changed_paths is required.`);
   }
-  const raw = runWhen.changed_paths;
-  if (!Array.isArray(raw)) throw new ConfigurationError(`${field}.changed_paths must be a list.`);
-  if (raw.length === 0) throw new ConfigurationError(`${field}.changed_paths must be a non-empty list.`);
+  requireContainer(WorkflowRunWhen.properties.changed_paths, rawPaths, `${field}.changed_paths`);
+  const raw = rawPaths as unknown[];
+  if (schemaIssues(WorkflowRunWhen.properties.changed_paths, raw).some((issue) => issue.path.length === 0 && issue.keyword === "minItems")) throw new ConfigurationError(`${field}.changed_paths must be a non-empty list.`);
   const changedPaths: string[] = [];
   raw.forEach((entry, index) => {
     const pattern = requiredString(entry, `${field}.changed_paths[${index}]`);
@@ -918,16 +923,14 @@ function parseRequires(raw: unknown, version2 = false): WorkflowRequires | null 
 
 function stringItems(raw: unknown, field: string): string[] {
   if (raw == null) return [];
-  if (!Array.isArray(raw)) throw new ConfigurationError(`${field} must be a list.`);
-  return raw.map((item, index) => requiredString(item, `${field}[${index}]`));
+  requireContainer(STAGE_FIELD_SCHEMAS.instructions, raw, field);
+  return (raw as unknown[]).map((item, index) => requiredString(item, `${field}[${index}]`));
 }
 
 function stageDependsOn(stage: Record<string, unknown>, stageId: string): string[] {
   if (!Object.hasOwn(stage, "depends_on") || stage.depends_on == null) return [];
-  const raw = stage.depends_on;
-  if (!Array.isArray(raw)) {
-    throw new ConfigurationError(`stages.${stageId}.depends_on must be a list.`);
-  }
+  requireContainer(STAGE_FIELD_SCHEMAS.depends_on, stage.depends_on, `stages.${stageId}.depends_on`);
+  const raw = stage.depends_on as unknown[];
   const parsed: string[] = [];
   const seen = new Set<string>();
   for (const item of raw) {
@@ -963,30 +966,31 @@ function stageResumeFrom(
 function normalizeStageDecision(stage: Record<string, unknown>, version7 = false): Record<string, unknown> {
   if (stage.decision == null) return stage;
   const field = `stages.${String(stage.id)}.decision`;
-  if (!Array.isArray(stage.decision) || stage.decision.length === 0) {
+  if (decisionListProblem(stage.decision)) {
     throw new ConfigurationError(`${field} must be a non-empty list in schema_version 3. Run \`migent migrate\` for older workflows.`);
   }
   const values: string[] = [];
   const routes: Record<string, unknown> = Object.create(null);
   const instructions: Record<string, string> = Object.create(null);
-  for (const entry of stage.decision) {
-    if (!isRecord(entry) || Object.keys(entry).length !== 1) {
+  for (const entry of stage.decision as Record<string, unknown>[]) {
+    if (decisionEntryProblem(entry)) {
       throw new ConfigurationError(`${field} entries must each declare exactly one decision.`);
     }
     const rawName = Object.keys(entry)[0]!;
     const name = requiredString(rawName, field).toLowerCase();
     if (Object.hasOwn(routes, name)) throw new ConfigurationError(`Duplicate decision value on ${field}: ${name}`);
     const body = entry[rawName];
-    if (!isRecord(body)) throw new ConfigurationError(`${field}.${name} must be a mapping.`);
-    for (const key of Object.keys(body)) {
-      if (key !== "when" && key !== "navigate" && !(version7 && key === "artifacts")) {
-        throw new ConfigurationError(`${field}.${name}.${key} is not allowed.`);
-      }
+    const found = decisionBodyProblems(body, version7)[0];
+    if (found !== undefined) {
+      if (found.kind === "body") throw new ConfigurationError(`${field}.${name} must be a mapping.`);
+      if (found.kind === "key") throw new ConfigurationError(`${field}.${name}.${found.key} is not allowed.`);
+      if (found.kind === "when") throw new ConfigurationError(`Missing or invalid ${field}.${name}.when.`);
+      throw new ConfigurationError(`${field}.${name}.navigate is required.`);
     }
-    if (body.when !== undefined) instructions[name] = requiredString(body.when, `${field}.${name}.when`);
-    if (body.navigate == null) throw new ConfigurationError(`${field}.${name}.navigate is required.`);
+    const accepted = body as Record<string, unknown>;
+    if (accepted.when !== undefined) instructions[name] = requiredString(accepted.when, `${field}.${name}.when`);
     values.push(name);
-    routes[name] = body.navigate;
+    routes[name] = accepted.navigate;
   }
   return { ...stage, decision: { values, routes, instructions } };
 }
@@ -1090,8 +1094,8 @@ function validateStageGraph(stages: Record<string, StageSpec>): void {
 }
 
 function stageAsk(stage: Record<string, unknown>, stageId: string): AskTarget {
-  if (stage.ask !== "human") throw new ConfigurationError(`stages.${stageId}.ask must be human.`);
-  return "human";
+  if (!isValid(STAGE_FIELD_SCHEMAS.ask, stage.ask)) throw new ConfigurationError(`stages.${stageId}.ask must be human.`);
+  return stage.ask;
 }
 
 const ROLE_ONLY_KEYS = [
@@ -1122,9 +1126,7 @@ function rejectRoleOnlyKeys(stage: Record<string, unknown>, stageId: string): vo
 
 function stageDescription(stage: Record<string, unknown>, stageId: string): string | null {
   const description = optionalStageString(stage, "description", stageId);
-  if (description !== null && /[\r\n]/.test(description)) {
-    throw new ConfigurationError(`stages.${stageId}.description must be one line.`);
-  }
+  if (description !== null) requireValid(stageField("description"), description, `stages.${stageId}.description must be one line.`);
   return description;
 }
 
@@ -1235,8 +1237,10 @@ interface ArtifactBuild {
   problems: ArtifactProblem[];
 }
 
-const ARTIFACT_ID = /^[A-Za-z][A-Za-z0-9_-]*$/;
-const ARTIFACT_KEYS = ["file", "description", "required"];
+const ARTIFACT_ID = new RegExp(ARTIFACT_ID_PATTERN);
+const VERIFY_LINE: TSchema = WorkflowLine;
+const DECISION_ENTRY_KEYS: readonly string[] = Object.keys(WorkflowDecisionEntry.properties);
+const ARTIFACT_KEYS: readonly string[] = Object.keys(WorkflowArtifact.properties);
 
 /**
  * Reads the schema 7 artifact declarations from the raw mapping: the top-level registry, stage
@@ -1259,7 +1263,8 @@ function buildArtifactsV7(data: Record<string, unknown>, conditional: ReadonlyMa
       fail(`Invalid ${label} id: ${pyRepr(id)}.`, at);
       return null;
     }
-    if (!isRecord(body)) {
+    const bodyError = containerError(WorkflowArtifact, body, label);
+    if (bodyError !== null || !isRecord(body)) {
       fail(`${label} must be a mapping.`, at);
       return null;
     }
@@ -1280,14 +1285,14 @@ function buildArtifactsV7(data: Record<string, unknown>, conditional: ReadonlyMa
     }
     let description: string | null = null;
     if (body.description !== undefined && body.description !== null) {
-      if (typeof body.description !== "string" || body.description.trim() === "") {
+      if (!isValid(WorkflowArtifact.properties.description, body.description)) {
         fail(`Missing or invalid ${label}.description.`, [...at, "description"]);
         ok = false;
       } else description = body.description.trim();
     }
     let required = true;
     if (body.required !== undefined && body.required !== null) {
-      if (typeof body.required !== "boolean") {
+      if (!isValid(WorkflowArtifact.properties.required, body.required)) {
         fail(`${label}.required must be true or false.`, [...at, "required"]);
         ok = false;
       } else required = body.required;
@@ -1298,7 +1303,8 @@ function buildArtifactsV7(data: Record<string, unknown>, conditional: ReadonlyMa
   const declared = new Map<string, StageArtifact>();
   const rawRegistry = data.artifacts;
   if (rawRegistry !== undefined && rawRegistry !== null) {
-    if (!isRecord(rawRegistry)) fail("artifacts must be a mapping.", ["artifacts"]);
+    const registryError = containerError(DOCUMENT_FIELD_SCHEMAS.artifacts, rawRegistry, "artifacts");
+    if (registryError !== null) fail(registryError.message, ["artifacts"]);
     else {
       const files = new Map<string, string>();
       for (const [id, body] of Object.entries(rawRegistry)) {
@@ -1464,26 +1470,21 @@ function stageMaxRevisions(stage: Record<string, unknown>, stageId: string): num
   const raw = stage.max_revisions;
   const field = `stages.${stageId}.max_revisions`;
   // yaml@2 yields numbers. Digit strings match the subset parser.
-  if (typeof raw === "string" && /^\d+$/.test(raw.trim())) return Number(raw.trim());
-  if (typeof raw === "number" && Number.isInteger(raw) && raw >= 0) return raw;
-  throw new ConfigurationError(`${field} must be a non-negative integer.`);
+  requireValid(stageField("max_revisions"), raw, `${field} must be a non-negative integer.`);
+  return Number(typeof raw === "string" ? raw.trim() : raw);
 }
 
 function stageVerify(stage: Record<string, unknown>, stageId: string): string[] {
   if (!Object.hasOwn(stage, "verify") || stage.verify == null) return [];
   const field = `stages.${stageId}.verify`;
   const raw = Array.isArray(stage.verify) ? stage.verify : [stage.verify];
-  if (raw.length === 0) throw new ConfigurationError(`${field} must not be empty.`);
-  return raw.map((entry) => {
-    if (typeof entry !== "string" || entry.trim() === "") {
-      throw new ConfigurationError(`Missing or invalid ${field} item.`);
-    }
-    const command = entry.trim();
-    if (/[\r\n]/.test(command)) {
-      throw new ConfigurationError(`${field} items must be one shell line.`);
-    }
-    return command;
-  });
+  if (!isValid(stageField("verify"), stage.verify)) {
+    if (raw.length === 0) throw new ConfigurationError(`${field} must not be empty.`);
+    const bad = raw.find((entry) => !isValid(VERIFY_LINE, entry));
+    if (typeof bad !== "string" || bad.trim() === "") throw new ConfigurationError(`Missing or invalid ${field} item.`);
+    throw new ConfigurationError(`${field} items must be one shell line.`);
+  }
+  return raw.map((entry) => (entry as string).trim());
 }
 
 function stageMaxVerify(stage: Record<string, unknown>, stageId: string, verify: string[]): number {
@@ -1501,13 +1502,12 @@ function stageVerifyTimeout(
   if (!Object.hasOwn(stage, "verify_timeout") || stage.verify_timeout == null) return null;
   const field = `stages.${stageId}.verify_timeout`;
   if (verify.length === 0) throw new ConfigurationError(`${field} requires verify.`);
-  return positiveInteger(stage.verify_timeout, field);
+  return positiveInteger(stage.verify_timeout, field, stageField("verify_timeout"));
 }
 
-function positiveInteger(raw: unknown, field: string): number {
-  if (typeof raw === "string" && /^\d+$/.test(raw.trim())) raw = Number(raw.trim());
-  if (typeof raw === "number" && Number.isInteger(raw) && raw >= 1) return raw;
-  throw new ConfigurationError(`${field} must be an integer of at least 1.`);
+function positiveInteger(raw: unknown, field: string, schema: TSchema = stageField("max_verify")): number {
+  requireValid(schema, raw, `${field} must be an integer of at least 1.`);
+  return Number(typeof raw === "string" ? raw.trim() : raw);
 }
 
 function validateVerifyPaths(
@@ -1609,17 +1609,13 @@ function optionalStageString(
 }
 
 function requiredString(value: unknown, field: string): string {
-  if (typeof value !== "string" || value.trim() === "") {
-    throw new ConfigurationError(`Missing or invalid ${field}.`);
-  }
-  return value.trim();
+  requireValid(NonBlankString, value, `Missing or invalid ${field}.`);
+  return (value as string).trim();
 }
 
 function filename(value: unknown, field: string): string {
   const text = requiredString(value, field);
-  if (text.includes("/") || text.includes("\\") || text === "." || text === "..") {
-    throw new ConfigurationError(`Invalid ${field}: ${pyRepr(text)}`);
-  }
+  requireValid(WorkflowArtifact.properties.file, text, `Invalid ${field}: ${pyRepr(text)}`);
   return text;
 }
 
@@ -1788,7 +1784,7 @@ function collectDecisionV3(
     instructions: {},
     routes: { state: "invalid" },
   };
-  if (!Array.isArray(raw) || raw.length === 0) {
+  if (decisionListProblem(raw)) {
     problems.addMessage(
       "invalid-decision",
       `${field} must be a non-empty list in schema_version 3. Run \`migent migrate\` for older workflows.`,
@@ -1802,9 +1798,9 @@ function collectDecisionV3(
   const routesRaw: Record<string, unknown> = Object.create(null);
   const entryIndexByName = new Map<string, number>();
   const rawNameByName = new Map<string, string>();
-  raw.forEach((entry, entryIndex) => {
+  (raw as unknown[]).forEach((entry, entryIndex) => {
     const entryPath: (string | number)[] = ["stages", index, "decision", entryIndex];
-    if (!isRecord(entry) || Object.keys(entry).length !== 1) {
+    if (decisionEntryProblem(entry) || !isRecord(entry)) {
       problems.addMessage("invalid-decision", `${field} entries must each declare exactly one decision.`, entryPath);
       valid = false;
       return;
@@ -1822,31 +1818,20 @@ function collectDecisionV3(
       return;
     }
     const body = entry[rawName];
-    if (!isRecord(body)) {
+    const found = decisionBodyProblems(body, version7);
+    if (found[0]?.kind === "body" || !isRecord(body)) {
       problems.addMessage("invalid-decision", `${field}.${name} must be a mapping.`, [...entryPath, rawName]);
       valid = false;
       return;
     }
-    let entryValid = true;
-    for (const key of Object.keys(body)) {
-      if (key !== "when" && key !== "navigate" && !(version7 && key === "artifacts")) {
-        problems.addMessage("invalid-decision", `${field}.${name}.${key} is not allowed.`, [...entryPath, rawName, key]);
-        entryValid = false;
-      }
+    const at = [...entryPath, rawName];
+    for (const problem of found) {
+      if (problem.kind === "key") problems.addMessage("invalid-decision", `${field}.${name}.${problem.key} is not allowed.`, [...at, problem.key]);
+      else if (problem.kind === "when") problems.addMessage("invalid-value", `Missing or invalid ${field}.${name}.when.`, [...at, "when"]);
+      else if (problem.kind === "navigate") problems.addMessage("missing-required", `${field}.${name}.navigate is required.`, [...at, "navigate"]);
     }
-    if (body.when !== undefined) {
-      if (typeof body.when !== "string" || body.when.trim() === "") {
-        problems.addMessage("invalid-value", `Missing or invalid ${field}.${name}.when.`, [...entryPath, rawName, "when"]);
-        entryValid = false;
-      } else {
-        instructions[name] = body.when.trim();
-      }
-    }
-    if (body.navigate == null) {
-      problems.addMessage("missing-required", `${field}.${name}.navigate is required.`, [...entryPath, rawName, "navigate"]);
-      entryValid = false;
-    }
-    if (!entryValid) {
+    if (found.length === 0 && body.when !== undefined) instructions[name] = (body.when as string).trim();
+    if (found.length > 0) {
       valid = false;
       return;
     }
@@ -1916,7 +1901,7 @@ function collectStage(
   declaredIds: ReadonlySet<string>,
   problems: DraftProblems,
 ): DraftStage | null {
-  if (!isRecord(rawItem)) {
+  if (stageMappingProblem(rawItem) || !isRecord(rawItem)) {
     problems.addMessage("invalid-value", "Workflow stage must be a mapping.", ["stages", index]);
     return null;
   }
@@ -2227,30 +2212,27 @@ function collectDownstream(
 ): { sectionValid: boolean; entries: DraftDownstreamEntry[] } {
   const field = "downstream";
   if (raw === undefined) return { sectionValid: true, entries: [] };
-  if (!Array.isArray(raw)) {
+  if (downstreamListProblem(raw)) {
     problems.addMessage("invalid-value", `${field} must be a list.`, [field]);
     return { sectionValid: false, entries: [] };
   }
   const entries: DraftDownstreamEntry[] = [];
   const seen = new Set<string>();
-  raw.forEach((entry, index) => {
+  (raw as unknown[]).forEach((entry, index) => {
     const entryPath: (string | number)[] = [field, index];
-    if (!isRecord(entry)) {
+    const structural = downstreamProblems(entry);
+    if (structural.some((problem) => problem.kind === "entry") || !isRecord(entry)) {
       problems.addMessage("invalid-value", `${field} entries must be mappings.`, entryPath);
       return;
     }
-    for (const key of Object.keys(entry)) {
-      if (!["workflow", "task", "artifacts"].includes(key)) {
-        problems.addMessage(
-          "invalid-downstream",
-          `Unknown downstream field: ${key}.`,
-          [...entryPath, key],
-        );
+    for (const problem of structural) {
+      if (problem.kind === "key") {
+        problems.addMessage("invalid-downstream", `Unknown downstream field: ${problem.key}.`, [...entryPath, problem.key]);
       }
     }
     let workflow: DraftUnit<string> = { state: "invalid" };
-    if (typeof entry.workflow === "string" && entry.workflow.trim() !== "") {
-      const value = entry.workflow.trim();
+    if (!structural.some((problem) => problem.kind === "workflow")) {
+      const value = (entry.workflow as string).trim();
       if (isPathReference(value)) {
         problems.addMessage(
           "invalid-downstream",
@@ -2266,13 +2248,13 @@ function collectDownstream(
     } else {
       problems.addMessage("missing-required", "Missing or invalid downstream.workflow.", [...entryPath, "workflow"]);
     }
-    if (typeof entry.task !== "string" || entry.task.trim() === "") {
+    if (structural.some((problem) => problem.kind === "task-missing")) {
       problems.addMessage("missing-required", "Missing or invalid downstream.task.", [...entryPath, "task"]);
-    } else if (/[\r\n]/.test(entry.task)) {
+    } else if (structural.some((problem) => problem.kind === "task-line")) {
       problems.addMessage("invalid-downstream", "downstream.task must be a single line.", [...entryPath, "task"]);
     }
-    const mapping = entry.artifacts === undefined ? {} : entry.artifacts;
-    if (!isRecord(mapping)) {
+    const mapping = entry.artifacts === undefined ? {} : (entry.artifacts as Record<string, unknown>);
+    if (structural.some((problem) => problem.kind === "artifacts")) {
       problems.addMessage("invalid-downstream", "downstream.artifacts must be a mapping.", [...entryPath, "artifacts"]);
     } else {
       for (const [name, source] of Object.entries(mapping)) {
@@ -2281,11 +2263,11 @@ function collectDownstream(
           problems.addMessage("invalid-downstream", `Invalid downstream artifact name: ${name}.`, artifactPath);
           continue;
         }
-        if (typeof source !== "string" || source.trim() === "") {
+        if (downstreamArtifactSourceProblem(source)) {
           problems.addMessage("missing-required", `Missing or invalid downstream.artifacts.${name}.`, artifactPath);
           continue;
         }
-        const output = source.trim();
+        const output = (source as string).trim();
         if (outputs.sectionValid && !outputs.names.has(output)) {
           problems.addMessage(
             "invalid-artifact",
@@ -2305,11 +2287,10 @@ function stageResumeFromUnchecked(stage: Record<string, unknown>, stageId: strin
   if (!Object.hasOwn(stage, "session") || stage.session == null) return null;
   const session = stage.session;
   if (isRecord(session) && Object.keys(session).length === 0) return null;
-  if (!isRecord(session)) {
-    throw new ConfigurationError(`stages.${stageId}.session must be a mapping.`);
-  }
-  if (!Object.hasOwn(session, "resume_from") || session.resume_from == null) return null;
-  return requiredString(session.resume_from, `stages.${stageId}.session.resume_from`);
+  requireContainer(STAGE_FIELD_SCHEMAS.session, session, `stages.${stageId}.session`);
+  const sessionMap = session as Record<string, unknown>;
+  if (!Object.hasOwn(sessionMap, "resume_from") || sessionMap.resume_from == null) return null;
+  return requiredString(sessionMap.resume_from, `stages.${stageId}.session.resume_from`);
 }
 
 /** Reads a string list for a top-level field, reporting each bad item on its own. */

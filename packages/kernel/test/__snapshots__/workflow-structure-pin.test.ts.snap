@@ -1,0 +1,1133 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`contract and loader disagree only on semantic rules 1`] = `
+[
+  "stages not a list",
+  "max_verify without verify",
+  "decision duplicate",
+]
+`;
+
+exports[`draft collector diagnostics 1`] = `
+{
+  "agent blank": [
+    {
+      "code": "invalid-value",
+      "message": "Missing or invalid stages.a.agent.",
+      "path": [
+        "stages",
+        0,
+        "agent",
+      ],
+    },
+  ],
+  "agent number": [
+    {
+      "code": "invalid-value",
+      "message": "Missing or invalid stages.a.agent.",
+      "path": [
+        "stages",
+        0,
+        "agent",
+      ],
+    },
+  ],
+  "artifact bad id": [
+    {
+      "code": "invalid-artifact",
+      "message": "Invalid artifacts.1x id: '1x'.",
+      "path": [
+        "artifacts",
+        "1x",
+      ],
+    },
+  ],
+  "artifact description number": [
+    {
+      "code": "invalid-artifact",
+      "message": "Missing or invalid artifacts.x.description.",
+      "path": [
+        "artifacts",
+        "x",
+        "description",
+      ],
+    },
+    {
+      "code": "invalid-artifact",
+      "message": "stages.a.artifacts[0]: unknown artifact x.",
+      "path": [
+        "stages",
+        0,
+        "artifacts",
+        0,
+      ],
+    },
+  ],
+  "artifact file missing": [
+    {
+      "code": "invalid-artifact",
+      "message": "Missing or invalid artifacts.x.file.",
+      "path": [
+        "artifacts",
+        "x",
+        "file",
+      ],
+    },
+    {
+      "code": "invalid-artifact",
+      "message": "stages.a.artifacts[0]: unknown artifact x.",
+      "path": [
+        "stages",
+        0,
+        "artifacts",
+        0,
+      ],
+    },
+  ],
+  "artifact file path": [
+    {
+      "code": "invalid-artifact",
+      "message": "Invalid artifacts.x.file: 'a/b.md'",
+      "path": [
+        "artifacts",
+        "x",
+        "file",
+      ],
+    },
+    {
+      "code": "invalid-artifact",
+      "message": "stages.a.artifacts[0]: unknown artifact x.",
+      "path": [
+        "stages",
+        0,
+        "artifacts",
+        0,
+      ],
+    },
+  ],
+  "artifact not mapping": [
+    {
+      "code": "invalid-artifact",
+      "message": "artifacts.x must be a mapping.",
+      "path": [
+        "artifacts",
+        "x",
+      ],
+    },
+    {
+      "code": "invalid-artifact",
+      "message": "stages.a.artifacts[0]: unknown artifact x.",
+      "path": [
+        "stages",
+        0,
+        "artifacts",
+        0,
+      ],
+    },
+  ],
+  "artifact required text": [
+    {
+      "code": "invalid-artifact",
+      "message": "artifacts.x.required must be true or false.",
+      "path": [
+        "artifacts",
+        "x",
+        "required",
+      ],
+    },
+    {
+      "code": "invalid-artifact",
+      "message": "stages.a.artifacts[0]: unknown artifact x.",
+      "path": [
+        "stages",
+        0,
+        "artifacts",
+        0,
+      ],
+    },
+  ],
+  "artifact unknown key": [
+    {
+      "code": "invalid-artifact",
+      "message": "artifacts.x.z is not allowed.",
+      "path": [
+        "artifacts",
+        "x",
+        "z",
+      ],
+    },
+    {
+      "code": "invalid-artifact",
+      "message": "stages.a.artifacts[0]: unknown artifact x.",
+      "path": [
+        "stages",
+        0,
+        "artifacts",
+        0,
+      ],
+    },
+  ],
+  "artifacts not mapping": [
+    {
+      "code": "invalid-artifact",
+      "message": "artifacts must be a mapping.",
+      "path": [
+        "artifacts",
+      ],
+    },
+  ],
+  "ask bot": [
+    {
+      "code": "workflow-invalid",
+      "message": "stages.a.ask must be human.",
+      "path": [
+        "stages",
+        0,
+        "ask",
+      ],
+    },
+  ],
+  "completion": [
+    {
+      "code": "schema-version-invalid",
+      "message": "schema_version 2 does not allow completion. Run \`migent migrate\`.",
+      "path": [
+        "completion",
+      ],
+    },
+  ],
+  "concurrency text": [
+    {
+      "code": "invalid-value",
+      "message": "concurrency must be a positive integer.",
+      "path": [
+        "concurrency",
+      ],
+    },
+  ],
+  "concurrency zero": [
+    {
+      "code": "invalid-value",
+      "message": "concurrency must be a positive integer.",
+      "path": [
+        "concurrency",
+      ],
+    },
+  ],
+  "constraints string": [
+    {
+      "code": "invalid-value",
+      "message": "constraints must be a list.",
+      "path": [
+        "constraints",
+      ],
+    },
+  ],
+  "decision duplicate": [
+    {
+      "code": "invalid-decision",
+      "message": "Duplicate decision value on stages.a.decision: x",
+      "path": [
+        "stages",
+        0,
+        "decision",
+        1,
+      ],
+    },
+  ],
+  "decision empty": [
+    {
+      "code": "invalid-decision",
+      "message": "stages.a.decision must be a non-empty list in schema_version 3. Run \`migent migrate\` for older workflows.",
+      "path": [
+        "stages",
+        0,
+        "decision",
+      ],
+    },
+  ],
+  "decision entry string": [
+    {
+      "code": "invalid-decision",
+      "message": "stages.a.decision.x must be a mapping.",
+      "path": [
+        "stages",
+        0,
+        "decision",
+        0,
+        "x",
+      ],
+    },
+  ],
+  "decision entry unknown key": [
+    {
+      "code": "unknown-key",
+      "message": "stages.a.decision.x.bogus is not used by Migent.",
+      "path": [
+        "stages",
+        0,
+        "decision",
+        0,
+        "x",
+        "bogus",
+      ],
+    },
+    {
+      "code": "invalid-decision",
+      "message": "stages.a.decision.x.bogus is not allowed.",
+      "path": [
+        "stages",
+        0,
+        "decision",
+        0,
+        "x",
+        "bogus",
+      ],
+    },
+  ],
+  "decision mapping": [
+    {
+      "code": "invalid-decision",
+      "message": "stages.a.decision must be a non-empty list in schema_version 3. Run \`migent migrate\` for older workflows.",
+      "path": [
+        "stages",
+        0,
+        "decision",
+      ],
+    },
+  ],
+  "decision no navigate": [
+    {
+      "code": "missing-required",
+      "message": "stages.a.decision.x.navigate is required.",
+      "path": [
+        "stages",
+        0,
+        "decision",
+        0,
+        "x",
+        "navigate",
+      ],
+    },
+  ],
+  "decision two keys": [
+    {
+      "code": "invalid-decision",
+      "message": "stages.a.decision entries must each declare exactly one decision.",
+      "path": [
+        "stages",
+        0,
+        "decision",
+        0,
+      ],
+    },
+  ],
+  "decision when number": [
+    {
+      "code": "invalid-value",
+      "message": "Missing or invalid stages.a.decision.x.when.",
+      "path": [
+        "stages",
+        0,
+        "decision",
+        0,
+        "x",
+        "when",
+      ],
+    },
+  ],
+  "depends_on string": [
+    {
+      "code": "invalid-value",
+      "message": "stages.a.depends_on must be a list.",
+      "path": [
+        "stages",
+        0,
+        "depends_on",
+      ],
+    },
+  ],
+  "description list": [
+    {
+      "code": "invalid-value",
+      "message": "Missing or invalid stages.a.description.",
+      "path": [
+        "stages",
+        0,
+        "description",
+      ],
+    },
+  ],
+  "description multiline": [
+    {
+      "code": "workflow-invalid",
+      "message": "stages.a.description must be one line.",
+      "path": [
+        "stages",
+        0,
+        "description",
+      ],
+    },
+  ],
+  "downstream artifacts list": [
+    {
+      "code": "invalid-downstream",
+      "message": "downstream.artifacts must be a mapping.",
+      "path": [
+        "downstream",
+        0,
+        "artifacts",
+      ],
+    },
+  ],
+  "downstream entry string": [
+    {
+      "code": "invalid-value",
+      "message": "downstream entries must be mappings.",
+      "path": [
+        "downstream",
+        0,
+      ],
+    },
+  ],
+  "downstream string": [
+    {
+      "code": "invalid-value",
+      "message": "downstream must be a list.",
+      "path": [
+        "downstream",
+      ],
+    },
+  ],
+  "downstream task multiline": [
+    {
+      "code": "invalid-downstream",
+      "message": "downstream.task must be a single line.",
+      "path": [
+        "downstream",
+        0,
+        "task",
+      ],
+    },
+  ],
+  "downstream unknown": [
+    {
+      "code": "invalid-downstream",
+      "message": "Unknown downstream field: z.",
+      "path": [
+        "downstream",
+        0,
+        "z",
+      ],
+    },
+  ],
+  "id number": [
+    {
+      "code": "invalid-value",
+      "message": "Missing or invalid id.",
+      "path": [
+        "id",
+      ],
+    },
+  ],
+  "instructions string": [
+    {
+      "code": "invalid-value",
+      "message": "stages.a.instructions must be a list.",
+      "path": [
+        "stages",
+        0,
+        "instructions",
+      ],
+    },
+  ],
+  "max_revisions negative": [
+    {
+      "code": "invalid-value",
+      "message": "stages.a.max_revisions must be a non-negative integer.",
+      "path": [
+        "stages",
+        0,
+        "max_revisions",
+      ],
+    },
+  ],
+  "max_revisions text": [
+    {
+      "code": "invalid-value",
+      "message": "stages.a.max_revisions must be a non-negative integer.",
+      "path": [
+        "stages",
+        0,
+        "max_revisions",
+      ],
+    },
+  ],
+  "max_verify without verify": [
+    {
+      "code": "invalid-verify",
+      "message": "stages.a.max_verify requires verify.",
+      "path": [
+        "stages",
+        0,
+        "max_verify",
+      ],
+    },
+  ],
+  "max_verify zero": [
+    {
+      "code": "invalid-value",
+      "message": "stages.a.max_verify must be an integer of at least 1.",
+      "path": [
+        "stages",
+        0,
+        "max_verify",
+      ],
+    },
+  ],
+  "produces v7": [
+    {
+      "code": "schema-version-invalid",
+      "message": "stages.a.produces was removed in schema_version 7. Declare top-level artifacts and run \`migent migrate\`.",
+      "path": [
+        "stages",
+        0,
+        "produces",
+      ],
+    },
+  ],
+  "role number": [
+    {
+      "code": "invalid-value",
+      "message": "Missing or invalid stages.a.role.",
+      "path": [
+        "stages",
+        0,
+        "role",
+      ],
+    },
+  ],
+  "run_when list": [
+    {
+      "code": "invalid-value",
+      "message": "stages.a.run_when must be a mapping.",
+      "path": [
+        "stages",
+        0,
+        "run_when",
+      ],
+    },
+  ],
+  "run_when paths string": [
+    {
+      "code": "invalid-value",
+      "message": "stages.a.run_when.changed_paths must be a list.",
+      "path": [
+        "stages",
+        0,
+        "run_when",
+        "changed_paths",
+      ],
+    },
+  ],
+  "run_when unknown key": [
+    {
+      "code": "workflow-invalid",
+      "message": "stages.a.run_when.x is not supported.",
+      "path": [
+        "stages",
+        0,
+        "run_when",
+        "x",
+      ],
+    },
+  ],
+  "schema_version text": [
+    {
+      "code": "schema-version-invalid",
+      "message": "schema_version must be a non-negative integer.",
+      "path": [
+        "schema_version",
+      ],
+    },
+  ],
+  "session list": [
+    {
+      "code": "invalid-value",
+      "message": "stages.a.session must be a mapping.",
+      "path": [
+        "stages",
+        0,
+        "session",
+      ],
+    },
+  ],
+  "session unknown": [
+    {
+      "code": "unknown-key",
+      "message": "stages.a.session.x is not used by Migent.",
+      "path": [
+        "stages",
+        0,
+        "session",
+        "x",
+      ],
+    },
+  ],
+  "stage artifact number": [
+    {
+      "code": "invalid-artifact",
+      "message": "Missing or invalid stages.a.artifacts[0].",
+      "path": [
+        "stages",
+        0,
+        "artifacts",
+        0,
+      ],
+    },
+  ],
+  "stage artifacts string": [
+    {
+      "code": "invalid-artifact",
+      "message": "stages.a.artifacts must be a list of artifact ids.",
+      "path": [
+        "stages",
+        0,
+        "artifacts",
+      ],
+    },
+  ],
+  "stage id blank": [
+    {
+      "code": "invalid-value",
+      "message": "Missing or invalid stages.id.",
+      "path": [
+        "stages",
+        0,
+        "id",
+      ],
+    },
+  ],
+  "stage not a mapping": [
+    {
+      "code": "invalid-value",
+      "message": "Workflow stage must be a mapping.",
+      "path": [
+        "stages",
+        0,
+      ],
+    },
+  ],
+  "stages not a list": [],
+  "unknown top key": [
+    {
+      "code": "unknown-key",
+      "message": "bogus is not used by Migent.",
+      "path": [
+        "bogus",
+      ],
+    },
+  ],
+  "verify empty": [
+    {
+      "code": "invalid-verify",
+      "message": "stages.a.verify must not be empty.",
+      "path": [
+        "stages",
+        0,
+        "verify",
+      ],
+    },
+  ],
+  "verify multiline": [
+    {
+      "code": "invalid-verify",
+      "message": "stages.a.verify items must be one shell line.",
+      "path": [
+        "stages",
+        0,
+        "verify",
+      ],
+    },
+  ],
+  "verify number item": [
+    {
+      "code": "invalid-value",
+      "message": "Missing or invalid stages.a.verify item.",
+      "path": [
+        "stages",
+        0,
+        "verify",
+      ],
+    },
+  ],
+  "verify_timeout text": [
+    {
+      "code": "invalid-value",
+      "message": "stages.a.verify_timeout must be an integer of at least 1.",
+      "path": [
+        "stages",
+        0,
+        "verify_timeout",
+      ],
+    },
+  ],
+}
+`;
+
+exports[`strict reader diagnostics 1`] = `
+{
+  "agent blank": {
+    "code": "invalid-value",
+    "message": "Missing or invalid stages.a.agent.",
+    "path": [
+      "stages",
+      0,
+      "agent",
+    ],
+  },
+  "agent number": {
+    "code": "invalid-value",
+    "message": "Missing or invalid stages.a.agent.",
+    "path": [
+      "stages",
+      0,
+      "agent",
+    ],
+  },
+  "artifact bad id": {
+    "code": "invalid-artifact",
+    "message": "Invalid artifacts.1x id: '1x'.",
+    "path": [
+      "artifacts",
+      "1x",
+    ],
+  },
+  "artifact description number": {
+    "code": "invalid-artifact",
+    "message": "Missing or invalid artifacts.x.description.",
+    "path": [
+      "artifacts",
+      "x",
+      "description",
+    ],
+  },
+  "artifact file missing": {
+    "code": "invalid-artifact",
+    "message": "Missing or invalid artifacts.x.file.",
+    "path": [
+      "artifacts",
+      "x",
+      "file",
+    ],
+  },
+  "artifact file path": {
+    "code": "invalid-artifact",
+    "message": "Invalid artifacts.x.file: 'a/b.md'",
+    "path": [
+      "artifacts",
+      "x",
+      "file",
+    ],
+  },
+  "artifact not mapping": {
+    "code": "invalid-artifact",
+    "message": "artifacts.x must be a mapping.",
+    "path": [
+      "artifacts",
+      "x",
+    ],
+  },
+  "artifact required text": {
+    "code": "invalid-artifact",
+    "message": "artifacts.x.required must be true or false.",
+    "path": [
+      "artifacts",
+      "x",
+      "required",
+    ],
+  },
+  "artifact unknown key": {
+    "code": "invalid-artifact",
+    "message": "artifacts.x.z is not allowed.",
+    "path": [
+      "artifacts",
+      "x",
+      "z",
+    ],
+  },
+  "artifacts not mapping": {
+    "code": "invalid-artifact",
+    "message": "artifacts must be a mapping.",
+    "path": [
+      "artifacts",
+    ],
+  },
+  "ask bot": {
+    "code": "workflow-invalid",
+    "message": "stages.a.ask must be human.",
+    "path": [
+      "stages",
+      0,
+      "ask",
+    ],
+  },
+  "completion": {
+    "code": "schema-version-invalid",
+    "message": "schema_version 2 does not allow completion. Run \`migent migrate\`.",
+    "path": undefined,
+  },
+  "concurrency text": {
+    "code": "invalid-value",
+    "message": "concurrency must be a positive integer.",
+    "path": [
+      "concurrency",
+    ],
+  },
+  "concurrency zero": {
+    "code": "invalid-value",
+    "message": "concurrency must be a positive integer.",
+    "path": [
+      "concurrency",
+    ],
+  },
+  "constraints string": {
+    "code": "invalid-value",
+    "message": "constraints must be a list.",
+    "path": [
+      "constraints",
+    ],
+  },
+  "decision duplicate": {
+    "code": "invalid-decision",
+    "message": "Duplicate decision value on stages.a.decision: x",
+    "path": [
+      "stages",
+      0,
+      "decision",
+    ],
+  },
+  "decision empty": {
+    "code": "schema-version-invalid",
+    "message": "stages.a.decision must be a non-empty list in schema_version 3. Run \`migent migrate\` for older workflows.",
+    "path": [
+      "stages",
+      0,
+      "decision",
+    ],
+  },
+  "decision entry string": {
+    "code": "invalid-value",
+    "message": "stages.a.decision.x must be a mapping.",
+    "path": [
+      "stages",
+      0,
+      "decision",
+    ],
+  },
+  "decision entry unknown key": {
+    "code": "unknown-key",
+    "message": "Unknown workflow keys: stages.a.decision.x.bogus is not used by Migent.",
+    "path": [
+      "stages",
+      0,
+      "decision",
+    ],
+  },
+  "decision mapping": {
+    "code": "schema-version-invalid",
+    "message": "stages.a.decision must be a non-empty list in schema_version 3. Run \`migent migrate\` for older workflows.",
+    "path": [
+      "stages",
+      0,
+      "decision",
+    ],
+  },
+  "decision no navigate": {
+    "code": "missing-required",
+    "message": "stages.a.decision.x.navigate is required.",
+    "path": [
+      "stages",
+      0,
+      "decision",
+    ],
+  },
+  "decision two keys": {
+    "code": "invalid-decision",
+    "message": "stages.a.decision entries must each declare exactly one decision.",
+    "path": [
+      "stages",
+      0,
+      "decision",
+    ],
+  },
+  "decision when number": {
+    "code": "invalid-value",
+    "message": "Missing or invalid stages.a.decision.x.when.",
+    "path": [
+      "stages",
+      0,
+      "decision",
+    ],
+  },
+  "depends_on string": {
+    "code": "invalid-value",
+    "message": "stages.a.depends_on must be a list.",
+    "path": [
+      "stages",
+      0,
+      "depends_on",
+    ],
+  },
+  "description list": {
+    "code": "invalid-value",
+    "message": "Missing or invalid stages.a.description.",
+    "path": [
+      "stages",
+      0,
+      "description",
+    ],
+  },
+  "description multiline": {
+    "code": "workflow-invalid",
+    "message": "stages.a.description must be one line.",
+    "path": [
+      "stages",
+      0,
+      "description",
+    ],
+  },
+  "downstream artifacts list": {
+    "code": "invalid-value",
+    "message": "downstream.artifacts must be a mapping.",
+    "path": [
+      "downstream",
+    ],
+  },
+  "downstream entry string": {
+    "code": "invalid-downstream",
+    "message": "downstream entries must be mappings.",
+    "path": [
+      "downstream",
+    ],
+  },
+  "downstream string": {
+    "code": "invalid-value",
+    "message": "downstream must be a list.",
+    "path": [
+      "downstream",
+    ],
+  },
+  "downstream task multiline": {
+    "code": "invalid-value",
+    "message": "downstream.task must be a single line.",
+    "path": [
+      "downstream",
+    ],
+  },
+  "downstream unknown": {
+    "code": "invalid-downstream",
+    "message": "Unknown downstream field: z.",
+    "path": undefined,
+  },
+  "id number": {
+    "code": "invalid-value",
+    "message": "Missing or invalid id.",
+    "path": undefined,
+  },
+  "instructions string": {
+    "code": "invalid-value",
+    "message": "stages.a.instructions must be a list.",
+    "path": [
+      "stages",
+      0,
+      "instructions",
+    ],
+  },
+  "max_revisions negative": {
+    "code": "invalid-value",
+    "message": "stages.a.max_revisions must be a non-negative integer.",
+    "path": [
+      "stages",
+      0,
+      "max_revisions",
+    ],
+  },
+  "max_revisions text": {
+    "code": "invalid-value",
+    "message": "stages.a.max_revisions must be a non-negative integer.",
+    "path": [
+      "stages",
+      0,
+      "max_revisions",
+    ],
+  },
+  "max_verify without verify": {
+    "code": "invalid-verify",
+    "message": "stages.a.max_verify requires verify.",
+    "path": [
+      "stages",
+      0,
+      "max_verify",
+    ],
+  },
+  "max_verify zero": {
+    "code": "invalid-value",
+    "message": "stages.a.max_verify must be an integer of at least 1.",
+    "path": [
+      "stages",
+      0,
+      "max_verify",
+    ],
+  },
+  "produces v7": {
+    "code": "schema-version-invalid",
+    "message": "stages.a.produces was removed in schema_version 7. Declare top-level artifacts and run \`migent migrate\`.",
+    "path": [
+      "stages",
+      0,
+      "produces",
+    ],
+  },
+  "role number": {
+    "code": "invalid-value",
+    "message": "Missing or invalid stages.a.role.",
+    "path": [
+      "stages",
+      0,
+      "role",
+    ],
+  },
+  "run_when list": {
+    "code": "invalid-value",
+    "message": "stages.a.run_when must be a mapping.",
+    "path": [
+      "stages",
+      0,
+      "run_when",
+    ],
+  },
+  "run_when paths string": {
+    "code": "invalid-value",
+    "message": "stages.a.run_when.changed_paths must be a list.",
+    "path": [
+      "stages",
+      0,
+      "run_when",
+      "changed_paths",
+    ],
+  },
+  "run_when unknown key": {
+    "code": "workflow-invalid",
+    "message": "stages.a.run_when.x is not supported.",
+    "path": [
+      "stages",
+      0,
+      "run_when",
+      "x",
+    ],
+  },
+  "schema_version text": {
+    "code": "schema-version-invalid",
+    "message": "schema_version must be a non-negative integer.",
+    "path": undefined,
+  },
+  "session list": {
+    "code": "invalid-value",
+    "message": "stages.a.session must be a mapping.",
+    "path": [
+      "stages",
+      0,
+      "session",
+    ],
+  },
+  "session unknown": {
+    "code": "unknown-key",
+    "message": "Unknown workflow keys: stages.a.session.x is not used by Migent.",
+    "path": [
+      "stages",
+      0,
+      "session",
+      "x",
+    ],
+  },
+  "stage artifact number": {
+    "code": "invalid-artifact",
+    "message": "Missing or invalid stages.a.artifacts[0].",
+    "path": [
+      "stages",
+      0,
+      "artifacts",
+      0,
+    ],
+  },
+  "stage artifacts string": {
+    "code": "invalid-artifact",
+    "message": "stages.a.artifacts must be a list of artifact ids.",
+    "path": [
+      "stages",
+      0,
+      "artifacts",
+    ],
+  },
+  "stage id blank": {
+    "code": "invalid-value",
+    "message": "Missing or invalid stages.id.",
+    "path": [
+      "stages",
+      0,
+      "id",
+    ],
+  },
+  "stage not a mapping": {
+    "code": "invalid-value",
+    "message": "Workflow stage must be a mapping.",
+    "path": [
+      "stages",
+      0,
+    ],
+  },
+  "stages not a list": "ok",
+  "unknown top key": {
+    "code": "unknown-key",
+    "message": "Unknown workflow keys: bogus is not used by Migent.",
+    "path": undefined,
+  },
+  "verify empty": {
+    "code": "invalid-verify",
+    "message": "stages.a.verify must not be empty.",
+    "path": [
+      "stages",
+      0,
+      "verify",
+    ],
+  },
+  "verify multiline": {
+    "code": "invalid-verify",
+    "message": "stages.a.verify items must be one shell line.",
+    "path": [
+      "stages",
+      0,
+      "verify",
+    ],
+  },
+  "verify number item": {
+    "code": "invalid-value",
+    "message": "Missing or invalid stages.a.verify item.",
+    "path": [
+      "stages",
+      0,
+      "verify",
+    ],
+  },
+  "verify_timeout text": {
+    "code": "invalid-value",
+    "message": "stages.a.verify_timeout must be an integer of at least 1.",
+    "path": [
+      "stages",
+      0,
+      "verify_timeout",
+    ],
+  },
+}
+`;

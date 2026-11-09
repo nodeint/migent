@@ -1,3 +1,4 @@
+import { WorkflowDecisionEntry, WorkflowDocumentInput, WorkflowSession, WorkflowStage } from "@nodeint/migent-contracts";
 import { ROLE_KEYS } from "./config-structure.js";
 import { isRecord } from "./record.js";
 
@@ -6,23 +7,25 @@ import { isRecord } from "./record.js";
  * They never rewrite or reinterpret the author's text.
  */
 
-/** Workflow keys that schema_version 4 and later read. */
-const WORKFLOW_KEYS = ["schema_version", "id", "stages", "outputs", "artifacts", "concurrency", "constraints", "downstream", "completion", "requires"];
-const STAGE_KEYS_COMMON = [
-  "id", "description", "role", "depends_on", "instructions", "max_revisions", "max_verify",
-  "verify", "verify_timeout", "produces", "artifacts", "decision", "session", "ask", "run_when",
-];
+/**
+ * Key lists derive from the workflow contract (schema_version 7). Keys the contract no longer
+ * declares but older documents still carry stay listed here so the version-gated readers keep
+ * their "removed in schema_version N, run `migent migrate`" messages instead of "not used".
+ */
+const keysOf = (schema: { properties: object }): string[] => Object.keys(schema.properties);
+const WORKFLOW_KEYS = [...keysOf(WorkflowDocumentInput), "outputs", "requires"];
+const STAGE_KEYS_COMMON_LEGACY = ["produces"];
 /** Stage keys through schema_version 4 select a model alias and tune options. */
-const STAGE_KEYS_V4 = [...STAGE_KEYS_COMMON, "model", "options"];
-/** Schema_version 5 selects an agent instead. */
-const STAGE_KEYS_V5 = [...STAGE_KEYS_COMMON, "agent"];
+const STAGE_KEYS_V4 = [...keysOf(WorkflowStage).filter((key) => key !== "agent"), ...STAGE_KEYS_COMMON_LEGACY, "model", "options"];
+/** Schema_version 5 and later select an agent instead. */
+const STAGE_KEYS_V5 = [...keysOf(WorkflowStage), ...STAGE_KEYS_COMMON_LEGACY];
 const STAGE_V5_RENAMED: Readonly<Record<string, string>> = {
   model: "was renamed to {location}.agent in schema_version 5. Run `migent migrate`.",
   options: "was removed in schema_version 5. Set options on an inline {location}.agent under client.options.",
 };
 const PRODUCES_KEYS = ["artifact"];
-const SESSION_KEYS = ["resume_from"];
-const DECISION_ENTRY_KEYS = ["when", "navigate", "artifacts"];
+const SESSION_KEYS = keysOf(WorkflowSession);
+const DECISION_ENTRY_KEYS = keysOf(WorkflowDecisionEntry);
 const ROLE_V4_RENAMED: Readonly<Record<string, string>> = {
   default_model: "was renamed to {location}.agent in schema_version 5. Run `migent migrate`.",
   instructions: "was renamed to {location}.responsibilities in schema_version 5. Run `migent migrate`.",
