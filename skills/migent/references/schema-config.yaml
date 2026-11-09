@@ -9,6 +9,8 @@ agents:
   deep_reasoning:
     model: grok-4.7
     client:
+      # Optional. When client is omitted, Migent infers the one installed client that lists
+      # the model (slower; none or several is an error).
       type: grok
     # Optional thinking level; use a supported value, or omit for client default.
     # Do not also set the equivalent client option or an OpenCode #variant.
@@ -17,8 +19,8 @@ agents:
   code_generation:
     model: coding-plan/deepseek-v4-pro
     client:
-      # Required when the model has no default client, such as a BytePlus model.
-      # Other client IDs: agy, claude-code, codex, grok, opencode.
+      # Required when client.options is set (even empty); optional otherwise.
+      # Client IDs: agy, claude-code, codex, grok, opencode.
       type: opencode
 
 roles:

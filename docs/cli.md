@@ -494,7 +494,9 @@ outdated config schema for a draft or live source.
 
 `doctor` checks that each configured model name exists by asking the client
 CLI for its model list. A missing name is a problem for `opencode`, `grok`, and
-`agy`, and a warning for other clients. An unreadable list is a warning.
+`agy`, and a warning for other clients. An unreadable list is a warning. An agent without `client.type` is checked against the client
+Migent infers from its model; a model no client lists, or several clients list, is a configuration
+problem (exit 1). See [Agent configuration](agents.md#inferred-client).
 
 ```bash
 # Edit .migent/sessions/<id>/workflow.yaml, then validate it before starting

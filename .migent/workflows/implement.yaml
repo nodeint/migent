@@ -1,4 +1,4 @@
-schema_version: 6
+schema_version: 7
 id: implement
 stages:
   - id: implement
@@ -13,9 +13,7 @@ stages:
       - Report architectural blockers with evidence. Seek a decision before changing the agreed design.
       - Run relevant checks and tests, and report results and anything unverified.
       - When revising, address all required review findings and rerun the affected checks.
-    produces:
-      artifact: implement.md
-
+    artifacts: [implement]
   - id: review_work
     role: reviewer
     depends_on:
@@ -33,3 +31,6 @@ stages:
       - revise:
           when: Choose revise according to the stage instructions.
           navigate: implement
+artifacts:
+  implement:
+    file: implement.md

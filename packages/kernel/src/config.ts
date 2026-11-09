@@ -368,6 +368,7 @@ export function loadAgentDefinition(
   const clientField = child(here, "client");
   let client: string | undefined;
   let options: Record<string, string> = {};
+  let optionsSet = false;
   if (agentConfig.client != null) {
     if (typeof agentConfig.client === "string") {
       throw new ConfigurationError(
@@ -386,12 +387,18 @@ export function loadAgentDefinition(
     }
     client = optionalString(clientConfig.type, child(clientField, "type"));
     options = readOptions(clientConfig.options, child(clientField, "options"));
+    optionsSet = clientConfig.options != null;
   }
+  const model = requiredString(agentConfig.model, child(here, "model"));
   if (client === undefined) {
-    throw new ConfigurationError(
-      `Missing ${clientField.label}.type. Set the agent's CLI client (for example, ${clientField.label}.type: opencode).`,
-      { code: "client-required", path: [...clientField.path, "type"] },
-    );
+    const typeField = child(clientField, "type");
+    if (optionsSet) {
+      throw new ConfigurationError(
+        `${typeField.label} is required when ${clientField.label}.options is set: native options belong to one client.`,
+        { code: "client-required", path: typeField.path },
+      );
+    }
+    client = inferClient(registry, model, typeField);
   }
   if (Object.hasOwn(agentConfig, "effort")) {
     const effortField = child(here, "effort");
@@ -417,7 +424,35 @@ export function loadAgentDefinition(
     }
     options[option] = effort;
   }
-  return stageTarget(client, requiredString(agentConfig.model, child(here, "model")), options);
+  return stageTarget(client, model, options);
+}
+
+/** Picks the one client that lists `model`. Runs only when an agent omits `client.type`. */
+function inferClient(registry: ClientRegistry | undefined, model: string, typeField: Field): string {
+  const details = (code: string) => ({ code, path: typeField.path });
+  if (registry?.clientsForModel === undefined) {
+    throw new ConfigurationError(
+      `Missing ${typeField.label}. Set the agent's CLI client (for example, ${typeField.label}: opencode).`,
+      details("client-required"),
+    );
+  }
+  const lookup = registry.clientsForModel(model);
+  if (lookup.matches.length === 1) return lookup.matches[0]!;
+  if (lookup.matches.length > 1) {
+    throw new ConfigurationError(
+      `Model ${model} is listed by several clients (${lookup.matches.join(", ")}); set ${typeField.label}.`,
+      details("client-ambiguous"),
+    );
+  }
+  const parts = [`searched: ${lookup.searched.join(", ") || "none"}`];
+  if (lookup.skipped.length > 0) parts.push(`not on PATH: ${lookup.skipped.join(", ")}`);
+  if (lookup.failed.length > 0) {
+    parts.push(`failed: ${lookup.failed.map((entry) => `${entry.client} (${entry.reason})`).join("; ")}`);
+  }
+  throw new ConfigurationError(
+    `No client lists model ${model} (${parts.join("; ")}); set ${typeField.label}.`,
+    details("client-not-found"),
+  );
 }
 
 export function resolveRoleCascade(

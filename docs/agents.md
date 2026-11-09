@@ -49,7 +49,7 @@ summary shown by `migent get roles`; it is not part of any prompt.
 | Field | Required | Meaning |
 | --- | --- | --- |
 | `model` | yes | Model ID passed to the client unchanged. |
-| `client.type` | yes | CLI client that runs the model: `agy`, `claude-code`, `codex`, `grok`, or `opencode`. |
+| `client.type` | no | CLI client that runs the model: `agy`, `claude-code`, `codex`, `grok`, or `opencode`. When omitted, Migent uses the one installed client whose model list contains `model`; see [Inferred client](#inferred-client). Required when `client.options` is set. |
 | `effort` | no | Thinking level; see [Agent effort](#agent-effort). |
 | `client.options` | no | Native options for the selected client. |
 
@@ -61,6 +61,32 @@ with `provider` is rejected with a hint to set `client.type` and run
 `migent migrate`. `migent migrate` maps each legacy provider to its client:
 `claude` → `claude-code`, `codex` → `codex`, `grok` → `grok`, `agy` → `agy`, and
 `opencode` → `opencode`. `byteplus` has no default client and must name one.
+
+## Inferred client
+
+```yaml
+roles:
+  planner:
+    agent:
+      model: opus     # only claude-code lists "opus"
+      effort: medium
+```
+
+Without `client.type`, Migent runs each installed client's model-list command and picks the
+client whose list contains `model` exactly (OpenCode's `#variant` suffix is ignored). This happens
+on every resolution that needs the client, with no cache on disk, and only for agents that omit
+`client.type`. It costs seconds per client, so set `client.type` when speed matters.
+
+- No client lists the model: `client-not-found`, naming the clients searched, not on PATH, or
+  failed. Some lists are incomplete (Claude Code omits pinned IDs, Codex hides some models); set
+  `client.type` for those.
+- More than one client lists it: `client-ambiguous`. Doctor reports it and a run refuses to start.
+  Set `client.type`.
+- Inference depends on the machine's installed CLIs and accounts. Pin `client.type` (for example in
+  `config.local.yaml`) for a portable config. A local override of a named agent that changes only
+  `model` keeps the shared `client.type`.
+- Started sessions run on the client frozen at start; resume never re-infers it.
+- `--client`/`--model` command-line overrides still need both values.
 
 ## Machine-specific overrides
 

@@ -1,4 +1,4 @@
-schema_version: 6
+schema_version: 7
 id: plan
 constraints:
   - Plan only. Do not modify source code.
@@ -15,9 +15,7 @@ stages:
       - Explain key decisions, trade-offs, risks, and open questions.
       - Stay at the architecture level. Exclude implementation steps, code-level details, and test procedures.
       - Resolve substantive review findings when revising.
-    produces:
-      artifact: plan.md
-
+    artifacts: [plan]
   - id: review_plan
     role: reviewer
     depends_on:
@@ -40,16 +38,14 @@ stages:
       - revise:
           when: Substantive gaps require correction.
           navigate: plan
-    produces:
-      artifact: review-comments.md
-
-outputs:
-  - name: plan
-    from_stage: plan
-    artifact: plan.md
-  
+    artifacts: [review_plan]
 downstream:
   - workflow: implement
     task: Implement the approved plan.
     artifacts:
       plan: plan
+artifacts:
+  plan:
+    file: plan.md
+  review_plan:
+    file: review-comments.md
