@@ -6,6 +6,8 @@ import { constants as osConstants, tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 // `.ts` so `node process-wrapper.ts` resolves it from source; tsc rewrites it to `.js`.
+// `.ts` for the same reason; env.ts imports only types, so it runs from source.
+import { debugEnabled } from "./env.ts";
 import { UnpassableArgument, spawnProvider } from "./provider-spawn.ts";
 import {
   UNPASSABLE_ARGUMENT_CODE,
@@ -32,7 +34,7 @@ import {
 export { WRAPPER_FAILED, WRAPPER_READY, WRAPPER_START };
 
 const FAILURE_SEND_TIMEOUT_MS = 500;
-const DEBUG = process.env.MIGENT_DEBUG === "1" || process.env.MIGENT_DEBUG === "true";
+const DEBUG = debugEnabled();
 
 function debug(step: string): void {
   if (DEBUG) process.stderr.write(`[migent-wrapper] ${new Date().toISOString()} ${step}\n`);

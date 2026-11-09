@@ -218,6 +218,7 @@ export { resolveStageOutcome } from "./outcome-resolver.js";
 export { QuestionFileError, loadQuestionFile } from "./questions.js";
 export type { Question, QuestionAnswer } from "./questions.js";
 export { log, utcNow } from "./runtime.js";
+export { debugEnabled, inheritedEnv, migentHomeOverride, noInputRequested, platformHome, skillsChildEnv } from "./env.js";
 export {
   MIGENT_DIRNAME,
   EXECUTIONS_DIRNAME,

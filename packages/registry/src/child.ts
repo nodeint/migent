@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { closeSync, constants as fsConstants, openSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { inheritedEnv } from "@nodeint/migent-kernel";
 import { ServiceEndpointServer } from "./endpoint.js";
 import { ensureRegistryHome } from "./home.js";
 import { RegistryHTTPServer } from "./server.js";
@@ -74,7 +75,7 @@ export async function launchChild(home: string, port: number): Promise<SpawnedCh
         cwd: directory,
         detached: true,
         stdio: ["ignore", logFd, logFd, "ipc"],
-        env: process.env,
+        env: inheritedEnv(),
         windowsHide: true,
       },
     );

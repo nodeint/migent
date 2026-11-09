@@ -9,7 +9,8 @@ agents may be partial, because layers merge) and `EffectiveConfig` describes the
 (`roles` required, named agents complete or an empty placeholder). The config schemas are input
 contracts and are not part of `CLI_CONTRACTS`. They validate structure only; error codes, semantic
 rules (client registry, effort, model availability) stay in `@nodeint/migent-kernel`.
-Workflow and environment contracts follow in later releases.
+The environment catalog (`ENV_CATALOG`) describes `MIGENT_DEBUG`, `MIGENT_NO_INPUT`, `MIGENT_HOME`, and
+`DISABLE_TELEMETRY`; only those four are a contract. Workflow contracts follow in later releases.
 
 - **Leaf package.** Its only runtime dependency is `typebox`. It imports no other Migent package.
 - **Open objects.** Consumers must ignore unknown fields. Adding a field is not a breaking change.

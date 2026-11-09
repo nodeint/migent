@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { confirm as clackConfirm, isCancel, select as clackSelect } from "@clack/prompts";
-import { loadWorkspaceConfig, whichSync } from "@nodeint/migent-kernel";
+import { loadWorkspaceConfig, skillsChildEnv, whichSync } from "@nodeint/migent-kernel";
 import { PromptCancelled } from "../errors.js";
 import { printError } from "../display.js";
 import { isDirectory, isFile } from "../fs-utils.js";
@@ -164,7 +164,7 @@ function defaultRunner(argv: string[], cwd: string): number {
     cwd,
     stdio: "inherit",
     shell: windows,
-    env: { ...process.env, DISABLE_TELEMETRY: process.env.DISABLE_TELEMETRY ?? "1" },
+    env: skillsChildEnv(),
   });
   return result.status ?? 1;
 }

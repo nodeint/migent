@@ -1,6 +1,7 @@
 import { chmodSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+import { migentHomeOverride } from "@nodeint/migent-kernel";
 
 export const homeOs = {
   homedir(): string {
@@ -9,7 +10,7 @@ export const homeOs = {
 };
 
 export function migentHomePath(): string {
-  const override = process.env.MIGENT_HOME;
+  const override = migentHomeOverride();
   if (override) return override;
   return path.join(homeOs.homedir(), ".migent");
 }

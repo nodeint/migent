@@ -51,6 +51,11 @@ pnpm vitest run packages/cli/test/config.test.ts
 pnpm vitest run packages/cli/test/config.test.ts -t "keeps the model name"
 ```
 
+## Environment variables
+
+Read `process.env` only in `packages/kernel/src/env.ts` (a test enforces this), and describe every new
+Migent variable in the `ENV_CATALOG` of `@nodeint/migent-contracts`.
+
 ## Writing tests
 
 - **Never call a real client CLI.** Pass the test's fake `which` *and*
