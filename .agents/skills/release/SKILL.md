@@ -29,8 +29,8 @@ explicitly authorized the merge.
 Do not ask again for actions already authorized.
 
 Before merging, check the migration prerequisites in `CONTRIBUTING.md`: the
-npm trusted publishers allow `npm publish` and the `main` ruleset lets the
-GitHub Actions app update `main`. Stop if they do not.
+npm trusted publishers allow `npm publish` and no `main` ruleset restricts
+updates (only `main: immutable release history` remains). Stop if they do not.
 
 ## Prepare the release branch
 

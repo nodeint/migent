@@ -111,9 +111,8 @@ Configure branch protection as follows:
   base. Require resolved conversations; a second review is optional for a
   solo maintainer. Use squash merges and delete working branches after merge.
 - Block force-pushes and deletion on both `next` and `main`.
-- On `main`, allow only the release workflow (the GitHub Actions app) and
-  repository admins to fast-forward to the release commit. Do not require a
-  squash PR for this update: it must preserve the tagged commit SHA.
+- On `main`, do not require a PR: the release workflow fast-forwards it to the
+  release commit, which must preserve the tagged commit SHA.
 - Keep `v*` tags immutable once pushed. The release workflow creates them.
 
 ### Migration prerequisites
@@ -128,11 +127,10 @@ checks into `next`.
 Release configuration must match the checked-in definitions:
 
 1. Use `next` as the repository default branch.
-2. Apply `.github/main-ruleset.json` to preserve release history and
-   `.github/main-release-ruleset.json` to restrict updates to repository admins
-   acting as release maintainers and the GitHub Actions app. The actor exceptions
-   apply only to the update restriction; deletion, force-push, and linear-history
-   rules have no exceptions.
+2. Apply `.github/main-ruleset.json` to preserve release history. It has no
+   update restriction, so the release workflow's `GITHUB_TOKEN` can fast-forward
+   `main`; deletion, force-push, and linear-history rules have no exceptions.
+   Delete any older `main: release maintainers only` ruleset.
 3. The release workflow runs on pushes to `next` and acts only on a commit whose
    subject is `Release X.Y.Z (#N)` and whose package versions all equal `X.Y.Z`.
 4. Run `pnpm setup:git`. The pre-push hook blocks every push to `main`
