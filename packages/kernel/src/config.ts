@@ -2,10 +2,18 @@ import type { ClientInfo, ClientRegistry } from "./cli-client.js";
 import { readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { stringify } from "yaml";
-import { z } from "zod";
+import {
+  mapping,
+  readClient,
+  requiredString,
+  roleDescription,
+  stringItems,
+  type Field,
+  type StructuralIndex,
+} from "./config-structure.js";
 import { ConfigurationError } from "./errors.js";
 import { isRecord } from "./record.js";
-import { isRoleStage, loadNamedWorkflow, readOptionMap, type RoleStageSpec, type StageAgent } from "./workflow.js";
+import { isRoleStage, loadNamedWorkflow, type RoleStageSpec, type StageAgent } from "./workflow.js";
 import { parseYamlDocument } from "./yaml.js";
 
 export { documentVersion } from "./record.js";
@@ -22,14 +30,6 @@ export interface ModelOverride {
   model?: string | null;
   options?: Record<string, string> | null;
 }
-
-const stageTargetSchema = z.object({
-  client: z.string(),
-  model: z.string(),
-  options: z.record(z.string(), z.string()),
-});
-
-const mappingSchema = z.record(z.string(), z.unknown());
 
 export type ConfigLayer = "project" | "local";
 
@@ -61,11 +61,7 @@ export function loadYamlMapping(filePath: string, layer?: ConfigLayer): Record<s
   if (!isRecord(parsed)) {
     throw new ConfigurationError("Invalid configuration: expected a mapping.", { code: "config-not-mapping", ...withLayer });
   }
-  const mapping = mappingSchema.safeParse(parsed);
-  if (!mapping.success) {
-    throw new ConfigurationError("Invalid configuration: expected a mapping.", { code: "config-not-mapping", ...withLayer });
-  }
-  return mapping.data;
+  return parsed;
 }
 
 /** Reads one config layer (a single file) into a mapping. Errors name the layer. */
@@ -332,14 +328,13 @@ export function loadAgentTarget(
   config: Record<string, unknown>,
   agentName: string,
   registry?: ClientRegistry,
+  index?: StructuralIndex,
 ): StageTarget {
   rejectLegacyConfigKeys(config);
-  const agents = mapping(config.agents, field("agents"));
+  const agents = mapping(config.agents, field("agents"), index);
   const label = field("agents", agentName);
-  return loadAgentDefinition(mapping(agents[agentName], label), label, registry);
+  return loadAgentDefinition(mapping(agents[agentName], label, index), label, registry, index);
 }
-
-const CLIENT_KEYS = ["type", "options"];
 
 /**
  * Named and inline agents share exactly the same validation and option handling. `where` is a
@@ -349,10 +344,11 @@ export function loadAgentDefinition(
   value: unknown,
   where: string | Field,
   registry?: ClientRegistry,
+  index?: StructuralIndex,
 ): StageTarget {
   const here = toField(where);
   const label = here.label;
-  const agentConfig = mapping(value, here);
+  const agentConfig = mapping(value, here, index);
   if (Object.hasOwn(agentConfig, "options")) {
     throw new ConfigurationError(
       `${label}.options moved to ${label}.client.options. Run \`migent migrate\`.`,
@@ -370,26 +366,9 @@ export function loadAgentDefinition(
   let options: Record<string, string> = {};
   let optionsSet = false;
   if (agentConfig.client != null) {
-    if (typeof agentConfig.client === "string") {
-      throw new ConfigurationError(
-        `${clientField.label} must be a mapping: use ${clientField.label}.type. Run \`migent migrate\`.`,
-        { code: "client-not-mapping", path: clientField.path },
-      );
-    }
-    const clientConfig = mapping(agentConfig.client, clientField);
-    for (const key of Object.keys(clientConfig)) {
-      if (!CLIENT_KEYS.includes(key)) {
-        throw new ConfigurationError(`${clientField.label}.${key} is not used by Migent.`, {
-          code: "unknown-key",
-          path: [...clientField.path, key],
-        });
-      }
-    }
-    client = optionalString(clientConfig.type, child(clientField, "type"));
-    options = readOptions(clientConfig.options, child(clientField, "options"));
-    optionsSet = clientConfig.options != null;
+    ({ type: client, options, optionsSet } = readClient(agentConfig.client, clientField, index));
   }
-  const model = requiredString(agentConfig.model, child(here, "model"));
+  const model = requiredString(agentConfig.model, child(here, "model"), index);
   if (client === undefined) {
     const typeField = child(clientField, "type");
     if (optionsSet) {
@@ -402,7 +381,7 @@ export function loadAgentDefinition(
   }
   if (Object.hasOwn(agentConfig, "effort")) {
     const effortField = child(here, "effort");
-    const effort = requiredString(agentConfig.effort, effortField);
+    const effort = requiredString(agentConfig.effort, effortField, index);
     const details = { code: "effort-unsupported", path: effortField.path };
     if (registry === undefined) {
       throw new ConfigurationError(`${label}.effort requires a client registry.`, details);
@@ -464,10 +443,11 @@ export function resolveRoleCascade(
     options?: Record<string, string> | null;
   },
   registry?: ClientRegistry,
+  index?: StructuralIndex,
 ): StageTarget {
   rejectLegacyConfigKeys(config);
-  const roles = mapping(config.roles, field("roles"));
-  const role = mapping(roles[roleKey], field("roles", roleKey));
+  const roles = mapping(config.roles, field("roles"), index);
+  const role = mapping(roles[roleKey], field("roles", roleKey), index);
   validateRoleKeys(role, roleKey);
   const agentField = args?.agentField == null ? field("roles", roleKey, "agent") : toField(args.agentField);
   const stageAgent = args?.agent ?? null;
@@ -475,16 +455,16 @@ export function resolveRoleCascade(
     stageAgent === null ? role.agent : stageAgent.kind === "named" ? stageAgent.name : stageAgent.value;
   let target: StageTarget;
   if (isRecord(selection)) {
-    target = loadAgentDefinition(selection, agentField, registry);
+    target = loadAgentDefinition(selection, agentField, registry, index);
   } else {
-    const name = requiredString(selection, agentField);
+    const name = requiredString(selection, agentField, index);
     if (!isRecord(config.agents) || !Object.hasOwn(config.agents, name)) {
       throw new ConfigurationError(`${agentField.label}: unknown agent "${name}" in agents.`, {
         code: "unknown-agent",
         path: agentField.path,
       });
     }
-    target = loadAgentTarget(config, name, registry);
+    target = loadAgentTarget(config, name, registry, index);
   }
   return stageTarget(
     target.client,
@@ -522,19 +502,27 @@ export function validateRoleKeys(role: Record<string, unknown>, roleKey: string)
 }
 
 /** Absent or null responsibilities are an empty list. A non-list is a configuration error. */
-export function loadRoleResponsibilities(config: Record<string, unknown>, roleKey: string): string[] {
-  const roles = mapping(config.roles, field("roles"));
-  const role = mapping(roles[roleKey], field("roles", roleKey));
+export function loadRoleResponsibilities(
+  config: Record<string, unknown>,
+  roleKey: string,
+  index?: StructuralIndex,
+): string[] {
+  const roles = mapping(config.roles, field("roles"), index);
+  const role = mapping(roles[roleKey], field("roles", roleKey), index);
   validateRoleKeys(role, roleKey);
-  return stringItems(role.responsibilities, field("roles", roleKey, "responsibilities"));
+  return stringItems(role.responsibilities, field("roles", roleKey, "responsibilities"), index);
 }
 
 /** The optional one-line description of a role, or null. */
-export function loadRoleDescription(config: Record<string, unknown>, roleKey: string): string | null {
-  const roles = mapping(config.roles, field("roles"));
-  const role = mapping(roles[roleKey], field("roles", roleKey));
+export function loadRoleDescription(
+  config: Record<string, unknown>,
+  roleKey: string,
+  index?: StructuralIndex,
+): string | null {
+  const roles = mapping(config.roles, field("roles"), index);
+  const role = mapping(roles[roleKey], field("roles", roleKey), index);
   if (role.description == null) return null;
-  const description = requiredString(role.description, field("roles", roleKey, "description"));
+  const description = roleDescription(role.description, field("roles", roleKey, "description"), index);
   if (/[\r\n]/.test(description)) {
     throw new ConfigurationError(`roles.${roleKey}.description must be one line.`, {
       code: "not-one-line",
@@ -544,14 +532,7 @@ export function loadRoleDescription(config: Record<string, unknown>, roleKey: st
   return description;
 }
 
-/**
- * A config location: `label` is the dotted text shown in messages, `path` the literal key segments.
- * Keys may contain dots or brackets, so the path is never recovered by parsing the label.
- */
-export interface Field {
-  label: string;
-  path: readonly (string | number)[];
-}
+export type { Field, StructuralIndex } from "./config-structure.js";
 
 /** A `Field` from literal key segments. */
 export function field(...keys: string[]): Field {
@@ -564,39 +545,6 @@ function child(parent: Field, key: string): Field {
 
 function toField(value: string | Field): Field {
   return typeof value === "string" ? { label: value, path: value.split(".") } : value;
-}
-
-function mapping(value: unknown, where: Field): Record<string, unknown> {
-  const details = { code: "missing-or-invalid", path: where.path };
-  if (!isRecord(value)) throw new ConfigurationError(`Missing or invalid ${where.label}.`, details);
-  const parsed = mappingSchema.safeParse(value);
-  if (!parsed.success) throw new ConfigurationError(`Missing or invalid ${where.label}.`, details);
-  return parsed.data;
-}
-
-function requiredString(value: unknown, where: Field): string {
-  if (typeof value !== "string" || value.trim() === "") {
-    throw new ConfigurationError(`Missing or invalid ${where.label}.`, { code: "missing-or-invalid", path: where.path });
-  }
-  return value.trim();
-}
-
-function optionalString(value: unknown, where: Field): string | undefined {
-  return value == null ? undefined : requiredString(value, where);
-}
-
-function stringItems(raw: unknown, where: Field): string[] {
-  if (raw == null) return [];
-  if (!Array.isArray(raw)) {
-    throw new ConfigurationError(`${where.label} must be a list.`, { code: "not-a-list", path: where.path });
-  }
-  return raw.map((item, index) =>
-    requiredString(item, { label: `${where.label}[${index}]`, path: [...where.path, index] }));
-}
-
-function readOptions(value: unknown, where: Field): Record<string, string> {
-  if (value == null) return {};
-  return readOptionMap(mapping(value, where), where.label, where.path);
 }
 
 function mergeOptions(
@@ -615,7 +563,7 @@ function stageTarget(
   model: string,
   options: Record<string, string>,
 ): StageTarget {
-  return stageTargetSchema.parse({ client, model, options });
+  return { client, model, options };
 }
 
 function normalizeOverride(override?: ModelOverride): {

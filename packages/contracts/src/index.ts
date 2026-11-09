@@ -1,5 +1,6 @@
 export * from "./common.js";
 export * from "./cli-output.js";
+export * from "./config.js";
 export * from "./known-shapes.js";
 export * from "./index-registry.js";
 export * from "./validate.js";

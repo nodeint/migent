@@ -82,6 +82,9 @@ importers:
 
   packages/kernel:
     dependencies:
+      '@nodeint/migent-contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@nodeint/migent-prompts':
         specifier: workspace:*
         version: link:../prompts
