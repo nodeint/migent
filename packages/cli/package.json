@@ -47,6 +47,7 @@
   },
   "dependencies": {
     "@clack/prompts": "^1.8.1",
+    "@nodeint/migent-contracts": "workspace:*",
     "@nodeint/migent-adapters": "workspace:*",
     "@nodeint/migent-doctor": "workspace:*",
     "@nodeint/migent-kernel": "workspace:*",

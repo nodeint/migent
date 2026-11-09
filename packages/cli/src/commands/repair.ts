@@ -1,3 +1,5 @@
+import { RepairResult, type Static } from "@nodeint/migent-contracts";
+import { writeJson } from "../emit.js";
 import { isSessionLockLost, repairSession, SessionLockHeldError } from "@nodeint/migent-kernel";
 import { printError } from "../display.js";
 import { requireCurrentSchema } from "../migrate.js";
@@ -6,11 +8,11 @@ export function repairWorkflowSession(workspace: string, sessionId: string, acce
   requireCurrentSchema(workspace);
   try {
     const status = repairSession(workspace, sessionId, { acceptTask });
-    const payload = {
+    const payload: Static<typeof RepairResult> = {
       session_id: sessionId,
       status: typeof status.status === "string" ? status.status : null,
     };
-    process.stdout.write(`${JSON.stringify(payload)}\n`);
+    writeJson(RepairResult, payload);
     return 0;
   } catch (error) {
     if (error instanceof SessionLockHeldError || isSessionLockLost(error)) {

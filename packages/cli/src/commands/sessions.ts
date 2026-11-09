@@ -1,3 +1,5 @@
+import { SealedMetrics, SealedMetricsLine, SessionRow, SessionRowOrNull, SessionRows, type Static } from "@nodeint/migent-contracts";
+import { writeJson } from "../emit.js";
 import { listSealedMetrics, listSessionRows, readSealedMetrics, ConfigurationError } from "@nodeint/migent-kernel";
 import { printError, printSessions } from "../display.js";
 import { SESSION_COLUMN, sessionFields } from "../session-row.js";
@@ -19,14 +21,14 @@ export function listSessions(workspace: string, options: SessionListOptions = {}
   if (options.latest) {
     const row = rows[0];
     if (options.asJson) {
-      process.stdout.write(`${JSON.stringify(row === undefined ? null : sessionJson(row))}\n`);
+      writeJson(SessionRowOrNull, row === undefined ? null : sessionJson(row));
       return 0;
     }
     printSessions(row === undefined ? [] : [row]);
     return 0;
   }
   if (options.asJson) {
-    process.stdout.write(`${JSON.stringify(rows.map((row) => sessionJson(row)))}\n`);
+    writeJson(SessionRows, rows.map((row) => sessionJson(row)));
     return 0;
   }
   printSessions(rows);
@@ -54,7 +56,7 @@ export function runSessionMetrics(
       status: selection.status ?? null,
       limit: selection.limit ?? null,
     });
-    for (const row of rows) process.stdout.write(`${JSON.stringify(row)}\n`);
+    for (const row of rows) writeJson(SealedMetricsLine, row);
     return 0;
   }
   const sealed = readSealedMetrics(workspace, sessionId);
@@ -66,7 +68,7 @@ export function runSessionMetrics(
     printError(`metrics.json for session ${sessionId} is not valid JSON.`);
     return 2;
   }
-  process.stdout.write(`${JSON.stringify(sealed.metrics)}\n`);
+  writeJson(SealedMetrics, sealed.metrics);
   return 0;
 }
 
@@ -168,7 +170,7 @@ function selectSessionRows(rows: readonly string[][], options: SessionListOption
   return selected;
 }
 
-function sessionJson(row: readonly string[]): Omit<ReturnType<typeof sessionFields>, "task"> {
+function sessionJson(row: readonly string[]): Static<typeof SessionRow> {
   const fields = sessionFields(row);
   return {
     session: fields.session,

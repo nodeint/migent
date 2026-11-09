@@ -1,3 +1,5 @@
+import { DoctorReport, type Static } from "@nodeint/migent-contracts";
+import { writeJson } from "../emit.js";
 import { homedir } from "node:os";
 import { diagnoseWorkspace, sessionDiagnosticsCheck, type Check } from "@nodeint/migent-doctor";
 import { selectSessionWorkflow, whichSync, type SessionSource } from "@nodeint/migent-kernel";
@@ -22,12 +24,12 @@ export async function runDoctor(
     ...(await diagnoseWorkspace(workspace, { clients, which, runCommand })),
     skillCheck(workspace, options.home ?? homedir()),
   ];
-  if (options.asJson) process.stdout.write(`${JSON.stringify(payload(checks))}\n`);
+  if (options.asJson) writeJson(DoctorReport, payload(checks));
   else printDoctor(checks);
   return checks.every((check) => check.ok) ? 0 : 1;
 }
 
-function payload(checks: readonly Check[]): { ok: boolean; checks: Array<Record<string, unknown>> } {
+function payload(checks: readonly Check[]): Static<typeof DoctorReport> {
   return {
     ok: checks.every((check) => check.ok),
     checks: checks.map((check) => ({
@@ -51,7 +53,7 @@ async function runSessionDoctor(
   // A role session has no workflow: the workflow check does not apply, diagnostics still do.
   if (selection.manifestWorkflowId === "agent") {
     const checks = [{ name: "Workflow", ok: true, items: ["Role session: no workflow to validate."], problems: [], warnings: [] }, diagnostics];
-    if (options.asJson) process.stdout.write(`${JSON.stringify({ ...payload(checks), session: sessionPayload(sessionId, null) })}\n`);
+    if (options.asJson) writeJson(DoctorReport, { ...payload(checks), session: sessionPayload(sessionId, null) });
     else printDoctor(checks);
     return 0;
   }
@@ -60,12 +62,12 @@ async function runSessionDoctor(
   const diagnosis = await diagnoseSelection(workspace, selection, { clients: clientRegistry(), which: options.which, runCommand: options.runCommand });
   // Shown only when something was recorded, so a clean session prints what it always did.
   if (diagnostics.warnings.length > 0) diagnosis.checks.push(diagnostics);
-  if (options.asJson) process.stdout.write(`${JSON.stringify({ ...payload(diagnosis.checks), session: sessionPayload(sessionId, diagnosis.source) })}\n`);
+  if (options.asJson) writeJson(DoctorReport, { ...payload(diagnosis.checks), session: sessionPayload(sessionId, diagnosis.source) });
   else printDoctor(diagnosis.checks);
   return diagnosis.ok ? 0 : 1;
 }
 
-function sessionPayload(sessionId: string, source: SessionSource | null): Record<string, unknown> {
+function sessionPayload(sessionId: string, source: SessionSource | null): NonNullable<Static<typeof DoctorReport>["session"]> {
   return {
     id: sessionId,
     workflow_id: source?.workflowId ?? null,

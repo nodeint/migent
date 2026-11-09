@@ -1,3 +1,5 @@
+import { UpdateCheck, type Static } from "@nodeint/migent-contracts";
+import { writeJson } from "../emit.js";
 import { spawnSync } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -137,6 +139,7 @@ export async function runUpdate(options: UpdateOptions = {}): Promise<number> {
   return 0;
 }
 
-function report(options: UpdateOptions, data: Record<string, unknown>, message: string): void {
-  process.stdout.write(options.asJson === true ? `${JSON.stringify(data)}\n` : `${message}\n`);
+function report(options: UpdateOptions, data: Static<typeof UpdateCheck>, message: string): void {
+  if (options.asJson === true) writeJson(UpdateCheck, data);
+  else process.stdout.write(`${message}\n`);
 }

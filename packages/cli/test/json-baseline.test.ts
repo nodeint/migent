@@ -1,14 +1,25 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { AgentToolRunner, SessionLock, SessionStore, StageOutcome, createPreparedSession, createWorkflowSession } from "@nodeint/migent-kernel";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, expect, test } from "vitest";
+import {
+  CLI_CONTRACTS,
+  LegacyLifecycleEvent,
+  LifecycleEventV2,
+  SealedMetrics,
+  SealedMetricsCurrent,
+  SealedMetricsHistorical,
+  SessionFollowRecord,
+  isValid,
+  validationIssues,
+} from "@nodeint/migent-contracts";
 import { serviceApi } from "../src/commands/service.ts";
 import { updateHooks } from "../src/commands/update.ts";
 import { workspaceApi } from "../src/commands/workspace-registry.ts";
 import { cliHooks } from "../src/hooks.ts";
 import { main } from "../src/index.ts";
-import { ScriptedClient, capture, registryOf, removeWorkspace, writeFakeWorkflowWorkspace } from "./support.ts";
+import { CancelOnCommand, ScriptedClient, capture, registryOf, removeWorkspace, writeFakeWorkflowWorkspace } from "./support.ts";
 
 // Epic #97 step 1: baseline of every `--json` output on fixed fixtures. Later steps replace
 // hand-written types with TypeBox schemas; these snapshots must not change except for error messages.
@@ -420,4 +431,127 @@ test("doctor --session --json checks a prepared session's draft workflow", async
   const sessionId = createPreparedSession(root, "Later", "plan");
   expect(await json(["doctor", "--session", sessionId, "--json"])).toMatchSnapshot();
   expect(await json(["doctor", "--session", "missing", "--json"])).toMatchSnapshot();
+});
+
+test("session prepare, session repair, and workspace register/remove", async () => {
+  const workspace = fakeWorkspace();
+  installOffline();
+  const prepared = await capture(() => main(["session", "prepare", "A task", "--workflow", "plan"], workspace));
+  expect(prepared.value).toBe(0);
+  const sessionId = (JSON.parse(prepared.stdout) as { session_id: string }).session_id;
+  installOffline();
+  const repaired = await capture(() => main(["session", "repair", sessionId], workspace));
+  expect(repaired.value).toBe(0);
+
+  const registry = path.join(home, "migent", "registry");
+  mkdirSync(registry, { recursive: true });
+  writeFileSync(
+    path.join(registry, "service.json"),
+    JSON.stringify({ schema_version: 2, instance_id: "instance", pid: 4242, host: "127.0.0.1", port: 47321, token: "token", started_at: "2026-09-26T08:07:57Z" }),
+  );
+  workspaceApi.startDetached = (async () => ({ host: "127.0.0.1", port: 47321, token: "token" })) as unknown as typeof workspaceApi.startDetached;
+  workspaceApi.callService = (async (...args: unknown[]) =>
+    args[3] === "POST"
+      ? [201, { id: "ws_abc", name: "demo", path: workspace, available: true }]
+      : [200, { id: "ws_abc", name: "demo", path: workspace, available: true }]) as unknown as typeof workspaceApi.callService;
+  expect((await json(["workspace", "register", "--path", workspace], undefined, workspace)).code).toBe(0);
+  expect((await json(["workspace", "remove", "ws_abc"], undefined, workspace)).code).toBe(0);
+});
+
+test("session follow --json forwards historical lifecycle and provider stream lines unchanged", async () => {
+  const workspace = fakeWorkspace();
+  const directory = path.join(workspace, ".migent", "sessions", "old-1");
+  mkdirSync(path.join(directory, "executions", "0001-draft--attempt-01"), { recursive: true });
+  writeFileSync(path.join(directory, "status.json"), JSON.stringify({ session_id: "old-1", workflow_id: "plan", status: "completed", updated_at: "2026-10-20T00:00:01.000+00:00" }));
+  const lines = [{ event: "session.created", odd: 42 }, { v: 2, seq: 2, event: "stage.started", timestamp: "2026-10-20T00:00:02.000+00:00", data: {} }];
+  writeFileSync(path.join(directory, "events.jsonl"), lines.map((line) => JSON.stringify(line)).join("\n") + "\n");
+  // Provider stream records are opaque. Follow parses and re-serializes each line, as it always has.
+  const streamLines = ['{"type":"assistant","message":{"text":"hi"},"usage":{"input_tokens":1.0,"n":1e3}}', '{"id":7,"tool":null}'];
+  writeFileSync(path.join(directory, "executions", "0001-draft--attempt-01", "stream.jsonl"), streamLines.join("\n") + "\n");
+  const result = await capture(() => main(["session", "follow", "old-1", "--exit-when-done", "--cursor", "0", "--json"], workspace));
+  const outputLines = result.stdout.trim().split("\n");
+  const records = outputLines.map((line) => JSON.parse(line));
+  for (const line of [...lines.map((item) => JSON.stringify(item)), ...streamLines.map((item) => JSON.stringify(JSON.parse(item)))]) {
+    expect(outputLines).toContain(line);
+  }
+  // Lines merge by timestamp; an unversioned line has none. Compare as a set.
+  expect(records).toHaveLength(lines.length + streamLines.length);
+  for (const line of lines) expect(records).toContainEqual(line);
+  for (const line of streamLines) expect(records).toContainEqual(JSON.parse(line));
+  expect(isValid(LegacyLifecycleEvent, lines[0])).toBe(true);
+});
+
+test("session run --role --session --json prints every resumed role execution", async () => {
+  const workspace = fakeWorkspace();
+  const sessionRoot = path.join(workspace, ".migent", "sessions");
+  cliHooks.runner = new AgentToolRunner(registryOf({ fake: new CancelOnCommand([]) }), 10);
+  installOffline();
+  const cancelled = await capture(() => main(["session", "run", "--role", "planner", "--prompt", "Plan it", "--json"], workspace));
+  expect(cancelled.value).toBe(130);
+  const sessionId = readdirSync(sessionRoot)[0]!;
+  // A second cancelled execution of the same role session, so the resume prints a list.
+  const executions = path.join(sessionRoot, sessionId, "executions");
+  const first = readdirSync(executions)[0]!;
+  const second = first.replace("0001", "0002");
+  cpSync(path.join(executions, first), path.join(executions, second), { recursive: true });
+  const metadataPath = path.join(executions, second, "execution.json");
+  const metadata = JSON.parse(readFileSync(metadataPath, "utf8")) as Record<string, unknown>;
+  Object.assign(metadata, { execution_id: second, execution_order: 2 });
+  writeFileSync(metadataPath, JSON.stringify(metadata));
+  cliHooks.runner = new AgentToolRunner(registryOf({ fake: new ScriptedClient(["status: complete\n\ndone", "status: complete\n\ndone"]) }), 10);
+  installOffline();
+  const resumed = await capture(() => main(["session", "run", "--role", "planner", "--session", sessionId, "--prompt", "again", "--json"], workspace));
+  expect(resumed.value).toBe(0);
+  expect(Array.isArray(JSON.parse(resumed.stdout))).toBe(true);
+});
+
+test("get model, get option, get option --native, and session list --latest with no session", async () => {
+  const install = (): void => {
+    cliHooks.which = (command: string) => (command === "codex" ? "/bin/codex" : null);
+    cliHooks.runCommand = (argv: string[]) => {
+      if (path.basename(argv[0] ?? "") === "codex" && argv.includes("models")) return CODEX_CATALOG;
+      if (argv.includes("--help")) return "Options:\n  --model <MODEL>  Model to use\n";
+      throw new Error("offline");
+    };
+  };
+  for (const argv of [
+    ["get", "model", "gpt-5", "--client", "codex", "-o", "json"],
+    ["get", "option", "model_reasoning_effort", "--client", "codex", "-o", "json"],
+    ["get", "option", "model", "--native", "--client", "codex", "-o", "json"],
+  ]) {
+    install();
+    const result = await json(argv);
+    expect([argv.join(" "), result.code]).toEqual([argv.join(" "), 0]);
+  }
+  const none = await json(["session", "list", "--latest", "--json"], undefined, fakeWorkspace());
+  expect(none.stdout).toBeNull();
+});
+
+test("known shapes describe files written by a real scripted run", async () => {
+  const workspace = fakeWorkspace();
+  cliHooks.runner = new AgentToolRunner(
+    registryOf({ fake: new ScriptedClient(["status: complete\n\nplanned"], ["# Plan\n"]) }),
+    10,
+  );
+  const run = await json(["session", "run", "--workflow", "plan", "--task", "Write a plan", "--skip-preflight"], undefined, workspace);
+  expect(run.code).toBe(0);
+  const sessions = path.join(workspace, ".migent", "sessions");
+  const directory = path.join(sessions, readdirSync(sessions)[0]!);
+  const metrics = JSON.parse(readFileSync(path.join(directory, "metrics.json"), "utf8")) as unknown;
+  expect(validationIssues(SealedMetricsCurrent, metrics)).toEqual([]);
+  expect(validationIssues(SealedMetricsHistorical, metrics)).toEqual([]);
+  expect(isValid(SealedMetrics, metrics)).toBe(true);
+  const events = readFileSync(path.join(directory, "events.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line) as unknown);
+  expect(events.length).toBeGreaterThan(0);
+  for (const event of events) {
+    expect(validationIssues(LifecycleEventV2, event)).toEqual([]);
+    expect(isValid(SessionFollowRecord, event)).toBe(true);
+  }
+});
+
+// Coverage guard: every contract in the index was emitted, and so validated, by this file.
+test("every CLI output contract was exercised by a real command", () => {
+  const emitted = (globalThis as { __migentEmittedContracts?: Set<string> }).__migentEmittedContracts ?? new Set<string>();
+  const missing = CLI_CONTRACTS.filter((entry) => !emitted.has(String(entry.schema.$id))).map((entry) => entry.key);
+  expect(missing).toEqual([]);
 });

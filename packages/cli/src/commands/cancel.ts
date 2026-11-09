@@ -1,3 +1,5 @@
+import { CancelResult } from "@nodeint/migent-contracts";
+import { writeJson } from "../emit.js";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { requestSessionCancel, SessionStore, sessionLockAlive } from "@nodeint/migent-kernel";
@@ -36,7 +38,7 @@ export async function cancelSession(
   if (args.asJson) {
     const current = new SessionStore(workspace).readSessionStatus(sessionId);
     const status = typeof current.status === "string" ? current.status : null;
-    process.stdout.write(`${JSON.stringify({ session_id: sessionId, cancelled: stopped, status })}\n`);
+    writeJson(CancelResult, { session_id: sessionId, cancelled: stopped, status });
   } else if (stopped) {
     printNotice(`Session ${sessionId} cancelled.`);
   } else {

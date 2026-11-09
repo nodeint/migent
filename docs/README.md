@@ -17,6 +17,7 @@ must be checked against the current source when changing behavior.
 | [Human interaction](human-in-the-loop.md) | Agent questions, user replies, blockers, question history, resume and verification | Adding human input or diagnosing a session waiting for an answer | `questions`, `--reply`, `single`, `multiple`, `blocked` |
 | [Session metrics](session-metrics.md) | Metrics JSON, aggregation, timing, usage completeness, cost, revisions | Reading metrics or changing totals and accounting | `metrics.json`, `usage_missing`, `cost_partial`, `uncaptured_turns`, `wall_seconds` |
 | [Diagnostics](diagnostics.md) | Process startup, wrapper failures, diagnostic artifacts, debug traces, troubleshooting | Investigating failed launches, permissions, timeouts, or client exits | `diagnostics.json`, `failure.md`, `stderr_tail`, `MIGENT_DEBUG`, `EACCES`, `ENOEXEC` |
+| [Output contracts](../packages/contracts/README.md) | `@nodeint/migent-contracts`: TypeBox schemas for every CLI `--json` payload, produced vs. passthrough rules, opt-in known shapes | Reading or changing the shape of `--json` / `-o json` output | `CLI_CONTRACTS`, `writeJson`, `passthrough`, `$id`, `KNOWN_SHAPES` |
 | [Backlog](backlogs.md) | Dated proposals and priorities for long refactor workflows | Evaluating planned work or historical motivation | `P0`, `P1`, `P2`, `budget`, `scope`, `for_each`, `hooks` |
 
 ## Task lookup
@@ -38,6 +39,7 @@ must be checked against the current source when changing behavior.
 | Diagnose missing tokens, partial costs, or cumulative usage | [Session metrics](session-metrics.md) | [Adapters: Failures and usage](adpaters.md#failures-and-usage) |
 | Investigate a failed process start or client exit | [Diagnostics](diagnostics.md) | [Adapters: Failures and usage](adpaters.md#failures-and-usage) |
 | Validate, render, or save draft configuration/workflows, including a session's `workflow.yaml` | [CLI: Authoring drafts](cli.md#authoring-drafts) | [CLI: Session drafts](cli.md#session-drafts), [Sessions](sessions.md), [Agent configuration](agents.md), [Workflows](workflows.md) |
+| Add or change a `--json` / `-o json` payload | [Output contracts](../packages/contracts/README.md) | [CLI](cli.md) |
 | Find proposals rather than implemented behavior | [Backlog](backlogs.md) | Verify current source before relying on a proposal |
 
 ## Reading and maintenance rules

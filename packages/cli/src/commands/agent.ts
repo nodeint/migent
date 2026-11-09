@@ -1,3 +1,5 @@
+import { RoleRunResult, RoleRunResults } from "@nodeint/migent-contracts";
+import { writeJson } from "../emit.js";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import {
@@ -150,7 +152,7 @@ export async function dispatchAgent(
       unbind();
     }
     if (resumedMany !== null) {
-      if (args.asJson) process.stdout.write(`${JSON.stringify(resumedMany)}\n`);
+      if (args.asJson) writeJson(RoleRunResults, resumedMany);
       else {
         for (const item of resumedMany) printAgent({ ...item }, args.role, target.client, target.model, workspace);
       }
@@ -160,7 +162,7 @@ export async function dispatchAgent(
       return finishRole(resolvedSessionId, resumedMany.every((item) => item.outcome_status === "complete") ? 0 : 1);
     }
     if (result === undefined) throw new Error("Agent run produced no result.");
-    if (args.asJson) process.stdout.write(`${JSON.stringify(result)}\n`);
+    if (args.asJson) writeJson(RoleRunResult, result);
     else printAgent({ ...result }, args.role, target.client, target.model, workspace);
     return finishRole(resolvedSessionId, result.outcome_status === "complete" ? 0 : result.outcome_status === "question" ? 9 : 1);
   }
@@ -329,11 +331,11 @@ async function runCancelledRole(
   if (finished.length === 1) {
     const result = finished[0];
     if (result === undefined) throw new Error("Agent run produced no result.");
-    if (asJson) process.stdout.write(`${JSON.stringify(result)}\n`);
+    if (asJson) writeJson(RoleRunResult, result);
     else printAgent({ ...result }, role, profile.client, profile.model, workspace);
     return finishRole(sessionId, result.outcome_status === "complete" ? 0 : result.outcome_status === "question" ? 9 : 1);
   }
-  if (asJson) process.stdout.write(`${JSON.stringify(finished)}\n`);
+  if (asJson) writeJson(RoleRunResults, finished);
   else {
     for (const item of finished) printAgent({ ...item }, role, profile.client, profile.model, workspace);
   }

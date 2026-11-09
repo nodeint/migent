@@ -48,7 +48,7 @@ test("register from a subdirectory sends the absolute root", async () => {
     workspaceApi.callService = async (...args) => {
       calls.push(args);
       const body = args[5] as { path: string };
-      return [201, { id: "ws_demo", path: body.path, available: true }];
+      return [201, { id: "ws_demo", name: "demo", path: body.path, available: true }];
     };
     const captured = await capture(() => main(["workspace", "register"], child));
     expect(captured.value).toBe(0);
@@ -75,7 +75,7 @@ test("register relative path resolves against the invocation cwd", async () => {
     workspaceApi.callService = async (...args) => {
       calls.push(args);
       const body = args[5] as { path: string };
-      return [201, { id: "ws_demo", path: body.path, available: true }];
+      return [201, { id: "ws_demo", name: "demo", path: body.path, available: true }];
     };
     const captured = await capture(() => main(["workspace", "register", "--path", "src/pkg"], workspace));
     expect(captured.value).toBe(0);

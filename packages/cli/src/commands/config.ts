@@ -1,3 +1,5 @@
+import { ConfigSummary } from "@nodeint/migent-contracts";
+import { writeJson } from "../emit.js";
 import { readFileSync } from "node:fs";
 import {
   LOCAL_CONFIG_LABEL as LOCAL_LABEL,
@@ -11,11 +13,11 @@ import {
 export function runConfigShow(workspace: string, options: { asJson?: boolean } = {}): number {
   const local = hasLocalConfig(workspace);
   if (options.asJson === true) {
-    const payload = {
+    const payload: ConfigSummary = {
       config: loadWorkspaceConfig(workspace),
       local: local ? { file: LOCAL_LABEL, agents: localAgentNames(workspace) } : null,
     };
-    process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+    writeJson(ConfigSummary, payload, { pretty: true });
     return 0;
   }
   if (!local) {
