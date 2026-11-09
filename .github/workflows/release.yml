@@ -1,9 +1,12 @@
 name: Release
 
+# A squashed release PR ("Release X.Y.Z (#N)") landing on next releases that
+# version: tag it, fast-forward main to it, publish to npm, then create the
+# GitHub Release. Every other push to next is ignored.
 on:
   push:
-    tags:
-      - "v*"
+    branches:
+      - next
 
 permissions:
   contents: write
@@ -21,70 +24,131 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check the tag is on next
+      - name: Detect release commit
+        id: plan
         run: |
-          git fetch origin next
-          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/next; then
-            echo "::error::$GITHUB_REF_NAME is not on next; tag the merged release commit"
-            exit 1
+          subject=$(git log -1 --format=%s "$GITHUB_SHA")
+          if ! [[ "$subject" =~ ^Release\ ([0-9]+\.[0-9]+\.[0-9]+)\ \(#[0-9]+\)$ ]]; then
+            echo "Not a release commit: $subject"
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 12.6.0
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 24
-          registry-url: https://registry.npmjs.org
-
-      # Trusted publishing needs npm >= 11.5.1; staged publishing needs >= 11.15.0.
-      - run: npm install -g npm@12.2.0
-
-      - run: pnpm install --frozen-lockfile
-
-      - name: Check tag matches package versions
-        run: |
-          tag="${GITHUB_REF_NAME#v}"
+          version="${BASH_REMATCH[1]}"
           for manifest in packages/*/package.json; do
-            version=$(node -p "require('./$manifest').version")
-            if [ "$version" != "$tag" ]; then
-              echo "::error file=$manifest::version $version does not match tag $GITHUB_REF_NAME"
+            actual=$(node -p "require('./$manifest').version")
+            if [ "$actual" != "$version" ]; then
+              echo "::error file=$manifest::version $actual does not match release commit $version"
               exit 1
             fi
           done
+          echo "release=true" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Extract release notes
+        if: steps.plan.outputs.release == 'true'
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="${{ steps.plan.outputs.version }}"
           awk -v v="$version" '$0 == "## " v {f=1; next} /^## /{f=0} f' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
           if ! grep -q '[^[:space:]]' "$RUNNER_TEMP/notes.md"; then
             echo "::error file=CHANGELOG.md::no notes under ## $version"
             exit 1
           fi
 
-      - run: pnpm build
-      - run: pnpm test
+      - uses: pnpm/action-setup@v4
+        if: steps.plan.outputs.release == 'true'
+        with:
+          version: 12.6.0
 
-      # pnpm pack rewrites workspace:* to exact versions; npm stages the tarballs.
+      - uses: actions/setup-node@v5
+        if: steps.plan.outputs.release == 'true'
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs npm >= 11.5.1.
+      - name: Install npm
+        if: steps.plan.outputs.release == 'true'
+        run: npm install -g npm@12.2.0
+
+      - name: Install, build, test
+        if: steps.plan.outputs.release == 'true'
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+          pnpm test
+
+      # The git flow completes before anything reaches npm. Reruns are safe:
+      # an existing tag on this commit and an up-to-date main are accepted.
+      - name: Tag the release commit
+        if: steps.plan.outputs.release == 'true'
+        run: |
+          tag="v${{ steps.plan.outputs.version }}"
+          git fetch origin tag "$tag" --no-tags 2>/dev/null || true
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            if [ "$(git rev-parse "$tag^{commit}")" != "$GITHUB_SHA" ]; then
+              echo "::error::$tag already exists on a different commit; never move a release tag"
+              exit 1
+            fi
+          else
+            git tag "$tag" "$GITHUB_SHA"
+            git push origin "refs/tags/$tag:refs/tags/$tag"
+          fi
+
+      - name: Fast-forward main
+        if: steps.plan.outputs.release == 'true'
+        run: |
+          git fetch origin main
+          if ! git merge-base --is-ancestor origin/main "$GITHUB_SHA"; then
+            echo "::error::main is not an ancestor of $GITHUB_SHA; resolve the history before releasing"
+            exit 1
+          fi
+          if [ "$(git rev-parse origin/main)" != "$GITHUB_SHA" ]; then
+            git push origin "$GITHUB_SHA:refs/heads/main"
+          fi
+
+      # pnpm pack rewrites workspace:* to exact versions.
       - name: Pack
+        if: steps.plan.outputs.release == 'true'
         run: pnpm -r pack --pack-destination "$RUNNER_TEMP/release"
 
-      - name: Stage for approval
+      # Dependency order, so a failure never leaves the CLI pointing at a
+      # missing dependency. Versions that are already public are skipped.
+      - name: Publish to npm
+        if: steps.plan.outputs.release == 'true'
         run: |
           cd "$RUNNER_TEMP/release"
-          version="${GITHUB_REF_NAME#v}"
+          version="${{ steps.plan.outputs.version }}"
           for name in migent-prompts migent-kernel migent-doctor migent-adapters migent-registry migent; do
-            npm stage publish "./nodeint-$name-$version.tgz"
+            if npm view "@nodeint/$name@$version" version --prefer-online >/dev/null 2>&1; then
+              echo "@nodeint/$name@$version is already public"
+            else
+              npm publish "./nodeint-$name-$version.tgz" --access public
+            fi
           done
 
+      - name: Verify the published CLI
+        if: steps.plan.outputs.release == 'true'
+        run: |
+          version="${{ steps.plan.outputs.version }}"
+          for attempt in 1 2 3 4 5 6; do
+            if npm install -g --prefer-online "@nodeint/migent@$version" \
+              && [ "$(migent --version)" = "$version" ]; then
+              exit 0
+            fi
+            sleep 20
+          done
+          echo "::error::@nodeint/migent@$version did not install with the expected version"
+          exit 1
+
       - name: Create GitHub Release
+        if: steps.plan.outputs.release == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            echo "Release $GITHUB_REF_NAME already exists"
+          tag="v${{ steps.plan.outputs.version }}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag already exists"
           else
-            gh release create "$GITHUB_REF_NAME" --verify-tag \
-              --title "${GITHUB_REF_NAME#v}" --notes-file "$RUNNER_TEMP/notes.md"
+            gh release create "$tag" --verify-tag \
+              --title "${tag#v}" --notes-file "$RUNNER_TEMP/notes.md"
           fi
