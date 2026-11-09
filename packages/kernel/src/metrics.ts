@@ -7,11 +7,11 @@ import { clientOfCommand, executionCommands, legacyExecutionClient } from "./leg
 import { ConfigurationError } from "./errors.js";
 import { listSessionRows, readStatusFileState } from "./query.js";
 import { exitAnomaliesOf } from "./exit-anomaly.js";
-import { isRecord } from "./record.js";
+import { isRecord } from "@nodeint/migent-workflow";
 import { EXECUTIONS_DIRNAME, MIGENT_DIRNAME, SESSIONS_DIRNAME } from "./runtime.js";
 import { readParsedEvents, streamFiles, type ParsedEvent } from "./session-events.js";
 import { loadFrozenWorkflow } from "./session-freeze.js";
-import { loadNamedWorkflow, loadWorkflowDocument, routeTargets, type WorkflowDocument } from "./workflow.js";
+import { loadNamedWorkflow, loadWorkflowDocument, routeTargets, type WorkflowDocument } from "@nodeint/migent-workflow";
 
 const USAGE_FIELDS = [
   "input_tokens",

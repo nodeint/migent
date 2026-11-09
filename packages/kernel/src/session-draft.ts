@@ -1,13 +1,13 @@
 import { existsSync, lstatSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import { ConfigurationError } from "./errors.js";
-import { isRecord } from "./record.js";
+import { isRecord } from "@nodeint/migent-workflow";
 import { readStatusFileState } from "./query.js";
 import { readFoldedStatus, readSessionManifest } from "./session-fold.js";
 import { WORKFLOW_FREEZE_FILE, readWorkflowFreeze } from "./session-freeze.js";
 import { relativeWorkflowPath } from "./session-records.js";
 import { assertSessionId } from "./session-selection.js";
-import { parseYamlDocument } from "./yaml.js";
+import { parseYamlDocument } from "@nodeint/migent-workflow";
 import { readFileSync } from "node:fs";
 
 /** The editable workflow draft a session owns, resolved and checked without writing anything. */

@@ -1,6 +1,6 @@
 import { ConfigurationError } from "./errors.js";
 import { legacyClientOf } from "./legacy-provider.js";
-import { isRecord } from "./record.js";
+import { isRecord } from "@nodeint/migent-workflow";
 
 /**
  * The schema_version 4 to 5 rewrite of a config mapping, in place:

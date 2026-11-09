@@ -2,18 +2,12 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, expect, test } from "vitest";
-import {
-  AgentToolRunner,
-  buildStagePrompt,
-  migrateWorkflow,
-  parseWorkflowMapping,
-  patchWorkflowText,
-  type ExecutionSnapshot,
-} from "../src/index.ts";
+import { AgentToolRunner, buildStagePrompt, migrateWorkflow, patchWorkflowText, type ExecutionSnapshot } from "../src/index.ts";
+import { parseWorkflowMapping } from "@nodeint/migent-workflow";
 import { publishNextSuggestions, resolveHandoff } from "../src/next-handoff.ts";
 import { createWorkflowSession } from "../src/session-records.ts";
 import { watchSnapshot } from "../src/query.ts";
-import { parseYamlDocument } from "../src/yaml.ts";
+import { parseYamlDocument } from "@nodeint/migent-workflow";
 import { ScriptedClient, SESSION_CONFIG, registryOf } from "./support.ts";
 
 const roots: string[] = [];

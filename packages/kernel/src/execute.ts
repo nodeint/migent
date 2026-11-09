@@ -17,7 +17,7 @@ import {
   type StageDispatchRequest,
   type StageDispatchResult,
 } from "./dispatch.js";
-import { isRecord } from "./record.js";
+import { isRecord } from "@nodeint/migent-workflow";
 import { buildStagePrompt, buildStageReplyPrompt, buildStageResumePrompt, buildVerifyRepairPrompt } from "./prompt.js";
 import { ProviderEventReporter } from "./provider-events.js";
 import { formatClock, formatDuration, log, utcNow } from "./runtime.js";
@@ -61,7 +61,7 @@ import {
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { evaluateRunWhen, ensureSessionBaseline } from "./run-when.js";
-import { isRoleStage, isWorkflowV2, loadNamedWorkflow, type StageSpec, type WorkflowDocument } from "./workflow.js";
+import { isRoleStage, isWorkflowV2, loadNamedWorkflow, type StageSpec, type WorkflowDocument } from "@nodeint/migent-workflow";
 import { runVerifyOnlyStage } from "./verify-only.js";
 import type { ExecutionSnapshot } from "./outputs.js";
 

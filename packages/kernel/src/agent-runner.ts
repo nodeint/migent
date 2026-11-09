@@ -25,7 +25,7 @@ import { VERIFY_EXHAUSTED } from "./selection.js";
 import { VerifyRunner, formatVerifyReport, type VerifyRunResult } from "./verify-runner.js";
 import { ConfigurationError } from "./errors.js";
 import { nonemptyArtifact } from "./outputs.js";
-import { isRecord } from "./record.js";
+import { isRecord } from "@nodeint/migent-workflow";
 import {
   renderProviderPrompt,
   flattenHistory,
@@ -40,7 +40,7 @@ import { StageOutcome } from "./stage-outcome.js";
 import { platformHome } from "./env.js";
 import { resolveStageOutcome, type OutcomeContext } from "./outcome-resolver.js";
 import { QuestionFileError, type Question } from "./questions.js";
-import { allStageArtifacts, isWorkflowV2, loadNamedWorkflow, loadStage, stageArtifactsFor, type StageArtifact, type StageSpec } from "./workflow.js";
+import { allStageArtifacts, isWorkflowV2, loadNamedWorkflow, loadStage, stageArtifactsFor, type StageArtifact, type StageSpec } from "@nodeint/migent-workflow";
 
 export interface RunResult {
   questions?: Question[];

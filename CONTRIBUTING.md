@@ -14,6 +14,7 @@ behavior is documented in [README.md](README.md) and [docs/](docs/).
 | Path | npm package | Role |
 |---|---|---|
 | `packages/contracts` | `@nodeint/migent-contracts` | Public data contracts (TypeBox schemas) |
+| `packages/workflow` | `@nodeint/migent-workflow` | Workflow definition: model, strict parser, draft collector, catalog, file loading; also `ConfigurationError` and YAML/record helpers shared with the kernel |
 | `packages/prompts` | `@nodeint/migent-prompts` | Prompt templates and renderers |
 | `packages/kernel` | `@nodeint/migent-kernel` | Workflow engine, config, session store, libc bindings |
 | `packages/doctor` | `@nodeint/migent-doctor` | Health checks and diagnostics: config, workflows, clients, sessions, model availability |
@@ -27,7 +28,10 @@ data contract: its schemas describe the CLI's JSON output and the structure of
 the config files, additive changes are
 allowed in minor releases, and a breaking wire change needs a major release.
 It is a leaf package that depends only on `typebox`; the kernel depends on it
-to validate config structure. The other packages have no
+to validate config structure. `@nodeint/migent-workflow` depends only on
+`@nodeint/migent-contracts`, `yaml`, and `zod`; the kernel, doctor, and CLI import
+workflow definitions from it, not from the kernel. Before the first release that
+includes a new package, add it as a trusted publisher on npmjs.com. The other packages have no
 stable API and are published only because the CLI depends on them. Import them by
 package name (`@nodeint/migent-kernel`), never by relative path across package
 boundaries.
@@ -221,7 +225,7 @@ Merging the release PR is the last manual step. The push to `next` starts
 4. fast-forwards `main` to that commit;
 5. packs with `pnpm -r pack` (which turns `workspace:*` into exact versions) and
    runs `npm publish` in dependency order, skipping versions that are already
-   public: `@nodeint/migent-contracts`, `-prompts`, `-kernel`, `-doctor`, `-adapters`,
+   public: `@nodeint/migent-contracts`, `-workflow`, `-prompts`, `-kernel`, `-doctor`, `-adapters`,
    `-registry`, then `@nodeint/migent`;
 6. installs `@nodeint/migent@X.Y.Z` and checks `migent --version`;
 7. creates the GitHub Release with those notes.
@@ -241,7 +245,7 @@ cannot be completed, release the next patch.
 The workflow already installs the published CLI. To check by hand:
 
 ```bash
-for package in migent-contracts migent-prompts migent-kernel migent-doctor migent-adapters migent-registry migent; do
+for package in migent-contracts migent-workflow migent-prompts migent-kernel migent-doctor migent-adapters migent-registry migent; do
   npm view "@nodeint/$package@0.2.0" version
 done
 npm i -g --prefer-online @nodeint/migent@0.2.0

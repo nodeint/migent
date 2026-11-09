@@ -3,7 +3,7 @@ import { closeSync, openSync, readFileSync, rmSync, statSync, writeSync } from "
 import os from "node:os";
 import path from "node:path";
 import { writeJsonAtomic } from "./atomic-file.js";
-import { isRecord } from "./record.js";
+import { isRecord } from "@nodeint/migent-workflow";
 import { utcNow } from "./runtime.js";
 
 export const SESSION_LOCK_FILENAME = "session.lock";

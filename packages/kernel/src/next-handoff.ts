@@ -5,7 +5,7 @@ import { writeJsonAtomic } from "./atomic-file.js";
 import { ConfigurationError } from "./errors.js";
 import { atomicCopy, nonemptyArtifact } from "./outputs.js";
 import { corruptStatusMessage, readStatusFileState } from "./query.js";
-import { isRecord } from "./record.js";
+import { isRecord } from "@nodeint/migent-workflow";
 import { log } from "./runtime.js";
 import { loadFrozenWorkflow } from "./session-freeze.js";
 

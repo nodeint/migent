@@ -51,7 +51,7 @@ import {
   type ProcessInspector,
   type ProcessStartInfo,
 } from "./process-ownership.js";
-import { isRecord } from "./record.js";
+import { isRecord } from "@nodeint/migent-workflow";
 import { VERIFY_EXHAUSTED, VERIFY_FAILED } from "./selection.js";
 import {
   MIGENT_DIRNAME,
@@ -71,7 +71,7 @@ import {
   loadNamedWorkflow,
   loadWorkflowDocument,
   type WorkflowDocument,
-} from "./workflow.js";
+} from "@nodeint/migent-workflow";
 
 export function stringOptions(value: unknown): Record<string, string> {
   if (!isRecord(value)) return {};

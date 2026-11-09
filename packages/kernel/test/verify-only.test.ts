@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "vitest";
-import { AgentToolRunner, executeNamedWorkflow, loadWorkflowDocument } from "../src/index.ts";
+import { AgentToolRunner, executeNamedWorkflow } from "../src/index.ts";
+import { loadWorkflowDocument } from "@nodeint/migent-workflow";
 import { ScriptedClient, tempDir, registryOf } from "./support.ts";
 
 const CONFIG = `\

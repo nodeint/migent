@@ -2,22 +2,8 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
-import {
-  loadWorkflowDocument,
-  nextStage,
-  NextStage,
-  NextStageError,
-  requireAgentSession,
-  resolvePriorSessionId,
-  resolveResumeExecution,
-  revisionStop,
-  stageDispatchError,
-  Stop,
-  type ExecutionSnapshot,
-  type NextStageResult,
-  type RoleStageSpec,
-  type WorkflowDocument,
-} from "../src/index.ts";
+import { nextStage, NextStage, NextStageError, requireAgentSession, resolvePriorSessionId, resolveResumeExecution, revisionStop, stageDispatchError, Stop, type ExecutionSnapshot, type NextStageResult } from "../src/index.ts";
+import { loadWorkflowDocument, type RoleStageSpec, type WorkflowDocument } from "@nodeint/migent-workflow";
 import { tempDir } from "./support.ts";
 
 const fixtures = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "workflows");

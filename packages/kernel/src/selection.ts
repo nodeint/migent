@@ -1,5 +1,5 @@
 import { isArtifactSchema, missingWorkflowOutputNames, type ExecutionSnapshot } from "./outputs.js";
-import { pyRepr } from "./record.js";
+import { pyRepr } from "@nodeint/migent-workflow";
 import {
   conditionalReach,
   dependencyClosure,
@@ -7,7 +7,7 @@ import {
   routeListsStage,
   type StageSpec,
   type WorkflowDocument,
-} from "./workflow.js";
+} from "@nodeint/migent-workflow";
 
 const terminalSessionStatuses = new Set(["blocked", "question", "cancelled", "completed"]);
 

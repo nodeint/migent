@@ -44,6 +44,7 @@
   },
   "dependencies": {
     "@nodeint/migent-contracts": "workspace:*",
+    "@nodeint/migent-workflow": "workspace:*",
     "@nodeint/migent-prompts": "workspace:*",
     "cross-spawn": "^7.0.6",
     "proper-lockfile": "^4.1.2",

@@ -3,18 +3,12 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "vitest";
 import { ConfigurationError, createWorkflowSession } from "../src/index.ts";
-import {
-  changedPathsSinceBaseline,
-  compileChangedPathPattern,
-  ensureSessionBaseline,
-  evaluateRunWhen,
-  matchesChangedPaths,
-  readSessionBaseline,
-} from "../src/run-when.ts";
+import { changedPathsSinceBaseline, ensureSessionBaseline, evaluateRunWhen, readSessionBaseline } from "../src/run-when.ts";
+import { compileChangedPathPattern, matchesChangedPaths } from "@nodeint/migent-workflow";
 import { appendLifecycleEvent } from "../src/session-events.ts";
 import { SessionLock } from "../src/session-lock.ts";
-import { parseWorkflowMapping, type WorkflowDocument } from "../src/workflow.ts";
-import { parseYamlDocument } from "../src/yaml.ts";
+import { parseWorkflowMapping, type WorkflowDocument } from "@nodeint/migent-workflow";
+import { parseYamlDocument } from "@nodeint/migent-workflow";
 import { tempDir } from "./support.ts";
 
 function git(cwd: string, ...args: string[]): string {

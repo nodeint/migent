@@ -1,0 +1,50 @@
+{
+  "name": "@nodeint/migent-workflow",
+  "version": "0.5.3",
+  "description": "Workflow definition model, strict parser, draft collector, and catalog for Migent.",
+  "keywords": [
+    "ai",
+    "agents",
+    "workflow",
+    "definition",
+    "migent"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/nodeint/migent/tree/main/packages/workflow#readme",
+  "bugs": {
+    "url": "https://github.com/nodeint/migent/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nodeint/migent.git",
+    "directory": "packages/workflow"
+  },
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "prepack": "pnpm -w run build && cp ../../LICENSE ."
+  },
+  "dependencies": {
+    "@nodeint/migent-contracts": "workspace:*",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4"
+  }
+}

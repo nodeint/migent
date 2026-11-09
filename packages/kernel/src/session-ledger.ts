@@ -8,11 +8,11 @@ import {
   shouldPublishOutputs,
   type ExecutionSnapshot,
 } from "./outputs.js";
-import { isRecord } from "./record.js";
+import { isRecord } from "@nodeint/migent-workflow";
 import { sessionChangeReason } from "./session-events.js";
 import { currentCompleteByStage, missingOutputNames, readyOutsideStoppedBranches, version2GraphQuiet } from "./selection.js";
 import { StageOutcome } from "./stage-outcome.js";
-import { isWorkflowV2, type WorkflowDocument } from "./workflow.js";
+import { isWorkflowV2, type WorkflowDocument } from "@nodeint/migent-workflow";
 
 export interface LedgerOutput {
   name: string;

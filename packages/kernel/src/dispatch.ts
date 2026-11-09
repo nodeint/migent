@@ -4,7 +4,7 @@ import path from "node:path";
 import { AgentToolRunner, type RunResult } from "./agent-runner.js";
 import { resolveStageTarget, type StageTarget } from "./config.js";
 import { ConfigurationError } from "./errors.js";
-import { isRecord } from "./record.js";
+import { isRecord } from "@nodeint/migent-workflow";
 import { frozenStageTarget, readWorkflowFreeze } from "./session-freeze.js";
 import { bindPriorSessionId, createWorkflowSession } from "./session-records.js";
 import {
@@ -15,7 +15,7 @@ import {
   verifyExhaustedExecution,
 } from "./selection.js";
 import { stringOptions, SessionStore } from "./session-store.js";
-import { loadNamedWorkflow, type WorkflowDocument } from "./workflow.js";
+import { loadNamedWorkflow, type WorkflowDocument } from "@nodeint/migent-workflow";
 
 export interface StageDispatchRequest {
   workflowId: string;

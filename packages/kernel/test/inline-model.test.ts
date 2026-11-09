@@ -8,8 +8,8 @@ import {
   describeChange, inspectConfig, loadWorkspaceConfig, patchConfigText,
   resolveRoleCascade, resolveRoleTarget, resolveStageSpec, type ClientRegistry,
 } from "../src/index.ts";
-import { parseWorkflowMapping } from "../src/workflow.ts";
-import { parseYamlDocument } from "../src/yaml.ts";
+import { parseWorkflowMapping } from "@nodeint/migent-workflow";
+import { parseYamlDocument } from "@nodeint/migent-workflow";
 
 const resolver: ClientRegistry = { ids: () => clientIds(), get: (id: string) => createClient(id) };
 const roots: string[] = [];

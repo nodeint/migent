@@ -13,7 +13,7 @@ import {
   patchWorkflowText,
   repairSession,
 } from "../src/index.ts";
-import { parseYamlDocument } from "../src/yaml.ts";
+import { parseYamlDocument } from "@nodeint/migent-workflow";
 import { PLAN_REVIEW_WORKFLOW, ScriptedClient, tempDir, registryOf } from "./support.ts";
 
 const CONFIG = `\

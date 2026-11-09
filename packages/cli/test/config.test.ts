@@ -1,7 +1,8 @@
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { loadYamlMapping, loadWorkspaceConfig, loadAgentTarget, loadNamedWorkflow, resolveStageSpec } from "@nodeint/migent-kernel";
+import { loadYamlMapping, loadWorkspaceConfig, loadAgentTarget, resolveStageSpec } from "@nodeint/migent-kernel";
+import { loadNamedWorkflow } from "@nodeint/migent-workflow";
 import { expect, test } from "vitest";
 import { main } from "../src/index.ts";
 import { requireCurrentSchema, runMigrate } from "../src/migrate.ts";

@@ -8,7 +8,7 @@ import { parseExecutionId } from "./session-events.js";
 import { VERIFY_FAILED } from "./selection.js";
 import { StageOutcome } from "./stage-outcome.js";
 import { VerifyRunner, formatVerifyReport, type VerifyRunResult } from "./verify-runner.js";
-import type { VerifyOnlyStageSpec } from "./workflow.js";
+import type { VerifyOnlyStageSpec } from "@nodeint/migent-workflow";
 
 const VERIFY_TURN = 1;
 

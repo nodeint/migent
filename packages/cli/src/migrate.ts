@@ -1,31 +1,8 @@
 import { lstatSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { confirm as clackConfirm, isCancel } from "@clack/prompts";
-import {
-  SCHEMA_VERSION,
-  documentVersion,
-  checkDocumentSchemaVersion,
-  loadYamlMapping,
-  loadWorkspaceConfig,
-  localConfigPath,
-  mergeConfigLayers,
-  assertConfigClientEquivalence,
-  migrateConfig,
-  migrateWorkflow,
-  patchConfigText,
-  parseWorkflowMapping,
-  patchWorkflowText,
-  stringifyConfig,
-  workflowsDirectory,
-  WORKFLOW_FREEZE_FILE,
-  SessionLock,
-  SessionLockHeldError,
-  parseYamlDocument,
-  sha256Hex,
-  yamlHasComments,
-  ConfigEditError,
-  ConfigurationError,
-} from "@nodeint/migent-kernel";
+import { documentVersion, checkDocumentSchemaVersion, loadYamlMapping, loadWorkspaceConfig, localConfigPath, mergeConfigLayers, assertConfigClientEquivalence, migrateConfig, migrateWorkflow, patchConfigText, patchWorkflowText, stringifyConfig, WORKFLOW_FREEZE_FILE, SessionLock, SessionLockHeldError, sha256Hex, yamlHasComments, ConfigEditError, ConfigurationError } from "@nodeint/migent-kernel";
+import { SCHEMA_VERSION, parseWorkflowMapping, workflowsDirectory, parseYamlDocument } from "@nodeint/migent-workflow";
 import { printError, printNotice } from "./display.js";
 import { clientRegistry } from "./client.js";
 import { isDirectory, isFile } from "./fs-utils.js";

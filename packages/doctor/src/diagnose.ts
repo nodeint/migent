@@ -1,14 +1,6 @@
 import path from "node:path";
-import {
-  ConfigurationError,
-  isRoleStage,
-  loadWorkflowCatalog,
-  resolveEffectiveClient,
-  resolveStageSpec,
-  whichSync,
-  type ClientRegistry,
-  type WorkflowDocument,
-} from "@nodeint/migent-kernel";
+import { ConfigurationError, resolveEffectiveClient, resolveStageSpec, whichSync, type ClientRegistry } from "@nodeint/migent-kernel";
+import { isRoleStage, loadWorkflowCatalog, type WorkflowDocument } from "@nodeint/migent-workflow";
 import {
   DiagnosticList,
   identityKey,

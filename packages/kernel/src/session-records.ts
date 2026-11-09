@@ -5,18 +5,18 @@ import { stringify } from "yaml";
 import path from "node:path";
 import { writeFileAtomic } from "./atomic-file.js";
 import { ConfigurationError } from "./errors.js";
-import { pyRepr } from "./record.js";
+import { pyRepr } from "@nodeint/migent-workflow";
 import { corruptStatusMessage, readStatusFileState } from "./query.js";
 import { isUnicodeAlnum, utcNow } from "./runtime.js";
 import { appendLifecycleEvent } from "./session-events.js";
 import { requireLiveWorkflow, renderWorkflowSource, writeWorkflowFreeze } from "./session-freeze.js";
 import { completedPriorStatus, resolveHandoff, snapshotHandoff } from "./next-handoff.js";
-import { parseYamlDocument } from "./yaml.js";
+import { parseYamlDocument } from "@nodeint/migent-workflow";
 import { commitFoldedStatus, readSessionManifest } from "./session-fold.js";
 import { SessionLock, sessionLockHeldLocally } from "./session-lock.js";
 import { SessionStore } from "./session-store.js";
 import { assertSessionTitle, assertSingleLineTask, requireTaskBody, writeTaskFile, taskFilePath } from "./task-file.js";
-import { isWorkflowV2, loadNamedWorkflow, type WorkflowDocument } from "./workflow.js";
+import { isWorkflowV2, loadNamedWorkflow, type WorkflowDocument } from "@nodeint/migent-workflow";
 
 function sessionWorkflowPath(workspace: string, workflow: WorkflowDocument): string {
   const source = workflow.source;

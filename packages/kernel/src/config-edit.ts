@@ -2,10 +2,10 @@ import { stringify } from "yaml";
 import type { ClientRegistry } from "./cli-client.js";
 import { loadAgentTarget, loadRoleDescription, loadRoleResponsibilities, resolveRoleCascade, resolveStageSpec } from "./config.js";
 import { ConfigurationError } from "./errors.js";
-import { isRecord } from "./record.js";
-import { isRoleStage, type RoleStageSpec, type WorkflowDocument } from "./workflow.js";
+import { isRecord } from "@nodeint/migent-workflow";
+import { isRoleStage, type RoleStageSpec, type WorkflowDocument } from "@nodeint/migent-workflow";
 import { liftConfigAgents } from "./migration-config.js";
-import { parseYamlDocument } from "./yaml.js";
+import { parseYamlDocument } from "@nodeint/migent-workflow";
 import { renderAuthoringYaml } from "./authoring.js";
 
 const NAME = /^[A-Za-z][A-Za-z0-9._-]*$/;

@@ -2,16 +2,8 @@ import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
-import {
-  buildStagePrompt,
-  buildStageReplyPrompt,
-  buildStageResumePrompt,
-  loadWorkflowDocument,
-  prependRoleInstructions,
-  type ExecutionSnapshot,
-  type RoleStageSpec,
-  type WorkflowDocument,
-} from "../src/index.ts";
+import { buildStagePrompt, buildStageReplyPrompt, buildStageResumePrompt, prependRoleInstructions, type ExecutionSnapshot } from "../src/index.ts";
+import { loadWorkflowDocument, type RoleStageSpec, type WorkflowDocument } from "@nodeint/migent-workflow";
 import { tempDir } from "./support.ts";
 
 const fixtures = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "workflows");

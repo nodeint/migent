@@ -40,6 +40,9 @@ importers:
       '@nodeint/migent-registry':
         specifier: workspace:*
         version: link:../registry
+      '@nodeint/migent-workflow':
+        specifier: workspace:*
+        version: link:../workflow
       commander:
         specifier: ^14.0.2
         version: 14.0.3
@@ -69,6 +72,9 @@ importers:
       '@nodeint/migent-kernel':
         specifier: workspace:*
         version: link:../kernel
+      '@nodeint/migent-workflow':
+        specifier: workspace:*
+        version: link:../workflow
       zod:
         specifier: ^4.6.5
         version: 4.6.5
@@ -88,6 +94,9 @@ importers:
       '@nodeint/migent-prompts':
         specifier: workspace:*
         version: link:../prompts
+      '@nodeint/migent-workflow':
+        specifier: workspace:*
+        version: link:../workflow
       cross-spawn:
         specifier: ^7.0.6
         version: 7.0.6
@@ -145,6 +154,22 @@ importers:
       '@types/proper-lockfile':
         specifier: ^4.1.4
         version: 4.1.4
+
+  packages/workflow:
+    dependencies:
+      '@nodeint/migent-contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.5
+    devDependencies:
+      '@types/node':
+        specifier: ^26.6.4
+        version: 26.6.4
 
 packages:
 

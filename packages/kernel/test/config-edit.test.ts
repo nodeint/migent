@@ -1,16 +1,6 @@
 import { expect, test } from "vitest";
-import {
-  ConfigEditError,
-  assignRoles,
-  inspectConfig,
-  loadRoleResponsibilities,
-  loadYamlMapping,
-  patchConfigText,
-  placeRoleAgent,
-  upsertAgent,
-  type RoleStageSpec,
-  type WorkflowDocument,
-} from "../src/index.ts";
+import { ConfigEditError, assignRoles, inspectConfig, loadRoleResponsibilities, loadYamlMapping, patchConfigText, placeRoleAgent, upsertAgent } from "../src/index.ts";
+import { type RoleStageSpec, type WorkflowDocument } from "@nodeint/migent-workflow";
 import { writeConfig } from "./support.ts";
 
 const SHARED = `\

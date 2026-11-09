@@ -10,12 +10,11 @@ import { ConfigEditError, yamlScalar } from "./config-edit.js";
 import { ConfigurationError } from "./errors.js";
 import { liftConfigAgents, liftConfigClients, liftWorkflowClients, type ConfigLayerKind } from "./migration-config.js";
 import { applyLegacyMigration, type MigrationKind } from "./migration-legacy.js";
-import { documentVersion, isRecord } from "./record.js";
-import { SCHEMA_VERSION, conditionalStages, parseWorkflowMapping } from "./workflow.js";
-import { parseYamlDocument } from "./yaml.js";
+import { documentVersion, isRecord } from "@nodeint/migent-workflow";
+import { SCHEMA_VERSION, conditionalStages, parseWorkflowMapping } from "@nodeint/migent-workflow";
+import { parseYamlDocument } from "@nodeint/migent-workflow";
 import { renderAuthoringYaml } from "./authoring.js";
 
-export { SCHEMA_VERSION };
 
 const SCHEMA_VERSION_FIELD = "schema_version";
 

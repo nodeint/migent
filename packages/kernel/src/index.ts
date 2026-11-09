@@ -68,7 +68,7 @@ export {
   upgradeConfigText,
   yamlScalar,
 } from "./config-edit.js";
-export { SCHEMA_VERSION, migrateConfig, migrateWorkflow, patchWorkflowText } from "./migration.js";
+export { migrateConfig, migrateWorkflow, patchWorkflowText } from "./migration.js";
 export { assertConfigClientEquivalence } from "./migration-config.js";
 export { classifyFailure, createNewSession, normalizeUsage, sessionOptions } from "./client-policy.js";
 export {
@@ -102,44 +102,9 @@ export {
 export type { SessionSelection, SessionSource, SessionWorkflowKind } from "./session-selection.js";
 export { ConfigurationError, OutputsMissing } from "./errors.js";
 export type { ConfigurationErrorDetails, SourcePosition } from "./errors.js";
-export { unknownRoleKeyEntries, unknownWorkflowKeyEntries } from "./authoring-diagnostics.js";
-export type { UnknownKey } from "./authoring-diagnostics.js";
+export { unknownRoleKeyEntries } from "./authoring-diagnostics.js";
 export { WORKFLOW_FREEZE_FILE, collectFrozenDrift } from "./session-freeze.js";
-export { parseYamlDocument } from "./yaml.js";
 export type { WorkflowFreeze } from "./session-freeze.js";
-export {
-  isWorkflowV2,
-  loadNamedWorkflow,
-  loadStage,
-  loadWorkflowCatalog,
-  isRoleStage,
-  parseWorkflowMapping,
-  checkWorkflowCatalog,
-  catalogEntryFromDocument,
-  collectWorkflowDraft,
-  loadWorkflowDocument,
-  stageArtifactName,
-  workflowsDirectory,
-} from "./workflow.js";
-export type {
-  CatalogFact,
-  DraftDownstreamEntry,
-  DraftProblem,
-  DraftStage,
-  DraftUnit,
-  RoleStageSpec,
-  StageAgent,
-  StageSpec,
-  VerifyOnlyStageSpec,
-  WorkflowCatalog,
-  WorkflowCatalogEntry,
-  WorkflowCompletion,
-  WorkflowDocument,
-  WorkflowDownstream,
-  WorkflowDraftParse,
-  WorkflowOutput,
-  WorkflowRequires,
-} from "./workflow.js";
 export {
   SessionLock,
   SessionLockHeldError,
@@ -372,7 +337,6 @@ export {
   sha256Hex,
   yamlHasComments,
 } from "./authoring.js";
-export type { CatalogProblem } from "./workflow.js";
 export type { AuthoringRender, DraftFormat, SchemaVersionStatus } from "./authoring.js";
 export { buildDraftSourceMap } from "./draft-source.js";
 export type { DraftRange, DraftSourceMap } from "./draft-source.js";

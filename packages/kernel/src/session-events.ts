@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { appendLineSynced, isAtomicTempName, sealTornTail } from "./atomic-file.js";
-import { isRecord } from "./record.js";
+import { isRecord } from "@nodeint/migent-workflow";
 import { EXECUTIONS_DIRNAME, utcNow } from "./runtime.js";
 import { assertSessionLockHeld } from "./session-lock.js";
 
