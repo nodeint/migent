@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { ConfigurationError } from "./errors.js";
 import { utcNow } from "./runtime.js";
+import type { SkipDetails } from "./session-store.js";
 import { appendLifecycleEvent, readParsedEvents, reservedExecutionOrders } from "./session-events.js";
 import { compileChangedPathPattern } from "@nodeint/migent-workflow";
 import type { StageSpec, WorkflowDocument } from "@nodeint/migent-workflow";
@@ -9,13 +10,6 @@ import type { StageSpec, WorkflowDocument } from "@nodeint/migent-workflow";
 const GIT_TIMEOUT_MS = 60_000;
 const GIT_MAX_BUFFER = 64 * 1024 * 1024;
 const SKIP_REASON = "no changed path matches run_when.changed_paths";
-
-export interface SkipDetails {
-  reason: string;
-  baseline: string;
-  patterns: string[];
-  changedPaths: number;
-}
 
 export interface SessionBaseline {
   commit: string | null;

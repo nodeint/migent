@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync
 import path from "node:path";
 import { expect, test, vi } from "vitest";
 import { AgentToolRunner, SessionStore } from "../src/index.ts";
-import { readExecutionClient } from "../src/legacy-provider.ts";
+import { readExecutionClient } from "../src/legacy-execution-client.ts";
 import { readExecutions } from "../src/session-fold.ts";
 import { FakeClient, registryOf, tempDir } from "./support.ts";
 

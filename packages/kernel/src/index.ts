@@ -76,13 +76,13 @@ export {
   LEGACY_PROVIDER_CLIENT,
   clientOfCommand,
   legacyClientOf,
-  legacyExecutionClient,
 } from "./legacy-provider.js";
+export { legacyExecutionClient } from "./legacy-execution-client.js";
 export type {
   LegacyExecutionClient,
   LegacyExecutionEvidence,
   LegacyProvenance,
-} from "./legacy-provider.js";
+} from "./legacy-execution-client.js";
 export type { MigrationLayer, MigrationFn } from "./migration.js";
 export type {
   ConfigChange,

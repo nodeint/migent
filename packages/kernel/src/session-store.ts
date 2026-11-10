@@ -13,8 +13,8 @@ import {
 } from "node:fs";
 import path from "node:path";
 import type { ClientRegistry } from "./cli-client.js";
-import { legacyClientOf, readExecutionClient } from "./legacy-provider.js";
-import type { SkipDetails } from "./run-when.js";
+import { legacyClientOf } from "./legacy-provider.js";
+import { readExecutionClient } from "./legacy-execution-client.js";
 import { writeFileAtomic, writeJsonAtomic } from "./atomic-file.js";
 import { ConfigurationError, OutputsMissing } from "./errors.js";
 import { sealSessionMetrics } from "./metrics.js";
@@ -209,6 +209,14 @@ export interface ManualCompletionResult {
   outputs: Record<string, unknown>;
   missingOutputs: string[];
   next: { path: string | null; next: NextSuggestion[] };
+}
+
+/** The stored shape of a skipped-stage record. */
+export interface SkipDetails {
+  reason: string;
+  baseline: string;
+  patterns: string[];
+  changedPaths: number;
 }
 
 export class SessionStore {

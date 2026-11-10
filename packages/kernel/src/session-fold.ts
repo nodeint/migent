@@ -14,7 +14,7 @@ import {
 } from "./session-ledger.js";
 import { readStatusFileState, type StatusFileState } from "./query.js";
 import { isRecord } from "@nodeint/migent-workflow";
-import { executionClientReader } from "./legacy-provider.js";
+import { executionClientReader } from "./legacy-execution-client.js";
 import { EXECUTIONS_DIRNAME } from "./runtime.js";
 import {
   CANCELLED_REPLY,
