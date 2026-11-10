@@ -964,6 +964,37 @@ Type: object
 | `target.options` | map of string | yes |  |  |
 | `problems` | string[] | yes |  |  |
 
+<a id="handoff-document-json"></a>
+### Stage handoff document
+
+Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/handoff/document.json`
+
+The one JSON file a stage writes to `handoff.json` in its execution directory (response protocol 3).
+
+Type: object \| object \| object
+
+| Field | Type | Required | Notes | Description |
+| --- | --- | --- | --- | --- |
+| `schema_version` | `1` | yes |  |  |
+| `status` | `"complete"` | yes |  |  |
+| `decision` | string | no | pattern: `"\\S"` | Non-blank text. |
+| `summary` | string | no |  |  |
+| `schema_version` | `1` | yes |  |  |
+| `status` | `"blocked"` | yes |  |  |
+| `blocker` | string | yes | pattern: `"\\S"` | Non-blank text. |
+| `schema_version` | `1` | yes |  |  |
+| `status` | `"question"` | yes |  |  |
+| `questions` | object[] | yes | minItems: `1` |  |
+| `questions[].id` | string | no | pattern: `"^[1-9][0-9]*$"` | Omit it: Migent numbers questions 1, 2, 3… in order. |
+| `questions[].question` | string | yes | pattern: `"\\S"` | Non-blank text. |
+| `questions[].context` | string | yes | pattern: `"\\S"` | Non-blank text. |
+| `questions[].selection` | `"single"` \| `"multiple"` | yes |  |  |
+| `questions[].options` | object[] | yes | minItems: `2`; maxItems: `26` |  |
+| `questions[].options[].id` | string | no | pattern: `"^[A-Z]$"` | Omit it: Migent letters options A, B, C… in order. |
+| `questions[].options[].label` | string | yes | pattern: `"\\S"` | Non-blank text. |
+| `questions[].options[].description` | string | no | pattern: `"\\S"` | Non-blank text. |
+| `questions[].recommended` | string[] | no | minItems: `1` | Option letters; at most one for `single`. |
+
 <a id="known-lifecycle-event-legacy-json"></a>
 ### Lifecycle event (unversioned or v1)
 

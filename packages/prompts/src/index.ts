@@ -12,7 +12,7 @@ export type ContractMode = boolean | "full" | "reminder";
 
 /** What the turn's message is. It picks the instruction under `## Do`; absent means a free-form request. */
 export type TurnKind = "start" | "continue" | "reply" | "answers" | "repair" | "correction"
-  | "response_correction" | "output_correction";
+  | "response_correction" | "output_correction" | "handoff_correction";
 
 const TURN_DIRECTIVES: Record<TurnKind, string> = {
   start: "carry out the stage.",
@@ -23,9 +23,15 @@ const TURN_DIRECTIVES: Record<TurnKind, string> = {
   correction: "Rewrite the whole question file as one valid JSON document, then respond again.",
   response_correction: "Send the response again in the required format. Do not redo the work.",
   output_correction: "Write the missing files, then report again.",
+  handoff_correction: "Rewrite the whole handoff file as one valid JSON document, then respond again.",
 };
 
-function directive(turn: TurnKind | null, hasTask: boolean): string {
+/** Protocol 3: the stage result is the handoff file. Protocol 2: response headers plus a question file. */
+export const CURRENT_RESPONSE_PROTOCOL = 3;
+
+function directive(turn: TurnKind | null, hasTask: boolean, handoff: boolean): string {
+  if (handoff && turn === "output_correction") return "Write the missing files, then rewrite the handoff file.";
+  if (handoff && turn === "repair") return "Fix the verify failure above, then rewrite the handoff file.";
   if (turn === "start" || turn === "continue") {
     const text = TURN_DIRECTIVES[turn];
     return hasTask ? `Read the task, then ${text}` : text[0]!.toUpperCase() + text.slice(1);
@@ -39,6 +45,10 @@ export interface ProviderPromptOptions {
   decisionValues?: readonly string[];
   decisionInstructions?: Readonly<Record<string, string>>;
   ask?: AskTarget | null;
+  /** Response protocol the conversation runs under. Defaults to the current protocol (3). */
+  protocol?: number;
+  /** Absolute path of the handoff file. Required to describe protocol 3. */
+  handoffFile?: string | null;
   /** Absolute path of the question request file. Required to describe the question protocol when `ask` is set. */
   questionFile?: string | null;
   artifactDirectory?: string;
@@ -60,6 +70,7 @@ function envelope(options: ProviderPromptOptions) {
     const name = value.toLowerCase();
     return { name, instruction: instructions[name] ?? null };
   });
+  const handoff = (options.protocol ?? CURRENT_RESPONSE_PROTOCOL) >= 3;
   const canAsk = mode !== null && options.ask != null;
   const artifactName = options.artifactName ?? null;
   const previousArtifactDirectory = artifactName ? options.previousArtifactDirectory ?? null : null;
@@ -69,7 +80,7 @@ function envelope(options: ProviderPromptOptions) {
   const statusLabel = canAsk ? "complete | question | blocked" : "complete | blocked";
   // The single place that tells the agent what to do this turn.
   const doLines: string[] = [];
-  if (mode !== null) doLines.push(directive(options.turn ?? null, taskFile !== null));
+  if (mode !== null) doLines.push(directive(options.turn ?? null, taskFile !== null, handoff));
   const files = options.artifactFiles ?? [];
   const multi = files.length > 1 || files.some((item) => item.decision !== null || item.description !== null);
   if (artifactName && !multi) doLines.push(`Write the artifact as \`${artifactName}\` in the artifacts directory.`);
@@ -84,7 +95,9 @@ function envelope(options: ProviderPromptOptions) {
   }
   if (mode === "reminder") {
     const decision = decisions.length > 0 ? `, with \`decision: ${decisionLabel}\` when complete` : "";
-    doLines.push(`Same response contract and stage instructions as before: start with \`status: ${statusLabel}\`${decision}.`);
+    doLines.push(handoff
+      ? `Same response contract and stage instructions as before: write the handoff file with \`status\` ${statusLabel}${decision}.`
+      : `Same response contract and stage instructions as before: start with \`status: ${statusLabel}\`${decision}.`);
   }
   return {
     full: mode === "full",
@@ -92,6 +105,9 @@ function envelope(options: ProviderPromptOptions) {
     contract: mode !== null,
     canAsk,
     statusLabel,
+    handoff,
+    handoffContract: handoff && mode !== null,
+    handoffFile: options.handoffFile ?? "",
     questionFile: options.questionFile ?? "",
     decisions,
     decisionLabel,
@@ -101,7 +117,7 @@ function envelope(options: ProviderPromptOptions) {
     previousVerifyReport,
     taskFile,
     sessionDirectory: options.sessionDirectory ?? "",
-    hasExecution: taskFile !== null || canAsk || artifactName !== null || previousVerifyReport !== null,
+    hasExecution: taskFile !== null || canAsk || (handoff && mode !== null) || artifactName !== null || previousVerifyReport !== null,
     doText: doLines.join("\n"),
   };
 }
@@ -225,6 +241,19 @@ export function renderQuestionCorrection(context: QuestionCorrectionContext): st
 export interface GateCorrectionContext {
   errorKind: string;
   errorDetail: string;
+  /** Set under protocol 3: the agent must rewrite this handoff file after fixing the problem. */
+  handoffFile?: string | null;
+}
+
+export interface HandoffCorrectionContext {
+  handoffFile: string;
+  errorKind: string;
+  errorDetail: string;
+}
+
+/** The single correction message sent when a handoff file fails validation. */
+export function renderHandoffCorrection(context: HandoffCorrectionContext): string {
+  return renderPrompt("handoff-correction", context);
 }
 
 /** The correction message sent when the response violates the response contract. */
@@ -234,7 +263,7 @@ export function renderResponseCorrection(context: GateCorrectionContext): string
 
 /** The correction message sent when required artifacts or completion outputs are missing. */
 export function renderOutputCorrection(context: GateCorrectionContext): string {
-  return renderPrompt("output-correction", context);
+  return renderPrompt("output-correction", { ...context, handoff: context.handoffFile != null, handoffFile: context.handoffFile ?? "" });
 }
 
 /**
@@ -242,5 +271,5 @@ export function renderOutputCorrection(context: GateCorrectionContext): string {
  * contract and states that it replaces the earlier response instructions.
  */
 export function renderProtocolUpdate(options: ProviderPromptOptions): string {
-  return renderPrompt("protocol-update", envelope({ ...options, contract: "full" }));
+  return renderPrompt("protocol-update", envelope({ ...options, protocol: 2, contract: "full" }));
 }

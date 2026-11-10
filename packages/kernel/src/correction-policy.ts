@@ -1,8 +1,11 @@
-import type { TurnKind } from "@nodeint/migent-prompts";
+import {
+  renderHandoffCorrection, renderOutputCorrection, renderQuestionCorrection, renderResponseCorrection, type TurnKind,
+} from "@nodeint/migent-prompts";
+import { HandoffFileError } from "./handoff.js";
 import { QuestionFileError } from "./questions.js";
 import { ResponseContractError } from "./stage-outcome.js";
 
-export type CorrectionKind = "response_contract" | "stage_output" | "question_file";
+export type CorrectionKind = "response_contract" | "stage_output" | "question_file" | "handoff";
 
 export interface CorrectionRule {
   /** Correction turns granted per execution for this kind. */
@@ -12,23 +15,49 @@ export interface CorrectionRule {
   turnKind: TurnKind;
   event: string;
   failureReason: string;
-  /** The request file is still needed by the correction turn, so the per-turn cleanup skips it. */
-  keepQuestionFile: boolean;
+  /** The handoff or request file the execution's protocol reads is still needed by the correction turn, so the per-turn cleanup skips it. */
+  keepFile: boolean;
+  /** The correction message for a ledger entry. */
+  render(entry: CorrectionEntry, files: CorrectionFiles): string;
+  /** The failure detail when the budget is used. */
+  detail(failure: GateFailure, files: CorrectionFiles): string;
 }
+
+export interface CorrectionFiles {
+  protocol: number;
+  questionFile: string;
+  handoffFile: string;
+}
+
+const plainDetail = (failure: GateFailure): string => failure.detail;
+const parts = (entry: CorrectionEntry) => ({ errorKind: entry.error_kind, errorDetail: entry.error_detail });
 
 /** The only place that decides which agent-correctable failures get a correction turn. */
 export const CORRECTION_POLICY: Readonly<Record<CorrectionKind, CorrectionRule>> = {
   response_contract: {
     budget: 1, contract: "full", turnKind: "response_correction",
-    event: "response.contract_invalid", failureReason: "response_contract_invalid", keepQuestionFile: false,
+    event: "response.contract_invalid", failureReason: "response_contract_invalid", keepFile: false,
+    render: (entry) => renderResponseCorrection(parts(entry)), detail: plainDetail,
   },
   stage_output: {
     budget: 1, contract: "reminder", turnKind: "output_correction",
-    event: "stage.output_missing", failureReason: "stage_output_missing", keepQuestionFile: false,
+    event: "stage.output_missing", failureReason: "stage_output_missing", keepFile: false,
+    render: (entry, files) => renderOutputCorrection({ ...parts(entry), handoffFile: files.protocol >= 3 ? files.handoffFile : null }),
+    detail: plainDetail,
   },
   question_file: {
     budget: 1, contract: "reminder", turnKind: "correction",
-    event: "question.file_invalid", failureReason: "question_file_invalid", keepQuestionFile: true,
+    event: "question.file_invalid", failureReason: "question_file_invalid", keepFile: true,
+    render: (entry, files) => renderQuestionCorrection({ questionFile: files.questionFile, ...parts(entry) }),
+    detail: (failure, files) => `The response said status: question, but the question request file is unusable (${failure.errorKind}): ${failure.detail}. ` +
+      `File: ${files.questionFile}. The agent had one correction turn. Run \`migent session continue\` to rerun the stage.`,
+  },
+  handoff: {
+    budget: 1, contract: "full", turnKind: "handoff_correction",
+    event: "handoff.file_invalid", failureReason: "handoff_file_invalid", keepFile: true,
+    render: (entry, files) => renderHandoffCorrection({ handoffFile: files.handoffFile, ...parts(entry) }),
+    detail: (failure, files) => `The stage handoff file is unusable (${failure.errorKind}): ${failure.detail}. ` +
+      `File: ${files.handoffFile}. The agent had one correction turn. Run \`migent session continue\` to rerun the stage.`,
   },
 };
 
@@ -43,6 +72,7 @@ export interface GateFailure {
 
 /** Map a gate error to a correctable failure, or null when the agent cannot fix it. */
 export function classifyGateError(error: unknown): GateFailure | null {
+  if (error instanceof HandoffFileError) return { kind: "handoff", errorKind: error.kind, detail: error.detail };
   if (error instanceof QuestionFileError) return { kind: "question_file", errorKind: error.kind, detail: error.detail };
   if (error instanceof ResponseContractError) return { kind: "response_contract", errorKind: "contract", detail: error.message };
   return null;

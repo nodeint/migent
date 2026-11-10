@@ -686,3 +686,692 @@ Fix the verify failure above, then report again.
 Write the artifact as \`make.md\` in the artifacts directory.",
 }
 `;
+
+exports[`protocol 3 prompt kinds under native resume, history replay and resume_from 1`] = `
+{
+  "first turn (resume_from) / native": "# Migent workflow stage
+
+## Response contract
+
+Write one JSON document to the handoff file (see Execution) before you finish. Migent reads only that file for the stage result. The response body is a free-form report for humans.
+
+\`\`\`json
+{"schema_version":1,"status":"complete","summary":"One-line report."}
+{"schema_version":1,"status":"blocked","blocker":"What stops you."}
+\`\`\`
+
+Each line above is a separate example; write exactly one document. \`status\` is complete | blocked.
+
+| Status | Meaning |
+| :--- | :--- |
+| \`complete\` | The stage's work is finished, artifact written. \`summary\` is optional. |
+| \`blocked\` | An obstacle you cannot resolve in this turn. \`blocker\` is required. |
+
+## Stage: again (role: worker)
+
+## Upstream artifacts
+
+- make: \`<ROOT>/.migent/sessions/s1/executions/e1/artifacts/make.md\`
+- make verify report: \`<ROOT>/.migent/sessions/s1/executions/e1/artifacts/verify.md\`
+
+## Execution
+
+- Task: \`<SESSION>/task.md\`
+- Session dir: \`<SESSION>\` (shared session files)
+- Handoff file: \`<HANDOFF>\`
+- Artifacts: \`<ART>\`
+
+## Do
+
+Read the task, then carry out the stage.
+Write the artifact as \`again.md\` in the artifacts directory.",
+  "first turn (resume_from) / replay": "user: (earlier turn)
+
+assistant: (earlier response)
+
+user: # Migent workflow stage
+
+## Response contract
+
+Write one JSON document to the handoff file (see Execution) before you finish. Migent reads only that file for the stage result. The response body is a free-form report for humans.
+
+\`\`\`json
+{"schema_version":1,"status":"complete","summary":"One-line report."}
+{"schema_version":1,"status":"blocked","blocker":"What stops you."}
+\`\`\`
+
+Each line above is a separate example; write exactly one document. \`status\` is complete | blocked.
+
+| Status | Meaning |
+| :--- | :--- |
+| \`complete\` | The stage's work is finished, artifact written. \`summary\` is optional. |
+| \`blocked\` | An obstacle you cannot resolve in this turn. \`blocker\` is required. |
+
+## Stage: again (role: worker)
+
+## Upstream artifacts
+
+- make: \`<ROOT>/.migent/sessions/s1/executions/e1/artifacts/make.md\`
+- make verify report: \`<ROOT>/.migent/sessions/s1/executions/e1/artifacts/verify.md\`
+
+## Execution
+
+- Task: \`<SESSION>/task.md\`
+- Session dir: \`<SESSION>\` (shared session files)
+- Handoff file: \`<HANDOFF>\`
+- Artifacts: \`<ART>\`
+
+## Do
+
+Read the task, then carry out the stage.
+Write the artifact as \`again.md\` in the artifacts directory.",
+  "first turn / native": "# Migent workflow stage
+
+## Response contract
+
+Write one JSON document to the handoff file (see Execution) before you finish. Migent reads only that file for the stage result. The response body is a free-form report for humans.
+
+\`\`\`json
+{"schema_version":1,"status":"complete","summary":"One-line report."}
+{"schema_version":1,"status":"blocked","blocker":"What stops you."}
+{"schema_version":1,"status":"question","questions":[{"question":"Which option?","context":"Why you need to know.","selection":"single","recommended":["A"],"options":[{"label":"First choice","description":"Optional detail."},{"label":"Second choice"}]}]}
+\`\`\`
+
+Each line above is a separate example; write exactly one document. \`status\` is complete | question | blocked. \`selection\` is \`single\` or \`multiple\`.
+
+| Status | Meaning |
+| :--- | :--- |
+| \`complete\` | The stage's work is finished, artifact written. \`summary\` is optional. |
+| \`question\` | You need a human answer to continue. |
+| \`blocked\` | An obstacle you cannot resolve in this turn. \`blocker\` is required. |
+
+## Asking questions
+
+Use \`status: question\` in the handoff file. Keep choices out of the report body.
+
+- Each question needs 2–26 options.
+- Omit IDs: Migent letters options A, B, C… and numbers questions 1, 2, 3… in order.
+- Optional: \`description\` on an option; \`recommended\` on a question, a list of option letters (at most one for \`single\`).
+- Free-text answers are always allowed.
+- Several questions are allowed; all must be answered before the stage continues.
+- Present choices neutrally. Never decide on the human's behalf.
+
+## Stage: make (role: worker)
+
+### Verify
+
+After \`status: complete\`, Migent runs these commands in order. Completion counts only if all exit 0; otherwise you get the report and fix it here.
+
+- \`check-one\`
+- \`check-two\`
+
+## Execution
+
+- Task: \`<SESSION>/task.md\`
+- Session dir: \`<SESSION>\` (shared session files)
+- Handoff file: \`<HANDOFF>\`
+- Artifacts: \`<ART>\`
+
+## Do
+
+Read the task, then carry out the stage.
+Write the artifact as \`make.md\` in the artifacts directory.",
+  "first turn / replay": "user: (earlier turn)
+
+assistant: (earlier response)
+
+user: # Migent workflow stage
+
+## Response contract
+
+Write one JSON document to the handoff file (see Execution) before you finish. Migent reads only that file for the stage result. The response body is a free-form report for humans.
+
+\`\`\`json
+{"schema_version":1,"status":"complete","summary":"One-line report."}
+{"schema_version":1,"status":"blocked","blocker":"What stops you."}
+{"schema_version":1,"status":"question","questions":[{"question":"Which option?","context":"Why you need to know.","selection":"single","recommended":["A"],"options":[{"label":"First choice","description":"Optional detail."},{"label":"Second choice"}]}]}
+\`\`\`
+
+Each line above is a separate example; write exactly one document. \`status\` is complete | question | blocked. \`selection\` is \`single\` or \`multiple\`.
+
+| Status | Meaning |
+| :--- | :--- |
+| \`complete\` | The stage's work is finished, artifact written. \`summary\` is optional. |
+| \`question\` | You need a human answer to continue. |
+| \`blocked\` | An obstacle you cannot resolve in this turn. \`blocker\` is required. |
+
+## Asking questions
+
+Use \`status: question\` in the handoff file. Keep choices out of the report body.
+
+- Each question needs 2–26 options.
+- Omit IDs: Migent letters options A, B, C… and numbers questions 1, 2, 3… in order.
+- Optional: \`description\` on an option; \`recommended\` on a question, a list of option letters (at most one for \`single\`).
+- Free-text answers are always allowed.
+- Several questions are allowed; all must be answered before the stage continues.
+- Present choices neutrally. Never decide on the human's behalf.
+
+## Stage: make (role: worker)
+
+### Verify
+
+After \`status: complete\`, Migent runs these commands in order. Completion counts only if all exit 0; otherwise you get the report and fix it here.
+
+- \`check-one\`
+- \`check-two\`
+
+## Execution
+
+- Task: \`<SESSION>/task.md\`
+- Session dir: \`<SESSION>\` (shared session files)
+- Handoff file: \`<HANDOFF>\`
+- Artifacts: \`<ART>\`
+
+## Do
+
+Read the task, then carry out the stage.
+Write the artifact as \`make.md\` in the artifacts directory.",
+  "re-entry (resume_from) / native": "# Migent workflow stage
+
+## Response contract
+
+Write one JSON document to the handoff file (see Execution) before you finish. Migent reads only that file for the stage result. The response body is a free-form report for humans.
+
+\`\`\`json
+{"schema_version":1,"status":"complete","summary":"One-line report."}
+{"schema_version":1,"status":"blocked","blocker":"What stops you."}
+\`\`\`
+
+Each line above is a separate example; write exactly one document. \`status\` is complete | blocked.
+
+| Status | Meaning |
+| :--- | :--- |
+| \`complete\` | The stage's work is finished, artifact written. \`summary\` is optional. |
+| \`blocked\` | An obstacle you cannot resolve in this turn. \`blocker\` is required. |
+
+## Continue stage
+
+This stage runs again.
+
+## Upstream artifacts
+
+- make: \`<ROOT>/.migent/sessions/s1/executions/e1/artifacts/make.md\`
+- make verify report: \`<ROOT>/.migent/sessions/s1/executions/e1/artifacts/verify.md\`
+
+## Execution
+
+- Task: \`<SESSION>/task.md\`
+- Session dir: \`<SESSION>\` (shared session files)
+- Handoff file: \`<HANDOFF>\`
+- Artifacts: \`<ART>\`
+
+## Do
+
+Read the task, then continue the stage with the context above.
+Write the artifact as \`again.md\` in the artifacts directory.",
+  "re-entry (resume_from) / replay": "user: (earlier turn)
+
+assistant: (earlier response)
+
+user: # Migent workflow stage
+
+## Response contract
+
+Write one JSON document to the handoff file (see Execution) before you finish. Migent reads only that file for the stage result. The response body is a free-form report for humans.
+
+\`\`\`json
+{"schema_version":1,"status":"complete","summary":"One-line report."}
+{"schema_version":1,"status":"blocked","blocker":"What stops you."}
+\`\`\`
+
+Each line above is a separate example; write exactly one document. \`status\` is complete | blocked.
+
+| Status | Meaning |
+| :--- | :--- |
+| \`complete\` | The stage's work is finished, artifact written. \`summary\` is optional. |
+| \`blocked\` | An obstacle you cannot resolve in this turn. \`blocker\` is required. |
+
+## Continue stage
+
+This stage runs again.
+
+## Upstream artifacts
+
+- make: \`<ROOT>/.migent/sessions/s1/executions/e1/artifacts/make.md\`
+- make verify report: \`<ROOT>/.migent/sessions/s1/executions/e1/artifacts/verify.md\`
+
+## Execution
+
+- Task: \`<SESSION>/task.md\`
+- Session dir: \`<SESSION>\` (shared session files)
+- Handoff file: \`<HANDOFF>\`
+- Artifacts: \`<ART>\`
+
+## Do
+
+Read the task, then continue the stage with the context above.
+Write the artifact as \`again.md\` in the artifacts directory.",
+  "re-entry after revise / native": "# Migent workflow stage
+
+## Response contract
+
+Write one JSON document to the handoff file (see Execution) before you finish. Migent reads only that file for the stage result. The response body is a free-form report for humans.
+
+\`\`\`json
+{"schema_version":1,"status":"complete","summary":"One-line report."}
+{"schema_version":1,"status":"blocked","blocker":"What stops you."}
+{"schema_version":1,"status":"question","questions":[{"question":"Which option?","context":"Why you need to know.","selection":"single","recommended":["A"],"options":[{"label":"First choice","description":"Optional detail."},{"label":"Second choice"}]}]}
+\`\`\`
+
+Each line above is a separate example; write exactly one document. \`status\` is complete | question | blocked. \`selection\` is \`single\` or \`multiple\`.
+
+| Status | Meaning |
+| :--- | :--- |
+| \`complete\` | The stage's work is finished, artifact written. \`summary\` is optional. |
+| \`question\` | You need a human answer to continue. |
+| \`blocked\` | An obstacle you cannot resolve in this turn. \`blocker\` is required. |
+
+## Asking questions
+
+Use \`status: question\` in the handoff file. Keep choices out of the report body.
+
+- Each question needs 2–26 options.
+- Omit IDs: Migent letters options A, B, C… and numbers questions 1, 2, 3… in order.
+- Optional: \`description\` on an option; \`recommended\` on a question, a list of option letters (at most one for \`single\`).
+- Free-text answers are always allowed.
+- Several questions are allowed; all must be answered before the stage continues.
+- Present choices neutrally. Never decide on the human's behalf.
+
+## Continue stage
+
+This stage runs again. Your previous response in this stage: \`<ROOT>/.migent/sessions/s1/executions/e1/response.md\`
+
+## Routing decision
+
+Read these responses and use their decision and feedback when working on this stage.
+
+- check (\`revise\`): \`<ROOT>/.migent/sessions/s1/executions/e2/response.md\`
+- Your previous artifact: \`<ROOT>/.migent/sessions/s1/executions/e1/artifacts/make.md\`
+
+## Execution
+
+- Task: \`<SESSION>/task.md\`
+- Session dir: \`<SESSION>\` (shared session files)
+- Handoff file: \`<HANDOFF>\`
+- Artifacts: \`<ART>\`
+
+## Do
+
+Read the task, then continue the stage with the context above.
+Write the artifact as \`make.md\` in the artifacts directory.",
+  "re-entry after revise / replay": "user: (earlier turn)
+
+assistant: (earlier response)
+
+user: # Migent workflow stage
+
+## Response contract
+
+Write one JSON document to the handoff file (see Execution) before you finish. Migent reads only that file for the stage result. The response body is a free-form report for humans.
+
+\`\`\`json
+{"schema_version":1,"status":"complete","summary":"One-line report."}
+{"schema_version":1,"status":"blocked","blocker":"What stops you."}
+{"schema_version":1,"status":"question","questions":[{"question":"Which option?","context":"Why you need to know.","selection":"single","recommended":["A"],"options":[{"label":"First choice","description":"Optional detail."},{"label":"Second choice"}]}]}
+\`\`\`
+
+Each line above is a separate example; write exactly one document. \`status\` is complete | question | blocked. \`selection\` is \`single\` or \`multiple\`.
+
+| Status | Meaning |
+| :--- | :--- |
+| \`complete\` | The stage's work is finished, artifact written. \`summary\` is optional. |
+| \`question\` | You need a human answer to continue. |
+| \`blocked\` | An obstacle you cannot resolve in this turn. \`blocker\` is required. |
+
+## Asking questions
+
+Use \`status: question\` in the handoff file. Keep choices out of the report body.
+
+- Each question needs 2–26 options.
+- Omit IDs: Migent letters options A, B, C… and numbers questions 1, 2, 3… in order.
+- Optional: \`description\` on an option; \`recommended\` on a question, a list of option letters (at most one for \`single\`).
+- Free-text answers are always allowed.
+- Several questions are allowed; all must be answered before the stage continues.
+- Present choices neutrally. Never decide on the human's behalf.
+
+## Continue stage
+
+This stage runs again. Your previous response in this stage: \`<ROOT>/.migent/sessions/s1/executions/e1/response.md\`
+
+## Routing decision
+
+Read these responses and use their decision and feedback when working on this stage.
+
+- check (\`revise\`): \`<ROOT>/.migent/sessions/s1/executions/e2/response.md\`
+- Your previous artifact: \`<ROOT>/.migent/sessions/s1/executions/e1/artifacts/make.md\`
+
+## Execution
+
+- Task: \`<SESSION>/task.md\`
+- Session dir: \`<SESSION>\` (shared session files)
+- Handoff file: \`<HANDOFF>\`
+- Artifacts: \`<ART>\`
+
+## Do
+
+Read the task, then continue the stage with the context above.
+Write the artifact as \`make.md\` in the artifacts directory.",
+  "reply to cancelled stage / native": "# Migent workflow stage
+
+## Response contract
+
+Write one JSON document to the handoff file (see Execution) before you finish. Migent reads only that file for the stage result. The response body is a free-form report for humans.
+
+\`\`\`json
+{"schema_version":1,"status":"complete","summary":"One-line report."}
+{"schema_version":1,"status":"blocked","blocker":"What stops you."}
+{"schema_version":1,"status":"question","questions":[{"question":"Which option?","context":"Why you need to know.","selection":"single","recommended":["A"],"options":[{"label":"First choice","description":"Optional detail."},{"label":"Second choice"}]}]}
+\`\`\`
+
+Each line above is a separate example; write exactly one document. \`status\` is complete | question | blocked. \`selection\` is \`single\` or \`multiple\`.
+
+| Status | Meaning |
+| :--- | :--- |
+| \`complete\` | The stage's work is finished, artifact written. \`summary\` is optional. |
+| \`question\` | You need a human answer to continue. |
+| \`blocked\` | An obstacle you cannot resolve in this turn. \`blocker\` is required. |
+
+## Asking questions
+
+Use \`status: question\` in the handoff file. Keep choices out of the report body.
+
+- Each question needs 2–26 options.
+- Omit IDs: Migent letters options A, B, C… and numbers questions 1, 2, 3… in order.
+- Optional: \`description\` on an option; \`recommended\` on a question, a list of option letters (at most one for \`single\`).
+- Free-text answers are always allowed.
+- Several questions are allowed; all must be answered before the stage continues.
+- Present choices neutrally. Never decide on the human's behalf.
+
+## Human reply
+
+Your previous turn was stopped by the human before it finished. Their message:
+
+go on
+
+## Execution
+
+- Task: \`<SESSION>/task.md\`
+- Session dir: \`<SESSION>\` (shared session files)
+- Handoff file: \`<HANDOFF>\`
+- Artifacts: \`<ART>\`
+
+## Do
+
+Continue the stage with the human reply above.
+Write the artifact as \`make.md\` in the artifacts directory.",
+  "reply to cancelled stage / replay": "user: (earlier turn)
+
+assistant: (earlier response)
+
+user: # Migent workflow stage
+
+## Response contract
+
+Write one JSON document to the handoff file (see Execution) before you finish. Migent reads only that file for the stage result. The response body is a free-form report for humans.
+
+\`\`\`json
+{"schema_version":1,"status":"complete","summary":"One-line report."}
+{"schema_version":1,"status":"blocked","blocker":"What stops you."}
+{"schema_version":1,"status":"question","questions":[{"question":"Which option?","context":"Why you need to know.","selection":"single","recommended":["A"],"options":[{"label":"First choice","description":"Optional detail."},{"label":"Second choice"}]}]}
+\`\`\`
+
+Each line above is a separate example; write exactly one document. \`status\` is complete | question | blocked. \`selection\` is \`single\` or \`multiple\`.
+
+| Status | Meaning |
+| :--- | :--- |
+| \`complete\` | The stage's work is finished, artifact written. \`summary\` is optional. |
+| \`question\` | You need a human answer to continue. |
+| \`blocked\` | An obstacle you cannot resolve in this turn. \`blocker\` is required. |
+
+## Asking questions
+
+Use \`status: question\` in the handoff file. Keep choices out of the report body.
+
+- Each question needs 2–26 options.
+- Omit IDs: Migent letters options A, B, C… and numbers questions 1, 2, 3… in order.
+- Optional: \`description\` on an option; \`recommended\` on a question, a list of option letters (at most one for \`single\`).
+- Free-text answers are always allowed.
+- Several questions are allowed; all must be answered before the stage continues.
+- Present choices neutrally. Never decide on the human's behalf.
+
+## Human reply
+
+Your previous turn was stopped by the human before it finished. Their message:
+
+go on
+
+## Execution
+
+- Task: \`<SESSION>/task.md\`
+- Session dir: \`<SESSION>\` (shared session files)
+- Handoff file: \`<HANDOFF>\`
+- Artifacts: \`<ART>\`
+
+## Do
+
+Continue the stage with the human reply above.
+Write the artifact as \`make.md\` in the artifacts directory.",
+  "reply to human answer / native": "# Migent workflow stage
+
+## Response contract
+
+Write one JSON document to the handoff file (see Execution) before you finish. Migent reads only that file for the stage result. The response body is a free-form report for humans.
+
+\`\`\`json
+{"schema_version":1,"status":"complete","summary":"One-line report."}
+{"schema_version":1,"status":"blocked","blocker":"What stops you."}
+{"schema_version":1,"status":"question","questions":[{"question":"Which option?","context":"Why you need to know.","selection":"single","recommended":["A"],"options":[{"label":"First choice","description":"Optional detail."},{"label":"Second choice"}]}]}
+\`\`\`
+
+Each line above is a separate example; write exactly one document. \`status\` is complete | question | blocked. \`selection\` is \`single\` or \`multiple\`.
+
+| Status | Meaning |
+| :--- | :--- |
+| \`complete\` | The stage's work is finished, artifact written. \`summary\` is optional. |
+| \`question\` | You need a human answer to continue. |
+| \`blocked\` | An obstacle you cannot resolve in this turn. \`blocker\` is required. |
+
+## Asking questions
+
+Use \`status: question\` in the handoff file. Keep choices out of the report body.
+
+- Each question needs 2–26 options.
+- Omit IDs: Migent letters options A, B, C… and numbers questions 1, 2, 3… in order.
+- Optional: \`description\` on an option; \`recommended\` on a question, a list of option letters (at most one for \`single\`).
+- Free-text answers are always allowed.
+- Several questions are allowed; all must be answered before the stage continues.
+- Present choices neutrally. Never decide on the human's behalf.
+
+## Human answers
+
+Answers to your latest questions.
+
+1. Pick one? (single)
+   - Selected: A. Yes
+
+## Execution
+
+- Task: \`<SESSION>/task.md\`
+- Session dir: \`<SESSION>\` (shared session files)
+- Handoff file: \`<HANDOFF>\`
+- Artifacts: \`<ART>\`
+
+## Do
+
+Continue the stage using these answers.
+Write the artifact as \`make.md\` in the artifacts directory.",
+  "reply to human answer / replay": "user: (earlier turn)
+
+assistant: (earlier response)
+
+user: # Migent workflow stage
+
+## Response contract
+
+Write one JSON document to the handoff file (see Execution) before you finish. Migent reads only that file for the stage result. The response body is a free-form report for humans.
+
+\`\`\`json
+{"schema_version":1,"status":"complete","summary":"One-line report."}
+{"schema_version":1,"status":"blocked","blocker":"What stops you."}
+{"schema_version":1,"status":"question","questions":[{"question":"Which option?","context":"Why you need to know.","selection":"single","recommended":["A"],"options":[{"label":"First choice","description":"Optional detail."},{"label":"Second choice"}]}]}
+\`\`\`
+
+Each line above is a separate example; write exactly one document. \`status\` is complete | question | blocked. \`selection\` is \`single\` or \`multiple\`.
+
+| Status | Meaning |
+| :--- | :--- |
+| \`complete\` | The stage's work is finished, artifact written. \`summary\` is optional. |
+| \`question\` | You need a human answer to continue. |
+| \`blocked\` | An obstacle you cannot resolve in this turn. \`blocker\` is required. |
+
+## Asking questions
+
+Use \`status: question\` in the handoff file. Keep choices out of the report body.
+
+- Each question needs 2–26 options.
+- Omit IDs: Migent letters options A, B, C… and numbers questions 1, 2, 3… in order.
+- Optional: \`description\` on an option; \`recommended\` on a question, a list of option letters (at most one for \`single\`).
+- Free-text answers are always allowed.
+- Several questions are allowed; all must be answered before the stage continues.
+- Present choices neutrally. Never decide on the human's behalf.
+
+## Human answers
+
+Answers to your latest questions.
+
+1. Pick one? (single)
+   - Selected: A. Yes
+
+## Execution
+
+- Task: \`<SESSION>/task.md\`
+- Session dir: \`<SESSION>\` (shared session files)
+- Handoff file: \`<HANDOFF>\`
+- Artifacts: \`<ART>\`
+
+## Do
+
+Continue the stage using these answers.
+Write the artifact as \`make.md\` in the artifacts directory.",
+  "verify repair / native": "# Migent workflow stage
+
+## Response contract
+
+Write one JSON document to the handoff file (see Execution) before you finish. Migent reads only that file for the stage result. The response body is a free-form report for humans.
+
+\`\`\`json
+{"schema_version":1,"status":"complete","summary":"One-line report."}
+{"schema_version":1,"status":"blocked","blocker":"What stops you."}
+{"schema_version":1,"status":"question","questions":[{"question":"Which option?","context":"Why you need to know.","selection":"single","recommended":["A"],"options":[{"label":"First choice","description":"Optional detail."},{"label":"Second choice"}]}]}
+\`\`\`
+
+Each line above is a separate example; write exactly one document. \`status\` is complete | question | blocked. \`selection\` is \`single\` or \`multiple\`.
+
+| Status | Meaning |
+| :--- | :--- |
+| \`complete\` | The stage's work is finished, artifact written. \`summary\` is optional. |
+| \`question\` | You need a human answer to continue. |
+| \`blocked\` | An obstacle you cannot resolve in this turn. \`blocker\` is required. |
+
+## Asking questions
+
+Use \`status: question\` in the handoff file. Keep choices out of the report body.
+
+- Each question needs 2–26 options.
+- Omit IDs: Migent letters options A, B, C… and numbers questions 1, 2, 3… in order.
+- Optional: \`description\` on an option; \`recommended\` on a question, a list of option letters (at most one for \`single\`).
+- Free-text answers are always allowed.
+- Several questions are allowed; all must be answered before the stage continues.
+- Present choices neutrally. Never decide on the human's behalf.
+
+## Verify failed
+
+1 of 3 red runs.
+
+- Stage artifact: \`<ROOT>/.migent/sessions/s1/make.md\` (update it if your fix changes it)
+
+### Report
+
+check-one failed
+
+
+## Execution
+
+- Task: \`<SESSION>/task.md\`
+- Session dir: \`<SESSION>\` (shared session files)
+- Handoff file: \`<HANDOFF>\`
+- Artifacts: \`<ART>\`
+
+## Do
+
+Fix the verify failure above, then rewrite the handoff file.
+Write the artifact as \`make.md\` in the artifacts directory.",
+  "verify repair / replay": "user: (earlier turn)
+
+assistant: (earlier response)
+
+user: # Migent workflow stage
+
+## Response contract
+
+Write one JSON document to the handoff file (see Execution) before you finish. Migent reads only that file for the stage result. The response body is a free-form report for humans.
+
+\`\`\`json
+{"schema_version":1,"status":"complete","summary":"One-line report."}
+{"schema_version":1,"status":"blocked","blocker":"What stops you."}
+{"schema_version":1,"status":"question","questions":[{"question":"Which option?","context":"Why you need to know.","selection":"single","recommended":["A"],"options":[{"label":"First choice","description":"Optional detail."},{"label":"Second choice"}]}]}
+\`\`\`
+
+Each line above is a separate example; write exactly one document. \`status\` is complete | question | blocked. \`selection\` is \`single\` or \`multiple\`.
+
+| Status | Meaning |
+| :--- | :--- |
+| \`complete\` | The stage's work is finished, artifact written. \`summary\` is optional. |
+| \`question\` | You need a human answer to continue. |
+| \`blocked\` | An obstacle you cannot resolve in this turn. \`blocker\` is required. |
+
+## Asking questions
+
+Use \`status: question\` in the handoff file. Keep choices out of the report body.
+
+- Each question needs 2–26 options.
+- Omit IDs: Migent letters options A, B, C… and numbers questions 1, 2, 3… in order.
+- Optional: \`description\` on an option; \`recommended\` on a question, a list of option letters (at most one for \`single\`).
+- Free-text answers are always allowed.
+- Several questions are allowed; all must be answered before the stage continues.
+- Present choices neutrally. Never decide on the human's behalf.
+
+## Verify failed
+
+1 of 3 red runs.
+
+- Stage artifact: \`<ROOT>/.migent/sessions/s1/make.md\` (update it if your fix changes it)
+
+### Report
+
+check-one failed
+
+
+## Execution
+
+- Task: \`<SESSION>/task.md\`
+- Session dir: \`<SESSION>\` (shared session files)
+- Handoff file: \`<HANDOFF>\`
+- Artifacts: \`<ART>\`
+
+## Do
+
+Fix the verify failure above, then rewrite the handoff file.
+Write the artifact as \`make.md\` in the artifacts directory.",
+}
+`;

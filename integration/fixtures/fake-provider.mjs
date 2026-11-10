@@ -150,10 +150,29 @@ function recordInvocation(extra) {
   appendFileSync(log, `${JSON.stringify({ provider, argv: [provider, ...args], ...extra })}\n`, "utf8");
 }
 
+// Protocol 3: the stage result is the handoff file the prompt names. Mirrors a status-header reply.
+function writeHandoff(prompt, text) {
+  const target = [...prompt.matchAll(/^- Handoff file: `(.+)`$/gm)].at(-1)?.[1];
+  if (!target) return;
+  const headers = new Map();
+  for (const line of String(text).split(/\r\n|\n|\r/)) {
+    const at = line.indexOf(":");
+    if (line.trim() === "" || at <= 0) break;
+    headers.set(line.slice(0, at).trim().toLowerCase(), line.slice(at + 1).trim());
+  }
+  const status = headers.get("status");
+  if (status !== "complete" && status !== "blocked") return;
+  const document = { schema_version: 1, status };
+  if (status === "blocked") document.blocker = headers.get("blocker") ?? "";
+  else if (headers.get("decision")) document.decision = headers.get("decision");
+  mkdirSync(path.dirname(target), { recursive: true });
+  writeFileSync(target, JSON.stringify(document), "utf8");
+}
+
 function responseText(prompt, step) {
   if ("text" in step) return String(step.text);
   if (process.env.MIGENT_FAKE_OUTCOME === "invalid") return "not a status header";
-  if (prompt.includes("decision: approved|revise")) return "status: complete\ndecision: approved\n\nok";
+  if (prompt.includes("decision: approved|revise") || prompt.includes("`decision` is one of approved|revise.")) return "status: complete\ndecision: approved\n\nok";
   return "status: complete\n\nready";
 }
 
@@ -197,6 +216,7 @@ function codex(prompt, step) {
   const exitCode = Number(step.exit || 0);
   if (exitCode) process.exit(exitCode);
   const text = responseText(prompt, step);
+  writeHandoff(prompt, text);
   const fileText = "file_text" in step ? step.file_text : text;
   const stdoutText = "stdout_text" in step ? step.stdout_text : text;
   const lastMessage = argAfter("--output-last-message");
@@ -210,6 +230,7 @@ function grok(prompt, step) {
   const exitCode = Number(step.exit || 0);
   if (exitCode) process.exit(exitCode);
   const text = responseText(prompt, step);
+  writeHandoff(prompt, text);
   const events = step.events || "text";
   if (events === "error") {
     emit({ type: "error", message: step.message || "provider failed" });

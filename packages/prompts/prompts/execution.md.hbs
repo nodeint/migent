@@ -3,8 +3,9 @@
 ## Execution
 {{#if taskFile}}
 - Task: `{{taskFile}}`
-- Session dir: `{{sessionDirectory}}` (shared session files){{/if}}{{#if canAsk}}
-- Question file: `{{questionFile}}`{{/if}}{{#if artifactName}}
+- Session dir: `{{sessionDirectory}}` (shared session files){{/if}}{{#if handoffContract}}
+- Handoff file: `{{handoffFile}}`{{else}}{{#if canAsk}}
+- Question file: `{{questionFile}}`{{/if}}{{/if}}{{#if artifactName}}
 - Artifacts: `{{artifactDirectory}}`{{/if}}{{#if previousArtifactDirectory}}
 - Previous artifacts: `{{previousArtifactDirectory}}` (continue from these if present){{/if}}{{#if previousVerifyReport}}
 - Previous verify report: `{{previousVerifyReport}}`{{/if}}{{/if}}

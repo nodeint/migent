@@ -13,7 +13,7 @@ import {
   sessionMetrics,
 } from "../src/index.ts";
 import { watchSnapshot } from "../src/query.ts";
-import { ScriptedClient, tempDir, registryOf } from "./support.ts";
+import { ScriptedClient, tempDir, registryOf, writeHandoffFromReply } from "./support.ts";
 
 vi.setConfig({ testTimeout: 60_000 });
 
@@ -170,11 +170,11 @@ test("AC3: an exit-1 reply with no outcome fails with the model text and is logg
   const result = await runStage(provider, workspace, sessionId);
   expect(result.execution_status).toBe("failed");
   const record = execution(workspace, sessionId, result.execution_id);
-  expect(record.error).toBe(text);
+  expect(String(record.error)).toContain("handoff.json");
   expect(readFileSync(responseFile(result.artifact_directory), "utf8")).toContain(text);
   const list = events(workspace, sessionId);
   expect(named(list, "provider.turn_failed")).toHaveLength(2);
-  expect(named(list, "response.contract_invalid")).toHaveLength(1);
+  expect(named(list, "handoff.file_invalid")).toHaveLength(1);
   const anomaly = details(named(list, "provider.exit_anomaly")[0]);
   expect(anomaly.accepted).toBe(false);
   expect(typeof anomaly.reason).toBe("string");
@@ -228,10 +228,10 @@ test("AC4: an unusable question file after an exit-only turn gets the single cor
   ]);
   const result = await runStage(provider, workspace, sessionId);
   expect(provider.calls).toHaveLength(2);
-  expect(result.failure_reason).toBe("question_file_invalid");
+  expect(result.failure_reason).toBe("handoff_file_invalid");
   const anomalies = named(events(workspace, sessionId), "provider.exit_anomaly");
   expect(anomalies).toHaveLength(1);
-  // The reply failed the question-file gate, so the exit anomaly is recorded as rejected.
+  // The reply failed the handoff gate, so the exit anomaly is recorded as rejected.
   expect(details(anomalies[0]).accepted).toBe(false);
   expect(String(details(anomalies[0]).reason)).toContain("invalid_json");
 });
@@ -326,7 +326,8 @@ test("AC9, real claude: an exit-1 reply is one completed verdict and one anomaly
   const { workspace, sessionId } = setup(SOLO);
   const fixture = '{"type":"result","is_error":false,"result":"status: complete\\n\\ndone","session_id":"s1"}\n';
   class ExitOneClaude extends ClaudeCodeClient {
-    override runCommand() {
+    override runCommand(input: Parameters<ClaudeCodeClient["runCommand"]>[0]) {
+      writeHandoffFromReply(input.prompt, "status: complete\n\ndone");
       return { argv: [process.execPath, "-e", "process.stdout.write(process.argv[1]);process.exit(1)", fixture] };
     }
   }

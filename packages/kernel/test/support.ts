@@ -209,6 +209,7 @@ export class FakeClient implements CliClient {
     const payload = JSON.stringify({
       text: `status: complete\necho:${responseInput}`,
       sessionId: "native-session-1",
+      call: this.calls.length - 1,
     });
     return {
       argv: [process.execPath, "-e", "process.stdout.write(process.argv[1])", payload],
@@ -221,11 +222,24 @@ export class FakeClient implements CliClient {
 
   parseResponse(stdout: string): [string, string | null] {
     const data = JSON.parse(stdout) as { text: string; sessionId?: string };
-    return [data.text, data.sessionId ?? null];
+    return [writeHandoffFromReply(this.parsedPrompt(), data.text), data.sessionId ?? null];
+  }
+
+  /** Index of the call whose process produced the output being parsed; concurrent stages interleave. */
+  protected parsingCall: number | null = null;
+
+  protected parsedPrompt(): string {
+    return (this.parsingCall === null ? this.calls.at(-1) : this.calls[this.parsingCall])?.prompt ?? "";
   }
 
   parseRun(stdout: string, lastMessageFile: string): CliRunOutput {
     void lastMessageFile;
+    try {
+      const call = (JSON.parse(stdout) as { call?: unknown }).call;
+      this.parsingCall = typeof call === "number" ? call : null;
+    } catch {
+      this.parsingCall = null;
+    }
     const [text, sessionId] = this.parseResponse(stdout);
     return { text, sessionId, source: "model" };
   }
@@ -270,7 +284,7 @@ export class FakeClient implements CliClient {
 
 export class BlockedClient extends FakeClient {
   override parseResponse(): [string, string | null] {
-    return ["status: blocked\nblocker: missing approved design", "native-session-1"];
+    return [writeHandoffFromReply(this.parsedPrompt(), "status: blocked\nblocker: missing approved design"), "native-session-1"];
   }
 }
 
@@ -301,26 +315,7 @@ export class ScriptedClient extends FakeClient {
     }
     const response = this.responses.shift();
     if (response === undefined) throw new Error("scripted client has no response left");
-    return [this.writeQuestionFile(response), "native-session-1"];
-  }
-
-  /**
-   * `status: question` followed by a JSON body is shorthand: the body goes to the question
-   * request file named in the prompt. `<<FILE>>` splits a report from raw file content.
-   */
-  private writeQuestionFile(response: string): string {
-    const prompt = this.calls.at(-1)?.prompt ?? "";
-    const target = [...prompt.matchAll(/^- Question file: `(.+)`$/gm)].at(-1)?.[1];
-    const marker = "\n<<FILE>>";
-    const split = response.indexOf(marker);
-    if (split >= 0) {
-      if (target) writeFileSync(target, response.slice(split + marker.length), "utf8");
-      return response.slice(0, split);
-    }
-    const head = "status: question\n\n";
-    if (!response.startsWith(head) || !response.slice(head.length).startsWith("{")) return response;
-    if (target) writeFileSync(target, response.slice(head.length), "utf8");
-    return head + "The questions are in the request file.";
+    return [writeHandoffFromReply(this.parsedPrompt(), response), "native-session-1"];
   }
 }
 
@@ -383,4 +378,66 @@ export function writePlanReviewSession(): [string, string] {
 export function repoWorkflowText(workflowId: string): string {
   const fixtures = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "workflows");
   return readFileSync(path.join(fixtures, `${workflowId}.yaml`), "utf8");
+}
+
+/**
+ * Protocol 3 shim: a scripted reply that opens with a status header is also written as the handoff
+ * file the prompt names. `status: question` with a JSON body, or a `<<FILE>>` section, supplies the
+ * questions. Replies without a status header write nothing.
+ */
+export function writeHandoffFromReply(prompt: string, response: string): string {
+  if (!/^- Handoff file: `/m.test(prompt)) return writeQuestionRequestFromReply(prompt, response);
+  const target = [...prompt.matchAll(/^- Handoff file: `(.+)`$/gm)].at(-1)?.[1];
+  const marker = "\n<<FILE>>";
+  const split = response.indexOf(marker);
+  const report = split >= 0 ? response.slice(0, split) : response;
+  const raw = split >= 0 ? response.slice(split + marker.length) : null;
+  if (!target) return report;
+  const headers = new Map<string, string>();
+  for (const line of report.split(/\r\n|\n|\r/)) {
+    const at = line.indexOf(":");
+    if (line.trim() === "" || at <= 0) break;
+    headers.set(line.slice(0, at).trim().toLowerCase(), line.slice(at + 1).trim());
+  }
+  const status = headers.get("status");
+  if (status === undefined && raw === null) return report;
+  const questionHead = "status: question\n\n";
+  let content: string | null = null;
+  if (raw !== null) {
+    try {
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      content = parsed !== null && typeof parsed === "object" && !("status" in parsed) && status === "question"
+        ? JSON.stringify({ ...parsed, status: "question" }) : raw;
+    } catch {
+      content = raw;
+    }
+  } else if (status === "question") {
+    const body = report.startsWith(questionHead) ? report.slice(questionHead.length) : "";
+    if (!body.startsWith("{")) return report;
+    content = JSON.stringify({ ...(JSON.parse(body) as Record<string, unknown>), status: "question" });
+    writeFileSync(target, content, "utf8");
+    return questionHead + "The questions are in the handoff file.";
+  } else if (status === "blocked") {
+    content = JSON.stringify({ schema_version: 1, status, blocker: headers.get("blocker") ?? "" });
+  } else if (status === "complete") {
+    const decision = headers.get("decision");
+    content = JSON.stringify({ schema_version: 1, status, ...(decision ? { decision } : {}) });
+  }
+  if (content !== null) writeFileSync(target, content, "utf8");
+  return report;
+}
+
+/** Protocol 2 shim: `status: question` plus a JSON body, or a `<<FILE>>` section, becomes the question request file. */
+export function writeQuestionRequestFromReply(prompt: string, response: string): string {
+  const target = [...prompt.matchAll(/^- Question file: `(.+)`$/gm)].at(-1)?.[1];
+  const marker = "\n<<FILE>>";
+  const split = response.indexOf(marker);
+  if (split >= 0) {
+    if (target) writeFileSync(target, response.slice(split + marker.length), "utf8");
+    return response.slice(0, split);
+  }
+  const head = "status: question\n\n";
+  if (!response.startsWith(head) || !response.slice(head.length).startsWith("{")) return response;
+  if (target) writeFileSync(target, response.slice(head.length), "utf8");
+  return head + "The questions are in the request file.";
 }

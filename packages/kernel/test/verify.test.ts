@@ -102,7 +102,7 @@ test("red verify repairs in the same execution", async () => {
   expect(provider.calls).toHaveLength(2);
   expect(provider.calls[1]?.newAgentId).toBeNull();
   expect(provider.calls[1]?.prompt).toContain("## Verify failed\n\n1 of 3 red runs.");
-  expect(provider.calls[1]?.prompt).toContain("## Do\n\nFix the verify failure above, then report again.");
+  expect(provider.calls[1]?.prompt).toContain("## Do\n\nFix the verify failure above, then rewrite the handoff file.");
   expect(provider.calls[1]?.prompt).toContain("boom 1");
   expect(existsSync(path.join(result.artifact_directory, "verify.md"))).toBe(true);
   const events = readFileSync(
