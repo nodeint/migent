@@ -197,7 +197,7 @@ test("an accepted exit-only turn leaves a record that says accepted", async () =
 test("a rejected exit leaves the cause in failure.md and no payload in the record", async () => {
   const { workspace, sessionId } = setup();
   const result = await run(
-    new DiagProvider([{ reply: `no header ${PAYLOAD}`, exit: 2, source: "model", stderr: "boom\n" }]),
+    new DiagProvider([{ reply: `no header ${PAYLOAD}`, exit: 2, source: "model", stderr: "boom\n" }, { reply: `no header ${PAYLOAD}`, exit: 2, source: "model", stderr: "boom\n" }]),
     workspace,
     sessionId,
   );

@@ -166,14 +166,15 @@ test("AC2: a provider error with a reply persists nothing and logs no anomaly", 
 test("AC3: an exit-1 reply with no outcome fails with the model text and is logged as rejected", async () => {
   const { workspace, sessionId } = setup(workflowText());
   const text = "I finished but forgot the header";
-  const provider = new ExitProvider([{ reply: text, exit: 1, source: "model" }]);
+  const provider = new ExitProvider([{ reply: text, exit: 1, source: "model" }, { reply: text, exit: 1, source: "model" }]);
   const result = await runStage(provider, workspace, sessionId);
   expect(result.execution_status).toBe("failed");
   const record = execution(workspace, sessionId, result.execution_id);
   expect(record.error).toBe(text);
   expect(readFileSync(responseFile(result.artifact_directory), "utf8")).toContain(text);
   const list = events(workspace, sessionId);
-  expect(named(list, "provider.turn_failed")).toHaveLength(1);
+  expect(named(list, "provider.turn_failed")).toHaveLength(2);
+  expect(named(list, "response.contract_invalid")).toHaveLength(1);
   const anomaly = details(named(list, "provider.exit_anomaly")[0]);
   expect(anomaly.accepted).toBe(false);
   expect(typeof anomaly.reason).toBe("string");
@@ -199,7 +200,7 @@ test("a provider that does not attest its source is never accepted after a faile
 
 test("AC4: a complete reply with a missing artifact is rejected", async () => {
   const { workspace, sessionId } = setup(workflowText());
-  const provider = new ExitProvider([{ reply: OK, artifact: null, exit: 1, source: "model" }]);
+  const provider = new ExitProvider([{ reply: OK, artifact: null, exit: 1, source: "model" }, { reply: OK, artifact: null, exit: 0, source: "model" }]);
   const result = await runStage(provider, workspace, sessionId);
   expect(result.execution_status).toBe("failed");
   const anomaly = details(named(events(workspace, sessionId), "provider.exit_anomaly")[0]);
@@ -230,7 +231,9 @@ test("AC4: an unusable question file after an exit-only turn gets the single cor
   expect(result.failure_reason).toBe("question_file_invalid");
   const anomalies = named(events(workspace, sessionId), "provider.exit_anomaly");
   expect(anomalies).toHaveLength(1);
-  expect(details(anomalies[0]).accepted).toBe(true);
+  // The reply failed the question-file gate, so the exit anomaly is recorded as rejected.
+  expect(details(anomalies[0]).accepted).toBe(false);
+  expect(String(details(anomalies[0]).reason)).toContain("invalid_json");
 });
 
 test("AC9: an accepted exit-only turn followed by a red verify keeps one anomaly and one verdict per turn", async () => {
@@ -363,7 +366,7 @@ test("metrics: an accepted exit-only turn counts once in the execution row and t
 
 test("metrics: a rejected exit-only turn counts in the total and not in the accepted subset", async () => {
   const { workspace, sessionId } = setup(workflowText());
-  await runStage(new ExitProvider([{ reply: "no header", exit: 1, source: "model" }]), workspace, sessionId);
+  await runStage(new ExitProvider([{ reply: "no header", exit: 1, source: "model" }, { reply: "no header", exit: 0, source: "model" }]), workspace, sessionId);
   const metrics = sessionMetrics(workspace, sessionId, {});
   expect(counters(metrics.totals)).toEqual({ total: 1, accepted: 0 });
 });
@@ -404,7 +407,7 @@ test("snapshot: lists the stage's latest anomaly with its diagnostics pointer", 
     sessionId,
   );
   const second = await runStage(
-    new ExitProvider([{ reply: "no header", exit: 2, source: "model" }]),
+    new ExitProvider([{ reply: "no header", exit: 2, source: "model" }, { reply: "no header", exit: 0, source: "model" }]),
     workspace,
     sessionId,
     { resumeExecutionId: first.execution_id },

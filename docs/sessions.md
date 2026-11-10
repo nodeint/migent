@@ -131,8 +131,10 @@ Each execution directory contains:
   `turns/01/commands/MM.log` and does not write a model response.
   `execution.json` for a role stage also records `turns`, `verify` (`runs`,
   `red`, `max_verify`, `last_result`, `last_report`), and `failure_reason`
-  (`verify_exhausted`, or `question_file_invalid` when the question request file
-  stays unusable after one correction turn). A stage with no role records `failure_reason:
+  (`verify_exhausted`, or a correction reason when the agent's fix turn still fails:
+  `response_contract_invalid`, `stage_output_missing`, `question_file_invalid`;
+  see [Workflows](workflows.md#correctable-response-failures)). `corrections` records
+  each granted correction by kind (`turn`, `error_kind`, `error_detail`). A stage with no role records `failure_reason:
   verify_failed` when the list fails.
 - `conversation.json`: client conversation checkpoint used when resuming a
   client session. It stores the client and model, native agent ID, options

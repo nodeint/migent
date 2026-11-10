@@ -32,7 +32,13 @@ import {
   debugEnabled,
   log,
 } from "./runtime.js";
-import { renderProtocolUpdate, renderQuestionCorrection, type TurnKind } from "@nodeint/migent-prompts";
+import {
+  renderOutputCorrection, renderProtocolUpdate, renderQuestionCorrection, renderResponseCorrection, type TurnKind,
+} from "@nodeint/migent-prompts";
+import {
+  CORRECTION_FAILURE_REASONS, CORRECTION_POLICY, classifyGateError, decideCorrection, readCorrectionLedger, ruleForTurn,
+  type CorrectionLedger, type GateFailure,
+} from "./correction-policy.js";
 import { ProviderEventReporter } from "./provider-events.js";
 import { loadFrozenWorkflow } from "./session-freeze.js";
 import { AgentSessionRecord, SessionStore, stringOptions, type ExecutionContext } from "./session-store.js";
@@ -55,7 +61,7 @@ export interface RunResult {
   session_status: string;
   response: string;
   failure_reason: string;
-  /** Readable diagnostic for `question_file_invalid`: the file, the problem and how to recover. Absent otherwise. */
+  /** Readable diagnostic for a correction-policy failure reason: the problem and how to recover. Absent otherwise. */
   failure_detail?: string;
   /** `quota`, `provider`, or empty when the turn was not a provider failure. */
   failure_kind: string;
@@ -84,12 +90,12 @@ export interface RunRequest {
   onExecution?: (executionId: string) => void;
 }
 
-/** Failure reason when the question request file stays invalid after the correction turn. */
-export const QUESTION_FILE_INVALID = "question_file_invalid";
 /** Version of the response contract baked into a saved first prompt. 2 = questions via request file. */
 const RESPONSE_PROTOCOL = 2;
 
-const TURN_KINDS: readonly TurnKind[] = ["start", "continue", "reply", "answers", "repair", "correction"];
+const TURN_KINDS: readonly TurnKind[] = [
+  "start", "continue", "reply", "answers", "repair", "correction", "response_correction", "output_correction",
+];
 
 /** The kind of the execution's latest user turn, as saved in execution.json. */
 function storedTurn(metadata: Record<string, unknown>): TurnKind | null {
@@ -113,22 +119,6 @@ const QUESTION_FILE_NAME = "question-request.json";
 /** Absolute, native path the agent writes questions to. It sits outside `artifacts/`. */
 export function questionRequestPath(context: ExecutionContext): string {
   return path.resolve(context.directory, QUESTION_FILE_NAME);
-}
-
-interface QuestionCorrection {
-  turn: number;
-  error_kind: string;
-  error_detail: string;
-}
-
-function storedCorrection(metadata: Record<string, unknown>): QuestionCorrection | null {
-  const value = metadata.question_correction;
-  if (!isRecord(value) || typeof value.turn !== "number") return null;
-  return {
-    turn: value.turn,
-    error_kind: typeof value.error_kind === "string" ? value.error_kind : "",
-    error_detail: typeof value.error_detail === "string" ? value.error_detail : "",
-  };
 }
 
 export class AgentToolRunner {
@@ -262,7 +252,7 @@ export class AgentToolRunner {
       currentAgentId: agentId,
       currentSession: newSession,
       pendingVerify: null,
-      questionCorrection: null,
+      corrections: {},
     });
   }
 
@@ -301,7 +291,7 @@ export class AgentToolRunner {
     const verifyCommands = stage?.verify ?? [];
     const eventReporter = new ProviderEventReporter(store, context, clientId, model, this.itemProgress);
     const progress = verifyProgress(metadata);
-    const correction = storedCorrection(metadata);
+    const corrections = readCorrectionLedger(metadata);
     const questionFile = questionRequestPath(context);
     const assistants = record.history.filter((item) => item.role === "assistant").length;
     const last = record.history.at(-1);
@@ -314,7 +304,11 @@ export class AgentToolRunner {
       // The first turn is sent as prompt.md, contract included. A later repair turn
       // stores only the repair text, and the loop adds the contract again before sending.
       let currentPrompt: string;
-      if (assistants === 0) {
+      // The saved first prompt applies only while the history holds just that prompt. A correction
+      // queued after an empty reply adds a user message without an assistant one.
+      const userTurns = record.history.filter((item) => item.role === "user").length;
+      const pendingCorrection = ruleForTurn(storedTurn(metadata));
+      if (assistants === 0 && userTurns <= 1) {
         try {
           currentPrompt = readFileSync(path.join(context.directory, "prompt.md"), "utf8");
         } catch {
@@ -330,7 +324,8 @@ export class AgentToolRunner {
         currentPrompt = agentId
           ? last.content
           : flattenHistory(record.history as Array<{ role: string; content: string }>);
-        const contract = agentId && metadata.response_protocol === RESPONSE_PROTOCOL ? "reminder" : "full";
+        const contract = agentId && metadata.response_protocol === RESPONSE_PROTOCOL
+          ? (pendingCorrection?.contract ?? "reminder") : "full";
         currentPrompt = renderProviderPrompt(currentPrompt, { ...sessionPaths(context, sessionId), contract, turn: storedTurn(metadata), decisionValues, decisionInstructions: stage?.decisionInstructions, ask, questionFile, artifactDirectory: context.artifactDirectory, artifactName, artifactFiles: promptArtifactFiles(artifactFiles) });
       }
       return this.driveTurns({
@@ -351,7 +346,7 @@ export class AgentToolRunner {
         verifyCommands,
         maxVerify: stage?.maxVerify ?? 0,
         verifyTimeoutSec: stage?.verifyTimeoutSec ?? null,
-        turn: Math.max(1, assistants + 1),
+        turn: persistedTurn(metadata, Math.max(1, assistants + 1)),
         red: progress.red,
         verifyRuns: progress.runs,
         lastReport: progress.lastReport,
@@ -360,20 +355,22 @@ export class AgentToolRunner {
         currentAgentId: agentId,
         currentSession: null,
         pendingVerify: null,
-        questionCorrection: correction,
+        corrections,
       });
     }
-    const turn = Math.max(1, assistants);
+    const turn = persistedTurn(metadata, Math.max(1, assistants));
     const responseText = savedResponse(context, last);
     let outcome: StageOutcome | null = null;
     let invokeError: string | null = null;
-    let questionError: QuestionFileError | null = null;
+    let gateFailure: GateFailure | null = null;
     try {
       outcome = savedOutcome(store, context, turn, responseText, { required: sessionId !== null, decisionValues, ask, questionFile });
     } catch (error) {
-      if (error instanceof QuestionFileError) questionError = error;
-      else if (error instanceof Error) invokeError = error.message;
-      else throw error;
+      if (error instanceof QuestionFileError) gateFailure = classifyGateError(error);
+      else if (error instanceof Error) {
+        invokeError = error.message;
+        gateFailure = classifyGateError(error);
+      } else throw error;
     }
     return this.driveTurns({
       client,
@@ -401,8 +398,8 @@ export class AgentToolRunner {
       currentPrompt: "",
       currentAgentId: record.agentId,
       currentSession: null,
-      pendingVerify: { responseText, outcome, invokeError, questionError },
-      questionCorrection: correction,
+      pendingVerify: { responseText, outcome, invokeError, gateFailure },
+      corrections,
     });
   }
 
@@ -435,7 +432,7 @@ export class AgentToolRunner {
     let currentAgentId = state.currentAgentId;
     let currentSession = state.currentSession;
     let pendingVerify = state.pendingVerify;
-    let questionCorrection = state.questionCorrection;
+    let corrections: CorrectionLedger = state.corrections;
     const questionFile = questionRequestPath(context);
     let keepQuestionFile = false;
     let responseText = pendingVerify?.responseText ?? "";
@@ -474,8 +471,8 @@ export class AgentToolRunner {
       final_turn: turn,
     });
     const outcomeFields = (): Record<string, unknown> | null => {
-      if (failureReason === QUESTION_FILE_INVALID) {
-        return { ...(extraFields() ?? {}), failure_reason: QUESTION_FILE_INVALID };
+      if (CORRECTION_FAILURE_REASONS.includes(failureReason)) {
+        return { ...(extraFields() ?? {}), failure_reason: failureReason };
       }
       if (classification?.kind !== "quota") return extraFields();
       failureReason = "quota";
@@ -486,15 +483,93 @@ export class AgentToolRunner {
         ...(classification.window ? { quota_window: classification.window } : {}),
       };
     };
+    // Queue one correction turn when the policy grants it. False when the budget for the kind is used.
+    const queueCorrection = (failure: GateFailure): boolean => {
+      const rule = CORRECTION_POLICY[failure.kind];
+      const decision = decideCorrection(failure.kind, corrections, turn);
+      if (decision === "exhausted") return false;
+      // The budget is persisted before the message joins the history, so a stop between the two
+      // writes sends the correction again on resume and never grants a second.
+      if (decision === "correct") {
+        corrections = { ...corrections, [failure.kind]: { turn, error_kind: failure.errorKind, error_detail: failure.detail } };
+        store.saveExecutionProgress(context, record, { corrections });
+        eventReporter.emit(rule.event, `${failure.errorKind}: ${failure.detail}`, {
+          turn, error_kind: failure.errorKind, ...(failure.kind === "question_file" ? { file: questionFile } : {}),
+        });
+      }
+      const used = corrections[failure.kind]!;
+      const message = failure.kind === "question_file"
+        ? renderQuestionCorrection({ questionFile, errorKind: used.error_kind, errorDetail: used.error_detail })
+        : failure.kind === "response_contract"
+          ? renderResponseCorrection({ errorKind: used.error_kind, errorDetail: used.error_detail })
+          : renderOutputCorrection({ errorKind: used.error_kind, errorDetail: used.error_detail });
+      record.history.push({ role: "user", content: message });
+      store.save(record, context);
+      store.saveExecutionProgress(context, record, { turn_kind: rule.turnKind, pending_turn: turn + 1 });
+      const base = record.agentId
+        ? message
+        : flattenHistory(record.history as Array<{ role: string; content: string }>);
+      currentPrompt = renderProviderPrompt(base, { ...sessionPaths(context, sessionId),
+        contract: record.agentId ? rule.contract : "full", turn: rule.turnKind, decisionValues,
+        decisionInstructions: stage?.decisionInstructions, ask, questionFile, artifactDirectory: context.artifactDirectory,
+        artifactName, artifactFiles: promptArtifactFiles(stage === null ? [] : allStageArtifacts(stage)),
+      });
+      turn += 1;
+      currentAgentId = record.agentId;
+      currentSession = null;
+      keepQuestionFile = rule.keepQuestionFile;
+      return true;
+    };
+    // The budget is used: the stage fails with the original error and the kind's reason.
+    const exhaust = (failure: GateFailure): void => {
+      failureReason = CORRECTION_POLICY[failure.kind].failureReason;
+      failureDetail = failure.kind === "question_file" ? questionFailureMessage(failure, questionFile) : failure.detail;
+    };
+    // The artifact and completion-output gates. Fresh turns and resumed saved replies both run them.
+    const checkOutputs = (reply: StageOutcome, gates: Gates | null): GateFailure | null => {
+      if (stage !== null && artifactName && reply.status === "complete") {
+        const missing = stageArtifactsFor(stage, reply.decision ?? null)
+          .filter((item) => item.required && !nonemptyArtifact(path.join(context.artifactDirectory, item.file)))
+          .map((item) => item.file);
+        const detail = `Stage artifact missing or empty: ${missing.join(", ")}.`;
+        if (missing.length > 0) {
+          if (gates) gates.artifact = { state: "failed", reason: detail };
+          return { kind: "stage_output", errorKind: "artifact", detail };
+        }
+        if (gates) gates.artifact = { state: "passed" };
+      }
+      if (isWorkflowV2(frozenDocument(context))) {
+        if (gates) gates.completion_outputs = { state: "not-applicable" };
+        return null;
+      }
+      const missing = store.missingCompletionOutputs(context, reply);
+      if (missing.length > 0) {
+        const detail = `Completion outputs missing or empty: ${missing.join(", ")}.`;
+        if (gates) gates.completion_outputs = { state: "failed", reason: detail };
+        return { kind: "stage_output", errorKind: "completion_outputs", detail };
+      }
+      if (gates) gates.completion_outputs = { state: "passed" };
+      return null;
+    };
     while (true) {
       let invokeError: string | null = null;
-      let questionError: QuestionFileError | null = null;
+      let gateFailure: GateFailure | null = null;
+      let eligible = true;
+      const pendingGate = pendingVerify !== null;
       if (pendingVerify) {
         responseText = pendingVerify.responseText;
         outcome = pendingVerify.outcome;
         invokeError = pendingVerify.invokeError;
-        questionError = pendingVerify.questionError;
+        gateFailure = pendingVerify.gateFailure;
         pendingVerify = null;
+        // A saved reply passes the same output gates a fresh one does before it is accepted.
+        if (invokeError === null && gateFailure === null && outcome !== null) {
+          const bad = checkOutputs(outcome, null);
+          if (bad !== null) {
+            gateFailure = bad;
+            invokeError = bad.detail;
+          }
+        }
       } else {
         // A request file left by an earlier turn must not be read as a new question. The
         // correction turn keeps the invalid file so the agent can repair it.
@@ -548,6 +623,8 @@ export class AgentToolRunner {
         // A non-zero exit alone does not decide the turn. A reply the model wrote still goes
         // through every gate an exit-0 turn passes; the provider's own error text never does.
         const candidate = exitOnly && source === "model" && responseText.trim() !== "";
+        // Only a reply the model wrote can be corrected: no start failure, timeout or provider verdict.
+        eligible = candidate || (classification === null && exitCode === 0 && turnResult.failure === undefined);
         const exitMessage = invokeError;
         let anomalyReason: string | null = null;
         if (candidate) {
@@ -565,8 +642,8 @@ export class AgentToolRunner {
             });
             gates.outcome = { state: "passed", ...(outcome === null ? {} : { status: outcome.status }) };
           } catch (error) {
+            gateFailure = classifyGateError(error);
             if (error instanceof QuestionFileError) {
-              questionError = error;
               gates.outcome = { state: "failed", reason: `question file unusable (${error.kind})` };
             } else if (error instanceof Error) {
               invokeError = error.message;
@@ -578,29 +655,16 @@ export class AgentToolRunner {
         else if (gates.outcome.state !== "not-evaluated" && outcome?.status !== "complete") {
           gates.artifact = { state: "not-applicable" };
         }
-        if (invokeError === null && outcome?.status === "complete" && stage !== null && artifactName) {
-          const missing = stageArtifactsFor(stage, outcome.decision ?? null)
-            .filter((item) => item.required && !nonemptyArtifact(path.join(context.artifactDirectory, item.file)))
-            .map((item) => item.file);
-          if (missing.length > 0) {
-            invokeError = `Stage artifact missing or empty: ${missing.join(", ")}.`;
-            gates.artifact = { state: "failed", reason: invokeError };
-          } else gates.artifact = { state: "passed" };
-        }
-        if (invokeError === null && outcome !== null) {
-          if (isWorkflowV2(frozenDocument(context))) {
-            gates.completion_outputs = { state: "not-applicable" };
-          } else {
-            const missing = store.missingCompletionOutputs(context, outcome);
-            if (missing.length > 0) {
-              invokeError = `Completion outputs missing or empty: ${missing.join(", ")}.`;
-              gates.completion_outputs = { state: "failed", reason: invokeError };
-            } else gates.completion_outputs = { state: "passed" };
+        if (invokeError === null && gateFailure === null && outcome !== null) {
+          const bad = checkOutputs(outcome, gates);
+          if (bad !== null) {
+            gateFailure = bad;
+            invokeError = bad.detail;
           }
         }
-        if (candidate && invokeError !== null) {
+        if (candidate && (invokeError !== null || gateFailure !== null)) {
           // Rejected: the error is the model text itself, the failed gate is the recorded reason.
-          anomalyReason = invokeError;
+          anomalyReason = invokeError ?? `${gateFailure!.errorKind}: ${gateFailure!.detail}`;
           invokeError = responseText;
           turnError = invokeError;
         }
@@ -640,7 +704,7 @@ export class AgentToolRunner {
         }
         const needsVerify =
           verifyCommands.length > 0 && invokeError === null && outcome?.status === "complete";
-        record.status = needsVerify ? "running" : invokeError === null && questionError === null ? "completed" : "failed";
+        record.status = needsVerify ? "running" : invokeError === null && gateFailure === null ? "completed" : "failed";
         // Only a real model reply belongs in the conversation. Error text, and the reply of a
         // turn the provider itself reported as failed, stay out, so a resume cannot replay
         // them as if the model had said them.
@@ -688,46 +752,32 @@ export class AgentToolRunner {
             },
           }));
         }
-        if (questionError !== null) {
-          const next = this.questionRetry(questionError, questionCorrection, turn, state, eventReporter);
-          if (next === null) {
-            invokeError = questionFailureMessage(questionError);
-            failureDetail = invokeError;
-            failureReason = QUESTION_FILE_INVALID;
+        if (gateFailure !== null && eligible) {
+          if (queueCorrection(gateFailure)) continue;
+          exhaust(gateFailure);
+          if (gateFailure.kind === "question_file") {
+            invokeError = failureDetail;
             record.status = "failed";
             store.save(record, context);
             store.saveExecution(context, record, "failed", invokeError, null, false, finalFields(outcomeFields()));
             break;
           }
-          ({ correction: questionCorrection, prompt: currentPrompt } = next);
-          turn += 1;
-          currentAgentId = record.agentId;
-          currentSession = null;
-          keepQuestionFile = true;
-          continue;
         }
         if (!needsVerify || outcome === null) {
           store.saveExecution(context, record, record.status, invokeError, outcome, false, finalFields(outcomeFields()));
           break;
         }
       }
-      if (questionError !== null) {
-        // Resumed from a saved response whose question file was unusable.
-        const next = this.questionRetry(questionError, questionCorrection, turn, state, eventReporter);
-        if (next === null) {
-          failureReason = QUESTION_FILE_INVALID;
-          failureDetail = questionFailureMessage(questionError);
+      if (gateFailure !== null && eligible && pendingGate) {
+        // Resumed from a saved response that failed a gate.
+        if (queueCorrection(gateFailure)) continue;
+        exhaust(gateFailure);
+        if (gateFailure.kind === "question_file") {
           record.status = "failed";
           store.save(record, context);
           store.saveExecution(context, record, "failed", failureDetail, null, false, finalFields(outcomeFields()));
           break;
         }
-        ({ correction: questionCorrection, prompt: currentPrompt } = next);
-        turn += 1;
-        currentAgentId = record.agentId;
-        currentSession = null;
-        keepQuestionFile = true;
-        continue;
       }
       if (invokeError !== null || outcome === null || outcome.status !== "complete" || verifyCommands.length === 0) {
         record.status = invokeError === null && outcome !== null ? "completed" : "failed";
@@ -840,7 +890,8 @@ export class AgentToolRunner {
       );
       record.history.push({ role: "user", content: repair });
       store.save(record, context);
-      store.saveExecutionProgress(context, record, { turn_kind: "repair" });
+      // pending_turn keeps resume from counting a turn short after an empty reply.
+      store.saveExecutionProgress(context, record, { turn_kind: "repair", pending_turn: turn + 1 });
       turn += 1;
       currentAgentId = record.agentId;
       currentSession = null;
@@ -873,45 +924,6 @@ export class AgentToolRunner {
       client: eventReporter.client,
       execution_status: record.status,
     };
-  }
-
-  /**
-   * Decide whether an unusable question file gets the one correction turn. Returns null when the
-   * budget is already used. The budget is persisted before the message joins the history, so a
-   * stop between the two writes still sends the correction on resume and never grants a second.
-   */
-  private questionRetry(
-    error: QuestionFileError,
-    correction: QuestionCorrection | null,
-    turn: number,
-    state: TurnDrive,
-    eventReporter: ProviderEventReporter,
-  ): { correction: QuestionCorrection; prompt: string } | null {
-    const { store, context, record, decisionValues, stage, artifactName, sessionId } = state;
-    if (correction !== null && correction.turn !== turn) return null;
-    const used: QuestionCorrection = correction ?? { turn, error_kind: error.kind, error_detail: error.detail };
-    if (correction === null) {
-      store.saveExecutionProgress(context, record, { question_correction: used });
-      eventReporter.emit("question.file_invalid", `${error.kind}: ${error.detail}`, {
-        turn, error_kind: error.kind, file: error.file,
-      });
-    }
-    const message = renderQuestionCorrection({
-      questionFile: error.file, errorKind: used.error_kind, errorDetail: used.error_detail,
-    });
-    record.history.push({ role: "user", content: message });
-    store.save(record, context);
-    store.saveExecutionProgress(context, record, { turn_kind: "correction" });
-    const ask = stage?.ask ?? (stage === null ? "human" : null);
-    const base = record.agentId
-      ? message
-      : flattenHistory(record.history as Array<{ role: string; content: string }>);
-    const prompt = renderProviderPrompt(base, { ...sessionPaths(context, sessionId),
-      contract: record.agentId ? "reminder" : "full", turn: "correction", decisionValues, decisionInstructions: stage?.decisionInstructions, ask,
-      questionFile: error.file, artifactDirectory: context.artifactDirectory, artifactName,
-      artifactFiles: promptArtifactFiles(stage === null ? [] : allStageArtifacts(stage)),
-    });
-    return { correction: used, prompt };
   }
 
   private carryExhaustedArtifact(
@@ -1189,7 +1201,7 @@ interface PendingVerify {
   responseText: string;
   outcome: StageOutcome | null;
   invokeError: string | null;
-  questionError: QuestionFileError | null;
+  gateFailure: GateFailure | null;
 }
 
 interface TurnDrive {
@@ -1219,12 +1231,21 @@ interface TurnDrive {
   currentAgentId: string | null;
   currentSession: NewSession | null;
   pendingVerify: PendingVerify | null;
-  questionCorrection: QuestionCorrection | null;
+  corrections: CorrectionLedger;
 }
 
-function questionFailureMessage(error: QuestionFileError): string {
-  return `The response said status: question, but the question request file is unusable (${error.kind}): ${error.detail}. ` +
-    `File: ${error.file}. The agent had one correction turn. Run \`migent session continue\` to rerun the stage.`;
+/**
+ * Empty replies leave no assistant message, so the count can fall short of the real turn. A queued
+ * correction saves the turn it runs as; the real turn is never lower than that.
+ */
+function persistedTurn(metadata: Record<string, unknown>, counted: number): number {
+  const saved = metadata.pending_turn;
+  return typeof saved === "number" && saved > counted ? saved : counted;
+}
+
+function questionFailureMessage(failure: GateFailure, file: string): string {
+  return `The response said status: question, but the question request file is unusable (${failure.errorKind}): ${failure.detail}. ` +
+    `File: ${file}. The agent had one correction turn. Run \`migent session continue\` to rerun the stage.`;
 }
 
 function verifyProgress(metadata: Record<string, unknown>): {

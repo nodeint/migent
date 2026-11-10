@@ -108,7 +108,7 @@ test("a question stops its dependents but independent stages continue", async ()
 test("a stage without ask cannot question", async () => {
   const root = workspace("  - { id: plan, role: planner }\n");
   try {
-    const result = await executeNamedWorkflow(root, { workflowId: "plan", task: "Plan" }, new AgentToolRunner(registryOf({ fake: new ScriptedClient([question]) }), 10));
+    const result = await executeNamedWorkflow(root, { workflowId: "plan", task: "Plan" }, new AgentToolRunner(registryOf({ fake: new ScriptedClient([question, question]) }), 10));
     expect(result.code).toBe(3);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
@@ -289,7 +289,7 @@ test("an invalid question file gets one correction turn in the same conversation
     expect(provider.calls[1]?.prompt).toContain("(invalid_json)");
     expect(provider.calls[1]?.prompt).toContain("- Question file: ");
     const execution = lastExecution(root, result.sessionId);
-    expect(execution.question_correction).toMatchObject({ turn: 1, error_kind: "invalid_json" });
+    expect((execution.corrections as Record<string, unknown>).question_file).toMatchObject({ turn: 1, error_kind: "invalid_json" });
     expect(execution.outcome).toMatchObject({ status: "question", questions: [scopeQuestion] });
     expect(execution.response_protocol).toBe(2);
   } finally { rmSync(root, { recursive: true, force: true }); }

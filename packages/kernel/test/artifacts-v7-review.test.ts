@@ -215,13 +215,13 @@ async function runGate(responses: string[], artifacts: Array<{ body: string; onl
 }
 
 test("the gate requires every stage-level file", async () => {
-  const { execution } = await runGate(["status: complete\ndecision: done\n\nok"], [{ body: "x", only: ["main.md"] }]);
+  const { execution } = await runGate(["status: complete\ndecision: done\n\nok", "status: complete\ndecision: done\n\nok"], [{ body: "x", only: ["main.md"] }, { body: "x", only: ["main.md"] }]);
   expect(execution.status).toBe("failed");
   expect(String(execution.error)).toContain("extra.md");
 });
 
 test("the gate requires the chosen decision's required local file", async () => {
-  const { execution } = await runGate(["status: complete\ndecision: redo\n\nok"], [{ body: "x", only: ["main.md", "extra.md"] }]);
+  const { execution } = await runGate(["status: complete\ndecision: redo\n\nok", "status: complete\ndecision: redo\n\nok"], [{ body: "x", only: ["main.md", "extra.md"] }, { body: "x", only: ["main.md", "extra.md"] }]);
   expect(execution.status).toBe("failed");
   expect(String(execution.error)).toContain("findings.md");
 });

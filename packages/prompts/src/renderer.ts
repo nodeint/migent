@@ -10,7 +10,7 @@ for (const name of ["continuation", "response-contract", "execution", "do"]) {
 const templates = new Map<string, ReturnType<typeof engine.compile>>();
 
 type PromptName = "stage-start" | "stage-continue" | "stage-reply" | "verify-repair"
-  | "role-run" | "provider-turn" | "history" | "question-correction" | "protocol-update";
+  | "role-run" | "provider-turn" | "history" | "question-correction" | "response-correction" | "output-correction" | "protocol-update";
 
 /** Internal: renders one template by name. Strict lookup fails on missing data. */
 export function renderPrompt(name: PromptName, context: object): string {

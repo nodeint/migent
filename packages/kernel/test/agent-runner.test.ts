@@ -363,7 +363,7 @@ test("missing or whitespace-only artifact fails that stage", async () => {
     const [workspace, sessionId] = writePlanReviewSession();
     const result = await new AgentToolRunner(
       registryOf({
-        fake: new ScriptedClient(["status: complete\n\nplanned"], body === null ? null : [body]),
+        fake: new ScriptedClient(["status: complete\n\nplanned", "status: complete\n\nplanned"], body === null ? [null, null] : [body, body]),
       }),
       10,
     ).run({
@@ -389,8 +389,8 @@ test("prose approval without a decision header fails the execution", async () =>
   const runner = new AgentToolRunner(
     registryOf({
       fake: new ScriptedClient(
-        ["status: complete\n\nplanned", "status: complete\n\nApproved."],
-        ["# Plan v1\n", null],
+        ["status: complete\n\nplanned", "status: complete\n\nApproved.", "status: complete\n\nApproved."],
+        ["# Plan v1\n", null, null],
       ),
     }),
     10,

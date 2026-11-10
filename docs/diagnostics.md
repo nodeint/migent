@@ -75,7 +75,7 @@ never says the execution failed because of that turn. Two verdicts exist:
 
 | Verdict | Meaning | Recorded in |
 | --- | --- | --- |
-| Client-turn verdict | Did this turn pass the client-level decision and the reply checks (outcome, artifact, completion outputs). It is fixed when those checks finish and later verify, question-correction or repair turns never change it. | `diagnostics.json` → `result_state.turn_verdict` (`accepted` or `failed`) |
+| Client-turn verdict | Did this turn pass the client-level decision and the reply checks (outcome, artifact, completion outputs). It is fixed when those checks finish and later verify, correction or repair turns never change it. A turn whose reply is corrected stays `failed`; only the follow-up turn can be `accepted`. | `diagnostics.json` → `result_state.turn_verdict` (`accepted` or `failed`) |
 | Execution verdict | Did the execution as a whole succeed, and if not, at which check on which turn. | `execution.json` → `status`, `error`, `failure_reason`, `final_turn` |
 
 The file holds the **latest** abnormal turn. A later clean turn leaves it alone;

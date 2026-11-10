@@ -4,7 +4,11 @@
 
 ### Added
 
+- Stage replies that the agent can fix get one correction turn per failure kind instead of failing at once: a response-contract violation, a missing or empty required artifact or completion output, and an unusable question file. Exhausted corrections fail the stage with `response_contract_invalid`, `stage_output_missing` or `question_file_invalid`. `execution.json` records them under `corrections`; older `question_correction` entries are still read. New events: `response.contract_invalid`, `stage.output_missing`.
+
 ### Changed
+
+- The missing-status error lists every status the stage allows, including `question` when the stage has `ask: human`.
 
 ### Removed
 

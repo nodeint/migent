@@ -599,6 +599,23 @@ response contract, then responds with `status: question`:
 The request file is a validated JSON document, not a prose list of choices; the
 response body is an ordinary report. One correction turn is allowed when the file
 is unusable, then the stage fails with `question_file_invalid`.
+
+### Correctable response failures
+
+When a provider turn ends normally and the reply fails a check the agent can fix, Migent
+sends one **correction turn** per failure kind instead of failing at once. The kernel
+policy table (`correction-policy.ts`) is the only place that decides this. The budget is
+one per kind per execution; a new attempt starts with fresh budgets.
+
+| Kind | Trigger | Contract in the correction | `failure_reason` when still wrong | Event |
+| --- | --- | --- | --- | --- |
+| `response_contract` | Missing or invalid `status:` or `decision:` header, or `status: question` without `ask: human` | full | `response_contract_invalid` | `response.contract_invalid` |
+| `stage_output` | After `status: complete`, a required artifact or completion output is missing or empty | reminder | `stage_output_missing` | `stage.output_missing` |
+| `question_file` | `status: question` with an unusable request file | reminder | `question_file_invalid` | `question.file_invalid` |
+
+Provider errors, quota, timeouts, start failures, signals and replies that are not model
+output never get a correction. An exit-only reply the model wrote does. Verify repair
+(`max_verify`) is separate and unchanged. The stage fails with the original error text.
 Each question requires `question`, `context`, `selection`, and 2 to 26 `options`.
 Migent assigns question IDs `1`, `2`, `3`, ... and option IDs `A`, `B`, `C`, ...
 by their order. Agents omit IDs; if supplied, IDs must match that order.

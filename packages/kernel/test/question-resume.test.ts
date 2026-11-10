@@ -85,7 +85,7 @@ test("resuming a saved question response with no file sends the one correction",
   expect(result.code).toBe(9);
   expect(run.provider.calls).toHaveLength(2);
   expect(run.provider.calls[1]?.prompt).toContain("(missing)");
-  expect(run.execution().question_correction).toMatchObject({ turn: 1, error_kind: "missing" });
+  expect((run.execution().corrections as Record<string, unknown>).question_file).toMatchObject({ turn: 1, error_kind: "missing" });
 }, 30_000);
 
 test("a recorded correction that was never sent is sent on resume without a second budget", async () => {
