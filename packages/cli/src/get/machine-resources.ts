@@ -1,5 +1,6 @@
 import type { CliClient, HeadlessOption } from "@nodeint/migent-adapters";
-import { ConfigurationError, type ClientOption, type View } from "@nodeint/migent-kernel";
+import { ConfigurationError, type ClientOption } from "@nodeint/migent-kernel";
+import { type View } from "@nodeint/migent-engine";
 import { GetAnyOption, GetClient, GetEffort, GetModel, GetNativeOption, GetOption, type Static } from "@nodeint/migent-contracts";
 import { field } from "./columns.js";
 import type { Column } from "./render.js";

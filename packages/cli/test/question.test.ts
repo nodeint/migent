@@ -1,6 +1,7 @@
 import { readdirSync } from "node:fs";
 import path from "node:path";
-import { AgentToolRunner, SessionStore } from "@nodeint/migent-kernel";
+import { SessionStore } from "@nodeint/migent-kernel";
+import { AgentToolRunner } from "@nodeint/migent-engine";
 import { expect, test } from "vitest";
 import { continueAgent, dispatchAgent } from "../src/commands/agent.ts";
 import { listSessions } from "../src/commands/sessions.ts";

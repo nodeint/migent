@@ -1,18 +1,7 @@
 import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
-import {
-  AgentToolRunner,
-  DEFAULT_MAX_DISPATCHES,
-  executeNamedWorkflow,
-  FAILURE_FILENAME,
-  formatDuration,
-  log,
-  SessionStore,
-  type ExecuteResult,
-  publishNextSuggestions,
-  formatNextCommand,
-  CORRECTION_FAILURE_REASONS,
-} from "@nodeint/migent-kernel";
+import { FAILURE_FILENAME, formatDuration, log, SessionStore, publishNextSuggestions, formatNextCommand, CORRECTION_FAILURE_REASONS } from "@nodeint/migent-kernel";
+import { AgentToolRunner, DEFAULT_MAX_DISPATCHES, executeNamedWorkflow, type ExecuteResult } from "@nodeint/migent-engine";
 import { printResumeCommand, printReplyCommand, formatQuestion } from "../display.js";
 import { cliHooks } from "../hooks.js";
 import { requireCurrentSchema } from "../migrate.js";

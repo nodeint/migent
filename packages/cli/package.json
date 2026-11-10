@@ -50,6 +50,7 @@
     "@nodeint/migent-adapters": "workspace:*",
     "@nodeint/migent-contracts": "workspace:*",
     "@nodeint/migent-doctor": "workspace:*",
+    "@nodeint/migent-engine": "workspace:*",
     "@nodeint/migent-kernel": "workspace:*",
     "@nodeint/migent-registry": "workspace:*",
     "@nodeint/migent-workflow": "workspace:*",

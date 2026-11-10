@@ -220,12 +220,6 @@ export {
   sessionMetrics,
 } from "./metrics.js";
 export {
-  providerErrorMessage,
-  classifyProviderError,
-  ProviderEvent,
-  ProviderEventReporter,
-} from "./provider-events.js";
-export {
   allocateSessionId,
   sessionSlug,
   createWorkflowSession,
@@ -245,20 +239,9 @@ export {
 } from "./session-store.js";
 export type { ManualCompletionResult } from "./session-store.js";
 export { CORRECTION_FAILURE_REASONS } from "./correction-policy.js";
-export { AgentToolRunner } from "./agent-runner.js";
 export { VerifyRunner, formatVerifyReport } from "./verify-runner.js";
 export type { VerifyRunResult, VerifyCommandResult } from "./verify-runner.js";
-export type { RunRequest, RunResult } from "./agent-runner.js";
-export {
-  StageDispatchResult,
-  dispatchNamedStage,
-  assertStageDispatchable,
-  resolveResumeExecution,
-} from "./dispatch.js";
-export type { StageDispatchRequest } from "./dispatch.js";
-export { DEFAULT_MAX_DISPATCHES, executeNamedWorkflow } from "./execute.js";
 export { relativeTaskPath } from "./task-file.js";
-export type { ExecuteRequest, ExecuteResult } from "./execute.js";
 export { killProcessTree, wrapperEndpoint } from "./process-wrapper.js";
 export {
   UnpassableArgument,
@@ -320,19 +303,6 @@ export { publishNextSuggestions, resolveNextSuggestions, formatNextCommand } fro
 export { latestDiagnosticsPath, readRecordedDiagnostics } from "./session-diagnostics.js";
 export type { RecordedDiagnostics } from "./session-diagnostics.js";
 export {
-  LOCAL_CONFIG_LABEL,
-  getConfigView,
-  getAgentView,
-  getRoleView,
-  getSessionWorkflowView,
-  getWorkflowView,
-  listAgentViews,
-  listRoleViews,
-  listWorkflowViews,
-  localAgentNames,
-} from "./views.js";
-export type { View, WorkflowSourceKind } from "./views.js";
-export {
   checkDocumentSchemaVersion,
   parseDraftText,
   renderAuthoringYaml,
@@ -345,3 +315,29 @@ export type { DraftRange, DraftSourceMap } from "./draft-source.js";
 export { writeFileConditional } from "./conditional-write.js";
 export type { ConditionalWrite } from "./conditional-write.js";
 export { containerIssues, isAgentPlaceholder, buildStructuralIndex, type StructuralIndex } from "./config-structure.js";
+
+// Temporary: symbols the engine package needs until session moves out of kernel.
+export { CORRECTION_POLICY, classifyGateError, decideCorrection, readCorrectionLedger, ruleForTurn } from "./correction-policy.js";
+export type { CorrectionFiles, CorrectionLedger, GateFailure } from "./correction-policy.js";
+export { DEFAULT_INTERRUPT_POLICY, interruptSession, isSettled } from "./provider-interrupt.js";
+export type { InterruptPolicy, InterruptReport } from "./provider-interrupt.js";
+export { StreamSummarizer, buildTurnDiagnostics, observeTurn, truncateText } from "./turn-diagnostics.js";
+export type { Gates } from "./turn-diagnostics.js";
+export type { OutcomeContext } from "./outcome-resolver.js";
+export { cancellationSignal } from "./command-executor.js";
+export type { ProcessFacts, StopReason } from "./command-executor.js";
+export { clearInFlightExecution, clearInFlightExecutions, noteInFlightExecution } from "./session-store.js";
+export type { SkipDetails } from "./session-store.js";
+export { VERIFY_EXHAUSTED, missingOutputProducers, schedulableStageIds, version2IdleReason } from "./selection.js";
+export { assertSingleLineTask, freezeSessionTask, requireTaskBody } from "./task-file.js";
+export { buildVerifyRepairPrompt } from "./prompt.js";
+export { frozenRoleInstructions, frozenStageTarget, loadFrozenWorkflow, readWorkflowFreeze, requireLiveWorkflow, warnIfFrozenDrift, writeWorkflowFreeze } from "./session-freeze.js";
+export { reservedExecutionOrders } from "./session-events.js";
+export { resolveHandoff } from "./next-handoff.js";
+export { readExecutionClient } from "./legacy-execution-client.js";
+export { readExecutions } from "./session-fold.js";
+export { ResponseContractError } from "./stage-outcome.js";
+export { version2GraphQuiet } from "./selection.js";
+export { CANCEL_REQUEST_FILENAME, setBetweenStaleLockReads } from "./session-lock.js";
+export { createSessionDirectory } from "./session-records.js";
+export { renderProviderDiagnostics } from "./turn-diagnostics.js";

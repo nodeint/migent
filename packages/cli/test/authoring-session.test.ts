@@ -1,15 +1,8 @@
 import { cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import {
-  SessionLock,
-  AgentToolRunner,
-  appendLifecycleEvent,
-  activatePreparedSession,
-  createPreparedSession,
-  executeNamedWorkflow,
-  sha256Hex,
-} from "@nodeint/migent-kernel";
+import { SessionLock, appendLifecycleEvent, activatePreparedSession, createPreparedSession, sha256Hex } from "@nodeint/migent-kernel";
+import { AgentToolRunner, executeNamedWorkflow } from "@nodeint/migent-engine";
 import { afterEach, beforeEach, expect, test } from "vitest";
 import { main } from "../src/index.ts";
 import { setInvocationCwd } from "../src/workspace.ts";

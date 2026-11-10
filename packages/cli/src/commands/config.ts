@@ -1,14 +1,8 @@
 import { ConfigSummary } from "@nodeint/migent-contracts";
 import { writeJson } from "../emit.js";
 import { readFileSync } from "node:fs";
-import {
-  LOCAL_CONFIG_LABEL as LOCAL_LABEL,
-  configPath,
-  hasLocalConfig,
-  loadWorkspaceConfig,
-  localAgentNames,
-  stringifyConfig,
-} from "@nodeint/migent-kernel";
+import { configPath, hasLocalConfig, loadWorkspaceConfig, stringifyConfig } from "@nodeint/migent-kernel";
+import { LOCAL_CONFIG_LABEL as LOCAL_LABEL, localAgentNames } from "@nodeint/migent-engine";
 
 export function runConfigShow(workspace: string, options: { asJson?: boolean } = {}): number {
   const local = hasLocalConfig(workspace);

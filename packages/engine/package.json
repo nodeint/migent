@@ -1,0 +1,54 @@
+{
+  "name": "@nodeint/migent-engine",
+  "version": "0.5.6",
+  "description": "Workflow execution engine for Migent: stage dispatch, agent runs, verification, and views.",
+  "keywords": [
+    "ai",
+    "agents",
+    "workflow",
+    "cli",
+    "claude",
+    "codex",
+    "grok",
+    "migent"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/nodeint/migent/tree/main/packages/engine#readme",
+  "bugs": {
+    "url": "https://github.com/nodeint/migent/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nodeint/migent.git",
+    "directory": "packages/engine"
+  },
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "prepack": "pnpm -w run build && cp ../../LICENSE ."
+  },
+  "dependencies": {
+    "@nodeint/migent-kernel": "workspace:*",
+    "@nodeint/migent-prompts": "workspace:*",
+    "@nodeint/migent-workflow": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "yaml": "^2.9.1"
+  }
+}

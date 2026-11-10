@@ -1,13 +1,8 @@
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import {
-  AgentToolRunner,
-  raiseCancellation,
-  type BuildCommandInput,
-  type CommandSpec,
-  type RawFailure,
-} from "@nodeint/migent-kernel";
+import { raiseCancellation, type BuildCommandInput, type CommandSpec, type RawFailure } from "@nodeint/migent-kernel";
+import { AgentToolRunner } from "@nodeint/migent-engine";
 import { expect, test, vi } from "vitest";
 import { cliHooks } from "../src/hooks.ts";
 import { main } from "../src/index.ts";

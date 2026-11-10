@@ -3,7 +3,7 @@ import path from "node:path";
 import { expect, test } from "vitest";
 import { main } from "../src/index.ts";
 import { ScriptedClient, capture, registryOf, removeWorkspace, repoWorkflowText, writeFakeWorkflowWorkspace } from "./support.ts";
-import { AgentToolRunner } from "@nodeint/migent-kernel";
+import { AgentToolRunner } from "@nodeint/migent-engine";
 import { cliHooks } from "../src/hooks.ts";
 
 async function runOnce(

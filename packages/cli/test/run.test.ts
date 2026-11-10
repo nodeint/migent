@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { AgentToolRunner, DEFAULT_MAX_DISPATCHES, listSessionRows } from "@nodeint/migent-kernel";
+import { listSessionRows } from "@nodeint/migent-kernel";
+import { AgentToolRunner, DEFAULT_MAX_DISPATCHES } from "@nodeint/migent-engine";
 import { expect, test } from "vitest";
 import { executeWorkflow } from "../src/commands/execute.ts";
 import { listSessions } from "../src/commands/sessions.ts";

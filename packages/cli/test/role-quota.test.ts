@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { AgentToolRunner, type BuildCommandInput, type RawFailure, type RunResult, resetCancellation, raiseCancellation } from "@nodeint/migent-kernel";
+import { type BuildCommandInput, type RawFailure, resetCancellation, raiseCancellation } from "@nodeint/migent-kernel";
+import { AgentToolRunner, type RunResult } from "@nodeint/migent-engine";
 import { expect, test } from "vitest";
 import { dispatchAgent } from "../src/commands/agent.ts";
 import { printWatchSnapshot } from "../src/display.ts";

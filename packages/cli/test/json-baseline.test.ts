@@ -1,5 +1,6 @@
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { AgentToolRunner, SessionLock, SessionStore, StageOutcome, createPreparedSession, createWorkflowSession } from "@nodeint/migent-kernel";
+import { SessionLock, SessionStore, StageOutcome, createPreparedSession, createWorkflowSession } from "@nodeint/migent-kernel";
+import { AgentToolRunner } from "@nodeint/migent-engine";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, expect, test } from "vitest";

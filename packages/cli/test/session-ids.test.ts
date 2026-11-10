@@ -13,7 +13,7 @@ import {
 import { parseYamlDocument } from "@nodeint/migent-workflow";
 import { afterEach, expect, test } from "vitest";
 import { main } from "../src/index.ts";
-import { AgentToolRunner } from "@nodeint/migent-kernel";
+import { AgentToolRunner } from "@nodeint/migent-engine";
 import { cliHooks } from "../src/hooks.ts";
 import { ScriptedClient, capture, registryOf, removeWorkspace, writeFakeWorkflowWorkspace } from "./support.ts";
 

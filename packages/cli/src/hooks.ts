@@ -1,4 +1,4 @@
-import type { AgentToolRunner } from "@nodeint/migent-kernel";
+import type { AgentToolRunner } from "@nodeint/migent-engine";
 import type { SkillRunner } from "./commands/skill.js";
 import type { RunCommand } from "./client.js";
 import type { TSchema } from "@nodeint/migent-contracts";

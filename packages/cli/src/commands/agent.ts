@@ -2,28 +2,8 @@ import { RoleRunResult, RoleRunResults } from "@nodeint/migent-contracts";
 import { writeJson } from "../emit.js";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import {
-  AgentToolRunner,
-  CancellationRequested,
-  ConfigurationError,
-  SessionStore,
-  createAgentSession,
-  loadRoleResponsibilities,
-  loadYamlMapping,
-  log,
-  buildStageReplyPrompt,
-  prependRoleInstructions,
-  requireAgentSession,
-  isSessionLockLost,
-  repairSessionUnlocked,
-  SessionLock,
-  stringOptions,
-  legacyClientOf,
-  loadWorkspaceConfig,
-  resolveRoleTarget,
-  type RunResult,
-  type TurnKind,
-} from "@nodeint/migent-kernel";
+import { CancellationRequested, ConfigurationError, SessionStore, createAgentSession, loadRoleResponsibilities, loadYamlMapping, log, buildStageReplyPrompt, prependRoleInstructions, requireAgentSession, isSessionLockLost, repairSessionUnlocked, SessionLock, stringOptions, legacyClientOf, loadWorkspaceConfig, resolveRoleTarget, type TurnKind } from "@nodeint/migent-kernel";
+import { AgentToolRunner, type RunResult } from "@nodeint/migent-engine";
 import { printAgent, printError, printNotice, printResumeCommand, printReplyCommand } from "../display.js";
 import { cliHooks } from "../hooks.js";
 import { requireCurrentSchema } from "../migrate.js";
