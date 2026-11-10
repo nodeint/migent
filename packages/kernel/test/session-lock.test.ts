@@ -206,7 +206,7 @@ test("createSessionDirectory skips an existing id and a prepared title can repea
   const prepared = createPreparedSession(workspace, "wave-1", "wf");
   const repeated = createPreparedSession(workspace, "wave-1", "wf");
   expect(prepared).not.toBe(repeated);
-  expect(prepared).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+  expect(prepared).toMatch(/^[1-9][0-9]*$/);
 });
 
 test("an execution directory that exists is an error, never shared", () => {

@@ -1,5 +1,5 @@
 import type { ClientRegistry } from "./cli-client.js";
-import { randomUUID } from "node:crypto";
+import { createNumericSessionDirectory, quotedSessionId } from "./session-id.js";
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
 import { stringify } from "yaml";
 import path from "node:path";
@@ -68,21 +68,6 @@ export function allocateSessionId(sessionsDirectory: string, sessionIdBase: stri
   return sessionId;
 }
 
-/** A new session directory. The id is a UUID. A collision retries with another UUID. */
-function createUuidSessionDirectory(sessionsDirectory: string): [string, string] {
-  mkdirSync(sessionsDirectory, { recursive: true });
-  for (;;) {
-    const sessionId = randomUUID();
-    const sessionDirectory = path.join(sessionsDirectory, sessionId);
-    try {
-      mkdirSync(sessionDirectory);
-      return [sessionId, sessionDirectory];
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-    }
-  }
-}
-
 export function sessionSlug(value: string, limit: number): string {
   let slug = "";
   for (const character of value) {
@@ -126,18 +111,18 @@ export function createWorkflowSession(
   const taskSummary = selectedTask.trim();
   if (!taskSummary) throw new ConfigurationError("Task summary must not be empty.");
   const sessionsDirectory = path.join(workspace, ".migent", "sessions");
-  const [sessionId, sessionDirectory] = createUuidSessionDirectory(sessionsDirectory);
+  const [sessionId, sessionDirectory] = createNumericSessionDirectory(sessionsDirectory);
   const createdAt = utcNow();
   const workflowRelativePath = sessionWorkflowPath(workspace, workflow);
   const manifestLines = [
-    `session_id: ${sessionId}`,
+    `session_id: ${quotedSessionId(sessionId)}`,
     `title: ${JSON.stringify(taskSummary)}`,
     `workflow_id: ${resolvedId}`,
     `workflow_path: ${workflowRelativePath}`,
     `task: ${JSON.stringify(taskSummary)}`,
     `created_at: ${createdAt}`,
   ];
-  if (resolvedPrior) manifestLines.push(`prior_session_id: ${resolvedPrior}`);
+  if (resolvedPrior) manifestLines.push(`prior_session_id: ${quotedSessionId(resolvedPrior)}`);
   manifestLines.push("schema_version: 2");
   try {
     withSessionLock(sessionDirectory, () => {
@@ -178,20 +163,20 @@ export function createPreparedSession(
   const resolvedId = workflow.id;
   const resolvedPrior = resolvePriorSessionId(workspace, workflow, priorSessionId);
   const sessionsDirectory = path.join(workspace, ".migent", "sessions");
-  const [sessionId, sessionDirectory] = createUuidSessionDirectory(sessionsDirectory);
+  const [sessionId, sessionDirectory] = createNumericSessionDirectory(sessionsDirectory);
   const createdAt = utcNow();
   const workflowRelativePath = relativeWorkflowPath(sessionId);
   const draftHeader =
     "# Session workflow draft. Edit this file before starting the session.\n" +
     `# Start with: migent session run --session ${sessionId}\n`;
   const manifestLines = [
-    `session_id: ${sessionId}`,
+    `session_id: ${quotedSessionId(sessionId)}`,
     `title: ${JSON.stringify(sessionTitle)}`,
     `workflow_id: ${resolvedId}`,
     `workflow_path: ${workflowRelativePath}`,
     `created_at: ${createdAt}`,
   ];
-  if (resolvedPrior) manifestLines.push(`prior_session_id: ${resolvedPrior}`);
+  if (resolvedPrior) manifestLines.push(`prior_session_id: ${quotedSessionId(resolvedPrior)}`);
   manifestLines.push("schema_version: 2");
   try {
     withSessionLock(sessionDirectory, () => {
@@ -261,13 +246,13 @@ export function createAgentSession(workspace: string, role: string, task: string
   const taskSummary = task.trim();
   if (!taskSummary) throw new ConfigurationError("Task summary must not be empty.");
   const sessionsDirectory = path.join(workspace, ".migent", "sessions");
-  const [sessionId, sessionDirectory] = createUuidSessionDirectory(sessionsDirectory);
+  const [sessionId, sessionDirectory] = createNumericSessionDirectory(sessionsDirectory);
   const createdAt = utcNow();
   withSessionLock(sessionDirectory, () => {
     writeFileAtomic(
       path.join(sessionDirectory, "manifest.yaml"),
       `${[
-        `session_id: ${sessionId}`,
+        `session_id: ${quotedSessionId(sessionId)}`,
         `title: ${JSON.stringify(taskSummary)}`,
         "workflow_id: agent",
         `role: ${role}`,

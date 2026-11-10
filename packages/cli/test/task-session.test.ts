@@ -36,7 +36,7 @@ test("prepare writes a chosen session and start runs task.md", async () => {
     expect(prepared.value).toBe(0);
     const preparedBody = JSON.parse(prepared.stdout) as { session_id: string; title: string; task_path: string; workflow_path: string };
     expect(preparedBody).toEqual({
-      session_id: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      session_id: expect.stringMatching(/^[1-9][0-9]*$/),
       title: "some task title",
       status: "prepared",
       task_path: `.migent/sessions/${preparedBody.session_id}/task.md`,

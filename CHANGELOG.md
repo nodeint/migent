@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- New sessions get short incrementing numeric ids (`1`, `2`, `3`, …) instead of UUIDs: the next id is the highest numeric session directory name plus one, starting at `1`. Sessions written by earlier versions (UUID, timestamp or `session_<hex>` ids) keep working unchanged and do not affect numbering. `session_id` and `prior_session_id` are now written as quoted strings in `manifest.yaml`, and the manifest reader also accepts an unquoted integer. A role run without a session id (library use) now also gets a numeric id.
+
 ## 0.5.5
 
 ### Added

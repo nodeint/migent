@@ -123,7 +123,7 @@ test("session run --workflow dispatches one stage", async () => {
     expect(captured.stderr).not.toContain("deprecated");
     const sessionMatch = /session_id: (\S+)/.exec(captured.stderr);
     const sessionId = sessionMatch?.[1] ?? "";
-    expect(sessionId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(sessionId).toMatch(/^[1-9][0-9]*$/);
     const status = JSON.parse(
       readFileSync(path.join(workspace, ".migent", "sessions", sessionId, "status.json"), "utf8"),
     ) as { status?: string; title?: string };
@@ -203,7 +203,7 @@ test("session prepare starts through session run --workflow", async () => {
     expect(prepared.value).toBe(0);
     const preparedBody = JSON.parse(prepared.stdout) as { session_id: string; title: string; task_path: string; workflow_path: string };
     expect(preparedBody).toEqual({
-      session_id: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      session_id: expect.stringMatching(/^[1-9][0-9]*$/),
       title: "some task title",
       status: "prepared",
       task_path: `.migent/sessions/${preparedBody.session_id}/task.md`,

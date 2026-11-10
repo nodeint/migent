@@ -11,8 +11,10 @@ override and stays uncommitted.
 
 ## On-disk layout
 
-Each run has its own directory, named by its session ID. A new session id is a
-UUID. `manifest.yaml` also records `title`. A workflow or role session sets
+Each run has its own directory, named by its session ID. A new session id is the
+next number in the workspace (`1`, `2`, `3`, …): the highest numeric directory name plus one.
+Older UUID and timestamp ids stay valid and are ignored when numbering. `manifest.yaml`
+stores `session_id` and `prior_session_id` as quoted strings, and also records `title`. A workflow or role session sets
 `title` to its one-line task. `session prepare` sets `title` to the text you
 pass, creates an empty `task.md`, and copies the workflow to an editable
 `workflow.yaml`. The title is for display, so spaces and capitals stay. A session written by an older Migent has no `title`. List and
