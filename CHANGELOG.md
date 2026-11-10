@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.5.5
+
 ### Added
 
 - Stage replies that the agent can fix get one correction turn per failure kind instead of failing at once: a response-contract violation, a missing or empty required artifact or completion output, and an unusable question file. Exhausted corrections fail the stage with `response_contract_invalid`, `stage_output_missing` or `question_file_invalid`. `execution.json` records them under `corrections`; older `question_correction` entries are still read. New events: `response.contract_invalid`, `stage.output_missing`.
@@ -10,8 +12,6 @@
 
 - **Response protocol 3.** A stage now reports its outcome (`complete`, `blocked` or `question`) by writing one JSON file, `handoff.json`, in its execution directory, instead of `status:`/`decision:`/`blocker:` header lines plus a separate `question-request.json`. The response text is a free-form report. An unusable handoff (missing, empty, not JSON, not matching the schema, a decision the stage does not allow, or a question on a stage without `ask: human`) gets one correction turn, recorded as `corrections.handoff`, then fails with `handoff_file_invalid`. New event: `handoff.file_invalid`. The handoff document's JSON Schema is published as `HandoffDocument` in `@nodeint/migent-contracts`. A conversation keeps the protocol it started with: existing sessions finish their conversations on protocol 2 (headers and `question-request.json`, with the earlier corrections), and `execution.json` records `response_protocol`. Only a stage that starts with no source execution uses protocol 3. Custom clients and scripts that fake a stage reply must now write `handoff.json`.
 - The missing-status error lists every status the stage allows, including `question` when the stage has `ask: human`.
-
-### Removed
 
 ## 0.5.4
 
@@ -63,28 +63,9 @@
 - Legacy resume checks every turn's client evidence before creating or reopening executions, refusing missing or conflicting evidence without sending native IDs to another CLI. Metrics parse each turn with its launched client and count captures with no identifiable client as uncaptured.
 - Shared quota waits retry all affected stages after reset within the concurrency limit, stop repeated quota failures for the same window, and resolve legacy wait keys from execution evidence.
 
-## 0.4.1
-
-### Added
-
-- `migent workflow validate|render|save --session <id>` validates, renders, and saves the editable `workflow.yaml` of an existing prepared or stopped session. The draft may share its id with its project template, must keep the session's recorded id, and is checked against live config bindings and downstream references. `save` takes the session lock, needs the draft's `--base-hash`, and writes only the draft: a prepared session adopts it at start, a started session after `--refresh-workflow`.
-- Exit-only provider anomalies (non-zero exit, no provider error) are now visible without opening executions: `metrics.json` counts `provider_exit_anomalies` and `provider_exit_anomalies_accepted` in `totals` and per execution, and `session show` / `session follow` print an `exit_anomaly` line per affected stage (`exit_anomalies` in JSON) that points to `diagnostics.json` (#73).
-- Every abnormal provider turn now leaves `diagnostics.json` (schema version 2): a non-zero exit even when stderr was empty, a provider-reported error at exit 0, and a non-zero exit accepted as a completed turn. It adds `agent_id`, `failure.origin`, `failure.exit_code`, `failure.signal`, `stderr` sizes with a `drain` state, a content-free `stream_summary` (event labels and counts; CLI clients gain an optional `eventLabel()`), and a `result_state` of what the turn left (reply, artifact, `response.md`) next to Migent's own check results and the provider-turn verdict. `execution.json` records `final_turn` for provider executions, and `failure.md` uses it to name the provider failure as the cause only when the diagnostics belong to the turn that ended the execution. `migent doctor --session` also shows origin, turn and verdict (#72).
-- `migent get providers`, `get clients`, `get models [--client <id>]`, `get options [--client <id>] [--native]`, and `get efforts [--client <id>]` expose machine-level discovery as separate resource types, each with a singular lookup, `-o json|yaml|name`, and `--json`. The machine types work outside a project. `get providers` and `get clients` run no subprocess; `get clients` reports PATH findings only. `get models`, `get efforts`, and `get options --native` ask each selected client's own CLI, warn on stderr for a client that is skipped or fails, and still print the other clients' rows and exit 0. A singular model, option, or effort is keyed by (client, name) and asks for `--client` when more than one client matches.
-- The doctor package accepts a client-keyed catalog source in `loadCatalog` and `loadOptionValues`, so catalog discovery uses a client's own command, parser, and stdin instead of a provider with the same name. Existing provider callers are unchanged.
-
-### Changed
-
-- **Breaking:** `migent provider list` is removed, including `--json`. It exits 2 and names `migent get providers`, `migent get clients`, `migent get models`, `migent get options`, and `migent get efforts`, and `provider` no longer appears in help. The `{ok, providers}` envelope, `headless_options`, and the exit-1-when-no-models rule are gone; the new lists print a plain array and exit 0, including when every client is skipped or fails.
-
-### Fixed
-
-- Stderr is read after the provider's pipes close, so lines written just before a non-zero exit are no longer lost (#72).
-
-- A provider process that exits non-zero without reporting an error no longer fails a stage whose reply passes the checks an exit-0 reply must pass. The turn is recorded `completed`, keeps `response.md`, and logs a `provider.exit_anomaly` event. Provider-reported errors, start failures and signal exits still fail, and a rejected turn's error is now the model's own text. A `continue` prompt after such a failed attempt references its reply (#71).
-
 ## Older versions
 
+- [0.4.1](https://github.com/nodeint/migent/releases/tag/v0.4.1)
 - [0.4.0](https://github.com/nodeint/migent/releases/tag/v0.4.0)
 - [0.3.6](https://github.com/nodeint/migent/releases/tag/v0.3.6)
 - [0.3.5](https://github.com/nodeint/migent/releases/tag/v0.3.5)
