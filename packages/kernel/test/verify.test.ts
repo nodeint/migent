@@ -975,7 +975,7 @@ test("a provider failure retries the same stage agent", async () => {
   }
   const provider = new ExitOnceProvider(
     1,
-    ["status: complete\n\nignored", OK, "status: complete\n\nreviewed"],
+    ["", OK, "status: complete\n\nreviewed"],
     [null, "# n\n", null],
   );
   const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
@@ -996,6 +996,20 @@ test("a provider failure retries the same stage agent", async () => {
   expect(execution(workspace, sessionId, snapshots[1]!.executionId).resumes_execution_id).toBe(
     snapshots[0]?.executionId,
   );
+});
+
+test("the persisted turn follows a correction and a verify repair after an empty reply", async () => {
+  const workspace0 = tempDir("migent-verify-pt-");
+  const command = counterScript(workspace0, "pt", 1);
+  const { workspace, sessionId } = setup(workflowText(command, "    max_verify: 2\n"));
+  // Turn 1 is empty and gets the correction (turn 2); verify fails once; the repair runs as turn 3.
+  const provider = new ScriptedClient(["", OK, OK], [null, "# n\n", null]);
+  const result = await runStage(new AgentToolRunner(registryOf({ fake: provider }), 10), workspace, sessionId);
+  expect(provider.calls).toHaveLength(3);
+  expect(provider.calls[2]?.prompt).toContain("Verify failed");
+  const record = execution(workspace, sessionId, result.execution_id);
+  expect(record.pending_turn).toBe(3);
+  expect(record.final_turn).toBe(3);
 });
 
 test("a repair turn without an agent id receives the flattened history", async () => {

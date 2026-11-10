@@ -168,6 +168,7 @@ test("a bad response fails the stage", async () => {
     writeWorkspace(workspace, GROK_CONFIG, { plan: PLAN_REVIEW });
     installScript(workspace, [
       { text: "not a status header" },
+      { text: "still not a status header" },
       { text: COMPLETE, artifact: "# plan\n" },
       { text: APPROVED },
     ]);
@@ -185,7 +186,7 @@ test("a bad response fails the stage", async () => {
     const records = executionRecords(workspace, String(result.session_id));
     expect(records.map((record) => record.status)).toEqual(["failed"]);
     expect(records[0]?.stage_id).toBe("plan");
-    expect(providerInvocations(workspace)).toHaveLength(1);
+    expect(providerInvocations(workspace)).toHaveLength(2);
   } finally {
     removeWorkspace(workspace);
   }
@@ -228,7 +229,7 @@ test("complete without the artifact fails the stage", async () => {
   const workspace = tempWorkspace();
   try {
     writeWorkspace(workspace, GROK_CONFIG, { solo: SOLO });
-    installScript(workspace, [{ text: COMPLETE, skip_artifact: true }]);
+    installScript(workspace, [{ text: COMPLETE, skip_artifact: true }, { text: COMPLETE, skip_artifact: true }]);
     const [code, objects, stderr] = await runMain(workspace, ["session", "run", "--workflow", "solo", "--task", "Write"]);
     expect(code, stderr).toBe(3);
     const records = executionRecords(workspace, String(objects[0]?.session_id));

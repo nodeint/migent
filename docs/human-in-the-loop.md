@@ -267,8 +267,10 @@ If the status is `question` and the file is missing, empty, not valid JSON, or
 fails validation, Migent sends the agent one correction turn in the same
 execution and conversation. The message names the file and the problem; the
 agent rewrites the file and responds again. The correction is recorded in
-`execution.json` as `question_correction`, so cancelling and resuming never
-grants a second one. A `question.file_invalid` event records the failure.
+`execution.json` under `corrections.question_file`, so cancelling and resuming never
+grants a second one. Older executions that recorded `question_correction` are read
+the same way. The kernel correction policy drives this; see
+[Workflows](workflows.md#correctable-response-failures). A `question.file_invalid` event records the failure.
 
 If the file is still unusable, the execution fails with
 `failure_reason: question_file_invalid`. The error names the file, the problem

@@ -104,6 +104,8 @@ test("the closing instruction follows the turn kind", () => {
   expect(close("answers")).toBe("Continue the stage using these answers.");
   expect(close("repair")).toBe("Fix the verify failure above, then report again.");
   expect(close("correction")).toBe("Rewrite the whole question file as one valid JSON document, then respond again.");
+  expect(close("response_correction")).toBe("Send the response again in the required format. Do not redo the work.");
+  expect(close("output_correction")).toBe("Write the missing files, then report again.");
   expect(renderProviderPrompt("body", { contract: true })).toContain("## Do\n\nCarry out the request above.");
 });
 

@@ -392,7 +392,7 @@ function resumeCommand(stderr: string): string | undefined {
 test("session continue retries an active role session with its last prompt", async () => {
   const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
   try {
-    cliHooks.runner = new AgentToolRunner(registryOf({ fake: new ScriptedClient(["not a status header"]) }), 10);
+    cliHooks.runner = new AgentToolRunner(registryOf({ fake: new ScriptedClient(["not a status header", "still not a status header"]) }), 10);
     const failed = await capture(() =>
       main(["session", "run", "--role", "reviewer", "--prompt", "Review the change", "--json"], workspace),
     );
@@ -404,7 +404,8 @@ test("session continue retries an active role session with its last prompt", asy
     cliHooks.runner = new AgentToolRunner(registryOf({ fake: retried }), 10);
     const resumed = await capture(() => main(["session", "continue", payload.session_id], workspace));
     expect(resumed.value).toBe(0);
-    expect(retried.calls[0]?.prompt).toContain("Review the change");
+    // The last prompt is the correction turn sent into the same conversation.
+    expect(retried.calls[0]?.prompt).toContain("## Invalid response");
   } finally {
     cliHooks.runner = null;
     removeWorkspace(workspace);

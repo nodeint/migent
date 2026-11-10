@@ -5,6 +5,14 @@ export const outcomeStatuses = new Set(["complete", "blocked", "question"]);
 import type { AskTarget } from "@nodeint/migent-workflow";
 export type { AskTarget };
 
+/** The reply broke the response contract (status or decision header). The agent can fix it by replying again. */
+export class ResponseContractError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ResponseContractError";
+  }
+}
+
 export class StageOutcome {
   constructor(
     readonly status: string,
@@ -35,8 +43,9 @@ export function parseStageOutcome(
   const rawStatus = headers.get("status");
   if (rawStatus === undefined) {
     if (required) {
-      throw new Error(
-        "Workflow stage response must start with `status: complete` or `status: blocked`.",
+      const statuses = ask === null ? ["complete", "blocked"] : ["complete", "blocked", "question"];
+      throw new ResponseContractError(
+        `Workflow stage response must start with ${statuses.map((item) => `\`status: ${item}\``).join(", ").replace(/, ([^,]*)$/, " or $1")}.`,
       );
     }
     return null;
@@ -44,11 +53,11 @@ export function parseStageOutcome(
   const status = rawStatus.toLowerCase();
   if (!outcomeStatuses.has(status)) {
     const allowed = [...outcomeStatuses].sort().join(", ");
-    throw new Error(`Invalid workflow stage status: ${rawStatus}. Allowed: ${allowed}.`);
+    throw new ResponseContractError(`Invalid workflow stage status: ${rawStatus}. Allowed: ${allowed}.`);
   }
   const decision = parseDecision(headers.get("decision"), status, decisionValues);
   if (status === "question") {
-    if (ask === null) throw new Error("status: question requires ask: human.");
+    if (ask === null) throw new ResponseContractError("status: question requires ask: human.");
     // Questions come from the question request file; see resolveStageOutcome.
     return new StageOutcome(status);
   }
@@ -65,7 +74,7 @@ function parseDecision(
   if (allowed.length === 0) return rawDecision ? rawDecision.toLowerCase() : null;
   if (rawDecision === undefined || rawDecision.trim() === "") {
     const allowedLabel = allowed.join("|");
-    throw new Error(
+    throw new ResponseContractError(
       "Workflow stage response must include " +
         `\`decision: ${allowedLabel}\` when status is complete.`,
     );
@@ -73,7 +82,7 @@ function parseDecision(
   const decision = rawDecision.trim().toLowerCase();
   if (!allowed.includes(decision)) {
     const allowedLabel = allowed.join(", ");
-    throw new Error(
+    throw new ResponseContractError(
       `Invalid workflow stage decision: ${rawDecision}. Allowed: ${allowedLabel}.`,
     );
   }

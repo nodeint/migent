@@ -11,7 +11,8 @@ export type AskTarget = string;
 export type ContractMode = boolean | "full" | "reminder";
 
 /** What the turn's message is. It picks the instruction under `## Do`; absent means a free-form request. */
-export type TurnKind = "start" | "continue" | "reply" | "answers" | "repair" | "correction";
+export type TurnKind = "start" | "continue" | "reply" | "answers" | "repair" | "correction"
+  | "response_correction" | "output_correction";
 
 const TURN_DIRECTIVES: Record<TurnKind, string> = {
   start: "carry out the stage.",
@@ -20,6 +21,8 @@ const TURN_DIRECTIVES: Record<TurnKind, string> = {
   answers: "Continue the stage using these answers.",
   repair: "Fix the verify failure above, then report again.",
   correction: "Rewrite the whole question file as one valid JSON document, then respond again.",
+  response_correction: "Send the response again in the required format. Do not redo the work.",
+  output_correction: "Write the missing files, then report again.",
 };
 
 function directive(turn: TurnKind | null, hasTask: boolean): string {
@@ -217,6 +220,21 @@ export interface QuestionCorrectionContext {
 /** The single correction message sent when a question request file fails validation. */
 export function renderQuestionCorrection(context: QuestionCorrectionContext): string {
   return renderPrompt("question-correction", context);
+}
+
+export interface GateCorrectionContext {
+  errorKind: string;
+  errorDetail: string;
+}
+
+/** The correction message sent when the response violates the response contract. */
+export function renderResponseCorrection(context: GateCorrectionContext): string {
+  return renderPrompt("response-correction", context);
+}
+
+/** The correction message sent when required artifacts or completion outputs are missing. */
+export function renderOutputCorrection(context: GateCorrectionContext): string {
+  return renderPrompt("output-correction", context);
 }
 
 /**

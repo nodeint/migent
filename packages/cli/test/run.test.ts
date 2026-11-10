@@ -564,7 +564,7 @@ test("continue redispatches a blocked session, leaves completed sessions stopped
 test("a failed stage stays active and continue --once dispatches it once", async () => {
   const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
   try {
-    const provider = new ScriptedClient(["status: complete\n\nplanned", "not a header"], ["# Plan\n", null]);
+    const provider = new ScriptedClient(["status: complete\n\nplanned", "not a header", "still not a header"], ["# Plan\n", null, null]);
     const [code, objects] = await runExecute(
       workspace,
       ["session", "run", "--workflow", "plan", "--task", "Write a plan"],
@@ -594,7 +594,7 @@ test("continue dispatches a failed stage once", async () => {
     const [code, objects] = await runExecute(
       workspace,
       ["session", "run", "--workflow", "plan", "--task", "Write a plan"],
-      new ScriptedClient(["status: complete\n\nplanned", "not a header"], ["# Plan\n", null]),
+      new ScriptedClient(["status: complete\n\nplanned", "not a header", "still not a header"], ["# Plan\n", null, null]),
     );
     expect(code).toBe(3);
     expect(objects.at(-1)?.stop_reason).toBe("stage_failed");
@@ -634,7 +634,7 @@ test("stage id runs the first stage and stops", async () => {
 test("stage id of a later stage creates no session", async () => {
   const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
   try {
-    const provider = new ScriptedClient(["status: complete\ndecision: approved\n\nok"], [null]);
+    const provider = new ScriptedClient(["status: complete\ndecision: approved\n\nok", "status: complete\ndecision: approved\n\nok"], [null, null]);
     const [code, objects] = await runExecute(
       workspace,
       ["session", "run", "--workflow", "plan", "--task", "Write a plan", "--once"],
@@ -642,7 +642,7 @@ test("stage id of a later stage creates no session", async () => {
     );
     expect(code).toBe(0);
     expect(objects.at(-1)?.stop_reason).toBe("stage");
-    expect(provider.calls).toHaveLength(1);
+    expect(provider.calls).toHaveLength(2);
   } finally {
     removeWorkspace(workspace);
   }

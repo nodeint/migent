@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import type { Check } from "@nodeint/migent-doctor";
-import { FAILURE_FILENAME } from "@nodeint/migent-kernel";
+import { CORRECTION_FAILURE_REASONS, FAILURE_FILENAME } from "@nodeint/migent-kernel";
 import { sessionFields } from "./session-row.js";
 
 const require = createRequire(import.meta.url);
@@ -127,7 +127,7 @@ export function printAgent(
     }
     if (typeof result.questions_file === "string") process.stdout.write(`questions  ${result.questions_file}\n`);
   }
-  if (result.failure_reason === "question_file_invalid" && typeof result.failure_detail === "string") {
+  if (typeof result.failure_reason === "string" && CORRECTION_FAILURE_REASONS.includes(result.failure_reason) && typeof result.failure_detail === "string") {
     process.stdout.write(`error  ${result.failure_detail}\n`);
   }
 }

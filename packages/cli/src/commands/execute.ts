@@ -11,6 +11,7 @@ import {
   type ExecuteResult,
   publishNextSuggestions,
   formatNextCommand,
+  CORRECTION_FAILURE_REASONS,
 } from "@nodeint/migent-kernel";
 import { printResumeCommand, printReplyCommand, formatQuestion } from "../display.js";
 import { cliHooks } from "../hooks.js";
@@ -181,7 +182,7 @@ function questionFileFailures(workspace: string, sessionId: string): string[] {
   }
   const lines: string[] = [];
   for (const [stageId, metadata] of latest) {
-    if (metadata.failure_reason === "question_file_invalid" && typeof metadata.error === "string") {
+    if (typeof metadata.failure_reason === "string" && CORRECTION_FAILURE_REASONS.includes(metadata.failure_reason) && typeof metadata.error === "string") {
       lines.push(`stage ${stageId}: ${metadata.error}`);
     }
   }
