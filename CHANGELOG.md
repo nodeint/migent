@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.5.6
+
 ### Added
 
 - `migent session rename <session> "<title>"` changes a session's display title at any time, including during a live run. It writes only `title.json`; the task, events, and status are untouched, and `session list`, `show`, and `follow` show the new title at once. `--json` prints `{session_id, title, previous_title}`.
@@ -45,34 +47,10 @@
 
 - `migent session complete <session-id>` marks a stopped workflow session completed without dispatching another stage. Takes the session lock and applies to `active`, `blocked`, `question`, or `cancelled` sessions. Rejects `prepared` and role sessions, and any session a live process is running. Completes manually by appending `session.completed` (with `data.manual: true`) to the event log; the fold derives this and survives `session repair`. Publishes outputs by normal rules (schema 7: artifact registry, schema 2–6: top-level outputs, v1: completion.outputs), records `published_by_execution_id: "manual"`, seals metrics.json, and writes next.json. Warns on stderr about each missing required artifact but completes anyway. Idempotent on already-completed sessions. Exit 0 on success or already-completed; exit 2 when the session is missing, prepared, a role, running (with live lock), or unreadable. A completed session's `status.json` records `completion_method`: `"manual"` for this command (with `manual_completion` holding the timestamp and previous status), and `"agent"` when stage executions completed it; sessions completed earlier gain `"agent"` the next time their status is folded, for example by `migent session repair`.
 
-## 0.5.1
-
-### Changed
-
-- **Breaking:** A client quota failure is no longer handled automatically. Migent still detects it and records `failure_reason: quota`, the reset time (`retry_at`), the window (`quota_window`), and the `provider.quota` event (also shown in `failure.md`, and in `session watch`/`session show` for each stage whose latest execution failed on quota), but the stage now fails like any other: no client parking, shared waits, sleeping, or automatic retry after reset, and role sessions no longer wait and rerun. Full runs report it as `stage_failed` (exit 3); `--once` and `--stage` still exit 8. `session continue` reruns the stage.
-
-- **Breaking:** Workflows use schema version 7. A top-level `artifacts` registry (`file`, `description`, `required`) replaces `stages[].produces` and top-level `outputs`; stages list artifact ids, and a decision may reference registry ids or define decision-local artifacts. Run `migent migrate`; it refuses without writing when two stages would publish the same file name or an id cannot be derived, and reports artifacts that are now published, `run_when` artifacts that become `required: false`, and merged output aliases.
-- Every registry artifact is published when the session completes. Required artifacts are guaranteed and hold completion until they exist; optional ones are copied only when present. Sources are the producer's current eligible completion, so a skipped stage or an unselected decision never supplies a stale file.
-- Prompts list every file a stage writes, with descriptions, and give dependents and routed stages the artifacts of the decision that was chosen. `downstream[].artifacts` is optional and, when omitted, passes every published artifact under its id. A mapping to an optional artifact is best-effort; doctor notes it, and `session show` lists absent optional artifacts as not produced.
-- `migent migrate` also upgrades each session's `workflow.yaml` draft and `workflow.frozen.yaml` pin, under the session lock. It skips symlinked session directories and files, and refuses to write if a session is running or a file changed since planning.
-- The bundled `plan` workflow records non-blocking review comments as `plan-comments.md`.
-
-## 0.5.0
-
-### Changed
-
-- The README lists supported CLIs with links to their project pages.
-- **Breaking:** Agents select a CLI through `client.type`; the provider abstraction is removed and configuration/workflows use schema version 6. Run `migent migrate` to preserve existing client selections and options. Replace provider selection flags with `--client` and use `migent get clients` instead of `get providers`.
-- Role sessions honor the configured client. Claude Code's session identity and default `permission_mode=bypassPermissions` follow `claude-code`; quota waits are grouped by client.
-
-### Fixed
-
-- Migration preserves layered client selections from v4/v5, writes inline workflow agents, keeps comments on retained role/stage fields, and verifies the resulting YAML before writing.
-- Legacy resume checks every turn's client evidence before creating or reopening executions, refusing missing or conflicting evidence without sending native IDs to another CLI. Metrics parse each turn with its launched client and count captures with no identifiable client as uncaptured.
-- Shared quota waits retry all affected stages after reset within the concurrency limit, stop repeated quota failures for the same window, and resolve legacy wait keys from execution evidence.
-
 ## Older versions
 
+- [0.5.1](https://github.com/nodeint/migent/releases/tag/v0.5.1)
+- [0.5.0](https://github.com/nodeint/migent/releases/tag/v0.5.0)
 - [0.4.1](https://github.com/nodeint/migent/releases/tag/v0.4.1)
 - [0.4.0](https://github.com/nodeint/migent/releases/tag/v0.4.0)
 - [0.3.6](https://github.com/nodeint/migent/releases/tag/v0.3.6)
