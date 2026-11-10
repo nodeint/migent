@@ -2,20 +2,33 @@ schema_version: 7
 id: plan
 constraints:
   - Plan only. Do not modify source code.
+
+artifacts:
+  plan:
+    file: plan.md
+  plan_comment:
+    file: plan_comment.md
+    required: false
+    description: Non-blocking review comments for the implementer.
+
 stages:
   - id: plan
-    role: planner
-    depends_on: []
+    role: architect
     max_revisions: 3
     ask: human
     instructions:
+      - Before starting, check that the workspace is on the default branch at its latest remote commit; otherwise ask the human how to proceed.
       - Define the goal, scope, and architectural constraints from the task and repository evidence.
+      - Ask the human when the scope or goal is ambiguous instead of choosing an interpretation.
       - Design component responsibilities, boundaries, contracts, and dependencies.
       - Favor maintainability and extensibility. Keep the design proportional to the task.
       - Explain key decisions, trade-offs, risks, and open questions.
-      - Stay at the architecture level. Exclude implementation steps, code-level details, and test procedures.
+      - Identify the affected modules and files, citing repository evidence.
+      - State acceptance criteria and the verification approach (which checks prove it works).
+      - Stay at the architecture level. Exclude step-by-step implementation, code snippets, and detailed test procedures.
       - Resolve substantive review findings when revising.
     artifacts: [plan]
+
   - id: review_plan
     role: reviewer
     depends_on:
@@ -24,7 +37,9 @@ stages:
       - Review the architecture against the task and repository evidence.
       - Assess correctness, feasibility, maintainability, and extensibility.
       - Check responsibilities, boundaries, contracts, dependencies, and material trade-offs or risks.
-      - Stay at the architecture level. Do not require implementation steps, code-level details, or test procedures.
+      - Check that acceptance criteria and the verification approach are present and testable.
+      - Flag designs larger than the task requires.
+      - Stay at the architecture level. Do not require step-by-step implementation, code snippets, or detailed test procedures.
       - Report all substantive gaps together with their impact and required corrections.
       - Choose revise for substantive gaps, approved-with-comments for non-blocking comments, or approved when no comments remain.
       - Do not revise for style or formatting.
@@ -33,19 +48,13 @@ stages:
           when: No substantive gaps or comments remain.
           navigate: complete
       - approved-with-comments:
-          when: No substantive gaps remain, but non-blocking comments are recorded in review-comments.md.
+          when: No substantive gaps remain, but non-blocking comments are recorded in plan_comment.md.
           navigate: complete
+          artifacts: [plan_comment]
       - revise:
           when: Substantive gaps require correction.
           navigate: plan
-    artifacts: [review_plan]
+
 downstream:
   - workflow: implement
     task: Implement the approved plan.
-    artifacts:
-      plan: plan
-artifacts:
-  plan:
-    file: plan.md
-  review_plan:
-    file: review-comments.md

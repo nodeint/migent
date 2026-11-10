@@ -47,11 +47,9 @@ Stage files by name. Do not use `git add -A` or `git commit -am`. Skip secrets
 and build output. Write the message in the style of `git log`, one short
 imperative subject. End it with the attribution line the session gives.
 
-## Confirm, then push
+## Push
 
-Pushing and opening a pull request are visible to others. Ask once, unless the
-user already asked for the pull request: push `<branch>` and open a pull request
-against `next`.
+Push `<branch>` and open a pull request against `next`.
 
 ```bash
 git push -u origin refs/heads/<branch>:refs/heads/<branch>

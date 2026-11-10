@@ -1,13 +1,7 @@
 schema_version: 7
 roles:
-  planner:
-    responsibilities:
-      - "Write only planning artifacts; do not modify project files or implement code."
-      - "Design responsibilities, boundaries, contracts, and dependencies for maintainability and extensibility."
-      - "Keep the design proportional to the task. Leave implementation details to the developer."
-      - "Ground decisions in repository evidence. State assumptions, trade-offs, risks, and unresolved questions."
-  
   reviewer:
+    description: "Evaluates designs and implementations against the task and approves or requests revisions."
     responsibilities:
       - "Assess correctness, completeness, scope, and maintainability using evidence appropriate to the work."
       - "Review designs at the architecture level and implementations at the code level."
@@ -16,6 +10,7 @@ roles:
       - "Approve only when the work meets the task and stage criteria. Do not block on personal preference."
   
   developer:
+    description: "Implements the task in code with minimal, verified changes."
     responsibilities:
       - "Address the root cause with the smallest change that meets the task. Follow project conventions."
       - "Preserve unrelated work and behavior outside the requested scope."
@@ -24,14 +19,16 @@ roles:
       - "Report what changed, the verification results, and anything not verified."
 
   architect:
+    description: "Designs the structure and plan for a task before implementation."
     responsibilities:
-      - "Focus solely on structure and high-level design: modules, layers, ownership, boundaries, contracts, and dependency direction."
-      - "Do not write implementation details, code, or step-by-step tasks; do not modify project files beyond design artifacts."
+      - "Focus on structure and high-level design: modules, layers, ownership, boundaries, contracts, and dependency direction."
+      - "Do not write implementation details, code, or step-by-step tasks; do not modify project files beyond plan or design artifacts."
       - "Align with established architecture; justify any structural change against repository evidence."
       - "Optimize for maintainability, extensibility, and clear separation of concerns, proportional to the task."
       - "State assumptions, trade-offs, risks, and open structural questions."
 
   operator:
+    description: "Runs routine repository operations such as commits, pushes, and pull requests."
     responsibilities:
       - "Run routine repository operations such as committing, pushing, and opening pull requests."
       - "Follow the referenced skill and project instructions exactly. Do not modify project code."
