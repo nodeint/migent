@@ -23,6 +23,7 @@ import {
   skipsStatusWrite,
   type ParsedEvent,
 } from "./session-events.js";
+import { effectiveTitleFrom, overlayTitle, readTitleRecord, type TitleRecord } from "./session-title.js";
 import { loadFrozenWorkflow } from "./session-freeze.js";
 import { StageOutcome } from "./stage-outcome.js";
 import { storedQuestions } from "./questions.js";
@@ -69,6 +70,8 @@ export interface FoldInputs {
   previousStatus: Record<string, unknown> | null;
   outputFiles: readonly string[];
   workflow: WorkflowDocument | null;
+  /** The rename record (`title.json`), or null. */
+  titleRecord: TitleRecord | null;
 }
 
 /** A missing schema_version is 1. This is not config documentVersion, which maps a missing version to 0. */
@@ -83,6 +86,7 @@ export function sessionSchemaVersion(document: Record<string, unknown> | null): 
 export function foldStatus(inputs: FoldInputs): Record<string, unknown> {
   const status = inputs.schemaVersion >= 2 ? foldSchema2(inputs) : foldV1(inputs);
   applyManualCompletion(status, inputs.events);
+  applyEffectiveTitle(status, inputs);
   addPathOnlyOutputs(status, inputs.outputFiles);
   return status;
 }
@@ -186,7 +190,7 @@ export function statusDriftMessage(workspace: string, sessionId: string): string
   } catch {
     return null;
   }
-  const fields = differingKeys(read.status, folded);
+  const fields = differingKeys(overlayTitle({ ...read.status }, sessionDirectory), folded);
   if (fields.length === 0) return null;
   return `status.json differs from the event fold: ${fields.join(", ")}.`;
 }
@@ -206,6 +210,7 @@ export function loadFoldInputs(workspace: string, sessionDirectory: string): Fol
     previousStatus,
     outputFiles: listOutputFiles(sessionDirectory),
     workflow: loadSessionWorkflow(workspace, sessionDirectory, identity),
+    titleRecord: readTitleRecord(sessionDirectory),
   };
 }
 
@@ -637,6 +642,12 @@ function initialStatus(manifest: SessionManifest, schemaVersion: number): Record
   applyManifestIdentity(status, manifest);
   if (manifest.createdAt) status.updated_at = manifest.createdAt;
   return status;
+}
+
+function applyEffectiveTitle(status: Record<string, unknown>, inputs: FoldInputs): void {
+  const title = effectiveTitleFrom(inputs.titleRecord, inputs.manifest.title);
+  if (title !== null) status.title = title;
+  else delete status.title;
 }
 
 function applyManifestIdentity(status: Record<string, unknown>, manifest: SessionManifest): void {

@@ -10,13 +10,6 @@ import { commitFoldedStatus } from "./session-fold.js";
 
 export const TASK_FILENAME = "task.md";
 
-export function assertSessionTitle(title: string): void {
-  if (title.includes("\n") || title.includes("\r")) {
-    throw new ConfigurationError("Session title must be one line.");
-  }
-  if (title.trim() === "") throw new ConfigurationError("Session title must not be empty.");
-}
-
 export function assertSingleLineTask(task: string): void {
   if (task.includes("\n") || task.includes("\r")) {
     throw new ConfigurationError(

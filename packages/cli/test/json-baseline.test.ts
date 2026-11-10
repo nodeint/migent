@@ -344,6 +344,13 @@ test("session complete --json and session follow --json on a stopped session", a
   expect(await json(["session", "follow", sessionId, "--exit-when-done", "--json"], undefined, workspace)).toMatchSnapshot();
 });
 
+test("session rename --json", async () => {
+  const workspace = fakeWorkspace({ partial: TWO_STAGE });
+  const sessionId = createWorkflowSession(workspace, "partial", "Write a plan");
+  const result = await json(["session", "rename", sessionId, "Better title", "--json"], undefined, workspace);
+  expect(result.stdout).toEqual({ session_id: sessionId, title: "Better title", previous_title: "Write a plan" });
+});
+
 test("session metrics and cancel --json success payloads", async () => {
   const workspace = fakeWorkspace();
   const directory = path.join(workspace, ".migent", "sessions", "wave-3");

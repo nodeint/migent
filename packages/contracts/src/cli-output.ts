@@ -379,6 +379,14 @@ export const CompleteResult = Type.Object(
   },
   { $id: id("cli/complete"), title: "session complete --json" },
 );
+export const RenameResult = Type.Object(
+  {
+    session_id: Type.String(),
+    title: Type.String(),
+    previous_title: nullable(Type.String()),
+  },
+  { $id: id("cli/rename"), title: "session rename --json" },
+);
 export const RoleRunResult = Type.Object(
   {
     agent_id: Type.String(),

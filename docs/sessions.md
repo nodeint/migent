@@ -26,6 +26,7 @@ show use `session_id` for that session.
 ├── workflow.yaml                         # editable workflow draft created by prepare
 ├── workflow.frozen.yaml                  # pinned workflow, roles, and stage targets
 ├── status.json
+├── title.json                            # present after `session rename`
 ├── task.md                               # task body; written before the first stage
 ├── events.jsonl
 ├── session.lock                          # present only while a process is running the session
@@ -79,6 +80,13 @@ The session-level files have distinct purposes:
   other files that belong next to it. Stage prompts name this path and the
   session directory. They do not include the task text. The first dispatch
   records a hash of `task.md`. A later change stops the next dispatch.
+- `title.json` is written only by `migent session rename`. It holds the current `title`, `updated_at`,
+  and a `history` of earlier titles with timestamps. The effective title is the `title.json` title,
+  then the `title` in `manifest.yaml` (the creation title, never rewritten), then none. A missing or
+  invalid `title.json` falls back to the manifest title. Rename takes no session lock, so it works
+  during a live run. `session list`, `session show`, and `session follow` apply the effective title
+  when they read, while `status.json` may keep the previous title until the next lifecycle commit or
+  `session repair` folds the effective title into it. Rename never changes `task`.
 - `status.json` is the current, machine-readable session snapshot. It includes
   the latest execution and stage state, and records decisions, blockers, and
   published outputs when applicable. `session show` reads this file.

@@ -412,6 +412,21 @@ Type: object
 | `task_path` | string | yes |  |  |
 | `workflow_path` | string | yes |  |  |
 
+<a id="cli-rename-json"></a>
+### session rename --json
+
+Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/cli/rename.json`
+
+Emitted by: `session rename --json` (produced, document)
+
+Type: object
+
+| Field | Type | Required | Notes | Description |
+| --- | --- | --- | --- | --- |
+| `session_id` | string | yes |  |  |
+| `title` | string | yes |  |  |
+| `previous_title` | string \| null | yes |  |  |
+
 <a id="cli-repair-json"></a>
 ### session repair
 

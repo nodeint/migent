@@ -49,6 +49,7 @@ export const CLI_CONTRACTS: readonly ContractEntry[] = [
   e("session-metrics-line", O.SealedMetricsLine, "passthrough", "json-lines", ["session metrics --json"]),
   e("cancel", O.CancelResult, "produced", "document", ["session cancel --json"]),
   e("complete", O.CompleteResult, "produced", "document", ["session complete --json"]),
+  e("rename", O.RenameResult, "produced", "document", ["session rename --json"]),
   e("role-run", O.RoleRunResult, "produced", "document", ["session run --role --json"]),
   e("role-run-many", O.RoleRunResults, "produced", "document", ["session run --role --json (resumed cancelled executions)"]),
   e("prepare", O.PrepareResult, "produced", "document", ["session prepare"]),
