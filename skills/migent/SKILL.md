@@ -27,6 +27,7 @@ use `migent <command> --help` for unfamiliar flags.
 | Find the most recent session when its ID is unknown | `migent session list --latest --json` |
 | Check a known session's status, decisions, and outputs | `migent session show <id> --json` |
 | Resume stopped work after resolving its blocker or failure | `migent session continue <id>` |
+| Change a session's display title (works during a run) | `migent session rename <id> "<title>"` |
 | Finish a stopped workflow session the user says is done, without another stage | `migent session complete <id>` |
 
 For preparation steps and status-specific resume behavior, read the matching

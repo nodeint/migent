@@ -5,6 +5,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { isRecord } from "@nodeint/migent-workflow";
 import { MIGENT_DIRNAME, SESSIONS_DIRNAME } from "./runtime.js";
+import { effectiveTitle } from "./session-title.js";
 import { loadFrozenWorkflow } from "./session-freeze.js";
 
 export function readStatusFile(filePath: string): Record<string, unknown> {
@@ -122,7 +123,8 @@ export function watchSnapshot(
   if (execution && isRecord(execution.skip)) snapshot.skip = execution.skip;
   const quotaFailures = unresolvedQuotaFailures(sessionDirectory);
   if (quotaFailures.length > 0) snapshot.quota_failures = quotaFailures;
-  if (typeof status.title === "string" && status.title !== "") snapshot.title = status.title;
+  const title = effectiveTitle(sessionDirectory);
+  if (title !== null) snapshot.title = title;
   const diagnostics = latestDiagnosticsPathIn(sessionDirectory);
   if (diagnostics !== null) snapshot.diagnostics = diagnostics;
   const exitAnomalies = exitAnomalySummaries(sessionDirectory);
@@ -222,7 +224,7 @@ export function listSessionRows(workspace: string): string[][] {
       status.latest_decision ? text(status.latest_decision) : "--",
       outputLabel,
       text(status.task, ""),
-      text(status.title, entry.name),
+      effectiveTitle(path.join(sessionsDirectory, entry.name)) ?? entry.name,
     ]);
   }
   rows.sort((left, right) => {

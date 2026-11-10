@@ -8,7 +8,7 @@ must be checked against the current source when changing behavior.
 
 | Document | Owns | Read when | Search terms |
 | --- | --- | --- | --- |
-| [CLI](cli.md) | Commands, flags, exit behavior, init, config inspection, draft authoring, migration, skills, doctor, registry service | Running Migent, changing a command, or checking invocation syntax | `session run`, `prepare`, `continue`, `--stage`, `config`, `get`, `doctor`, `workspace` |
+| [CLI](cli.md) | Commands, flags, exit behavior, init, config inspection, draft authoring, migration, skills, doctor, registry service | Running Migent, changing a command, or checking invocation syntax | `session run`, `prepare`, `continue`, `rename`, `--stage`, `config`, `get`, `doctor`, `workspace` |
 | [Workflows](workflows.md) | Workflow YAML (parsed by `@nodeint/migent-workflow`), stage protocol, artifacts, decisions, routes, conditions, verification, revision limits, concurrency, outputs | Creating or editing a workflow, changing stage execution semantics | `stages`, `needs`, `run_when`, `verify`, `routes`, `outputs`, `downstream` |
 | [Agent configuration](agents.md) | Shared/local agent configuration, role agents, named agents, client options, effort, client-specific settings | Selecting agents or changing configuration resolution | `agent`, `agents`, `responsibilities`, `config.local.yaml`, `client`, `effort` |
 | [Adapters](adpaters.md) | Shared adapter architecture, client contracts, command building, discovery, parsing, validation boundaries, failure and usage contracts | Implementing a client or changing headless option discovery | `CliClient`, `CommandSpec`, `parseOptions`, `value_mode`, `normalizeUsage` |

@@ -571,6 +571,8 @@ migent session cancel <session-id>
 migent session cancel <session-id> --wait 60 --json
 migent session complete <session-id>
 migent session complete <session-id> --json
+migent session rename <session-id> "<title>"
+migent session rename <session-id> "<title>" --json
 ```
 
 `session cancel` stops a session that another process is running, without a
@@ -583,6 +585,14 @@ stopped, 1 when it is still running after the wait, 2 when the session does not
 exist, no live process holds its lock, or the lock belongs to another machine.
 A session that is not running is left unchanged. `--json` prints
 `{"session_id", "cancelled", "status"}`.
+
+`session rename <session-id> "<title>"` changes only the session's display title.
+It takes no session lock, so it works in any status, including while a process
+is running the session, and it leaves `task`, `task.md`, events, and lifecycle
+state unchanged. The title is trimmed. A title that is empty or contains a line
+break exits 2 and changes nothing; an unknown session also exits 2. Exit 0 when
+renamed. `--json` prints `{"session_id", "title", "previous_title"}`. See
+[Sessions](sessions.md) for where the title is stored.
 
 `session complete <session-id>` marks a stopped workflow session `completed` when
 you judge the work is done, without dispatching another stage. It takes the

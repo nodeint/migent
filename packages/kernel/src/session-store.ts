@@ -21,6 +21,7 @@ import { sealSessionMetrics } from "./metrics.js";
 import { appendLifecycleEvent, appendRecordedEvent, CANCELLED_REPLY, readParsedEvents, reservedExecutionOrders, reservedStageAttempts, skipsStatusWrite } from "./session-events.js";
 import { commitFoldedStatus, readSessionManifest } from "./session-fold.js";
 import { loadFrozenWorkflow, readWorkflowFreeze } from "./session-freeze.js";
+import { normalizeRenameTitle, writeTitleRecord } from "./session-title.js";
 import { assertSessionLockHeld, SessionLock, SessionLockHeldError } from "./session-lock.js";
 import { publishManualCompletion } from "./manual-completion.js";
 import { assertSessionId } from "./session-selection.js";
@@ -1060,6 +1061,19 @@ export class SessionStore {
     }
     if (plan.sessionStatus === "completed") publishNextSuggestions(this.workspace, context.sessionId);
     if (plan.outputsMissing.length > 0) throw new OutputsMissing(plan.outputsMissing);
+  }
+
+  /**
+   * Change a session's display title. Takes no session lock, so it works during a live run. Only
+   * title.json is written; readers overlay it and the next lifecycle commit folds it into status.json.
+   */
+  rename(sessionId: string, rawTitle: string): { sessionId: string; title: string; previousTitle: string | null } {
+    const title = normalizeRenameTitle(rawTitle);
+    assertSessionId(sessionId);
+    const sessionDirectory = path.join(this.sessionsDirectory, sessionId);
+    if (!isDirectory(sessionDirectory)) throw new ConfigurationError(`Session ${sessionId} does not exist.`);
+    const { previousTitle } = writeTitleRecord(sessionDirectory, title, utcNow());
+    return { sessionId, title, previousTitle };
   }
 
   /**

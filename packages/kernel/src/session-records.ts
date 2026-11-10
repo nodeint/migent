@@ -15,7 +15,8 @@ import { parseYamlDocument } from "@nodeint/migent-workflow";
 import { commitFoldedStatus, readSessionManifest } from "./session-fold.js";
 import { SessionLock, sessionLockHeldLocally } from "./session-lock.js";
 import { SessionStore } from "./session-store.js";
-import { assertSessionTitle, assertSingleLineTask, requireTaskBody, writeTaskFile, taskFilePath } from "./task-file.js";
+import { assertSessionTitle } from "./session-title.js";
+import { assertSingleLineTask, requireTaskBody, writeTaskFile, taskFilePath } from "./task-file.js";
 import { isWorkflowV2, loadNamedWorkflow, type WorkflowDocument } from "@nodeint/migent-workflow";
 
 function sessionWorkflowPath(workspace: string, workflow: WorkflowDocument): string {

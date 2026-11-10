@@ -8,6 +8,7 @@ import { getHelpTypes, runGet } from "./commands/get.js";
 import { runDoctor } from "./commands/doctor.js";
 import { executeWorkflow } from "./commands/execute.js";
 import { cancelSession } from "./commands/cancel.js";
+import { renameSession } from "./commands/rename.js";
 import { completeSession } from "./commands/complete.js";
 import { prepareWorkflowSession } from "./commands/prepare.js";
 import { repairWorkflowSession } from "./commands/repair.js";
@@ -498,6 +499,26 @@ function registerSessionCommand(program: Command, status: CliStatus): void {
     )
     .action((id: string, options: OptionValues) =>
       settle(status, () => completeSession(findWorkspace(invocationCwdPath()), id, options.json === true)),
+    );
+
+  session
+    .command("rename")
+    .description("Change a session's display title. The task and the session state stay unchanged.")
+    .argument("<session>", "Session to rename.")
+    .argument("<title>", "New one-line title.")
+    .option("--json", "Print {session_id, title, previous_title} on stdout.")
+    .addHelpText(
+      "after",
+      `${exitText([
+        "Exit 0 when the session is renamed.",
+        "Exit 2 when the session does not exist or the title is empty or has a line break.",
+      ])}Works while the session is running. Examples:
+  migent session rename <session> "New title"
+  migent session rename <session> "New title" --json
+`,
+    )
+    .action((id: string, title: string, options: OptionValues) =>
+      settle(status, () => renameSession(findWorkspace(invocationCwdPath()), id, title, options.json === true)),
     );
 
   session
