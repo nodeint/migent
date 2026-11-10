@@ -1185,9 +1185,9 @@ exports[`doctor --session --json checks a prepared session's draft workflow 1`] 
     "checks": [
       {
         "items": [
-          "session  <uuid>",
+          "session  1",
           "workflow  plan",
-          "source  draft  .migent/sessions/<uuid>/workflow.yaml",
+          "source  draft  .migent/sessions/1/workflow.yaml",
         ],
         "name": "session",
         "ok": true,
@@ -1231,8 +1231,8 @@ Could not list grok models: offline",
     ],
     "ok": true,
     "session": {
-      "id": "<uuid>",
-      "path": ".migent/sessions/<uuid>/workflow.yaml",
+      "id": "1",
+      "path": ".migent/sessions/1/workflow.yaml",
       "source": "draft",
       "workflow_id": "plan",
     },
@@ -1852,7 +1852,7 @@ exports[`service status and workspace list --json without a running service 2`] 
 exports[`session complete --json and session follow --json on a stopped session 1`] = `
 {
   "code": 0,
-  "stderr": "[migent] Watching session <uuid>.
+  "stderr": "[migent] Watching session 1.
 ",
   "stdout": {
     "baseline": null,
@@ -1870,7 +1870,7 @@ exports[`session complete --json and session follow --json on a stopped session 
     "outputs_not_produced": [],
     "questions": [],
     "running_stages": [],
-    "session_id": "<uuid>",
+    "session_id": "1",
     "skipped_stages": [],
     "status": "active",
     "title": "Write a plan",
@@ -1890,7 +1890,7 @@ exports[`session complete --json and session follow --json on a stopped session 
       "notes",
     ],
     "next": {
-      "path": "<root>/.migent/sessions/<uuid>/next.json",
+      "path": "<root>/.migent/sessions/1/next.json",
       "suggestions": [
         {
           "argv": [
@@ -1900,7 +1900,7 @@ exports[`session complete --json and session follow --json on a stopped session 
             "--workflow",
             "implement",
             "--prior",
-            "<uuid>",
+            "1",
           ],
           "artifacts": {
             "plan": {
@@ -1908,7 +1908,7 @@ exports[`session complete --json and session follow --json on a stopped session 
               "path": "outputs/plan.md",
             },
           },
-          "command": "migent session run --workflow implement --prior <uuid>",
+          "command": "migent session run --workflow implement --prior 1",
           "task": "Implement the plan",
           "workflow": "implement",
         },
@@ -1917,10 +1917,10 @@ exports[`session complete --json and session follow --json on a stopped session 
     "outputs": [
       {
         "name": "plan",
-        "path": "<root>/.migent/sessions/<uuid>/outputs/plan.md",
+        "path": "<root>/.migent/sessions/1/outputs/plan.md",
       },
     ],
-    "session_id": "<uuid>",
+    "session_id": "1",
     "status": "completed",
   },
 }
@@ -1934,7 +1934,7 @@ exports[`session complete --json and session follow --json on a stopped session 
     "already_completed": true,
     "missing_outputs": [],
     "next": {
-      "path": "<root>/.migent/sessions/<uuid>/next.json",
+      "path": "<root>/.migent/sessions/1/next.json",
       "suggestions": [
         {
           "argv": [
@@ -1944,7 +1944,7 @@ exports[`session complete --json and session follow --json on a stopped session 
             "--workflow",
             "implement",
             "--prior",
-            "<uuid>",
+            "1",
           ],
           "artifacts": {
             "plan": {
@@ -1952,7 +1952,7 @@ exports[`session complete --json and session follow --json on a stopped session 
               "path": "outputs/plan.md",
             },
           },
-          "command": "migent session run --workflow implement --prior <uuid>",
+          "command": "migent session run --workflow implement --prior 1",
           "task": "Implement the plan",
           "workflow": "implement",
         },
@@ -1961,10 +1961,10 @@ exports[`session complete --json and session follow --json on a stopped session 
     "outputs": [
       {
         "name": "plan",
-        "path": "<root>/.migent/sessions/<uuid>/outputs/plan.md",
+        "path": "<root>/.migent/sessions/1/outputs/plan.md",
       },
     ],
-    "session_id": "<uuid>",
+    "session_id": "1",
     "status": "completed",
   },
 }
@@ -1973,7 +1973,7 @@ exports[`session complete --json and session follow --json on a stopped session 
 exports[`session complete --json and session follow --json on a stopped session 4`] = `
 {
   "code": 0,
-  "stderr": "[migent] Watching session <uuid>.
+  "stderr": "[migent] Watching session 1.
 ",
   "stdout": {
     "baseline": null,
@@ -1997,7 +1997,7 @@ exports[`session complete --json and session follow --json on a stopped session 
     "outputs_not_produced": [],
     "questions": [],
     "running_stages": [],
-    "session_id": "<uuid>",
+    "session_id": "1",
     "skipped_stages": [],
     "status": "completed",
     "title": "Write a plan",
@@ -2119,12 +2119,12 @@ exports[`session metrics and cancel --json success payloads 3`] = `
 exports[`session run --role --json prints the role result 1`] = `
 {
   "code": 0,
-  "stderr": "[migent] session_id: <uuid>
+  "stderr": "[migent] session_id: 1
 [migent] agent planner · fake/m1 (effort: medium).
 ",
   "stdout": {
     "agent_id": "native-session-1",
-    "artifact_directory": "<root>/.migent/sessions/<uuid>/executions/0001-planner--attempt-01/artifacts",
+    "artifact_directory": "<root>/.migent/sessions/1/executions/0001-planner--attempt-01/artifacts",
     "client": "fake",
     "execution_id": "0001-planner--attempt-01",
     "execution_status": "completed",
@@ -2139,7 +2139,7 @@ exports[`session run --role --json prints the role result 1`] = `
     "response": "status: complete
 
 role answer",
-    "session_id": "<uuid>",
+    "session_id": "1",
     "session_status": "completed",
   },
 }
@@ -2149,13 +2149,13 @@ exports[`session run --workflow completes and publishes outputs 1`] = `
 {
   "code": 0,
   "stderr": "preflight skipped (--skip-preflight)
-[migent] session_id: <uuid>
+[migent] session_id: 1
 [migent] stage draft · attempt 1 · <clock> · fake/m1 (effort: medium).
 [migent] stage draft · attempt 1 · <dur> · complete.
 [migent] completed · <dur>
-[migent] artifact: <root>/.migent/sessions/<uuid>/outputs/plan.md
-[migent] next: <root>/.migent/sessions/<uuid>/next.json
-[migent] migent session run --workflow implement --prior <uuid>
+[migent] artifact: <root>/.migent/sessions/1/outputs/plan.md
+[migent] next: <root>/.migent/sessions/1/next.json
+[migent] migent session run --workflow implement --prior 1
 ",
   "stdout": [],
 }

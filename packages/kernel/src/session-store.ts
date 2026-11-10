@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createNumericSessionDirectory, quotedSessionId } from "./session-id.js";
 import { renderProviderDiagnostics } from "./turn-diagnostics.js";
 import { publishNextSuggestions, type NextSuggestion } from "./next-handoff.js";
 import {
@@ -1257,7 +1257,7 @@ export class SessionStore {
     resumesExecutionId: string | null = null,
     kind: "verify" | null = null,
   ): ExecutionContext {
-    const resolvedSession = sessionId ?? `session_${randomUUID().replaceAll("-", "")}`;
+    const resolvedSession = sessionId ?? path.basename(createNumericSessionDirectory(this.sessionsDirectory)[1]);
     const order = executionOrder ? executionOrder : this.nextExecutionOrder(resolvedSession);
     const attempt = stageAttempt ? stageAttempt : this.nextStageAttempt(resolvedSession, stageId);
     const executionId = `${String(order).padStart(4, "0")}-${safeComponent(stageId)}--attempt-${String(attempt).padStart(2, "0")}`;
@@ -1328,7 +1328,7 @@ export class SessionStore {
     const createdAt = utcNow();
     writeFileAtomic(
       manifestPath,
-      `${[`session_id: ${context.sessionId}`, `created_at: ${createdAt}`, "status: running"].join("\n")}\n`);
+      `${[`session_id: ${quotedSessionId(context.sessionId)}`, `created_at: ${createdAt}`, "status: running"].join("\n")}\n`);
     appendLifecycleEvent(sessionDirectory, {
       event: "session.created",
       timestamp: createdAt,

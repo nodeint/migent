@@ -9,7 +9,7 @@ import { freezeSessionTask } from "../src/task-file.ts";
 import { tempDir, writeSessionConfig } from "./support.ts";
 
 const WORKFLOW = "schema_version: 1\nid: solo\nstages:\n  - id: work\n    role: developer\n";
-const SESSION_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const SESSION_NUMBER = /^[1-9][0-9]*$/;
 
 function workspaceWithWorkflow(): string {
   const workspace = tempDir("migent-task-");
@@ -31,7 +31,7 @@ test("a one-line task is stored in task.md", () => {
   };
   expect(status.status).toBe("active");
   expect(status.task).toBe("Write a plan");
-  expect(sessionId).toMatch(SESSION_UUID);
+  expect(sessionId).toMatch(SESSION_NUMBER);
   expect((status as { title?: string }).title).toBe("Write a plan");
 });
 
@@ -49,7 +49,7 @@ test("prepare stores a title and waits for task.md", () => {
   expect(() => createPreparedSession(workspace, "   ", "solo")).toThrow(/must not be empty/);
   expect(() => createPreparedSession(workspace, "one\ntwo", "solo")).toThrow(/one line/);
   const sessionId = createPreparedSession(workspace, "  some task title  ", "solo");
-  expect(sessionId).toMatch(SESSION_UUID);
+  expect(sessionId).toMatch(SESSION_NUMBER);
   const directory = path.join(workspace, ".migent", "sessions", sessionId);
   expect(existsSync(path.join(directory, "session.lock"))).toBe(false);
   expect(readFileSync(path.join(directory, "task.md"), "utf8")).toBe("");
@@ -73,7 +73,7 @@ test("prepare stores a title and waits for task.md", () => {
   expect(events).toContain("\"v\":2");
   expect(events).toContain("\"title\":\"some task title\"");
   const again = createPreparedSession(workspace, "some task title", "solo");
-  expect(again).toMatch(SESSION_UUID);
+  expect(again).toMatch(SESSION_NUMBER);
   expect(again).not.toBe(sessionId);
   expect(() => activatePreparedSession(workspace, sessionId)).toThrow(/no task.md/);
   writeFileSync(path.join(directory, "task.md"), "   \n", "utf8");

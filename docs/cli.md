@@ -12,7 +12,7 @@ migent session run --workflow <workflow> --task "<task>"
 
 # Create a prepared session with an empty task.md and an editable workflow.yaml,
 # fill them in, then start it.
-# <title> is a display label, such as "some task title". The printed session_id is a UUID.
+# <title> is a display label, such as "some task title". The printed session_id is the next number (`1`, `2`, …).
 migent session prepare "<title>" --workflow <workflow>
 migent session run --session <session-id>
 
@@ -60,7 +60,7 @@ over every stage. A problem exits 2 and creates or freezes nothing. Pass
 `--skip-preflight` to bypass it. `session continue` and `--role` skip it.
 
 `--task` is one line on a workflow run. Migent writes it to
-`.migent/sessions/<session-id>/task.md`. The session id is a UUID. The session
+`.migent/sessions/<session-id>/task.md`. The session id is the next number (`1`, `2`, …). The session
 title is that line. A longer task uses `session prepare`.
 `<title>` is the display label, such as `some task title`. Spaces and capitals
 stay. It must be one non-empty line. The command creates the session with status
@@ -82,7 +82,7 @@ and keep the project workflow path stored in their manifest. The title stays
 the text from `prepare`.
 
 On a role run, `--task` is the label for a new session and is stored as the title.
-The session id is a UUID. `--task` cannot be
+The session id is the next number (`1`, `2`, …). `--task` cannot be
 combined with `--session`. Pass one of `--prompt`, `--file`, or `--stdin`.
 `--client` and `--model` are passed together. `--json` prints one result
 object. Without `--json` the result is a table. Exit 0 means the outcome is

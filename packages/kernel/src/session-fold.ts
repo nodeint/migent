@@ -127,14 +127,14 @@ export function readSessionManifest(sessionDirectory: string): SessionManifest {
   }
   if (!isRecord(parsed)) throw new ConfigurationError(`Session manifest is corrupt: ${manifestPath}.`);
   return {
-    sessionId: textOr(parsed.session_id) ?? path.basename(sessionDirectory),
+    sessionId: identityText(parsed.session_id) ?? path.basename(sessionDirectory),
     title: textOr(parsed.title),
     workflowId: textOr(parsed.workflow_id),
     workflowPath: textOr(parsed.workflow_path),
     role: textOr(parsed.role),
     task: textOr(parsed.task),
     createdAt: textOr(parsed.created_at),
-    priorSessionId: textOr(parsed.prior_session_id),
+    priorSessionId: identityText(parsed.prior_session_id),
     manifestStatus: textOr(parsed.status),
     schemaVersion: sessionSchemaVersion(parsed),
   };
@@ -868,6 +868,12 @@ function later(current: string | null, next: string | null): string | null {
 
 function textOr(value: unknown): string | null {
   return typeof value === "string" && value !== "" ? value : null;
+}
+
+/** Session ids are strings; a hand-edited manifest may hold an unquoted integer. */
+function identityText(value: unknown): string | null {
+  if (typeof value === "number" && Number.isSafeInteger(value) && value > 0) return String(value);
+  return textOr(value);
 }
 
 function asInt(value: unknown): number {
