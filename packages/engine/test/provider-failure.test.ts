@@ -2,7 +2,8 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test, vi } from "vitest";
 import { ClaudeCodeClient } from "../../adapters/src/clients/claude-code-client.ts";
-import { type BuildCommandInput, type FailureClassification, SessionStore, STATUS_PROVIDER_EVENTS, sessionMetrics, watchSnapshot } from "@nodeint/migent-kernel";
+import { type BuildCommandInput, type FailureClassification, STATUS_PROVIDER_EVENTS } from "@nodeint/migent-kernel";
+import { SessionStore, sessionMetrics, watchSnapshot } from "@nodeint/migent-session";
 import { AgentToolRunner, executeNamedWorkflow } from "../src/index.ts";
 import { ScriptedClient, tempDir, registryOf } from "./support.ts";
 

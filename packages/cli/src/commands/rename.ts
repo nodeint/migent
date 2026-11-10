@@ -1,6 +1,7 @@
 import { RenameResult } from "@nodeint/migent-contracts";
 import { writeJson } from "../emit.js";
-import { ConfigurationError, log, SessionStore } from "@nodeint/migent-kernel";
+import { ConfigurationError, log } from "@nodeint/migent-kernel";
+import { SessionStore } from "@nodeint/migent-session";
 import { clientRegistry } from "../client.js";
 import { printError } from "../display.js";
 import { requireCurrentSchema } from "../migrate.js";

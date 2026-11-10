@@ -1,7 +1,7 @@
 import path from "node:path";
 import { readFileSync } from "node:fs";
 import { isRecord } from "@nodeint/migent-workflow";
-import { clientOfCommand, legacyClientOf } from "./legacy-provider.js";
+import { clientOfCommand, legacyClientOf } from "@nodeint/migent-kernel";
 import { readParsedEvents, type ParsedEvent } from "./session-events.js";
 
 export type LegacyProvenance = "recorded" | "executable" | "code-path";

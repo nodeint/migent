@@ -1,9 +1,9 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { isRecord, parseYamlDocument } from "@nodeint/migent-workflow";
-import { writeJsonAtomic } from "./atomic-file.js";
-import { ConfigurationError } from "./errors.js";
-import { withFileLockSync } from "./file-lock.js";
+import { writeJsonAtomic } from "@nodeint/migent-kernel";
+import { ConfigurationError } from "@nodeint/migent-kernel";
+import { withFileLockSync } from "@nodeint/migent-kernel";
 
 /**
  * Leaf module: owns a session's display title. It imports no session, fold, query, or lock module,

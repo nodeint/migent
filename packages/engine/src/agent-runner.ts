@@ -39,8 +39,8 @@ import {
   type CorrectionFiles, type CorrectionLedger, type GateFailure,
 } from "@nodeint/migent-kernel";
 import { ProviderEventReporter } from "./provider-events.js";
-import { loadFrozenWorkflow } from "@nodeint/migent-kernel";
-import { AgentSessionRecord, SessionStore, stringOptions, type ExecutionContext } from "@nodeint/migent-kernel";
+import { loadFrozenWorkflow } from "@nodeint/migent-session";
+import { AgentSessionRecord, SessionStore, stringOptions, type ExecutionContext } from "@nodeint/migent-session";
 import { StageOutcome } from "@nodeint/migent-kernel";
 import { platformHome } from "@nodeint/migent-kernel";
 import { resolveStageOutcome, type OutcomeContext } from "@nodeint/migent-kernel";

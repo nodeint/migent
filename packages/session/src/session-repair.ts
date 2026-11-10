@@ -1,15 +1,15 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
-import { writeJsonAtomic } from "./atomic-file.js";
+import { writeJsonAtomic } from "@nodeint/migent-kernel";
 import { publishNextSuggestions } from "./next-handoff.js";
-import { ConfigurationError } from "./errors.js";
-import { storedQuestions } from "./questions.js";
-import { sessionStatusAfterExecution } from "./outputs.js";
+import { ConfigurationError } from "@nodeint/migent-kernel";
+import { storedQuestions } from "@nodeint/migent-kernel";
+import { sessionStatusAfterExecution } from "@nodeint/migent-kernel";
 import { sessionStatusFromExecutions, type StatusExecution } from "./session-ledger.js";
 import { isRecord } from "@nodeint/migent-workflow";
 import { isWorkflowV2 } from "@nodeint/migent-workflow";
-import { utcNow } from "./runtime.js";
+import { utcNow } from "@nodeint/migent-kernel";
 import {
   appendLifecycleEvent,
   eventRecord,
@@ -28,7 +28,7 @@ import {
   type FoldInputs,
 } from "./session-fold.js";
 import { SessionLock } from "./session-lock.js";
-import { StageOutcome } from "./stage-outcome.js";
+import { StageOutcome } from "@nodeint/migent-kernel";
 
 export interface RepairOptions {
   /** The only way past a v1 status.json that does not parse. `continue` never sets this. */

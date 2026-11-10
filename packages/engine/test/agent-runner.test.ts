@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "vitest";
-import { AgentSessionRecord, createAgentSession, createWorkflowSession } from "@nodeint/migent-kernel";
+import { AgentSessionRecord, createAgentSession, createWorkflowSession } from "@nodeint/migent-session";
 import { AgentToolRunner } from "../src/index.ts";
 import { GrokClient } from "../../adapters/src/clients/grok-client.ts";
 import {

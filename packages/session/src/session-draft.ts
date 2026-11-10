@@ -1,6 +1,6 @@
 import { existsSync, lstatSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
-import { ConfigurationError } from "./errors.js";
+import { ConfigurationError } from "@nodeint/migent-kernel";
 import { isRecord } from "@nodeint/migent-workflow";
 import { readStatusFileState } from "./query.js";
 import { readFoldedStatus, readSessionManifest } from "./session-fold.js";

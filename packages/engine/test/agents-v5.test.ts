@@ -6,7 +6,7 @@ import { ConfigurationError, listAgentDefinitions, loadRoleDescription, loadRole
 import { getAgentView, getRoleView } from "../src/index.ts";
 import { SCHEMA_VERSION, unknownWorkflowKeyEntries } from "@nodeint/migent-workflow";
 import { parseWorkflowMapping, type RoleStageSpec } from "@nodeint/migent-workflow";
-import { readWorkflowFreeze, writeWorkflowFreeze } from "@nodeint/migent-kernel";
+import { readWorkflowFreeze, writeWorkflowFreeze } from "@nodeint/migent-session";
 import { loadNamedWorkflow } from "@nodeint/migent-workflow";
 import { defaultClients, tempDir } from "./support.ts";
 

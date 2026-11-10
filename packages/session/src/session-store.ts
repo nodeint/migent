@@ -1,241 +1,36 @@
+import { asInt, isDirectory } from "./session-store-util.js";
+import { AgentSessionRecord, DEBUG_LOG_FILENAME, DIAGNOSTICS_FILENAME, ExecutionContext, inFlightExecutions, stringOptions } from "./session-store-types.js";
+import type { ManualCompletionResult, SkipDetails } from "./session-store-types.js";
+import { writeFailureReport } from "./session-failure-report.js";
+import { readJsonObject, textField } from "./session-store-util.js";
 import { createNumericSessionDirectory, quotedSessionId } from "./session-id.js";
-import { renderProviderDiagnostics } from "./turn-diagnostics.js";
 import { publishNextSuggestions, type NextSuggestion } from "./next-handoff.js";
-import {
-  appendFileSync,
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  rmSync,
-  statSync,
-} from "node:fs";
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
-import type { ClientRegistry } from "./cli-client.js";
-import { legacyClientOf } from "./legacy-provider.js";
-import { readExecutionClient } from "./legacy-execution-client.js";
-import { writeFileAtomic, writeJsonAtomic } from "./atomic-file.js";
-import { ConfigurationError, OutputsMissing } from "./errors.js";
+import type { } from "@nodeint/migent-kernel";
+import { legacyClientOf } from "@nodeint/migent-kernel";
+import { writeFileAtomic, writeJsonAtomic } from "@nodeint/migent-kernel";
+import { ConfigurationError, OutputsMissing } from "@nodeint/migent-kernel";
 import { sealSessionMetrics } from "./metrics.js";
-import { appendLifecycleEvent, appendRecordedEvent, CANCELLED_REPLY, readParsedEvents, reservedExecutionOrders, reservedStageAttempts, skipsStatusWrite } from "./session-events.js";
+import { appendLifecycleEvent, appendRecordedEvent, skipsStatusWrite } from "./session-events.js";
 import { commitFoldedStatus, readSessionManifest } from "./session-fold.js";
-import { loadFrozenWorkflow, readWorkflowFreeze } from "./session-freeze.js";
 import { normalizeRenameTitle, writeTitleRecord } from "./session-title.js";
 import { assertSessionLockHeld, SessionLock, SessionLockHeldError } from "./session-lock.js";
 import { publishManualCompletion } from "./manual-completion.js";
 import { assertSessionId } from "./session-selection.js";
-import { corruptStatusMessage, readStatusFileState } from "./query.js";
-import { STATUS_PROVIDER_EVENTS } from "./event-kinds.js";
-import {
-  missingCompletionOutputNames,
-  nonemptyArtifact,
-  runnableViolation,
-  shouldPublishOutputs,
-  type ExecutionSnapshot,
-} from "./outputs.js";
-import {
-  blockedExecutions,
-  planExecutionSave,
-  statusExecutionsFromSnapshots,
-  type PlannedExecutionSave,
-} from "./session-ledger.js";
-import {
-  REAP_ALREADY_EXITED,
-  REAP_STILL_RUNNING,
-  REAP_UNVERIFIED,
-  SystemProcessInspector,
-  classifyOrphanedExecution,
-  ownerMetadataPayload,
-  processMetadataPayload,
-  raiseReapDecision,
-  type ProcessInspector,
-  type ProcessStartInfo,
-} from "./process-ownership.js";
+import { readStatusFileState } from "./query.js";
+import { STATUS_PROVIDER_EVENTS } from "@nodeint/migent-kernel";
+import { missingCompletionOutputNames, nonemptyArtifact, shouldPublishOutputs, type ExecutionSnapshot } from "@nodeint/migent-kernel";
+import { planExecutionSave, type PlannedExecutionSave } from "./session-ledger.js";
+import { REAP_ALREADY_EXITED, REAP_STILL_RUNNING, REAP_UNVERIFIED, classifyOrphanedExecution, ownerMetadataPayload, processMetadataPayload, raiseReapDecision, type ProcessStartInfo } from "@nodeint/migent-kernel";
 import { isRecord } from "@nodeint/migent-workflow";
-import { VERIFY_EXHAUSTED, VERIFY_FAILED } from "./selection.js";
-import {
-  MIGENT_DIRNAME,
-  CONVERSATION_FILENAME,
-  EXECUTION_SCHEMA_VERSION,
-  EXECUTIONS_DIRNAME,
-  LEGACY_CONVERSATION_FILENAME,
-  SESSIONS_DIRNAME,
-  safeComponent,
-  utcNow,
-} from "./runtime.js";
-import { withFileLockSync } from "./file-lock.js";
-import type { StageOutcome } from "./stage-outcome.js";
-import { answerQuestions, formatQuestionAnswers, storedQuestions, type Question } from "./questions.js";
-import {
-  VERIFY_ARTIFACT,
-  loadNamedWorkflow,
-  loadWorkflowDocument,
-  type WorkflowDocument,
-} from "@nodeint/migent-workflow";
+import { EXECUTION_SCHEMA_VERSION, EXECUTIONS_DIRNAME, safeComponent, utcNow } from "@nodeint/migent-kernel";
+import type { StageOutcome } from "@nodeint/migent-kernel";
+import { VERIFY_ARTIFACT } from "@nodeint/migent-workflow";
 
-export function stringOptions(value: unknown): Record<string, string> {
-  if (!isRecord(value)) return {};
-  const options: Record<string, string> = {};
-  for (const [key, item] of Object.entries(value)) {
-    if (typeof item === "string") options[key] = item;
-  }
-  return options;
-}
+import { SessionStoreResume } from "./session-store-resume.js";
 
-export class AgentSessionRecord {
-  client: string;
-  model: string;
-  workspace: string;
-  agentId: string | null;
-  options: Record<string, string>;
-  status: string;
-  history: Array<Record<string, string>>;
-
-  constructor(
-    client: string,
-    model: string,
-    workspace: string,
-    agentId: string | null = null,
-    options: Record<string, string> = {},
-    status = "new",
-    history: Array<Record<string, string>> = [],
-  ) {
-    this.client = client;
-    this.model = model;
-    this.workspace = workspace;
-    this.agentId = agentId;
-    this.options = { ...options };
-    this.status = status;
-    this.history = history;
-  }
-
-  static fromJson(
-    raw: unknown,
-    client: string,
-    model: string,
-    workspace: string,
-  ): AgentSessionRecord {
-    if (Array.isArray(raw)) {
-      return new AgentSessionRecord(
-        client,
-        model,
-        workspace,
-        null,
-        {},
-        "new",
-        raw as Array<Record<string, string>>,
-      );
-    }
-    if (!isRecord(raw)) return new AgentSessionRecord(client, model, workspace);
-    const history = Array.isArray(raw.history) ? (raw.history as Array<Record<string, string>>) : [];
-    return new AgentSessionRecord(
-      nonempty(raw.client) ?? legacyClientOf(nonempty(raw.provider)) ?? client,
-      nonempty(raw.model) ?? model,
-      nonempty(raw.workspace) ?? workspace,
-      nonempty(raw.agent_id) ?? nonempty(raw.native_session_id),
-      stringOptions(raw.options),
-      nonempty(raw.status) ?? "unknown",
-      history,
-    );
-  }
-
-  toJson(): Record<string, unknown> {
-    return {
-      client: this.client,
-      model: this.model,
-      workspace: this.workspace,
-      agent_id: this.agentId,
-      options: { ...this.options },
-      status: this.status,
-      history: this.history,
-    };
-  }
-}
-
-export class ExecutionContext {
-  constructor(
-    readonly sessionId: string,
-    readonly executionId: string,
-    readonly directory: string,
-  ) {}
-
-  get conversationPath(): string {
-    return path.join(this.directory, CONVERSATION_FILENAME);
-  }
-
-  get conversationReadPath(): string {
-    if (existsSync(this.conversationPath)) return this.conversationPath;
-    return path.join(this.directory, LEGACY_CONVERSATION_FILENAME);
-  }
-
-  get artifactDirectory(): string {
-    return path.join(this.directory, "artifacts");
-  }
-}
-
-// loadOrCreate builds its own SessionStore, so the execute loop's instance cannot see this set.
-const inFlightBySession = new Map<string, Set<string>>();
-
-export function noteInFlightExecution(sessionId: string, executionId: string): void {
-  let ids = inFlightBySession.get(sessionId);
-  if (ids === undefined) {
-    ids = new Set();
-    inFlightBySession.set(sessionId, ids);
-  }
-  ids.add(executionId);
-}
-
-export function clearInFlightExecution(sessionId: string, executionId: string): void {
-  const ids = inFlightBySession.get(sessionId);
-  if (ids === undefined) return;
-  ids.delete(executionId);
-  if (ids.size === 0) inFlightBySession.delete(sessionId);
-}
-
-export function clearInFlightExecutions(sessionId: string): void {
-  inFlightBySession.delete(sessionId);
-}
-
-export const DIAGNOSTICS_FILENAME = "diagnostics.json";
-export const FAILURE_FILENAME = "failure.md";
-export const DEBUG_LOG_FILENAME = "debug.log";
-
-export interface ManualCompletionResult {
-  alreadyCompleted: boolean;
-  /** Status before the completion. */
-  from: string;
-  /** `status.outputs` after the completion. */
-  outputs: Record<string, unknown>;
-  missingOutputs: string[];
-  next: { path: string | null; next: NextSuggestion[] };
-}
-
-/** The stored shape of a skipped-stage record. */
-export interface SkipDetails {
-  reason: string;
-  baseline: string;
-  patterns: string[];
-  changedPaths: number;
-}
-
-export class SessionStore {
-  readonly workspace: string;
-  readonly sessionsDirectory: string;
-  readonly processInspector: ProcessInspector;
-  readonly metricsClients: ClientRegistry | null;
-
-  constructor(
-    workspace: string,
-    processInspector?: ProcessInspector,
-    metricsClients?: ClientRegistry,
-  ) {
-    this.workspace = workspace;
-    this.sessionsDirectory = path.join(workspace, MIGENT_DIRNAME, SESSIONS_DIRNAME);
-    this.processInspector = processInspector ?? new SystemProcessInspector();
-    this.metricsClients = metricsClients ?? null;
-  }
-
+export class SessionStore extends SessionStoreResume {
   loadOrCreate(
     client: string,
     model: string,
@@ -296,22 +91,6 @@ export class SessionStore {
     return [record, false, context];
   }
 
-  /** Resolve and validate provenance before any resume changes persisted state. */
-  executionClient(sessionId: string, executionId: string): string {
-    const context = this.executionContext(sessionId, executionId);
-    if (context === null) throw new ConfigurationError(`Execution ${executionId} was not found in session ${sessionId}.`);
-    const metadata = readJsonObject(path.join(context.directory, "execution.json"));
-    const sessionDirectory = path.join(this.sessionsDirectory, sessionId);
-    const freeze = readWorkflowFreeze(sessionDirectory);
-    const stageId = typeof metadata.stage_id === "string" ? metadata.stage_id : "";
-    const frozen = freeze?.targets[stageId]?.client;
-    const decided = readExecutionClient(sessionDirectory, executionId, metadata, frozen);
-    if (decided.client === null) {
-      throw new ConfigurationError(`Cannot resume execution ${executionId}: ${decided.reason}. Start a new attempt.`);
-    }
-    return decided.client;
-  }
-
   /** Start a verify-only execution. It has no prompt and no provider conversation. */
   openVerifyExecution(sessionId: string, stageId: string): ExecutionContext {
     this.ensureSessionIsRunnable(sessionId);
@@ -320,10 +99,6 @@ export class SessionStore {
 
   clearVerifyTurn(context: ExecutionContext): void {
     rmSync(this.turnDirectory(context, 1), { recursive: true, force: true });
-  }
-
-  save(record: AgentSessionRecord, context: ExecutionContext): void {
-    writeJsonAtomic(context.conversationPath, record.toJson());
   }
 
   saveExecution(
@@ -371,10 +146,6 @@ export class SessionStore {
       metadata.provider_pid = null;
       writeJsonAtomic(filePath, metadata);
     });
-  }
-
-  turnDirectory(context: ExecutionContext, turn: number): string {
-    return path.join(context.directory, "turns", String(turn).padStart(2, "0"));
   }
 
   saveTurnResponse(context: ExecutionContext, turn: number, text: string): void {
@@ -440,7 +211,7 @@ export class SessionStore {
   }
 
   reapOrphanedExecutions(sessionId: string, onLiveOwner: string, inFlight?: ReadonlySet<string>): void {
-    const skip = inFlight ?? inFlightBySession.get(sessionId);
+    const skip = inFlight ?? inFlightExecutions(sessionId);
     for (const context of this.executionContexts(sessionId)) {
       if (skip?.has(context.executionId)) continue;
       this.reapExecution(context, onLiveOwner);
@@ -453,336 +224,6 @@ export class SessionStore {
     const name = String(event.event);
     if (!STATUS_PROVIDER_EVENTS.has(name) || skipsStatusWrite(name)) return;
     commitFoldedStatus(this.workspace, sessionDirectory);
-  }
-
-  executionContext(sessionId: string, executionId: string): ExecutionContext | null {
-    const directory = path.join(this.sessionsDirectory, sessionId, EXECUTIONS_DIRNAME, executionId);
-    try {
-      if (!statSync(directory).isDirectory()) return null;
-    } catch {
-      return null;
-    }
-    return new ExecutionContext(sessionId, executionId, directory);
-  }
-
-  latestExecution(sessionId: string): ExecutionContext | null {
-    const contexts = this.executionContexts(sessionId);
-    if (contexts.length === 0) return null;
-    return contexts.reduce((best, context) =>
-      compareSortKey(this.executionSortKey(context), this.executionSortKey(best)) > 0 ? context : best,
-    );
-  }
-
-  stageId(context: ExecutionContext): string {
-    const metadata = readJsonObject(path.join(context.directory, "execution.json"));
-    const stageId = metadata.stage_id;
-    if (typeof stageId !== "string") throw new Error(`Execution ${context.executionId} has no stage_id.`);
-    return stageId;
-  }
-
-  readSessionStatus(sessionId: string): Record<string, unknown> {
-    return this.readSessionStatusAt(path.join(this.sessionsDirectory, sessionId));
-  }
-
-  /** Latest blocked execution of each stage, in resume order. */
-  blockedStages(sessionId: string): { executionId: string; stageId: string }[] {
-    return this.blockedStageRows(sessionId).map((row) => ({
-      executionId: row.executionId,
-      stageId: row.stageId,
-    }));
-  }
-
-  /** Latest cancelled execution of each stage, in execution order. */
-  cancelledStages(sessionId: string): { executionId: string; stageId: string }[] {
-    const latest = new Map<string, ExecutionSnapshot>();
-    for (const row of this.executionSnapshots(sessionId)) {
-      if (row.status === "skipped") continue;
-      const prev = latest.get(row.stageId);
-      if (prev === undefined || row.executionOrder > prev.executionOrder) latest.set(row.stageId, row);
-    }
-    return [...latest.values()]
-      .filter((row) => row.status === "cancelled")
-      .sort((left, right) => left.executionOrder - right.executionOrder)
-      .map((row) => ({ executionId: row.executionId, stageId: row.stageId }));
-  }
-
-  /** Cancelled executions that a reply replaced. They are never reopened in place. */
-  supersededExecutionIds(sessionId: string): Set<string> {
-    const ids = new Set<string>();
-    for (const event of readParsedEvents(path.join(this.sessionsDirectory, sessionId, "events.jsonl"))) {
-      if (event.event === "session.active" && event.data.from === CANCELLED_REPLY && event.executionId) ids.add(event.executionId);
-    }
-    return ids;
-  }
-
-  /**
-   * Record a reply that supersedes a cancelled stage execution. The execution stays cancelled;
-   * the reply is dispatched as a new execution that continues its conversation.
-   */
-  supersedeCancelled(sessionId: string, stageId: string, reply: string): void {
-    const directory = path.join(this.sessionsDirectory, sessionId);
-    assertSessionLockHeld(directory);
-    const target = this.cancelledStages(sessionId).find((row) => row.stageId === stageId);
-    if (!target) throw new ConfigurationError(`Stage ${stageId} has no cancelled execution.`);
-    if (!reply.trim()) throw new ConfigurationError("--reply is empty.");
-    // Persist the reply before dispatch so an interrupted dispatch can be recovered.
-    appendLifecycleEvent(directory, {
-      event: "session.active", timestamp: utcNow(), executionId: target.executionId, stageId: stageId || null,
-      data: { from: CANCELLED_REPLY, reply },
-    });
-    this.rewriteManifestStatus(directory, "running");
-    commitFoldedStatus(this.workspace, directory);
-  }
-
-  /** A recorded reply whose superseded execution is still the latest of its stage, so it was not dispatched yet. */
-  pendingCancelledReply(sessionId: string, stageId: string | null = null): { executionId: string; stageId: string; reply: string } | null {
-    const events = readParsedEvents(path.join(this.sessionsDirectory, sessionId, "events.jsonl"));
-    for (const row of this.cancelledStages(sessionId)) {
-      if (stageId !== null && row.stageId !== stageId) continue;
-      const event = [...events].reverse().find((item) =>
-        item.event === "session.active" && item.executionId === row.executionId && item.data.from === CANCELLED_REPLY,
-      );
-      if (typeof event?.data.reply === "string") return { ...row, reply: event.data.reply };
-    }
-    return null;
-  }
-
-  /** Questions are execution outcomes; the recipient is configured by the stage. */
-  questionStages(sessionId: string): { executionId: string; stageId: string; question: string; questions: Question[] }[] {
-    const latest = new Map<string, ExecutionSnapshot>();
-    for (const row of this.executionSnapshots(sessionId)) {
-      const prev = latest.get(row.stageId);
-      if (prev === undefined || row.executionOrder > prev.executionOrder) latest.set(row.stageId, row);
-    }
-    return [...latest.values()]
-      .filter((row) => row.outcomeStatus === "question" && row.status !== "running")
-      .map((row) => {
-        const metadata = readJsonObject(path.join(
-          this.sessionsDirectory, sessionId, EXECUTIONS_DIRNAME, row.executionId, "execution.json",
-        ));
-        const outcome = isRecord(metadata.outcome) ? metadata.outcome : {};
-        return { executionId: row.executionId, stageId: row.stageId, question: String(outcome.question ?? ""), questions: storedQuestions(outcome) };
-      });
-  }
-
-  /** A reply unlocks only its selected question. No automatic resume without a reply. */
-  resumeQuestion(sessionId: string, stageId: string, reply: string): string {
-    const directory = path.join(this.sessionsDirectory, sessionId);
-    assertSessionLockHeld(directory);
-    const target = this.questionStages(sessionId).find((row) => row.stageId === stageId);
-    if (!target) throw new ConfigurationError(`Stage ${stageId} has no pending question.`);
-    if (!reply.trim()) throw new ConfigurationError("--reply is empty.");
-    const answers = answerQuestions(target.questions, reply);
-    const formatted = formatQuestionAnswers(target.questions, answers);
-    // Persist the answer before unlocking dispatch, including if dispatch fails before creating an execution.
-    appendLifecycleEvent(directory, {
-      event: "session.active", timestamp: utcNow(), executionId: target.executionId, stageId,
-      data: { from: "question", reply: formatted, answers, input: reply },
-    });
-    commitFoldedStatus(this.workspace, directory);
-    return formatted;
-  }
-
-  questionReply(sessionId: string, executionId: string): string | null {
-    const events = readParsedEvents(path.join(this.sessionsDirectory, sessionId, "events.jsonl"));
-    const event = events.reverse().find((row) =>
-      row.event === "session.active" && row.executionId === executionId && row.data.from === "question",
-    );
-    return typeof event?.data.reply === "string" ? event.data.reply : null;
-  }
-
-  /**
-   * Record that continue is running blocked stages again. The caller holds the session lock.
-   * `stageId` resumes that stage only. Other blocked stages stay blocked.
-   */
-  resumeBlockedSession(sessionId: string, stageId: string | null = null): { executionId: string; stageId: string }[] {
-    const sessionDirectory = path.join(this.sessionsDirectory, sessionId);
-    assertSessionLockHeld(sessionDirectory);
-    const status = this.readSessionStatus(sessionId);
-    if (status.status !== "blocked" && status.status !== "active") {
-      throw new ConfigurationError(`Session ${sessionId} is ${String(status.status)}, not blocked.`);
-    }
-    const blocked = this.blockedStageRows(sessionId);
-    if (blocked.length === 0) {
-      throw new ConfigurationError(`Session ${sessionId} is blocked without an execution.`);
-    }
-    const targets =
-      stageId === null ? blocked : blocked.filter((row) => row.stageId === stageId);
-    if (stageId !== null && targets.length === 0) {
-      const names = blocked.map((row) => row.stageId).join(", ");
-      throw new ConfigurationError(`Stage ${stageId} is not blocked. Blocked stages: ${names}.`);
-    }
-    const timestamp = utcNow();
-    for (const target of targets) {
-      const data: Record<string, unknown> = { from: "blocked" };
-      const blocker = target.blocker ?? (targets.length === 1 ? textField(status.blocker) : null);
-      if (blocker) data.blocker = blocker;
-      appendLifecycleEvent(sessionDirectory, {
-        event: "session.active",
-        timestamp,
-        executionId: target.executionId,
-        stageId: target.stageId || null,
-        data,
-      });
-    }
-    this.rewriteManifestStatus(sessionDirectory, "running");
-    const folded = commitFoldedStatus(this.workspace, sessionDirectory);
-    if (folded.status !== "active") {
-      throw new ConfigurationError(`Session ${sessionId} stayed ${String(folded.status)} after resume.`);
-    }
-    return targets.map((target) => ({ executionId: target.executionId, stageId: target.stageId }));
-  }
-
-  /**
-   * Append `session.active` with `data.from: failed` for each failed non-verify stage.
-   * Does not rewrite the manifest or commit the fold. The session need not be active.
-   */
-  markFailedResumes(sessionId: string, stageId: string | null = null): void {
-    const sessionDirectory = path.join(this.sessionsDirectory, sessionId);
-    assertSessionLockHeld(sessionDirectory);
-    const latest = new Map<string, ExecutionSnapshot>();
-    for (const snapshot of this.executionSnapshots(sessionId)) {
-      const current = latest.get(snapshot.stageId);
-      if (current === undefined || snapshot.executionOrder > current.executionOrder) {
-        latest.set(snapshot.stageId, snapshot);
-      }
-    }
-    const timestamp = utcNow();
-    for (const snapshot of latest.values()) {
-      if (stageId !== null && snapshot.stageId !== stageId) continue;
-      if (snapshot.status !== "failed") continue;
-      if (snapshot.failureReason === "verify_exhausted" || snapshot.failureReason === "verify_failed") continue;
-      appendLifecycleEvent(sessionDirectory, {
-        event: "session.active",
-        timestamp,
-        executionId: snapshot.executionId,
-        stageId: snapshot.stageId || null,
-        data: { from: "failed" },
-      });
-    }
-  }
-
-  private blockedStageRows(
-    sessionId: string,
-  ): { executionId: string; stageId: string; blocker: string | null }[] {
-    const status = this.readSessionStatus(sessionId);
-    const workflow = this.loadWorkflow(status);
-    return blockedExecutions(
-      statusExecutionsFromSnapshots(this.snapshotList(sessionId)),
-      status,
-      workflow,
-    ).map((row) => ({
-      executionId: row.executionId,
-      stageId: row.stageId,
-      blocker: this.executionBlocker(sessionId, row.executionId),
-    }));
-  }
-
-  /**
-   * Reopen every cancelled execution in place. The caller holds the session lock.
-   * Execution ids and stage attempts stay the same.
-   */
-  reopenCancelledExecutions(
-    sessionId: string,
-    latestPerStage = false,
-  ): { executionId: string; stageId: string }[] {
-    const sessionDirectory = path.join(this.sessionsDirectory, sessionId);
-    assertSessionLockHeld(sessionDirectory);
-    const status = this.readSessionStatus(sessionId);
-    // A blocked session is not cancelled. Continue still reopens each stage's latest cancelled execution.
-    if (!latestPerStage && status.status !== "cancelled") {
-      throw new ConfigurationError(`Session ${sessionId} is ${String(status.status)}, not cancelled.`);
-    }
-    const rows = this.executionContexts(sessionId).map((context) => {
-      const metadata = readJsonObject(path.join(context.directory, "execution.json"));
-      return { context, metadata, order: asInt(metadata.execution_order) };
-    });
-    const selected = latestPerStage ? latestExecutionPerStage(rows) : rows;
-    const superseded = this.supersededExecutionIds(sessionId);
-    const cancelled = selected
-      .filter((item) => item.metadata.status === "cancelled" && !superseded.has(item.context.executionId))
-      .sort((left, right) =>
-        compareSortKey([left.order, left.context.executionId], [right.order, right.context.executionId]),
-      );
-    if (cancelled.length === 0) {
-      if (latestPerStage) return [];
-      throw new ConfigurationError(`Session ${sessionId} is cancelled without an execution.`);
-    }
-    const records = new Map<string, AgentSessionRecord>();
-    for (const item of cancelled) {
-      if (item.metadata.kind === "verify") continue;
-      if (!existsSync(item.context.conversationReadPath)) {
-        throw new ConfigurationError(`Execution ${item.context.executionId} has no conversation to resume.`);
-      }
-      const client = this.executionClient(sessionId, item.context.executionId);
-      const raw: unknown = JSON.parse(readFileSync(item.context.conversationReadPath, "utf8"));
-      const model = typeof item.metadata.model === "string" ? item.metadata.model : "";
-      const record = AgentSessionRecord.fromJson(raw, client, model, this.workspace);
-      record.client = client;
-      records.set(item.context.executionId, record);
-    }
-    const reopened: { executionId: string; stageId: string }[] = [];
-    const timestamp = utcNow();
-    for (const item of cancelled) {
-      const metadata = item.metadata;
-      const context = item.context;
-      metadata.status = "running";
-      metadata.completed_at = null;
-      writeJsonAtomic(path.join(context.directory, "execution.json"), metadata);
-      if (metadata.kind !== "verify") {
-        const record = records.get(context.executionId)!;
-        record.status = "running";
-        this.save(record, context);
-      }
-      const stageId = typeof metadata.stage_id === "string" ? metadata.stage_id : "";
-      appendLifecycleEvent(sessionDirectory, {
-        event: "execution.running",
-        timestamp,
-        executionId: context.executionId,
-        stageId: stageId || null,
-        data: {
-          outcome: null,
-          failure_reason: null,
-          error: null,
-          session_status: "active",
-        },
-      });
-      appendLifecycleEvent(sessionDirectory, {
-        event: "session.active",
-        timestamp,
-        executionId: context.executionId,
-        stageId: stageId || null,
-        data: { from: "cancelled" },
-      });
-      reopened.push({ executionId: context.executionId, stageId });
-    }
-    this.rewriteManifestStatus(sessionDirectory, "running");
-    const folded = commitFoldedStatus(this.workspace, sessionDirectory);
-    if (folded.status !== "active") {
-      throw new ConfigurationError(`Session ${sessionId} stayed ${String(folded.status)} after resume.`);
-    }
-    return reopened;
-  }
-
-  resetRevisionCounts(sessionId: string, snapshots: readonly ExecutionSnapshot[]): void {
-    const sessionDirectory = path.join(this.sessionsDirectory, sessionId);
-    assertSessionLockHeld(sessionDirectory);
-    const counts: Record<string, number> = {};
-    for (const snapshot of snapshots) {
-      if (snapshot.status === "completed" && snapshot.outcomeStatus === "complete") {
-        counts[snapshot.stageId] = (counts[snapshot.stageId] ?? 0) + 1;
-      }
-    }
-    appendLifecycleEvent(sessionDirectory, {
-      event: "revisions.reset",
-      timestamp: utcNow(),
-      data: { baselines: counts },
-    });
-    commitFoldedStatus(this.workspace, sessionDirectory);
-  }
-
-  executionSnapshots(sessionId: string): ExecutionSnapshot[] {
-    return this.snapshotList(sessionId);
   }
 
   missingCompletionOutputs(context: ExecutionContext, outcome: StageOutcome | null): string[] {
@@ -1202,71 +643,6 @@ export class SessionStore {
     this.saveExecution(context, record, "failed", error, null, locked, extra);
   }
 
-  private withExecutionLock<T>(filePath: string, fn: () => T): T {
-    if (!existsSync(filePath)) return fn();
-    return withFileLockSync(filePath, fn);
-  }
-
-  private ensureSessionIsRunnable(sessionId: string | null): void {
-    if (sessionId === null) return;
-    const statusPath = path.join(this.sessionsDirectory, sessionId, "status.json");
-    const read = readStatusFileState(statusPath);
-    if (read.state === "corrupt") throw new ConfigurationError(corruptStatusMessage(statusPath));
-    if (read.state === "missing") return;
-    const status = read.status;
-    const message = runnableViolation(sessionId, status);
-    if (message) throw new Error(message);
-  }
-
-  private rewriteManifestStatus(sessionDirectory: string, status: string): void {
-    if (readSessionManifest(sessionDirectory).schemaVersion >= 2) return;
-    const manifestPath = path.join(sessionDirectory, "manifest.yaml");
-    try {
-      if (!statSync(manifestPath).isFile()) return;
-    } catch {
-      return;
-    }
-    const text = readFileSync(manifestPath, "utf8");
-    const pattern = /^status: \S+\s*$/m;
-    if (!pattern.test(text)) return;
-    writeFileAtomic(manifestPath, text.replace(pattern, `status: ${status}`));
-  }
-
-  private loadWorkflow(previousStatus: Record<string, unknown>): WorkflowDocument | null {
-    if (previousStatus.workflow_id === "agent") return null;
-    const sessionId = previousStatus.session_id;
-    if (typeof sessionId === "string" && sessionId !== "") {
-      const frozen = loadFrozenWorkflow(path.join(this.sessionsDirectory, sessionId));
-      if (frozen) return frozen;
-    }
-    const workflowPath = previousStatus.workflow_path;
-    if (typeof workflowPath === "string" && workflowPath) {
-      const filePath = path.isAbsolute(workflowPath) ? workflowPath : path.join(this.workspace, workflowPath);
-      if (isFile(filePath)) {
-        try {
-          return loadWorkflowDocument(filePath);
-        } catch (error) {
-          if (!(error instanceof ConfigurationError)) throw error;
-        }
-      }
-    }
-    const workflowId = previousStatus.workflow_id;
-    if (typeof workflowId !== "string" || workflowId === "") return null;
-    try {
-      return loadNamedWorkflow(this.workspace, workflowId);
-    } catch (error) {
-      if (error instanceof ConfigurationError) return null;
-      throw error;
-    }
-  }
-
-  private readSessionStatusAt(sessionDirectory: string): Record<string, unknown> {
-    const statusPath = path.join(sessionDirectory, "status.json");
-    const read = readStatusFileState(statusPath);
-    if (read.state === "corrupt") throw new ConfigurationError(corruptStatusMessage(statusPath));
-    return read.status;
-  }
-
   private createExecution(
     client: string,
     model: string,
@@ -1358,180 +734,6 @@ export class SessionStore {
     });
   }
 
-  private nextExecutionOrder(sessionId: string): number {
-    const sessionDirectory = path.join(this.sessionsDirectory, sessionId);
-    const orders = [
-      ...this.executionContexts(sessionId).map((context) => this.executionSortKey(context)[0]),
-      ...reservedExecutionOrders(sessionDirectory),
-    ];
-    return Math.max(0, ...orders) + 1;
-  }
-
-  private nextStageAttempt(sessionId: string, stageId: string): number {
-    const attempts: number[] = [];
-    for (const context of this.executionContexts(sessionId)) {
-      const metadata = readJsonObject(path.join(context.directory, "execution.json"));
-      if (metadata.stage_id === stageId) attempts.push(asInt(metadata.stage_attempt));
-    }
-    let safe = stageId;
-    try {
-      safe = safeComponent(stageId);
-    } catch {
-      safe = stageId;
-    }
-    const sessionDirectory = path.join(this.sessionsDirectory, sessionId);
-    for (const slot of reservedStageAttempts(sessionDirectory)) {
-      if (slot.stageId === stageId || slot.stageId === safe) attempts.push(slot.attempt);
-    }
-    return Math.max(0, ...attempts) + 1;
-  }
-
-  private executionBlocker(sessionId: string, executionId: string): string | null {
-    const context = this.executionContext(sessionId, executionId);
-    if (context === null) return null;
-    const outcome = readJsonObject(path.join(context.directory, "execution.json")).outcome;
-    if (!isRecord(outcome)) return null;
-    return textField(outcome.blocker);
-  }
-
-  private executionContexts(sessionId: string): ExecutionContext[] {
-    const directory = path.join(this.sessionsDirectory, sessionId, EXECUTIONS_DIRNAME);
-    if (!existsSync(directory)) return [];
-    const contexts: ExecutionContext[] = [];
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue;
-      const executionDirectory = path.join(directory, entry.name);
-      if (!existsSync(path.join(executionDirectory, "execution.json"))) continue;
-      contexts.push(new ExecutionContext(sessionId, entry.name, executionDirectory));
-    }
-    return contexts;
-  }
-
-  private executionSortKey(context: ExecutionContext): [number, string] {
-    const metadata = readJsonObject(path.join(context.directory, "execution.json"));
-    return [asInt(metadata.execution_order), context.executionId];
-  }
-
-  private snapshotList(sessionId: string): ExecutionSnapshot[] {
-    const snapshots: ExecutionSnapshot[] = [];
-    for (const context of this.executionContexts(sessionId)) {
-      const metadata = readJsonObject(path.join(context.directory, "execution.json"));
-      const outcome = metadata.outcome;
-      let outcomeStatus: string | null = null;
-      let outcomeDecision: string | null = null;
-      if (isRecord(outcome)) {
-        if (typeof outcome.status === "string") outcomeStatus = outcome.status;
-        if (typeof outcome.decision === "string" && outcome.decision) outcomeDecision = outcome.decision;
-      }
-      snapshots.push({
-        executionId: context.executionId,
-        stageId: typeof metadata.stage_id === "string" ? metadata.stage_id : "",
-        executionOrder: asInt(metadata.execution_order),
-        status: typeof metadata.status === "string" ? metadata.status : "",
-        outcomeStatus,
-        artifactDirectory: context.artifactDirectory,
-        outcomeDecision,
-        failureReason: typeof metadata.failure_reason === "string" ? metadata.failure_reason : null,
-        verifyReport: verifyReportPath(context.directory, metadata.verify),
-      });
-    }
-    return snapshots;
-  }
-}
-
-/**
- * A readable report beside a failed execution. It keeps errors out of response.md,
- * which holds only what the provider returned.
- */
-function writeFailureReport(
-  context: ExecutionContext,
-  metadata: Record<string, unknown>,
-  error: string | null,
-): void {
-  const stageId = textField(metadata.stage_id) ?? "agent";
-  const attempt = typeof metadata.stage_attempt === "number" ? metadata.stage_attempt : null;
-  const client = textField(metadata.client) ?? legacyClientOf(textField(metadata.provider));
-  const model = textField(metadata.model);
-  const failureReason = textField(metadata.failure_reason);
-  const lines = [
-    "# Execution failed",
-    "",
-    `- Session: \`${context.sessionId}\``,
-    `- Execution: \`${context.executionId}\``,
-    `- Stage: \`${stageId}\`${attempt === null ? "" : ` (attempt ${attempt})`}`,
-  ];
-  if (metadata.kind === "verify") lines.push("- Kind: verify-only");
-  if (client !== null || model !== null) {
-    lines.push(`- Client: \`${client ?? "unknown"}/${model ?? "unknown"}\``);
-  }
-  if (failureReason !== null) lines.push(`- Failure reason: \`${failureReason}\``);
-  if (failureReason === "quota") {
-    const resetAt = textField(metadata.retry_at);
-    const window = textField(metadata.quota_window);
-    if (resetAt !== null) lines.push(`- Quota resets at: ${resetAt}`);
-    if (window !== null) lines.push(`- Quota window: \`${window}\``);
-  }
-  if (typeof metadata.completed_at === "string") lines.push(`- Completed at: ${metadata.completed_at}`);
-  lines.push("", "## Error", "", "```text", error ?? "No error message was recorded.", "```");
-  const diagnostics = readDiagnostics(context.directory);
-  if (diagnostics !== null) {
-    lines.push(
-      "",
-      ...renderProviderDiagnostics({
-        diagnostics,
-        finalTurn: typeof metadata.final_turn === "number" ? metadata.final_turn : null,
-        failureReason,
-        link: DIAGNOSTICS_FILENAME,
-      }),
-    );
-  } else if (existsSync(path.join(context.directory, DIAGNOSTICS_FILENAME))) {
-    lines.push("", "## Diagnostics", "", `See [\`${DIAGNOSTICS_FILENAME}\`](${DIAGNOSTICS_FILENAME}).`);
-  }
-  const verifyReport = verifyFailureReport(context.directory, metadata, failureReason);
-  if (verifyReport !== null) {
-    lines.push("", "## Verify", "", `See [\`${verifyReport}\`](${verifyReport}).`);
-  }
-  writeFileAtomic(path.join(context.directory, FAILURE_FILENAME), `${lines.join("\n")}\n`);
-}
-
-function readDiagnostics(directory: string): Record<string, unknown> | null {
-  try {
-    return readJsonObject(path.join(directory, DIAGNOSTICS_FILENAME));
-  } catch {
-    return null;
-  }
-}
-
-function verifyFailureReport(
-  directory: string,
-  metadata: Record<string, unknown>,
-  failureReason: string | null,
-): string | null {
-  const verify = isRecord(metadata.verify) ? metadata.verify : null;
-  const recorded =
-    verify !== null && typeof verify.last_report === "string" && verify.last_report !== ""
-      ? verify.last_report
-      : null;
-  if (recorded !== null) return existsSync(path.join(directory, recorded)) ? recorded : null;
-  if (failureReason !== VERIFY_EXHAUSTED && failureReason !== VERIFY_FAILED) return null;
-  return existsSync(path.join(directory, "turns/01/verify.md")) ? "turns/01/verify.md" : null;
-}
-
-function latestExecutionPerStage<
-  T extends { context: { executionId: string }; metadata: Record<string, unknown>; order: number },
->(rows: readonly T[]): T[] {
-  const byStage = new Map<string, T>();
-  for (const row of rows) {
-    const stageId = typeof row.metadata.stage_id === "string" ? row.metadata.stage_id : "";
-    const current = byStage.get(stageId);
-    if (
-      current === undefined ||
-      compareSortKey([row.order, row.context.executionId], [current.order, current.context.executionId]) > 0
-    ) {
-      byStage.set(stageId, row);
-    }
-  }
-  return [...byStage.values()];
 }
 
 function snapshotsIncludingSave(
@@ -1555,52 +757,15 @@ function existingNext(sessionDirectory: string): { path: string | null; next: Ne
   return { path: null, next: [] };
 }
 
-function textField(value: unknown): string | null {
-  return typeof value === "string" && value ? value : null;
-}
-
-function verifyReportPath(directory: string, verify: unknown): string | null {
-  if (!isRecord(verify) || typeof verify.last_report !== "string" || verify.last_report === "") {
-    return null;
-  }
-  return path.join(directory, verify.last_report);
-}
-
-function nonempty(value: unknown): string | null {
-  return typeof value === "string" && value !== "" ? value : null;
-}
-
-function isDirectory(directory: string): boolean {
-  try {
-    return statSync(directory).isDirectory();
-  } catch {
-    return false;
-  }
-}
-
-function asInt(value: unknown): number {
-  if (typeof value === "number" && Number.isFinite(value)) return Math.trunc(value);
-  if (typeof value === "string" && /^-?\d+$/.test(value)) return Number(value);
-  return 0;
-}
-
-function readJsonObject(filePath: string): Record<string, unknown> {
-  const value = JSON.parse(readFileSync(filePath, "utf8")) as unknown;
-  if (!isRecord(value)) throw new Error(`Expected a JSON object: ${filePath}`);
-  return value;
-}
-
-function isFile(filePath: string): boolean {
-  try {
-    return statSync(filePath).isFile();
-  } catch {
-    return false;
-  }
-}
-
-function compareSortKey(left: [number, string], right: [number, string]): number {
-  if (left[0] !== right[0]) return left[0] - right[0];
-  if (left[1] < right[1]) return -1;
-  if (left[1] > right[1]) return 1;
-  return 0;
-}
+export {
+  AgentSessionRecord,
+  DEBUG_LOG_FILENAME,
+  DIAGNOSTICS_FILENAME,
+  ExecutionContext,
+  FAILURE_FILENAME,
+  clearInFlightExecution,
+  clearInFlightExecutions,
+  noteInFlightExecution,
+  stringOptions,
+} from "./session-store-types.js";
+export type { ManualCompletionResult, SkipDetails } from "./session-store-types.js";

@@ -13,7 +13,6 @@ import type {
   TurnUsage,
   UsageCapture,
 } from "../src/cli-client.ts";
-import { createWorkflowSession } from "../src/session-records.ts";
 
 const optionKey = /^[A-Za-z][A-Za-z0-9_.-]*$/;
 
@@ -365,15 +364,6 @@ completion:
       from_stage: plan
       artifact: plan.md
 `;
-
-export function writePlanReviewSession(): [string, string] {
-  const workspace = tempDir("migent-plan-");
-  const workflows = path.join(workspace, ".migent", "workflows");
-  mkdirSync(workflows, { recursive: true });
-  writeFileSync(path.join(workflows, "plan.yaml"), PLAN_REVIEW_WORKFLOW, "utf8");
-  writeSessionConfig(workspace);
-  return [workspace, createWorkflowSession(workspace, "plan", "Write a plan")];
-}
 
 export function repoWorkflowText(workflowId: string): string {
   const fixtures = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "workflows");

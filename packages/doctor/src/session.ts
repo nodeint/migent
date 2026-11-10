@@ -1,4 +1,5 @@
-import { ConfigurationError, collectFrozenDrift, loadRoleResponsibilities, loadWorkspaceConfig, resolveEffectiveClient, resolveStageSpec, whichSync, type ClientInfo, type ClientRegistry, type SessionSelection, type SessionSource, type StageTarget, type WorkflowFreeze } from "@nodeint/migent-kernel";
+import { ConfigurationError, loadRoleResponsibilities, loadWorkspaceConfig, resolveEffectiveClient, resolveStageSpec, whichSync, type ClientInfo, type ClientRegistry, type StageTarget } from "@nodeint/migent-kernel";
+import { collectFrozenDrift, type SessionSelection, type SessionSource, type WorkflowFreeze } from "@nodeint/migent-session";
 import { isRoleStage, type RoleStageSpec, type WorkflowDocument } from "@nodeint/migent-workflow";
 import { addUnique, makeCheck, type Check, type DiagnoseOptions } from "./check.js";
 import { failureText } from "./clients.js";

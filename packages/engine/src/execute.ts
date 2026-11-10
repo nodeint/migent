@@ -21,18 +21,9 @@ import { isRecord } from "@nodeint/migent-workflow";
 import { buildStagePrompt, buildStageReplyPrompt, buildStageResumePrompt, buildVerifyRepairPrompt } from "@nodeint/migent-kernel";
 import { ProviderEventReporter } from "./provider-events.js";
 import { formatClock, formatDuration, log, utcNow } from "@nodeint/migent-kernel";
-import { appendLifecycleEvent, parseExecutionId, readParsedEvents } from "@nodeint/migent-kernel";
-import { commitFoldedStatus } from "@nodeint/migent-kernel";
-import {
-  WORKFLOW_FREEZE_FILE,
-  frozenRoleInstructions,
-  frozenStageTarget,
-  loadFrozenWorkflow,
-  readWorkflowFreeze,
-  requireLiveWorkflow,
-  warnIfFrozenDrift,
-  writeWorkflowFreeze,
-} from "@nodeint/migent-kernel";
+import { appendLifecycleEvent, parseExecutionId, readParsedEvents } from "@nodeint/migent-session";
+import { commitFoldedStatus } from "@nodeint/migent-session";
+import { WORKFLOW_FREEZE_FILE, frozenRoleInstructions, frozenStageTarget, loadFrozenWorkflow, readWorkflowFreeze, requireLiveWorkflow, warnIfFrozenDrift, writeWorkflowFreeze } from "@nodeint/migent-session";
 import {
   VERIFY_EXHAUSTED,
   VERIFY_FAILED,
@@ -48,16 +39,11 @@ import {
   NextStageError,
   Stop,
 } from "@nodeint/migent-kernel";
-import { repairSessionUnlocked } from "@nodeint/migent-kernel";
-import { activatePreparedSession, bindPriorSessionId, createWorkflowSession, resolvePriorSessionId } from "@nodeint/migent-kernel";
-import { assertSingleLineTask, freezeSessionTask, requireTaskBody } from "@nodeint/migent-kernel";
-import { isSessionLockLost, SessionLock, SessionLockHeldError } from "@nodeint/migent-kernel";
-import {
-  clearInFlightExecution,
-  clearInFlightExecutions,
-  noteInFlightExecution,
-  SessionStore,
-} from "@nodeint/migent-kernel";
+import { repairSessionUnlocked } from "@nodeint/migent-session";
+import { activatePreparedSession, bindPriorSessionId, createWorkflowSession, resolvePriorSessionId } from "@nodeint/migent-session";
+import { assertSingleLineTask, freezeSessionTask, requireTaskBody } from "@nodeint/migent-session";
+import { isSessionLockLost, SessionLock, SessionLockHeldError } from "@nodeint/migent-session";
+import { clearInFlightExecution, clearInFlightExecutions, noteInFlightExecution, SessionStore } from "@nodeint/migent-session";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { evaluateRunWhen, ensureSessionBaseline } from "./run-when.js";

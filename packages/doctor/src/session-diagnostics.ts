@@ -1,4 +1,4 @@
-import { readRecordedDiagnostics } from "@nodeint/migent-kernel";
+import { readRecordedDiagnostics } from "@nodeint/migent-session";
 import type { Check } from "./check.js";
 
 const STDERR_LINES = 5;

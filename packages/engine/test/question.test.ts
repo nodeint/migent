@@ -6,10 +6,10 @@ import { AgentToolRunner } from "../src/agent-runner.ts";
 import { executeNamedWorkflow } from "../src/execute.ts";
 import { parseWorkflowMapping } from "@nodeint/migent-workflow";
 import { parseStageOutcome } from "@nodeint/migent-kernel";
-import { SessionStore } from "@nodeint/migent-kernel";
-import { watchSnapshot } from "@nodeint/migent-kernel";
-import { repairSession } from "@nodeint/migent-kernel";
-import { SessionLock } from "@nodeint/migent-kernel";
+import { SessionStore } from "@nodeint/migent-session";
+import { watchSnapshot } from "@nodeint/migent-session";
+import { repairSession } from "@nodeint/migent-session";
+import { SessionLock } from "@nodeint/migent-session";
 import { ScriptedClient, registryOf } from "./support.ts";
 
 const scopeQuestion = {

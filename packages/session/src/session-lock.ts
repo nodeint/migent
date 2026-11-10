@@ -2,9 +2,9 @@ import { randomBytes } from "node:crypto";
 import { closeSync, openSync, readFileSync, rmSync, statSync, writeSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { writeJsonAtomic } from "./atomic-file.js";
+import { writeJsonAtomic } from "@nodeint/migent-kernel";
 import { isRecord } from "@nodeint/migent-workflow";
-import { utcNow } from "./runtime.js";
+import { utcNow } from "@nodeint/migent-kernel";
 
 export const SESSION_LOCK_FILENAME = "session.lock";
 export const SESSION_LOCK_STALE_MS = 30_000;

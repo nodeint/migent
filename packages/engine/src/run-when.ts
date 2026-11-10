@@ -2,8 +2,8 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { ConfigurationError } from "@nodeint/migent-kernel";
 import { utcNow } from "@nodeint/migent-kernel";
-import type { SkipDetails } from "@nodeint/migent-kernel";
-import { appendLifecycleEvent, readParsedEvents, reservedExecutionOrders } from "@nodeint/migent-kernel";
+import type { SkipDetails } from "@nodeint/migent-session";
+import { appendLifecycleEvent, readParsedEvents, reservedExecutionOrders } from "@nodeint/migent-session";
 import { compileChangedPathPattern } from "@nodeint/migent-workflow";
 import type { StageSpec, WorkflowDocument } from "@nodeint/migent-workflow";
 

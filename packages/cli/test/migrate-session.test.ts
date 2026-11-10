@@ -2,7 +2,8 @@ import { mkdtempSync, mkdirSync, readFileSync, renameSync, rmSync, symlinkSync, 
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, test } from "vitest";
-import { SessionLock, sha256Hex } from "@nodeint/migent-kernel";
+import { sha256Hex } from "@nodeint/migent-kernel";
+import { SessionLock } from "@nodeint/migent-session";
 import { main } from "../src/index.ts";
 import { capture } from "./support.ts";
 

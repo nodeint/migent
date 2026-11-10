@@ -4,7 +4,7 @@
 
 ### Changed
 
-- Workflow execution moved from `@nodeint/migent-kernel` into a new internal npm package, `@nodeint/migent-engine`. CLI behavior and `--json` output are unchanged.
+- Workflow execution moved from `@nodeint/migent-kernel` into a new internal npm package, `@nodeint/migent-engine`, and the session store moved into `@nodeint/migent-session`. CLI behavior and `--json` output are unchanged.
 
 ## 0.5.6
 

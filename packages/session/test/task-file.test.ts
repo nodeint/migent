@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "vitest";
-import { ConfigurationError, createPreparedSession, createWorkflowSession } from "../src/index.ts";
+import { ConfigurationError } from "@nodeint/migent-kernel";
+import { createPreparedSession, createWorkflowSession } from "@nodeint/migent-session";
 import { activatePreparedSession } from "../src/session-records.ts";
 import { loadFrozenWorkflow } from "../src/session-freeze.ts";
 import { SessionLock } from "../src/session-lock.ts";

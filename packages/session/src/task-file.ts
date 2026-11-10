@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { writeFileAtomic } from "./atomic-file.js";
-import { ConfigurationError } from "./errors.js";
+import { writeFileAtomic } from "@nodeint/migent-kernel";
+import { ConfigurationError } from "@nodeint/migent-kernel";
 import { corruptStatusMessage, readStatusFileState } from "./query.js";
-import { MIGENT_DIRNAME, SESSIONS_DIRNAME, utcNow } from "./runtime.js";
+import { MIGENT_DIRNAME, SESSIONS_DIRNAME, utcNow } from "@nodeint/migent-kernel";
 import { appendLifecycleEvent } from "./session-events.js";
 import { commitFoldedStatus } from "./session-fold.js";
 

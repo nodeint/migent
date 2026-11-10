@@ -1,13 +1,13 @@
-import type { ClientRegistry } from "./cli-client.js";
+import type { ClientRegistry } from "@nodeint/migent-kernel";
 import { createNumericSessionDirectory, quotedSessionId } from "./session-id.js";
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
 import { stringify } from "yaml";
 import path from "node:path";
-import { writeFileAtomic } from "./atomic-file.js";
-import { ConfigurationError } from "./errors.js";
+import { writeFileAtomic } from "@nodeint/migent-kernel";
+import { ConfigurationError } from "@nodeint/migent-kernel";
 import { pyRepr } from "@nodeint/migent-workflow";
 import { corruptStatusMessage, readStatusFileState } from "./query.js";
-import { isUnicodeAlnum, utcNow } from "./runtime.js";
+import { isUnicodeAlnum, utcNow } from "@nodeint/migent-kernel";
 import { appendLifecycleEvent } from "./session-events.js";
 import { requireLiveWorkflow, renderWorkflowSource, writeWorkflowFreeze } from "./session-freeze.js";
 import { completedPriorStatus, resolveHandoff, snapshotHandoff } from "./next-handoff.js";

@@ -3,9 +3,10 @@ import path from "node:path";
 import { expect, test, vi } from "vitest";
 import { ClaudeCodeClient } from "../../adapters/src/clients/claude-code-client.ts";
 import { CodexClient } from "../../adapters/src/clients/codex-client.ts";
-import { type CliRunOutput, type FailureOrigin, type RawFailure, type ResponseSource, createWorkflowSession, sessionMetrics } from "@nodeint/migent-kernel";
+import { type CliRunOutput, type FailureOrigin, type RawFailure, type ResponseSource } from "@nodeint/migent-kernel";
+import { createWorkflowSession, sessionMetrics } from "@nodeint/migent-session";
 import { AgentToolRunner } from "../src/index.ts";
-import { watchSnapshot } from "@nodeint/migent-kernel";
+import { watchSnapshot } from "@nodeint/migent-session";
 import { ScriptedClient, tempDir, registryOf, writeHandoffFromReply } from "./support.ts";
 
 vi.setConfig({ testTimeout: 60_000 });

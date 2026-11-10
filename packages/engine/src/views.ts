@@ -11,7 +11,7 @@ import {
   resolveStageSpec,
   type StageTarget,
 } from "@nodeint/migent-kernel";
-import { selectSessionWorkflow } from "@nodeint/migent-kernel";
+import { selectSessionWorkflow } from "@nodeint/migent-session";
 import { ConfigurationError } from "@nodeint/migent-kernel";
 import type { ClientRegistry } from "@nodeint/migent-kernel";
 import { isRecord } from "@nodeint/migent-workflow";

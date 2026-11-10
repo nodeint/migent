@@ -2,7 +2,8 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import path from "node:path";
 import { expect, test } from "vitest";
 import type { BuildCommandInput } from "@nodeint/migent-kernel";
-import { createWorkflowSession, raiseCancellation } from "@nodeint/migent-kernel";
+import { raiseCancellation } from "@nodeint/migent-kernel";
+import { createWorkflowSession } from "@nodeint/migent-session";
 import { AgentToolRunner, executeNamedWorkflow } from "../src/index.ts";
 import type { CommandSpec } from "@nodeint/migent-kernel";
 import { ScriptedClient, tempDir, registryOf } from "./support.ts";

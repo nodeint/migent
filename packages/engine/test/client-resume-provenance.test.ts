@@ -1,10 +1,10 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test, vi } from "vitest";
-import { SessionStore } from "@nodeint/migent-kernel";
+import { SessionStore } from "@nodeint/migent-session";
 import { AgentToolRunner } from "../src/index.ts";
-import { readExecutionClient } from "@nodeint/migent-kernel";
-import { readExecutions } from "@nodeint/migent-kernel";
+import { readExecutionClient } from "@nodeint/migent-session";
+import { readExecutions } from "@nodeint/migent-session";
 import { FakeClient, registryOf, tempDir } from "./support.ts";
 
 const ID = "0001-work--attempt-01";

@@ -7,11 +7,11 @@ import {
   sessionStatusAfterExecution,
   shouldPublishOutputs,
   type ExecutionSnapshot,
-} from "./outputs.js";
+} from "@nodeint/migent-kernel";
 import { isRecord } from "@nodeint/migent-workflow";
 import { sessionChangeReason } from "./session-events.js";
-import { currentCompleteByStage, missingOutputNames, readyOutsideStoppedBranches, version2GraphQuiet } from "./selection.js";
-import { StageOutcome } from "./stage-outcome.js";
+import { currentCompleteByStage, missingOutputNames, readyOutsideStoppedBranches, version2GraphQuiet } from "@nodeint/migent-kernel";
+import { StageOutcome } from "@nodeint/migent-kernel";
 import { isWorkflowV2, type WorkflowDocument } from "@nodeint/migent-workflow";
 
 export interface LedgerOutput {

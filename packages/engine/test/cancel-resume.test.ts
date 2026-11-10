@@ -2,9 +2,10 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import path from "node:path";
 import { expect, test } from "vitest";
 import type { BuildCommandInput } from "@nodeint/migent-kernel";
-import { SessionLock, SessionStore, StageOutcome, createWorkflowSession, raiseCancellation, requestSessionCancel } from "@nodeint/migent-kernel";
+import { StageOutcome, raiseCancellation } from "@nodeint/migent-kernel";
+import { SessionLock, SessionStore, createWorkflowSession, requestSessionCancel } from "@nodeint/migent-session";
 import { AgentToolRunner, executeNamedWorkflow } from "../src/index.ts";
-import { clearInFlightExecution, noteInFlightExecution } from "@nodeint/migent-kernel";
+import { clearInFlightExecution, noteInFlightExecution } from "@nodeint/migent-session";
 import type { CommandSpec } from "@nodeint/migent-kernel";
 import { ScriptedClient, tempDir, registryOf } from "./support.ts";
 

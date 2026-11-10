@@ -1,12 +1,12 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { writeJsonAtomic } from "./atomic-file.js";
-import { ConfigurationError } from "./errors.js";
-import { atomicCopy, nonemptyArtifact } from "./outputs.js";
+import { writeJsonAtomic } from "@nodeint/migent-kernel";
+import { ConfigurationError } from "@nodeint/migent-kernel";
+import { atomicCopy, nonemptyArtifact } from "@nodeint/migent-kernel";
 import { corruptStatusMessage, readStatusFileState } from "./query.js";
 import { isRecord } from "@nodeint/migent-workflow";
-import { log } from "./runtime.js";
+import { log } from "@nodeint/migent-kernel";
 import { loadFrozenWorkflow } from "./session-freeze.js";
 
 export interface NextSuggestion {

@@ -1,6 +1,6 @@
 # @nodeint/migent-kernel
 
-Configuration, session store, and process execution for Migent. Workflow execution lives in `@nodeint/migent-engine`.
+Configuration, authoring, and process execution for Migent. The session store lives in `@nodeint/migent-session`; workflow execution lives in `@nodeint/migent-engine`.
 
 This package is an internal dependency of the Migent CLI and has no stable public API.
 

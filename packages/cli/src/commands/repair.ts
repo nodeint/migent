@@ -1,6 +1,6 @@
 import { RepairResult, type Static } from "@nodeint/migent-contracts";
 import { writeJson } from "../emit.js";
-import { isSessionLockLost, repairSession, SessionLockHeldError } from "@nodeint/migent-kernel";
+import { isSessionLockLost, repairSession, SessionLockHeldError } from "@nodeint/migent-session";
 import { printError } from "../display.js";
 import { requireCurrentSchema } from "../migrate.js";
 

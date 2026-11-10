@@ -1,14 +1,8 @@
 import { CompleteResult } from "@nodeint/migent-contracts";
 import { writeJson } from "../emit.js";
 import path from "node:path";
-import {
-  ConfigurationError,
-  formatNextCommand,
-  isSessionLockLost,
-  log,
-  SessionLockHeldError,
-  SessionStore,
-} from "@nodeint/migent-kernel";
+import { ConfigurationError, log } from "@nodeint/migent-kernel";
+import { formatNextCommand, isSessionLockLost, SessionLockHeldError, SessionStore } from "@nodeint/migent-session";
 import { clientRegistry } from "../client.js";
 import { printError } from "../display.js";
 import { requireCurrentSchema } from "../migrate.js";

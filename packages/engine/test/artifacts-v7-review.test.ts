@@ -5,9 +5,9 @@ import { afterEach, expect, test } from "vitest";
 import { buildStagePrompt, migrateWorkflow, patchWorkflowText, type ExecutionSnapshot } from "@nodeint/migent-kernel";
 import { AgentToolRunner } from "../src/index.ts";
 import { parseWorkflowMapping } from "@nodeint/migent-workflow";
-import { publishNextSuggestions, resolveHandoff } from "@nodeint/migent-kernel";
-import { createWorkflowSession } from "@nodeint/migent-kernel";
-import { watchSnapshot } from "@nodeint/migent-kernel";
+import { publishNextSuggestions, resolveHandoff } from "@nodeint/migent-session";
+import { createWorkflowSession } from "@nodeint/migent-session";
+import { watchSnapshot } from "@nodeint/migent-session";
 import { parseYamlDocument } from "@nodeint/migent-workflow";
 import { ScriptedClient, SESSION_CONFIG, registryOf } from "./support.ts";
 

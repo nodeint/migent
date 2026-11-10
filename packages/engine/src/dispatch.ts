@@ -5,8 +5,8 @@ import { AgentToolRunner, type RunResult } from "./agent-runner.js";
 import { resolveStageTarget, type StageTarget } from "@nodeint/migent-kernel";
 import { ConfigurationError } from "@nodeint/migent-kernel";
 import { isRecord } from "@nodeint/migent-workflow";
-import { frozenStageTarget, readWorkflowFreeze } from "@nodeint/migent-kernel";
-import { bindPriorSessionId, createWorkflowSession } from "@nodeint/migent-kernel";
+import { frozenStageTarget, readWorkflowFreeze } from "@nodeint/migent-session";
+import { bindPriorSessionId, createWorkflowSession } from "@nodeint/migent-session";
 import {
   missingOutputProducers,
   revisionResumeExecution,
@@ -14,7 +14,7 @@ import {
   stageDispatchError,
   verifyExhaustedExecution,
 } from "@nodeint/migent-kernel";
-import { stringOptions, SessionStore } from "@nodeint/migent-kernel";
+import { stringOptions, SessionStore } from "@nodeint/migent-session";
 import { loadNamedWorkflow, type WorkflowDocument } from "@nodeint/migent-workflow";
 
 export interface StageDispatchRequest {

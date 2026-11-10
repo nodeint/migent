@@ -4,7 +4,7 @@ import { latestDiagnosticsPathIn } from "./session-diagnostics.js";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { isRecord } from "@nodeint/migent-workflow";
-import { MIGENT_DIRNAME, SESSIONS_DIRNAME } from "./runtime.js";
+import { MIGENT_DIRNAME, SESSIONS_DIRNAME } from "@nodeint/migent-kernel";
 import { effectiveTitle } from "./session-title.js";
 import { loadFrozenWorkflow } from "./session-freeze.js";
 

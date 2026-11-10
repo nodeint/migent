@@ -3,10 +3,11 @@ import { hostname } from "node:os";
 import path from "node:path";
 import { expect, test } from "vitest";
 import { ENDPOINT_UNKNOWN, PID_GONE, type ProcessInspector } from "@nodeint/migent-kernel";
-import { ConfigurationError, SessionLock, SessionStore, StageOutcome, VerifyRunner, createWorkflowSession, raiseCancellation, resetCancellation, buildStagePrompt } from "@nodeint/migent-kernel";
+import { ConfigurationError, StageOutcome, VerifyRunner, raiseCancellation, resetCancellation, buildStagePrompt } from "@nodeint/migent-kernel";
+import { SessionLock, SessionStore, createWorkflowSession } from "@nodeint/migent-session";
 import { AgentToolRunner, executeNamedWorkflow } from "../src/index.ts";
 import { loadWorkflowDocument } from "@nodeint/migent-workflow";
-import { clearInFlightExecution, clearInFlightExecutions, noteInFlightExecution } from "@nodeint/migent-kernel";
+import { clearInFlightExecution, clearInFlightExecutions, noteInFlightExecution } from "@nodeint/migent-session";
 import { ScriptedClient, tempDir, registryOf } from "./support.ts";
 
 const CONFIG = `\

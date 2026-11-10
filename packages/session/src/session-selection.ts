@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { ZodError } from "zod";
-import { ConfigurationError } from "./errors.js";
+import { ConfigurationError } from "@nodeint/migent-kernel";
 import { isRecord } from "@nodeint/migent-workflow";
 import { readStatusFileState } from "./query.js";
 import { readSessionManifest } from "./session-fold.js";

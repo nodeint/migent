@@ -1,8 +1,8 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
-import { appendLineSynced, isAtomicTempName, sealTornTail } from "./atomic-file.js";
+import { appendLineSynced, isAtomicTempName, sealTornTail } from "@nodeint/migent-kernel";
 import { isRecord } from "@nodeint/migent-workflow";
-import { EXECUTIONS_DIRNAME, utcNow } from "./runtime.js";
+import { EXECUTIONS_DIRNAME, utcNow } from "@nodeint/migent-kernel";
 import { assertSessionLockHeld } from "./session-lock.js";
 
 export const EVENT_VERSION = 2;

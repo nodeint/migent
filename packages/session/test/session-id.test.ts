@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { expect, test } from "vitest";
 import { parseYamlDocument } from "@nodeint/migent-workflow";
-import { ConfigurationError } from "../src/index.ts";
+import { ConfigurationError } from "@nodeint/migent-kernel";
 import { createNumericSessionDirectory, MAX_SESSION_NUMBER } from "../src/session-id.ts";
 import { readSessionManifest } from "../src/session-fold.ts";
 import { createPreparedSession, createWorkflowSession } from "../src/session-records.ts";

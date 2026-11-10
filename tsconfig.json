@@ -14,6 +14,9 @@
       "path": "packages/kernel"
     },
     {
+      "path": "packages/session"
+    },
+    {
       "path": "packages/engine"
     },
     {

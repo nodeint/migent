@@ -2,9 +2,10 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test, vi } from "vitest";
-import { ConfigurationError, SessionStore, createWorkflowSession } from "@nodeint/migent-kernel";
+import { ConfigurationError } from "@nodeint/migent-kernel";
+import { SessionStore, createWorkflowSession } from "@nodeint/migent-session";
 import { AgentToolRunner, executeNamedWorkflow } from "../src/index.ts";
-import { repairSession } from "@nodeint/migent-kernel";
+import { repairSession } from "@nodeint/migent-session";
 import { VerifyRunner } from "@nodeint/migent-kernel";
 import { ScriptedClient, tempDir, registryOf } from "./support.ts";
 

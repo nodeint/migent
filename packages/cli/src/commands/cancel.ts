@@ -2,7 +2,7 @@ import { CancelResult } from "@nodeint/migent-contracts";
 import { writeJson } from "../emit.js";
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { requestSessionCancel, SessionStore, sessionLockAlive } from "@nodeint/migent-kernel";
+import { requestSessionCancel, SessionStore, sessionLockAlive } from "@nodeint/migent-session";
 import { printError, printNotice } from "../display.js";
 import { requireCurrentSchema } from "../migrate.js";
 

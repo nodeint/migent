@@ -2,10 +2,10 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { expect, test } from "vitest";
-import { SessionLock, SessionStore, assertSessionLockHeld, createAgentSession, createWorkflowSession } from "@nodeint/migent-kernel";
+import { SessionLock, SessionStore, assertSessionLockHeld, createAgentSession, createWorkflowSession } from "@nodeint/migent-session";
 import { AgentToolRunner, executeNamedWorkflow } from "../src/index.ts";
-import { CANCEL_REQUEST_FILENAME, requestSessionCancel, setBetweenStaleLockReads } from "@nodeint/migent-kernel";
-import { createSessionDirectory, createPreparedSession } from "@nodeint/migent-kernel";
+import { CANCEL_REQUEST_FILENAME, requestSessionCancel, setBetweenStaleLockReads } from "@nodeint/migent-session";
+import { createSessionDirectory, createPreparedSession } from "@nodeint/migent-session";
 import { ScriptedClient, tempDir, registryOf } from "./support.ts";
 
 function sessionDir(): string {

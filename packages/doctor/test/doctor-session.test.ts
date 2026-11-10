@@ -2,15 +2,8 @@ import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync }
 import path from "node:path";
 import { expect, test } from "vitest";
 import { parse, stringify } from "yaml";
-import {
-  ConfigurationError,
-  WORKFLOW_FREEZE_FILE,
-  createAgentSession,
-  createPreparedSession,
-  createWorkflowSession,
-  selectSessionWorkflow,
-  type ClientRegistry,
-} from "@nodeint/migent-kernel";
+import { ConfigurationError, type ClientRegistry } from "@nodeint/migent-kernel";
+import { WORKFLOW_FREEZE_FILE, createAgentSession, createPreparedSession, createWorkflowSession, selectSessionWorkflow } from "@nodeint/migent-session";
 import {
   diagnoseSession,
   sessionEffortKeys,

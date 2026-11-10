@@ -1,8 +1,9 @@
 import { readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { SessionLock, SessionStore, StageOutcome, createPreparedSession, createWorkflowSession } from "@nodeint/migent-kernel";
+import { StageOutcome } from "@nodeint/migent-kernel";
+import { SessionLock, SessionStore, createPreparedSession, createWorkflowSession } from "@nodeint/migent-session";
 import { AgentToolRunner } from "@nodeint/migent-engine";
-import { statusDriftMessage, readFoldedStatus } from "@nodeint/migent-kernel";
+import { statusDriftMessage, readFoldedStatus } from "@nodeint/migent-session";
 import { afterEach, expect, test } from "vitest";
 import { main } from "../src/index.ts";
 import { cliHooks } from "../src/hooks.ts";

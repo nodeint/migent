@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test, vi } from "vitest";
-import { type CliRunOutput, type FailureOrigin, type RawFailure, type ResponseSource, createWorkflowSession } from "@nodeint/migent-kernel";
+import { type CliRunOutput, type FailureOrigin, type RawFailure, type ResponseSource } from "@nodeint/migent-kernel";
+import { createWorkflowSession } from "@nodeint/migent-session";
 import { AgentToolRunner } from "../src/index.ts";
 import { CommandExecutor } from "@nodeint/migent-kernel";
 import { StreamSummarizer, observeTurn, renderProviderDiagnostics } from "@nodeint/migent-kernel";

@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "vitest";
-import { createWorkflowSession } from "@nodeint/migent-kernel";
+import { createWorkflowSession } from "@nodeint/migent-session";
 import { AgentToolRunner, executeNamedWorkflow } from "../src/index.ts";
 import { ScriptedClient, registryOf, tempDir } from "./support.ts";
 

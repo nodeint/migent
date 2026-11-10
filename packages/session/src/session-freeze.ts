@@ -1,20 +1,20 @@
-import type { ClientRegistry } from "./cli-client.js";
-import { legacyClientOf } from "./legacy-provider.js";
+import type { ClientRegistry } from "@nodeint/migent-kernel";
+import { legacyClientOf } from "@nodeint/migent-kernel";
 import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { stringify } from "yaml";
-import { writeFileAtomic } from "./atomic-file.js";
+import { writeFileAtomic } from "@nodeint/migent-kernel";
 import {
   loadRoleResponsibilities,
   loadWorkspaceConfig,
   resolveStageSpec,
   type ModelOverride,
   type StageTarget,
-} from "./config.js";
-import { ConfigurationError } from "./errors.js";
+} from "@nodeint/migent-kernel";
+import { ConfigurationError } from "@nodeint/migent-kernel";
 import { isRecord } from "@nodeint/migent-workflow";
-import { log } from "./runtime.js";
+import { log } from "@nodeint/migent-kernel";
 import {
   isRoleStage,
   isWorkflowV2,

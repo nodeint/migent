@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { createWorkflowSession } from "@nodeint/migent-kernel";
+import { createWorkflowSession } from "@nodeint/migent-session";
 import { AgentToolRunner } from "@nodeint/migent-engine";
 import { expect, test } from "vitest";
 import { followSession } from "../src/commands/watch.ts";

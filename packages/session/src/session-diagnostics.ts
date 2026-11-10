@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
-import { EXECUTIONS_DIRNAME, SESSIONS_DIRNAME, MIGENT_DIRNAME } from "./runtime.js";
+import { EXECUTIONS_DIRNAME, SESSIONS_DIRNAME, MIGENT_DIRNAME } from "@nodeint/migent-kernel";
 
 const DIAGNOSTICS_FILE = "diagnostics.json";
 

@@ -7,7 +7,7 @@ import { version2GraphQuiet } from "@nodeint/migent-kernel";
 import { migrateWorkflow, patchWorkflowText } from "@nodeint/migent-kernel";
 import { parseWorkflowMapping } from "@nodeint/migent-workflow";
 import { parseYamlDocument } from "@nodeint/migent-workflow";
-import { readWorkflowFreeze, writeWorkflowFreeze } from "@nodeint/migent-kernel";
+import { readWorkflowFreeze, writeWorkflowFreeze } from "@nodeint/migent-session";
 import { AgentToolRunner } from "../src/agent-runner.ts";
 import { executeNamedWorkflow } from "../src/execute.ts";
 import { ScriptedClient, registryOf } from "./support.ts";

@@ -19,6 +19,9 @@
       "path": "../prompts"
     },
     {
+      "path": "../session"
+    },
+    {
       "path": "../workflow"
     }
   ]

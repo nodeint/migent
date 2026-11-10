@@ -3,14 +3,8 @@ import {
   type DiagnoseHooks as DoctorHooks,
   type SessionDiagnosis,
 } from "@nodeint/migent-doctor";
-import {
-  readStatusFileState,
-  selectRunWorkflow,
-  selectSessionWorkflow,
-  whichSync,
-  type ClientRegistry,
-  type SessionSelection,
-} from "@nodeint/migent-kernel";
+import { whichSync, type ClientRegistry } from "@nodeint/migent-kernel";
+import { readStatusFileState, selectRunWorkflow, selectSessionWorkflow, type SessionSelection } from "@nodeint/migent-session";
 import path from "node:path";
 import { printDoctor } from "./display.js";
 import { cliHooks } from "./hooks.js";

@@ -7,10 +7,10 @@ import { ConfigurationError } from "@nodeint/migent-kernel";
 import { executeNamedWorkflow } from "../src/index.ts";
 import { loadNamedWorkflow } from "@nodeint/migent-workflow";
 import { AgentToolRunner } from "../src/agent-runner.ts";
-import { readFoldedStatus } from "@nodeint/migent-kernel";
-import { createAgentSession, createPreparedSession, createWorkflowSession } from "@nodeint/migent-kernel";
-import { WORKFLOW_FREEZE_FILE, loadFrozenWorkflow, readWorkflowFreeze, writeWorkflowFreeze } from "@nodeint/migent-kernel";
-import { SessionStore } from "@nodeint/migent-kernel";
+import { readFoldedStatus } from "@nodeint/migent-session";
+import { createAgentSession, createPreparedSession, createWorkflowSession } from "@nodeint/migent-session";
+import { WORKFLOW_FREEZE_FILE, loadFrozenWorkflow, readWorkflowFreeze, writeWorkflowFreeze } from "@nodeint/migent-session";
+import { SessionStore } from "@nodeint/migent-session";
 import { ScriptedClient, tempDir, writeStageWorkspace, registryOf } from "./support.ts";
 
 // Each stage spawns a wrapper and a provider process, which is slow on Windows CI.

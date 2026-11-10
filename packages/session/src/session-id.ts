@@ -1,6 +1,6 @@
 import { mkdirSync, readdirSync } from "node:fs";
 import path from "node:path";
-import { ConfigurationError } from "./errors.js";
+import { ConfigurationError } from "@nodeint/migent-kernel";
 
 const CANONICAL_NUMBER = /^[1-9][0-9]*$/u;
 

@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "vitest";
-import { createAgentSession, listSealedMetrics, listSessionMetrics, readSealedMetrics, sealedMetricsPath, sessionMetrics } from "@nodeint/migent-kernel";
+import { createAgentSession, listSealedMetrics, listSessionMetrics, readSealedMetrics, sealedMetricsPath, sessionMetrics } from "@nodeint/migent-session";
 import { AgentToolRunner, executeNamedWorkflow } from "../src/index.ts";
 import type { TurnUsage, UsageCapture } from "@nodeint/migent-kernel";
 import { FakeClient, ScriptedClient, tempDir, registryOf } from "./support.ts";

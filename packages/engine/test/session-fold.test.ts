@@ -3,16 +3,17 @@ import { mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
-import { ConfigurationError, SessionLock } from "@nodeint/migent-kernel";
+import { ConfigurationError } from "@nodeint/migent-kernel";
+import { SessionLock } from "@nodeint/migent-session";
 import { AgentToolRunner, executeNamedWorkflow } from "../src/index.ts";
 import { loadWorkflowDocument } from "@nodeint/migent-workflow";
-import { readExecutions, readFoldedStatus, statusDriftMessage } from "@nodeint/migent-kernel";
-import { appendLifecycleEvent, readParsedEvents } from "@nodeint/migent-kernel";
-import { repairSession } from "@nodeint/migent-kernel";
-import { createAgentSession, createWorkflowSession } from "@nodeint/migent-kernel";
-import { clearInFlightExecution, noteInFlightExecution, SessionStore } from "@nodeint/migent-kernel";
+import { readExecutions, readFoldedStatus, statusDriftMessage } from "@nodeint/migent-session";
+import { appendLifecycleEvent, readParsedEvents } from "@nodeint/migent-session";
+import { repairSession } from "@nodeint/migent-session";
+import { createAgentSession, createWorkflowSession } from "@nodeint/migent-session";
+import { clearInFlightExecution, noteInFlightExecution, SessionStore } from "@nodeint/migent-session";
 import { StageOutcome } from "@nodeint/migent-kernel";
-import { freezeSessionTask } from "@nodeint/migent-kernel";
+import { freezeSessionTask } from "@nodeint/migent-session";
 import { defaultClients, tempDir, writeSessionConfig } from "./support.ts";
 
 const PLAN = readFileSync(

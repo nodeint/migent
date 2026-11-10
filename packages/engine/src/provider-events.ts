@@ -1,6 +1,6 @@
 import { isRecord } from "@nodeint/migent-workflow";
 import { logProgress, utcNow } from "@nodeint/migent-kernel";
-import type { ExecutionContext, SessionStore } from "@nodeint/migent-kernel";
+import type { ExecutionContext, SessionStore } from "@nodeint/migent-session";
 import { STATUS_PROVIDER_EVENTS } from "@nodeint/migent-kernel";
 
 const CONTROL_PLANE_WARNING_MARKERS = ["failed to refresh available models"];

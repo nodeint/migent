@@ -1,7 +1,7 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
-import { isAtomicTempName, writeJsonAtomic } from "./atomic-file.js";
-import { ConfigurationError } from "./errors.js";
+import { writeJsonAtomic } from "@nodeint/migent-kernel";
+import { ConfigurationError } from "@nodeint/migent-kernel";
 import {
   applyTerminalFields,
   blockedExecutions,
@@ -14,8 +14,6 @@ import {
 } from "./session-ledger.js";
 import { readStatusFileState, type StatusFileState } from "./query.js";
 import { isRecord } from "@nodeint/migent-workflow";
-import { executionClientReader } from "./legacy-execution-client.js";
-import { EXECUTIONS_DIRNAME } from "./runtime.js";
 import {
   CANCELLED_REPLY,
   parseExecutionId,
@@ -23,56 +21,13 @@ import {
   skipsStatusWrite,
   type ParsedEvent,
 } from "./session-events.js";
-import { effectiveTitleFrom, overlayTitle, readTitleRecord, type TitleRecord } from "./session-title.js";
-import { loadFrozenWorkflow } from "./session-freeze.js";
-import { StageOutcome } from "./stage-outcome.js";
-import { storedQuestions } from "./questions.js";
-import { loadNamedWorkflow, loadWorkflowDocument, type WorkflowDocument } from "@nodeint/migent-workflow";
+import { effectiveTitleFrom, overlayTitle, readTitleRecord } from "./session-title.js";
+import { StageOutcome } from "@nodeint/migent-kernel";
+import { storedQuestions } from "@nodeint/migent-kernel";
+import type { FoldExecution, FoldInputs, SessionManifest } from "./session-fold-types.js";
+import { asInt, cloneRecord, differingKeys, identityText, later, textOr } from "./session-fold-util.js";
+import { listOutputFiles, loadSessionWorkflow, readExecutions } from "./session-fold-read.js";
 import { parseYamlDocument } from "@nodeint/migent-workflow";
-
-export interface SessionManifest {
-  sessionId: string;
-  title: string | null;
-  workflowId: string | null;
-  workflowPath: string | null;
-  role: string | null;
-  task: string | null;
-  createdAt: string | null;
-  priorSessionId: string | null;
-  manifestStatus: string | null;
-  schemaVersion: number;
-}
-
-export interface FoldExecution {
-  executionId: string;
-  executionOrder: number;
-  stageId: string;
-  stageAttempt: number;
-  client: string;
-  model: string;
-  resumesExecutionId: string | null;
-  status: string;
-  outcome: Record<string, unknown> | null;
-  error: string | null;
-  failureReason: string | null;
-  createdAt: string | null;
-  completedAt: string | null;
-  artifactDirectory?: string;
-}
-
-export interface FoldInputs {
-  schemaVersion: number;
-  manifest: SessionManifest;
-  events: readonly ParsedEvent[];
-  executions: readonly FoldExecution[];
-  /** Present execution ids. An `execution.started` whose file is absent is not in this set. */
-  presentExecutionIds: ReadonlySet<string>;
-  previousStatus: Record<string, unknown> | null;
-  outputFiles: readonly string[];
-  workflow: WorkflowDocument | null;
-  /** The rename record (`title.json`), or null. */
-  titleRecord: TitleRecord | null;
-}
 
 /** A missing schema_version is 1. This is not config documentVersion, which maps a missing version to 0. */
 export function sessionSchemaVersion(document: Record<string, unknown> | null): number {
@@ -704,123 +659,6 @@ function latestExecution(executions: readonly FoldExecution[]): FoldExecution | 
   return best;
 }
 
-export function readExecutions(sessionDirectory: string): FoldExecution[] {
-  const directory = path.join(sessionDirectory, EXECUTIONS_DIRNAME);
-  let entries;
-  try {
-    entries = readdirSync(directory, { withFileTypes: true });
-  } catch {
-    return [];
-  }
-  const executions: FoldExecution[] = [];
-  const clientOf = executionClientReader(sessionDirectory);
-  for (const entry of entries) {
-    if (!entry.isDirectory() || isAtomicTempName(entry.name)) continue;
-    const filePath = path.join(directory, entry.name, "execution.json");
-    let text: string;
-    try {
-      text = readFileSync(filePath, "utf8");
-    } catch {
-      continue;
-    }
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(text) as unknown;
-    } catch {
-      throw new ConfigurationError(`Execution file is corrupt: ${filePath}.`);
-    }
-    if (!isRecord(parsed)) throw new ConfigurationError(`Execution file is corrupt: ${filePath}.`);
-    executions.push(executionFromRecord(sessionDirectory, entry.name, parsed, clientOf(entry.name, parsed).client));
-  }
-  return executions;
-}
-
-function executionFromRecord(
-  sessionDirectory: string,
-  executionId: string,
-  metadata: Record<string, unknown>,
-  client: string | null,
-): FoldExecution {
-  const outcome = isRecord(metadata.outcome) ? metadata.outcome : null;
-  return {
-    executionId,
-    executionOrder: asInt(metadata.execution_order),
-    stageId: textOr(metadata.stage_id) ?? "",
-    stageAttempt: asInt(metadata.stage_attempt),
-    client: client ?? "",
-    model: textOr(metadata.model) ?? "",
-    resumesExecutionId: textOr(metadata.resumes_execution_id),
-    status: textOr(metadata.status) ?? "",
-    outcome,
-    error: textOr(metadata.error),
-    failureReason: textOr(metadata.failure_reason),
-    createdAt: textOr(metadata.created_at),
-    completedAt: textOr(metadata.completed_at),
-    artifactDirectory: path.join(sessionDirectory, EXECUTIONS_DIRNAME, executionId, "artifacts"),
-  };
-}
-
-/** Finder, Explorer, and editor backups are not published artifacts. */
-function isIgnoredOutputName(name: string): boolean {
-  if (name.startsWith(".") || name.endsWith("~")) return true;
-  const lower = name.toLowerCase();
-  return lower === "thumbs.db" || lower === "desktop.ini";
-}
-
-function listOutputFiles(sessionDirectory: string): string[] {
-  const directory = path.join(sessionDirectory, "outputs");
-  let entries;
-  try {
-    entries = readdirSync(directory, { withFileTypes: true });
-  } catch {
-    return [];
-  }
-  const names: string[] = [];
-  for (const entry of entries) {
-    if (!entry.isFile() || isIgnoredOutputName(entry.name)) continue;
-    names.push(entry.name);
-  }
-  names.sort();
-  return names;
-}
-
-function loadSessionWorkflow(
-  workspace: string,
-  sessionDirectory: string,
-  status: Record<string, unknown>,
-): WorkflowDocument | null {
-  if (status.workflow_id === "agent") return null;
-  const frozen = loadFrozenWorkflow(sessionDirectory);
-  if (frozen) return frozen;
-  const workflowPath = status.workflow_path;
-  if (typeof workflowPath === "string" && workflowPath) {
-    const filePath = path.isAbsolute(workflowPath) ? workflowPath : path.join(workspace, workflowPath);
-    if (isReadableFile(filePath)) {
-      try {
-        return loadWorkflowDocument(filePath);
-      } catch (error) {
-        if (!(error instanceof ConfigurationError)) throw error;
-      }
-    }
-  }
-  const workflowId = status.workflow_id;
-  if (typeof workflowId !== "string" || workflowId === "") return null;
-  try {
-    return loadNamedWorkflow(workspace, workflowId);
-  } catch (error) {
-    if (error instanceof ConfigurationError) return null;
-    throw error;
-  }
-}
-
-function isReadableFile(filePath: string): boolean {
-  try {
-    return statSync(filePath).isFile();
-  } catch {
-    return false;
-  }
-}
-
 function statusIdentity(manifest: SessionManifest, previous: Record<string, unknown> | null): Record<string, unknown> {
   return {
     workflow_id: manifest.workflowId ?? previous?.workflow_id ?? null,
@@ -843,52 +681,5 @@ function emptyManifest(sessionId: string): SessionManifest {
   };
 }
 
-function differingKeys(left: Record<string, unknown>, right: Record<string, unknown>): string[] {
-  const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
-  const different: string[] = [];
-  for (const key of [...keys].sort()) {
-    if (canonical(left[key]) !== canonical(right[key])) different.push(key);
-  }
-  return different;
-}
-
-function canonical(value: unknown): string {
-  return JSON.stringify(sortValue(value));
-}
-
-function sortValue(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortValue);
-  if (!isRecord(value)) return value;
-  const sorted: Record<string, unknown> = {};
-  for (const key of Object.keys(value).sort()) sorted[key] = sortValue(value[key]);
-  return sorted;
-}
-
-function cloneRecord(value: Record<string, unknown>): Record<string, unknown> {
-  return JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
-}
-
-function later(current: string | null, next: string | null): string | null {
-  if (!next) return current;
-  if (!current) return next;
-  const left = Date.parse(current);
-  const right = Date.parse(next);
-  if (Number.isNaN(left) || Number.isNaN(right)) return current >= next ? current : next;
-  return left >= right ? current : next;
-}
-
-function textOr(value: unknown): string | null {
-  return typeof value === "string" && value !== "" ? value : null;
-}
-
-/** Session ids are strings; a hand-edited manifest may hold an unquoted integer. */
-function identityText(value: unknown): string | null {
-  if (typeof value === "number" && Number.isSafeInteger(value) && value > 0) return String(value);
-  return textOr(value);
-}
-
-function asInt(value: unknown): number {
-  if (typeof value === "number" && Number.isFinite(value)) return Math.trunc(value);
-  if (typeof value === "string" && /^-?\d+$/.test(value)) return Number(value);
-  return 0;
-}
+export type { FoldExecution, FoldInputs, SessionManifest } from "./session-fold-types.js";
+export { readExecutions } from "./session-fold-read.js";

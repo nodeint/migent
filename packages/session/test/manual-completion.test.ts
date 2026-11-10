@@ -1,13 +1,14 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "vitest";
-import { ConfigurationError, SessionLock, SessionLockHeldError } from "../src/index.ts";
+import { ConfigurationError } from "@nodeint/migent-kernel";
+import { SessionLock, SessionLockHeldError } from "@nodeint/migent-session";
 import { readFoldedStatus } from "../src/session-fold.ts";
 import { readParsedEvents } from "../src/session-events.ts";
 import { createAgentSession, createPreparedSession, createWorkflowSession } from "../src/session-records.ts";
 import { repairSession } from "../src/session-repair.ts";
 import { SessionStore } from "../src/session-store.ts";
-import { StageOutcome } from "../src/stage-outcome.ts";
+import { StageOutcome } from "@nodeint/migent-kernel";
 import { freezeSessionTask } from "../src/task-file.ts";
 import { defaultClients, tempDir, writeSessionConfig } from "./support.ts";
 

@@ -1,10 +1,10 @@
 import type { RunResult } from "./agent-runner.js";
 import type { ClientRegistry } from "@nodeint/migent-kernel";
-import { AgentSessionRecord, SessionStore, type ExecutionContext } from "@nodeint/migent-kernel";
+import { AgentSessionRecord, SessionStore, type ExecutionContext } from "@nodeint/migent-session";
 import { CancellationRequested } from "@nodeint/migent-kernel";
 import { ProviderEventReporter } from "./provider-events.js";
 import { formatClock, log } from "@nodeint/migent-kernel";
-import { parseExecutionId } from "@nodeint/migent-kernel";
+import { parseExecutionId } from "@nodeint/migent-session";
 import { VERIFY_FAILED } from "@nodeint/migent-kernel";
 import { StageOutcome } from "@nodeint/migent-kernel";
 import { VerifyRunner, formatVerifyReport, type VerifyRunResult } from "@nodeint/migent-kernel";

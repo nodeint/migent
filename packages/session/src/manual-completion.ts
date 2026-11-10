@@ -7,8 +7,8 @@ import {
   resolveArtifactSources,
   selectSourceExecution,
   type ExecutionSnapshot,
-} from "./outputs.js";
-import { currentCompleteByStage } from "./selection.js";
+} from "@nodeint/migent-kernel";
+import { currentCompleteByStage } from "@nodeint/migent-kernel";
 import type { LedgerOutput } from "./session-ledger.js";
 import { isWorkflowV2, type WorkflowDocument } from "@nodeint/migent-workflow";
 

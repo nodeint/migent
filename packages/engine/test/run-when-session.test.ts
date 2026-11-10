@@ -2,9 +2,9 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test, vi } from "vitest";
-import { SessionStore, createWorkflowSession, readFoldedStatus, sessionMetrics, statusDriftMessage, watchSnapshot } from "@nodeint/migent-kernel";
+import { SessionStore, createWorkflowSession, readFoldedStatus, sessionMetrics, statusDriftMessage, watchSnapshot } from "@nodeint/migent-session";
 import { AgentToolRunner, executeNamedWorkflow } from "../src/index.ts";
-import { loadFrozenWorkflow } from "@nodeint/migent-kernel";
+import { loadFrozenWorkflow } from "@nodeint/migent-session";
 import { ScriptedClient, tempDir, registryOf } from "./support.ts";
 
 // Git setup and wrapper/provider process startup can exceed 10 seconds on Windows CI.
