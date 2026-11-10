@@ -221,21 +221,18 @@ question files from the saved execution outcomes and events.
 
 ## Agent response format
 
-An agent asks in two steps. It writes the question document to the **question
-request file** whose absolute path appears in its response contract
-(`question-request.json` in the execution directory, outside `artifacts/`), then
-ends its response with `status: question`. The response body is an ordinary
-report; Migent never reads questions from it. Migent reads the file only when
-the status is `question` and ignores it for any other status. Migent removes a
-leftover file before each client turn so an old file is never read as a new
-question. The file is not `questions.json`, which Migent writes from the
-validated outcome.
-
-The file holds one JSON document:
+An agent reports every outcome, questions included, by writing one JSON file: the
+**handoff file** whose absolute path appears in its response contract (`handoff.json`
+in the execution directory, outside `artifacts/`). To ask, it sets `status: question`
+and lists the questions. The response body is an ordinary report; Migent never reads
+the outcome or the questions from it. Migent removes a leftover file before each client
+turn so an old file is never read as a new outcome. The file is not `questions.json`,
+which Migent writes from the validated outcome.
 
 ```json
 {
   "schema_version": 1,
+  "status": "question",
   "questions": [
     {
       "question": "Should existing sessions be supported?",
@@ -251,6 +248,10 @@ The file holds one JSON document:
 }
 ```
 
+`status` is `complete`, `blocked` (with a required `blocker`) or `question`. A `question`
+handoff is valid only for a stage with `ask: human`. The published schema is
+`HandoffDocument` in `@nodeint/migent-contracts`.
+
 Each question requires nonempty `question` and `context` strings, a `selection`
 of `single` or `multiple`, and 2 to 26 options. Each option requires a nonempty
 `label`; `description` is optional. Agents omit IDs so Migent assigns them.
@@ -261,22 +262,30 @@ one entry for a `single` question and never supplies an answer automatically.
 The document can contain several questions. Migent validates the complete
 document before accepting the question outcome.
 
-### When the question file is unusable
+**Protocol 2 conversations.** A conversation that started under response protocol 2
+keeps it until it ends. There the agent writes only the questions document
+(`schema_version` and `questions`, no `status`) to `question-request.json` and ends its
+response with a `status: question` header line; the file is read only for that status. See
+[Workflows](workflows.md#stage-protocol) for how a conversation's protocol is chosen.
 
-If the status is `question` and the file is missing, empty, not valid JSON, or
-fails validation, Migent sends the agent one correction turn in the same
-execution and conversation. The message names the file and the problem; the
-agent rewrites the file and responds again. The correction is recorded in
-`execution.json` under `corrections.question_file`, so cancelling and resuming never
-grants a second one. Older executions that recorded `question_correction` are read
-the same way. The kernel correction policy drives this; see
-[Workflows](workflows.md#correctable-response-failures). A `question.file_invalid` event records the failure.
+### When the handoff file is unusable
+
+If the handoff file is missing, empty, not valid JSON, fails validation, names a
+decision the stage does not allow, or asks a question on a stage without `ask: human`,
+Migent sends the agent one correction turn in the same execution and conversation. The
+message names the file and the problem; the agent rewrites the file and responds again.
+The correction is recorded in `execution.json` under `corrections.handoff`, so cancelling
+and resuming never grants a second one. The kernel correction policy drives this; see
+[Workflows](workflows.md#correctable-response-failures). A `handoff.file_invalid` event
+records the failure.
 
 If the file is still unusable, the execution fails with
-`failure_reason: question_file_invalid`. The error names the file, the problem
-(`missing`, `empty`, `invalid_json`, or `invalid_schema`) and how to recover:
-`migent session continue <session>` runs the stage again. The invalid file stays
-in the execution directory for diagnosis.
+`failure_reason: handoff_file_invalid`. The error names the file, the problem
+(`missing`, `empty`, `invalid_json`, `invalid_schema`, `invalid_decision` or
+`question_not_allowed`) and how to recover: `migent session continue <session>` runs the
+stage again. The invalid file stays in the execution directory for diagnosis. Under
+protocol 2 the same flow applies to `question-request.json`, recorded as
+`corrections.question_file` with `failure_reason: question_file_invalid`.
 
 ## Resume and verification
 

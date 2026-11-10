@@ -44,24 +44,24 @@ function fixture() {
 const normalize = (text: string, root: string) =>
   text.split(root).join("<ROOT>").split(root.replaceAll("\\", "/")).join("<ROOT>").replaceAll("\\", "/");
 
-function turn(prompt: string, stageId: string, kind: TurnKind) {
+function turn(prompt: string, stageId: string, kind: TurnKind, protocol = 2) {
   const stage = workflow.stages[stageId]!;
   return renderProviderPrompt(prompt, {
-    contract: true, turn: kind, decisionValues: stage.decisionValues, decisionInstructions: stage.decisionInstructions,
+    contract: true, protocol, handoffFile: "<HANDOFF>", turn: kind, decisionValues: stage.decisionValues, decisionInstructions: stage.decisionInstructions,
     ask: stage.ask ?? null, questionFile: "<QFILE>", artifactDirectory: "<ART>", artifactName: stage.artifacts[0]?.file ?? null,
     taskFile: "<SESSION>/task.md", sessionDirectory: "<SESSION>",
   });
 }
 
-test("prompt kinds under native resume, history replay and resume_from", () => {
+for (const protocol of [2, 3]) test(protocol === 2 ? "prompt kinds under native resume, history replay and resume_from" : "protocol 3 prompt kinds under native resume, history replay and resume_from", () => {
   const { root, session, snapshots } = fixture();
   const base = { workflow, workspace: root, sessionDirectory: session, taskFile: path.join(session, "task.md"), roleInstructions: [] as string[] };
   const kinds: Record<string, string> = {};
   const record = (name: string, stageId: string, kind: TurnKind, body: string) => {
-    kinds[`${name} / native`] = turn(body, stageId, kind);
+    kinds[`${name} / native`] = turn(body, stageId, kind, protocol);
     kinds[`${name} / replay`] = flattenHistory([
       { role: "user", content: "(earlier turn)" }, { role: "assistant", content: "(earlier response)" },
-      { role: "user", content: turn(body, stageId, kind) },
+      { role: "user", content: turn(body, stageId, kind, protocol) },
     ]);
   };
   record("first turn", "make", "start", buildStagePrompt({ ...base, stageId: "make", snapshots: [] }));
@@ -74,5 +74,6 @@ test("prompt kinds under native resume, history replay and resume_from", () => {
 
   const normalized = Object.fromEntries(Object.entries(kinds).map(([k, v]) => [k, normalize(v, root)]));
   expect(normalized).toMatchSnapshot();
+  if (protocol === 3) expect(Object.values(normalized).every((text) => !text.includes("<QFILE>"))).toBe(true);
   console.log("PROMPT SIZES", JSON.stringify(Object.fromEntries(Object.entries(normalized).map(([k, v]) => [k, v.length]))));
 });

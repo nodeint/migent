@@ -45,7 +45,7 @@ test("v3 decisions carry agent instructions and route two approvals or a revisio
     else expect(version2GraphQuiet(workflow, completed, "active")).toBe(true);
   }
   const prompt = addStageOutcomeContract("Review the work.", review.decisionValues, review.decisionInstructions);
-  expect(prompt).toContain("decision: approved|approved-with-note|revise");
+  expect(prompt).toContain("`decision` is one of approved|approved-with-note|revise.");
   expect(prompt).toContain("`approved-with-note`: Only minor findings remain. Record them in review.md.");
 });
 
@@ -66,7 +66,7 @@ test("decisions can omit when while retaining labels, routes, and optional guida
   expect(review.decisionInstructions).toEqual({ revise: "Blocking findings remain." });
   expect(review.routes.approved).toBe("complete");
   const prompt = addStageOutcomeContract("Review.", review.decisionValues, review.decisionInstructions);
-  expect(prompt).toContain("decision: approved|revise");
+  expect(prompt).toContain("`decision` is one of approved|revise.");
   expect(prompt).toContain("Blocking findings remain.");
 });
 

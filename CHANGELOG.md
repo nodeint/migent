@@ -8,6 +8,7 @@
 
 ### Changed
 
+- **Response protocol 3.** A stage now reports its outcome (`complete`, `blocked` or `question`) by writing one JSON file, `handoff.json`, in its execution directory, instead of `status:`/`decision:`/`blocker:` header lines plus a separate `question-request.json`. The response text is a free-form report. An unusable handoff (missing, empty, not JSON, not matching the schema, a decision the stage does not allow, or a question on a stage without `ask: human`) gets one correction turn, recorded as `corrections.handoff`, then fails with `handoff_file_invalid`. New event: `handoff.file_invalid`. The handoff document's JSON Schema is published as `HandoffDocument` in `@nodeint/migent-contracts`. A conversation keeps the protocol it started with: existing sessions finish their conversations on protocol 2 (headers and `question-request.json`, with the earlier corrections), and `execution.json` records `response_protocol`. Only a stage that starts with no source execution uses protocol 3. Custom clients and scripts that fake a stage reply must now write `handoff.json`.
 - The missing-status error lists every status the stage allows, including `question` when the stage has `ask: human`.
 
 ### Removed

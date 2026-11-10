@@ -74,7 +74,7 @@ test("a workflow stage whose question file stays invalid shows the file, the pro
     }));
     expect(result.value).not.toBe(9);
     expect(provider.calls).toHaveLength(2);
-    expect(result.stderr).toContain("question-request.json");
+    expect(result.stderr).toContain("handoff.json");
     expect(result.stderr).toContain("invalid_schema");
     expect(result.stderr).toContain("session continue");
   } finally { removeWorkspace(root); }
@@ -87,7 +87,7 @@ test("a role session whose question file stays invalid prints the diagnostic", a
   try {
     const result = await capture(() => dispatchAgent(root, { role: "reviewer", prompt: "Review scope", runner }));
     expect(result.value).toBe(1);
-    expect(result.stdout).toContain("question-request.json");
+    expect(result.stdout).toContain("handoff.json");
     expect(result.stdout).toContain("missing");
   } finally { removeWorkspace(root); }
 });
@@ -105,7 +105,7 @@ test("a question-file failure is shown with its stage even when a newer sibling 
     }));
     expect(result.value).not.toBe(0);
     expect(result.stderr).toContain("stage plan:");
-    expect(result.stderr).toContain("question-request.json");
+    expect(result.stderr).toContain("handoff.json");
     expect(result.stderr).toContain("(missing)");
   } finally { removeWorkspace(root); }
 });

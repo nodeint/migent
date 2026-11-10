@@ -498,6 +498,9 @@ test("session run --role --session --json prints every resumed role execution", 
   const metadata = JSON.parse(readFileSync(metadataPath, "utf8")) as Record<string, unknown>;
   Object.assign(metadata, { execution_id: second, execution_order: 2 });
   writeFileSync(metadataPath, JSON.stringify(metadata));
+  // The copied prompt names the handoff file of the execution it was copied from.
+  const promptPath = path.join(executions, second, "prompt.md");
+  writeFileSync(promptPath, readFileSync(promptPath, "utf8").split(first).join(second));
   cliHooks.runner = new AgentToolRunner(registryOf({ fake: new ScriptedClient(["status: complete\n\ndone", "status: complete\n\ndone"]) }), 10);
   installOffline();
   const resumed = await capture(() => main(["session", "run", "--role", "planner", "--session", sessionId, "--prompt", "again", "--json"], workspace));

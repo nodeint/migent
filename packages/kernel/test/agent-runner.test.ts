@@ -212,12 +212,12 @@ test("fails a workflow session without a stage status", async () => {
   const execution = readJson(path.join(sessionDirectory, "executions", result.execution_id, "execution.json"));
   const status = readJson(path.join(sessionDirectory, "status.json"));
   expect(execution.status).toBe("failed");
-  expect(String(execution.error)).toContain("must start with");
+  expect(String(execution.error)).toContain("handoff.json");
   const executionDirectory = path.join(sessionDirectory, "executions", result.execution_id);
   expect(readFileSync(path.join(executionDirectory, "response.md"), "utf8")).toBe(
     "implementation report without a status header",
   );
-  expect(readFileSync(path.join(executionDirectory, "failure.md"), "utf8")).toContain("must start with");
+  expect(readFileSync(path.join(executionDirectory, "failure.md"), "utf8")).toContain("handoff.json");
   expect(status.status).toBe("active");
   expect(status).not.toHaveProperty("terminal_execution_id");
   const retry = await new AgentToolRunner(registryOf({ fake: new FakeClient() }), 10).run({
@@ -415,7 +415,7 @@ test("prose approval without a decision header fails the execution", async () =>
   const execution = readJson(path.join(sessionDirectory, "executions", review.execution_id, "execution.json"));
   const status = readJson(path.join(sessionDirectory, "status.json"));
   expect(execution.status).toBe("failed");
-  expect(String(execution.error)).toContain("decision:");
+  expect(String(execution.error)).toContain("handoff.json");
   expect(status.status).toBe("active");
   expect(existsSync(path.join(sessionDirectory, "outputs"))).toBe(false);
 });

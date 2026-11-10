@@ -132,10 +132,17 @@ Each execution directory contains:
   `execution.json` for a role stage also records `turns`, `verify` (`runs`,
   `red`, `max_verify`, `last_result`, `last_report`), and `failure_reason`
   (`verify_exhausted`, or a correction reason when the agent's fix turn still fails:
-  `response_contract_invalid`, `stage_output_missing`, `question_file_invalid`;
+  `handoff_file_invalid`, `stage_output_missing`, and for protocol 2 conversations
+  `response_contract_invalid`, `question_file_invalid`;
   see [Workflows](workflows.md#correctable-response-failures)). `corrections` records
   each granted correction by kind (`turn`, `error_kind`, `error_detail`). A stage with no role records `failure_reason:
   verify_failed` when the list fails.
+- `handoff.json`: the stage outcome the agent writes under response protocol 3 (see
+  [Workflows](workflows.md#stage-protocol)). Migent deletes it before every fresh turn, so it
+  holds the last turn's handoff, and a failed validation leaves it for diagnosis. Corrections for it
+  are recorded as `corrections.handoff`. `execution.json` records `response_protocol` (3 for a
+  new conversation; a continued conversation keeps its source execution's value, and a missing
+  or legacy value is read as protocol 1). Protocol 2 conversations use `question-request.json`.
 - `conversation.json`: client conversation checkpoint used when resuming a
   client session. It stores the client and model, native agent ID, options
   setting, lifecycle status, and fallback message history. A stage with no

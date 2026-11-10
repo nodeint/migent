@@ -60,6 +60,60 @@ Read the task, then carry out the stage.
 Write the artifact as \`plan.md\` in the artifacts directory."
 `;
 
+exports[`protocol 3 asks for one handoff file and names it under Execution 1`] = `
+"# Migent workflow stage
+
+## Response contract
+
+Write one JSON document to the handoff file (see Execution) before you finish. Migent reads only that file for the stage result. The response body is a free-form report for humans.
+
+\`\`\`json
+{"schema_version":1,"status":"complete","decision":"approved","summary":"One-line report."}
+{"schema_version":1,"status":"blocked","blocker":"What stops you."}
+{"schema_version":1,"status":"question","questions":[{"question":"Which option?","context":"Why you need to know.","selection":"single","recommended":["A"],"options":[{"label":"First choice","description":"Optional detail."},{"label":"Second choice"}]}]}
+\`\`\`
+
+Each line above is a separate example; write exactly one document. \`status\` is complete | question | blocked. \`decision\` is one of approved|revise. \`selection\` is \`single\` or \`multiple\`.
+
+| Status | Meaning |
+| :--- | :--- |
+| \`complete\` | The stage's work is finished, artifact written. \`summary\` is optional. \`decision\` is required. |
+| \`question\` | You need a human answer to continue. |
+| \`blocked\` | An obstacle you cannot resolve in this turn. \`blocker\` is required. |
+
+## Decisions
+
+Choose exactly one when complete. Set it as \`decision\` in the handoff file. Do not choose one while asking a question.
+
+- \`approved\`
+- \`revise\`
+
+## Asking questions
+
+Use \`status: question\` in the handoff file. Keep choices out of the report body.
+
+- Each question needs 2–26 options.
+- Omit IDs: Migent letters options A, B, C… and numbers questions 1, 2, 3… in order.
+- Optional: \`description\` on an option; \`recommended\` on a question, a list of option letters (at most one for \`single\`).
+- Free-text answers are always allowed.
+- Several questions are allowed; all must be answered before the stage continues.
+- Present choices neutrally. Never decide on the human's behalf.
+
+body
+
+## Execution
+
+- Task: \`/s/task.md\`
+- Session dir: \`/s\` (shared session files)
+- Handoff file: \`/s/e1/handoff.json\`
+- Artifacts: \`/s/e1/artifacts\`
+
+## Do
+
+Read the task, then carry out the stage.
+Write the artifact as \`plan.md\` in the artifacts directory."
+`;
+
 exports[`renders the full contract (ask=human, decisions=0) 1`] = `
 "# Migent workflow stage
 

@@ -33,11 +33,11 @@ import {
   log,
 } from "./runtime.js";
 import {
-  renderOutputCorrection, renderProtocolUpdate, renderQuestionCorrection, renderResponseCorrection, type TurnKind,
+  renderProtocolUpdate, CURRENT_RESPONSE_PROTOCOL, type TurnKind,
 } from "@nodeint/migent-prompts";
 import {
   CORRECTION_FAILURE_REASONS, CORRECTION_POLICY, classifyGateError, decideCorrection, readCorrectionLedger, ruleForTurn,
-  type CorrectionLedger, type GateFailure,
+  type CorrectionFiles, type CorrectionLedger, type GateFailure,
 } from "./correction-policy.js";
 import { ProviderEventReporter } from "./provider-events.js";
 import { loadFrozenWorkflow } from "./session-freeze.js";
@@ -45,6 +45,7 @@ import { AgentSessionRecord, SessionStore, stringOptions, type ExecutionContext 
 import { StageOutcome } from "./stage-outcome.js";
 import { platformHome } from "./env.js";
 import { resolveStageOutcome, type OutcomeContext } from "./outcome-resolver.js";
+import { HandoffFileError } from "./handoff.js";
 import { QuestionFileError, type Question } from "./questions.js";
 import { allStageArtifacts, isWorkflowV2, loadNamedWorkflow, loadStage, stageArtifactsFor, type StageArtifact, type StageSpec } from "@nodeint/migent-workflow";
 
@@ -90,11 +91,20 @@ export interface RunRequest {
   onExecution?: (executionId: string) => void;
 }
 
-/** Version of the response contract baked into a saved first prompt. 2 = questions via request file. */
-const RESPONSE_PROTOCOL = 2;
+/**
+ * Version of the response contract baked into a saved first prompt. 2 = headers plus a question
+ * request file. 3 = one handoff file. A conversation keeps the protocol it started under.
+ */
+const RESPONSE_PROTOCOL = CURRENT_RESPONSE_PROTOCOL;
+
+/** The protocol a stored stamp runs under. A missing or legacy stamp is read as 1. */
+function storedProtocol(metadata: Record<string, unknown> | null): number {
+  const value = metadata?.response_protocol;
+  return typeof value === "number" && value >= 2 ? value : 1;
+}
 
 const TURN_KINDS: readonly TurnKind[] = [
-  "start", "continue", "reply", "answers", "repair", "correction", "response_correction", "output_correction",
+  "start", "continue", "reply", "answers", "repair", "correction", "response_correction", "output_correction", "handoff_correction",
 ];
 
 /** The kind of the execution's latest user turn, as saved in execution.json. */
@@ -115,6 +125,12 @@ function sessionPaths(context: ExecutionContext, sessionId: string | null): { ta
   }
 }
 const QUESTION_FILE_NAME = "question-request.json";
+const HANDOFF_FILE_NAME = "handoff.json";
+
+/** Absolute, native path the agent writes its handoff to (protocol 3). It sits outside `artifacts/`. */
+export function handoffPath(context: ExecutionContext): string {
+  return path.resolve(context.directory, HANDOFF_FILE_NAME);
+}
 
 /** Absolute, native path the agent writes questions to. It sits outside `artifacts/`. */
 export function questionRequestPath(context: ExecutionContext): string {
@@ -126,6 +142,11 @@ export class AgentToolRunner {
   readonly executor: CommandExecutor;
   readonly verifyRunner: VerifyRunner;
   itemProgress = false;
+  /**
+   * Protocol a conversation with no source execution starts under. Continued conversations always
+   * inherit their source's. Tests set 2 to build authentic protocol-2 conversations.
+   */
+  newConversationProtocol = RESPONSE_PROTOCOL;
   interruptPolicy: InterruptPolicy = DEFAULT_INTERRUPT_POLICY;
   private readonly cliVersions = new Map<string, string | null>();
 
@@ -193,6 +214,10 @@ export class AgentToolRunner {
     const artifactFiles = stage === null ? [] : allStageArtifacts(stage);
     const artifactName = artifactFiles[0]?.artifact.file ?? null;
     const verifyCommands = stage?.verify ?? [];
+    const source = request.resumeExecutionId ? store.executionContext(context.sessionId, request.resumeExecutionId) : null;
+    const sourceMetadata = source === null ? null : readExecutionJson(source.directory);
+    // A new conversation takes the current protocol; a continued one keeps its source's, never past 2 from a legacy stamp.
+    const protocol = isNew || source === null ? this.newConversationProtocol : Math.max(2, storedProtocol(sourceMetadata));
     const previous = request.resumeExecutionId
       ? store.executionSnapshots(context.sessionId).find((row) => row.executionId === request.resumeExecutionId && row.stageId === stageId && row.outcomeStatus === "question")
       : undefined;
@@ -202,21 +227,21 @@ export class AgentToolRunner {
     const progress = previousMetadata ? verifyProgress(previousMetadata) : null;
     // Answering a question on the same agent: the conversation already holds the contract and stage instructions.
     const sameConversation = previous !== undefined && agentId !== null && agentId !== ""
-      && previousMetadata?.response_protocol === RESPONSE_PROTOCOL;
+      && storedProtocol(previousMetadata) === protocol;
     if (previous) for (const item of artifactFiles) store.carryVerifyArtifact(previous.artifactDirectory, context, item.artifact.file);
     if (request.resumeExecutionId && verifyCommands.length > 0) {
       for (const item of artifactFiles) this.carryExhaustedArtifact(store, context, request.resumeExecutionId, item.artifact.file);
     }
     turnPrompt = renderProviderPrompt(turnPrompt, { ...sessionPaths(context, sessionId),
       contract: sessionId === null ? false : sameConversation ? "reminder" : "full", turn: request.turn ?? null, decisionValues, decisionInstructions: stage?.decisionInstructions, ask,
-      questionFile: questionRequestPath(context),
+      protocol, questionFile: questionRequestPath(context), handoffFile: handoffPath(context),
       artifactDirectory: context.artifactDirectory, artifactName, artifactFiles: promptArtifactFiles(artifactFiles),
       previousArtifactDirectory: previous?.artifactDirectory ?? null,
       previousVerifyReport: previous && progress?.lastReport
         ? path.resolve(path.dirname(previous.artifactDirectory), progress.lastReport) : null,
     });
     store.savePrompt(context, turnPrompt);
-    store.saveExecutionProgress(context, record, { response_protocol: RESPONSE_PROTOCOL, turn_kind: request.turn ?? null });
+    store.saveExecutionProgress(context, record, { response_protocol: protocol, turn_kind: request.turn ?? null });
     const started: Record<string, unknown> = {
       cli_version: this.cachedCliVersion(client, clientId, workspacePath),
       ...readGitFacts(workspacePath),
@@ -253,6 +278,7 @@ export class AgentToolRunner {
       currentSession: newSession,
       pendingVerify: null,
       corrections: {},
+      protocol,
     });
   }
 
@@ -293,6 +319,14 @@ export class AgentToolRunner {
     const progress = verifyProgress(metadata);
     const corrections = readCorrectionLedger(metadata);
     const questionFile = questionRequestPath(context);
+    const handoffFile = handoffPath(context);
+    const stamped = storedProtocol(metadata);
+    const protocol = Math.max(2, stamped);
+    // A legacy execution continues under protocol 2 from here on; record it so later resumes, the
+    // contract selection and the execution metadata agree.
+    if (stamped !== protocol) store.saveExecutionProgress(context, record, { response_protocol: protocol });
+    // The file a pending correction repairs must survive the first turn's cleanup.
+    let keepFile = false;
     const assistants = record.history.filter((item) => item.role === "assistant").length;
     const last = record.history.at(-1);
     const lastRole = last && typeof last.role === "string" ? last.role : "";
@@ -315,18 +349,21 @@ export class AgentToolRunner {
           throw new ConfigurationError(`Execution ${executionId} has no prompt to resume.`);
         }
         // A first prompt saved under an older protocol carries the old question instructions.
-        if (sessionId !== null && ask !== null && metadata.response_protocol !== RESPONSE_PROTOCOL) {
+        if (sessionId !== null && ask !== null && stamped < 2) {
           currentPrompt += renderProtocolUpdate({ ...sessionPaths(context, sessionId), turn: storedTurn(metadata),
             decisionValues, decisionInstructions: stage?.decisionInstructions, ask, questionFile,
           });
+          // The stamp now says protocol 2, so the saved prompt must carry the update for the next resume.
+          store.savePrompt(context, currentPrompt);
         }
       } else {
         currentPrompt = agentId
           ? last.content
           : flattenHistory(record.history as Array<{ role: string; content: string }>);
-        const contract = agentId && metadata.response_protocol === RESPONSE_PROTOCOL
+        const contract = agentId && stamped >= 2
           ? (pendingCorrection?.contract ?? "reminder") : "full";
-        currentPrompt = renderProviderPrompt(currentPrompt, { ...sessionPaths(context, sessionId), contract, turn: storedTurn(metadata), decisionValues, decisionInstructions: stage?.decisionInstructions, ask, questionFile, artifactDirectory: context.artifactDirectory, artifactName, artifactFiles: promptArtifactFiles(artifactFiles) });
+        keepFile = pendingCorrection?.keepFile ?? false;
+        currentPrompt = renderProviderPrompt(currentPrompt, { ...sessionPaths(context, sessionId), contract, turn: storedTurn(metadata), decisionValues, decisionInstructions: stage?.decisionInstructions, ask, protocol, questionFile, handoffFile, artifactDirectory: context.artifactDirectory, artifactName, artifactFiles: promptArtifactFiles(artifactFiles) });
       }
       return this.driveTurns({
         client,
@@ -356,6 +393,8 @@ export class AgentToolRunner {
         currentSession: null,
         pendingVerify: null,
         corrections,
+        protocol,
+        keepFile,
       });
     }
     const turn = persistedTurn(metadata, Math.max(1, assistants));
@@ -364,9 +403,9 @@ export class AgentToolRunner {
     let invokeError: string | null = null;
     let gateFailure: GateFailure | null = null;
     try {
-      outcome = savedOutcome(store, context, turn, responseText, { required: sessionId !== null, decisionValues, ask, questionFile });
+      outcome = savedOutcome(store, context, turn, responseText, { required: sessionId !== null, decisionValues, ask, protocol, questionFile, handoffFile });
     } catch (error) {
-      if (error instanceof QuestionFileError) gateFailure = classifyGateError(error);
+      if (error instanceof QuestionFileError || error instanceof HandoffFileError) gateFailure = classifyGateError(error);
       else if (error instanceof Error) {
         invokeError = error.message;
         gateFailure = classifyGateError(error);
@@ -400,6 +439,7 @@ export class AgentToolRunner {
       currentSession: null,
       pendingVerify: { responseText, outcome, invokeError, gateFailure },
       corrections,
+      protocol,
     });
   }
 
@@ -433,8 +473,13 @@ export class AgentToolRunner {
     let currentSession = state.currentSession;
     let pendingVerify = state.pendingVerify;
     let corrections: CorrectionLedger = state.corrections;
+    const protocol = state.protocol;
     const questionFile = questionRequestPath(context);
-    let keepQuestionFile = false;
+    const handoffFile = handoffPath(context);
+    const files: CorrectionFiles = { protocol, questionFile, handoffFile };
+    // The file this protocol's outcome is read from; per-turn cleanup removes it.
+    const signalFile = protocol >= 3 ? handoffFile : questionFile;
+    let keepFile = state.keepFile ?? false;
     let responseText = pendingVerify?.responseText ?? "";
     let outcome: StageOutcome | null = pendingVerify?.outcome ?? null;
     let failureReason = "";
@@ -494,15 +539,11 @@ export class AgentToolRunner {
         corrections = { ...corrections, [failure.kind]: { turn, error_kind: failure.errorKind, error_detail: failure.detail } };
         store.saveExecutionProgress(context, record, { corrections });
         eventReporter.emit(rule.event, `${failure.errorKind}: ${failure.detail}`, {
-          turn, error_kind: failure.errorKind, ...(failure.kind === "question_file" ? { file: questionFile } : {}),
+          turn, error_kind: failure.errorKind, ...(failure.kind === "question_file" ? { file: questionFile } : failure.kind === "handoff" ? { file: handoffFile } : {}),
         });
       }
       const used = corrections[failure.kind]!;
-      const message = failure.kind === "question_file"
-        ? renderQuestionCorrection({ questionFile, errorKind: used.error_kind, errorDetail: used.error_detail })
-        : failure.kind === "response_contract"
-          ? renderResponseCorrection({ errorKind: used.error_kind, errorDetail: used.error_detail })
-          : renderOutputCorrection({ errorKind: used.error_kind, errorDetail: used.error_detail });
+      const message = rule.render(used, files);
       record.history.push({ role: "user", content: message });
       store.save(record, context);
       store.saveExecutionProgress(context, record, { turn_kind: rule.turnKind, pending_turn: turn + 1 });
@@ -511,19 +552,19 @@ export class AgentToolRunner {
         : flattenHistory(record.history as Array<{ role: string; content: string }>);
       currentPrompt = renderProviderPrompt(base, { ...sessionPaths(context, sessionId),
         contract: record.agentId ? rule.contract : "full", turn: rule.turnKind, decisionValues,
-        decisionInstructions: stage?.decisionInstructions, ask, questionFile, artifactDirectory: context.artifactDirectory,
+        decisionInstructions: stage?.decisionInstructions, ask, protocol, questionFile, handoffFile, artifactDirectory: context.artifactDirectory,
         artifactName, artifactFiles: promptArtifactFiles(stage === null ? [] : allStageArtifacts(stage)),
       });
       turn += 1;
       currentAgentId = record.agentId;
       currentSession = null;
-      keepQuestionFile = rule.keepQuestionFile;
+      keepFile = rule.keepFile;
       return true;
     };
     // The budget is used: the stage fails with the original error and the kind's reason.
     const exhaust = (failure: GateFailure): void => {
       failureReason = CORRECTION_POLICY[failure.kind].failureReason;
-      failureDetail = failure.kind === "question_file" ? questionFailureMessage(failure, questionFile) : failure.detail;
+      failureDetail = CORRECTION_POLICY[failure.kind].detail(failure, files);
     };
     // The artifact and completion-output gates. Fresh turns and resumed saved replies both run them.
     const checkOutputs = (reply: StageOutcome, gates: Gates | null): GateFailure | null => {
@@ -573,8 +614,8 @@ export class AgentToolRunner {
       } else {
         // A request file left by an earlier turn must not be read as a new question. The
         // correction turn keeps the invalid file so the agent can repair it.
-        if (!keepQuestionFile) rmSync(questionFile, { force: true });
-        keepQuestionFile = false;
+        if (!keepFile) rmSync(signalFile, { force: true });
+        keepFile = false;
         let turnResult: TurnResult;
         try {
           turnResult = await this.runTurn(
@@ -638,13 +679,15 @@ export class AgentToolRunner {
         if (invokeError === null) {
           try {
             outcome = resolveStageOutcome(responseText, {
-              required: sessionId !== null, decisionValues, ask, questionFile,
+              required: sessionId !== null, decisionValues, ask, protocol, questionFile, handoffFile,
             });
             gates.outcome = { state: "passed", ...(outcome === null ? {} : { status: outcome.status }) };
           } catch (error) {
             gateFailure = classifyGateError(error);
             if (error instanceof QuestionFileError) {
               gates.outcome = { state: "failed", reason: `question file unusable (${error.kind})` };
+            } else if (error instanceof HandoffFileError) {
+              gates.outcome = { state: "failed", reason: `handoff file unusable (${error.kind})` };
             } else if (error instanceof Error) {
               invokeError = error.message;
               gates.outcome = { state: "failed", reason: truncateText(error.message) };
@@ -755,7 +798,7 @@ export class AgentToolRunner {
         if (gateFailure !== null && eligible) {
           if (queueCorrection(gateFailure)) continue;
           exhaust(gateFailure);
-          if (gateFailure.kind === "question_file") {
+          if (gateFailure.kind === "question_file" || gateFailure.kind === "handoff") {
             invokeError = failureDetail;
             record.status = "failed";
             store.save(record, context);
@@ -772,7 +815,7 @@ export class AgentToolRunner {
         // Resumed from a saved response that failed a gate.
         if (queueCorrection(gateFailure)) continue;
         exhaust(gateFailure);
-        if (gateFailure.kind === "question_file") {
+        if (gateFailure.kind === "question_file" || gateFailure.kind === "handoff") {
           record.status = "failed";
           store.save(record, context);
           store.saveExecution(context, record, "failed", failureDetail, null, false, finalFields(outcomeFields()));
@@ -899,7 +942,7 @@ export class AgentToolRunner {
         ? repair
         : flattenHistory(record.history as Array<{ role: string; content: string }>);
       currentPrompt = renderProviderPrompt(currentPrompt, { ...sessionPaths(context, sessionId),
-        contract: currentAgentId ? "reminder" : "full", turn: "repair", decisionValues, decisionInstructions: stage?.decisionInstructions, ask, questionFile,
+        contract: currentAgentId ? "reminder" : "full", turn: "repair", decisionValues, decisionInstructions: stage?.decisionInstructions, ask, protocol, questionFile, handoffFile,
         artifactDirectory: context.artifactDirectory, artifactName, artifactFiles: promptArtifactFiles(stage === null ? [] : allStageArtifacts(stage)),
       });
     }
@@ -1232,6 +1275,10 @@ interface TurnDrive {
   currentSession: NewSession | null;
   pendingVerify: PendingVerify | null;
   corrections: CorrectionLedger;
+  /** Response protocol the execution runs under. */
+  protocol: number;
+  /** The first turn must not delete the file a resumed correction asks the agent to repair. */
+  keepFile?: boolean;
 }
 
 /**
@@ -1243,9 +1290,13 @@ function persistedTurn(metadata: Record<string, unknown>, counted: number): numb
   return typeof saved === "number" && saved > counted ? saved : counted;
 }
 
-function questionFailureMessage(failure: GateFailure, file: string): string {
-  return `The response said status: question, but the question request file is unusable (${failure.errorKind}): ${failure.detail}. ` +
-    `File: ${file}. The agent had one correction turn. Run \`migent session continue\` to rerun the stage.`;
+function readExecutionJson(directory: string): Record<string, unknown> | null {
+  try {
+    const value = JSON.parse(readFileSync(path.join(directory, "execution.json"), "utf8")) as unknown;
+    return isRecord(value) ? value : null;
+  } catch {
+    return null;
+  }
 }
 
 function verifyProgress(metadata: Record<string, unknown>): {

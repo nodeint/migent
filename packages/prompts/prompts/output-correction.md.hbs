@@ -4,4 +4,4 @@ Your last response reported the stage complete, but required output is missing.
 
 - Problem ({{errorKind}}): {{errorDetail}}
 
-Write only the missing or empty files, then report again.
+{{#if handoff}}Write only the missing or empty files, then rewrite the handoff file `{{handoffFile}}` with your final status. It was cleared for this turn, so it must be written again.{{else}}Write only the missing or empty files, then report again.{{/if}}

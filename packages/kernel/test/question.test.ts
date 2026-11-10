@@ -284,18 +284,18 @@ test("an invalid question file gets one correction turn in the same conversation
     expect(result.code).toBe(9);
     expect(provider.calls).toHaveLength(2);
     expect(provider.calls[1]?.agentId).toBe("native-session-1");
-    expect(provider.calls[1]?.prompt).toContain("question file is not valid");
-    expect(provider.calls[1]?.prompt).toContain("## Do\n\nRewrite the whole question file");
+    expect(provider.calls[1]?.prompt).toContain("## Invalid handoff file");
+    expect(provider.calls[1]?.prompt).toContain("## Do\n\nRewrite the whole handoff file");
     expect(provider.calls[1]?.prompt).toContain("(invalid_json)");
-    expect(provider.calls[1]?.prompt).toContain("- Question file: ");
+    expect(provider.calls[1]?.prompt).toContain("- Handoff file: ");
     const execution = lastExecution(root, result.sessionId);
-    expect((execution.corrections as Record<string, unknown>).question_file).toMatchObject({ turn: 1, error_kind: "invalid_json" });
+    expect((execution.corrections as Record<string, unknown>).handoff).toMatchObject({ turn: 1, error_kind: "invalid_json" });
     expect(execution.outcome).toMatchObject({ status: "question", questions: [scopeQuestion] });
-    expect(execution.response_protocol).toBe(2);
+    expect(execution.response_protocol).toBe(3);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test("a question file that stays invalid fails with a named, recoverable error after one correction", async () => {
+test("a handoff file that stays invalid fails with a named, recoverable error after one correction", async () => {
   const root = workspace(askStage);
   try {
     const provider = new ScriptedClient([
@@ -306,26 +306,25 @@ test("a question file that stays invalid fails with a named, recoverable error a
     expect(provider.calls).toHaveLength(2);
     expect(result.code).not.toBe(9);
     const execution = lastExecution(root, result.sessionId);
-    expect(execution).toMatchObject({ status: "failed", failure_reason: "question_file_invalid" });
-    expect(execution.error).toContain("question-request.json");
+    expect(execution).toMatchObject({ status: "failed", failure_reason: "handoff_file_invalid" });
+    expect(execution.error).toContain("handoff.json");
     expect(execution.error).toContain("invalid_schema");
-    expect(execution.error).toContain("status: question");
     expect(execution.error).toContain("session continue");
     expect(execution.error).not.toMatch(/^Unexpected/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test("the question file is ignored unless the status is question", async () => {
+test("a complete reply needs no question file and a stray one is never read", async () => {
   const root = workspace(askStage);
   try {
-    const provider = new ScriptedClient(["status: complete\n\nDone.\n<<FILE>>not json at all"]);
+    const provider = new ScriptedClient(["status: complete\n\nDone."]);
     const result = await executeNamedWorkflow(root, { workflowId: "plan", task: "Plan" }, new AgentToolRunner(registryOf({ fake: provider }), 10));
     expect(result.code).toBe(0);
     expect(lastExecution(root, result.sessionId)).toMatchObject({ status: "completed", outcome: { status: "complete" } });
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test("a leftover question file from an earlier turn is not read as a new question", async () => {
+test("a leftover handoff file from an earlier turn is not read as a new answer", async () => {
   const root = workspace(askStage);
   try {
     const provider = new ScriptedClient([
@@ -337,6 +336,62 @@ test("a leftover question file from an earlier turn is not read as a new questio
     const first = await executeNamedWorkflow(root, { workflowId: "plan", task: "Plan" }, runner);
     expect(first.code).toBe(9);
     const second = await executeNamedWorkflow(root, { sessionId: first.sessionId, reply: "1A" }, runner);
-    expect(lastExecution(root, second.sessionId)).toMatchObject({ status: "failed", failure_reason: "question_file_invalid" });
+    expect(lastExecution(root, second.sessionId)).toMatchObject({ status: "failed", failure_reason: "handoff_file_invalid" });
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+function executionRecords(root: string, sessionId: string): Array<Record<string, any>> {
+  const directory = path.join(root, ".migent/sessions", sessionId, "executions");
+  return readdirSync(directory).sort().map((name) => JSON.parse(readFileSync(path.join(directory, name, "execution.json"), "utf8")));
+}
+
+function stampExecutions(root: string, sessionId: string, protocol: number | null): void {
+  const directory = path.join(root, ".migent/sessions", sessionId, "executions");
+  for (const name of readdirSync(directory)) {
+    const file = path.join(directory, name, "execution.json");
+    const record = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+    if (protocol === null) delete record.response_protocol;
+    else record.response_protocol = protocol;
+    writeFileSync(file, JSON.stringify(record));
+  }
+}
+
+test("a reply continues the conversation under the protocol it started with", async () => {
+  const root = workspace(askStage + "  - { id: after, role: planner, depends_on: [plan] }\n");
+  try {
+    const provider = new ScriptedClient([question, "status: complete\n\nDone.", "status: complete\n\nAfter."]);
+    const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
+    const first = await executeNamedWorkflow(root, { workflowId: "plan", task: "Plan" }, runner);
+    expect(first.code).toBe(9);
+    expect(executionRecords(root, first.sessionId)[0]!.response_protocol).toBe(3);
+    // A conversation begun before protocol 3 exists.
+    stampExecutions(root, first.sessionId, 2);
+    const second = await executeNamedWorkflow(root, { sessionId: first.sessionId, reply: "1A" }, runner);
+    expect(second.code).toBe(0);
+    const records = executionRecords(root, first.sessionId);
+    expect(records.map((record) => [record.stage_id, record.response_protocol])).toEqual([["plan", 2], ["plan", 2], ["after", 3]]);
+    // The answered turn runs on the protocol 2 contract; no handoff file is mentioned.
+    const answered = provider.calls[1]?.prompt ?? "";
+    expect(answered).not.toContain("Handoff file");
+    expect(answered).not.toContain("Write one JSON document");
+    // A fresh stage with no source execution starts on protocol 3 and names its handoff file.
+    expect(provider.calls[2]?.prompt).toContain("- Handoff file: ");
+    expect(records[2]).toMatchObject({ status: "completed" });
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("a conversation continued from a legacy stamp gets the protocol 2 update and stays on protocol 2", async () => {
+  const root = workspace(askStage);
+  try {
+    const provider = new ScriptedClient([question, "status: complete\n\nDone."]);
+    const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
+    const first = await executeNamedWorkflow(root, { workflowId: "plan", task: "Plan" }, runner);
+    expect(first.code).toBe(9);
+    stampExecutions(root, first.sessionId, null);
+    const second = await executeNamedWorkflow(root, { sessionId: first.sessionId, reply: "1A" }, runner);
+    expect(second.code).toBe(0);
+    const records = executionRecords(root, first.sessionId);
+    expect(records[1]!.response_protocol).toBe(2);
+    expect(provider.calls[1]?.prompt).not.toContain("Handoff file");
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

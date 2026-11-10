@@ -42,6 +42,8 @@ async function cancelledAsk(responses: string[]) {
   const sessionId = createWorkflowSession(workspace, "wf", "Finish the notes");
   const provider = new HangFirstProvider(pidFile, responses);
   const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
+  // An authentic protocol-2 conversation: its first prompt names the question file, not a handoff file.
+  runner.newConversationProtocol = 2;
   const timer = setInterval(() => {
     if (!existsSync(pidFile) || readFileSync(pidFile, "utf8").trim() === "") return;
     clearInterval(timer);
@@ -66,7 +68,7 @@ async function cancelledAsk(responses: string[]) {
     writeFileSync(path.join(executionDirectory, "response.md"), text);
     if (requestFile !== null) writeFileSync(path.join(executionDirectory, "question-request.json"), requestFile);
   };
-  return { provider, resume, execution, patchExecution, saveAssistant };
+  return { provider, resume, execution, patchExecution, saveAssistant, executionDirectory };
 }
 
 test("a saved question response with a valid file is registered on resume", async () => {
@@ -115,6 +117,14 @@ test("a first prompt saved under an older protocol gets the protocol update on r
   expect(run.provider.calls).toHaveLength(2);
   expect(run.provider.calls[1]?.prompt).toContain("Response protocol update");
   expect(run.provider.calls[1]?.prompt).toContain("- Question file: ");
+}, 30_000);
+
+test("a legacy execution resumed in place persists the protocol 2 stamp and the update in its prompt", async () => {
+  const run = await cancelledAsk(["status: complete\n\ndone"]);
+  run.patchExecution({ response_protocol: undefined });
+  await run.resume();
+  expect(run.execution().response_protocol).toBe(2);
+  expect(readFileSync(path.join(run.executionDirectory, "prompt.md"), "utf8")).toContain("Response protocol update");
 }, 30_000);
 
 const OK_COMPLETE = "status: complete\n\ndone";

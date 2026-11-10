@@ -1,0 +1,158 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/handoff/document.json",
+  "anyOf": [
+    {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "status"
+      ],
+      "properties": {
+        "schema_version": {
+          "type": "number",
+          "const": 1
+        },
+        "status": {
+          "type": "string",
+          "const": "complete"
+        },
+        "decision": {
+          "type": "string",
+          "pattern": "\\S",
+          "description": "Non-blank text."
+        },
+        "summary": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "status",
+        "blocker"
+      ],
+      "properties": {
+        "schema_version": {
+          "type": "number",
+          "const": 1
+        },
+        "status": {
+          "type": "string",
+          "const": "blocked"
+        },
+        "blocker": {
+          "type": "string",
+          "pattern": "\\S",
+          "description": "Non-blank text."
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "status",
+        "questions"
+      ],
+      "properties": {
+        "schema_version": {
+          "type": "number",
+          "const": 1
+        },
+        "status": {
+          "type": "string",
+          "const": "question"
+        },
+        "questions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "question",
+              "context",
+              "selection",
+              "options"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[1-9][0-9]*$",
+                "description": "Omit it: Migent numbers questions 1, 2, 3… in order."
+              },
+              "question": {
+                "type": "string",
+                "pattern": "\\S",
+                "description": "Non-blank text."
+              },
+              "context": {
+                "type": "string",
+                "pattern": "\\S",
+                "description": "Non-blank text."
+              },
+              "selection": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "const": "single"
+                  },
+                  {
+                    "type": "string",
+                    "const": "multiple"
+                  }
+                ]
+              },
+              "options": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "label"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[A-Z]$",
+                      "description": "Omit it: Migent letters options A, B, C… in order."
+                    },
+                    "label": {
+                      "type": "string",
+                      "pattern": "\\S",
+                      "description": "Non-blank text."
+                    },
+                    "description": {
+                      "type": "string",
+                      "pattern": "\\S",
+                      "description": "Non-blank text."
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "minItems": 2,
+                "maxItems": 26
+              },
+              "recommended": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[A-Z]$"
+                },
+                "minItems": 1,
+                "description": "Option letters; at most one for `single`."
+              }
+            },
+            "additionalProperties": false
+          },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false
+    }
+  ],
+  "title": "Stage handoff document",
+  "description": "The one JSON file a stage writes to `handoff.json` in its execution directory (response protocol 3)."
+}

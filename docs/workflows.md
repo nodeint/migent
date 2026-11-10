@@ -144,7 +144,7 @@ name alone does not adequately explain the choice; if supplied, it must be a
 non-empty string.
 Every stage in a destination list is routed by that decision.
 The agent chooses a decision using its name and any `when` guidance, and returns
-its name in the `decision` header. Migent validates the name and follows
+its name as `decision` in the handoff file. Migent validates the name and follows
 `navigate`; `when` is natural-language guidance, not an expression evaluated by
 the engine.
 Several decisions can share a destination, such as `approved` and
@@ -518,22 +518,33 @@ with guidance but cannot infer downstream tasks or mappings.
 
 ## Stage protocol
 
-A workflow stage begins its final response with a structured outcome:
+A workflow stage reports its outcome by writing one JSON file, `handoff.json`, in its
+execution directory (outside `artifacts/`). The prompt names the absolute path. The
+response text is a free-form report for humans; Migent does not read it for the outcome.
 
-```text
-status: complete
-decision: approved
-
-The plan covers the required behavior and tests.
+```json
+{"schema_version":1,"status":"complete","decision":"approved","summary":"The plan covers the required behavior and tests."}
 ```
 
-The status must be `complete`, `blocked`, or (with `ask: human`) `question`. A blocked stage may include a
-reason:
+`status` is `complete`, `blocked`, or (with `ask: human`) `question`. `decision` is
+required with `complete` when the stage declares decisions. `summary` is optional display
+text. A blocked stage states its reason in `blocker`, which is required:
 
-```text
-status: blocked
-blocker: The required API schema is missing.
+```json
+{"schema_version":1,"status":"blocked","blocker":"The required API schema is missing."}
 ```
+
+The document is a closed JSON object; its schema is published in
+`@nodeint/migent-contracts` (`HandoffDocument`, `schemas/handoff/document.json`).
+Migent deletes the file before every fresh turn, so an agent writes it again each turn,
+including after a verify repair or an artifact correction.
+
+**Protocol 2 conversations.** A conversation started before this change keeps the earlier
+contract until it ends: the reply starts with `status:`, `decision:` and `blocker:` header lines,
+and questions go to a separate `question-request.json`. The protocol is recorded as
+`response_protocol` in each `execution.json`. A new conversation (no source execution) uses
+protocol 3. An execution that continues one (a reply, retry, revision, route-back or
+`resume_from`) inherits its source execution's protocol.
 
 `migent session continue <session-id>` runs that stage again after the blocker
 is fixed. The new attempt's prompt includes the blocker text and the previous
@@ -544,8 +555,8 @@ on that same execution. `completed` sessions are not resumed.
 
 A client process that exits non-zero does not by itself fail a stage. If the
 client reported no error and its reply passes the checks an exit-0 reply must
-pass (a parsable outcome, the stage artifact, completion outputs), the turn is
-accepted and then follows the normal path: an unusable question file still gets
+pass (a usable handoff, the stage artifact, completion outputs), the turn is
+accepted and then follows the normal path: an unusable handoff file still gets
 its single correction turn, and `verify` commands still run and repair as usual.
 See [Sessions](sessions.md) for the `provider.exit_anomaly` event. When a stage
 is continued after an attempt that failed this way and left a `response.md`, the
@@ -553,7 +564,7 @@ new prompt references that file and says the attempt ended abnormally, so the
 agent re-confirms the artifacts and workspace before redoing work.
 
 If the stage declares decisions, a completed response must include one of their
-names in the `decision` header. The decision instructions are included on each
+names in the `decision` field. The decision instructions are included on each
 turn, including resume, reply, and repair after verification fails.
 
 ### Questions and human decisions
@@ -575,12 +586,13 @@ A stage without a role cannot declare it. Use `instructions` to describe when
 the agent should ask. The recipient is independent of the question protocol,
 so an agent recipient can be added later without introducing another stage.
 
-The agent writes this document to the question request file named in its
-response contract, then responds with `status: question`:
+The agent asks by writing `handoff.json` with `status: question` and the questions
+(under protocol 2, the questions document alone goes to `question-request.json`):
 
 ```json
 {
   "schema_version": 1,
+  "status": "question",
   "questions": [
     {
       "question": "Should the plan support existing sessions?",
@@ -596,22 +608,23 @@ response contract, then responds with `status: question`:
 }
 ```
 
-The request file is a validated JSON document, not a prose list of choices; the
+The handoff file is a validated JSON document, not a prose list of choices; the
 response body is an ordinary report. One correction turn is allowed when the file
-is unusable, then the stage fails with `question_file_invalid`.
+is unusable, then the stage fails with `handoff_file_invalid`.
 
 ### Correctable response failures
 
 When a provider turn ends normally and the reply fails a check the agent can fix, Migent
 sends one **correction turn** per failure kind instead of failing at once. The kernel
 policy table (`correction-policy.ts`) is the only place that decides this. The budget is
-one per kind per execution; a new attempt starts with fresh budgets.
+one per kind per execution (so a protocol 3 execution gets at most two correction turns, one `handoff` and one `stage_output`); a new attempt starts with fresh budgets.
 
 | Kind | Trigger | Contract in the correction | `failure_reason` when still wrong | Event |
 | --- | --- | --- | --- | --- |
-| `response_contract` | Missing or invalid `status:` or `decision:` header, or `status: question` without `ask: human` | full | `response_contract_invalid` | `response.contract_invalid` |
-| `stage_output` | After `status: complete`, a required artifact or completion output is missing or empty | reminder | `stage_output_missing` | `stage.output_missing` |
-| `question_file` | `status: question` with an unusable request file | reminder | `question_file_invalid` | `question.file_invalid` |
+| `handoff` | Protocol 3: `handoff.json` missing, empty, not JSON, not matching the schema, with a decision the stage does not allow, or `question` without `ask: human` | full | `handoff_file_invalid` | `handoff.file_invalid` |
+| `stage_output` | After `status: complete`, a required artifact or completion output is missing or empty. Both protocols; under protocol 3 the agent fixes it by also rewriting `handoff.json` | reminder | `stage_output_missing` | `stage.output_missing` |
+| `response_contract` | Protocol 2 only: missing or invalid `status:` or `decision:` header, or `status: question` without `ask: human` | full | `response_contract_invalid` | `response.contract_invalid` |
+| `question_file` | Protocol 2 only: `status: question` with an unusable request file | reminder | `question_file_invalid` | `question.file_invalid` |
 
 Provider errors, quota, timeouts, start failures, signals and replies that are not model
 output never get a correction. An exit-only reply the model wrote does. Verify repair

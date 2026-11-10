@@ -405,7 +405,7 @@ test("session continue retries an active role session with its last prompt", asy
     const resumed = await capture(() => main(["session", "continue", payload.session_id], workspace));
     expect(resumed.value).toBe(0);
     // The last prompt is the correction turn sent into the same conversation.
-    expect(retried.calls[0]?.prompt).toContain("## Invalid response");
+    expect(retried.calls[0]?.prompt).toContain("## Invalid handoff file");
   } finally {
     cliHooks.runner = null;
     removeWorkspace(workspace);

@@ -252,7 +252,7 @@ test("an accepted anomaly followed by a failing correction turn is an earlier an
     workspace,
     sessionId,
   );
-  expect(result.failure_reason).toBe("question_file_invalid");
+  expect(result.failure_reason).toBe("handoff_file_invalid");
   const dir = executionDir(workspace, sessionId, result.execution_id);
   expect(JSON.parse(readFileSync(path.join(dir, "execution.json"), "utf8")).final_turn).toBe(2);
   expect(diagnostics(dir).turn).toBe(1);

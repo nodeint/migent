@@ -26,20 +26,23 @@ const questionSchema = z.object({
   }
 });
 
-export const questionDocumentSchema = z.object({
-  schema_version: z.literal(1),
-  questions: z.array(questionSchema).min(1),
-}).strict().superRefine((document, ctx) => {
-  const ids = document.questions.map((question) => question.id).filter((id) => id !== undefined);
+/** The question list shared by both protocols: batch invariants plus ID and letter assignment. */
+export const questionBatchSchema = z.array(questionSchema).min(1).superRefine((questions, ctx) => {
+  const ids = questions.map((question) => question.id).filter((id) => id !== undefined);
   if (new Set(ids).size !== ids.length) ctx.addIssue({ code: "custom", message: "Duplicate question id." });
-  if (document.questions.some((question, index) => question.id !== undefined && question.id !== String(index + 1))) {
+  if (questions.some((question, index) => question.id !== undefined && question.id !== String(index + 1))) {
     ctx.addIssue({ code: "custom", message: "Question IDs must follow order 1, 2, 3, ..." });
   }
-}).transform((document) => ({ ...document, questions: document.questions.map((question, index) => ({
+}).transform((questions) => questions.map((question, index) => ({
   ...question, id: String(index + 1), options: question.options.map((option, optionIndex) => ({
     ...option, id: String.fromCharCode(65 + optionIndex),
   })),
-})) }));
+})));
+
+export const questionDocumentSchema = z.object({
+  schema_version: z.literal(1),
+  questions: questionBatchSchema,
+}).strict();
 
 export type Question = z.output<typeof questionDocumentSchema>["questions"][number];
 export interface QuestionAnswer {
