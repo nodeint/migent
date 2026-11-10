@@ -2,7 +2,8 @@ import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import type { Check } from "@nodeint/migent-doctor";
-import { CORRECTION_FAILURE_REASONS, FAILURE_FILENAME } from "@nodeint/migent-kernel";
+import { CORRECTION_FAILURE_REASONS } from "@nodeint/migent-kernel";
+import { FAILURE_FILENAME } from "@nodeint/migent-session";
 import { sessionFields } from "./session-row.js";
 
 const require = createRequire(import.meta.url);

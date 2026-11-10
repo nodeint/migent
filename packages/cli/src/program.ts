@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import { Command, Option, type OptionValues } from "commander";
-import { ConfigurationError, DEFAULT_MAX_DISPATCHES, noInputRequested, requireAgentSession } from "@nodeint/migent-kernel";
+import { ConfigurationError, noInputRequested } from "@nodeint/migent-kernel";
+import { requireAgentSession } from "@nodeint/migent-session";
+import { DEFAULT_MAX_DISPATCHES } from "@nodeint/migent-engine";
 import { continueAgent, dispatchAgent } from "./commands/agent.js";
 import { runAuthoring, type AuthoringKind, type AuthoringMode } from "./commands/authoring.js";
 import { removedConfigCommand, runConfigShow } from "./commands/config.js";

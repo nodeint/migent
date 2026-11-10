@@ -1,13 +1,7 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import {
-  SessionLock,
-  SessionStore,
-  StageOutcome,
-  createAgentSession,
-  createPreparedSession,
-  createWorkflowSession,
-} from "@nodeint/migent-kernel";
+import { StageOutcome } from "@nodeint/migent-kernel";
+import { SessionLock, SessionStore, createAgentSession, createPreparedSession, createWorkflowSession } from "@nodeint/migent-session";
 import { afterEach, expect, test } from "vitest";
 import { main } from "../src/index.ts";
 import { capture, removeWorkspace, writeFakeWorkflowWorkspace } from "./support.ts";

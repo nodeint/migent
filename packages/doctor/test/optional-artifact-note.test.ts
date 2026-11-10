@@ -1,7 +1,8 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "vitest";
-import { createPreparedSession, mergeConfigLayers, selectSessionWorkflow } from "@nodeint/migent-kernel";
+import { mergeConfigLayers } from "@nodeint/migent-kernel";
+import { createPreparedSession, selectSessionWorkflow } from "@nodeint/migent-session";
 import { diagnose, diagnoseSession, validateWorkflowDraft, type ConfigLoad } from "../src/index.ts";
 import { defaultClients, STAGE_CONFIG, tempDir, whichFound } from "./support.ts";
 

@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, expect, test } from "vitest";
-import { SessionLock } from "@nodeint/migent-kernel";
+import { SessionLock } from "@nodeint/migent-session";
 import { main } from "../src/index.ts";
 import { capture, removeWorkspace, writeFakeWorkflowWorkspace } from "./support.ts";
 

@@ -1,9 +1,5 @@
-import {
-  CancellationRequested,
-  raiseCancellation,
-  resetCancellation,
-  type SessionLock,
-} from "@nodeint/migent-kernel";
+import { CancellationRequested, raiseCancellation, resetCancellation } from "@nodeint/migent-kernel";
+import { type SessionLock } from "@nodeint/migent-session";
 
 let pending: CancellationRequested | null = null;
 const waiters = new Set<() => void>();

@@ -34,12 +34,18 @@ importers:
       '@nodeint/migent-doctor':
         specifier: workspace:*
         version: link:../doctor
+      '@nodeint/migent-engine':
+        specifier: workspace:*
+        version: link:../engine
       '@nodeint/migent-kernel':
         specifier: workspace:*
         version: link:../kernel
       '@nodeint/migent-registry':
         specifier: workspace:*
         version: link:../registry
+      '@nodeint/migent-session':
+        specifier: workspace:*
+        version: link:../session
       '@nodeint/migent-workflow':
         specifier: workspace:*
         version: link:../workflow
@@ -72,12 +78,37 @@ importers:
       '@nodeint/migent-kernel':
         specifier: workspace:*
         version: link:../kernel
+      '@nodeint/migent-session':
+        specifier: workspace:*
+        version: link:../session
       '@nodeint/migent-workflow':
         specifier: workspace:*
         version: link:../workflow
       zod:
         specifier: ^4.6.5
         version: 4.6.5
+    devDependencies:
+      '@types/node':
+        specifier: ^26.6.4
+        version: 26.6.4
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
+
+  packages/engine:
+    dependencies:
+      '@nodeint/migent-kernel':
+        specifier: workspace:*
+        version: link:../kernel
+      '@nodeint/migent-prompts':
+        specifier: workspace:*
+        version: link:../prompts
+      '@nodeint/migent-session':
+        specifier: workspace:*
+        version: link:../session
+      '@nodeint/migent-workflow':
+        specifier: workspace:*
+        version: link:../workflow
     devDependencies:
       '@types/node':
         specifier: ^26.6.4
@@ -154,6 +185,28 @@ importers:
       '@types/proper-lockfile':
         specifier: ^4.1.4
         version: 4.1.4
+
+  packages/session:
+    dependencies:
+      '@nodeint/migent-contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@nodeint/migent-kernel':
+        specifier: workspace:*
+        version: link:../kernel
+      '@nodeint/migent-workflow':
+        specifier: workspace:*
+        version: link:../workflow
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.5
+    devDependencies:
+      '@types/node':
+        specifier: ^26.6.4
+        version: 26.6.4
 
   packages/workflow:
     dependencies:

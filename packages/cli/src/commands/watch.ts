@@ -2,18 +2,8 @@ import { SessionFollowRecord, SessionSnapshot, SessionSnapshotLine, type Static 
 import { writeJson } from "../emit.js";
 import { openSync, readFileSync, readSync, closeSync, statSync } from "node:fs";
 import path from "node:path";
-import {
-  CancellationRequested,
-  ConfigurationError,
-  corruptStatusMessage,
-  SessionLock,
-  SessionStore,
-  log,
-  readStatusFileState,
-  readExecutionFile,
-  statusDriftMessage,
-  watchSnapshot,
-} from "@nodeint/migent-kernel";
+import { CancellationRequested, ConfigurationError, log } from "@nodeint/migent-kernel";
+import { corruptStatusMessage, SessionLock, SessionStore, readStatusFileState, readExecutionFile, statusDriftMessage, watchSnapshot } from "@nodeint/migent-session";
 import { printNotice, printWatchEvent, printWatchSnapshot } from "../display.js";
 import { EXIT_BLOCKED, EXIT_CANCELLED, EXIT_OK, EXIT_QUESTION } from "../exits.js";
 import {

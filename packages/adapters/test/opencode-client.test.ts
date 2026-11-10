@@ -1,12 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import {
-  classifyFailure,
-  classifyProviderError,
-  loadAgentTarget,
-  normalizeUsage,
-  sessionOptions,
-} from "@nodeint/migent-kernel";
+import { classifyFailure, loadAgentTarget, normalizeUsage, sessionOptions } from "@nodeint/migent-kernel";
+import { classifyProviderError } from "@nodeint/migent-engine";
 import { expect, test } from "vitest";
 import { OpencodeClient, clientIds, createClient } from "../src/index.ts";
 

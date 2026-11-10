@@ -1,7 +1,8 @@
 import { PrepareResult, type Static } from "@nodeint/migent-contracts";
 import { writeJson } from "../emit.js";
 import { clientRegistry } from "../client.js";
-import { createPreparedSession, log, relativeTaskPath, relativeWorkflowPath } from "@nodeint/migent-kernel";
+import { log } from "@nodeint/migent-kernel";
+import { createPreparedSession, relativeTaskPath, relativeWorkflowPath } from "@nodeint/migent-session";
 import { requireCurrentSchema } from "../migrate.js";
 
 export function prepareWorkflowSession(

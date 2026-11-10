@@ -1,4 +1,5 @@
-import { activatePreparedSession, loadYamlMapping } from "@nodeint/migent-kernel";
+import { loadYamlMapping } from "@nodeint/migent-kernel";
+import { activatePreparedSession } from "@nodeint/migent-session";
 import { cpSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";

@@ -16,7 +16,9 @@ behavior is documented in [README.md](README.md) and [docs/](docs/).
 | `packages/contracts` | `@nodeint/migent-contracts` | Public data contracts (TypeBox schemas) |
 | `packages/workflow` | `@nodeint/migent-workflow` | Workflow definition: model, strict parser, draft collector, catalog, file loading; also `ConfigurationError` and YAML/record helpers shared with the kernel |
 | `packages/prompts` | `@nodeint/migent-prompts` | Prompt templates and renderers |
-| `packages/kernel` | `@nodeint/migent-kernel` | Workflow engine, config, session store, libc bindings |
+| `packages/kernel` | `@nodeint/migent-kernel` | Foundation: config, authoring and migration, outputs, selection, process execution, libc bindings |
+| `packages/session` | `@nodeint/migent-session` | Stored session state: store, events, fold, ledger, lock, freeze, repair, query, metrics, diagnostics; depends on the kernel |
+| `packages/engine` | `@nodeint/migent-engine` | Workflow execution: stage dispatch, agent runs, verification, views; depends on the kernel and session |
 | `packages/doctor` | `@nodeint/migent-doctor` | Health checks and diagnostics: config, workflows, clients, sessions, model availability |
 | `packages/adapters` | `@nodeint/migent-adapters` | Antigravity, Claude, Codex, Grok, and OpenCode clients |
 | `packages/registry` | `@nodeint/migent-registry` | Machine-local workspace registry service |
@@ -225,7 +227,7 @@ Merging the release PR is the last manual step. The push to `next` starts
 4. fast-forwards `main` to that commit;
 5. packs with `pnpm -r pack` (which turns `workspace:*` into exact versions) and
    runs `npm publish` in dependency order, skipping versions that are already
-   public: `@nodeint/migent-contracts`, `-workflow`, `-prompts`, `-kernel`, `-doctor`, `-adapters`,
+   public: `@nodeint/migent-contracts`, `-workflow`, `-prompts`, `-kernel`, `-session`, `-engine`, `-doctor`, `-adapters`,
    `-registry`, then `@nodeint/migent`;
 6. installs `@nodeint/migent@X.Y.Z` and checks `migent --version`;
 7. creates the GitHub Release with those notes.
@@ -245,7 +247,7 @@ cannot be completed, release the next patch.
 The workflow already installs the published CLI. To check by hand:
 
 ```bash
-for package in migent-contracts migent-workflow migent-prompts migent-kernel migent-doctor migent-adapters migent-registry migent; do
+for package in migent-contracts migent-workflow migent-prompts migent-kernel migent-session migent-engine migent-doctor migent-adapters migent-registry migent; do
   npm view "@nodeint/$package@0.2.0" version
 done
 npm i -g --prefer-online @nodeint/migent@0.2.0

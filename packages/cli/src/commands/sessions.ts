@@ -1,6 +1,7 @@
 import { SealedMetrics, SealedMetricsLine, SessionRow, SessionRowOrNull, SessionRows, type Static } from "@nodeint/migent-contracts";
 import { writeJson } from "../emit.js";
-import { listSealedMetrics, listSessionRows, readSealedMetrics, ConfigurationError } from "@nodeint/migent-kernel";
+import { ConfigurationError } from "@nodeint/migent-kernel";
+import { listSealedMetrics, listSessionRows, readSealedMetrics } from "@nodeint/migent-session";
 import { printError, printSessions } from "../display.js";
 import { SESSION_COLUMN, sessionFields } from "../session-row.js";
 import { optionalText } from "../text.js";

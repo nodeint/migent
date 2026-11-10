@@ -13,6 +13,8 @@ export default defineConfig({
       "@nodeint/migent-prompts": path.join(root, "packages/prompts/src/index.ts"),
       "@nodeint/migent-doctor": path.join(root, "packages/doctor/src/index.ts"),
       "@nodeint/migent-kernel": path.join(root, "packages/kernel/src/index.ts"),
+      "@nodeint/migent-session": path.join(root, "packages/session/src/index.ts"),
+      "@nodeint/migent-engine": path.join(root, "packages/engine/src/index.ts"),
     },
   },
   test: {

@@ -1,15 +1,5 @@
-import {
-  getConfigView,
-  getAgentView,
-  getRoleView,
-  getSessionWorkflowView,
-  getWorkflowView,
-  listAgentViews,
-  listRoleViews,
-  listWorkflowViews,
-  ConfigurationError,
-  type ClientRegistry,
-} from "@nodeint/migent-kernel";
+import { ConfigurationError, type ClientRegistry } from "@nodeint/migent-kernel";
+import { getConfigView, getAgentView, getRoleView, getSessionWorkflowView, getWorkflowView, listAgentViews, listRoleViews, listWorkflowViews } from "@nodeint/migent-engine";
 import { GetAgent, GetConfig, GetRole, GetWorkflow, GetWorkflowSummary } from "@nodeint/migent-contracts";
 import { clientRegistry } from "../client.js";
 import { field, count } from "./columns.js";

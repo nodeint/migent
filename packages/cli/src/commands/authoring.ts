@@ -8,7 +8,8 @@ import {
   type ConfigLoad,
   type Diagnostic,
 } from "@nodeint/migent-doctor";
-import { ConfigurationError, buildDraftSourceMap, configPath, locateSessionDirectory, mergeConfigLayers, resolveSessionDraft, SessionLock, type SessionDraft, loadYamlMapping, localConfigPath, parseDraftText, renderAuthoringYaml, sha256Hex, writeFileConditional, yamlHasComments, type DraftFormat, type DraftSourceMap } from "@nodeint/migent-kernel";
+import { ConfigurationError, buildDraftSourceMap, configPath, mergeConfigLayers, loadYamlMapping, localConfigPath, parseDraftText, renderAuthoringYaml, sha256Hex, writeFileConditional, yamlHasComments, type DraftFormat, type DraftSourceMap } from "@nodeint/migent-kernel";
+import { locateSessionDirectory, resolveSessionDraft, SessionLock, type SessionDraft } from "@nodeint/migent-session";
 import { workflowsDirectory } from "@nodeint/migent-workflow";
 import { clientRegistry } from "../client.js";
 import { findWorkspace, invocationCwdPath } from "../workspace.js";

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, expect, test } from "vitest";
-import { AgentToolRunner } from "@nodeint/migent-kernel";
+import { AgentToolRunner } from "@nodeint/migent-engine";
 import { cliHooks } from "../src/hooks.ts";
 import { main } from "../src/index.ts";
 import { clientRegistry } from "../src/client.ts";
