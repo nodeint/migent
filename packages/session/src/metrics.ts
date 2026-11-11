@@ -146,7 +146,7 @@ function sessionObject(
       executionClients.get(execution.id) ?? null,
     ),
   );
-  const sessionTotals = newUsageTotals();
+  let sessionTotals = newUsageTotals();
   let turnsCount = 0;
   let uncaptured = 0;
   let verifyMs = 0;
@@ -158,7 +158,11 @@ function sessionObject(
     turnsCount += execution.turns as number;
     uncaptured += execution.uncaptured_turns as number;
     verifyMs += execution.verifyMs as number;
-    addUsageRecord(sessionTotals, execution.usage as TurnUsage, execution.usage_missing as Record<UsageField, number>);
+    sessionTotals = addUsageRecord(
+      sessionTotals,
+      execution.usage as TurnUsage,
+      execution.usage_missing as Record<UsageField, number>,
+    );
   }
   const wallMs = sessionWallMs(executions);
   const activeMs = executions.reduce((sum, execution) => {
@@ -226,11 +230,11 @@ function executionObject(
 } {
   const ownEvents = events.filter((event) => event.executionId === execution.id);
   const ownTurns = turns.filter((turn) => turn.executionId === execution.id);
-  const totals = newUsageTotals();
+  let totals = newUsageTotals();
   let uncaptured = cancelled;
   for (const turn of ownTurns) {
     if (!turn.captured) uncaptured += 1;
-    addTurn(totals, turn.usage);
+    totals = addTurn(totals, turn.usage);
   }
   const started = ownEvents.find((event) => event.event === 'provider.stage_started');
   const startedDetails = detailsOf(started);

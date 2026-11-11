@@ -19,29 +19,35 @@ export interface UsageTotals {
   missing: Record<UsageField, number>;
 }
 
-export function addTurn(totals: UsageTotals, usage: TurnUsage): void {
-  for (const field of USAGE_FIELDS) {
-    const value = usage[field];
-    if (value === null) totals.missing[field] += 1;
-    else {
-      totals.sums[field] += value;
-      totals.seen[field] = true;
-    }
-  }
-}
-
-export function addUsageRecord(totals: UsageTotals, usage: TurnUsage, missing: Record<UsageField, number>): void {
-  for (const field of USAGE_FIELDS) {
-    totals.missing[field] += missing[field];
-    if (usage[field] !== null) {
-      totals.sums[field] += usage[field];
-      totals.seen[field] = true;
-    }
-  }
-}
-
 function uniformFields<T>(value: T): Record<UsageField, T> {
   return Object.fromEntries(USAGE_FIELDS.map((field) => [field, value])) as Record<UsageField, T>;
+}
+
+/** A copy of `totals` with one usage record folded in. `missing` counts the fields the record lacks. */
+export function addUsageRecord(
+  totals: UsageTotals,
+  usage: TurnUsage,
+  missing: Record<UsageField, number>,
+): UsageTotals {
+  const next: UsageTotals = { sums: { ...totals.sums }, seen: { ...totals.seen }, missing: { ...totals.missing } };
+  for (const field of USAGE_FIELDS) {
+    next.missing[field] += missing[field];
+    const value = usage[field];
+    if (value !== null) {
+      next.sums[field] += value;
+      next.seen[field] = true;
+    }
+  }
+  return next;
+}
+
+/** A copy of `totals` with one turn folded in. A null field counts as one missing capture. */
+export function addTurn(totals: UsageTotals, usage: TurnUsage): UsageTotals {
+  const missing = uniformFields(0);
+  for (const field of USAGE_FIELDS) {
+    if (usage[field] === null) missing[field] = 1;
+  }
+  return addUsageRecord(totals, usage, missing);
 }
 
 export function newUsageTotals(): UsageTotals {

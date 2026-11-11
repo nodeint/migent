@@ -152,12 +152,14 @@ function unsupportedBaseReason(doc: Document.Parsed): string | null {
   return reason;
 }
 
-function copyComments(from: YamlNode | null | undefined, to: YamlNode): YamlNode {
-  if (from !== null && from !== undefined && isNode(from)) {
-    if (to.comment === undefined) to.comment = from.comment;
-    if (to.commentBefore === undefined) to.commentBefore = from.commentBefore;
+/** A new node for `value` that carries the comments of the node it replaces. */
+function createNodeLike(doc: Document, value: unknown, replaced: YamlNode | null | undefined): YamlNode {
+  const created = doc.createNode(value) as YamlNode;
+  if (replaced !== null && replaced !== undefined && isNode(replaced)) {
+    if (created.comment === undefined) created.comment = replaced.comment;
+    if (created.commentBefore === undefined) created.commentBefore = replaced.commentBefore;
   }
-  return to;
+  return created;
 }
 
 function reconcileMap(doc: Document, map: YAMLMap, data: Record<string, unknown>): void {
@@ -171,7 +173,7 @@ function reconcileMap(doc: Document, map: YAMLMap, data: Record<string, unknown>
       return;
     }
     kept.add(key);
-    pair.value = reconcileValue(doc, pair.value as YamlNode | null, wanted.get(key), pair);
+    map.set(pair.key, reconcileValue(doc, pair.value as YamlNode | null, wanted.get(key)));
   });
   for (const index of removed.reverse()) map.items.splice(index, 1);
   // Keys the draft adds go last, in draft order; every kept key keeps the file's order.
@@ -181,41 +183,26 @@ function reconcileMap(doc: Document, map: YAMLMap, data: Record<string, unknown>
   }
 }
 
-function reconcileValue(
-  doc: Document,
-  node: YamlNode | null | undefined,
-  value: unknown,
-  owner: Pair | null,
-): YamlNode {
+/** The node that holds `value`: `node` itself, reconciled in place, or a replacement for it. */
+function reconcileValue(doc: Document, node: YamlNode | null | undefined, value: unknown): YamlNode {
   if (Array.isArray(value)) {
     if (isSeq(node)) {
       reconcileSeq(doc, node, value);
       return node;
     }
-    return replaceValue(doc, node, value, owner);
+    return createNodeLike(doc, value, node);
   }
   if (isRecord(value)) {
     if (isMap(node)) {
       reconcileMap(doc, node, value);
       return node;
     }
-    return replaceValue(doc, node, value, owner);
+    return createNodeLike(doc, value, node);
   }
-  if (node !== null && node !== undefined && isNode(node) && !isMap(node) && !isSeq(node) && deepEqual(node.toJSON(), value)) {
-    return node;
-  }
-  return replaceValue(doc, node, value, owner);
-}
-
-function replaceValue(
-  doc: Document,
-  node: YamlNode | null | undefined,
-  value: unknown,
-  owner: Pair | null,
-): YamlNode {
-  const replaced = copyComments(node, doc.createNode(value) as YamlNode);
-  if (owner !== null) owner.value = replaced;
-  return replaced;
+  const unchanged =
+    node !== null && node !== undefined && isNode(node) && !isMap(node) && !isSeq(node) && deepEqual(node.toJSON(), value);
+  if (unchanged) return node;
+  return createNodeLike(doc, value, node);
 }
 
 /** Stages and outputs are matched by `id` when every item has one, so reordering keeps comments. */
@@ -229,27 +216,34 @@ function reconcileSeq(doc: Document, seq: YAMLSeq, items: readonly unknown[]): v
       : null;
   });
   const byId = ids.every((id) => id !== null) && baseIds.every((id) => id !== null);
+  let nodes: YamlNode[];
   if (byId) {
     const existing = new Map<string, YamlNode>();
     seq.items.forEach((node, index) => existing.set(baseIds[index]!, node as YamlNode));
-    seq.items = items.map((item, index) => {
+    nodes = items.map((item, index) => {
       const id = ids[index];
       if (id === null) return doc.createNode(item) as YamlNode;
       const node = existing.get(id);
       if (node === undefined) return doc.createNode(item) as YamlNode;
       existing.delete(id);
-      return reconcileValue(doc, node, item, null);
+      return reconcileValue(doc, node, item);
     });
-    return;
+  } else {
+    nodes = items.map((item, index) => {
+      if (index >= seq.items.length) return doc.createNode(item) as YamlNode;
+      return reconcileValue(doc, seq.items[index] as YamlNode, item);
+    });
   }
-  const shared = Math.min(seq.items.length, items.length);
-  for (let index = 0; index < shared; index += 1) {
-    seq.items[index] = reconcileValue(doc, seq.items[index] as YamlNode, items[index], null);
-  }
-  for (let index = shared; index < items.length; index += 1) {
-    seq.items.push(doc.createNode(items[index]) as YamlNode);
-  }
-  if (seq.items.length > items.length) seq.items.length = items.length;
+  installItems(seq, nodes);
+}
+
+/** Make `nodes` the sequence's items, through the yaml API so the sequence keeps its own comments and flow style. */
+function installItems(seq: YAMLSeq, nodes: readonly YamlNode[]): void {
+  nodes.forEach((node, index) => {
+    if (index < seq.items.length) seq.set(index, node);
+    else seq.add(node);
+  });
+  while (seq.items.length > nodes.length) seq.delete(seq.items.length - 1);
 }
 
 /** True when the YAML text carries any comment. */

@@ -173,17 +173,32 @@ export function runAuthoring(options: AuthoringOptions): number {
   }
 }
 
+/** The session lock a save holds. The command releases it in a `finally`, whatever step failed. */
+class HeldLock {
+  private current: SessionLock | null = null;
+
+  /** Take the lock of `directory`; false when another process holds it. */
+  public tryAcquire(directory: string): boolean {
+    this.current = SessionLock.tryAcquire(directory);
+    return this.current !== null;
+  }
+
+  public release(): void {
+    this.current?.release();
+  }
+}
+
 function execute(
   options: AuthoringOptions,
   context: Context,
   emit: (exit: number, items: Diagnostic[], extra?: Record<string, unknown>) => number,
 ): number {
   // A session save holds the session lock from before it reads mutable session state until the write ends.
-  const held: { lock: SessionLock | null } = { lock: null };
+  const held = new HeldLock();
   try {
     return executeDraft(options, context, emit, held);
   } finally {
-    held.lock?.release();
+    held.release();
   }
 }
 
@@ -191,7 +206,7 @@ function executeDraft(
   options: AuthoringOptions,
   context: Context,
   emit: (exit: number, items: Diagnostic[], extra?: Record<string, unknown>) => number,
-  held: { lock: SessionLock | null },
+  held: HeldLock,
 ): number {
   const { kind, mode } = options;
   const invocation = (message: string): Finish => new Finish(EXIT_IO, [plain('invalid-invocation', message)]);
@@ -236,8 +251,7 @@ function executeDraft(
   if (options.session !== undefined) {
     if (mode === 'save') {
       const directory = locateSessionDirectory(workspace, options.session);
-      held.lock = SessionLock.tryAcquire(directory);
-      if (held.lock === null) {
+      if (!held.tryAcquire(directory)) {
         throw new Finish(EXIT_CONFLICT, [plain('session-locked', `Session ${options.session} is locked by a running process; try again when it stops.`)]);
       }
     }

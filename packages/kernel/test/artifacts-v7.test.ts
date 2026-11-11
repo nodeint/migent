@@ -170,8 +170,8 @@ downstream:
 
 function migrate(text: string) {
   const raw = parseYamlDocument(text) as Record<string, unknown>;
-  const notes = migrateWorkflow(raw, {});
-  return { notes, text: patchWorkflowText(text, raw), raw };
+  const { document, notes } = migrateWorkflow(raw, {});
+  return { notes, text: patchWorkflowText(text, document), raw: document };
 }
 
 test('migration converts v6 outputs and reports unpublished artifacts as now published', () => {

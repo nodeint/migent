@@ -125,11 +125,10 @@ function pendingRewrites(workspace: string, clientIds: readonly string[]): Rewri
   const localPath = localConfigPath(workspace);
   const localOriginal = isFile(localPath) ? readConfigOriginal(localPath) : null;
   // Older layers must reach v5 before the client lift inspects their merged shape.
-  const projectV5 = structuredClone(projectOriginal);
-  const localV5 = localOriginal === null ? null : structuredClone(localOriginal);
-  for (const layer of [projectV5, localV5]) {
-    if (layer !== null && documentVersion(layer) < 5) migrateConfig(layer, 5, originalContext);
-  }
+  const toV5 = (layer: Record<string, unknown>): Record<string, unknown> =>
+    documentVersion(layer) < 5 ? migrateConfig(layer, 5, originalContext).document : layer;
+  const projectV5 = toV5(projectOriginal);
+  const localV5 = localOriginal === null ? null : toV5(localOriginal);
   const context = mergeConfigLayers(projectV5, localV5).config;
   const [config, configRewrite] = configRewriteOf(configPath, projectOriginal, context, clientIds, {
     layer: 'project',
@@ -200,14 +199,14 @@ function configRewriteOf(
   layers: { layer: 'project' | 'local'; project: Record<string, unknown>; local: Record<string, unknown> | null },
 ): [Record<string, unknown> | null, Rewrite | null] {
   const original = readFileSync(filePath, 'utf8');
-  const updated = structuredClone(originalDocument);
+  let updated: Record<string, unknown>;
   let notes: string[];
   try {
-    notes = migrateConfig(updated, SCHEMA_VERSION, context, {
+    ({ document: updated, notes } = migrateConfig(originalDocument, SCHEMA_VERSION, context, {
       ...layers,
       merged: context,
       clientIds,
-    });
+    }));
   } catch (error) {
     if (error instanceof ConfigurationError) throw error;
     return [null, null];
@@ -250,10 +249,10 @@ function workflowRewrites(
     } catch {
       continue;
     }
-    const updated = structuredClone(parsed);
+    let updated: Record<string, unknown>;
     let changed: string[];
     try {
-      changed = migrateWorkflow(updated, config, SCHEMA_VERSION, clientIds);
+      ({ document: updated, notes: changed } = migrateWorkflow(parsed, config, SCHEMA_VERSION, clientIds));
     } catch (error) {
       if (error instanceof ConfigurationError) throw error;
       continue;
@@ -357,14 +356,16 @@ function sessionRewrites(
     }
     const body = document.workflow;
     if (!isRecord(body)) continue;
+    let migratedBody: Record<string, unknown>;
     let notes: string[];
     try {
-      notes = migrateWorkflow(body, config, SCHEMA_VERSION, clientIds);
+      ({ document: migratedBody, notes } = migrateWorkflow(body, config, SCHEMA_VERSION, clientIds));
     } catch (error) {
       if (error instanceof ConfigurationError) throw error;
       continue;
     }
     if (notes.length === 0) continue;
+    document = { ...document, workflow: migratedBody };
     // The pin records the draft's hash; keep it matching when the draft is rewritten alongside.
     if (draftText !== null && newDraftText !== null && document.source_sha256 === sha256Hex(draftText)) {
       document.source_sha256 = sha256Hex(newDraftText);
@@ -394,10 +395,10 @@ function migratedText(
     return null;
   }
   if (!isRecord(parsed)) return null;
-  const updated = structuredClone(parsed);
+  let updated: Record<string, unknown>;
   let changed: string[];
   try {
-    changed = migrateWorkflow(updated, config, SCHEMA_VERSION, clientIds);
+    ({ document: updated, notes: changed } = migrateWorkflow(parsed, config, SCHEMA_VERSION, clientIds));
   } catch (error) {
     if (error instanceof ConfigurationError) throw error;
     return null;

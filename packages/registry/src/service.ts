@@ -252,7 +252,7 @@ export async function serveForeground(
   } = {},
 ): Promise<ServiceEndpoint> {
   const directory = ensureRegistryHome(home);
-  const stopRequested = { flag: false };
+  const stopRequested = new AbortController();
   let server: RegistryHTTPServer | null = null;
   let lifetime: ServiceEndpointServer | null = null;
   let endpoint: ServiceEndpoint;
@@ -264,7 +264,7 @@ export async function serveForeground(
       const instanceId = randomBytes(32).toString('base64url');
       const token = randomBytes(32).toString('base64url');
       lifetime = await svc.acquireServiceLock(directory, { instance_id: instanceId, pid: process.pid }, token, () => {
-        stopRequested.flag = true;
+        stopRequested.abort();
         server?.close();
       });
       if (lifetime === null) throw new ServiceError('Another registry service holds the service endpoint.');
@@ -287,7 +287,7 @@ export async function serveForeground(
   }
   if (!server || !lifetime) return endpoint;
   process.stderr.write(`${endpoint.host}:${endpoint.port}\n`);
-  await serveUntilSignal(server, lifetime, options.stopEvent ?? null, stopRequested);
+  await serveUntilSignal(server, lifetime, options.stopEvent ?? null, stopRequested.signal);
   return endpoint;
 }
 
@@ -312,10 +312,11 @@ export async function serveUntilSignal(
   server: RegistryHTTPServer,
   lifetime: ServiceEndpointServer,
   stopEvent: StopEvent | null = null,
-  stopRequested: { flag: boolean } = { flag: false },
+  stopRequested: AbortSignal = new AbortController().signal,
 ): Promise<void> {
+  let signalled = false;
   const onSignal = (): void => {
-    stopRequested.flag = true;
+    signalled = true;
     try {
       server.close();
     } catch {
@@ -327,9 +328,8 @@ export async function serveUntilSignal(
     process.on('SIGINT', onSignal);
     process.on('SIGTERM', onSignal);
   }
-  const stopping = (): boolean => stopRequested.flag || (stopEvent?.isSet() ?? false);
+  const stopping = (): boolean => signalled || stopRequested.aborted || (stopEvent?.isSet() ?? false);
   try {
-    server.timeout = 0.2;
     while (!stopping()) {
       try {
         await server.handleRequest();

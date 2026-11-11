@@ -9,12 +9,18 @@ import { documentVersion, isRecord } from '@nodeint/migent-workflow';
 import { conditionalStages, parseWorkflowMapping,SCHEMA_VERSION } from '@nodeint/migent-workflow';
 
 import { ConfigurationError } from './errors.js';
-import { type ConfigLayerKind,liftConfigAgents, liftConfigClients, liftWorkflowClients } from './migration-config.js';
+import { type ConfigLayerKind, liftConfigAgents, liftConfigClients, type Lifted, liftWorkflowClients } from './migration-config.js';
 import { migrateModels, migrateRoles, migrateStages } from './migration-legacy.js';
 import { SCHEMA_VERSION_FIELD, stagesById } from './workflow-text.js';
 import { deepCopy, deepCopyRecord, deepEqual } from './yaml-patch.js';
 
-export type MigrationFn = (entry: Record<string, unknown>) => void;
+export type MigrationFn = (entry: Record<string, unknown>) => Record<string, unknown>;
+
+/**
+ * A migrated copy and the notes that describe the changes. The migration never changes the document
+ * it receives; callers take `document` and discard their input.
+ */
+export type MigrationResult = Lifted;
 
 export interface MigrationLayer {
   layer?: ConfigLayerKind;
@@ -31,68 +37,83 @@ export interface MigrationLayer {
 }
 
 export function migrateConfig(
-  config: Record<string, unknown>,
+  config: Readonly<Record<string, unknown>>,
   current = SCHEMA_VERSION,
   context: Readonly<Record<string, unknown>> = config,
   layers: MigrationLayer = {},
-): string[] {
+): MigrationResult {
   let version = requireCurrent(documentVersion(config), current, 'config');
-  if (version === current) return [];
-  const before = deepCopyRecord(config);
+  if (version === current) return { document: deepCopyRecord(config), notes: [] };
+  let document = deepCopyRecord(config);
   let providerStage: Record<string, unknown> | null = null;
   let structural: string[] = [];
   while (version < current) {
-    migrateModels(config, version, context);
-    migrateRoles(config, version, context);
+    document = migrateModels(document, version, context);
+    document = migrateRoles(document, version, context);
     // Version 4 to 5 renames and reshapes keys for every provider alike.
     if (version === 4) {
-      providerStage = deepCopyRecord(config);
-      structural = liftConfigAgents(config);
+      providerStage = document;
+      const lifted = liftConfigAgents(document);
+      document = lifted.document;
+      structural = lifted.notes;
     }
     if (version === 5) {
-      structural.push(...liftConfigClients({
+      const lifted = liftConfigClients({
         layer: layers.layer ?? 'project',
-        layerConfig: config,
-        project: layers.project ?? config,
+        layerConfig: document,
+        project: layers.project ?? document,
         local: layers.local ?? null,
         merged: layers.merged ?? context,
         clientIds: layers.clientIds ?? [],
-      }));
+      });
+      document = lifted.document;
+      structural.push(...lifted.notes);
     }
     version += 1;
   }
-  config[SCHEMA_VERSION_FIELD] = current;
-  const notes = [`${SCHEMA_VERSION_FIELD} -> ${String(config[SCHEMA_VERSION_FIELD])}`];
+  document = { ...document, [SCHEMA_VERSION_FIELD]: current };
+  const notes = [`${SCHEMA_VERSION_FIELD} -> ${String(current)}`];
   // Provider steps ran on the shape they were written for; compare that shape, then list the lifts.
-  const compared = providerStage ?? config;
-  notes.push(...namedNotes(before.models ?? before.agents, compared.models ?? compared.agents, 'models'));
-  notes.push(...namedNotes(before.roles, compared.roles, 'roles'));
+  const compared = providerStage ?? document;
+  notes.push(...namedNotes(config.models ?? config.agents, compared.models ?? compared.agents, 'models'));
+  notes.push(...namedNotes(config.roles, compared.roles, 'roles'));
   notes.push(...structural);
-  return notes;
+  return { document, notes };
 }
 
 export function migrateWorkflow(
-  workflow: Record<string, unknown>,
+  workflow: Readonly<Record<string, unknown>>,
   config: Readonly<Record<string, unknown>>,
   current = SCHEMA_VERSION,
   clientIds: readonly string[] = [],
-): string[] {
+): MigrationResult {
   let version = requireCurrent(documentVersion(workflow), current, 'workflow');
-  if (version === current) return [];
-  const before = deepCopyRecord(workflow);
+  if (version === current) return { document: deepCopyRecord(workflow), notes: [] };
+  let document = deepCopyRecord(workflow);
   const semanticNotes: string[] = [];
   while (version < current) {
-    if (version === 6) semanticNotes.push(...liftWorkflowArtifacts(workflow));
-    migrateStages(workflow, config, version);
-    if (version === 1) liftWorkflowCompletion(workflow);
-    if (version === 2) liftWorkflowDecisions(workflow);
-    if (version === 3) delete workflow.requires;
-    if (version === 4) liftWorkflowAgents(workflow);
-    if (version === 5) liftWorkflowClients(workflow, config, clientIds);
+    if (version === 6) {
+      const lifted = liftWorkflowArtifacts(document);
+      document = lifted.document;
+      semanticNotes.push(...lifted.notes);
+    }
+    document = migrateStages(document, config, version);
+    if (version === 1) document = liftWorkflowCompletion(document);
+    if (version === 2) document = liftWorkflowDecisions(document);
+    if (version === 3) document = withoutKey(document, 'requires');
+    if (version === 4) document = liftWorkflowAgents(document);
+    if (version === 5) {
+      const lifted = liftWorkflowClients(document, config, clientIds);
+      document = lifted.document;
+    }
     version += 1;
   }
-  workflow[SCHEMA_VERSION_FIELD] = current;
-  return [...workflowNotes(before, workflow), ...semanticNotes];
+  document = { ...document, [SCHEMA_VERSION_FIELD]: current };
+  return { document, notes: [...workflowNotes(workflow, document), ...semanticNotes] };
+}
+
+function withoutKey(record: Readonly<Record<string, unknown>>, key: string): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(record).filter(([name]) => name !== key));
 }
 
 const ARTIFACT_ID = /^[A-Za-z][A-Za-z0-9_-]*$/;
@@ -101,18 +122,17 @@ const ARTIFACT_ID = /^[A-Za-z][A-Za-z0-9_-]*$/;
  * analysed first; any refusal throws before the document is changed, so nothing is written.
  * Returns the semantic changes the author must know about.
  */
-function liftWorkflowArtifacts(workflow: Record<string, unknown>): string[] {
-  const rawStages = Array.isArray(workflow.stages) ? workflow.stages : [];
+function liftWorkflowArtifacts(workflow: Readonly<Record<string, unknown>>): MigrationResult {
+  const rawStages: unknown[] = Array.isArray(workflow.stages) ? workflow.stages : [];
   const hasProduces = rawStages.some((stage) => isRecord(stage) && Object.hasOwn(stage, 'produces'));
-  if (!hasProduces && !Object.hasOwn(workflow, 'outputs')) return [];
-  const probe = deepCopyRecord(workflow);
-  probe[SCHEMA_VERSION_FIELD] = 6;
+  if (!hasProduces && !Object.hasOwn(workflow, 'outputs')) return { document: { ...workflow }, notes: [] };
+  const probe = { ...deepCopyRecord(workflow), [SCHEMA_VERSION_FIELD]: 6 };
   const parsed = parseWorkflowMapping(probe, 'migrating workflow');
   const conditional = conditionalStages(parsed.stages);
   const outputs = parsed.outputs ?? [];
   const problems: string[] = [];
   const notes: string[] = [];
-  const plans: { stage: Record<string, unknown>; stageId: string; id: string; file: string; required: boolean }[] = [];
+  const plans = new Map<Record<string, unknown>, { id: string; file: string; required: boolean }>();
   const byId = new Map<string, string>();
   const byFile = new Map<string, string>();
   const aliasTarget = new Map<string, string>();
@@ -141,7 +161,7 @@ function liftWorkflowArtifacts(workflow: Record<string, unknown>): string[] {
     byId.set(id, stageId);
     byFile.set(file, stageId);
     const required = !conditional.has(stageId);
-    plans.push({ stage: raw, stageId, id, file, required });
+    plans.set(raw, { id, file, required });
     for (const alias of named.slice(1)) aliasTarget.set(alias.name, id);
     if (named.length === 0) notes.push(`stages.${stageId}.produces.artifact is now published as artifact ${id} (it was unpublished in schema 6)`);
     if (!required) notes.push(`artifact ${id} comes from a run_when stage: it is now published when produced and declared required: false, so a turn may complete without ${file}`);
@@ -151,96 +171,108 @@ function liftWorkflowArtifacts(workflow: Record<string, unknown>): string[] {
     throw new ConfigurationError(`Cannot migrate artifacts to schema_version 7:\n- ${problems.join('\n- ')}`);
   }
   const registry: Record<string, unknown> = {};
-  for (const plan of plans) {
+  for (const plan of plans.values()) {
     registry[plan.id] = plan.required ? { file: plan.file } : { file: plan.file, required: false };
-    delete plan.stage.produces;
-    plan.stage.artifacts = [plan.id];
   }
-  for (const raw of rawStages) {
-    if (isRecord(raw) && Object.hasOwn(raw, 'produces')) delete raw.produces;
+  const stages = rawStages.map((raw) => {
+    if (!isRecord(raw)) return raw;
+    const plan = plans.get(raw);
+    if (plan !== undefined) return { ...withoutKey(raw, 'produces'), artifacts: [plan.id] };
+    return Object.hasOwn(raw, 'produces') ? withoutKey(raw, 'produces') : raw;
+  });
+  let document: Record<string, unknown> = Array.isArray(workflow.stages) ? { ...workflow, stages } : { ...workflow };
+  if (Object.keys(registry).length > 0) document = { ...document, artifacts: registry };
+  document = withoutKey(document, 'outputs');
+  if (Array.isArray(document.downstream)) {
+    const downstream = document.downstream.map((entry: unknown) => {
+      if (!isRecord(entry) || !isRecord(entry.artifacts)) return entry;
+      const artifacts = renameAliases(entry.artifacts, aliasTarget);
+      return { ...entry, artifacts };
+    });
+    document = { ...document, downstream };
   }
-  if (Object.keys(registry).length > 0) workflow.artifacts = registry;
-  delete workflow.outputs;
-  if (Array.isArray(workflow.downstream)) {
-    for (const entry of workflow.downstream) {
-      if (!isRecord(entry) || !isRecord(entry.artifacts)) continue;
-      for (const [name, value] of Object.entries(entry.artifacts)) {
-        if (typeof value === 'string' && aliasTarget.has(value)) entry.artifacts[name] = aliasTarget.get(value);
-      }
-    }
+  return { document, notes };
+}
+
+/** A copy of a downstream artifact mapping with merged output aliases replaced by the artifact that absorbed them. */
+function renameAliases(
+  artifacts: Readonly<Record<string, unknown>>,
+  aliasTarget: ReadonlyMap<string, string>,
+): Record<string, unknown> {
+  const renamed: Record<string, unknown> = {};
+  for (const [name, value] of Object.entries(artifacts)) {
+    renamed[name] = typeof value === 'string' && aliasTarget.has(value) ? aliasTarget.get(value) : value;
   }
-  return notes;
+  return renamed;
 }
 
 /** Version 5 selects an `agent` per stage; stage `options` no longer exist and are dropped. */
-function liftWorkflowAgents(workflow: Record<string, unknown>): void {
-  if (!Array.isArray(workflow.stages)) return;
-  for (const stage of workflow.stages) {
-    if (!isRecord(stage)) continue;
-    if (Object.hasOwn(stage, 'model')) {
-      if (Object.hasOwn(stage, 'agent')) {
-        throw new ConfigurationError(`stages.${String(stage.id)} has both model and agent.`);
-      }
-      const lifted: Record<string, unknown> = {};
-      for (const [key, value] of Object.entries(stage)) {
-        if (key === 'model') {
-          if ((value !== null && value !== undefined)) lifted.agent = value;
-        } else {
-          lifted[key] = value;
-        }
-      }
-      for (const key of Object.keys(stage)) delete stage[key];
-      Object.assign(stage, lifted);
-    }
-    delete stage.options;
+function liftWorkflowAgents(workflow: Readonly<Record<string, unknown>>): Record<string, unknown> {
+  if (!Array.isArray(workflow.stages)) return { ...workflow };
+  const stages = workflow.stages.map((stage: unknown) => (isRecord(stage) ? liftStageAgent(stage) : stage));
+  return { ...workflow, stages };
+}
+
+function liftStageAgent(stage: Readonly<Record<string, unknown>>): Record<string, unknown> {
+  if (!Object.hasOwn(stage, 'model')) return withoutKey(stage, 'options');
+  if (Object.hasOwn(stage, 'agent')) {
+    throw new ConfigurationError(`stages.${String(stage.id)} has both model and agent.`);
   }
+  const lifted: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(stage)) {
+    if (key === 'model') {
+      if ((value !== null && value !== undefined)) lifted.agent = value;
+    } else {
+      lifted[key] = value;
+    }
+  }
+  return withoutKey(lifted, 'options');
 }
 
 /** Version 2 has no completion block and no requires.decision. */
-function liftWorkflowCompletion(workflow: Record<string, unknown>): void {
+function liftWorkflowCompletion(workflow: Readonly<Record<string, unknown>>): Record<string, unknown> {
+  let document: Record<string, unknown> = { ...workflow };
   const {completion} = workflow;
   if (isRecord(completion)) {
     refuseForeignCompleteRoutes(workflow, completion);
     const {outputs} = completion;
     const emptyOutputs =
       (outputs === null || outputs === undefined) || outputs === false || (isRecord(outputs) && Object.keys(outputs).length === 0);
-    if (!emptyOutputs) workflow.outputs = deepCopy(outputs);
-    delete workflow.completion;
+    if (!emptyOutputs) document = { ...document, outputs: deepCopy(outputs) };
+    document = withoutKey(document, 'completion');
   } else if (Object.hasOwn(workflow, 'completion')) {
-    delete workflow.completion;
+    document = withoutKey(document, 'completion');
   }
-  const {requires} = workflow;
-  if (!isRecord(requires)) return;
-  delete requires.decision;
-  if (Object.keys(requires).length === 0) delete workflow.requires;
+  const {requires} = document;
+  if (!isRecord(requires)) return document;
+  const remaining = withoutKey(requires, 'decision');
+  return Object.keys(remaining).length === 0 ? withoutKey(document, 'requires') : { ...document, requires: remaining };
 }
 
 /** Keep existing prose criteria; migration cannot infer a new decision policy. */
-function liftWorkflowDecisions(workflow: Record<string, unknown>): void {
-  if (!Array.isArray(workflow.stages)) return;
-  for (const stage of workflow.stages) {
-    if (!isRecord(stage) || (stage.decision === null || stage.decision === undefined) || Array.isArray(stage.decision)) continue;
-    const field = `stages.${String(stage.id)}.decision`;
-    const {decision} = stage;
-    if (isRecord(decision) && Object.keys(decision).length === 0) {
-      delete stage.decision;
-      continue;
-    }
-    if (!isRecord(decision) || !Array.isArray(decision.values) || !isRecord(decision.routes)) {
-      throw new ConfigurationError(`${field} requires values and routes before migration.`);
-    }
-    const {routes} = decision;
-    const names = decision.values.map((value) => typeof value === 'string' ? value.trim().toLowerCase() : '');
-    const targets = new Map(Object.entries(routes).map(([key, value]) => [key.trim().toLowerCase(), value]));
-    if (names.length === 0 || names.some((name) => !name || !targets.has(name)) ||
-        new Set(names).size !== names.length || targets.size !== Object.keys(routes).length ||
-        targets.size !== names.length) {
-      throw new ConfigurationError(`${field}.routes keys must match unique decision.values.`);
-    }
-    stage.decision = names.map((name) => ({
-      [name]: { navigate: targets.get(name) },
-    }));
+function liftWorkflowDecisions(workflow: Readonly<Record<string, unknown>>): Record<string, unknown> {
+  if (!Array.isArray(workflow.stages)) return { ...workflow };
+  const stages = workflow.stages.map((stage: unknown) => (isRecord(stage) ? liftStageDecision(stage) : stage));
+  return { ...workflow, stages };
+}
+
+function liftStageDecision(stage: Readonly<Record<string, unknown>>): Record<string, unknown> {
+  if ((stage.decision === null || stage.decision === undefined) || Array.isArray(stage.decision)) return { ...stage };
+  const field = `stages.${String(stage.id)}.decision`;
+  const {decision} = stage;
+  if (isRecord(decision) && Object.keys(decision).length === 0) return withoutKey(stage, 'decision');
+  if (!isRecord(decision) || !Array.isArray(decision.values) || !isRecord(decision.routes)) {
+    throw new ConfigurationError(`${field} requires values and routes before migration.`);
   }
+  const {routes} = decision;
+  const names = decision.values.map((value) => typeof value === 'string' ? value.trim().toLowerCase() : '');
+  const targets = new Map(Object.entries(routes).map(([key, value]) => [key.trim().toLowerCase(), value]));
+  if (names.length === 0 || names.some((name) => !name || !targets.has(name)) ||
+      new Set(names).size !== names.length || targets.size !== Object.keys(routes).length ||
+      targets.size !== names.length) {
+    throw new ConfigurationError(`${field}.routes keys must match unique decision.values.`);
+  }
+  return { ...stage, decision: names.map((name) => ({ [name]: { navigate: targets.get(name) } })) };
 }
 
 function refuseForeignCompleteRoutes(

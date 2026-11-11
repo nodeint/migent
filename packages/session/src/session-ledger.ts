@@ -223,38 +223,41 @@ export function decisionOfOutcome(outcome: Record<string, unknown> | null): stri
   return typeof decision === 'string' && decision !== '' ? decision : null;
 }
 
-export function recordLatestDecision(status: Record<string, unknown>, decision: string | null): void {
-  if (decision) status.latest_decision = decision;
+/** A stopped execution that names the terminal state of the session. */
+export interface TerminalSource {
+  executionId: string;
+  stageId: string;
+  blocker: string | null;
 }
 
-export function applyTerminalFields(
-  status: Record<string, unknown>,
+/**
+ * The terminal keys a session status calls for, in the order they are written to `status.json`.
+ * Only blocked, completed, and cancelled sessions have any.
+ */
+export function terminalFields(
   sessionStatus: string,
-  source: { executionId: string; stageId: string; blocker: string | null } | null,
+  source: TerminalSource | null,
   reason: string | null,
-  blocked: readonly { executionId: string; stageId: string; blocker: string | null }[] = [],
-): void {
-  delete status.terminal_execution_id;
-  delete status.blocked_by_execution_id;
-  delete status.blocked_by_execution_ids;
-  delete status.blocked_by_stage_id;
-  delete status.blocker;
-  if (sessionStatus !== 'blocked' && sessionStatus !== 'completed' && sessionStatus !== 'cancelled') return;
+  blocked: readonly TerminalSource[] = [],
+): Record<string, unknown> {
+  const fields: Record<string, unknown> = {};
+  if (sessionStatus !== 'blocked' && sessionStatus !== 'completed' && sessionStatus !== 'cancelled') return fields;
   const fallbackRows = source ? [source] : [];
   const rows = blocked.length > 0 ? blocked : fallbackRows;
   if (rows.length === 0) {
-    if (sessionStatus === 'blocked' && reason) status.blocker = reason;
-    return;
+    if (sessionStatus === 'blocked' && reason) fields.blocker = reason;
+    return fields;
   }
   const first = rows[0]!;
-  status.terminal_execution_id = source?.executionId ?? first.executionId;
+  fields.terminal_execution_id = source?.executionId ?? first.executionId;
   if (sessionStatus === 'blocked') {
-    status.blocked_by_execution_id = first.executionId;
-    status.blocked_by_execution_ids = rows.map((row) => row.executionId);
-    status.blocked_by_stage_id = first.stageId;
+    fields.blocked_by_execution_id = first.executionId;
+    fields.blocked_by_execution_ids = rows.map((row) => row.executionId);
+    fields.blocked_by_stage_id = first.stageId;
     const blocker = first.blocker || source?.blocker || reason;
-    if (blocker) status.blocker = blocker;
+    if (blocker) fields.blocker = blocker;
   }
+  return fields;
 }
 
 function laterStatusExecution(candidate: StatusExecution, current: StatusExecution): boolean {

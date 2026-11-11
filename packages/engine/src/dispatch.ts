@@ -235,9 +235,30 @@ export const EXECUTE_EXIT_CODES:Record<string, number> = {
 
 export const TERMINAL_SESSION_STATUSES = new Set(['completed', 'blocked', 'question', 'cancelled']);
 
-export interface PendingStageReply {
-  stageId: string;
-  text: string | null;
+/**
+ * A human reply waiting for its stage. The stage that receives it takes the text once; the
+ * run asks `consumed` afterwards to learn whether the reply was sent.
+ */
+export class PendingStageReply {
+  public readonly stageId: string;
+  private pending: string | null;
+
+  constructor(stageId: string, text: string) {
+    this.stageId = stageId;
+    this.pending = text;
+  }
+
+  public get consumed(): boolean {
+    return this.pending === null;
+  }
+
+  /** The reply text when it is addressed to `stageId` and not yet taken; null otherwise. */
+  public take(stageId: string): string | null {
+    if (this.stageId !== stageId || this.pending === null) return null;
+    const text = this.pending;
+    this.pending = null;
+    return text;
+  }
 }
 
 export interface ExecuteResult {
@@ -405,7 +426,7 @@ export async function dispatchExecuteStage(
     priorOutputs: priorSessionOutputs(workspace, priorSessionId, sessionId),
     roleInstructions,
   };
-  const stageReply = takeStageReply(reply, stageId);
+  const stageReply = reply?.take(stageId) ?? null;
   const answers = stageReply !== null
     && new SessionStore(workspace).questionStages(sessionId).some((row) => row.stageId === stageId);
   const interrupted = stageReply !== null && interruptedExecutionId(snapshots, stageId) !== undefined;
@@ -522,13 +543,6 @@ function interruptedExecutionId(snapshots: readonly ExecutionSnapshot[], stageId
     if (latest === null || snapshot.executionOrder > latest.executionOrder) latest = snapshot;
   }
   return latest?.status === 'cancelled' ? latest.executionId : undefined;
-}
-
-export function takeStageReply(reply: PendingStageReply | null, stageId: string): string | null {
-  if (reply === null || reply.stageId !== stageId || reply.text === null) return null;
-  const {text} = reply;
-  reply.text = null;
-  return text;
 }
 
 export function storedPriorSessionId(status: Record<string, unknown>): string | null {

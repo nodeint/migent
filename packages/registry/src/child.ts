@@ -168,7 +168,7 @@ export async function readReadyLine(child: SpawnedChild, deadline: number): Prom
   return child.readReady(deadline);
 }
 
-function waitForAck(deadline: number, stop: { flag: boolean }): Promise<boolean> {
+function waitForAck(deadline: number, stop: AbortSignal): Promise<boolean> {
   return new Promise((resolve) => {
     const finish = (ok: boolean): void => {
       clearTimeout(timer);
@@ -183,7 +183,7 @@ function waitForAck(deadline: number, stop: { flag: boolean }): Promise<boolean>
     const onDisconnect = (): void => finish(false);
     const timer = setTimeout(() => finish(false), Math.max(0, deadline - monotonic()) * 1000);
     const poll = setInterval(() => {
-      if (stop.flag) finish(false);
+      if (stop.aborted) finish(false);
     }, 50);
     process.on('message', onMessage);
     process.once('disconnect', onDisconnect);
@@ -198,9 +198,9 @@ export async function serveChild(home: string, port: number): Promise<number> {
   const instanceId = randomBytes(32).toString('base64url');
   const token = randomBytes(32).toString('base64url');
   let server: RegistryHTTPServer | null = null;
-  const stop = { flag: false };
+  const stop = new AbortController();
   const onSignal = (): void => {
-    stop.flag = true;
+    stop.abort();
     try {
       server?.close();
     } catch {
@@ -226,9 +226,9 @@ export async function serveChild(home: string, port: number): Promise<number> {
     } catch {
       return 1;
     }
-    if (!(await waitForAck(monotonic() + ACK_TIMEOUT_SEC, stop))) return stop.flag ? 0 : 1;
+    if (!(await waitForAck(monotonic() + ACK_TIMEOUT_SEC, stop.signal))) return stop.signal.aborted ? 0 : 1;
     process.disconnect?.();
-    await serveLoop(server, stop);
+    await serveLoop(server, stop.signal);
     return 0;
   } finally {
     process.off('SIGINT', onSignal);
@@ -238,15 +238,14 @@ export async function serveChild(home: string, port: number): Promise<number> {
   }
 }
 
-async function serveLoop(server: RegistryHTTPServer, stop: { flag: boolean }): Promise<void> {
-  server.timeout = 0.2;
-  while (!stop.flag) {
+async function serveLoop(server: RegistryHTTPServer, stop: AbortSignal): Promise<void> {
+  while (!stop.aborted) {
     try {
       await server.handleRequest();
     } catch (error) {
       const {code} = (error as NodeJS.ErrnoException);
       if (code === 'EINTR') continue;
-      if (stop.flag) break;
+      if (stop.aborted) break;
       throw error;
     }
   }

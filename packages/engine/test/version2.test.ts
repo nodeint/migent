@@ -69,8 +69,10 @@ function mapping(value: unknown): Record<string, unknown> {
 }
 
 function migratedPlan(): string {
-  const parsed = mapping(parseYamlDocument(PLAN_REVIEW_WORKFLOW));
-  migrateWorkflow(parsed, { agents: {}, roles: {} });
+  const { document: parsed } = migrateWorkflow(
+    mapping(parseYamlDocument(PLAN_REVIEW_WORKFLOW)),
+    { agents: {}, roles: {} },
+  );
   return patchWorkflowText(PLAN_REVIEW_WORKFLOW, parsed);
 }
 

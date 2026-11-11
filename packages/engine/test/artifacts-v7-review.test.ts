@@ -175,8 +175,8 @@ outputs:
     artifact: plan.md
 `;
   const raw = parseYamlDocument(text) as Record<string, unknown>;
-  migrateWorkflow(raw, {});
-  const patched = patchWorkflowText(text, raw);
+  const { document } = migrateWorkflow(raw, {});
+  const patched = patchWorkflowText(text, document);
   expect(patched).toContain('artifacts: ["null"]');
   expect(parse(patched).artifacts?.[0]?.id).toBe('null');
 });

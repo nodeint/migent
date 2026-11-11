@@ -5,6 +5,7 @@
 ### Changed
 
 - Workflow execution moved from `@nodeint/migent-kernel` into a new internal npm package, `@nodeint/migent-engine`, and the session store moved into `@nodeint/migent-session`. CLI behavior and `--json` output are unchanged.
+- `migrateConfig` and `migrateWorkflow` in `@nodeint/migent-kernel` no longer change the document they receive. They return `{ document, notes }`; use `document` instead of the argument you passed in.
 
 ## 0.5.6
 

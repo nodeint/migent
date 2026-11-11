@@ -201,3 +201,32 @@ test('a nested workspace path is not found', async () => {
   const result = await dispatch(router, store, 'GET', '/v1/workspaces/ws_one/child');
   expect(result.status).toBe(404);
 });
+
+test('dispatch hands the handler a routed call and leaves the incoming call unchanged', async () => {
+  const { root, store, router } = setup();
+  const workspace = makeWorkspace(root);
+  const gated: string[] = [];
+  const call = new Call({
+    method: 'POST',
+    path: '/v1/workspaces',
+    store,
+    token: TOKEN,
+    instanceId: INSTANCE,
+    authorization: `Bearer ${TOKEN}`,
+    body: Buffer.from(JSON.stringify({ path: workspace, tool: TOOL })),
+    beforeStore: () => {
+      gated.push('before');
+    },
+  });
+  // The POST handler reads its body through the prototype method jsonObject().
+  const created = await router.dispatch(call);
+  expect(created.status).toBe(201);
+  expect(gated.length).toBeGreaterThan(0);
+  expect(call.store).toBe(store);
+  expect(call.params).toEqual({});
+  const fetched = await router.dispatch(
+    new Call({ method: 'GET', path: `/v1/workspaces/${String(created.payload.id)}`, store, token: TOKEN, instanceId: INSTANCE, authorization: `Bearer ${TOKEN}` }),
+  );
+  expect(fetched.status).toBe(200);
+  expect(fetched.payload.id).toBe(created.payload.id);
+});

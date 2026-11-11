@@ -84,8 +84,7 @@ test('config reference parses and names every key the config parser reads', () =
     writeFileSync(configPath, text, 'utf8');
     const reference = loadYamlMapping(configPath);
     expect(documentVersion(reference)).toBe(7);
-    const config = structuredClone(reference);
-    migrateConfig(config, 7, config, { layer: 'project', clientIds: clientIds() });
+    const { document: config } = migrateConfig(reference, 7, reference, { layer: 'project', clientIds: clientIds() });
     expect(documentVersion(config)).toBe(7);
     writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
     const clients = clientRegistry();

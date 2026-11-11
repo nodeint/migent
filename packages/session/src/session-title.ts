@@ -95,12 +95,14 @@ export function effectiveTitle(sessionDirectory: string): string | null {
   return effectiveTitleFrom(readTitleRecord(sessionDirectory), readManifestTitle(sessionDirectory));
 }
 
-/** Set `status.title` to the effective title, or remove it when there is none. */
-export function overlayTitle(status: Record<string, unknown>, sessionDirectory: string): Record<string, unknown> {
+/** A copy of `status` whose `title` is the effective title, or has no `title` when there is none. */
+export function overlayTitle(
+  status: Readonly<Record<string, unknown>>,
+  sessionDirectory: string,
+): Record<string, unknown> {
   const title = effectiveTitle(sessionDirectory);
-  if (title !== null) status.title = title;
-  else delete status.title;
-  return status;
+  if (title !== null) return { ...status, title };
+  return Object.fromEntries(Object.entries(status).filter(([key]) => key !== 'title'));
 }
 
 /**

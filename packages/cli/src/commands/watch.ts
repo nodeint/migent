@@ -249,7 +249,7 @@ function readText(filePath: string): string {
 function readCompleteLines(
   fd: number,
   position: number,
-  pending: string,
+  carried: string,
 ): { lines: string[]; pending: string; position: number } {
   const chunks: Buffer[] = [];
   const buffer = Buffer.alloc(64 * 1024);
@@ -260,9 +260,8 @@ function readCompleteLines(
     chunks.push(Buffer.from(buffer.subarray(0, count)));
     offset += count;
   }
-  if (chunks.length === 0) return { lines: [], pending, position };
-  pending += Buffer.concat(chunks).toString('utf8');
-  const pieces = pending.split('\n');
+  if (chunks.length === 0) return { lines: [], pending: carried, position };
+  const pieces = (carried + Buffer.concat(chunks).toString('utf8')).split('\n');
   const rest = pieces.pop() ?? '';
   return { lines: pieces, pending: rest, position: offset };
 }

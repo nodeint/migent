@@ -147,28 +147,28 @@ export interface RunTurnArgs {
 
 /** What one pass of the loop produced. Created at the top of each pass and passed to every step. */
 export interface Iteration {
-  responseText: string;
-  outcome: StageOutcome | null;
-  invokeError: string | null;
-  gateFailure: GateFailure | null;
-  eligible: boolean;
-  pendingGate: boolean;
-  needsVerify: boolean;
+  readonly responseText: string;
+  readonly outcome: StageOutcome | null;
+  readonly invokeError: string | null;
+  readonly gateFailure: GateFailure | null;
+  readonly eligible: boolean;
+  readonly pendingGate: boolean;
+  readonly needsVerify: boolean;
 }
 
 /** What the steps of one fresh provider turn share. Separate from the loop's persistent state. */
 export interface FreshTurn {
-  turnResult: TurnResult;
-  parsedSource: ResponseSource | undefined;
-  source: ResponseSource;
-  recordsTurn: boolean;
-  exitOnly: boolean;
-  candidate: boolean;
-  exitMessage: string | null;
-  anomalyReason: string | null;
-  turnError: string | null;
-  gates: Gates;
-  turnDetails: Record<string, unknown>;
-  modelResponded: boolean;
-  recordedClassification: FailureClassification | null;
+  readonly turnResult: TurnResult;
+  readonly parsedSource: ResponseSource | undefined;
+  readonly source: ResponseSource;
+  readonly recordsTurn: boolean;
+  readonly exitOnly: boolean;
+  readonly candidate: boolean;
+  readonly exitMessage: string | null;
+  readonly anomalyReason: string | null;
+  readonly turnError: string | null;
+  readonly gates: Gates;
+  readonly turnDetails: Record<string, unknown>;
+  readonly modelResponded: boolean;
+  readonly recordedClassification: FailureClassification | null;
 }

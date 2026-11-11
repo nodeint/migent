@@ -18,6 +18,28 @@ import { type FreshTurn, frozenDocument, handoffPath, type Iteration, type Pendi
 
 type Step = 'continue' | 'stop' | 'proceed';
 
+/** The gate verdicts an output check produced, and the failure that goes with them. */
+interface OutputCheck {
+  failure: GateFailure | null;
+  gates: Partial<Gates>;
+}
+
+/** What the gates decided about one fresh turn. */
+interface GateEvaluation {
+  iteration: Iteration;
+  fresh: FreshTurn;
+}
+
+/** What persisting one turn decided. */
+interface PersistVerdict {
+  needsVerify: boolean;
+  modelResponded: boolean;
+  recordedClassification: FailureClassification | null;
+}
+
+/** How the verify run ends: a repair turn follows, or the execution ends with this outcome. */
+type VerifyVerdict = { kind: 'repair'; report: string } | { kind: 'end'; outcome: StageOutcome | null };
+
 /**
  * Drives the turns of one execution: provider turn, gates, correction turns, verify, and repair turns.
  * The loop state that survives correction and repair turns lives in private fields.
@@ -113,8 +135,11 @@ export class TurnLoop {
       if (g === 'continue') continue;
       if (g === 'stop') break;
       if (this.finishWithoutVerify(it)) break;
-      const v = await this.verifyAndRepair(it);
-      if (v === 'stop') break;
+      const verified = await this.verifyAndRepair(it);
+      if (verified !== null) {
+        it = verified;
+        break;
+      }
     }
     return this.result(it);
   }
@@ -214,102 +239,83 @@ export class TurnLoop {
   }
 
   // The artifact and completion-output gates. Fresh turns and resumed saved replies both run them.
-  private checkOutputs(reply: StageOutcome, gates: Gates | null): GateFailure | null {
+  private checkOutputs(reply: StageOutcome): OutputCheck {
     const { stage, artifactName, context, store } = this;
+    let gates: Partial<Gates> = {};
     if (stage !== null && artifactName && reply.status === 'complete') {
       const missing = stageArtifactsFor(stage, reply.decision ?? null)
         .filter((item) => item.required && !nonemptyArtifact(path.join(context.artifactDirectory, item.file)))
         .map((item) => item.file);
       const detail = `Stage artifact missing or empty: ${missing.join(', ')}.`;
       if (missing.length > 0) {
-        if (gates) gates.artifact = { state: 'failed', reason: detail };
-        return { kind: 'stage_output', errorKind: 'artifact', detail };
+        return {
+          failure: { kind: 'stage_output', errorKind: 'artifact', detail },
+          gates: { artifact: { state: 'failed', reason: detail } },
+        };
       }
-      if (gates) gates.artifact = { state: 'passed' };
+      gates = { artifact: { state: 'passed' } };
     }
     if (isWorkflowV2(frozenDocument(context))) {
-      if (gates) gates.completion_outputs = { state: 'not-applicable' };
-      return null;
+      return { failure: null, gates: { ...gates, completion_outputs: { state: 'not-applicable' } } };
     }
     const missing = store.missingCompletionOutputs(context, reply);
     if (missing.length > 0) {
       const detail = `Completion outputs missing or empty: ${missing.join(', ')}.`;
-      if (gates) gates.completion_outputs = { state: 'failed', reason: detail };
-      return { kind: 'stage_output', errorKind: 'completion_outputs', detail };
+      return {
+        failure: { kind: 'stage_output', errorKind: 'completion_outputs', detail },
+        gates: { ...gates, completion_outputs: { state: 'failed', reason: detail } },
+      };
     }
-    if (gates) gates.completion_outputs = { state: 'passed' };
-    return null;
+    return { failure: null, gates: { ...gates, completion_outputs: { state: 'passed' } } };
   }
 
   private takePendingVerify(): Iteration {
     const pending = this.pendingVerify!;
-    const it: Iteration = {
+    this.pendingVerify = null;
+    let { invokeError, gateFailure } = pending;
+    // A saved reply passes the same output gates a fresh one does before it is accepted.
+    if (invokeError === null && gateFailure === null && pending.outcome !== null) {
+      const bad = this.checkOutputs(pending.outcome).failure;
+      if (bad !== null) {
+        gateFailure = bad;
+        invokeError = bad.detail;
+      }
+    }
+    return {
       responseText: pending.responseText,
       outcome: pending.outcome,
-      invokeError: pending.invokeError,
-      gateFailure: pending.gateFailure,
+      invokeError,
+      gateFailure,
       eligible: true,
       pendingGate: true,
       needsVerify: false,
     };
-    this.pendingVerify = null;
-    // A saved reply passes the same output gates a fresh one does before it is accepted.
-    if (it.invokeError === null && it.gateFailure === null && it.outcome !== null) {
-      const bad = this.checkOutputs(it.outcome, null);
-      if (bad !== null) {
-        it.gateFailure = bad;
-        it.invokeError = bad.detail;
-      }
-    }
-    return it;
   }
 
   private async freshTurn(): Promise<Iteration> {
-    const it: Iteration = {
-      responseText: '',
-      outcome: null,
-      invokeError: null,
-      gateFailure: null,
-      eligible: true,
-      pendingGate: false,
-      needsVerify: false,
-    };
-    const fresh = await this.invokeProviderTurn(it);
-    this.evaluateGates(it, fresh);
-    this.emitTurnEvents(it, fresh);
-    this.persistTurn(it, fresh);
-    this.writeTurnDiagnostics(it, fresh);
-    return it;
+    const invoked = await this.invokeProviderTurn();
+    const evaluated = this.evaluateGates(invoked.iteration, invoked.fresh);
+    this.emitTurnEvents(evaluated.iteration, evaluated.fresh);
+    const persisted = this.persistTurn(evaluated.iteration, evaluated.fresh);
+    const iteration: Iteration = { ...evaluated.iteration, needsVerify: persisted.needsVerify };
+    this.writeTurnDiagnostics(iteration, {
+      ...evaluated.fresh,
+      modelResponded: persisted.modelResponded,
+      recordedClassification: persisted.recordedClassification,
+    });
+    return iteration;
   }
 
   // Signal-file cleanup, the provider turn, and the exit-only/candidate/eligibility computation.
-  private async invokeProviderTurn(it: Iteration): Promise<FreshTurn> {
-    const { record, store, model, profile, workspacePath } = this;
+  private async invokeProviderTurn(): Promise<GateEvaluation> {
+    const { record, model, profile, workspacePath } = this;
     // A request file left by an earlier turn must not be read as a new question. The
     // correction turn keeps the invalid file so the agent can repair it.
     if (!this.keepFile) rmSync(this.signalFile, { force: true });
     this.keepFile = false;
-    let turnResult: TurnResult;
-    try {
-      turnResult = await this.runTurn({
-        client: this.client,
-        model,
-        workspace: workspacePath,
-        prompt: this.currentPrompt,
-        agentId: this.currentAgentId,
-        newSession: this.currentSession,
-        options: this.resolvedOptions,
-        eventReporter: this.eventReporter,
-        store,
-        context: this.context,
-        turn: this.turn,
-      });
-    } catch (error) {
-      return this.markCancelled(error);
-    }
-    const { argv, usage, source: parsedSource, exitCode } = turnResult;
-    it.responseText = turnResult.responseText;
-    it.invokeError = turnResult.invokeError;
+    const turnResult = await this.callProvider();
+    const { argv, usage, source: parsedSource, exitCode, responseText } = turnResult;
+    let { invokeError } = turnResult;
     this.classification = turnResult.classification;
     const { classification } = this;
     // An abnormal provider turn leaves a record whatever the gates decide: a failed start or
@@ -331,80 +337,118 @@ export class TurnLoop {
     record.model = model;
     record.options = profile;
     record.workspace = workspacePath;
-    it.outcome = null;
     // A provider that does not attest the source of its text is trusted only on a clean exit.
     const source: ResponseSource = parsedSource ?? (classification === null ? 'model' : 'none');
     const exitOnly = classification?.origin === 'exit-only';
     // A non-zero exit alone does not decide the turn. A reply the model wrote still goes
     // through every gate an exit-0 turn passes; the provider's own error text never does.
-    const candidate = exitOnly && source === 'model' && it.responseText.trim() !== '';
+    const candidate = exitOnly && source === 'model' && responseText.trim() !== '';
     // Only a reply the model wrote can be corrected: no start failure, timeout or provider verdict.
-    it.eligible = candidate || (classification === null && exitCode === 0 && turnResult.failure === undefined);
-    const exitMessage = it.invokeError;
+    const eligible = candidate || (classification === null && exitCode === 0 && turnResult.failure === undefined);
+    const exitMessage = invokeError;
     let anomalyReason: string | null = null;
     if (candidate) {
-      it.invokeError = null;
+      invokeError = null;
     } else if (exitOnly) {
-      anomalyReason = it.responseText.trim() === '' ? 'no reply' : 'reply is not model output';
-      it.invokeError = it.responseText.trim() === '' ? exitMessage : it.responseText;
+      anomalyReason = responseText.trim() === '' ? 'no reply' : 'reply is not model output';
+      invokeError = responseText.trim() === '' ? exitMessage : responseText;
     }
     // The turn event follows the provider verdict only; later gates never rename it.
-    const turnError = it.invokeError;
+    const turnError = invokeError;
     return {
-      turnResult,
-      parsedSource,
-      source,
-      recordsTurn,
-      exitOnly,
-      candidate,
-      exitMessage,
-      anomalyReason,
-      turnError,
-      gates,
-      turnDetails,
-      modelResponded: false,
-      recordedClassification: null,
+      iteration: {
+        responseText,
+        outcome: null,
+        invokeError,
+        gateFailure: null,
+        eligible,
+        pendingGate: false,
+        needsVerify: false,
+      },
+      fresh: {
+        turnResult,
+        parsedSource,
+        source,
+        recordsTurn,
+        exitOnly,
+        candidate,
+        exitMessage,
+        anomalyReason,
+        turnError,
+        gates,
+        turnDetails,
+        modelResponded: false,
+        recordedClassification: null,
+      },
     };
   }
 
+  // The provider turn. A cancellation marks the execution cancelled and is rethrown.
+  private async callProvider(): Promise<TurnResult> {
+    try {
+      return await this.runTurn({
+        client: this.client,
+        model: this.model,
+        workspace: this.workspacePath,
+        prompt: this.currentPrompt,
+        agentId: this.currentAgentId,
+        newSession: this.currentSession,
+        options: this.resolvedOptions,
+        eventReporter: this.eventReporter,
+        store: this.store,
+        context: this.context,
+        turn: this.turn,
+      });
+    } catch (error) {
+      return this.markCancelled(error);
+    }
+  }
+
   // Outcome resolution, the artifact and completion-output gates, and candidate rejection.
-  private evaluateGates(it: Iteration, fresh: FreshTurn): void {
-    const { gates } = fresh;
-    if (it.invokeError === null) {
+  private evaluateGates(it: Iteration, fresh: FreshTurn): GateEvaluation {
+    let { outcome, invokeError, gateFailure } = it;
+    let gates: Gates = { ...fresh.gates };
+    if (invokeError === null) {
       try {
-        it.outcome = resolveStageOutcome(it.responseText, {
+        outcome = resolveStageOutcome(it.responseText, {
           required: this.sessionId !== null, decisionValues: this.decisionValues, ask: this.ask, protocol: this.protocol, questionFile: this.questionFile, handoffFile: this.handoffFile,
         });
-        gates.outcome = { state: 'passed', ...(it.outcome === null ? {} : { status: it.outcome.status }) };
+        gates.outcome = { state: 'passed', ...(outcome === null ? {} : { status: outcome.status }) };
       } catch (error) {
-        it.gateFailure = classifyGateError(error);
+        gateFailure = classifyGateError(error);
         if (error instanceof QuestionFileError) {
           gates.outcome = { state: 'failed', reason: `question file unusable (${error.kind})` };
         } else if (error instanceof HandoffFileError) {
           gates.outcome = { state: 'failed', reason: `handoff file unusable (${error.kind})` };
         } else if (error instanceof Error) {
-          it.invokeError = error.message;
+          invokeError = error.message;
           gates.outcome = { state: 'failed', reason: truncateText(error.message) };
         } else throw error;
       }
     }
     if (this.artifactName === null) gates.artifact = { state: 'not-applicable' };
-    else if (gates.outcome.state !== 'not-evaluated' && it.outcome?.status !== 'complete') {
+    else if (gates.outcome.state !== 'not-evaluated' && outcome?.status !== 'complete') {
       gates.artifact = { state: 'not-applicable' };
     }
-    if (it.invokeError === null && it.gateFailure === null && it.outcome !== null) {
-      const bad = this.checkOutputs(it.outcome, gates);
-      if (bad !== null) {
-        it.gateFailure = bad;
-        it.invokeError = bad.detail;
+    if (invokeError === null && gateFailure === null && outcome !== null) {
+      const checked = this.checkOutputs(outcome);
+      gates = { ...gates, ...checked.gates };
+      if (checked.failure !== null) {
+        gateFailure = checked.failure;
+        invokeError = checked.failure.detail;
       }
     }
-    if (fresh.candidate && (it.invokeError !== null || it.gateFailure !== null)) {
+    let { anomalyReason, turnError } = fresh;
+    if (fresh.candidate && (invokeError !== null || gateFailure !== null)) {
       // Rejected: the error is the model text itself, the failed gate is the recorded reason.
-      fresh.anomalyReason = it.invokeError ?? `${it.gateFailure!.errorKind}: ${it.gateFailure!.detail}`;
-      it.invokeError = it.responseText;
-      fresh.turnError = it.invokeError;
+      anomalyReason = invokeError ?? `${gateFailure!.errorKind}: ${gateFailure!.detail}`;
+      invokeError = it.responseText;
+      turnError = invokeError;
     }
+    return {
+      iteration: { ...it, outcome, invokeError, gateFailure },
+      fresh: { ...fresh, gates, anomalyReason, turnError },
+    };
   }
 
   // Turn completed or failed, quota, and exit anomaly events. Emitted before persistTurn resets the classification.
@@ -449,30 +493,31 @@ export class TurnLoop {
   }
 
   // Status, conversation history, saved response, and the verify turn outcome.
-  private persistTurn(it: Iteration, fresh: FreshTurn): void {
+  private persistTurn(it: Iteration, fresh: FreshTurn): PersistVerdict {
     const { record, store, context, verifyCommands } = this;
     const { responseText } = it;
-    it.needsVerify =
+    const needsVerify =
       verifyCommands.length > 0 && it.invokeError === null && it.outcome?.status === 'complete';
     const finishedStatus = it.invokeError === null && it.gateFailure === null ? 'completed' : 'failed';
-    record.status = it.needsVerify ? 'running' : finishedStatus;
+    record.status = needsVerify ? 'running' : finishedStatus;
     // Only a real model reply belongs in the conversation. Error text, and the reply of a
     // turn the provider itself reported as failed, stay out, so a resume cannot replay
     // them as if the model had said them.
-    fresh.modelResponded =
+    const modelResponded =
       responseText !== '' && fresh.source === 'model' && (this.classification === null || fresh.exitOnly);
-    fresh.recordedClassification = this.classification;
+    const recordedClassification = this.classification;
     // An accepted turn is no longer a failure: nothing downstream may see its classification.
     if (fresh.exitOnly && fresh.anomalyReason === null) this.classification = null;
-    if (fresh.modelResponded) record.history.push({ role: 'assistant', content: responseText });
+    if (modelResponded) record.history.push({ role: 'assistant', content: responseText });
     store.save(record, context);
-    if (fresh.modelResponded) {
+    if (modelResponded) {
       store.saveResponse(context, responseText);
       if (verifyCommands.length > 0) store.saveTurnResponse(context, this.turn, responseText);
     }
     if (verifyCommands.length > 0 && it.outcome?.status === 'complete') {
       store.saveTurnOutcome(context, this.turn, it.outcome);
     }
+    return { needsVerify, modelResponded, recordedClassification };
   }
 
   // The only writer of diagnostics.json: once this turn's gates have run, before any verify or follow-up turn.
@@ -517,10 +562,9 @@ export class TurnLoop {
       if (this.queueCorrection(it.gateFailure)) return 'continue';
       this.exhaust(it.gateFailure);
       if (it.gateFailure.kind === 'question_file' || it.gateFailure.kind === 'handoff') {
-        it.invokeError = this.failureDetail;
         record.status = 'failed';
         store.save(record, context);
-        store.saveExecution(context, record, 'failed', it.invokeError, null, false, this.finalFields(this.outcomeFields()));
+        store.saveExecution(context, record, 'failed', this.failureDetail, null, false, this.finalFields(this.outcomeFields()));
         return 'stop';
       }
     }
@@ -559,15 +603,16 @@ export class TurnLoop {
     return false;
   }
 
-  private async verifyAndRepair(it: Iteration): Promise<Step> {
-    const reportPath = await this.runVerify(it);
-    if (reportPath === null) return 'stop';
-    this.queueRepair(reportPath);
-    return 'proceed';
+  // Null when a repair turn is queued and the loop goes on; the final iteration when the execution ends.
+  private async verifyAndRepair(it: Iteration): Promise<Iteration | null> {
+    const verdict = await this.runVerify(it);
+    if (verdict.kind === 'end') return { ...it, outcome: verdict.outcome };
+    this.queueRepair(verdict.report);
+    return null;
   }
 
-  // Runs the verify commands. Returns the report path when a repair turn follows, null when the execution ends.
-  private async runVerify(it: Iteration): Promise<string | null> {
+  // Runs the verify commands. A repair turn follows a failed run; every other result ends the execution.
+  private async runVerify(it: Iteration): Promise<VerifyVerdict> {
     const { record, store, context, eventReporter, verifyCommands, stage, maxVerify } = this;
     store.clearProcessEndpoint(context);
     eventReporter.emit('verify.started', `${verifyCommands.length} command(s)`, {
@@ -617,7 +662,7 @@ export class TurnLoop {
       record.status = 'failed';
       store.save(record, context);
       store.saveExecution(context, record, 'failed', result.infraError, null, false, this.finalFields(this.extraFields()));
-      return null;
+      return { kind: 'end', outcome: it.outcome };
     }
     if (result.passed) {
       eventReporter.emit('verify.passed', 'all commands passed', { turn: this.turn, report: lastReport });
@@ -625,7 +670,7 @@ export class TurnLoop {
       store.save(record, context);
       store.saveExecution(context, record, 'completed', null, it.outcome, false, this.finalFields(this.extraFields()));
       store.publishVerifyReport(context, this.turn);
-      return null;
+      return { kind: 'end', outcome: it.outcome };
     }
     this.red += 1;
     const failed = result.commands.find((item) => item.status === 'fail' || item.status === 'timed_out');
@@ -651,11 +696,10 @@ export class TurnLoop {
         false,
         this.finalFields(this.extraFields(this.failureReason)),
       );
-      it.outcome = null;
-      return null;
+      return { kind: 'end', outcome: null };
     }
     store.saveExecutionProgress(context, record, this.extraFields() ?? {});
-    return lastReport;
+    return { kind: 'repair', report: lastReport };
   }
 
   // Queues the repair turn that follows a failed verify run.

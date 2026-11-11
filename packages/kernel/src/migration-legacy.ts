@@ -5,7 +5,8 @@
  */
 
 export type MigrationBody = Record<string, unknown>;
-export type MigrationFn = (body: MigrationBody) => void;
+/** A step returns the migrated body; it never changes the body it receives. */
+export type MigrationFn = (body: MigrationBody) => MigrationBody;
 export type MigrationKind = 'model' | 'role' | 'stage';
 
 const CODEX_REASONING_OPTION = 'model_reasoning_effort';
@@ -18,24 +19,23 @@ function nonempty(value: unknown): value is string {
 /** Renames the generic `thinking` setting to the CLI's own option, never overwriting one already set. */
 export function moveThinkingTo(option: string): MigrationFn {
   return (body) => {
-    const {options} = body;
-    if ('options' in body && !isRecord(options)) return;
-    if (isRecord(options) && 'thinking' in options) {
-      const value = options.thinking;
-      if (nonempty(value)) {
-        if (!nonempty(options[option])) options[option] = value.trim();
-        delete options.thinking;
-      }
+    if ('options' in body && !isRecord(body.options)) return body;
+    let options = isRecord(body.options) ? { ...body.options } : null;
+    const nested = options?.thinking;
+    if (options !== null && 'thinking' in options && nonempty(nested)) {
+      if (!nonempty(options[option])) options[option] = nested.trim();
+      delete options.thinking;
     }
-    const value = body.thinking;
-    if (!nonempty(value)) return;
-    let record = isRecord(body.options) ? body.options : null;
-    if (record === null) {
-      record = {};
-      body.options = record;
+    const scalar = body.thinking;
+    const hasScalar = nonempty(scalar);
+    if (hasScalar) {
+      options ??= {};
+      if (!nonempty(options[option])) options[option] = scalar.trim();
     }
-    if (!nonempty(record[option])) record[option] = value.trim();
-    delete body.thinking;
+    if (options === null) return body;
+    const moved: MigrationBody = { ...body, options };
+    if (hasScalar) delete moved.thinking;
+    return moved;
   };
 }
 
@@ -67,57 +67,62 @@ export function applyLegacyMigration(
   provider: string | null,
   version: number,
   body: MigrationBody,
-): void {
-  if (provider === null) return;
+): MigrationBody {
+  if (provider === null) return body;
   const step = LEGACY_MIGRATIONS[provider.trim().toLowerCase()]?.[kind]?.[version];
-  if (step !== undefined) step(body);
+  return step === undefined ? body : step(body);
 }
 
 export function migrateModels(
   config: Record<string, unknown>,
   version: number,
   context: Readonly<Record<string, unknown>>,
-): void {
+): Record<string, unknown> {
   const {models} = config;
-  if (!isRecord(models)) return;
-  for (const [name, body] of Object.entries(models)) {
-    if (!isRecord(body)) continue;
-    const provider = providerName(body.provider) ?? modelProvider(context, name);
-    applyLegacyMigration('model', provider, version, body);
-  }
+  if (!isRecord(models)) return config;
+  const migrated = Object.fromEntries(
+    Object.entries(models).map(([name, body]) => {
+      if (!isRecord(body)) return [name, body];
+      const provider = providerName(body.provider) ?? modelProvider(context, name);
+      return [name, applyLegacyMigration('model', provider, version, body)];
+    }),
+  );
+  return { ...config, models: migrated };
 }
 
 export function migrateRoles(
   config: Record<string, unknown>,
   version: number,
   context: Readonly<Record<string, unknown>>,
-): void {
+): Record<string, unknown> {
   const {roles} = config;
-  if (!isRecord(roles)) return;
-  for (const [name, body] of Object.entries(roles)) {
-    if (!isRecord(body)) continue;
-    const effectiveRoles = context.roles;
-    const effectiveRole = isRecord(effectiveRoles) ? effectiveRoles[name] : null;
-    const provider = roleProvider(
-      context,
-      Object.hasOwn(body, 'default_model') || Object.hasOwn(body, 'agent') || !isRecord(effectiveRole) ? body : effectiveRole,
-    );
-    applyLegacyMigration('role', provider, version, body);
-  }
+  if (!isRecord(roles)) return config;
+  const effectiveRoles = context.roles;
+  const migrated = Object.fromEntries(
+    Object.entries(roles).map(([name, body]) => {
+      if (!isRecord(body)) return [name, body];
+      const effectiveRole = isRecord(effectiveRoles) ? effectiveRoles[name] : null;
+      const provider = roleProvider(
+        context,
+        Object.hasOwn(body, 'default_model') || Object.hasOwn(body, 'agent') || !isRecord(effectiveRole) ? body : effectiveRole,
+      );
+      return [name, applyLegacyMigration('role', provider, version, body)];
+    }),
+  );
+  return { ...config, roles: migrated };
 }
 
 export function migrateStages(
   workflow: Record<string, unknown>,
   config: Readonly<Record<string, unknown>>,
   version: number,
-): void {
+): Record<string, unknown> {
   const {stages} = workflow;
-  if (!Array.isArray(stages)) return;
-  for (const stage of stages) {
-    if (!isRecord(stage)) continue;
-    const provider = stageProvider(config, stage);
-    applyLegacyMigration('stage', provider, version, stage);
-  }
+  if (!Array.isArray(stages)) return workflow;
+  const migrated = stages.map((stage: unknown) =>
+    isRecord(stage) ? applyLegacyMigration('stage', stageProvider(config, stage), version, stage) : stage,
+  );
+  return { ...workflow, stages: migrated };
 }
 
 /** Reads the provider of a role's agent in either document shape: `agent` or the earlier `default_model`. */

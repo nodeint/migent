@@ -10,12 +10,12 @@ import { printError } from './display.js';
 import { PromptCancelled } from './errors.js';
 import { EXIT_CANCELLED, EXIT_CONFIG } from './exits.js';
 import { cliHooks } from './hooks.js';
-import { type CliStatus,createProgram } from './program.js';
+import { CliStatus, createProgram } from './program.js';
 import { setInvocationCwd } from './workspace.js';
 
 export async function main(argv: string[] = process.argv.slice(2), cwd?: string): Promise<number> {
   setInvocationCwd(cwd);
-  const status: CliStatus = { code: 0, handled: false };
+  const status = new CliStatus();
   const authoring = authoringCommandOf(argv);
   try {
     const program = createProgram(status, { quietErrors: authoring !== null });

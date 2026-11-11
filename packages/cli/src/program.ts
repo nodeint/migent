@@ -18,7 +18,7 @@ import { installSkill, printSkillPath, type SkillOptions,updateSkill } from './c
 import { runUpdate } from './commands/update.js';
 import { runRegister, runRemove, runWorkspaceList } from './commands/workspace-registry.js';
 import { printError } from './display.js';
-import { exitText, LOOP_EXITS, PREFLIGHT_EXIT, ROLE_EXITS, STAGE_EXITS } from './exits.js';
+import { EXIT_CONFIG, exitText, LOOP_EXITS, PREFLIGHT_EXIT, ROLE_EXITS, STAGE_EXITS } from './exits.js';
 import { runMigrate } from './migrate.js';
 import { collect, optionalText, rawText, stringList } from './text.js';
 import { PACKAGE_VERSION } from './version.js';
@@ -33,9 +33,29 @@ const VERBOSE_HELP =
 const PROVIDER_LIST_REMOVED =
   'provider list has been removed. Use `migent get clients`, `migent get models`, `migent get options`, or `migent get efforts`.';
 
-export interface CliStatus {
-  code: number;
-  handled: boolean;
+/** Whether a command action ran, and the exit code it chose. The actions report through its methods. */
+export class CliStatus {
+  private exitCode = 0;
+  private isHandled = false;
+
+  public get code(): number {
+    return this.exitCode;
+  }
+
+  public get handled(): boolean {
+    return this.isHandled;
+  }
+
+  /** A command ran and chose its exit code. */
+  public finish(code: number): void {
+    this.isHandled = true;
+    this.exitCode = code;
+  }
+
+  /** A command was invoked without what it needs, so its help was printed. */
+  public showedHelp(): void {
+    this.finish(EXIT_CONFIG);
+  }
 }
 
 export function createProgram(status: CliStatus, options: { quietErrors?: boolean } = {}): Command {
@@ -61,8 +81,7 @@ export function createProgram(status: CliStatus, options: { quietErrors?: boolea
       program.error(`error: unknown command '${unknown}'`, { code: 'commander.unknownCommand' });
     }
     program.outputHelp();
-    status.handled = true;
-    status.code = 2;
+    status.showedHelp();
   });
   return program;
 }
@@ -110,8 +129,7 @@ ${exitText(['Exit 0 on success, including an empty list.', 'Exit 2 on a usage or
     .action((type: string | undefined, name: string | undefined, options: OptionValues, command: Command) => {
       if (type === undefined) {
         command.outputHelp();
-        status.handled = true;
-        status.code = 2;
+        status.showedHelp();
         return;
       }
       return settle(status, () =>
@@ -666,15 +684,13 @@ function outputFlags(options: OptionValues): { itemProgress: boolean } {
 function showHelpWhenBare(status: CliStatus, command: Command): void {
   command.action(() => {
     command.outputHelp();
-    status.handled = true;
-    status.code = 2;
+    status.showedHelp();
   });
 }
 
 function settle(status: CliStatus, action: () => number | Promise<number>): Promise<void> {
   return Promise.resolve(action()).then((code) => {
-    status.handled = true;
-    status.code = code;
+    status.finish(code);
   });
 }
 

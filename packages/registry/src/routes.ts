@@ -58,15 +58,15 @@ export interface WorkspaceRecords {
 const noop = (): void => undefined;
 
 export class Call {
-  public method: string;
-  public path: string;
-  public store: WorkspaceRecords;
-  public token: string;
-  public instanceId: string;
-  public authorization: string | null;
-  public body: Buffer | null;
-  public beforeStore: () => void;
-  public params: Record<string, string>;
+  public readonly method: string;
+  public readonly path: string;
+  public readonly store: WorkspaceRecords;
+  public readonly token: string;
+  public readonly instanceId: string;
+  public readonly authorization: string | null;
+  public readonly body: Buffer | null;
+  public readonly beforeStore: () => void;
+  public readonly params: Record<string, string>;
 
   constructor(options: {
     method: string;
@@ -88,6 +88,21 @@ export class Call {
     this.body = options.body ?? null;
     this.beforeStore = options.beforeStore ?? noop;
     this.params = options.params ?? {};
+  }
+
+  /** The same request with the store a handler may use and the path parameters its route matched. */
+  public routed(store: WorkspaceRecords, params: Record<string, string>): Call {
+    return new Call({
+      method: this.method,
+      path: this.path,
+      store,
+      token: this.token,
+      instanceId: this.instanceId,
+      authorization: this.authorization,
+      body: this.body,
+      beforeStore: this.beforeStore,
+      params,
+    });
   }
 
   public jsonObject(allowed: Set<string>, required: Set<string>): Record<string, unknown> {
@@ -272,7 +287,7 @@ export class Router {
   }
 
   public async dispatch(call: Call): Promise<Result> {
-    call.store = new GatedStore(call.store, call.beforeStore);
+    const gatedStore = new GatedStore(call.store, call.beforeStore);
     const matched: [Route, Record<string, string>][] = [];
     for (const route of this.routes) {
       const params = matchPath(route.pattern, call.path);
@@ -285,10 +300,9 @@ export class Router {
       return failure(405, 'method_not_allowed', 'Method is not allowed.');
     }
     const [route, params] = chosen[0]!;
-    call.params = params;
     if (route.auth !== 'health' && authState(call.authorization, call.token) !== 'ok') return unauthorized();
     try {
-      return await route.handler(call);
+      return await route.handler(call.routed(gatedStore, params));
     } catch (error) {
       if (error instanceof HttpError) return failure(error.status, error.code, error.message);
       const mapped = failureForStore(error);

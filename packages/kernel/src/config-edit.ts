@@ -136,20 +136,17 @@ export function upsertAgent(
   if (!exists && client === null) {
     throw new ConfigEditError('Pass --client and --model to add an agent.');
   }
-  let body: Record<string, unknown>;
+  let body: Record<string, unknown> = {};
   if (exists) {
     const current = agents[key];
     if (!isRecord(current)) throw new ConfigurationError(`Missing or invalid agents.${key}.`);
     body = current;
-  } else {
-    body = {};
-    agents[key] = body;
   }
   if (client !== null && model !== null) {
-    setAgentClient(body, plain(client, '--client'));
-    body.model = plain(model, '--model');
+    body = { ...withAgentClient(body, plain(client, '--client')), model: plain(model, '--model') };
   }
-  if (options !== UNSET) applyAgentOptions(body, key, options);
+  if (options !== UNSET) body = withAgentOptions(body, key, options);
+  agents[key] = body;
   return describeChange(config, updated, args.workflows ?? [], { registry: args.registry });
 }
 
@@ -195,8 +192,8 @@ export function placeRoleAgent(
   const workflows = args.workflows ?? [];
   const updated = copyConfig(config);
   const agents = agentsOf(updated);
-  const definition: Record<string, unknown> = { client: { type: clientName }, model: modelId };
-  if (options !== UNSET) applyAgentOptions(definition, role, options);
+  let definition: Record<string, unknown> = { client: { type: clientName }, model: modelId };
+  if (options !== UNSET) definition = withAgentOptions(definition, role, options);
   let match = matchingAgentName(updated, {
     client: clientName, model: modelId, options: optionsDict(definition, role),
   }, args.registry);
@@ -439,21 +436,26 @@ function signature(body: unknown): unknown[] {
   return [body.model ?? null, client.type ?? null, rendered];
 }
 
-function setAgentClient(body: Record<string, unknown>, type: string): void {
+function withAgentClient(body: Readonly<Record<string, unknown>>, type: string): Record<string, unknown> {
   const client = isRecord(body.client) ? body.client : {};
   const { type: previousType, ...rest } = client;
-  body.client = { type, ...rest };
+  return { ...body, client: { type, ...rest } };
 }
 
-function applyAgentOptions(body: Record<string, unknown>, key: string, updates: unknown): void {
+function withAgentOptions(
+  body: Readonly<Record<string, unknown>>,
+  key: string,
+  updates: unknown,
+): Record<string, unknown> {
   if (!isRecord(updates)) throw new ConfigEditError('Options must be a mapping.');
   const client = optionRecord(body.client, `Missing or invalid agents.${key}.client.`);
-  const options = optionRecord(client.options, `Missing or invalid agents.${key}.client.options.`);
-  writeOptions(options, updates);
-  if (Object.keys(options).length > 0) client.options = options;
-  else delete client.options;
-  if (Object.keys(client).length > 0) body.client = client;
-  else delete body.client;
+  const options = withOptionUpdates(optionRecord(client.options, `Missing or invalid agents.${key}.client.options.`), updates);
+  const nextClient = Object.keys(options).length > 0 ? { ...client, options } : omitKey(client, 'options');
+  return Object.keys(nextClient).length > 0 ? { ...body, client: nextClient } : omitKey(body, 'client');
+}
+
+function omitKey(record: Readonly<Record<string, unknown>>, key: string): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(record).filter(([name]) => name !== key));
 }
 
 function optionRecord(value: unknown, field: string): Record<string, unknown> {
@@ -462,16 +464,21 @@ function optionRecord(value: unknown, field: string): Record<string, unknown> {
   return value;
 }
 
-function writeOptions(options: Record<string, unknown>, updates: Record<string, unknown>): void {
+function withOptionUpdates(
+  options: Readonly<Record<string, unknown>>,
+  updates: Readonly<Record<string, unknown>>,
+): Record<string, unknown> {
+  const next = { ...options };
   for (const [name, value] of Object.entries(updates)) {
     if (name.trim() === '') throw new ConfigEditError('Option name is required.');
     if (value === null) {
-      delete options[name];
+      delete next[name];
       continue;
     }
     if (typeof value !== 'string' || value.trim() === '') throw new ConfigEditError(`${name} is required.`);
-    options[name] = value.trim();
+    next[name] = value.trim();
   }
+  return next;
 }
 
 function copyConfig(config: Record<string, unknown>): Record<string, unknown> {

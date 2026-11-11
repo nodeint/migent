@@ -6,7 +6,7 @@ import { stringify } from 'yaml';
 import { renderAuthoringYaml } from './authoring.js';
 import { ConfigurationError } from './errors.js';
 import { liftConfigAgents } from './migration-config.js';
-import { applyEdits, ConfigEditError, deepCopyRecord, deepEqual, type Edit, splitComment, splitLines, yamlScalar } from './yaml-patch.js';
+import { applyEdits, ConfigEditError, deepEqual, type Edit, splitComment, splitLines, yamlScalar } from './yaml-patch.js';
 
 export interface Block {
   key: string;
@@ -19,25 +19,23 @@ export interface Block {
 
 export function patchConfigText(original: string, updated: Record<string, unknown>): string {
   if (original.includes('\t')) throw new ConfigEditError('Cannot edit a config that uses tabs.');
-  let current = parseYamlDocument(original);
+  const parsed = parseYamlDocument(original);
+  if (!isRecord(parsed)) throw new ConfigEditError('Invalid configuration: expected a mapping.');
+  // Lift a schema_version 4 document to the v5 structure first, so the sync below sees one shape.
+  const legacy = isLegacyShape(parsed);
+  const source = legacy ? upgradeConfigText(original, parsed) : original;
+  const target = legacy ? liftConfigAgents(updated).document : updated;
+  const current = legacy ? parseYamlDocument(source) : parsed;
   if (!isRecord(current)) throw new ConfigEditError('Invalid configuration: expected a mapping.');
-  if (isLegacyShape(current)) {
-    // Lift a schema_version 4 document to the v5 structure first, so the sync below sees one shape.
-    original = upgradeConfigText(original, current);
-    updated = deepCopyRecord(updated);
-    liftConfigAgents(updated);
-    current = parseYamlDocument(original);
-    if (!isRecord(current)) throw new ConfigEditError('Invalid configuration: expected a mapping.');
-  }
-  const lines = splitLines(original);
+  const lines = splitLines(source);
   const unit = indentUnit(lines);
   const blocks = parseBlocks(lines, unit);
   const edits: Edit[] = [];
-  syncSchemaVersion(lines, updated, edits);
-  syncAgents(lines, blocks, current, updated, unit, edits);
-  syncRoles(lines, blocks, current, updated, unit, edits);
-  const text = applyEdits(original, lines, edits);
-  if (!deepEqual(parseYamlDocument(text), updated)) {
+  syncSchemaVersion(lines, target, edits);
+  syncAgents(lines, blocks, current, target, unit, edits);
+  syncRoles(lines, blocks, current, target, unit, edits);
+  const text = applyEdits(source, lines, edits);
+  if (!deepEqual(parseYamlDocument(text), target)) {
     throw new ConfigEditError('Config text does not match the updated document.');
   }
   return text;
@@ -471,8 +469,7 @@ export function upgradeConfigText(original: string, parsed?: Record<string, unkn
   if (original.includes('\t')) throw new ConfigEditError('Cannot edit a config that uses tabs.');
   const current = parsed ?? parseYamlDocument(original);
   if (!isRecord(current)) throw new ConfigEditError('Invalid configuration: expected a mapping.');
-  const expected = deepCopyRecord(current);
-  liftConfigAgents(expected);
+  const expected = liftConfigAgents(current).document;
   let text: string;
   try {
     text = liftConfigLines(original);

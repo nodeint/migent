@@ -1,0 +1,358 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`fold: blocked then resumed, with latest decision and outputs 1`] = `
+"{
+  "session_id": "s1",
+  "status": "blocked",
+  "title": "Manifest title",
+  "workflow_id": "plan",
+  "workflow_path": ".migent/workflows/plan.yaml",
+  "task": "Do it",
+  "created_at": "2026-01-01T00:00:00Z",
+  "prior_session_id": "p0",
+  "updated_at": "2026-01-01T00:00:20Z",
+  "handoff": {
+    "from": "x"
+  },
+  "task_sha256": "abc",
+  "baseline": {
+    "commit": "deadbeef",
+    "captured_at": "2026-01-01T00:00:02Z"
+  },
+  "latest_provider_event": {
+    "v": 2,
+    "seq": 5,
+    "event": "provider.stage_started",
+    "timestamp": "2026-01-01T00:00:11Z"
+  },
+  "latest_execution_id": "e1",
+  "latest_execution_status": "blocked",
+  "latest_stage_id": "draft",
+  "latest_decision": "revise",
+  "terminal_execution_id": "e1",
+  "blocked_by_execution_id": "e1",
+  "blocked_by_execution_ids": [
+    "e1"
+  ],
+  "blocked_by_stage_id": "draft",
+  "blocker": "need key"
+}"
+`;
+
+exports[`fold: blocked then resumed, with latest decision and outputs 2`] = `
+"{
+  "session_id": "s1",
+  "status": "active",
+  "title": "Manifest title",
+  "workflow_id": "plan",
+  "workflow_path": ".migent/workflows/plan.yaml",
+  "task": "Do it",
+  "created_at": "2026-01-01T00:00:00Z",
+  "prior_session_id": "p0",
+  "updated_at": "2026-01-01T00:00:32Z",
+  "handoff": {
+    "from": "x"
+  },
+  "task_sha256": "abc",
+  "baseline": {
+    "commit": "deadbeef",
+    "captured_at": "2026-01-01T00:00:02Z"
+  },
+  "latest_provider_event": {
+    "v": 2,
+    "seq": 5,
+    "event": "provider.stage_started",
+    "timestamp": "2026-01-01T00:00:11Z"
+  },
+  "outputs": {
+    "plan": {
+      "path": "outputs/plan.md",
+      "source_execution_id": "e1",
+      "published_by_execution_id": "e1"
+    },
+    "extra.md": {
+      "path": "outputs/extra.md"
+    }
+  },
+  "revision_baselines": {
+    "draft": 2
+  },
+  "latest_execution_id": "e1",
+  "latest_execution_status": "blocked",
+  "latest_stage_id": "draft",
+  "latest_decision": "revise"
+}"
+`;
+
+exports[`fold: cancelled with a recorded reply, then skipped stages 1`] = `
+"{
+  "session_id": "s1",
+  "status": "cancelled",
+  "title": "Manifest title",
+  "workflow_id": "plan",
+  "workflow_path": ".migent/workflows/plan.yaml",
+  "task": "Do it",
+  "created_at": "2026-01-01T00:00:00Z",
+  "prior_session_id": "p0",
+  "updated_at": "2026-01-01T00:00:20Z",
+  "handoff": {
+    "from": "x"
+  },
+  "task_sha256": "abc",
+  "baseline": {
+    "commit": "deadbeef",
+    "captured_at": "2026-01-01T00:00:02Z"
+  },
+  "latest_provider_event": {
+    "v": 2,
+    "seq": 5,
+    "event": "provider.stage_started",
+    "timestamp": "2026-01-01T00:00:11Z"
+  },
+  "latest_execution_id": "e1",
+  "latest_execution_status": "cancelled",
+  "latest_stage_id": "draft",
+  "terminal_execution_id": "e1"
+}"
+`;
+
+exports[`fold: cancelled with a recorded reply, then skipped stages 2`] = `
+"{
+  "session_id": "s1",
+  "status": "active",
+  "title": "Manifest title",
+  "workflow_id": "plan",
+  "workflow_path": ".migent/workflows/plan.yaml",
+  "task": "Do it",
+  "created_at": "2026-01-01T00:00:00Z",
+  "prior_session_id": "p0",
+  "updated_at": "2026-01-01T00:00:40Z",
+  "handoff": {
+    "from": "x"
+  },
+  "task_sha256": "abc",
+  "baseline": {
+    "commit": "deadbeef",
+    "captured_at": "2026-01-01T00:00:02Z"
+  },
+  "latest_provider_event": {
+    "v": 2,
+    "seq": 5,
+    "event": "provider.stage_started",
+    "timestamp": "2026-01-01T00:00:11Z"
+  },
+  "latest_execution_id": "e1",
+  "latest_execution_status": "cancelled",
+  "latest_stage_id": "draft",
+  "skipped_stages": [
+    {
+      "stage_id": "extra",
+      "execution_id": "e2"
+    }
+  ]
+}"
+`;
+
+exports[`fold: manual completion and title record 1`] = `
+"{
+  "session_id": "s1",
+  "status": "completed",
+  "title": "Renamed",
+  "workflow_id": "plan",
+  "workflow_path": ".migent/workflows/plan.yaml",
+  "task": "Do it",
+  "created_at": "2026-01-01T00:00:00Z",
+  "prior_session_id": "p0",
+  "updated_at": "2026-01-01T00:01:00Z",
+  "handoff": {
+    "from": "x"
+  },
+  "task_sha256": "abc",
+  "baseline": {
+    "commit": "deadbeef",
+    "captured_at": "2026-01-01T00:00:02Z"
+  },
+  "latest_provider_event": {
+    "v": 2,
+    "seq": 5,
+    "event": "provider.stage_started",
+    "timestamp": "2026-01-01T00:00:11Z"
+  },
+  "latest_execution_id": "e1",
+  "latest_execution_status": "blocked",
+  "latest_stage_id": "draft",
+  "completion_method": "manual",
+  "manual_completion": {
+    "completed_at": "2026-01-01T00:01:00Z",
+    "from": "blocked"
+  }
+}"
+`;
+
+exports[`fold: question with recipient and file 1`] = `
+"{
+  "session_id": "s1",
+  "status": "question",
+  "title": "Manifest title",
+  "workflow_id": "plan",
+  "workflow_path": ".migent/workflows/plan.yaml",
+  "task": "Do it",
+  "created_at": "2026-01-01T00:00:00Z",
+  "prior_session_id": "p0",
+  "updated_at": "2026-01-01T00:00:20Z",
+  "handoff": {
+    "from": "x"
+  },
+  "task_sha256": "abc",
+  "baseline": {
+    "commit": "deadbeef",
+    "captured_at": "2026-01-01T00:00:02Z"
+  },
+  "latest_provider_event": {
+    "v": 2,
+    "seq": 5,
+    "event": "provider.stage_started",
+    "timestamp": "2026-01-01T00:00:11Z"
+  },
+  "latest_execution_id": "e1",
+  "latest_execution_status": "question",
+  "latest_stage_id": "draft",
+  "questions": [
+    {
+      "id": "1",
+      "question": "Which?",
+      "context": "Because",
+      "selection": "single",
+      "options": [
+        {
+          "id": "A",
+          "label": "A"
+        },
+        {
+          "id": "B",
+          "label": "B"
+        }
+      ],
+      "execution_id": "e1",
+      "stage_id": "draft",
+      "recipient": "human",
+      "file": "executions/e1/questions.json"
+    }
+  ]
+}"
+`;
+
+exports[`fold: running stage keeps its key order 1`] = `
+"{
+  "session_id": "s1",
+  "status": "active",
+  "title": "Manifest title",
+  "workflow_id": "plan",
+  "workflow_path": ".migent/workflows/plan.yaml",
+  "task": "Do it",
+  "created_at": "2026-01-01T00:00:00Z",
+  "prior_session_id": "p0",
+  "updated_at": "2026-01-01T00:00:11Z",
+  "handoff": {
+    "from": "x"
+  },
+  "task_sha256": "abc",
+  "baseline": {
+    "commit": "deadbeef",
+    "captured_at": "2026-01-01T00:00:02Z"
+  },
+  "latest_provider_event": {
+    "v": 2,
+    "seq": 5,
+    "event": "provider.stage_started",
+    "timestamp": "2026-01-01T00:00:11Z"
+  },
+  "latest_execution_id": "e1",
+  "latest_execution_status": "running",
+  "latest_stage_id": "draft",
+  "running_stages": [
+    {
+      "execution_id": "e1",
+      "stage_id": "draft",
+      "client": "codex",
+      "event": "provider.stage_started",
+      "summary": null,
+      "updated_at": "2026-01-01T00:00:11Z"
+    }
+  ]
+}"
+`;
+
+exports[`fold: schema 1 with a previous status 1`] = `
+"{
+  "session_id": "s1",
+  "status": "blocked",
+  "extra_key": 1,
+  "updated_at": "2026-01-01T00:00:20Z",
+  "title": "Manifest title",
+  "workflow_id": "plan",
+  "workflow_path": ".migent/workflows/plan.yaml",
+  "task": "Do it",
+  "created_at": "2026-01-01T00:00:00Z",
+  "prior_session_id": "p0",
+  "task_sha256": "abc",
+  "latest_provider_event": {
+    "v": 2,
+    "seq": 16,
+    "event": "provider.stage_started",
+    "timestamp": "2026-01-01T00:00:11Z"
+  },
+  "latest_execution_id": "e1",
+  "latest_execution_status": "blocked",
+  "latest_stage_id": "draft",
+  "latest_decision": "stop",
+  "terminal_execution_id": "e1",
+  "blocked_by_execution_id": "e1",
+  "blocked_by_execution_ids": [
+    "e1"
+  ],
+  "blocked_by_stage_id": "draft",
+  "blocker": "old"
+}"
+`;
+
+exports[`fold: schema 2 session.* events without an execution 1`] = `
+"{
+  "session_id": "s1",
+  "status": "active",
+  "title": "Manifest title",
+  "workflow_id": "plan",
+  "workflow_path": ".migent/workflows/plan.yaml",
+  "task": "Do it",
+  "created_at": "2026-01-01T00:00:00Z",
+  "prior_session_id": "p0",
+  "updated_at": "2026-01-01T00:00:50Z",
+  "handoff": {
+    "from": "x"
+  },
+  "task_sha256": "abc",
+  "baseline": {
+    "commit": "deadbeef",
+    "captured_at": "2026-01-01T00:00:02Z"
+  },
+  "latest_provider_event": {
+    "v": 2,
+    "seq": 5,
+    "event": "provider.stage_started",
+    "timestamp": "2026-01-01T00:00:11Z"
+  },
+  "latest_execution_id": "e1",
+  "latest_execution_status": "running",
+  "latest_stage_id": "draft",
+  "running_stages": [
+    {
+      "execution_id": "e1",
+      "stage_id": "draft",
+      "client": "codex",
+      "event": "provider.stage_started",
+      "summary": null,
+      "updated_at": "2026-01-01T00:00:11Z"
+    }
+  ]
+}"
+`;

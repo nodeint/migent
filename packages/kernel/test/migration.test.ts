@@ -65,8 +65,7 @@ function mapping(value: unknown): Record<string, unknown> {
 }
 
 test('v0 thinking follows the legacy provider and the document version advances', () => {
-  const config = loadYamlMapping(writeConfig(LEGACY));
-  const notes = migrateConfig(config);
+  const { document: config, notes } = migrateConfig(loadYamlMapping(writeConfig(LEGACY)));
   expect(notes[0]).toBe('schema_version -> 7');
   expect(mapping(mapping(mapping(config.agents).grok).client).options).toEqual({ 'reasoning-effort': 'medium' });
   expect(mapping(mapping(mapping(config.agents)['gpt-terra']).client).options).toEqual({
@@ -79,7 +78,7 @@ test('v0 thinking follows the legacy provider and the document version advances'
 
 test('current version is left alone', () => {
   const config = { schema_version: '7', agents: {}, roles: {} };
-  expect(migrateConfig(config)).toEqual([]);
+  expect(migrateConfig(config).notes).toEqual([]);
   expect(documentVersion(config)).toBe(SCHEMA_VERSION);
 });
 
@@ -103,8 +102,7 @@ test('newer version is rejected', () => {
 });
 
 test('thinking moves to the provider option and keeps the file', () => {
-  const config = loadYamlMapping(writeConfig(LEGACY));
-  const notes = migrateConfig(config);
+  const { document: config, notes } = migrateConfig(loadYamlMapping(writeConfig(LEGACY)));
   expect(notes).toContain('models.grok.options.thinking -> reasoning-effort');
   expect(notes).toContain('models.gpt-terra.options.thinking -> model_reasoning_effort');
   expect(notes).toContain('roles.planner.thinking -> options.reasoning-effort');
@@ -130,10 +128,8 @@ test('thinking moves to the provider option and keeps the file', () => {
 });
 
 test('workflow stage keeps instructions and records its version', () => {
-  const config = loadYamlMapping(writeConfig(LEGACY));
-  migrateConfig(config);
-  const parsed = mapping(parseYamlDocument(WORKFLOW));
-  const notes = migrateWorkflow(parsed, config);
+  const { document: config } = migrateConfig(loadYamlMapping(writeConfig(LEGACY)));
+  const { document: parsed, notes } = migrateWorkflow(mapping(parseYamlDocument(WORKFLOW)), config);
   expect(notes).toContain('stages.review.model -> agent');
   expect(notes).toContain('stages.review.options.thinking removed');
   const rewritten = patchWorkflowText(WORKFLOW, parsed);
@@ -153,12 +149,11 @@ test('workflow stage keeps instructions and records its version', () => {
 });
 
 test('a version 0 upgrade applies the legacy thinking step and the v5 lifts in one pass', () => {
-  const config = {
+  const { document: config, notes } = migrateConfig({
     schema_version: 0,
     models: { m: { provider: 'grok', model: 'x', options: { thinking: 'high' } } },
     roles: { dev: { default_model: 'm' } },
-  };
-  const notes = migrateConfig(config);
+  });
   expect(config.schema_version).toBe(7);
   expect(mapping(mapping(mapping(config.agents).m).client).options).toEqual({ 'reasoning-effort': 'high' });
   expect(mapping(mapping(config.roles).dev).agent).toBe('m');
@@ -171,8 +166,7 @@ test('an existing option wins over thinking', () => {
     options: { thinking: 'medium', 'reasoning-effort': 'low' },
     thinking: 'high',
   };
-  applyLegacyMigration('model', 'grok', 0, body);
-  expect(body).toEqual({ options: { 'reasoning-effort': 'low' } });
+  expect(applyLegacyMigration('model', 'grok', 0, body)).toEqual({ options: { 'reasoning-effort': 'low' } });
 });
 
 const PLAN_V1 = `schema_version: 1
@@ -304,8 +298,10 @@ roles:
 
 test('repo plan and implement workflows migrate to version 7', () => {
   const planBefore = loadWorkflowDocument(writeConfig(PLAN_V1));
-  const planParsed = mapping(parseYamlDocument(PLAN_V1));
-  const planNotes = migrateWorkflow(planParsed, { models: {}, roles: {} });
+  const { document: planParsed, notes: planNotes } = migrateWorkflow(
+    mapping(parseYamlDocument(PLAN_V1)),
+    { models: {}, roles: {} },
+  );
   expect(planNotes).toContain('schema_version -> 7');
   expect(planNotes).toContain('completion removed');
   const planText = patchWorkflowText(PLAN_V1, planParsed);
@@ -324,8 +320,10 @@ test('repo plan and implement workflows migrate to version 7', () => {
   expect(planNotes).toContain('stages.review-plan.options.reasoning-effort removed');
 
   const implementBefore = loadWorkflowDocument(writeConfig(IMPLEMENT_V1));
-  const implementParsed = mapping(parseYamlDocument(IMPLEMENT_V1));
-  const implementNotes = migrateWorkflow(implementParsed, { models: {}, roles: {} });
+  const { document: implementParsed, notes: implementNotes } = migrateWorkflow(
+    mapping(parseYamlDocument(IMPLEMENT_V1)),
+    { models: {}, roles: {} },
+  );
   expect(implementNotes).toContain('requires.decision removed');
   const implementText = patchWorkflowText(IMPLEMENT_V1, implementParsed);
   const implementAfter = loadWorkflowDocument(writeConfig(implementText));
@@ -340,8 +338,7 @@ test('repo plan and implement workflows migrate to version 7', () => {
 });
 
 test('a version 1 config upgrades to version 7 and keeps its layout', () => {
-  const parsed = loadYamlMapping(writeConfig(CONFIG_V1));
-  const notes = migrateConfig(parsed);
+  const { document: parsed, notes } = migrateConfig(loadYamlMapping(writeConfig(CONFIG_V1)));
   expect(notes).toEqual([
     'schema_version -> 7',
     'models -> agents',
@@ -403,8 +400,7 @@ roles:
 `;
 
 test('a version 4 config moves models, client and options with comments intact', () => {
-  const parsed = loadYamlMapping(writeConfig(CONFIG_V4));
-  const notes = migrateConfig(parsed);
+  const { document: parsed, notes } = migrateConfig(loadYamlMapping(writeConfig(CONFIG_V4)));
   expect(notes).toEqual([
     'schema_version -> 7',
     'models -> agents',
@@ -452,8 +448,7 @@ roles:
 
 test('a config that cannot be edited line by line falls back to the canonical rendering', () => {
   const text = 'schema_version: 4\nmodels: { fast: { provider: codex, model: gpt-5, options: { a: b } } }\nroles: {}\n';
-  const parsed = loadYamlMapping(writeConfig(text));
-  migrateConfig(parsed);
+  const { document: parsed } = migrateConfig(loadYamlMapping(writeConfig(text)));
   const rewritten = patchConfigText(text, parsed);
   expect(parseYamlDocument(rewritten)).toEqual({
     schema_version: 7,
@@ -464,8 +459,7 @@ test('a config that cannot be edited line by line falls back to the canonical re
 
 test('a local config with only roles and models migrates on its own', () => {
   const text = 'schema_version: 4\nmodels: {}\nroles:\n  dev:\n    default_model: shared # local pick\n';
-  const parsed = loadYamlMapping(writeConfig(text));
-  migrateConfig(parsed);
+  const { document: parsed } = migrateConfig(loadYamlMapping(writeConfig(text)));
   expect(patchConfigText(text, parsed)).toBe('schema_version: 7\nagents: {}\nroles:\n  dev:\n    agent: shared # local pick\n');
 });
 
@@ -489,8 +483,10 @@ stages:
 `;
 
 test('a version 4 workflow renames model to agent and drops stage options with a note', () => {
-  const parsed = mapping(parseYamlDocument(WORKFLOW_V4));
-  const notes = migrateWorkflow(parsed, { models: { plain: { provider: 'codex', model: 'gpt-5' } }, roles: {} });
+  const { document: parsed, notes } = migrateWorkflow(mapping(parseYamlDocument(WORKFLOW_V4)), {
+    models: { plain: { provider: 'codex', model: 'gpt-5' } },
+    roles: {},
+  });
   expect(notes).toEqual([
     'schema_version -> 7',
     'stages.a.options.effort removed',
@@ -596,8 +592,7 @@ stages:
     role: planner
 `;
   for (const original of [folded, flow, quoted]) {
-    const updated = mapping(parseYamlDocument(original));
-    migrateWorkflow(updated, { models: {}, roles: {} });
+    const { document: updated } = migrateWorkflow(mapping(parseYamlDocument(original)), { models: {}, roles: {} });
     const text = patchWorkflowText(original, updated);
     const parsed = mapping(parseYamlDocument(text));
     const document = parseWorkflowMapping(parsed, 'check.yaml');
@@ -659,8 +654,7 @@ stages:
     role: planner
 `;
   for (const original of [empty, plain, noted, nested]) {
-    const updated = mapping(parseYamlDocument(original));
-    migrateWorkflow(updated, { models: {}, roles: {} });
+    const { document: updated } = migrateWorkflow(mapping(parseYamlDocument(original)), { models: {}, roles: {} });
     const text = patchWorkflowText(original, updated);
     const parsed = mapping(parseYamlDocument(text));
     const document = parseWorkflowMapping(parsed, 'check.yaml');
@@ -720,25 +714,25 @@ function migrateLayers(
 } {
   // The v5 merged view, read before either layer is rewritten.
   const merged = mergeConfigLayers(projectDocument, localDocument).config;
-  const project = structuredClone(projectDocument);
-  const local = localDocument === null ? null : structuredClone(localDocument);
-  const projectNotes = migrateConfig(project, SCHEMA_VERSION, merged, {
+  const { document: project, notes: projectNotes } = migrateConfig(projectDocument, SCHEMA_VERSION, merged, {
     layer: 'project',
     project: projectDocument,
     local: localDocument,
     merged,
     clientIds,
   });
-  const localNotes =
-    local === null
-      ? []
-      : migrateConfig(local, SCHEMA_VERSION, merged, {
+  const migratedLocal =
+    localDocument === null
+      ? null
+      : migrateConfig(localDocument, SCHEMA_VERSION, merged, {
           layer: 'local',
           project: projectDocument,
           local: localDocument,
           merged,
           clientIds,
         });
+  const local = migratedLocal?.document ?? null;
+  const localNotes = migratedLocal?.notes ?? [];
   const effective = local === null ? project : mergeConfigLayers(project, local).config;
   assertConfigClientEquivalence({
     originalProject: projectDocument,
@@ -926,4 +920,20 @@ test('a second layered migration at version 6 changes nothing', () => {
   expect(second.notes.local).toEqual([]);
   expect(documentVersion(second.project)).toBe(SCHEMA_VERSION);
   expect(documentVersion(second.local)).toBe(SCHEMA_VERSION);
+});
+
+test('migrateConfig and migrateWorkflow return a copy and leave their input unchanged', () => {
+  const config = loadYamlMapping(writeConfig(LEGACY));
+  const configBefore = structuredClone(config);
+  const migratedConfig = migrateConfig(config);
+  expect(config).toEqual(configBefore);
+  expect(migratedConfig.document).not.toBe(config);
+  expect(migratedConfig.document.schema_version).toBe(7);
+
+  const workflow = mapping(parseYamlDocument(WORKFLOW));
+  const workflowBefore = structuredClone(workflow);
+  const migratedWorkflow = migrateWorkflow(workflow, migratedConfig.document);
+  expect(workflow).toEqual(workflowBefore);
+  expect(migratedWorkflow.document).not.toBe(workflow);
+  expect(migratedWorkflow.document.schema_version).toBe(7);
 });

@@ -119,9 +119,9 @@ ${version === 1 ? '  ' : ''}    artifact: draft.md
   // v1 only allowed a single route destination.
   const source = version === 1 ? original.replace('revise: [draft]', 'revise: draft') : original;
   const raw = parseYamlDocument(source) as Record<string, unknown>;
-  const notes = migrateWorkflow(raw, {});
+  const { document: migratedDocument, notes } = migrateWorkflow(raw, {});
   expect(notes.some((note) => note.includes('decision migrated'))).toBe(true);
-  const migrated = patchWorkflowText(source, raw);
+  const migrated = patchWorkflowText(source, migratedDocument);
   expect(migrated).toContain('# project workflow');
   expect(migrated).toContain('Revise only for blocking findings.');
   expect(migrated).not.toContain('values:');
@@ -131,8 +131,9 @@ ${version === 1 ? '  ' : ''}    artifact: draft.md
   expect(loaded.stages.review?.routes).toEqual({ approved: 'complete', 'approved-with-note': 'complete', revise: version === 1 ? 'draft' : ['draft'] });
   expect(loaded.artifacts?.map((item) => item.id)).toEqual(['draft', 'review']);
   expect(loaded.stages.review?.artifacts.map((item) => item.file)).toEqual(['review.md']);
-  expect(migrateWorkflow(raw, {})).toEqual([]);
-  expect(patchWorkflowText(migrated, raw)).toBe(migrated);
+  const again = migrateWorkflow(migratedDocument, {});
+  expect(again.notes).toEqual([]);
+  expect(patchWorkflowText(migrated, again.document)).toBe(migrated);
 });
 
 test('migration rejects inconsistent old decision routes instead of discarding them', () => {

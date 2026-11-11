@@ -17,7 +17,7 @@ import {
   text,
 } from './dispatch.js';
 import { runExecuteLoop, runExecuteOnce, startTracked, trackDispatch } from './execute-loop.js';
-import { type ExecuteRequest, type HeldSession, openExecuteSession, verifyOnlyExecution } from './execute-session.js';
+import { type ExecuteRequest, HeldSession, openExecuteSession, verifyOnlyExecution } from './execute-session.js';
 import { runVerifyOnlyStage } from './verify-only.js';
 
 export type { ExecuteResult } from './dispatch.js';
@@ -31,7 +31,7 @@ export async function executeNamedWorkflow(
   request: ExecuteRequest,
   runner?: AgentToolRunner,
 ): Promise<ExecuteResult> {
-  const held: HeldSession = { lock: null, sessionId: null };
+  const held = new HeldSession();
   try {
     return await executeLocked(workspace, request, held, runner);
   } catch (error) {
@@ -127,7 +127,7 @@ async function executeLocked(
       );
       if (resumed !== null) return resumed;
     }
-    const replySent = stageReply !== null && stageReply.text === null;
+    const replySent = stageReply !== null && stageReply.consumed;
     const replyResult = replySent ? stageJsons[0] : undefined;
     const replyExhausted = replyResult?.failure_reason === VERIFY_EXHAUSTED;
     if (replyExhausted && (!isWorkflowV2(workflow) || once || stageId !== null)) {
@@ -313,7 +313,7 @@ async function resumeReopenedExecutions(
         activeRunner,
         tasks,
         stageReply,
-        stageReply !== null && stageReply.text === null ? 1 : 0,
+        stageReply !== null && stageReply.consumed ? 1 : 0,
         stageJsons[0]?.failure_reason === VERIFY_EXHAUSTED && stageReply !== null ? [stageReply.stageId] : [],
         reopened
           .filter((item, index) => continued[index]?.failure_reason === VERIFY_FAILED)

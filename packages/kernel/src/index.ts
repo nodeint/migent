@@ -113,7 +113,7 @@ export {
   LEGACY_PROVIDER_CLIENT,
   legacyClientOf,
 } from './legacy-provider.js';
-export type { MigrationFn,MigrationLayer } from './migration.js';
+export type { MigrationFn, MigrationLayer, MigrationResult } from './migration.js';
 export { migrateConfig, migrateWorkflow } from './migration.js';
 export { assertConfigClientEquivalence } from './migration-config.js';
 export { resolveStageOutcome } from './outcome-resolver.js';
