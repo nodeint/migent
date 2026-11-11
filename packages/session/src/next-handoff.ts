@@ -155,7 +155,8 @@ export function snapshotHandoff(directory: string, resolved: ResolvedHandoff | n
 
 /** Windows' default terminal shell is PowerShell; POSIX uses single-quoted shell words. */
 export function formatNextCommand(argv: readonly string[], windows = process.platform === 'win32'): string {
-  return argv.map((word) => /^[A-Za-z0-9_./:=-]+$/.test(word) ? word : windows
+  const quote = (word: string): string => (windows
     ? `'${word.replaceAll("'", "''")}'`
-    : `'${word.replaceAll("'", "'\\''")}'`).join(' ');
+    : `'${word.replaceAll("'", "'\\''")}'`);
+  return argv.map((word) => (/^[A-Za-z0-9_./:=-]+$/.test(word) ? word : quote(word))).join(' ');
 }

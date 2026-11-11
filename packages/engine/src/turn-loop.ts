@@ -180,8 +180,11 @@ export class TurnLoop {
     if (decision === 'correct') {
       this.corrections = { ...this.corrections, [failure.kind]: { turn: this.turn, error_kind: failure.errorKind, error_detail: failure.detail } };
       store.saveExecutionProgress(context, record, { corrections: this.corrections });
+      let fileField: Record<string, unknown> = {};
+      if (failure.kind === 'question_file') fileField = { file: this.questionFile };
+      else if (failure.kind === 'handoff') fileField = { file: this.handoffFile };
       eventReporter.emit(rule.event, `${failure.errorKind}: ${failure.detail}`, {
-        turn: this.turn, error_kind: failure.errorKind, ...(failure.kind === 'question_file' ? { file: this.questionFile } : failure.kind === 'handoff' ? { file: this.handoffFile } : {}),
+        turn: this.turn, error_kind: failure.errorKind, ...fileField,
       });
     }
     const used = this.corrections[failure.kind]!;
@@ -451,7 +454,8 @@ export class TurnLoop {
     const { responseText } = it;
     it.needsVerify =
       verifyCommands.length > 0 && it.invokeError === null && it.outcome?.status === 'complete';
-    record.status = it.needsVerify ? 'running' : it.invokeError === null && it.gateFailure === null ? 'completed' : 'failed';
+    const finishedStatus = it.invokeError === null && it.gateFailure === null ? 'completed' : 'failed';
+    record.status = it.needsVerify ? 'running' : finishedStatus;
     // Only a real model reply belongs in the conversation. Error text, and the reply of a
     // turn the provider itself reported as failed, stay out, so a resume cannot replay
     // them as if the model had said them.
@@ -477,7 +481,8 @@ export class TurnLoop {
     const { record, store, context, artifactName } = this;
     const { turnResult, exitOnly, anomalyReason, recordedClassification } = fresh;
     const accepted = exitOnly && anomalyReason === null;
-    const reason = exitOnly ? (anomalyReason === null ? null : truncateText(anomalyReason)) : truncateText(recordedClassification?.message ?? fresh.exitMessage ?? 'provider failure');
+    const anomalyText = anomalyReason === null ? null : truncateText(anomalyReason);
+    const reason = exitOnly ? anomalyText : truncateText(recordedClassification?.message ?? fresh.exitMessage ?? 'provider failure');
     const errors = recordedClassification?.origin === 'provider-error' ? [recordedClassification.message] : [];
     const stream = turnResult.summarizer.finish(
       { bytes: turnResult.facts?.stdoutBytes ?? 0, lines: turnResult.facts?.stdoutLines ?? 0 },

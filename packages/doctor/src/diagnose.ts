@@ -98,9 +98,9 @@ function checkStageBindings(
   for (const stage of Object.values(document.stages)) {
     if (!isRoleStage(stage)) continue;
     const role = isRecord(config.roles) ? config.roles[stage.role] : undefined;
-    const alias = stage.agent !== null
-      ? (stage.agent.kind === 'named' ? stage.agent.name : undefined)
-      : (isRecord(role) ? role.agent : undefined);
+    let alias: unknown;
+    if (stage.agent !== null) alias = stage.agent.kind === 'named' ? stage.agent.name : undefined;
+    else alias = isRecord(role) ? role.agent : undefined;
     if (stage.agent === null && invalidEffort.has(`roles.${stage.role}.agent`)) continue;
     if (typeof alias === 'string' && invalidEffort.has(alias)) continue;
     if (stage.agent?.kind === 'inline') {

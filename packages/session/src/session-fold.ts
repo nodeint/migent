@@ -78,10 +78,13 @@ export function writeQuestionsFile(sessionDirectory: string, inputs: FoldInputs)
       event.event === 'session.active' && event.executionId === execution.executionId && event.data.from === 'question',
     );
     const answers = Array.isArray(reply?.data.answers) ? reply.data.answers.filter(isRecord) : [];
+    let questionStatus: 'answered' | 'pending' | 'superseded' = 'superseded';
+    if (reply) questionStatus = 'answered';
+    else if (latest.has(execution.executionId) && !manuallyCompleted) questionStatus = 'pending';
     return storedQuestions(execution.outcome).map((question) => ({
       ...question, execution_id: execution.executionId, stage_id: execution.stageId,
       recipient: inputs.workflow?.stages[execution.stageId]?.ask ?? 'human',
-      status: reply ? 'answered' : latest.has(execution.executionId) && !manuallyCompleted ? 'pending' : 'superseded',
+      status: questionStatus,
       answer: answers.find((answer) => answer.question_id === question.id) ?? null,
       ...(reply ? { answered_at: reply.timestamp } : {}),
     }));

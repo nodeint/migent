@@ -34,7 +34,11 @@ export function compileChangedPathPattern(pattern: string): { ok: RegExp } | { e
     if (separator) source += '/';
     source += segment
       .split('')
-      .map((char) => (char === '*' ? '[^/]*' : char === '?' ? '[^/]' : char.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')))
+      .map((char) => {
+        if (char === '*') return '[^/]*';
+        if (char === '?') return '[^/]';
+        return char.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+      })
       .join('');
     separator = true;
   });

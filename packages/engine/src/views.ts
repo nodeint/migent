@@ -105,12 +105,14 @@ function stageView(stage: StageSpec, config: Loaded, origin: WorkflowOrigin, res
       }
     }
   }
+  let agentField: string | { inline: boolean } | null = null;
+  if (stage.agent !== null) agentField = stage.agent.kind === 'named' ? stage.agent.name : { inline: true };
   return {
     id: stage.id,
     role: isRoleStage(stage) ? stage.role : null,
     description: stage.description,
     depends_on: [...stage.dependsOn],
-    agent: stage.agent === null ? null : stage.agent.kind === 'named' ? stage.agent.name : { inline: true },
+    agent: agentField,
     options: { ...stage.options },
     artifact: stage.artifacts[0]?.file ?? null,
     artifacts: stage.artifacts.map(artifactView),

@@ -151,7 +151,7 @@ export async function dispatchAgent(
     if (result === undefined) throw new Error('Agent run produced no result.');
     if (args.asJson) writeJson(RoleRunResult, result);
     else printAgent({ ...result }, args.role, target.client, target.model, workspace);
-    return finishRole(resolvedSessionId, result.outcome_status === 'complete' ? 0 : result.outcome_status === 'question' ? 9 : 1);
+    return finishRole(resolvedSessionId, roleExitCode(result.outcome_status));
   }
 }
 
@@ -275,7 +275,7 @@ export async function continueAgent(
         stageId: role,
       });
       printAgent({ ...result }, role, profile.client, profile.model, workspace);
-      return finishRole(args.sessionId, result.outcome_status === 'complete' ? 0 : result.outcome_status === 'question' ? 9 : 1);
+      return finishRole(args.sessionId, roleExitCode(result.outcome_status));
     } catch (error) {
       if (error instanceof CancellationRequested) {
         log(error.message);
@@ -320,7 +320,7 @@ async function runCancelledRole(
     if (result === undefined) throw new Error('Agent run produced no result.');
     if (asJson) writeJson(RoleRunResult, result);
     else printAgent({ ...result }, role, profile.client, profile.model, workspace);
-    return finishRole(sessionId, result.outcome_status === 'complete' ? 0 : result.outcome_status === 'question' ? 9 : 1);
+    return finishRole(sessionId, roleExitCode(result.outcome_status));
   }
   if (asJson) writeJson(RoleRunResults, finished);
   else {
@@ -334,7 +334,9 @@ function lastUserPrompt(workspace: string, sessionId: string, executionId: strin
   const context = new SessionStore(workspace).executionContext(sessionId, executionId);
   if (context === null) throw new ConfigurationError(`Execution ${executionId} was not found.`);
   const raw = JSON.parse(readFileSync(context.conversationReadPath, 'utf8')) as unknown;
-  const history = Array.isArray(raw) ? raw : isRecord(raw) && Array.isArray(raw.history) ? raw.history : [];
+  let history: unknown[] = [];
+  if (Array.isArray(raw)) history = raw;
+  else if (isRecord(raw) && Array.isArray(raw.history)) history = raw.history;
   for (let index = history.length - 1; index >= 0; index -= 1) {
     const entry = history[index];
     if (isRecord(entry) && entry.role === 'user' && typeof entry.content === 'string' && entry.content !== '') {
@@ -367,15 +369,21 @@ function executionProfile(
   executionId: string,
 ): { client: string; model: string; options: Record<string, string> } {
   const raw = JSON.parse(readFileSync(path.join(directory, 'execution.json'), 'utf8')) as unknown;
-  const client = isRecord(raw)
-    ? typeof raw.client === 'string' && raw.client !== ''
+  let client: string | null = null;
+  if (isRecord(raw)) {
+    client = typeof raw.client === 'string' && raw.client !== ''
       ? raw.client
-      : legacyClientOf(typeof raw.provider === 'string' ? raw.provider : null)
-    : null;
+      : legacyClientOf(typeof raw.provider === 'string' ? raw.provider : null);
+  }
   if (!isRecord(raw) || client === null || typeof raw.model !== 'string' || raw.model === '') {
     throw new ConfigurationError(`Execution ${executionId} has no client.`);
   }
   return { client, model: raw.model, options: stringOptions(raw.options) };
+}
+
+function roleExitCode(status: unknown): number {
+  if (status === 'complete') return 0;
+  return status === 'question' ? 9 : 1;
 }
 
 function executionBlocker(directory: string): string | null {

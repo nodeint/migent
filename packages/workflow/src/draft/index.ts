@@ -121,12 +121,10 @@ export function collectWorkflowDraft(data: Record<string, unknown>, source: stri
   const downstream = schemaVersion >= 4
     ? collectDownstream(data.downstream, outputs, problems)
     : { sectionValid: true, entries: [] };
-  const requires: DraftUnit<WorkflowRequires | null> =
-    schemaVersion >= 4
-      ? Object.hasOwn(data, 'requires')
-        ? { state: 'invalid' }
-        : { state: 'absent', value: null }
-      : draftUnit(() => parseRequires(data.requires, version2), problems, ['requires']);
+  let requires: DraftUnit<WorkflowRequires | null>;
+  if (schemaVersion < 4) requires = draftUnit(() => parseRequires(data.requires, version2), problems, ['requires']);
+  else if (Object.hasOwn(data, 'requires')) requires = { state: 'invalid' };
+  else requires = { state: 'absent', value: null };
   // Top-level fields are leaf units of their own: they are read even when a stage is unreadable.
   if (version2) draftUnit(() => parseConcurrency(data), problems, ['concurrency']);
   collectStringItems(data.constraints, 'constraints', problems);

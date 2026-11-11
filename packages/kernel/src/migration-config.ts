@@ -130,9 +130,8 @@ export function liftConfigClients(input: LiftConfigClientsInput): string[] {
       if (!isRecord(raw)) continue;
       const label = `agents.${name}`;
       const mergedBody = isRecord(mergedAgents[name]) ? mergedAgents[name] : null;
-      const otherBody = layer === 'project'
-        ? (isRecord(localAgents[name]) ? localAgents[name] : null)
-        : (isRecord(projectAgents[name]) ? projectAgents[name] : null);
+      const otherAgents = layer === 'project' ? localAgents : projectAgents;
+      const otherBody = isRecord(otherAgents[name]) ? otherAgents[name] : null;
       liftBody(raw, label, {
         layer,
         kind: 'named',

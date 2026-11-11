@@ -70,11 +70,9 @@ export function runnableViolation(
   const sessionStatus = Object.hasOwn(status, 'status') ? status.status : undefined;
   if (sessionStatus === 'active') return null;
   if (sessionStatus === 'completed' && status.workflow_id === 'agent') return null;
-  const terminalBy = Object.hasOwn(status, 'blocked_by_execution_id')
-    ? status.blocked_by_execution_id
-    : Object.hasOwn(status, 'terminal_execution_id')
-      ? status.terminal_execution_id
-      : 'an earlier execution';
+  let terminalBy: unknown = 'an earlier execution';
+  if (Object.hasOwn(status, 'blocked_by_execution_id')) terminalBy = status.blocked_by_execution_id;
+  else if (Object.hasOwn(status, 'terminal_execution_id')) terminalBy = status.terminal_execution_id;
   return (
     `Session ${sessionId} is ${pyNone(sessionStatus)} at ${pyNone(terminalBy)}; ` +
     'start a new session to continue.'

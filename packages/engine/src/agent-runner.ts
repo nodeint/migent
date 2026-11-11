@@ -144,8 +144,9 @@ export class AgentToolRunner {
     if (request.resumeExecutionId && verifyCommands.length > 0) {
       for (const item of artifactFiles) this.carryExhaustedArtifact(store, context, request.resumeExecutionId, item.artifact.file);
     }
+    const conversationContract = sameConversation ? 'reminder' : 'full';
     turnPrompt = renderProviderPrompt(turnPrompt, { ...sessionPaths(context, sessionId),
-      contract: sessionId === null ? false : sameConversation ? 'reminder' : 'full', turn: request.turn ?? null, decisionValues, decisionInstructions: stage?.decisionInstructions, ask,
+      contract: sessionId === null ? false : conversationContract, turn: request.turn ?? null, decisionValues, decisionInstructions: stage?.decisionInstructions, ask,
       protocol, questionFile: questionRequestPath(context), handoffFile: handoffPath(context),
       artifactDirectory: context.artifactDirectory, artifactName, artifactFiles: promptArtifactFiles(artifactFiles),
       previousArtifactDirectory: previous?.artifactDirectory ?? null,

@@ -240,7 +240,8 @@ export function applyTerminalFields(
   delete status.blocked_by_stage_id;
   delete status.blocker;
   if (sessionStatus !== 'blocked' && sessionStatus !== 'completed' && sessionStatus !== 'cancelled') return;
-  const rows = blocked.length > 0 ? blocked : source ? [source] : [];
+  const fallbackRows = source ? [source] : [];
+  const rows = blocked.length > 0 ? blocked : fallbackRows;
   if (rows.length === 0) {
     if (sessionStatus === 'blocked' && reason) status.blocker = reason;
     return;

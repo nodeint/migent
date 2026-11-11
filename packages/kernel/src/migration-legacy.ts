@@ -100,7 +100,7 @@ export function migrateRoles(
     const effectiveRole = isRecord(effectiveRoles) ? effectiveRoles[name] : null;
     const provider = roleProvider(
       context,
-      Object.hasOwn(body, 'default_model') || Object.hasOwn(body, 'agent') ? body : isRecord(effectiveRole) ? effectiveRole : body,
+      Object.hasOwn(body, 'default_model') || Object.hasOwn(body, 'agent') || !isRecord(effectiveRole) ? body : effectiveRole,
     );
     applyLegacyMigration('role', provider, version, body);
   }

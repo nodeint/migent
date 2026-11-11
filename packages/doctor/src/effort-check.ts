@@ -62,7 +62,9 @@ export async function checkModelEfforts(
     const check: ModelEffortCheck = {};
     if (warning) check.warning = warning;
     if (invalidType || (values !== null && !values.includes((model.effort as string).trim()))) {
-      const valid = values === null ? 'unavailable (could not verify)' : values.length === 0 ? 'none (omit effort)' : values.join(', ');
+      let valid: string;
+      if (values === null) valid = 'unavailable (could not verify)';
+      else valid = values.length === 0 ? 'none (omit effort)' : values.join(', ');
       check.problem = `Invalid ${field}: ${value}\nValid values: ${valid}`;
     }
     return [alias, check] as const;

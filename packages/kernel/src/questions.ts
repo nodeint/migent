@@ -123,8 +123,11 @@ export function answerQuestions(questions: readonly Question[], reply: string): 
     if (typeof answer === 'string' && !ids.includes(answer) && answer.trim()) {
       return { question_id: question.id, selected: [], text: answer };
     }
-    const selected = typeof answer === 'string' ? [answer] : Array.isArray(answer)
-      ? answer.map((value) => typeof value === 'string' && /^[a-z]$/.test(value) ? value.toUpperCase() : value) : answer;
+    let selected: unknown = answer;
+    if (typeof answer === 'string') selected = [answer];
+    else if (Array.isArray(answer)) {
+      selected = answer.map((value) => typeof value === 'string' && /^[a-z]$/.test(value) ? value.toUpperCase() : value);
+    }
     if (!Array.isArray(selected) || selected.length === 0 || selected.some((option) => typeof option !== 'string' || !ids.includes(option)) || new Set(selected).size !== selected.length) {
       throw new ConfigurationError(`Question ${question.id}: select distinct IDs from its options.`);
     }

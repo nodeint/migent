@@ -44,7 +44,10 @@ const keyOf = (path: readonly (string | number)[]): string => JSON.stringify(pat
 
 const labelOf = (where: Field, rest: readonly (string | number)[]): string =>
   rest.reduce<string>(
-    (text, segment) => (typeof segment === 'number' ? `${text}[${segment}]` : text === '' ? segment : `${text}.${segment}`),
+    (text, segment) => {
+      if (typeof segment === 'number') return `${text}[${segment}]`;
+      return text === '' ? segment : `${text}.${segment}`;
+    },
     where.label,
   );
 
@@ -244,8 +247,10 @@ export function isAgentPlaceholder(value: unknown): boolean {
 
 type JsonSchema = Record<string, unknown>;
 
-const typeOfValue = (value: unknown): string =>
-  value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value;
+const typeOfValue = (value: unknown): string => {
+  if (value === null) return 'null';
+  return Array.isArray(value) ? 'array' : typeof value;
+};
 
 /**
  * The instance path of the schema node a `schemaPath` reaches, with every `anyOf` branch that

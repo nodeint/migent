@@ -296,12 +296,13 @@ function registerAuthoringCommands(program: Command, status: CliStatus, config: 
       );
     });
   };
+  const modeVerbs = { validate: 'Validate', render: 'Print canonical YAML for', save: 'Validate and save' } as const;
   for (const mode of ['validate', 'render', 'save'] as const) {
-    authoring(config, 'config', mode, `${mode === 'validate' ? 'Validate' : mode === 'render' ? 'Print canonical YAML for' : 'Validate and save'} a config draft (a file, or - for stdin).`);
+    authoring(config, 'config', mode, `${modeVerbs[mode]} a config draft (a file, or - for stdin).`);
   }
   const workflow = program.command('workflow').description('Validate, render, or save workflow drafts.');
   for (const mode of ['validate', 'render', 'save'] as const) {
-    authoring(workflow, 'workflow', mode, `${mode === 'validate' ? 'Validate' : mode === 'render' ? 'Print canonical YAML for' : 'Validate and save'} a workflow draft (a file, or - for stdin).`);
+    authoring(workflow, 'workflow', mode, `${modeVerbs[mode]} a workflow draft (a file, or - for stdin).`);
   }
   for (const removed of ['show', 'model', 'role']) {
     config
@@ -340,9 +341,12 @@ function registerSkillCommands(program: Command, status: CliStatus): void {
     } catch {
       // No .migent yet: the skill installs into the current directory.
     }
+    let scope: 'global' | 'project' | null = null;
+    if (options.global === true) scope = 'global';
+    else if (options.project === true) scope = 'project';
     return {
       workspace,
-      scope: options.global === true ? 'global' : options.project === true ? 'project' : null,
+      scope,
       clients: optionalText(options.client)?.split(',') ?? [],
       yes: options.yes === true,
       interactive: !inputDisabled(options) && Boolean(process.stdin.isTTY),

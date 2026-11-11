@@ -134,7 +134,8 @@ export function selectSessionWorkflow(workspace: string, sessionId: string): Ses
     return selection;
   }
   const kind: SessionWorkflowKind = recorded === draftPath ? 'draft' : 'live';
-  const filePath = recorded ? (path.isAbsolute(recorded) ? recorded : path.join(workspace, recorded)) : null;
+  let filePath: string | null = null;
+  if (recorded) filePath = path.isAbsolute(recorded) ? recorded : path.join(workspace, recorded);
   if (filePath !== null && (kind === 'draft' || isFile(filePath))) {
     selection.source = { sessionId, workflowId: manifest.workflowId, kind, path: display(workspace, filePath) };
     try {

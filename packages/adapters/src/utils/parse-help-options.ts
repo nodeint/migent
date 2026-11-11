@@ -29,14 +29,14 @@ export function parseHelpOptions(help: string, format: HelpOptionsFormat): Headl
     const text = description.join(' ');
     const argument = header.match(/\[<[^>]+>\]|<[^>]+>|\[[^\]]+\]/)?.[0] ?? null;
     const explicitType = text.match(/\[(string|number|boolean|array)\]/)?.[1] as HeadlessOption['type'] | undefined;
-    const type = explicitType ?? (!format.inferArgumentType ? 'unknown' : argument ? 'string' : 'boolean');
+    const type = explicitType ?? inferredType(format.inferArgumentType, argument);
     const choice = text.match(/\[(?:possible values|choices):\s*([^\]]+)\]/)
       ?? text.match(/\(choices:\s*([^)]+)\)/);
     const choices = choice ? choice[1].split(',').map(value => value.trim().replace(/^"|"$/g, '')) : null;
     return {
       name: (flags.find(flag => flag.startsWith('--')) ?? flags[0] ?? '').replace(/^-+/, ''),
       flags, description: text, argument,
-      valueMode: !format.inferArgumentType ? 'unknown' : argument ? argument.startsWith('[') ? 'optional' : 'required' : explicitType && explicitType !== 'boolean' ? 'required' : 'none',
+      valueMode: valueModeOf(format.inferArgumentType, argument, explicitType),
       type, choices,
       defaultValue: text.match(/\[default:\s*(\[\]|[^\]]*)\]/)?.[1] ?? text.match(/\(default ([^)]*)\)/)?.[1] ?? null,
     };
@@ -45,3 +45,17 @@ export function parseHelpOptions(help: string, format: HelpOptionsFormat): Headl
   return options;
 }
 
+function inferredType(infer: boolean | undefined, argument: string | null): HeadlessOption['type'] {
+  if (!infer) return 'unknown';
+  return argument ? 'string' : 'boolean';
+}
+
+function valueModeOf(
+  infer: boolean | undefined,
+  argument: string | null,
+  explicitType: HeadlessOption['type'] | undefined,
+): HeadlessOption['valueMode'] {
+  if (!infer) return 'unknown';
+  if (argument) return argument.startsWith('[') ? 'optional' : 'required';
+  return explicitType && explicitType !== 'boolean' ? 'required' : 'none';
+}

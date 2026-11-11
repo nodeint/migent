@@ -35,10 +35,10 @@ export function sessionMetrics(
   const workflow = loadMetricsWorkflow(workspace, sessionDirectory, status);
   const executions = readExecutions(sessionDirectory);
   const events = orderedEvents(sessionDirectory);
-  const agentRole =
-    status.workflow_id === 'agent'
-      ? (typeof status.role === 'string' ? status.role : manifestRole(sessionDirectory))
-      : null;
+  let agentRole: ReturnType<typeof manifestRole> | null = null;
+  if (status.workflow_id === 'agent') {
+    agentRole = typeof status.role === 'string' ? status.role : manifestRole(sessionDirectory);
+  }
   return sessionObject(sessionId, status, workflow, executions, events, clients, agentRole);
 }
 

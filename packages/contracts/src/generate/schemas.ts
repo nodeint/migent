@@ -51,7 +51,7 @@ export function collectIdentities(): Map<string, Node> {
       if (!found.has(identity)) found.set(identity, node);
     });
   }
-  return new Map([...found].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+  return new Map([...found].sort(([a], [b]) => Number(a > b) - Number(a < b)));
 }
 
 export function schemaPath(identity: string): string {

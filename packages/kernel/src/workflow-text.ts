@@ -456,7 +456,7 @@ function renderTopLevel(key: string, value: unknown): string[] {
 }
 
 function sorted(keys: Iterable<string>): string[] {
-  return [...keys].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+  return [...keys].sort((left, right) => Number(left > right) - Number(left < right));
 }
 
 export const SCHEMA_VERSION_FIELD = 'schema_version';

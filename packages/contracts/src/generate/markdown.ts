@@ -156,8 +156,10 @@ function exitCodes(): string {
 function env(): string {
   const lines = [BANNER, '# Environment variables', '', '| Name | Kind | Value rule | Processes | Description |', '| --- | --- | --- | --- | --- |'];
   for (const item of ENV_CATALOG) {
-    const rule =
-      item.kind === 'flag' ? `on for ${item.enabling_values.map(code).join(', ')}` : item.kind === 'path' ? `default ${code(item.default)}` : `default ${code(item.default_value)} for ${code(item.child)}`;
+    let rule: string;
+    if (item.kind === 'flag') rule = `on for ${item.enabling_values.map(code).join(', ')}`;
+    else if (item.kind === 'path') rule = `default ${code(item.default)}`;
+    else rule = `default ${code(item.default_value)} for ${code(item.child)}`;
     lines.push(`| ${code(item.name)} | ${item.kind} | ${rule} | ${item.processes.join(', ')} | ${cell(item.description)} |`);
   }
   return `${lines.join('\n')}\n`;

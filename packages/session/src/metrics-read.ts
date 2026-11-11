@@ -106,7 +106,7 @@ export function readExecutions(sessionDirectory: string): ExecutionRow[] {
     const leftOrder = left.order ?? Number.POSITIVE_INFINITY;
     const rightOrder = right.order ?? Number.POSITIVE_INFINITY;
     if (leftOrder !== rightOrder) return leftOrder - rightOrder;
-    return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
+    return Number(left.id > right.id) - Number(left.id < right.id);
   });
   return rows;
 }

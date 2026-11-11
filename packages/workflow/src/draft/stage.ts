@@ -189,7 +189,9 @@ export function collectStage(
     ? read(() => requiredString(rawItem.role, `stages.${stageId}.role`))
     : { state: 'absent', value: '' };
   if (!hasRole && !verifyOnly) report(`stages.${stageId}.role is required.`);
-  const kind: DraftStage['kind'] = hasRole ? 'role' : verifyOnly ? 'verify' : null;
+  let kind: DraftStage['kind'] = null;
+  if (hasRole) kind = 'role';
+  else if (verifyOnly) kind = 'verify';
   if (kind === 'verify') {
     if (Object.hasOwn(rawItem, 'ask')) report(`stages.${stageId}.ask requires a role.`);
     for (const key of ROLE_ONLY_KEYS) {
@@ -200,13 +202,15 @@ export function collectStage(
   const roleFields = kind === 'role';
   // `produces` stays readable without a role: output checks must not report a false missing artifact.
   // A verify-only stage with `produces` is invalid on its own, so dependent checks skip it.
-  const artifact: DraftUnit<string | null> = version7
-    ? Object.hasOwn(rawItem, 'produces')
-      ? (report(`stages.${stageId}.produces was removed in schema_version 7. Declare top-level artifacts and run \`migent migrate\`.`), { state: 'invalid' } as const)
-      : { state: 'valid', value: null }
-    : kind === 'verify' && Object.hasOwn(rawItem, 'produces') && (rawItem.produces !== null && rawItem.produces !== undefined)
-      ? { state: 'invalid' }
-      : read(() => stageArtifact(rawItem, stageId));
+  let artifact: DraftUnit<string | null>;
+  if (version7) {
+    if (Object.hasOwn(rawItem, 'produces')) {
+      report(`stages.${stageId}.produces was removed in schema_version 7. Declare top-level artifacts and run \`migent migrate\`.`);
+      artifact = { state: 'invalid' };
+    } else artifact = { state: 'valid', value: null };
+  } else if (kind === 'verify' && Object.hasOwn(rawItem, 'produces') && (rawItem.produces !== null && rawItem.produces !== undefined)) {
+    artifact = { state: 'invalid' };
+  } else artifact = read(() => stageArtifact(rawItem, stageId));
   if (
     roleFields &&
     verify.state !== 'invalid' &&
@@ -219,15 +223,17 @@ export function collectStage(
   const ask: DraftUnit<AskTarget> = roleFields && Object.hasOwn(rawItem, 'ask')
     ? read(() => stageAsk(rawItem, stageId))
     : ({ state: 'absent', value: 'human' } as const);
-  const decision: CollectedDecision = roleFields
-    ? version3
-      ? collectDecisionV3(rawItem, stageId, index, declaredIds, problems, version7)
-      : {
-          values: read(() => stageDecisionValues(rawItem, stageId)),
-          instructions: {},
-          routes: { state: 'invalid' },
-        }
-    : { values: { state: 'absent', value: [] }, instructions: {}, routes: { state: 'absent', value: {} } };
+  let decision: CollectedDecision;
+  if (!roleFields) {
+    decision = { values: { state: 'absent', value: [] }, instructions: {}, routes: { state: 'absent', value: {} } };
+  } else if (version3) decision = collectDecisionV3(rawItem, stageId, index, declaredIds, problems, version7);
+  else {
+    decision = {
+      values: read(() => stageDecisionValues(rawItem, stageId)),
+      instructions: {},
+      routes: { state: 'invalid' },
+    };
+  }
   if (roleFields && !version3) {
     decision.routes =
       decision.values.state === 'invalid'
@@ -254,20 +260,20 @@ export function collectStage(
   const maxRevisions: DraftUnit<number | null> = roleFields
     ? read(() => stageMaxRevisions(rawItem, stageId))
     : { state: 'absent', value: null };
-  const maxVerify = read(() =>
-    verify.state === 'invalid'
-      ? Object.hasOwn(rawItem, 'max_verify') && (rawItem.max_verify !== null && rawItem.max_verify !== undefined)
-        ? positiveInteger(rawItem.max_verify, `stages.${stageId}.max_verify`)
-        : kind === 'verify' ? 0 : 3
-      : stageMaxVerify(rawItem, stageId, verify.value),
-  );
-  const verifyTimeoutSec = read(() =>
-    verify.state === 'invalid'
-      ? Object.hasOwn(rawItem, 'verify_timeout') && (rawItem.verify_timeout !== null && rawItem.verify_timeout !== undefined)
-        ? positiveInteger(rawItem.verify_timeout, `stages.${stageId}.verify_timeout`)
-        : null
-      : stageVerifyTimeout(rawItem, stageId, verify.value),
-  );
+  const maxVerify = read(() => {
+    if (verify.state !== 'invalid') return stageMaxVerify(rawItem, stageId, verify.value);
+    if (Object.hasOwn(rawItem, 'max_verify') && (rawItem.max_verify !== null && rawItem.max_verify !== undefined)) {
+      return positiveInteger(rawItem.max_verify, `stages.${stageId}.max_verify`);
+    }
+    return kind === 'verify' ? 0 : 3;
+  });
+  const verifyTimeoutSec = read(() => {
+    if (verify.state !== 'invalid') return stageVerifyTimeout(rawItem, stageId, verify.value);
+    if (Object.hasOwn(rawItem, 'verify_timeout') && (rawItem.verify_timeout !== null && rawItem.verify_timeout !== undefined)) {
+      return positiveInteger(rawItem.verify_timeout, `stages.${stageId}.verify_timeout`);
+    }
+    return null;
+  });
   const resumeFrom = read(() =>
     dependsOn.state === 'invalid'
       ? stageResumeFromUnchecked(rawItem, stageId)

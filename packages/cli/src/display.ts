@@ -78,7 +78,9 @@ export function printInitConflicts(paths: readonly string[]): void {
 export function printDoctor(checks: readonly Check[], out: NodeJS.WriteStream = process.stdout): void {
   const tty = Boolean(out.isTTY);
   for (const check of checks) {
-    const status = check.ok ? (tty ? pc.green('ok') : 'ok') : tty ? pc.red('failed') : 'failed';
+    let status: string;
+    if (check.ok) status = tty ? pc.green('ok') : 'ok';
+    else status = tty ? pc.red('failed') : 'failed';
     out.write(`${check.name.padEnd(12)}${status}\n`);
     for (const item of check.items) {
       const line = `  ${item}`;

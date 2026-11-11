@@ -334,9 +334,8 @@ export class GrokClient implements CliClient {
 
   public readUsage(capture: UsageCapture): CliUsage {
     const end = isRecord(capture.end) ? capture.end : null;
-    const usage = end !== null
-      ? (isRecord(end.usage) ? end.usage : null)
-      : (isRecord(capture.usage_event) ? capture.usage_event : null);
+    const usageSource = end !== null ? end.usage : capture.usage_event;
+    const usage = isRecord(usageSource) ? usageSource : null;
     return {
       values: {
         input_tokens: finite(usage?.input_tokens),

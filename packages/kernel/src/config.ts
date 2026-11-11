@@ -453,8 +453,9 @@ export function resolveRoleCascade(
   validateRoleKeys(role, roleKey);
   const agentField = (args?.agentField === null || args?.agentField === undefined) ? field('roles', roleKey, 'agent') : toField(args.agentField);
   const stageAgent = args?.agent ?? null;
-  const selection: unknown =
-    stageAgent === null ? role.agent : stageAgent.kind === 'named' ? stageAgent.name : stageAgent.value;
+  let selection: unknown;
+  if (stageAgent === null) selection = role.agent;
+  else selection = stageAgent.kind === 'named' ? stageAgent.name : stageAgent.value;
   let target: StageTarget;
   if (isRecord(selection)) {
     target = loadAgentDefinition(selection, agentField, registry, index);
