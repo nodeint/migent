@@ -83,7 +83,7 @@ export function watchSnapshot(
 ): Record<string, unknown> {
   const status = readStatusFile(path.join(sessionDirectory, 'status.json'));
   const eventsPath = path.join(sessionDirectory, 'events.jsonl');
-  let cursor = 0;
+  let cursor: number;
   try {
     cursor = statSync(eventsPath).size;
   } catch {

@@ -284,7 +284,7 @@ completion:
   const store = new SessionStore(workspace);
   const lock = SessionLock.acquire(path.join(workspace, '.migent', 'sessions', sessionId));
   let noted: string | null = null;
-  let reviewId = '';
+  let reviewId: string;
   try {
     const [implementRecord, , implement] = store.loadOrCreate(
       'fake',
@@ -359,7 +359,7 @@ stages:
   const store = new SessionStore(workspace);
   const lock = SessionLock.acquire(path.join(workspace, '.migent', 'sessions', sessionId));
   const noted: string[] = [];
-  let cancelledId = '';
+  let cancelledId: string;
   try {
     const created = ['a', 'b', 'c'].map((stageId) => {
       const [record, , context] = store.loadOrCreate(

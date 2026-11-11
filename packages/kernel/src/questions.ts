@@ -80,7 +80,7 @@ export function loadQuestionFile(file: string): Question[] {
   if (text.trim() === '') throw new QuestionFileError('empty', 'the file has no content', file);
   let value: unknown;
   try {
-    value = JSON.parse(text.replace(/^﻿/, ''));
+    value = JSON.parse(text.replace(/^\uFEFF/, ''));
   } catch (error) {
     throw new QuestionFileError('invalid_json', error instanceof Error ? error.message : String(error), file);
   }

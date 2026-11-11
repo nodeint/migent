@@ -265,7 +265,7 @@ export class SessionStore extends SessionStoreResume {
       mkdirSync(directory);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
-        throw new Error(`Execution already exists: ${directory}`);
+        throw new Error(`Execution already exists: ${directory}`, { cause: error });
       }
       throw error;
     }
@@ -672,7 +672,7 @@ export class SessionStore extends SessionStoreResume {
       mkdirSync(directory);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
-        throw new Error(`Execution already exists: ${directory}`);
+        throw new Error(`Execution already exists: ${directory}`, { cause: error });
       }
       throw error;
     }

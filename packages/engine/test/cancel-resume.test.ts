@@ -297,7 +297,7 @@ completion:
   const store = new SessionStore(workspace);
   const lock = SessionLock.acquire(path.join(workspace, '.migent', 'sessions', sessionId));
   let noted: string | null = null;
-  let reviewId = '';
+  let reviewId: string;
   try {
     const [implementRecord, , implement] = store.loadOrCreate(
       'fake',

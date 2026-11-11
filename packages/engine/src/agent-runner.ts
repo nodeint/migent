@@ -481,8 +481,8 @@ export class AgentToolRunner {
     // The file this protocol's outcome is read from; per-turn cleanup removes it.
     const signalFile = protocol >= 3 ? handoffFile : questionFile;
     let keepFile = state.keepFile ?? false;
-    let responseText = pendingVerify?.responseText ?? '';
-    let outcome: StageOutcome | null = pendingVerify?.outcome ?? null;
+    let responseText: string;
+    let outcome: StageOutcome | null;
     let failureReason = '';
     let failureDetail = '';
     let classification: FailureClassification | null = null;
@@ -594,7 +594,7 @@ export class AgentToolRunner {
       return null;
     };
     while (true) {
-      let invokeError: string | null = null;
+      let invokeError: string | null;
       let gateFailure: GateFailure | null = null;
       let eligible = true;
       const pendingGate = pendingVerify !== null;
@@ -1219,9 +1219,9 @@ function resolveWorkspace(workspace: string): string {
     return resolved;
   } catch (error) {
     if (error instanceof Error && error.message === 'missing') {
-      throw new Error(`Workspace does not exist: ${workspace}`);
+      throw new Error(`Workspace does not exist: ${workspace}`, { cause: error });
     }
-    if (isMissingPath(error)) throw new Error(`Workspace does not exist: ${workspace}`);
+    if (isMissingPath(error)) throw new Error(`Workspace does not exist: ${workspace}`, { cause: error });
     throw error;
   }
 }

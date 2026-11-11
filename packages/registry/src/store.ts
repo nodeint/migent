@@ -12,6 +12,7 @@ import {
   realpathSync,
   renameSync,
   statSync,
+  rmSync,
   unlinkSync,
   writeSync,
 } from 'node:fs';
@@ -138,12 +139,7 @@ export function atomicReplace(destination: string, payload: Buffer): void {
     }
   } finally {
     if (!replaced) {
-      try {
-        unlinkSync(tmpPath);
-      } catch (error) {
-        const {code} = (error as NodeJS.ErrnoException);
-        if (code !== 'ENOENT') throw error;
-      }
+      rmSync(tmpPath, { force: true });
     }
   }
 }
@@ -242,7 +238,7 @@ function prepareRegister(filePath: string, name: string | null, tool: unknown): 
   if (typeof filePath !== 'string' || filePath.includes('\0') || !path.isAbsolute(filePath)) {
     throw new NotAWorkspace('Workspace path is not absolute.');
   }
-  let stored = filePath;
+  let stored: string;
   try {
     stored = realpathSync(filePath);
   } catch {

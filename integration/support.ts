@@ -349,7 +349,7 @@ function workflowResult(
     });
   }
   stages.sort((left, right) => Number(left.execution_order ?? 0) - Number(right.execution_order ?? 0));
-  let status: Record<string, unknown> = {};
+  let status: Record<string, unknown>;
   try {
     status = sessionStatus(workspace, sessionId);
   } catch {

@@ -221,7 +221,7 @@ function reconcileDrafts(inputs: FoldInputs): EventDraft[] {
 
 function acceptedTaskDraft(sessionDirectory: string, sessionId: string): EventDraft {
   const filePath = path.join(sessionDirectory, 'task.md');
-  let text: string | null = null;
+  let text: string | null;
   try {
     text = readFileSync(filePath, 'utf8');
   } catch {

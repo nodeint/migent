@@ -77,7 +77,7 @@ class ServerFixture {
           const chunks: Buffer[] = [];
           response.on('data', (chunk: Buffer) => chunks.push(chunk));
           response.on('end', () => {
-            let parsed: unknown = {};
+            let parsed: unknown;
             try {
               parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'));
             } catch {

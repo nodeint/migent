@@ -180,7 +180,7 @@ export class SessionStoreCore {
       const metadata = readJsonObject(path.join(context.directory, 'execution.json'));
       if (metadata.stage_id === stageId) attempts.push(asInt(metadata.stage_attempt));
     }
-    let safe = stageId;
+    let safe: string;
     try {
       safe = safeComponent(stageId);
     } catch {

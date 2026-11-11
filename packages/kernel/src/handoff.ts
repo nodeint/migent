@@ -54,7 +54,7 @@ export function loadHandoffFile(file: string, rules: HandoffRules): LoadedHandof
   if (content.trim() === '') throw new HandoffFileError('empty', 'the file has no content', file);
   let value: unknown;
   try {
-    value = JSON.parse(content.replace(/^﻿/, ''));
+    value = JSON.parse(content.replace(/^\uFEFF/, ''));
   } catch (error) {
     throw new HandoffFileError('invalid_json', error instanceof Error ? error.message : String(error), file);
   }
