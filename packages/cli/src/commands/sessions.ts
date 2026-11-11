@@ -1,11 +1,18 @@
 import { SealedMetrics, SealedMetricsLine, SessionRow, SessionRowOrNull, SessionRows, type Static } from '@nodeint/migent-contracts';
 import { ConfigurationError } from '@nodeint/migent-kernel';
 import { listSealedMetrics, listSessionRows, readSealedMetrics } from '@nodeint/migent-session';
+import { Command, type OptionValues } from 'commander';
 
 import { printError, printSessions } from '../display.js';
 import { writeJson } from '../emit.js';
+import { exitText } from '../exits.js';
 import { SESSION_COLUMN, sessionFields } from '../session-row.js';
 import { optionalText } from '../text.js';
+import { findWorkspace, invocationCwdPath } from '../workspace.js';
+import { cancelSession } from './cancel.js';
+import { completeSession } from './complete.js';
+import { renameSession } from './rename.js';
+import { repairWorkflowSession } from './repair.js';
 import { followSession } from './watch.js';
 
 const SESSION_STATUSES = new Set(['active', 'prepared', 'completed', 'blocked', 'question', 'cancelled', 'corrupt']);
@@ -217,4 +224,214 @@ function parseCursor(raw: string | undefined): number | null {
   const cursor = Number(raw);
   if (!Number.isInteger(cursor) || cursor < 0) throw new ConfigurationError('--cursor must be >= 0.');
   return cursor;
+}
+
+/** Runs a command action and records its exit code; supplied by the program. */
+export type Settle = (action: () => number | Promise<number>) => Promise<void>;
+
+/** cancel, complete, rename, and repair. */
+export function registerSessionLifecycleCommands(session: Command, settle: Settle): void {
+  session
+    .command('cancel')
+    .description('Ask the process running a session to stop. Works on Windows, where signals cannot reach it.')
+    .argument('<session>', 'Session to cancel.')
+    .option('--wait <seconds>', 'Seconds to wait for the process to stop.', '15')
+    .option('--json', 'Print {session_id, cancelled, status}.')
+    .addHelpText(
+      'after',
+      `${exitText([
+        'Exit 0 when the session stopped.',
+        'Exit 1 when the cancel was requested but the process is still running after --wait.',
+        'Exit 2 when the session does not exist, is not running, or runs on another machine.',
+      ])}Examples:\n  migent session cancel <session>\n  migent session cancel <session> --wait 60 --json\n`,
+    )
+    .action((id: string, options: OptionValues) =>
+      settle(() => {
+        const wait = Number(options.wait);
+        if (!Number.isFinite(wait) || wait < 0) {
+          printError('--wait must be a number of seconds, 0 or more.');
+          return 2;
+        }
+        return cancelSession(findWorkspace(invocationCwdPath()), id, { waitSeconds: wait, asJson: options.json === true });
+      }),
+    );
+
+  session
+    .command('complete')
+    .description('Mark a stopped workflow session completed without running another stage.')
+    .argument('<session>', 'Session to complete.')
+    .option('--json', 'Print {session_id, status, already_completed, outputs, missing_outputs, next} on stdout.')
+    .addHelpText(
+      'after',
+      `${exitText([
+        'Exit 0 when the session is completed, or already was.',
+        'Exit 2 when the session does not exist, is a role session, is prepared, or is running (run migent session cancel first).',
+      ])}Completion is terminal. Examples:
+  migent session complete <session>
+  migent session complete <session> --json
+`,
+    )
+    .action((id: string, options: OptionValues) =>
+      settle(() => completeSession(findWorkspace(invocationCwdPath()), id, options.json === true)),
+    );
+
+  session
+    .command('rename')
+    .description("Change a session's display title. The task and the session state stay unchanged.")
+    .argument('<session>', 'Session to rename.')
+    .argument('<title>', 'New one-line title.')
+    .option('--json', 'Print {session_id, title, previous_title} on stdout.')
+    .addHelpText(
+      'after',
+      `${exitText([
+        'Exit 0 when the session is renamed.',
+        'Exit 2 when the session does not exist or the title is empty or has a line break.',
+      ])}Works while the session is running. Examples:
+  migent session rename <session> "New title"
+  migent session rename <session> "New title" --json
+`,
+    )
+    .action((id: string, title: string, options: OptionValues) =>
+      settle(() => renameSession(findWorkspace(invocationCwdPath()), id, title, options.json === true)),
+    );
+
+  session
+    .command('repair')
+    .description('Rebuild status.json from the session directory.')
+    .argument('<session>', 'Session to repair.')
+    .option('--accept-task', 'Store the hash of the current task.md when status.json does not parse.')
+    .addHelpText(
+      'after',
+      `${exitText([
+        'Exit 0 after status.json is rebuilt.',
+        'Exit 2 when the session cannot be repaired, or another process holds the session lock.',
+      ])}Examples:\n  migent session repair <session>\n  migent session repair <session> --accept-task\n`,
+    )
+    .action((id: string, options: OptionValues) =>
+      settle(() =>
+        repairWorkflowSession(findWorkspace(invocationCwdPath()), id, options.acceptTask === true),
+      ),
+    );
+}
+
+/** list, show, metrics, and follow. */
+export function registerSessionQueryCommands(session: Command, settle: Settle): void {
+  session
+    .command('list')
+    .description('List sessions, newest first.')
+    .option('--json', 'Print a JSON array without the task. With --latest, print one object, or null.')
+    .option('--workflow <id>', 'List sessions for this workflow id.')
+    .option('--status <status>', 'List sessions with this status: active, prepared, completed, blocked, question, cancelled, or corrupt.')
+    .option('--limit <n>', 'List the newest n sessions. At least 1. Cannot be combined with --latest.')
+    .option('--latest', 'Print the newest matching session. Cannot be combined with --limit.')
+    .addHelpText(
+      'after',
+      `${exitText(['Exit 0 after a list, including an empty list.', 'Exit 2 on a configuration error.'])}Examples:\n  migent session list\n  migent session list --latest --json\n  migent session list --workflow <id> --status completed --json\n`,
+    )
+    .action((options: OptionValues) =>
+      settle(() =>
+        runSessions(findWorkspace(invocationCwdPath()), undefined, {
+          asJson: options.json === true,
+          follow: false,
+          execution: null,
+          until: false,
+          cursor: undefined,
+          exitWhenDone: false,
+          workflow: typeof options.workflow === 'string' ? options.workflow : null,
+          status: typeof options.status === 'string' ? options.status : null,
+          limit: options.limit === undefined ? null : String(options.limit),
+          latest: options.latest === true,
+        }),
+      ),
+    );
+
+  session
+    .command('show')
+    .description('Print one session snapshot.')
+    .argument('<session>', 'Session to inspect.')
+    .option('--json', 'Print one JSON object without the task.')
+    .addHelpText(
+      'after',
+      `${exitText(['Exit 0 after a snapshot, including a blocked session.', 'Exit 2 on a configuration error.'])}Examples:\n  migent session show <session>\n  migent session show <session> --json\n`,
+    )
+    .action((id: string, options: OptionValues) =>
+      settle(() =>
+        runSessions(findWorkspace(invocationCwdPath()), id, {
+          asJson: options.json === true,
+          follow: false,
+          execution: null,
+          until: false,
+          cursor: undefined,
+          exitWhenDone: false,
+          workflow: null,
+          status: null,
+          limit: null,
+          latest: false,
+        }),
+      ),
+    );
+
+  session
+    .command('metrics')
+    .description('Print usage, time, and revision counts recorded for a completed workflow session.')
+    .argument('[session]', 'Workflow session to read. Omit to list sessions that have metrics.')
+    .option('--json', 'Print one JSON object, or one object per line for a list.')
+    .option('--workflow <id>', 'With a list, keep sessions for this workflow.')
+    .option('--status <status>', 'With a list, keep sessions in this status.')
+    .option('--limit <n>', 'With a list, keep the newest n sessions.')
+    .addHelpText(
+      'after',
+      `${exitText([
+        'Exit 0 after one session object, or one object per line. An empty list prints nothing.',
+        'Exit 2 when --json is missing, the session has no metrics.json, that file is corrupt, or a list flag is invalid.',
+      ])}Examples:\n  migent session metrics <session> --json\n  migent session metrics --json --workflow <id> --status completed --limit 10\n`,
+    )
+    .action((id: string | undefined, options: OptionValues) =>
+      settle(() =>
+        runSessionMetrics(findWorkspace(invocationCwdPath()), id, {
+          asJson: options.json === true,
+          workflow: typeof options.workflow === 'string' ? options.workflow : null,
+          status: typeof options.status === 'string' ? options.status : null,
+          limit: options.limit === undefined ? null : String(options.limit),
+        }),
+      ),
+    );
+
+  session
+    .command('follow')
+    .description("Follow a session's events until a signal.")
+    .argument('<session>', 'Session to follow.')
+    .option('--json', 'Print a snapshot object, then JSON lines. With --cursor, only JSON lines.')
+    .option('--execution <execution>', 'Limit followed events and --until to this execution.')
+    .option(
+      '--cursor <offset>',
+      'Byte offset in events.jsonl. 0 replays the whole log and every execution stream. Any other offset replays events from that byte, and stream lines whose timestamp is at or after the first event there. Skips the snapshot.',
+    )
+    .option('--until', 'Exit when --execution reaches completed, failed, or cancelled. Requires --execution.')
+    .option('--exit-when-done', 'Exit when the session is completed (0), blocked (1), waiting for a reply (9), or cancelled (130).')
+    .addHelpText(
+      'after',
+      `${exitText([
+        'Exit 0 when --exit-when-done and the session is completed.',
+        'Exit 1 when --exit-when-done and the session is blocked.',
+        'Exit 130 when --exit-when-done and the session is cancelled, or the follow is cancelled.',
+        'Exit 2 on a configuration error.',
+      ])}Examples:\n  migent session follow <session>\n  migent session follow <session> --exit-when-done\n`,
+    )
+    .action((id: string, options: OptionValues) =>
+      settle(() =>
+        runSessions(findWorkspace(invocationCwdPath()), id, {
+          asJson: options.json === true,
+          follow: true,
+          execution: optionalText(options.execution),
+          until: options.until === true,
+          cursor: options.cursor === undefined ? undefined : String(options.cursor),
+          exitWhenDone: options.exitWhenDone === true,
+          workflow: null,
+          status: null,
+          limit: null,
+          latest: false,
+        }),
+      ),
+    );
 }

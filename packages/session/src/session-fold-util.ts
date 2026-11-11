@@ -1,4 +1,8 @@
+import { StageOutcome, storedQuestions } from '@nodeint/migent-kernel';
 import { isRecord } from '@nodeint/migent-workflow';
+
+import { type ParsedEvent, parseExecutionId } from './session-events.js';
+import type { FoldExecution } from './session-fold-types.js';
 
 
 
@@ -50,4 +54,54 @@ export function asInt(value: unknown): number {
   if (typeof value === 'number' && Number.isFinite(value)) return Math.trunc(value);
   if (typeof value === 'string' && /^-?\d+$/.test(value)) return Number(value);
   return 0;
+}
+
+export function eventExecutionOrder(event: ParsedEvent): number {
+  const fromId = event.executionId ? (parseExecutionId(event.executionId)?.order ?? 0) : 0;
+  return Math.max(asInt(event.data.execution_order), fromId);
+}
+
+export function isExecutionScoped(eventName: string): boolean {
+  return (
+    eventName.startsWith('execution.') ||
+    eventName.startsWith('stage.') ||
+    eventName.startsWith('provider.') ||
+    eventName.startsWith('verify.') ||
+    (eventName.startsWith('session.') && eventName !== 'session.created' && eventName !== 'session.activated')
+  );
+}
+
+export function outcomeRecord(event: ParsedEvent): Record<string, unknown> | null {
+  if (isRecord(event.data.outcome)) return event.data.outcome;
+  const top: Record<string, unknown> = {};
+  if (typeof event.raw.status === 'string') top.status = event.raw.status;
+  if (typeof event.raw.blocker === 'string') top.blocker = event.raw.blocker;
+  if (typeof event.raw.decision === 'string') top.decision = event.raw.decision;
+  if (typeof event.raw.question === 'string') top.question = event.raw.question;
+  return Object.keys(top).length > 0 ? top : null;
+}
+
+export function decisionOf(outcome: Record<string, unknown> | null): string | null {
+  if (outcome === null) return null;
+  return textOr(outcome.decision);
+}
+
+export function toStageOutcome(outcome: Record<string, unknown> | null): StageOutcome | null {
+  if (outcome === null || typeof outcome.status !== 'string') return null;
+  return new StageOutcome(outcome.status, textOr(outcome.blocker), textOr(outcome.decision), textOr(outcome.question), storedQuestions(outcome));
+}
+
+export function latestExecution(executions: readonly FoldExecution[]): FoldExecution | null {
+  let best: FoldExecution | null = null;
+  for (const execution of executions) {
+    if (best === null) {
+      best = execution;
+      continue;
+    }
+    if (execution.executionOrder > best.executionOrder) best = execution;
+    else if (execution.executionOrder === best.executionOrder && execution.executionId > best.executionId) {
+      best = execution;
+    }
+  }
+  return best;
 }

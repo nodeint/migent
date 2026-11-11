@@ -25,10 +25,9 @@ import {
   type FoldExecution,
   type FoldInputs,
   foldStatus,
-  loadFoldInputs,
-  readSessionManifest,
   writeQuestionsFile,
 } from './session-fold.js';
+import { loadFoldInputs, readSessionManifest } from './session-fold-read.js';
 import { sessionStatusFromExecutions, type StatusExecution } from './session-ledger.js';
 import { SessionLock } from './session-lock.js';
 

@@ -15,7 +15,7 @@ import { loadNamedWorkflow, loadWorkflowDocument, type WorkflowDocument } from '
 import { readExecutionClient } from './legacy-execution-client.js';
 import { corruptStatusMessage, readStatusFileState } from './query.js';
 import { reservedExecutionOrders, reservedStageAttempts } from './session-events.js';
-import { readSessionManifest } from './session-fold.js';
+import { readSessionManifest } from './session-fold-read.js';
 import { loadFrozenWorkflow, readWorkflowFreeze } from './session-freeze.js';
 import { AgentSessionRecord, ExecutionContext } from './session-store-types.js';
 import { asInt, compareSortKey, isFile, verifyReportPath } from './session-store-util.js';

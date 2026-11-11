@@ -12,7 +12,7 @@ import { parseYamlDocument } from '@nodeint/migent-workflow';
 import { ZodError } from 'zod';
 
 import { readStatusFileState } from './query.js';
-import { readSessionManifest } from './session-fold.js';
+import { readSessionManifest } from './session-fold-read.js';
 import {
   readWorkflowFreeze,
   WORKFLOW_FREEZE_FILE,

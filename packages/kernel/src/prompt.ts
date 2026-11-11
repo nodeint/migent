@@ -6,7 +6,7 @@ import { isRecord } from '@nodeint/migent-workflow';
 import { isRoleStage, isWorkflowV2, routeListsStage, stageArtifactsFor, type StageSpec, VERIFY_ARTIFACT, type WorkflowDocument } from '@nodeint/migent-workflow';
 
 import { type ExecutionSnapshot,isArtifactSchema, nonemptyArtifact } from './outputs.js';
-import { currentCompleteByStage, latestCompleteByStage, relevantRouterSnapshots } from './selection.js';
+import { currentCompleteByStage, latestCompleteByStage, relevantRouterSnapshots } from './selection-history.js';
 
 export function buildStagePrompt(input: {
   workflow: WorkflowDocument;

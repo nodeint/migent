@@ -2,12 +2,15 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import { ConfigurationError, EXECUTIONS_DIRNAME, isAtomicTempName } from '@nodeint/migent-kernel';
-import { isRecord, loadNamedWorkflow, loadWorkflowDocument, type WorkflowDocument } from '@nodeint/migent-workflow';
+import { isRecord, loadNamedWorkflow, loadWorkflowDocument, parseYamlDocument, type WorkflowDocument } from '@nodeint/migent-workflow';
 
 import { executionClientReader } from './legacy-execution-client.js';
-import type { FoldExecution, } from './session-fold-types.js';
-import { asInt, textOr } from './session-fold-util.js';
+import { readStatusFileState, type StatusFileState } from './query.js';
+import { readParsedEvents } from './session-events.js';
+import type { FoldExecution, FoldInputs, SessionManifest } from './session-fold-types.js';
+import { asInt, identityText, textOr } from './session-fold-util.js';
 import { loadFrozenWorkflow } from './session-freeze.js';
+import { readTitleRecord } from './session-title.js';
 
 export function readExecutions(sessionDirectory: string): FoldExecution[] {
   const directory = path.join(sessionDirectory, EXECUTIONS_DIRNAME);
@@ -124,4 +127,88 @@ export function isReadableFile(filePath: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** A missing schema_version is 1. This is not config documentVersion, which maps a missing version to 0. */
+export function sessionSchemaVersion(document: Record<string, unknown> | null): number {
+  if (document === null || !Object.hasOwn(document, 'schema_version') || (document.schema_version === null || document.schema_version === undefined)) return 1;
+  const raw = document.schema_version;
+  if (typeof raw === 'number' && Number.isInteger(raw) && raw >= 1) return raw;
+  if (typeof raw === 'string' && /^[1-9][0-9]*$/.test(raw)) return Number(raw);
+  return 1;
+}
+
+export function readSessionManifest(sessionDirectory: string): SessionManifest {
+  const manifestPath = path.join(sessionDirectory, 'manifest.yaml');
+  let text: string;
+  try {
+    text = readFileSync(manifestPath, 'utf8');
+  } catch {
+    return emptyManifest(path.basename(sessionDirectory));
+  }
+  let parsed: unknown;
+  try {
+    parsed = parseYamlDocument(text);
+  } catch (error) {
+    if (error instanceof ConfigurationError) throw error;
+    throw new ConfigurationError(`Session manifest is corrupt: ${manifestPath}.`);
+  }
+  if (!isRecord(parsed)) throw new ConfigurationError(`Session manifest is corrupt: ${manifestPath}.`);
+  return {
+    sessionId: identityText(parsed.session_id) ?? path.basename(sessionDirectory),
+    title: textOr(parsed.title),
+    workflowId: textOr(parsed.workflow_id),
+    workflowPath: textOr(parsed.workflow_path),
+    role: textOr(parsed.role),
+    task: textOr(parsed.task),
+    createdAt: textOr(parsed.created_at),
+    priorSessionId: identityText(parsed.prior_session_id),
+    manifestStatus: textOr(parsed.status),
+    schemaVersion: sessionSchemaVersion(parsed),
+  };
+}
+
+export function loadFoldInputs(workspace: string, sessionDirectory: string): FoldInputs {
+  const manifest = readSessionManifest(sessionDirectory);
+  const previous = readStatusFileState(path.join(sessionDirectory, 'status.json'));
+  const previousStatus = previous.state === 'ok' ? previous.status : null;
+  const executions = readExecutions(sessionDirectory);
+  const identity = statusIdentity(manifest, previousStatus);
+  return {
+    schemaVersion: manifest.schemaVersion,
+    manifest,
+    events: readParsedEvents(path.join(sessionDirectory, 'events.jsonl')),
+    executions,
+    presentExecutionIds: new Set(executions.map((execution) => execution.executionId)),
+    previousStatus,
+    outputFiles: listOutputFiles(sessionDirectory),
+    workflow: loadSessionWorkflow(workspace, sessionDirectory, identity),
+    titleRecord: readTitleRecord(sessionDirectory),
+  };
+}
+
+export function statusFileState(sessionDirectory: string): StatusFileState {
+  return readStatusFileState(path.join(sessionDirectory, 'status.json'));
+}
+
+export function statusIdentity(manifest: SessionManifest, previous: Record<string, unknown> | null): Record<string, unknown> {
+  return {
+    workflow_id: manifest.workflowId ?? previous?.workflow_id ?? null,
+    workflow_path: manifest.workflowPath ?? previous?.workflow_path ?? null,
+  };
+}
+
+export function emptyManifest(sessionId: string): SessionManifest {
+  return {
+    sessionId,
+    title: null,
+    workflowId: null,
+    workflowPath: null,
+    role: null,
+    task: null,
+    createdAt: null,
+    priorSessionId: null,
+    manifestStatus: null,
+    schemaVersion: 1,
+  };
 }

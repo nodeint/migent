@@ -45,11 +45,9 @@ export {
   commitFoldedStatus,
   foldStatus,
   readFoldedStatus,
-  readSessionManifest,
-  sessionSchemaVersion,
   statusDriftMessage,
 } from './session-fold.js';
-export { readExecutions } from './session-fold.js';
+export { readExecutions, readSessionManifest, sessionSchemaVersion } from './session-fold-read.js';
 export type { WorkflowFreeze } from './session-freeze.js';
 export { collectFrozenDrift,WORKFLOW_FREEZE_FILE } from './session-freeze.js';
 export { frozenRoleInstructions, frozenStageTarget, loadFrozenWorkflow, readWorkflowFreeze, requireLiveWorkflow, warnIfFrozenDrift, writeWorkflowFreeze } from './session-freeze.js';

@@ -72,3 +72,92 @@ export function applyLegacyMigration(
   const step = LEGACY_MIGRATIONS[provider.trim().toLowerCase()]?.[kind]?.[version];
   if (step !== undefined) step(body);
 }
+
+export function migrateModels(
+  config: Record<string, unknown>,
+  version: number,
+  context: Readonly<Record<string, unknown>>,
+): void {
+  const {models} = config;
+  if (!isRecord(models)) return;
+  for (const [name, body] of Object.entries(models)) {
+    if (!isRecord(body)) continue;
+    const provider = providerName(body.provider) ?? modelProvider(context, name);
+    applyLegacyMigration('model', provider, version, body);
+  }
+}
+
+export function migrateRoles(
+  config: Record<string, unknown>,
+  version: number,
+  context: Readonly<Record<string, unknown>>,
+): void {
+  const {roles} = config;
+  if (!isRecord(roles)) return;
+  for (const [name, body] of Object.entries(roles)) {
+    if (!isRecord(body)) continue;
+    const effectiveRoles = context.roles;
+    const effectiveRole = isRecord(effectiveRoles) ? effectiveRoles[name] : null;
+    const provider = roleProvider(
+      context,
+      Object.hasOwn(body, 'default_model') || Object.hasOwn(body, 'agent') ? body : isRecord(effectiveRole) ? effectiveRole : body,
+    );
+    applyLegacyMigration('role', provider, version, body);
+  }
+}
+
+export function migrateStages(
+  workflow: Record<string, unknown>,
+  config: Readonly<Record<string, unknown>>,
+  version: number,
+): void {
+  const {stages} = workflow;
+  if (!Array.isArray(stages)) return;
+  for (const stage of stages) {
+    if (!isRecord(stage)) continue;
+    const provider = stageProvider(config, stage);
+    applyLegacyMigration('stage', provider, version, stage);
+  }
+}
+
+/** Reads the provider of a role's agent in either document shape: `agent` or the earlier `default_model`. */
+function roleProvider(config: Readonly<Record<string, unknown>>, role: Readonly<Record<string, unknown>>): string | null {
+  const selection = Object.hasOwn(role, 'agent') ? role.agent : role.default_model;
+  if (isRecord(selection)) return bodyProvider(selection);
+  if (typeof selection !== 'string') return null;
+  return modelProvider(config, selection);
+}
+
+function stageProvider(config: Readonly<Record<string, unknown>>, stage: Readonly<Record<string, unknown>>): string | null {
+  const selection = Object.hasOwn(stage, 'agent') ? stage.agent : stage.model;
+  if (isRecord(selection)) return bodyProvider(selection);
+  if (typeof selection === 'string' && selection.trim() !== '') return modelProvider(config, selection);
+  const roleName = stage.role;
+  if (typeof roleName !== 'string') return null;
+  const {roles} = config;
+  if (!isRecord(roles)) return null;
+  const role = roles[roleName.trim()];
+  if (!isRecord(role)) return null;
+  return roleProvider(config, role);
+}
+
+function modelProvider(config: Readonly<Record<string, unknown>>, modelName: string): string | null {
+  const models = isRecord(config.agents) ? config.agents : config.models;
+  if (!isRecord(models)) return null;
+  const model = models[modelName.trim()];
+  if (!isRecord(model)) return null;
+  return bodyProvider(model);
+}
+
+/** A body's own `provider`, else the legacy provider its `client.type` was lifted from. */
+function bodyProvider(body: Readonly<Record<string, unknown>>): string | null {
+  const provider = providerName(body.provider);
+  if (provider !== null) return provider;
+  const {client} = body;
+  return providerName(isRecord(client) ? client.type : client);
+}
+
+function providerName(value: unknown): string | null {
+  if (typeof value !== 'string' || value.trim() === '') return null;
+  return value.trim();
+}

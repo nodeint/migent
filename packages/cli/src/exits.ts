@@ -20,3 +20,7 @@ export const LOOP_EXITS = exitLines('run', LOOP_ORDER);
 export const STAGE_EXITS = exitLines('run_once', STAGE_ORDER);
 export const ROLE_EXITS = exitLines('role_run', ROLE_ORDER);
 export const PREFLIGHT_EXIT = exitLines('preflight')[0]!;
+
+export function exitText(lines: readonly string[]): string {
+  return `\n${lines.join('\n')}\n`;
+}

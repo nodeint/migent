@@ -7,19 +7,18 @@ import { legacyClientOf } from '@nodeint/migent-kernel';
 import { writeFileAtomic, writeJsonAtomic } from '@nodeint/migent-kernel';
 import { ConfigurationError, OutputsMissing } from '@nodeint/migent-kernel';
 import { STATUS_PROVIDER_EVENTS } from '@nodeint/migent-kernel';
-import { type ExecutionSnapshot,missingCompletionOutputNames, nonemptyArtifact, shouldPublishOutputs } from '@nodeint/migent-kernel';
+import { missingCompletionOutputNames, nonemptyArtifact, shouldPublishOutputs } from '@nodeint/migent-kernel';
 import { classifyOrphanedExecution, ownerMetadataPayload, processMetadataPayload, type ProcessStartInfo,raiseReapDecision, REAP_ALREADY_EXITED, REAP_STILL_RUNNING, REAP_UNVERIFIED } from '@nodeint/migent-kernel';
 import { EXECUTION_SCHEMA_VERSION, EXECUTIONS_DIRNAME, safeComponent, utcNow } from '@nodeint/migent-kernel';
-import { isRecord } from '@nodeint/migent-workflow';
 import { VERIFY_ARTIFACT } from '@nodeint/migent-workflow';
 
-import { publishManualCompletion } from './manual-completion.js';
+import { completeManuallyLocked } from './manual-completion.js';
 import { sealSessionMetrics } from './metrics.js';
-import { type NextSuggestion,publishNextSuggestions } from './next-handoff.js';
-import { readStatusFileState } from './query.js';
+import { publishNextSuggestions } from './next-handoff.js';
 import { appendLifecycleEvent, appendRecordedEvent, skipsStatusWrite } from './session-events.js';
 import { writeFailureReport } from './session-failure-report.js';
-import { commitFoldedStatus, readSessionManifest } from './session-fold.js';
+import { commitFoldedStatus } from './session-fold.js';
+import { readSessionManifest } from './session-fold-read.js';
 import { createNumericSessionDirectory, quotedSessionId } from './session-id.js';
 import { planExecutionSave, type PlannedExecutionSave } from './session-ledger.js';
 import { assertSessionLockHeld, SessionLock, SessionLockHeldError } from './session-lock.js';
@@ -27,7 +26,7 @@ import { assertSessionId } from './session-selection.js';
 import { SessionStoreResume } from './session-store-resume.js';
 import type { ManualCompletionResult, SkipDetails } from './session-store-types.js';
 import { AgentSessionRecord, DEBUG_LOG_FILENAME, DIAGNOSTICS_FILENAME, ExecutionContext, inFlightExecutions, stringOptions } from './session-store-types.js';
-import { asInt, isDirectory } from './session-store-util.js';
+import { asInt, isDirectory, snapshotsIncludingSave } from './session-store-util.js';
 import { readJsonObject, textField } from './session-store-util.js';
 import { normalizeRenameTitle, writeTitleRecord } from './session-title.js';
 
@@ -548,60 +547,17 @@ export class SessionStore extends SessionStoreResume {
   }
 
   private completeManuallyLocked(sessionId: string, sessionDirectory: string): ManualCompletionResult {
-    const read = readStatusFileState(path.join(sessionDirectory, 'status.json'));
-    if (read.state !== 'ok') {
-      const reason = read.state === 'corrupt' ? 'has an unreadable status.json' : 'has no status.json';
-      throw new ConfigurationError(`Session ${sessionId} ${reason}. Run: migent session repair ${sessionId}`);
-    }
-    const previous = read.status;
-    const manifest = readSessionManifest(sessionDirectory);
-    if (previous.workflow_id === 'agent' || manifest.workflowId === 'agent') {
-      throw new ConfigurationError(`Session ${sessionId} is a role session. Only workflow sessions can be completed manually.`);
-    }
-    const from = typeof previous.status === 'string' ? previous.status : '';
-    if (from === 'completed') {
-      const outputs = isRecord(previous.outputs) ? previous.outputs : {};
-      return { alreadyCompleted: true, from, outputs, missingOutputs: [], next: existingNext(sessionDirectory) };
-    }
-    if (from === 'prepared') {
-      throw new ConfigurationError(
-        `Session ${sessionId} is prepared and has not run. Start it with: migent session run --session ${sessionId}`,
-      );
-    }
-    if (from !== 'active' && from !== 'blocked' && from !== 'question' && from !== 'cancelled') {
-      throw new ConfigurationError(`Session ${sessionId} has status ${from || 'unknown'} and cannot be completed.`);
-    }
-    const workflow = this.loadWorkflow(previous);
-    if (workflow === null && previous.workflow_id !== 'agent') {
-      throw new ConfigurationError(
-        `Session ${sessionId} has no readable workflow. Check the frozen workflow or the live definition. Run: migent doctor --session ${sessionId}`,
-      );
-    }
-    const plan = publishManualCompletion(sessionDirectory, workflow, this.snapshotList(sessionId));
-    const timestamp = utcNow();
-    if (plan.outputs.length > 0) {
-      appendLifecycleEvent(sessionDirectory, { event: 'outputs.published', timestamp, data: { outputs: plan.outputs } });
-    }
-    const data: Record<string, unknown> = {
-      manual: true,
-      from,
-      reason: plan.missing.length > 0
-        ? `Marked completed manually; missing required outputs: ${plan.missing.join(', ')}`
-        : 'Marked completed manually',
-    };
-    if (plan.missing.length > 0) data.missing_outputs = plan.missing;
-    appendLifecycleEvent(sessionDirectory, { event: 'session.completed', timestamp, data });
-    this.rewriteManifestStatus(sessionDirectory, 'completed');
-    const folded = commitFoldedStatus(this.workspace, sessionDirectory);
-    if (this.metricsClients !== null) sealSessionMetrics(this.workspace, sessionId, this.metricsClients);
-    const next = publishNextSuggestions(this.workspace, sessionId);
-    return {
-      alreadyCompleted: false,
-      from,
-      outputs: isRecord(folded.outputs) ? folded.outputs : {},
-      missingOutputs: plan.missing,
-      next,
-    };
+    return completeManuallyLocked(
+      {
+        workspace: this.workspace,
+        metricsClients: this.metricsClients,
+        loadWorkflow: (status) => this.loadWorkflow(status),
+        snapshotList: (id) => this.snapshotList(id),
+        rewriteManifestStatus: (directory, status) => this.rewriteManifestStatus(directory, status),
+      },
+      sessionId,
+      sessionDirectory,
+    );
   }
 
   private reapExecution(context: ExecutionContext, onLiveOwner: string): void {
@@ -735,27 +691,6 @@ export class SessionStore extends SessionStoreResume {
     });
   }
 
-}
-
-function snapshotsIncludingSave(
-  snapshots: readonly ExecutionSnapshot[],
-  saved: ExecutionSnapshot,
-): ExecutionSnapshot[] {
-  const included = snapshots.filter((snapshot) => snapshot.executionId !== saved.executionId);
-  included.push(saved);
-  return included;
-}
-
-/** The next.json already on disk, read without rewriting it. */
-function existingNext(sessionDirectory: string): { path: string | null; next: NextSuggestion[] } {
-  const filePath = path.join(sessionDirectory, 'next.json');
-  try {
-    const parsed = JSON.parse(readFileSync(filePath, 'utf8')) as unknown;
-    if (isRecord(parsed) && Array.isArray(parsed.next)) return { path: filePath, next: parsed.next as NextSuggestion[] };
-  } catch {
-    // No usable next.json.
-  }
-  return { path: null, next: [] };
 }
 
 export type { ManualCompletionResult, SkipDetails } from './session-store-types.js';

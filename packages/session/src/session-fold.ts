@@ -1,24 +1,18 @@
-import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { writeJsonAtomic } from '@nodeint/migent-kernel';
-import { ConfigurationError } from '@nodeint/migent-kernel';
-import { StageOutcome } from '@nodeint/migent-kernel';
 import { storedQuestions } from '@nodeint/migent-kernel';
 import { isRecord } from '@nodeint/migent-workflow';
-import { parseYamlDocument } from '@nodeint/migent-workflow';
 
-import { readStatusFileState, type StatusFileState } from './query.js';
+import { readStatusFileState } from './query.js';
 import {
   CANCELLED_REPLY,
   type ParsedEvent,
-  parseExecutionId,
-  readParsedEvents,
   skipsStatusWrite,
 } from './session-events.js';
-import { listOutputFiles, loadSessionWorkflow, readExecutions } from './session-fold-read.js';
+import { loadFoldInputs, readSessionManifest } from './session-fold-read.js';
 import type { FoldExecution, FoldInputs, SessionManifest } from './session-fold-types.js';
-import { asInt, cloneRecord, differingKeys, identityText, later, textOr } from './session-fold-util.js';
+import { cloneRecord, decisionOf, differingKeys, eventExecutionOrder, isExecutionScoped, later, latestExecution, outcomeRecord, textOr, toStageOutcome } from './session-fold-util.js';
 import {
   applyTerminalFields,
   blockedExecutions,
@@ -29,16 +23,7 @@ import {
   sessionStatusFromExecutions,
   type StatusExecution,
 } from './session-ledger.js';
-import { effectiveTitleFrom, overlayTitle, readTitleRecord } from './session-title.js';
-
-/** A missing schema_version is 1. This is not config documentVersion, which maps a missing version to 0. */
-export function sessionSchemaVersion(document: Record<string, unknown> | null): number {
-  if (document === null || !Object.hasOwn(document, 'schema_version') || (document.schema_version === null || document.schema_version === undefined)) return 1;
-  const raw = document.schema_version;
-  if (typeof raw === 'number' && Number.isInteger(raw) && raw >= 1) return raw;
-  if (typeof raw === 'string' && /^[1-9][0-9]*$/.test(raw)) return Number(raw);
-  return 1;
-}
+import { effectiveTitleFrom, overlayTitle } from './session-title.js';
 
 export function foldStatus(inputs: FoldInputs): Record<string, unknown> {
   const status = inputs.schemaVersion >= 2 ? foldSchema2(inputs) : foldV1(inputs);
@@ -69,36 +54,6 @@ function applyManualCompletion(status: Record<string, unknown>, events: readonly
   delete status.questions;
   status.manual_completion = { completed_at: event.timestamp, from: textOr(event.data.from) };
   status.updated_at = later(textOr(status.updated_at), event.timestamp);
-}
-
-export function readSessionManifest(sessionDirectory: string): SessionManifest {
-  const manifestPath = path.join(sessionDirectory, 'manifest.yaml');
-  let text: string;
-  try {
-    text = readFileSync(manifestPath, 'utf8');
-  } catch {
-    return emptyManifest(path.basename(sessionDirectory));
-  }
-  let parsed: unknown;
-  try {
-    parsed = parseYamlDocument(text);
-  } catch (error) {
-    if (error instanceof ConfigurationError) throw error;
-    throw new ConfigurationError(`Session manifest is corrupt: ${manifestPath}.`);
-  }
-  if (!isRecord(parsed)) throw new ConfigurationError(`Session manifest is corrupt: ${manifestPath}.`);
-  return {
-    sessionId: identityText(parsed.session_id) ?? path.basename(sessionDirectory),
-    title: textOr(parsed.title),
-    workflowId: textOr(parsed.workflow_id),
-    workflowPath: textOr(parsed.workflow_path),
-    role: textOr(parsed.role),
-    task: textOr(parsed.task),
-    createdAt: textOr(parsed.created_at),
-    priorSessionId: identityText(parsed.prior_session_id),
-    manifestStatus: textOr(parsed.status),
-    schemaVersion: sessionSchemaVersion(parsed),
-  };
 }
 
 export function readFoldedStatus(workspace: string, sessionDirectory: string): Record<string, unknown> {
@@ -150,29 +105,6 @@ export function statusDriftMessage(workspace: string, sessionId: string): string
   const fields = differingKeys(overlayTitle({ ...read.status }, sessionDirectory), folded);
   if (fields.length === 0) return null;
   return `status.json differs from the event fold: ${fields.join(', ')}.`;
-}
-
-export function loadFoldInputs(workspace: string, sessionDirectory: string): FoldInputs {
-  const manifest = readSessionManifest(sessionDirectory);
-  const previous = readStatusFileState(path.join(sessionDirectory, 'status.json'));
-  const previousStatus = previous.state === 'ok' ? previous.status : null;
-  const executions = readExecutions(sessionDirectory);
-  const identity = statusIdentity(manifest, previousStatus);
-  return {
-    schemaVersion: manifest.schemaVersion,
-    manifest,
-    events: readParsedEvents(path.join(sessionDirectory, 'events.jsonl')),
-    executions,
-    presentExecutionIds: new Set(executions.map((execution) => execution.executionId)),
-    previousStatus,
-    outputFiles: listOutputFiles(sessionDirectory),
-    workflow: loadSessionWorkflow(workspace, sessionDirectory, identity),
-    titleRecord: readTitleRecord(sessionDirectory),
-  };
-}
-
-export function statusFileState(sessionDirectory: string): StatusFileState {
-  return readStatusFileState(path.join(sessionDirectory, 'status.json'));
 }
 
 function foldV1(inputs: FoldInputs): Record<string, unknown> {
@@ -499,11 +431,6 @@ function statusExecutionsFromFolds(executions: readonly FoldExecution[]): Status
   }));
 }
 
-function eventExecutionOrder(event: ParsedEvent): number {
-  const fromId = event.executionId ? (parseExecutionId(event.executionId)?.order ?? 0) : 0;
-  return Math.max(asInt(event.data.execution_order), fromId);
-}
-
 /**
  * An explicit resume of a blocker or an answered question makes the session runnable.
  * Each stopped execution still requires its own resume event before dispatch.
@@ -549,16 +476,6 @@ function latestSeenId(seen: ReadonlyMap<string, SeenExecution>): string | null {
     }
   }
   return best;
-}
-
-function isExecutionScoped(eventName: string): boolean {
-  return (
-    eventName.startsWith('execution.') ||
-    eventName.startsWith('stage.') ||
-    eventName.startsWith('provider.') ||
-    eventName.startsWith('verify.') ||
-    (eventName.startsWith('session.') && eventName !== 'session.created' && eventName !== 'session.activated')
-  );
 }
 
 function mergePublished(status: Record<string, unknown>, raw: unknown): void {
@@ -626,62 +543,5 @@ function manifestStatusToSession(manifestStatus: string | null): string {
   return 'active';
 }
 
-function outcomeRecord(event: ParsedEvent): Record<string, unknown> | null {
-  if (isRecord(event.data.outcome)) return event.data.outcome;
-  const top: Record<string, unknown> = {};
-  if (typeof event.raw.status === 'string') top.status = event.raw.status;
-  if (typeof event.raw.blocker === 'string') top.blocker = event.raw.blocker;
-  if (typeof event.raw.decision === 'string') top.decision = event.raw.decision;
-  if (typeof event.raw.question === 'string') top.question = event.raw.question;
-  return Object.keys(top).length > 0 ? top : null;
-}
-
-function decisionOf(outcome: Record<string, unknown> | null): string | null {
-  if (outcome === null) return null;
-  return textOr(outcome.decision);
-}
-
-function toStageOutcome(outcome: Record<string, unknown> | null): StageOutcome | null {
-  if (outcome === null || typeof outcome.status !== 'string') return null;
-  return new StageOutcome(outcome.status, textOr(outcome.blocker), textOr(outcome.decision), textOr(outcome.question), storedQuestions(outcome));
-}
-
-function latestExecution(executions: readonly FoldExecution[]): FoldExecution | null {
-  let best: FoldExecution | null = null;
-  for (const execution of executions) {
-    if (best === null) {
-      best = execution;
-      continue;
-    }
-    if (execution.executionOrder > best.executionOrder) best = execution;
-    else if (execution.executionOrder === best.executionOrder && execution.executionId > best.executionId) {
-      best = execution;
-    }
-  }
-  return best;
-}
-
-function statusIdentity(manifest: SessionManifest, previous: Record<string, unknown> | null): Record<string, unknown> {
-  return {
-    workflow_id: manifest.workflowId ?? previous?.workflow_id ?? null,
-    workflow_path: manifest.workflowPath ?? previous?.workflow_path ?? null,
-  };
-}
-
-function emptyManifest(sessionId: string): SessionManifest {
-  return {
-    sessionId,
-    title: null,
-    workflowId: null,
-    workflowPath: null,
-    role: null,
-    task: null,
-    createdAt: null,
-    priorSessionId: null,
-    manifestStatus: null,
-    schemaVersion: 1,
-  };
-}
-
-export { readExecutions } from './session-fold-read.js';
+export { readExecutions, readSessionManifest } from './session-fold-read.js';
 export type { FoldExecution, FoldInputs, SessionManifest } from './session-fold-types.js';

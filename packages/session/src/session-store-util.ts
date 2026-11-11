@@ -1,7 +1,10 @@
 import { readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 
+import { type ExecutionSnapshot } from '@nodeint/migent-kernel';
 import { isRecord } from '@nodeint/migent-workflow';
+
+import type { NextSuggestion } from './next-handoff.js';
 
 export function nonempty(value: unknown): string | null {
   return typeof value === 'string' && value !== '' ? value : null;
@@ -68,4 +71,25 @@ export function compareSortKey(left: [number, string], right: [number, string]):
   if (left[1] < right[1]) return -1;
   if (left[1] > right[1]) return 1;
   return 0;
+}
+
+export function snapshotsIncludingSave(
+  snapshots: readonly ExecutionSnapshot[],
+  saved: ExecutionSnapshot,
+): ExecutionSnapshot[] {
+  const included = snapshots.filter((snapshot) => snapshot.executionId !== saved.executionId);
+  included.push(saved);
+  return included;
+}
+
+/** The next.json already on disk, read without rewriting it. */
+export function existingNext(sessionDirectory: string): { path: string | null; next: NextSuggestion[] } {
+  const filePath = path.join(sessionDirectory, 'next.json');
+  try {
+    const parsed = JSON.parse(readFileSync(filePath, 'utf8')) as unknown;
+    if (isRecord(parsed) && Array.isArray(parsed.next)) return { path: filePath, next: parsed.next as NextSuggestion[] };
+  } catch {
+    // No usable next.json.
+  }
+  return { path: null, next: [] };
 }

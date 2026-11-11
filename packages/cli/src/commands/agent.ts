@@ -5,6 +5,7 @@ import { RoleRunResult, RoleRunResults } from '@nodeint/migent-contracts';
 import { AgentToolRunner, type RunResult } from '@nodeint/migent-engine';
 import { buildStageReplyPrompt, CancellationRequested, ConfigurationError, legacyClientOf, loadRoleResponsibilities, loadWorkspaceConfig, log, prependRoleInstructions, resolveRoleTarget, type TurnKind } from '@nodeint/migent-kernel';
 import { createAgentSession, isSessionLockLost, repairSessionUnlocked, requireAgentSession, SessionLock, SessionStore, stringOptions } from '@nodeint/migent-session';
+import { type OptionValues } from 'commander';
 
 import { clientRegistry, parseOptions } from '../client.js';
 import { printAgent, printError, printNotice, printReplyCommand,printResumeCommand } from '../display.js';
@@ -12,7 +13,10 @@ import { writeJson } from '../emit.js';
 import { cliHooks } from '../hooks.js';
 import { requireCurrentSchema } from '../migrate.js';
 import { bindCancellationSignals } from '../signals.js';
-import { resolvePrompt } from '../workspace.js';
+import { optionalText, stringList } from '../text.js';
+import { findWorkspace, invocationCwdPath, resolvePrompt } from '../workspace.js';
+
+export const CLIENT_MAPPING = 'claude→claude-code, codex→codex, grok→grok, agy→agy, opencode→opencode';
 
 export async function dispatchAgent(
   workspace: string,
@@ -399,4 +403,79 @@ function resolveSession(
   }
   const taskSummary = (task ?? role).trim();
   return [createAgentSession(workspace, role, taskSummary), true];
+}
+
+export function isAgentSession(workspace: string, sessionId: string): boolean {
+  try {
+    requireAgentSession(workspace, sessionId);
+    return true;
+  } catch (error) {
+    if (!(error instanceof ConfigurationError)) throw error;
+    if (error.message === `Session not found: ${sessionId}.`) return false;
+    if (error.message === `Session ${sessionId} was not created by agent.`) return false;
+    if (error.message.startsWith('Session status file is corrupt:')) return false;
+    throw error;
+  }
+}
+
+export function continueRoleSession(
+  workspace: string,
+  sessionId: string,
+  options: OptionValues,
+  readReply: (options: OptionValues) => string | null | 'invalid',
+): number | Promise<number> {
+  const flags: string[] = [];
+  if (options.once === true) flags.push('--once');
+  if (options.stage !== undefined) flags.push('--stage');
+  if (options.prior !== undefined) flags.push('--prior');
+  if (options.maxDispatches !== undefined) flags.push('--max-dispatches');
+  if (options.unlimitedDispatches === true) flags.push('--unlimited-dispatches');
+  if (options.progress === true) flags.push('--progress');
+  if (options.verbose === true) flags.push('--verbose');
+  if (options.refreshWorkflow === true) flags.push('--refresh-workflow');
+  if (flags.length > 0) {
+    printError(`Session ${sessionId} is a role session. Omit ${flags.join(', ')}.`);
+    return 2;
+  }
+  const reply = readReply(options);
+  if (reply === 'invalid') return 2;
+  return continueAgent(workspace, { sessionId, reply });
+}
+
+export async function runAgent(options: OptionValues, sessionId: string | null): Promise<number> {
+  const role = optionalText(options.role);
+  if (role === null) {
+    printError('Pass --role.');
+    return 2;
+  }
+  if (options.provider !== undefined) {
+    printError(`--provider has been removed; use --client <id> (${CLIENT_MAPPING}).`);
+    return 2;
+  }
+  const client = optionalText(options.client);
+  const model = optionalText(options.model);
+  if ((client === null) !== (model === null)) {
+    printError('Pass both --client and --model, or omit both.');
+    return 2;
+  }
+  const prompt = optionalText(options.prompt);
+  const promptFile = optionalText(options.file);
+  const promptStdin = options.stdin === true;
+  const selected = Number(prompt !== null) + Number(promptFile !== null) + Number(promptStdin);
+  if (selected !== 1) {
+    printError('Pass one of --prompt, --file, or --stdin.');
+    return 2;
+  }
+  return dispatchAgent(findWorkspace(invocationCwdPath()), {
+    role,
+    task: optionalText(options.task),
+    sessionId,
+    client,
+    model,
+    options: stringList(options.option),
+    prompt,
+    promptFile,
+    promptStdin,
+    asJson: options.json === true,
+  });
 }

@@ -7,7 +7,8 @@ import { isRecord } from '@nodeint/migent-workflow';
 import { parseYamlDocument } from '@nodeint/migent-workflow';
 
 import { readStatusFileState } from './query.js';
-import { readFoldedStatus, readSessionManifest } from './session-fold.js';
+import { readFoldedStatus } from './session-fold.js';
+import { readSessionManifest } from './session-fold-read.js';
 import { readWorkflowFreeze,WORKFLOW_FREEZE_FILE } from './session-freeze.js';
 import { relativeWorkflowPath } from './session-records.js';
 import { assertSessionId } from './session-selection.js';

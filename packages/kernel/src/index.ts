@@ -94,16 +94,13 @@ export type {
 } from './config-edit.js';
 export {
   assignRoles,
-  ConfigEditError,
   describeChange,
   inspectConfig,
   matchingAgentName,
-  patchConfigText,
   placeRoleAgent,
-  upgradeConfigText,
   upsertAgent,
-  yamlScalar,
 } from './config-edit.js';
+export { patchConfigText, upgradeConfigText } from './config-text.js';
 export { CORRECTION_FAILURE_REASONS } from './correction-policy.js';
 export { debugEnabled, inheritedEnv, migentHomeOverride, noInputRequested, platformHome, skillsChildEnv } from './env.js';
 export type { ConfigurationErrorDetails, SourcePosition } from './errors.js';
@@ -117,7 +114,7 @@ export {
   legacyClientOf,
 } from './legacy-provider.js';
 export type { MigrationFn,MigrationLayer } from './migration.js';
-export { migrateConfig, migrateWorkflow, patchWorkflowText } from './migration.js';
+export { migrateConfig, migrateWorkflow } from './migration.js';
 export { assertConfigClientEquivalence } from './migration-config.js';
 export { resolveStageOutcome } from './outcome-resolver.js';
 export type { ExecutionSnapshot, PublishedOutput } from './outputs.js';
@@ -192,28 +189,32 @@ export {
 } from './runtime.js';
 export type { NextStageResult } from './selection.js';
 export {
-  failedStageCount,
-  latestCompleteByStage,
   NextStage,
   nextStage,
   NextStageError,
   readyStages,
+  runnableNow,
+  stageDispatchError,
+  Stop,
+} from './selection.js';
+export {
+  failedStageCount,
+  latestCompleteByStage,
   revisionResumeExecution,
   revisionStop,
-  runnableNow,
   stageAgentExecution,
-  stageDispatchError,
   stagePromptAlreadyDelivered,
-  Stop,
   VERIFY_FAILED,
   verifyExhaustedExecution,
   verifyFailedExecution,
-} from './selection.js';
+} from './selection-history.js';
 export type { AskTarget } from './stage-outcome.js';
 export { outcomeStatuses, parseStageOutcome, StageOutcome } from './stage-outcome.js';
 export type { VerifyCommandResult,VerifyRunResult } from './verify-runner.js';
 export { formatVerifyReport,VerifyRunner } from './verify-runner.js';
 export { whichSync } from './which.js';
+export { patchWorkflowText } from './workflow-text.js';
+export { ConfigEditError, yamlScalar } from './yaml-patch.js';
 export type { TurnKind } from '@nodeint/migent-prompts';
 
 export const KERNEL_PLACEHOLDER = 'kernel';
@@ -240,8 +241,9 @@ export type { OutcomeContext } from './outcome-resolver.js';
 export { buildVerifyRepairPrompt } from './prompt.js';
 export type { InterruptPolicy, InterruptReport } from './provider-interrupt.js';
 export { DEFAULT_INTERRUPT_POLICY, interruptSession, isSettled } from './provider-interrupt.js';
-export { currentCompleteByStage, missingOutputNames, missingOutputProducers, readyOutsideStoppedBranches, schedulableStageIds, VERIFY_EXHAUSTED, version2IdleReason } from './selection.js';
+export { missingOutputNames, missingOutputProducers, readyOutsideStoppedBranches, schedulableStageIds, version2IdleReason } from './selection.js';
 export { version2GraphQuiet } from './selection.js';
+export { currentCompleteByStage, VERIFY_EXHAUSTED } from './selection-history.js';
 export { ResponseContractError } from './stage-outcome.js';
 export type { Gates } from './turn-diagnostics.js';
 export { buildTurnDiagnostics, observeTurn, StreamSummarizer, truncateText } from './turn-diagnostics.js';

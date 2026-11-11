@@ -1,5 +1,6 @@
 import path from 'node:path';
 
+import type { ClientRegistry } from '@nodeint/migent-kernel';
 import {
   type ExecutionSnapshot,
   isArtifactSchema,
@@ -10,9 +11,18 @@ import {
   selectSourceExecution,
 } from '@nodeint/migent-kernel';
 import { currentCompleteByStage } from '@nodeint/migent-kernel';
-import { isWorkflowV2, type WorkflowDocument } from '@nodeint/migent-workflow';
+import { ConfigurationError, utcNow } from '@nodeint/migent-kernel';
+import { isRecord, isWorkflowV2, type WorkflowDocument } from '@nodeint/migent-workflow';
 
+import { sealSessionMetrics } from './metrics.js';
+import { publishNextSuggestions } from './next-handoff.js';
+import { readStatusFileState } from './query.js';
+import { appendLifecycleEvent } from './session-events.js';
+import { commitFoldedStatus } from './session-fold.js';
+import { readSessionManifest } from './session-fold-read.js';
 import type { LedgerOutput } from './session-ledger.js';
+import type { ManualCompletionResult } from './session-store-types.js';
+import { existingNext } from './session-store-util.js';
 
 /** `published_by_execution_id` for outputs published by `migent session complete`. */
 export const MANUAL_PUBLISHER = 'manual';
@@ -68,4 +78,75 @@ export function publishManualCompletion(
     published_by_execution_id: output.publishedByExecutionId,
   }));
   return { outputs, missing };
+}
+
+/** The store operations the locked manual completion needs. */
+export interface ManualCompletionOps {
+  readonly workspace: string;
+  readonly metricsClients: ClientRegistry | null;
+  loadWorkflow(previousStatus: Record<string, unknown>): WorkflowDocument | null;
+  snapshotList(sessionId: string): ExecutionSnapshot[];
+  rewriteManifestStatus(sessionDirectory: string, status: string): void;
+}
+
+/** The locked part of `completeManually`: validates the status, publishes outputs, seals, and writes next.json. */
+export function completeManuallyLocked(
+  ops: ManualCompletionOps,
+  sessionId: string,
+  sessionDirectory: string,
+): ManualCompletionResult {
+    const read = readStatusFileState(path.join(sessionDirectory, 'status.json'));
+    if (read.state !== 'ok') {
+      const reason = read.state === 'corrupt' ? 'has an unreadable status.json' : 'has no status.json';
+      throw new ConfigurationError(`Session ${sessionId} ${reason}. Run: migent session repair ${sessionId}`);
+    }
+    const previous = read.status;
+    const manifest = readSessionManifest(sessionDirectory);
+    if (previous.workflow_id === 'agent' || manifest.workflowId === 'agent') {
+      throw new ConfigurationError(`Session ${sessionId} is a role session. Only workflow sessions can be completed manually.`);
+    }
+    const from = typeof previous.status === 'string' ? previous.status : '';
+    if (from === 'completed') {
+      const outputs = isRecord(previous.outputs) ? previous.outputs : {};
+      return { alreadyCompleted: true, from, outputs, missingOutputs: [], next: existingNext(sessionDirectory) };
+    }
+    if (from === 'prepared') {
+      throw new ConfigurationError(
+        `Session ${sessionId} is prepared and has not run. Start it with: migent session run --session ${sessionId}`,
+      );
+    }
+    if (from !== 'active' && from !== 'blocked' && from !== 'question' && from !== 'cancelled') {
+      throw new ConfigurationError(`Session ${sessionId} has status ${from || 'unknown'} and cannot be completed.`);
+    }
+    const workflow = ops.loadWorkflow(previous);
+    if (workflow === null && previous.workflow_id !== 'agent') {
+      throw new ConfigurationError(
+        `Session ${sessionId} has no readable workflow. Check the frozen workflow or the live definition. Run: migent doctor --session ${sessionId}`,
+      );
+    }
+    const plan = publishManualCompletion(sessionDirectory, workflow, ops.snapshotList(sessionId));
+    const timestamp = utcNow();
+    if (plan.outputs.length > 0) {
+      appendLifecycleEvent(sessionDirectory, { event: 'outputs.published', timestamp, data: { outputs: plan.outputs } });
+    }
+    const data: Record<string, unknown> = {
+      manual: true,
+      from,
+      reason: plan.missing.length > 0
+        ? `Marked completed manually; missing required outputs: ${plan.missing.join(', ')}`
+        : 'Marked completed manually',
+    };
+    if (plan.missing.length > 0) data.missing_outputs = plan.missing;
+    appendLifecycleEvent(sessionDirectory, { event: 'session.completed', timestamp, data });
+    ops.rewriteManifestStatus(sessionDirectory, 'completed');
+    const folded = commitFoldedStatus(ops.workspace, sessionDirectory);
+    if (ops.metricsClients !== null) sealSessionMetrics(ops.workspace, sessionId, ops.metricsClients);
+    const next = publishNextSuggestions(ops.workspace, sessionId);
+    return {
+      alreadyCompleted: false,
+      from,
+      outputs: isRecord(folded.outputs) ? folded.outputs : {},
+      missingOutputs: plan.missing,
+      next,
+    };
 }

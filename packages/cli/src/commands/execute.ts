@@ -2,15 +2,17 @@ import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 
 import { AgentToolRunner, DEFAULT_MAX_DISPATCHES, executeNamedWorkflow, type ExecuteResult } from '@nodeint/migent-engine';
-import { CORRECTION_FAILURE_REASONS,formatDuration, log } from '@nodeint/migent-kernel';
+import { ConfigurationError, CORRECTION_FAILURE_REASONS,formatDuration, log } from '@nodeint/migent-kernel';
 import { FAILURE_FILENAME, formatNextCommand,publishNextSuggestions, SessionStore } from '@nodeint/migent-session';
+import { type OptionValues } from 'commander';
 
 import { clientRegistry } from '../client.js';
-import { formatQuestion,printReplyCommand, printResumeCommand } from '../display.js';
+import { formatQuestion,printError, printReplyCommand, printResumeCommand } from '../display.js';
 import { cliHooks } from '../hooks.js';
 import { requireCurrentSchema } from '../migrate.js';
 import { runPreflight } from '../preflight.js';
-import { text } from '../text.js';
+import { optionalText, text } from '../text.js';
+import { findWorkspace, invocationCwdPath } from '../workspace.js';
 
 export interface ExecuteWorkflowOptions {
   action: string;
@@ -241,4 +243,82 @@ function parsedTime(value: unknown): number | null {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+export function runWorkflowCommand(args: {
+  workflowId: string | null;
+  task: string | null;
+  sessionId: string | null;
+  prepared: boolean;
+  once: boolean;
+  options: OptionValues;
+  output: { itemProgress: boolean };
+}): number | Promise<number> {
+  if (rejectOnce(args.options)) return 2;
+  const {workflowId} = args;
+  const task = args.prepared ? null : args.task;
+  const sessionId = args.prepared ? args.sessionId : null;
+  const stageId = optionalText(args.options.stage);
+  if (!args.once && stageId === null) {
+    const ceiling = dispatchCeiling(args.options);
+    if (typeof ceiling === 'string') return 2;
+    return executeWorkflow(findWorkspace(invocationCwdPath()), {
+      action: 'start',
+      workflowId,
+      task,
+      sessionId,
+      startPrepared: args.prepared,
+      priorSessionId: optionalText(args.options.prior),
+      maxDispatches: ceiling,
+      refreshWorkflow: args.options.refreshWorkflow === true,
+      skipPreflight: args.options.skipPreflight === true,
+      ...args.output,
+    });
+  }
+  return executeWorkflow(findWorkspace(invocationCwdPath()), {
+    action: 'stage',
+    workflowId,
+    task,
+    sessionId,
+    stageId,
+    startPrepared: args.prepared,
+    priorSessionId: optionalText(args.options.prior),
+    maxDispatches: null,
+    refreshWorkflow: args.options.refreshWorkflow === true,
+    skipPreflight: args.options.skipPreflight === true,
+    ...args.output,
+  });
+}
+
+export function rejectOnce(options: OptionValues): boolean {
+  if (options.once !== true && options.stage === undefined) return false;
+  const flag = options.once === true ? '--once' : '--stage';
+  if (options.maxDispatches !== undefined) {
+    printError(`${flag} cannot be combined with --max-dispatches.`);
+    return true;
+  }
+  if (options.unlimitedDispatches === true) {
+    printError(`${flag} cannot be combined with --unlimited-dispatches.`);
+    return true;
+  }
+  return false;
+}
+
+export function dispatchCeiling(options: OptionValues): number | null | 'error' {
+  const maxDispatches = optionalText(options.maxDispatches);
+  const unlimited = options.unlimitedDispatches === true;
+  if (unlimited && maxDispatches !== null) {
+    printError('--max-dispatches cannot be combined with --unlimited-dispatches.');
+    return 'error';
+  }
+  if (unlimited) return null;
+  if (maxDispatches === null) return DEFAULT_MAX_DISPATCHES;
+  return integerFlag(maxDispatches, '--max-dispatches');
+}
+
+function integerFlag(raw: string, flag: string): number {
+  if (!/^[0-9]+$/.test(raw) || Number(raw) < 1) {
+    throw new ConfigurationError(`${flag} must be at least 1.`);
+  }
+  return Number(raw);
 }
