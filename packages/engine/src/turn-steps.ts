@@ -240,9 +240,10 @@ export function evaluateGates(
     }
   }
   let { anomalyReason, turnError } = fresh;
-  if (fresh.candidate && (invokeError !== null || gateFailure !== null)) {
+  const rejection = invokeError ?? (gateFailure === null ? null : `${gateFailure.errorKind}: ${gateFailure.detail}`);
+  if (fresh.candidate && rejection !== null) {
     // Rejected: the error is the model text itself, the failed gate is the recorded reason.
-    anomalyReason = invokeError ?? `${gateFailure!.errorKind}: ${gateFailure!.detail}`;
+    anomalyReason = rejection;
     invokeError = it.responseText;
     turnError = invokeError;
   }

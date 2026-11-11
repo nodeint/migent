@@ -201,8 +201,8 @@ function checkExecutables(
 ): Check {
   const items: string[] = [];
   const problems: string[] = [];
-  for (const command of [...executables.keys()].sort()) {
-    const entry = executables.get(command)!;
+  const ordered = [...executables].sort(([left], [right]) => Number(left > right) - Number(left < right));
+  for (const [command, entry] of ordered) {
     const found = which(command);
     if (found) items.push(`${[...entry.labels].sort().join(', ')}  ${found}`);
     else problems.push(`${command} is not on PATH (stages: ${entry.stages.join(', ')})`);

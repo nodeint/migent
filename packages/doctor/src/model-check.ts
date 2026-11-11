@@ -163,14 +163,14 @@ function distance(left: string, right: string): number {
     const current = [row];
     for (let column = 1; column <= right.length; column++) {
       current[column] = Math.min(
-        previous[column]! + 1,
-        current[column - 1]! + 1,
-        previous[column - 1]! + (left[row - 1] === right[column - 1] ? 0 : 1),
+        previous[column] + 1,
+        current[column - 1] + 1,
+        previous[column - 1] + (left[row - 1] === right[column - 1] ? 0 : 1),
       );
     }
     previous = current;
   }
-  return previous[right.length]!;
+  return previous[right.length];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

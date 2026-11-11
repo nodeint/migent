@@ -37,7 +37,6 @@ const timestampText = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
 const topKeys = new Set(['schema_version', 'workspaces']);
 const workspaceKeys = new Set(['id', 'name', 'path', 'registered_at', 'updated_at', 'tool']);
 const toolKeys = new Set(['name', 'version']);
-const stringFields = ['id', 'name', 'path', 'registered_at', 'updated_at'] as const;
 
 export class RegistryCorrupt extends Error {
   constructor(message: string) {
@@ -268,22 +267,28 @@ function parseWorkspace(item: unknown): WorkspaceRecord {
     throw new RegistryCorrupt('registry.json has the wrong shape.');
   }
   const source = item as Record<string, unknown>;
-  const record: Partial<WorkspaceRecord> = {};
-  for (const key of stringFields) {
+  const readString = (key: 'id' | 'name' | 'path' | 'registered_at' | 'updated_at'): string => {
     const value = source[key];
     if (typeof value !== 'string' || value === '') throw new RegistryCorrupt('registry.json has the wrong shape.');
-    record[key] = value;
-  }
+    return value;
+  };
+  const record = {
+    id: readString('id'),
+    name: readString('name'),
+    path: readString('path'),
+    registered_at: readString('registered_at'),
+    updated_at: readString('updated_at'),
+  };
   const {tool} = source;
   if (!tool || typeof tool !== 'object' || Array.isArray(tool) || !sameKeys(tool, toolKeys, false) || !('name' in tool)) {
     throw new RegistryCorrupt('registry.json has the wrong shape.');
   }
-  if (record.name!.length === 0 || record.name!.length > MAX_WORKSPACE_NAME_LENGTH) {
+  if (record.name.length === 0 || record.name.length > MAX_WORKSPACE_NAME_LENGTH) {
     throw new RegistryCorrupt('registry.json has the wrong shape.');
   }
-  if (!absoluteRegistryPath(record.path!)) throw new RegistryCorrupt('registry.json has the wrong shape.');
-  if (record.id !== workspaceIdFor(record.path!)) throw new RegistryCorrupt('registry.json has the wrong shape.');
-  if (!isTimestamp(record.registered_at!) || !isTimestamp(record.updated_at!)) {
+  if (!absoluteRegistryPath(record.path)) throw new RegistryCorrupt('registry.json has the wrong shape.');
+  if (record.id !== workspaceIdFor(record.path)) throw new RegistryCorrupt('registry.json has the wrong shape.');
+  if (!isTimestamp(record.registered_at) || !isTimestamp(record.updated_at)) {
     throw new RegistryCorrupt('registry.json has the wrong shape.');
   }
   const toolRecord = tool as Record<string, unknown>;
@@ -300,11 +305,11 @@ function parseWorkspace(item: unknown): WorkspaceRecord {
     storedTool.version = version;
   }
   return {
-    id: record.id!,
-    name: record.name!,
-    path: record.path!,
-    registered_at: record.registered_at!,
-    updated_at: record.updated_at!,
+    id: record.id,
+    name: record.name,
+    path: record.path,
+    registered_at: record.registered_at,
+    updated_at: record.updated_at,
     tool: storedTool,
   };
 }

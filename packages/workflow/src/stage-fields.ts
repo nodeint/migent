@@ -113,7 +113,7 @@ export function normalizeStageDecision(stage: Record<string, unknown>, version7 
     if (decisionEntryProblem(entry)) {
       throw new ConfigurationError(`${field} entries must each declare exactly one decision.`);
     }
-    const rawName = Object.keys(entry)[0]!;
+    const [rawName] = Object.keys(entry);
     const name = requiredString(rawName, field).toLowerCase();
     if (Object.hasOwn(routes, name)) throw new ConfigurationError(`Duplicate decision value on ${field}: ${name}`);
     const body = entry[rawName];

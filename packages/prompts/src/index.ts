@@ -37,7 +37,7 @@ function directive(turn: TurnKind | null, hasTask: boolean, handoff: boolean): s
   if (handoff && turn === 'repair') return 'Fix the verify failure above, then rewrite the handoff file.';
   if (turn === 'start' || turn === 'continue') {
     const text = TURN_DIRECTIVES[turn];
-    return hasTask ? `Read the task, then ${text}` : text[0]!.toUpperCase() + text.slice(1);
+    return hasTask ? `Read the task, then ${text}` : text[0].toUpperCase() + text.slice(1);
   }
   return turn === null ? 'Carry out the request above.' : TURN_DIRECTIVES[turn];
 }
@@ -221,8 +221,13 @@ export function formatQuestionAnswers(
   answers: readonly QuestionAnswerInput[],
 ): string {
   return answers.map((answer) => {
-    const question = questions.find((row) => row.id === answer.question_id)!;
-    const selected = answer.selected.map((id) => `${id}. ${question.options.find((option) => option.id === id)!.label}`);
+    const question = questions.find((row) => row.id === answer.question_id);
+    if (question === undefined) throw new Error(`Answer references unknown question: ${answer.question_id}`);
+    const selected = answer.selected.map((id) => {
+      const option = question.options.find((candidate) => candidate.id === id);
+      if (option === undefined) throw new Error(`Answer references unknown option ${id} of question ${answer.question_id}`);
+      return `${id}. ${option.label}`;
+    });
     const lines = [
       `${answer.question_id}. ${question.question} (${question.selection})`,
       `   - Selected: ${selected.length > 0 ? selected.join('; ') : 'none'}`,

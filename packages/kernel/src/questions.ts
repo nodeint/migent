@@ -115,7 +115,7 @@ export function answerQuestions(questions: readonly Question[], reply: string): 
   if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
     values = value as Record<string, unknown>;
   } else if (questions.length === 1) {
-    values = { [questions[0]!.id]: typeof value === 'string' && /^[A-Za-z](?:\s*\+\s*[A-Za-z])+$/.test(value.trim())
+    values = { [questions[0].id]: typeof value === 'string' && /^[A-Za-z](?:\s*\+\s*[A-Za-z])+$/.test(value.trim())
       ? value.trim().toUpperCase().split(/\s*\+\s*/) : value };
   } else {
     throw new ConfigurationError('Answer every question using its number, for example: 1A, 2B, 3 explain further.');
@@ -157,10 +157,10 @@ function numberedAnswers(questions: readonly Question[], reply: string): Record<
   for (const entry of entries) {
     const match = pattern.exec(entry.trim());
     if (!match) throw new ConfigurationError('Use a question number followed by a letter or free text.');
-    const number = match[1]!;
+    const [, number] = match;
     if (!questions.some((question) => question.id === number)) throw new ConfigurationError(`Unknown question number: ${number}.`);
     if (Object.hasOwn(values, number)) throw new ConfigurationError(`Question ${number} is answered more than once. Use A+C for multiple selections.`);
-    const answer = match[2]!.trim();
+    const answer = match[2].trim();
     values[number] = /^[A-Za-z](?:\s*\+\s*[A-Za-z])*$/.test(answer)
       ? answer.toUpperCase().split(/\s*\+\s*/) : answer;
   }

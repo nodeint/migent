@@ -328,14 +328,17 @@ function publishRunningStages(
   draft.clear('current_stage');
   draft.clear('running_stages');
   const rows = executions
-    .filter((execution) => execution.status === 'running' && noted.has(execution.executionId))
+    .filter((execution) => execution.status === 'running')
     .sort((left, right) => {
       if (left.executionOrder !== right.executionOrder) return left.executionOrder - right.executionOrder;
       if (left.executionId < right.executionId) return -1;
       if (left.executionId > right.executionId) return 1;
       return 0;
     })
-    .map((execution) => ({ ...noted.get(execution.executionId)!, client: execution.client || null }));
+    .flatMap((execution) => {
+      const stage = noted.get(execution.executionId);
+      return stage === undefined ? [] : [{ ...stage, client: execution.client || null }];
+    });
   if (rows.length > 0) draft.set('running_stages', rows);
 }
 
@@ -358,7 +361,7 @@ function publishExecutionStatus(
     draft.recordLatestDecision(decisionOfOutcome(latest.outcome));
   }
   const questions = latestPerStage(rows).filter((row) => row.outcome?.status === 'question' && row.status !== 'running');
-  draft.set('questions', questions.flatMap((row) => row.outcome!.questions.map((question) => ({
+  draft.set('questions', questions.flatMap((row) => (row.outcome?.questions ?? []).map((question) => ({
     ...question, execution_id: row.executionId, stage_id: row.stageId,
     recipient: inputs.workflow?.stages[row.stageId]?.ask ?? 'human',
     file: 'executions/' + row.executionId + '/questions.json',

@@ -235,9 +235,9 @@ export function readOptions(value: unknown, where: Field, index?: StructuralInde
   const raw = value as Record<string, unknown>;
   const known = index === undefined ? undefined : new Map<string, ConfigurationError>();
   const errors = known ?? optionErrors(raw, where);
-  if (known !== undefined) {
+  if (known !== undefined && index !== undefined) {
     for (const key of Object.keys(raw)) {
-      const found = index!.get(keyOf([...where.path, key]));
+      const found = index.get(keyOf([...where.path, key]));
       if (found !== undefined) known.set(key, found);
     }
   }
@@ -274,7 +274,7 @@ function onChosenBranches(issue: SchemaIssue, owner: readonly (string | number)[
   let node: unknown = EffectiveConfig;
   let depth = 0;
   for (let at = 0; at < segments.length; at += 1) {
-    const segment = segments[at]!;
+    const segment = segments[at];
     const container = node as JsonSchema | unknown[];
     if (segment === 'anyOf') {
       const value = owner.slice(0, depth).reduce<unknown>(
@@ -291,7 +291,7 @@ function onChosenBranches(issue: SchemaIssue, owner: readonly (string | number)[
     }
     if (segment === 'properties' || segment === 'patternProperties') {
       node = (container as JsonSchema)[segment];
-      node = (node as JsonSchema)[segments[at + 1]!];
+      node = (node as JsonSchema)[segments[at + 1]];
       at += 1;
       depth += 1;
       continue;

@@ -162,7 +162,7 @@ export function selectSessionWorkflow(workspace: string, sessionId: string): Ses
   }
   const {document} = selection;
   if (document === null) return selection;
-  selection.source!.workflowId = document.id;
+  selection.source.workflowId = document.id;
   if (kind === 'draft' && manifest.workflowId && document.id !== manifest.workflowId) {
     selection.problems.push(
       `Session workflow id is ${document.id}, not ${manifest.workflowId}. Do not change id in workflow.yaml.`,

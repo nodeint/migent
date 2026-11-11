@@ -68,7 +68,7 @@ export function collectDecisionV3(
       valid = false;
       return;
     }
-    const rawName = Object.keys(entry)[0]!;
+    const [rawName] = Object.keys(entry);
     const name = rawName.trim().toLowerCase();
     if (name === '') {
       problems.addMessage('invalid-value', `Missing or invalid ${field}.`, entryPath);

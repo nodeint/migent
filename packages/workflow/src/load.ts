@@ -35,7 +35,7 @@ export function loadNamedWorkflow(
     fail(`${workflowId}: id is declared by ${names}.`);
   }
   if (matches.length === 0) fail(`Workflow not found: ${workflowId}`);
-  return requireStages(loadWorkflowDocument(matches[0]!.path, options));
+  return requireStages(loadWorkflowDocument(matches[0].path, options));
 }
 
 export function loadWorkflowCatalog(workspace: string, options: LoadWorkflowOptions = {}): WorkflowCatalog {

@@ -199,7 +199,7 @@ async function runVersion2Pool(run: ExecuteRun, limits: LoopLimits): Promise<Exe
       throw error;
     }
     for (let index = flights.length - 1; index >= 0; index -= 1) {
-      if (flights[index]!.settled) flights.splice(index, 1);
+      if (flights[index].settled) flights.splice(index, 1);
     }
   };
   const startStage = (

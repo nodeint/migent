@@ -267,13 +267,13 @@ export class SessionStoreResume extends SessionStoreCore {
     const reopened: { executionId: string; stageId: string }[] = [];
     const timestamp = utcNow();
     for (const item of cancelled) {
-      const {metadata} = item;
-      const {context} = item;
+      const {metadata, context} = item;
       metadata.status = 'running';
       metadata.completed_at = null;
       writeJsonAtomic(path.join(context.directory, 'execution.json'), metadata);
       if (metadata.kind !== 'verify') {
-        const record = records.get(context.executionId)!;
+        const record = records.get(context.executionId);
+        if (record === undefined) throw new Error(`No agent session record for execution ${context.executionId}`);
         record.status = 'running';
         this.save(record, context);
       }

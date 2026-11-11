@@ -55,8 +55,7 @@ export function dependencyClosureKnown(
 ): boolean {
   const pending = [stageId];
   const seen = new Set<string>();
-  while (pending.length > 0) {
-    const next = pending.pop()!;
+  for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
     if (seen.has(next)) continue;
     seen.add(next);
     // A declared stage without a collected unit, or an unknown edge, leaves the closure unproven.
@@ -84,8 +83,7 @@ export function definiteConditionalReach(
   const closureKnown = (id: string): boolean => dependencyClosureKnown(byId, declaredIds, id);
   const reach = new Set<string>([stageId]);
   const pending = [stageId];
-  while (pending.length > 0) {
-    const member = pending.pop()!;
+  for (let member = pending.pop(); member !== undefined; member = pending.pop()) {
     const found: string[] = [];
     for (const other of stages) {
       if (other.dependsOn.state !== 'valid') continue;
@@ -214,7 +212,7 @@ export function collectGraphProblems(stages: readonly DraftStage[], context: Gra
   if (version2 && dependsComplete && structurallyComplete) {
     for (const stage of stages) {
       if (stage.routes.state === 'invalid') continue;
-      if (isLeafStage(graph, graph[stage.id]!)) points.add(stage.id);
+      if (isLeafStage(graph, graph[stage.id])) points.add(stage.id);
     }
   }
   if (points.size === 0) return;

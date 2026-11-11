@@ -194,7 +194,8 @@ export class TurnLoop {
         turn: this.turn, error_kind: failure.errorKind, ...fileField,
       });
     }
-    const used = this.corrections[failure.kind]!;
+    const used = this.corrections[failure.kind];
+    if (used === undefined) throw new Error(`Correction ledger has no entry for ${failure.kind} after a ${decision} decision.`);
     const message = rule.render(used, files);
     record.history.push({ role: 'user', content: message });
     store.save(record, context);
@@ -229,7 +230,8 @@ export class TurnLoop {
   }
 
   private takePendingVerify(): Iteration {
-    const pending = this.pendingVerify!;
+    const pending = this.pendingVerify;
+    if (pending === null) throw new Error('No pending verify result to take.');
     this.pendingVerify = null;
     let { invokeError, gateFailure } = pending;
     // A saved reply passes the same output gates a fresh one does before it is accepted.

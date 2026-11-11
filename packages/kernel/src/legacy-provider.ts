@@ -43,5 +43,5 @@ export function legacyClientOf(provider: string | null | undefined): string | nu
 export function clientOfCommand(command: string | null | undefined): string | null {
   if (typeof command !== 'string' || command.trim() === '') return null;
   const base = path.basename(command.trim()).replace(/\.(?:exe|cmd|bat|ps1)$/i, '').toLowerCase();
-  return Object.hasOwn(LEGACY_COMMAND_CLIENT, base) ? LEGACY_COMMAND_CLIENT[base]! : null;
+  return Object.hasOwn(LEGACY_COMMAND_CLIENT, base) ? LEGACY_COMMAND_CLIENT[base] : null;
 }

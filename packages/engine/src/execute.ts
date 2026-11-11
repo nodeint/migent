@@ -239,8 +239,8 @@ async function resumeReopenedExecutions(
     if (rejected && rejected.status === 'rejected') throw rejected.reason;
     const continued = settled.flatMap((item) => (item.status === 'fulfilled' ? [item.value] : []));
     for (let index = 0; index < reopened.length; index += 1) {
-      const item = reopened[index]!;
-      const result = continued[index]!;
+      const item = reopened[index];
+      const result = continued[index];
       const outcome =
         result.failure_reason === VERIFY_FAILED
           ? 'verify_failed'

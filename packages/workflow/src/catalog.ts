@@ -71,7 +71,7 @@ export function checkWorkflowCatalog(
       failed.add(workflowId);
       continue;
     }
-    const entry = group[0]!;
+    const [entry] = group;
     if (entry.document !== null) documents[workflowId] = entry.document;
     if (!entry.stagesDeclared) {
       problems.push({ code: 'no-stages', message: `${workflowId}: declares no stages.`, workflow: workflowId });
@@ -79,7 +79,7 @@ export function checkWorkflowCatalog(
   }
   for (const [workflowId, group] of grouped) {
     if (group.length > 1) continue;
-    checkEntryReferences(group[0]!, workflowId, { entries, documents, failed, problems, external: false });
+    checkEntryReferences(group[0], workflowId, { entries, documents, failed, problems, external: false });
   }
   // An external entry (a session draft) is checked against the catalog but is never part of it, so it
   // may share an id with a catalog workflow without a duplicate-id finding.

@@ -20,9 +20,9 @@ function table(views: readonly Record<string, unknown>[], columns: readonly Colu
     columns.map((column) => column.header),
     ...views.map((view) => columns.map((column) => column.cell(view))),
   ];
-  const widths = columns.map((_, index) => Math.max(...rows.map((row) => row[index]!.length)));
+  const widths = columns.map((_, index) => Math.max(...rows.map((row) => row[index].length)));
   return rows
-    .map((row) => row.map((cell, index) => (index === row.length - 1 ? cell : cell.padEnd(widths[index]!))).join('  ').trimEnd())
+    .map((row) => row.map((cell, index) => (index === row.length - 1 ? cell : cell.padEnd(widths[index]))).join('  ').trimEnd())
     .join('\n')
     .concat('\n');
 }

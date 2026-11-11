@@ -303,7 +303,7 @@ function version2CompletingExecution(
   if (!isWorkflowV2(workflow)) return null;
   for (let index = 0; index < rows.length; index += 1) {
     if (sessionStatusFromExecutions(rows.slice(0, index + 1), cursor, workflow) === 'completed') {
-      return rows[index]!.executionId;
+      return rows[index].executionId;
     }
   }
   return null;

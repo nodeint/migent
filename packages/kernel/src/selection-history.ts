@@ -167,7 +167,7 @@ export function revisionResumeExecution(
 ): string | null {
   const own = snapshots.filter((snapshot) => snapshot.stageId === stageId && snapshot.status !== 'skipped');
   if (own.length === 0) return null;
-  let latestOwn = own[0]!;
+  let [latestOwn] = own;
   let latestCompleteOwn: ExecutionSnapshot | null = null;
   for (const snapshot of own) {
     if (snapshot.executionOrder > latestOwn.executionOrder) latestOwn = snapshot;
@@ -276,7 +276,7 @@ export function latestRouteTo(
   if (isWorkflowV2(workflow)) {
     const relevant = relevantRouterSnapshots(workflow, snapshots, stageId);
     if (relevant === null || relevant.length === 0) return null;
-    return relevant[relevant.length - 1]!;
+    return relevant[relevant.length - 1];
   }
   let best: ExecutionSnapshot | null = null;
   for (const snapshot of snapshots) {

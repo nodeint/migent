@@ -114,7 +114,7 @@ async function lookupView<Row extends { name: string }>(options: {
       if (view.name === name) matches.push({ client: result.client, view });
     }
   }
-  if (matches.length === 1) return matches[0]!.view;
+  if (matches.length === 1) return matches[0].view;
   if (matches.length > 1) {
     throw new ConfigurationError(
       `${capitalized(label)} ${name} matches more than one client: ${matches.map((match) => match.client).join(', ')}. Pass --client to choose one.`,

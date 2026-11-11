@@ -520,7 +520,7 @@ function renameKey(context: SyncContext, block: Block, key: string): void {
   const line = lines[block.line] ?? '';
   const match = /^(\s*)(["']?)([^\s"':]+)\2(\s*:)/.exec(line);
   if (match === null) throw new ConfigEditError(`Cannot rename ${block.key} in this file.`);
-  edits.push([block.line, block.line + 1, [`${match[1]}${key}${line.slice(match[0].length - match[4]!.length)}`]]);
+  edits.push([block.line, block.line + 1, [`${match[1]}${key}${line.slice(match[0].length - match[4].length)}`]]);
 }
 
 /** The end of a block's own content: trailing blank and comment-only lines belong to what follows. */
@@ -533,10 +533,11 @@ function contentEnd(lines: string[], block: Block): number {
 function liftAgentLines(context: SyncContext, agent: Block): void {
   const client = childBlock(agent, 'client');
   const options = childBlock(agent, 'options');
-  if (client === null && options === null) return;
-  if (client !== null && client.value.trim() === '' ) return; // already a mapping
-  if (client !== null && /^[{[]/.test(client.value.trim())) return;
-  const {indent} = ((client ?? options)!);
+  const anchor = client ?? options;
+  if (anchor === null) return;
+  // An empty value is already a mapping; a flow value is left alone.
+  if (client !== null && (client.value.trim() === '' || /^[{[]/.test(client.value.trim()))) return;
+  const {indent} = anchor;
   const moved: string[] = [];
   if (options !== null) {
     for (const line of context.lines.slice(options.line, contentEnd(context.lines, options))) {
@@ -553,5 +554,5 @@ function liftAgentLines(context: SyncContext, agent: Block): void {
     if (options !== null) context.edits.push([options.line, contentEnd(context.lines, options), []]);
     return;
   }
-  context.edits.push([options!.line, contentEnd(context.lines, options!), [`${' '.repeat(indent)}client:`, ...moved]]);
+  if (options !== null) context.edits.push([options.line, contentEnd(context.lines, options), [`${' '.repeat(indent)}client:`, ...moved]]);
 }

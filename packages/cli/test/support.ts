@@ -89,7 +89,7 @@ export class FakeClient implements CliClient {
   protected promptFor(stdout: string): string {
     try {
       const {call} = (JSON.parse(stdout) as { call?: unknown });
-      if (typeof call === 'number' && this.calls[call] !== undefined) return this.calls[call]!.prompt;
+      if (typeof call === 'number' && this.calls[call] !== undefined) return this.calls[call].prompt;
     } catch { /* fall back to the latest call */ }
     return this.calls.at(-1)?.prompt ?? '';
   }
@@ -177,7 +177,7 @@ function promptArtifactNames(prompt: string): string[] {
   if (single) return [single];
   const at = prompt.lastIndexOf('Write these artifacts in the artifacts directory:');
   if (at < 0) return [];
-  return [...prompt.slice(at).split('\n').slice(1).join('\n').matchAll(/^- `(.+?)`/gm)].map((match) => match[1]!);
+  return [...prompt.slice(at).split('\n').slice(1).join('\n').matchAll(/^- `(.+?)`/gm)].map((match) => match[1]);
 }
 
 export const FAKE_FLOW_CONFIG = `\

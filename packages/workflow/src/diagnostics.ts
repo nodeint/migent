@@ -34,15 +34,15 @@ export const UNKNOWN_KEYS_ERROR_SCHEMA_VERSION = SCHEMA_V5;
 export function distance(a: string, b: string): number {
   const row = Array.from({ length: b.length + 1 }, (_, index) => index);
   for (let i = 1; i <= a.length; i += 1) {
-    let diagonal = row[0]!;
+    let [diagonal] = row;
     row[0] = i;
     for (let j = 1; j <= b.length; j += 1) {
-      const above = row[j]!;
-      row[j] = Math.min(above + 1, row[j - 1]! + 1, diagonal + (a[i - 1] === b[j - 1] ? 0 : 1));
+      const above = row[j];
+      row[j] = Math.min(above + 1, row[j - 1] + 1, diagonal + (a[i - 1] === b[j - 1] ? 0 : 1));
       diagonal = above;
     }
   }
-  return row[b.length]!;
+  return row[b.length];
 }
 
 /** Edit-distance budget for "did you mean" suggestions: at least this, growing with key length. */
@@ -80,7 +80,7 @@ export function unknownKeyEntries(value: Record<string, unknown>, scope: Unknown
     if (valid.includes(key)) continue;
     const suggestion = closest(key, valid);
     const path = location === '' ? key : `${location}.${key}`;
-    const hint = Object.hasOwn(renamed, key) ? renamed[key]!.replaceAll('{location}', location) : null;
+    const hint = Object.hasOwn(renamed, key) ? renamed[key].replaceAll('{location}', location) : null;
     entries.push({
       code: 'unknown-key',
       message: hint !== null
@@ -120,7 +120,7 @@ export function unknownWorkflowKeyEntries(data: Record<string, unknown>): Unknow
     if (!Array.isArray(stage.decision)) return;
     stage.decision.forEach((entry, entryIndex) => {
       if (!isRecord(entry) || Object.keys(entry).length !== 1) return;
-      const name = Object.keys(entry)[0]!;
+      const [name] = Object.keys(entry);
       const body = entry[name];
       if (isRecord(body)) entries.push(...unknownKeyEntries(body, { valid: DECISION_ENTRY_KEYS, location: `${location}.decision.${name}`, base: [...base, 'decision', entryIndex, name] }));
     });
@@ -187,12 +187,12 @@ const MISSING_STAGE_ID = /^Missing or invalid stages\.id\.$/;
 function routeAuthorPath(item: Record<string, unknown>, rest: string): (string | number)[] | undefined {
   const match = /^\.decision\.routes\.([^.[\s]+)((?:\[\d+\])*)/.exec(rest);
   if (match === null || !Array.isArray(item.decision)) return undefined;
-  const name = match[1]!;
+  const [, name] = match;
   const index = item.decision.findIndex((entry) =>
-    isRecord(entry) && Object.keys(entry).length === 1 && Object.keys(entry)[0]!.trim().toLowerCase() === name);
+    isRecord(entry) && Object.keys(entry).length === 1 && Object.keys(entry)[0].trim().toLowerCase() === name);
   if (index === -1) return ['decision'];
   const tail = [...(match[2] ?? '').matchAll(/\[(\d+)\]/g)].map((m) => Number(m[1]));
-  return ['decision', index, Object.keys(item.decision[index] as object)[0]!, 'navigate', ...tail];
+  return ['decision', index, Object.keys(item.decision[index] as object)[0], 'navigate', ...tail];
 }
 
 /** Path for a message raised while reading the stage at `index`: the stage is known, so only the field is derived. */
@@ -221,7 +221,7 @@ export function workflowErrorPath(message: string, data: Record<string, unknown>
   const duplicate = /^Duplicate stage id: (.*)$/.exec(message);
   if (duplicate) {
     const at = stages.flatMap((stage, index) => (isRecord(stage) && stage.id === duplicate[1] ? [index] : []));
-    if (at.length > 1) return ['stages', at[1]!, 'id'];
+    if (at.length > 1) return ['stages', at[1], 'id'];
   }
   if (MISSING_STAGE_ID.test(message)) {
     const at = stages.findIndex((stage) => isRecord(stage) && (typeof stage.id !== 'string' || stage.id.trim() === ''));
@@ -252,5 +252,5 @@ export function workflowErrorPath(message: string, data: Record<string, unknown>
   });
   if (best !== null) return (best as { path: (string | number)[] }).path;
   const top = /^(downstream|outputs|constraints|concurrency|completion|requires|id)\b/.exec(message);
-  return top ? [top[1]!] : undefined;
+  return top ? [top[1]] : undefined;
 }

@@ -150,17 +150,17 @@ export function resolveSessionDraft(
     if (typeof folded === 'string' && TERMINAL_STATUSES.has(folded) && folded !== status) {
       fail('session-terminal', `Session ${sessionId} is ${folded} according to its events; it can no longer adopt a workflow draft.`);
     }
-    if (folded !== status && !TERMINAL_STATUSES.has(status!)) {
+    if (folded !== status && !TERMINAL_STATUSES.has(status)) {
       fail(
         'session-status-inconsistent',
         `Session ${sessionId} status.json says ${status}, but its events say ${String(folded)}. Run \`migent session continue ${sessionId}\` or repair the session first.`,
       );
     }
-    if (TERMINAL_STATUSES.has(status!)) {
+    if (TERMINAL_STATUSES.has(status)) {
       fail('session-terminal', `Session ${sessionId} is ${status}; it can no longer adopt a workflow draft.`);
     }
     if (status !== 'prepared') {
-      if (!REFRESHABLE_STATUSES.has(status!)) {
+      if (!REFRESHABLE_STATUSES.has(status)) {
         fail('session-not-savable', `Session ${sessionId} is ${status}; a draft can be saved only for a prepared or stopped session.`);
       }
       const freezePath = path.join(sessionDirectory, WORKFLOW_FREEZE_FILE);

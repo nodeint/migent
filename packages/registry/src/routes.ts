@@ -300,7 +300,7 @@ export class Router {
       if (matched.length === 0) return failure(HTTP_NOT_FOUND, 'workspace_not_found', 'Not found.');
       return failure(HTTP_METHOD_NOT_ALLOWED, 'method_not_allowed', 'Method is not allowed.');
     }
-    const [route, params] = chosen[0]!;
+    const [[route, params]] = chosen;
     if (route.auth !== 'health' && authState(call.authorization, call.token) !== 'ok') return unauthorized();
     try {
       return await route.handler(call.routed(gatedStore, params));

@@ -153,7 +153,7 @@ function patchStage(patch: TextPatch, stage: LineSpan, change: Change): void {
       if (item.indent !== siblingIndent || item.key !== 'model') continue;
       const text = lines[start + index] ?? '';
       const match = /^(\s*)(["']?)model\2(\s*:)/.exec(text);
-      if (match !== null) edits.push([start + index, start + index + 1, [`${match[1]}agent${text.slice(match[0].length - match[3]!.length)}`]]);
+      if (match !== null) edits.push([start + index, start + index + 1, [`${match[1]}agent${text.slice(match[0].length - match[3].length)}`]]);
       break;
     }
   }

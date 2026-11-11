@@ -148,7 +148,7 @@ function copyTarget(target: StageTarget, options: Record<string, string> = targe
 
 export function frozenRoleInstructions(freeze: WorkflowFreeze, role: string): string[] {
   if (!Object.hasOwn(freeze.roles, role)) throw new ConfigurationError(`Missing or invalid roles.${role}.`);
-  return [...freeze.roles[role]!];
+  return [...freeze.roles[role]];
 }
 
 /** The live workflow named by the session. A missing or invalid file throws. */

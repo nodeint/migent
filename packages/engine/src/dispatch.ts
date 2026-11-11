@@ -345,19 +345,21 @@ export async function dispatchExecuteStage(
     && new SessionStore(workspace).questionStages(sessionId).some((row) => row.stageId === stageId);
   const interrupted = stageReply !== null && interruptedExecutionId(snapshots, stageId) !== undefined;
   let turn: TurnKind;
-  if (stageReply !== null) turn = answers && !interrupted ? 'answers' : 'reply';
-  else if (exhausted?.verifyReport) turn = 'repair';
-  else turn = stagePromptAlreadyDelivered(workflow, snapshots, stageId) ? 'continue' : 'start';
   let prompt;
-  if (turn === 'answers' || turn === 'reply') {
-    prompt = buildStageReplyPrompt(stageReply!, { answers, interrupted });
-  } else if (turn === 'repair') {
+  if (stageReply !== null) {
+    turn = answers && !interrupted ? 'answers' : 'reply';
+    prompt = buildStageReplyPrompt(stageReply, { answers, interrupted });
+  } else if (exhausted?.verifyReport) {
+    turn = 'repair';
     prompt = buildVerifyRepairPrompt(
-      readFileSync(exhausted!.verifyReport!, 'utf8'),
+      readFileSync(exhausted.verifyReport, 'utf8'),
       { red: stageSpec.maxVerify, maxVerify: stageSpec.maxVerify, artifactPath: null },
       { taskFile: frozen.taskFile, sessionDirectory: frozen.sessionDirectory },
     );
-  } else prompt = turn === 'continue' ? buildStageResumePrompt(promptInput) : buildStagePrompt(promptInput);
+  } else {
+    turn = stagePromptAlreadyDelivered(workflow, snapshots, stageId) ? 'continue' : 'start';
+    prompt = turn === 'continue' ? buildStageResumePrompt(promptInput) : buildStagePrompt(promptInput);
+  }
   const request: StageDispatchRequest = {
     workflowId,
     stageId,

@@ -248,7 +248,7 @@ export function terminalFields(
     if (sessionStatus === 'blocked' && reason) fields.blocker = reason;
     return fields;
   }
-  const first = rows[0]!;
+  const [first] = rows;
   fields.terminal_execution_id = source?.executionId ?? first.executionId;
   if (sessionStatus === 'blocked') {
     fields.blocked_by_execution_id = first.executionId;

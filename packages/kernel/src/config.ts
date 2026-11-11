@@ -434,7 +434,7 @@ function inferClient(registry: ClientRegistry | undefined, model: string, typeFi
     );
   }
   const lookup = registry.clientsForModel(model);
-  if (lookup.matches.length === 1) return lookup.matches[0]!;
+  if (lookup.matches.length === 1) return lookup.matches[0];
   if (lookup.matches.length > 1) {
     throw new ConfigurationError(
       `Model ${model} is listed by several clients (${lookup.matches.join(', ')}); set ${typeField.label}.`,

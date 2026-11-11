@@ -101,7 +101,7 @@ export function nextStage(
   if (selected.length > 1) {
     return new NextStageError(`ambiguous next stage: ${selected.join(', ')}`);
   }
-  return new NextStage(selected[0]!);
+  return new NextStage(selected[0]);
 }
 
 /** Same stage list nextStage uses once a route has been followed. */
@@ -232,13 +232,13 @@ export function stageDispatchError(
     if (stage.dependsOn.length > 0) return `Stage ${stageId} is waiting for a routing decision.`;
     return null;
   }
-  let router = completedIncoming[0]!;
+  let [router] = completedIncoming;
   for (const item of completedIncoming.slice(1)) {
-    const best = latestComplete[router.id]!;
-    const current = latestComplete[item.id]!;
+    const best = latestComplete[router.id];
+    const current = latestComplete[item.id];
     if (current.executionOrder > best.executionOrder) router = item;
   }
-  const decision = (latestComplete[router.id]!.outcomeDecision ?? '').toLowerCase();
+  const decision = (latestComplete[router.id].outcomeDecision ?? '').toLowerCase();
   if (!routeListsStage(router.routes[decision], stageId)) {
     return `Stage ${stageId} is not routed by ${router.id} decision ${pyRepr(decision)}.`;
   }
@@ -285,7 +285,7 @@ function nextVersion2Stage(
         if (error !== null) {
           // A quiet graph with a missing output still reruns the producer.
           const producers = missingOutputProducers(workflow, snapshots, sessionStatus);
-          if (producers.length > 0) return new NextStage(producers[0]!);
+          if (producers.length > 0) return new NextStage(producers[0]);
           return new NextStageError(error);
         }
         return new NextStage(target);
@@ -293,9 +293,9 @@ function nextVersion2Stage(
     }
   }
   const selected = sequentialCandidates(workflow, snapshots, sessionStatus);
-  if (selected.length > 0) return new NextStage(selected[0]!);
+  if (selected.length > 0) return new NextStage(selected[0]);
   const producers = missingOutputProducers(workflow, snapshots, sessionStatus);
-  if (producers.length > 0) return new NextStage(producers[0]!);
+  if (producers.length > 0) return new NextStage(producers[0]);
   return new NextStageError('no eligible stage');
 }
 

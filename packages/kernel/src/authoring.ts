@@ -24,7 +24,7 @@ function jsonErrorPosition(text: string, message: string): { line: number; colum
   const offset = /position (\d+)/.exec(message);
   if (!offset) return undefined;
   const lines = text.slice(0, Number(offset[1])).split('\n');
-  return { line: lines.length, column: lines[lines.length - 1]!.length + 1 };
+  return { line: lines.length, column: lines[lines.length - 1].length + 1 };
 }
 
 /**
@@ -132,7 +132,7 @@ function applyLineEnding(text: string, ending: string): string {
 /** The indentation width the base uses, so a kept document keeps its shape. */
 function indentWidth(text: string): number {
   const match = /\n( +)\S/.exec(text.replace(/\r\n/g, '\n'));
-  const width = match === null ? DEFAULT_INDENT : match[1]!.length;
+  const width = match === null ? DEFAULT_INDENT : match[1].length;
   return width >= 1 && width <= MAX_INDENT ? width : DEFAULT_INDENT;
 }
 
@@ -224,7 +224,7 @@ function reconcileSeq(doc: Document, seq: YAMLSeq, items: readonly unknown[]): v
   let nodes: YamlNode[];
   if (byId) {
     const existing = new Map<string, YamlNode>();
-    seq.items.forEach((node, index) => existing.set(baseIds[index]!, node as YamlNode));
+    seq.items.forEach((node, index) => existing.set(baseIds[index], node as YamlNode));
     nodes = items.map((item, index) => {
       const id = ids[index];
       if (id === null) return doc.createNode(item) as YamlNode;

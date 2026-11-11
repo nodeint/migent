@@ -73,8 +73,8 @@ export function parseWorkflowMappingUnchecked(data: Record<string, unknown>, sou
     const [first] = built.problems;
     if (first !== undefined) throw new ConfigurationError(first.message, { code: first.code, path: first.path });
     for (const [stageId, found] of built.perStage) {
-      stages[stageId]!.artifacts = found.artifacts;
-      stages[stageId]!.decisionArtifacts = found.decisionArtifacts;
+      stages[stageId].artifacts = found.artifacts;
+      stages[stageId].decisionArtifacts = found.decisionArtifacts;
     }
     registry = built.registry;
     outputs = registry.map(outputOfArtifact);
@@ -245,7 +245,7 @@ export function parseStages(raw: unknown, versions: ParseStagesVersions = {}): R
   for (const [index, item] of items.entries()) {
     try {
       const stageId = requiredString(item.id, 'stages.id');
-      const stage = stages[stageId]!;
+      const stage = stages[stageId];
       stage.routes = stageRoutes(item, stageId, { values: stage.decisionValues, stages, version2 });
     } catch (error) {
       throw locatedAtStage(error, index, rawItems[index]);

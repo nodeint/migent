@@ -35,7 +35,7 @@ export function parseOutputItems(
     if (!Object.hasOwn(stages, fromStage)) {
       throw new ConfigurationError(`${field}.from_stage is not a declared stage: ${fromStage}`);
     }
-    const source = stages[fromStage]!;
+    const source = stages[fromStage];
     const sourceFile = source.artifacts[0]?.file ?? null;
     if (sourceFile === null) {
       throw new ConfigurationError(
@@ -48,7 +48,7 @@ export function parseOutputItems(
       );
     }
     seen.add(name);
-    source.artifacts[0]!.scope = 'published';
+    source.artifacts[0].scope = 'published';
     outputs.push(workflowOutputSchema.parse({ name, fromStage, artifact }));
   }
   return outputs;
@@ -218,7 +218,7 @@ export function buildArtifactsV7(
         fail(`${field}: artifact ${name} is referenced from a decision and must declare required: false.`, at);
       }
       if (found.required && conditional.has(stageId)) {
-        const source = conditional.get(stageId)!;
+        const source = conditional.get(stageId);
         const origin = source === stageId ? `run_when stage ${source}` : `${stageField}, which is reached through run_when stage ${source}`;
         fail(`${field}: required artifact ${name} comes from ${origin}; a skip would leave it missing. Declare required: false.`, at);
       }
@@ -248,7 +248,7 @@ export function buildArtifactsV7(
     if (!Array.isArray(rawStage.decision)) return;
     rawStage.decision.forEach((rawEntry, entryIndex) => {
       if (!isRecord(rawEntry) || Object.keys(rawEntry).length !== 1) return;
-      const rawName = Object.keys(rawEntry)[0]!;
+      const [rawName] = Object.keys(rawEntry);
       const name = rawName.trim().toLowerCase();
       const body = rawEntry[rawName];
       if (!isRecord(body) || body.artifacts === undefined || body.artifacts === null) return;
@@ -304,7 +304,7 @@ export function buildArtifactsV7(
       fail(`artifacts.${id} has more than one producer: ${where}.`, ['artifacts', id]);
       continue;
     }
-    registry.push({ ...artifact, producer: found[0]! });
+    registry.push({ ...artifact, producer: found[0] });
   }
   return { registry, perStage, problems };
 }

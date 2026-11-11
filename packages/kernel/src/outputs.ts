@@ -227,8 +227,8 @@ export function nonemptyArtifact(filePath: string): boolean {
   const data = readFileSync(filePath);
   let start = 0;
   let end = data.length;
-  while (start < end && asciiSpace.has(data[start]!)) start += 1;
-  while (end > start && asciiSpace.has(data[end - 1]!)) end -= 1;
+  while (start < end && asciiSpace.has(data[start])) start += 1;
+  while (end > start && asciiSpace.has(data[end - 1])) end -= 1;
   return end > start;
 }
 

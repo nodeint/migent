@@ -123,7 +123,7 @@ export function authoringCommandOf(argv: readonly string[]): string | null {
   if (group !== 'config' && group !== 'workflow') return null;
   // `config` itself takes --json, so it may sit between the group and the mode.
   let at = 1;
-  while (at < argv.length && argv[at]!.startsWith('-') && argv[at] !== '--help' && argv[at] !== '-h') at += 1;
+  while (at < argv.length && argv[at].startsWith('-') && argv[at] !== '--help' && argv[at] !== '-h') at += 1;
   const mode = argv[at];
   if (mode !== 'validate' && mode !== 'render' && mode !== 'save') return null;
   return argv.includes('--json') ? `${group}.${mode}` : null;

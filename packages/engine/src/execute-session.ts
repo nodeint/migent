@@ -327,7 +327,7 @@ function resolveStageReply(
     const waiting = [...store.blockedStages(sessionId), ...store.questionStages(sessionId), ...cancelled];
     if (waiting.length === 0) throw new ConfigurationError('--reply requires a blocked, cancelled, or question stage.');
     if (waiting.length > 1 && replyStageId === null) throw new ConfigurationError(`--reply needs --stage when more than one stage is waiting: ${waiting.map((row) => row.stageId).join(', ')}.`);
-    const target = replyStageId ?? waiting[0]!.stageId;
+    const target = replyStageId ?? waiting[0].stageId;
     if (!waiting.some((row) => row.stageId === target)) throw new ConfigurationError(`Stage ${target} is not waiting for a reply.`);
     let text = replyText;
     const cancelledTarget = cancelled.find((row) => row.stageId === target);
@@ -347,10 +347,11 @@ function resolveStageReply(
     stageReply = new PendingStageReply(target, text);
   } else {
     // Recover an answer recorded before a dispatch was interrupted or failed preflight.
-    const answered = store.questionStages(sessionId).map((row) => ({
-      ...row, reply: store.questionReply(sessionId, row.executionId),
-    })).find((row) => row.reply !== null && (replyStageId === null || replyStageId === row.stageId));
-    if (answered) stageReply = new PendingStageReply(answered.stageId, answered.reply!);
+    const [answered] = store.questionStages(sessionId).flatMap((row) => {
+      const reply = store.questionReply(sessionId, row.executionId);
+      return reply !== null && (replyStageId === null || replyStageId === row.stageId) ? [{ ...row, reply }] : [];
+    });
+    if (answered) stageReply = new PendingStageReply(answered.stageId, answered.reply);
     else {
       // Recover a reply to a cancelled stage that was recorded before its dispatch.
       const pending = store.pendingCancelledReply(sessionId, replyStageId);

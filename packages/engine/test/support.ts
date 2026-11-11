@@ -313,7 +313,7 @@ function promptArtifactNames(prompt: string): string[] {
   if (single) return [single];
   const at = prompt.lastIndexOf('Write these artifacts in the artifacts directory:');
   if (at < 0) return [];
-  return [...prompt.slice(at).split('\n').slice(1).join('\n').matchAll(/^- `(.+?)`/gm)].map((match) => match[1]!);
+  return [...prompt.slice(at).split('\n').slice(1).join('\n').matchAll(/^- `(.+?)`/gm)].map((match) => match[1]);
 }
 
 export const PLAN_REVIEW_WORKFLOW = `\

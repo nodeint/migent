@@ -269,8 +269,8 @@ export function describeChange(
       Object.hasOwn(beforeAgents, key) &&
       !deepEqual(signature(beforeAgents[key]), signature(afterAgents[key])),
   );
-  const createdAgent = created.length === 1 ? created[0]! : null;
-  const updatedAgent = updated.length === 1 ? updated[0]! : null;
+  const createdAgent = created.length === 1 ? created[0] : null;
+  const updatedAgent = updated.length === 1 ? updated[0] : null;
   let reusedAgent = args.reusedAgent ?? null;
   if (createdAgent !== null || updatedAgent !== null) reusedAgent = null;
   const stagesUpdated: [string, string][] = [];

@@ -20,8 +20,7 @@ export function conditionalReach(stages: Record<string, StageSpec>, stageId: str
   if (cached !== undefined) return cached;
   const reach = new Set<string>([stageId]);
   const pending = [stageId];
-  while (pending.length > 0) {
-    const member = pending.pop()!;
+  for (let member = pending.pop(); member !== undefined; member = pending.pop()) {
     const found: string[] = [];
     for (const other of Object.values(stages)) {
       if (other.dependsOn.includes(member)) found.push(other.id);
@@ -110,7 +109,7 @@ export function validateStageGraph(stages: Record<string, StageSpec>): void {
         `stages.${stage.id}.max_revisions requires a route back to ${stage.id}.`,
       );
     }
-    if (stage.resumeFrom !== null && !isRoleStage(stages[stage.resumeFrom]!)) {
+    if (stage.resumeFrom !== null && !isRoleStage(stages[stage.resumeFrom])) {
       throw new ConfigurationError(
         `stages.${stage.id}.session.resume_from must name a role stage: ${stage.resumeFrom}.`,
       );
@@ -126,8 +125,7 @@ export function isLeafStage(stages: Record<string, StageSpec>, stage: StageSpec)
 export function dependencyClosure(stages: Record<string, StageSpec>, stageId: string): Set<string> {
   const seen = new Set<string>();
   const pending = [...(stages[stageId]?.dependsOn ?? [])];
-  while (pending.length > 0) {
-    const next = pending.pop()!;
+  for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
     if (seen.has(next)) continue;
     seen.add(next);
     pending.push(...(stages[next]?.dependsOn ?? []));

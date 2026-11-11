@@ -84,7 +84,7 @@ function printResumeHint(workspace: string, result: ExecuteResult): void {
   printResumeCommand(result.sessionId);
   if (result.status === 'cancelled' || result.code === EXIT_CANCELLED) {
     const cancelled = new SessionStore(workspace).cancelledStages(result.sessionId);
-    printReplyCommand(result.sessionId, cancelled.length === 1 ? cancelled[0]!.stageId : undefined);
+    printReplyCommand(result.sessionId, cancelled.length === 1 ? cancelled[0].stageId : undefined);
   }
 }
 
