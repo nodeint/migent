@@ -33,7 +33,7 @@ test('session cancel from another process stops a running role session with exit
     const sessions = path.join(workspace, '.migent', 'sessions');
     const lockPath = (): string | null => {
       if (!existsSync(sessions)) return null;
-      const id = readdirSync(sessions)[0];
+      const [id] = readdirSync(sessions);
       return id !== undefined && existsSync(path.join(sessions, id, 'session.lock')) ? id : null;
     };
     let sessionId: string | null = null;

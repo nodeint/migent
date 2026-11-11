@@ -21,7 +21,7 @@ export interface SessionListOptions {
 export function listSessions(workspace: string, options: SessionListOptions = {}): number {
   const rows = selectSessionRows(listSessionRows(workspace), options);
   if (options.latest) {
-    const row = rows[0];
+    const [row] = rows;
     if (options.asJson) {
       writeJson(SessionRowOrNull, row === undefined ? null : sessionJson(row));
       return 0;

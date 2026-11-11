@@ -241,14 +241,14 @@ test('warns when config.local.yaml is tracked by git, without failing', () => {
   writeFileSync(local, 'agents:\n  grok:\n    model: grok-local\n', 'utf8');
   const options = { clients: defaultClients(), which: whichFound(new Set(['codex', 'grok'])) };
 
-  const outside = diagnose(workspace, options)[0];
+  const [outside] = diagnose(workspace, options);
   expect(outside.warnings).toEqual([]);
 
   execFileSync('git', ['init', '-q'], { cwd: workspace });
   expect(diagnose(workspace, options)[0].warnings).toEqual([]);
 
   execFileSync('git', ['add', '.migent/config.local.yaml'], { cwd: workspace });
-  const tracked = diagnose(workspace, options)[0];
+  const [tracked] = diagnose(workspace, options);
   expect(tracked.ok).toBe(true);
   expect(tracked.warnings).toEqual([
     '.migent/config.local.yaml is tracked by git; run git rm --cached .migent/config.local.yaml and keep it ignored.',

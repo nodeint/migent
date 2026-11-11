@@ -21,7 +21,7 @@ export function latestDiagnosticsPath(workspace: string, sessionId: string): str
 
 /** Same, from a session directory. */
 export function latestDiagnosticsPathIn(sessionDirectory: string): string | null {
-  const last = latestPerStageIn(sessionDirectory).sort((a, b) => b.order - a.order)[0];
+  const [last] = latestPerStageIn(sessionDirectory).sort((a, b) => b.order - a.order);
   return last ? last.relative : null;
 }
 

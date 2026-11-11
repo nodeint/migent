@@ -45,7 +45,7 @@ export async function main(argv: string[] = process.argv.slice(2), cwd?: string)
 }
 
 function isDirectRun(): boolean {
-  const entry = process.argv[1];
+  const [, entry] = process.argv;
   if (!entry) return false;
   try {
     return realpathSync(entry) === realpathSync(fileURLToPath(import.meta.url));

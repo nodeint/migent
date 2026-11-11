@@ -464,7 +464,7 @@ test('stop holds start lock across the unlink', async () => {
     sleep(8).then(() => Promise.reject(new Error(`start hung\n${logText(home)}`))),
   ]);
   expect(stopped[0]?.outcome).toBe('stopped');
-  const endpoint = startedResult[0];
+  const [endpoint] = startedResult;
   expect(endpoint, `${String(endpoint)}\n${logText(home)}`).toBeInstanceOf(ServiceEndpoint);
   const adopted = endpoint as ServiceEndpoint;
   children.push(adopted.pid);

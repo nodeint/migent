@@ -3,17 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import type {
-  BuildCommandInput,
-  CliClient,
-  ClientRegistry,
-  CliModelCatalog,
-  CliRunOutput,
-  CliUsage,
-  CommandSpec,
-  TurnUsage,
-  UsageCapture,
-} from '../src/cli-client.ts';
+import type { BuildCommandInput, CliClient, ClientRegistry, CliModelCatalog, CliRunOutput, CliUsage, CommandSpec, UsageCapture } from '../src/cli-client.ts';
 
 const optionKey = /^[A-Za-z][A-Za-z0-9_.-]*$/;
 

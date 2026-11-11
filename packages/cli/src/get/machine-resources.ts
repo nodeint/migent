@@ -1,12 +1,11 @@
 import type { CliClient, HeadlessOption } from '@nodeint/migent-adapters';
 import { GetAnyOption, GetClient, GetEffort, GetModel, GetNativeOption, GetOption, type Static } from '@nodeint/migent-contracts';
-import { type View } from '@nodeint/migent-engine';
 import { type ClientOption,ConfigurationError } from '@nodeint/migent-kernel';
 
 import { field } from './columns.js';
 import type { DiscoveryContext, DiscoveryOutcome } from './discovery.js';
 import type { Column } from './render.js';
-import { asView, type MachineQuery, type MachineResource } from './resource-types.js';
+import { type MachineQuery, type MachineResource } from './resource-types.js';
 
 function requireName(label: string, name: string | null): string {
   if (name === null) throw new ConfigurationError(`Pass a ${label} name.`);

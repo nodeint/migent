@@ -1,6 +1,4 @@
-import path from 'node:path';
 
-import type { TSchema } from '@nodeint/migent-contracts';
 import { ARTIFACT_ID_PATTERN, isValid,WorkflowArtifact, WorkflowDecisionEntry } from '@nodeint/migent-contracts';
 
 import type { DraftUnit } from './draft/problems.js';
@@ -10,8 +8,8 @@ import type { ArtifactSpec, StageArtifact, StageSpec, WorkflowCompletion, Workfl
 import { VERIFY_ARTIFACT } from './model.js';
 import { isRecord, pyRepr } from './record.js';
 import { workflowCompletionSchema, workflowOutputSchema } from './schema.js';
-import { fail, filename, requiredString, stageHasRole } from './stage-fields.js';
-import { containerError, DOCUMENT_FIELD_SCHEMAS, stageField } from './structure.js';
+import { filename, requiredString, stageHasRole } from './stage-fields.js';
+import { containerError, DOCUMENT_FIELD_SCHEMAS } from './structure.js';
 
 export function parseTopLevelOutputs(raw: unknown, stages: Record<string, StageSpec>): WorkflowOutput[] {
   if ((raw === null || raw === undefined)) return [];

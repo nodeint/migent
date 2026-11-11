@@ -1354,7 +1354,7 @@ function savedOutcome(
 
 function readCliVersion(client: CliClient, workspace: string): string | null {
   const spec = client.versionCommand();
-  const command = spec.argv[0];
+  const [command] = spec.argv;
   if (command === undefined) return null;
   const result = spawnProviderSync(command, spec.argv.slice(1), {
     encoding: 'utf8',

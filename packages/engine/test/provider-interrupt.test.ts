@@ -183,7 +183,7 @@ test('cancel before the server created the session retries a bounded number of t
   expect(provider.interrupts()).toHaveLength(6);
   const saved = savedExecution(workspace, sessionId);
   expect(saved.conversation.agent_id).toBe(PRE_ID);
-  const warning = named(saved, 'provider.warning')[0];
+  const [warning] = named(saved, 'provider.warning');
   expect(String(warning?.summary)).toContain('could not confirm');
   expect(String(warning?.summary)).toContain(PRE_ID);
   expect(named(saved, 'provider.interrupt')).toHaveLength(0);

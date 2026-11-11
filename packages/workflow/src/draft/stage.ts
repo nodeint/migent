@@ -1,4 +1,3 @@
-import path from 'node:path';
 
 import { legacyArtifacts } from '../artifacts.js';
 import { stageErrorPath, workflowRuleCode } from '../diagnostics.js';
@@ -11,7 +10,7 @@ import { VERIFY_ARTIFACT } from '../model.js';
 import { isRecord } from '../record.js';
 import { stageSpecSchema } from '../schema.js';
 import { legacyStageModel, positiveInteger, requiredString, ROLE_ONLY_KEYS, routeTarget, stageAgent, stageArtifact, stageAsk, stageDecisionValues, stageDependsOn, stageDescription, stageHasRole, stageMaxRevisions, stageMaxVerify, stageOptions, stageResumeFrom, stageResumeFromUnchecked, stageRoutes, stageRunWhen, stageVerify, stageVerifyTimeout, stringItems } from '../stage-fields.js';
-import { decisionBodyProblems, decisionEntryProblem, decisionListProblem, requireContainer,STAGE_FIELD_SCHEMAS, stageMappingProblem } from '../structure.js';
+import { decisionBodyProblems, decisionEntryProblem, decisionListProblem, stageMappingProblem } from '../structure.js';
 
 export interface CollectedDecision {
   values: DraftUnit<string[]>;

@@ -1,8 +1,6 @@
-import path from 'node:path';
 
 import type { TSchema } from '@nodeint/migent-contracts';
 import { isValid, NonBlankString, schemaIssues,WorkflowArtifact, WorkflowLine, WorkflowRunWhen } from '@nodeint/migent-contracts';
-import { z } from 'zod';
 
 import { compileChangedPathPattern } from './changed-paths.js';
 import { ConfigurationError } from './errors.js';
@@ -113,7 +111,7 @@ export function normalizeStageDecision(stage: Record<string, unknown>, version7 
     const name = requiredString(rawName, field).toLowerCase();
     if (Object.hasOwn(routes, name)) throw new ConfigurationError(`Duplicate decision value on ${field}: ${name}`);
     const body = entry[rawName];
-    const found = decisionBodyProblems(body, version7)[0];
+    const [found] = decisionBodyProblems(body, version7);
     if (found !== undefined) {
       if (found.kind === 'body') throw new ConfigurationError(`${field}.${name} must be a mapping.`);
       if (found.kind === 'key') throw new ConfigurationError(`${field}.${name}.${found.key} is not allowed.`);

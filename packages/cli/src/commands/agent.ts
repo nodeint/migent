@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import { RoleRunResult, RoleRunResults } from '@nodeint/migent-contracts';
 import { AgentToolRunner, type RunResult } from '@nodeint/migent-engine';
-import { buildStageReplyPrompt, CancellationRequested, ConfigurationError, legacyClientOf, loadRoleResponsibilities, loadWorkspaceConfig, loadYamlMapping, log, prependRoleInstructions, resolveRoleTarget, type TurnKind } from '@nodeint/migent-kernel';
+import { buildStageReplyPrompt, CancellationRequested, ConfigurationError, legacyClientOf, loadRoleResponsibilities, loadWorkspaceConfig, log, prependRoleInstructions, resolveRoleTarget, type TurnKind } from '@nodeint/migent-kernel';
 import { createAgentSession, isSessionLockLost, repairSessionUnlocked, requireAgentSession, SessionLock, SessionStore, stringOptions } from '@nodeint/migent-session';
 
 import { clientRegistry, parseOptions } from '../client.js';
@@ -312,7 +312,7 @@ async function runCancelledRole(
   }
   const finished: RunResult[] = continued;
   if (finished.length === 1) {
-    const result = finished[0];
+    const [result] = finished;
     if (result === undefined) throw new Error('Agent run produced no result.');
     if (asJson) writeJson(RoleRunResult, result);
     else printAgent({ ...result }, role, profile.client, profile.model, workspace);

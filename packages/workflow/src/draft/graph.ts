@@ -1,4 +1,3 @@
-import path from 'node:path';
 
 import type { CollectedOutputs } from '../draft/outputs.js';
 import type { DraftStage } from '../draft/problems.js';

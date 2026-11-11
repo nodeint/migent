@@ -14,7 +14,7 @@ import { renderAuthoringYaml } from './authoring.js';
 import { ConfigEditError, yamlScalar } from './config-edit.js';
 import { ConfigurationError } from './errors.js';
 import { type ConfigLayerKind,liftConfigAgents, liftConfigClients, liftWorkflowClients } from './migration-config.js';
-import { applyLegacyMigration, type MigrationKind } from './migration-legacy.js';
+import { applyLegacyMigration } from './migration-legacy.js';
 
 
 const SCHEMA_VERSION_FIELD = 'schema_version';
@@ -503,7 +503,7 @@ function bodyNotes(
     !Object.hasOwn(after, 'thinking') &&
     removed.length === 0 &&
     added.length === 1;
-  const addedName = added[0];
+  const [addedName] = added;
   if (renamedOption && addedName !== undefined) {
     notes.push(`${label}.options.thinking -> ${addedName}`);
   } else if (movedScalar && addedName !== undefined) {
@@ -580,7 +580,7 @@ function patchStage(
     if (item !== null) content.push([index, item]);
   }
   if (content.length === 0) return;
-  const first = content[0];
+  const [first] = content;
   if (first === undefined) return;
   const firstIndent = first[1].indent;
   const siblingIndent = siblingIndentOf(content, firstIndent);
@@ -779,7 +779,7 @@ function idOnDash(text: string): string | null {
   const key = body.slice(0, colon).trim();
   const rest = body.slice(colon + 1);
   if (key !== 'id' || rest.trim() === '') return null;
-  const first = rest.trim().split(/\s+/)[0];
+  const [first] = rest.trim().split(/\s+/);
   return first === undefined ? null : unquote(first);
 }
 

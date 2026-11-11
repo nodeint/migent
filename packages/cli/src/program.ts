@@ -25,7 +25,7 @@ import { runRegister, runRemove, runWorkspaceList } from './commands/workspace-r
 import { printError } from './display.js';
 import { LOOP_EXITS, PREFLIGHT_EXIT, ROLE_EXITS, STAGE_EXITS } from './exits.js';
 import { runMigrate } from './migrate.js';
-import { optionalText, rawText, text } from './text.js';
+import { optionalText, rawText } from './text.js';
 import { PACKAGE_VERSION } from './version.js';
 import { findWorkspace, invocationCwdPath } from './workspace.js';
 
@@ -389,7 +389,7 @@ ${exitText([
 
   program.allowExcessArguments();
   program.action(() => {
-    const unknown = program.args[0];
+    const [unknown] = program.args;
     if (unknown) {
       program.error(`error: unknown command '${unknown}'`, { code: 'commander.unknownCommand' });
     }

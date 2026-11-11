@@ -103,7 +103,7 @@ function translate(issue: SchemaIssue, where: Field): ConfigurationError {
 }
 
 function first(schema: TSchema, value: unknown, where: Field): ConfigurationError | null {
-  const issue = schemaIssues(schema, value)[0];
+  const [issue] = schemaIssues(schema, value);
   return issue === undefined ? null : translate(issue, where);
 }
 
@@ -157,7 +157,7 @@ function optionErrors(value: Record<string, unknown>, where: Field): Map<string,
 }
 
 const checkList = (value: unknown, where: Field): ConfigurationError | null => {
-  const issue = schemaIssues(Responsibilities, value)[0];
+  const [issue] = schemaIssues(Responsibilities, value);
   if (issue === undefined) return null;
   return translate(issue, where);
 };

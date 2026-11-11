@@ -1,7 +1,5 @@
 import path from 'node:path';
 
-import { z } from 'zod';
-
 import { buildArtifactsV7, outputOfArtifact, parseCompletion, parseTopLevelOutputs, validateVerifyPaths } from './artifacts.js';
 import { stageErrorPath, UNKNOWN_KEYS_ERROR_SCHEMA_VERSION, unknownWorkflowKeys, workflowErrorPath, workflowRuleCode } from './diagnostics.js';
 import { ConfigurationError } from './errors.js';
@@ -68,7 +66,7 @@ export function parseWorkflowMappingUnchecked(data: Record<string, unknown>, sou
   let outputs: WorkflowOutput[] | undefined;
   if (version7) {
     const built = buildArtifactsV7(data, conditionalStages(stages));
-    const first = built.problems[0];
+    const [first] = built.problems;
     if (first !== undefined) throw new ConfigurationError(first.message, { code: first.code, path: first.path });
     for (const [stageId, found] of built.perStage) {
       stages[stageId]!.artifacts = found.artifacts;

@@ -441,7 +441,7 @@ test('metrics: two anomalies of one execution on the same turn number are both c
   // A resumed execution derives its turn number from the conversation, so a later anomaly can reuse
   // the turn of an earlier one. Replay that shape: same execution id, same turn, next sequence number.
   const log = path.join(sessionDirectory(workspace, sessionId), 'events.jsonl');
-  const original = named(events(workspace, sessionId), 'provider.exit_anomaly')[0];
+  const [original] = named(events(workspace, sessionId), 'provider.exit_anomaly');
   expect(original).toBeDefined();
   const lastSeq = Math.max(...events(workspace, sessionId).map((item) => Number(item.seq)));
   const repeat = {
@@ -461,6 +461,6 @@ test('metrics: two anomalies of one execution on the same turn number are both c
     const rows = metrics.executions as Record<string, unknown>[];
     expect(rows.map((row) => counters(row))).toEqual([{ total: 2, accepted: 1 }]);
   }
-  const entry = (watchSnapshot(sessionDirectory(workspace, sessionId)).exit_anomalies as Record<string, unknown>[])[0];
+  const [entry] = (watchSnapshot(sessionDirectory(workspace, sessionId)).exit_anomalies as Record<string, unknown>[]);
   expect(entry).toMatchObject({ count: 2, accepted: false });
 });

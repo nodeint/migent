@@ -1,9 +1,8 @@
-import * as fs from 'node:fs';
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { expect, test, vi } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { appendLineSynced, isAtomicTempName, sealTornTail, writeFileAtomic } from '../src/atomic-file.js';
 

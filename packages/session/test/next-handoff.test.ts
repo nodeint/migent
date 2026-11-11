@@ -6,7 +6,7 @@ import path from 'node:path';
 import { parseWorkflowMapping } from '@nodeint/migent-workflow';
 import { afterEach, expect, test } from 'vitest';
 
-import { formatNextCommand, publishNextSuggestions, resolveHandoff } from '../src/next-handoff.ts';
+import { formatNextCommand, publishNextSuggestions } from '../src/next-handoff.ts';
 import { readFoldedStatus } from '../src/session-fold.ts';
 import { loadFrozenWorkflow } from '../src/session-freeze.ts';
 import { activatePreparedSession, createPreparedSession, createWorkflowSession } from '../src/session-records.ts';

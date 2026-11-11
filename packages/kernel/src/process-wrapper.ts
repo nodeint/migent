@@ -121,7 +121,7 @@ function sleepMs(ms: number): Promise<void> {
 }
 
 function runningAsMain(): boolean {
-  const entry = process.argv[1];
+  const [, entry] = process.argv;
   if (!entry) return false;
   return path.resolve(entry) === path.resolve(wrapperEntry());
 }

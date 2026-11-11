@@ -3,7 +3,6 @@ import path from 'node:path';
 
 import { clientIds, createClient } from '@nodeint/migent-adapters';
 import type { ClientRegistry } from '@nodeint/migent-kernel';
-import { ConfigurationError } from '@nodeint/migent-kernel';
 import { readFoldedStatus } from '@nodeint/migent-session';
 import { createAgentSession, createPreparedSession, createWorkflowSession } from '@nodeint/migent-session';
 import { loadFrozenWorkflow, readWorkflowFreeze, WORKFLOW_FREEZE_FILE, writeWorkflowFreeze } from '@nodeint/migent-session';

@@ -1235,7 +1235,7 @@ function liftAgentLines(lines: string[], agent: Block, unit: number, edits: Edit
   const options = childBlock(agent, 'options');
   if (client === null && options === null) return;
   if (client !== null && client.value.trim() === '' ) return; // already a mapping
-  if (client !== null && /^[{\[]/.test(client.value.trim())) return;
+  if (client !== null && /^[{[]/.test(client.value.trim())) return;
   const {indent} = ((client ?? options)!);
   const moved: string[] = [];
   if (options !== null) {

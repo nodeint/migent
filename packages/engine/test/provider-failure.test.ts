@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { type BuildCommandInput, type FailureClassification, STATUS_PROVIDER_EVENTS } from '@nodeint/migent-kernel';
+import { type FailureClassification, STATUS_PROVIDER_EVENTS } from '@nodeint/migent-kernel';
 import { sessionMetrics, SessionStore, watchSnapshot } from '@nodeint/migent-session';
 import { expect, test, vi } from 'vitest';
 

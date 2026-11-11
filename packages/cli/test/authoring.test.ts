@@ -296,7 +296,7 @@ test('workflow validate reports every independent error with its own path', asyn
 
 test('draft diagnostics carry an exclusive end position, and missing keys carry none', async () => {
   const res = await run(['workflow', 'validate', '@draft', '--format', 'yaml', '--json'], MULTI_ERROR);
-  const ask = res.json.diagnostics[0];
+  const [ask] = res.json.diagnostics;
   expect(ask).toMatchObject({ line: 7, column: 10, end_line: 7, end_column: 13 });
   expect(res.json.diagnostics[2].line).toBeUndefined();
   expect(res.json.diagnostics[2].end_line).toBeUndefined();

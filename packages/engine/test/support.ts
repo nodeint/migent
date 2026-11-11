@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import type { BuildCommandInput, CliClient, ClientRegistry, CliModelCatalog, CliRunOutput, CliUsage, CommandSpec, TurnUsage, UsageCapture } from '@nodeint/migent-kernel';
+import type { BuildCommandInput, CliClient, ClientRegistry, CliModelCatalog, CliRunOutput, CliUsage, CommandSpec, UsageCapture } from '@nodeint/migent-kernel';
 import { createWorkflowSession } from '@nodeint/migent-session';
 
 const optionKey = /^[A-Za-z][A-Za-z0-9_.-]*$/;

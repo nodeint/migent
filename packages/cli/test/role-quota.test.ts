@@ -152,7 +152,7 @@ test('a cancelled role that hits quota on resume fails without a rerun', async (
 
 function readSessionId(root: string): string {
   const names = readdirSync(path.join(root, '.migent', 'sessions')).filter((name) => !name.startsWith('.'));
-  const session = names[0];
+  const [session] = names;
   if (!session) throw new Error('missing session');
   return session;
 }

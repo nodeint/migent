@@ -93,7 +93,7 @@ completion:
   expect(first.stopReason).toBe('cancelled');
   expect(first.status).toBe('cancelled');
   expect(provider.calls).toHaveLength(1);
-  const executionId = executionIds(workspace, sessionId)[0];
+  const [executionId] = executionIds(workspace, sessionId);
   expect(executionId).toBeTruthy();
 
   const second = await executeNamedWorkflow(
@@ -157,7 +157,7 @@ completion:
   clearInterval(timer);
   expect(first.stopReason).toBe('cancelled');
   expect(provider.calls).toHaveLength(1);
-  const executionId = executionIds(workspace, sessionId)[0];
+  const [executionId] = executionIds(workspace, sessionId);
   writeFileSync(marker, '1', 'utf8');
 
   const second = await executeNamedWorkflow(
@@ -210,7 +210,7 @@ completion:
   clearInterval(timer);
   expect(first.stopReason).toBe('cancelled');
   expect(provider.calls).toHaveLength(1);
-  const executionId = executionIds(workspace, sessionId)[0];
+  const [executionId] = executionIds(workspace, sessionId);
   writeFileSync(marker, '1', 'utf8');
 
   const second = await executeNamedWorkflow(

@@ -7,16 +7,7 @@ import { expect, test } from 'vitest';
 
 import { GrokClient } from '../../adapters/src/clients/grok-client.ts';
 import { AgentToolRunner } from '../src/index.ts';
-import {
-  BlockedClient,
-defaultClients,  FakeClient,
-  MissingOutcomeClient,
-  registryOf,
-  repoWorkflowText,
-  ScriptedClient,
-  tempDir,
-  writePlanReviewSession,
-  writeSessionConfig } from './support.ts';
+import { BlockedClient, FakeClient, MissingOutcomeClient, registryOf, repoWorkflowText, ScriptedClient, tempDir, writePlanReviewSession, writeSessionConfig } from './support.ts';
 
 function executionFile(workspace: string, sessionId: string, executionId: string): string {
   return path.join(

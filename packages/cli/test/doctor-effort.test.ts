@@ -109,7 +109,7 @@ test.each(['request timed out', 'invalid catalog', 'CLI unavailable'])('unverifi
     run: () => { throw new Error(reason); },
   });
   expect(result.value).toBe(0);
-  const config = JSON.parse(result.stdout).checks[0];
+  const [config] = JSON.parse(result.stdout).checks;
   expect(config.problems).toEqual([]);
   expect(config.warnings).toEqual([expect.stringContaining('Could not validate agents.fast.model: "test"')]);
   expect(config.warnings[0]).toContain(reason);
@@ -139,7 +139,7 @@ test('empty effort still fails if supported values cannot be verified', async ()
     run: () => { throw new Error('request timed out'); },
   });
   expect(result.value).toBe(1);
-  const config = JSON.parse(result.stdout).checks[0];
+  const [config] = JSON.parse(result.stdout).checks;
   expect(config.problems).toEqual(['Invalid agents.fast.effort: ""\nValid values: unavailable (could not verify)']);
   expect(config.warnings).toHaveLength(1);
 });

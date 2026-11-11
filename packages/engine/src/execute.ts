@@ -49,7 +49,6 @@ import {
   type StageDispatchRequest,
   type StageDispatchResult,
 } from './dispatch.js';
-import { ProviderEventReporter } from './provider-events.js';
 import { ensureSessionBaseline,evaluateRunWhen } from './run-when.js';
 import { runVerifyOnlyStage } from './verify-only.js';
 
@@ -688,7 +687,7 @@ function version2OnceStage(
     }
     return stageId;
   }
-  const next = runnableNow(workflow, schedulable, running, workflow.concurrency ?? 1, snapshots)[0];
+  const [next] = runnableNow(workflow, schedulable, running, workflow.concurrency ?? 1, snapshots);
   if (next === undefined) {
     const reason = version2IdleReason(workflow, snapshots, sessionStatus, baselines, resumes);
     if (reason === 'no eligible stage') throw new ConfigurationError('no eligible stage');
@@ -798,7 +797,7 @@ async function runVersion2Pool(
   const errors: unknown[] = [];
   const concurrency = workflow.concurrency ?? 1;
   const observe = async (): Promise<void> => {
-    const error = errors[0];
+    const [error] = errors;
     if (error !== undefined) {
       await Promise.allSettled(flights.map((flight) => flight.promise));
       throw error;

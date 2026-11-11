@@ -178,7 +178,7 @@ const MISSING_STAGE_ID = /^Missing or invalid stages\.id\.$/;
  * (`decision: [{ <name>: { navigate } }]`). Maps such a message tail back to the draft's own coordinates.
  */
 function routeAuthorPath(item: Record<string, unknown>, rest: string): (string | number)[] | undefined {
-  const match = /^\.decision\.routes\.([^.\[\s]+)((?:\[\d+\])*)/.exec(rest);
+  const match = /^\.decision\.routes\.([^.[\s]+)((?:\[\d+\])*)/.exec(rest);
   if (match === null || !Array.isArray(item.decision)) return undefined;
   const name = match[1]!;
   const index = item.decision.findIndex((entry) =>

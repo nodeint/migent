@@ -533,9 +533,9 @@ test('test and docs overlap and review-test starts while docs runs', async () =>
       'Ship the change',
     ]);
     expect(code, stderr).toBe(0);
-    const testRun = invocationsFor(workspace, 'test')[0];
-    const docsRun = invocationsFor(workspace, 'docs')[0];
-    const reviewTest = invocationsFor(workspace, 'review-test')[0];
+    const [testRun] = invocationsFor(workspace, 'test');
+    const [docsRun] = invocationsFor(workspace, 'docs');
+    const [reviewTest] = invocationsFor(workspace, 'review-test');
     expect(testRun).toBeDefined();
     expect(docsRun).toBeDefined();
     expect(reviewTest).toBeDefined();
@@ -572,7 +572,7 @@ test('review-test revise reruns test while the docs branch continues', async () 
     ]);
     expect(code, stderr).toBe(0);
     const tests = invocationsFor(workspace, 'test');
-    const docsRun = invocationsFor(workspace, 'docs')[0];
+    const [docsRun] = invocationsFor(workspace, 'docs');
     expect(tests).toHaveLength(2);
     expect(Number(tests[1]?.started_at)).toBeLessThan(Number(docsRun?.ended_at));
     expect(executionRecords(workspace).filter((record) => record.stage_id === 'docs')).toHaveLength(1);

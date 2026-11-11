@@ -290,7 +290,7 @@ function parseChildArgs(argv: string[]): { home: string; port: number } | null {
 }
 
 export function isDirectChildEntry(): boolean {
-  const entry = process.argv[1];
+  const [, entry] = process.argv;
   if (!entry) return false;
   return import.meta.url === pathToFileURL(entry).href;
 }

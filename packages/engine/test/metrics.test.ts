@@ -263,7 +263,7 @@ test('verify red then red then pass', () => {
     ],
   );
   const metrics = sessionMetrics(workspace, 'verify', registryOf({}));
-  const execution = (metrics.executions as Record<string, unknown>[])[0];
+  const [execution] = (metrics.executions as Record<string, unknown>[]);
   expect(execution?.verify).toEqual({
     runs: 3,
     red: 2,
@@ -454,7 +454,7 @@ test('a running execution has no wall time', () => {
     [],
   );
   const metrics = sessionMetrics(workspace, 'run', registryOf({}));
-  const execution = (metrics.executions as Record<string, unknown>[])[0];
+  const [execution] = (metrics.executions as Record<string, unknown>[]);
   expect(execution?.completed_at).toBeNull();
   expect(execution?.wall_seconds).toBeNull();
   expect((metrics.totals as Record<string, unknown>).wall_seconds).toBeNull();

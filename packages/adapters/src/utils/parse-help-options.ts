@@ -6,9 +6,11 @@ export interface HelpOptionsFormat {
   inferArgumentType: boolean;
 }
 
+const ESC = '\u001B';
+
 /** Parse a help option table; the caller supplies its CLI's format. */
 export function parseHelpOptions(help: string, format: HelpOptionsFormat): HeadlessOption[] {
-  const lines = help.replace(/\x1b\[[0-9;]*m/g, '').split(/\r?\n/);
+  const lines = help.replace(new RegExp(`${ESC}\\[[0-9;]*m`, 'g'), '').split(/\r?\n/);
   const blocks: { header: string; description: string[] }[] = [];
   let active = false;
   for (const line of lines) {
@@ -29,7 +31,7 @@ export function parseHelpOptions(help: string, format: HelpOptionsFormat): Headl
     const explicitType = text.match(/\[(string|number|boolean|array)\]/)?.[1] as HeadlessOption['type'] | undefined;
     const type = explicitType ?? (!format.inferArgumentType ? 'unknown' : argument ? 'string' : 'boolean');
     const choice = text.match(/\[(?:possible values|choices):\s*([^\]]+)\]/)
-      ?? text.match(/\(choices:\s*([^\)]+)\)/);
+      ?? text.match(/\(choices:\s*([^)]+)\)/);
     const choices = choice ? choice[1].split(',').map(value => value.trim().replace(/^"|"$/g, '')) : null;
     return {
       name: (flags.find(flag => flag.startsWith('--')) ?? flags[0] ?? '').replace(/^-+/, ''),

@@ -117,7 +117,7 @@ function plain(code: string, message: string, severity: 'error' | 'warning' = 'e
 
 /** `config.validate` etc. when argv is an authoring command asking for JSON; otherwise null. */
 export function authoringCommandOf(argv: readonly string[]): string | null {
-  const group = argv[0];
+  const [group] = argv;
   if (group !== 'config' && group !== 'workflow') return null;
   // `config` itself takes --json, so it may sit between the group and the mode.
   let at = 1;

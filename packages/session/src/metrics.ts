@@ -471,7 +471,7 @@ function verifyStats(
 function sessionWallMs(executions: ExecutionRow[]): number | null {
   if (executions.length === 0) return null;
   if (executions.some((execution) => execution.completedAt === null || execution.createdAt === null)) return null;
-  const first = executions[0];
+  const [first] = executions;
   if (first === undefined) return null;
   let latest = parseTime(first.completedAt);
   const start = parseTime(first.createdAt);
