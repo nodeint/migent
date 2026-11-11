@@ -159,7 +159,10 @@ function checkLiveBindings(workspace: string, scope: BindingScope & { readonly w
       addUnique(problems, `${where}: ${effort.problem}`);
       continue;
     }
-    if (key !== null && isRecord(config.agents) && isRecord(config.agents[key]) && Object.keys(config.agents[key]).length === 0) {
+    if (
+      key !== null && isRecord(config.agents) && isRecord(config.agents[key])
+      && Object.keys(config.agents[key]).length === 0
+    ) {
       addUnique(problems, `${where}: agents.${key} has no client and model on this machine. Map it in .migent/config.local.yaml.`);
       continue;
     }

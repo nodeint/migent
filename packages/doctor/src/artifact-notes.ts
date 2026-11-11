@@ -22,7 +22,9 @@ export interface OptionalMapping {
 export function optionalArtifactMappings(
   document: Pick<WorkflowDocument, 'artifacts' | 'downstream'>,
 ): OptionalMapping[] {
-  const optional = new Set((document.artifacts ?? []).filter((artifact) => !artifact.required).map((artifact) => artifact.id));
+  const optional = new Set(
+    (document.artifacts ?? []).filter((artifact) => !artifact.required).map((artifact) => artifact.id),
+  );
   const found: OptionalMapping[] = [];
   (document.downstream ?? []).forEach((entry, index) => {
     for (const [name, artifact] of Object.entries(entry.artifacts ?? {})) {

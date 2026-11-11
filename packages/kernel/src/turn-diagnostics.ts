@@ -7,7 +7,10 @@ import type { ExecutionFailure, ProcessFacts } from './command-executor.js';
 import { KERNEL_VERSION } from './package-version.js';
 import { leadingHeaders, outcomeStatuses } from './stage-outcome.js';
 
-/** Schema of `diagnostics.json`. 2: `provider-exit` no longer implies stderr; adds `provider-error`, `stream_summary`, `result_state`. */
+/**
+ * Schema of `diagnostics.json`. 2: `provider-exit` no longer implies stderr; adds `provider-error`,
+ * `stream_summary`, `result_state`.
+ */
 export const DIAGNOSTICS_SCHEMA_VERSION = 2;
 
 const MAX_DISTINCT_LABELS = 32;

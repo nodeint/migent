@@ -235,7 +235,9 @@ const optionResource: MachineResource<typeof GetAnyOption> = {
   kind: 'option',
   contract: GetAnyOption,
   listContract: GetAnyOption,
-  contractFor: (query) => (query.native ? { one: GetNativeOption, item: GetNativeOption } : { one: GetOption, item: GetOption }),
+  contractFor: (query) => (query.native
+    ? { one: GetNativeOption, item: GetNativeOption }
+    : { one: GetOption, item: GetOption }),
   names: ['option', 'options'],
   summary: "Migent's option metadata per client, or the CLI's native headless options with --native.",
   acceptsClient: true,
@@ -272,7 +274,10 @@ const optionResource: MachineResource<typeof GetAnyOption> = {
   },
 };
 
-async function listConfiguredOptions(context: DiscoveryContext, query: MachineQuery): Promise<Static<typeof GetOption>[]> {
+async function listConfiguredOptions(
+  context: DiscoveryContext,
+  query: MachineQuery,
+): Promise<Static<typeof GetOption>[]> {
   const rows: Static<typeof GetOption>[] = [];
   for (const client of selectedClients(context, query)) {
     for (const option of client.options()) rows.push(optionView(client.id, option));
@@ -280,7 +285,10 @@ async function listConfiguredOptions(context: DiscoveryContext, query: MachineQu
   return rows;
 }
 
-async function listNativeOptions(context: DiscoveryContext, query: MachineQuery): Promise<Static<typeof GetNativeOption>[]> {
+async function listNativeOptions(
+  context: DiscoveryContext,
+  query: MachineQuery,
+): Promise<Static<typeof GetNativeOption>[]> {
   const rows: Static<typeof GetNativeOption>[] = [];
   for (const client of selectedClients(context, query)) {
     const outcome = await context.nativeOptions(client);

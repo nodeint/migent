@@ -37,7 +37,8 @@ test('agy labels by event and step type, and flags a failed result', () => {
 
 test('an identifier-shaped payload in a type field is not a label', () => {
   const line = JSON.stringify({ type: 'SECRET_TOKEN_123', event: 'SECRET_TOKEN_123' });
-  for (const client of [new ClaudeCodeClient(), new CodexClient(), new GrokClient(), new OpencodeClient(), new AgyClient()]) {
+  const clients = [new ClaudeCodeClient(), new CodexClient(), new GrokClient(), new OpencodeClient(), new AgyClient()];
+  for (const client of clients) {
     expect(client.eventLabel(line)).toBe('other');
   }
   expect(new CodexClient().eventLabel(JSON.stringify({ type: 'item.completed', item: { type: 'SECRET_TOKEN_123' } }))).toBe(

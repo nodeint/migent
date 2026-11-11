@@ -147,7 +147,12 @@ export function clientsListingModel(
   skipped: string[];
   failed: { client: string; reason: string }[];
 } {
-  const result = { matches: [] as string[], searched: [] as string[], skipped: [] as string[], failed: [] as { client: string; reason: string }[] };
+  const result = {
+    matches: [] as string[],
+    searched: [] as string[],
+    skipped: [] as string[],
+    failed: [] as { client: string; reason: string }[],
+  };
   const name = model.trim();
   for (const { id, command, outcome } of clients) {
     if (outcome.status === 'skipped') result.skipped.push(id);

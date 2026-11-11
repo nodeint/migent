@@ -235,7 +235,8 @@ function optionsFailure(
   if (full === null) return null;
   // An inline stage agent is a complete definition of its own: its options are the stage's to fix.
   if (stage.agent?.kind === 'inline') return { message: full, path: null };
-  const roleDefault = isRecord(config.roles) && isRecord(config.roles[stage.role]) ? config.roles[stage.role] : undefined;
+  const roleDefault =
+    isRecord(config.roles) && isRecord(config.roles[stage.role]) ? config.roles[stage.role] : undefined;
   let selected: unknown;
   if (stage.agent !== null) selected = stage.agent.kind === 'named' ? stage.agent.name : undefined;
   else selected = isRecord(roleDefault) ? roleDefault.agent : undefined;

@@ -83,5 +83,9 @@ export const workflowDocumentSchema = z.object({
   concurrency: z.number().int().positive().optional(),
   outputs: z.array(workflowOutputSchema).optional(),
   artifacts: z.array(artifactSpecSchema).optional(),
-  downstream: z.array(z.object({ workflow: z.string(), task: z.string(), artifacts: z.record(z.string(), z.string()).optional() })).optional(),
+  downstream: z.array(z.object({
+    workflow: z.string(),
+    task: z.string(),
+    artifacts: z.record(z.string(), z.string()).optional(),
+  })).optional(),
 });

@@ -1,18 +1,17 @@
-import { readFileSync } from 'node:fs';
 
 import { DEFAULT_MAX_DISPATCHES } from '@nodeint/migent-engine';
 import { noInputRequested } from '@nodeint/migent-kernel';
 import { Command, Option, type OptionValues } from 'commander';
 
-import { CLIENT_MAPPING, continueRoleSession, isAgentSession, runAgent } from './commands/agent.js';
+import { CLIENT_MAPPING } from './commands/agent.js';
 import { type AuthoringKind, type AuthoringMode,runAuthoring } from './commands/authoring.js';
 import { removedConfigCommand, runConfigShow } from './commands/config.js';
 import { runDoctor } from './commands/doctor.js';
-import { dispatchCeiling, executeWorkflow, rejectOnce, runWorkflowCommand } from './commands/execute.js';
 import { getHelpTypes, runGet } from './commands/get.js';
 import { runInit } from './commands/init.js';
 import { prepareWorkflowSession } from './commands/prepare.js';
 import { parsePort, runServiceStart, runServiceStatus, runServiceStop } from './commands/service.js';
+import { continueSession, runSessionCommand } from './commands/session-run.js';
 import { registerSessionLifecycleCommands, registerSessionQueryCommands } from './commands/sessions.js';
 import { installSkill, printSkillPath, type SkillOptions,updateSkill } from './commands/skill.js';
 import { runUpdate } from './commands/update.js';
@@ -20,7 +19,7 @@ import { runRegister, runRemove, runWorkspaceList } from './commands/workspace-r
 import { printError } from './display.js';
 import { EXIT_CONFIG, exitText, LOOP_EXITS, PREFLIGHT_EXIT, ROLE_EXITS, STAGE_EXITS } from './exits.js';
 import { runMigrate } from './migrate.js';
-import { collect, optionalText, rawText, stringList } from './text.js';
+import { collect, optionalText, stringList } from './text.js';
 import { PACKAGE_VERSION } from './version.js';
 import { findWorkspace, invocationCwdPath } from './workspace.js';
 
@@ -440,8 +439,6 @@ function registerWorkspaceCommands(program: Command, status: CliStatus): void {
   showHelpWhenBare(status, workspace);
 }
 
-const RUN_SPLIT = 'Pass --workflow for a workflow run, or --role for an agent run.';
-
 function registerSessionCommand(program: Command, status: CliStatus): void {
   const session = program.command('session').description('Create, run, resume, and inspect sessions.');
   registerSessionRunCommands(session, status);
@@ -513,161 +510,6 @@ function registerSessionRunCommands(session: Command, status: CliStatus): void {
     .action((id: string, options: OptionValues) => settle(status, () => continueSession(id, options)));
 }
 
-function runSessionCommand(options: OptionValues): number | Promise<number> {
-  if (options.stage !== undefined && optionalText(options.stage) === null) {
-    printError('--stage is empty.');
-    return EXIT_CONFIG;
-  }
-  const workflowProvided = options.workflow !== undefined;
-  const workflowId = optionalText(options.workflow);
-  if (workflowProvided && workflowId === null) {
-    printError('--workflow is empty.');
-    return EXIT_CONFIG;
-  }
-  const sessionId = optionalText(options.session);
-  const roleMode = roleFlagsPresent(options);
-  const workflowMode = workflowFlagsPresent(options);
-  if ((workflowId !== null && roleMode) || (workflowId === null && workflowMode && (roleMode || sessionId === null))) {
-    printError(RUN_SPLIT);
-    return EXIT_CONFIG;
-  }
-  // A session without role flags is a prepared workflow session; it records its own workflow.
-  if (workflowId !== null || (sessionId !== null && !roleMode)) {
-    const task = rawText(options.task);
-    const prepared = sessionId !== null;
-    if (prepared && task !== null) {
-      printError('Pass --workflow and --task, or --session, not both.');
-      return EXIT_CONFIG;
-    }
-    if (!prepared && task === null && options.prior === undefined) {
-      printError('Pass --task.');
-      return EXIT_CONFIG;
-    }
-    return runWorkflowCommand({
-      workflowId,
-      task,
-      sessionId,
-      prepared,
-      once: options.once === true,
-      options,
-      output: outputFlags(options),
-    });
-  }
-  if (!roleMode) {
-    printError(RUN_SPLIT);
-    return EXIT_CONFIG;
-  }
-  return runAgent(options, optionalText(options.session));
-}
-
-function roleFlagsPresent(options: OptionValues): boolean {
-  return (
-    options.role !== undefined ||
-    options.client !== undefined ||
-    options.provider !== undefined ||
-    options.model !== undefined ||
-    stringList(options.option).length > 0 ||
-    options.prompt !== undefined ||
-    options.file !== undefined ||
-    options.stdin === true ||
-    options.json === true
-  );
-}
-
-function workflowFlagsPresent(options: OptionValues): boolean {
-  return (
-    options.once === true ||
-    options.stage !== undefined ||
-    options.prior !== undefined ||
-    options.maxDispatches !== undefined ||
-    options.unlimitedDispatches === true ||
-    options.progress === true ||
-    options.verbose === true ||
-    options.refreshWorkflow === true ||
-    options.skipPreflight === true
-  );
-}
-
-function continueSession(session: string, options: OptionValues): number | Promise<number> {
-  if (options.stage !== undefined && optionalText(options.stage) === null) {
-    printError('--stage is empty.');
-    return EXIT_CONFIG;
-  }
-  const workspace = findWorkspace(invocationCwdPath());
-  if (isAgentSession(workspace, session)) return continueRoleSession(
-    { workspace, sessionId: session },
-    options,
-    readReply,
-  );
-  if (rejectOnce(options)) return EXIT_CONFIG;
-  const reply = readReply(options);
-  if (reply === 'invalid') return EXIT_CONFIG;
-  const stageId = optionalText(options.stage);
-  // With --reply and no --once, --stage only picks the stage that receives the reply; the workflow keeps running.
-  if (options.once === true || (stageId !== null && reply === null)) {
-    return executeWorkflow(findWorkspace(invocationCwdPath()), {
-      action: 'stage',
-      sessionId: session,
-      stageId,
-      priorSessionId: optionalText(options.prior),
-      maxDispatches: null,
-      continueFailed: true,
-      refreshWorkflow: options.refreshWorkflow === true,
-      reply,
-      ...outputFlags(options),
-    });
-  }
-  const ceiling = dispatchCeiling(options);
-  if (typeof ceiling === 'string') return EXIT_CONFIG;
-  return executeWorkflow(findWorkspace(invocationCwdPath()), {
-    action: 'continue',
-    sessionId: session,
-    replyStageId: stageId,
-    priorSessionId: optionalText(options.prior),
-    maxDispatches: ceiling,
-    continueFailed: true,
-    refreshWorkflow: options.refreshWorkflow === true,
-    reply,
-    ...outputFlags(options),
-  });
-}
-
-function readReply(options: OptionValues): string | null | 'invalid' {
-  const hasReply = options.reply !== undefined;
-  const hasFile = options.replyFile !== undefined;
-  if (!hasReply && !hasFile) return null;
-  if (hasReply && hasFile) {
-    printError('Pass only one of --reply or --reply-file.');
-    return 'invalid';
-  }
-  if (hasFile) {
-    const file = optionalText(options.replyFile);
-    if (file === null) {
-      printError('--reply-file is empty.');
-      return 'invalid';
-    }
-    let text: string;
-    try {
-      text = readFileSync(file, 'utf8');
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error);
-      printError(`Unable to read reply file: ${file} (${reason})`);
-      return 'invalid';
-    }
-    if (text.trim() === '') {
-      printError('--reply is empty.');
-      return 'invalid';
-    }
-    return text;
-  }
-  const reply = rawText(options.reply);
-  if (reply === null || reply.trim() === '') {
-    printError('--reply is empty.');
-    return 'invalid';
-  }
-  return reply;
-}
-
 function addDispatchOptions(command: Command, onceDescription: string): void {
   command
     .option('--once', onceDescription)
@@ -684,10 +526,6 @@ function addDispatchOptions(command: Command, onceDescription: string): void {
       '--refresh-workflow',
       'Use the current workflow, agents, and role responsibilities for this session. Requires an existing session that has a frozen workflow. A prepared-session start reads its recorded workflow source instead and does not need this flag.',
     );
-}
-
-function outputFlags(options: OptionValues): { itemProgress: boolean } {
-  return { itemProgress: options.progress === true };
 }
 
 function showHelpWhenBare(status: CliStatus, command: Command): void {

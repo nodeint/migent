@@ -30,7 +30,8 @@ async function inspect(roleExtra: Record<string, unknown>, stageAgent: unknown) 
       schema_version: 7,
       stages: [{ id: 'work', role: 'developer', ...(stageAgent === undefined ? {} : { agent: stageAgent }) }],
     }));
-    const result = await capture(() => runDoctor(workspace, { asJson: true, which, runCommand: catalog, home: workspace }));
+    const result = await capture(() =>
+      runDoctor(workspace, { asJson: true, which, runCommand: catalog, home: workspace }));
     const checks = JSON.parse(result.stdout).checks as { name: string; problems: string[]; items: string[] }[];
     return { code: result.value, checks };
   } finally {

@@ -55,7 +55,10 @@ test('a question answer, a failure retry and a pending correction stay on protoc
   expect(records(workspace, sessionId)[1]!.corrections.response_contract).toBeDefined();
   // A retry of the failed execution continues the same conversation.
   const retried = await executeNamedWorkflow(workspace, { workflowId: 'wf', sessionId, continueFailed: true }, runner);
-  expect(retried.code, JSON.stringify({ stop: retried.stopReason, stages: retried.stages, calls: provider.calls.length })).toBe(0);
+  expect(
+    retried.code,
+    JSON.stringify({ stop: retried.stopReason, stages: retried.stages, calls: provider.calls.length }),
+  ).toBe(0);
   noProtocol3(provider.calls[3]?.prompt);
   expect(protocols(workspace, sessionId).every(([, protocol]) => protocol === 2)).toBe(true);
 }, 60_000);

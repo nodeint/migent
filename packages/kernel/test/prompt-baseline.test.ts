@@ -34,7 +34,14 @@ function fixture() {
     if (artifacts) writeFileSync(path.join(dir, 'artifacts', 'make.md'), 'x');
     return path.join(dir, 'artifacts');
   };
-  const snap = (executionId: string, stageId: string, order: number, artifactDirectory: string, outcomeStatus: string, decision: string | null = null): ExecutionSnapshot =>
+  const snap = (
+    executionId: string,
+    stageId: string,
+    order: number,
+    artifactDirectory: string,
+    outcomeStatus: string,
+    decision: string | null = null,
+  ): ExecutionSnapshot =>
     ({ executionId, stageId, executionOrder: order, status: 'completed', outcomeStatus, outcomeDecision: decision, artifactDirectory });
   const snapshots = [
     snap('e1', 'make', 1, execution('e1', true), 'complete'),

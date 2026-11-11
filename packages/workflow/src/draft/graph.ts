@@ -7,7 +7,10 @@ import type { StageSpec } from '../model.js';
 import { pyRepr } from '../record.js';
 
 /** The conditional (`run_when`) membership the draft can prove from readable edges. */
-export function draftConditionalStages(stages: readonly DraftStage[], declaredIds: ReadonlySet<string>): Map<string, string> {
+export function draftConditionalStages(
+  stages: readonly DraftStage[],
+  declaredIds: ReadonlySet<string>,
+): Map<string, string> {
   const graph: Record<string, StageSpec> = Object.create(null);
   for (const stage of stages) graph[stage.id] = graphStageOf(stage);
   const members = new Map<string, string>();

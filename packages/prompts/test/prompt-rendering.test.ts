@@ -3,8 +3,9 @@ import { readFileSync } from 'node:fs';
 import { expect, test } from 'vitest';
 
 import {
-  addArtifactContext, buildStageReplyPrompt, flattenHistory, formatQuestionAnswers,   renderHandoffCorrection, renderOutputCorrection, renderProtocolUpdate,
-renderProviderPrompt, renderStageStart, renderVerifyRepair, type TurnKind,
+  addArtifactContext, buildStageReplyPrompt, flattenHistory, formatQuestionAnswers,
+  renderHandoffCorrection, renderOutputCorrection, renderProtocolUpdate,
+  renderProviderPrompt, renderStageStart, renderVerifyRepair, type TurnKind,
 } from '../src/index.ts';
 import { renderPrompt } from '../src/renderer.ts';
 

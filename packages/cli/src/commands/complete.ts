@@ -38,7 +38,10 @@ export function completeSession(workspace: string, sessionId: string, asJson: bo
       missing_outputs: result.missingOutputs,
       next: {
         path: result.next.path,
-        suggestions: result.next.next.map((suggestion) => ({ ...suggestion, command: formatNextCommand(suggestion.argv) })),
+        suggestions: result.next.next.map((suggestion) => ({
+          ...suggestion,
+          command: formatNextCommand(suggestion.argv),
+        })),
       },
     });
     return 0;

@@ -410,7 +410,12 @@ test('a session recorded before usage captures still has a row', () => {
     [event(1, 'provider.turn_completed', '0001')],
   );
   const metrics = sessionMetrics(workspace, 'old', registryOf({ fake: new FakeClient() }));
-  const totals = metrics.totals as { turns: number; wall_seconds: number; usage: TurnUsage; usage_missing: Record<string, number> };
+  const totals = metrics.totals as {
+    turns: number;
+    wall_seconds: number;
+    usage: TurnUsage;
+    usage_missing: Record<string, number>;
+  };
   expect(totals.turns).toBe(1);
   expect(totals.wall_seconds).toBe(10);
   expect(totals.usage).toEqual(blank());
@@ -590,7 +595,10 @@ test('mixed legacy CLI turns use their own parsers without inventing an executio
     const codex = new FakeClient();
     const opencode = new FakeClient();
     codex.readUsage = (capture) => ({ values: { ...blank(), input_tokens: Number(capture.codex) }, cumulative: [] });
-    opencode.readUsage = (capture) => ({ values: { ...blank(), input_tokens: Number(capture.opencode) }, cumulative: [] });
+    opencode.readUsage = (capture) => ({
+      values: { ...blank(), input_tokens: Number(capture.opencode) },
+      cumulative: [],
+    });
     writeSession(workspace, 'legacy', { workflow_id: 'legacy', status: 'active' },
       [{ id: '0001', order: 1, stage: 'work', status: 'failed', client: null, provider: 'codex' }],
       [turn(1, '0001', { opencode: 10 }, 'opencode'), turn(2, '0001', { codex: 25 }, 'codex')]);

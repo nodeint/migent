@@ -330,7 +330,8 @@ function publishVersion2(input: {
   if (missing.length > 0) return { outputs: [], outputsMissing: missing };
   const sources: Record<string, readonly [string, string]> = {};
   if (isArtifactSchema(input.workflow)) {
-    for (const item of resolveArtifactSources(input.workflow, currentCompleteByStage(input.workflow, input.snapshots))) {
+    const current = currentCompleteByStage(input.workflow, input.snapshots);
+    for (const item of resolveArtifactSources(input.workflow, current)) {
       if (item.source === null) continue;
       sources[item.name] = [path.join(item.source.artifactDirectory, item.file), item.source.executionId];
     }

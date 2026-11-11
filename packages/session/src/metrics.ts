@@ -49,7 +49,9 @@ export function listSessionMetrics(
 ): Record<string, unknown>[] {
   let rows = listSessionRows(workspace);
   // Columns are updated_at, session, workflow, status. Same order as session list.
-  if ((filters.workflow !== null && filters.workflow !== undefined)) rows = rows.filter((row) => row[2] === filters.workflow);
+  if ((filters.workflow !== null && filters.workflow !== undefined)) {
+    rows = rows.filter((row) => row[2] === filters.workflow);
+  }
   if ((filters.status !== null && filters.status !== undefined)) rows = rows.filter((row) => row[3] === filters.status);
   if ((filters.limit !== null && filters.limit !== undefined)) rows = rows.slice(0, filters.limit);
   return rows.map((row) => sessionMetrics(workspace, row[1] ?? '', clients));
@@ -104,8 +106,12 @@ export function listSealedMetrics(
     sealed.push(read.metrics);
   }
   let rows = sealed;
-  if ((filters.workflow !== null && filters.workflow !== undefined)) rows = rows.filter((row) => row.workflow_id === filters.workflow);
-  if ((filters.status !== null && filters.status !== undefined)) rows = rows.filter((row) => row.status === filters.status);
+  if ((filters.workflow !== null && filters.workflow !== undefined)) {
+    rows = rows.filter((row) => row.workflow_id === filters.workflow);
+  }
+  if ((filters.status !== null && filters.status !== undefined)) {
+    rows = rows.filter((row) => row.status === filters.status);
+  }
   if ((filters.limit !== null && filters.limit !== undefined)) rows = rows.slice(0, filters.limit);
   return rows;
 }

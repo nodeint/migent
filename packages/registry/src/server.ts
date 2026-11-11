@@ -355,7 +355,11 @@ export class RegistryHTTPServer {
     }
   }
 
-  private async handleOne(socket: Socket, reader: DeadlineReader, state: { responseStarted: boolean }): Promise<boolean> {
+  private async handleOne(
+    socket: Socket,
+    reader: DeadlineReader,
+    state: { responseStarted: boolean },
+  ): Promise<boolean> {
     const exchange: Exchange = { socket, state };
     state.responseStarted = false;
     reader.setDeadline(monotonic() + this.readDeadlineSec);

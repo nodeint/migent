@@ -136,7 +136,11 @@ export function printInvocationEnvelope(command: string, message: string): void 
 }
 
 class Finish extends Error {
-  constructor(public readonly exit: number, public readonly items: Diagnostic[], public readonly extra: Record<string, unknown> = {}) {
+  constructor(
+    public readonly exit: number,
+    public readonly items: Diagnostic[],
+    public readonly extra: Record<string, unknown> = {},
+  ) {
     super('finish');
   }
 }
@@ -317,7 +321,10 @@ function executeDraft(
       destination = session.draftPath;
       label = session.relativePath;
       const siblings = readSiblings(workflowsDirectory(workspace), '');
-      diagnostics = validateWorkflowDraft({ draft, file: session.relativePath, siblings, config, session: { expectedId: session.workflowId } }, clients);
+      diagnostics = validateWorkflowDraft(
+        { draft, file: session.relativePath, siblings, config, session: { expectedId: session.workflowId } },
+        clients,
+      );
     } else {
       const {id} = draft;
       const derived = typeof id === 'string' && FILE_NAME.test(id) ? `${id}.yaml` : null;

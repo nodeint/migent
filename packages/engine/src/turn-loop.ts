@@ -1,45 +1,34 @@
 /** The turn loop of one execution: provider turns, gates, corrections, verify, and repair turns. */
-import { readFileSync, rmSync, statSync } from 'node:fs';
-import path from 'node:path';
+import { rmSync } from 'node:fs';
 
 import {
-  buildTurnDiagnostics, buildVerifyRepairPrompt, CancellationRequested, classifyGateError, type CliClient,
-  CORRECTION_FAILURE_REASONS, CORRECTION_POLICY, type CorrectionFiles, type CorrectionLedger, decideCorrection,
-  type FailureClassification, flattenHistory, formatVerifyReport, type GateFailure, type Gates, HandoffFileError,
-  log, type NewSession, nonemptyArtifact, observeTurn, QuestionFileError, resolveStageOutcome, type ResponseSource,
-  StageOutcome, truncateText, VERIFY_EXHAUSTED, type VerifyRunner, type VerifyRunResult,
+  CancellationRequested, type CliClient, CORRECTION_FAILURE_REASONS, CORRECTION_POLICY, type CorrectionFiles,
+  type CorrectionLedger, decideCorrection, type FailureClassification, flattenHistory, formatVerifyReport,
+  type GateFailure, log, type NewSession, StageOutcome, VERIFY_EXHAUSTED,
+  type VerifyRunner, type VerifyRunResult,
 } from '@nodeint/migent-kernel';
 import { renderProviderPrompt } from '@nodeint/migent-prompts';
 import { HANDOFF_FILE_PROTOCOL } from '@nodeint/migent-prompts';
 import type { AgentSessionRecord, ExecutionContext, SessionStore } from '@nodeint/migent-session';
-import { allStageArtifacts, isWorkflowV2,  stageArtifactsFor, type StageSpec } from '@nodeint/migent-workflow';
+import { allStageArtifacts, type StageSpec } from '@nodeint/migent-workflow';
 
 import type { ProviderEventReporter } from './provider-events.js';
-import { type FreshTurn, frozenDocument, handoffPath, type Iteration, type PendingVerify, promptArtifactFiles, questionRequestPath, type RunResult, type RunTurnArgs, sessionPaths, type TurnDrive, type TurnResult } from './turn-types.js';
-
-type Step = 'continue' | 'stop' | 'proceed';
-
-/** The gate verdicts an output check produced, and the failure that goes with them. */
-interface OutputCheck {
-  failure: GateFailure | null;
-  gates: Partial<Gates>;
-}
-
-/** What the gates decided about one fresh turn. */
-interface GateEvaluation {
-  iteration: Iteration;
-  fresh: FreshTurn;
-}
-
-/** What persisting one turn decided. */
-interface PersistVerdict {
-  needsVerify: boolean;
-  modelResponded: boolean;
-  recordedClassification: FailureClassification | null;
-}
-
-/** How the verify run ends: a repair turn follows, or the execution ends with this outcome. */
-type VerifyVerdict = { kind: 'repair'; report: string } | { kind: 'end'; outcome: StageOutcome | null };
+import {
+  assessProviderTurn,
+  buildRepairPrompt,
+  buildRunResult,
+  checkOutputs,
+  emitTurnEvents,
+  evaluateGates,
+  type GateEvaluation,
+  type OutputCheck,
+  type PersistVerdict,
+  type Step,
+  verifyFields,
+  type VerifyVerdict,
+  writeTurnDiagnostics,
+} from './turn-steps.js';
+import { type FreshTurn, handoffPath, type Iteration, type PendingVerify, promptArtifactFiles, questionRequestPath, type RunResult, type RunTurnArgs, sessionPaths, type TurnDrive, type TurnResult } from './turn-types.js';
 
 /**
  * Drives the turns of one execution: provider turn, gates, correction turns, verify, and repair turns.
@@ -157,19 +146,8 @@ export class TurnLoop {
   }
 
   private extraFields(reason: string | null = null): Record<string, unknown> | null {
-    if (this.verifyCommands.length === 0) return null;
-    const fields: Record<string, unknown> = { turns: this.turn };
-    if (this.lastResult !== null && this.lastReport !== null) {
-      fields.verify = {
-        runs: this.verifyRuns,
-        red: this.red,
-        max_verify: this.maxVerify,
-        last_result: this.lastResult,
-        last_report: this.lastReport,
-      };
-    }
-    if (reason !== null) fields.failure_reason = reason;
-    return fields;
+    const { verifyCommands, turn, lastResult, lastReport, verifyRuns, red, maxVerify } = this;
+    return verifyFields({ verifyCommands, turn, lastResult, lastReport, verifyRuns, red, maxVerify }, reason);
   }
 
   // The last provider turn this execution ran; failure.md joins diagnostics.json to it.
@@ -204,7 +182,10 @@ export class TurnLoop {
     // The budget is persisted before the message joins the history, so a stop between the two
     // writes sends the correction again on resume and never grants a second.
     if (decision === 'correct') {
-      this.corrections = { ...this.corrections, [failure.kind]: { turn: this.turn, error_kind: failure.errorKind, error_detail: failure.detail } };
+      this.corrections = {
+        ...this.corrections,
+        [failure.kind]: { turn: this.turn, error_kind: failure.errorKind, error_detail: failure.detail },
+      };
       store.saveExecutionProgress(context, record, { corrections: this.corrections });
       let fileField: Record<string, unknown> = {};
       if (failure.kind === 'question_file') fileField = { file: this.questionFile };
@@ -223,8 +204,10 @@ export class TurnLoop {
       : flattenHistory(record.history as { role: string; content: string }[]);
     this.currentPrompt = renderProviderPrompt(base, { ...sessionPaths(context, this.sessionId),
       contract: record.agentId ? rule.contract : 'full', turn: rule.turnKind, decisionValues: this.decisionValues,
-      decisionInstructions: stage?.decisionInstructions, ask: this.ask, protocol: this.protocol, questionFile: this.questionFile, handoffFile: this.handoffFile, artifactDirectory: context.artifactDirectory,
-      artifactName: this.artifactName, artifactFiles: promptArtifactFiles(stage === null ? [] : allStageArtifacts(stage)),
+      decisionInstructions: stage?.decisionInstructions, ask: this.ask, protocol: this.protocol,
+      questionFile: this.questionFile, handoffFile: this.handoffFile, artifactDirectory: context.artifactDirectory,
+      artifactName: this.artifactName,
+      artifactFiles: promptArtifactFiles(stage === null ? [] : allStageArtifacts(stage)),
     });
     this.turn += 1;
     this.currentAgentId = record.agentId;
@@ -242,32 +225,7 @@ export class TurnLoop {
   // The artifact and completion-output gates. Fresh turns and resumed saved replies both run them.
   private checkOutputs(reply: StageOutcome): OutputCheck {
     const { stage, artifactName, context, store } = this;
-    let gates: Partial<Gates> = {};
-    if (stage !== null && artifactName && reply.status === 'complete') {
-      const missing = stageArtifactsFor(stage, reply.decision ?? null)
-        .filter((item) => item.required && !nonemptyArtifact(path.join(context.artifactDirectory, item.file)))
-        .map((item) => item.file);
-      const detail = `Stage artifact missing or empty: ${missing.join(', ')}.`;
-      if (missing.length > 0) {
-        return {
-          failure: { kind: 'stage_output', errorKind: 'artifact', detail },
-          gates: { artifact: { state: 'failed', reason: detail } },
-        };
-      }
-      gates = { artifact: { state: 'passed' } };
-    }
-    if (isWorkflowV2(frozenDocument(context))) {
-      return { failure: null, gates: { ...gates, completion_outputs: { state: 'not-applicable' } } };
-    }
-    const missing = store.missingCompletionOutputs(context, reply);
-    if (missing.length > 0) {
-      const detail = `Completion outputs missing or empty: ${missing.join(', ')}.`;
-      return {
-        failure: { kind: 'stage_output', errorKind: 'completion_outputs', detail },
-        gates: { ...gates, completion_outputs: { state: 'failed', reason: detail } },
-      };
-    }
-    return { failure: null, gates: { ...gates, completion_outputs: { state: 'passed' } } };
+    return checkOutputs({ stage, artifactName, context, store }, reply);
   }
 
   private takePendingVerify(): Iteration {
@@ -315,73 +273,9 @@ export class TurnLoop {
     if (!this.keepFile) rmSync(this.signalFile, { force: true });
     this.keepFile = false;
     const turnResult = await this.callProvider();
-    const { argv, usage, source: parsedSource, exitCode, responseText } = turnResult;
-    let { invokeError } = turnResult;
     this.classification = turnResult.classification;
-    const { classification } = this;
-    // An abnormal provider turn leaves a record whatever the gates decide: a failed start or
-    // exit, or a provider-reported error at exit 0. A timeout or an unpassable argument has neither.
-    const recordsTurn = turnResult.failure !== undefined || (exitCode === 0 && classification !== null);
-    const gates: Gates = {
-      outcome: { state: 'not-evaluated' },
-      artifact: { state: 'not-evaluated' },
-      completion_outputs: { state: 'not-evaluated' },
-    };
-
-    record.agentId = turnResult.sessionId || record.agentId;
-    const turnDetails: Record<string, unknown> = {
-      turn: this.turn,
-      agent_id: record.agentId,
-      argv,
-    };
-    if (usage !== null) turnDetails.usage = usage;
-    record.model = model;
-    record.options = profile;
-    record.workspace = workspacePath;
-    // A provider that does not attest the source of its text is trusted only on a clean exit.
-    const source: ResponseSource = parsedSource ?? (classification === null ? 'model' : 'none');
-    const exitOnly = classification?.origin === 'exit-only';
-    // A non-zero exit alone does not decide the turn. A reply the model wrote still goes
-    // through every gate an exit-0 turn passes; the provider's own error text never does.
-    const candidate = exitOnly && source === 'model' && responseText.trim() !== '';
-    // Only a reply the model wrote can be corrected: no start failure, timeout or provider verdict.
-    const eligible = candidate || (classification === null && exitCode === 0 && turnResult.failure === undefined);
-    const exitMessage = invokeError;
-    let anomalyReason: string | null = null;
-    if (candidate) {
-      invokeError = null;
-    } else if (exitOnly) {
-      anomalyReason = responseText.trim() === '' ? 'no reply' : 'reply is not model output';
-      invokeError = responseText.trim() === '' ? exitMessage : responseText;
-    }
-    // The turn event follows the provider verdict only; later gates never rename it.
-    const turnError = invokeError;
-    return {
-      iteration: {
-        responseText,
-        outcome: null,
-        invokeError,
-        gateFailure: null,
-        eligible,
-        pendingGate: false,
-        needsVerify: false,
-      },
-      fresh: {
-        turnResult,
-        parsedSource,
-        source,
-        recordsTurn,
-        exitOnly,
-        candidate,
-        exitMessage,
-        anomalyReason,
-        turnError,
-        gates,
-        turnDetails,
-        modelResponded: false,
-        recordedClassification: null,
-      },
-    };
+    const { turn } = this;
+    return assessProviderTurn({ record, model, profile, workspacePath, turn }, turnResult);
   }
 
   // The provider turn. A cancellation marks the execution cancelled and is rethrown.
@@ -407,90 +301,15 @@ export class TurnLoop {
 
   // Outcome resolution, the artifact and completion-output gates, and candidate rejection.
   private evaluateGates(it: Iteration, fresh: FreshTurn): GateEvaluation {
-    let { outcome, invokeError, gateFailure } = it;
-    let gates: Gates = { ...fresh.gates };
-    if (invokeError === null) {
-      try {
-        outcome = resolveStageOutcome(it.responseText, {
-          required: this.sessionId !== null, decisionValues: this.decisionValues, ask: this.ask, protocol: this.protocol, questionFile: this.questionFile, handoffFile: this.handoffFile,
-        });
-        gates.outcome = { state: 'passed', ...(outcome === null ? {} : { status: outcome.status }) };
-      } catch (error) {
-        gateFailure = classifyGateError(error);
-        if (error instanceof QuestionFileError) {
-          gates.outcome = { state: 'failed', reason: `question file unusable (${error.kind})` };
-        } else if (error instanceof HandoffFileError) {
-          gates.outcome = { state: 'failed', reason: `handoff file unusable (${error.kind})` };
-        } else if (error instanceof Error) {
-          invokeError = error.message;
-          gates.outcome = { state: 'failed', reason: truncateText(error.message) };
-        } else throw error;
-      }
-    }
-    if (this.artifactName === null) gates.artifact = { state: 'not-applicable' };
-    else if (gates.outcome.state !== 'not-evaluated' && outcome?.status !== 'complete') {
-      gates.artifact = { state: 'not-applicable' };
-    }
-    if (invokeError === null && gateFailure === null && outcome !== null) {
-      const checked = this.checkOutputs(outcome);
-      gates = { ...gates, ...checked.gates };
-      if (checked.failure !== null) {
-        gateFailure = checked.failure;
-        invokeError = checked.failure.detail;
-      }
-    }
-    let { anomalyReason, turnError } = fresh;
-    if (fresh.candidate && (invokeError !== null || gateFailure !== null)) {
-      // Rejected: the error is the model text itself, the failed gate is the recorded reason.
-      anomalyReason = invokeError ?? `${gateFailure!.errorKind}: ${gateFailure!.detail}`;
-      invokeError = it.responseText;
-      turnError = invokeError;
-    }
-    return {
-      iteration: { ...it, outcome, invokeError, gateFailure },
-      fresh: { ...fresh, gates, anomalyReason, turnError },
-    };
+    const { sessionId, decisionValues, ask, protocol, questionFile, handoffFile, artifactName } = this;
+    const loop = { sessionId, decisionValues, ask, protocol, questionFile, handoffFile, artifactName };
+    return evaluateGates({ ...loop, checkOutputs: (reply) => this.checkOutputs(reply) }, it, fresh);
   }
 
   // Turn completed or failed, quota, and exit anomaly events. Emitted before persistTurn resets the classification.
   private emitTurnEvents(it: Iteration, fresh: FreshTurn): void {
-    const { eventReporter, classification } = this;
-    const { turnError, turnDetails, exitOnly, anomalyReason } = fresh;
-    const { exitCode } = fresh.turnResult;
-    eventReporter.emit(
-      turnError === null ? 'provider.turn_completed' : 'provider.turn_failed',
-      turnError === null ? 'completed' : turnError,
-      turnDetails,
-    );
-    if (classification?.kind === 'quota') {
-      const resetAt = classification.resetAt ?? '';
-      eventReporter.emit(
-        'provider.quota',
-        [classification.message, resetAt].filter((item) => item !== '').join(' '),
-        {
-          retry_at: resetAt,
-          client: eventReporter.client,
-          ...(classification.window ? { window: classification.window } : {}),
-        },
-      );
-    }
-    if (exitOnly) {
-      eventReporter.emit(
-        'provider.exit_anomaly',
-        it.invokeError === null || anomalyReason === null
-          ? `exit ${exitCode} with a usable reply; accepted`
-          : `exit ${exitCode}; rejected: ${anomalyReason}`,
-        {
-          turn: this.turn,
-          client: eventReporter.client,
-          exit_code: exitCode,
-          signal: null,
-          origin: 'exit-only',
-          accepted: anomalyReason === null,
-          reason: anomalyReason,
-        },
-      );
-    }
+    const { eventReporter, classification, turn } = this;
+    emitTurnEvents({ eventReporter, classification, turn }, it, fresh);
   }
 
   // Status, conversation history, saved response, and the verify turn outcome.
@@ -523,37 +342,8 @@ export class TurnLoop {
 
   // The only writer of diagnostics.json: once this turn's gates have run, before any verify or follow-up turn.
   private writeTurnDiagnostics(it: Iteration, fresh: FreshTurn): void {
-    if (!fresh.recordsTurn) return;
-    const { record, store, context, artifactName } = this;
-    const { turnResult, exitOnly, anomalyReason, recordedClassification } = fresh;
-    const accepted = exitOnly && anomalyReason === null;
-    const anomalyText = anomalyReason === null ? null : truncateText(anomalyReason);
-    const reason = exitOnly ? anomalyText : truncateText(recordedClassification?.message ?? fresh.exitMessage ?? 'provider failure');
-    const errors = recordedClassification?.origin === 'provider-error' ? [recordedClassification.message] : [];
-    const stream = turnResult.summarizer.finish(
-      { bytes: turnResult.facts?.stdoutBytes ?? 0, lines: turnResult.facts?.stdoutLines ?? 0 },
-      errors,
-    );
-    store.saveDiagnostics(context, buildTurnDiagnostics({
-      turn: this.turn,
-      agentId: record.agentId || null,
-      ...(turnResult.failure ? { failure: turnResult.failure } : {}),
-      ...(turnResult.facts ? { facts: turnResult.facts } : {}),
-      classification: recordedClassification,
-      stream,
-      resultState: {
-        observed: observeTurn({
-          source: fresh.parsedSource,
-          responseText: it.responseText,
-          artifactPath: artifactName ? path.join(context.artifactDirectory, artifactName) : null,
-          responseWritten: fresh.modelResponded,
-          conversationTurns: record.history.filter((item) => item.role === 'assistant').length,
-        }),
-        gates: fresh.gates,
-        turn_verdict: accepted ? 'accepted' : 'failed',
-        reason,
-      },
-    }));
+    const { record, store, context, artifactName, turn } = this;
+    writeTurnDiagnostics({ record, store, context, artifactName, turn }, it, fresh);
   }
 
   // A gate failure on a fresh turn: queue a correction, or fail the stage. Then stop when no verify follows.
@@ -720,24 +510,7 @@ export class TurnLoop {
   // Queues the repair turn that follows a failed verify run.
   private queueRepair(lastReport: string): void {
     const { record, store, context, stage, artifactName } = this;
-    const report = readFileSync(path.join(context.directory, lastReport), 'utf8');
-    const sessionDirectory = path.dirname(path.dirname(context.directory));
-    const taskFile = path.join(sessionDirectory, 'task.md');
-    let taskPointer: string | null = null;
-    try {
-      if (statSync(taskFile).isFile()) taskPointer = taskFile;
-    } catch {
-      taskPointer = null;
-    }
-    const repair = buildVerifyRepairPrompt(
-      report,
-      {
-        red: this.red,
-        maxVerify: this.maxVerify,
-        artifactPath: artifactName ? path.join(context.artifactDirectory, artifactName) : null,
-      },
-      { taskFile: taskPointer, sessionDirectory: taskPointer === null ? null : sessionDirectory },
-    );
+    const repair = buildRepairPrompt({ context, artifactName, red: this.red, maxVerify: this.maxVerify }, lastReport);
     record.history.push({ role: 'user', content: repair });
     store.save(record, context);
     // pending_turn keeps resume from counting a turn short after an empty reply.
@@ -750,33 +523,16 @@ export class TurnLoop {
       : flattenHistory(record.history as { role: string; content: string }[]);
     this.currentPrompt = renderProviderPrompt(this.currentPrompt, { ...sessionPaths(context, this.sessionId),
       contract: this.currentAgentId ? 'reminder' : 'full', turn: 'repair', decisionValues: this.decisionValues, decisionInstructions: stage?.decisionInstructions, ask: this.ask, protocol: this.protocol, questionFile: this.questionFile, handoffFile: this.handoffFile,
-      artifactDirectory: context.artifactDirectory, artifactName, artifactFiles: promptArtifactFiles(stage === null ? [] : allStageArtifacts(stage)),
+      artifactDirectory: context.artifactDirectory, artifactName,
+      artifactFiles: promptArtifactFiles(stage === null ? [] : allStageArtifacts(stage)),
     });
   }
 
   private result(it: Iteration): RunResult {
-    const { record, store, context, eventReporter, classification } = this;
-    const { outcome } = it;
-    const sessionStatus = store.readSessionStatus(context.sessionId);
-    return {
-      agent_id: record.agentId || '',
-      options: { ...record.options },
-      session_id: context.sessionId,
-      execution_id: context.executionId,
-      artifact_directory: context.artifactDirectory,
-      outcome_status: outcome?.status ?? '',
-      ...(outcome?.status === 'question' ? {
-        questions: outcome.questions, questions_file: path.join(context.directory, 'questions.json'),
-      } : {}),
-      outcome_decision: outcome?.decision ?? '',
-      session_status: typeof sessionStatus.status === 'string' ? sessionStatus.status : '',
-      response: it.responseText,
-      failure_reason: this.failureReason,
-      ...(this.failureDetail === '' ? {} : { failure_detail: this.failureDetail }),
-      failure_kind: classification?.kind ?? '',
-      reset_at: classification?.kind === 'quota' && classification.resetAt ? classification.resetAt : '',
-      client: eventReporter.client,
-      execution_status: record.status,
-    };
+    const { record, store, context, eventReporter, classification, failureReason, failureDetail } = this;
+    return buildRunResult(
+      { record, store, context, eventReporter, classification, failureReason, failureDetail },
+      it,
+    );
   }
 }

@@ -96,7 +96,10 @@ test.each(['123', 'true', 'null'])('plain reply %s remains free text', (reply) =
 test('Migent assigns question numbers and option letters when the agent omits IDs', () => {
   const { id: firstId, ...first } = single;
   const { id: secondId, ...second } = multiple;
-  const withoutIds = (question: typeof first) => ({ ...question, options: question.options.map(({ id, ...option }) => option) });
+  const withoutIds = (question: typeof first) => ({
+    ...question,
+    options: question.options.map(({ id, ...option }) => option),
+  });
   const parsed = loadText(body([withoutIds(first), withoutIds(second)]));
   expect(parsed.map((question) => question.id)).toEqual(['1', '2']);
   expect(parsed[1]!.options.map((option) => option.id)).toEqual(['A', 'B', 'C']);

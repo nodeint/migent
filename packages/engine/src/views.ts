@@ -133,7 +133,9 @@ function stageView(
     verify: [...stage.verify],
     max_verify: stage.maxVerify,
     verify_timeout: stage.verifyTimeoutSec,
-    run_when: stage.runWhen === null || stage.runWhen === undefined ? null : { changed_paths: [...stage.runWhen.changedPaths] },
+    run_when: stage.runWhen === null || stage.runWhen === undefined
+      ? null
+      : { changed_paths: [...stage.runWhen.changedPaths] },
     ask: stage.ask ?? null,
     target,
     problems,

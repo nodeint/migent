@@ -204,7 +204,12 @@ test('session prepare starts through session run --workflow', async () => {
   try {
     const prepared = await capture(() => main(['session', 'prepare', 'some task title', '--workflow', 'plan'], workspace));
     expect(prepared.value).toBe(0);
-    const preparedBody = JSON.parse(prepared.stdout) as { session_id: string; title: string; task_path: string; workflow_path: string };
+    const preparedBody = JSON.parse(prepared.stdout) as {
+      session_id: string;
+      title: string;
+      task_path: string;
+      workflow_path: string;
+    };
     expect(preparedBody).toEqual({
       session_id: expect.stringMatching(/^[1-9][0-9]*$/),
       title: 'some task title',

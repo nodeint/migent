@@ -114,7 +114,10 @@ export interface RunOptions {
 export type StopReason = 'cancel' | 'timeout';
 
 /** Runs a hook; true unless it reports (by returning false) that it did nothing. */
-async function notify(hook: ((reason: StopReason) => Promise<void | boolean>) | null | undefined, reason: StopReason): Promise<boolean> {
+async function notify(
+  hook: ((reason: StopReason) => Promise<void | boolean>) | null | undefined,
+  reason: StopReason,
+): Promise<boolean> {
   if (!hook) return false;
   try {
     return (await hook(reason)) !== false;

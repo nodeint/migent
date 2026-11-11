@@ -56,7 +56,10 @@ export const WorkflowDecisionEntry = Type.Object(
       description: 'A stage id, `complete`, or a list of stage ids to run next.',
     }),
     artifacts: Type.Optional(
-      Type.Union([Type.Array(NonBlankString), Type.Record(Type.String(), WorkflowArtifact, { propertyNames: { pattern: ARTIFACT_ID_PATTERN } })], {
+      Type.Union([
+        Type.Array(NonBlankString),
+        Type.Record(Type.String(), WorkflowArtifact, { propertyNames: { pattern: ARTIFACT_ID_PATTERN } }),
+      ], {
         description: 'Artifacts produced under this decision: registry ids, or a mapping of inline artifact definitions.',
       }),
     ),

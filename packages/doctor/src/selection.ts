@@ -42,7 +42,10 @@ export async function diagnoseSelection(
 }
 
 /** The checks of `migent doctor`: config, workflows and clients, with every model looked up. */
-export async function diagnoseWorkspace(workspace: string, hooks: DiagnoseHooks & { runCommand: RunCommand }): Promise<Check[]> {
+export async function diagnoseWorkspace(
+  workspace: string,
+  hooks: DiagnoseHooks & { runCommand: RunCommand },
+): Promise<Check[]> {
   const which = hooks.which ?? whichSync;
   const documents = Object.values(loadWorkflowCatalog(workspace, { quiet: true }).documents);
   const modelEffortChecks = await checkModels(

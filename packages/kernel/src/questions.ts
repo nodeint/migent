@@ -13,7 +13,9 @@ const questionSchema = z.object({
   question: text,
   context: text,
   selection: z.enum(['single', 'multiple']),
-  options: z.array(z.object({ id: optionId.optional(), label: text, description: text.optional() }).strict()).min(MIN_QUESTION_OPTIONS).max(MAX_QUESTION_OPTIONS),
+  options: z.array(z.object({ id: optionId.optional(), label: text, description: text.optional() }).strict())
+    .min(MIN_QUESTION_OPTIONS)
+    .max(MAX_QUESTION_OPTIONS),
   recommended: z.array(optionId).min(1).optional(),
 }).strict().superRefine((question, ctx) => {
   const ids = question.options.map((_, index) => String.fromCharCode(OPTION_LETTER_BASE + index));
@@ -63,7 +65,11 @@ export type QuestionFileErrorKind = 'missing' | 'empty' | 'invalid_json' | 'inva
 
 /** The question request file cannot be used. The kind and detail are safe to show to the agent. */
 export class QuestionFileError extends Error {
-  constructor(public readonly kind: QuestionFileErrorKind, public readonly detail: string, public readonly file: string) {
+  constructor(
+    public readonly kind: QuestionFileErrorKind,
+    public readonly detail: string,
+    public readonly file: string,
+  ) {
     super(`Question request file ${file} is invalid (${kind}): ${detail}`);
     this.name = 'QuestionFileError';
   }
@@ -114,7 +120,10 @@ export function answerQuestions(questions: readonly Question[], reply: string): 
   } else {
     throw new ConfigurationError('Answer every question using its number, for example: 1A, 2B, 3 explain further.');
   }
-  if (Object.keys(values).length !== questions.length || Object.keys(values).some((key) => !questions.some((question) => question.id === key))) {
+  if (
+    Object.keys(values).length !== questions.length
+    || Object.keys(values).some((key) => !questions.some((question) => question.id === key))
+  ) {
     throw new ConfigurationError('The reply must answer exactly the pending question IDs.');
   }
   return questions.map((question) => {

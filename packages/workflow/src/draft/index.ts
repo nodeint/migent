@@ -117,7 +117,13 @@ export function collectWorkflowDraft(data: Record<string, unknown>, source: stri
     const built = buildArtifactsV7(data, draftConditionalStages(stages, declaredStageIds));
     for (const problem of built.problems) problems.addMessage(problem.code, problem.message, problem.path);
     const names = new Set(Object.keys(isRecord(data.artifacts) ? data.artifacts : {}));
-    outputs = { sectionValid: isRecord(data.artifacts) || (data.artifacts === null || data.artifacts === undefined), complete: built.problems.length === 0, names, values: [], indexes: [] };
+    outputs = {
+      sectionValid: isRecord(data.artifacts) || (data.artifacts === null || data.artifacts === undefined),
+      complete: built.problems.length === 0,
+      names,
+      values: [],
+      indexes: [],
+    };
   } else if (Object.hasOwn(data, 'artifacts')) {
     problems.addMessage('invalid-artifact', 'artifacts requires schema_version 7.', ['artifacts']);
   }

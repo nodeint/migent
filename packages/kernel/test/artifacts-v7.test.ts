@@ -114,7 +114,10 @@ test("resolution picks the chosen decision's artifact and holds only required on
   const reviseDir = dir({ 'review.md': 'findings' });
   const approved = [snap('plan', 1, planDir), snap('review', 2, approvedDir, 'approved')];
   const sources = (snaps: ExecutionSnapshot[]) =>
-    Object.fromEntries(resolveArtifactSources(document, currentCompleteByStage(document, snaps)).map((s) => [s.name, s.source?.executionId ?? null]));
+    Object.fromEntries(
+      resolveArtifactSources(document, currentCompleteByStage(document, snaps))
+        .map((s) => [s.name, s.source?.executionId ?? null]),
+    );
   expect(sources(approved)).toEqual({ plan: 'e1', 'plan-comments': 'e2' });
   expect(missingWorkflowOutputNames(document, approved, currentCompleteByStage(document, approved))).toEqual([]);
   // A later revise round never revives the earlier approved comments.
@@ -140,7 +143,8 @@ stages:
   const first = dir({ 'out.md': 'x' });
   const done = [snap('gate', 1, first)];
   const skipped: ExecutionSnapshot[] = [...done, { ...snap('gate', 2, first, null, 'skipped'), outcomeStatus: null }];
-  const view = (snaps: ExecutionSnapshot[]) => resolveArtifactSources(document, currentCompleteByStage(document, snaps))[0]?.source?.executionId ?? null;
+  const view = (snaps: ExecutionSnapshot[]) =>
+    resolveArtifactSources(document, currentCompleteByStage(document, snaps))[0]?.source?.executionId ?? null;
   expect(view(done)).toBe('e1');
   expect(view(skipped)).toBeNull();
 });
@@ -206,5 +210,6 @@ test('migration refuses file collisions and invalid ids without changing the doc
   expect(() => migrateWorkflow(raw, {})).toThrow(/both write plan\.md/);
   expect(JSON.stringify(raw)).toBe(before);
   const bad = V6.replace('name: plan\n', 'name: bad.name\n').replace('plan: plan\n', 'plan: bad.name\n');
-  expect(() => migrateWorkflow(parseYamlDocument(bad) as Record<string, unknown>, {})).toThrow(/cannot derive an artifact id/);
+  expect(() => migrateWorkflow(parseYamlDocument(bad) as Record<string, unknown>, {}))
+    .toThrow(/cannot derive an artifact id/);
 });

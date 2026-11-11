@@ -71,7 +71,8 @@ export function publishManualCompletion(
     }
     missing = missingCompletionOutputNames({ workflow, snapshots, beforeOrder: Number.POSITIVE_INFINITY });
   }
-  const outputs = Object.entries(publishOutputFiles(sessionDirectory, sources, MANUAL_PUBLISHER)).map(([name, output]) => ({
+  const published = publishOutputFiles(sessionDirectory, sources, MANUAL_PUBLISHER);
+  const outputs = Object.entries(published).map(([name, output]) => ({
     name,
     path: output.path,
     source_execution_id: output.sourceExecutionId,

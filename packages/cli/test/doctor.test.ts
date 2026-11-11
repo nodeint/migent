@@ -246,7 +246,8 @@ test('doctor and session prepare resolve model effort through adapter clients', 
     writeFileSync(path.join(workspace, '.migent', 'sessions', sessionId, 'task.md'), 'Check effort at start\n');
     activatePreparedSession(workspace, sessionId, clientRegistry());
     const frozen = loadYamlMapping(path.join(workspace, '.migent', 'sessions', sessionId, 'workflow.frozen.yaml'));
-    const targets = Object.values(frozen.targets as Record<string, { client: string; options: Record<string, string> }>);
+    type FrozenTarget = { client: string; options: Record<string, string> };
+    const targets = Object.values(frozen.targets as Record<string, FrozenTarget>);
     expect(targets).toEqual(expect.arrayContaining([
       expect.objectContaining({ client: 'codex', options: { model_reasoning_effort: 'high' } }),
       expect.objectContaining({ client: 'grok', options: { 'reasoning-effort': 'medium' } }),
@@ -292,7 +293,11 @@ test('doctor --session validates a prepared draft in text and JSON without writi
     const json = await capture(() => main(['doctor', '--session', sessionId, '--json'], workspace));
     expect(json.value).toBe(0);
     expect(json.stderr).toBe('');
-    const payload = JSON.parse(json.stdout) as { ok: boolean; session: Record<string, string>; checks: { name: string }[] };
+    const payload = JSON.parse(json.stdout) as {
+      ok: boolean;
+      session: Record<string, string>;
+      checks: { name: string }[];
+    };
     expect(payload.ok).toBe(true);
     expect(payload.session).toEqual({
       id: sessionId,
@@ -349,7 +354,10 @@ test('doctor --session validates a frozen session without live workflows or an u
     const captured = await capture(() => main(['doctor', '--session', sessionId, '--json'], workspace));
     expect(captured.value).toBe(0);
     expect(captured.stderr).toBe('');
-    const payload = JSON.parse(captured.stdout) as { session: Record<string, string>; checks: { warnings: string[] }[] };
+    const payload = JSON.parse(captured.stdout) as {
+      session: Record<string, string>;
+      checks: { warnings: string[] }[];
+    };
     expect(payload.session.source).toBe('frozen');
     expect(payload.checks.flatMap((check) => check.warnings).join('\n')).toContain('The workflow file differs.');
   } finally {
@@ -367,7 +375,11 @@ test('doctor --session uses the CLI exit conventions for unusable sessions', asy
     expect(invalid.stderr).toContain('Invalid session id: ../escape.');
     const unknown = await capture(() => main(['doctor', '--session', 'missing', '--json'], workspace));
     expect(unknown.value).toBe(1);
-    const payload = JSON.parse(unknown.stdout) as { ok: boolean; session: { id: string; source: null }; checks: { problems: string[] }[] };
+    const payload = JSON.parse(unknown.stdout) as {
+      ok: boolean;
+      session: { id: string; source: null };
+      checks: { problems: string[] }[];
+    };
     expect(payload.ok).toBe(false);
     expect(payload.session).toMatchObject({ id: 'missing', source: null });
     expect(payload.checks[0]?.problems).toEqual(['Session not found: missing.']);

@@ -144,7 +144,11 @@ outputs:
   const failed = await executeNamedWorkflow(workspace, { workflowId: 'wf', task: 'go' }, runner);
   expect(failed.code).toBe(7);
   expect(provider.calls).toHaveLength(0);
-  const continued = await executeNamedWorkflow(workspace, { sessionId: failed.sessionId, resetRevisions: true }, runner);
+  const continued = await executeNamedWorkflow(
+    workspace,
+    { sessionId: failed.sessionId, resetRevisions: true },
+    runner,
+  );
   expect(continued.code).toBe(0);
   expect(provider.calls).toHaveLength(1);
   expect(existsSync(path.join(workspace, '.migent', 'sessions', failed.sessionId, 'executions', '0002-prepare--attempt-02'))).toBe(

@@ -279,7 +279,11 @@ export function assertConfigClientEquivalence(input: {
   compareView('merged config', input.originalMerged, input.updatedMerged);
 }
 
-function compareView(label: string, before: Readonly<Record<string, unknown>>, after: Readonly<Record<string, unknown>>): void {
+function compareView(
+  label: string,
+  before: Readonly<Record<string, unknown>>,
+  after: Readonly<Record<string, unknown>>,
+): void {
   for (const [name, body] of locations(before)) {
     const next = findLocation(after, name);
     const previousClient = effectiveClientValue(body);

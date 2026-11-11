@@ -241,7 +241,10 @@ export function workflowErrorPath(message: string, data: Record<string, unknown>
       if (/^[\w-]/.test(rest)) continue;
       const mapped = routeAuthorPath(stage, rest);
       const found = mapped !== undefined ? { path: mapped, confirmed: mapped.length } : fieldPathWithin(stage, rest);
-      if (best === null || found.confirmed > best.confirmed || (found.confirmed === best.confirmed && needle.length > best.length)) {
+      if (
+        best === null || found.confirmed > best.confirmed
+        || (found.confirmed === best.confirmed && needle.length > best.length)
+      ) {
         best = { path: ['stages', index, ...found.path], confirmed: found.confirmed, length: needle.length };
       }
       break;

@@ -112,7 +112,10 @@ export type DownstreamProblem =
   | { kind: 'task-line' }
   | { kind: 'artifacts' };
 
-/** Structural problems of one downstream entry in reading order. Id syntax, uniqueness and outputs stay with the readers. */
+/**
+ * Structural problems of one downstream entry in reading order. Id syntax, uniqueness and outputs
+ * stay with the readers.
+ */
 export function downstreamProblems(entry: unknown): DownstreamProblem[] {
   const issues = schemaIssues(WorkflowDownstream, entry);
   if (issues.some((issue) => issue.path.length === 0 && issue.keyword === 'type')) return [{ kind: 'entry' }];

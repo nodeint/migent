@@ -259,7 +259,8 @@ function liftWorkflowCompletion(workflow: Readonly<Record<string, unknown>>): Re
     refuseForeignCompleteRoutes(workflow, completion);
     const {outputs} = completion;
     const emptyOutputs =
-      (outputs === null || outputs === undefined) || outputs === false || (isRecord(outputs) && Object.keys(outputs).length === 0);
+      (outputs === null || outputs === undefined) || outputs === false
+      || (isRecord(outputs) && Object.keys(outputs).length === 0);
     if (!emptyOutputs) document = { ...document, outputs: deepCopy(outputs) };
     document = withoutKey(document, 'completion');
   } else if (Object.hasOwn(workflow, 'completion')) {

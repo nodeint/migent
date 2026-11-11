@@ -24,7 +24,11 @@ export type HandoffFileErrorKind =
 
 /** The handoff file cannot be used. The kind and detail are safe to show to the agent. */
 export class HandoffFileError extends Error {
-  constructor(public readonly kind: HandoffFileErrorKind, public readonly detail: string, public readonly file: string) {
+  constructor(
+    public readonly kind: HandoffFileErrorKind,
+    public readonly detail: string,
+    public readonly file: string,
+  ) {
     super(`Handoff file ${file} is invalid (${kind}): ${detail}`);
     this.name = 'HandoffFileError';
   }

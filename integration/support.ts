@@ -375,7 +375,9 @@ function jsonObjects(text: string): Record<string, unknown>[] {
   return objects;
 }
 
-async function capture(fn: () => Promise<unknown> | unknown): Promise<{ stdout: string; stderr: string; value: unknown }> {
+async function capture(
+  fn: () => Promise<unknown> | unknown,
+): Promise<{ stdout: string; stderr: string; value: unknown }> {
   let stdout = '';
   let stderr = '';
   const out = process.stdout.write;

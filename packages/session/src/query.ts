@@ -168,7 +168,8 @@ function unresolvedQuotaFailures(sessionDirectory: string): Record<string, unkno
 
 /** One entry per stage that recorded an exit-only anomaly: its latest anomaly and the stage's count. */
 function exitAnomalySummaries(sessionDirectory: string): Record<string, unknown>[] {
-  const byStage = new Map<string, { latest: ReturnType<typeof readExitAnomalies>[number]; stageId: string; count: number }>();
+  type StageAnomalies = { latest: ReturnType<typeof readExitAnomalies>[number]; stageId: string; count: number };
+  const byStage = new Map<string, StageAnomalies>();
   for (const anomaly of readExitAnomalies(sessionDirectory)) {
     const stageId = anomaly.stageId ?? parseExecutionId(anomaly.executionId)?.stageId ?? anomaly.executionId;
     const current = byStage.get(stageId);

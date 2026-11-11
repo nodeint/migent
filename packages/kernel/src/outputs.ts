@@ -187,7 +187,8 @@ export function missingWorkflowOutputNames(
 ): string[] {
   if (isArtifactSchema(workflow)) {
     return resolveArtifactSources(workflow, current ?? {})
-      .filter((item) => item.required && (item.source === null || !nonemptyArtifact(path.join(item.source.artifactDirectory, item.file))))
+      .filter((item) => item.required
+        && (item.source === null || !nonemptyArtifact(path.join(item.source.artifactDirectory, item.file))))
       .map((item) => item.name);
   }
   const missing: string[] = [];

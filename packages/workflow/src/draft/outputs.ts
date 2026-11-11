@@ -32,7 +32,9 @@ export function collectOutputs(raw: unknown, stages: readonly DraftStage[], cont
   const { basePath = [field] } = context;
   const result: CollectedOutputs = { sectionValid: true, complete: true, names: new Set(), values: [], indexes: [] };
   let rawItems: unknown = raw === false ? [] : raw;
-  if ((rawItems === null || rawItems === undefined) || (isRecord(rawItems) && Object.keys(rawItems).length === 0)) rawItems = [];
+  if ((rawItems === null || rawItems === undefined) || (isRecord(rawItems) && Object.keys(rawItems).length === 0)) {
+    rawItems = [];
+  }
   if (!Array.isArray(rawItems)) {
     problems.addMessage('invalid-value', `${field} must be a list.`, [...basePath]);
     return { sectionValid: false, complete: false, names: result.names, values: [], indexes: [] };

@@ -62,11 +62,18 @@ async function runSessionDoctor(
   }
   // A freeze needs no live config, so only a live source requires a current config schema.
   if (selection.document !== null && selection.freeze === null) requireCurrentSchema(workspace, { configOnly: true });
-  const diagnosis = await diagnoseSelection(workspace, selection, { clients: clientRegistry(), which: options.which, runCommand: options.runCommand });
+  const diagnosis = await diagnoseSelection(workspace, selection, {
+    clients: clientRegistry(),
+    which: options.which,
+    runCommand: options.runCommand,
+  });
   // Shown only when something was recorded, so a clean session prints what it always did.
   if (diagnostics.warnings.length > 0) diagnosis.checks.push(diagnostics);
-  if (options.asJson) writeJson(DoctorReport, { ...payload(diagnosis.checks), session: sessionPayload(sessionId, diagnosis.source) });
-  else printDoctor(diagnosis.checks);
+  if (options.asJson) {
+    writeJson(DoctorReport, { ...payload(diagnosis.checks), session: sessionPayload(sessionId, diagnosis.source) });
+  } else {
+    printDoctor(diagnosis.checks);
+  }
   return diagnosis.ok ? 0 : 1;
 }
 

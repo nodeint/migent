@@ -251,7 +251,11 @@ export function collectFrozenDrift(workspace: string, freeze: WorkflowFreeze, re
   return details;
 }
 
-function liveTarget(config: Record<string, unknown>, stage: StageSpec, resolveClient?: ClientRegistry): StageTarget | null {
+function liveTarget(
+  config: Record<string, unknown>,
+  stage: StageSpec,
+  resolveClient?: ClientRegistry,
+): StageTarget | null {
   if (!isRoleStage(stage)) return null;
   try {
     return resolveStageSpec(config, stage, { registry: resolveClient });
@@ -360,7 +364,10 @@ function stageMapping(
   if (stage.decisionValues.length > 0) {
     mapped.decision = version3
       ? stage.decisionValues.map((name) => {
-          const body: Record<string, unknown> = { when: stage.decisionInstructions?.[name], navigate: stage.routes[name] };
+          const body: Record<string, unknown> = {
+            when: stage.decisionInstructions?.[name],
+            navigate: stage.routes[name],
+          };
           const added = stage.decisionArtifacts[name] ?? [];
           if (version7 && added.length > 0) {
             body.artifacts = added.every((artifact) => artifact.scope === 'published')
@@ -378,7 +385,9 @@ function stageMapping(
   if (!version5 && Object.keys(stage.options).length > 0) mapped.options = stage.options;
   if (stage.maxRevisions !== null) mapped.max_revisions = stage.maxRevisions;
   if (stage.resumeFrom !== null) mapped.session = { resume_from: stage.resumeFrom };
-  if ((stage.runWhen !== null && stage.runWhen !== undefined)) mapped.run_when = { changed_paths: stage.runWhen.changedPaths };
+  if ((stage.runWhen !== null && stage.runWhen !== undefined)) {
+    mapped.run_when = { changed_paths: stage.runWhen.changedPaths };
+  }
   if (stage.verify.length > 0) {
     mapped.verify = stage.verify;
     if (isRoleStage(stage) && stage.maxVerify !== DEFAULT_MAX_VERIFY) mapped.max_verify = stage.maxVerify;

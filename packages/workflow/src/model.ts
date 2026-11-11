@@ -97,7 +97,8 @@ export function stageArtifactsFor(stage: StageSpec, decision: string | null): St
 
 /** Every file a stage may write, with the decision that adds it (null for stage-level). */
 export function allStageArtifacts(stage: StageSpec): { artifact: StageArtifact; decision: string | null }[] {
-  const all: { artifact: StageArtifact; decision: string | null }[] = stage.artifacts.map((artifact) => ({ artifact, decision: null }));
+  const all: { artifact: StageArtifact; decision: string | null }[] =
+    stage.artifacts.map((artifact) => ({ artifact, decision: null }));
   for (const [decision, list] of Object.entries(stage.decisionArtifacts)) {
     for (const artifact of list) all.push({ artifact, decision });
   }

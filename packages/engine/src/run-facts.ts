@@ -1,4 +1,7 @@
-/** Facts read from persisted execution state and from the workspace: protocol stamps, saved replies, git and CLI versions. */
+/**
+ * Facts read from persisted execution state and from the workspace: protocol stamps, saved replies,
+ * git and CLI versions.
+ */
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 

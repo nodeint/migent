@@ -46,7 +46,9 @@ function label(schema: unknown, from: string, root: Node | null): string {
   if (schema.type === 'array') return `${group(label(schema.items, from, root))}[]`;
   if (schema.type === 'object') {
     if (isNode(schema.properties) && Object.keys(schema.properties).length > 0) return 'object';
-    const values = isNode(schema.patternProperties) ? Object.values(schema.patternProperties)[0] : schema.additionalProperties;
+    const values = isNode(schema.patternProperties)
+      ? Object.values(schema.patternProperties)[0]
+      : schema.additionalProperties;
     return isNode(values) ? `map of ${group(label(values, from, root))}` : 'object';
   }
   return typeof schema.type === 'string' ? schema.type : 'any';
@@ -92,12 +94,20 @@ function rows(schema: unknown, prefix: string, context: RowsContext): void {
     for (const [name, property] of Object.entries(schema.properties)) {
       const path = prefix ? `${prefix}.${name}` : name;
       if (isNode(property)) {
-        out.push({ path, type: label(property, from, root), required: required.has(name), notes: notes(property), description: describeOf(property) });
+        out.push({
+          path,
+          type: label(property, from, root),
+          required: required.has(name),
+          notes: notes(property),
+          description: describeOf(property),
+        });
         rows(property, path, context);
       }
     }
   }
-  const values = isNode(schema.patternProperties) ? Object.values(schema.patternProperties)[0] : schema.additionalProperties;
+  const values = isNode(schema.patternProperties)
+    ? Object.values(schema.patternProperties)[0]
+    : schema.additionalProperties;
   if (isNode(values)) rows(values, `${prefix}.*`, context);
 }
 

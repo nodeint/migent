@@ -30,7 +30,13 @@ function fakeCatalog(argv: string[]): string {
 
 async function inspect(
   agents: Record<string, unknown>,
-  options: { run?: RunCommand; json?: boolean; local?: Record<string, unknown>; which?: typeof which; inline?: boolean } = {},
+  options: {
+    run?: RunCommand;
+    json?: boolean;
+    local?: Record<string, unknown>;
+    which?: typeof which;
+    inline?: boolean;
+  } = {},
 ) {
   const workspace = mkdtempSync(path.join(tmpdir(), 'migent-doctor-effort-'));
   try {
@@ -44,7 +50,10 @@ async function inspect(
       schema_version: 7, stages: [{ id: 'work', role: 'developer' }, { id: 'again', role: 'developer', depends_on: ['work'] }],
     }));
     return await capture(() => runDoctor(workspace, {
-      asJson: options.json ?? true, which: options.which ?? which, runCommand: options.run ?? fakeCatalog, home: workspace,
+      asJson: options.json ?? true,
+      which: options.which ?? which,
+      runCommand: options.run ?? fakeCatalog,
+      home: workspace,
     }));
   } finally {
     rmSync(workspace, { recursive: true, force: true });

@@ -76,7 +76,11 @@ export function locateSessionDirectory(workspace: string, sessionId: string): st
  * `--refresh-workflow` adopts it). The caller holds the session lock for a save; liveness is the
  * lock's to decide, never the persisted status string alone.
  */
-export function resolveSessionDraft(workspace: string, sessionId: string, options: { forSave?: boolean } = {}): SessionDraft {
+export function resolveSessionDraft(
+  workspace: string,
+  sessionId: string,
+  options: { forSave?: boolean } = {},
+): SessionDraft {
   const sessionDirectory = locateSessionDirectory(workspace, sessionId);
   const manifestPath = path.join(sessionDirectory, 'manifest.yaml');
   if (!existsSync(manifestPath)) fail('session-metadata-missing', `Session manifest is missing: .migent/sessions/${sessionId}/manifest.yaml.`);

@@ -31,7 +31,13 @@ function event(
   };
 }
 
-function execution(id: string, order: number, stageId: string, status: string, outcome: Record<string, unknown> | null): FoldExecution {
+function execution(
+  id: string,
+  order: number,
+  stageId: string,
+  status: string,
+  outcome: Record<string, unknown> | null,
+): FoldExecution {
   return {
     executionId: id,
     executionOrder: order,

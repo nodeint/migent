@@ -94,7 +94,10 @@ export const ARTIFACT_KEYS: readonly string[] = Object.keys(WorkflowArtifact.pro
  * reports the first and the draft collector reports all. `conditional` maps each stage in a
  * `run_when` reach to the stage that reaches it.
  */
-export function buildArtifactsV7(data: Record<string, unknown>, conditional: ReadonlyMap<string, string>): ArtifactBuild {
+export function buildArtifactsV7(
+  data: Record<string, unknown>,
+  conditional: ReadonlyMap<string, string>,
+): ArtifactBuild {
   const problems: ArtifactProblem[] = [];
   const fail = (message: string, at: (string | number)[]): void => {
     problems.push({ code: 'invalid-artifact', message, path: at });

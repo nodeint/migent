@@ -1,51 +1,70 @@
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import type { CliClient, ClientRegistry, FailureClassification, UsageCapture } from '@nodeint/migent-kernel';
-import { classifyFailure, createNewSession, sessionOptions } from '@nodeint/migent-kernel';
+import type { CliClient, ClientRegistry, UsageCapture } from '@nodeint/migent-kernel';
+import { createNewSession, sessionOptions } from '@nodeint/migent-kernel';
 import { CommandExecutor, DEFAULT_TIMEOUT_SEC, type StopReason } from '@nodeint/migent-kernel';
-import { DEFAULT_INTERRUPT_POLICY, type InterruptPolicy, type InterruptReport, interruptSession, isSettled } from '@nodeint/migent-kernel';
+import {
+  DEFAULT_INTERRUPT_POLICY,
+  type InterruptPolicy,
+  type InterruptReport,
+  interruptSession,
+  isSettled,
+} from '@nodeint/migent-kernel';
 import { StreamSummarizer } from '@nodeint/migent-kernel';
-import { VERIFY_EXHAUSTED } from '@nodeint/migent-kernel';
 import { VerifyRunner } from '@nodeint/migent-kernel';
 import { ConfigurationError } from '@nodeint/migent-kernel';
 import { debugEnabled, flattenHistory, log } from '@nodeint/migent-kernel';
 import { classifyGateError, type GateFailure, readCorrectionLedger, ruleForTurn } from '@nodeint/migent-kernel';
 import { StageOutcome } from '@nodeint/migent-kernel';
-import { isShellSignalExitCode, platformHome } from '@nodeint/migent-kernel';
 import { HandoffFileError } from '@nodeint/migent-kernel';
 import { QuestionFileError } from '@nodeint/migent-kernel';
-import { CURRENT_RESPONSE_PROTOCOL, LEGACY_RESPONSE_PROTOCOL, renderProtocolUpdate, renderProviderPrompt, type TurnKind } from '@nodeint/migent-prompts';
-import { loadFrozenWorkflow } from '@nodeint/migent-session';
-import { AgentSessionRecord, type ExecutionContext, SessionStore, stringOptions } from '@nodeint/migent-session';
+import {
+  CURRENT_RESPONSE_PROTOCOL,
+  LEGACY_RESPONSE_PROTOCOL,
+  renderProtocolUpdate,
+  renderProviderPrompt,
+} from '@nodeint/migent-prompts';
+import { AgentSessionRecord, SessionStore, stringOptions } from '@nodeint/migent-session';
 import { isRecord } from '@nodeint/migent-workflow';
-import { allStageArtifacts, loadNamedWorkflow, loadStage, type StageSpec } from '@nodeint/migent-workflow';
 
 import { ProviderEventReporter } from './provider-events.js';
-import { persistedTurn, readCliVersion,readExecutionJson, readGitFacts, savedOutcome, savedResponse, storedProtocol, storedTurn, verifyProgress } from './run-facts.js';
+import {
+  persistedTurn,
+  readCliVersion,
+  readExecutionJson,
+  readGitFacts,
+  savedOutcome,
+  savedResponse,
+  storedProtocol,
+  storedTurn,
+  verifyProgress,
+} from './run-facts.js';
+import {
+  carryExhaustedArtifact,
+  classifyFinishedProcess,
+  loadRunStage,
+  resolveWorkspace,
+  type RunRequest,
+  stageFacts,
+  validateSessionProfile,
+} from './run-setup.js';
 import { TurnLoop } from './turn-loop.js';
-import { handoffPath, promptArtifactFiles, questionRequestPath, type RunResult, type RunTurnArgs, sessionPaths, type TurnDrive, type TurnResult } from './turn-types.js';
+import {
+  handoffPath,
+  promptArtifactFiles,
+  questionRequestPath,
+  type RunResult,
+  type RunTurnArgs,
+  sessionPaths,
+  type TurnDrive,
+  type TurnResult,
+} from './turn-types.js';
 
+export type { RunRequest } from './run-setup.js';
 export type { RunResult } from './turn-types.js';
 
-export interface RunRequest {
-  /** CLI client id, resolved through the runner's registry. */
-  client: string;
-  model: string;
-  prompt: string;
-  /** What the prompt is; it picks the closing instruction and is kept for resume. */
-  turn?: TurnKind | null;
-  workspace: string;
-  sessionId?: string | null;
-  resumeExecutionId?: string | null;
-  stageId?: string;
-  stageAttempt?: number | null;
-  executionOrder?: number | null;
-  options?: Record<string, string> | null;
-  /** Called as soon as the execution id exists, before the first await. */
-  onExecution?: (executionId: string) => void;
-}
 
 /**
  * Version of the response contract baked into a saved first prompt. 2 = headers plus a question
@@ -128,23 +147,34 @@ export class AgentToolRunner {
     }
     const stage = sessionId === null ? null : loadRunStage(store, context.sessionId, stageId);
     const { decisionValues, ask, artifactFiles, artifactName, verifyCommands } = stageFacts(stage);
-    const source = request.resumeExecutionId ? store.executionContext(context.sessionId, request.resumeExecutionId) : null;
+    const source = request.resumeExecutionId
+      ? store.executionContext(context.sessionId, request.resumeExecutionId) : null;
     const sourceMetadata = source === null ? null : readExecutionJson(source.directory);
-    // A new conversation takes the current protocol; a continued one keeps its source's, never past 2 from a legacy stamp.
-    const protocol = isNew || source === null ? this.newConversationProtocol : Math.max(LEGACY_RESPONSE_PROTOCOL, storedProtocol(sourceMetadata));
+    // A new conversation takes the current protocol;
+    // a continued one keeps its source's, never past 2 from a legacy stamp.
+    const protocol = isNew || source === null
+      ? this.newConversationProtocol
+      : Math.max(LEGACY_RESPONSE_PROTOCOL, storedProtocol(sourceMetadata));
     const previous = request.resumeExecutionId
-      ? store.executionSnapshots(context.sessionId).find((row) => row.executionId === request.resumeExecutionId && row.stageId === stageId && row.outcomeStatus === 'question')
+      ? store.executionSnapshots(context.sessionId).find((row) => row.executionId === request.resumeExecutionId
+        && row.stageId === stageId && row.outcomeStatus === 'question')
       : undefined;
     const previousMetadata = previous
-      ? JSON.parse(readFileSync(path.join(path.dirname(previous.artifactDirectory), 'execution.json'), 'utf8')) as Record<string, unknown>
+      ? JSON.parse(
+        readFileSync(path.join(path.dirname(previous.artifactDirectory), 'execution.json'), 'utf8'),
+      ) as Record<string, unknown>
       : null;
     const progress = previousMetadata ? verifyProgress(previousMetadata) : null;
     // Answering a question on the same agent: the conversation already holds the contract and stage instructions.
     const sameConversation = previous !== undefined && agentId !== null && agentId !== ''
       && storedProtocol(previousMetadata) === protocol;
-    if (previous) for (const item of artifactFiles) store.carryVerifyArtifact(previous.artifactDirectory, context, item.artifact.file);
+    if (previous) {
+      for (const item of artifactFiles) {
+        store.carryVerifyArtifact(previous.artifactDirectory, context, item.artifact.file);
+      }
+    }
     if (request.resumeExecutionId && verifyCommands.length > 0) {
-      for (const item of artifactFiles) this.carryExhaustedArtifact(
+      for (const item of artifactFiles) carryExhaustedArtifact(
         store,
         context,
         { resumeExecutionId: request.resumeExecutionId, artifactName: item.artifact.file },
@@ -152,7 +182,8 @@ export class AgentToolRunner {
     }
     const conversationContract = sameConversation ? 'reminder' : 'full';
     turnPrompt = renderProviderPrompt(turnPrompt, { ...sessionPaths(context, sessionId),
-      contract: sessionId === null ? false : conversationContract, turn: request.turn ?? null, decisionValues, decisionInstructions: stage?.decisionInstructions, ask,
+      contract: sessionId === null ? false : conversationContract, turn: request.turn ?? null, decisionValues,
+      decisionInstructions: stage?.decisionInstructions, ask,
       protocol, questionFile: questionRequestPath(context), handoffFile: handoffPath(context),
       artifactDirectory: context.artifactDirectory, artifactName, artifactFiles: promptArtifactFiles(artifactFiles),
       previousArtifactDirectory: previous?.artifactDirectory ?? null,
@@ -190,7 +221,10 @@ export class AgentToolRunner {
       red: progress?.red ?? 0,
       verifyRuns: progress?.runs ?? 0,
       lastReport: previous && progress?.lastReport
-        ? path.relative(context.directory, path.resolve(path.dirname(previous.artifactDirectory), progress.lastReport)) : null,
+        ? path.relative(
+          context.directory,
+          path.resolve(path.dirname(previous.artifactDirectory), progress.lastReport),
+        ) : null,
       lastResult: progress?.lastResult ?? null,
       currentPrompt: turnPrompt,
       currentAgentId: agentId,
@@ -305,7 +339,11 @@ export class AgentToolRunner {
         const contract = agentId && stamped >= LEGACY_RESPONSE_PROTOCOL
           ? (pendingCorrection?.contract ?? 'reminder') : 'full';
         keepFile = pendingCorrection?.keepFile ?? false;
-        currentPrompt = renderProviderPrompt(currentPrompt, { ...sessionPaths(context, sessionId), contract, turn: storedTurn(metadata), decisionValues, decisionInstructions: stage?.decisionInstructions, ask, protocol, questionFile, handoffFile, artifactDirectory: context.artifactDirectory, artifactName, artifactFiles: promptArtifactFiles(artifactFiles) });
+        currentPrompt = renderProviderPrompt(currentPrompt, {
+          ...sessionPaths(context, sessionId), contract, turn: storedTurn(metadata), decisionValues,
+          decisionInstructions: stage?.decisionInstructions, ask, protocol, questionFile, handoffFile,
+          artifactDirectory: context.artifactDirectory, artifactName, artifactFiles: promptArtifactFiles(artifactFiles),
+        });
       }
       return this.driveTurns({
         ...common,
@@ -328,8 +366,9 @@ export class AgentToolRunner {
         { required: sessionId !== null, decisionValues, ask, protocol, questionFile, handoffFile },
       );
     } catch (error) {
-      if (error instanceof QuestionFileError || error instanceof HandoffFileError) gateFailure = classifyGateError(error);
-      else if (error instanceof Error) {
+      if (error instanceof QuestionFileError || error instanceof HandoffFileError) {
+        gateFailure = classifyGateError(error);
+      } else if (error instanceof Error) {
         invokeError = error.message;
         gateFailure = classifyGateError(error);
       } else throw error;
@@ -350,19 +389,6 @@ export class AgentToolRunner {
       this.verifyRunner,
     );
     return loop.drive();
-  }
-
-  private carryExhaustedArtifact(
-    store: SessionStore,
-    context: ExecutionContext,
-    carry: { resumeExecutionId: string; artifactName: string },
-  ): void {
-    const { resumeExecutionId, artifactName } = carry;
-    const previous = store
-      .executionSnapshots(context.sessionId)
-      .find((snapshot) => snapshot.executionId === resumeExecutionId);
-    if (previous === undefined || previous.failureReason !== VERIFY_EXHAUSTED) return;
-    store.carryVerifyArtifact(previous.artifactDirectory, context, artifactName);
   }
 
   private cachedCliVersion(client: CliClient, clientId: string, workspace: string): string | null {
@@ -517,109 +543,5 @@ export class AgentToolRunner {
       rmSync(tmp, { recursive: true, force: true });
     }
   }
-}
-
-function classifyFinishedProcess(
-  client: CliClient,
-  run: { stdout: string; exitCode: number | null; executorError: string | null },
-): FailureClassification | null {
-  const { stdout, exitCode, executorError } = run;
-  if (exitCode === null) return { kind: 'provider', origin: 'start', message: executorError === null ? '' : executorError };
-  const classified = classifyFailure(client, stdout, exitCode);
-  // Signal death (negative, or the shell's 128 + signal) is not a normal exit: its reply never counts.
-  const signalled = exitCode < 0 || (isShellSignalExitCode(exitCode));
-  return classified !== null && signalled ? { ...classified, origin: 'start' } : classified;
-}
-
-/** What a stage says about its decisions, questions, artifacts, and verify list. */
-function stageFacts(stage: StageSpec | null) {
-  const decisionValues = stage?.decisionValues ?? [];
-  const ask = stage?.ask ?? (stage === null ? 'human' : null);
-  const artifactFiles = stage === null ? [] : allStageArtifacts(stage);
-  const artifactName = artifactFiles[0]?.artifact.file ?? null;
-  const verifyCommands = stage?.verify ?? [];
-  return { decisionValues, ask, artifactFiles, artifactName, verifyCommands };
-}
-
-function loadRunStage(store: SessionStore, sessionId: string, stageId: string): StageSpec | null {
-  const sessionStatus = store.readSessionStatus(sessionId);
-  if (sessionStatus.workflow_id === 'agent') return null;
-  const frozen = loadFrozenWorkflow(path.join(store.sessionsDirectory, sessionId));
-  if (frozen) return frozen.stages[stageId] ?? null;
-  const workflowPath = sessionStatus.workflow_path;
-  if (typeof workflowPath === 'string') {
-    const stage = loadStage(store.workspace, workflowPath, stageId);
-    if (stage !== null) return stage;
-  }
-  const workflowId = sessionStatus.workflow_id;
-  if (typeof workflowId !== 'string') return null;
-  try {
-    return loadNamedWorkflow(store.workspace, workflowId).stages[stageId] ?? null;
-  } catch (error) {
-    if (error instanceof ConfigurationError) return null;
-    throw error;
-  }
-}
-
-/** The client, model and options a conversation runs under. */
-interface SessionProfile {
-  readonly client: string;
-  readonly model: string;
-  readonly options: Record<string, string>;
-}
-
-function validateSessionProfile(previous: SessionProfile, requested: SessionProfile): void {
-  const { client: previousClient, model: previousModel, options: previousOptions } = previous;
-  const { client, model, options } = requested;
-  if (
-    previousClient !== client ||
-    previousModel !== model ||
-    !sameOptions(previousOptions, options)
-  ) {
-    throw new ConfigurationError(
-      'Cannot resume an agent session with a different client, model, or options: ' +
-        `recorded ${previousClient}/${previousModel}, requested ${client}/${model}. Start a new attempt.`,
-    );
-  }
-}
-
-function sameOptions(left: Record<string, string>, right: Record<string, string>): boolean {
-  const leftKeys = Object.keys(left).sort();
-  const rightKeys = Object.keys(right).sort();
-  if (leftKeys.length !== rightKeys.length) return false;
-  return leftKeys.every((key, index) => key === rightKeys[index] && left[key] === right[key]);
-}
-
-function resolveWorkspace(workspace: string): string {
-  const expanded = expandHome(workspace);
-  const resolved = path.resolve(expanded);
-  try {
-    if (!statSync(resolved).isDirectory()) throw new Error('missing');
-    return resolved;
-  } catch (error) {
-    if (error instanceof Error && error.message === 'missing') {
-      throw new Error(`Workspace does not exist: ${workspace}`, { cause: error });
-    }
-    if (isMissingPath(error)) throw new Error(`Workspace does not exist: ${workspace}`, { cause: error });
-    throw error;
-  }
-}
-
-/** Leading `~/` of a home-relative path. */
-const HOME_PREFIX = '~/';
-
-function expandHome(target: string): string {
-  if (target === '~') return platformHome() || target;
-  if (target.startsWith(HOME_PREFIX)) return path.join(platformHome() || '', target.slice(HOME_PREFIX.length));
-  return target;
-}
-
-function isMissingPath(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    (error as { code?: unknown }).code === 'ENOENT'
-  );
 }
 

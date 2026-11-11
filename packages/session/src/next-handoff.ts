@@ -57,13 +57,16 @@ function resolveSuggestionEntries(workspace: string, sessionId: string): Suggest
   const status = completedPriorStatus(workspace, sessionId);
   const workflow = loadFrozenWorkflow(directory);
   const outputs = isRecord(status.outputs) ? status.outputs : {};
-  const optional = new Set((workflow?.artifacts ?? []).filter((artifact) => !artifact.required).map((artifact) => artifact.id));
+  const optional = new Set(
+    (workflow?.artifacts ?? []).filter((artifact) => !artifact.required).map((artifact) => artifact.id),
+  );
   const result: SuggestionResult = { suggestions: [], errors: new Map() };
   for (const entry of workflow?.downstream ?? []) {
     const artifacts: NextSuggestion['artifacts'] = {};
     let failure: ConfigurationError | null = null;
     // Omitted `artifacts` passes every published output under its own name.
-    const mapping: Record<string, string> = entry.artifacts ?? Object.fromEntries(Object.keys(outputs).map((name) => [name, name]));
+    const mapping: Record<string, string> =
+      entry.artifacts ?? Object.fromEntries(Object.keys(outputs).map((name) => [name, name]));
     for (const [name, output] of Object.entries(mapping)) {
       const record = outputs[output];
       if (!isRecord(record) || typeof record.path !== 'string' || !record.path) {
@@ -97,7 +100,10 @@ export function resolveNextSuggestions(workspace: string, sessionId: string): Ne
 }
 
 /** Publication failure cannot undo a successfully completed workflow. Safe to retry. */
-export function publishNextSuggestions(workspace: string, sessionId: string): { path: string | null; next: NextSuggestion[] } {
+export function publishNextSuggestions(
+  workspace: string,
+  sessionId: string,
+): { path: string | null; next: NextSuggestion[] } {
   let next: NextSuggestion[] = [];
   try {
     const resolved = resolveSuggestionEntries(workspace, sessionId);
@@ -113,7 +119,11 @@ export function publishNextSuggestions(workspace: string, sessionId: string): { 
   }
 }
 
-export function resolveHandoff(workspace: string, workflowId: string, priorSessionId?: string | null): ResolvedHandoff | null {
+export function resolveHandoff(
+  workspace: string,
+  workflowId: string,
+  priorSessionId?: string | null,
+): ResolvedHandoff | null {
   if (!priorSessionId) return null;
   const status = completedPriorStatus(workspace, priorSessionId);
   const resolved = resolveSuggestionEntries(workspace, priorSessionId);
@@ -121,7 +131,8 @@ export function resolveHandoff(workspace: string, workflowId: string, priorSessi
   if (failure !== undefined) throw failure;
   const suggestion = resolved.suggestions.find((entry) => entry.workflow === workflowId);
   const outputs = isRecord(status.outputs) ? status.outputs : {};
-  const mappings = suggestion?.artifacts ?? Object.fromEntries(Object.keys(outputs).map((name) => [name, { output: name }]));
+  const mappings =
+    suggestion?.artifacts ?? Object.fromEntries(Object.keys(outputs).map((name) => [name, { output: name }]));
   const artifacts: ResolvedHandoff['artifacts'] = {};
   for (const [name, mapping] of Object.entries(mappings)) {
     // Fallback output names historically allow punctuation. They are labels, never path components.
@@ -131,7 +142,10 @@ export function resolveHandoff(workspace: string, workflowId: string, priorSessi
     }
     const sourcePath = path.resolve(sessionDirectory(workspace, priorSessionId), record.path);
     if (!nonemptyArtifact(sourcePath)) throw new ConfigurationError(`Prior output ${mapping.output} is missing or empty: ${sourcePath}.`);
-    Object.defineProperty(artifacts, name, { value: { output: mapping.output, source_path: sourcePath }, enumerable: true });
+    Object.defineProperty(artifacts, name, {
+      value: { output: mapping.output, source_path: sourcePath },
+      enumerable: true,
+    });
   }
   return { source_session_id: priorSessionId, task: suggestion?.task ?? null, artifacts };
 }

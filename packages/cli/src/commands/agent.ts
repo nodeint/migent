@@ -115,9 +115,14 @@ export async function dispatchAgent(
             promptFile: args.promptFile ?? null,
             promptStdin: args.promptStdin ?? false,
           });
-        const question = new SessionStore(workspace).questionStages(resolvedSessionId).find((row) => row.stageId === args.role);
+        const question = new SessionStore(workspace)
+          .questionStages(resolvedSessionId)
+          .find((row) => row.stageId === args.role);
         if (question) input = new SessionStore(workspace).resumeQuestion(resolvedSessionId, args.role, input);
-        const prompt = prependRoleInstructions(loadRoleResponsibilities(loadWorkspaceConfig(workspace), args.role), input);
+        const prompt = prependRoleInstructions(
+          loadRoleResponsibilities(loadWorkspaceConfig(workspace), args.role),
+          input,
+        );
         result = await runner.run({
           client: target.client,
           model: target.model,
@@ -199,7 +204,8 @@ export async function continueAgent(
     let sessionStatus = typeof status.status === 'string' ? status.status : '';
     const role = typeof status.role === 'string' ? status.role : '';
     if (role === '') throw new ConfigurationError(`Session ${args.sessionId} has no role.`);
-    // A reply to a stopped turn supersedes it: the cancelled execution stays cancelled and the reply runs as a new turn.
+    // A reply to a stopped turn supersedes it: the cancelled execution stays cancelled
+    // and the reply runs as a new turn.
     let cancelledReply: { executionId: string; text: string } | null = null;
     const pendingCancelled = store.pendingCancelledReply(args.sessionId, role);
     if (args.reply !== null && (sessionStatus === 'cancelled' || pendingCancelled !== null)) {
@@ -215,7 +221,9 @@ export async function continueAgent(
       printNotice(`Session ${args.sessionId} is completed.`);
       return 0;
     }
-    const pending = cancelledReply === null ? store.questionStages(args.sessionId).find((row) => row.stageId === role) : undefined;
+    const pending = cancelledReply === null
+      ? store.questionStages(args.sessionId).find((row) => row.stageId === role)
+      : undefined;
     const reply = args.reply ?? (pending ? store.questionReply(args.sessionId, pending.executionId) : null);
     if (sessionStatus === 'question' && reply === null) {
       printNotice(`Session ${args.sessionId} has a pending question. Continue with --reply.`);

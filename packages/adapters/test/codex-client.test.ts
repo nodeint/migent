@@ -79,8 +79,24 @@ test('normalizes codex usage from the resume fixtures', () => {
   expect(first.cost_usd).toBeNull();
   expect(client.captureUsage('{"type":"thread.started"}\n')).toBeNull();
   const regressed = normalizeUsage(client,
-    { turn_completed: [{ input_tokens: 3, cached_input_tokens: 0, output_tokens: 1, reasoning_output_tokens: 0, cache_write_input_tokens: 0 }] },
-    { turn_completed: [{ input_tokens: 10, cached_input_tokens: 0, output_tokens: 1, reasoning_output_tokens: 0, cache_write_input_tokens: 0 }] },
+    {
+      turn_completed: [{
+        input_tokens: 3,
+        cached_input_tokens: 0,
+        output_tokens: 1,
+        reasoning_output_tokens: 0,
+        cache_write_input_tokens: 0,
+      }],
+    },
+    {
+      turn_completed: [{
+        input_tokens: 10,
+        cached_input_tokens: 0,
+        output_tokens: 1,
+        reasoning_output_tokens: 0,
+        cache_write_input_tokens: 0,
+      }],
+    },
   );
   expect(regressed.input_tokens).toBeNull();
   const missingCache = normalizeUsage(client, { turn_completed: [{ input_tokens: 10, output_tokens: 2 }] }, null);

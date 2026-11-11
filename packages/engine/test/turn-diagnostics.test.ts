@@ -187,7 +187,12 @@ test('an accepted exit-only turn leaves a record that says accepted', async () =
     },
     gates: { outcome: { state: 'passed', status: 'complete' }, artifact: { state: 'passed' } },
   });
-  expect(doc.stream_summary).toMatchObject({ lines: 3, non_json_lines: 1, labelled: true, events: { text: 1, result: 1 } });
+  expect(doc.stream_summary).toMatchObject({
+    lines: 3,
+    non_json_lines: 1,
+    labelled: true,
+    events: { text: 1, result: 1 },
+  });
   expect(JSON.parse(readFileSync(path.join(dir, 'execution.json'), 'utf8')).final_turn).toBe(1);
 });
 

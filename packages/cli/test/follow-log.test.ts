@@ -91,7 +91,8 @@ test('follow merges a stream by timestamp for each cursor', () => {
     { path: `executions/${EXECUTION}/stream.jsonl`, text: streamText },
     { path: `executions/${OTHER}/stream.jsonl`, text: otherText },
   ];
-  const all = replayFollowLines({ cursor: 0, eventsText, streams }).map((item) => JSON.parse(item) as { summary?: string });
+  const all = replayFollowLines({ cursor: 0, eventsText, streams })
+    .map((item) => JSON.parse(item) as { summary?: string });
   expect(all.map((item) => item.summary ?? null)).toEqual([
     null,
     'early-stream',

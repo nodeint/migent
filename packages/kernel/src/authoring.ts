@@ -204,7 +204,8 @@ function reconcileValue(doc: Document, node: YamlNode | null | undefined, value:
     return createNodeLike(doc, value, node);
   }
   const unchanged =
-    node !== null && node !== undefined && isNode(node) && !isMap(node) && !isSeq(node) && deepEqual(node.toJSON(), value);
+    node !== null && node !== undefined && isNode(node) && !isMap(node) && !isSeq(node)
+    && deepEqual(node.toJSON(), value);
   if (unchanged) return node;
   return createNodeLike(doc, value, node);
 }

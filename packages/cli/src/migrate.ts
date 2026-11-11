@@ -347,7 +347,12 @@ function sessionRewrites(
       const result = migratedText(draftText, `${label}/workflow.yaml`, { config, clientIds });
       if (result !== null) {
         newDraftText = result.text;
-        rewrites.push({ path: draftPath, text: result.text, notes: result.notes, session: { directory, original: draftText } });
+        rewrites.push({
+          path: draftPath,
+          text: result.text,
+          notes: result.notes,
+          session: { directory, original: draftText },
+        });
       }
     }
     const frozenPath = path.join(directory, WORKFLOW_FREEZE_FILE);

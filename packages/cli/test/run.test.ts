@@ -17,7 +17,11 @@ type Row = Record<string, unknown>;
 
 function writeWatchSession(
   workspace: string,
-  args: { events: Record<string, unknown>[]; execution: Record<string, unknown>; sessionStatus?: Record<string, unknown> },
+  args: {
+    events: Record<string, unknown>[];
+    execution: Record<string, unknown>;
+    sessionStatus?: Record<string, unknown>;
+  },
 ): void {
   const executionId = '0001-implement--attempt-01';
   const sessionDirectory = path.join(workspace, '.migent', 'sessions', 'run-1');
@@ -94,7 +98,11 @@ function stopReasonFor(code: number, status: string): string {
   return 'stage';
 }
 
-async function runExecute(workspace: string, argv: string[], provider: ScriptedClient): Promise<[number, Row[], string]> {
+async function runExecute(
+  workspace: string,
+  argv: string[],
+  provider: ScriptedClient,
+): Promise<[number, Row[], string]> {
   const hinted = sessionIdFromOutput('', argv);
   const before = hinted === null ? new Map<string, string>() : executionTexts(workspace, hinted);
   cliHooks.runner = new AgentToolRunner(registryOf({ fake: provider }), 10);

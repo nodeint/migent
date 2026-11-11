@@ -517,9 +517,16 @@ interface ReadyLine {
   token: string;
 }
 
-function validateReady(payload: Record<string, unknown> | null, procPid: number, requestedPort: number): ReadyLine | null {
+function validateReady(
+  payload: Record<string, unknown> | null,
+  procPid: number,
+  requestedPort: number,
+): ReadyLine | null {
   if (payload === null) return null;
-  if (new Set(Object.keys(payload)).size !== READY_KEYS.size || ![...READY_KEYS].every((key) => Object.hasOwn(payload, key))) {
+  if (
+    new Set(Object.keys(payload)).size !== READY_KEYS.size
+    || ![...READY_KEYS].every((key) => Object.hasOwn(payload, key))
+  ) {
     return null;
   }
   const { pid, port, instance_id: instanceId, token } = payload;

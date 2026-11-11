@@ -126,14 +126,20 @@ export function migrateStages(
 }
 
 /** Reads the provider of a role's agent in either document shape: `agent` or the earlier `default_model`. */
-function roleProvider(config: Readonly<Record<string, unknown>>, role: Readonly<Record<string, unknown>>): string | null {
+function roleProvider(
+  config: Readonly<Record<string, unknown>>,
+  role: Readonly<Record<string, unknown>>,
+): string | null {
   const selection = Object.hasOwn(role, 'agent') ? role.agent : role.default_model;
   if (isRecord(selection)) return bodyProvider(selection);
   if (typeof selection !== 'string') return null;
   return modelProvider(config, selection);
 }
 
-function stageProvider(config: Readonly<Record<string, unknown>>, stage: Readonly<Record<string, unknown>>): string | null {
+function stageProvider(
+  config: Readonly<Record<string, unknown>>,
+  stage: Readonly<Record<string, unknown>>,
+): string | null {
   const selection = Object.hasOwn(stage, 'agent') ? stage.agent : stage.model;
   if (isRecord(selection)) return bodyProvider(selection);
   if (typeof selection === 'string' && selection.trim() !== '') return modelProvider(config, selection);

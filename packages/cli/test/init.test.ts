@@ -111,7 +111,8 @@ test('writes inline role models and both working presets', async () => {
         reviewer: { agent: { model: 'gpt-5', client: { type: 'codex' } } },
       },
     });
-    const roles = loadWorkspaceConfig(workspace).roles as Record<string, { responsibilities: string[]; description: string }>;
+    type RoleShape = { responsibilities: string[]; description: string };
+    const roles = loadWorkspaceConfig(workspace).roles as Record<string, RoleShape>;
     expect(Object.keys(roles).sort()).toEqual(['developer', 'planner', 'reviewer']);
     for (const role of Object.values(roles)) {
       expect(role.responsibilities.length).toBeGreaterThan(0);

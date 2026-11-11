@@ -248,7 +248,10 @@ export function createWrapperStepParser(onStep: (step: string) => void): (chunk:
       if (!discarding) {
         partial += piece;
         const prefixLength = Math.min(partial.length, WRAPPER_STEP_PREFIX.length);
-        if (partial.slice(0, prefixLength) !== WRAPPER_STEP_PREFIX.slice(0, prefixLength) || partial.length > MAX_STEP_LINE_CHARS) {
+        if (
+          partial.slice(0, prefixLength) !== WRAPPER_STEP_PREFIX.slice(0, prefixLength)
+          || partial.length > MAX_STEP_LINE_CHARS
+        ) {
           discarding = true;
           partial = '';
         }

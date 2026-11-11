@@ -106,7 +106,8 @@ test('a draft with an unknown role or model, bad options, or a missing executabl
     '    role: developer\n',
     '    role: developer\n    agent:\n      client:\n        type: grok\n        options:\n          bogus: x\n      model: grok-4.6\n',
   ), 'utf8');
-  expect(allProblems(run(workspace, sessionId))).toMatch(/plan-implement\.implement: stages\.implement\.agent\.client\.options: .*bogus/);
+  expect(allProblems(run(workspace, sessionId)))
+    .toMatch(/plan-implement\.implement: stages\.implement\.agent\.client\.options: .*bogus/);
   writeFileSync(draft, original, 'utf8');
   const missing = run(workspace, sessionId, { which: whichFound(new Set(['codex'])) });
   expect(missing.ok).toBe(false);
@@ -219,7 +220,8 @@ test('frozen targets with an unsupported client or option are diagnosed', () => 
     body.targets['review-work'].options = {};
     body.targets.implement.options = { 'not-an-option': '' };
   });
-  expect(allProblems(run(workspace, sessionId))).toMatch(/plan-implement\.implement: targets\.implement\.options: .*not-an-option/);
+  expect(allProblems(run(workspace, sessionId)))
+    .toMatch(/plan-implement\.implement: targets\.implement\.options: .*not-an-option/);
 });
 
 test("a frozen target's missing executable is reported with its stage", () => {

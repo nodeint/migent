@@ -1,28 +1,24 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { EXIT_CATALOG, exitCode } from '@nodeint/migent-contracts';
-import type { ClientRegistry, ExecutionSnapshot, ScheduleState } from '@nodeint/migent-kernel';
+import { exitCode } from '@nodeint/migent-contracts';
+import type { ClientRegistry, ExecutionSnapshot } from '@nodeint/migent-kernel';
 import { loadRoleResponsibilities, loadWorkspaceConfig, resolveStageTarget, type StageTarget } from '@nodeint/migent-kernel';
 import { ConfigurationError } from '@nodeint/migent-kernel';
 import { buildStagePrompt, buildStageReplyPrompt, buildStageResumePrompt, buildVerifyRepairPrompt } from '@nodeint/migent-kernel';
-import { formatClock, formatDuration, log } from '@nodeint/migent-kernel';
+import { log } from '@nodeint/migent-kernel';
 import {
   missingOutputProducers,
-  NextStage,
-  nextStage,
-  NextStageError,
   revisionResumeExecution,
   stageAgentExecution,
   stageDispatchError,
   stagePromptAlreadyDelivered,
-  Stop,
   VERIFY_FAILED,
   verifyExhaustedExecution,
 } from '@nodeint/migent-kernel';
 import type { TurnKind } from '@nodeint/migent-prompts';
 import { frozenRoleInstructions, frozenStageTarget, readWorkflowFreeze } from '@nodeint/migent-session';
-import { commitFoldedStatus, parseExecutionId, readParsedEvents } from '@nodeint/migent-session';
+import { commitFoldedStatus, parseExecutionId } from '@nodeint/migent-session';
 import { freezeSessionTask } from '@nodeint/migent-session';
 import { bindPriorSessionId, createWorkflowSession } from '@nodeint/migent-session';
 import { SessionStore,stringOptions } from '@nodeint/migent-session';
@@ -30,8 +26,14 @@ import { isRecord } from '@nodeint/migent-workflow';
 import { isRoleStage, loadNamedWorkflow, type StageSpec, type WorkflowDocument } from '@nodeint/migent-workflow';
 
 import { AgentToolRunner, type RunResult } from './agent-runner.js';
+import { EXECUTE_EXIT_CODES, type ExecuteResult, PendingStageReply } from './execute-state.js';
 import { ensureSessionBaseline, evaluateRunWhen } from './run-when.js';
+import { roleStartLine, stageFinishLine } from './stage-lines.js';
 import { runVerifyOnlyStage } from './verify-only.js';
+
+export { EXECUTE_EXIT_CODES, type ExecuteResult, PendingStageReply, TERMINAL_SESSION_STATUSES } from './execute-state.js';
+export { blockResumes, selectedStage } from './execute-state.js';
+export { roleStartLine, stageFinishLine } from './stage-lines.js';
 
 export interface StageDispatchRequest {
   workflowId: string;
@@ -263,144 +265,6 @@ function resultFromRun(result: RunResult, sessionId: string): StageDispatchResul
     client: result.client || '',
     executionStatus: result.execution_status || '',
   });
-}
-
-/** Stop reason to exit code, derived from the contracts exit catalog. `stage` ends a one-stage run cleanly. */
-export const EXECUTE_EXIT_CODES: Record<string, number> = {
-  ...Object.fromEntries(EXIT_CATALOG.filter((entry) => entry.name !== 'config').map((entry) => [entry.name, entry.code])),
-  stage: exitCode('completed'),
-};
-
-export const TERMINAL_SESSION_STATUSES = new Set(['completed', 'blocked', 'question', 'cancelled']);
-
-/**
- * A human reply waiting for its stage. The stage that receives it takes the text once; the
- * run asks `consumed` afterwards to learn whether the reply was sent.
- */
-export class PendingStageReply {
-  public readonly stageId: string;
-  private pending: string | null;
-
-  constructor(stageId: string, text: string) {
-    this.stageId = stageId;
-    this.pending = text;
-  }
-
-  public get consumed(): boolean {
-    return this.pending === null;
-  }
-
-  /** The reply text when it is addressed to `stageId` and not yet taken; null otherwise. */
-  public take(stageId: string): string | null {
-    if (this.stageId !== stageId || this.pending === null) return null;
-    const text = this.pending;
-    this.pending = null;
-    return text;
-  }
-}
-
-export interface ExecuteResult {
-  code: number;
-  status: string;
-  stopReason: string;
-  sessionId: string;
-  latestDecision: string | null;
-  latestExecutionId: string | null;
-  outputs: Record<string, unknown>;
-  stages: Record<string, unknown>[];
-}
-
-export function selectedStage(
-  workflow: WorkflowDocument,
-  snapshots: readonly ExecutionSnapshot[],
-  state: ScheduleState,
-): NextStage | Stop {
-  const selected = nextStage(workflow, snapshots, state);
-  if (selected instanceof NextStageError) throw new ConfigurationError(selected.message);
-  if (selected instanceof NextStage || selected instanceof Stop) return selected;
-  throw new ConfigurationError('no eligible stage');
-}
-
-export function blockResumes(
-  workspace: string,
-  sessionId: string,
-): Pick<ReturnType<typeof readParsedEvents>[number], 'event' | 'executionId' | 'data'>[] {
-  return readParsedEvents(path.join(workspace, '.migent', 'sessions', sessionId, 'events.jsonl')).map((event) => ({
-    event: event.event,
-    executionId: event.executionId,
-    data: event.data,
-  }));
-}
-
-export function roleStartLine(
-  stageId: string,
-  target: { client: string; model: string; optionLabel: string },
-  detail: { description: string | null; attempt: number | null },
-): string {
-  const { client, model, optionLabel } = target;
-  const { description, attempt } = detail;
-  const parts = [`stage ${stageId}`];
-  if (attempt !== null) parts.push(`attempt ${attempt}`);
-  parts.push(formatClock(), `${client}/${model} (${optionLabel})`);
-  const base = parts.join(' · ');
-  if (description === null) return `${base}.`;
-  return `${base} — ${description}.`;
-}
-
-export function stageFinishLine(
-  session: { workspace: string; sessionId: string },
-  stage: { stageId: string; executionId: string },
-  result: { outcome: string; decision: string },
-): string {
-  const { workspace, sessionId } = session;
-  const { stageId, executionId } = stage;
-  const { outcome, decision } = result;
-  const parts = [`stage ${stageId}`];
-  const attempt = parseExecutionId(executionId)?.attempt;
-  if (attempt !== undefined) parts.push(`attempt ${attempt}`);
-  const duration = stageDurationLabel(workspace, sessionId, executionId);
-  if (duration !== null) parts.push(duration);
-  const tail = decision ? `${outcome} decision=${decision}` : outcome;
-  return `${parts.join(' · ')} · ${tail}.`;
-}
-
-function stageDurationLabel(workspace: string, sessionId: string, executionId: string): string | null {
-  if (executionId === '') return null;
-  const filePath = path.join(
-    workspace,
-    '.migent',
-    'sessions',
-    sessionId,
-    'executions',
-    executionId,
-    'execution.json',
-  );
-  const elapsed = elapsedMs(readExecutionTimes(filePath));
-  return elapsed === null ? null : formatDuration(elapsed);
-}
-
-function readExecutionTimes(filePath: string): { started: number | null; finished: number | null } {
-  try {
-    const metadata = JSON.parse(readFileSync(filePath, 'utf8')) as unknown;
-    if (!isRecord(metadata)) return { started: null, finished: null };
-    return {
-      started: parsedTime(metadata.created_at),
-      finished: parsedTime(metadata.completed_at),
-    };
-  } catch {
-    return { started: null, finished: null };
-  }
-}
-
-function elapsedMs(times: { started: number | null; finished: number | null }): number | null {
-  if (times.started === null) return null;
-  return (times.finished ?? Date.now()) - times.started;
-}
-
-function parsedTime(value: unknown): number | null {
-  if (typeof value !== 'string' || value === '') return null;
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? null : parsed;
 }
 
 /** What every step of one execute run shares. */

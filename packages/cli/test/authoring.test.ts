@@ -383,7 +383,8 @@ roles:
   writeFileSync(path.join(root, '.migent', 'config.local.yaml'), 'schema_version: [\n');
   const res = await run(['config', 'validate', '@draft', '--format', 'yaml', '--json'], draft);
   expect(res.code).toBe(1);
-  expect(res.json.diagnostics.map((d: { code: string; source: string; draft: boolean }) => [d.code, d.source, d.draft])).toEqual([
+  type DiagnosticRow = { code: string; source: string; draft: boolean };
+  expect(res.json.diagnostics.map((d: DiagnosticRow) => [d.code, d.source, d.draft])).toEqual([
     ['yaml-syntax', 'local', false],
     ['client-unsupported', 'project', true],
     ['not-a-list', 'project', true],

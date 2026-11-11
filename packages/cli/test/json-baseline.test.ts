@@ -113,7 +113,11 @@ function installOffline(): void {
   }
 }
 
-async function json(argv: string[], stdin?: string, cwd: string = root): Promise<{ code: unknown; stdout: unknown; stderr: string }> {
+async function json(
+  argv: string[],
+  stdin?: string,
+  cwd: string = root,
+): Promise<{ code: unknown; stdout: unknown; stderr: string }> {
   const args = argv.map((arg) => {
     if (arg !== '@draft') return arg;
     const draft = path.join(root, 'draft.in');
@@ -205,7 +209,9 @@ test('config and workflow validate/render --json: valid and invalid drafts', asy
     [['workflow', 'render', '@draft', '--format', 'yaml', '--json'], WORKFLOW],
   ];
   const results = [];
-  for (const [argv, draft] of cases) results.push({ argv: argv.slice(0, 2).concat(argv.slice(3)), draft, ...(await json(argv, draft)) });
+  for (const [argv, draft] of cases) {
+    results.push({ argv: argv.slice(0, 2).concat(argv.slice(3)), draft, ...(await json(argv, draft)) });
+  }
   expect(results).toMatchSnapshot();
 });
 
@@ -482,7 +488,10 @@ test('session follow --json forwards historical lifecycle and provider stream li
   const result = await capture(() => main(['session', 'follow', 'old-1', '--exit-when-done', '--cursor', '0', '--json'], workspace));
   const outputLines = result.stdout.trim().split('\n');
   const records = outputLines.map((line) => JSON.parse(line));
-  for (const line of [...lines.map((item) => JSON.stringify(item)), ...streamLines.map((item) => JSON.stringify(JSON.parse(item)))]) {
+  for (const line of [
+    ...lines.map((item) => JSON.stringify(item)),
+    ...streamLines.map((item) => JSON.stringify(JSON.parse(item))),
+  ]) {
     expect(outputLines).toContain(line);
   }
   // Lines merge by timestamp; an unversioned line has none. Compare as a set.
@@ -565,7 +574,8 @@ test('known shapes describe files written by a real scripted run', async () => {
 
 // Coverage guard: every contract in the index was emitted, and so validated, by this file.
 test('every CLI output contract was exercised by a real command', () => {
-  const emitted = (globalThis as { __migentEmittedContracts?: Set<string> }).__migentEmittedContracts ?? new Set<string>();
+  const emitted = (globalThis as { __migentEmittedContracts?: Set<string> }).__migentEmittedContracts
+    ?? new Set<string>();
   const missing = CLI_CONTRACTS.filter((entry) => !emitted.has(String(entry.schema.$id))).map((entry) => entry.key);
   expect(missing).toEqual([]);
 });

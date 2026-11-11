@@ -10,7 +10,11 @@ import { parse } from 'yaml';
 import { type ModelChoice,projectTemplateDirectory, renderProject } from '../src/project-template.js';
 
 const root = new URL('../../../templates/', import.meta.url);
-const choice = (client: string, model: string, options: Record<string, string> = {}): ModelChoice => ({ client, model, options });
+const choice = (client: string, model: string, options: Record<string, string> = {}): ModelChoice => ({
+  client,
+  model,
+  options,
+});
 const models = {
   planner: choice('codex', 'gpt-5', { model_reasoning_effort: 'high' }),
   reviewer: choice('grok', '123'),
@@ -19,7 +23,8 @@ const models = {
 
 test('renders config models independently and keeps template content', () => {
   const files = renderProject(models);
-  const config = parse(files[0]!.content) as { roles: Record<string, { agent?: unknown; responsibilities: string[]; description?: string }> };
+  type TemplateRole = { agent?: unknown; responsibilities: string[]; description?: string };
+  const config = parse(files[0]!.content) as { roles: Record<string, TemplateRole> };
   const local = parse(files[1]!.content) as { roles: Record<string, unknown> };
   const template = parse(readFileSync(new URL('config.yaml', root), 'utf8')) as typeof config;
   expect(config.roles.planner?.agent).toEqual({ model: 'gpt-5', client: { type: 'codex', options: { model_reasoning_effort: 'high' } } });

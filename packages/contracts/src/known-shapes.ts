@@ -117,7 +117,12 @@ const CurrentExecution = Type.Object({
   provider_exit_anomalies_accepted: num(),
   usage: UsageNumbers,
   usage_missing: UsageMissing,
-  verify: nullable(Type.Object({ runs: num(), red: num(), first_pass: Type.Boolean(), failed_commands: Type.Array(str()) })),
+  verify: nullable(Type.Object({
+    runs: num(),
+    red: num(),
+    first_pass: Type.Boolean(),
+    failed_commands: Type.Array(str()),
+  })),
   skip: nullable(Type.Record(str(), Type.Unknown())),
 });
 

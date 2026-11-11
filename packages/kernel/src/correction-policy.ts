@@ -21,7 +21,10 @@ export interface CorrectionRule {
   turnKind: TurnKind;
   event: string;
   failureReason: string;
-  /** The handoff or request file the execution's protocol reads is still needed by the correction turn, so the per-turn cleanup skips it. */
+  /**
+   * The handoff or request file the execution's protocol reads is still needed by the correction turn,
+   * so the per-turn cleanup skips it.
+   */
   keepFile: boolean;
   /** The correction message for a ledger entry. */
   render(entry: CorrectionEntry, files: CorrectionFiles): string;
@@ -71,7 +74,8 @@ export const CORRECTION_POLICY: Readonly<Record<CorrectionKind, CorrectionRule>>
 };
 
 /** Failure reasons the policy can produce, for consumers that show their detail. */
-export const CORRECTION_FAILURE_REASONS: readonly string[] = Object.values(CORRECTION_POLICY).map((rule) => rule.failureReason);
+export const CORRECTION_FAILURE_REASONS: readonly string[] =
+  Object.values(CORRECTION_POLICY).map((rule) => rule.failureReason);
 
 export interface GateFailure {
   kind: CorrectionKind;

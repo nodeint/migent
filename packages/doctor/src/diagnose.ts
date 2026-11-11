@@ -66,7 +66,9 @@ function checkWorkflows(workspace: string, context: WorkflowCheckContext): Check
   if (config !== null) {
     // A stage finding the config check already reported is the same root cause: report it once.
     const known = new Set(configDiagnostics.errors.map(identityKey));
-    const knownOptionReasons = new Set(configDiagnostics.errors.flatMap((item) => (item.detail === undefined ? [] : [item.detail])));
+    const knownOptionReasons = new Set(
+      configDiagnostics.errors.flatMap((item) => (item.detail === undefined ? [] : [item.detail])),
+    );
     for (const document of Object.values(catalog.documents)) {
       checkStageBindings(
         document,
@@ -75,7 +77,8 @@ function checkWorkflows(workspace: string, context: WorkflowCheckContext): Check
       );
     }
   }
-  const items = Object.keys(catalog.documents).filter((workflowId) => !workflowFailed(workflowId, catalog.problems, failedWorkflows));
+  const items = Object.keys(catalog.documents)
+    .filter((workflowId) => !workflowFailed(workflowId, catalog.problems, failedWorkflows));
   const warnings = [...Object.values(catalog.documents).flatMap(workflowWarnings), ...stageWarnings];
   if (problems.length > 0) return failed('workflows', problems, { items, warnings });
   return passed('workflows', items, warnings);
@@ -146,7 +149,11 @@ function checkStageBindings(
  * A workflow is out of the list when the catalog named it in a problem (its text starts with the
  * workflow id) or one of its stage bindings failed.
  */
-function workflowFailed(workflowId: string, catalogProblems: readonly string[], failedBindings: ReadonlySet<string>): boolean {
+function workflowFailed(
+  workflowId: string,
+  catalogProblems: readonly string[],
+  failedBindings: ReadonlySet<string>,
+): boolean {
   if (failedBindings.has(workflowId)) return true;
   const prefix = `${workflowId}:`;
   const stagePrefix = `${workflowId}.`;

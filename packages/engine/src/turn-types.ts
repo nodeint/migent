@@ -34,7 +34,10 @@ export interface RunResult {
 }
 
 /** Task file and session directory of a workflow execution, for the prompt's Execution block. */
-export function sessionPaths(context: ExecutionContext, sessionId: string | null): { taskFile?: string; sessionDirectory?: string } {
+export function sessionPaths(
+  context: ExecutionContext,
+  sessionId: string | null,
+): { taskFile?: string; sessionDirectory?: string } {
   if (sessionId === null) return {};
   const sessionDirectory = path.dirname(path.dirname(context.directory));
   const taskFile = path.join(sessionDirectory, 'task.md');

@@ -22,7 +22,8 @@ Object.defineProperty(cliHooks, 'which', {
 // so a guard test can prove each one is exercised.
 import { validationIssues } from '../packages/contracts/src/index.ts';
 
-const emitted = ((globalThis as { __migentEmittedContracts?: Set<string> }).__migentEmittedContracts ??= new Set<string>());
+type EmittedContractsGlobal = { __migentEmittedContracts?: Set<string> };
+const emitted = ((globalThis as EmittedContractsGlobal).__migentEmittedContracts ??= new Set<string>());
 cliHooks.validateJson = (schema, value) => {
   const issues = validationIssues(schema, value);
   if (issues.length > 0) {

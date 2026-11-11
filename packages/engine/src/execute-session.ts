@@ -420,7 +420,8 @@ function resumeBlockedStages(
 ): readonly { stageId: string; executionId: string }[] | null {
   const { sessionId, stageId } = target;
   const { stageReply } = opened;
-  const blockedReply = stageReply !== null && store.blockedStages(sessionId).some((row) => row.stageId === stageReply.stageId);
+  const blockedReply =
+    stageReply !== null && store.blockedStages(sessionId).some((row) => row.stageId === stageReply.stageId);
   if (opened.cancelledReplyStage || (opened.sessionStatus !== 'blocked' && !blockedReply)) return null;
   const resumed = store.resumeBlockedSession(
     sessionId,

@@ -70,7 +70,10 @@ export class SessionStoreResume extends SessionStoreCore {
   }
 
   /** A recorded reply whose superseded execution is still the latest of its stage, so it was not dispatched yet. */
-  public pendingCancelledReply(sessionId: string, stageId: string | null = null): { executionId: string; stageId: string; reply: string } | null {
+  public pendingCancelledReply(
+    sessionId: string,
+    stageId: string | null = null,
+  ): { executionId: string; stageId: string; reply: string } | null {
     const events = readParsedEvents(path.join(this.sessionsDirectory, sessionId, 'events.jsonl'));
     for (const row of this.cancelledStages(sessionId)) {
       if (stageId !== null && row.stageId !== stageId) continue;
@@ -83,7 +86,9 @@ export class SessionStoreResume extends SessionStoreCore {
   }
 
   /** Questions are execution outcomes; the recipient is configured by the stage. */
-  public questionStages(sessionId: string): { executionId: string; stageId: string; question: string; questions: Question[] }[] {
+  public questionStages(
+    sessionId: string,
+  ): { executionId: string; stageId: string; question: string; questions: Question[] }[] {
     const latest = new Map<string, ExecutionSnapshot>();
     for (const row of this.executionSnapshots(sessionId)) {
       const prev = latest.get(row.stageId);
@@ -130,7 +135,10 @@ export class SessionStoreResume extends SessionStoreCore {
    * Record that continue is running blocked stages again. The caller holds the session lock.
    * `stageId` resumes that stage only. Other blocked stages stay blocked.
    */
-  public resumeBlockedSession(sessionId: string, stageId: string | null = null): { executionId: string; stageId: string }[] {
+  public resumeBlockedSession(
+    sessionId: string,
+    stageId: string | null = null,
+  ): { executionId: string; stageId: string }[] {
     const sessionDirectory = path.join(this.sessionsDirectory, sessionId);
     assertSessionLockHeld(sessionDirectory);
     const status = this.readSessionStatus(sessionId);

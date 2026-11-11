@@ -1,33 +1,70 @@
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 
-import type { } from '@nodeint/migent-kernel';
 import type { StageOutcome } from '@nodeint/migent-kernel';
-import { legacyClientOf } from '@nodeint/migent-kernel';
-import { writeFileAtomic, writeJsonAtomic } from '@nodeint/migent-kernel';
-import { ConfigurationError, OutputsMissing } from '@nodeint/migent-kernel';
-import { STATUS_PROVIDER_EVENTS } from '@nodeint/migent-kernel';
-import { missingCompletionOutputNames, nonemptyArtifact, shouldPublishOutputs } from '@nodeint/migent-kernel';
-import { classifyOrphanedExecution, ownerMetadataPayload, processMetadataPayload, type ProcessStartInfo,raiseReapDecision, REAP_ALREADY_EXITED, REAP_STILL_RUNNING, REAP_UNVERIFIED } from '@nodeint/migent-kernel';
-import { EXECUTION_SCHEMA_VERSION, EXECUTIONS_DIRNAME, safeComponent, utcNow } from '@nodeint/migent-kernel';
+import {
+  classifyOrphanedExecution,
+  ConfigurationError,
+  JSON_INDENT,
+  legacyClientOf,
+  missingCompletionOutputNames,
+  nonemptyArtifact,
+  OutputsMissing,
+  processMetadataPayload,
+  type ProcessStartInfo,
+  raiseReapDecision,
+  REAP_ALREADY_EXITED,
+  REAP_STILL_RUNNING,
+  REAP_UNVERIFIED,
+  shouldPublishOutputs,
+  STATUS_PROVIDER_EVENTS,
+  utcNow,
+  writeFileAtomic,
+  writeJsonAtomic,
+} from '@nodeint/migent-kernel';
 import { VERIFY_ARTIFACT } from '@nodeint/migent-workflow';
 
+import { TURN_PAD_WIDTH } from './constants.js';
 import { completeManuallyLocked } from './manual-completion.js';
 import { sealSessionMetrics } from './metrics.js';
 import { publishNextSuggestions } from './next-handoff.js';
-import { appendLifecycleEvent, appendRecordedEvent, skipsStatusWrite } from './session-events.js';
+import { appendRecordedEvent, skipsStatusWrite } from './session-events.js';
 import { writeFailureReport } from './session-failure-report.js';
 import { commitFoldedStatus } from './session-fold.js';
 import { readSessionManifest } from './session-fold-read.js';
-import { createNumericSessionDirectory, quotedSessionId } from './session-id.js';
-import { planExecutionSave, type PlannedExecutionSave } from './session-ledger.js';
+import { createNumericSessionDirectory } from './session-id.js';
+import { planExecutionSave } from './session-ledger.js';
 import { assertSessionLockHeld, SessionLock, SessionLockHeldError } from './session-lock.js';
 import { assertSessionId } from './session-selection.js';
+import {
+  appendExecutionSaveEvents,
+  appendExecutionStarted,
+  createSessionFiles,
+  executionIdFor,
+  type FinishExecutionSaveInput,
+  isEndedExecutionStatus,
+  openExecutionDirectory,
+  skippedExecutionMetadata,
+  skipRecordOf,
+  writeStartedExecution,
+} from './session-store-execution.js';
 import { SessionStoreResume } from './session-store-resume.js';
-import type { ExecutionSaveInput, ExecutionStartInput, LoadOrCreateInput, ManualCompletionResult, SkipDetails } from './session-store-types.js';
-import { AgentSessionRecord, DEBUG_LOG_FILENAME, DIAGNOSTICS_FILENAME, ExecutionContext, inFlightExecutions, stringOptions } from './session-store-types.js';
-import { asInt, isDirectory, snapshotsIncludingSave } from './session-store-util.js';
-import { readJsonObject, textField } from './session-store-util.js';
+import type {
+  ExecutionSaveInput,
+  ExecutionStartInput,
+  LoadOrCreateInput,
+  ManualCompletionResult,
+  SkipDetails,
+} from './session-store-types.js';
+import {
+  AgentSessionRecord,
+  DEBUG_LOG_FILENAME,
+  DIAGNOSTICS_FILENAME,
+  ExecutionContext,
+  inFlightExecutions,
+  stringOptions,
+} from './session-store-types.js';
+import { asInt, isDirectory, readJsonObject, snapshotsIncludingSave, textField } from './session-store-util.js';
 import { normalizeRenameTitle, writeTitleRecord } from './session-title.js';
 
 export class SessionStore extends SessionStoreResume {
@@ -184,7 +221,10 @@ export class SessionStore extends SessionStoreResume {
     });
   }
 
-  /** The latest abnormal provider turn of this execution (a start failure, a non-zero exit, a provider-reported error). Separate from `execution.json`, which is frozen once the execution ends. */
+  /**
+   * The latest abnormal provider turn of this execution (a start failure, a non-zero exit, a provider-reported
+   * error). Separate from `execution.json`, which is frozen once the execution ends.
+   */
   public saveDiagnostics(context: ExecutionContext, payload: Record<string, unknown>): void {
     mkdirSync(context.directory, { recursive: true });
     writeJsonAtomic(path.join(context.directory, DIAGNOSTICS_FILENAME), payload);
@@ -246,50 +286,17 @@ export class SessionStore extends SessionStoreResume {
     assertSessionLockHeld(sessionDirectory);
     const order = this.nextExecutionOrder(sessionId);
     const attempt = this.nextStageAttempt(sessionId, stageId);
-    const executionId = `${String(order).padStart(ORDER_PAD_WIDTH, '0')}-${safeComponent(stageId)}--attempt-${String(attempt).padStart(TURN_PAD_WIDTH, '0')}`;
-    const directory = path.join(sessionDirectory, EXECUTIONS_DIRNAME, executionId);
-    mkdirSync(path.dirname(directory), { recursive: true });
-    try {
-      mkdirSync(directory);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
-        throw new Error(`Execution already exists: ${directory}`, { cause: error });
-      }
-      throw error;
-    }
-    const taskSource = path.join(sessionDirectory, 'task.md');
-    if (existsSync(taskSource)) copyFileSync(taskSource, path.join(directory, 'task.md'));
-    const context = new ExecutionContext(sessionId, executionId, directory);
-    mkdirSync(context.artifactDirectory);
+    const context = openExecutionDirectory(sessionDirectory, sessionId, executionIdFor(order, stageId, attempt));
+    const { executionId } = context;
     const previousStatus = this.readSessionStatusAt(sessionDirectory);
     const workflow = this.loadWorkflow(previousStatus);
     const manifest = readSessionManifest(sessionDirectory);
     const timestamp = utcNow();
-    const skipRecord = {
-      reason: skip.reason,
-      baseline: skip.baseline,
-      patterns: [...skip.patterns],
-      changed_paths: skip.changedPaths,
-    };
-    writeJsonAtomic(path.join(directory, 'execution.json'), {
-      session_id: sessionId,
-      execution_id: executionId,
-      execution_order: order,
-      stage_id: stageId,
-      stage_attempt: attempt,
-      kind: 'skip',
-      client: null,
-      model: null,
-      options: {},
-      agent_id: null,
-      resumes_execution_id: null,
-      status: 'skipped',
-      schema_version: EXECUTION_SCHEMA_VERSION,
-      created_at: timestamp,
-      completed_at: timestamp,
-      artifact_directory: 'artifacts',
-      skip: skipRecord,
-    });
+    const skipRecord = skipRecordOf(skip);
+    writeJsonAtomic(
+      path.join(context.directory, 'execution.json'),
+      skippedExecutionMetadata({ sessionId, executionId, order, stageId, attempt, timestamp, skipRecord }),
+    );
     const plan = planExecutionSave({
       executionStatus: 'skipped',
       outcome: null,
@@ -304,19 +311,13 @@ export class SessionStore extends SessionStoreResume {
       manifestStatus: manifest.manifestStatus,
       snapshots: this.snapshotList(sessionId),
     });
-    appendLifecycleEvent(sessionDirectory, {
-      event: 'execution.started',
-      timestamp,
-      executionId,
-      stageId,
-      data: {
-        execution_order: order,
-        stage_attempt: attempt,
-        client: '',
-        model: '',
-        resumes_execution_id: null,
-        kind: 'skip',
-      },
+    appendExecutionStarted(sessionDirectory, { timestamp, executionId, stageId }, {
+      execution_order: order,
+      stage_attempt: attempt,
+      client: '',
+      model: '',
+      resumes_execution_id: null,
+      kind: 'skip',
     });
     this.finishExecutionSave({
       context,
@@ -352,12 +353,7 @@ export class SessionStore extends SessionStoreResume {
     const filePath = path.join(context.directory, 'execution.json');
     const metadata = readJsonObject(filePath);
     const existingStatus = metadata.status;
-    if (
-      existingStatus === 'completed' ||
-      existingStatus === 'failed' ||
-      existingStatus === 'cancelled' ||
-      existingStatus === 'skipped'
-    ) {
+    if (isEndedExecutionStatus(existingStatus)) {
       throw new Error(`Execution ${context.executionId} is immutable after it ended.`);
     }
     const sessionDirectory = path.dirname(path.dirname(context.directory));
@@ -428,64 +424,9 @@ export class SessionStore extends SessionStoreResume {
   }
 
   /** Events, fold, and sealing after the execution file is final. Shared by saves and skip records. */
-  private finishExecutionSave(input: {
-    context: ExecutionContext;
-    sessionDirectory: string;
-    status: string;
-    outcome: StageOutcome | null;
-    plan: PlannedExecutionSave;
-    previousStatus: Record<string, unknown>;
-    timestamp: string;
-    stageId: string;
-    failureReason: string | null;
-    storedError: string | null;
-    extraData: Record<string, unknown> | null;
-  }): void {
-    const { context, sessionDirectory, status, outcome, plan, previousStatus, timestamp, stageId } = input;
-    const { failureReason, storedError } = input;
-    appendLifecycleEvent(sessionDirectory, {
-      event: `execution.${status}`,
-      timestamp,
-      executionId: context.executionId,
-      stageId,
-      data: {
-        outcome: outcome ? outcome.toJson() : null,
-        failure_reason: failureReason,
-        error: storedError,
-        session_status: plan.sessionStatus,
-        ...(input.extraData ?? {}),
-      },
-    });
-    if (outcome !== null) {
-      const outcomeJson = outcome.toJson();
-      appendLifecycleEvent(sessionDirectory, {
-        event: `stage.${outcome.status}`,
-        timestamp,
-        executionId: context.executionId,
-        stageId,
-        outcomeTopLevel: outcomeJson,
-        data: { outcome: outcomeJson },
-      });
-    }
-    if (plan.outputs.length > 0) {
-      appendLifecycleEvent(sessionDirectory, {
-        event: 'outputs.published',
-        timestamp,
-        executionId: context.executionId,
-        stageId,
-        data: { outputs: plan.outputs },
-      });
-    }
-    if (plan.sessionEvent !== null) {
-      appendLifecycleEvent(sessionDirectory, {
-        event: `session.${plan.sessionStatus}`,
-        timestamp,
-        executionId: context.executionId,
-        stageId,
-        outcomeTopLevel: plan.sessionEvent.outcomeTopLevel,
-        data: plan.sessionEvent.data,
-      });
-    }
+  private finishExecutionSave(input: FinishExecutionSaveInput): void {
+    const { context, sessionDirectory, plan, previousStatus } = input;
+    appendExecutionSaveEvents(input);
     if (plan.manifestStatus !== null) this.rewriteManifestStatus(sessionDirectory, plan.manifestStatus);
     commitFoldedStatus(this.workspace, sessionDirectory);
     if (
@@ -503,7 +444,10 @@ export class SessionStore extends SessionStoreResume {
    * Change a session's display title. Takes no session lock, so it works during a live run. Only
    * title.json is written; readers overlay it and the next lifecycle commit folds it into status.json.
    */
-  public rename(sessionId: string, rawTitle: string): { sessionId: string; title: string; previousTitle: string | null } {
+  public rename(
+    sessionId: string,
+    rawTitle: string,
+  ): { sessionId: string; title: string; previousTitle: string | null } {
     const title = normalizeRenameTitle(rawTitle);
     assertSessionId(sessionId);
     const sessionDirectory = path.join(this.sessionsDirectory, sessionId);
@@ -591,82 +535,19 @@ export class SessionStore extends SessionStoreResume {
     const resolvedSession = sessionId ?? path.basename(createNumericSessionDirectory(this.sessionsDirectory)[1]);
     const order = executionOrder ? executionOrder : this.nextExecutionOrder(resolvedSession);
     const attempt = stageAttempt ? stageAttempt : this.nextStageAttempt(resolvedSession, stageId);
-    const executionId = `${String(order).padStart(ORDER_PAD_WIDTH, '0')}-${safeComponent(stageId)}--attempt-${String(attempt).padStart(TURN_PAD_WIDTH, '0')}`;
-    const directory = path.join(
-      this.sessionsDirectory,
-      resolvedSession,
-      EXECUTIONS_DIRNAME,
-      executionId,
-    );
+    const executionId = executionIdFor(order, stageId, attempt);
     assertSessionLockHeld(path.join(this.sessionsDirectory, resolvedSession));
-    mkdirSync(path.dirname(directory), { recursive: true });
-    try {
-      mkdirSync(directory);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
-        throw new Error(`Execution already exists: ${directory}`, { cause: error });
-      }
-      throw error;
-    }
-    const taskSource = path.join(this.sessionsDirectory, resolvedSession, 'task.md');
-    if (existsSync(taskSource)) copyFileSync(taskSource, path.join(directory, 'task.md'));
-    const context = new ExecutionContext(resolvedSession, executionId, directory);
-    mkdirSync(context.artifactDirectory);
-    this.createSessionFiles(context);
+    const sessionDirectory = path.join(this.sessionsDirectory, resolvedSession);
+    const context = openExecutionDirectory(sessionDirectory, resolvedSession, executionId);
+    const { directory } = context;
+    createSessionFiles(context);
     const verifyOnly = kind === 'verify';
     if (!verifyOnly) writeFileAtomic(path.join(directory, 'prompt.md'), prompt);
-    const createdAt = utcNow();
-    const sessionDirectory = path.dirname(path.dirname(directory));
-    writeJsonAtomic(path.join(directory, 'execution.json'), {
-      session_id: resolvedSession,
-      execution_id: executionId,
-      execution_order: order,
-      stage_id: stageId,
-      stage_attempt: attempt,
-      ...(verifyOnly ? { kind: 'verify' } : {}),
-      client: verifyOnly ? null : client,
-      model: verifyOnly ? null : model,
-      options: { ...(options ?? {}) },
-      agent_id: null,
-      resumes_execution_id: resumesExecutionId,
-      status: 'running',
-      ...ownerMetadataPayload(),
-      schema_version: EXECUTION_SCHEMA_VERSION,
-      created_at: createdAt,
-      artifact_directory: 'artifacts',
-    });
-    appendLifecycleEvent(sessionDirectory, {
-      event: 'execution.started',
-      timestamp: createdAt,
-      executionId,
-      stageId,
-      data: {
-        execution_order: order,
-        stage_attempt: attempt,
-        client,
-        model,
-        resumes_execution_id: resumesExecutionId,
-      },
-    });
+    const start = { order, stageId, attempt, verifyOnly, client, model, options, resumesExecutionId };
+    writeStartedExecution(context, start);
     commitFoldedStatus(this.workspace, sessionDirectory);
     return context;
   }
-
-  private createSessionFiles(context: ExecutionContext): void {
-    const sessionDirectory = path.dirname(path.dirname(context.directory));
-    const manifestPath = path.join(sessionDirectory, 'manifest.yaml');
-    if (existsSync(manifestPath)) return;
-    const createdAt = utcNow();
-    writeFileAtomic(
-      manifestPath,
-      `${[`session_id: ${quotedSessionId(context.sessionId)}`, `created_at: ${createdAt}`, 'status: running'].join('\n')}\n`);
-    appendLifecycleEvent(sessionDirectory, {
-      event: 'session.created',
-      timestamp: createdAt,
-      data: {},
-    });
-  }
-
 }
 
 export type { ExecutionSaveInput, ExecutionStartInput, LoadOrCreateInput, ManualCompletionResult, SessionRecordFallback, SessionRecordInit, SkipDetails } from './session-store-types.js';
@@ -681,6 +562,3 @@ export {
   noteInFlightExecution,
   stringOptions,
 } from './session-store-types.js';
-import { JSON_INDENT } from '@nodeint/migent-kernel';
-
-import { ORDER_PAD_WIDTH, TURN_PAD_WIDTH } from './constants.js';

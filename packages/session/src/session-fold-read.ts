@@ -195,7 +195,10 @@ export function statusFileState(sessionDirectory: string): StatusFileState {
   return readStatusFileState(path.join(sessionDirectory, 'status.json'));
 }
 
-export function statusIdentity(manifest: SessionManifest, previous: Record<string, unknown> | null): Record<string, unknown> {
+export function statusIdentity(
+  manifest: SessionManifest,
+  previous: Record<string, unknown> | null,
+): Record<string, unknown> {
   return {
     workflow_id: manifest.workflowId ?? previous?.workflow_id ?? null,
     workflow_path: manifest.workflowPath ?? previous?.workflow_path ?? null,

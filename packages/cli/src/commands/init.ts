@@ -100,9 +100,12 @@ export async function runInit(
   const reviewerOptionPairs = options.reviewerOptions ?? [];
   const classified = classify(workspace, chosen, resolve);
   if (classified.state === 'ready') {
-    if (client !== null || model !== null || (options.effort !== null && options.effort !== undefined) || optionPairs.length > 0 ||
-        plannerClient !== null || plannerModel !== null || (options.plannerEffort !== null && options.plannerEffort !== undefined) || plannerOptionPairs.length > 0 ||
-        reviewerClient !== null || reviewerModel !== null || (options.reviewerEffort !== null && options.reviewerEffort !== undefined) || reviewerOptionPairs.length > 0) {
+    if (client !== null || model !== null ||
+        (options.effort !== null && options.effort !== undefined) || optionPairs.length > 0 ||
+        plannerClient !== null || plannerModel !== null ||
+        (options.plannerEffort !== null && options.plannerEffort !== undefined) || plannerOptionPairs.length > 0 ||
+        reviewerClient !== null || reviewerModel !== null ||
+        (options.reviewerEffort !== null && options.reviewerEffort !== undefined) || reviewerOptionPairs.length > 0) {
       printError('Already initialized; ignoring model selection flags.');
     }
     printAlreadyInitialized();

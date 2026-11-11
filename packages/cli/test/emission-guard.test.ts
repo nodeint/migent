@@ -19,7 +19,12 @@ test('no CLI source serializes JSON to stdout outside the emitter', () => {
     .filter((file) => path.basename(file) !== 'emit.ts')
     .filter((file) => {
       const text = readFileSync(file, 'utf8');
-      return /process\.stdout\.write\(\s*`?\$\{JSON\.stringify|process\.stdout\.write\(\s*JSON\.stringify|options\.asJson === true \? `\$\{JSON\.stringify/.test(text);
+      const directJsonWrite = new RegExp([
+        String.raw`process\.stdout\.write\(\s*` + '`' + String.raw`?\$\{JSON\.stringify`,
+        String.raw`process\.stdout\.write\(\s*JSON\.stringify`,
+        String.raw`options\.asJson === true \? ` + '`' + String.raw`\$\{JSON\.stringify`,
+      ].join('|'));
+      return directJsonWrite.test(text);
     })
     .map((file) => path.relative(SRC, file));
   expect(offenders).toEqual([]);

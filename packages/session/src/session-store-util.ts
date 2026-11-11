@@ -87,7 +87,9 @@ export function existingNext(sessionDirectory: string): { path: string | null; n
   const filePath = path.join(sessionDirectory, 'next.json');
   try {
     const parsed = JSON.parse(readFileSync(filePath, 'utf8')) as unknown;
-    if (isRecord(parsed) && Array.isArray(parsed.next)) return { path: filePath, next: parsed.next as NextSuggestion[] };
+    if (isRecord(parsed) && Array.isArray(parsed.next)) {
+      return { path: filePath, next: parsed.next as NextSuggestion[] };
+    }
   } catch {
     // No usable next.json.
   }

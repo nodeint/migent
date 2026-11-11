@@ -60,7 +60,9 @@ test('a timeout ends descendants of the client, including behind a Windows shim'
     await expect(runClientCommandAsync(argv, undefined, { timeoutMs: 1500 })).rejects.toThrow(/timed out/);
     grandchild = Number(readFileSync(pidFile, 'utf8'));
     expect(grandchild).toBeGreaterThan(0);
-    for (let attempt = 0; attempt < 40 && alive(grandchild); attempt++) await new Promise((resolve) => setTimeout(resolve, 100));
+    for (let attempt = 0; attempt < 40 && alive(grandchild); attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
     expect(alive(grandchild)).toBe(false);
   } finally {
     if (grandchild > 0 && alive(grandchild)) process.kill(grandchild, 'SIGKILL');

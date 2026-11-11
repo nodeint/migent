@@ -120,7 +120,8 @@ function envelope(options: ProviderPromptOptions) {
     previousVerifyReport,
     taskFile,
     sessionDirectory: options.sessionDirectory ?? '',
-    hasExecution: taskFile !== null || canAsk || (handoff && mode !== null) || artifactName !== null || previousVerifyReport !== null,
+    hasExecution: taskFile !== null || canAsk || (handoff && mode !== null) || artifactName !== null
+      || previousVerifyReport !== null,
     doText: doLines.join('\n'),
   };
 }
@@ -215,7 +216,10 @@ export interface QuestionAnswerInput {
  * Structured answers for the agent. Every answer echoes its question, so it reads correctly after
  * context compaction. `Selected:` is always present (`none` when empty); `Free text:` only when given.
  */
-export function formatQuestionAnswers(questions: readonly AnsweredQuestion[], answers: readonly QuestionAnswerInput[]): string {
+export function formatQuestionAnswers(
+  questions: readonly AnsweredQuestion[],
+  answers: readonly QuestionAnswerInput[],
+): string {
   return answers.map((answer) => {
     const question = questions.find((row) => row.id === answer.question_id)!;
     const selected = answer.selected.map((id) => `${id}. ${question.options.find((option) => option.id === id)!.label}`);

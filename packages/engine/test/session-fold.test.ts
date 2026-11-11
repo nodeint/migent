@@ -297,7 +297,8 @@ test('continue repairs a status.json that missed its event, and refuses a destro
 
   markSchema1(workspace, sessionId);
   writeFileSync(path.join(directory, 'status.json'), '{', 'utf8');
-  await expect(executeNamedWorkflow(workspace, { sessionId }, new AgentToolRunner(defaultClients()))).rejects.toThrow(/--accept-task/);
+  await expect(executeNamedWorkflow(workspace, { sessionId }, new AgentToolRunner(defaultClients())))
+    .rejects.toThrow(/--accept-task/);
   expect(() => repairSession(workspace, sessionId)).toThrow(ConfigurationError);
   expect(() => repairSession(workspace, sessionId)).toThrow(/task_sha256/);
   const task = readFileSync(path.join(directory, 'task.md'), 'utf8');

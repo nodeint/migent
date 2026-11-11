@@ -42,6 +42,13 @@ export function schemaIssues(schema: TSchema, value: unknown): SchemaIssue[] {
       path.push(Array.isArray(node) ? Number(key) : key);
       node = typeof node === 'object' && node !== null ? (node as Record<string, unknown>)[key] : undefined;
     }
-    return { keyword: error.keyword, schemaPath: error.schemaPath, path, message: error.message, params: error.params as Record<string, unknown>, value: node };
+    return {
+      keyword: error.keyword,
+      schemaPath: error.schemaPath,
+      path,
+      message: error.message,
+      params: error.params as Record<string, unknown>,
+      value: node,
+    };
   });
 }

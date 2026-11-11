@@ -193,7 +193,10 @@ function sessionJson(row: readonly string[]): Static<typeof SessionRow> {
 }
 
 function hasListFilter(selection: SessionListOptions): boolean {
-  return selection.latest === true || (selection.workflow !== null && selection.workflow !== undefined) || (selection.status !== null && selection.status !== undefined) || (selection.limit !== null && selection.limit !== undefined);
+  return selection.latest === true ||
+    (selection.workflow !== null && selection.workflow !== undefined) ||
+    (selection.status !== null && selection.status !== undefined) ||
+    (selection.limit !== null && selection.limit !== undefined);
 }
 
 function parseListSelection(options: {
@@ -252,7 +255,8 @@ export function registerSessionLifecycleCommands(session: Command, settle: Settl
           printError('--wait must be a number of seconds, 0 or more.');
           return EXIT_CONFIG;
         }
-        return cancelSession(findWorkspace(invocationCwdPath()), id, { waitSeconds: wait, asJson: options.json === true });
+        const cancelOptions = { waitSeconds: wait, asJson: options.json === true };
+        return cancelSession(findWorkspace(invocationCwdPath()), id, cancelOptions);
       }),
     );
 

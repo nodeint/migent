@@ -102,11 +102,23 @@ function upstreamArtifacts(
     for (const artifact of producedArtifacts(dep, snapshot, v7)) {
       const artifactPath = resolvePath(path.join(snapshot.artifactDirectory, artifact.file));
       if (v7 && !nonemptyArtifact(artifactPath)) continue;
-      lines.push({ stageId: depId, path: artifactPath, verify: false, description: artifact.description, updated: ownOrder > 0 && snapshot.executionOrder > ownOrder });
+      lines.push({
+        stageId: depId,
+        path: artifactPath,
+        verify: false,
+        description: artifact.description,
+        updated: ownOrder > 0 && snapshot.executionOrder > ownOrder,
+      });
     }
     if (dep.verify.length > 0) {
       const reportPath = resolvePath(path.join(snapshot.artifactDirectory, VERIFY_ARTIFACT));
-      lines.push({ stageId: depId, path: reportPath, verify: true, description: null, updated: ownOrder > 0 && snapshot.executionOrder > ownOrder });
+      lines.push({
+        stageId: depId,
+        path: reportPath,
+        verify: true,
+        description: null,
+        updated: ownOrder > 0 && snapshot.executionOrder > ownOrder,
+      });
     }
   }
   return lines;
@@ -127,7 +139,9 @@ function producedArtifacts(stage: StageSpec, snapshot: ExecutionSnapshot, v7: bo
 
 function routedResultContext(workflow: WorkflowDocument, stageId: string, snapshots: readonly ExecutionSnapshot[]) {
   // Schema 7 never reads a completion that a later skip superseded.
-  const complete = isArtifactSchema(workflow) ? currentCompleteByStage(workflow, snapshots) : latestCompleteByStage(snapshots);
+  const complete = isArtifactSchema(workflow)
+    ? currentCompleteByStage(workflow, snapshots)
+    : latestCompleteByStage(snapshots);
   const previous = complete[stageId];
   const previousOrder = previous ? previous.executionOrder : 0;
   let routed: readonly ExecutionSnapshot[];
@@ -164,7 +178,9 @@ function routedResultContext(workflow: WorkflowDocument, stageId: string, snapsh
       if (router === undefined || seen.has(router.id)) continue;
       for (const item of stageArtifactsFor(router, decision.outcomeDecision)) {
         const file = resolvePath(path.join(decision.artifactDirectory, item.file));
-        if (nonemptyArtifact(file)) routedArtifacts.push({ stageId: router.id, path: file, verify: false, description: item.description });
+        if (nonemptyArtifact(file)) {
+          routedArtifacts.push({ stageId: router.id, path: file, verify: false, description: item.description });
+        }
       }
       if (router.verify.length > 0) {
         routedArtifacts.push({
@@ -195,7 +211,11 @@ function previousBlockedAttempt(stageId: string, snapshots: readonly ExecutionSn
   const executionDirectory = path.dirname(latest.artifactDirectory);
   const blocker = readOutcomeBlocker(path.join(executionDirectory, 'execution.json'));
   const responsePath = path.join(executionDirectory, 'response.md');
-  return { executionId: latest.executionId, blocker, response: isFile(responsePath) ? resolvePath(responsePath) : null };
+  return {
+    executionId: latest.executionId,
+    blocker,
+    response: isFile(responsePath) ? resolvePath(responsePath) : null,
+  };
 }
 
 /**

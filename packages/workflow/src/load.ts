@@ -45,7 +45,10 @@ export function loadWorkflowCatalog(workspace: string, options: LoadWorkflowOpti
     loaded.map((entry) => catalogEntryFromDocument(path.basename(entry.path), entry.document)),
     unreadableWorkflowIds(problems),
   );
-  return { documents: checked.documents, problems: [...problems, ...checked.problems.map((problem) => problem.message)] };
+  return {
+    documents: checked.documents,
+    problems: [...problems, ...checked.problems.map((problem) => problem.message)],
+  };
 }
 
 export function loadWorkflowDocument(filePath: string, options: LoadWorkflowOptions = {}): WorkflowDocument {
@@ -100,7 +103,10 @@ export interface LoadedWorkflow {
   document: WorkflowDocument;
 }
 
-export function readWorkflowDirectory(workspace: string, options: LoadWorkflowOptions = {}): { loaded: LoadedWorkflow[]; problems: string[] } {
+export function readWorkflowDirectory(
+  workspace: string,
+  options: LoadWorkflowOptions = {},
+): { loaded: LoadedWorkflow[]; problems: string[] } {
   const directory = workflowsDirectory(workspace);
   if (!isDir(directory)) {
     return { loaded: [], problems: ['Workflows directory not found: .migent/workflows'] };

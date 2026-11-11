@@ -199,7 +199,10 @@ test('maps options onto claude flags', () => {
 test('normalizes claude usage from the resume fixtures', () => {
   const client = new ClaudeCodeClient();
   const captures = [1, 2, 3].map((turn) => client.captureUsage(usageFixture(`claude-resume-${turn}.jsonl`)));
-  expect(captures[0]?.result).toMatchObject({ total_cost_usd: 0.0439477, usage: { output_tokens: 3, input_tokens: 2 } });
+  expect(captures[0]?.result).toMatchObject({
+    total_cost_usd: 0.0439477,
+    usage: { output_tokens: 3, input_tokens: 2 },
+  });
   expect(captures[1]?.result).toMatchObject({ total_cost_usd: 0.07983470000000001 });
   expect(captures[2]?.result).toMatchObject({ total_cost_usd: 0.08419960000000001 });
   const first = normalizeUsage(client, captures[0]!, null);
