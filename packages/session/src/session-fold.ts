@@ -187,69 +187,123 @@ interface RunningStage {
   updated_at: string | null;
 }
 
+type SharedEventHandler = (draft: StatusDraft, event: ParsedEvent) => boolean;
+
+function applyBaselineCaptured(draft: StatusDraft, event: ParsedEvent): boolean {
+  if (isRecord(draft.get('baseline'))) return true;
+  const baseline: Record<string, unknown> = {
+    commit: typeof event.data.commit === 'string' ? event.data.commit : null,
+    captured_at: event.timestamp,
+  };
+  const error = textOr(event.data.error);
+  if (error) baseline.error = error;
+  draft.set('baseline', baseline);
+  return true;
+}
+
+const SHARED_EVENT_HANDLERS: Readonly<Record<string, SharedEventHandler>> = {
+  'workflow.refreshed': () => false,
+  'session.created': (draft, event) => {
+    if (isRecord(event.data.handoff)) draft.set('handoff', cloneRecord(event.data.handoff));
+    if (event.data.prepared !== true) return false;
+    draft.set('status', 'prepared');
+    return true;
+  },
+  'handoff.bound': (draft, event) => {
+    if (isRecord(event.data.handoff)) draft.set('handoff', cloneRecord(event.data.handoff));
+    return true;
+  },
+  'task.frozen': (draft, event) => {
+    const hash = textOr(event.data.sha256);
+    if (hash) draft.set('task_sha256', hash);
+    return true;
+  },
+  'baseline.captured': applyBaselineCaptured,
+  'revisions.reset': (draft, event) => {
+    if (isRecord(event.data.baselines)) draft.set('revision_baselines', cloneRecord(event.data.baselines));
+    return true;
+  },
+  'outputs.published': (draft, event) => {
+    draft.mergePublished(event.data.outputs);
+    return true;
+  },
+  'session.activated': (draft) => {
+    draft.set('status', 'active');
+    return true;
+  },
+};
+
+function applyProviderEvent(draft: StatusDraft, event: ParsedEvent, noted: Map<string, RunningStage>): boolean {
+  if (skipsStatusWrite(event.event)) return false;
+  draft.set('latest_provider_event', event.raw);
+  if (event.executionId) {
+    noted.set(event.executionId, {
+      execution_id: event.executionId,
+      stage_id: event.stageId,
+      client: event.raw.client ?? null,
+      event: event.event,
+      summary: event.summary,
+      updated_at: event.timestamp,
+    });
+  }
+  return true;
+}
+
 function applySharedEvent(
   draft: StatusDraft,
   event: ParsedEvent,
   noted: Map<string, RunningStage>,
 ): boolean {
-  if (event.event === 'workflow.refreshed') return false;
-  if (event.event === 'session.created') {
-    if (isRecord(event.data.handoff)) draft.set('handoff', cloneRecord(event.data.handoff));
-    if (event.data.prepared === true) {
-      draft.set('status', 'prepared');
-      return true;
-    }
-    return false;
-  }
-  if (event.event === 'handoff.bound') {
-    if (isRecord(event.data.handoff)) draft.set('handoff', cloneRecord(event.data.handoff));
-    return true;
-  }
-  if (event.event === 'task.frozen') {
-    const hash = textOr(event.data.sha256);
-    if (hash) draft.set('task_sha256', hash);
-    return true;
-  }
-  if (event.event === 'baseline.captured') {
-    if (!isRecord(draft.get('baseline'))) {
-      const baseline: Record<string, unknown> = {
-        commit: typeof event.data.commit === 'string' ? event.data.commit : null,
-        captured_at: event.timestamp,
-      };
-      const error = textOr(event.data.error);
-      if (error) baseline.error = error;
-      draft.set('baseline', baseline);
-    }
-    return true;
-  }
-  if (event.event === 'revisions.reset') {
-    if (isRecord(event.data.baselines)) draft.set('revision_baselines', cloneRecord(event.data.baselines));
-    return true;
-  }
-  if (event.event === 'outputs.published') {
-    draft.mergePublished(event.data.outputs);
-    return true;
-  }
-  if (event.event === 'session.activated') {
-    draft.set('status', 'active');
-    return true;
-  }
+  const handler = Object.hasOwn(SHARED_EVENT_HANDLERS, event.event) ? SHARED_EVENT_HANDLERS[event.event] : undefined;
+  if (handler !== undefined) return handler(draft, event);
   if (event.event.startsWith('provider.') || event.event.startsWith('verify.')) {
-    if (skipsStatusWrite(event.event)) return false;
-    draft.set('latest_provider_event', event.raw);
-    if (event.executionId) {
-      noted.set(event.executionId, {
-        execution_id: event.executionId,
-        stage_id: event.stageId,
-        client: event.raw.client ?? null,
-        event: event.event,
-        summary: event.summary,
-        updated_at: event.timestamp,
-      });
-    }
-    return true;
+    return applyProviderEvent(draft, event, noted);
   }
   return false;
+}
+
+function applySessionLevelEvent(draft: StatusDraft, event: ParsedEvent): boolean {
+  if (!event.event.startsWith('session.') || event.event === 'session.created' || event.event === 'session.activated') {
+    return false;
+  }
+  const sessionStatus = event.event.slice('session.'.length);
+  draft.set('status', sessionStatus);
+  if (sessionStatus === 'completed' && event.data.manual !== true) {
+    draft.set('completion_method', 'agent');
+  }
+  draft.applyTerminalFields(sessionStatus, { source: null, reason: textOr(event.data.reason) });
+  return true;
+}
+
+function applyExecutionStarted(event: ParsedEvent, executionId: string, seen: Map<string, SeenExecution>): void {
+  const current = seen.get(executionId);
+  const order = Math.max(current?.order ?? 0, eventExecutionOrder(event));
+  if (current && current.status !== 'running') {
+    current.order = order;
+    if (event.stageId) current.stageId = event.stageId;
+    return;
+  }
+  seen.set(executionId, {
+    order,
+    stageId: event.stageId ?? current?.stageId ?? '',
+    status: 'running',
+    outcome: null,
+  });
+}
+
+function applyExecutionTransition(event: ParsedEvent, executionId: string, seen: Map<string, SeenExecution>): void {
+  const executionStatus = event.event.slice('execution.'.length);
+  const current = seen.get(executionId) ?? {
+    order: 0,
+    stageId: event.stageId ?? '',
+    status: executionStatus,
+    outcome: null,
+  };
+  current.status = executionStatus;
+  current.outcome = isRecord(event.data.outcome) ? event.data.outcome : null;
+  current.order = Math.max(current.order, eventExecutionOrder(event));
+  if (event.stageId) current.stageId = event.stageId;
+  seen.set(executionId, current);
 }
 
 function applySchema2Execution(
@@ -258,55 +312,18 @@ function applySchema2Execution(
   seen: Map<string, SeenExecution>,
 ): boolean {
   if (event.event === 'workflow.refreshed') return false;
-  if (!event.executionId) {
-    if (event.event.startsWith('session.') && event.event !== 'session.created' && event.event !== 'session.activated') {
-      const sessionStatus = event.event.slice('session.'.length);
-      draft.set('status', sessionStatus);
-      if (sessionStatus === 'completed' && event.data.manual !== true) {
-        draft.set('completion_method', 'agent');
-      }
-      draft.applyTerminalFields(sessionStatus, { source: null, reason: textOr(event.data.reason) });
-      return true;
-    }
-    return false;
-  }
+  const { executionId } = event;
+  if (!executionId) return applySessionLevelEvent(draft, event);
   if (event.event === 'execution.started') {
-    const current = seen.get(event.executionId);
-    const order = Math.max(current?.order ?? 0, eventExecutionOrder(event));
-    if (current && current.status !== 'running') {
-      current.order = order;
-      if (event.stageId) current.stageId = event.stageId;
-      return true;
-    }
-    seen.set(event.executionId, {
-      order,
-      stageId: event.stageId ?? current?.stageId ?? '',
-      status: 'running',
-      outcome: null,
-    });
+    applyExecutionStarted(event, executionId, seen);
     return true;
   }
   if (event.event.startsWith('execution.')) {
-    const executionStatus = event.event.slice('execution.'.length);
-    const current = seen.get(event.executionId) ?? {
-      order: 0,
-      stageId: event.stageId ?? '',
-      status: executionStatus,
-      outcome: null,
-    };
-    current.status = executionStatus;
-    current.outcome = isRecord(event.data.outcome) ? event.data.outcome : null;
-    current.order = Math.max(current.order, eventExecutionOrder(event));
-    if (event.stageId) current.stageId = event.stageId;
-    seen.set(event.executionId, current);
+    applyExecutionTransition(event, executionId, seen);
     return true;
   }
-  if (event.event.startsWith('stage.')) {
-    const outcome = outcomeRecord(event);
-    return decisionOf(outcome) !== null;
-  }
-  if (event.event.startsWith('session.') && event.event !== 'session.created') return true;
-  return false;
+  if (event.event.startsWith('stage.')) return decisionOf(outcomeRecord(event)) !== null;
+  return event.event.startsWith('session.') && event.event !== 'session.created';
 }
 
 function publishLatestExecution(draft: StatusDraft, seen: ReadonlyMap<string, SeenExecution>): void {
@@ -431,6 +448,17 @@ function statusExecutionsFromFolds(executions: readonly FoldExecution[]): Status
   }));
 }
 
+/** The last `session.active` event resuming this execution from blocked or question. */
+function lastResumeOf(events: readonly ParsedEvent[], executionId: string): ParsedEvent | null {
+  let resume: ParsedEvent | null = null;
+  for (const event of events) {
+    if (event.event !== 'session.active' || event.executionId !== executionId) continue;
+    if (event.data.from !== 'blocked' && event.data.from !== 'question') continue;
+    resume = event;
+  }
+  return resume;
+}
+
 /**
  * An explicit resume of a blocker or an answered question makes the session runnable.
  * Each stopped execution still requires its own resume event before dispatch.
@@ -443,16 +471,10 @@ function applyBlockedResume(
   const { blockedIds, updatedAt } = stopped;
   const current = draft.get('status');
   if ((current !== 'blocked' && current !== 'question') || blockedIds.length === 0) return updatedAt;
-  const resumes: ParsedEvent[] = [];
-  for (const executionId of blockedIds) {
-    let resume: ParsedEvent | null = null;
-    for (const event of events) {
-      if (event.event !== 'session.active' || event.executionId !== executionId) continue;
-      if (event.data.from !== 'blocked' && event.data.from !== 'question') continue;
-      resume = event;
-    }
-    if (resume !== null) resumes.push(resume);
-  }
+  const resumes = blockedIds.flatMap((executionId) => {
+    const resume = lastResumeOf(events, executionId);
+    return resume === null ? [] : [resume];
+  });
   if (resumes.length === 0) return updatedAt;
   draft.set('status', 'active');
   draft.applyTerminalFields('active', { source: null, reason: null });

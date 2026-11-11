@@ -78,24 +78,35 @@ export function writeWorkflowFreeze(sessionDirectory: string, source: FreezeSour
   return { hash: sha256(text), sourceSha256 };
 }
 
-/** Null when the file is missing. A broken file throws and names the path. */
-export function readWorkflowFreeze(sessionDirectory: string): WorkflowFreeze | null {
-  const filePath = path.join(sessionDirectory, WORKFLOW_FREEZE_FILE);
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** The freeze file as a mapping; null when it is missing. */
+function readFreezeMapping(filePath: string): Record<string, unknown> | null {
   let text: string;
   try {
     if (!statSync(filePath).isFile()) return null;
     text = readFileSync(filePath, 'utf8');
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
-    throw corrupt(filePath, error instanceof Error ? error.message : String(error));
+    throw corrupt(filePath, errorText(error));
   }
   let parsed: unknown;
   try {
     parsed = parseYamlDocument(text);
   } catch (error) {
-    throw corrupt(filePath, error instanceof Error ? error.message : String(error));
+    throw corrupt(filePath, errorText(error));
   }
   if (!isRecord(parsed)) throw corrupt(filePath, 'expected a mapping');
+  return parsed;
+}
+
+/** Null when the file is missing. A broken file throws and names the path. */
+export function readWorkflowFreeze(sessionDirectory: string): WorkflowFreeze | null {
+  const filePath = path.join(sessionDirectory, WORKFLOW_FREEZE_FILE);
+  const parsed = readFreezeMapping(filePath);
+  if (parsed === null) return null;
   if (!Object.hasOwn(parsed, 'source_sha256')) throw corrupt(filePath, 'missing source_sha256');
   const sourceSha256 = parsed.source_sha256;
   if (sourceSha256 !== null && typeof sourceSha256 !== 'string') {
@@ -106,7 +117,7 @@ export function readWorkflowFreeze(sessionDirectory: string): WorkflowFreeze | n
   try {
     workflow = parseWorkflowMapping(parsed.workflow, filePath);
   } catch (error) {
-    throw corrupt(filePath, error instanceof Error ? error.message : String(error));
+    throw corrupt(filePath, errorText(error));
   }
   return {
     sourceSha256,
@@ -191,63 +202,86 @@ export function warnIfFrozenDrift(workspace: string, sessionId: string, live: Li
  * How the live source and config differ from what the freeze pinned. Read-only; a missing or
  * broken live file is a difference, never an error. `quiet` keeps authoring warnings off stderr.
  */
-export function collectFrozenDrift(workspace: string, freeze: WorkflowFreeze, ref: LiveWorkflowRef): string[] {
-  const { workflowPath, workflowId, resolveClient, quiet = false } = ref;
-  const details: string[] = [];
-  const filePath = workflowPath ? workflowFile(workspace, workflowPath) : null;
-  let readable = false;
-  if (filePath === null || !isFile(filePath)) {
-    details.push('The workflow file is missing.');
-  } else {
-    const digest = sourceFileHash(filePath);
-    if (digest === null) details.push('The workflow file cannot be loaded.');
-    else {
-      readable = true;
-      if (digest !== freeze.sourceSha256) details.push('The workflow file differs.');
-    }
-  }
-  let live: WorkflowDocument | null = null;
-  if (readable && filePath !== null) {
-    try {
-      live = loadWorkflowDocument(filePath, { quiet });
-    } catch (error) {
-      if (!(error instanceof ConfigurationError)) throw error;
-      details.push('The workflow file cannot be loaded.');
-    }
-  } else if (filePath === null && workflowId) {
-    try {
-      live = loadNamedWorkflow(workspace, workflowId, { quiet });
-    } catch (error) {
-      if (!(error instanceof ConfigurationError)) throw error;
-    }
-  }
-  let config: Record<string, unknown> | null = null;
+/** Run a configuration read; a ConfigurationError becomes null, anything else propagates. */
+function configurationOrNull<T>(read: () => T): T | null {
   try {
-    config = loadWorkspaceConfig(workspace);
+    return read();
   } catch (error) {
     if (!(error instanceof ConfigurationError)) throw error;
+    return null;
   }
-  if (live !== null && config !== null) {
-    for (const [stageId, target] of Object.entries(freeze.targets)) {
+}
+
+/** Whether the live source file is readable; records file-level drift. */
+function sourceFileDrift(filePath: string | null, freeze: WorkflowFreeze, details: string[]): boolean {
+  if (filePath === null || !isFile(filePath)) {
+    details.push('The workflow file is missing.');
+    return false;
+  }
+  const digest = sourceFileHash(filePath);
+  if (digest === null) {
+    details.push('The workflow file cannot be loaded.');
+    return false;
+  }
+  if (digest !== freeze.sourceSha256) details.push('The workflow file differs.');
+  return true;
+}
+
+function loadLiveWorkflow(
+  located: { workspace: string; filePath: string | null; readable: boolean },
+  ref: LiveWorkflowRef,
+  details: string[],
+): WorkflowDocument | null {
+  const { workspace, filePath, readable } = located;
+  const { workflowId, quiet = false } = ref;
+  if (readable && filePath !== null) {
+    const live = configurationOrNull(() => loadWorkflowDocument(filePath, { quiet }));
+    if (live === null) details.push('The workflow file cannot be loaded.');
+    return live;
+  }
+  if (filePath === null && workflowId) {
+    return configurationOrNull(() => loadNamedWorkflow(workspace, workflowId, { quiet }));
+  }
+  return null;
+}
+
+function targetDrift(
+  freeze: WorkflowFreeze,
+  live: WorkflowDocument,
+  current: { config: Record<string, unknown>; resolveClient: ClientRegistry | undefined },
+): string[] {
+  const { config, resolveClient } = current;
+  return Object.entries(freeze.targets)
+    .filter(([stageId, target]) => {
       const stage = live.stages[stageId];
-      if (stage === undefined || !sameTarget(target, liveTarget(config, stage, resolveClient))) {
-        details.push(`Stage ${stageId} model differs.`);
-      }
-    }
+      return stage === undefined || !sameTarget(target, liveTarget(config, stage, resolveClient));
+    })
+    .map(([stageId]) => `Stage ${stageId} model differs.`);
+}
+
+function roleDrift(freeze: WorkflowFreeze, config: Record<string, unknown>): string[] {
+  const details: string[] = [];
+  for (const [role, instructions] of Object.entries(freeze.roles)) {
+    const current = configurationOrNull(() => loadRoleResponsibilities(config, role));
+    if (current === null || !sameList(current, instructions)) details.push(`Role ${role} responsibilities differ.`);
   }
-  if (config !== null) {
-    for (const [role, instructions] of Object.entries(freeze.roles)) {
-      let current: string[] | null = null;
-      try {
-        current = loadRoleResponsibilities(config, role);
-      } catch (error) {
-        if (!(error instanceof ConfigurationError)) throw error;
-      }
-      if (current === null || !sameList(current, instructions)) {
-        details.push(`Role ${role} responsibilities differ.`);
-      }
-    }
-  }
+  return details;
+}
+
+/**
+ * How the live source and config differ from what the freeze pinned. Read-only; a missing or
+ * broken live file is a difference, never an error. `quiet` keeps authoring warnings off stderr.
+ */
+export function collectFrozenDrift(workspace: string, freeze: WorkflowFreeze, ref: LiveWorkflowRef): string[] {
+  const { workflowPath, resolveClient } = ref;
+  const details: string[] = [];
+  const filePath = workflowPath ? workflowFile(workspace, workflowPath) : null;
+  const readable = sourceFileDrift(filePath, freeze, details);
+  const live = loadLiveWorkflow({ workspace, filePath, readable }, ref, details);
+  const config = configurationOrNull(() => loadWorkspaceConfig(workspace));
+  if (config === null) return details;
+  if (live !== null) details.push(...targetDrift(freeze, live, { config, resolveClient }));
+  details.push(...roleDrift(freeze, config));
   return details;
 }
 
@@ -345,10 +379,52 @@ function artifactMapping(artifact: StageArtifact): Record<string, unknown> {
   return mapped;
 }
 
-function stageMapping(
-  stage: StageSpec,
-  versions: { version3?: boolean; version5?: boolean; version7?: boolean } = {},
-): Record<string, unknown> {
+type MappingVersions = { version3?: boolean; version5?: boolean; version7?: boolean };
+
+function stageArtifactFields(stage: StageSpec, version7: boolean): Record<string, unknown> {
+  if (version7) {
+    return stage.artifacts.length > 0 ? { artifacts: stage.artifacts.map((artifact) => artifact.id) } : {};
+  }
+  return stage.artifacts[0] !== undefined ? { produces: { artifact: stage.artifacts[0].file } } : {};
+}
+
+function decisionBody(stage: StageSpec, name: string, version7: boolean): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    when: stage.decisionInstructions?.[name],
+    navigate: stage.routes[name],
+  };
+  const added = stage.decisionArtifacts[name] ?? [];
+  if (version7 && added.length > 0) {
+    body.artifacts = added.every((artifact) => artifact.scope === 'published')
+      ? added.map((artifact) => artifact.id)
+      : Object.fromEntries(added.map((artifact) => [artifact.id, artifactMapping(artifact)]));
+  }
+  return body;
+}
+
+function decisionMapping(stage: StageSpec, version3: boolean, version7: boolean): unknown {
+  if (!version3) return { values: stage.decisionValues, routes: stage.routes };
+  return stage.decisionValues.map((name) => ({ [name]: decisionBody(stage, name, version7) }));
+}
+
+function verifyFields(stage: StageSpec): Record<string, unknown> {
+  if (stage.verify.length === 0) return {};
+  const mapped: Record<string, unknown> = { verify: stage.verify };
+  if (isRoleStage(stage) && stage.maxVerify !== DEFAULT_MAX_VERIFY) mapped.max_verify = stage.maxVerify;
+  if (stage.verifyTimeoutSec !== null) mapped.verify_timeout = stage.verifyTimeoutSec;
+  return mapped;
+}
+
+function agentFields(stage: StageSpec, version5: boolean): Record<string, unknown> {
+  const mapped: Record<string, unknown> = {};
+  if (stage.agent !== null) {
+    mapped[version5 ? 'agent' : 'model'] = stage.agent.kind === 'named' ? stage.agent.name : stage.agent.value;
+  }
+  if (!version5 && Object.keys(stage.options).length > 0) mapped.options = stage.options;
+  return mapped;
+}
+
+function stageMapping(stage: StageSpec, versions: MappingVersions = {}): Record<string, unknown> {
   const { version3 = false, version5 = false, version7 = false } = versions;
   const mapped: Record<string, unknown> = {
     id: stage.id,
@@ -358,42 +434,15 @@ function stageMapping(
   if (stage.ask !== undefined) mapped.ask = stage.ask;
   if (stage.description !== null) mapped.description = stage.description;
   if (stage.instructions.length > 0) mapped.instructions = stage.instructions;
-  if (version7) {
-    if (stage.artifacts.length > 0) mapped.artifacts = stage.artifacts.map((artifact) => artifact.id);
-  } else if (stage.artifacts[0] !== undefined) mapped.produces = { artifact: stage.artifacts[0].file };
-  if (stage.decisionValues.length > 0) {
-    mapped.decision = version3
-      ? stage.decisionValues.map((name) => {
-          const body: Record<string, unknown> = {
-            when: stage.decisionInstructions?.[name],
-            navigate: stage.routes[name],
-          };
-          const added = stage.decisionArtifacts[name] ?? [];
-          if (version7 && added.length > 0) {
-            body.artifacts = added.every((artifact) => artifact.scope === 'published')
-              ? added.map((artifact) => artifact.id)
-              : Object.fromEntries(added.map((artifact) => [artifact.id, artifactMapping(artifact)]));
-          }
-          return { [name]: body };
-        })
-      : { values: stage.decisionValues, routes: stage.routes };
-  }
-  if (stage.agent !== null) {
-    const selected = stage.agent.kind === 'named' ? stage.agent.name : stage.agent.value;
-    mapped[version5 ? 'agent' : 'model'] = selected;
-  }
-  if (!version5 && Object.keys(stage.options).length > 0) mapped.options = stage.options;
+  Object.assign(mapped, stageArtifactFields(stage, version7));
+  if (stage.decisionValues.length > 0) mapped.decision = decisionMapping(stage, version3, version7);
+  Object.assign(mapped, agentFields(stage, version5));
   if (stage.maxRevisions !== null) mapped.max_revisions = stage.maxRevisions;
   if (stage.resumeFrom !== null) mapped.session = { resume_from: stage.resumeFrom };
   if ((stage.runWhen !== null && stage.runWhen !== undefined)) {
     mapped.run_when = { changed_paths: stage.runWhen.changedPaths };
   }
-  if (stage.verify.length > 0) {
-    mapped.verify = stage.verify;
-    if (isRoleStage(stage) && stage.maxVerify !== DEFAULT_MAX_VERIFY) mapped.max_verify = stage.maxVerify;
-    if (stage.verifyTimeoutSec !== null) mapped.verify_timeout = stage.verifyTimeoutSec;
-  }
-  return mapped;
+  return Object.assign(mapped, verifyFields(stage));
 }
 
 function completionMapping(completion: WorkflowCompletion): Record<string, unknown> {

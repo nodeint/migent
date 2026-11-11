@@ -48,6 +48,18 @@ export interface LoadedHandoff {
 
 /** Read the handoff file and run the shape and stage-dependent checks in one pass. */
 export function loadHandoffFile(file: string, rules: HandoffRules): LoadedHandoff {
+  const handoff = readHandoffDocument(file);
+  if (handoff.status === 'question') {
+    if (rules.ask === null) throw new HandoffFileError('question_not_allowed', 'status: question requires a stage with ask: human.', file);
+    return { status: 'question', blocker: null, decision: null, questions: handoff.questions };
+  }
+  if (handoff.status === 'blocked') return { status: 'blocked', blocker: handoff.blocker, decision: null, questions: [] };
+  const decision = completedDecision(handoff.decision, rules, file);
+  return { status: 'complete', blocker: null, decision, questions: [] };
+}
+
+/** Read, parse and shape-check the handoff file, or throw the matching HandoffFileError. */
+function readHandoffDocument(file: string) {
   let content: string;
   try {
     content = readFileSync(file, 'utf8');
@@ -67,21 +79,20 @@ export function loadHandoffFile(file: string, rules: HandoffRules): LoadedHandof
     const detail = parsed.error.issues.map((issue) => `${issue.path.length > 0 ? issue.path.join('.') : 'document'}: ${issue.message}`).join('; ');
     throw new HandoffFileError('invalid_schema', detail, file);
   }
-  const handoff = parsed.data;
-  if (handoff.status === 'question') {
-    if (rules.ask === null) throw new HandoffFileError('question_not_allowed', 'status: question requires a stage with ask: human.', file);
-    return { status: 'question', blocker: null, decision: null, questions: handoff.questions };
-  }
-  if (handoff.status === 'blocked') return { status: 'blocked', blocker: handoff.blocker, decision: null, questions: [] };
+  return parsed.data;
+}
+
+/** Normalize a completed handoff's decision and check it against the stage's allowed values. */
+function completedDecision(raw: string | null | undefined, rules: HandoffRules, file: string): string | null {
   const allowed = rules.decisionValues.filter((item) => item).map((item) => item.toLowerCase());
-  const decision = handoff.decision?.toLowerCase() ?? null;
+  const decision = raw?.toLowerCase() ?? null;
   if (allowed.length > 0) {
     if (decision === null) {
       throw new HandoffFileError('invalid_decision', `decision is required when status is complete. Allowed: ${allowed.join(', ')}.`, file);
     }
     if (!allowed.includes(decision)) {
-      throw new HandoffFileError('invalid_decision', `Invalid decision: ${handoff.decision}. Allowed: ${allowed.join(', ')}.`, file);
+      throw new HandoffFileError('invalid_decision', `Invalid decision: ${raw}. Allowed: ${allowed.join(', ')}.`, file);
     }
   }
-  return { status: 'complete', blocker: null, decision, questions: [] };
+  return decision;
 }

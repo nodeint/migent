@@ -275,32 +275,39 @@ function onChosenBranches(issue: SchemaIssue, owner: readonly (string | number)[
   let depth = 0;
   for (let at = 0; at < segments.length; at += 1) {
     const segment = segments[at];
-    const container = node as JsonSchema | unknown[];
     if (segment === 'anyOf') {
-      const value = owner.slice(0, depth).reduce<unknown>(
-        (current, key) => (typeof current === 'object' && current !== null ? (current as Record<string | number, unknown>)[key] : undefined),
-        root,
-      );
-      const branches = (container as JsonSchema).anyOf as JsonSchema[];
-      const matching = branches.findIndex((branch) => branch.type === typeOfValue(value));
-      const chosen = matching === -1 ? 0 : matching;
-      if (Number(segments[at + 1]) !== chosen) return false;
-      node = branches[chosen];
+      const chosen = chosenBranch((node as JsonSchema).anyOf as JsonSchema[], valueAt(root, owner.slice(0, depth)));
+      if (Number(segments[at + 1]) !== chosen.index) return false;
+      node = chosen.branch;
       at += 1;
       continue;
     }
     if (segment === 'properties' || segment === 'patternProperties') {
-      node = (container as JsonSchema)[segment];
-      node = (node as JsonSchema)[segments[at + 1]];
+      node = ((node as JsonSchema)[segment] as JsonSchema)[segments[at + 1]];
       at += 1;
       depth += 1;
       continue;
     }
     if (segment === 'items') depth += 1;
-    node = (container as JsonSchema)[segment];
-    if (node === undefined) break;
+    node = (node as JsonSchema)[segment];
+    if (node === undefined) return true;
   }
   return true;
+}
+
+/** The value at an instance path, or `undefined` once a step leaves objects. */
+function valueAt(root: unknown, path: readonly (string | number)[]): unknown {
+  return path.reduce<unknown>(
+    (current, key) => (typeof current === 'object' && current !== null ? (current as Record<string | number, unknown>)[key] : undefined),
+    root,
+  );
+}
+
+/** The `anyOf` branch whose JSON type matches the value, or the first when none does. */
+function chosenBranch(branches: JsonSchema[], value: unknown): { index: number; branch: JsonSchema | undefined } {
+  const matching = branches.findIndex((branch) => branch.type === typeOfValue(value));
+  const index = matching === -1 ? 0 : matching;
+  return { index, branch: branches[index] };
 }
 
 /**

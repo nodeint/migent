@@ -109,12 +109,9 @@ export class VerifyRunner {
     step: { number: number; deadline: number | null },
     input: VerifyRunInput,
   ): Promise<VerifyCommandResult | 'infra'> {
-    const { number, deadline } = step;
     // The wrapper reports a missing executable as exit 127, which would look like a red
     // command. A shell that cannot run is infrastructure, so check it before spawning.
-    try {
-      accessSync(this.shell, fsConstants.X_OK);
-    } catch {
+    if (!isExecutable(this.shell)) {
       input.onEnd?.();
       return 'infra';
     }
@@ -133,43 +130,7 @@ export class VerifyRunner {
         return 'infra';
       }
       if (child.pid !== undefined) input.onStart?.(collectProcessStartInfo(child.pid, endpoint));
-      const output = captureOutput(child);
-      child.send({ type: WRAPPER_START });
-      const startedAt = Date.now();
-      let timedOut = false;
-      while (true) {
-        let waitMs = this.progressIntervalSec * MS_PER_SECOND;
-        if (deadline !== null) {
-          const remainingMs = deadline - Date.now();
-          if (remainingMs <= 0) {
-            timedOut = true;
-            break;
-          }
-          waitMs = Math.min(waitMs, remainingMs);
-        }
-        const finished = await waitForExit(child, waitMs);
-        if (finished === 'cancel') {
-          cancellation.throwIfCancelled();
-          continue;
-        }
-        if (finished) break;
-        if (deadline !== null && Date.now() >= deadline) {
-          timedOut = true;
-          break;
-        }
-        input.onHeartbeat?.(command, Math.floor((Date.now() - startedAt) / MS_PER_SECOND));
-      }
-      if (timedOut) await stopProcessGroup(child);
-      else await output.drain();
-      child.stdout?.destroy();
-      const status = childStatus(child);
-      const tail = output.tail();
-      const log = writeLog(input, number, tail);
-      if (timedOut) {
-        return { command, status: 'timed_out', exitCode: null, log, tail };
-      }
-      if (status === 0) return { command, status: 'pass', exitCode: 0, log, tail: [] };
-      return { command, status: 'fail', exitCode: status, log, tail };
+      return await this.runStarted(child, { command, ...step }, input);
     } catch (error) {
       if (error instanceof CancellationRequested) await stopProcessGroup(child);
       throw error;
@@ -177,6 +138,73 @@ export class VerifyRunner {
       input.onEnd?.();
     }
   }
+
+  /** Starts a ready command, waits for it, and records its result. */
+  private async runStarted(
+    child: ChildProcess,
+    step: { command: string; number: number; deadline: number | null },
+    input: VerifyRunInput,
+  ): Promise<VerifyCommandResult> {
+    const { command, number, deadline } = step;
+    const output = captureOutput(child);
+    child.send({ type: WRAPPER_START });
+    const timedOut = await this.awaitExit(child, { command, deadline }, input);
+    if (timedOut) await stopProcessGroup(child);
+    else await output.drain();
+    child.stdout?.destroy();
+    const status = timedOut ? 'timed_out' : childStatus(child);
+    return commandResult(command, { status, tail: output.tail() }, (tail) => writeLog(input, number, tail));
+  }
+
+  /** Waits for the command to exit; resolves true when the deadline passed first. */
+  private async awaitExit(
+    child: ChildProcess,
+    step: { command: string; deadline: number | null },
+    input: VerifyRunInput,
+  ): Promise<boolean> {
+    const { command, deadline } = step;
+    const startedAt = Date.now();
+    while (true) {
+      const waitMs = remainingWaitMs(this.progressIntervalSec * MS_PER_SECOND, deadline);
+      if (waitMs <= 0) return true;
+      const finished = await waitForExit(child, waitMs);
+      if (finished === 'cancel') {
+        cancellationSignal().throwIfCancelled();
+        continue;
+      }
+      if (finished) return false;
+      if (deadline !== null && Date.now() >= deadline) return true;
+      input.onHeartbeat?.(command, Math.floor((Date.now() - startedAt) / MS_PER_SECOND));
+    }
+  }
+}
+
+function isExecutable(path: string): boolean {
+  try {
+    accessSync(path, fsConstants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The next wait slice, capped by the deadline; zero or less means the deadline passed. */
+function remainingWaitMs(intervalMs: number, deadline: number | null): number {
+  if (deadline === null) return intervalMs;
+  const remainingMs = deadline - Date.now();
+  return remainingMs <= 0 ? 0 : Math.min(intervalMs, remainingMs);
+}
+
+function commandResult(
+  command: string,
+  outcome: { status: 'timed_out' | number | null; tail: string[] },
+  log: (tail: string[]) => ReturnType<typeof writeLog>,
+): VerifyCommandResult {
+  const { status, tail } = outcome;
+  const logPath = log(tail);
+  if (status === 'timed_out') return { command, status: 'timed_out', exitCode: null, log: logPath, tail };
+  if (status === 0) return { command, status: 'pass', exitCode: 0, log: logPath, tail: [] };
+  return { command, status: 'fail', exitCode: status, log: logPath, tail };
 }
 
 function captureOutput(child: ChildProcess): { tail(): string[]; drain(): Promise<void> } {

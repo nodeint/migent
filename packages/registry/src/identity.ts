@@ -111,7 +111,7 @@ export function readService(home: string): ServiceRecord | typeof CORRUPT | null
   }
 }
 
-export function parseServiceBytes(raw: Buffer): ServiceRecord {
+function parseServiceObject(raw: Buffer): Record<string, unknown> {
   if (raw.toString('utf8').trim() === '') throw new ServiceCorrupt();
   let parsed: unknown;
   try {
@@ -120,10 +120,10 @@ export function parseServiceBytes(raw: Buffer): ServiceRecord {
     throw new ServiceCorrupt();
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new ServiceCorrupt();
-  const record = parsed as Record<string, unknown>;
-  const keys = record.schema_version === 1 ? legacyServiceKeys : serviceKeys;
-  if (record.schema_version !== 1 && record.schema_version !== SERVICE_SCHEMA_VERSION) throw new ServiceCorrupt();
-  if (!sameKeySet(record, keys)) throw new ServiceCorrupt();
+  return parsed as Record<string, unknown>;
+}
+
+function validateServiceFields(record: Record<string, unknown>): void {
   for (const key of ['instance_id', 'host', 'token', 'started_at']) {
     if (typeof record[key] !== 'string' || record[key] === '') throw new ServiceCorrupt();
   }
@@ -132,12 +132,20 @@ export function parseServiceBytes(raw: Buffer): ServiceRecord {
   }
   const port = record.port as number;
   if (port < 1 || port > MAX_PORT) throw new ServiceCorrupt();
+}
+
+export function parseServiceBytes(raw: Buffer): ServiceRecord {
+  const record = parseServiceObject(raw);
+  const keys = record.schema_version === 1 ? legacyServiceKeys : serviceKeys;
+  if (record.schema_version !== 1 && record.schema_version !== SERVICE_SCHEMA_VERSION) throw new ServiceCorrupt();
+  if (!sameKeySet(record, keys)) throw new ServiceCorrupt();
+  validateServiceFields(record);
   return {
     schema_version: record.schema_version,
     instance_id: record.instance_id as string,
     pid: record.pid as number,
     host: record.host as string,
-    port,
+    port: record.port as number,
     token: record.token as string,
     started_at: record.started_at as string,
   };

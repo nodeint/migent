@@ -202,12 +202,12 @@ export async function serveChild(home: string, port: number): Promise<number> {
   const directory = ensureRegistryHome(home);
   const instanceId = randomBytes(SECRET_BYTES).toString('base64url');
   const token = randomBytes(SECRET_BYTES).toString('base64url');
-  let server: RegistryHTTPServer | null = null;
+  const opened: { server: RegistryHTTPServer | null } = { server: null };
   const stop = new AbortController();
   const onSignal = (): void => {
     stop.abort();
     try {
-      server?.close();
+      opened.server?.close();
     } catch {
       // socket already closed
     }
@@ -224,27 +224,48 @@ export async function serveChild(home: string, port: number): Promise<number> {
   process.on('SIGINT', onSignal);
   process.on('SIGTERM', onSignal);
   try {
-    try {
-      server = await RegistryHTTPServer.open({ store: new RegistryStore(directory), token, instanceId, port });
-    } catch (error) {
-      process.stderr.write(`Cannot listen on 127.0.0.1:${port}: ${(error as Error).message}\n`);
-      return 1;
-    }
-    try {
-      send({ type: READY, pid: process.pid, port: server.port, instance_id: instanceId, token });
-    } catch {
-      return 1;
-    }
-    if (!(await waitForAck(monotonic() + ACK_TIMEOUT_SEC, stop.signal))) return stop.signal.aborted ? 0 : 1;
-    process.disconnect?.();
-    await serveLoop(server, stop.signal);
-    return 0;
+    return await runChildServer({ directory, token, instanceId, port, send, stop }, (server) => {
+      opened.server = server;
+    });
   } finally {
     process.off('SIGINT', onSignal);
     process.off('SIGTERM', onSignal);
-    server?.close();
+    opened.server?.close();
     lifetime.close();
   }
+}
+
+interface ChildServerContext {
+  readonly directory: string;
+  readonly token: string;
+  readonly instanceId: string;
+  readonly port: number;
+  readonly send: NonNullable<typeof process.send>;
+  readonly stop: AbortController;
+}
+
+async function runChildServer(
+  context: ChildServerContext,
+  onOpen: (server: RegistryHTTPServer) => void,
+): Promise<number> {
+  const { directory, token, instanceId, port, send, stop } = context;
+  let server: RegistryHTTPServer;
+  try {
+    server = await RegistryHTTPServer.open({ store: new RegistryStore(directory), token, instanceId, port });
+  } catch (error) {
+    process.stderr.write(`Cannot listen on 127.0.0.1:${port}: ${(error as Error).message}\n`);
+    return 1;
+  }
+  onOpen(server);
+  try {
+    send({ type: READY, pid: process.pid, port: server.port, instance_id: instanceId, token });
+  } catch {
+    return 1;
+  }
+  if (!(await waitForAck(monotonic() + ACK_TIMEOUT_SEC, stop.signal))) return stop.signal.aborted ? 0 : 1;
+  process.disconnect?.();
+  await serveLoop(server, stop.signal);
+  return 0;
 }
 
 async function serveLoop(server: RegistryHTTPServer, stop: AbortSignal): Promise<void> {
@@ -267,32 +288,45 @@ export async function childMain(argv: string[]): Promise<number> {
   return serveChild(parsed.home, parsed.port);
 }
 
-function parseChildArgs(argv: string[]): { home: string; port: number } | null {
-  let home: string | null = null;
-  let port: number | null = null;
-  let sawChild = false;
-  for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index];
-    if (arg === '--child') {
-      if (sawChild) return null;
-      sawChild = true;
-      continue;
-    }
-    const next = argv[index + 1];
-    if (arg === '--home' && next !== undefined && !next.startsWith('--')) {
-      if (home !== null) return null;
-      home = next;
-      index += 1;
-      continue;
-    }
-    if (arg === '--port' && next !== undefined && /^-?\d+$/.test(next)) {
-      if (port !== null) return null;
-      port = Number(next);
-      index += 1;
-      continue;
-    }
-    return null;
+interface ChildArgs {
+  home: string | null;
+  port: number | null;
+  sawChild: boolean;
+}
+
+/** Arguments consumed by a flag with a value. */
+const FLAG_WITH_VALUE = 2;
+
+/** Consumes one argument at `index`; returns the number consumed, or 0 when invalid. */
+function consumeChildArg(argv: string[], index: number, state: ChildArgs): number {
+  const arg = argv[index];
+  if (arg === '--child') {
+    if (state.sawChild) return 0;
+    state.sawChild = true;
+    return 1;
   }
+  const next = argv[index + 1];
+  if (arg === '--home' && next !== undefined && !next.startsWith('--')) {
+    if (state.home !== null) return 0;
+    state.home = next;
+    return FLAG_WITH_VALUE;
+  }
+  if (arg === '--port' && next !== undefined && /^-?\d+$/.test(next)) {
+    if (state.port !== null) return 0;
+    state.port = Number(next);
+    return FLAG_WITH_VALUE;
+  }
+  return 0;
+}
+
+function parseChildArgs(argv: string[]): { home: string; port: number } | null {
+  const state: ChildArgs = { home: null, port: null, sawChild: false };
+  for (let index = 0; index < argv.length; ) {
+    const consumed = consumeChildArg(argv, index, state);
+    if (consumed === 0) return null;
+    index += consumed;
+  }
+  const { home, port, sawChild } = state;
   if (!sawChild || home === null || port === null) return null;
   return { home, port };
 }

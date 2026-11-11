@@ -56,6 +56,20 @@ export function checkWorkflowCatalog(
 ): { documents: Record<string, WorkflowDocument>; problems: CatalogProblem[] } {
   const failed = new Set(failedIds);
   const problems: CatalogProblem[] = [];
+  const grouped = groupEntriesById(entries);
+  const documents = collectUniqueDocuments(grouped, failed, problems);
+  for (const [workflowId, group] of grouped) {
+    if (group.length > 1) continue;
+    checkEntryReferences(group[0], workflowId, { entries, documents, failed, problems, external: false });
+  }
+  // An external entry (a session draft) is checked against the catalog but is never part of it, so it
+  // may share an id with a catalog workflow without a duplicate-id finding.
+  if (external !== null) checkExternalEntry(external, { entries, documents, failed, problems, external: true });
+  return { documents, problems };
+}
+
+/** Groups the entries that know their id by that id, in input order. */
+function groupEntriesById(entries: readonly WorkflowCatalogEntry[]): Map<string, WorkflowCatalogEntry[]> {
   const grouped = new Map<string, WorkflowCatalogEntry[]>();
   for (const entry of entries) {
     if (!entry.id.known) continue;
@@ -63,6 +77,15 @@ export function checkWorkflowCatalog(
     if (list === undefined) grouped.set(entry.id.value, [entry]);
     else list.push(entry);
   }
+  return grouped;
+}
+
+/** Reports duplicate ids and empty stages, returning the documents of the uniquely declared workflows. */
+function collectUniqueDocuments(
+  grouped: ReadonlyMap<string, WorkflowCatalogEntry[]>,
+  failed: Set<string>,
+  problems: CatalogProblem[],
+): Record<string, WorkflowDocument> {
   const documents: Record<string, WorkflowDocument> = {};
   for (const [workflowId, group] of grouped) {
     if (group.length > 1) {
@@ -77,20 +100,16 @@ export function checkWorkflowCatalog(
       problems.push({ code: 'no-stages', message: `${workflowId}: declares no stages.`, workflow: workflowId });
     }
   }
-  for (const [workflowId, group] of grouped) {
-    if (group.length > 1) continue;
-    checkEntryReferences(group[0], workflowId, { entries, documents, failed, problems, external: false });
+  return documents;
+}
+
+/** Checks a session draft entry against the catalog without adding it to the catalog. */
+function checkExternalEntry(external: WorkflowCatalogEntry, context: EntryReferenceContext): void {
+  const workflowId = external.id.known ? external.id.value : '';
+  if (external.id.known && !external.stagesDeclared) {
+    context.problems.push({ code: 'no-stages', message: `${workflowId}: declares no stages.`, workflow: workflowId, external: true });
   }
-  // An external entry (a session draft) is checked against the catalog but is never part of it, so it
-  // may share an id with a catalog workflow without a duplicate-id finding.
-  if (external !== null) {
-    const workflowId = external.id.known ? external.id.value : '';
-    if (external.id.known && !external.stagesDeclared) {
-      problems.push({ code: 'no-stages', message: `${workflowId}: declares no stages.`, workflow: workflowId, external: true });
-    }
-    checkEntryReferences(external, workflowId, { entries, documents, failed, problems, external: true });
-  }
-  return { documents, problems };
+  checkEntryReferences(external, workflowId, context);
 }
 
 export interface EntryReferenceContext {

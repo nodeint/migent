@@ -68,6 +68,10 @@ export function runSessionMetrics(
     for (const row of rows) writeJson(SealedMetricsLine, row);
     return 0;
   }
+  return writeSessionMetrics(workspace, sessionId);
+}
+
+function writeSessionMetrics(workspace: string, sessionId: string): number {
   const sealed = readSealedMetrics(workspace, sessionId);
   if (sealed.state === 'missing') {
     printError(`No metrics for session: ${sessionId}. Metrics are recorded when a workflow session completes.`);

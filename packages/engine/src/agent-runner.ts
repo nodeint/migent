@@ -15,16 +15,22 @@ import {
 import { StreamSummarizer } from '@nodeint/migent-kernel';
 import { VerifyRunner } from '@nodeint/migent-kernel';
 import { ConfigurationError } from '@nodeint/migent-kernel';
-import { flattenHistory } from '@nodeint/migent-kernel';
 import { readCorrectionLedger } from '@nodeint/migent-kernel';
 import {
   CURRENT_RESPONSE_PROTOCOL,
   LEGACY_RESPONSE_PROTOCOL,
-  renderProviderPrompt,
 } from '@nodeint/migent-prompts';
 import { type ExecutionContext, SessionStore, stringOptions } from '@nodeint/migent-session';
 
 import { ProviderEventReporter } from './provider-events.js';
+import {
+  type ContinuedDrive,
+  driveBase,
+  type OpenedRun,
+  previousReportPath,
+  type PriorExecution,
+  renderFirstPrompt,
+} from './run-drive.js';
 import {
   persistedTurn,
   readCliVersion,
@@ -47,11 +53,9 @@ import { TurnLoop } from './turn-loop.js';
 import { finishTurn, forwardProviderEvent, turnDebugStep } from './turn-process.js';
 import {
   handoffPath,
-  promptArtifactFiles,
   questionRequestPath,
   type RunResult,
   type RunTurnArgs,
-  sessionPaths,
   type TurnDrive,
   type TurnResult,
 } from './turn-types.js';
@@ -90,71 +94,21 @@ export class AgentToolRunner {
   }
 
   public async run(request: RunRequest): Promise<RunResult> {
-    const workspacePath = resolveWorkspace(request.workspace);
-    const stageAttempt = request.stageAttempt ?? null;
-    const executionOrder = request.executionOrder ?? null;
-    assertRunOrdering(stageAttempt, executionOrder);
-    const clientId = request.client;
-    const { client, resolvedOptions, profile } = this.resolveClient(clientId, { ...(request.options ?? {}) });
-    const store = new SessionStore(workspacePath, undefined, this.registry);
-    const sessionId = request.sessionId ?? null;
-    const stageId = request.stageId ?? 'agent';
-    const [record, isNew, context] = loadOrCreateRun(
-      store,
-      request,
-      { workspacePath, stageAttempt, executionOrder, profile },
-    );
-    request.onExecution?.(context.executionId);
-    const newSession = isNew ? createNewSession(client) : null;
-    if (newSession?.agentId) record.agentId = newSession.agentId;
-    record.history.push({ role: 'user', content: request.prompt });
-    record.status = 'running';
-    store.save(record, context);
-    store.saveExecution(context, record, { status: 'running' });
-    const eventReporter = this.eventReporterFor({ store, context }, clientId, request.model);
-    const agentId = isNew ? null : record.agentId;
-    let turnPrompt = request.prompt;
-    if (!isNew && !agentId) {
-      turnPrompt = flattenHistory(record.history as { role: string; content: string }[]);
-    }
-    const stage = sessionId === null ? null : loadRunStage(store, context.sessionId, stageId);
-    const { decisionValues, ask, artifactFiles, artifactName, verifyCommands } = stageFacts(stage);
-    const { protocol, previous, progress, sameConversation } = this.priorExecution(
-      { store, context, stageId, isNew, agentId },
-      request.resumeExecutionId ?? null,
-    );
-    carryPriorArtifacts({ store, context, artifactFiles, verifyCommands }, previous, request.resumeExecutionId ?? null);
-    const conversationContract = sameConversation ? 'reminder' : 'full';
-    turnPrompt = renderProviderPrompt(turnPrompt, { ...sessionPaths(context, sessionId),
-      contract: sessionId === null ? false : conversationContract, turn: request.turn ?? null, decisionValues,
-      decisionInstructions: stage?.decisionInstructions, ask,
-      protocol, questionFile: questionRequestPath(context), handoffFile: handoffPath(context),
-      artifactDirectory: context.artifactDirectory, artifactName, artifactFiles: promptArtifactFiles(artifactFiles),
-      previousArtifactDirectory: previous?.artifactDirectory ?? null,
-      previousVerifyReport: previousReportPath(previous, progress),
-    });
+    const opened = this.openRun(request);
+    const { store, context, record, isNew, agentId } = opened;
+    const stage = opened.sessionId === null ? null : loadRunStage(store, context.sessionId, opened.stageId);
+    const facts = stageFacts(stage);
+    const resumeExecutionId = request.resumeExecutionId ?? null;
+    const prior = this.priorExecution({ store, context, stageId: opened.stageId, isNew, agentId }, resumeExecutionId);
+    carryPriorArtifacts({ store, context, ...facts }, prior.previous, resumeExecutionId);
+    const turnPrompt = renderFirstPrompt({ request, opened, stage, facts, prior });
     store.savePrompt(context, turnPrompt);
-    store.saveExecutionProgress(context, record, { response_protocol: protocol, turn_kind: request.turn ?? null });
-    this.emitStageStarted({ client, clientId, model: request.model, workspacePath, profile }, eventReporter);
-
+    const turnKind = request.turn ?? null;
+    store.saveExecutionProgress(context, record, { response_protocol: prior.protocol, turn_kind: turnKind });
+    this.emitStageStarted(opened, opened.eventReporter);
+    const { progress, previous } = prior;
     return this.driveTurns({
-      client,
-      clientId,
-      model: request.model,
-      workspacePath,
-      resolvedOptions,
-      profile,
-      store,
-      context,
-      record,
-      eventReporter,
-      sessionId,
-      stage,
-      decisionValues,
-      artifactName,
-      verifyCommands,
-      maxVerify: stage?.maxVerify ?? 0,
-      verifyTimeoutSec: stage?.verifyTimeoutSec ?? null,
+      ...driveBase(opened, stage, facts),
       turn: 1,
       red: progress?.red ?? 0,
       verifyRuns: progress?.runs ?? 0,
@@ -162,10 +116,10 @@ export class AgentToolRunner {
       lastResult: progress?.lastResult ?? null,
       currentPrompt: turnPrompt,
       currentAgentId: agentId,
-      currentSession: newSession,
+      currentSession: opened.newSession,
       pendingVerify: null,
       corrections: {},
-      protocol,
+      protocol: prior.protocol,
     });
   }
 
@@ -180,43 +134,39 @@ export class AgentToolRunner {
     const { client, resolvedOptions, profile } = this.resolveClient(clientId, stringOptions(metadata.options));
     const record = reopenConversation({ store, context }, { clientId, model, workspace: workspacePath });
     const stage = loadRunStage(store, sessionId, stageId);
-    const { decisionValues, ask, artifactName, verifyCommands } = stageFacts(stage);
+    const facts = stageFacts(stage);
     const eventReporter = this.eventReporterFor({ store, context }, clientId, model);
     const progress = verifyProgress(metadata);
-    const corrections = readCorrectionLedger(metadata);
-    const questionFile = questionRequestPath(context);
-    const handoffFile = handoffPath(context);
     const stamped = storedProtocol(metadata);
     const protocol = Math.max(LEGACY_RESPONSE_PROTOCOL, stamped);
     // A legacy execution continues under protocol 2 from here on; record it so later resumes, the
     // contract selection and the execution metadata agree.
     if (stamped !== protocol) store.saveExecutionProgress(context, record, { response_protocol: protocol });
-    const common: Omit<TurnDrive, 'turn' | 'currentPrompt' | 'currentAgentId' | 'pendingVerify' | 'keepFile'> = {
-      client,
-      clientId,
-      model,
-      workspacePath,
-      resolvedOptions,
-      profile,
-      store,
-      context,
-      record,
-      eventReporter,
-      sessionId,
-      stage,
-      decisionValues,
-      artifactName,
-      verifyCommands,
-      maxVerify: stage?.maxVerify ?? 0,
-      verifyTimeoutSec: stage?.verifyTimeoutSec ?? null,
+    const common: ContinuedDrive = {
+      ...driveBase({
+        client, clientId, model, workspacePath, resolvedOptions, profile,
+        store, context, record, eventReporter, sessionId,
+      }, stage, facts),
       red: progress.red,
       verifyRuns: progress.runs,
       lastReport: progress.lastReport,
       lastResult: progress.lastResult,
       currentSession: null,
-      corrections,
+      corrections: readCorrectionLedger(metadata),
       protocol,
     };
+    return this.continueFromHistory(common, { metadata, sessionId, executionId, stamped, facts });
+  }
+
+  // Resumes a reopened execution either from its pending prompt or from its last saved reply.
+  private continueFromHistory(
+    common: ContinuedDrive,
+    saved: {
+      metadata: Record<string, unknown>; sessionId: string; executionId: string; stamped: number; facts: StageFacts;
+    },
+  ): Promise<RunResult> {
+    const { store, context, record, stage, protocol } = common;
+    const { metadata, sessionId, executionId, stamped, facts } = saved;
     const assistants = record.history.filter((item) => item.role === 'assistant').length;
     const last = record.history.at(-1);
     const lastRole = last && typeof last.role === 'string' ? last.role : '';
@@ -239,10 +189,10 @@ export class AgentToolRunner {
       });
     }
     const turn = persistedTurn(metadata, Math.max(1, assistants));
-    const pendingVerify = savedVerdict(
-      { store, context, turn, last },
-      { required: sessionId !== null, decisionValues, ask, protocol, questionFile, handoffFile },
-    );
+    const pendingVerify = savedVerdict({ store, context, turn, last }, {
+      required: sessionId !== null, decisionValues: facts.decisionValues, ask: facts.ask, protocol,
+      questionFile: questionRequestPath(context), handoffFile: handoffPath(context),
+    });
     return this.driveTurns({
       ...common,
       turn,
@@ -250,6 +200,38 @@ export class AgentToolRunner {
       currentAgentId: record.agentId,
       pendingVerify,
     });
+  }
+
+  // Resolves the client, loads or creates the run record, and marks the execution running.
+  private openRun(request: RunRequest): OpenedRun {
+    const workspacePath = resolveWorkspace(request.workspace);
+    const stageAttempt = request.stageAttempt ?? null;
+    const executionOrder = request.executionOrder ?? null;
+    assertRunOrdering(stageAttempt, executionOrder);
+    const clientId = request.client;
+    const { client, resolvedOptions, profile } = this.resolveClient(clientId, { ...(request.options ?? {}) });
+    const store = new SessionStore(workspacePath, undefined, this.registry);
+    const [record, isNew, context] = loadOrCreateRun(
+      store,
+      request,
+      { workspacePath, stageAttempt, executionOrder, profile },
+    );
+    request.onExecution?.(context.executionId);
+    const newSession = isNew ? createNewSession(client) : null;
+    if (newSession?.agentId) record.agentId = newSession.agentId;
+    record.history.push({ role: 'user', content: request.prompt });
+    record.status = 'running';
+    store.save(record, context);
+    store.saveExecution(context, record, { status: 'running' });
+    return {
+      client, clientId, model: request.model, workspacePath, resolvedOptions, profile, store, context, record,
+      eventReporter: this.eventReporterFor({ store, context }, clientId, request.model),
+      sessionId: request.sessionId ?? null,
+      stageId: request.stageId ?? 'agent',
+      isNew,
+      newSession,
+      agentId: isNew ? null : record.agentId,
+    };
   }
 
   private driveTurns(state: TurnDrive): Promise<RunResult> {
@@ -282,12 +264,7 @@ export class AgentToolRunner {
   private priorExecution(
     run: { store: SessionStore; context: ExecutionContext; stageId: string; isNew: boolean; agentId: string | null },
     resumeExecutionId: string | null,
-  ): {
-    protocol: number;
-    previous: ExecutionSnapshot | undefined;
-    progress: ReturnType<typeof verifyProgress> | null;
-    sameConversation: boolean;
-  } {
+  ): PriorExecution {
     const { store, context, stageId, isNew, agentId } = run;
     const source = resumeExecutionId
       ? store.executionContext(context.sessionId, resumeExecutionId) : null;
@@ -461,17 +438,6 @@ function assertRunOrdering(stageAttempt: number | null, executionOrder: number |
   if (executionOrder !== null && executionOrder < 1) {
     throw new Error('Execution order must be at least 1.');
   }
-}
-
-/** The previous execution's last verify report, absolute or relative to `from` when given. */
-function previousReportPath(
-  previous: ExecutionSnapshot | undefined,
-  progress: { lastReport: string | null } | null,
-  from?: string,
-): string | null {
-  if (!previous || !progress?.lastReport) return null;
-  const report = path.resolve(path.dirname(previous.artifactDirectory), progress.lastReport);
-  return from === undefined ? report : path.relative(from, report);
 }
 
 // Carries the answered execution's artifacts, and an exhausted verify artifact, into the new execution.

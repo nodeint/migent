@@ -1,10 +1,11 @@
 import { readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 
-import { type ExecutionSnapshot } from '@nodeint/migent-kernel';
+import { type ExecutionSnapshot, type StageOutcome, writeJsonAtomic } from '@nodeint/migent-kernel';
 import { isRecord } from '@nodeint/migent-workflow';
 
 import type { NextSuggestion } from './next-handoff.js';
+import type { ExecutionContext } from './session-store-types.js';
 
 export function nonempty(value: unknown): string | null {
   return typeof value === 'string' && value !== '' ? value : null;
@@ -94,4 +95,61 @@ export function existingNext(sessionDirectory: string): { path: string | null; n
     // No usable next.json.
   }
   return { path: null, next: [] };
+}
+
+export interface ExecutionResultInput {
+  status: string;
+  agentId: string | null;
+  timestamp: string;
+  error: string | null;
+  outcome: StageOutcome | null;
+  extra: Record<string, unknown> | null;
+}
+
+/** The execution metadata keys a save writes, in write order; `extra` overrides the rest. */
+export function executionResultFields(result: ExecutionResultInput): Record<string, unknown> {
+  const { status, agentId, timestamp, error, outcome, extra } = result;
+  return {
+    status,
+    agent_id: agentId,
+    completed_at: status === 'running' ? null : timestamp,
+    ...(error === null ? {} : { error }),
+    ...(outcome === null ? {} : { outcome: outcome.toJson() }),
+    ...(extra ?? {}),
+  };
+}
+
+export function savedOutcomeFields(
+  outcome: StageOutcome | null,
+): { outcomeStatus: string | null; outcomeDecision: string | null } {
+  return { outcomeStatus: outcome?.status ?? null, outcomeDecision: outcome?.decision || null };
+}
+
+export function storedFailure(
+  metadata: Record<string, unknown>,
+): { storedError: string | null; failureReason: string | null } {
+  return {
+    storedError: typeof metadata.error === 'string' ? metadata.error : null,
+    failureReason: typeof metadata.failure_reason === 'string' ? metadata.failure_reason : null,
+  };
+}
+
+export function executionPosition(metadata: Record<string, unknown>): { stageId: string; executionOrder: number } {
+  return {
+    stageId: typeof metadata.stage_id === 'string' ? metadata.stage_id : '',
+    executionOrder: asInt(metadata.execution_order),
+  };
+}
+
+/** The question request beside an execution that asked. */
+export function writeQuestionRequest(
+  context: ExecutionContext,
+  target: { stageId: unknown; recipient: string },
+  outcome: StageOutcome,
+): void {
+  writeJsonAtomic(path.join(context.directory, 'questions.json'), {
+    schema_version: 1, stage_id: target.stageId, execution_id: context.executionId,
+    recipient: target.recipient,
+    questions: outcome.questions,
+  });
 }

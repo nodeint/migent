@@ -52,6 +52,30 @@ interface SuggestionResult {
   errors: Map<string, ConfigurationError>;
 }
 
+interface PriorOutputs {
+  sessionId: string;
+  outputs: Record<string, unknown>;
+  optional: ReadonlySet<string>;
+}
+
+function resolveEntryArtifacts(
+  mapping: Record<string, string>,
+  prior: PriorOutputs,
+): { artifacts: NextSuggestion['artifacts']; failure: ConfigurationError | null } {
+  const { sessionId, outputs, optional } = prior;
+  const artifacts: NextSuggestion['artifacts'] = {};
+  for (const [name, output] of Object.entries(mapping)) {
+    const record = outputs[output];
+    if (!isRecord(record) || typeof record.path !== 'string' || !record.path) {
+      // A mapping to an optional artifact selects it only when it was published.
+      if (optional.has(output)) continue;
+      return { artifacts, failure: new ConfigurationError(`Prior session ${sessionId} has no published output ${output}.`) };
+    }
+    artifacts[name] = { output, path: record.path };
+  }
+  return { artifacts, failure: null };
+}
+
 function resolveSuggestionEntries(workspace: string, sessionId: string): SuggestionResult {
   const directory = sessionDirectory(workspace, sessionId);
   const status = completedPriorStatus(workspace, sessionId);
@@ -62,21 +86,10 @@ function resolveSuggestionEntries(workspace: string, sessionId: string): Suggest
   );
   const result: SuggestionResult = { suggestions: [], errors: new Map() };
   for (const entry of workflow?.downstream ?? []) {
-    const artifacts: NextSuggestion['artifacts'] = {};
-    let failure: ConfigurationError | null = null;
     // Omitted `artifacts` passes every published output under its own name.
     const mapping: Record<string, string> =
       entry.artifacts ?? Object.fromEntries(Object.keys(outputs).map((name) => [name, name]));
-    for (const [name, output] of Object.entries(mapping)) {
-      const record = outputs[output];
-      if (!isRecord(record) || typeof record.path !== 'string' || !record.path) {
-        // A mapping to an optional artifact selects it only when it was published.
-        if (optional.has(output)) continue;
-        failure = new ConfigurationError(`Prior session ${sessionId} has no published output ${output}.`);
-        break;
-      }
-      artifacts[name] = { output, path: record.path };
-    }
+    const { artifacts, failure } = resolveEntryArtifacts(mapping, { sessionId, outputs, optional });
     if (failure !== null) {
       result.errors.set(entry.workflow, failure);
       continue;

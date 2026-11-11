@@ -8,6 +8,7 @@ import { ConfigurationError } from './errors.js';
 import type { AskTarget } from './model.js';
 import type { RunWhen, StageAgent, StageSpec } from './model.js';
 import { isRecord, pyRepr } from './record.js';
+import type { DecisionBodyProblem } from './structure.js';
 import { decisionBodyProblems, decisionEntryProblem, decisionListProblem, requireContainer, requireValid, RUN_WHEN_KEYS, runWhenPathsMissing, STAGE_FIELD_SCHEMAS, stageField } from './structure.js';
 
 export const optionKey = /^[A-Za-z][A-Za-z0-9_.-]*$/;
@@ -110,26 +111,37 @@ export function normalizeStageDecision(stage: Record<string, unknown>, version7 
   const routes: Record<string, unknown> = Object.create(null);
   const instructions: Record<string, string> = Object.create(null);
   for (const entry of stage.decision as Record<string, unknown>[]) {
-    if (decisionEntryProblem(entry)) {
-      throw new ConfigurationError(`${field} entries must each declare exactly one decision.`);
-    }
-    const [rawName] = Object.keys(entry);
-    const name = requiredString(rawName, field).toLowerCase();
+    const { name, body } = normalizeDecisionEntry(entry, { field, version7 });
     if (Object.hasOwn(routes, name)) throw new ConfigurationError(`Duplicate decision value on ${field}: ${name}`);
-    const body = entry[rawName];
-    const [found] = decisionBodyProblems(body, version7);
-    if (found !== undefined) {
-      if (found.kind === 'body') throw new ConfigurationError(`${field}.${name} must be a mapping.`);
-      if (found.kind === 'key') throw new ConfigurationError(`${field}.${name}.${found.key} is not allowed.`);
-      if (found.kind === 'when') throw new ConfigurationError(`Missing or invalid ${field}.${name}.when.`);
-      throw new ConfigurationError(`${field}.${name}.navigate is required.`);
-    }
-    const accepted = body as Record<string, unknown>;
-    if (accepted.when !== undefined) instructions[name] = requiredString(accepted.when, `${field}.${name}.when`);
+    if (body.when !== undefined) instructions[name] = requiredString(body.when, `${field}.${name}.when`);
     values.push(name);
-    routes[name] = accepted.navigate;
+    routes[name] = body.navigate;
   }
   return { ...stage, decision: { values, routes, instructions } };
+}
+
+/** Error message for one decision body problem at `path`. */
+function decisionBodyMessage(found: DecisionBodyProblem, path: string): string {
+  if (found.kind === 'body') return `${path} must be a mapping.`;
+  if (found.kind === 'key') return `${path}.${found.key} is not allowed.`;
+  if (found.kind === 'when') return `Missing or invalid ${path}.when.`;
+  return `${path}.navigate is required.`;
+}
+
+/** Validates one single-key decision entry and returns its lowercased name and accepted body. */
+function normalizeDecisionEntry(
+  entry: Record<string, unknown>,
+  { field, version7 }: { field: string; version7: boolean },
+): { name: string; body: Record<string, unknown> } {
+  if (decisionEntryProblem(entry)) {
+    throw new ConfigurationError(`${field} entries must each declare exactly one decision.`);
+  }
+  const [rawName] = Object.keys(entry);
+  const name = requiredString(rawName, field).toLowerCase();
+  const body = entry[rawName];
+  const [found] = decisionBodyProblems(body, version7);
+  if (found !== undefined) throw new ConfigurationError(decisionBodyMessage(found, `${field}.${name}`));
+  return { name, body: body as Record<string, unknown> };
 }
 
 export interface StageRoutesContext {
@@ -164,14 +176,19 @@ export function stageRoutes(
     }
     parsed[key] = target;
   }
-  const left = Object.keys(parsed).sort();
-  const right = [...values].sort();
-  if (left.length !== right.length || left.some((key, index) => key !== right[index])) {
+  if (!sameKeys(Object.keys(parsed), values)) {
     throw new ConfigurationError(
       `stages.${stageId}.decision.routes keys must match decision.values.`,
     );
   }
   return parsed;
+}
+
+/** True when both lists hold the same names, ignoring order. */
+function sameKeys(keys: readonly string[], values: readonly string[]): boolean {
+  const left = [...keys].sort();
+  const right = [...values].sort();
+  return left.length === right.length && left.every((key, index) => key === right[index]);
 }
 
 export function routeTarget(

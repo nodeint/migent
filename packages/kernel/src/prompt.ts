@@ -85,6 +85,26 @@ export function buildVerifyRepairPrompt(
   });
 }
 
+/** Artifact lines one completed dependency contributes, plus its verify report when it verifies. */
+function dependencyLines(
+  dep: StageSpec,
+  snapshot: ExecutionSnapshot,
+  flags: { v7: boolean; updated: boolean },
+): UpstreamLine[] {
+  const { v7, updated } = flags;
+  const lines: UpstreamLine[] = [];
+  for (const artifact of producedArtifacts(dep, snapshot, v7)) {
+    const artifactPath = resolvePath(path.join(snapshot.artifactDirectory, artifact.file));
+    if (v7 && !nonemptyArtifact(artifactPath)) continue;
+    lines.push({ stageId: dep.id, path: artifactPath, verify: false, description: artifact.description, updated });
+  }
+  if (dep.verify.length > 0) {
+    const reportPath = resolvePath(path.join(snapshot.artifactDirectory, VERIFY_ARTIFACT));
+    lines.push({ stageId: dep.id, path: reportPath, verify: true, description: null, updated });
+  }
+  return lines;
+}
+
 function upstreamArtifacts(
   input: { workflow: WorkflowDocument; snapshots: readonly ExecutionSnapshot[]; stageId: string },
   dependsOn: readonly string[],
@@ -96,30 +116,9 @@ function upstreamArtifacts(
   const lines: UpstreamLine[] = [];
   for (const depId of dependsOn) {
     const dep = workflow.stages[depId];
-    if (dep === undefined) continue;
     const snapshot = complete[depId];
-    if (snapshot === undefined) continue;
-    for (const artifact of producedArtifacts(dep, snapshot, v7)) {
-      const artifactPath = resolvePath(path.join(snapshot.artifactDirectory, artifact.file));
-      if (v7 && !nonemptyArtifact(artifactPath)) continue;
-      lines.push({
-        stageId: depId,
-        path: artifactPath,
-        verify: false,
-        description: artifact.description,
-        updated: ownOrder > 0 && snapshot.executionOrder > ownOrder,
-      });
-    }
-    if (dep.verify.length > 0) {
-      const reportPath = resolvePath(path.join(snapshot.artifactDirectory, VERIFY_ARTIFACT));
-      lines.push({
-        stageId: depId,
-        path: reportPath,
-        verify: true,
-        description: null,
-        updated: ownOrder > 0 && snapshot.executionOrder > ownOrder,
-      });
-    }
+    if (dep === undefined || snapshot === undefined) continue;
+    lines.push(...dependencyLines(dep, snapshot, { v7, updated: ownOrder > 0 && snapshot.executionOrder > ownOrder }));
   }
   return lines;
 }
@@ -137,61 +136,97 @@ function producedArtifacts(stage: StageSpec, snapshot: ExecutionSnapshot, v7: bo
   return v7 ? stageArtifactsFor(stage, snapshot.outcomeDecision) : stage.artifacts;
 }
 
+interface RoutingInput {
+  workflow: WorkflowDocument;
+  snapshots: readonly ExecutionSnapshot[];
+  stageId: string;
+}
+
+type RoutedArtifact = { stageId: string; path: string; verify: boolean; description: string | null };
+
+/** Schema 1 routing: the latest completion after the previous visit whose decision routes here. */
+function legacyRoutedSnapshots(input: RoutingInput, previousOrder: number): readonly ExecutionSnapshot[] {
+  const { workflow, snapshots, stageId } = input;
+  const candidates = snapshots.filter((snapshot) => {
+    if (snapshot.status !== 'completed' || snapshot.outcomeStatus !== 'complete') return false;
+    if (snapshot.executionOrder <= previousOrder) return false;
+    const source = workflow.stages[snapshot.stageId];
+    return source !== undefined && routeListsStage(source.routes[(snapshot.outcomeDecision ?? '').toLowerCase()], stageId);
+  });
+  return candidates.length === 0 ? [] : [candidates.reduce((a, b) => b.executionOrder > a.executionOrder ? b : a)];
+}
+
+function routedSnapshots(input: RoutingInput, previousOrder: number): readonly ExecutionSnapshot[] {
+  const { workflow, snapshots, stageId } = input;
+  if (isWorkflowV2(workflow)) return relevantRouterSnapshots(workflow, snapshots, stageId) ?? [];
+  return legacyRoutedSnapshots(input, previousOrder);
+}
+
+function routedDecision(decision: ExecutionSnapshot) {
+  const response = resolvePath(path.join(path.dirname(decision.artifactDirectory), 'response.md'));
+  if (!isFile(response)) throw new Error(`Routed stage response is missing: ${response}`);
+  return { stageId: decision.stageId, decision: decision.outcomeDecision, path: response };
+}
+
+function previousStageArtifacts(
+  own: StageSpec | undefined,
+  previous: ExecutionSnapshot | undefined,
+  v7: boolean,
+): string[] {
+  if (!previous || !own) return [];
+  return own.artifacts
+    .map((item) => resolvePath(path.join(previous.artifactDirectory, item.file)))
+    .filter((file) => (v7 ? nonemptyArtifact(file) : isFile(file)));
+}
+
+function routerArtifacts(router: StageSpec, decision: ExecutionSnapshot): RoutedArtifact[] {
+  const lines: RoutedArtifact[] = [];
+  for (const item of stageArtifactsFor(router, decision.outcomeDecision)) {
+    const file = resolvePath(path.join(decision.artifactDirectory, item.file));
+    if (nonemptyArtifact(file)) {
+      lines.push({ stageId: router.id, path: file, verify: false, description: item.description });
+    }
+  }
+  if (router.verify.length > 0) {
+    lines.push({
+      stageId: router.id,
+      path: resolvePath(path.join(decision.artifactDirectory, VERIFY_ARTIFACT)),
+      verify: true,
+      description: null,
+    });
+  }
+  return lines;
+}
+
+/** Schema 7: the routers' artifacts reach the destination under the same rule as dependents. */
+function routedArtifactLines(
+  workflow: WorkflowDocument,
+  own: StageSpec | undefined,
+  routed: readonly ExecutionSnapshot[],
+): RoutedArtifact[] {
+  const seen = new Set<string>(own?.dependsOn ?? []);
+  const lines: RoutedArtifact[] = [];
+  for (const decision of routed) {
+    const router = workflow.stages[decision.stageId];
+    if (router === undefined || seen.has(router.id)) continue;
+    lines.push(...routerArtifacts(router, decision));
+  }
+  return lines;
+}
+
 function routedResultContext(workflow: WorkflowDocument, stageId: string, snapshots: readonly ExecutionSnapshot[]) {
+  const v7 = isArtifactSchema(workflow);
   // Schema 7 never reads a completion that a later skip superseded.
-  const complete = isArtifactSchema(workflow)
+  const complete = v7
     ? currentCompleteByStage(workflow, snapshots)
     : latestCompleteByStage(snapshots);
   const previous = complete[stageId];
-  const previousOrder = previous ? previous.executionOrder : 0;
-  let routed: readonly ExecutionSnapshot[];
-  if (isWorkflowV2(workflow)) {
-    routed = relevantRouterSnapshots(workflow, snapshots, stageId) ?? [];
-  } else {
-    const candidates = snapshots.filter((snapshot) => {
-      if (snapshot.status !== 'completed' || snapshot.outcomeStatus !== 'complete') return false;
-      if (snapshot.executionOrder <= previousOrder) return false;
-      const source = workflow.stages[snapshot.stageId];
-      return source !== undefined && routeListsStage(source.routes[(snapshot.outcomeDecision ?? '').toLowerCase()], stageId);
-    });
-    routed = candidates.length === 0 ? [] : [candidates.reduce((a, b) => b.executionOrder > a.executionOrder ? b : a)];
-  }
+  const routed = routedSnapshots({ workflow, snapshots, stageId }, previous ? previous.executionOrder : 0);
   if (routed.length === 0) return null;
-  const decisions = routed.map((decision) => {
-    const response = resolvePath(path.join(path.dirname(decision.artifactDirectory), 'response.md'));
-    if (!isFile(response)) throw new Error(`Routed stage response is missing: ${response}`);
-    return { stageId: decision.stageId, decision: decision.outcomeDecision, path: response };
-  });
-  const v7 = isArtifactSchema(workflow);
+  const decisions = routed.map(routedDecision);
   const own = workflow.stages[stageId];
-  const previousArtifacts = previous && own
-    ? own.artifacts
-        .map((item) => resolvePath(path.join(previous.artifactDirectory, item.file)))
-        .filter((file) => (v7 ? nonemptyArtifact(file) : isFile(file)))
-    : [];
-  // Schema 7: the routers' artifacts reach the destination under the same rule as dependents.
-  const routedArtifacts: { stageId: string; path: string; verify: boolean; description: string | null }[] = [];
-  if (v7) {
-    const seen = new Set<string>(own?.dependsOn ?? []);
-    for (const decision of routed) {
-      const router = workflow.stages[decision.stageId];
-      if (router === undefined || seen.has(router.id)) continue;
-      for (const item of stageArtifactsFor(router, decision.outcomeDecision)) {
-        const file = resolvePath(path.join(decision.artifactDirectory, item.file));
-        if (nonemptyArtifact(file)) {
-          routedArtifacts.push({ stageId: router.id, path: file, verify: false, description: item.description });
-        }
-      }
-      if (router.verify.length > 0) {
-        routedArtifacts.push({
-          stageId: router.id,
-          path: resolvePath(path.join(decision.artifactDirectory, VERIFY_ARTIFACT)),
-          verify: true,
-          description: null,
-        });
-      }
-    }
-  }
+  const previousArtifacts = previousStageArtifacts(own, previous, v7);
+  const routedArtifacts = v7 ? routedArtifactLines(workflow, own, routed) : [];
   return {
     decisions,
     stageId,
@@ -274,6 +309,14 @@ function absoluteOutputPath(
   );
 }
 
+function isMissingPathError(error: unknown): boolean {
+  const code =
+    typeof error === 'object' && error !== null && 'code' in error
+      ? (error as { code?: unknown }).code
+      : undefined;
+  return code === 'ENOENT' || code === 'ENOTDIR';
+}
+
 function resolvePath(target: string): string {
   const absolute = path.resolve(target);
   let cursor = absolute;
@@ -283,11 +326,7 @@ function resolvePath(target: string): string {
       const real = realpathSync(cursor);
       return suffix.length === 0 ? real : path.join(real, ...suffix);
     } catch (error) {
-      const code =
-        typeof error === 'object' && error !== null && 'code' in error
-          ? (error as { code?: unknown }).code
-          : undefined;
-      if (code !== 'ENOENT' && code !== 'ENOTDIR') throw error;
+      if (!isMissingPathError(error)) throw error;
       const parent = path.dirname(cursor);
       if (parent === cursor) return absolute;
       suffix.unshift(path.basename(cursor));

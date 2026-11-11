@@ -113,6 +113,28 @@ export function utcTimestamp(now = new Date()): string {
   return `${year}-${month}-${day}T${hour}:${minute}:${second}Z`;
 }
 
+function writeFully(fd: number, payload: Buffer): void {
+  fchmodSync(fd, FILE_MODE);
+  let offset = 0;
+  while (offset < payload.length) {
+    const written = storeFs.write(fd, payload.subarray(offset));
+    if (written <= 0) throw new Error('short write publishing registry file');
+    offset += written;
+  }
+  storeFs.fsync(fd);
+}
+
+function fsyncDirectory(directory: string): void {
+  // Windows cannot open or fsync a directory; its rename is durable without it.
+  if (process.platform === 'win32') return;
+  const dirFd = openSync(directory, fsConstants.O_RDONLY);
+  try {
+    storeFs.fsync(dirFd);
+  } finally {
+    closeSync(dirFd);
+  }
+}
+
 export function atomicReplace(destination: string, payload: Buffer): void {
   const directory = path.dirname(destination);
   mkdirSync(directory, { recursive: true, mode: DIRECTORY_MODE });
@@ -123,29 +145,14 @@ export function atomicReplace(destination: string, payload: Buffer): void {
   let replaced = false;
   try {
     try {
-      fchmodSync(fd, FILE_MODE);
-      let offset = 0;
-      while (offset < payload.length) {
-        const written = storeFs.write(fd, payload.subarray(offset));
-        if (written <= 0) throw new Error('short write publishing registry file');
-        offset += written;
-      }
-      storeFs.fsync(fd);
+      writeFully(fd, payload);
     } finally {
       closeSync(fd);
     }
     storeFs.replace(tmpPath, destination);
     replaced = true;
     chmodSync(destination, FILE_MODE);
-    // Windows cannot open or fsync a directory; its rename is durable without it.
-    if (process.platform !== 'win32') {
-      const dirFd = openSync(directory, fsConstants.O_RDONLY);
-      try {
-        storeFs.fsync(dirFd);
-      } finally {
-        closeSync(dirFd);
-      }
-    }
+    fsyncDirectory(directory);
   } finally {
     if (!replaced) {
       rmSync(tmpPath, { force: true });
@@ -167,29 +174,19 @@ function sameKeys(value: object, expected: Set<string>, exact: boolean): boolean
   return true;
 }
 
+function inRange(value: number | undefined, min: number, max: number): value is number {
+  return value !== undefined && !Number.isNaN(value) && value >= min && value <= max;
+}
+
 function isTimestamp(value: string): boolean {
   if (!timestampText.test(value)) return false;
   const [date, time] = value.slice(0, -1).split('T');
   if (!date || !time) return false;
   const [year, month, day] = date.split('-').map(Number);
   const [hour, minute, second] = time.split(':').map(Number);
-  if (
-    !year ||
-    !month ||
-    !day ||
-    hour === undefined ||
-    minute === undefined ||
-    second === undefined ||
-    month < 1 ||
-    month > MAX_MONTH ||
-    day < 1 ||
-    day > MAX_DAY ||
-    hour > MAX_HOUR ||
-    minute > MAX_MINUTE_OR_SECOND ||
-    second > MAX_MINUTE_OR_SECOND
-  ) {
-    return false;
-  }
+  if (!year || !inRange(month, 1, MAX_MONTH) || !inRange(day, 1, MAX_DAY)) return false;
+  if (!inRange(hour, 0, MAX_HOUR)) return false;
+  if (!inRange(minute, 0, MAX_MINUTE_OR_SECOND) || !inRange(second, 0, MAX_MINUTE_OR_SECOND)) return false;
   const parsed = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
   return (
     parsed.getUTCFullYear() === year &&
@@ -262,14 +259,45 @@ function prepareRegister(filePath: string, name: string | null, tool: unknown): 
   return [stored, chosen, normalizeTool(tool)];
 }
 
-function parseWorkspace(item: unknown): WorkspaceRecord {
-  if (!item || typeof item !== 'object' || Array.isArray(item) || !sameKeys(item, workspaceKeys, true)) {
-    throw new RegistryCorrupt('registry.json has the wrong shape.');
+const WRONG_SHAPE = 'registry.json has the wrong shape.';
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function parseStoredTool(tool: unknown): ToolRecord {
+  if (!isPlainObject(tool) || !sameKeys(tool, toolKeys, false) || !('name' in tool)) {
+    throw new RegistryCorrupt(WRONG_SHAPE);
   }
-  const source = item as Record<string, unknown>;
+  const {name} = tool;
+  if (typeof name !== 'string' || !toolName.test(name) || name.length === 0 || name.length > MAX_TOOL_NAME_LENGTH) {
+    throw new RegistryCorrupt(WRONG_SHAPE);
+  }
+  const storedTool: ToolRecord = { name };
+  if (Object.hasOwn(tool, 'version')) {
+    const {version} = tool;
+    if (typeof version !== 'string' || version.length > MAX_TOOL_VERSION_LENGTH) throw new RegistryCorrupt(WRONG_SHAPE);
+    storedTool.version = version;
+  }
+  return storedTool;
+}
+
+function validWorkspaceFields(record: Omit<WorkspaceRecord, 'tool'>): boolean {
+  return record.name.length > 0
+    && record.name.length <= MAX_WORKSPACE_NAME_LENGTH
+    && absoluteRegistryPath(record.path)
+    && record.id === workspaceIdFor(record.path)
+    && isTimestamp(record.registered_at)
+    && isTimestamp(record.updated_at);
+}
+
+function parseWorkspace(item: unknown): WorkspaceRecord {
+  if (!isPlainObject(item) || !sameKeys(item, workspaceKeys, true)) {
+    throw new RegistryCorrupt(WRONG_SHAPE);
+  }
   const readString = (key: 'id' | 'name' | 'path' | 'registered_at' | 'updated_at'): string => {
-    const value = source[key];
-    if (typeof value !== 'string' || value === '') throw new RegistryCorrupt('registry.json has the wrong shape.');
+    const value = item[key];
+    if (typeof value !== 'string' || value === '') throw new RegistryCorrupt(WRONG_SHAPE);
     return value;
   };
   const record = {
@@ -279,39 +307,12 @@ function parseWorkspace(item: unknown): WorkspaceRecord {
     registered_at: readString('registered_at'),
     updated_at: readString('updated_at'),
   };
-  const {tool} = source;
-  if (!tool || typeof tool !== 'object' || Array.isArray(tool) || !sameKeys(tool, toolKeys, false) || !('name' in tool)) {
-    throw new RegistryCorrupt('registry.json has the wrong shape.');
+  const {tool} = item;
+  if (!isPlainObject(tool) || !sameKeys(tool, toolKeys, false) || !('name' in tool)) {
+    throw new RegistryCorrupt(WRONG_SHAPE);
   }
-  if (record.name.length === 0 || record.name.length > MAX_WORKSPACE_NAME_LENGTH) {
-    throw new RegistryCorrupt('registry.json has the wrong shape.');
-  }
-  if (!absoluteRegistryPath(record.path)) throw new RegistryCorrupt('registry.json has the wrong shape.');
-  if (record.id !== workspaceIdFor(record.path)) throw new RegistryCorrupt('registry.json has the wrong shape.');
-  if (!isTimestamp(record.registered_at) || !isTimestamp(record.updated_at)) {
-    throw new RegistryCorrupt('registry.json has the wrong shape.');
-  }
-  const toolRecord = tool as Record<string, unknown>;
-  const {name} = toolRecord;
-  if (typeof name !== 'string' || !toolName.test(name) || name.length === 0 || name.length > MAX_TOOL_NAME_LENGTH) {
-    throw new RegistryCorrupt('registry.json has the wrong shape.');
-  }
-  const storedTool: ToolRecord = { name };
-  if (Object.hasOwn(toolRecord, 'version')) {
-    const {version} = toolRecord;
-    if (typeof version !== 'string' || version.length > MAX_TOOL_VERSION_LENGTH) {
-      throw new RegistryCorrupt('registry.json has the wrong shape.');
-    }
-    storedTool.version = version;
-  }
-  return {
-    id: record.id,
-    name: record.name,
-    path: record.path,
-    registered_at: record.registered_at,
-    updated_at: record.updated_at,
-    tool: storedTool,
-  };
+  if (!validWorkspaceFields(record)) throw new RegistryCorrupt(WRONG_SHAPE);
+  return { ...record, tool: parseStoredTool(tool) };
 }
 
 function parseRegistry(raw: Buffer): WorkspaceRecord[] {

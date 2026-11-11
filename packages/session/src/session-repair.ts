@@ -54,6 +54,58 @@ export function repairSession(
   }
 }
 
+interface RepairPlan {
+  inputs: FoldInputs;
+  drafts: EventDraft[];
+  torn: ParsedEvent | null;
+}
+
+function planRepairDrafts(
+  sessionDirectory: string,
+  loaded: FoldInputs,
+  options: { eventLog: boolean; acceptDraft: EventDraft | null },
+): RepairPlan {
+  const { eventLog, acceptDraft } = options;
+  const draftsFor = (inputs: FoldInputs): EventDraft[] => {
+    const drafts = eventLog ? reconcileDrafts(inputs) : [];
+    if (acceptDraft) drafts.push(acceptDraft);
+    return drafts;
+  };
+  const drafts = draftsFor(loaded);
+  // Appending seals a torn tail. Fold that line first, and leave the file untouched on refusal.
+  const torn = drafts.length > 0 ? parseableTornTail(path.join(sessionDirectory, 'events.jsonl')) : null;
+  if (!torn) return { inputs: loaded, drafts, torn };
+  const inputs = { ...loaded, events: [...loaded.events, torn] };
+  return { inputs, drafts: draftsFor(inputs), torn };
+}
+
+function writeRepairedEvents(sessionDirectory: string, plan: RepairPlan): void {
+  const { inputs, drafts, torn } = plan;
+  if (torn) sealSessionEventLogs(sessionDirectory);
+  for (const draft of drafts) appendLifecycleEvent(sessionDirectory, draft);
+  writeExecutionQuestions(sessionDirectory, inputs);
+  writeQuestionsFile(sessionDirectory, withDrafts(inputs, drafts));
+}
+
+function assertTaskHash(folded: Record<string, unknown>, sessionId: string): void {
+  const hash = typeof folded.task_sha256 === 'string' ? folded.task_sha256 : '';
+  if (hash !== '') return;
+  throw new ConfigurationError(
+    `Session ${sessionId} cannot store a task hash. Write task.md, then run: migent session repair ${sessionId} --accept-task`,
+  );
+}
+
+function writeExecutionQuestions(sessionDirectory: string, inputs: FoldInputs): void {
+  for (const execution of inputs.executions) {
+    if (execution.outcome?.status !== 'question') continue;
+    writeJsonAtomic(path.join(sessionDirectory, 'executions', execution.executionId, 'questions.json'), {
+      schema_version: 1, stage_id: execution.stageId, execution_id: execution.executionId,
+      recipient: inputs.workflow?.stages[execution.stageId]?.ask ?? 'human',
+      questions: storedQuestions(execution.outcome),
+    });
+  }
+}
+
 /**
  * Rebuild status.json. The caller holds the session lock.
  * A normal save does not call this: refusal applies only to repair and continue.
@@ -71,38 +123,15 @@ export function repairSessionUnlocked(
   const statusPath = path.join(sessionDirectory, 'status.json');
   const before = loaded.previousStatus === null ? statusFileKind(statusPath) : 'ok';
   const acceptDraft = acceptTask && before === 'corrupt' ? acceptedTaskDraft(sessionDirectory, sessionId) : null;
-  let inputs = loaded;
-  let drafts: EventDraft[] = manifest.schemaVersion >= MANIFEST_SCHEMA_EVENT_LOG ? reconcileDrafts(inputs) : [];
-  if (acceptDraft) drafts.push(acceptDraft);
-  // Appending seals a torn tail. Fold that line first, and leave the file untouched on refusal.
-  const torn = drafts.length > 0 ? parseableTornTail(path.join(sessionDirectory, 'events.jsonl')) : null;
-  if (torn) {
-    inputs = { ...loaded, events: [...loaded.events, torn] };
-    drafts = manifest.schemaVersion >= MANIFEST_SCHEMA_EVENT_LOG ? reconcileDrafts(inputs) : [];
-    if (acceptDraft) drafts.push(acceptDraft);
-  }
+  const { inputs, drafts, torn } = planRepairDrafts(sessionDirectory, loaded, {
+    eventLog: manifest.schemaVersion >= MANIFEST_SCHEMA_EVENT_LOG,
+    acceptDraft,
+  });
   const folded = foldStatus(withDrafts(inputs, drafts));
-  if (acceptTask && before === 'corrupt') {
-    const hash = typeof folded.task_sha256 === 'string' ? folded.task_sha256 : '';
-    if (hash === '') {
-      throw new ConfigurationError(
-        `Session ${sessionId} cannot store a task hash. Write task.md, then run: migent session repair ${sessionId} --accept-task`,
-      );
-    }
-  }
+  if (acceptTask && before === 'corrupt') assertTaskHash(folded, sessionId);
   const reasons = replacementRefusal(folded, inputs, { before, acceptTask });
   if (reasons.length > 0) throw new ConfigurationError(repairRefusalMessage(sessionId, reasons));
-  if (torn) sealSessionEventLogs(sessionDirectory);
-  for (const draft of drafts) appendLifecycleEvent(sessionDirectory, draft);
-  for (const execution of inputs.executions) {
-    if (execution.outcome?.status !== 'question') continue;
-    writeJsonAtomic(path.join(sessionDirectory, 'executions', execution.executionId, 'questions.json'), {
-      schema_version: 1, stage_id: execution.stageId, execution_id: execution.executionId,
-      recipient: inputs.workflow?.stages[execution.stageId]?.ask ?? 'human',
-      questions: storedQuestions(execution.outcome),
-    });
-  }
-  writeQuestionsFile(sessionDirectory, withDrafts(inputs, drafts));
+  writeRepairedEvents(sessionDirectory, { inputs, drafts, torn });
   writeJsonAtomic(statusPath, folded);
   if (folded.status === 'completed') publishNextSuggestions(workspace, sessionId);
   return folded;
@@ -167,15 +196,8 @@ function sessionDraft(
   };
 }
 
-function reconcileDrafts(inputs: FoldInputs): EventDraft[] {
-  const drafts: EventDraft[] = [];
-  const executions = [...inputs.executions].sort(compareExecutions);
-  const fromStatus = manifestSessionStatus(inputs.manifest.manifestStatus);
-  const cursor: Record<string, unknown> = {
-    workflow_id: inputs.manifest.workflowId,
-    status: fromStatus,
-  };
-  const rows = executions.map((execution) => ({
+function statusRow(execution: RepairExecution) {
+  return {
     executionId: execution.executionId,
     stageId: execution.stageId,
     executionOrder: execution.executionOrder,
@@ -183,52 +205,90 @@ function reconcileDrafts(inputs: FoldInputs): EventDraft[] {
     outcome: stageOutcome(execution),
     artifactDirectory: execution.artifactDirectory,
     failureReason: execution.failureReason,
-  }));
+  };
+}
+
+/** The missing terminal `execution.<status>` event of an execution. */
+function terminalExecutionDraft(
+  execution: RepairExecution,
+  outcome: ReturnType<typeof stageOutcome>,
+  finalStatus: string,
+): EventDraft {
+  return {
+    event: `execution.${execution.status}`,
+    timestamp: execution.completedAt ?? execution.createdAt ?? utcNow(),
+    executionId: execution.executionId,
+    stageId: execution.stageId,
+    data: {
+      outcome: outcome ? outcome.toJson() : null,
+      failure_reason: execution.failureReason,
+      error: execution.error,
+      session_status: finalStatus,
+    },
+  };
+}
+
+interface ReconcileTarget {
+  fromStatus: string;
+  cursor: Record<string, unknown>;
+  finalStatus: string;
+  completingId: string | null;
+}
+
+/** The session status the executions reduce to, and the execution that owns its event. */
+function reconcileTarget(inputs: FoldInputs, executions: readonly RepairExecution[]): ReconcileTarget {
+  const fromStatus = manifestSessionStatus(inputs.manifest.manifestStatus);
+  const cursor: Record<string, unknown> = {
+    workflow_id: inputs.manifest.workflowId,
+    status: fromStatus,
+  };
+  const rows = executions.map(statusRow);
   const finalStatus = sessionStatusFromExecutions(rows, cursor, inputs.workflow);
   const completingId =
     finalStatus === 'completed' ? version2CompletingExecution(rows, cursor, inputs.workflow) : null;
+  return { fromStatus, cursor, finalStatus, completingId };
+}
+
+/**
+ * One session event for the whole reduction. A later sibling must not clear a blocked stage.
+ * Version 2 has no completion decision, so the quiet execution owns session.completed.
+ */
+function ownsSessionEvent(
+  execution: RepairExecution,
+  outcome: ReturnType<typeof stageOutcome>,
+  context: { inputs: FoldInputs; target: ReconcileTarget },
+): boolean {
+  const { inputs, target } = context;
+  if (target.finalStatus === 'active') return false;
+  if (execution.executionId === target.completingId) return true;
+  return sessionStatusAfterExecution({
+    executionStatus: execution.status,
+    outcome,
+    previousStatus: target.cursor,
+    workflow: inputs.workflow,
+    stageId: execution.stageId,
+  }) === target.finalStatus;
+}
+
+function reconcileDrafts(inputs: FoldInputs): EventDraft[] {
+  const drafts: EventDraft[] = [];
+  const executions = [...inputs.executions].sort(compareExecutions);
+  const target = reconcileTarget(inputs, executions);
+  const { finalStatus, fromStatus } = target;
   const planned = (name: string, executionId: string) =>
     hasEvent(inputs.events, name, executionId) ||
     drafts.some((draft) => draft.event === name && draft.executionId === executionId);
-  const sessionPlanned = (name: string) =>
-    inputs.events.some((event) => event.event === name) || drafts.some((draft) => draft.event === name);
-  let attachedSession = false;
+  let attachedSession = inputs.events.some((event) => event.event === `session.${finalStatus}`);
   for (const execution of executions) {
     if (!planned('execution.started', execution.executionId)) {
       drafts.push(startedDraft(execution));
     }
     if (!isTerminalExecution(execution.status)) continue;
     const outcome = stageOutcome(execution);
-    const ownStatus = sessionStatusAfterExecution({
-      executionStatus: execution.status,
-      outcome,
-      previousStatus: cursor,
-      workflow: inputs.workflow,
-      stageId: execution.stageId,
-    });
     if (!planned(`execution.${execution.status}`, execution.executionId)) {
-      drafts.push({
-        event: `execution.${execution.status}`,
-        timestamp: execution.completedAt ?? execution.createdAt ?? utcNow(),
-        executionId: execution.executionId,
-        stageId: execution.stageId,
-        data: {
-          outcome: outcome ? outcome.toJson() : null,
-          failure_reason: execution.failureReason,
-          error: execution.error,
-          session_status: finalStatus,
-        },
-      });
+      drafts.push(terminalExecutionDraft(execution, outcome, finalStatus));
     }
-    // One session event for the whole reduction. A later sibling must not clear a blocked stage.
-    // Version 2 has no completion decision, so the quiet execution owns session.completed.
-    const completesSession = execution.executionId === completingId;
-    if (
-      finalStatus !== 'active' &&
-      (ownStatus === finalStatus || completesSession) &&
-      !attachedSession &&
-      !sessionPlanned(`session.${finalStatus}`)
-    ) {
+    if (!attachedSession && ownsSessionEvent(execution, outcome, { inputs, target })) {
       drafts.push(sessionDraft(execution, { finalStatus, fromStatus, outcome }));
       attachedSession = true;
     }

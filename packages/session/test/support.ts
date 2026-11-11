@@ -373,38 +373,60 @@ export function writeHandoffFromReply(prompt: string, response: string): string 
   const report = split >= 0 ? response.slice(0, split) : response;
   const raw = split >= 0 ? response.slice(split + marker.length) : null;
   if (!target) return report;
+  const headers = replyHeaders(report);
+  const status = headers.get('status');
+  if (status === undefined && raw === null) return report;
+  if (raw !== null) {
+    writeFileSync(target, rawHandoffContent(raw, status), 'utf8');
+    return report;
+  }
+  if (status === 'question') return writeQuestionHandoff(target, report);
+  const content = headerHandoffContent(status, headers);
+  if (content !== null) writeFileSync(target, content, 'utf8');
+  return report;
+}
+
+const QUESTION_HEAD = 'status: question\n\n';
+
+/** The leading `key: value` lines of a reply, keys lowercased. */
+function replyHeaders(report: string): Map<string, string> {
   const headers = new Map<string, string>();
   for (const line of report.split(/\r\n|\n|\r/)) {
     const at = line.indexOf(':');
     if (line.trim() === '' || at <= 0) break;
     headers.set(line.slice(0, at).trim().toLowerCase(), line.slice(at + 1).trim());
   }
-  const status = headers.get('status');
-  if (status === undefined && raw === null) return report;
-  const questionHead = 'status: question\n\n';
-  let content: string | null = null;
-  if (raw !== null) {
-    try {
-      const parsed = JSON.parse(raw) as Record<string, unknown>;
-      content = parsed !== null && typeof parsed === 'object' && !('status' in parsed) && status === 'question'
-        ? JSON.stringify({ ...parsed, status: 'question' }) : raw;
-    } catch {
-      content = raw;
-    }
-  } else if (status === 'question') {
-    const body = report.startsWith(questionHead) ? report.slice(questionHead.length) : '';
-    if (!body.startsWith('{')) return report;
-    content = JSON.stringify({ ...(JSON.parse(body) as Record<string, unknown>), status: 'question' });
-    writeFileSync(target, content, 'utf8');
-    return questionHead + 'The questions are in the handoff file.';
-  } else if (status === 'blocked') {
-    content = JSON.stringify({ schema_version: 1, status, blocker: headers.get('blocker') ?? '' });
-  } else if (status === 'complete') {
-    const decision = headers.get('decision');
-    content = JSON.stringify({ schema_version: 1, status, ...(decision ? { decision } : {}) });
+  return headers;
+}
+
+/** A `<<FILE>>` section; a question header adds the missing status to a JSON body. */
+function rawHandoffContent(raw: string, status: string | undefined): string {
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    return parsed !== null && typeof parsed === 'object' && !('status' in parsed) && status === 'question'
+      ? JSON.stringify({ ...parsed, status: 'question' }) : raw;
+  } catch {
+    return raw;
   }
-  if (content !== null) writeFileSync(target, content, 'utf8');
-  return report;
+}
+
+function writeQuestionHandoff(target: string, report: string): string {
+  const body = report.startsWith(QUESTION_HEAD) ? report.slice(QUESTION_HEAD.length) : '';
+  if (!body.startsWith('{')) return report;
+  const content = JSON.stringify({ ...(JSON.parse(body) as Record<string, unknown>), status: 'question' });
+  writeFileSync(target, content, 'utf8');
+  return QUESTION_HEAD + 'The questions are in the handoff file.';
+}
+
+function headerHandoffContent(status: string | undefined, headers: ReadonlyMap<string, string>): string | null {
+  if (status === 'blocked') {
+    return JSON.stringify({ schema_version: 1, status, blocker: headers.get('blocker') ?? '' });
+  }
+  if (status === 'complete') {
+    const decision = headers.get('decision');
+    return JSON.stringify({ schema_version: 1, status, ...(decision ? { decision } : {}) });
+  }
+  return null;
 }
 
 /** Protocol 2 shim: `status: question` plus a JSON body, or a `<<FILE>>` section, becomes the question request file. */

@@ -20,6 +20,7 @@ import {
   isRoleStage,
   loadNamedWorkflow,
   loadWorkflowCatalog,
+  type RoleStageSpec,
   type StageArtifact,
   type StageSpec,
   type WorkflowDocument,
@@ -89,28 +90,43 @@ interface WorkflowOrigin {
   problems?: readonly string[];
 }
 
+// Resolves a role stage's target view, preferring a frozen session's pinned target; records problems.
+function stageTargetView(
+  stage: RoleStageSpec,
+  context: { config: Loaded; origin: WorkflowOrigin; resolve?: ClientRegistry },
+  problems: string[],
+): View | null {
+  const { config, origin, resolve } = context;
+  const pinned = origin.frozenTargets?.[stage.id];
+  if (pinned !== undefined) return targetView(pinned);
+  if (origin.frozenTargets !== undefined) {
+    problems.push(`No pinned target for stage ${stage.id}.`);
+    return null;
+  }
+  if (config.config === null) {
+    problems.push(config.problem ?? 'Config could not be loaded.');
+    return null;
+  }
+  try {
+    return targetView(resolveStageSpec(config.config, stage, { registry: resolve }));
+  } catch (error) {
+    problems.push(message(error));
+    return null;
+  }
+}
+
+function stageAgentField(stage: StageSpec): string | { inline: boolean } | null {
+  if (stage.agent === null) return null;
+  return stage.agent.kind === 'named' ? stage.agent.name : { inline: true };
+}
+
 function stageView(
   stage: StageSpec,
   context: { config: Loaded; origin: WorkflowOrigin; resolve?: ClientRegistry },
 ): View {
-  const { config, origin, resolve } = context;
   const problems: string[] = [];
-  let target: View | null = null;
-  if (isRoleStage(stage)) {
-    const pinned = origin.frozenTargets?.[stage.id];
-    if (pinned !== undefined) target = targetView(pinned);
-    else if (origin.frozenTargets !== undefined) problems.push(`No pinned target for stage ${stage.id}.`);
-    else if (config.config === null) problems.push(config.problem ?? 'Config could not be loaded.');
-    else {
-      try {
-        target = targetView(resolveStageSpec(config.config, stage, { registry: resolve }));
-      } catch (error) {
-        problems.push(message(error));
-      }
-    }
-  }
-  let agentField: string | { inline: boolean } | null = null;
-  if (stage.agent !== null) agentField = stage.agent.kind === 'named' ? stage.agent.name : { inline: true };
+  const target = isRoleStage(stage) ? stageTargetView(stage, context, problems) : null;
+  const agentField = stageAgentField(stage);
   return {
     id: stage.id,
     role: isRoleStage(stage) ? stage.role : null,
@@ -336,6 +352,27 @@ function configRecord(workspace: string, key: 'roles' | 'agents'): { config: Rec
   return { config, table: isRecord(table) ? table : {} };
 }
 
+// Runs a loader, recording its error message as a problem and returning the fallback on failure.
+function collectProblem<T>(problems: string[], fallback: T, load: () => T): T {
+  try {
+    return load();
+  } catch (error) {
+    problems.push(message(error));
+    return fallback;
+  }
+}
+
+// Lists the workflow stages that match a predicate as `{ workflow, stage }` views.
+function stageUsers(workflows: readonly WorkflowDocument[], matches: (stage: StageSpec) => boolean): View[] {
+  const usedBy: View[] = [];
+  for (const workflow of workflows) {
+    for (const stage of Object.values(workflow.stages)) {
+      if (matches(stage)) usedBy.push({ workflow: workflow.id, stage: stage.id });
+    }
+  }
+  return usedBy;
+}
+
 function roleView(
   config: Record<string, unknown>,
   entry: { name: string; role: unknown },
@@ -348,30 +385,11 @@ function roleView(
   let agent: unknown = null;
   if (typeof selection === 'string') agent = selection;
   else if (isRecord(selection)) agent = { inline: true };
-  let target: View | null = null;
-  try {
-    target = targetView(resolveRoleCascade(config, name, { registry: resolve }));
-  } catch (error) {
-    problems.push(message(error));
-  }
-  let responsibilities: string[] = [];
-  try {
-    responsibilities = loadRoleResponsibilities(config, name);
-  } catch (error) {
-    problems.push(message(error));
-  }
-  let description: string | null = null;
-  try {
-    description = loadRoleDescription(config, name);
-  } catch (error) {
-    problems.push(message(error));
-  }
-  const usedBy: View[] = [];
-  for (const workflow of workflows) {
-    for (const stage of Object.values(workflow.stages)) {
-      if (isRoleStage(stage) && stage.role === name) usedBy.push({ workflow: workflow.id, stage: stage.id });
-    }
-  }
+  const target = collectProblem<View | null>(problems, null, () =>
+    targetView(resolveRoleCascade(config, name, { registry: resolve })));
+  const responsibilities = collectProblem<string[]>(problems, [], () => loadRoleResponsibilities(config, name));
+  const description = collectProblem<string | null>(problems, null, () => loadRoleDescription(config, name));
+  const usedBy = stageUsers(workflows, (stage) => isRoleStage(stage) && stage.role === name);
   return { kind: 'role', name, description, agent, target, responsibilities, used_by: usedBy, problems };
 }
 
@@ -389,6 +407,21 @@ export function getRoleView(workspace: string, name: string, resolve?: ClientReg
 
 // ------------------------------------------------------------------- agents
 
+// Reads the model, client type, and effort an agent declares in config; null where absent.
+function declaredAgentFields(
+  config: Record<string, unknown>,
+  name: string,
+): { model: string | null; client: string | null; effort: string | null } {
+  const definition = isRecord(config.agents) && isRecord(config.agents[name]) ? config.agents[name] : {};
+  if (!isRecord(definition)) return { model: null, client: null, effort: null };
+  const clientConfig = isRecord(definition.client) ? definition.client : {};
+  return {
+    model: typeof definition.model === 'string' ? definition.model : null,
+    client: typeof clientConfig.type === 'string' ? clientConfig.type : null,
+    effort: typeof definition.effort === 'string' ? definition.effort : null,
+  };
+}
+
 function agentView(
   config: Record<string, unknown>,
   name: string,
@@ -401,30 +434,19 @@ function agentView(
 ): View {
   const { roles, workflows, local, resolve } = scope;
   const problems: string[] = [];
-  let target: StageTarget | null = null;
-  try {
-    target = loadAgentTarget(config, name, { registry: resolve });
-  } catch (error) {
-    problems.push(message(error));
-  }
-  const definition = isRecord(config.agents) && isRecord(config.agents[name]) ? config.agents[name] : {};
-  const clientConfig = isRecord(definition) && isRecord(definition.client) ? definition.client : {};
-  const effort = isRecord(definition) && typeof definition.effort === 'string' ? definition.effort : null;
-  const usedBy: View[] = [];
-  for (const [role, value] of Object.entries(roles)) {
-    if (isRecord(value) && value.agent === name) usedBy.push({ role });
-  }
-  for (const workflow of workflows) {
-    for (const stage of Object.values(workflow.stages)) {
-      if (isRoleStage(stage) && stage.agent?.kind === 'named' && stage.agent.name === name) usedBy.push({ workflow: workflow.id, stage: stage.id });
-    }
-  }
+  const target = collectProblem<StageTarget | null>(problems, null, () =>
+    loadAgentTarget(config, name, { registry: resolve }));
+  const declared = declaredAgentFields(config, name);
+  const usedBy: View[] = [
+    ...Object.entries(roles).filter(([, value]) => isRecord(value) && value.agent === name).map(([role]) => ({ role })),
+    ...stageUsers(workflows, (stage) => isRoleStage(stage) && stage.agent?.kind === 'named' && stage.agent.name === name),
+  ];
   return {
     kind: 'agent',
     name,
-    model: target?.model ?? (isRecord(definition) && typeof definition.model === 'string' ? definition.model : null),
-    client: target?.client ?? (typeof clientConfig.type === 'string' ? clientConfig.type : null),
-    effort,
+    model: target?.model ?? declared.model,
+    client: target?.client ?? declared.client,
+    effort: declared.effort,
     options: target === null ? {} : { ...target.options },
     local: local.has(name),
     used_by: usedBy,

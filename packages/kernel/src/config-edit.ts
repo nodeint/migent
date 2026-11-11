@@ -138,18 +138,27 @@ export function upsertAgent(
   if (!exists && client === null) {
     throw new ConfigEditError('Pass --client and --model to add an agent.');
   }
-  let body: Record<string, unknown> = {};
-  if (exists) {
-    const current = agents[key];
-    if (!isRecord(current)) throw new ConfigurationError(`Missing or invalid agents.${key}.`);
-    body = current;
-  }
+  let body = exists ? existingAgentBody(agents, key) : {};
   if (client !== null && model !== null) {
     body = { ...withAgentClient(body, plain(client, '--client')), model: plain(model, '--model') };
   }
   if (options !== UNSET) body = withAgentOptions(body, key, options);
   agents[key] = body;
   return describeChange(config, updated, { workflows: args.workflows, registry: args.registry });
+}
+
+function existingAgentBody(agents: Record<string, unknown>, key: string): Record<string, unknown> {
+  const current = agents[key];
+  if (!isRecord(current)) throw new ConfigurationError(`Missing or invalid agents.${key}.`);
+  return current;
+}
+
+/** The role's current body, or an empty one when the role is new. */
+function roleBody(roleMap: Record<string, unknown>, role: string): Record<string, unknown> {
+  if (!Object.hasOwn(roleMap, role)) return {};
+  const body = roleMap[role];
+  if (!isRecord(body)) throw new ConfigurationError(`Missing or invalid roles.${role}.`);
+  return body;
 }
 
 export function assignRoles(
@@ -196,28 +205,15 @@ export function placeRoleAgent(
   const agents = agentsOf(updated);
   let definition: Record<string, unknown> = { client: { type: clientName }, model: modelId };
   if (options !== UNSET) definition = withAgentOptions(definition, role, options);
-  let match = matchingAgentName(updated, {
+  const reused = matchingAgentName(updated, {
     client: clientName, model: modelId, options: optionsDict(definition, role),
   }, args.registry);
-  let created: string | null = null;
-  let reused: string | null = null;
-  if (match === null) {
-    match = suggestAgentName(updated, role);
-    agents[match] = definition;
-    created = match;
-  } else {
-    reused = match;
-  }
+  const match = reused ?? suggestAgentName(updated, role);
+  if (reused === null) agents[match] = definition;
   const roleMap = rolesOf(updated);
-  if (!Object.hasOwn(roleMap, role)) {
-    roleMap[role] = { agent: match };
-  } else {
-    const body = roleMap[role];
-    if (!isRecord(body)) throw new ConfigurationError(`Missing or invalid roles.${role}.`);
-    body.agent = match;
-  }
+  roleMap[role] = { ...roleBody(roleMap, role), agent: match };
   const change = describeChange(config, updated, { workflows, reusedAgent: reused, registry: args.registry });
-  if (created !== null) return { ...change, createdAgent: created, reusedAgent: null };
+  if (reused === null) return { ...change, createdAgent: match, reusedAgent: null };
   return change;
 }
 
@@ -273,23 +269,11 @@ export function describeChange(
   const updatedAgent = updated.length === 1 ? updated[0] : null;
   let reusedAgent = args.reusedAgent ?? null;
   if (createdAgent !== null || updatedAgent !== null) reusedAgent = null;
-  const stagesUpdated: [string, string][] = [];
-  const stagesUnchanged: StageShield[] = [];
-  for (const document of workflows) {
-    for (const stage of Object.values(document.stages)) {
-      if (!isRoleStage(stage)) continue;
-      const beforeTarget = resolvedStage(before, stage, args.registry);
-      const afterTarget = resolvedStage(afterCopy, stage, args.registry);
-      if (!resolvedEqual(beforeTarget, afterTarget)) {
-        stagesUpdated.push([document.id, stage.id]);
-        continue;
-      }
-      const ignores = shields(stage, { beforeRoles, afterRoles, beforeAgents, afterAgents, updatedAgents: updated });
-      if (ignores.length > 0) {
-        stagesUnchanged.push({ workflow: document.id, stage: stage.id, ignores });
-      }
-    }
-  }
+  const { stagesUpdated, stagesUnchanged } = stageEffects(workflows, {
+    configs: { before, after: afterCopy },
+    shield: { beforeRoles, afterRoles, beforeAgents, afterAgents, updatedAgents: updated },
+    registry: args.registry,
+  });
   return {
     config: afterCopy,
     createdAgent,
@@ -302,6 +286,38 @@ export function describeChange(
   };
 }
 
+/** Which role stages resolve to a different target, and which a stage override shields from the change. */
+function stageEffects(
+  workflows: readonly WorkflowDocument[],
+  change: {
+    configs: { before: Record<string, unknown>; after: Record<string, unknown> };
+    shield: ShieldChange;
+    registry?: ClientRegistry;
+  },
+): { stagesUpdated: [string, string][]; stagesUnchanged: StageShield[] } {
+  const { configs, shield, registry } = change;
+  const stagesUpdated: [string, string][] = [];
+  const stagesUnchanged: StageShield[] = [];
+  for (const document of workflows) {
+    for (const stage of Object.values(document.stages).filter(isRoleStage)) {
+      const beforeTarget = resolvedStage(configs.before, stage, registry);
+      if (!resolvedEqual(beforeTarget, resolvedStage(configs.after, stage, registry))) {
+        stagesUpdated.push([document.id, stage.id]);
+        continue;
+      }
+      const ignores = shields(stage, shield);
+      if (ignores.length > 0) stagesUnchanged.push({ workflow: document.id, stage: stage.id, ignores });
+    }
+  }
+  return { stagesUpdated, stagesUnchanged };
+}
+
+function stagedAgentKey(stage: RoleStageSpec, roles: Record<string, unknown>): unknown {
+  if (stage.agent !== null) return stage.agent.kind === 'named' ? stage.agent.name : null;
+  const role = roles[stage.role];
+  return isRecord(role) ? role.agent : null;
+}
+
 function stagesUsing(
   workflows: readonly WorkflowDocument[],
   roles: Record<string, unknown>,
@@ -309,14 +325,8 @@ function stagesUsing(
 ): StageRef[] {
   const found: StageRef[] = [];
   for (const document of workflows) {
-    for (const stage of Object.values(document.stages)) {
-      if (!isRoleStage(stage)) continue;
-      let key: unknown = stage.agent?.kind === 'named' ? stage.agent.name : null;
-      if (stage.agent === null) {
-        const role = roles[stage.role];
-        if (isRecord(role)) key = role.agent;
-      }
-      if (key === agentName) {
+    for (const stage of Object.values(document.stages).filter(isRoleStage)) {
+      if (stagedAgentKey(stage, roles) === agentName) {
         found.push({ workflow: document.id, stage: stage.id, agent: null, options: {} });
       }
     }

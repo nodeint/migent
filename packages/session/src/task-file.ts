@@ -37,6 +37,29 @@ export function writeTaskFile(filePath: string, task: string): void {
   writeFileAtomic(filePath, body);
 }
 
+function emptyTaskMessage(sessionId: string): string {
+  return `Session ${sessionId} has no task.md or it is empty. Write ${relativeTaskPath(sessionId)} before starting.`;
+}
+
+/** Write a missing task.md from the recorded task label, before the first dispatch only. */
+function materializeTask(
+  filePath: string,
+  session: { sessionId: string; status: Record<string, unknown>; storedHash: string },
+): string | null {
+  const { sessionId, status, storedHash } = session;
+  if (storedHash !== '') {
+    throw new ConfigurationError(`Session ${sessionId} is missing task.md.`);
+  }
+  const fallback = typeof status.task === 'string' ? status.task : '';
+  // A prepared session has no task label. An empty label is not a body.
+  // A label equal to the session id is the placeholder written by an older Migent.
+  if (fallback.trim() === '' || fallback === sessionId) {
+    throw new ConfigurationError(emptyTaskMessage(sessionId));
+  }
+  writeTaskFile(filePath, fallback);
+  return readTask(filePath);
+}
+
 /** Materialize a missing task.md, then reject a body that differs from the first dispatch. */
 export function freezeSessionTask(
   workspace: string,
@@ -51,27 +74,10 @@ export function freezeSessionTask(
     );
   }
   const filePath = taskFilePath(workspace, sessionId);
-  let text = readTask(filePath);
   const storedHash = typeof status.task_sha256 === 'string' ? status.task_sha256 : '';
-  if (text === null) {
-    if (storedHash !== '') {
-      throw new ConfigurationError(`Session ${sessionId} is missing task.md.`);
-    }
-    const fallback = typeof status.task === 'string' ? status.task : '';
-    // A prepared session has no task label. An empty label is not a body.
-    // A label equal to the session id is the placeholder written by an older Migent.
-    if (fallback.trim() === '' || fallback === sessionId) {
-      throw new ConfigurationError(
-        `Session ${sessionId} has no task.md or it is empty. Write ${relativeTaskPath(sessionId)} before starting.`,
-      );
-    }
-    writeTaskFile(filePath, fallback);
-    text = readTask(filePath);
-  }
+  const text = readTask(filePath) ?? materializeTask(filePath, { sessionId, status, storedHash });
   if (text === null || (storedHash === '' && text.trim() === '')) {
-    throw new ConfigurationError(
-      `Session ${sessionId} has no task.md or it is empty. Write ${relativeTaskPath(sessionId)} before starting.`,
-    );
+    throw new ConfigurationError(emptyTaskMessage(sessionId));
   }
   const hash = createHash('sha256').update(text, 'utf8').digest('hex');
   if (storedHash === '') {

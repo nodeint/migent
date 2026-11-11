@@ -42,63 +42,76 @@ export function loadRunningExecution(
   return { context, metadata };
 }
 
+type PendingPromptRun = {
+  store: SessionStore;
+  context: ExecutionContext;
+  record: AgentSessionRecord;
+  metadata: Record<string, unknown>;
+  sessionId: string;
+  stage: StageSpec | null;
+  protocol: number;
+  stamped: number;
+};
+
 // Rebuilds the prompt of a reopened execution whose last message is the unanswered user prompt.
 export function resumePendingPrompt(
-  run: {
-    store: SessionStore;
-    context: ExecutionContext;
-    record: AgentSessionRecord;
-    metadata: Record<string, unknown>;
-    sessionId: string;
-    stage: StageSpec | null;
-    protocol: number;
-    stamped: number;
-  },
+  run: PendingPromptRun,
   resume: { executionId: string; assistants: number; last: string },
 ): { currentPrompt: string; keepFile: boolean } {
-  const { store, context, record, metadata, sessionId, stage, protocol, stamped } = run;
+  const { record } = run;
   const { executionId, assistants, last } = resume;
-  const { agentId } = record;
-  const { decisionValues, ask, artifactFiles, artifactName } = stageFacts(stage);
-  const questionFile = questionRequestPath(context);
-  const handoffFile = handoffPath(context);
   // The first turn is sent as prompt.md, contract included. A later repair turn
   // stores only the repair text, and the loop adds the contract again before sending.
-  let currentPrompt: string;
-  // The file a pending correction repairs must survive the first turn's cleanup.
-  let keepFile = false;
   // The saved first prompt applies only while the history holds just that prompt. A correction
   // queued after an empty reply adds a user message without an assistant one.
   const userTurns = record.history.filter((item) => item.role === 'user').length;
-  const pendingCorrection = ruleForTurn(storedTurn(metadata));
   if (assistants === 0 && userTurns <= 1) {
-    try {
-      currentPrompt = readFileSync(path.join(context.directory, 'prompt.md'), 'utf8');
-    } catch {
-      throw new ConfigurationError(`Execution ${executionId} has no prompt to resume.`);
-    }
-    // A first prompt saved under an older protocol carries the old question instructions.
-    if (sessionId !== null && ask !== null && stamped < LEGACY_RESPONSE_PROTOCOL) {
-      currentPrompt += renderProtocolUpdate({ ...sessionPaths(context, sessionId), turn: storedTurn(metadata),
-        decisionValues, decisionInstructions: stage?.decisionInstructions, ask, questionFile,
-      });
-      // The stamp now says protocol 2, so the saved prompt must carry the update for the next resume.
-      store.savePrompt(context, currentPrompt);
-    }
-  } else {
-    currentPrompt = agentId
-      ? last
-      : flattenHistory(record.history as { role: string; content: string }[]);
-    const contract = agentId && stamped >= LEGACY_RESPONSE_PROTOCOL
-      ? (pendingCorrection?.contract ?? 'reminder') : 'full';
-    keepFile = pendingCorrection?.keepFile ?? false;
-    currentPrompt = renderProviderPrompt(currentPrompt, {
-      ...sessionPaths(context, sessionId), contract, turn: storedTurn(metadata), decisionValues,
-      decisionInstructions: stage?.decisionInstructions, ask, protocol, questionFile, handoffFile,
-      artifactDirectory: context.artifactDirectory, artifactName, artifactFiles: promptArtifactFiles(artifactFiles),
-    });
+    // The file a pending correction repairs must survive the first turn's cleanup.
+    return { currentPrompt: savedFirstPrompt(run, executionId), keepFile: false };
   }
-  return { currentPrompt, keepFile };
+  return renderedPendingPrompt(run, last);
+}
+
+// Reads the saved first prompt, appending the protocol update when it predates protocol 2.
+function savedFirstPrompt(run: PendingPromptRun, executionId: string): string {
+  const { store, context, metadata, sessionId, stage, stamped } = run;
+  const { decisionValues, ask } = stageFacts(stage);
+  let currentPrompt: string;
+  try {
+    currentPrompt = readFileSync(path.join(context.directory, 'prompt.md'), 'utf8');
+  } catch {
+    throw new ConfigurationError(`Execution ${executionId} has no prompt to resume.`);
+  }
+  // A first prompt saved under an older protocol carries the old question instructions.
+  if (sessionId !== null && ask !== null && stamped < LEGACY_RESPONSE_PROTOCOL) {
+    currentPrompt += renderProtocolUpdate({ ...sessionPaths(context, sessionId), turn: storedTurn(metadata),
+      decisionValues, decisionInstructions: stage?.decisionInstructions, ask,
+      questionFile: questionRequestPath(context),
+    });
+    // The stamp now says protocol 2, so the saved prompt must carry the update for the next resume.
+    store.savePrompt(context, currentPrompt);
+  }
+  return currentPrompt;
+}
+
+// Renders a later pending turn: the last message, or the flattened history without an agent id.
+function renderedPendingPrompt(run: PendingPromptRun, last: string): { currentPrompt: string; keepFile: boolean } {
+  const { context, record, metadata, sessionId, stage, protocol, stamped } = run;
+  const { agentId } = record;
+  const { decisionValues, ask, artifactFiles, artifactName } = stageFacts(stage);
+  const pendingCorrection = ruleForTurn(storedTurn(metadata));
+  const base = agentId
+    ? last
+    : flattenHistory(record.history as { role: string; content: string }[]);
+  const contract = agentId && stamped >= LEGACY_RESPONSE_PROTOCOL
+    ? (pendingCorrection?.contract ?? 'reminder') : 'full';
+  const currentPrompt = renderProviderPrompt(base, {
+    ...sessionPaths(context, sessionId), contract, turn: storedTurn(metadata), decisionValues,
+    decisionInstructions: stage?.decisionInstructions, ask, protocol,
+    questionFile: questionRequestPath(context), handoffFile: handoffPath(context),
+    artifactDirectory: context.artifactDirectory, artifactName, artifactFiles: promptArtifactFiles(artifactFiles),
+  });
+  return { currentPrompt, keepFile: pendingCorrection?.keepFile ?? false };
 }
 
 // Re-reads the saved response of a reopened execution so the loop resumes at its verdict.

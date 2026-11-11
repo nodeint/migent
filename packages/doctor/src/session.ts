@@ -44,12 +44,7 @@ export function diagnoseSession(
 ): SessionDiagnosis {
   const which = options.which ?? whichSync;
   const {source} = selection;
-  const sessionCheck = makeCheck('session', { items: [], problems: [...selection.problems], warnings: [...selection.warnings] });
-  sessionCheck.items.push(`session  ${selection.sessionId}`);
-  if (source !== null) {
-    if (source.workflowId !== null) sessionCheck.items.push(`workflow  ${source.workflowId}`);
-    sessionCheck.items.push(`source  ${source.kind}  ${source.path}`);
-  }
+  const sessionCheck = buildSessionCheck(selection);
   const {document} = selection;
   if (document === null) return finish(source, [sessionCheck]); // Nothing further can be checked.
 
@@ -57,27 +52,54 @@ export function diagnoseSession(
   const workflowProblems: string[] = [];
   if (Object.keys(document.stages).length === 0) workflowProblems.push(`${document.id}: declares no stages.`);
   const workflowWarnings = authoringWarnings(document, label);
-  let drift: string[] = [];
-  if (selection.freeze !== null) {
-    drift = collectFrozenDrift(
-      workspace,
-      selection.freeze,
-      {
-        workflowPath: selection.workflowPath,
-        workflowId: selection.manifestWorkflowId,
-        resolveClient: options.clients,
-        quiet: true,
-      },
-    ).map((detail) => `Frozen workflow differs from the live files: ${detail}`);
-  }
-  const stages = Object.values(document.stages).filter(isRoleStage);
+  const drift = frozenDrift(workspace, selection, options);
   const workflowCheck = makeCheck('workflow', { items: [document.id], problems: workflowProblems, warnings: [...workflowWarnings, ...drift] });
   if (workflowProblems.length > 0) return finish(source, [sessionCheck, workflowCheck]);
 
+  const { bindingsCheck, executables } = checkBindings(workspace, { selection, document, options });
+  const clientsCheck = checkExecutables(executables, which);
+  return finish(source, [sessionCheck, workflowCheck, bindingsCheck, clientsCheck]);
+}
+
+function buildSessionCheck(selection: SessionSelection): Check {
+  const {source} = selection;
+  const sessionCheck = makeCheck('session', { items: [], problems: [...selection.problems], warnings: [...selection.warnings] });
+  sessionCheck.items.push(`session  ${selection.sessionId}`);
+  if (source !== null) {
+    if (source.workflowId !== null) sessionCheck.items.push(`workflow  ${source.workflowId}`);
+    sessionCheck.items.push(`source  ${source.kind}  ${source.path}`);
+  }
+  return sessionCheck;
+}
+
+/** How a frozen session's workflow differs from the live files; empty for live sessions. */
+function frozenDrift(workspace: string, selection: SessionSelection, options: DiagnoseSessionOptions): string[] {
+  if (selection.freeze === null) return [];
+  return collectFrozenDrift(
+    workspace,
+    selection.freeze,
+    {
+      workflowPath: selection.workflowPath,
+      workflowId: selection.manifestWorkflowId,
+      resolveClient: options.clients,
+      quiet: true,
+    },
+  ).map((detail) => `Frozen workflow differs from the live files: ${detail}`);
+}
+
+type Executables = Map<string, { labels: Set<string>; stages: string[] }>;
+
+/** Binds every role stage, from the freeze or live config, and groups the resolved clients by executable. */
+function checkBindings(
+  workspace: string,
+  input: { selection: SessionSelection; document: WorkflowDocument; options: DiagnoseSessionOptions },
+): { bindingsCheck: Check; executables: Executables } {
+  const { selection, document, options } = input;
+  const stages = Object.values(document.stages).filter(isRoleStage);
   const bindingItems: string[] = [];
   const bindingProblems: string[] = [];
   const bindingWarnings: string[] = [];
-  const executables = new Map<string, { labels: Set<string>; stages: string[] }>();
+  const executables: Executables = new Map();
   const record = (target: StageTarget, effective: ClientInfo, stageId: string): void => {
     const name = target.client;
     const entry = executables.get(effective.command) ?? { labels: new Set<string>(), stages: [] };
@@ -99,8 +121,7 @@ export function diagnoseSession(
     );
   }
   const bindingsCheck = makeCheck('bindings', { items: bindingItems, problems: bindingProblems, warnings: bindingWarnings });
-  const clientsCheck = checkExecutables(executables, which);
-  return finish(source, [sessionCheck, workflowCheck, bindingsCheck, clientsCheck]);
+  return { bindingsCheck, executables };
 }
 
 /** The stages of one workflow, and where their binding findings and resolved clients go. */
@@ -129,55 +150,68 @@ function checkFrozenBindings(freeze: WorkflowFreeze, scope: BindingScope): void 
   }
 }
 
-function checkLiveBindings(workspace: string, scope: BindingScope & { readonly warnings: string[] }): void {
-  const { stages, workflowId, options, problems, warnings, record } = scope;
+type LiveScope = BindingScope & { readonly warnings: string[] };
+
+function checkLiveBindings(workspace: string, scope: LiveScope): void {
   let config: Record<string, unknown>;
   try {
     config = loadWorkspaceConfig(workspace);
   } catch (error) {
     if (!(error instanceof ConfigurationError)) throw error;
-    addUnique(problems, error.message);
+    addUnique(scope.problems, error.message);
     return;
   }
-  const efforts = options.modelEffortChecks ?? {};
   const reportedRoles = new Set<string>();
-  for (const stage of stages) {
-    const where = `${workflowId}.${stage.id}`;
+  for (const stage of scope.stages) {
     if (!reportedRoles.has(stage.role)) {
       reportedRoles.add(stage.role);
-      try {
-        loadRoleResponsibilities(config, stage.role);
-      } catch (error) {
-        if (!(error instanceof ConfigurationError)) throw error;
-        addUnique(problems, `${where}: ${error.message}`);
-      }
+      checkRoleResponsibilities(config, stage, scope);
     }
-    const key = modelKey(config, stage, workflowId);
-    const effort = key === null ? undefined : efforts[key];
-    if (effort?.warning) addUnique(warnings, effort.warning);
-    if (effort?.problem) {
-      addUnique(problems, `${where}: ${effort.problem}`);
-      continue;
-    }
-    if (
-      key !== null && isRecord(config.agents) && isRecord(config.agents[key])
-      && Object.keys(config.agents[key]).length === 0
-    ) {
-      addUnique(problems, `${where}: agents.${key} has no client and model on this machine. Map it in .migent/config.local.yaml.`);
-      continue;
-    }
-    let target: StageTarget;
-    try {
-      target = resolveStageSpec(config, stage, { registry: options.clients });
-    } catch (error) {
-      if (!(error instanceof ConfigurationError)) throw error;
-      addUnique(problems, `${where}: ${error.message}`);
-      continue;
-    }
-    const field = stage.agent !== null ? `stages.${stage.id}.agent` : `roles.${stage.role}.agent`;
-    const effective = effectiveClient(options.clients, target, { field, where, problems });
-    if (effective !== null) record(target, effective, stage.id);
+    checkLiveStage(config, stage, scope);
   }
+}
+
+/** Reports a role whose responsibilities cannot be loaded, once per role. */
+function checkRoleResponsibilities(config: Record<string, unknown>, stage: RoleStageSpec, scope: LiveScope): void {
+  try {
+    loadRoleResponsibilities(config, stage.role);
+  } catch (error) {
+    if (!(error instanceof ConfigurationError)) throw error;
+    addUnique(scope.problems, `${scope.workflowId}.${stage.id}: ${error.message}`);
+  }
+}
+
+function isUnmappedAgent(config: Record<string, unknown>, key: string | null): key is string {
+  return key !== null && isRecord(config.agents) && isRecord(config.agents[key])
+    && Object.keys(config.agents[key]).length === 0;
+}
+
+/** Resolves one stage against live config and records its client, reporting the first fault. */
+function checkLiveStage(config: Record<string, unknown>, stage: RoleStageSpec, scope: LiveScope): void {
+  const { workflowId, options, problems, warnings, record } = scope;
+  const where = `${workflowId}.${stage.id}`;
+  const key = modelKey(config, stage, workflowId);
+  const effort = key === null ? undefined : (options.modelEffortChecks ?? {})[key];
+  if (effort?.warning) addUnique(warnings, effort.warning);
+  if (effort?.problem) {
+    addUnique(problems, `${where}: ${effort.problem}`);
+    return;
+  }
+  if (isUnmappedAgent(config, key)) {
+    addUnique(problems, `${where}: agents.${key} has no client and model on this machine. Map it in .migent/config.local.yaml.`);
+    return;
+  }
+  let target: StageTarget;
+  try {
+    target = resolveStageSpec(config, stage, { registry: options.clients });
+  } catch (error) {
+    if (!(error instanceof ConfigurationError)) throw error;
+    addUnique(problems, `${where}: ${error.message}`);
+    return;
+  }
+  const field = stage.agent !== null ? `stages.${stage.id}.agent` : `roles.${stage.role}.agent`;
+  const effective = effectiveClient(options.clients, target, { field, where, problems });
+  if (effective !== null) record(target, effective, stage.id);
 }
 
 /** Binds the target to its client, reporting a failure as `where: field…`. */

@@ -107,6 +107,20 @@ async function lookupView<Row extends { name: string }>(options: {
   const results: ClientRows<Row>[] = await Promise.all(
     options.candidates.map(async (client) => ({ client: client.id, outcome: await options.rowsFor(client) })),
   );
+  const matches = matchingRows(results, name);
+  if (matches.length === 1) return matches[0].view;
+  if (matches.length > 1) {
+    throw new ConfigurationError(
+      `${capitalized(label)} ${name} matches more than one client: ${matches.map((match) => match.client).join(', ')}. Pass --client to choose one.`,
+    );
+  }
+  throw notFound(results, { label, name, scoped });
+}
+
+function matchingRows<Row extends { name: string }>(
+  results: readonly ClientRows<Row>[],
+  name: string,
+): { client: string; view: Row }[] {
   const matches: { client: string; view: Row }[] = [];
   for (const result of results) {
     if (result.outcome.status !== 'ok') continue;
@@ -114,19 +128,21 @@ async function lookupView<Row extends { name: string }>(options: {
       if (view.name === name) matches.push({ client: result.client, view });
     }
   }
-  if (matches.length === 1) return matches[0].view;
-  if (matches.length > 1) {
-    throw new ConfigurationError(
-      `${capitalized(label)} ${name} matches more than one client: ${matches.map((match) => match.client).join(', ')}. Pass --client to choose one.`,
-    );
-  }
+  return matches;
+}
 
+/** The error for a lookup with no match, naming the clients searched, skipped, and failed. */
+function notFound<Row>(
+  results: readonly ClientRows<Row>[],
+  lookup: { label: string; name: string; scoped: string | null },
+): ConfigurationError {
+  const { label, name, scoped } = lookup;
   const skipped = results.filter((result) => result.outcome.status === 'skipped');
   const failed = results.filter((result) => result.outcome.status === 'failed');
   if (scoped !== null) {
     const first = skipped[0] ?? failed[0];
     const reason = first === undefined ? undefined : outcomeMessage(first.outcome);
-    throw new ConfigurationError(
+    return new ConfigurationError(
       reason === undefined || reason === ''
         ? `${capitalized(label)} not found: ${name} for client ${scoped}.`
         : `${capitalized(label)} ${name} is not available for client ${scoped}: ${reason}`,
@@ -141,7 +157,7 @@ async function lookupView<Row extends { name: string }>(options: {
   if (failed.length > 0) {
     parts.push(`Failed: ${failed.map((item) => `${item.client} (${outcomeMessage(item.outcome)})`).join(', ')}.`);
   }
-  throw new ConfigurationError(parts.join(' '));
+  return new ConfigurationError(parts.join(' '));
 }
 
 /** Clients with an effort option are the only candidates for an effort probe. */

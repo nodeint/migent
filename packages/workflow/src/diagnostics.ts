@@ -78,29 +78,25 @@ export function unknownKeyEntries(value: Record<string, unknown>, scope: Unknown
   const entries: UnknownKey[] = [];
   for (const key of Object.keys(value)) {
     if (valid.includes(key)) continue;
-    const suggestion = closest(key, valid);
     const path = location === '' ? key : `${location}.${key}`;
-    const hint = Object.hasOwn(renamed, key) ? renamed[key].replaceAll('{location}', location) : null;
-    entries.push({
-      code: 'unknown-key',
-      message: hint !== null
-        ? `${path} ${hint}`
-        : `${path} is not used by Migent.${suggestion === null ? '' : ` Did you mean ${location === '' ? suggestion : `${location}.${suggestion}`}?`}`,
-      path: [...base, key],
-    });
+    const message = Object.hasOwn(renamed, key)
+      ? `${path} ${renamed[key].replaceAll('{location}', location)}`
+      : unusedKeyMessage(key, valid, location);
+    entries.push({ code: 'unknown-key', message, path: [...base, key] });
   }
   return entries;
 }
 
+/** `<path> is not used by Migent.` with the closest valid key as a suggestion when there is one. */
+function unusedKeyMessage(key: string, valid: readonly string[], location: string): string {
+  const suggestion = closest(key, valid);
+  const path = location === '' ? key : `${location}.${key}`;
+  if (suggestion === null) return `${path} is not used by Migent.`;
+  return `${path} is not used by Migent. Did you mean ${location === '' ? suggestion : `${location}.${suggestion}`}?`;
+}
+
 export function unknownKeys(value: Record<string, unknown>, valid: readonly string[], location: string): string[] {
-  const messages: string[] = [];
-  for (const key of Object.keys(value)) {
-    if (valid.includes(key)) continue;
-    const suggestion = closest(key, valid);
-    const path = location === '' ? key : `${location}.${key}`;
-    messages.push(`${path} is not used by Migent.${suggestion === null ? '' : ` Did you mean ${location === '' ? suggestion : `${location}.${suggestion}`}?`}`);
-  }
-  return messages;
+  return Object.keys(value).filter((key) => !valid.includes(key)).map((key) => unusedKeyMessage(key, valid, location));
 }
 
 /** Unknown keys at the top level, stages, `produces`, `session` and decision entries, with author-coordinate paths. */
@@ -165,17 +161,20 @@ function fieldPathWithin(item: unknown, rest: string): { path: (string | number)
     if (match === null) break;
     text = text.slice(match[0].length);
     const key: string | number = match[1] !== undefined ? match[1] : Number(match[2]);
-    if (out.length > 0) {
-      const present = typeof key === 'number'
-        ? Array.isArray(current) && key < current.length
-        : isRecord(current) && Object.hasOwn(current, key);
-      if (!present) break;
-    }
+    const present = hasSegment(current, key);
+    if (out.length > 0 && !present) break;
     out.push(key);
-    if (typeof key === 'number' ? Array.isArray(current) && key < current.length : isRecord(current) && Object.hasOwn(current, key)) confirmed += 1;
+    if (present) confirmed += 1;
     current = typeof key === 'number' ? (current as unknown[])[key] : (current as Record<string, unknown>)[key];
   }
   return { path: out, confirmed };
+}
+
+/** True when `container` has the list index or mapping key `key`. */
+function hasSegment(container: unknown, key: string | number): boolean {
+  return typeof key === 'number'
+    ? Array.isArray(container) && key < container.length
+    : isRecord(container) && Object.hasOwn(container, key);
 }
 
 const MISSING_STAGE_ID = /^Missing or invalid stages\.id\.$/;

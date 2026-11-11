@@ -70,21 +70,37 @@ interface Context {
   source: DraftSourceMap | null;
 }
 
-function publicDiagnostic(item: Diagnostic, context: Context): PublicDiagnostic {
-  let source: PublicDiagnostic['source'];
-  let file: string | undefined;
-  let draft: boolean | undefined;
-  if (item.source !== undefined) {
-    if ('workflow' in item.source) {
-      source = 'workflow';
+interface SourceFields {
+  source?: PublicDiagnostic['source'];
+  file?: string;
+  draft?: boolean;
+}
+
+function sourceFieldsOf(item: Diagnostic, context: Context): SourceFields {
+  if (item.source === undefined) return {};
+  if ('workflow' in item.source) {
+    return {
+      source: 'workflow',
       // An empty name is the draft itself, before a file name can be derived.
-      file = item.source.workflow === '' ? undefined : item.source.workflow;
-      draft = context.file !== null && item.source.workflow === context.file;
-    } else {
-      source = item.source.layer === 'merged' ? 'effective' : item.source.layer;
-      draft = context.scope !== null && (source === 'effective' || source === context.scope);
-    }
+      file: item.source.workflow === '' ? undefined : item.source.workflow,
+      draft: context.file !== null && item.source.workflow === context.file,
+    };
   }
+  const source = item.source.layer === 'merged' ? 'effective' : item.source.layer;
+  return { source, draft: context.scope !== null && (source === 'effective' || source === context.scope) };
+}
+
+function positionFieldsOf(position: Diagnostic['position']): Partial<PublicDiagnostic> {
+  if (position === undefined) return {};
+  return {
+    line: position.line,
+    column: position.column,
+    ...(position.end === undefined ? {} : { end_line: position.end.line, end_column: position.end.column }),
+  };
+}
+
+function publicDiagnostic(item: Diagnostic, context: Context): PublicDiagnostic {
+  const { source, file, draft } = sourceFieldsOf(item, context);
   const position = item.position ?? (draft === true ? draftRangeOf(item, context) : undefined);
   return {
     ...(source === undefined ? {} : { source }),
@@ -94,10 +110,7 @@ function publicDiagnostic(item: Diagnostic, context: Context): PublicDiagnostic 
     severity: item.severity,
     code: item.code,
     message: item.message,
-    ...(position === undefined ? {} : { line: position.line, column: position.column }),
-    ...(position?.end === undefined
-      ? {}
-      : { end_line: position.end.line, end_column: position.end.column }),
+    ...positionFieldsOf(position),
   };
 }
 
@@ -155,16 +168,8 @@ export function runAuthoring(options: AuthoringOptions): number {
       const envelope = { schema_version: 1 as const, command, valid, diagnostics, ...extra };
       writeJson(AuthoringEnvelope, envelope);
     } else {
-      for (const item of diagnostics) {
-        const where = item.path === undefined ? '' : ` ${item.path.join('.')}`;
-        const line = item.line === undefined ? '' : ` (line ${item.line}${item.column === undefined ? '' : `, column ${item.column}`})`;
-        process.stderr.write(`${item.severity}${where}${line}: ${item.message} [${item.code}]\n`);
-      }
-      if (exit === 0) {
-        if (typeof extra.rendered === 'string') process.stdout.write(extra.rendered);
-        else if (options.mode === 'save' && typeof extra.file === 'string') process.stdout.write(`Saved ${extra.file}.\n`);
-        else process.stdout.write('Valid.\n');
-      }
+      printHumanDiagnostics(diagnostics);
+      if (exit === 0) printHumanSuccess(options.mode, extra);
     }
     return exit;
   };
@@ -177,6 +182,21 @@ export function runAuthoring(options: AuthoringOptions): number {
     }
     throw error;
   }
+}
+
+function printHumanDiagnostics(diagnostics: readonly PublicDiagnostic[]): void {
+  for (const item of diagnostics) {
+    const where = item.path === undefined ? '' : ` ${item.path.join('.')}`;
+    const column = item.column === undefined ? '' : `, column ${item.column}`;
+    const line = item.line === undefined ? '' : ` (line ${item.line}${column})`;
+    process.stderr.write(`${item.severity}${where}${line}: ${item.message} [${item.code}]\n`);
+  }
+}
+
+function printHumanSuccess(mode: AuthoringOptions['mode'], extra: Record<string, unknown>): void {
+  if (typeof extra.rendered === 'string') process.stdout.write(extra.rendered);
+  else if (mode === 'save' && typeof extra.file === 'string') process.stdout.write(`Saved ${extra.file}.\n`);
+  else process.stdout.write('Valid.\n');
 }
 
 /** The session lock a save holds. The command releases it in a `finally`, whatever step failed. */
@@ -241,13 +261,19 @@ function executeDraft(
   const invalid = diagnostics.some((item) => item.severity === 'error');
   if (mode === 'validate' || invalid) return emit(invalid ? EXIT_INVALID : 0, diagnostics);
 
+  return renderOrSave(options, target, { emit });
+}
+
+function renderOrSave(options: AuthoringOptions, target: Target, output: { emit: Emit }): number {
+  const { emit } = output;
+  const { diagnostics, draft } = target;
   const preserve = options.preserveComments === true;
   const base = preserve ? resolveBase(options, target) : { text: null };
   const { conflict } = base;
   if (conflict !== undefined) return emit(EXIT_CONFLICT, [...diagnostics, conflict.item], conflict.extra);
   const rendered = renderAuthoringYaml(draft, base.text ?? undefined);
   const preservation = preservationWarnings(target.label, rendered, preserve && base.text !== null);
-  if (mode === 'render') return emit(0, [...diagnostics, ...preservation], { rendered: rendered.text });
+  if (options.mode === 'render') return emit(0, [...diagnostics, ...preservation], { rendered: rendered.text });
   return saveDraft(options, target, { emit, rendered, preservation });
 }
 
@@ -267,15 +293,24 @@ function invocation(message: string): Finish {
 
 /** Rejects flag combinations that do not apply; returns the config scope. */
 function checkInvocation(options: AuthoringOptions): 'project' | 'local' {
-  const { kind, mode } = options;
-  let scope: 'project' | 'local' = 'project';
-  if (kind === 'config') {
-    const given = options.scope ?? 'project';
-    if (given !== 'project' && given !== 'local') throw invocation('--scope must be project or local.');
-    scope = given;
-  } else if (options.scope !== undefined) {
-    throw invocation('--scope applies only to config.');
+  const scope = checkScope(options);
+  checkBaseHash(options);
+  checkWorkflowTarget(options);
+  return scope;
+}
+
+function checkScope(options: AuthoringOptions): 'project' | 'local' {
+  if (options.kind !== 'config') {
+    if (options.scope !== undefined) throw invocation('--scope applies only to config.');
+    return 'project';
   }
+  const given = options.scope ?? 'project';
+  if (given !== 'project' && given !== 'local') throw invocation('--scope must be project or local.');
+  return given;
+}
+
+function checkBaseHash(options: AuthoringOptions): void {
+  const { mode } = options;
   if (options.baseHash !== undefined && !/^[0-9a-f]{64}$/.test(options.baseHash)) {
     throw invocation('--base-hash must be a lowercase SHA-256 hex digest.');
   }
@@ -283,13 +318,16 @@ function checkInvocation(options: AuthoringOptions): 'project' | 'local' {
   if (options.preserveComments === true && mode === 'validate') {
     throw invocation('--preserve-comments applies only to render and save.');
   }
+}
+
+function checkWorkflowTarget(options: AuthoringOptions): void {
+  const { kind } = options;
   if (options.target !== undefined && kind !== 'workflow') throw invocation('--target applies only to workflow.');
   if (options.session !== undefined && kind !== 'workflow') throw invocation('--session applies only to workflow.');
   if (options.session !== undefined && options.target !== undefined) throw invocation('--session and --target are mutually exclusive.');
   if (options.target !== undefined && !(FILE_NAME.test(options.target) && options.target.endsWith('.yaml'))) {
     throw invocation('--target must be a plain *.yaml file name.');
   }
-  return scope;
 }
 
 function readDraft(options: AuthoringOptions): string {

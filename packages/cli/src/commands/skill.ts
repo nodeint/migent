@@ -67,17 +67,13 @@ export async function installSkill(options: SkillOptions = {}): Promise<number> 
   return runSkills(scope, targets, options);
 }
 
+type InstalledSkill = ReturnType<typeof scanInstalledSkills>[number];
+
 export async function updateSkill(options: SkillOptions = {}): Promise<number> {
-  const workspace = options.workspace ?? null;
-  const home = options.home ?? homedir();
   const requested = options.clients ?? [];
   const wanted = requested.length === 0 ? null : pickTargets(requested);
   if (requested.length > 0 && wanted === null) return EXIT_CONFIG;
-  const installed = scanInstalledSkills({ workspace: workspace ?? path.join(home, '\0none'), home }, skillSourceDirectory())
-    .filter((entry) => entry.scope === 'global' || workspace !== null)
-    .filter((entry) => (options.scope === null || options.scope === undefined) || entry.scope === options.scope)
-    .filter((entry) => wanted === null ||
-      entry.clients.some((client) => wanted.some((target) => target.client === client)));
+  const installed = installedSkills(options, wanted);
   if (installed.length === 0) {
     printError('Migent skill is not installed; run `migent skill install`.');
     return 1;
@@ -88,15 +84,34 @@ export async function updateSkill(options: SkillOptions = {}): Promise<number> {
     return 0;
   }
   if (!preflight(options)) return 1;
-  if (options.yes !== true) {
-    const list = stale.map((entry) => `  ${entry.directory}`).join('\n');
-    const answer = await ask(options, `Overwrite these copies with the bundled skill? Local edits are lost.\n${list}`);
-    if (answer === null) {
-      printError('Pass --yes to update without confirmation.');
-      return EXIT_CONFIG;
-    }
-    if (!answer) return 0;
+  const confirmed = await confirmUpdate(options, stale);
+  if (confirmed !== true) return confirmed;
+  return updateStale(stale, options);
+}
+
+function installedSkills(options: SkillOptions, wanted: readonly SkillTarget[] | null): InstalledSkill[] {
+  const workspace = options.workspace ?? null;
+  const home = options.home ?? homedir();
+  const wantsClient = (client: string): boolean => wanted?.some((target) => target.client === client) === true;
+  return scanInstalledSkills({ workspace: workspace ?? path.join(home, '\0none'), home }, skillSourceDirectory())
+    .filter((entry) => entry.scope === 'global' || workspace !== null)
+    .filter((entry) => (options.scope === null || options.scope === undefined) || entry.scope === options.scope)
+    .filter((entry) => wanted === null || entry.clients.some(wantsClient));
+}
+
+/** True to proceed; otherwise the exit code to return. */
+async function confirmUpdate(options: SkillOptions, stale: readonly InstalledSkill[]): Promise<true | number> {
+  if (options.yes === true) return true;
+  const list = stale.map((entry) => `  ${entry.directory}`).join('\n');
+  const answer = await ask(options, `Overwrite these copies with the bundled skill? Local edits are lost.\n${list}`);
+  if (answer === null) {
+    printError('Pass --yes to update without confirmation.');
+    return EXIT_CONFIG;
   }
+  return answer ? true : 0;
+}
+
+async function updateStale(stale: readonly InstalledSkill[], options: SkillOptions): Promise<number> {
   for (const scope of ['project', 'global'] as const) {
     const group = stale.filter((entry) => entry.scope === scope);
     if (group.length === 0) continue;
@@ -106,6 +121,10 @@ export async function updateSkill(options: SkillOptions = {}): Promise<number> {
     if (code !== 0) return code;
   }
   return 0;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 
 /** Migent client ids used by the agents in `.migent/config.yaml`. */
@@ -118,24 +137,29 @@ export function clientsFromConfig(workspace: string): string[] {
   } catch {
     return [];
   }
-  const definitions: unknown[] = typeof config.agents === 'object' && config.agents !== null
-    ? Object.values(config.agents) : [];
-  if (typeof config.roles === 'object' && config.roles !== null) {
-    for (const role of Object.values(config.roles)) {
-      if (typeof role === 'object' && role !== null && 'agent' in role) {
-        definitions.push(role.agent);
-      }
-    }
-  }
   const found = new Set<string>();
-  for (const model of definitions) {
-    if (typeof model !== 'object' || model === null) continue;
-    const {client} = (model as { client?: unknown });
-    const clientType = typeof client === 'object' && client !== null ? (client as { type?: unknown }).type : undefined;
-    const id = typeof clientType === 'string' ? clientType : null;
-    if (typeof id === 'string' && findTarget(id) !== undefined) found.add(id);
+  for (const model of agentDefinitions(config)) {
+    const id = clientTypeOf(model);
+    if (id !== null && findTarget(id) !== undefined) found.add(id);
   }
   return [...found];
+}
+
+/** Agent definitions from `agents` and the inline `agent` of each role. */
+function agentDefinitions(config: Record<string, unknown>): unknown[] {
+  const definitions: unknown[] = isObject(config.agents) ? Object.values(config.agents) : [];
+  const roles = isObject(config.roles) ? Object.values(config.roles) : [];
+  for (const role of roles) {
+    if (isObject(role) && 'agent' in role) definitions.push(role.agent);
+  }
+  return definitions;
+}
+
+function clientTypeOf(model: unknown): string | null {
+  if (!isObject(model)) return null;
+  const { client } = model;
+  const clientType = isObject(client) ? client.type : undefined;
+  return typeof clientType === 'string' ? clientType : null;
 }
 
 /** Directory the client reads project skills from, for prompt text. */

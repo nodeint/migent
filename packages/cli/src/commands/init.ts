@@ -293,62 +293,81 @@ function writeDoctorProblems(
   for (const problem of problems) process.stderr.write(`${problem}\n`);
 }
 
-async function choices(
-  env: { clients: import('@nodeint/migent-kernel').ClientRegistry; which: Which; prompt: Prompter },
-  args: {
-    role: string;
-    client: string | null;
-    model: string | null;
-    options: Record<string, string>;
-    effort: string | null;
-    runCommand: RunCommand;
-    models: readonly ModelSelection[];
-    getCatalog: (name: string) => Promise<ModelCatalog>;
-  },
-): Promise<ModelChoice> {
-  const { clients, which, prompt } = env;
-  let {client} = args;
-  let {model} = args;
-  let {effort} = args;
-  let stored: Record<string, string>;
-  if (client === null) {
-    const selected = await prompt.selectModel(args.models, `${args.role} model`);
-    if (!args.models.some((item) => item.client === selected.client && item.model === selected.model)) {
-      throw new ConfigurationError('Unknown client or model.');
-    }
-    client = selected.client;
-    model = selected.model;
-    const impl = clients.get(client);
-    const catalog = await args.getCatalog(client);
-    stored = await promptOptions(impl, { model, catalog }, { which, runCommand: args.runCommand, prompt });
-    // The prompt stores effort as a native option; keep it in the dedicated `effort` field instead.
-    const promptedOption = impl.effortOption;
-    if (promptedOption && Object.hasOwn(stored, promptedOption) && !(promptedOption === 'variant' && model.includes('#'))) {
-      effort = stored[promptedOption] ?? null;
-      delete stored[promptedOption];
-    }
-  } else {
-    const impl = clients.get(client);
-    if (model === null) throw new ConfigurationError('Model is required.');
-    const catalog = await args.getCatalog(client);
-    model = knownModel(model, catalog);
-    const {effortOption} = impl;
-    if (args.effort !== null && !effortOption) throw new ConfigurationError(`${args.role} client does not support effort.`);
-    if (args.effort !== null && effortOption && Object.hasOwn(args.options, effortOption)) {
-      throw new ConfigurationError(`${args.role} effort conflicts with option ${effortOption}; use only one.`);
-    }
-    if (args.effort !== null && model.includes('#') && effortOption === 'variant') {
-      throw new ConfigurationError(`${args.role} model already selects a #variant; omit effort.`);
-    }
-    const requested = args.effort !== null && effortOption
-      ? { ...args.options, [effortOption]: args.effort }
-      : args.options;
-    stored = await acceptedOptions(impl, { model, catalog, which, runCommand: args.runCommand, options: requested });
-    if (args.effort !== null && effortOption) delete stored[effortOption];
-  }
+type ChoiceEnv = { clients: import('@nodeint/migent-kernel').ClientRegistry; which: Which; prompt: Prompter };
+
+interface ChoiceArgs {
+  role: string;
+  client: string | null;
+  model: string | null;
+  options: Record<string, string>;
+  effort: string | null;
+  runCommand: RunCommand;
+  models: readonly ModelSelection[];
+  getCatalog: (name: string) => Promise<ModelCatalog>;
+}
+
+/** A client and model with the options to store and the effort, before the final model check. */
+interface PendingChoice {
+  client: string;
+  model: string;
+  stored: Record<string, string>;
+  effort: string | null;
+}
+
+async function choices(env: ChoiceEnv, args: ChoiceArgs): Promise<ModelChoice> {
+  const pending = args.client === null ? await promptedChoice(env, args) : await givenChoice(env, args, args.client);
+  const { client, model, stored, effort } = pending;
   if (model.trim() === '') throw new ConfigurationError('Model is required.');
   const primary = { client, model: model.trim(), options: stored, ...(effort !== null ? { effort } : {}) };
   return primary;
+}
+
+async function promptedChoice(env: ChoiceEnv, args: ChoiceArgs): Promise<PendingChoice> {
+  const { clients, which, prompt } = env;
+  const selected = await prompt.selectModel(args.models, `${args.role} model`);
+  if (!args.models.some((item) => item.client === selected.client && item.model === selected.model)) {
+    throw new ConfigurationError('Unknown client or model.');
+  }
+  const { client, model } = selected;
+  const impl = clients.get(client);
+  const catalog = await args.getCatalog(client);
+  const stored = await promptOptions(impl, { model, catalog }, { which, runCommand: args.runCommand, prompt });
+  let { effort } = args;
+  // The prompt stores effort as a native option; keep it in the dedicated `effort` field instead.
+  const promptedOption = impl.effortOption;
+  if (promptedOption && Object.hasOwn(stored, promptedOption) && !(promptedOption === 'variant' && model.includes('#'))) {
+    effort = stored[promptedOption] ?? null;
+    delete stored[promptedOption];
+  }
+  return { client, model, stored, effort };
+}
+
+async function givenChoice(env: ChoiceEnv, args: ChoiceArgs, client: string): Promise<PendingChoice> {
+  const impl = env.clients.get(client);
+  if (args.model === null) throw new ConfigurationError('Model is required.');
+  const catalog = await args.getCatalog(client);
+  const model = knownModel(args.model, catalog);
+  const { effortOption } = impl;
+  checkGivenEffort(args, model, effortOption);
+  const requested = args.effort !== null && effortOption
+    ? { ...args.options, [effortOption]: args.effort }
+    : args.options;
+  const stored = await acceptedOptions(impl, {
+    model, catalog, which: env.which, runCommand: args.runCommand, options: requested,
+  });
+  if (args.effort !== null && effortOption) delete stored[effortOption];
+  return { client, model, stored, effort: args.effort };
+}
+
+function checkGivenEffort(args: ChoiceArgs, model: string, effortOption: string | null | undefined): void {
+  if (args.effort === null) return;
+  if (!effortOption) throw new ConfigurationError(`${args.role} client does not support effort.`);
+  if (Object.hasOwn(args.options, effortOption)) {
+    throw new ConfigurationError(`${args.role} effort conflicts with option ${effortOption}; use only one.`);
+  }
+  if (model.includes('#') && effortOption === 'variant') {
+    throw new ConfigurationError(`${args.role} model already selects a #variant; omit effort.`);
+  }
 }
 
 function classify(
@@ -359,29 +378,31 @@ function classify(
   const root = path.join(workspace, '.migent');
   const config = path.join(root, 'config.yaml');
   const workflows = path.join(root, 'workflows');
-  const gitignore = path.join(root, '.gitignore');
-  const owned: string[] = [];
-  if (exists(config)) owned.push('.migent/config.yaml');
-  if (exists(path.join(root, 'config.local.yaml'))) owned.push('.migent/config.local.yaml');
-  if (exists(workflows) && !(isDirectory(workflows) && readdirSync(workflows).length === 0)) {
-    owned.push('.migent/workflows');
-    if (isDirectory(workflows)) {
-      for (const name of readdirSync(workflows).filter((item) => item.endsWith('.yaml')).sort()) {
-        if (isFile(path.join(workflows, name))) owned.push(`.migent/workflows/${name}`);
-      }
-    }
-  }
-  if (exists(gitignore)) owned.push('.migent/.gitignore');
+  const owned = ownedPaths(root, workflows);
   if (owned.length === 0) return { state: 'create', conflicts: [] };
-  const yamlFiles = isDirectory(workflows)
-    ? readdirSync(workflows).filter((name) => name.endsWith('.yaml') && isFile(path.join(workflows, name)))
-    : [];
-  if (isFile(config) && yamlFiles.length > 0) {
+  if (isFile(config) && workflowYamlFiles(workflows).length > 0) {
     const checks = diagnose(workspace, { clients, which });
     const byName = new Map(checks.map((check) => [check.name, check]));
     if (byName.get('config')?.ok && byName.get('workflows')?.ok) return { state: 'ready', conflicts: [] };
   }
   return { state: 'conflict', conflicts: owned };
+}
+
+/** Migent-owned paths that already exist, in report order. */
+function ownedPaths(root: string, workflows: string): string[] {
+  const owned: string[] = [];
+  if (exists(path.join(root, 'config.yaml'))) owned.push('.migent/config.yaml');
+  if (exists(path.join(root, 'config.local.yaml'))) owned.push('.migent/config.local.yaml');
+  if (exists(workflows) && !(isDirectory(workflows) && readdirSync(workflows).length === 0)) {
+    owned.push('.migent/workflows', ...workflowYamlFiles(workflows).sort().map((name) => `.migent/workflows/${name}`));
+  }
+  if (exists(path.join(root, '.gitignore'))) owned.push('.migent/.gitignore');
+  return owned;
+}
+
+function workflowYamlFiles(workflows: string): string[] {
+  if (!isDirectory(workflows)) return [];
+  return readdirSync(workflows).filter((name) => name.endsWith('.yaml') && isFile(path.join(workflows, name)));
 }
 
 function writeProject(workspace: string, files: readonly RenderedFile[]): string[] {

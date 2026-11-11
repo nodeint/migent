@@ -170,40 +170,71 @@ export interface TurnDiagnosticsInput {
   resultState: ResultState;
 }
 
+/** The process-level observations, from the wrapper failure when there is one, else the executor facts. */
+function processObservations(base: ExecutionFailure | ProcessFacts) {
+  return {
+    stderrTail: base.stderrTail,
+    exitCode: base.exitCode,
+    signal: base.signal,
+    recordedAt: 'failedAt' in base ? base.failedAt : base.endedAt,
+    drain: base.drain,
+    stderrTotalBytes: base.stderrTotalBytes,
+  };
+}
+
+/** The wrapper's own failure detail; all null when the process ran to its end. */
+function failureDetail(failure: ExecutionFailure | undefined, classification: FailureClassification | null) {
+  if (!failure) {
+    return {
+      phase: null,
+      code: null,
+      errno: null,
+      syscall: null,
+      path: null,
+      message: truncateText(classification?.message ?? 'provider reported an error'),
+    };
+  }
+  return {
+    phase: failure.phase,
+    code: failure.code,
+    errno: failure.errno,
+    syscall: failure.syscall,
+    path: failure.path,
+    message: failure.message,
+  };
+}
+
 /** The `diagnostics.json` document of one abnormal provider turn. Pure. */
 export function buildTurnDiagnostics(input: TurnDiagnosticsInput): Record<string, unknown> {
   const { failure, facts, classification } = input;
   const base = failure ?? facts;
   if (base === undefined) throw new Error('A diagnostics record needs a process failure or process facts.');
-  const stderrTail = failure?.stderrTail ?? facts?.stderrTail ?? '';
+  const observed = processObservations(base);
   const kind = failure?.kind ?? 'provider-error';
   const origin: DiagnosticsOrigin = kind === 'start' ? 'start' : (classification?.origin ?? 'exit-only');
-  const exitCode = failure ? failure.exitCode : (facts?.exitCode ?? null);
-  const signal = failure ? failure.signal : (facts?.signal ?? null);
-  const recordedAt = failure?.failedAt ?? facts?.endedAt ?? new Date().toISOString();
-  const drain = failure?.drain ?? facts?.drain ?? 'closed';
+  const { phase, code, errno, syscall, path, message } = failureDetail(failure, classification);
   return {
     schema_version: DIAGNOSTICS_SCHEMA_VERSION,
     turn: input.turn,
-    recorded_at: recordedAt,
+    recorded_at: observed.recordedAt,
     agent_id: input.agentId,
     failure: {
       kind,
       origin,
-      phase: failure?.phase ?? null,
-      code: failure?.code ?? null,
-      errno: failure?.errno ?? null,
-      syscall: failure?.syscall ?? null,
-      path: failure?.path ?? null,
-      exit_code: exitCode,
-      signal,
-      message: failure?.message ?? truncateText(classification?.message ?? 'provider reported an error'),
+      phase,
+      code,
+      errno,
+      syscall,
+      path,
+      exit_code: observed.exitCode,
+      signal: observed.signal,
+      message,
     },
-    stderr_tail: stderrTail,
+    stderr_tail: observed.stderrTail,
     stderr: {
-      tail_bytes: Buffer.byteLength(stderrTail),
-      total_bytes: failure?.stderrTotalBytes ?? facts?.stderrTotalBytes ?? 0,
-      drain,
+      tail_bytes: Buffer.byteLength(observed.stderrTail),
+      total_bytes: observed.stderrTotalBytes,
+      drain: observed.drain,
     },
     stream_summary: input.stream,
     result_state: input.resultState,
@@ -216,7 +247,7 @@ export function buildTurnDiagnostics(input: TurnDiagnosticsInput): Record<string
     node_version: process.version,
     platform: process.platform,
     arch: process.arch,
-    timings: { spawned_at: base.spawnedAt, failed_at: recordedAt },
+    timings: { spawned_at: base.spawnedAt, failed_at: observed.recordedAt },
   };
 }
 
@@ -267,66 +298,86 @@ export function renderProviderDiagnostics(input: {
 }): string[] {
   const { diagnostics, finalTurn, failureReason, link } = input;
   const failure = record(diagnostics.failure);
-  const state = record(diagnostics.result_state);
-  const stderr = record(diagnostics.stderr);
   const turn = typeof diagnostics.turn === 'number' ? diagnostics.turn : null;
-  const verdict = text(state.turn_verdict);
-  const origin = text(failure.origin) ?? 'unknown';
-  const exit = typeof failure.exit_code === 'number' ? failure.exit_code : null;
-  const pointer = `See [\`${link}\`](${link}).`;
-  const turnLabel = turn === null ? 'an unknown turn' : `turn ${turn}`;
-  if (finalTurn === null || turn === null) {
-    return [
-      '## Provider diagnostics',
-      '',
-      `A provider record exists for ${turnLabel} (origin \`${origin}\`, verdict \`${verdict ?? 'unknown'}\`). ` +
-        'Whether it relates to this failure is unknown: this execution does not record its final provider turn.',
-      '',
-      pointer,
-    ];
-  }
-  if (turn < finalTurn) {
-    return [
-      '## Earlier provider anomaly',
-      '',
-      `Turn ${turn} had a provider anomaly (origin \`${origin}\`, verdict \`${verdict ?? 'unknown'}\`). ` +
-        `It is not the cause of this failure, which happened on turn ${finalTurn}.`,
-      '',
-      pointer,
-    ];
-  }
-  if (verdict === 'accepted') {
-    return [
-      '## Earlier in this turn',
-      '',
-      `Provider ${exit === null ? 'ended abnormally' : `exited ${exit}`} on turn ${turn}; the reply was accepted. ` +
-        `The execution failed later${failureReason === null ? '' : ` at \`${failureReason}\``}. The cause is the error above.`,
-      '',
-      pointer,
-    ];
-  }
+  const facts: ProviderFacts = {
+    turn,
+    verdict: text(record(diagnostics.result_state).turn_verdict),
+    origin: text(failure.origin) ?? 'unknown',
+    exit: typeof failure.exit_code === 'number' ? failure.exit_code : null,
+    pointer: `See [\`${link}\`](${link}).`,
+  };
+  if (finalTurn === null || turn === null) return unplacedDiagnostics(facts);
+  if (turn < finalTurn) return earlierAnomaly(facts, turn, finalTurn);
+  if (facts.verdict === 'accepted') return acceptedTurnAnomaly(facts, turn, failureReason);
+  return [...providerFailureFacts(diagnostics, facts, turn), '', providerVerdictLine(diagnostics), '', facts.pointer];
+}
+
+interface ProviderFacts {
+  turn: number | null;
+  verdict: string | null;
+  origin: string;
+  exit: number | null;
+  pointer: string;
+}
+
+function unplacedDiagnostics(facts: ProviderFacts): string[] {
+  const turnLabel = facts.turn === null ? 'an unknown turn' : `turn ${facts.turn}`;
+  return [
+    '## Provider diagnostics',
+    '',
+    `A provider record exists for ${turnLabel} (origin \`${facts.origin}\`, verdict \`${facts.verdict ?? 'unknown'}\`). ` +
+      'Whether it relates to this failure is unknown: this execution does not record its final provider turn.',
+    '',
+    facts.pointer,
+  ];
+}
+
+function earlierAnomaly(facts: ProviderFacts, turn: number, finalTurn: number): string[] {
+  return [
+    '## Earlier provider anomaly',
+    '',
+    `Turn ${turn} had a provider anomaly (origin \`${facts.origin}\`, verdict \`${facts.verdict ?? 'unknown'}\`). ` +
+      `It is not the cause of this failure, which happened on turn ${finalTurn}.`,
+    '',
+    facts.pointer,
+  ];
+}
+
+function acceptedTurnAnomaly(facts: ProviderFacts, turn: number, failureReason: string | null): string[] {
+  const { exit } = facts;
+  return [
+    '## Earlier in this turn',
+    '',
+    `Provider ${exit === null ? 'ended abnormally' : `exited ${exit}`} on turn ${turn}; the reply was accepted. ` +
+      `The execution failed later${failureReason === null ? '' : ` at \`${failureReason}\``}. The cause is the error above.`,
+    '',
+    facts.pointer,
+  ];
+}
+
+/** The bullet facts of a provider failure on the execution's final turn. */
+function providerFailureFacts(diagnostics: Record<string, unknown>, facts: ProviderFacts, turn: number): string[] {
+  const failure = record(diagnostics.failure);
+  const stderr = record(diagnostics.stderr);
+  const { exit } = facts;
   const drain = text(stderr.drain) ?? 'closed';
   const lines = [
     '## Provider failure',
     '',
     `- Turn: ${turn}`,
-    `- Origin: \`${origin}\``,
+    `- Origin: \`${facts.origin}\``,
     `- Exit code: ${exit === null ? 'none' : exit}${text(failure.signal) === null ? '' : ` (signal ${String(failure.signal)})`}`,
     `- Stderr: ${typeof stderr.total_bytes === 'number' ? stderr.total_bytes : 0} bytes seen, drain \`${drain}\``,
   ];
   const agentId = text(diagnostics.agent_id);
   if (agentId !== null) lines.push(`- Provider session: \`${agentId}\``);
-  const observed = record(state.observed);
+  const observed = record(record(diagnostics.result_state).observed);
   const reply = record(observed.reply);
   const artifact = record(observed.artifact);
   lines.push(
     `- Reply: source \`${text(reply.source) ?? 'unknown'}\`, ${typeof reply.bytes === 'number' ? reply.bytes : 0} bytes`,
     `- Artifact: \`${text(artifact.state) ?? 'unknown'}\``,
     `- Response written: ${observed.response_written === true ? 'yes' : 'no'}`,
-    '',
-    providerVerdictLine(diagnostics),
-    '',
-    pointer,
   );
   return lines;
 }

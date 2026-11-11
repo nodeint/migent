@@ -390,48 +390,65 @@ async function decide(home: string, identityTimeout: number): Promise<Decision> 
   }
 }
 
-async function spawnAndPublish(
-  home: string,
-  port: number,
-  limits: { readyTimeout: number; healthTimeout: number; termGraceSec: number; killGraceSec: number },
-): Promise<ServiceEndpoint> {
+type SpawnLimits = { readyTimeout: number; healthTimeout: number; termGraceSec: number; killGraceSec: number };
+
+async function spawnAndPublish(home: string, port: number, limits: SpawnLimits): Promise<ServiceEndpoint> {
   const proc = await svc.launchChild(home, port);
-  let published: ServiceRecord | null = null;
+  const progress: { published: ServiceRecord | null } = { published: null };
   let outcome: ServiceEndpoint | null = null;
   let error: unknown = null;
   try {
-    const payload = await svc.readReadyLine(proc, monotonic() + limits.readyTimeout);
-    const ready = validateReady(payload, proc.pid, port);
-    if (!ready) {
-      throw new ServiceError(`Registry service did not become ready. See ${path.join(home, 'service.log')}.`);
-    }
-    const record = recordFor({ instanceId: ready.instance_id, token: ready.token, port: ready.port, pid: ready.pid });
-    svc.publishServiceJson(home, record);
-    published = record;
-    if (!proc.acknowledge()) throw new ServiceError('Registry service did not become ready.');
-    if (!(await waitUntilHealthy(home, record, monotonic() + limits.healthTimeout))) {
-      throw new ServiceError('Registry service did not become ready.');
-    }
-    outcome = endpointFrom(record);
+    outcome = await publishReadyChild(home, port, { proc, limits, progress });
   } catch (caught) {
     error = caught;
   } finally {
     if (outcome === null) {
-      // The handle is our own child, so signals cannot reach a reused pid.
-      const gone = await stopSpawnedChild(proc, limits.termGraceSec, limits.killGraceSec);
-      if (published && gone) {
-        try {
-          await svc.unlinkServiceJsonIfUnchanged(home, published.instance_id);
-        } catch (unlinkError) {
-          if (error === null) error = unlinkError;
-        }
-      }
+      error = await cleanupFailedSpawn(home, { proc, limits, published: progress.published }, error);
     }
     proc.release();
   }
   if (error) throw error;
   if (!outcome) throw new ServiceError('The process is still alive.');
   return outcome;
+}
+
+async function publishReadyChild(
+  home: string,
+  port: number,
+  spawn: { proc: SpawnedChild; limits: SpawnLimits; progress: { published: ServiceRecord | null } },
+): Promise<ServiceEndpoint> {
+  const { proc, limits, progress } = spawn;
+  const payload = await svc.readReadyLine(proc, monotonic() + limits.readyTimeout);
+  const ready = validateReady(payload, proc.pid, port);
+  if (!ready) {
+    throw new ServiceError(`Registry service did not become ready. See ${path.join(home, 'service.log')}.`);
+  }
+  const record = recordFor({ instanceId: ready.instance_id, token: ready.token, port: ready.port, pid: ready.pid });
+  svc.publishServiceJson(home, record);
+  progress.published = record;
+  if (!proc.acknowledge()) throw new ServiceError('Registry service did not become ready.');
+  if (!(await waitUntilHealthy(home, record, monotonic() + limits.healthTimeout))) {
+    throw new ServiceError('Registry service did not become ready.');
+  }
+  return endpointFrom(record);
+}
+
+/** Stops a child that never became the service and withdraws its record; returns the error to report. */
+async function cleanupFailedSpawn(
+  home: string,
+  spawn: { proc: SpawnedChild; limits: SpawnLimits; published: ServiceRecord | null },
+  error: unknown,
+): Promise<unknown> {
+  const { proc, limits, published } = spawn;
+  // The handle is our own child, so signals cannot reach a reused pid.
+  const gone = await stopSpawnedChild(proc, limits.termGraceSec, limits.killGraceSec);
+  if (!published || !gone) return error;
+  try {
+    await svc.unlinkServiceJsonIfUnchanged(home, published.instance_id);
+  } catch (unlinkError) {
+    if (error === null) return unlinkError;
+  }
+  return error;
 }
 
 async function waitUntilHealthy(home: string, record: ServiceRecord, deadline: number): Promise<boolean> {
@@ -522,20 +539,26 @@ function validateReady(
   procPid: number,
   requestedPort: number,
 ): ReadyLine | null {
-  if (payload === null) return null;
-  if (
-    new Set(Object.keys(payload)).size !== READY_KEYS.size
-    || ![...READY_KEYS].every((key) => Object.hasOwn(payload, key))
-  ) {
-    return null;
-  }
+  if (payload === null || !hasReadyKeys(payload)) return null;
   const { pid, port, instance_id: instanceId, token } = payload;
   if (typeof pid !== 'number' || pid !== procPid) return null;
-  if (typeof port !== 'number' || !Number.isInteger(port) || port < 1 || port > MAX_PORT) return null;
-  if (requestedPort !== 0 && port !== requestedPort) return null;
-  if (typeof instanceId !== 'string' || !SECRET.test(instanceId)) return null;
-  if (typeof token !== 'string' || !SECRET.test(token)) return null;
+  if (!isReadyPort(port, requestedPort)) return null;
+  if (!isSecret(instanceId) || !isSecret(token)) return null;
   return { pid, port, instance_id: instanceId, token };
+}
+
+function hasReadyKeys(payload: Record<string, unknown>): boolean {
+  return new Set(Object.keys(payload)).size === READY_KEYS.size
+    && [...READY_KEYS].every((key) => Object.hasOwn(payload, key));
+}
+
+function isReadyPort(port: unknown, requestedPort: number): port is number {
+  if (typeof port !== 'number' || !Number.isInteger(port) || port < 1 || port > MAX_PORT) return false;
+  return requestedPort === 0 || port === requestedPort;
+}
+
+function isSecret(value: unknown): value is string {
+  return typeof value === 'string' && SECRET.test(value);
 }
 
 function endpointFrom(record: ServiceRecord): ServiceEndpoint {

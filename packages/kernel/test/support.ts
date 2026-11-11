@@ -349,6 +349,49 @@ export function repoWorkflowText(workflowId: string): string {
   return readFileSync(path.join(fixtures, `${workflowId}.yaml`), 'utf8');
 }
 
+function replyHeaders(report: string): Map<string, string> {
+  const headers = new Map<string, string>();
+  for (const line of report.split(/\r\n|\n|\r/)) {
+    const at = line.indexOf(':');
+    if (line.trim() === '' || at <= 0) break;
+    headers.set(line.slice(0, at).trim().toLowerCase(), line.slice(at + 1).trim());
+  }
+  return headers;
+}
+
+/** A `<<FILE>>` section is written as-is; a JSON question object gains its `status` when the header says question. */
+function fileSectionContent(raw: string, status: string | undefined): string {
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    return parsed !== null && typeof parsed === 'object' && !('status' in parsed) && status === 'question'
+      ? JSON.stringify({ ...parsed, status: 'question' }) : raw;
+  } catch {
+    return raw;
+  }
+}
+
+/** Handoff content for a header-only `blocked` or `complete` reply; null for any other status. */
+function headerHandoffContent(status: string | undefined, headers: Map<string, string>): string | null {
+  if (status === 'blocked') {
+    return JSON.stringify({ schema_version: 1, status, blocker: headers.get('blocker') ?? '' });
+  }
+  if (status === 'complete') {
+    const decision = headers.get('decision');
+    return JSON.stringify({ schema_version: 1, status, ...(decision ? { decision } : {}) });
+  }
+  return null;
+}
+
+const QUESTION_HEAD = 'status: question\n\n';
+
+function writeQuestionHandoff(target: string, report: string): string {
+  const body = report.startsWith(QUESTION_HEAD) ? report.slice(QUESTION_HEAD.length) : '';
+  if (!body.startsWith('{')) return report;
+  const content = JSON.stringify({ ...(JSON.parse(body) as Record<string, unknown>), status: 'question' });
+  writeFileSync(target, content, 'utf8');
+  return QUESTION_HEAD + 'The questions are in the handoff file.';
+}
+
 /**
  * Protocol 3 shim: a scripted reply that opens with a status header is also written as the handoff
  * file the prompt names. `status: question` with a JSON body, or a `<<FILE>>` section, supplies the
@@ -362,36 +405,11 @@ export function writeHandoffFromReply(prompt: string, response: string): string 
   const report = split >= 0 ? response.slice(0, split) : response;
   const raw = split >= 0 ? response.slice(split + marker.length) : null;
   if (!target) return report;
-  const headers = new Map<string, string>();
-  for (const line of report.split(/\r\n|\n|\r/)) {
-    const at = line.indexOf(':');
-    if (line.trim() === '' || at <= 0) break;
-    headers.set(line.slice(0, at).trim().toLowerCase(), line.slice(at + 1).trim());
-  }
+  const headers = replyHeaders(report);
   const status = headers.get('status');
   if (status === undefined && raw === null) return report;
-  const questionHead = 'status: question\n\n';
-  let content: string | null = null;
-  if (raw !== null) {
-    try {
-      const parsed = JSON.parse(raw) as Record<string, unknown>;
-      content = parsed !== null && typeof parsed === 'object' && !('status' in parsed) && status === 'question'
-        ? JSON.stringify({ ...parsed, status: 'question' }) : raw;
-    } catch {
-      content = raw;
-    }
-  } else if (status === 'question') {
-    const body = report.startsWith(questionHead) ? report.slice(questionHead.length) : '';
-    if (!body.startsWith('{')) return report;
-    content = JSON.stringify({ ...(JSON.parse(body) as Record<string, unknown>), status: 'question' });
-    writeFileSync(target, content, 'utf8');
-    return questionHead + 'The questions are in the handoff file.';
-  } else if (status === 'blocked') {
-    content = JSON.stringify({ schema_version: 1, status, blocker: headers.get('blocker') ?? '' });
-  } else if (status === 'complete') {
-    const decision = headers.get('decision');
-    content = JSON.stringify({ schema_version: 1, status, ...(decision ? { decision } : {}) });
-  }
+  if (raw === null && status === 'question') return writeQuestionHandoff(target, report);
+  const content = raw !== null ? fileSectionContent(raw, status) : headerHandoffContent(status, headers);
   if (content !== null) writeFileSync(target, content, 'utf8');
   return report;
 }

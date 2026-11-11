@@ -211,29 +211,18 @@ export class GrokClient implements CliClient {
       if (payload === null) continue;
       sawEvent = true;
       const eventType = payload.type;
-      if (
-        eventType === 'tool_call' ||
-        (eventType === 'tool_call_update' &&
-          (payload.status === 'completed' || payload.status === 'failed'))
-      ) {
+      if (endsTextSegment(payload)) {
         if (segments[segments.length - 1]?.length) segments.push([]);
       } else if (eventType === 'text') {
-        const {data} = payload;
-        if (typeof data === 'string' && data) segments[segments.length - 1]?.push(data);
+        const data = nonEmptyString(payload.data);
+        if (data !== null) segments[segments.length - 1]?.push(data);
       } else if (eventType === 'end') {
-        const id = payload.sessionId;
-        if (typeof id === 'string' && id) sessionId = id;
+        sessionId = nonEmptyString(payload.sessionId) ?? sessionId;
       } else if (eventType === 'error') {
-        const {message} = payload;
-        if (typeof message === 'string' && message) errorMessage = message;
+        errorMessage = nonEmptyString(payload.message) ?? errorMessage;
       }
     }
-    const text = textWithStatusHeader(segments);
-    if (text) return { text, sessionId, source: 'model' };
-    if (errorMessage) return { text: errorMessage, sessionId, source: 'error' };
-    if (sawEvent) return { text: '', sessionId, source: 'none' };
-    const raw = stdout.trim();
-    return { text: raw, sessionId: null, source: raw === '' ? 'none' : 'error' };
+    return segmentedRunOutput(stdout, { segments, sessionId, errorMessage, sawEvent });
   }
 
   public parseModels(stdout: string): ModelCatalog {
@@ -384,4 +373,35 @@ export class GrokClient implements CliClient {
     if (values.length === 0) throw new Error('grok did not list reasoning-effort values.');
     return values;
   }
+}
+
+/** A tool call, or a finished tool call update, separates the text before it from the text after. */
+function endsTextSegment(payload: Record<string, unknown>): boolean {
+  if (payload.type === 'tool_call') return true;
+  return payload.type === 'tool_call_update' && (payload.status === 'completed' || payload.status === 'failed');
+}
+
+function nonEmptyString(value: unknown): string | null {
+  return typeof value === 'string' && value ? value : null;
+}
+
+interface SegmentedRun {
+  segments: readonly (readonly string[])[];
+  sessionId: string | null;
+  errorMessage: string | null;
+  sawEvent: boolean;
+}
+
+/** Picks the run output: model text, else the reported error, else the raw stdout when no event parsed. */
+function segmentedRunOutput(
+  stdout: string,
+  parsed: SegmentedRun,
+): CliRunOutput {
+  const { segments, sessionId, errorMessage, sawEvent } = parsed;
+  const text = textWithStatusHeader(segments);
+  if (text) return { text, sessionId, source: 'model' };
+  if (errorMessage) return { text: errorMessage, sessionId, source: 'error' };
+  if (sawEvent) return { text: '', sessionId, source: 'none' };
+  const raw = stdout.trim();
+  return { text: raw, sessionId: null, source: raw === '' ? 'none' : 'error' };
 }

@@ -80,18 +80,22 @@ export function printInitConflicts(paths: readonly string[]): void {
 
 export function printDoctor(checks: readonly Check[], out: NodeJS.WriteStream = process.stdout): void {
   const tty = Boolean(out.isTTY);
-  for (const check of checks) {
-    let status: string;
-    if (check.ok) status = tty ? pc.green('ok') : 'ok';
-    else status = tty ? pc.red('failed') : 'failed';
-    out.write(`${check.name.padEnd(CHECK_NAME_WIDTH)}${status}\n`);
-    for (const item of check.items) {
-      const line = `  ${item}`;
-      out.write(`${tty ? pc.dim(line) : line}\n`);
-    }
-    for (const problem of check.problems) out.write(`  ${problem.replaceAll('\n', '\n  ')}\n`);
-    for (const warning of check.warnings) out.write(`  warning: ${warning.replaceAll('\n', '\n  ')}\n`);
+  for (const check of checks) printCheck(check, out, tty);
+}
+
+function checkStatus(ok: boolean, tty: boolean): string {
+  if (ok) return tty ? pc.green('ok') : 'ok';
+  return tty ? pc.red('failed') : 'failed';
+}
+
+function printCheck(check: Check, out: NodeJS.WriteStream, tty: boolean): void {
+  out.write(`${check.name.padEnd(CHECK_NAME_WIDTH)}${checkStatus(check.ok, tty)}\n`);
+  for (const item of check.items) {
+    const line = `  ${item}`;
+    out.write(`${tty ? pc.dim(line) : line}\n`);
   }
+  for (const problem of check.problems) out.write(`  ${problem.replaceAll('\n', '\n  ')}\n`);
+  for (const warning of check.warnings) out.write(`  warning: ${warning.replaceAll('\n', '\n  ')}\n`);
 }
 
 export function printSessions(rows: readonly string[][]): void {
@@ -128,15 +132,21 @@ export function printAgent(
   for (const [label, value] of rows) process.stdout.write(`${label}  ${value}\n`);
   const failurePath = failureArtifactPath(workspace, result);
   if (failurePath !== null) process.stdout.write(`failure  ${failurePath}\n`);
-  if (result.outcome_status === 'question') {
-    for (const question of Array.isArray(result.questions) ? result.questions.filter(isRecord) : []) {
-      process.stdout.write(`${formatQuestion(question)}\n`);
-    }
-    if (typeof result.questions_file === 'string') process.stdout.write(`questions  ${result.questions_file}\n`);
-  }
-  if (typeof result.failure_reason === 'string' && CORRECTION_FAILURE_REASONS.includes(result.failure_reason) && typeof result.failure_detail === 'string') {
-    process.stdout.write(`error  ${result.failure_detail}\n`);
-  }
+  if (result.outcome_status === 'question') printAgentQuestions(result);
+  if (isCorrectionFailure(result)) process.stdout.write(`error  ${String(result.failure_detail)}\n`);
+}
+
+function printAgentQuestions(result: Record<string, unknown>): void {
+  for (const question of recordList(result.questions)) process.stdout.write(`${formatQuestion(question)}\n`);
+  if (typeof result.questions_file === 'string') process.stdout.write(`questions  ${result.questions_file}\n`);
+}
+
+function isCorrectionFailure(result: Record<string, unknown>): boolean {
+  return (
+    typeof result.failure_reason === 'string' &&
+    CORRECTION_FAILURE_REASONS.includes(result.failure_reason) &&
+    typeof result.failure_detail === 'string'
+  );
 }
 
 function failureArtifactPath(workspace: string | null, result: Record<string, unknown>): string | null {
@@ -153,70 +163,92 @@ function failureArtifactPath(workspace: string | null, result: Record<string, un
   return existsSync(absolute) ? relative : null;
 }
 
-export function printWatchSnapshot(snapshot: Record<string, unknown>): void {
-  const lines: [string, string][] = [
+type Line = [string, string];
+
+function nonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value !== '';
+}
+
+function recordList(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.filter(isRecord) : [];
+}
+
+function identityLines(snapshot: Record<string, unknown>): Line[] {
+  const lines: Line[] = [
     ['session_id', String(snapshot.session_id ?? '--')],
     ['status', String(snapshot.status ?? 'unknown')],
   ];
   const {title} = snapshot;
-  if (typeof title === 'string' && title !== '' && title !== lines[0]?.[1]) {
-    lines.splice(1, 0, ['title', title]);
-  }
-  if (typeof snapshot.workflow_id === 'string' && snapshot.workflow_id) {
-    lines.push(['workflow', snapshot.workflow_id]);
-  }
-  if (typeof snapshot.task === 'string' && snapshot.task) lines.push(['task', snapshot.task]);
-  const running = Array.isArray(snapshot.running_stages) ? snapshot.running_stages.filter(isRecord) : [];
-  if (running.length > 0) {
-    for (const stage of running) {
-      const stageId = typeof stage.stage_id === 'string' && stage.stage_id ? stage.stage_id : 'stage';
-      const executionId = typeof stage.execution_id === 'string' ? stage.execution_id : '';
-      const summary = typeof stage.summary === 'string' && stage.summary ? ` · ${stage.summary}` : '';
-      lines.push(['running', `${stageId} · ${executionId}${summary}`]);
-    }
-  } else {
-    const executionId = snapshot.execution_id;
-    const executionStatus = snapshot.execution_status ?? snapshot.latest_execution_status;
-    if (typeof executionId === 'string' && executionId) {
-      const value =
-        typeof executionStatus === 'string' && executionStatus
-          ? `${executionId} · ${executionStatus}`
-          : executionId;
-      lines.push(['execution', value]);
-    }
-  }
-  const exitAnomalies = Array.isArray(snapshot.exit_anomalies) ? snapshot.exit_anomalies.filter(isRecord) : [];
-  for (const anomaly of exitAnomalies) lines.push(['exit_anomaly', formatExitAnomaly(anomaly)]);
-  if (typeof snapshot.blocker === 'string' && snapshot.blocker) lines.push(['blocked', snapshot.blocker]);
-  const questions = Array.isArray(snapshot.questions) ? snapshot.questions.filter(isRecord) : [];
-  for (const item of questions) lines.push(['question', formatQuestion(item)]);
-  const skippedStages = Array.isArray(snapshot.skipped_stages) ? snapshot.skipped_stages.filter(isRecord) : [];
+  if (nonEmptyString(title) && title !== lines[0]?.[1]) lines.splice(1, 0, ['title', title]);
+  if (nonEmptyString(snapshot.workflow_id)) lines.push(['workflow', snapshot.workflow_id]);
+  if (nonEmptyString(snapshot.task)) lines.push(['task', snapshot.task]);
+  return lines;
+}
+
+function runningStageLine(stage: Record<string, unknown>): Line {
+  const stageId = nonEmptyString(stage.stage_id) ? stage.stage_id : 'stage';
+  const executionId = typeof stage.execution_id === 'string' ? stage.execution_id : '';
+  const summary = nonEmptyString(stage.summary) ? ` · ${stage.summary}` : '';
+  return ['running', `${stageId} · ${executionId}${summary}`];
+}
+
+function executionLines(snapshot: Record<string, unknown>): Line[] {
+  const running = recordList(snapshot.running_stages);
+  if (running.length > 0) return running.map(runningStageLine);
+  const executionId = snapshot.execution_id;
+  if (!nonEmptyString(executionId)) return [];
+  const executionStatus = snapshot.execution_status ?? snapshot.latest_execution_status;
+  const value = nonEmptyString(executionStatus) ? `${executionId} · ${executionStatus}` : executionId;
+  return [['execution', value]];
+}
+
+function attentionLines(snapshot: Record<string, unknown>): Line[] {
+  const lines: Line[] = recordList(snapshot.exit_anomalies).map((anomaly) => ['exit_anomaly', formatExitAnomaly(anomaly)]);
+  if (nonEmptyString(snapshot.blocker)) lines.push(['blocked', snapshot.blocker]);
+  for (const item of recordList(snapshot.questions)) lines.push(['question', formatQuestion(item)]);
+  const skippedStages = recordList(snapshot.skipped_stages);
   if (skippedStages.length > 0) {
     lines.push(['skipped', skippedStages.map((stage) => String(stage.stage_id ?? '')).join(', ')]);
   }
+  return lines;
+}
+
+function outcomeLines(snapshot: Record<string, unknown>): Line[] {
   const {outcome} = snapshot;
-  if (isRecord(outcome) && typeof outcome.status === 'string') {
-    lines.push(['outcome', outcome.status]);
-    if (typeof outcome.decision === 'string' && outcome.decision) lines.push(['decision', outcome.decision]);
-  }
-  const quotaFailures = Array.isArray(snapshot.quota_failures) ? snapshot.quota_failures.filter(isRecord) : [];
-  for (const quota of quotaFailures) {
-    const parts = [
-      typeof quota.stage_id === 'string' ? quota.stage_id : '',
-      typeof quota.message === 'string' ? quota.message : '',
-      typeof quota.reset_at === 'string' ? `resets at ${quota.reset_at}` : '',
-      typeof quota.window === 'string' ? `window ${quota.window}` : '',
-    ].filter((item) => item !== '');
-    lines.push(['quota', parts.join(' · ') || 'reported']);
-  }
-  if (typeof snapshot.diagnostics === 'string' && snapshot.diagnostics) lines.push(['diagnostics', snapshot.diagnostics]);
-  lines.push(['updated_at', formatWatchTimestamp(snapshot.updated_at)]);
+  if (!isRecord(outcome) || typeof outcome.status !== 'string') return [];
+  const lines: Line[] = [['outcome', outcome.status]];
+  if (nonEmptyString(outcome.decision)) lines.push(['decision', outcome.decision]);
+  return lines;
+}
+
+function formatQuotaFailure(quota: Record<string, unknown>): string {
+  const parts = [
+    typeof quota.stage_id === 'string' ? quota.stage_id : '',
+    typeof quota.message === 'string' ? quota.message : '',
+    typeof quota.reset_at === 'string' ? `resets at ${quota.reset_at}` : '',
+    typeof quota.window === 'string' ? `window ${quota.window}` : '',
+  ].filter((item) => item !== '');
+  return parts.join(' · ') || 'reported';
+}
+
+function outputsLine(snapshot: Record<string, unknown>): Line {
   const {outputs} = snapshot;
   const missing = Array.isArray(snapshot.outputs_not_produced) ? snapshot.outputs_not_produced.map(String) : [];
   const published = isRecord(outputs) ? Object.keys(outputs) : [];
-  if (published.length > 0 || missing.length > 0) {
-    lines.push(['outputs', [...published, ...missing.map((name) => `${name} (not produced)`)].join(', ')]);
-  } else lines.push(['outputs', 'none']);
+  if (published.length === 0 && missing.length === 0) return ['outputs', 'none'];
+  return ['outputs', [...published, ...missing.map((name) => `${name} (not produced)`)].join(', ')];
+}
+
+export function printWatchSnapshot(snapshot: Record<string, unknown>): void {
+  const lines: Line[] = [
+    ...identityLines(snapshot),
+    ...executionLines(snapshot),
+    ...attentionLines(snapshot),
+    ...outcomeLines(snapshot),
+    ...recordList(snapshot.quota_failures).map((quota): Line => ['quota', formatQuotaFailure(quota)]),
+  ];
+  if (nonEmptyString(snapshot.diagnostics)) lines.push(['diagnostics', snapshot.diagnostics]);
+  lines.push(['updated_at', formatWatchTimestamp(snapshot.updated_at)], outputsLine(snapshot));
   lines.push(['events_cursor', String(snapshot.events_cursor ?? 0)]);
   for (const [label, value] of lines) process.stdout.write(`${label}  ${value}\n`);
 }

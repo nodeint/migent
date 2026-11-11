@@ -22,7 +22,7 @@ import {
   writeFileAtomic,
   writeJsonAtomic,
 } from '@nodeint/migent-kernel';
-import { VERIFY_ARTIFACT } from '@nodeint/migent-workflow';
+import { VERIFY_ARTIFACT, type WorkflowDocument } from '@nodeint/migent-workflow';
 
 import { TURN_PAD_WIDTH } from './constants.js';
 import { completeManuallyLocked } from './manual-completion.js';
@@ -64,7 +64,9 @@ import {
   inFlightExecutions,
   stringOptions,
 } from './session-store-types.js';
-import { asInt, isDirectory, readJsonObject, snapshotsIncludingSave, textField } from './session-store-util.js';
+import { asInt, executionPosition, executionResultFields, isDirectory, readJsonObject } from './session-store-util.js';
+import { savedOutcomeFields, snapshotsIncludingSave, storedFailure, textField } from './session-store-util.js';
+import { writeQuestionRequest } from './session-store-util.js';
 import { normalizeRenameTitle, writeTitleRecord } from './session-title.js';
 
 export class SessionStore extends SessionStoreResume {
@@ -344,6 +346,24 @@ export class SessionStore extends SessionStoreResume {
     writeFileAtomic(path.join(context.directory, 'response.md'), responseText);
   }
 
+  /** The session a save writes into; the caller must hold its lock. */
+  private lockedSaveSession(context: ExecutionContext): {
+    sessionDirectory: string;
+    previousStatus: Record<string, unknown>;
+    workflow: WorkflowDocument | null;
+    manifest: ReturnType<typeof readSessionManifest>;
+  } {
+    const sessionDirectory = path.dirname(path.dirname(context.directory));
+    assertSessionLockHeld(sessionDirectory);
+    const previousStatus = this.readSessionStatusAt(sessionDirectory);
+    return {
+      sessionDirectory,
+      previousStatus,
+      workflow: this.loadWorkflow(previousStatus),
+      manifest: readSessionManifest(sessionDirectory),
+    };
+  }
+
   private saveExecutionUnlocked(
     context: ExecutionContext,
     record: AgentSessionRecord,
@@ -352,35 +372,18 @@ export class SessionStore extends SessionStoreResume {
     const { status, error = null, outcome = null, extra = null } = result;
     const filePath = path.join(context.directory, 'execution.json');
     const metadata = readJsonObject(filePath);
-    const existingStatus = metadata.status;
-    if (isEndedExecutionStatus(existingStatus)) {
+    if (isEndedExecutionStatus(metadata.status)) {
       throw new Error(`Execution ${context.executionId} is immutable after it ended.`);
     }
-    const sessionDirectory = path.dirname(path.dirname(context.directory));
-    assertSessionLockHeld(sessionDirectory);
-    const previousStatus = this.readSessionStatusAt(sessionDirectory);
-    const workflow = this.loadWorkflow(previousStatus);
-    const manifest = readSessionManifest(sessionDirectory);
-    const stageId = typeof metadata.stage_id === 'string' ? metadata.stage_id : '';
-    const executionOrder = asInt(metadata.execution_order);
+    const { sessionDirectory, previousStatus, workflow, manifest } = this.lockedSaveSession(context);
+    const { stageId, executionOrder } = executionPosition(metadata);
     const timestamp = utcNow();
-    metadata.status = status;
-    metadata.agent_id = record.agentId;
-    metadata.completed_at = status === 'running' ? null : timestamp;
-    if (error !== null) metadata.error = error;
-    if (outcome !== null) {
-      metadata.outcome = outcome.toJson();
-      if (outcome.status === 'question') {
-        writeJsonAtomic(path.join(context.directory, 'questions.json'), {
-          schema_version: 1, stage_id: metadata.stage_id, execution_id: context.executionId,
-          recipient: workflow?.stages[stageId]?.ask ?? 'human',
-          questions: outcome.questions,
-        });
-      }
+    const { agentId } = record;
+    Object.assign(metadata, executionResultFields({ status, agentId, timestamp, error, outcome, extra }));
+    if (outcome?.status === 'question') {
+      writeQuestionRequest(context, { stageId: metadata.stage_id, recipient: workflow?.stages[stageId]?.ask ?? 'human' }, outcome);
     }
-    if (extra !== null) Object.assign(metadata, extra);
-    const storedError = typeof metadata.error === 'string' ? metadata.error : null;
-    const failureReason = typeof metadata.failure_reason === 'string' ? metadata.failure_reason : null;
+    const { storedError, failureReason } = storedFailure(metadata);
     const plan = planExecutionSave({
       executionStatus: status,
       outcome,
@@ -398,16 +401,13 @@ export class SessionStore extends SessionStoreResume {
         stageId,
         executionOrder,
         status,
-        outcomeStatus: outcome?.status ?? null,
+        ...savedOutcomeFields(outcome),
         artifactDirectory: context.artifactDirectory,
-        outcomeDecision: outcome?.decision || null,
         failureReason,
       }),
     });
     writeJsonAtomic(filePath, metadata);
-    if (status === 'failed') {
-      writeFailureReport(context, metadata, error ?? (typeof metadata.error === 'string' ? metadata.error : null));
-    }
+    if (status === 'failed') writeFailureReport(context, metadata, error ?? storedError);
     this.finishExecutionSave({
       context,
       sessionDirectory,

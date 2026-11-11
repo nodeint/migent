@@ -77,33 +77,19 @@ export class TurnLoop {
     private readonly runTurn: (args: RunTurnArgs) => Promise<TurnResult>,
     private readonly verifyRunner: VerifyRunner,
   ) {
-    this.client = state.client;
-    this.model = state.model;
-    this.workspacePath = state.workspacePath;
-    this.resolvedOptions = state.resolvedOptions;
-    this.profile = state.profile;
-    this.store = state.store;
-    this.context = state.context;
-    this.record = state.record;
-    this.eventReporter = state.eventReporter;
-    this.sessionId = state.sessionId;
-    this.stage = state.stage;
-    this.decisionValues = state.decisionValues;
-    this.artifactName = state.artifactName;
-    this.verifyCommands = state.verifyCommands;
-    this.maxVerify = state.maxVerify;
-    this.protocol = state.protocol;
+    ({
+      client: this.client, model: this.model, workspacePath: this.workspacePath,
+      resolvedOptions: this.resolvedOptions, profile: this.profile, store: this.store, context: this.context,
+      record: this.record, eventReporter: this.eventReporter, sessionId: this.sessionId, stage: this.stage,
+      decisionValues: this.decisionValues, artifactName: this.artifactName, verifyCommands: this.verifyCommands,
+      maxVerify: this.maxVerify, protocol: this.protocol,
+    } = state);
     this.ask = state.stage?.ask ?? (state.stage === null ? 'human' : null);
-    this.turn = state.turn;
-    this.red = state.red;
-    this.verifyRuns = state.verifyRuns;
-    this.lastReport = state.lastReport;
-    this.lastResult = state.lastResult;
-    this.currentPrompt = state.currentPrompt;
-    this.currentAgentId = state.currentAgentId;
-    this.currentSession = state.currentSession;
-    this.pendingVerify = state.pendingVerify;
-    this.corrections = state.corrections;
+    ({
+      turn: this.turn, red: this.red, verifyRuns: this.verifyRuns, lastReport: this.lastReport,
+      lastResult: this.lastResult, currentPrompt: this.currentPrompt, currentAgentId: this.currentAgentId,
+      currentSession: this.currentSession, pendingVerify: this.pendingVerify, corrections: this.corrections,
+    } = state);
     this.questionFile = questionRequestPath(state.context);
     this.handoffFile = handoffPath(state.context);
     this.files = { protocol: state.protocol, questionFile: this.questionFile, handoffFile: this.handoffFile };
@@ -112,26 +98,21 @@ export class TurnLoop {
   }
 
   public async drive(): Promise<RunResult> {
-    let it: Iteration;
     while (true) {
-      const pending = this.pendingVerify !== null;
-      it = pending ? this.takePendingVerify() : await this.freshTurn();
-      if (!pending) {
-        const s = this.afterFreshTurn(it);
-        if (s === 'continue') continue;
-        if (s === 'stop') break;
-      }
-      const g = this.afterPendingGate(it);
-      if (g === 'continue') continue;
-      if (g === 'stop') break;
-      if (this.finishWithoutVerify(it)) break;
-      const verified = await this.verifyAndRepair(it);
-      if (verified !== null) {
-        it = verified;
-        break;
-      }
+      const final = await this.iterate();
+      if (final !== null) return this.result(final);
     }
-    return this.result(it);
+  }
+
+  // One loop iteration: the final iteration when the execution ends, null when another turn follows.
+  private async iterate(): Promise<Iteration | null> {
+    const pending = this.pendingVerify !== null;
+    const it = pending ? this.takePendingVerify() : await this.freshTurn();
+    const step = pending ? 'proceed' : this.afterFreshTurn(it);
+    const gate = step === 'proceed' ? this.afterPendingGate(it) : step;
+    if (gate === 'continue') return null;
+    if (gate === 'stop' || this.finishWithoutVerify(it)) return it;
+    return this.verifyAndRepair(it);
   }
 
   private markCancelled(error: unknown): never {
@@ -173,27 +154,31 @@ export class TurnLoop {
     };
   }
 
+  // Spends the correction budget for this failure kind and announces the correction turn.
+  private grantCorrection(failure: GateFailure): void {
+    const { store, context, record, eventReporter } = this;
+    this.corrections = {
+      ...this.corrections,
+      [failure.kind]: { turn: this.turn, error_kind: failure.errorKind, error_detail: failure.detail },
+    };
+    store.saveExecutionProgress(context, record, { corrections: this.corrections });
+    let fileField: Record<string, unknown> = {};
+    if (failure.kind === 'question_file') fileField = { file: this.questionFile };
+    else if (failure.kind === 'handoff') fileField = { file: this.handoffFile };
+    eventReporter.emit(CORRECTION_POLICY[failure.kind].event, `${failure.errorKind}: ${failure.detail}`, {
+      turn: this.turn, error_kind: failure.errorKind, ...fileField,
+    });
+  }
+
   // Queue one correction turn when the policy grants it. False when the budget for the kind is used.
   private queueCorrection(failure: GateFailure): boolean {
-    const { store, context, record, eventReporter, stage, files } = this;
+    const { store, context, record, stage, files } = this;
     const rule = CORRECTION_POLICY[failure.kind];
     const decision = decideCorrection(failure.kind, this.corrections, this.turn);
     if (decision === 'exhausted') return false;
     // The budget is persisted before the message joins the history, so a stop between the two
     // writes sends the correction again on resume and never grants a second.
-    if (decision === 'correct') {
-      this.corrections = {
-        ...this.corrections,
-        [failure.kind]: { turn: this.turn, error_kind: failure.errorKind, error_detail: failure.detail },
-      };
-      store.saveExecutionProgress(context, record, { corrections: this.corrections });
-      let fileField: Record<string, unknown> = {};
-      if (failure.kind === 'question_file') fileField = { file: this.questionFile };
-      else if (failure.kind === 'handoff') fileField = { file: this.handoffFile };
-      eventReporter.emit(rule.event, `${failure.errorKind}: ${failure.detail}`, {
-        turn: this.turn, error_kind: failure.errorKind, ...fileField,
-      });
-    }
+    if (decision === 'correct') this.grantCorrection(failure);
     const used = this.corrections[failure.kind];
     if (used === undefined) throw new Error(`Correction ledger has no entry for ${failure.kind} after a ${decision} decision.`);
     const message = rule.render(used, files);
@@ -332,14 +317,19 @@ export class TurnLoop {
     if (fresh.exitOnly && fresh.anomalyReason === null) this.classification = null;
     if (modelResponded) record.history.push({ role: 'assistant', content: responseText });
     store.save(record, context);
-    if (modelResponded) {
-      store.saveResponse(context, responseText);
-      if (verifyCommands.length > 0) store.saveTurnResponse(context, this.turn, responseText);
-    }
-    if (verifyCommands.length > 0 && it.outcome?.status === 'complete') {
-      store.saveTurnOutcome(context, this.turn, it.outcome);
-    }
+    this.saveTurnFiles(it, modelResponded);
     return { needsVerify, modelResponded, recordedClassification };
+  }
+
+  // The saved response and, under verify, the per-turn response and outcome.
+  private saveTurnFiles(it: Iteration, modelResponded: boolean): void {
+    const { store, context, verifyCommands } = this;
+    const verifying = verifyCommands.length > 0;
+    if (modelResponded) {
+      store.saveResponse(context, it.responseText);
+      if (verifying) store.saveTurnResponse(context, this.turn, it.responseText);
+    }
+    if (verifying && it.outcome?.status === 'complete') store.saveTurnOutcome(context, this.turn, it.outcome);
   }
 
   // The only writer of diagnostics.json: once this turn's gates have run, before any verify or follow-up turn.
@@ -424,7 +414,7 @@ export class TurnLoop {
 
   // Runs the verify commands. A repair turn follows a failed run; every other result ends the execution.
   private async runVerify(it: Iteration): Promise<VerifyVerdict> {
-    const { record, store, context, eventReporter, verifyCommands, stage, maxVerify } = this;
+    const { store, context, eventReporter, verifyCommands, stage, maxVerify } = this;
     store.clearProcessEndpoint(context);
     eventReporter.emit('verify.started', `${verifyCommands.length} command(s)`, {
       turn: this.turn,
@@ -450,6 +440,12 @@ export class TurnLoop {
     );
     this.lastReport = lastReport;
     this.lastResult = result.passed ? 'pass' : 'fail';
+    return this.verifyVerdict(it, result, lastReport);
+  }
+
+  // Ends the execution on an infrastructure error or a passing run; a red run goes to the repair policy.
+  private verifyVerdict(it: Iteration, result: VerifyRunResult, lastReport: string): VerifyVerdict {
+    const { record, store, context, eventReporter } = this;
     if (result.infraError !== null) {
       record.status = 'failed';
       store.save(record, context);

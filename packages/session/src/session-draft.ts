@@ -73,23 +73,34 @@ export function locateSessionDirectory(workspace: string, sessionId: string): st
  * The status of a session that can adopt a saved draft: prepared, or refreshable with a loadable freeze.
  * The snapshot and the event fold must agree; anything else fails.
  */
-function savableStatus(workspace: string, sessionDirectory: string, sessionId: string): string {
+function recordedStatus(sessionDirectory: string, sessionId: string): string {
   const read = readStatusFileState(path.join(sessionDirectory, 'status.json'));
   if (read.state !== 'ok') {
     fail('session-metadata-corrupt', `Session status file is ${read.state === 'missing' ? 'missing' : 'corrupt'}: .migent/sessions/${sessionId}/status.json.`);
   }
-  const value = read.state === 'ok' ? read.status.status : undefined;
-  const status = typeof value === 'string' ? value : null;
-  if (status === null) fail('session-metadata-corrupt', `Session status names no status: .migent/sessions/${sessionId}/status.json.`);
-  // The snapshot can lag the events (a crash between an append and the commit). Read the fold, which
-  // writes nothing, and refuse a save the two disagree on: only a locked repair can settle which is true.
-  let folded: unknown;
+  const value = read.status.status;
+  if (typeof value !== 'string') fail('session-metadata-corrupt', `Session status names no status: .migent/sessions/${sessionId}/status.json.`);
+  return value;
+}
+
+/** Fail with the draft-save error code when a configuration read throws. */
+function orMetadataCorrupt<T>(read: () => T): T {
   try {
-    folded = readFoldedStatus(workspace, sessionDirectory).status;
+    return read();
   } catch (error) {
     if (!(error instanceof ConfigurationError)) throw error;
     fail('session-metadata-corrupt', error.message);
   }
+}
+
+function assertFoldAgrees(
+  session: { workspace: string; sessionDirectory: string; sessionId: string },
+  status: string,
+): void {
+  const { workspace, sessionDirectory, sessionId } = session;
+  // The snapshot can lag the events (a crash between an append and the commit). Read the fold, which
+  // writes nothing, and refuse a save the two disagree on: only a locked repair can settle which is true.
+  const folded: unknown = orMetadataCorrupt(() => readFoldedStatus(workspace, sessionDirectory).status);
   if (typeof folded === 'string' && TERMINAL_STATUSES.has(folded) && folded !== status) {
     fail('session-terminal', `Session ${sessionId} is ${folded} according to its events; it can no longer adopt a workflow draft.`);
   }
@@ -99,26 +110,85 @@ function savableStatus(workspace: string, sessionDirectory: string, sessionId: s
       `Session ${sessionId} status.json says ${status}, but its events say ${String(folded)}. Run \`migent session continue ${sessionId}\` or repair the session first.`,
     );
   }
+}
+
+function assertRefreshable(sessionDirectory: string, sessionId: string, status: string): void {
+  if (!REFRESHABLE_STATUSES.has(status)) {
+    fail('session-not-savable', `Session ${sessionId} is ${status}; a draft can be saved only for a prepared or stopped session.`);
+  }
+  const freezePath = path.join(sessionDirectory, WORKFLOW_FREEZE_FILE);
+  if (!existsSync(freezePath) || !statSync(freezePath).isFile()) {
+    fail('session-not-savable', `Session ${sessionId} has no frozen workflow, so it cannot adopt a draft through --refresh-workflow.`);
+  }
+  // A freeze that does not load makes refresh fail, so the saved draft could never be adopted.
+  orMetadataCorrupt(() => readWorkflowFreeze(sessionDirectory));
+}
+
+/**
+ * The status of a session that can adopt a saved draft: prepared, or refreshable with a loadable freeze.
+ * The snapshot and the event fold must agree; anything else fails.
+ */
+function savableStatus(workspace: string, sessionDirectory: string, sessionId: string): string {
+  const status = recordedStatus(sessionDirectory, sessionId);
+  assertFoldAgrees({ workspace, sessionDirectory, sessionId }, status);
   if (TERMINAL_STATUSES.has(status)) {
     fail('session-terminal', `Session ${sessionId} is ${status}; it can no longer adopt a workflow draft.`);
   }
-  if (status !== 'prepared') {
-    if (!REFRESHABLE_STATUSES.has(status)) {
-      fail('session-not-savable', `Session ${sessionId} is ${status}; a draft can be saved only for a prepared or stopped session.`);
-    }
-    const freezePath = path.join(sessionDirectory, WORKFLOW_FREEZE_FILE);
-    if (!existsSync(freezePath) || !statSync(freezePath).isFile()) {
-      fail('session-not-savable', `Session ${sessionId} has no frozen workflow, so it cannot adopt a draft through --refresh-workflow.`);
-    }
-    // A freeze that does not load makes refresh fail, so the saved draft could never be adopted.
-    try {
-      readWorkflowFreeze(sessionDirectory);
-    } catch (error) {
-      if (!(error instanceof ConfigurationError)) throw error;
-      fail('session-metadata-corrupt', error.message);
-    }
-  }
+  if (status !== 'prepared') assertRefreshable(sessionDirectory, sessionId, status);
   return status;
+}
+
+function rawManifestIdentity(manifestPath: string): unknown {
+  try {
+    const raw = parseYamlDocument(readFileSync(manifestPath, 'utf8'));
+    return isRecord(raw) ? raw.session_id : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+type DraftManifest = ReturnType<typeof readSessionManifest> & { workflowId: string };
+
+function readDraftManifest(sessionDirectory: string, sessionId: string): DraftManifest {
+  const manifestPath = path.join(sessionDirectory, 'manifest.yaml');
+  if (!existsSync(manifestPath)) fail('session-metadata-missing', `Session manifest is missing: .migent/sessions/${sessionId}/manifest.yaml.`);
+  const manifest = orMetadataCorrupt(() => readSessionManifest(sessionDirectory));
+  // The permissive reader fills a missing session_id from the directory name; a save needs a real one.
+  const rawIdentity = rawManifestIdentity(manifestPath);
+  if (rawIdentity === undefined || rawIdentity === null) {
+    fail('session-metadata-missing', `Session manifest names no session_id: .migent/sessions/${sessionId}/manifest.yaml.`);
+  }
+  if (String(rawIdentity) !== sessionId) {
+    fail('session-metadata-corrupt', `Session manifest records session_id ${String(rawIdentity)}, not ${sessionId}.`);
+  }
+  if (manifest.workflowId === 'agent' || manifest.role !== null) {
+    fail('session-not-workflow', `Session ${sessionId} is a role session; it has no workflow draft.`);
+  }
+  const { workflowId } = manifest;
+  if (workflowId === null) {
+    fail('session-metadata-missing', `Session manifest names no workflow_id: .migent/sessions/${sessionId}/manifest.yaml.`);
+  }
+  return { ...manifest, workflowId };
+}
+
+function assertDraftSource(sessionId: string, workflowPath: string | null, relativePath: string): void {
+  if (workflowPath === relativePath) return;
+  fail(
+    'session-source-unsupported',
+    workflowPath === null
+      ? `Session ${sessionId} records no workflow source, so it has no editable draft.`
+      : `Session ${sessionId} runs the project workflow ${workflowPath}, not a session draft. Edit the project workflow instead.`,
+  );
+}
+
+function assertDraftFile(draftPath: string, relativePath: string): void {
+  let draftStat;
+  try {
+    draftStat = lstatSync(draftPath);
+  } catch {
+    fail('session-draft-missing', `Session draft is missing: ${relativePath}.`);
+  }
+  if (!draftStat.isFile()) fail('session-draft-invalid', `Session draft is not a regular file: ${relativePath}.`);
 }
 
 /**
@@ -134,52 +204,11 @@ export function resolveSessionDraft(
   options: { forSave?: boolean } = {},
 ): SessionDraft {
   const sessionDirectory = locateSessionDirectory(workspace, sessionId);
-  const manifestPath = path.join(sessionDirectory, 'manifest.yaml');
-  if (!existsSync(manifestPath)) fail('session-metadata-missing', `Session manifest is missing: .migent/sessions/${sessionId}/manifest.yaml.`);
-  let manifest;
-  try {
-    manifest = readSessionManifest(sessionDirectory);
-  } catch (error) {
-    if (!(error instanceof ConfigurationError)) throw error;
-    fail('session-metadata-corrupt', error.message);
-  }
-  // The permissive reader fills a missing session_id from the directory name; a save needs a real one.
-  let rawIdentity: unknown;
-  try {
-    const raw = parseYamlDocument(readFileSync(manifestPath, 'utf8'));
-    rawIdentity = isRecord(raw) ? raw.session_id : undefined;
-  } catch {
-    rawIdentity = undefined;
-  }
-  if (rawIdentity === undefined || rawIdentity === null) {
-    fail('session-metadata-missing', `Session manifest names no session_id: .migent/sessions/${sessionId}/manifest.yaml.`);
-  }
-  if (String(rawIdentity) !== sessionId) {
-    fail('session-metadata-corrupt', `Session manifest records session_id ${String(rawIdentity)}, not ${sessionId}.`);
-  }
-  if (manifest.workflowId === 'agent' || manifest.role !== null) {
-    fail('session-not-workflow', `Session ${sessionId} is a role session; it has no workflow draft.`);
-  }
-  if (manifest.workflowId === null) {
-    fail('session-metadata-missing', `Session manifest names no workflow_id: .migent/sessions/${sessionId}/manifest.yaml.`);
-  }
+  const manifest = readDraftManifest(sessionDirectory, sessionId);
   const relativePath = relativeWorkflowPath(sessionId);
-  if (manifest.workflowPath !== relativePath) {
-    fail(
-      'session-source-unsupported',
-      manifest.workflowPath === null
-        ? `Session ${sessionId} records no workflow source, so it has no editable draft.`
-        : `Session ${sessionId} runs the project workflow ${manifest.workflowPath}, not a session draft. Edit the project workflow instead.`,
-    );
-  }
+  assertDraftSource(sessionId, manifest.workflowPath, relativePath);
   const draftPath = path.join(sessionDirectory, 'workflow.yaml');
-  let draftStat;
-  try {
-    draftStat = lstatSync(draftPath);
-  } catch {
-    fail('session-draft-missing', `Session draft is missing: ${relativePath}.`);
-  }
-  if (!draftStat.isFile()) fail('session-draft-invalid', `Session draft is not a regular file: ${relativePath}.`);
+  assertDraftFile(draftPath, relativePath);
 
   const status = options.forSave === true ? savableStatus(workspace, sessionDirectory, sessionId) : null;
   return { sessionId, sessionDirectory, draftPath, relativePath, workflowId: manifest.workflowId, status };

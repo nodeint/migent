@@ -66,42 +66,85 @@ export interface ProviderPromptOptions {
   sessionDirectory?: string | null;
 }
 
-function envelope(options: ProviderPromptOptions) {
-  const mode = options.contract === true ? 'full' : options.contract || null;
+type EnvelopeMode = 'full' | 'reminder' | null;
+type EnvelopeDecision = { name: string; instruction: string | null };
+type ArtifactFile = NonNullable<ProviderPromptOptions['artifactFiles']>[number];
+
+function contractMode(options: ProviderPromptOptions): EnvelopeMode {
+  return options.contract === true ? 'full' : options.contract || null;
+}
+
+function envelopeDecisions(options: ProviderPromptOptions, mode: EnvelopeMode): EnvelopeDecision[] {
+  if (mode === null) return [];
   const instructions = options.decisionInstructions ?? {};
-  const decisions = mode === null ? [] : (options.decisionValues ?? []).filter(Boolean).map((value) => {
+  return (options.decisionValues ?? []).filter(Boolean).map((value) => {
     const name = value.toLowerCase();
     return { name, instruction: instructions[name] ?? null };
   });
+}
+
+function artifactFileLine(item: ArtifactFile): string {
+  const when = item.decision === null ? '' : ` (with \`decision: ${item.decision}\`)`;
+  const kind = item.required ? '' : ' [optional]';
+  const note = item.description === null ? '' : `: ${item.description}`;
+  return `- \`${item.file}\`${when}${kind}${note}`;
+}
+
+function artifactLines(files: readonly ArtifactFile[], artifactName: string | null): string[] {
+  const multi = files.length > 1 || files.some((item) => item.decision !== null || item.description !== null);
+  if (multi) return ['Write these artifacts in the artifacts directory:', ...files.map(artifactFileLine)];
+  return artifactName ? [`Write the artifact as \`${artifactName}\` in the artifacts directory.`] : [];
+}
+
+function reminderLine(handoff: boolean, statusLabel: string, decisions: readonly EnvelopeDecision[]): string {
+  const decisionLabel = decisions.map(({ name }) => name).join('|');
+  const decision = decisions.length > 0 ? `, with \`decision: ${decisionLabel}\` when complete` : '';
+  return handoff
+    ? `Same response contract and stage instructions as before: write the handoff file with \`status\` ${statusLabel}${decision}.`
+    : `Same response contract and stage instructions as before: start with \`status: ${statusLabel}\`${decision}.`;
+}
+
+interface DoTextInput {
+  options: ProviderPromptOptions;
+  mode: EnvelopeMode;
+  handoff: boolean;
+  statusLabel: string;
+  decisions: readonly EnvelopeDecision[];
+  artifactName: string | null;
+  taskFile: string | null;
+}
+
+// The single place that tells the agent what to do this turn.
+function doText(input: DoTextInput): string {
+  const { options, mode, handoff, statusLabel, decisions, artifactName, taskFile } = input;
+  const doLines: string[] = [];
+  if (mode !== null) doLines.push(directive(options.turn ?? null, taskFile !== null, handoff));
+  doLines.push(...artifactLines(options.artifactFiles ?? [], artifactName));
+  if (mode === 'reminder') doLines.push(reminderLine(handoff, statusLabel, decisions));
+  return doLines.join('\n');
+}
+
+/** Per-execution file locations, defaulted for the template. */
+function envelopePaths(options: ProviderPromptOptions) {
+  return {
+    handoffFile: options.handoffFile ?? '',
+    questionFile: options.questionFile ?? '',
+    artifactDirectory: options.artifactDirectory ?? '',
+    sessionDirectory: options.sessionDirectory ?? '',
+  };
+}
+
+function envelope(options: ProviderPromptOptions) {
+  const mode = contractMode(options);
+  const decisions = envelopeDecisions(options, mode);
   const handoff = (options.protocol ?? CURRENT_RESPONSE_PROTOCOL) >= HANDOFF_FILE_PROTOCOL;
   const canAsk = mode !== null && (options.ask !== null && options.ask !== undefined);
   const artifactName = options.artifactName ?? null;
   const previousArtifactDirectory = artifactName ? options.previousArtifactDirectory ?? null : null;
   const previousVerifyReport = options.previousVerifyReport ?? null;
   const taskFile = options.taskFile ?? null;
-  const decisionLabel = decisions.map(({ name }) => name).join('|');
   const statusLabel = canAsk ? 'complete | question | blocked' : 'complete | blocked';
-  // The single place that tells the agent what to do this turn.
-  const doLines: string[] = [];
-  if (mode !== null) doLines.push(directive(options.turn ?? null, taskFile !== null, handoff));
-  const files = options.artifactFiles ?? [];
-  const multi = files.length > 1 || files.some((item) => item.decision !== null || item.description !== null);
-  if (artifactName && !multi) doLines.push(`Write the artifact as \`${artifactName}\` in the artifacts directory.`);
-  if (multi) {
-    doLines.push('Write these artifacts in the artifacts directory:');
-    for (const item of files) {
-      const when = item.decision === null ? '' : ` (with \`decision: ${item.decision}\`)`;
-      const kind = item.required ? '' : ' [optional]';
-      const note = item.description === null ? '' : `: ${item.description}`;
-      doLines.push(`- \`${item.file}\`${when}${kind}${note}`);
-    }
-  }
-  if (mode === 'reminder') {
-    const decision = decisions.length > 0 ? `, with \`decision: ${decisionLabel}\` when complete` : '';
-    doLines.push(handoff
-      ? `Same response contract and stage instructions as before: write the handoff file with \`status\` ${statusLabel}${decision}.`
-      : `Same response contract and stage instructions as before: start with \`status: ${statusLabel}\`${decision}.`);
-  }
+  const handoffContract = handoff && mode !== null;
   return {
     full: mode === 'full',
     reminder: mode === 'reminder',
@@ -109,20 +152,17 @@ function envelope(options: ProviderPromptOptions) {
     canAsk,
     statusLabel,
     handoff,
-    handoffContract: handoff && mode !== null,
-    handoffFile: options.handoffFile ?? '',
-    questionFile: options.questionFile ?? '',
+    handoffContract,
+    ...envelopePaths(options),
     decisions,
-    decisionLabel,
-    artifactDirectory: options.artifactDirectory ?? '',
+    decisionLabel: decisions.map(({ name }) => name).join('|'),
     artifactName,
     previousArtifactDirectory,
     previousVerifyReport,
     taskFile,
-    sessionDirectory: options.sessionDirectory ?? '',
-    hasExecution: taskFile !== null || canAsk || (handoff && mode !== null) || artifactName !== null
+    hasExecution: taskFile !== null || canAsk || handoffContract || artifactName !== null
       || previousVerifyReport !== null,
-    doText: doLines.join('\n'),
+    doText: doText({ options, mode, handoff, statusLabel, decisions, artifactName, taskFile }),
   };
 }
 

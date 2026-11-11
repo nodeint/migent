@@ -365,20 +365,8 @@ export function loadAgentTarget(
 export function loadAgentDefinition(value: unknown, where: string | Field, context: ResolveContext = {}): StageTarget {
   const { registry, index } = context;
   const here = toField(where);
-  const {label} = here;
   const agentConfig = mapping(value, here, index);
-  if (Object.hasOwn(agentConfig, 'options')) {
-    throw new ConfigurationError(
-      `${label}.options moved to ${label}.client.options. Run \`migent migrate\`.`,
-      { code: 'agent-options-moved', path: [...here.path, 'options'] },
-    );
-  }
-  if (Object.hasOwn(agentConfig, 'provider')) {
-    throw new ConfigurationError(
-      `${label}.provider was removed in schema_version 6; set ${label}.client.type. Run \`migent migrate\`.`,
-      { code: 'legacy-key', path: [...here.path, 'provider'] },
-    );
-  }
+  refuseLegacyAgentKeys(agentConfig, here);
   const clientField = child(here, 'client');
   let client: string | undefined;
   let options: Record<string, string> = {};
@@ -397,31 +385,54 @@ export function loadAgentDefinition(value: unknown, where: string | Field, conte
     }
     client = inferClient(registry, model, typeField);
   }
-  if (Object.hasOwn(agentConfig, 'effort')) {
-    const effortField = child(here, 'effort');
-    const effort = requiredString(agentConfig.effort, effortField, index);
-    const details = { code: 'effort-unsupported', path: effortField.path };
-    if (registry === undefined) {
-      throw new ConfigurationError(`${label}.effort requires a client registry.`, details);
-    }
-    let option: string | undefined;
-    try {
-      option = registry.get(client).effortOption;
-    } catch (error) {
-      throw new ConfigurationError(`${label}.effort: ${error instanceof Error ? error.message : String(error)}`, details);
-    }
-    if (option === undefined) {
-      throw new ConfigurationError(`${label}.effort is not supported by the selected CLI client.`, details);
-    }
-    if (Object.hasOwn(options, option)) {
-      throw new ConfigurationError(
-        `${label}.effort conflicts with ${label}.client.options.${option}; keep only one.`,
-        { code: 'effort-conflict', path: effortField.path },
-      );
-    }
-    options[option] = effort;
+  if (!Object.hasOwn(agentConfig, 'effort')) return stageTarget(client, model, options);
+  const [option, effort] = effortOption(agentConfig.effort, client, { here, registry, index, options });
+  return stageTarget(client, model, { ...options, [option]: effort });
+}
+
+/** Agent keys removed by earlier schema versions point at `migent migrate`. */
+function refuseLegacyAgentKeys(agentConfig: Record<string, unknown>, { label, path }: Field): void {
+  if (Object.hasOwn(agentConfig, 'options')) {
+    throw new ConfigurationError(
+      `${label}.options moved to ${label}.client.options. Run \`migent migrate\`.`,
+      { code: 'agent-options-moved', path: [...path, 'options'] },
+    );
   }
-  return stageTarget(client, model, options);
+  if (Object.hasOwn(agentConfig, 'provider')) {
+    throw new ConfigurationError(
+      `${label}.provider was removed in schema_version 6; set ${label}.client.type. Run \`migent migrate\`.`,
+      { code: 'legacy-key', path: [...path, 'provider'] },
+    );
+  }
+}
+
+/** Resolve an agent's `effort` to the client's native option name and its value. */
+function effortOption(
+  value: unknown,
+  client: string,
+  { here, registry, index, options }: ResolveContext & { here: Field; options: Readonly<Record<string, string>> },
+): [string, string] {
+  const {label} = here;
+  const effortField = child(here, 'effort');
+  const effort = requiredString(value, effortField, index);
+  const details = { code: 'effort-unsupported', path: effortField.path };
+  if (registry === undefined) throw new ConfigurationError(`${label}.effort requires a client registry.`, details);
+  let option: string | undefined;
+  try {
+    option = registry.get(client).effortOption;
+  } catch (error) {
+    throw new ConfigurationError(`${label}.effort: ${error instanceof Error ? error.message : String(error)}`, details);
+  }
+  if (option === undefined) {
+    throw new ConfigurationError(`${label}.effort is not supported by the selected CLI client.`, details);
+  }
+  if (Object.hasOwn(options, option)) {
+    throw new ConfigurationError(
+      `${label}.effort conflicts with ${label}.client.options.${option}; keep only one.`,
+      { code: 'effort-conflict', path: effortField.path },
+    );
+  }
+  return [option, effort];
 }
 
 /** Picks the one client that lists `model`. Runs only when an agent omits `client.type`. */

@@ -159,63 +159,78 @@ interface StageCheckContext {
   source: Diagnostic['source'];
 }
 
+/** Maps a stage resolution error to the diagnostic owned by the workflow or the config layer. */
+function resolutionDiagnostic(
+  error: ConfigurationError,
+  where: { stage: RoleStageSpec; index: number },
+  ctx: StageCheckContext,
+): Diagnostic {
+  const { stage, index } = where;
+  const { ownerOf, label, source } = ctx;
+  const stagePath = (field: string): (string | number)[] => ['stages', index, field];
+  const head = error.path?.[0];
+  const missingRole = error.code === 'missing-or-invalid' && error.path?.join('.') === `roles.${stage.role}`;
+  if (head === 'stages' || missingRole) {
+    // The stage's own reference (its explicit agent, or a role that does not exist) is the workflow's to fix.
+    const field = missingRole ? 'role' : 'agent';
+    return { severity: 'error', code: missingRole ? 'unknown-role' : (error.code ?? 'workflow-invalid'), message: `${label}.${stage.id}: ${error.message}`, path: stagePath(field), source };
+  } else if (error.path !== undefined) {
+    // A fault in the config, including a model inherited from the role's default: the config owns the fix.
+    return { severity: 'error', code: error.code ?? 'config-invalid', message: error.message, path: error.path, source: ownerSource(ownerOf(error.path)) };
+  }
+  return { severity: 'error', code: error.code ?? 'workflow-invalid', message: `${label}.${stage.id}: ${error.message}`, path: stagePath('role'), source };
+}
+
 /** Resolves one readable stage against the effective config and reports who owns each fault. */
 function stageDiagnostics(stageDraft: StageDraft, ctx: StageCheckContext): Diagnostic[] {
   const stage = stageDraft.roleStage;
   if (stage === null) return [];
   const { config, ownerOf, clients, label, source } = ctx;
   const {index} = stageDraft;
-  const stagePath = (field: string): (string | number)[] => ['stages', index, field];
   let target;
   try {
     target = resolveStageSpec(config, stage, { registry: clients });
   } catch (error) {
     if (!(error instanceof ConfigurationError)) throw error;
-    const head = error.path?.[0];
-    const missingRole = error.code === 'missing-or-invalid' && error.path?.join('.') === `roles.${stage.role}`;
-    if (head === 'stages' || missingRole) {
-      // The stage's own reference (its explicit agent, or a role that does not exist) is the workflow's to fix.
-      const field = missingRole ? 'role' : 'agent';
-      return [{ severity: 'error', code: missingRole ? 'unknown-role' : (error.code ?? 'workflow-invalid'), message: `${label}.${stage.id}: ${error.message}`, path: stagePath(field), source }];
-    } else if (error.path !== undefined) {
-      // A fault in the config, including a model inherited from the role's default: the config owns the fix.
-      return [{ severity: 'error', code: error.code ?? 'config-invalid', message: error.message, path: error.path, source: ownerSource(ownerOf(error.path)) }];
-    }
-    return [{ severity: 'error', code: error.code ?? 'workflow-invalid', message: `${label}.${stage.id}: ${error.message}`, path: stagePath('role'), source }];
+    return [resolutionDiagnostic(error, { stage, index }, ctx)];
   }
   const failure = optionsFailure(config, stage, { target, clients });
   if (failure === null) return [];
   if (failure.path === null) {
-    return [{ severity: 'error', code: 'options-invalid', message: `${label}.${stage.id}: ${failure.message}`, path: stagePath('agent'), source }];
+    return [{ severity: 'error', code: 'options-invalid', message: `${label}.${stage.id}: ${failure.message}`, path: ['stages', index, 'agent'], source }];
   }
   // The options come from the model or role definition: the config layer that owns it fixes them.
   return [{ severity: 'error', code: 'options-invalid', message: `${label}.${stage.id}: ${failure.message}`, path: failure.path, source: ownerSource(ownerOf(failure.path)) }];
 }
 
-/** Validates an unsaved workflow against the parser, the catalog rules and the effective config. */
-export function validateWorkflowDraft(input: WorkflowDraftInput, clients: ClientRegistry): Diagnostic[] {
-  const out: Diagnostic[] = [];
-  const source = { workflow: input.file };
-  out.push(...versionDiagnostics(input.draft, input.file === '' ? 'workflow' : input.file, source));
-  const parsed = collectWorkflowDraft(input.draft, input.file);
-  out.push(...draftDiagnostics(input.draft, parsed, source));
+const DRAFT_PATHS: Record<string, string> = { 'duplicate-id': 'id', 'unknown-downstream': 'downstream', 'no-stages': 'stages', 'requires-invalid': 'requires' };
 
+/** Reports a draft id that differs from the id the session expects. */
+function sessionIdDiagnostics(input: WorkflowDraftInput, draftId: string | null, source: Diagnostic['source']): Diagnostic[] {
+  if (input.session === undefined || draftId === null || draftId === input.session.expectedId) return [];
+  return [{
+    severity: 'error',
+    code: 'session-workflow-id-mismatch',
+    message: `Session workflow id is ${input.session.expectedId}, not ${draftId}. Do not change id in the session draft.`,
+    path: ['id'],
+    source,
+  }];
+}
+
+/** Checks the draft together with its sibling workflows and attributes each catalog problem. */
+function catalogDiagnostics(
+  input: WorkflowDraftInput,
+  draft: { parsed: ReturnType<typeof collectWorkflowDraft>; draftId: string | null },
+  source: Diagnostic['source'],
+): Diagnostic[] {
+  const { parsed, draftId } = draft;
+  const out: Diagnostic[] = [];
   const { entries, failedIds, diagnostics: siblingDiagnostics } = siblingCatalog(input.siblings);
   out.push(...siblingDiagnostics);
   if (input.session === undefined) entries.push(parsed.catalogEntry);
-  const draftId = parsed.id.state === 'invalid' ? null : parsed.id.value;
-  if (input.session !== undefined && draftId !== null && draftId !== input.session.expectedId) {
-    out.push({
-      severity: 'error',
-      code: 'session-workflow-id-mismatch',
-      message: `Session workflow id is ${input.session.expectedId}, not ${draftId}. Do not change id in the session draft.`,
-      path: ['id'],
-      source,
-    });
-  }
+  out.push(...sessionIdDiagnostics(input, draftId, source));
   const fileOf = (workflowId: string): string | undefined =>
     entries.find((entry) => entry.id.known && entry.id.value === workflowId)?.file;
-  const draftPaths: Record<string, string> = { 'duplicate-id': 'id', 'unknown-downstream': 'downstream', 'no-stages': 'stages', 'requires-invalid': 'requires' };
   const catalog = checkWorkflowCatalog(entries, failedIds, input.session === undefined ? null : parsed.catalogEntry);
   for (const problem of catalog.problems) {
     const concerns = problem.external === true || (input.session === undefined &&
@@ -225,10 +240,22 @@ export function validateWorkflowDraft(input: WorkflowDraftInput, clients: Client
       severity: concerns ? 'error' : 'warning',
       code: problem.code,
       message: problem.message,
-      ...(concerns ? { path: problem.path ?? [draftPaths[problem.code] ?? 'id'] } : {}),
+      ...(concerns ? { path: problem.path ?? [DRAFT_PATHS[problem.code] ?? 'id'] } : {}),
       source: where,
     });
   }
+  return out;
+}
+
+/** Validates an unsaved workflow against the parser, the catalog rules and the effective config. */
+export function validateWorkflowDraft(input: WorkflowDraftInput, clients: ClientRegistry): Diagnostic[] {
+  const out: Diagnostic[] = [];
+  const source = { workflow: input.file };
+  out.push(...versionDiagnostics(input.draft, input.file === '' ? 'workflow' : input.file, source));
+  const parsed = collectWorkflowDraft(input.draft, input.file);
+  out.push(...draftDiagnostics(input.draft, parsed, source));
+  const draftId = parsed.id.state === 'invalid' ? null : parsed.id.value;
+  out.push(...catalogDiagnostics(input, { parsed, draftId }, source));
 
   if (input.config instanceof ConfigurationError) {
     out.push(fromError(input.config, input.config.layer === undefined ? undefined : { layer: input.config.layer }, 'config-invalid'));
@@ -268,17 +295,8 @@ function optionsFailure(
   if (stage.agent?.kind === 'inline') return { message: full, path: null };
   const roleDefault =
     isRecord(config.roles) && isRecord(config.roles[stage.role]) ? config.roles[stage.role] : undefined;
-  let selected: unknown;
-  if (stage.agent !== null) selected = stage.agent.kind === 'named' ? stage.agent.name : undefined;
-  else selected = isRecord(roleDefault) ? roleDefault.agent : undefined;
-  if (typeof selected === 'string') {
-    try {
-      const message = validate(loadAgentTarget(config, selected, { registry: clients }));
-      if (message !== null) return { message, path: ['agents', selected, 'client', 'options'] };
-    } catch (error) {
-      if (!(error instanceof ConfigurationError)) throw error;
-    }
-  }
+  const agentFailure = namedAgentFailure(config, selectedAgent(stage, roleDefault), { clients, validate });
+  if (agentFailure !== null) return agentFailure;
   const withRole = resolveStageSpec(config, { ...stage, options: {} }, { registry: clients });
   const roleMessage = validate(withRole);
   if (roleMessage !== null) {
@@ -286,6 +304,28 @@ function optionsFailure(
     return { message: roleMessage, path: inline ? ['roles', stage.role, 'agent'] : ['roles', stage.role, 'options'] };
   }
   return { message: full, path: null };
+}
+
+/** The agent a stage selects: its own named agent, or the role default's agent field. */
+function selectedAgent(stage: RoleStageSpec, roleDefault: unknown): unknown {
+  if (stage.agent !== null) return stage.agent.kind === 'named' ? stage.agent.name : undefined;
+  return isRecord(roleDefault) ? roleDefault.agent : undefined;
+}
+
+/** Validates a named agent definition's options on their own. */
+function namedAgentFailure(
+  config: Mapping,
+  selected: unknown,
+  deps: { clients: ClientRegistry; validate: (candidate: StageTarget) => string | null },
+): { message: string; path: (string | number)[] } | null {
+  if (typeof selected !== 'string') return null;
+  try {
+    const message = deps.validate(loadAgentTarget(config, selected, { registry: deps.clients }));
+    if (message !== null) return { message, path: ['agents', selected, 'client', 'options'] };
+  } catch (error) {
+    if (!(error instanceof ConfigurationError)) throw error;
+  }
+  return null;
 }
 
 function dedupe(items: Diagnostic[]): Diagnostic[] {

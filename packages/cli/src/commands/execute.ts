@@ -39,38 +39,77 @@ export async function executeWorkflow(workspace: string, options: ExecuteWorkflo
   const startPrepared = options.startPrepared === true;
   const sessionId = text(options.sessionId);
   const creating = !startPrepared && (options.action === 'start' || (once && sessionId === null));
-  const maxDispatches = options.maxDispatches === undefined ? DEFAULT_MAX_DISPATCHES : options.maxDispatches;
   const runner = options.runner ?? cliHooks.runner ?? new AgentToolRunner(clientRegistry());
   runner.itemProgress = options.itemProgress === true;
   const result = await executeNamedWorkflow(
     workspace,
     {
-      workflowId: creating || startPrepared ? (options.workflowId ?? null) : null,
-      task: creating ? (options.task ?? null) : null,
-      sessionId: creating ? null : sessionId,
-      priorSessionId: options.priorSessionId ?? null,
-      startPrepared,
-      maxDispatches: once ? null : maxDispatches,
-      continueFailed: options.continueFailed === true,
-      stageId: options.stageId ?? null,
-      once,
-      resetRevisions: options.action === 'continue',
-      refreshWorkflow: options.refreshWorkflow === true,
-      preflight: !creating && !startPrepared ? undefined : async (target) => {
-        if (options.skipPreflight === true) {
-          process.stderr.write('preflight skipped (--skip-preflight)\n');
-          return true;
-        }
-        return runPreflight(workspace, target, { clients: runner.registry });
-      },
-      reply: options.reply ?? null,
-      replyStageId: options.replyStageId ?? null,
+      ...targetRequest(options, { creating, startPrepared, sessionId }),
+      ...runRequest(options, once),
+      preflight: creating || startPrepared ? preflightHook(workspace, options, runner) : undefined,
     },
     runner,
   );
   printResult(workspace, result);
   printResumeHint(workspace, result);
   return result.code;
+}
+
+function targetRequest(
+  options: ExecuteWorkflowOptions,
+  state: { creating: boolean; startPrepared: boolean; sessionId: string | null },
+): {
+  workflowId: string | null;
+  task: string | null;
+  sessionId: string | null;
+  priorSessionId: string | null;
+  startPrepared: boolean;
+} {
+  const { creating, startPrepared, sessionId } = state;
+  return {
+    workflowId: creating || startPrepared ? (options.workflowId ?? null) : null,
+    task: creating ? (options.task ?? null) : null,
+    sessionId: creating ? null : sessionId,
+    priorSessionId: options.priorSessionId ?? null,
+    startPrepared,
+  };
+}
+
+function runRequest(options: ExecuteWorkflowOptions, once: boolean): {
+  maxDispatches: number | null;
+  continueFailed: boolean;
+  stageId: string | null;
+  once: boolean;
+  resetRevisions: boolean;
+  refreshWorkflow: boolean;
+  reply: string | null;
+  replyStageId: string | null;
+} {
+  const maxDispatches = options.maxDispatches === undefined ? DEFAULT_MAX_DISPATCHES : options.maxDispatches;
+  return {
+    maxDispatches: once ? null : maxDispatches,
+    continueFailed: options.continueFailed === true,
+    stageId: options.stageId ?? null,
+    once,
+    resetRevisions: options.action === 'continue',
+    refreshWorkflow: options.refreshWorkflow === true,
+    reply: options.reply ?? null,
+    replyStageId: options.replyStageId ?? null,
+  };
+}
+
+function preflightHook(
+  workspace: string,
+  options: ExecuteWorkflowOptions,
+  runner: AgentToolRunner,
+): (target: Parameters<typeof runPreflight>[1]) => Promise<boolean> {
+  return async (target) => {
+    if (options.skipPreflight === true) {
+      process.stderr.write('preflight skipped (--skip-preflight)\n');
+      return true;
+    }
+    return runPreflight(workspace, target, { clients: runner.registry });
+  };
 }
 
 function printResumeHint(workspace: string, result: ExecuteResult): void {
@@ -92,23 +131,32 @@ const INSPECT_EXIT_CODES = new Set([EXIT_BLOCKED, EXIT_STAGE_FAILED, EXIT_VERIFY
 
 function printResult(workspace: string, result: ExecuteResult): void {
   // Printed before the completed branch: a retried attempt can fail and still end in a completed session.
+  printFailures(workspace, result);
+  if (result.status === 'completed' || result.stopReason === 'completed') printCompleted(workspace, result);
+  else printStopped(workspace, result);
+}
+
+function printFailures(workspace: string, result: ExecuteResult): void {
   for (const executionId of failedExecutionIds(result)) {
     const failure = `executions/${executionId}/${FAILURE_FILENAME}`;
     if (executionFileExists({ workspace, sessionId: result.sessionId }, executionId, FAILURE_FILENAME)) {
       log(`failure: ${failure}`);
     }
   }
-  if (result.status === 'completed' || result.stopReason === 'completed') {
-    const duration = sessionDurationLabel(workspace, result.sessionId);
-    log(duration === null ? 'completed' : `completed · ${duration}`);
-    for (const filePath of artifactPaths(workspace, result.sessionId, result.outputs)) {
-      log(`artifact: ${filePath}`);
-    }
-    const suggestions = publishNextSuggestions(workspace, result.sessionId);
-    if (suggestions.path) log(`next: ${suggestions.path}`);
-    for (const next of suggestions.next) log(formatNextCommand(next.argv));
-    return;
+}
+
+function printCompleted(workspace: string, result: ExecuteResult): void {
+  const duration = sessionDurationLabel(workspace, result.sessionId);
+  log(duration === null ? 'completed' : `completed · ${duration}`);
+  for (const filePath of artifactPaths(workspace, result.sessionId, result.outputs)) {
+    log(`artifact: ${filePath}`);
   }
+  const suggestions = publishNextSuggestions(workspace, result.sessionId);
+  if (suggestions.path) log(`next: ${suggestions.path}`);
+  for (const next of suggestions.next) log(formatNextCommand(next.argv));
+}
+
+function printStopped(workspace: string, result: ExecuteResult): void {
   const questions = result.sessionId === '' ? [] : new SessionStore(workspace).questionStages(result.sessionId);
   if (questions.length > 0) log(`questions: .migent/sessions/${result.sessionId}/questions.json`);
   for (const stage of questions) {

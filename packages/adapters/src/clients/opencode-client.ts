@@ -233,12 +233,7 @@ export class OpencodeClient implements CliClient {
         errorMessage = errorString(payload);
       }
     }
-    const text = textWithStatusHeader(segments);
-    if (text) return { text, sessionId, source: 'model' };
-    if (errorMessage) return { text: errorMessage, sessionId, source: 'error' };
-    if (sawEvent) return { text: '', sessionId, source: 'none' };
-    const raw = stdout.trim();
-    return { text: raw, sessionId: null, source: raw === '' ? 'none' : 'error' };
+    return segmentedRunOutput(stdout, { segments, sessionId, errorMessage, sawEvent });
   }
 
   public parseModels(stdout: string): ModelCatalog {
@@ -364,4 +359,25 @@ export class OpencodeClient implements CliClient {
       return item.id;
     }))];
   }
+}
+
+interface SegmentedRun {
+  segments: readonly (readonly string[])[];
+  sessionId: string | null;
+  errorMessage: string | null;
+  sawEvent: boolean;
+}
+
+/** Picks the run output: model text, else the reported error, else the raw stdout when no event parsed. */
+function segmentedRunOutput(
+  stdout: string,
+  parsed: SegmentedRun,
+): CliRunOutput {
+  const { segments, sessionId, errorMessage, sawEvent } = parsed;
+  const text = textWithStatusHeader(segments);
+  if (text) return { text, sessionId, source: 'model' };
+  if (errorMessage) return { text: errorMessage, sessionId, source: 'error' };
+  if (sawEvent) return { text: '', sessionId, source: 'none' };
+  const raw = stdout.trim();
+  return { text: raw, sessionId: null, source: raw === '' ? 'none' : 'error' };
 }

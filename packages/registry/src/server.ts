@@ -363,33 +363,51 @@ export class RegistryHTTPServer {
     const exchange: Exchange = { socket, state };
     state.responseStarted = false;
     reader.setDeadline(monotonic() + this.readDeadlineSec);
+    const head = await this.readRequestHead(exchange, reader);
+    if (head === null) return true;
+    const { method, headers } = head;
+    const closeRequested = connectionClose(head.version, headers);
+    const path = decodePath(head.target);
+    let body: Buffer | null = null;
+    if (this.router.shouldReadBody(method, path)) {
+      body = await this.readLimitedBody(exchange, reader, { method, headers });
+      if (body === null) return true;
+    }
+    const response = await this.dispatch({ method, path, headers, body });
+    const payload = Buffer.from(await response.arrayBuffer());
+    await this.sendRaw(exchange, { status: response.status, close: closeRequested }, payload);
+    return closeRequested;
+  }
+
+  /** Reads the request line and headers; answers 400 and returns null when either is invalid or empty. */
+  private async readRequestHead(
+    exchange: Exchange,
+    reader: DeadlineReader,
+  ): Promise<(NonNullable<ReturnType<typeof parseRequestLine>> & { headers: Map<string, string[]> }) | null> {
     const line = await reader.readLine(MAX_LINE_PROBE_BYTES);
-    if (line.length === 0) return true;
+    if (line.length === 0) return null;
     if (line.length > MAX_LINE_BYTES) {
       await this.sendJson(exchange, { status: 400, close: true }, errorBody('invalid_request', 'Request line is too long.'));
-      return true;
+      return null;
     }
     const parsed = parseRequestLine(line);
-    if (!parsed) {
+    const headerBytes = parsed ? await readHeaders(reader) : null;
+    if (!parsed || headerBytes === null) {
       await this.sendJson(exchange, { status: 400, close: true }, errorBody('invalid_request', 'Invalid request.'));
-      return true;
+      return null;
     }
-    const headerBytes = await readHeaders(reader);
-    if (headerBytes === null) {
-      await this.sendJson(exchange, { status: 400, close: true }, errorBody('invalid_request', 'Invalid request.'));
-      return true;
-    }
-    const headers = parseHeaders(headerBytes);
-    const closeRequested = connectionClose(parsed.version, headers);
-    const path = decodePath(parsed.target);
-    let body: Buffer | null = null;
-    if (this.router.shouldReadBody(parsed.method, path)) {
-      const limited = await this.readLimitedBody(exchange, reader, { method: parsed.method, headers });
-      if (limited === null) return true;
-      body = limited;
-    }
+    return { ...parsed, headers: parseHeaders(headerBytes) };
+  }
+
+  private async dispatch(request: {
+    method: string;
+    path: string;
+    headers: Map<string, string[]>;
+    body: Buffer | null;
+  }): Promise<Response> {
+    const { method, path, headers, body } = request;
     const call = new Call({
-      method: parsed.method,
+      method,
       path,
       store: this.store as WorkspaceRecords,
       token: this.token,
@@ -398,12 +416,7 @@ export class RegistryHTTPServer {
       body,
       beforeStore: () => undefined,
     });
-    const response = await this.router.hono.request(new Request(`http://127.0.0.1${path}`, { method: parsed.method }), undefined, {
-      call,
-    });
-    const payload = Buffer.from(await response.arrayBuffer());
-    await this.sendRaw(exchange, { status: response.status, close: closeRequested }, payload);
-    return closeRequested;
+    return this.router.hono.request(new Request(`http://127.0.0.1${path}`, { method }), undefined, { call });
   }
 
   private async readLimitedBody(
@@ -413,6 +426,20 @@ export class RegistryHTTPServer {
   ): Promise<Buffer | null> {
     const { method, headers } = request;
     if (method !== 'POST') return Buffer.alloc(0);
+    const length = await this.acceptedBodyLength(exchange, headers);
+    if (length === null) return null;
+    try {
+      const body = await reader.read(length);
+      if (body.length === length) return body;
+    } catch (error) {
+      if (error instanceof RequestTimeout) throw error;
+    }
+    await this.sendJson(exchange, { status: 400, close: false }, errorBody('invalid_request', 'Request body was truncated.'));
+    return null;
+  }
+
+  /** Validates body framing headers; answers the error and returns null when the body cannot be read. */
+  private async acceptedBodyLength(exchange: Exchange, headers: Map<string, string[]>): Promise<number | null> {
     if (headers.has('transfer-encoding')) {
       await this.sendJson(exchange, { status: 400, close: false }, errorBody('invalid_request', 'Transfer-Encoding is not accepted.'));
       return null;
@@ -427,18 +454,7 @@ export class RegistryHTTPServer {
       await this.sendJson(exchange, { status: 400, close: false }, errorBody('invalid_request', 'Content-Length is missing or invalid.'));
       return null;
     }
-    try {
-      const body = await reader.read(length);
-      if (body.length !== length) {
-        await this.sendJson(exchange, { status: 400, close: false }, errorBody('invalid_request', 'Request body was truncated.'));
-        return null;
-      }
-      return body;
-    } catch (error) {
-      if (error instanceof RequestTimeout) throw error;
-      await this.sendJson(exchange, { status: 400, close: false }, errorBody('invalid_request', 'Request body was truncated.'));
-      return null;
-    }
+    return length;
   }
 
   private async writeTimeout(socket: Socket, state: { responseStarted: boolean }): Promise<void> {

@@ -25,38 +25,52 @@ export function runSessionCommand(options: OptionValues): number | Promise<numbe
   }
   const sessionId = optionalText(options.session);
   const roleMode = roleFlagsPresent(options);
-  const workflowMode = workflowFlagsPresent(options);
-  if ((workflowId !== null && roleMode) || (workflowId === null && workflowMode && (roleMode || sessionId === null))) {
+  if (mixedModes(options, { workflowId, sessionId, roleMode })) {
     printError(RUN_SPLIT);
     return EXIT_CONFIG;
   }
   // A session without role flags is a prepared workflow session; it records its own workflow.
-  if (workflowId !== null || (sessionId !== null && !roleMode)) {
-    const task = rawText(options.task);
-    const prepared = sessionId !== null;
-    if (prepared && task !== null) {
-      printError('Pass --workflow and --task, or --session, not both.');
-      return EXIT_CONFIG;
-    }
-    if (!prepared && task === null && options.prior === undefined) {
-      printError('Pass --task.');
-      return EXIT_CONFIG;
-    }
-    return runWorkflowCommand({
-      workflowId,
-      task,
-      sessionId,
-      prepared,
-      once: options.once === true,
-      options,
-      output: outputFlags(options),
-    });
-  }
+  if (workflowId !== null || (sessionId !== null && !roleMode)) return runWorkflowMode(options, workflowId, sessionId);
   if (!roleMode) {
     printError(RUN_SPLIT);
     return EXIT_CONFIG;
   }
   return runAgent(options, optionalText(options.session));
+}
+
+function mixedModes(
+  options: OptionValues,
+  state: { workflowId: string | null; sessionId: string | null; roleMode: boolean },
+): boolean {
+  const { workflowId, sessionId, roleMode } = state;
+  if (workflowId !== null) return roleMode;
+  return workflowFlagsPresent(options) && (roleMode || sessionId === null);
+}
+
+function runWorkflowMode(
+  options: OptionValues,
+  workflowId: string | null,
+  sessionId: string | null,
+): number | Promise<number> {
+  const task = rawText(options.task);
+  const prepared = sessionId !== null;
+  if (prepared && task !== null) {
+    printError('Pass --workflow and --task, or --session, not both.');
+    return EXIT_CONFIG;
+  }
+  if (!prepared && task === null && options.prior === undefined) {
+    printError('Pass --task.');
+    return EXIT_CONFIG;
+  }
+  return runWorkflowCommand({
+    workflowId,
+    task,
+    sessionId,
+    prepared,
+    once: options.once === true,
+    options,
+    output: outputFlags(options),
+  });
 }
 
 function roleFlagsPresent(options: OptionValues): boolean {
@@ -139,32 +153,34 @@ function readReply(options: OptionValues): string | null | 'invalid' {
     printError('Pass only one of --reply or --reply-file.');
     return 'invalid';
   }
-  if (hasFile) {
-    const file = optionalText(options.replyFile);
-    if (file === null) {
-      printError('--reply-file is empty.');
-      return 'invalid';
-    }
-    let text: string;
-    try {
-      text = readFileSync(file, 'utf8');
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error);
-      printError(`Unable to read reply file: ${file} (${reason})`);
-      return 'invalid';
-    }
-    if (text.trim() === '') {
-      printError('--reply is empty.');
-      return 'invalid';
-    }
-    return text;
-  }
+  if (hasFile) return readReplyFile(options);
   const reply = rawText(options.reply);
   if (reply === null || reply.trim() === '') {
     printError('--reply is empty.');
     return 'invalid';
   }
   return reply;
+}
+
+function readReplyFile(options: OptionValues): string | 'invalid' {
+  const file = optionalText(options.replyFile);
+  if (file === null) {
+    printError('--reply-file is empty.');
+    return 'invalid';
+  }
+  let text: string;
+  try {
+    text = readFileSync(file, 'utf8');
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    printError(`Unable to read reply file: ${file} (${reason})`);
+    return 'invalid';
+  }
+  if (text.trim() === '') {
+    printError('--reply is empty.');
+    return 'invalid';
+  }
+  return text;
 }
 
 function outputFlags(options: OptionValues): { itemProgress: boolean } {

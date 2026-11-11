@@ -93,56 +93,79 @@ function workflowWarnings(document: WorkflowDocument): string[] {
   ].map((message) => `${label}: ${message}`);
 }
 
+type StageBindingContext = Omit<WorkflowCheckContext, 'config' | 'configDiagnostics'> & {
+  readonly config: Record<string, unknown>;
+  readonly known: ReadonlySet<string>;
+  readonly knownOptionReasons: ReadonlySet<string>;
+};
+
+type RoleStage = Parameters<typeof resolveStageSpec>[1];
+
 function checkStageBindings(
   document: WorkflowDocument,
-  context: Omit<WorkflowCheckContext, 'config' | 'configDiagnostics'> & {
-    readonly config: Record<string, unknown>;
-    readonly known: ReadonlySet<string>;
-    readonly knownOptionReasons: ReadonlySet<string>;
-  },
+  context: StageBindingContext,
   sink: BindingSink,
 ): void {
-  const { config, clients, known, knownOptionReasons, unmapped, invalidEffort, efforts } = context;
-  const { problems, warnings, failedWorkflows } = sink;
-  const report = (stageId: string, message: string): void => {
-    const text = `${document.id}.${stageId}: ${message}`;
-    if (!problems.includes(text)) problems.push(text);
-    failedWorkflows.add(document.id);
-  };
+  const { problems, failedWorkflows } = sink;
   for (const stage of Object.values(document.stages)) {
     if (!isRoleStage(stage)) continue;
-    const role = isRecord(config.roles) ? config.roles[stage.role] : undefined;
-    let alias: unknown;
-    if (stage.agent !== null) alias = stage.agent.kind === 'named' ? stage.agent.name : undefined;
-    else alias = isRecord(role) ? role.agent : undefined;
-    if (stage.agent === null && invalidEffort.has(`roles.${stage.role}.agent`)) continue;
-    if (typeof alias === 'string' && invalidEffort.has(alias)) continue;
-    if (stage.agent?.kind === 'inline') {
-      // An inline stage agent is checked like a named one: its model and effort against the catalog.
-      const check = efforts[stageAgentKey(document.id, stage.id)];
-      if (check?.warning && !warnings.includes(check.warning)) warnings.push(check.warning);
-      if (check?.problem) {
-        report(stage.id, check.problem);
-        continue;
-      }
-    }
-    let target;
-    try {
-      target = resolveStageSpec(config, stage, { registry: clients });
-    } catch (error) {
-      if (!(error instanceof ConfigurationError)) throw error;
-      const identity = { code: error.code ?? 'config-invalid', ...(error.path === undefined ? {} : { path: error.path }), message: error.message };
-      if (known.has(identityKey(identity))) continue;
-      // An unmapped alias is reported once, by the config check.
-      if (error.path?.[0] === 'agents' && typeof error.path[1] === 'string' && unmapped.has(error.path[1])) continue;
-      report(stage.id, error.message);
-      continue;
-    }
-    const bound = resolveEffectiveClient(clients, target);
-    if (bound.failure === undefined) continue;
-    if (bound.failure.code === 'options-invalid' && knownOptionReasons.has(bound.failure.message)) continue;
-    report(stage.id, bound.failure.message);
+    const message = stageBindingProblem({ workflowId: document.id, stage }, context, sink.warnings);
+    if (message === null) continue;
+    const text = `${document.id}.${stage.id}: ${message}`;
+    if (!problems.includes(text)) problems.push(text);
+    failedWorkflows.add(document.id);
   }
+}
+
+/** Whether the stage's agent has an effort the config check already reported as invalid. */
+function hasInvalidEffort(
+  stage: RoleStage,
+  config: Record<string, unknown>,
+  invalidEffort: ReadonlySet<string>,
+): boolean {
+  if (stage.agent === null && invalidEffort.has(`roles.${stage.role}.agent`)) return true;
+  const role = isRecord(config.roles) ? config.roles[stage.role] : undefined;
+  let alias: unknown;
+  if (stage.agent !== null) alias = stage.agent.kind === 'named' ? stage.agent.name : undefined;
+  else alias = isRecord(role) ? role.agent : undefined;
+  return typeof alias === 'string' && invalidEffort.has(alias);
+}
+
+/** Resolves and binds one role stage; returns the problem to report, or null when it binds or is reported elsewhere. */
+function stageBindingProblem(
+  where: { workflowId: string; stage: RoleStage & { id: string } },
+  context: StageBindingContext,
+  warnings: string[],
+): string | null {
+  const { workflowId, stage } = where;
+  const { config, clients, knownOptionReasons, invalidEffort, efforts } = context;
+  if (hasInvalidEffort(stage, config, invalidEffort)) return null;
+  if (stage.agent?.kind === 'inline') {
+    // An inline stage agent is checked like a named one: its model and effort against the catalog.
+    const check = efforts[stageAgentKey(workflowId, stage.id)];
+    if (check?.warning && !warnings.includes(check.warning)) warnings.push(check.warning);
+    if (check?.problem) return check.problem;
+  }
+  let target;
+  try {
+    target = resolveStageSpec(config, stage, { registry: clients });
+  } catch (error) {
+    if (!(error instanceof ConfigurationError)) throw error;
+    return resolutionProblem(error, context);
+  }
+  const bound = resolveEffectiveClient(clients, target);
+  if (bound.failure === undefined) return null;
+  if (bound.failure.code === 'options-invalid' && knownOptionReasons.has(bound.failure.message)) return null;
+  return bound.failure.message;
+}
+
+/** A resolution error's message, or null when the config check already reports it. */
+function resolutionProblem(error: ConfigurationError, context: StageBindingContext): string | null {
+  const identity = { code: error.code ?? 'config-invalid', ...(error.path === undefined ? {} : { path: error.path }), message: error.message };
+  if (context.known.has(identityKey(identity))) return null;
+  // An unmapped alias is reported once, by the config check.
+  if (error.path?.[0] === 'agents' && typeof error.path[1] === 'string' && context.unmapped.has(error.path[1])) return null;
+  return error.message;
 }
 
 /**

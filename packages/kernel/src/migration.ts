@@ -61,34 +61,13 @@ export function migrateConfig(
   const layers: MigrationLayer = options;
   let version = requireCurrent(documentVersion(config), current, 'config');
   if (version === current) return { document: deepCopyRecord(config), notes: [] };
-  let document = deepCopyRecord(config);
-  let providerStage: Record<string, unknown> | null = null;
-  let structural: string[] = [];
+  let run: ConfigMigrationRun = { document: deepCopyRecord(config), providerStage: null, structural: [] };
   while (version < current) {
-    document = migrateModels(document, version, context);
-    document = migrateRoles(document, version, context);
-    // Version 4 to 5 renames and reshapes keys for every provider alike.
-    if (version === CONFIG_AGENTS_LIFT_FROM) {
-      providerStage = document;
-      const lifted = liftConfigAgents(document);
-      document = lifted.document;
-      structural = lifted.notes;
-    }
-    if (version === CONFIG_CLIENTS_LIFT_FROM) {
-      const lifted = liftConfigClients({
-        layer: layers.layer ?? 'project',
-        layerConfig: document,
-        project: layers.project ?? document,
-        local: layers.local ?? null,
-        merged: layers.merged ?? context,
-        clientIds: layers.clientIds ?? [],
-      });
-      document = lifted.document;
-      structural.push(...lifted.notes);
-    }
+    run = migrateConfigStep(run, version, { layers, context });
     version += 1;
   }
-  document = { ...document, [SCHEMA_VERSION_FIELD]: current };
+  const document: Record<string, unknown> = { ...run.document, [SCHEMA_VERSION_FIELD]: current };
+  const { providerStage, structural } = run;
   const notes = [`${SCHEMA_VERSION_FIELD} -> ${String(current)}`];
   // Provider steps ran on the shape they were written for; compare that shape, then list the lifts.
   const compared = providerStage ?? document;
@@ -96,6 +75,43 @@ export function migrateConfig(
   notes.push(...namedNotes(config.roles, compared.roles, 'roles'));
   notes.push(...structural);
   return { document, notes };
+}
+
+interface ConfigMigrationRun {
+  document: Record<string, unknown>;
+  /** The document as it stood before the provider lift, for comparing provider-shaped notes. */
+  providerStage: Record<string, unknown> | null;
+  structural: string[];
+}
+
+/** Advance a config document by one schema version. */
+function migrateConfigStep(
+  previous: ConfigMigrationRun,
+  version: number,
+  { layers, context }: { layers: MigrationLayer; context: Readonly<Record<string, unknown>> },
+): ConfigMigrationRun {
+  const run = { ...previous, structural: [...previous.structural] };
+  let document = migrateRoles(migrateModels(run.document, version, context), version, context);
+  // Version 4 to 5 renames and reshapes keys for every provider alike.
+  if (version === CONFIG_AGENTS_LIFT_FROM) {
+    run.providerStage = document;
+    const lifted = liftConfigAgents(document);
+    ({ document } = lifted);
+    run.structural = lifted.notes;
+  }
+  if (version === CONFIG_CLIENTS_LIFT_FROM) {
+    const lifted = liftConfigClients({
+      layer: layers.layer ?? 'project',
+      layerConfig: document,
+      project: layers.project ?? document,
+      local: layers.local ?? null,
+      merged: layers.merged ?? context,
+      clientIds: layers.clientIds ?? [],
+    });
+    ({ document } = lifted);
+    run.structural.push(...lifted.notes);
+  }
+  return { ...run, document };
 }
 
 export interface MigrateWorkflowOptions {
@@ -148,50 +164,93 @@ function liftWorkflowArtifacts(workflow: Readonly<Record<string, unknown>>): Mig
   const rawStages: unknown[] = Array.isArray(workflow.stages) ? workflow.stages : [];
   const hasProduces = rawStages.some((stage) => isRecord(stage) && Object.hasOwn(stage, 'produces'));
   if (!hasProduces && !Object.hasOwn(workflow, 'outputs')) return { document: { ...workflow }, notes: [] };
+  const analysis = planWorkflowArtifacts(workflow, rawStages);
+  if (analysis.problems.length > 0) {
+    throw new ConfigurationError(`Cannot migrate artifacts to schema_version 7:\n- ${analysis.problems.join('\n- ')}`);
+  }
+  return { document: applyArtifactPlans(workflow, rawStages, analysis), notes: analysis.notes };
+}
+
+interface ArtifactPlan { id: string; file: string; required: boolean }
+
+interface ArtifactAnalysis {
+  problems: string[];
+  notes: string[];
+  plans: Map<Record<string, unknown>, ArtifactPlan>;
+  byId: Map<string, string>;
+  byFile: Map<string, string>;
+  aliasTarget: Map<string, string>;
+}
+
+/** Analyse every stage's artifact before anything is rewritten, collecting all refusals at once. */
+function planWorkflowArtifacts(
+  workflow: Readonly<Record<string, unknown>>,
+  rawStages: readonly unknown[],
+): ArtifactAnalysis {
   const probe = { ...deepCopyRecord(workflow), [SCHEMA_VERSION_FIELD]: 6 };
   const parsed = parseWorkflowMapping(probe, 'migrating workflow');
   const conditional = conditionalStages(parsed.stages);
   const outputs = parsed.outputs ?? [];
-  const problems: string[] = [];
-  const notes: string[] = [];
-  const plans = new Map<Record<string, unknown>, { id: string; file: string; required: boolean }>();
-  const byId = new Map<string, string>();
-  const byFile = new Map<string, string>();
-  const aliasTarget = new Map<string, string>();
+  const analysis: ArtifactAnalysis = {
+    problems: [], notes: [], plans: new Map(), byId: new Map(), byFile: new Map(), aliasTarget: new Map(),
+  };
   for (const raw of rawStages) {
     if (!isRecord(raw) || typeof raw.id !== 'string') continue;
     const stageId = raw.id.trim();
-    const spec = parsed.stages[stageId];
-    const file = spec?.artifacts[0]?.file;
-    if (spec === undefined || file === undefined) continue;
-    const named = outputs.filter((output) => output.fromStage === stageId);
-    const id = named[0]?.name ?? stageId;
-    if (!ARTIFACT_ID.test(id)) {
-      problems.push(`stages.${stageId}: cannot derive an artifact id from ${named[0] === undefined ? 'the stage id' : `output ${JSON.stringify(id)}`}; rename it to letters, digits, "_" or "-" and start with a letter.`);
+    const file = parsed.stages[stageId]?.artifacts[0]?.file;
+    if (file === undefined) continue;
+    const named = outputs.filter((output) => output.fromStage === stageId).map((output) => output.name);
+    const id = named[0] ?? stageId;
+    const problem = artifactPlanProblem(analysis, { stageId, id, file, aliased: named.length > 0 });
+    if (problem !== null) {
+      analysis.problems.push(problem);
       continue;
     }
-    const clash = byId.get(id);
-    if (clash !== undefined) {
-      problems.push(`stages.${stageId} and stages.${clash} both derive the artifact id ${id}; rename one output or stage.`);
-      continue;
-    }
-    const sameFile = byFile.get(file);
-    if (sameFile !== undefined) {
-      problems.push(`stages.${stageId} and stages.${sameFile} both write ${file}; schema 7 publishes every artifact into outputs/, so rename one file.`);
-      continue;
-    }
-    byId.set(id, stageId);
-    byFile.set(file, stageId);
-    const required = !conditional.has(stageId);
-    plans.set(raw, { id, file, required });
-    for (const alias of named.slice(1)) aliasTarget.set(alias.name, id);
-    if (named.length === 0) notes.push(`stages.${stageId}.produces.artifact is now published as artifact ${id} (it was unpublished in schema 6)`);
-    if (!required) notes.push(`artifact ${id} comes from a run_when stage: it is now published when produced and declared required: false, so a turn may complete without ${file}`);
-    for (const alias of named.slice(1)) notes.push(`output alias ${alias.name} merged into artifact ${id}; downstream runs without a mapping now receive one context name`);
+    recordArtifactPlan(analysis, raw, { stageId, id, file, required: !conditional.has(stageId), named });
   }
-  if (problems.length > 0) {
-    throw new ConfigurationError(`Cannot migrate artifacts to schema_version 7:\n- ${problems.join('\n- ')}`);
+  return analysis;
+}
+
+function artifactPlanProblem(
+  analysis: ArtifactAnalysis,
+  { stageId, id, file, aliased }: { stageId: string; id: string; file: string; aliased: boolean },
+): string | null {
+  if (!ARTIFACT_ID.test(id)) {
+    return `stages.${stageId}: cannot derive an artifact id from ${aliased ? `output ${JSON.stringify(id)}` : 'the stage id'}; rename it to letters, digits, "_" or "-" and start with a letter.`;
   }
+  const clash = analysis.byId.get(id);
+  if (clash !== undefined) {
+    return `stages.${stageId} and stages.${clash} both derive the artifact id ${id}; rename one output or stage.`;
+  }
+  const sameFile = analysis.byFile.get(file);
+  if (sameFile !== undefined) {
+    return `stages.${stageId} and stages.${sameFile} both write ${file}; schema 7 publishes every artifact into outputs/, so rename one file.`;
+  }
+  return null;
+}
+
+function recordArtifactPlan(
+  analysis: ArtifactAnalysis,
+  raw: Record<string, unknown>,
+  { stageId, id, file, required, named }: ArtifactPlan & { stageId: string; named: readonly string[] },
+): void {
+  const { notes } = analysis;
+  analysis.byId.set(id, stageId);
+  analysis.byFile.set(file, stageId);
+  analysis.plans.set(raw, { id, file, required });
+  const aliases = named.slice(1);
+  for (const alias of aliases) analysis.aliasTarget.set(alias, id);
+  if (named.length === 0) notes.push(`stages.${stageId}.produces.artifact is now published as artifact ${id} (it was unpublished in schema 6)`);
+  if (!required) notes.push(`artifact ${id} comes from a run_when stage: it is now published when produced and declared required: false, so a turn may complete without ${file}`);
+  for (const alias of aliases) notes.push(`output alias ${alias} merged into artifact ${id}; downstream runs without a mapping now receive one context name`);
+}
+
+/** Rewrite the workflow from the analysed plans: registry, stage references, and downstream aliases. */
+function applyArtifactPlans(
+  workflow: Readonly<Record<string, unknown>>,
+  rawStages: readonly unknown[],
+  { plans, aliasTarget }: ArtifactAnalysis,
+): Record<string, unknown> {
   const registry: Record<string, unknown> = {};
   for (const plan of plans.values()) {
     registry[plan.id] = plan.required ? { file: plan.file } : { file: plan.file, required: false };
@@ -205,15 +264,12 @@ function liftWorkflowArtifacts(workflow: Readonly<Record<string, unknown>>): Mig
   let document: Record<string, unknown> = Array.isArray(workflow.stages) ? { ...workflow, stages } : { ...workflow };
   if (Object.keys(registry).length > 0) document = { ...document, artifacts: registry };
   document = withoutKey(document, 'outputs');
-  if (Array.isArray(document.downstream)) {
-    const downstream = document.downstream.map((entry: unknown) => {
-      if (!isRecord(entry) || !isRecord(entry.artifacts)) return entry;
-      const artifacts = renameAliases(entry.artifacts, aliasTarget);
-      return { ...entry, artifacts };
-    });
-    document = { ...document, downstream };
-  }
-  return { document, notes };
+  if (!Array.isArray(document.downstream)) return document;
+  const downstream = document.downstream.map((entry: unknown) => {
+    if (!isRecord(entry) || !isRecord(entry.artifacts)) return entry;
+    return { ...entry, artifacts: renameAliases(entry.artifacts, aliasTarget) };
+  });
+  return { ...document, downstream };
 }
 
 /** A copy of a downstream artifact mapping with merged output aliases replaced by the artifact that absorbed them. */
@@ -310,23 +366,30 @@ function refuseForeignCompleteRoutes(
   const {stages} = workflow;
   if (!Array.isArray(stages)) return;
   for (const stage of stages) {
-    if (!isRecord(stage)) continue;
-    const stageId = typeof stage.id === 'string' ? stage.id.trim() : '';
-    const {decision} = stage;
-    if (!isRecord(decision) || !isRecord(decision.routes)) continue;
-    for (const [rawKey, rawTarget] of Object.entries(decision.routes)) {
-      const routeKey = rawKey.trim().toLowerCase();
-      if (!routeListsComplete(rawTarget)) continue;
-      if (stageId !== completionStage) {
-        throw new ConfigurationError(
-          `stages.${stageId}.decision.routes.${routeKey} routes to complete, but completion.stage is ${completionStage || 'missing'}.`,
-        );
-      }
-      if (completionDecision !== null && routeKey !== completionDecision) {
-        throw new ConfigurationError(
-          `stages.${stageId}.decision.routes.${routeKey} routes to complete, but completion.decision is ${completionDecision}.`,
-        );
-      }
+    if (isRecord(stage)) refuseStageCompleteRoutes(stage, { completionStage, completionDecision });
+  }
+}
+
+/** A stage may route to complete only when it is the completion stage, under the completion decision. */
+function refuseStageCompleteRoutes(
+  stage: Record<string, unknown>,
+  { completionStage, completionDecision }: { completionStage: string; completionDecision: string | null },
+): void {
+  const {decision} = stage;
+  if (!isRecord(decision) || !isRecord(decision.routes)) return;
+  const stageId = typeof stage.id === 'string' ? stage.id.trim() : '';
+  for (const [rawKey, rawTarget] of Object.entries(decision.routes)) {
+    const routeKey = rawKey.trim().toLowerCase();
+    if (!routeListsComplete(rawTarget)) continue;
+    if (stageId !== completionStage) {
+      throw new ConfigurationError(
+        `stages.${stageId}.decision.routes.${routeKey} routes to complete, but completion.stage is ${completionStage || 'missing'}.`,
+      );
+    }
+    if (completionDecision !== null && routeKey !== completionDecision) {
+      throw new ConfigurationError(
+        `stages.${stageId}.decision.routes.${routeKey} routes to complete, but completion.decision is ${completionDecision}.`,
+      );
     }
   }
 }
@@ -418,14 +481,28 @@ function bodyNotes(
   } else if (movedScalar && addedName !== undefined) {
     notes.push(`${label}.thinking -> options.${addedName}`);
   } else {
-    notes.push(...removed.map((key) => `${label}.options.${key} removed`));
-    if (label.startsWith('stages.') && removed.length > 0 && !Object.hasOwn(after, 'options')) {
-      notes.push(`${label}.options removed in schema_version 5; set options on an inline ${label}.agent if the stage still needs them`);
-    }
-    notes.push(...added.map((key) => `${label}.options.${key} set`));
-    if (Object.hasOwn(before, 'thinking') && !Object.hasOwn(after, 'thinking')) {
-      notes.push(`${label}.thinking removed`);
-    }
+    notes.push(...optionChangeNotes({ before, after, label }, removed, added));
+  }
+  return notes;
+}
+
+/** Notes for option keys removed and added when no single rename explains the change. */
+function optionChangeNotes(
+  { before, after, label }: {
+    before: Readonly<Record<string, unknown>>;
+    after: Readonly<Record<string, unknown>>;
+    label: string;
+  },
+  removed: readonly string[],
+  added: readonly string[],
+): string[] {
+  const notes = removed.map((key) => `${label}.options.${key} removed`);
+  if (label.startsWith('stages.') && removed.length > 0 && !Object.hasOwn(after, 'options')) {
+    notes.push(`${label}.options removed in schema_version 5; set options on an inline ${label}.agent if the stage still needs them`);
+  }
+  notes.push(...added.map((key) => `${label}.options.${key} set`));
+  if (Object.hasOwn(before, 'thinking') && !Object.hasOwn(after, 'thinking')) {
+    notes.push(`${label}.thinking removed`);
   }
   return notes;
 }

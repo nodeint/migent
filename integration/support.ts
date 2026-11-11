@@ -182,13 +182,7 @@ export function writeWorkspace(root: string, config: string, workflows: Record<s
   }
 }
 
-export async function runMain(
-  workspace: string,
-  argv: string[],
-  outcome = 'complete',
-): Promise<[number, Record<string, unknown>[], string]> {
-  const previous = new Map<string, string | undefined>();
-  for (const name of FAKE_ENV) previous.set(name, process.env[name]);
+function applyFakeEnv(workspace: string, outcome: string): void {
   process.env.PATH = `${PROVIDER_BIN}${path.delimiter}${process.env.PATH ?? ''}`;
   process.env.MIGENT_FAKE_OUTCOME = outcome;
   const script = path.join(workspace, FAKE_SCRIPT);
@@ -201,6 +195,16 @@ export async function runMain(
     delete process.env.MIGENT_FAKE_CURSOR;
     delete process.env.MIGENT_FAKE_LOG;
   }
+}
+
+export async function runMain(
+  workspace: string,
+  argv: string[],
+  outcome = 'complete',
+): Promise<[number, Record<string, unknown>[], string]> {
+  const previous = new Map<string, string | undefined>();
+  for (const name of FAKE_ENV) previous.set(name, process.env[name]);
+  applyFakeEnv(workspace, outcome);
   const before = executionTexts(workspace);
   // These tests exercise stage execution; the preflight would add its own catalog calls to the fake CLIs.
   const skip = argv[0] === 'session' && argv[1] === 'run' && !argv.includes('--role') && !argv.includes('--skip-preflight');
@@ -326,21 +330,7 @@ function workflowResult(
     if (!key.startsWith(`${sessionId}/`)) continue;
     const previous = before.get(key);
     if (previous !== undefined && executionFingerprint(previous) === executionFingerprint(text)) continue;
-    const record = JSON.parse(text) as Record<string, unknown>;
-    const executionId = String(record.execution_id ?? key.slice(sessionId.length + 1));
-    const outcome =
-      typeof record.outcome === 'object' && record.outcome !== null && !Array.isArray(record.outcome)
-        ? (record.outcome as Record<string, unknown>)
-        : {};
-    stages.push({
-      execution_id: executionId,
-      execution_order: record.execution_order,
-      agent_id: record.agent_id ?? '',
-      outcome_status: typeof outcome.status === 'string' ? outcome.status : '',
-      outcome_decision: typeof outcome.decision === 'string' ? outcome.decision : '',
-      artifact_directory: path.join(workspace, '.migent', 'sessions', sessionId, 'executions', executionId, 'artifacts'),
-      response: executionResponse(workspace, sessionId, executionId),
-    });
+    stages.push(stageResult(workspace, sessionId, { key, text }));
   }
   stages.sort((left, right) => Number(left.execution_order ?? 0) - Number(right.execution_order ?? 0));
   let status: Record<string, unknown>;
@@ -356,6 +346,28 @@ function workflowResult(
     stop_reason: stopReasonFor(code, sessionStatusText),
     outputs: status.outputs ?? {},
     stages,
+  };
+}
+
+function stageResult(
+  workspace: string,
+  sessionId: string,
+  entry: { key: string; text: string },
+): Record<string, unknown> {
+  const record = JSON.parse(entry.text) as Record<string, unknown>;
+  const executionId = String(record.execution_id ?? entry.key.slice(sessionId.length + 1));
+  const outcome =
+    typeof record.outcome === 'object' && record.outcome !== null && !Array.isArray(record.outcome)
+      ? (record.outcome as Record<string, unknown>)
+      : {};
+  return {
+    execution_id: executionId,
+    execution_order: record.execution_order,
+    agent_id: record.agent_id ?? '',
+    outcome_status: typeof outcome.status === 'string' ? outcome.status : '',
+    outcome_decision: typeof outcome.decision === 'string' ? outcome.decision : '',
+    artifact_directory: path.join(workspace, '.migent', 'sessions', sessionId, 'executions', executionId, 'artifacts'),
+    response: executionResponse(workspace, sessionId, executionId),
   };
 }
 

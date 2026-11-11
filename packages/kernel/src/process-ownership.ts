@@ -191,21 +191,24 @@ export function classifyOrphanedExecution(
     return { action: REAP_UNVERIFIED, sessionId, executionId, ownerPid };
   }
   const endpoint = presentStr(metadata.provider_endpoint);
+  return classifyOwnedExecution(endpoint, inspector, { sessionId, executionId, ownerPid });
+}
+
+/** Classifies a running execution whose owner pid is known, by probing its endpoint or owner. */
+function classifyOwnedExecution(
+  endpoint: string | null,
+  inspector: ProcessInspector,
+  ids: { sessionId: string; executionId: string; ownerPid: number },
+): ReapDecision {
   if (endpoint === null) {
     // Recorded before provider endpoints existed: trust only a vanished owner.
-    if (inspector.probePid(ownerPid) === PID_GONE) {
-      return { action: REAP_ALREADY_EXITED, sessionId, executionId, ownerPid, error: ERROR_ALREADY_EXITED };
-    }
-    return { action: REAP_UNVERIFIED, sessionId, executionId, ownerPid };
+    if (inspector.probePid(ids.ownerPid) !== PID_GONE) return { action: REAP_UNVERIFIED, ...ids };
+    return { action: REAP_ALREADY_EXITED, ...ids, error: ERROR_ALREADY_EXITED };
   }
   const state = inspector.probeEndpoint(endpoint);
-  if (state === ENDPOINT_ALIVE) {
-    return { action: REAP_STILL_RUNNING, sessionId, executionId, ownerPid };
-  }
-  if (state === ENDPOINT_GONE) {
-    return { action: REAP_ALREADY_EXITED, sessionId, executionId, ownerPid, error: ERROR_ALREADY_EXITED };
-  }
-  return { action: REAP_UNVERIFIED, sessionId, executionId, ownerPid };
+  if (state === ENDPOINT_ALIVE) return { action: REAP_STILL_RUNNING, ...ids };
+  if (state === ENDPOINT_GONE) return { action: REAP_ALREADY_EXITED, ...ids, error: ERROR_ALREADY_EXITED };
+  return { action: REAP_UNVERIFIED, ...ids };
 }
 
 /** Owner fields recorded when an execution is created, before any provider process exists. */

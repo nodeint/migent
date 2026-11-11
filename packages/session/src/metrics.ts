@@ -370,6 +370,35 @@ function resolveExecutionClients(
   }));
 }
 
+function turnClientId(details: Record<string, unknown>, recorded: string | null | undefined): string | null {
+  const {argv} = details;
+  const command = Array.isArray(argv) && typeof argv[0] === 'string' ? argv[0] : null;
+  // A conflicting history cannot be resumed, but each turn still proves its own output format.
+  return clientOfCommand(command) ?? recorded ?? null;
+}
+
+function usageReader(clients: ClientRegistry, clientId: string | null): Pick<CliClient, 'readUsage'> | null {
+  if (clientId === null) return null;
+  try {
+    return clients.get(clientId);
+  } catch {
+    return null;
+  }
+}
+
+function turnUsage(
+  reader: Pick<CliClient, 'readUsage'> | null,
+  capture: Record<string, unknown> | null,
+  prior: UsageCapture | null,
+): TurnUsage {
+  if (capture === null || reader === null) return blankUsage();
+  try {
+    return coerceUsage(normalizeUsage(reader, capture, prior));
+  } catch {
+    return blankUsage();
+  }
+}
+
 function normalizeTurns(
   events: ParsedEvent[],
   executionClients: ReadonlyMap<string, string | null>,
@@ -382,29 +411,12 @@ function normalizeTurns(
     const details = detailsOf(event);
     // Usage is read with the CLI that actually ran the turn. Legacy records name no
     // client, so this follows the same evidence policy as resume.
-    const {argv} = details;
-    const command = Array.isArray(argv) && typeof argv[0] === 'string' ? argv[0] : null;
-    // A conflicting history cannot be resumed, but each turn still proves its own output format.
-    const clientId = clientOfCommand(command) ?? executionClients.get(event.executionId) ?? null;
+    const clientId = turnClientId(details, executionClients.get(event.executionId));
     const agentId = typeof details.agent_id === 'string' ? details.agent_id : null;
     const key = JSON.stringify([clientId, agentId]);
     const capture = isRecord(details.usage) ? details.usage : null;
-    let reader: Pick<CliClient, 'readUsage'> | null = null;
-    if (clientId !== null) {
-      try {
-        reader = clients.get(clientId);
-      } catch {
-        reader = null;
-      }
-    }
-    let usage = blankUsage();
-    if (capture !== null && reader !== null) {
-      try {
-        usage = coerceUsage(normalizeUsage(reader, capture, previous.get(key) ?? null));
-      } catch {
-        usage = blankUsage();
-      }
-    }
+    const reader = usageReader(clients, clientId);
+    const usage = turnUsage(reader, capture, previous.get(key) ?? null);
     if (capture !== null) previous.set(key, capture);
     turns.push({ executionId: event.executionId, usage, captured: capture !== null && reader !== null });
   }
@@ -474,6 +486,22 @@ function stageObjects(
   return stages;
 }
 
+const VERIFY_RESULTS = new Set(['verify.passed', 'verify.failed']);
+
+/** Time from each `verify.started` to the result that closes it. */
+function verifyMilliseconds(events: readonly ParsedEvent[]): number {
+  let openStart: number | null = null;
+  let milliseconds = 0;
+  for (const event of events) {
+    if (event.event === 'verify.started') openStart = parseTime(event.timestamp);
+    if (!VERIFY_RESULTS.has(event.event)) continue;
+    const finished = parseTime(event.timestamp);
+    if (openStart !== null && finished !== null) milliseconds += finished - openStart;
+    openStart = null;
+  }
+  return milliseconds;
+}
+
 function verifyStats(
   events: ParsedEvent[],
   hasCommands: boolean,
@@ -481,36 +509,16 @@ function verifyStats(
   public: { runs: number; red: number; first_pass: boolean; failed_commands: string[] } | null;
   milliseconds: number;
 } {
-  let runs = 0;
-  let red = 0;
-  let firstPass: boolean | null = null;
-  const failedCommands: string[] = [];
-  let openStart: number | null = null;
-  let milliseconds = 0;
-  let saw = false;
-  for (const event of events) {
-    if (event.event === 'verify.started') {
-      saw = true;
-      openStart = parseTime(event.timestamp);
-      continue;
-    }
-    if (event.event !== 'verify.passed' && event.event !== 'verify.failed') continue;
-    saw = true;
-    runs += 1;
-    if (firstPass === null) firstPass = event.event === 'verify.passed';
-    if (event.event === 'verify.failed') {
-      red += 1;
-      const {command} = detailsOf(event);
-      if (typeof command === 'string') failedCommands.push(command);
-    }
-    const finished = parseTime(event.timestamp);
-    if (openStart !== null && finished !== null) milliseconds += finished - openStart;
-    openStart = null;
-  }
+  const results = events.filter((event) => VERIFY_RESULTS.has(event.event));
+  const saw = results.length > 0 || events.some((event) => event.event === 'verify.started');
   if (!saw && !hasCommands) return { public: null, milliseconds: 0 };
+  const failed = results.filter((event) => event.event === 'verify.failed');
+  const failedCommands = failed
+    .map((event) => detailsOf(event).command)
+    .filter((command): command is string => typeof command === 'string');
   return {
-    milliseconds,
-    public: { runs, red, first_pass: firstPass === true, failed_commands: failedCommands },
+    milliseconds: verifyMilliseconds(events),
+    public: { runs: results.length, red: failed.length, first_pass: results[0]?.event === 'verify.passed', failed_commands: failedCommands },
   };
 }
 

@@ -68,43 +68,47 @@ export function dependencyClosureKnown(
   return true;
 }
 
+type ReachScope = {
+  readonly stages: readonly DraftStage[];
+  readonly graph: Record<string, StageSpec>;
+  readonly declaredIds: ReadonlySet<string>;
+};
+
 /** Stages a skip of `stageId` definitely leaves unreached, using only edges the draft made readable. */
-export function definiteConditionalReach(
-  scope: {
-    readonly stages: readonly DraftStage[];
-    readonly graph: Record<string, StageSpec>;
-    readonly declaredIds: ReadonlySet<string>;
-  },
-  stageId: string,
-): Set<string> {
-  const { stages, graph, declaredIds } = scope;
-  const byId = new Map(stages.map((stage) => [stage.id, stage]));
-  // A route target is forward only when the member's whole dependency chain is readable.
-  const closureKnown = (id: string): boolean => dependencyClosureKnown(byId, declaredIds, id);
+export function definiteConditionalReach(scope: ReachScope, stageId: string): Set<string> {
+  const byId = new Map(scope.stages.map((stage) => [stage.id, stage]));
   const reach = new Set<string>([stageId]);
   const pending = [stageId];
   for (let member = pending.pop(); member !== undefined; member = pending.pop()) {
-    const found: string[] = [];
-    for (const other of stages) {
-      if (other.dependsOn.state !== 'valid') continue;
-      if (other.dependsOn.value.includes(member)) found.push(other.id);
-    }
-    const stage = byId.get(member);
-    if (stage !== undefined && stage.routes.state === 'valid' && closureKnown(member)) {
-      const closure = dependencyClosure(graph, member);
-      for (const value of Object.values(stage.routes.value)) {
-        for (const target of routeTargets(value)) {
-          if (target !== 'complete' && !closure.has(target)) found.push(target);
-        }
-      }
-    }
-    for (const next of found) {
+    for (const next of definiteSuccessors(scope, byId, member)) {
       if (reach.has(next) || !byId.has(next)) continue;
       reach.add(next);
       pending.push(next);
     }
   }
   return reach;
+}
+
+/** Readable dependents of `member`, plus its forward route targets when its dependency chain is readable. */
+function definiteSuccessors(
+  scope: ReachScope,
+  byId: ReadonlyMap<string, DraftStage>,
+  member: string,
+): string[] {
+  const found = scope.stages
+    .filter((other) => other.dependsOn.state === 'valid' && other.dependsOn.value.includes(member))
+    .map((other) => other.id);
+  const stage = byId.get(member);
+  // A route target is forward only when the member's whole dependency chain is readable.
+  if (stage === undefined || stage.routes.state !== 'valid') return found;
+  if (!dependencyClosureKnown(byId, scope.declaredIds, member)) return found;
+  const closure = dependencyClosure(scope.graph, member);
+  for (const value of Object.values(stage.routes.value)) {
+    for (const target of routeTargets(value)) {
+      if (target !== 'complete' && !closure.has(target)) found.push(target);
+    }
+  }
+  return found;
 }
 
 /** The runtime's cross-stage rules over whatever each stage could read. A rule is skipped only when a
@@ -180,9 +184,7 @@ function collectConditionalReachProblems(scope: GraphScope, context: GraphProble
   }
   for (const stage of stages) {
     const source = reachedBy.get(stage.id);
-    if (source === undefined) continue;
-    if (stage.verify.state === 'invalid') continue;
-    if (stage.verify.state === 'valid' && stage.verify.value.length === 0) continue;
+    if (source === undefined || !mayHaveVerify(stage)) continue;
     problems.addMessage(
       'invalid-value',
       `stages.${stage.id}.verify is reached through run_when stage ${source}; a skip would bypass this verify.`,
@@ -202,6 +204,12 @@ function collectConditionalReachProblems(scope: GraphScope, context: GraphProble
       ['outputs', outputs.indexes[at] ?? at, 'from_stage'],
     );
   });
+}
+
+/** A stage whose verify list is unknown-but-present or non-empty; an invalid list is reported elsewhere. */
+function mayHaveVerify(stage: DraftStage): boolean {
+  if (stage.verify.state === 'invalid') return false;
+  return !(stage.verify.state === 'valid' && stage.verify.value.length === 0);
 }
 
 /** Every verify stage must be on each provable path to complete. */
@@ -230,26 +238,23 @@ function completionPoints(scope: GraphScope, context: GraphProblemsContext): Set
   // uncollected stage elsewhere cannot make a point's path unknown, and an unreadable point's own chain
   // is the only reason to skip that point.
   const points = new Set<string>();
-  if (
-    !version2 &&
-    completionStage !== null &&
-    dependencyClosureKnown(stagesById, declaredStageIds, completionStage)
-  ) {
-    points.add(completionStage);
-  }
+  const closureKnown = (id: string): boolean => dependencyClosureKnown(stagesById, declaredStageIds, id);
+  if (!version2 && completionStage !== null && closureKnown(completionStage)) points.add(completionStage);
   for (const stage of stages) {
-    if (stage.routes.state === 'invalid') continue;
-    if (!Object.values(stage.routes.value).some((value) => routeTargets(value).includes('complete'))) continue;
-    if (!dependencyClosureKnown(stagesById, declaredStageIds, stage.id)) continue;
-    points.add(stage.id);
+    if (routesToComplete(stage) && closureKnown(stage.id)) points.add(stage.id);
   }
   // A leaf is only provable when every dependency list and every stage is readable, and the candidate's
   // own routes are readable too (an absent route set means it has none).
   if (version2 && dependsComplete && structurallyComplete) {
     for (const stage of stages) {
-      if (stage.routes.state === 'invalid') continue;
-      if (isLeafStage(graph, graph[stage.id])) points.add(stage.id);
+      if (stage.routes.state !== 'invalid' && isLeafStage(graph, graph[stage.id])) points.add(stage.id);
     }
   }
   return points;
+}
+
+/** True when the stage's readable routes send some decision to `complete`. */
+function routesToComplete(stage: DraftStage): boolean {
+  if (stage.routes.state === 'invalid') return false;
+  return Object.values(stage.routes.value).some((value) => routeTargets(value).includes('complete'));
 }

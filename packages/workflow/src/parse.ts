@@ -32,32 +32,10 @@ export function parseWorkflowMapping(data: Record<string, unknown>, source: stri
 export function parseWorkflowMappingUnchecked(data: Record<string, unknown>, source: string): WorkflowDocument {
   const workflowId = documentId(data, source);
   const schemaVersion = documentVersion(data);
-  if (schemaVersion > SCHEMA_VERSION) {
-    throw new ConfigurationError(
-      `workflow schema_version ${schemaVersion} is newer than this Migent (${SCHEMA_VERSION}).`,
-    );
-  }
-  const version2 = schemaVersion >= SCHEMA_V2;
   const unknown = unknownWorkflowKeys(data);
-  if (unknown.length > 0 && schemaVersion >= UNKNOWN_KEYS_ERROR_SCHEMA_VERSION) {
-    throw new ConfigurationError(`Unknown workflow keys: ${unknown.join(' ')}`);
-  }
-  if (schemaVersion >= SCHEMA_V4_DOWNSTREAM && Object.hasOwn(data, 'requires')) {
-    throw new ConfigurationError('requires was removed in schema_version 4. Run `migent migrate`; use --prior for context and downstream for suggestions.');
-  }
-  if (schemaVersion < SCHEMA_V4_DOWNSTREAM && Object.hasOwn(data, 'downstream')) {
-    throw new ConfigurationError('downstream requires schema_version 4.');
-  }
-  if (version2 && Object.hasOwn(data, 'completion') && (data.completion !== null && data.completion !== undefined)) {
-    throw new ConfigurationError('schema_version 2 does not allow completion. Run `migent migrate`.');
-  }
+  validateDocumentKeys(data, schemaVersion, unknown);
+  const version2 = schemaVersion >= SCHEMA_V2;
   const version7 = schemaVersion >= SCHEMA_V7_ARTIFACTS;
-  if (version7 && Object.hasOwn(data, 'outputs')) {
-    throw new ConfigurationError('outputs was removed in schema_version 7. Declare artifacts and run `migent migrate`.');
-  }
-  if (!version7 && Object.hasOwn(data, 'artifacts')) {
-    throw new ConfigurationError('artifacts requires schema_version 7.');
-  }
   const stages = parseStages(
     data.stages,
     { version2, version3: schemaVersion >= SCHEMA_V3, version5: schemaVersion >= SCHEMA_V5, version7 },
@@ -66,23 +44,9 @@ export function parseWorkflowMappingUnchecked(data: Record<string, unknown>, sou
     !version2 && isRecord(data.completion) && Object.keys(stages).length > 0
       ? parseCompletion(data.completion, stages)
       : null;
-  let registry: ArtifactSpec[] | undefined;
-  let outputs: WorkflowOutput[] | undefined;
-  if (version7) {
-    const built = buildArtifactsV7(data, conditionalStages(stages));
-    const [first] = built.problems;
-    if (first !== undefined) throw new ConfigurationError(first.message, { code: first.code, path: first.path });
-    for (const [stageId, found] of built.perStage) {
-      stages[stageId].artifacts = found.artifacts;
-      stages[stageId].decisionArtifacts = found.decisionArtifacts;
-    }
-    registry = built.registry;
-    outputs = registry.map(outputOfArtifact);
-    validateConditionalStages(stages, []);
-  } else {
-    outputs = version2 ? parseTopLevelOutputs(data.outputs, stages) : undefined;
-    validateConditionalStages(stages, outputs ?? []);
-  }
+  const { registry, outputs } = version7
+    ? parseArtifactsV7(data, stages)
+    : parseLegacyOutputs(data, stages, version2);
   const concurrency = version2 ? parseConcurrency(data) : undefined;
   validateVerifyPaths(stages, completion, version2);
   const document: WorkflowDocument = workflowDocumentSchema.parse({
@@ -102,39 +66,130 @@ export function parseWorkflowMappingUnchecked(data: Record<string, unknown>, sou
   return document;
 }
 
+/** Each top-level key rule: the error it raises when `applies` holds for the document. */
+const DOCUMENT_KEY_RULES: readonly {
+  readonly applies: (data: Record<string, unknown>, schemaVersion: number) => boolean;
+  readonly message: string;
+}[] = [
+  {
+    applies: (data, schemaVersion) => schemaVersion >= SCHEMA_V4_DOWNSTREAM && Object.hasOwn(data, 'requires'),
+    message: 'requires was removed in schema_version 4. Run `migent migrate`; use --prior for context and downstream for suggestions.',
+  },
+  {
+    applies: (data, schemaVersion) => schemaVersion < SCHEMA_V4_DOWNSTREAM && Object.hasOwn(data, 'downstream'),
+    message: 'downstream requires schema_version 4.',
+  },
+  {
+    applies: (data, schemaVersion) =>
+      schemaVersion >= SCHEMA_V2 && Object.hasOwn(data, 'completion') && data.completion !== null && data.completion !== undefined,
+    message: 'schema_version 2 does not allow completion. Run `migent migrate`.',
+  },
+  {
+    applies: (data, schemaVersion) => schemaVersion >= SCHEMA_V7_ARTIFACTS && Object.hasOwn(data, 'outputs'),
+    message: 'outputs was removed in schema_version 7. Declare artifacts and run `migent migrate`.',
+  },
+  {
+    applies: (data, schemaVersion) => schemaVersion < SCHEMA_V7_ARTIFACTS && Object.hasOwn(data, 'artifacts'),
+    message: 'artifacts requires schema_version 7.',
+  },
+];
+
+/** Rejects a schema version this Migent cannot read and top-level keys the version does not allow. */
+function validateDocumentKeys(data: Record<string, unknown>, schemaVersion: number, unknown: readonly string[]): void {
+  if (schemaVersion > SCHEMA_VERSION) {
+    throw new ConfigurationError(
+      `workflow schema_version ${schemaVersion} is newer than this Migent (${SCHEMA_VERSION}).`,
+    );
+  }
+  if (unknown.length > 0 && schemaVersion >= UNKNOWN_KEYS_ERROR_SCHEMA_VERSION) {
+    throw new ConfigurationError(`Unknown workflow keys: ${unknown.join(' ')}`);
+  }
+  const broken = DOCUMENT_KEY_RULES.find((rule) => rule.applies(data, schemaVersion));
+  if (broken !== undefined) throw new ConfigurationError(broken.message);
+}
+
+interface ParsedOutputs {
+  readonly registry: ArtifactSpec[] | undefined;
+  readonly outputs: WorkflowOutput[] | undefined;
+}
+
+/** Reads the schema 7 artifact registry and assigns each stage its artifacts. */
+function parseArtifactsV7(data: Record<string, unknown>, stages: Record<string, StageSpec>): ParsedOutputs {
+  const built = buildArtifactsV7(data, conditionalStages(stages));
+  const [first] = built.problems;
+  if (first !== undefined) throw new ConfigurationError(first.message, { code: first.code, path: first.path });
+  for (const [stageId, found] of built.perStage) {
+    const stage = stages[stageId];
+    stage.artifacts = found.artifacts;
+    stage.decisionArtifacts = found.decisionArtifacts;
+  }
+  const { registry } = built;
+  validateConditionalStages(stages, []);
+  return { registry, outputs: registry.map(outputOfArtifact) };
+}
+
+/** Reads the pre-schema 7 top-level `outputs`, which only schema_version 2+ declares. */
+function parseLegacyOutputs(
+  data: Record<string, unknown>,
+  stages: Record<string, StageSpec>,
+  version2: boolean,
+): ParsedOutputs {
+  const outputs = version2 ? parseTopLevelOutputs(data.outputs, stages) : undefined;
+  validateConditionalStages(stages, outputs ?? []);
+  return { registry: undefined, outputs };
+}
+
 export function parseDownstream(raw: unknown, outputs: readonly WorkflowOutput[]): WorkflowDownstream[] {
   if (raw === undefined) return [];
   if (raw === null) throw new ConfigurationError('downstream must be a list.');
   requireContainer(DOCUMENT_FIELD_SCHEMAS.downstream, raw, 'downstream');
   const entries = raw as unknown[];
   const seen = new Set<string>();
-  return entries.map((entry) => {
-    const structural = downstreamProblems(entry);
-    if (structural.some((problem) => problem.kind === 'entry') || !isRecord(entry)) throw new ConfigurationError('downstream entries must be mappings.');
-    for (const problem of structural) {
-      if (problem.kind === 'key') throw new ConfigurationError(`Unknown downstream field: ${problem.key}.`);
+  return entries.map((entry) => parseDownstreamEntry(entry, outputs, seen));
+}
+
+/** Parses one `downstream` entry, recording its workflow in `seen` to reject duplicates. */
+function parseDownstreamEntry(
+  entry: unknown,
+  outputs: readonly WorkflowOutput[],
+  seen: Set<string>,
+): WorkflowDownstream {
+  const structural = downstreamProblems(entry);
+  const kinds = new Set(structural.map((problem) => problem.kind));
+  if (kinds.has('entry') || !isRecord(entry)) throw new ConfigurationError('downstream entries must be mappings.');
+  for (const problem of structural) {
+    if (problem.kind === 'key') throw new ConfigurationError(`Unknown downstream field: ${problem.key}.`);
+  }
+  const workflow = requiredString(entry.workflow, 'downstream.workflow');
+  if (isPathReference(workflow)) throw new ConfigurationError('downstream.workflow must be a workflow id, not a path.');
+  if (seen.has(workflow)) throw new ConfigurationError(`Duplicate downstream workflow: ${workflow}.`);
+  seen.add(workflow);
+  if (kinds.has('task-missing')) throw new ConfigurationError('Missing or invalid downstream.task.');
+  if (kinds.has('task-line')) throw new ConfigurationError('downstream.task must be a single line.');
+  const task = requiredString(entry.task, 'downstream.task');
+  if (kinds.has('artifacts')) throw new ConfigurationError('downstream.artifacts must be a mapping.');
+  if (entry.artifacts === undefined) return { workflow, task };
+  return { workflow, task, artifacts: parseDownstreamArtifacts(entry.artifacts as Record<string, unknown>, outputs) };
+}
+
+const RESERVED_ARTIFACT_NAMES = new Set(['__proto__', 'constructor', 'prototype']);
+
+/** Maps each downstream artifact name to a declared output name. */
+function parseDownstreamArtifacts(
+  mapping: Record<string, unknown>,
+  outputs: readonly WorkflowOutput[],
+): Record<string, string> {
+  const outputNames = new Set(outputs.map((item) => item.name));
+  const artifacts: Record<string, string> = {};
+  for (const [name, source] of Object.entries(mapping)) {
+    if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(name) || RESERVED_ARTIFACT_NAMES.has(name)) {
+      throw new ConfigurationError(`Invalid downstream artifact name: ${name}.`);
     }
-    const workflow = requiredString(entry.workflow, 'downstream.workflow');
-    if (isPathReference(workflow)) throw new ConfigurationError('downstream.workflow must be a workflow id, not a path.');
-    if (seen.has(workflow)) throw new ConfigurationError(`Duplicate downstream workflow: ${workflow}.`);
-    seen.add(workflow);
-    if (structural.some((problem) => problem.kind === 'task-missing')) throw new ConfigurationError('Missing or invalid downstream.task.');
-    if (structural.some((problem) => problem.kind === 'task-line')) throw new ConfigurationError('downstream.task must be a single line.');
-    const task = requiredString(entry.task, 'downstream.task');
-    if (structural.some((problem) => problem.kind === 'artifacts')) throw new ConfigurationError('downstream.artifacts must be a mapping.');
-    const mapping = entry.artifacts === undefined ? {} : (entry.artifacts as Record<string, unknown>);
-    const artifacts: Record<string, string> = {};
-    const mapped = entry.artifacts !== undefined;
-    for (const [name, source] of Object.entries(mapping)) {
-      if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(name) || name === '__proto__' || name === 'constructor' || name === 'prototype') {
-        throw new ConfigurationError(`Invalid downstream artifact name: ${name}.`);
-      }
-      const output = requiredString(source, `downstream.artifacts.${name}`);
-      if (!outputs.some((item) => item.name === output)) throw new ConfigurationError(`downstream.artifacts.${name}: unknown output ${output}.`);
-      artifacts[name] = output;
-    }
-    return mapped ? { workflow, task, artifacts } : { workflow, task };
-  });
+    const output = requiredString(source, `downstream.artifacts.${name}`);
+    if (!outputNames.has(output)) throw new ConfigurationError(`downstream.artifacts.${name}: unknown output ${output}.`);
+    artifacts[name] = output;
+  }
+  return artifacts;
 }
 
 export function parseConcurrency(data: Record<string, unknown>): number {
@@ -243,27 +298,14 @@ function parseRoleStage(
 }
 
 export function parseStages(raw: unknown, versions: ParseStagesVersions = {}): Record<string, StageSpec> {
-  const { version2 = false, version3 = false, version5 = false, version7 = false } = versions;
   if (!Array.isArray(raw) || raw.length === 0) return {};
   const stages: Record<string, StageSpec> = {};
   const items: Record<string, unknown>[] = [];
-  const rawItems: unknown[] = [];
   for (const [index, rawItem] of raw.entries()) {
     try {
-    if (stageMappingProblem(rawItem) || !isRecord(rawItem)) throw new ConfigurationError('Workflow stage must be a mapping.');
-    const item = version3 ? normalizeStageDecision(rawItem, version7) : rawItem;
-    const stageId = requiredString(item.id, 'stages.id');
-    if (Object.hasOwn(stages, stageId)) throw new ConfigurationError(`Duplicate stage id: ${stageId}`);
-    const description = stageDescription(item, stageId);
-    const dependsOn = stageDependsOn(item, stageId);
-    const verify = stageVerify(item, stageId);
-    const runWhen = stageRunWhen(item, stageId, { version2, verify });
-    const common: StageCommonFields = { stageId, description, dependsOn, verify, runWhen };
-    stages[stageId] = stageHasRole(item)
-      ? parseRoleStage(item, common, { version3, version5, version7 })
-      : parseVerifyStage(item, common, version2);
-    items.push(item);
-    rawItems.push(rawItem);
+      const { stage, item } = parseStageItem(rawItem, stages, versions);
+      stages[stage.id] = stage;
+      items.push(item);
     } catch (error) {
       throw locatedAtStage(error, index, rawItem);
     }
@@ -272,13 +314,39 @@ export function parseStages(raw: unknown, versions: ParseStagesVersions = {}): R
     try {
       const stageId = requiredString(item.id, 'stages.id');
       const stage = stages[stageId];
+      const version2 = versions.version2 ?? false;
       stage.routes = stageRoutes(item, stageId, { values: stage.decisionValues, stages, version2 });
     } catch (error) {
-      throw locatedAtStage(error, index, rawItems[index]);
+      throw locatedAtStage(error, index, raw[index]);
     }
   }
   validateStageGraph(stages);
   return stages;
+}
+
+/** Parses one stage, rejecting an id already in `stages`; `item` is its normalized mapping for routes. */
+function parseStageItem(
+  rawItem: unknown,
+  stages: Readonly<Record<string, StageSpec>>,
+  versions: ParseStagesVersions,
+): { stage: StageSpec; item: Record<string, unknown> } {
+  const { version2 = false, version3 = false, version7 = false } = versions;
+  if (stageMappingProblem(rawItem) || !isRecord(rawItem)) throw new ConfigurationError('Workflow stage must be a mapping.');
+  const item = version3 ? normalizeStageDecision(rawItem, version7) : rawItem;
+  const stageId = requiredString(item.id, 'stages.id');
+  if (Object.hasOwn(stages, stageId)) throw new ConfigurationError(`Duplicate stage id: ${stageId}`);
+  const verify = stageVerify(item, stageId);
+  const common: StageCommonFields = {
+    stageId,
+    description: stageDescription(item, stageId),
+    dependsOn: stageDependsOn(item, stageId),
+    verify,
+    runWhen: stageRunWhen(item, stageId, { version2, verify }),
+  };
+  const stage = stageHasRole(item)
+    ? parseRoleStage(item, common, versions)
+    : parseVerifyStage(item, common, version2);
+  return { stage, item };
 }
 
 /** Gives a parse error raised while reading stage `index` its code and author-coordinate path. */

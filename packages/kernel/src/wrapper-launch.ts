@@ -282,6 +282,18 @@ function stderrExcerpt(stderrTail: string): string {
   return lines.slice(-STDERR_EXCERPT_LINES).join(' | ');
 }
 
+/** The message for a wrapper-reported spawn failure, or null to fall back to the generic one. */
+function describeSpawnPhaseFailure(
+  failure: Extract<StartFailure, { kind: 'wrapper-reported' }>,
+  command: string,
+): string | null {
+  if (failure.code === 'ENOENT') return `CLI executable not found: ${command}`;
+  if (failure.code === UNPASSABLE_ARGUMENT_CODE) return failure.message;
+  if (!failure.code) return null;
+  const syscall = failure.syscall ? ` (${failure.syscall})` : '';
+  return `Provider CLI could not be started: ${command}: ${failure.code}${syscall} ${failure.message}`;
+}
+
 /** The user-facing message for a failed start. Pure. */
 export function describeStartFailure(
   failure: StartFailure,
@@ -300,14 +312,8 @@ export function describeStartFailure(
       return withExcerpt(`Provider process wrapper exited before it was ready (${how}).`);
     }
     case 'wrapper-reported': {
-      if (failure.phase === 'spawn') {
-        if (failure.code === 'ENOENT') return `CLI executable not found: ${context.command}`;
-        if (failure.code === UNPASSABLE_ARGUMENT_CODE) return failure.message;
-        if (failure.code) {
-          const syscall = failure.syscall ? ` (${failure.syscall})` : '';
-          return `Provider CLI could not be started: ${context.command}: ${failure.code}${syscall} ${failure.message}`;
-        }
-      }
+      const spawnMessage = failure.phase === 'spawn' ? describeSpawnPhaseFailure(failure, context.command) : null;
+      if (spawnMessage !== null) return spawnMessage;
       const early = failure.phase === 'argv' || failure.phase === 'ipc' || failure.phase === 'listen';
       const head = early ? 'Provider wrapper failed to start' : 'Provider wrapper failed';
       return withExcerpt(`${head} (${failure.phase}): ${failure.message}`);

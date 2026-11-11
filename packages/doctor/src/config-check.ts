@@ -56,24 +56,7 @@ export function analyzeConfig(
 ): ConfigAnalysis {
   const { effortChecks, ownerOf } = source;
   const diagnostics = new DiagnosticList();
-  const error = (
-    code: string,
-    message: string,
-    where: { path?: readonly (string | number)[]; detail?: string } = {},
-  ): void => {
-    const { path, detail } = where;
-    diagnostics.add({
-      severity: 'error',
-      code,
-      message,
-      ...(path === undefined ? {} : { path, source: { layer: ownerOf(path) } }),
-      ...(detail === undefined ? {} : { detail }),
-    });
-  };
-  const fromError = (caught: unknown, fallbackPath?: readonly (string | number)[]): void => {
-    if (!(caught instanceof ConfigurationError)) throw caught;
-    error(caught.code ?? 'config-invalid', caught.message, { path: caught.path ?? fallbackPath });
-  };
+  const { error, fromError } = errorReporters(diagnostics, ownerOf);
 
   try { rejectLegacyConfigKeys(config); } catch (caught) { fromError(caught, ['models']); }
   for (const issue of containerIssues(config)) fromError(issue);
@@ -87,18 +70,54 @@ export function analyzeConfig(
   );
   if (unmapped.size > 0) error('agent-unmapped', unmappedMessage([...unmapped].sort()), { path: ['agents'] });
 
-  for (const [name, role] of Object.entries(roles)) {
-    if (!isRecord(role)) continue;
-    try { validateRoleKeys(role, name); } catch (caught) { fromError(caught, ['roles', name, 'options']); }
-  }
+  checkRoleKeys(roles, fromError);
   const ctx: AnalysisContext = { config, clients, effortChecks, structure, unmapped, diagnostics, error, fromError };
   const executableByClient = checkAgentDefinitions(ctx);
   const { roleNames, roleDescriptions } = checkRoles(ctx, roles);
 
+  warnUnknownRoleKeys(config, diagnostics, ownerOf);
+  return { diagnostics, executableByClient, roleNames, roleDescriptions, unmapped };
+}
+
+type ReportCaught = (caught: unknown, fallbackPath?: readonly (string | number)[]) => void;
+
+/** Builds the reporters that add config errors, owned by the layer that defines the path. */
+function errorReporters(
+  diagnostics: DiagnosticList,
+  ownerOf: (path: readonly (string | number)[]) => ConfigOwner,
+): { error: ReportError; fromError: ReportCaught } {
+  const error: ReportError = (code, message, where = {}) => {
+    const { path, detail } = where;
+    diagnostics.add({
+      severity: 'error',
+      code,
+      message,
+      ...(path === undefined ? {} : { path, source: { layer: ownerOf(path) } }),
+      ...(detail === undefined ? {} : { detail }),
+    });
+  };
+  const fromError: ReportCaught = (caught, fallbackPath) => {
+    if (!(caught instanceof ConfigurationError)) throw caught;
+    error(caught.code ?? 'config-invalid', caught.message, { path: caught.path ?? fallbackPath });
+  };
+  return { error, fromError };
+}
+
+function checkRoleKeys(roles: Record<string, unknown>, fromError: ReportCaught): void {
+  for (const [name, role] of Object.entries(roles)) {
+    if (!isRecord(role)) continue;
+    try { validateRoleKeys(role, name); } catch (caught) { fromError(caught, ['roles', name, 'options']); }
+  }
+}
+
+function warnUnknownRoleKeys(
+  config: Record<string, unknown>,
+  diagnostics: DiagnosticList,
+  ownerOf: (path: readonly (string | number)[]) => ConfigOwner,
+): void {
   for (const unknown of unknownRoleKeyEntries(config)) {
     diagnostics.add({ severity: 'warning', code: unknown.code, message: unknown.message, path: unknown.path, source: { layer: ownerOf(unknown.path) } });
   }
-  return { diagnostics, executableByClient, roleNames, roleDescriptions, unmapped };
 }
 
 type ReportError = (
@@ -115,53 +134,66 @@ interface AnalysisContext {
   readonly unmapped: ReadonlySet<string>;
   readonly diagnostics: DiagnosticList;
   readonly error: ReportError;
-  readonly fromError: (caught: unknown, fallbackPath?: readonly (string | number)[]) => void;
+  readonly fromError: ReportCaught;
 }
+
+type AgentEntry = ReturnType<typeof listAgentDefinitions>[number];
 
 /** Loads every mapped agent definition and binds its client; returns the executable each client runs. */
 function checkAgentDefinitions(ctx: AnalysisContext): Record<string, string> {
-  const { config, clients, effortChecks, structure, unmapped, diagnostics, error, fromError } = ctx;
   const executableByClient: Record<string, string> = {};
-  for (const entry of listAgentDefinitions(config)) {
-    if (unmapped.has(entry.key)) continue;
-    const effortCheck = effortChecks[entry.key];
-    if (effortCheck?.problem) error('model-unavailable', effortCheck.problem, { path: entry.path });
-    if (effortCheck?.warning) {
-      diagnostics.add({ severity: 'warning', code: 'model-unverified', message: effortCheck.warning, path: entry.path });
-    }
-    let definition = entry.value;
-    // A model the environment rejects drops its effort, so the index verdict on `effort` no longer applies.
-    let verdicts: StructuralIndex | undefined = structure;
-    if (effortCheck?.problem && isRecord(definition)) {
-      const { effort, ...rest } = definition;
-      definition = rest;
-      verdicts = undefined;
-    }
-    let target;
-    try {
-      target = loadAgentDefinition(
-        definition,
-        { label: entry.field, path: entry.path },
-        { registry: clients, index: verdicts },
-      );
-    } catch (caught) {
-      fromError(caught, entry.path);
-      continue;
-    }
-    const bound = resolveEffectiveClient(clients, target);
-    if (bound.client !== undefined && !Object.hasOwn(executableByClient, target.client)) {
-      executableByClient[target.client] = bound.client.command;
-    }
-    if (bound.failure !== undefined) {
-      const { failure } = bound;
-      error(
-        failure.code,
-        failureText(entry.field, failure),
-        { path: [...entry.path, ...failurePath(failure)], detail: failure.code === 'options-invalid' ? failure.message : undefined },
-      );
+  for (const entry of listAgentDefinitions(ctx.config)) {
+    if (ctx.unmapped.has(entry.key)) continue;
+    const bound = checkAgentEntry(ctx, entry);
+    if (bound !== null && !Object.hasOwn(executableByClient, bound.client)) {
+      executableByClient[bound.client] = bound.command;
     }
   }
   return executableByClient;
+}
+
+/** Reports what the environment learned about one agent's model. */
+function reportEffortCheck(ctx: AnalysisContext, entry: AgentEntry, effortCheck: ModelEffortCheck | undefined): void {
+  if (effortCheck?.problem) ctx.error('model-unavailable', effortCheck.problem, { path: entry.path });
+  if (effortCheck?.warning) {
+    ctx.diagnostics.add({ severity: 'warning', code: 'model-unverified', message: effortCheck.warning, path: entry.path });
+  }
+}
+
+/** Loads one agent definition and reports a binding failure; returns the client's executable when it binds. */
+function checkAgentEntry(ctx: AnalysisContext, entry: AgentEntry): { client: string; command: string } | null {
+  const { clients, structure, error, fromError } = ctx;
+  const effortCheck = ctx.effortChecks[entry.key];
+  reportEffortCheck(ctx, entry, effortCheck);
+  let definition = entry.value;
+  // A model the environment rejects drops its effort, so the index verdict on `effort` no longer applies.
+  let verdicts: StructuralIndex | undefined = structure;
+  if (effortCheck?.problem && isRecord(definition)) {
+    const { effort, ...rest } = definition;
+    definition = rest;
+    verdicts = undefined;
+  }
+  let target;
+  try {
+    target = loadAgentDefinition(
+      definition,
+      { label: entry.field, path: entry.path },
+      { registry: clients, index: verdicts },
+    );
+  } catch (caught) {
+    fromError(caught, entry.path);
+    return null;
+  }
+  const bound = resolveEffectiveClient(clients, target);
+  if (bound.failure !== undefined) {
+    const { failure } = bound;
+    error(
+      failure.code,
+      failureText(entry.field, failure),
+      { path: [...entry.path, ...failurePath(failure)], detail: failure.code === 'options-invalid' ? failure.message : undefined },
+    );
+  }
+  return bound.client === undefined ? null : { client: target.client, command: bound.client.command };
 }
 
 /** Resolves every role's cascade in name order; unmapped roles count as known without further checks. */
@@ -169,44 +201,59 @@ function checkRoles(
   ctx: AnalysisContext,
   roles: Record<string, unknown>,
 ): { roleNames: string[]; roleDescriptions: Record<string, string> } {
-  const { config, clients, effortChecks, structure, unmapped, error, fromError } = ctx;
   const roleNames: string[] = [];
   const roleDescriptions: Record<string, string> = {};
   for (const roleKey of Object.keys(roles).sort()) {
-    const role = roles[roleKey];
-    const roleAgent = isRecord(role) ? role.agent : undefined;
-    if (typeof roleAgent === 'string' && unmapped.has(roleAgent)) {
-      roleNames.push(roleKey);
-      continue;
-    }
-    if (typeof roleAgent === 'string' && effortChecks[roleAgent]?.problem) {
-      try { loadRoleResponsibilities(config, roleKey, structure); loadRoleDescription(config, roleKey, structure); } catch (caught) { fromError(caught, ['roles', roleKey]); }
-      continue;
-    }
-    if (effortChecks[`roles.${roleKey}.agent`]?.problem) continue;
-    let resolved;
-    try {
-      resolved = resolveRoleCascade(config, roleKey, { options: null, registry: clients, index: structure });
-      loadRoleResponsibilities(config, roleKey, structure);
-      const description = loadRoleDescription(config, roleKey, structure);
-      if (description !== null) roleDescriptions[roleKey] = description;
-    } catch (caught) {
-      fromError(caught, ['roles', roleKey]);
-      continue;
-    }
-    const bound = resolveEffectiveClient(clients, resolved);
-    if (bound.failure !== undefined) {
-      const where = `roles.${roleKey}`;
-      const detail = failurePath(bound.failure).join('.');
-      error(
-        bound.failure.code,
-        bound.failure.part === 'options' ? `${where}: ${bound.failure.message}` : `${where}.${detail} ${bound.failure.message}`,
-        { path: ['roles', roleKey, ...failurePath(bound.failure)], detail: bound.failure.code === 'options-invalid' ? bound.failure.message : undefined },
-      );
-    }
-    roleNames.push(roleKey);
+    const result = checkRole(ctx, roleKey, roles[roleKey]);
+    if (result.description !== null) roleDescriptions[roleKey] = result.description;
+    if (result.known) roleNames.push(roleKey);
   }
   return { roleNames, roleDescriptions };
+}
+
+interface RoleCheck {
+  /** Whether the role counts as a known role name. */
+  known: boolean;
+  description: string | null;
+}
+
+/** Checks one role: its cascade, responsibilities, description and client binding. */
+function checkRole(ctx: AnalysisContext, roleKey: string, role: unknown): RoleCheck {
+  const { config, clients, effortChecks, structure, unmapped, fromError } = ctx;
+  const roleAgent = isRecord(role) ? role.agent : undefined;
+  if (typeof roleAgent === 'string' && unmapped.has(roleAgent)) return { known: true, description: null };
+  if (typeof roleAgent === 'string' && effortChecks[roleAgent]?.problem) {
+    try { loadRoleResponsibilities(config, roleKey, structure); loadRoleDescription(config, roleKey, structure); } catch (caught) { fromError(caught, ['roles', roleKey]); }
+    return { known: false, description: null };
+  }
+  if (effortChecks[`roles.${roleKey}.agent`]?.problem) return { known: false, description: null };
+  let resolved;
+  let description: string | null;
+  try {
+    resolved = resolveRoleCascade(config, roleKey, { options: null, registry: clients, index: structure });
+    loadRoleResponsibilities(config, roleKey, structure);
+    description = loadRoleDescription(config, roleKey, structure);
+  } catch (caught) {
+    fromError(caught, ['roles', roleKey]);
+    return { known: false, description: null };
+  }
+  reportRoleBinding(ctx, roleKey, resolveEffectiveClient(clients, resolved));
+  return { known: true, description };
+}
+
+function reportRoleBinding(
+  ctx: AnalysisContext,
+  roleKey: string,
+  bound: ReturnType<typeof resolveEffectiveClient>,
+): void {
+  if (bound.failure === undefined) return;
+  const where = `roles.${roleKey}`;
+  const detail = failurePath(bound.failure).join('.');
+  ctx.error(
+    bound.failure.code,
+    bound.failure.part === 'options' ? `${where}: ${bound.failure.message}` : `${where}.${detail} ${bound.failure.message}`,
+    { path: ['roles', roleKey, ...failurePath(bound.failure)], detail: bound.failure.code === 'options-invalid' ? bound.failure.message : undefined },
+  );
 }
 
 function unmappedMessage(aliases: readonly string[]): string {

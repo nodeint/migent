@@ -22,6 +22,14 @@ import { AgentSessionRecord, ExecutionContext } from './session-store-types.js';
 import { asInt, compareSortKey, isFile, verifyReportPath } from './session-store-util.js';
 import { readJsonObject, textField } from './session-store-util.js';
 
+function outcomeFields(outcome: unknown): { outcomeStatus: string | null; outcomeDecision: string | null } {
+  if (!isRecord(outcome)) return { outcomeStatus: null, outcomeDecision: null };
+  return {
+    outcomeStatus: typeof outcome.status === 'string' ? outcome.status : null,
+    outcomeDecision: typeof outcome.decision === 'string' && outcome.decision ? outcome.decision : null,
+  };
+}
+
 export class SessionStoreCore {
   public readonly workspace: string;
   public readonly sessionsDirectory: string;
@@ -71,13 +79,7 @@ export class SessionStoreCore {
     const snapshots: ExecutionSnapshot[] = [];
     for (const context of this.executionContexts(sessionId)) {
       const metadata = readJsonObject(path.join(context.directory, 'execution.json'));
-      const {outcome} = metadata;
-      let outcomeStatus: string | null = null;
-      let outcomeDecision: string | null = null;
-      if (isRecord(outcome)) {
-        if (typeof outcome.status === 'string') outcomeStatus = outcome.status;
-        if (typeof outcome.decision === 'string' && outcome.decision) outcomeDecision = outcome.decision;
-      }
+      const { outcomeStatus, outcomeDecision } = outcomeFields(metadata.outcome);
       snapshots.push({
         executionId: context.executionId,
         stageId: typeof metadata.stage_id === 'string' ? metadata.stage_id : '',
@@ -127,6 +129,18 @@ export class SessionStoreCore {
     writeFileAtomic(manifestPath, text.replace(pattern, `status: ${status}`));
   }
 
+  private loadWorkflowAtPath(workflowPath: unknown): WorkflowDocument | null {
+    if (typeof workflowPath !== 'string' || !workflowPath) return null;
+    const filePath = path.isAbsolute(workflowPath) ? workflowPath : path.join(this.workspace, workflowPath);
+    if (!isFile(filePath)) return null;
+    try {
+      return loadWorkflowDocument(filePath);
+    } catch (error) {
+      if (!(error instanceof ConfigurationError)) throw error;
+      return null;
+    }
+  }
+
   protected loadWorkflow(previousStatus: Record<string, unknown>): WorkflowDocument | null {
     if (previousStatus.workflow_id === 'agent') return null;
     const sessionId = previousStatus.session_id;
@@ -134,17 +148,8 @@ export class SessionStoreCore {
       const frozen = loadFrozenWorkflow(path.join(this.sessionsDirectory, sessionId));
       if (frozen) return frozen;
     }
-    const workflowPath = previousStatus.workflow_path;
-    if (typeof workflowPath === 'string' && workflowPath) {
-      const filePath = path.isAbsolute(workflowPath) ? workflowPath : path.join(this.workspace, workflowPath);
-      if (isFile(filePath)) {
-        try {
-          return loadWorkflowDocument(filePath);
-        } catch (error) {
-          if (!(error instanceof ConfigurationError)) throw error;
-        }
-      }
-    }
+    const fromPath = this.loadWorkflowAtPath(previousStatus.workflow_path);
+    if (fromPath !== null) return fromPath;
     const workflowId = previousStatus.workflow_id;
     if (typeof workflowId !== 'string' || workflowId === '') return null;
     try {

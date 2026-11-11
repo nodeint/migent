@@ -62,46 +62,16 @@ export function collectDecisionV3(
   const entryIndexByName = new Map<string, number>();
   const rawNameByName = new Map<string, string>();
   (raw as unknown[]).forEach((entry, entryIndex) => {
-    const entryPath: (string | number)[] = ['stages', index, 'decision', entryIndex];
-    if (decisionEntryProblem(entry) || !isRecord(entry)) {
-      problems.addMessage('invalid-decision', `${field} entries must each declare exactly one decision.`, entryPath);
+    const read = readDecisionEntry(entry, { field, index, entryIndex, version7, problems }, routesRaw);
+    if (read === null) {
       valid = false;
       return;
     }
-    const [rawName] = Object.keys(entry);
-    const name = rawName.trim().toLowerCase();
-    if (name === '') {
-      problems.addMessage('invalid-value', `Missing or invalid ${field}.`, entryPath);
-      valid = false;
-      return;
-    }
-    if (Object.hasOwn(routesRaw, name)) {
-      problems.addMessage('invalid-decision', `Duplicate decision value on ${field}: ${name}`, entryPath);
-      valid = false;
-      return;
-    }
-    const body = entry[rawName];
-    const found = decisionBodyProblems(body, version7);
-    if (found[0]?.kind === 'body' || !isRecord(body)) {
-      problems.addMessage('invalid-decision', `${field}.${name} must be a mapping.`, [...entryPath, rawName]);
-      valid = false;
-      return;
-    }
-    const at = [...entryPath, rawName];
-    for (const problem of found) {
-      if (problem.kind === 'key') problems.addMessage('invalid-decision', `${field}.${name}.${problem.key} is not allowed.`, [...at, problem.key]);
-      else if (problem.kind === 'when') problems.addMessage('invalid-value', `Missing or invalid ${field}.${name}.when.`, [...at, 'when']);
-      else if (problem.kind === 'navigate') problems.addMessage('missing-required', `${field}.${name}.navigate is required.`, [...at, 'navigate']);
-    }
-    if (found.length === 0 && body.when !== undefined) instructions[name] = (body.when as string).trim();
-    if (found.length > 0) {
-      valid = false;
-      return;
-    }
-    values.push(name);
-    entryIndexByName.set(name, entryIndex);
-    rawNameByName.set(name, rawName);
-    routesRaw[name] = body.navigate;
+    if (read.when !== undefined) instructions[read.name] = read.when;
+    values.push(read.name);
+    entryIndexByName.set(read.name, entryIndex);
+    rawNameByName.set(read.name, read.rawName);
+    routesRaw[read.name] = read.navigate;
   });
   // Readable entries keep their route checks even when another entry is malformed.
   const routes = collectRouteTargets({ field, routes: routesRaw, entryIndexByName, rawNameByName, index }, context);
@@ -110,6 +80,74 @@ export function collectDecisionV3(
     instructions,
     routes: valid ? routes : { state: 'invalid' },
   };
+}
+
+interface DecisionEntryAt {
+  readonly field: string;
+  readonly index: number;
+  readonly entryIndex: number;
+  readonly version7: boolean;
+  readonly problems: DraftProblems;
+}
+
+/** Reads one `{ name: body }` decision entry, reporting each problem; `null` when the entry is unusable. */
+function readDecisionEntry(
+  entry: unknown,
+  { field, index, entryIndex, version7, problems }: DecisionEntryAt,
+  seen: Record<string, unknown>,
+): { name: string; rawName: string; when: string | undefined; navigate: unknown } | null {
+  const entryPath: (string | number)[] = ['stages', index, 'decision', entryIndex];
+  if (decisionEntryProblem(entry) || !isRecord(entry)) {
+    problems.addMessage('invalid-decision', `${field} entries must each declare exactly one decision.`, entryPath);
+    return null;
+  }
+  const [rawName] = Object.keys(entry);
+  const name = rawName.trim().toLowerCase();
+  if (name === '') {
+    problems.addMessage('invalid-value', `Missing or invalid ${field}.`, entryPath);
+    return null;
+  }
+  if (Object.hasOwn(seen, name)) {
+    problems.addMessage('invalid-decision', `Duplicate decision value on ${field}: ${name}`, entryPath);
+    return null;
+  }
+  const body = entry[rawName];
+  const found = decisionBodyProblems(body, version7);
+  return readDecisionBody(body, found, { field, name, rawName, at: [...entryPath, rawName], problems });
+}
+
+interface DecisionBodyAt {
+  readonly field: string;
+  readonly name: string;
+  readonly rawName: string;
+  readonly at: (string | number)[];
+  readonly problems: DraftProblems;
+}
+
+/** Checks one decision body, reporting each problem; `null` when the body is unusable. */
+function readDecisionBody(
+  body: unknown,
+  found: ReturnType<typeof decisionBodyProblems>,
+  { field, name, rawName, at, problems }: DecisionBodyAt,
+): { name: string; rawName: string; when: string | undefined; navigate: unknown } | null {
+  if (found[0]?.kind === 'body' || !isRecord(body)) {
+    problems.addMessage('invalid-decision', `${field}.${name} must be a mapping.`, at);
+    return null;
+  }
+  for (const problem of found) reportDecisionBodyProblem(problem, { field, name, at, problems });
+  if (found.length > 0) return null;
+  const when = body.when === undefined ? undefined : (body.when as string).trim();
+  return { name, rawName, when, navigate: body.navigate };
+}
+
+/** Reports one problem found in a decision body at its field's path. */
+function reportDecisionBodyProblem(
+  problem: ReturnType<typeof decisionBodyProblems>[number],
+  { field, name, at, problems }: { field: string; name: string; at: (string | number)[]; problems: DraftProblems },
+): void {
+  if (problem.kind === 'key') problems.addMessage('invalid-decision', `${field}.${name}.${problem.key} is not allowed.`, [...at, problem.key]);
+  else if (problem.kind === 'when') problems.addMessage('invalid-value', `Missing or invalid ${field}.${name}.when.`, [...at, 'when']);
+  else if (problem.kind === 'navigate') problems.addMessage('missing-required', `${field}.${name}.navigate is required.`, [...at, 'navigate']);
 }
 
 /** Resolves each route on its own, so one bad target does not hide the others. */
@@ -188,61 +226,19 @@ interface CollectedStageFields {
 }
 
 export function collectStage(rawItem: unknown, index: number, context: DraftStageContext): DraftStage | null {
-  const { version2, problems } = context;
+  const { problems } = context;
   if (stageMappingProblem(rawItem) || !isRecord(rawItem)) {
     problems.addMessage('invalid-value', 'Workflow stage must be a mapping.', ['stages', index]);
     return null;
   }
   const before = problems.items.length;
-  const report = (message: string): void => {
-    problems.addMessage(workflowRuleCode(message), message, stageErrorPath(message, index, rawItem));
-  };
-  const read = <T>(fn: () => T): DraftUnit<T> => {
-    try {
-      return { state: 'valid', value: fn() };
-    } catch (error) {
-      problems.add(error, stageErrorPath(error instanceof Error ? error.message : String(error), index, rawItem));
-      return { state: 'invalid' };
-    }
-  };
-
+  const { report, read } = stageFieldReporters(rawItem, index, problems);
   const idUnit = read(() => requiredString(rawItem.id, 'stages.id'));
   if (idUnit.state !== 'valid') return null;
   const stageId = idUnit.value;
   const reader: StageReader = { rawItem, index, stageId, context, report, read };
-
-  const description = read(() => stageDescription(rawItem, stageId));
-  const dependsOn = read(() => stageDependsOn(rawItem, stageId));
-  const verify = read(() => stageVerify(rawItem, stageId));
-  const runWhen = read(() =>
-    stageRunWhen(rawItem, stageId, { version2, verify: verify.state === 'invalid' ? [] : verify.value }),
-  );
-  const { kind, role } = readStageKind(reader, verify);
-  const roleFields = kind === 'role';
-  const artifact = readStageArtifact(reader, kind, verify);
-  const ask: DraftUnit<AskTarget> = roleFields && Object.hasOwn(rawItem, 'ask')
-    ? read(() => stageAsk(rawItem, stageId))
-    : ({ state: 'absent', value: 'human' } as const);
-  const decision = readStageDecision(reader, roleFields);
-  const fields: CollectedStageFields = {
-    kind,
-    role,
-    description,
-    dependsOn,
-    verify,
-    runWhen,
-    artifact,
-    ask,
-    decision,
-    ...readRoleOnlyFields(reader, roleFields),
-    ...readVerifyLimits(reader, kind, verify),
-    resumeFrom: read(() =>
-      dependsOn.state === 'invalid'
-        ? stageResumeFromUnchecked(rawItem, stageId)
-        : stageResumeFrom(rawItem, stageId, dependsOn.value),
-    ),
-  };
-
+  const fields = readStageFields(reader);
+  const { kind, role, dependsOn, verify, artifact, runWhen, decision } = fields;
   const clean = problems.items.length === before;
   return {
     index,
@@ -262,6 +258,63 @@ export function collectStage(rawItem: unknown, index: number, context: DraftStag
     routes: decision.routes,
     spec: clean && kind !== null ? parseCollectedStageSpec(reader, fields, kind) : null,
     roleStage: collectedRoleStage(stageId, fields),
+  };
+}
+
+/** The report and read callbacks of one stage, both locating failures at the stage's author coordinates. */
+function stageFieldReporters(
+  rawItem: Record<string, unknown>,
+  index: number,
+  problems: DraftProblems,
+): Pick<StageReader, 'report' | 'read'> {
+  const report = (message: string): void => {
+    problems.addMessage(workflowRuleCode(message), message, stageErrorPath(message, index, rawItem));
+  };
+  const read = <T>(fn: () => T): DraftUnit<T> => {
+    try {
+      return { state: 'valid', value: fn() };
+    } catch (error) {
+      problems.add(error, stageErrorPath(error instanceof Error ? error.message : String(error), index, rawItem));
+      return { state: 'invalid' };
+    }
+  };
+  return { report, read };
+}
+
+/** Reads every field of a stage whose id is known, in the order their checks depend on each other. */
+function readStageFields(reader: StageReader): CollectedStageFields {
+  const { rawItem, stageId, context, read } = reader;
+  const { version2 } = context;
+  const description = read(() => stageDescription(rawItem, stageId));
+  const dependsOn = read(() => stageDependsOn(rawItem, stageId));
+  const verify = read(() => stageVerify(rawItem, stageId));
+  const runWhen = read(() =>
+    stageRunWhen(rawItem, stageId, { version2, verify: verify.state === 'invalid' ? [] : verify.value }),
+  );
+  const { kind, role } = readStageKind(reader, verify);
+  const roleFields = kind === 'role';
+  const artifact = readStageArtifact(reader, kind, verify);
+  const ask: DraftUnit<AskTarget> = roleFields && Object.hasOwn(rawItem, 'ask')
+    ? read(() => stageAsk(rawItem, stageId))
+    : ({ state: 'absent', value: 'human' } as const);
+  const decision = readStageDecision(reader, roleFields);
+  return {
+    kind,
+    role,
+    description,
+    dependsOn,
+    verify,
+    runWhen,
+    artifact,
+    ask,
+    decision,
+    ...readRoleOnlyFields(reader, roleFields),
+    ...readVerifyLimits(reader, kind, verify),
+    resumeFrom: read(() =>
+      dependsOn.state === 'invalid'
+        ? stageResumeFromUnchecked(rawItem, stageId)
+        : stageResumeFrom(rawItem, stageId, dependsOn.value),
+    ),
   };
 }
 
@@ -395,25 +448,11 @@ function parseCollectedStageSpec(
   kind: NonNullable<DraftStage['kind']>,
 ): StageSpec | null {
   const { rawItem, index, stageId, context } = reader;
-  const { description, dependsOn, resumeFrom, instructions, agent, options, maxRevisions, decision } = fields;
-  const { verify, maxVerify, verifyTimeoutSec, runWhen, artifact, ask, role } = fields;
+  const { agent, options, decision, verify, ask, role } = fields;
   const common = {
-    id: stageId,
-    description: description.state === 'invalid' ? null : description.value,
-    dependsOn: dependsOn.state === 'invalid' ? [] : dependsOn.value,
-    resumeFrom: resumeFrom.state === 'invalid' ? null : resumeFrom.value,
-    instructions: instructions.state === 'invalid' ? [] : instructions.value,
-    agent: agent.state === 'invalid' ? null : agent.value,
-    options: options.state === 'invalid' ? {} : options.value,
-    maxRevisions: maxRevisions.state === 'invalid' ? null : maxRevisions.value,
-    routes: decision.routes.state === 'invalid' ? {} : decision.routes.value,
-    verify: verify.state === 'invalid' ? [] : verify.value,
-    maxVerify: maxVerify.state === 'invalid' ? DEFAULT_MAX_VERIFY : maxVerify.value,
-    verifyTimeoutSec: verifyTimeoutSec.state === 'invalid' ? null : verifyTimeoutSec.value,
-    runWhen: runWhen.state === 'invalid' ? null : runWhen.value,
-    artifacts: legacyArtifacts(stageId, artifact),
-    decisionArtifacts: {},
-    decisionValues: decision.values.state === 'invalid' ? [] : decision.values.value,
+    ...collectedCommonFields(stageId, fields),
+    agent: unitOr(agent, null),
+    options: unitOr(options, {}),
     ...(context.version3 && Object.keys(decision.instructions).length > 0
       ? { decisionInstructions: decision.instructions }
       : {}),
@@ -422,8 +461,8 @@ function parseCollectedStageSpec(
   try {
     return stageSpecSchema.parse(
       kind === 'role'
-        ? { ...common, kind: 'role', role: role.state === 'invalid' ? '' : role.value }
-        : { ...common, kind: 'verify', role: null, verify: verify.state === 'invalid' ? [] : verify.value, maxVerify: 0 },
+        ? { ...common, kind: 'role', role: unitOr(role, '') }
+        : { ...common, kind: 'verify', role: null, verify: unitOr(verify, []), maxVerify: 0 },
     ) as StageSpec;
   } catch (error) {
     if (error instanceof ConfigurationError) {
@@ -441,29 +480,42 @@ function parseCollectedStageSpec(
 
 /** The role-stage view later rules read even when an unrelated field of the stage failed. */
 function collectedRoleStage(stageId: string, fields: CollectedStageFields): RoleStageSpec | null {
-  const { kind, role, agent, options, description, artifact, decision, dependsOn, resumeFrom } = fields;
-  const { instructions, maxRevisions, verify, maxVerify, verifyTimeoutSec, runWhen, ask } = fields;
+  const { kind, role, agent, options, ask } = fields;
   if (kind !== 'role' || role.state === 'invalid' || agent.state === 'invalid' || options.state === 'invalid') return null;
   return {
     kind: 'role',
-    id: stageId,
-    description: description.state === 'invalid' ? null : description.value,
-    artifacts: legacyArtifacts(stageId, artifact),
-    decisionArtifacts: {},
-    decisionValues: decision.values.state === 'invalid' ? [] : decision.values.value,
-    dependsOn: dependsOn.state === 'invalid' ? [] : dependsOn.value,
-    resumeFrom: resumeFrom.state === 'invalid' ? null : resumeFrom.value,
-    instructions: instructions.state === 'invalid' ? [] : instructions.value,
+    ...collectedCommonFields(stageId, fields),
     agent: agent.value,
     options: options.value,
-    maxRevisions: maxRevisions.state === 'invalid' ? null : maxRevisions.value,
-    routes: decision.routes.state === 'invalid' ? {} : decision.routes.value,
-    verify: verify.state === 'invalid' ? [] : verify.value,
-    maxVerify: maxVerify.state === 'invalid' ? DEFAULT_MAX_VERIFY : maxVerify.value,
-    verifyTimeoutSec: verifyTimeoutSec.state === 'invalid' ? null : verifyTimeoutSec.value,
-    runWhen: runWhen.state === 'invalid' ? null : runWhen.value,
     role: role.value,
     ...(ask.state === 'valid' ? { ask: ask.value } : {}),
+  };
+}
+
+/** A unit's value, or `fallback` when the unit failed to read. */
+function unitOr<T>(unit: DraftUnit<T>, fallback: T): T {
+  return unit.state === 'invalid' ? fallback : unit.value;
+}
+
+/** The stage spec fields both the role and verify views share, with a fallback for each failed unit. */
+function collectedCommonFields(stageId: string, fields: CollectedStageFields) {
+  const { description, artifact, decision, dependsOn, resumeFrom, instructions, maxRevisions } = fields;
+  const { verify, maxVerify, verifyTimeoutSec, runWhen } = fields;
+  return {
+    id: stageId,
+    description: unitOr(description, null),
+    artifacts: legacyArtifacts(stageId, artifact),
+    decisionArtifacts: {},
+    decisionValues: unitOr(decision.values, []),
+    dependsOn: unitOr(dependsOn, []),
+    resumeFrom: unitOr(resumeFrom, null),
+    instructions: unitOr(instructions, []),
+    maxRevisions: unitOr(maxRevisions, null),
+    routes: unitOr(decision.routes, {}),
+    verify: unitOr(verify, []),
+    maxVerify: unitOr(maxVerify, DEFAULT_MAX_VERIFY),
+    verifyTimeoutSec: unitOr(verifyTimeoutSec, null),
+    runWhen: unitOr(runWhen, null),
   };
 }
 

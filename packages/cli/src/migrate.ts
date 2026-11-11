@@ -67,35 +67,42 @@ export async function runMigrate(
   if (!options.assumeYes && !(await accepted(options.confirm ?? null))) {
     return (options.confirm === null || options.confirm === undefined) && !process.stdin.isTTY ? EXIT_CONFIG : 0;
   }
+  if (!applyRewrites(workspace, rewrites)) return EXIT_CONFIG;
+  process.stdout.write(`Upgraded schema to version ${SCHEMA_VERSION}.\n`);
+  return 0;
+}
+
+/** Writes every rewrite under the session locks; false after reporting why nothing was written. */
+function applyRewrites(workspace: string, rewrites: readonly Rewrite[]): boolean {
   const locks: SessionLock[] = [];
   try {
     // Session files change only under the session lock, and only if they still match the plan.
     for (const directory of [...new Set(rewrites.flatMap((item) => (item.session ? [item.session.directory] : [])))]) {
-      const lock = SessionLock.acquire(directory);
-      locks.push(lock);
+      locks.push(SessionLock.acquire(directory));
     }
-    for (const rewrite of rewrites) {
-      if (rewrite.session === undefined) continue;
-      let current: string | null = null;
-      try {
-        if (lstatSync(rewrite.path).isFile()) current = readFileSync(rewrite.path, 'utf8');
-      } catch {
-        // Treated as changed below.
-      }
-      if (current !== rewrite.session.original) {
-        throw new ConfigurationError(`${path.relative(workspace, rewrite.path)} changed during migration. Nothing was written; run \`migent migrate\` again.`);
-      }
-    }
+    for (const rewrite of rewrites) assertSessionFileUnchanged(workspace, rewrite);
     for (const rewrite of rewrites) writeFileSync(rewrite.path, rewrite.text, 'utf8');
+    return true;
   } catch (error) {
     if (!(error instanceof SessionLockHeldError || error instanceof ConfigurationError)) throw error;
     printError(`${error.message} Nothing was written.`);
-    return EXIT_CONFIG;
+    return false;
   } finally {
     for (const lock of locks) lock.release();
   }
-  process.stdout.write(`Upgraded schema to version ${SCHEMA_VERSION}.\n`);
-  return 0;
+}
+
+function assertSessionFileUnchanged(workspace: string, rewrite: Rewrite): void {
+  if (rewrite.session === undefined) return;
+  let current: string | null = null;
+  try {
+    if (lstatSync(rewrite.path).isFile()) current = readFileSync(rewrite.path, 'utf8');
+  } catch {
+    // Treated as changed below.
+  }
+  if (current !== rewrite.session.original) {
+    throw new ConfigurationError(`${path.relative(workspace, rewrite.path)} changed during migration. Nothing was written; run \`migent migrate\` again.`);
+  }
 }
 
 async function accepted(confirm: ((message: string) => boolean | Promise<boolean>) | null): Promise<boolean> {
@@ -139,18 +146,15 @@ function pendingRewrites(workspace: string, clientIds: readonly string[]): Rewri
     layers: { layer: 'project', project: projectV5, local: localV5 },
   });
   if (config === null) return [];
-  const rewrites: Rewrite[] = [];
-  if (configRewrite !== null) rewrites.push(configRewrite);
-  let effective = config;
-  if (localOriginal !== null) {
-    const [local, rewrite] = configRewriteOf(localPath, localOriginal, {
+  const [local, localRewrite] = localOriginal === null
+    ? [null, null]
+    : configRewriteOf(localPath, localOriginal, {
       context,
       clientIds,
       layers: { layer: 'local', project: projectV5, local: localV5 },
     });
-    if (rewrite !== null) rewrites.push(rewrite);
-    if (local !== null) effective = mergeConfigLayers(config, local).config;
-  }
+  const rewrites = [configRewrite, localRewrite].filter((item): item is Rewrite => item !== null);
+  const effective = local === null ? config : mergeConfigLayers(config, local).config;
   // Both views must keep the client every location had in the original v5 documents.
   assertConfigClientEquivalence({
     originalProject: projectV5,
@@ -256,36 +260,57 @@ function workflowRewrites(
     } catch {
       continue;
     }
-    let updated: Record<string, unknown>;
-    let changed: string[];
-    try {
-      ({ document: updated, notes: changed } = migrateWorkflow(parsed, config, { clientIds }));
-    } catch (error) {
-      if (error instanceof ConfigurationError) throw error;
-      continue;
-    }
-    if (changed.length === 0) continue;
-    let rewritten: string;
-    try {
-      rewritten = patchWorkflowText(original, updated);
-    } catch (error) {
-      if (!(error instanceof ConfigurationError)) throw error;
-      // The line patcher cannot edit this layout (flow-style stages, a key on the dash line, empty
-      // entries): write the migrated document as canonical YAML. Comments are reported below.
-      rewritten = stringifyConfig(updated);
-      parseWorkflowMapping(updated, 'migrated workflow');
-    }
-    if (rewritten === original) continue;
-    const relative = `.migent/workflows/${name}`;
-    const notes = changed.map((note) =>
-      note.startsWith('schema_version') ? `Migrated ${relative} ${note}` : `${relative}: ${note}`,
-    );
-    if (yamlHasComments(original) && !yamlHasComments(rewritten)) {
-      notes.push(`${relative}: comments could not be preserved by this migration`);
-    }
-    rewrites.push({ path: filePath, text: rewritten, notes });
+    const result = rewrittenWorkflow({ original, relative: `.migent/workflows/${name}` }, parsed, { config, clientIds });
+    if (result !== null) rewrites.push({ path: filePath, ...result });
   }
   return rewrites;
+}
+
+/** The migrated workflow, or null when migration fails on a non-configuration error. */
+function tryMigrateWorkflow(
+  document: Record<string, unknown>,
+  source: { config: Record<string, unknown>; clientIds: readonly string[] },
+): { document: Record<string, unknown>; notes: string[] } | null {
+  try {
+    return migrateWorkflow(document, source.config, { clientIds: source.clientIds });
+  } catch (error) {
+    if (error instanceof ConfigurationError) throw error;
+    return null;
+  }
+}
+
+/** Migrated workflow text and its notes, or null when nothing changes. */
+function rewrittenWorkflow(
+  file: { original: string; relative: string },
+  parsed: Record<string, unknown>,
+  source: { config: Record<string, unknown>; clientIds: readonly string[] },
+): { text: string; notes: string[] } | null {
+  const { original, relative } = file;
+  const migrated = tryMigrateWorkflow(parsed, source);
+  if (migrated === null || migrated.notes.length === 0) return null;
+  const { document: updated, notes: changed } = migrated;
+  let text: string;
+  try {
+    text = patchWorkflowText(original, updated);
+  } catch (error) {
+    if (!(error instanceof ConfigurationError)) throw error;
+    // The line patcher cannot edit this layout (flow-style stages, a key on the dash line, empty
+    // entries): write the migrated document as canonical YAML. Comments are reported below.
+    text = stringifyConfig(updated);
+    parseWorkflowMapping(updated, 'migrated workflow');
+  }
+  if (text === original) return null;
+  const notes = labelWorkflowNotes(changed, relative);
+  if (yamlHasComments(original) && !yamlHasComments(text)) {
+    notes.push(`${relative}: comments could not be preserved by this migration`);
+  }
+  return { text, notes };
+}
+
+function labelWorkflowNotes(notes: readonly string[], relative: string): string[] {
+  return notes.map((note) =>
+    note.startsWith('schema_version') ? `Migrated ${relative} ${note}` : `${relative}: ${note}`,
+  );
 }
 
 
@@ -325,6 +350,8 @@ function isDirectChild(realRoot: string, target: string): boolean {
   }
 }
 
+type MigrationSource = { config: Record<string, unknown>; clientIds: readonly string[] };
+
 function sessionRewrites(
   workspace: string,
   config: Record<string, unknown>,
@@ -338,68 +365,73 @@ function sessionRewrites(
     const directory = path.join(root, id);
     // A symlinked session directory or file could point outside the workspace; leave it alone.
     if (!isRealDirectory(directory) || !isDirectChild(realRoot, directory)) continue;
-    const draftPath = path.join(directory, 'workflow.yaml');
-    const label = `.migent/sessions/${id}`;
-    let draftText: string | null = null;
-    let newDraftText: string | null = null;
-    if (isRegularFile(draftPath)) {
-      draftText = readFileSync(draftPath, 'utf8');
-      const result = migratedText(draftText, `${label}/workflow.yaml`, { config, clientIds });
-      if (result !== null) {
-        newDraftText = result.text;
-        rewrites.push({
-          path: draftPath,
-          text: result.text,
-          notes: result.notes,
-          session: { directory, original: draftText },
-        });
-      }
-    }
-    const frozenPath = path.join(directory, WORKFLOW_FREEZE_FILE);
-    if (!isRegularFile(frozenPath)) continue;
-    const frozenText = readFileSync(frozenPath, 'utf8');
-    let document: Record<string, unknown>;
-    try {
-      const parsed = parseYamlDocument(frozenText);
-      if (!isRecord(parsed)) continue;
-      document = parsed;
-    } catch {
-      continue;
-    }
-    const body = document.workflow;
-    if (!isRecord(body)) continue;
-    let migratedBody: Record<string, unknown>;
-    let notes: string[];
-    try {
-      ({ document: migratedBody, notes } = migrateWorkflow(body, config, { clientIds }));
-    } catch (error) {
-      if (error instanceof ConfigurationError) throw error;
-      continue;
-    }
-    if (notes.length === 0) continue;
-    document = { ...document, workflow: migratedBody };
-    // The pin records the draft's hash; keep it matching when the draft is rewritten alongside.
-    if (draftText !== null && newDraftText !== null && document.source_sha256 === sha256Hex(draftText)) {
-      document.source_sha256 = sha256Hex(newDraftText);
-    }
-    rewrites.push({
-      path: frozenPath,
-      text: stringifyConfig(document),
-      session: { directory, original: frozenText },
-      notes: notes.map((note) =>
-        note.startsWith('schema_version') ? `Migrated ${label}/${WORKFLOW_FREEZE_FILE} ${note}` : `${label}/${WORKFLOW_FREEZE_FILE}: ${note}`,
-      ),
-    });
+    rewrites.push(...sessionDirectoryRewrites(directory, `.migent/sessions/${id}`, { config, clientIds }));
   }
   return rewrites;
+}
+
+function sessionDirectoryRewrites(directory: string, label: string, source: MigrationSource): Rewrite[] {
+  const rewrites: Rewrite[] = [];
+  const draftPath = path.join(directory, 'workflow.yaml');
+  let draft: { original: string; updated: string | null } | null = null;
+  if (isRegularFile(draftPath)) {
+    const draftText = readFileSync(draftPath, 'utf8');
+    const result = migratedText(draftText, `${label}/workflow.yaml`, source);
+    draft = { original: draftText, updated: result?.text ?? null };
+    if (result !== null) {
+      rewrites.push({
+        path: draftPath,
+        text: result.text,
+        notes: result.notes,
+        session: { directory, original: draftText },
+      });
+    }
+  }
+  const frozen = frozenRewrite(directory, label, { source, draft });
+  if (frozen !== null) rewrites.push(frozen);
+  return rewrites;
+}
+
+function readFrozenDocument(frozenText: string): Record<string, unknown> | null {
+  try {
+    const parsed = parseYamlDocument(frozenText);
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function frozenRewrite(
+  directory: string,
+  label: string,
+  state: { source: MigrationSource; draft: { original: string; updated: string | null } | null },
+): Rewrite | null {
+  const frozenPath = path.join(directory, WORKFLOW_FREEZE_FILE);
+  if (!isRegularFile(frozenPath)) return null;
+  const frozenText = readFileSync(frozenPath, 'utf8');
+  const parsed = readFrozenDocument(frozenText);
+  if (parsed === null || !isRecord(parsed.workflow)) return null;
+  const migrated = tryMigrateWorkflow(parsed.workflow, state.source);
+  if (migrated === null || migrated.notes.length === 0) return null;
+  const document: Record<string, unknown> = { ...parsed, workflow: migrated.document };
+  // The pin records the draft's hash; keep it matching when the draft is rewritten alongside.
+  const { draft } = state;
+  if (draft !== null && draft.updated !== null && document.source_sha256 === sha256Hex(draft.original)) {
+    document.source_sha256 = sha256Hex(draft.updated);
+  }
+  return {
+    path: frozenPath,
+    text: stringifyConfig(document),
+    session: { directory, original: frozenText },
+    notes: labelWorkflowNotes(migrated.notes, `${label}/${WORKFLOW_FREEZE_FILE}`),
+  };
 }
 
 function migratedText(
   original: string,
   relative: string,
-  source: { config: Record<string, unknown>; clientIds: readonly string[] },
+  source: MigrationSource,
 ): { text: string; notes: string[] } | null {
-  const { config, clientIds } = source;
   let parsed: unknown;
   try {
     parsed = parseYamlDocument(original);
@@ -407,31 +439,7 @@ function migratedText(
     return null;
   }
   if (!isRecord(parsed)) return null;
-  let updated: Record<string, unknown>;
-  let changed: string[];
-  try {
-    ({ document: updated, notes: changed } = migrateWorkflow(parsed, config, { clientIds }));
-  } catch (error) {
-    if (error instanceof ConfigurationError) throw error;
-    return null;
-  }
-  if (changed.length === 0) return null;
-  let text: string;
-  try {
-    text = patchWorkflowText(original, updated);
-  } catch (error) {
-    if (!(error instanceof ConfigurationError)) throw error;
-    text = stringifyConfig(updated);
-    parseWorkflowMapping(updated, 'migrated workflow');
-  }
-  if (text === original) return null;
-  const notes = changed.map((note) =>
-    note.startsWith('schema_version') ? `Migrated ${relative} ${note}` : `${relative}: ${note}`,
-  );
-  if (yamlHasComments(original) && !yamlHasComments(text)) {
-    notes.push(`${relative}: comments could not be preserved by this migration`);
-  }
-  return { text, notes };
+  return rewrittenWorkflow({ original, relative }, parsed, source);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

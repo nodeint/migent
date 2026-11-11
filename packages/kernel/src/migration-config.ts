@@ -102,16 +102,18 @@ function liftAgentBody(body: Record<string, unknown>, label: string): LiftedBody
       lifted[key] = value;
     }
   }
-  if (Object.keys(client).length > 0) {
-    // `type` reads first, as in the documented layout.
-    const { type, options, ...rest } = client;
-    lifted.client = {
-      ...(type === undefined ? {} : { type }),
-      ...rest,
-      ...(options === undefined ? {} : { options }),
-    };
-  }
+  if (Object.keys(client).length > 0) lifted.client = orderedClient(client);
   return { body: lifted, notes };
+}
+
+/** The client map with `type` first and `options` last, as in the documented layout. */
+function orderedClient(client: Record<string, unknown>): Record<string, unknown> {
+  const { type, options, ...rest } = client;
+  return {
+    ...(type === undefined ? {} : { type }),
+    ...rest,
+    ...(options === undefined ? {} : { options }),
+  };
 }
 
 /** A copy of `record` with `from` renamed to `to` and set to `value`. The other keys keep their order. */

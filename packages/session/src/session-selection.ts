@@ -55,6 +55,27 @@ export function assertSessionId(sessionId: string): void {
 type SessionManifestRecord = ReturnType<typeof readSessionManifest>;
 type SelectedWorkflow = Pick<SessionSelection, 'source' | 'document' | 'freeze'>;
 
+/** Reads the freeze behind a selected frozen source; a broken freeze is a problem, never a fallback. */
+function loadFrozenSelection(
+  selection: SessionSelection,
+  sessionDirectory: string,
+  source: SessionSource,
+): SelectedWorkflow {
+  const unloaded: SelectedWorkflow = { source, document: null, freeze: null };
+  try {
+    const freeze = readWorkflowFreeze(sessionDirectory);
+    if (freeze === null) {
+      selection.problems.push(`Workflow freeze is not a file: ${source.path}.`);
+      return unloaded;
+    }
+    return { source: { ...source, workflowId: freeze.workflow.id }, document: freeze.workflow, freeze };
+  } catch (error) {
+    if (!(error instanceof ConfigurationError)) throw error;
+    selection.problems.push(error.message);
+  }
+  return unloaded;
+}
+
 /** Selects the session's freeze when the runtime would use it; the selected fields when that settled the selection. */
 function selectFrozenWorkflow(
   selection: SessionSelection,
@@ -62,7 +83,6 @@ function selectFrozenWorkflow(
 ): SelectedWorkflow | null {
   const { workspace, sessionDirectory, manifest } = session;
   const { sessionId } = selection;
-  const found: SelectedWorkflow = { source: null, document: null, freeze: null };
   // Activation writes the freeze before it records the start, so an interrupted one leaves a stale
   // freeze on a session that is still prepared. Activation would re-read the draft, so check that.
   const status = readStatusFileState(path.join(sessionDirectory, 'status.json'));
@@ -77,23 +97,56 @@ function selectFrozenWorkflow(
       kind: 'frozen',
       path: display(workspace, freezePath),
     };
-    found.source = source;
-    try {
-      const freeze = readWorkflowFreeze(sessionDirectory);
-      if (freeze === null) {
-        selection.problems.push(`Workflow freeze is not a file: ${source.path}.`);
-        return found;
-      }
-      found.freeze = freeze;
-      found.document = freeze.workflow;
-      source.workflowId = freeze.workflow.id;
-    } catch (error) {
-      if (!(error instanceof ConfigurationError)) throw error;
-      selection.problems.push(error.message);
-    }
-    return found;
+    return loadFrozenSelection(selection, sessionDirectory, source);
   }
   return null;
+}
+
+/** Loads the recorded workflow file; null after recording a problem. */
+function selectRecordedFile(
+  selection: SessionSelection,
+  recorded: { workspace: string; filePath: string; kind: SessionWorkflowKind; manifest: SessionManifestRecord },
+): SelectedWorkflow | null {
+  const { workspace, filePath, kind, manifest } = recorded;
+  const source: SessionSource = {
+    sessionId: selection.sessionId, workflowId: manifest.workflowId, kind, path: display(workspace, filePath),
+  };
+  try {
+    return { source, document: loadSessionFile(filePath), freeze: null };
+  } catch (error) {
+    selection.problems.push(authoringMessage(error));
+    return { source, document: null, freeze: null };
+  }
+}
+
+/** The recorded file is gone or unrecorded: the runtime then looks the workflow up by id. */
+function selectWorkflowById(
+  selection: SessionSelection,
+  missing: { workspace: string; recorded: string | null; manifest: SessionManifestRecord },
+): SelectedWorkflow | null {
+  const { workspace, recorded, manifest } = missing;
+  const { workflowId } = manifest;
+  if (!workflowId) {
+    selection.problems.push(`Workflow file is missing: ${recorded ?? ''}.`);
+    return null;
+  }
+  if (recorded) selection.warnings.push(`Recorded workflow file ${recorded} is missing; using workflow ${workflowId} by id.`);
+  const source: SessionSource = {
+    sessionId: selection.sessionId, workflowId, kind: 'live', path: `.migent/workflows (${workflowId})`,
+  };
+  let document: WorkflowDocument;
+  try {
+    document = loadNamedWorkflow(workspace, workflowId, { quiet: true });
+  } catch (error) {
+    selection.problems.push(authoringMessage(error));
+    return { source, document: null, freeze: null };
+  }
+  if (document.source !== null) source.path = display(workspace, document.source);
+  return { source, document, freeze: null };
+}
+
+function resolveRecordedPath(workspace: string, recorded: string): string {
+  return path.isAbsolute(recorded) ? recorded : path.join(workspace, recorded);
 }
 
 /** Selects the recorded workflow source, or the project workflow by id when the recorded file is gone. */
@@ -113,34 +166,14 @@ function selectRecordedWorkflow(
     return found;
   }
   const kind: SessionWorkflowKind = recorded === draftPath ? 'draft' : 'live';
-  let filePath: string | null = null;
-  if (recorded) filePath = path.isAbsolute(recorded) ? recorded : path.join(workspace, recorded);
-  if (filePath !== null && (kind === 'draft' || isFile(filePath))) {
-    found.source = { sessionId, workflowId: manifest.workflowId, kind, path: display(workspace, filePath) };
-    try {
-      found.document = loadSessionFile(filePath);
-    } catch (error) {
-      selection.problems.push(authoringMessage(error));
-      return found;
-    }
-  } else {
-    // The recorded file is gone or unrecorded: the runtime then looks the workflow up by id.
-    if (!manifest.workflowId) {
-      selection.problems.push(`Workflow file is missing: ${recorded ?? ''}.`);
-      return found;
-    }
-    if (recorded) selection.warnings.push(`Recorded workflow file ${recorded} is missing; using workflow ${manifest.workflowId} by id.`);
-    found.source = { sessionId, workflowId: manifest.workflowId, kind: 'live', path: `.migent/workflows (${manifest.workflowId})` };
-    try {
-      found.document = loadNamedWorkflow(workspace, manifest.workflowId, { quiet: true });
-    } catch (error) {
-      selection.problems.push(authoringMessage(error));
-      return found;
-    }
-    if (found.document.source !== null) found.source.path = display(workspace, found.document.source);
-  }
+  const filePath = recorded ? resolveRecordedPath(workspace, recorded) : null;
+  const selected = filePath !== null && (kind === 'draft' || isFile(filePath))
+    ? selectRecordedFile(selection, { workspace, filePath, kind, manifest })
+    : selectWorkflowById(selection, { workspace, recorded, manifest });
+  if (selected === null) return found;
+  Object.assign(found, selected);
   const {document} = found;
-  if (document === null) return found;
+  if (document === null || found.source === null) return found;
   found.source.workflowId = document.id;
   if (kind === 'draft' && manifest.workflowId && document.id !== manifest.workflowId) {
     selection.problems.push(
@@ -148,6 +181,30 @@ function selectRecordedWorkflow(
     );
   }
   return found;
+}
+
+/** The session manifest; null after recording why it cannot be read. */
+function readSelectionManifest(
+  selection: SessionSelection,
+  workspace: string,
+  sessionDirectory: string,
+): SessionManifestRecord | null {
+  if (!isDirectory(sessionDirectory)) {
+    selection.problems.push(`Session not found: ${selection.sessionId}.`);
+    return null;
+  }
+  const manifestPath = path.join(sessionDirectory, 'manifest.yaml');
+  if (!isFile(manifestPath)) {
+    selection.problems.push(`Session manifest is missing: ${display(workspace, manifestPath)}.`);
+    return null;
+  }
+  try {
+    return readSessionManifest(sessionDirectory);
+  } catch (error) {
+    if (!(error instanceof ConfigurationError)) throw error;
+    selection.problems.push(error.message);
+    return null;
+  }
 }
 
 /**
@@ -168,23 +225,9 @@ export function selectSessionWorkflow(workspace: string, sessionId: string): Ses
     warnings: [],
   };
   const sessionDirectory = path.join(workspace, '.migent', 'sessions', sessionId);
-  if (!isDirectory(sessionDirectory)) {
-    selection.problems.push(`Session not found: ${sessionId}.`);
-    return selection;
-  }
   const manifestPath = path.join(sessionDirectory, 'manifest.yaml');
-  if (!isFile(manifestPath)) {
-    selection.problems.push(`Session manifest is missing: ${display(workspace, manifestPath)}.`);
-    return selection;
-  }
-  let manifest;
-  try {
-    manifest = readSessionManifest(sessionDirectory);
-  } catch (error) {
-    if (!(error instanceof ConfigurationError)) throw error;
-    selection.problems.push(error.message);
-    return selection;
-  }
+  const manifest = readSelectionManifest(selection, workspace, sessionDirectory);
+  if (manifest === null) return selection;
   selection.workflowPath = manifest.workflowPath;
   selection.manifestWorkflowId = manifest.workflowId;
   if (manifest.workflowId === 'agent' || manifest.role !== null) {

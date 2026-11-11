@@ -24,7 +24,7 @@ export async function runExecuteOnce(run: ExecuteRun, stageId: string | null): P
   const { workspace, store, workflow, sessionId, tasks } = run;
   store.reapOrphanedExecutions(sessionId, 'raise');
   const snapshots = store.executionSnapshots(sessionId);
-  let status = store.readSessionStatus(sessionId);
+  const status = store.readSessionStatus(sessionId);
   const sessionStatus = text(status.status);
   if (TERMINAL_SESSION_STATUSES.has(sessionStatus)) return executeFinal(status, sessionStatus, []);
   const chosen = isWorkflowV2(workflow)
@@ -35,11 +35,17 @@ export async function runExecuteOnce(run: ExecuteRun, stageId: string | null): P
   const stage = await trackDispatch(sessionId, tasks, (note) =>
     dispatchExecuteStage(run, { stageId: chosen, status, snapshots }, note),
   );
-  status = store.readSessionStatus(sessionId);
-  const after = text(status.status);
-  if (stage.failure_reason === VERIFY_FAILED) return executeFinal(status, VERIFY_FAILED, [stage]);
-  if (stage.failure_reason === VERIFY_EXHAUSTED) return executeFinal(status, VERIFY_EXHAUSTED, [stage]);
+  return onceResult(store.readSessionStatus(sessionId), stage);
+}
+
+const STAGE_STOP_REASONS: readonly string[] = [VERIFY_FAILED, VERIFY_EXHAUSTED];
+
+// Maps the single dispatched stage and the refreshed session status to the pass result.
+function onceResult(status: Record<string, unknown>, stage: Record<string, unknown>): ExecuteResult {
+  const failureReason = text(stage.failure_reason);
+  if (STAGE_STOP_REASONS.includes(failureReason)) return executeFinal(status, failureReason, [stage]);
   if (stage.failure_kind === 'quota') return executeFinal(status, 'quota', [stage]);
+  const after = text(status.status);
   const stopReason = TERMINAL_SESSION_STATUSES.has(after) ? after : 'stage';
   const result = executeFinal(status, stopReason, [stage]);
   if (stage.outcome_status === 'question') {
@@ -87,47 +93,64 @@ function version2OnceStage(
 ): string | ExecuteResult {
   const { workspace, workflow, sessionId } = run;
   const { snapshots, status } = state;
-  const sessionStatus = text(status.status);
-  const baselines = revisionBaselines(status);
   const resumes = blockResumes(workspace, sessionId);
-  const schedule = { sessionStatus, revisionBaselines: baselines, resumes };
-  const ready = readyStages(workflow, snapshots, schedule);
+  const schedule = { sessionStatus: text(status.status), revisionBaselines: revisionBaselines(status), resumes };
   const schedulable = schedulableStageIds(workflow, snapshots, { ...schedule, verifyTried: new Set() });
-  const running = runningStageIds(snapshots);
-  if (stageId !== null) {
-    const latest = latestSnapshotForStage(snapshots, stageId);
-    if (
-      latest?.status === 'failed' &&
-      latest.failureReason !== VERIFY_EXHAUSTED &&
-      latest.failureReason !== VERIFY_FAILED &&
-      !resumes.some(
-        (event) =>
-          event.event === 'session.active' &&
-          event.executionId === latest.executionId &&
-          event.data?.from === 'failed',
-      )
-    ) {
-      return executeFinal(status, 'stage_failed', []);
-    }
+  const runnable = runnableNow(workflow, schedulable, {
+    running: runningStageIds(snapshots),
+    concurrency: workflow.concurrency ?? 1,
+    snapshots,
+  });
+  let chosen: string;
+  if (stageId === null) {
+    const [next] = runnable;
+    if (next === undefined) return idleResult(run, state, schedule);
+    chosen = next;
+  } else {
+    if (unresumedFailure(snapshots, resumes, stageId)) return executeFinal(status, 'stage_failed', []);
     if (!schedulable.includes(stageId)) {
-      const first = runnableNow(workflow, schedulable, { running, concurrency: workflow.concurrency ?? 1, snapshots })[0] ?? ready[0] ?? '';
+      const first = runnable[0] ?? readyStages(workflow, snapshots, schedule)[0] ?? '';
       throw new ConfigurationError(`Stage ${stageId} is not the eligible stage ${first}.`);
     }
-    if (revisionStop(workflow, snapshots, { stageId, revisionBaselines: baselines })) {
-      return executeFinal(status, 'revisions_exhausted', []);
-    }
-    return stageId;
+    chosen = stageId;
   }
-  const [next] = runnableNow(workflow, schedulable, { running, concurrency: workflow.concurrency ?? 1, snapshots });
-  if (next === undefined) {
-    const reason = version2IdleReason(workflow, snapshots, schedule);
-    if (reason === 'no eligible stage') throw new ConfigurationError('no eligible stage');
-    return executeFinal(status, reason, []);
-  }
-  if (revisionStop(workflow, snapshots, { stageId: next, revisionBaselines: baselines })) {
+  if (revisionStop(workflow, snapshots, { stageId: chosen, revisionBaselines: schedule.revisionBaselines })) {
     return executeFinal(status, 'revisions_exhausted', []);
   }
-  return next;
+  return chosen;
+}
+
+
+// Reports why nothing can run, or fails when the workflow has no eligible stage at all.
+function idleResult(
+  run: Pick<ExecuteRun, 'workflow'>,
+  state: PassState & { readonly stages?: Record<string, unknown>[] },
+  schedule: Schedule,
+): ExecuteResult {
+  const reason = version2IdleReason(run.workflow, state.snapshots, schedule);
+  if (reason === 'no eligible stage') throw new ConfigurationError('no eligible stage');
+  return executeFinal(state.status, reason, state.stages ?? []);
+}
+
+
+// True when the stage's latest execution failed (not by verify) and was never resumed from failure.
+function unresumedFailure(snapshots: readonly ExecutionSnapshot[], resumes: Resumes, stageId: string): boolean {
+  const latest = latestSnapshotForStage(snapshots, stageId);
+  if (latest?.status !== 'failed') return false;
+  if (latest.failureReason === VERIFY_EXHAUSTED || latest.failureReason === VERIFY_FAILED) return false;
+  return !resumes.some(
+    (event) =>
+      event.event === 'session.active' && event.executionId === latest.executionId && event.data?.from === 'failed',
+  );
+}
+
+type Resumes = ReturnType<typeof blockResumes>;
+
+/** Scheduling inputs shared by the version 2 stage selectors. */
+interface Schedule {
+  readonly sessionStatus: string;
+  readonly revisionBaselines: Record<string, number> | null;
+  readonly resumes: Resumes;
 }
 
 /** How far a loop may go, and what earlier dispatches of the run already used. */
@@ -183,79 +206,111 @@ export async function runExecuteLoop(run: ExecuteRun, limits: LoopLimits): Promi
 }
 
 async function runVersion2Pool(run: ExecuteRun, limits: LoopLimits): Promise<ExecuteResult> {
-  const { workspace, store, workflow, sessionId, tasks } = run;
-  const { maxDispatches, alreadyDispatched = 0, verifyTriedSeed = [], verifyOnlyTriedSeed = [] } = limits;
-  const stages: Record<string, unknown>[] = [];
-  let dispatched = alreadyDispatched;
-  const verifyTried = new Set<string>(verifyTriedSeed);
-  const verifyOnlyTried = new Set<string>(verifyOnlyTriedSeed);
-  const flights: { promise: Promise<void>; settled: boolean }[] = [];
-  const errors: unknown[] = [];
-  const concurrency = workflow.concurrency ?? 1;
-  const observe = (): Promise<void> => observeFlights(flights, errors);
-  const startStage = (
-    stageId: string,
-    status: Record<string, unknown>,
-    snapshots: readonly ExecutionSnapshot[],
-  ): void => {
-    const flight = { promise: Promise.resolve(), settled: false };
-    flight.promise = trackDispatch(sessionId, tasks, (note) =>
-      dispatchExecuteStage(run, { stageId, status, snapshots }, note),
-    )
-      .then((stage) => {
-        stages.push(stage);
-        if (stage.failure_reason === VERIFY_EXHAUSTED) verifyTried.add(stageId);
-        if (stage.failure_reason === VERIFY_FAILED) verifyOnlyTried.add(stageId);
-      })
-      .catch((error: unknown) => {
-        errors.push(error);
-      })
-      .finally(() => {
-        flight.settled = true;
-      });
-    flights.push(flight);
-    dispatched += 1;
-  };
-  const settleCeiling = async (): Promise<ExecuteResult | null> => {
-    if (maxDispatches === null || dispatched < maxDispatches) return null;
-    await Promise.allSettled(flights.map((flight) => flight.promise));
-    await observe();
-    return dispatchLimitResult(run, { verifyTried, verifyOnlyTried }, stages);
-  };
+  const pool = new Version2Pool(run, limits);
   while (true) {
+    const result = await pool.pass();
+    if (result !== null) return result;
+  }
+}
+
+type Flight = { promise: Promise<void>; settled: boolean };
+
+/** Dispatches runnable version 2 stages concurrently until the session idles or hits a limit. */
+class Version2Pool {
+  private readonly stages: Record<string, unknown>[] = [];
+  private dispatched: number;
+  private readonly verifyTried: Set<string>;
+  private readonly verifyOnlyTried: Set<string>;
+  private readonly flights: Flight[] = [];
+  private readonly errors: unknown[] = [];
+  private readonly maxDispatches: number | null;
+
+  constructor(
+    private readonly run: ExecuteRun,
+    limits: LoopLimits,
+  ) {
+    this.maxDispatches = limits.maxDispatches;
+    this.dispatched = limits.alreadyDispatched ?? 0;
+    this.verifyTried = new Set<string>(limits.verifyTriedSeed ?? []);
+    this.verifyOnlyTried = new Set<string>(limits.verifyOnlyTriedSeed ?? []);
+  }
+
+  // Runs one scheduling pass; returns the final result, or null to keep looping.
+  public async pass(): Promise<ExecuteResult | null> {
+    const { workspace, store, sessionId } = this.run;
     cancellationSignal().throwIfCancelled();
-    await observe();
+    await this.observe();
     store.reapOrphanedExecutions(sessionId, 'raise');
     const snapshots = store.executionSnapshots(sessionId);
     const status = store.readSessionStatus(sessionId);
     const sessionStatus = text(status.status);
     if (sessionStatus === 'cancelled') {
-      await Promise.allSettled(flights.map((flight) => flight.promise));
+      await this.settleAll();
       return executeFinal(status, 'cancelled', []);
     }
-    const capped = await settleCeiling();
+    const capped = await this.settleCeiling();
     if (capped) return capped;
-    const baselines = revisionBaselines(status);
     const resumes = blockResumes(workspace, sessionId);
-    const schedule = { sessionStatus, revisionBaselines: baselines, resumes };
+    const schedule = { sessionStatus, revisionBaselines: revisionBaselines(status), resumes };
+    this.startRunnable({ snapshots, status }, schedule);
+    const cappedAfterStart = await this.settleCeiling();
+    if (cappedAfterStart) return cappedAfterStart;
+    if (this.flights.length === 0) return idleResult(this.run, { snapshots, status, stages: this.stages }, schedule);
+    await Promise.race(this.flights.map((flight) => flight.promise));
+    return null;
+  }
+
+  // Starts as many runnable stages as concurrency and the dispatch ceiling allow.
+  private startRunnable(state: PassState, schedule: Schedule): void {
+    const { workspace, workflow, sessionId } = this.run;
+    const { snapshots, status } = state;
+    const room = (this.maxDispatches ?? Number.POSITIVE_INFINITY) - this.dispatched;
+    if (room <= 0) return;
+    const { verifyTried, verifyOnlyTried } = this;
     const schedulable = schedulableStageIds(workflow, snapshots, { ...schedule, verifyTried, verifyOnlyTried });
     const running = runningStageIds(snapshots);
-    const ceiling = maxDispatches === null ? Number.POSITIVE_INFINITY : maxDispatches;
-    const room = ceiling - dispatched;
-    if (room > 0) {
-      const cap = Math.min(concurrency, running.length + room);
-      const starting = runnableNow(workflow, schedulable, { running, concurrency: cap, snapshots });
-      if (sessionStatus === 'blocked' && starting.length > 0) reactivateBlockedSession(workspace, sessionId, status);
-      for (const stageId of starting) startStage(stageId, status, snapshots);
-    }
-    const cappedAfterStart = await settleCeiling();
-    if (cappedAfterStart) return cappedAfterStart;
-    if (flights.length === 0) {
-      const reason = version2IdleReason(workflow, snapshots, schedule);
-      if (reason === 'no eligible stage') throw new ConfigurationError('no eligible stage');
-      return executeFinal(status, reason, stages);
-    }
-    await Promise.race(flights.map((flight) => flight.promise));
+    const cap = Math.min(workflow.concurrency ?? 1, running.length + room);
+    const starting = runnableNow(workflow, schedulable, { running, concurrency: cap, snapshots });
+    if (schedule.sessionStatus === 'blocked' && starting.length > 0) reactivateBlockedSession(workspace, sessionId, status);
+    for (const stageId of starting) this.startStage(stageId, state);
+  }
+
+  private startStage(stageId: string, state: PassState): void {
+    const { sessionId, tasks } = this.run;
+    const { status, snapshots } = state;
+    const flight: Flight = { promise: Promise.resolve(), settled: false };
+    flight.promise = trackDispatch(sessionId, tasks, (note) =>
+      dispatchExecuteStage(this.run, { stageId, status, snapshots }, note),
+    )
+      .then((stage) => {
+        this.stages.push(stage);
+        if (stage.failure_reason === VERIFY_EXHAUSTED) this.verifyTried.add(stageId);
+        if (stage.failure_reason === VERIFY_FAILED) this.verifyOnlyTried.add(stageId);
+      })
+      .catch((error: unknown) => {
+        this.errors.push(error);
+      })
+      .finally(() => {
+        flight.settled = true;
+      });
+    this.flights.push(flight);
+    this.dispatched += 1;
+  }
+
+  private observe(): Promise<void> {
+    return observeFlights(this.flights, this.errors);
+  }
+
+  private async settleAll(): Promise<void> {
+    await Promise.allSettled(this.flights.map((flight) => flight.promise));
+  }
+
+  private async settleCeiling(): Promise<ExecuteResult | null> {
+    if (this.maxDispatches === null || this.dispatched < this.maxDispatches) return null;
+    await this.settleAll();
+    await this.observe();
+    const { verifyTried, verifyOnlyTried } = this;
+    return dispatchLimitResult(this.run, { verifyTried, verifyOnlyTried }, this.stages);
   }
 }
 

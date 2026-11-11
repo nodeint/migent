@@ -74,47 +74,60 @@ export function sessionStatusFromExecutions(
 ): string {
   const latest = latestPerStage(executions);
   if (latest.some((execution) => execution.status === 'running')) return 'active';
-  let cancelled = false;
-  let stopped: 'blocked' | 'question' | null = null;
-  let completed = false;
-  for (const execution of latest) {
-    const status = sessionStatusForExecution({
-      executionStatus: execution.status,
-      outcome: execution.outcome,
-      previousStatus,
-      workflow,
-      stageId: execution.stageId,
-    });
-    if (status === 'blocked' || status === 'question') {
-      if (workflow !== null && isWorkflowV2(workflow)) {
-        const snapshots = snapshotsFromStatus(executions);
-        const startable = readyOutsideStoppedBranches(workflow, snapshots, {
-          sessionStatus: 'active',
-          revisionBaselines: revisionBaselinesFrom(previousStatus),
-        }).filter((stageId) => {
-          const row = latest.find((execution) => execution.stageId === stageId);
-          // A failed stage stays stopped until continue writes `from: failed` for that execution.
-          return row === undefined || (row.status !== 'cancelled' && row.status !== 'failed');
-        });
-        if (startable.length > 0) return 'active';
-      }
-      if (status === 'blocked' || stopped === null) stopped = status;
-    }
-    if (status === 'cancelled') cancelled = true;
-    else if (status === 'completed') completed = true;
+  const statuses = latest.map((execution) => sessionStatusForExecution({
+    executionStatus: execution.status,
+    outcome: execution.outcome,
+    previousStatus,
+    workflow,
+    stageId: execution.stageId,
+  }));
+  const stopped = stoppedStatus(statuses);
+  if (stopped !== null) {
+    return hasStartableOutsideStops({ executions, latest }, previousStatus, workflow) ? 'active' : stopped;
   }
-  if (stopped !== null) return stopped;
-  if (cancelled) return 'cancelled';
+  if (statuses.includes('cancelled')) return 'cancelled';
   if (workflow !== null && isWorkflowV2(workflow)) {
-    const snapshots = snapshotsFromStatus(executions);
-    const sessionStatus = typeof previousStatus.status === 'string' ? previousStatus.status : 'active';
-    // Quiescence, not one stage's decision. A missing output keeps the session active.
-    if (!version2GraphQuiet(workflow, snapshots, sessionStatus)) return 'active';
-    if (missingOutputNames(workflow, snapshots).length > 0) return 'active';
-    return 'completed';
+    return version2CompletionStatus(executions, previousStatus, workflow);
   }
-  if (completed) return 'completed';
-  return 'active';
+  return statuses.includes('completed') ? 'completed' : 'active';
+}
+
+/** Blocked wins over question; null when no stage stopped. */
+function stoppedStatus(statuses: readonly string[]): 'blocked' | 'question' | null {
+  if (statuses.includes('blocked')) return 'blocked';
+  return statuses.includes('question') ? 'question' : null;
+}
+
+/** Version 2: a stop does not hold the session while another branch can still start. */
+function hasStartableOutsideStops(
+  rows: { executions: readonly StatusExecution[]; latest: readonly StatusExecution[] },
+  previousStatus: Readonly<Record<string, unknown>>,
+  workflow: WorkflowDocument | null,
+): boolean {
+  const { executions, latest } = rows;
+  if (workflow === null || !isWorkflowV2(workflow)) return false;
+  const snapshots = snapshotsFromStatus(executions);
+  return readyOutsideStoppedBranches(workflow, snapshots, {
+    sessionStatus: 'active',
+    revisionBaselines: revisionBaselinesFrom(previousStatus),
+  }).some((stageId) => {
+    const row = latest.find((execution) => execution.stageId === stageId);
+    // A failed stage stays stopped until continue writes `from: failed` for that execution.
+    return row === undefined || (row.status !== 'cancelled' && row.status !== 'failed');
+  });
+}
+
+function version2CompletionStatus(
+  executions: readonly StatusExecution[],
+  previousStatus: Readonly<Record<string, unknown>>,
+  workflow: WorkflowDocument,
+): string {
+  const snapshots = snapshotsFromStatus(executions);
+  const sessionStatus = typeof previousStatus.status === 'string' ? previousStatus.status : 'active';
+  // Quiescence, not one stage's decision. A missing output keeps the session active.
+  if (!version2GraphQuiet(workflow, snapshots, sessionStatus)) return 'active';
+  if (missingOutputNames(workflow, snapshots).length > 0) return 'active';
+  return 'completed';
 }
 
 /** Latest blocked execution of each stage, lowest execution order first. */
@@ -240,23 +253,30 @@ export function terminalFields(
   terminal: TerminalContext,
 ): Record<string, unknown> {
   const { source, reason, blocked = [] } = terminal;
-  const fields: Record<string, unknown> = {};
-  if (sessionStatus !== 'blocked' && sessionStatus !== 'completed' && sessionStatus !== 'cancelled') return fields;
+  if (!TERMINAL_FIELD_STATUSES.has(sessionStatus)) return {};
   const fallbackRows = source ? [source] : [];
   const rows = blocked.length > 0 ? blocked : fallbackRows;
-  if (rows.length === 0) {
-    if (sessionStatus === 'blocked' && reason) fields.blocker = reason;
-    return fields;
-  }
   const [first] = rows;
-  fields.terminal_execution_id = source?.executionId ?? first.executionId;
-  if (sessionStatus === 'blocked') {
-    fields.blocked_by_execution_id = first.executionId;
-    fields.blocked_by_execution_ids = rows.map((row) => row.executionId);
-    fields.blocked_by_stage_id = first.stageId;
-    const blocker = first.blocker || source?.blocker || reason;
-    if (blocker) fields.blocker = blocker;
-  }
+  if (first === undefined) return sessionStatus === 'blocked' && reason ? { blocker: reason } : {};
+  const fields: Record<string, unknown> = { terminal_execution_id: source?.executionId ?? first.executionId };
+  if (sessionStatus === 'blocked') Object.assign(fields, blockedFields(rows, first, source?.blocker || reason));
+  return fields;
+}
+
+const TERMINAL_FIELD_STATUSES = new Set(['blocked', 'completed', 'cancelled']);
+
+function blockedFields(
+  rows: readonly TerminalSource[],
+  first: TerminalSource,
+  fallbackBlocker: string | null | undefined,
+): Record<string, unknown> {
+  const fields: Record<string, unknown> = {
+    blocked_by_execution_id: first.executionId,
+    blocked_by_execution_ids: rows.map((row) => row.executionId),
+    blocked_by_stage_id: first.stageId,
+  };
+  const blocker = first.blocker || fallbackBlocker;
+  if (blocker) fields.blocker = blocker;
   return fields;
 }
 

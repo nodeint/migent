@@ -4,7 +4,7 @@ import { EXIT_CATALOG, exitCode } from '@nodeint/migent-contracts';
 import type { ExecutionSnapshot, ScheduleState } from '@nodeint/migent-kernel';
 import { ConfigurationError, NextStage, nextStage, NextStageError, Stop } from '@nodeint/migent-kernel';
 import { readParsedEvents } from '@nodeint/migent-session';
-import type { WorkflowDocument } from '@nodeint/migent-workflow';
+import { isRecord, type WorkflowDocument } from '@nodeint/migent-workflow';
 
 /** Stop reason to exit code, derived from the contracts exit catalog. `stage` ends a one-stage run cleanly. */
 export const EXECUTE_EXIT_CODES: Record<string, number> = {
@@ -71,4 +71,29 @@ export function blockResumes(
     executionId: event.executionId,
     data: event.data,
   }));
+}
+
+export function executeFinal(
+  status: Record<string, unknown>,
+  stopReason: string,
+  stages: Record<string, unknown>[],
+): ExecuteResult {
+  return {
+    code: EXECUTE_EXIT_CODES[stopReason] ?? exitCode('config'),
+    status: text(status.status),
+    stopReason,
+    sessionId: text(status.session_id),
+    latestDecision: optionalText(status.latest_decision),
+    latestExecutionId: optionalText(status.latest_execution_id),
+    outputs: isRecord(status.outputs) ? status.outputs : {},
+    stages,
+  };
+}
+
+export function optionalText(value: unknown): string | null {
+  return typeof value === 'string' && value ? value : null;
+}
+
+export function text(value: unknown): string {
+  return typeof value === 'string' ? value : '';
 }

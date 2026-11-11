@@ -98,15 +98,20 @@ function runningScriptPath(): string {
   }
 }
 
-export async function runUpdate(options: UpdateOptions = {}): Promise<number> {
-  const current = options.current ?? PACKAGE_VERSION;
-  let latest: string;
+/** The latest published version, or null after reporting why it could not be fetched. */
+async function latestVersion(): Promise<string | null> {
   try {
-    latest = await (updateHooks.fetchLatest ?? fetchLatestVersion)();
+    return await (updateHooks.fetchLatest ?? fetchLatestVersion)();
   } catch (error) {
     printError(`Could not check the latest version: ${error instanceof Error ? error.message : String(error)}`);
-    return 1;
+    return null;
   }
+}
+
+export async function runUpdate(options: UpdateOptions = {}): Promise<number> {
+  const current = options.current ?? PACKAGE_VERSION;
+  const latest = await latestVersion();
+  if (latest === null) return 1;
   const outdated = compareVersions(current, latest) < 0;
   const manager = detectPackageManager(options.installPath ?? runningScriptPath());
   const command = manager === null ? upgradeCommand('npm') : upgradeCommand(manager);
@@ -134,6 +139,16 @@ export async function runUpdate(options: UpdateOptions = {}): Promise<number> {
     );
     return 0;
   }
+  return installUpdate(options, { base, command });
+}
+
+function installUpdate(
+  options: UpdateOptions,
+  plan: { base: { current: string; latest: string; update_available: boolean }; command: string[] },
+): number {
+  const { base, command } = plan;
+  const { current, latest } = base;
+  const commandText = command.join(' ');
   if (options.asJson !== true) process.stdout.write(`Updating Migent ${current} -> ${latest}\n  ${commandText}\n`);
   const code = (updateHooks.run ?? defaultRun)(command);
   if (code !== 0) {

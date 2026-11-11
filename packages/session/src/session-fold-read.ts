@@ -12,6 +12,24 @@ import { asInt, identityText, textOr } from './session-fold-util.js';
 import { loadFrozenWorkflow } from './session-freeze.js';
 import { readTitleRecord } from './session-title.js';
 
+/** One execution.json: null when unreadable, a ConfigurationError when not a JSON object. */
+function readExecutionRecord(filePath: string): Record<string, unknown> | null {
+  let text: string;
+  try {
+    text = readFileSync(filePath, 'utf8');
+  } catch {
+    return null;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text) as unknown;
+  } catch {
+    throw new ConfigurationError(`Execution file is corrupt: ${filePath}.`);
+  }
+  if (!isRecord(parsed)) throw new ConfigurationError(`Execution file is corrupt: ${filePath}.`);
+  return parsed;
+}
+
 export function readExecutions(sessionDirectory: string): FoldExecution[] {
   const directory = path.join(sessionDirectory, EXECUTIONS_DIRNAME);
   let entries;
@@ -24,20 +42,8 @@ export function readExecutions(sessionDirectory: string): FoldExecution[] {
   const clientOf = executionClientReader(sessionDirectory);
   for (const entry of entries) {
     if (!entry.isDirectory() || isAtomicTempName(entry.name)) continue;
-    const filePath = path.join(directory, entry.name, 'execution.json');
-    let text: string;
-    try {
-      text = readFileSync(filePath, 'utf8');
-    } catch {
-      continue;
-    }
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(text) as unknown;
-    } catch {
-      throw new ConfigurationError(`Execution file is corrupt: ${filePath}.`);
-    }
-    if (!isRecord(parsed)) throw new ConfigurationError(`Execution file is corrupt: ${filePath}.`);
+    const parsed = readExecutionRecord(path.join(directory, entry.name, 'execution.json'));
+    if (parsed === null) continue;
     executions.push(
       executionFromRecord(
         sessionDirectory,
@@ -96,6 +102,19 @@ export function listOutputFiles(sessionDirectory: string): string[] {
   return names;
 }
 
+/** The workflow at the recorded path; null when it is absent, unreadable, or invalid. */
+function loadRecordedWorkflowPath(workspace: string, workflowPath: unknown): WorkflowDocument | null {
+  if (typeof workflowPath !== 'string' || !workflowPath) return null;
+  const filePath = path.isAbsolute(workflowPath) ? workflowPath : path.join(workspace, workflowPath);
+  if (!isReadableFile(filePath)) return null;
+  try {
+    return loadWorkflowDocument(filePath);
+  } catch (error) {
+    if (!(error instanceof ConfigurationError)) throw error;
+    return null;
+  }
+}
+
 export function loadSessionWorkflow(
   workspace: string,
   sessionDirectory: string,
@@ -104,17 +123,8 @@ export function loadSessionWorkflow(
   if (status.workflow_id === 'agent') return null;
   const frozen = loadFrozenWorkflow(sessionDirectory);
   if (frozen) return frozen;
-  const workflowPath = status.workflow_path;
-  if (typeof workflowPath === 'string' && workflowPath) {
-    const filePath = path.isAbsolute(workflowPath) ? workflowPath : path.join(workspace, workflowPath);
-    if (isReadableFile(filePath)) {
-      try {
-        return loadWorkflowDocument(filePath);
-      } catch (error) {
-        if (!(error instanceof ConfigurationError)) throw error;
-      }
-    }
-  }
+  const fromPath = loadRecordedWorkflowPath(workspace, status.workflow_path);
+  if (fromPath !== null) return fromPath;
   const workflowId = status.workflow_id;
   if (typeof workflowId !== 'string' || workflowId === '') return null;
   try {

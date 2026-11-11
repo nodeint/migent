@@ -110,96 +110,145 @@ function syncChangedStages(patch: TextPatch, change: Change): void {
   }
 }
 
-/** Where the stage's block `options:` mapping, its entries and its `thinking` line sit, as absolute lines. */
-function scanStageOptions(
-  content: readonly [number, LineInfo][],
-  layout: { start: number; siblingIndent: number },
-): {
+interface StageOptionsScan {
   optionsAt: number | null;
   optionIndent: number | null;
   optionLines: Map<string, number>;
   thinkingAt: number | null;
-} {
+}
+
+/** Where the stage's block `options:` mapping, its entries and its `thinking` line sit, as absolute lines. */
+function scanStageOptions(
+  content: readonly [number, LineInfo][],
+  layout: { start: number; siblingIndent: number },
+): StageOptionsScan {
   const { start, siblingIndent } = layout;
-  let optionsAt: number | null = null;
-  let optionIndent: number | null = null;
-  let inOptions = false;
+  const optionsAt = siblingLineWith(content, layout, (item) => item.key === 'options' && item.rest === '');
+  const thinkingAt = siblingLineWith(content, layout, (item) => item.key === 'thinking' && item.rest !== '');
   const optionLines = new Map<string, number>();
-  let thinkingAt: number | null = null;
+  if (optionsAt === null) return { optionsAt, optionIndent: null, optionLines, thinkingAt };
+  let optionIndent: number | null = null;
   for (const [index, item] of content) {
-    if (inOptions && item.indent <= siblingIndent) inOptions = false;
-    if (inOptions && item.key !== null && item.rest !== '') {
-      if (optionIndent === null) optionIndent = item.indent;
-      if (item.indent === optionIndent) optionLines.set(item.key, start + index);
-      continue;
-    }
-    if (item.indent !== siblingIndent || item.key === null) continue;
-    if (item.key === 'options' && item.rest === '') {
-      optionsAt = start + index;
-      inOptions = true;
-      continue;
-    }
-    if (item.key === 'thinking' && item.rest !== '') thinkingAt = start + index;
+    if (start + index <= optionsAt) continue;
+    if (item.indent <= siblingIndent) break;
+    if (item.key === null || item.rest === '') continue;
+    optionIndent ??= item.indent;
+    if (item.indent === optionIndent) optionLines.set(item.key, start + index);
   }
   return { optionsAt, optionIndent, optionLines, thinkingAt };
 }
 
-function patchStage(patch: TextPatch, stage: LineSpan, change: Change): void {
-  const { lines, edits } = patch;
-  const { start, end } = stage;
-  const { before, after } = change;
-  const info = lines.slice(start, end).map((line) => lineInfo(line));
-  const content: [number, LineInfo][] = [];
-  for (let index = 0; index < info.length; index += 1) {
-    const item = info[index];
-    if (item !== null) content.push([index, item]);
+/** The last sibling-level line matching the predicate, as an absolute line. */
+function siblingLineWith(
+  content: readonly [number, LineInfo][],
+  layout: { start: number; siblingIndent: number },
+  matches: (item: LineInfo) => boolean,
+): number | null {
+  let found: number | null = null;
+  for (const [index, item] of content) {
+    if (item.indent === layout.siblingIndent && item.key !== null && matches(item)) found = layout.start + index;
   }
-  if (content.length === 0) return;
+  return found;
+}
+
+interface StageContext {
+  readonly patch: TextPatch;
+  readonly span: LineSpan;
+  readonly change: Change;
+  readonly content: [number, LineInfo][];
+  readonly siblingIndent: number;
+}
+
+function stageContent(lines: string[], stage: LineSpan): [number, LineInfo][] {
+  const content: [number, LineInfo][] = [];
+  lines.slice(stage.start, stage.end).forEach((line, index) => {
+    const item = lineInfo(line);
+    if (item !== null) content.push([index, item]);
+  });
+  return content;
+}
+
+function patchStage(patch: TextPatch, stage: LineSpan, change: Change): void {
+  const content = stageContent(patch.lines, stage);
   const [first] = content;
   if (first === undefined) return;
   const firstIndent = first[1].indent;
   const siblingIndent = siblingIndentOf(content, firstIndent);
   const unit = siblingIndent > firstIndent ? siblingIndent - firstIndent : YAML_DEFAULT_INDENT;
-  if (!deepEqual(before.agent, after.agent) && Object.hasOwn(after, 'agent') && !Object.hasOwn(before, 'model')) {
-    const span = nestedKeySpan(lines, { start, end }, 'agent');
-    if (span === null) throw new ConfigEditError('Cannot locate the stage agent to migrate.');
-    const base = lines.slice(span[0], span[1]).map((line) => line.slice(siblingIndent)).join('\n');
-    const result = renderAuthoringYaml({ agent: after.agent }, base);
-    if (!result.preserved) throw new ConfigEditError(`Cannot preserve the stage agent: ${result.reason}.`);
-    edits.push([span[0], span[1], result.text.trimEnd().split('\n').map((line) => `${' '.repeat(siblingIndent)}${line}`)]);
+  const context: StageContext = { patch, span: stage, change, content, siblingIndent };
+  migrateStageAgent(context);
+  migrateStageProduces(context);
+  migrateStageDecision(context);
+  renameStageModelKey(context);
+  dropFlowStageOptions(context);
+  patchStageOptions(context, unit);
+}
+
+function locateStageKey(context: StageContext, key: string): [number, number] {
+  const span = nestedKeySpan(context.patch.lines, context.span, key);
+  if (span === null) throw new ConfigEditError(`Cannot locate the stage ${key} to migrate.`);
+  return span;
+}
+
+function migrateStageAgent(context: StageContext): void {
+  const { patch, change: { before, after }, siblingIndent } = context;
+  if (deepEqual(before.agent, after.agent) || !Object.hasOwn(after, 'agent') || Object.hasOwn(before, 'model')) return;
+  const span = locateStageKey(context, 'agent');
+  const base = patch.lines.slice(span[0], span[1]).map((line) => line.slice(siblingIndent)).join('\n');
+  const result = renderAuthoringYaml({ agent: after.agent }, base);
+  if (!result.preserved) throw new ConfigEditError(`Cannot preserve the stage agent: ${result.reason}.`);
+  patch.edits.push([span[0], span[1], result.text.trimEnd().split('\n').map((line) => `${' '.repeat(siblingIndent)}${line}`)]);
+}
+
+function migrateStageProduces(context: StageContext): void {
+  const { patch, change: { before, after }, siblingIndent } = context;
+  if (!Object.hasOwn(before, 'produces') || Object.hasOwn(after, 'produces')) return;
+  const span = locateStageKey(context, 'produces');
+  const ids = Array.isArray(after.artifacts) ? after.artifacts : [];
+  patch.edits.push([span[0], span[1], ids.length > 0 ? [`${' '.repeat(siblingIndent)}artifacts: [${ids.map((id) => artifactIdScalar(String(id))).join(', ')}]`] : []]);
+}
+
+function migrateStageDecision(context: StageContext): void {
+  const { patch, change: { before, after }, siblingIndent } = context;
+  if (deepEqual(before.decision, after.decision)) return;
+  const span = locateStageKey(context, 'decision');
+  const replacement = Object.hasOwn(after, 'decision')
+    ? renderTopLevel('decision', after.decision).map((line) => `${' '.repeat(siblingIndent)}${line}`)
+    : [];
+  patch.edits.push([span[0], span[1], replacement]);
+}
+
+function siblingKeyLine(context: StageContext, key: string, requireValue: boolean): number | null {
+  for (const [index, item] of context.content) {
+    if (item.indent !== context.siblingIndent || item.key !== key) continue;
+    if (requireValue && item.rest === '') continue;
+    return context.span.start + index;
   }
-  if (Object.hasOwn(before, 'produces') && !Object.hasOwn(after, 'produces')) {
-    const span = nestedKeySpan(lines, { start, end }, 'produces');
-    if (span === null) throw new ConfigEditError('Cannot locate the stage produces to migrate.');
-    const ids = Array.isArray(after.artifacts) ? after.artifacts : [];
-    edits.push([span[0], span[1], ids.length > 0 ? [`${' '.repeat(siblingIndent)}artifacts: [${ids.map((id) => artifactIdScalar(String(id))).join(', ')}]`] : []]);
-  }
-  if (!deepEqual(before.decision, after.decision)) {
-    const span = nestedKeySpan(lines, { start, end }, 'decision');
-    if (span === null) throw new ConfigEditError('Cannot locate the stage decision to migrate.');
-    const replacement = Object.hasOwn(after, 'decision')
-      ? renderTopLevel('decision', after.decision).map((line) => `${' '.repeat(siblingIndent)}${line}`)
-      : [];
-    edits.push([span[0], span[1], replacement]);
-  }
-  if (Object.hasOwn(before, 'model') && Object.hasOwn(after, 'agent') && !Object.hasOwn(after, 'model')) {
-    for (const [index, item] of content) {
-      if (item.indent !== siblingIndent || item.key !== 'model') continue;
-      const text = lines[start + index] ?? '';
-      const match = /^(\s*)(["']?)model\2(\s*:)/.exec(text);
-      if (match !== null) edits.push([start + index, start + index + 1, [`${match[1]}agent${text.slice(match[0].length - match[3].length)}`]]);
-      break;
-    }
-  }
-  if (Object.hasOwn(before, 'options') && !Object.hasOwn(after, 'options')) {
-    for (const [index, item] of content) {
-      if (item.indent !== siblingIndent || item.key !== 'options' || item.rest === '') continue;
-      // A flow-style `options: {..}` has no nested lines to sync; drop the whole entry.
-      edits.push([start + index, optionsEnd(lines, start + index, { siblingIndent, stageEnd: end }), []]);
-      break;
-    }
-  }
-  const { optionsAt, optionIndent, optionLines, thinkingAt } = scanStageOptions(content, { start, siblingIndent });
+  return null;
+}
+
+function renameStageModelKey(context: StageContext): void {
+  const { patch, change: { before, after } } = context;
+  if (!Object.hasOwn(before, 'model') || !Object.hasOwn(after, 'agent') || Object.hasOwn(after, 'model')) return;
+  const at = siblingKeyLine(context, 'model', false);
+  if (at === null) return;
+  const text = patch.lines[at] ?? '';
+  const match = /^(\s*)(["']?)model\2(\s*:)/.exec(text);
+  if (match !== null) patch.edits.push([at, at + 1, [`${match[1]}agent${text.slice(match[0].length - match[3].length)}`]]);
+}
+
+function dropFlowStageOptions(context: StageContext): void {
+  const { patch, change: { before, after }, siblingIndent, span } = context;
+  if (!Object.hasOwn(before, 'options') || Object.hasOwn(after, 'options')) return;
+  // A flow-style `options: {..}` has no nested lines to sync; drop the whole entry.
+  const at = siblingKeyLine(context, 'options', true);
+  if (at !== null) patch.edits.push([at, optionsEnd(patch.lines, at, { siblingIndent, stageEnd: span.end }), []]);
+}
+
+function patchStageOptions(context: StageContext, unit: number): void {
+  const { patch, change: { before, after }, siblingIndent, span } = context;
+  const layout = { start: span.start, siblingIndent };
+  const { optionsAt, optionIndent, optionLines, thinkingAt } = scanStageOptions(context.content, layout);
   const beforeOptions = isRecord(before.options) ? before.options : {};
   const afterOptions = isRecord(after.options) ? after.options : {};
   if (!deepEqual(beforeOptions, afterOptions)) {
@@ -208,11 +257,11 @@ function patchStage(patch: TextPatch, stage: LineSpan, change: Change): void {
       optionsAt,
       optionIndent: optionIndent ?? siblingIndent + unit,
       siblingIndent,
-      stageEnd: end,
+      stageEnd: span.end,
     });
   }
   if (Object.hasOwn(before, 'thinking') && !Object.hasOwn(after, 'thinking') && thinkingAt !== null) {
-    edits.push([thinkingAt, thinkingAt + 1, []]);
+    patch.edits.push([thinkingAt, thinkingAt + 1, []]);
   }
 }
 
@@ -224,51 +273,63 @@ interface OptionsLayout {
   readonly stageEnd: number;
 }
 
+function nonEmptyOptionText(options: Record<string, unknown>): Map<string, string> {
+  const text = new Map<string, string>();
+  for (const [key, value] of Object.entries(options)) {
+    if (typeof value === 'string' && value.trim() !== '') text.set(key, value.trim());
+  }
+  return text;
+}
+
 function syncStageOptions(patch: TextPatch, change: Change, layout: OptionsLayout): void {
   const { lines, edits } = patch;
-  const { before, after } = change;
-  const { optionLines, optionsAt, optionIndent, siblingIndent, stageEnd } = layout;
-  const afterText = new Map<string, string>();
-  for (const [key, value] of Object.entries(after)) {
-    if (typeof value === 'string' && value.trim() !== '') afterText.set(key, value.trim());
-  }
-  const beforeKeys = new Set(Object.keys(before));
+  const { optionsAt, siblingIndent, stageEnd } = layout;
+  const afterText = nonEmptyOptionText(change.after);
   if (afterText.size === 0) {
     if (optionsAt !== null) edits.push([optionsAt, optionsEnd(lines, optionsAt, { siblingIndent, stageEnd }), []]);
     return;
   }
   if (optionsAt === null) {
-    const indent = ' '.repeat(siblingIndent);
-    const nested = ' '.repeat(optionIndent);
-    const block = [`${indent}options:`];
-    for (const name of sorted(afterText.keys())) block.push(`${nested}${name}: ${yamlScalar(afterText.get(name) ?? '')}`);
-    edits.push([stageEnd, stageEnd, block]);
+    appendOptionsBlock(patch, afterText, layout);
     return;
   }
-  const afterNames = new Set(afterText.keys());
-  for (const name of sorted([...beforeKeys].filter((key) => !afterNames.has(key)))) {
-    const lineIndex = optionLines.get(name);
-    if (lineIndex !== undefined) edits.push([lineIndex, lineIndex + 1, []]);
+  removeStaleOptions(patch, Object.keys(change.before).filter((key) => !afterText.has(key)), layout);
+  for (const name of sorted(afterText.keys())) upsertOptionLine(patch, [name, afterText.get(name) ?? ''], { ...layout, optionsAt });
+}
+
+function appendOptionsBlock(patch: TextPatch, afterText: Map<string, string>, layout: OptionsLayout): void {
+  const nested = ' '.repeat(layout.optionIndent);
+  const block = [`${' '.repeat(layout.siblingIndent)}options:`];
+  for (const name of sorted(afterText.keys())) block.push(`${nested}${name}: ${yamlScalar(afterText.get(name) ?? '')}`);
+  patch.edits.push([layout.stageEnd, layout.stageEnd, block]);
+}
+
+function removeStaleOptions(patch: TextPatch, stale: string[], layout: OptionsLayout): void {
+  for (const name of sorted(stale)) {
+    const lineIndex = layout.optionLines.get(name);
+    if (lineIndex !== undefined) patch.edits.push([lineIndex, lineIndex + 1, []]);
   }
-  for (const name of sorted(afterText.keys())) {
-    const rendered = `${' '.repeat(optionIndent)}${name}: ${yamlScalar(afterText.get(name) ?? '')}`;
-    const lineIndex = optionLines.get(name);
-    if (lineIndex === undefined) {
-      const insertAt = optionsEnd(lines, optionsAt, { siblingIndent, stageEnd });
-      edits.push([insertAt, insertAt, [rendered]]);
-      continue;
-    }
-    const [current] = splitComment(lines[lineIndex] ?? '');
-    const raw = current.split(':').slice(1).join(':');
-    if (unquote(raw.trim()) !== afterText.get(name)) {
-      const [code, comment] = splitComment(lines[lineIndex] ?? '');
-      const colon = code.indexOf(':');
-      const key = colon < 0 ? code : code.slice(0, colon);
-      let updated = `${key}: ${yamlScalar(afterText.get(name) ?? '')}`;
-      if (comment !== '') updated = `${updated} ${comment}`;
-      edits.push([lineIndex, lineIndex + 1, [updated]]);
-    }
+}
+
+type PlacedOptions = OptionsLayout & { readonly optionsAt: number };
+
+function upsertOptionLine(patch: TextPatch, [name, value]: [string, string], layout: PlacedOptions): void {
+  const { lines, edits } = patch;
+  const { optionsAt } = layout;
+  const lineIndex = layout.optionLines.get(name);
+  if (lineIndex === undefined) {
+    const insertAt = optionsEnd(lines, optionsAt, { siblingIndent: layout.siblingIndent, stageEnd: layout.stageEnd });
+    edits.push([insertAt, insertAt, [`${' '.repeat(layout.optionIndent)}${name}: ${yamlScalar(value)}`]]);
+    return;
   }
+  const [code, comment] = splitComment(lines[lineIndex] ?? '');
+  const raw = code.split(':').slice(1).join(':');
+  if (unquote(raw.trim()) === value) return;
+  const colon = code.indexOf(':');
+  const key = colon < 0 ? code : code.slice(0, colon);
+  let updated = `${key}: ${yamlScalar(value)}`;
+  if (comment !== '') updated = `${updated} ${comment}`;
+  edits.push([lineIndex, lineIndex + 1, [updated]]);
 }
 
 function optionsEnd(lines: string[], optionsAt: number, bounds: { siblingIndent: number; stageEnd: number }): number {
@@ -292,36 +353,60 @@ function siblingIndentOf(content: [number, LineInfo][], firstIndent: number): nu
   return sibling === null ? firstIndent : sibling;
 }
 
+interface StageCursor {
+  readonly listIndent: number | null;
+  readonly start: number | null;
+  readonly stageId: string | null;
+}
+
+function stagesHeaderIndex(lines: string[]): number | null {
+  for (let index = 0; index < lines.length; index += 1) {
+    const item = lineInfo(lines[index] ?? '');
+    if (item !== null && item.indent === 0 && item.key === 'stages' && item.rest === '') return index;
+  }
+  return null;
+}
+
+function closeStage(spans: [string, number, number][], cursor: StageCursor, end: number): void {
+  if (cursor.start !== null && cursor.stageId !== null) spans.push([cursor.stageId, cursor.start, end]);
+}
+
+function isListItem(text: string): boolean {
+  return text.startsWith('- ') || text === '-';
+}
+
+/** Advances the cursor over one line; a new list item at the stage indent opens a stage. */
+function advanceStage(cursor: StageCursor, item: LineInfo, text: string): { cursor: StageCursor; opened: boolean } {
+  const listIndent = cursor.listIndent ?? (isListItem(text) ? item.indent : null);
+  if (listIndent !== null && item.indent === listIndent && isListItem(text)) {
+    return { cursor: { listIndent, start: -1, stageId: idOnDash(text) }, opened: true };
+  }
+  const named = cursor.start !== null && cursor.stageId === null && item.key === 'id' && item.rest !== '';
+  return { cursor: { ...cursor, listIndent, stageId: named ? unquote(item.rest) : cursor.stageId }, opened: false };
+}
+
 function stageSpans(lines: string[]): [string, number, number][] {
   const spans: [string, number, number][] = [];
-  let inStages = false;
-  let listIndent: number | null = null;
-  let start: number | null = null;
-  let stageId: string | null = null;
-  for (let index = 0; index < lines.length; index += 1) {
+  let cursor: StageCursor = { listIndent: null, start: null, stageId: null };
+  const header = stagesHeaderIndex(lines);
+  if (header === null) return spans;
+  for (let index = header + 1; index < lines.length; index += 1) {
     const line = lines[index] ?? '';
     const item = lineInfo(line);
     if (item === null) continue;
-    if (!inStages) {
-      if (item.indent === 0 && item.key === 'stages' && item.rest === '') inStages = true;
-      continue;
-    }
     if (item.indent === 0) {
-      if (start !== null && stageId !== null) spans.push([stageId, start, index]);
-      start = null;
-      break;
+      closeStage(spans, cursor, index);
+      return spans;
     }
-    const text = codeOf(line);
-    if (listIndent === null && (text.startsWith('- ') || text === '-')) listIndent = item.indent;
-    if (listIndent !== null && item.indent === listIndent && (text.startsWith('- ') || text === '-')) {
-      if (start !== null && stageId !== null) spans.push([stageId, start, index]);
-      start = index;
-      stageId = idOnDash(text);
-      continue;
+    const next = advanceStage(cursor, item, codeOf(line));
+    if (next.opened) {
+      closeStage(spans, cursor, index);
+      cursor = { ...next.cursor, start: index };
+    } else {
+      cursor = next.cursor;
     }
-    if (start !== null && stageId === null && item.key === 'id' && item.rest !== '') stageId = unquote(item.rest);
   }
-  if (start !== null && stageId !== null) spans.push([stageId, start, lines.length]);
+  closeStage(spans, cursor, lines.length);
   return spans;
 }
 
@@ -404,26 +489,35 @@ function syncDocumentShape(patch: TextPatch, change: Change): void {
   }
   for (const [key, span] of spans) {
     if (key === 'stages' || !Object.hasOwn(after, key)) continue;
-    const previous = before[key];
-    const next = after[key];
-    if (key === 'downstream' && !deepEqual(previous, next)) {
-      edits.push([span.start, span.end, renderTopLevel(key, next)]);
-      continue;
-    }
-    if (!isRecord(previous) || !isRecord(next)) continue;
-    const removed = Object.keys(previous).filter((nested) => !Object.hasOwn(next, nested));
-    if (removed.length === 0) continue;
-    const header = lineInfo(lines[span.start] ?? '');
-    const flow = header !== null && (header.rest.startsWith('{') || header.rest.startsWith('['));
-    // A flow value has no nested key line. Rewrite the parent from the migrated mapping.
-    if (flow || removed.some((nested) => nestedKeySpan(lines, span, nested) === null)) {
-      edits.push([span.start, span.end, renderTopLevel(key, next)]);
-      continue;
-    }
-    for (const nested of removed) {
-      const range = nestedKeySpan(lines, span, nested);
-      if (range !== null) edits.push([range[0], range[1], []]);
-    }
+    syncTopLevelEntry(patch, { key, span }, { before: before[key], after: after[key] });
+  }
+}
+
+function syncTopLevelEntry(
+  patch: TextPatch,
+  entry: { key: string; span: LineSpan },
+  values: { before: unknown; after: unknown },
+): void {
+  const { lines, edits } = patch;
+  const { key, span } = entry;
+  const { before: previous, after: next } = values;
+  if (key === 'downstream' && !deepEqual(previous, next)) {
+    edits.push([span.start, span.end, renderTopLevel(key, next)]);
+    return;
+  }
+  if (!isRecord(previous) || !isRecord(next)) return;
+  const removed = Object.keys(previous).filter((nested) => !Object.hasOwn(next, nested));
+  if (removed.length === 0) return;
+  const header = lineInfo(lines[span.start] ?? '');
+  const flow = header !== null && (header.rest.startsWith('{') || header.rest.startsWith('['));
+  // A flow value has no nested key line. Rewrite the parent from the migrated mapping.
+  if (flow || removed.some((nested) => nestedKeySpan(lines, span, nested) === null)) {
+    edits.push([span.start, span.end, renderTopLevel(key, next)]);
+    return;
+  }
+  for (const nested of removed) {
+    const range = nestedKeySpan(lines, span, nested);
+    if (range !== null) edits.push([range[0], range[1], []]);
   }
 }
 

@@ -75,17 +75,14 @@ export function renderAuthoringYaml(mapping: Record<string, unknown>, base?: str
   // Tier 1: the base already holds this data, so its bytes are the output.
   if (deepEqual(data, mapping)) return { text: base, preserved: true };
 
-  let doc: Document.Parsed;
-  try {
-    doc = parseDocument(base);
-  } catch {
-    return { text: canonical, preserved: false, reason: 'the base could not be read as YAML' };
-  }
-  const unsupported = unsupportedBaseReason(doc);
-  if (unsupported !== null) return { text: canonical, preserved: false, reason: unsupported };
-  if (!isMap(doc.contents)) {
-    return { text: canonical, preserved: false, reason: 'the base is not a mapping' };
-  }
+  return reconcileBase(base, mapping, canonical);
+}
+
+/** Tier 2: reconcile the draft into the base's syntax tree, trusting it only when the data round-trips. */
+function reconcileBase(base: string, mapping: Record<string, unknown>, canonical: string): AuthoringRender {
+  const tree = parseBaseTree(base);
+  if (typeof tree === 'string') return { text: canonical, preserved: false, reason: tree };
+  const doc = tree;
   let text: string;
   try {
     reconcileMap(doc, doc.contents, mapping);
@@ -102,6 +99,19 @@ export function renderAuthoringYaml(mapping: Record<string, unknown>, base?: str
     return { text: canonical, preserved: false, reason: 'updating the base in place produced invalid YAML' };
   }
   return { text, preserved: true };
+}
+
+function parseBaseTree(base: string): Document.Parsed & { contents: YAMLMap } | string {
+  let doc: Document.Parsed;
+  try {
+    doc = parseDocument(base);
+  } catch {
+    return 'the base could not be read as YAML';
+  }
+  const unsupported = unsupportedBaseReason(doc);
+  if (unsupported !== null) return unsupported;
+  if (!isMap(doc.contents)) return 'the base is not a mapping';
+  return doc as Document.Parsed & { contents: YAMLMap };
 }
 
 /** Order-insensitive for mappings (YAML keys are a set), ordered for lists. */

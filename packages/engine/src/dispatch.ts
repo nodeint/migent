@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { exitCode } from '@nodeint/migent-contracts';
 import type { ClientRegistry, ExecutionSnapshot } from '@nodeint/migent-kernel';
 import { loadRoleResponsibilities, loadWorkspaceConfig, resolveStageTarget, type StageTarget } from '@nodeint/migent-kernel';
 import { ConfigurationError } from '@nodeint/migent-kernel';
@@ -21,18 +20,19 @@ import { frozenRoleInstructions, frozenStageTarget, readWorkflowFreeze } from '@
 import { commitFoldedStatus, parseExecutionId } from '@nodeint/migent-session';
 import { freezeSessionTask } from '@nodeint/migent-session';
 import { bindPriorSessionId, createWorkflowSession } from '@nodeint/migent-session';
-import { SessionStore,stringOptions } from '@nodeint/migent-session';
+import { SessionStore, stringOptions } from '@nodeint/migent-session';
 import { isRecord } from '@nodeint/migent-workflow';
 import { isRoleStage, loadNamedWorkflow, type RoleStageSpec, type StageSpec, type WorkflowDocument } from '@nodeint/migent-workflow';
 
 import { AgentToolRunner, type RunResult } from './agent-runner.js';
-import { EXECUTE_EXIT_CODES, type ExecuteResult, PendingStageReply } from './execute-state.js';
-import { ensureSessionBaseline, evaluateRunWhen } from './run-when.js';
+import { PendingStageReply } from './execute-state.js';
+import { ensureSessionBaseline } from './run-when.js';
+import { skipUnlessRunWhenMatches } from './run-when-skip.js';
 import { roleStartLine, stageFinishLine } from './stage-lines.js';
 import { runVerifyOnlyStage } from './verify-only.js';
 
 export { EXECUTE_EXIT_CODES, type ExecuteResult, PendingStageReply, TERMINAL_SESSION_STATUSES } from './execute-state.js';
-export { blockResumes, selectedStage } from './execute-state.js';
+export { blockResumes, executeFinal, optionalText, selectedStage, text } from './execute-state.js';
 export { roleStartLine, stageFinishLine } from './stage-lines.js';
 
 export interface StageDispatchRequest {
@@ -132,43 +132,11 @@ export async function dispatchNamedStage(
   request: StageDispatchRequest,
   run: NamedStageRun,
 ): Promise<StageDispatchResult> {
-  const { runner, resolved, onExecution } = run;
-  const activeRunner = runner;
-  const {registry} = activeRunner;
-  let loaded = resolved ?? loadDispatchTarget(workspace, request, registry);
-  let {workflow} = loaded;
-  let {target} = loaded;
-  let sessionId = request.sessionId ?? null;
-  if (sessionId === null) {
-    sessionId = createWorkflowSession(
-      workspace,
-      workflow.id,
-      { task: request.task, priorSessionId: request.priorSessionId, resolveClient: registry },
-    );
-    if (!resolved) {
-      loaded = loadDispatchTarget(workspace, { ...request, sessionId }, registry);
-      workflow = loaded.workflow;
-      target = loaded.target;
-    }
-  } else {
-    bindPriorSessionId(workspace, sessionId, request.priorSessionId);
-  }
+  const { runner, onExecution } = run;
+  const { sessionId, workflow, target } = resolveDispatchSession(workspace, request, run);
   assertStageDispatchable(workspace, workflow, { sessionId, stageId: request.stageId });
-  const snapshots = new SessionStore(workspace).executionSnapshots(sessionId);
-  const stage = workflow.stages[request.stageId];
-  const ownAgent = stageAgentExecution(snapshots, request.stageId);
-  const question = snapshots.find((row) => row.executionId === ownAgent && row.outcomeStatus === 'question');
-  // A reply to a stopped turn continues that turn's own conversation, even for a resume_from stage.
-  const interrupted = snapshots.find((row) => row.executionId === ownAgent && row.status === 'cancelled');
-  let resumeExecutionId;
-  if (question) resumeExecutionId = question.executionId;
-  else if (interrupted) resumeExecutionId = interrupted.executionId;
-  else if (stage?.resumeFrom) {
-    resumeExecutionId = verifyExhaustedExecution(snapshots, request.stageId)?.executionId ??
-      revisionResumeExecution(workflow, snapshots, request.stageId) ??
-      resolveResumeExecution(workspace, workflow, { sessionId, stageId: request.stageId });
-  } else resumeExecutionId = ownAgent;
-  const result = await activeRunner.run({
+  const resumeExecutionId = dispatchResumeExecution(workspace, workflow, { sessionId, stageId: request.stageId });
+  const result = await runner.run({
     client: target.client,
     model: target.model,
     options: { ...target.options },
@@ -183,6 +151,47 @@ export async function dispatchNamedStage(
     onExecution,
   });
   return resultFromRun(result, sessionId);
+}
+
+// Creates the session when the request names none, and loads the workflow and target it runs under.
+function resolveDispatchSession(
+  workspace: string,
+  request: StageDispatchRequest,
+  run: NamedStageRun,
+): { sessionId: string; workflow: WorkflowDocument; target: StageTarget } {
+  const { registry } = run.runner;
+  const loaded = run.resolved ?? loadDispatchTarget(workspace, request, registry);
+  if (request.sessionId !== undefined && request.sessionId !== null) {
+    bindPriorSessionId(workspace, request.sessionId, request.priorSessionId);
+    return { sessionId: request.sessionId, ...loaded };
+  }
+  const sessionId = createWorkflowSession(
+    workspace,
+    loaded.workflow.id,
+    { task: request.task, priorSessionId: request.priorSessionId, resolveClient: registry },
+  );
+  const reloaded = run.resolved ? loaded : loadDispatchTarget(workspace, { ...request, sessionId }, registry);
+  return { sessionId, workflow: reloaded.workflow, target: reloaded.target };
+}
+
+// The execution whose conversation a dispatched stage continues, if any.
+function dispatchResumeExecution(
+  workspace: string,
+  workflow: WorkflowDocument,
+  target: { sessionId: string; stageId: string },
+): string | null | undefined {
+  const { stageId } = target;
+  const snapshots = new SessionStore(workspace).executionSnapshots(target.sessionId);
+  const ownAgent = stageAgentExecution(snapshots, stageId);
+  const question = snapshots.find((row) => row.executionId === ownAgent && row.outcomeStatus === 'question');
+  if (question) return question.executionId;
+  // A reply to a stopped turn continues that turn's own conversation, even for a resume_from stage.
+  const interrupted = snapshots.find((row) => row.executionId === ownAgent && row.status === 'cancelled');
+  if (interrupted) return interrupted.executionId;
+  if (!workflow.stages[stageId]?.resumeFrom) return ownAgent;
+  return verifyExhaustedExecution(snapshots, stageId)?.executionId ??
+    revisionResumeExecution(workflow, snapshots, stageId) ??
+    resolveResumeExecution(workspace, workflow, target);
 }
 
 export function assertStageDispatchable(
@@ -304,8 +313,7 @@ export async function dispatchExecuteStage(
   if (!isRoleStage(stageSpec)) {
     return dispatchVerifyOnly({ workspace, sessionId, runner }, { stageId, stageSpec }, onExecution);
   }
-  const sessionDirectory = path.join(workspace, '.migent', 'sessions', sessionId);
-  const freeze = readWorkflowFreeze(sessionDirectory);
+  const freeze = readWorkflowFreeze(path.join(workspace, '.migent', 'sessions', sessionId));
   const target = freeze
     ? frozenStageTarget(freeze, stageId)
     : resolveStageTarget(workspace, { workflowId, stageId }, { registry: runner.registry });
@@ -313,34 +321,11 @@ export async function dispatchExecuteStage(
     Object.entries(target.options)
       .map(([key, value]) => `${key}: ${value}`)
       .join(', ') || 'default';
-  const priorSessionId = storedPriorSessionId(status);
-  const frozen = freezeSessionTask(workspace, sessionId);
-  const exhausted = verifyExhaustedExecution(snapshots, stageId);
-  const roleInstructions = freeze
-    ? frozenRoleInstructions(freeze, stageSpec.role)
-    : loadRoleResponsibilities(loadWorkspaceConfig(workspace), stageSpec.role);
-  const promptInput = {
-    workflow,
-    stageId,
-    taskFile: frozen.taskFile,
-    sessionDirectory: frozen.sessionDirectory,
-    snapshots,
-    workspace,
-    priorSessionId,
-    priorOutputs: priorSessionOutputs(workspace, priorSessionId, sessionId),
-    roleInstructions,
-  };
-  const { turn, prompt } = selectStageTurn(
+  const { turn, prompt } = buildRoleStageTurn(
     { workspace, workflow, sessionId, stageId, stageSpec, snapshots },
-    { stageReply: reply?.take(stageId) ?? null, exhausted, frozen, promptInput },
+    { status, freeze, reply },
   );
-  const request: StageDispatchRequest = {
-    workflowId,
-    stageId,
-    prompt,
-    turn,
-    sessionId,
-  };
+  const request: StageDispatchRequest = { workflowId, stageId, prompt, turn, sessionId };
   let loggedStart = false;
   const result: StageDispatchResult = await dispatchNamedStage(workspace, request, {
     runner,
@@ -360,6 +345,41 @@ export async function dispatchExecuteStage(
   });
   logRoleStageFinish({ workspace, sessionId }, stageId, result);
   return result.toJson();
+}
+
+// Gathers the prompt inputs for a role stage and picks its turn kind and prompt.
+function buildRoleStageTurn(
+  stage: Parameters<typeof selectStageTurn>[0],
+  inputs: {
+    status: Record<string, unknown>;
+    freeze: ReturnType<typeof readWorkflowFreeze>;
+    reply: PendingStageReply | null;
+  },
+): { turn: TurnKind; prompt: string } {
+  const { workspace, workflow, sessionId, stageId, stageSpec, snapshots } = stage;
+  const { status, freeze, reply } = inputs;
+  const priorSessionId = storedPriorSessionId(status);
+  const frozen = freezeSessionTask(workspace, sessionId);
+  const roleInstructions = freeze
+    ? frozenRoleInstructions(freeze, stageSpec.role)
+    : loadRoleResponsibilities(loadWorkspaceConfig(workspace), stageSpec.role);
+  const promptInput = {
+    workflow,
+    stageId,
+    taskFile: frozen.taskFile,
+    sessionDirectory: frozen.sessionDirectory,
+    snapshots,
+    workspace,
+    priorSessionId,
+    priorOutputs: priorSessionOutputs(workspace, priorSessionId, sessionId),
+    roleInstructions,
+  };
+  return selectStageTurn(stage, {
+    stageReply: reply?.take(stageId) ?? null,
+    exhausted: verifyExhaustedExecution(snapshots, stageId),
+    frozen,
+    promptInput,
+  });
 }
 
 // Logs a role stage's finish line with its outcome, or failed/finished when it has none.
@@ -439,57 +459,6 @@ function selectStageTurn(
   return { turn, prompt: turn === 'continue' ? buildStageResumePrompt(promptInput) : buildStagePrompt(promptInput) };
 }
 
-/** A fresh visit of a run_when stage is evaluated. Retries and resumed blocks already passed the condition. */
-export function skipUnlessRunWhenMatches(
-  run: { workspace: string; sessionId: string; runner: AgentToolRunner },
-  stage: StageSpec,
-  snapshots: readonly ExecutionSnapshot[],
-): Record<string, unknown> | null {
-  const { workspace, sessionId, runner } = run;
-  if ((stage.runWhen === null || stage.runWhen === undefined)) return null;
-  let latest: ExecutionSnapshot | null = null;
-  for (const snapshot of snapshots) {
-    if (snapshot.stageId !== stage.id) continue;
-    if (latest === null || snapshot.executionOrder > latest.executionOrder) latest = snapshot;
-  }
-  const fresh =
-    latest === null ||
-    latest.status === 'skipped' ||
-    (latest.status === 'completed' && latest.outcomeStatus !== 'blocked' && latest.outcomeStatus !== 'question');
-  if (!fresh) return null;
-  const evaluation = evaluateRunWhen(workspace, sessionId, stage);
-  if ('matched' in evaluation) {
-    log(`stage ${stage.id} · run_when matched ${evaluation.matched}.`);
-    return null;
-  }
-  const store = new SessionStore(workspace, undefined, runner.registry);
-  const context = store.recordSkippedExecution(sessionId, stage.id, evaluation.skip);
-  const attempt = parseExecutionId(context.executionId)?.attempt ?? null;
-  log(`stage ${stage.id} · attempt ${attempt ?? 1} · skipped (no changed path matches run_when).`);
-  return {
-    agent_id: null,
-    options: {},
-    session_id: sessionId,
-    execution_id: context.executionId,
-    artifact_directory: context.artifactDirectory,
-    failure_reason: '',
-    failure_kind: '',
-    reset_at: '',
-    client: '',
-    outcome_status: '',
-    outcome_decision: '',
-    session_status: text(store.readSessionStatus(sessionId).status),
-    response: '',
-    execution_status: 'skipped',
-    skip: {
-      reason: evaluation.skip.reason,
-      baseline: evaluation.skip.baseline,
-      patterns: evaluation.skip.patterns,
-      changed_paths: evaluation.skip.changedPaths,
-    },
-  };
-}
-
 /** Execution id of the stage's latest attempt when the human stopped it before it finished. */
 function interruptedExecutionId(snapshots: readonly ExecutionSnapshot[], stageId: string): string | undefined {
   let latest: ExecutionSnapshot | null = null;
@@ -522,29 +491,4 @@ export function priorSessionOutputs(
   }
   const {outputs} = new SessionStore(workspace).readSessionStatus(priorSessionId);
   return isRecord(outputs) ? outputs : {};
-}
-
-export function executeFinal(
-  status: Record<string, unknown>,
-  stopReason: string,
-  stages: Record<string, unknown>[],
-): ExecuteResult {
-  return {
-    code: EXECUTE_EXIT_CODES[stopReason] ?? exitCode('config'),
-    status: text(status.status),
-    stopReason,
-    sessionId: text(status.session_id),
-    latestDecision: optionalText(status.latest_decision),
-    latestExecutionId: optionalText(status.latest_execution_id),
-    outputs: isRecord(status.outputs) ? status.outputs : {},
-    stages,
-  };
-}
-
-export function optionalText(value: unknown): string | null {
-  return typeof value === 'string' && value ? value : null;
-}
-
-export function text(value: unknown): string {
-  return typeof value === 'string' ? value : '';
 }

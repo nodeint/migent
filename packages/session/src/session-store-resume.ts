@@ -15,9 +15,15 @@ import { commitFoldedStatus } from './session-fold.js';
 import { blockedExecutions, statusExecutionsFromSnapshots } from './session-ledger.js';
 import { assertSessionLockHeld } from './session-lock.js';
 import { SessionStoreCore } from './session-store-core.js';
-import { AgentSessionRecord } from './session-store-types.js';
+import { AgentSessionRecord, type ExecutionContext } from './session-store-types.js';
 import { asInt, compareSortKey, latestExecutionPerStage } from './session-store-util.js';
 import { readJsonObject, textField } from './session-store-util.js';
+interface CancelledRow {
+  context: ExecutionContext;
+  metadata: Record<string, unknown>;
+  order: number;
+}
+
 export class SessionStoreResume extends SessionStoreCore {
   /** Latest blocked execution of each stage, in resume order. */
   public blockedStages(sessionId: string): { executionId: string; stageId: string }[] {
@@ -131,6 +137,32 @@ export class SessionStoreResume extends SessionStoreCore {
     return typeof event?.data.reply === 'string' ? event.data.reply : null;
   }
 
+  private blockedResumeTargets(
+    sessionId: string,
+    stageId: string | null,
+  ): { executionId: string; stageId: string; blocker: string | null }[] {
+    const blocked = this.blockedStageRows(sessionId);
+    if (blocked.length === 0) {
+      throw new ConfigurationError(`Session ${sessionId} is blocked without an execution.`);
+    }
+    if (stageId === null) return blocked;
+    const targets = blocked.filter((row) => row.stageId === stageId);
+    if (targets.length === 0) {
+      const names = blocked.map((row) => row.stageId).join(', ');
+      throw new ConfigurationError(`Stage ${stageId} is not blocked. Blocked stages: ${names}.`);
+    }
+    return targets;
+  }
+
+  /** Rewrite the legacy manifest and commit the fold; the session must come out active. */
+  private commitResumed(sessionId: string, sessionDirectory: string): void {
+    this.rewriteManifestStatus(sessionDirectory, 'running');
+    const folded = commitFoldedStatus(this.workspace, sessionDirectory);
+    if (folded.status !== 'active') {
+      throw new ConfigurationError(`Session ${sessionId} stayed ${String(folded.status)} after resume.`);
+    }
+  }
+
   /**
    * Record that continue is running blocked stages again. The caller holds the session lock.
    * `stageId` resumes that stage only. Other blocked stages stay blocked.
@@ -145,16 +177,7 @@ export class SessionStoreResume extends SessionStoreCore {
     if (status.status !== 'blocked' && status.status !== 'active') {
       throw new ConfigurationError(`Session ${sessionId} is ${String(status.status)}, not blocked.`);
     }
-    const blocked = this.blockedStageRows(sessionId);
-    if (blocked.length === 0) {
-      throw new ConfigurationError(`Session ${sessionId} is blocked without an execution.`);
-    }
-    const targets =
-      stageId === null ? blocked : blocked.filter((row) => row.stageId === stageId);
-    if (stageId !== null && targets.length === 0) {
-      const names = blocked.map((row) => row.stageId).join(', ');
-      throw new ConfigurationError(`Stage ${stageId} is not blocked. Blocked stages: ${names}.`);
-    }
+    const targets = this.blockedResumeTargets(sessionId, stageId);
     const timestamp = utcNow();
     for (const target of targets) {
       const data: Record<string, unknown> = { from: 'blocked' };
@@ -168,11 +191,7 @@ export class SessionStoreResume extends SessionStoreCore {
         data,
       });
     }
-    this.rewriteManifestStatus(sessionDirectory, 'running');
-    const folded = commitFoldedStatus(this.workspace, sessionDirectory);
-    if (folded.status !== 'active') {
-      throw new ConfigurationError(`Session ${sessionId} stayed ${String(folded.status)} after resume.`);
-    }
+    this.commitResumed(sessionId, sessionDirectory);
     return targets.map((target) => ({ executionId: target.executionId, stageId: target.stageId }));
   }
 
@@ -221,6 +240,77 @@ export class SessionStoreResume extends SessionStoreCore {
     }));
   }
 
+  /** Cancelled, not superseded executions to reopen, in execution order. */
+  private cancelledRows(sessionId: string, latestPerStage: boolean): CancelledRow[] {
+    const rows = this.executionContexts(sessionId).map((context) => {
+      const metadata = readJsonObject(path.join(context.directory, 'execution.json'));
+      return { context, metadata, order: asInt(metadata.execution_order) };
+    });
+    const selected = latestPerStage ? latestExecutionPerStage(rows) : rows;
+    const superseded = this.supersededExecutionIds(sessionId);
+    return selected
+      .filter((item) => item.metadata.status === 'cancelled' && !superseded.has(item.context.executionId))
+      .sort((left, right) =>
+        compareSortKey([left.order, left.context.executionId], [right.order, right.context.executionId]),
+      );
+  }
+
+  /** Every agent conversation is loaded before any execution is reopened, so a missing one changes nothing. */
+  private resumableRecords(sessionId: string, cancelled: readonly CancelledRow[]): Map<string, AgentSessionRecord> {
+    const records = new Map<string, AgentSessionRecord>();
+    for (const item of cancelled) {
+      if (item.metadata.kind === 'verify') continue;
+      if (!existsSync(item.context.conversationReadPath)) {
+        throw new ConfigurationError(`Execution ${item.context.executionId} has no conversation to resume.`);
+      }
+      const client = this.executionClient(sessionId, item.context.executionId);
+      const raw: unknown = JSON.parse(readFileSync(item.context.conversationReadPath, 'utf8'));
+      const model = typeof item.metadata.model === 'string' ? item.metadata.model : '';
+      const record = AgentSessionRecord.fromJson(raw, { client, model, workspace: this.workspace });
+      record.client = client;
+      records.set(item.context.executionId, record);
+    }
+    return records;
+  }
+
+  private reopenCancelledRow(
+    item: CancelledRow,
+    reopen: { sessionDirectory: string; records: ReadonlyMap<string, AgentSessionRecord>; timestamp: string },
+  ): { executionId: string; stageId: string } {
+    const { sessionDirectory, records, timestamp } = reopen;
+    const {metadata, context} = item;
+    metadata.status = 'running';
+    metadata.completed_at = null;
+    writeJsonAtomic(path.join(context.directory, 'execution.json'), metadata);
+    if (metadata.kind !== 'verify') {
+      const record = records.get(context.executionId);
+      if (record === undefined) throw new Error(`No agent session record for execution ${context.executionId}`);
+      record.status = 'running';
+      this.save(record, context);
+    }
+    const stageId = typeof metadata.stage_id === 'string' ? metadata.stage_id : '';
+    appendLifecycleEvent(sessionDirectory, {
+      event: 'execution.running',
+      timestamp,
+      executionId: context.executionId,
+      stageId: stageId || null,
+      data: {
+        outcome: null,
+        failure_reason: null,
+        error: null,
+        session_status: 'active',
+      },
+    });
+    appendLifecycleEvent(sessionDirectory, {
+      event: 'session.active',
+      timestamp,
+      executionId: context.executionId,
+      stageId: stageId || null,
+      data: { from: 'cancelled' },
+    });
+    return { executionId: context.executionId, stageId };
+  }
+
   /**
    * Reopen every cancelled execution in place. The caller holds the session lock.
    * Execution ids and stage attempts stay the same.
@@ -236,74 +326,15 @@ export class SessionStoreResume extends SessionStoreCore {
     if (!latestPerStage && status.status !== 'cancelled') {
       throw new ConfigurationError(`Session ${sessionId} is ${String(status.status)}, not cancelled.`);
     }
-    const rows = this.executionContexts(sessionId).map((context) => {
-      const metadata = readJsonObject(path.join(context.directory, 'execution.json'));
-      return { context, metadata, order: asInt(metadata.execution_order) };
-    });
-    const selected = latestPerStage ? latestExecutionPerStage(rows) : rows;
-    const superseded = this.supersededExecutionIds(sessionId);
-    const cancelled = selected
-      .filter((item) => item.metadata.status === 'cancelled' && !superseded.has(item.context.executionId))
-      .sort((left, right) =>
-        compareSortKey([left.order, left.context.executionId], [right.order, right.context.executionId]),
-      );
+    const cancelled = this.cancelledRows(sessionId, latestPerStage);
     if (cancelled.length === 0) {
       if (latestPerStage) return [];
       throw new ConfigurationError(`Session ${sessionId} is cancelled without an execution.`);
     }
-    const records = new Map<string, AgentSessionRecord>();
-    for (const item of cancelled) {
-      if (item.metadata.kind === 'verify') continue;
-      if (!existsSync(item.context.conversationReadPath)) {
-        throw new ConfigurationError(`Execution ${item.context.executionId} has no conversation to resume.`);
-      }
-      const client = this.executionClient(sessionId, item.context.executionId);
-      const raw: unknown = JSON.parse(readFileSync(item.context.conversationReadPath, 'utf8'));
-      const model = typeof item.metadata.model === 'string' ? item.metadata.model : '';
-      const record = AgentSessionRecord.fromJson(raw, { client, model, workspace: this.workspace });
-      record.client = client;
-      records.set(item.context.executionId, record);
-    }
-    const reopened: { executionId: string; stageId: string }[] = [];
+    const records = this.resumableRecords(sessionId, cancelled);
     const timestamp = utcNow();
-    for (const item of cancelled) {
-      const {metadata, context} = item;
-      metadata.status = 'running';
-      metadata.completed_at = null;
-      writeJsonAtomic(path.join(context.directory, 'execution.json'), metadata);
-      if (metadata.kind !== 'verify') {
-        const record = records.get(context.executionId);
-        if (record === undefined) throw new Error(`No agent session record for execution ${context.executionId}`);
-        record.status = 'running';
-        this.save(record, context);
-      }
-      const stageId = typeof metadata.stage_id === 'string' ? metadata.stage_id : '';
-      appendLifecycleEvent(sessionDirectory, {
-        event: 'execution.running',
-        timestamp,
-        executionId: context.executionId,
-        stageId: stageId || null,
-        data: {
-          outcome: null,
-          failure_reason: null,
-          error: null,
-          session_status: 'active',
-        },
-      });
-      appendLifecycleEvent(sessionDirectory, {
-        event: 'session.active',
-        timestamp,
-        executionId: context.executionId,
-        stageId: stageId || null,
-        data: { from: 'cancelled' },
-      });
-      reopened.push({ executionId: context.executionId, stageId });
-    }
-    this.rewriteManifestStatus(sessionDirectory, 'running');
-    const folded = commitFoldedStatus(this.workspace, sessionDirectory);
-    if (folded.status !== 'active') {
-      throw new ConfigurationError(`Session ${sessionId} stayed ${String(folded.status)} after resume.`);
-    }
+    const reopened = cancelled.map((item) => this.reopenCancelledRow(item, { sessionDirectory, records, timestamp }));
+    this.commitResumed(sessionId, sessionDirectory);
     return reopened;
   }
 

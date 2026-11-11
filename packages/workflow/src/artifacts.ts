@@ -27,31 +27,41 @@ export function parseOutputItems(
   const outputs: WorkflowOutput[] = [];
   const seen = new Set<string>();
   for (const item of outputsRaw) {
-    if (!isRecord(item)) throw new ConfigurationError(`${field} item must be a mapping.`);
-    const name = filename(item.name, `${field}.name`);
-    const fromStage = requiredString(item.from_stage, `${field}.from_stage`);
-    const artifact = filename(item.artifact, `${field}.artifact`);
-    if (seen.has(name)) throw new ConfigurationError(`Duplicate ${field} name: ${name}`);
-    if (!Object.hasOwn(stages, fromStage)) {
-      throw new ConfigurationError(`${field}.from_stage is not a declared stage: ${fromStage}`);
-    }
-    const source = stages[fromStage];
-    const sourceFile = source.artifacts[0]?.file ?? null;
-    if (sourceFile === null) {
-      throw new ConfigurationError(
-        `${field} ${pyRepr(name)} references stage ${fromStage} which does not produce an artifact.`,
-      );
-    }
-    if (sourceFile !== artifact) {
-      throw new ConfigurationError(
-        `${field} ${pyRepr(name)} artifact ${pyRepr(artifact)} does not match stages.${fromStage}.produces.artifact ${pyRepr(sourceFile)}.`,
-      );
-    }
-    seen.add(name);
-    source.artifacts[0].scope = 'published';
-    outputs.push(workflowOutputSchema.parse({ name, fromStage, artifact }));
+    const output = parseOutputItem(item, stages, { field, seen });
+    seen.add(output.name);
+    const [sourceArtifact] = stages[output.fromStage].artifacts;
+    sourceArtifact.scope = 'published';
+    outputs.push(output);
   }
   return outputs;
+}
+
+/** Validates one output item against the names seen so far and its source stage's first artifact. */
+function parseOutputItem(
+  item: unknown,
+  stages: Record<string, StageSpec>,
+  { field, seen }: { field: string; seen: ReadonlySet<string> },
+): WorkflowOutput {
+  if (!isRecord(item)) throw new ConfigurationError(`${field} item must be a mapping.`);
+  const name = filename(item.name, `${field}.name`);
+  const fromStage = requiredString(item.from_stage, `${field}.from_stage`);
+  const artifact = filename(item.artifact, `${field}.artifact`);
+  if (seen.has(name)) throw new ConfigurationError(`Duplicate ${field} name: ${name}`);
+  if (!Object.hasOwn(stages, fromStage)) {
+    throw new ConfigurationError(`${field}.from_stage is not a declared stage: ${fromStage}`);
+  }
+  const sourceFile = stages[fromStage].artifacts[0]?.file ?? null;
+  if (sourceFile === null) {
+    throw new ConfigurationError(
+      `${field} ${pyRepr(name)} references stage ${fromStage} which does not produce an artifact.`,
+    );
+  }
+  if (sourceFile !== artifact) {
+    throw new ConfigurationError(
+      `${field} ${pyRepr(name)} artifact ${pyRepr(artifact)} does not match stages.${fromStage}.produces.artifact ${pyRepr(sourceFile)}.`,
+    );
+  }
+  return workflowOutputSchema.parse({ name, fromStage, artifact });
 }
 
 export function legacyArtifacts(stageId: string, artifact: DraftUnit<string | null>): StageArtifact[] {
@@ -161,6 +171,37 @@ function readArtifactDefinition(
     fail(`${label} must be a mapping.`, at);
     return null;
   }
+  const keysOk = checkArtifactKeys(body, where);
+  const file = readArtifactFile(body, where);
+  const description = readOptionalArtifactField(body, 'description', {
+    ...where,
+    message: `Missing or invalid ${label}.description.`,
+  });
+  const required = readOptionalArtifactField(body, 'required', {
+    ...where,
+    message: `${label}.required must be true or false.`,
+  });
+  if (!keysOk || file === null || description === INVALID || required === INVALID) return null;
+  return {
+    id,
+    file,
+    description: description === undefined ? null : description.trim(),
+    required: required ?? true,
+    scope: 'published',
+  };
+}
+
+type ArtifactWhere = { label: string; at: ArtifactPath; fail: FailArtifact };
+
+const INVALID = Symbol('invalid');
+
+interface OptionalArtifactFields {
+  description: string;
+  required: boolean;
+}
+
+/** Reports every key of an artifact body that the schema does not allow. */
+function checkArtifactKeys(body: Record<string, unknown>, { label, at, fail }: ArtifactWhere): boolean {
   let ok = true;
   for (const key of Object.keys(body)) {
     if (!ARTIFACT_KEYS.includes(key)) {
@@ -168,29 +209,32 @@ function readArtifactDefinition(
       ok = false;
     }
   }
-  let file = '';
+  return ok;
+}
+
+/** Reads the artifact `file`, which must be a plain filename other than the verify artifact. */
+function readArtifactFile(body: Record<string, unknown>, { label, at, fail }: ArtifactWhere): string | null {
   try {
-    file = filename(body.file, `${label}.file`);
+    const file = filename(body.file, `${label}.file`);
     if (file === VERIFY_ARTIFACT) throw new ConfigurationError(`${label}.file cannot be ${VERIFY_ARTIFACT}.`);
+    return file;
   } catch (error) {
     fail(error instanceof Error ? error.message : String(error), [...at, 'file']);
-    ok = false;
+    return null;
   }
-  let description: string | null = null;
-  if (body.description !== undefined && body.description !== null) {
-    if (!isValid(WorkflowArtifact.properties.description, body.description)) {
-      fail(`Missing or invalid ${label}.description.`, [...at, 'description']);
-      ok = false;
-    } else description = body.description.trim();
-  }
-  let required = true;
-  if (body.required !== undefined && body.required !== null) {
-    if (!isValid(WorkflowArtifact.properties.required, body.required)) {
-      fail(`${label}.required must be true or false.`, [...at, 'required']);
-      ok = false;
-    } else required = body.required;
-  }
-  return ok ? { id, file, description, required, scope: 'published' } : null;
+}
+
+/** Reads an optional schema-validated artifact field: `undefined` when absent, `INVALID` when rejected. */
+function readOptionalArtifactField<K extends keyof OptionalArtifactFields>(
+  body: Record<string, unknown>,
+  key: K,
+  { at, fail, message }: ArtifactWhere & { message: string },
+): OptionalArtifactFields[K] | undefined | typeof INVALID {
+  const value = body[key];
+  if (value === undefined || value === null) return undefined;
+  if (isValid(WorkflowArtifact.properties[key], value)) return value as unknown as OptionalArtifactFields[K];
+  fail(message, [...at, key]);
+  return INVALID;
 }
 
 /** Reads the top-level `artifacts` registry, rejecting two artifacts that share one file. */
@@ -258,24 +302,34 @@ function collectDecisionArtifacts(
 ): StageArtifact[] {
   const { field, at } = where;
   if (Array.isArray(rawArtifacts)) return collectArtifactReferences(scope, rawArtifacts, where);
-  const list: StageArtifact[] = [];
-  if (isRecord(rawArtifacts)) {
-    for (const [id, definitionBody] of Object.entries(rawArtifacts)) {
-      const itemAt = [...at, id];
-      const definition = readArtifactDefinition(id, definitionBody, { label: `${field}.${id}`, at: itemAt, fail: scope.fail });
-      if (definition === null) continue;
-      if (scope.declared.has(id) || scope.localIds.has(id)) {
-        scope.fail(`${field}.${id}: artifact id collides with ${scope.declared.has(id) ? 'a top-level artifact' : 'another inline artifact of this stage'}.`, itemAt);
-        continue;
-      }
-      scope.localIds.add(id);
-      const local: StageArtifact = { ...definition, scope: 'local' };
-      if (noteStageArtifactFile(scope, local, [...itemAt, 'file'])) list.push(local);
-    }
-  } else {
+  if (!isRecord(rawArtifacts)) {
     scope.fail(`${field} must be a list of artifact ids or a mapping of inline artifacts.`, at);
+    return [];
+  }
+  const list: StageArtifact[] = [];
+  for (const [id, definitionBody] of Object.entries(rawArtifacts)) {
+    const local = collectInlineArtifact(scope, [id, definitionBody], where);
+    if (local !== null) list.push(local);
   }
   return list;
+}
+
+/** Reads one inline decision artifact, rejecting an id already used by the registry or this stage. */
+function collectInlineArtifact(
+  scope: StageArtifactScope,
+  [id, definitionBody]: [string, unknown],
+  { field, at }: { field: string; at: ArtifactPath },
+): StageArtifact | null {
+  const itemAt = [...at, id];
+  const definition = readArtifactDefinition(id, definitionBody, { label: `${field}.${id}`, at: itemAt, fail: scope.fail });
+  if (definition === null) return null;
+  if (scope.declared.has(id) || scope.localIds.has(id)) {
+    scope.fail(`${field}.${id}: artifact id collides with ${scope.declared.has(id) ? 'a top-level artifact' : 'another inline artifact of this stage'}.`, itemAt);
+    return null;
+  }
+  scope.localIds.add(id);
+  const local: StageArtifact = { ...definition, scope: 'local' };
+  return noteStageArtifactFile(scope, local, [...itemAt, 'file']) ? local : null;
 }
 
 /** Resolves a list of artifact ids against the registry, keeping each distinct one. */
@@ -385,20 +439,32 @@ export function validateVerifyPaths(
   completion: WorkflowCompletion | null,
   version2 = false,
 ): void {
+  const points = completionPoints(stages, completion, version2);
+  if (points.size === 0) return;
+  for (const stage of Object.values(stages)) {
+    if (stage.verify.length === 0) continue;
+    const missed = [...points].find(
+      (point) => point !== stage.id && !dependencyClosure(stages, point).has(stage.id),
+    );
+    if (missed !== undefined) {
+      throw new ConfigurationError(
+        `stages.${stage.id}.verify is not on every path to complete: ${missed} does not depend on ${stage.id}.`,
+      );
+    }
+  }
+}
+
+/** The stages from which a run can complete. */
+function completionPoints(
+  stages: Record<string, StageSpec>,
+  completion: WorkflowCompletion | null,
+  version2: boolean,
+): Set<string> {
   const points = new Set<string>();
   if (!version2 && completion !== null) points.add(completion.stage);
   for (const stage of Object.values(stages)) {
     if (Object.values(stage.routes).some((value) => routeTargets(value).includes('complete'))) points.add(stage.id);
     if (version2 && isLeafStage(stages, stage)) points.add(stage.id);
   }
-  if (points.size === 0) return;
-  for (const stage of Object.values(stages)) {
-    if (stage.verify.length === 0) continue;
-    for (const point of points) {
-      if (point === stage.id || dependencyClosure(stages, point).has(stage.id)) continue;
-      throw new ConfigurationError(
-        `stages.${stage.id}.verify is not on every path to complete: ${point} does not depend on ${stage.id}.`,
-      );
-    }
-  }
+  return points;
 }

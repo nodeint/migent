@@ -23,22 +23,12 @@ export async function cancelSession(
     printError(`Session ${sessionId} does not exist.`);
     return EXIT_CONFIG;
   }
-  const outcome = requestSessionCancel(directory);
-  if (outcome === 'foreign-host') {
-    printError(`Session ${sessionId} is running on another machine. Cancel it there.`);
+  const refusal = cancelRefusal(sessionId, requestSessionCancel(directory));
+  if (refusal !== null) {
+    printError(refusal);
     return EXIT_CONFIG;
   }
-  if (outcome === 'not-running') {
-    printError(
-      `Session ${sessionId} is not running. Resume it with: migent session continue ${sessionId}, or fix it with: migent session repair ${sessionId}`,
-    );
-    return EXIT_CONFIG;
-  }
-  const deadline = Date.now() + args.waitSeconds * MS_PER_SECOND;
-  while (sessionLockAlive(directory) && Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, POLL_MS));
-  }
-  const stopped = !sessionLockAlive(directory);
+  const stopped = await waitForStop(directory, args.waitSeconds);
   if (args.asJson) {
     const current = new SessionStore(workspace).readSessionStatus(sessionId);
     const status = typeof current.status === 'string' ? current.status : null;
@@ -49,4 +39,21 @@ export async function cancelSession(
     printError(`Cancel requested, but session ${sessionId} is still running after ${args.waitSeconds} s.`);
   }
   return stopped ? 0 : 1;
+}
+
+function cancelRefusal(sessionId: string, outcome: ReturnType<typeof requestSessionCancel>): string | null {
+  if (outcome === 'foreign-host') return `Session ${sessionId} is running on another machine. Cancel it there.`;
+  if (outcome === 'not-running') {
+    return `Session ${sessionId} is not running. Resume it with: migent session continue ${sessionId}, or fix it with: migent session repair ${sessionId}`;
+  }
+  return null;
+}
+
+/** Polls until the session lock is released or the wait elapses; true when it stopped. */
+async function waitForStop(directory: string, waitSeconds: number): Promise<boolean> {
+  const deadline = Date.now() + waitSeconds * MS_PER_SECOND;
+  while (sessionLockAlive(directory) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+  }
+  return !sessionLockAlive(directory);
 }

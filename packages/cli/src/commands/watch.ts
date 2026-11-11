@@ -33,26 +33,40 @@ const SESSION_DONE_EXITS: Record<string, number> = {
 
 const TERMINAL_EXECUTION_STATUSES = new Set(['completed', 'failed', 'cancelled', 'skipped']);
 
+interface FollowOptions {
+  once?: boolean;
+  executionId?: string | null;
+  untilTerminal?: boolean;
+  jsonLines?: boolean;
+  cursor?: number | null;
+  exitWhenDone?: boolean;
+}
+
+/** Where the tail starts: the events cursor and, when tailing only new lines, the stream offsets. */
+interface FollowStart {
+  cursor: number;
+  tailOnly: boolean;
+  streamOffsets: Map<string, number> | null;
+}
+
+/** What a follow prints and when it stops. */
+interface WatchState {
+  executionId: string | null;
+  jsonLines: boolean;
+  untilTerminal: boolean;
+  executionPath: string | null;
+  exitWhenDone: boolean;
+}
+
 export async function followSession(
   workspace: string,
   sessionId: string,
-  options: {
-    once?: boolean;
-    executionId?: string | null;
-    untilTerminal?: boolean;
-    jsonLines?: boolean;
-    cursor?: number | null;
-    exitWhenDone?: boolean;
-  } = {},
+  options: FollowOptions = {},
 ): Promise<number> {
   const once = options.once ?? false;
-  const untilTerminal = options.untilTerminal ?? false;
   const jsonLines = options.jsonLines ?? false;
   const executionId = options.executionId ?? null;
-  const cursor = options.cursor === undefined ? null : options.cursor;
-  const exitWhenDone = options.exitWhenDone === true;
   const sessionDirectory = path.join(workspace, '.migent', 'sessions', sessionId);
-  const eventsPath = path.join(sessionDirectory, 'events.jsonl');
   const executionPath = prepareFollow(workspace, sessionId, { once, executionId });
   if (once) {
     const drift = statusDriftMessage(workspace, sessionId);
@@ -60,31 +74,42 @@ export async function followSession(
     printSnapshot(sessionDirectory, { executionId, jsonLines });
     return 0;
   }
-  const tailOnly = cursor === null;
-  let followCursor = cursor ?? 0;
-  let streamOffsets: Map<string, number> | null = null;
-  if (cursor === null) {
-    // Snapshot and the notice can block. Capture offsets first so lines written then are still tailed.
-    streamOffsets = new Map(listStreamFiles(sessionDirectory).map((stream) => [stream, fileSize(stream)]));
-    followCursor = fileSize(eventsPath);
-    printSnapshot(sessionDirectory, { executionId, jsonLines }, followCursor);
-  }
+  const start = followStart(sessionDirectory, options.cursor ?? null, { executionId, jsonLines });
   printNotice(`Watching session ${sessionId}.`);
+  return pollSession(sessionDirectory, start, {
+    executionId,
+    jsonLines,
+    untilTerminal: options.untilTerminal ?? false,
+    executionPath,
+    exitWhenDone: options.exitWhenDone === true,
+  });
+}
+
+function followStart(
+  sessionDirectory: string,
+  cursor: number | null,
+  selection: { executionId: string | null; jsonLines: boolean },
+): FollowStart {
+  if (cursor !== null) return { cursor, tailOnly: false, streamOffsets: null };
+  // Snapshot and the notice can block. Capture offsets first so lines written then are still tailed.
+  const streamOffsets = new Map(listStreamFiles(sessionDirectory).map((stream) => [stream, fileSize(stream)]));
+  const eventsCursor = fileSize(path.join(sessionDirectory, 'events.jsonl'));
+  printSnapshot(sessionDirectory, selection, eventsCursor);
+  return { cursor: eventsCursor, tailOnly: true, streamOffsets };
+}
+
+async function pollSession(
+  sessionDirectory: string,
+  start: FollowStart,
+  watch: WatchState,
+): Promise<number> {
   const unbind = bindCancellationSignals();
-  const logs = openFollowLogs(sessionDirectory, eventsPath, { cursor: followCursor, tailOnly, streamOffsets });
+  const logs = openFollowLogs(sessionDirectory, path.join(sessionDirectory, 'events.jsonl'), start);
   try {
     for (;;) {
-      throwIfCliCancelled();
-      discoverStreams(sessionDirectory, logs);
-      const batch = readBatch(logs);
-      for (const item of batch) emitWatchEvent(item.line, executionId, jsonLines);
-      if (batch.length > 0) continue;
-      const exit = followExit(sessionDirectory, { untilTerminal, executionPath, exitWhenDone });
-      if (exit !== null) {
-        const drained = readBatch(logs);
-        for (const item of drained) emitWatchEvent(item.line, executionId, jsonLines);
-        return exit;
-      }
+      const exit = pollOnce(sessionDirectory, logs, watch);
+      if (exit === 'more') continue;
+      if (exit !== null) return exit;
       await delay(POLL_MS);
     }
   } catch (error) {
@@ -97,6 +122,25 @@ export async function followSession(
     for (const log of logs) closeSync(log.fd);
     unbind();
   }
+}
+
+/** Emits new lines; 'more' when some were read, else the exit code once done, or null to wait. */
+function pollOnce(
+  sessionDirectory: string,
+  logs: OpenLog[],
+  watch: WatchState,
+): number | 'more' | null {
+  const emitBatch = (batch: readonly FollowLine[]): void => {
+    for (const item of batch) emitWatchEvent(item.line, watch.executionId, watch.jsonLines);
+  };
+  throwIfCliCancelled();
+  discoverStreams(sessionDirectory, logs);
+  const batch = readBatch(logs);
+  emitBatch(batch);
+  if (batch.length > 0) return 'more';
+  const exit = followExit(sessionDirectory, watch);
+  if (exit !== null) emitBatch(readBatch(logs));
+  return exit;
 }
 
 /** Checks the session can be followed and reaps orphans; returns the execution file to watch, if any. */

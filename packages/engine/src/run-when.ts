@@ -106,20 +106,7 @@ export function changedPathsSinceBaseline(workspace: string, commit: string, lab
   const fail = (message: string): never => {
     throw new ConfigurationError(`${label}: ${message}`);
   };
-  const top = runGit(['rev-parse', '--show-toplevel'], workspace);
-  if (!top.ok) {
-    return fail(
-      top.error === 'git is not available'
-        ? 'git is not available.'
-        : `the workspace is not in a Git work tree (${top.error}).`,
-    );
-  }
-  const toplevel = top.stdout.trim();
-  const prefixResult = runGit(['rev-parse', '--show-prefix'], workspace);
-  if (!prefixResult.ok) {
-    return fail(`the workspace is not in a Git work tree (${prefixResult.error}).`);
-  }
-  const prefix = prefixResult.stdout.trim();
+  const { toplevel, prefix } = gitWorkTree(workspace, fail);
   const exists = runGit(['cat-file', '-e', `${commit}^{commit}`], toplevel);
   if (!exists.ok) {
     return fail(`baseline commit ${commit} is not in this repository (rewritten history or garbage collection).`);
@@ -131,9 +118,30 @@ export function changedPathsSinceBaseline(workspace: string, commit: string, lab
   if (!diff.ok) return fail(`git diff failed: ${diff.error}.`);
   const untracked = runGit(['--no-optional-locks', 'ls-files', '--others', '--exclude-standard', '-z'], toplevel);
   if (!untracked.ok) return fail(`git ls-files failed: ${untracked.error}.`);
-  const own = `${prefix}.migent/sessions/`;
+  return workspacePaths([diff.stdout, untracked.stdout], `${prefix}.migent/sessions/`);
+}
+
+// The Git top level and the workspace's prefix within it; reports through `fail` outside a work tree.
+function gitWorkTree(workspace: string, fail: (message: string) => never): { toplevel: string; prefix: string } {
+  const top = runGit(['rev-parse', '--show-toplevel'], workspace);
+  if (!top.ok) {
+    return fail(
+      top.error === 'git is not available'
+        ? 'git is not available.'
+        : `the workspace is not in a Git work tree (${top.error}).`,
+    );
+  }
+  const prefixResult = runGit(['rev-parse', '--show-prefix'], workspace);
+  if (!prefixResult.ok) {
+    return fail(`the workspace is not in a Git work tree (${prefixResult.error}).`);
+  }
+  return { toplevel: top.stdout.trim(), prefix: prefixResult.stdout.trim() };
+}
+
+// Sorted unique NUL-separated paths, without Migent's own session files.
+function workspacePaths(outputs: readonly string[], own: string): string[] {
   const paths = new Set<string>();
-  for (const text of [diff.stdout, untracked.stdout]) {
+  for (const text of outputs) {
     for (const item of text.split('\0')) {
       if (item === '' || item.startsWith(own)) continue;
       paths.add(item);

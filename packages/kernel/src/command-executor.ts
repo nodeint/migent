@@ -1,9 +1,9 @@
 import { type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { constants as osConstants } from 'node:os';
-import type { Readable } from 'node:stream';
 
 import { ENDPOINT_TOKEN_BYTES, MS_PER_SECOND, TERMINATION_POLL_MS } from './constants.js';
+import { createLineQueue, type LineQueue } from './line-queue.js';
 import { collectProcessStartInfo, type ProcessStartInfo } from './process-ownership.js';
 import { killProcessTree, wrapperEndpoint } from './process-wrapper.js';
 import { assertArgumentsPassable,UnpassableArgument } from './provider-spawn.js';
@@ -292,94 +292,55 @@ export class CommandExecutor {
   }
 
   public async run(spec: CommandSpec, cwd: string, options: RunOptions = {}): Promise<CommandResult> {
-    const { onStart, onDebug } = options;
-    const executable = spec.argv[0] ?? 'command';
-    let child: ChildProcess | null = null;
-    // True once the provider was told to start; before that no server-side turn can exist.
-    let launched = false;
     const unpassable = unpassableArguments(spec);
     if (unpassable !== null) return unpassable;
+    // `launched` turns true once the provider was told to start; before that no server-side turn can exist.
+    const state: RunState = { child: null, launched: false };
     try {
-      const endpoint = wrapperEndpoint(randomBytes(ENDPOINT_TOKEN_BYTES).toString('hex'));
-      onDebug?.(`endpoint ${endpoint} (length ${Buffer.byteLength(endpoint)})`);
-      const spawnedAt = new Date().toISOString();
-      child = startWrapper(spec, { cwd, endpoint });
-      onDebug?.(`wrapper spawned pid=${child.pid ?? 'none'}`);
-      if (onDebug) forwardWrapperSteps(child, onDebug);
-      const started = await waitForReady(child);
-      const argCount = Math.max(0, spec.argv.length - 1);
-      const launch: LaunchContext = { endpoint, executable, argCount, cwd, spawnedAt };
-      const running = child;
-      const describe = (
-        result: StartFailure,
-        kind: ExecutionFailure['kind'],
-        process?: { exitCode: number | null; signal: string | null; drain: StderrDrain },
-      ): ExecutionFailure => describeExecutionFailure(running, launch, { result, kind, process });
+      const { child, launch, started } = await spawnAndAwaitReady(spec, { cwd, onDebug: options.onDebug }, state);
       if (started.kind === 'cancelled') throwIfCancelled();
       if (started.kind !== 'ready' && started.kind !== 'cancelled') {
-        onDebug?.(`wrapper failed: ${started.kind}`);
-        // Read stderr only after the pipes closed (bounded), so a late line is not lost.
-        await drainStdio(child);
-        const failure = describe(started, 'start');
-        await stopProcessGroup(child);
-        // A cancel that lands before this point must never be persisted as a startup failure.
-        throwIfCancelled();
-        return { stdout: '', error: failure.message, exitCode: null, failure };
+        return await startFailureResult(child, launch, { started, onDebug: options.onDebug });
       }
-      onDebug?.('wrapper ready');
-      if (onStart && child.pid !== undefined) onStart(collectProcessStartInfo(child.pid, endpoint));
-      let reported: WrapperFailedMessage | null = null;
-      let reportedSignal: string | null = null;
-      child.on('message', (message: unknown) => {
-        reported = parseFailedMessage(message) ?? reported;
-        reportedSignal = parseExitedSignal(message) ?? reportedSignal;
-      });
-      child.send({ type: WRAPPER_START });
-      launched = true;
-      onDebug?.('start sent');
-      const [stdout, error, exitCode, streamStats] = await this.wait(child, spec, options);
-      onDebug?.(`provider exit code=${exitCode} error=${error ?? 'none'}`);
-      // The process is gone; stderr is complete only once every pipe has closed (bounded wait).
-      const drain = streamStats === null ? stderrDrainOf(child) : await drainStdio(child);
-      // A cancel that lands while the pipes drain must not be persisted as a failure.
-      if (error !== null) throwIfCancelled();
-      const wrapperReport = reported as WrapperFailedMessage | null;
-      if (wrapperReport !== null && error !== null) {
-        const result: StartFailure = { kind: 'wrapper-reported', ...stripType(wrapperReport) };
-        const failure = describe(result, 'start');
-        return { stdout, error: failure.message, exitCode: null, failure };
-      }
-      const facts = streamStats === null
-        ? undefined
-        : processFactsOf(child, launch, { exitCode, signal: reportedSignal ?? child.signalCode, drain, streamStats });
-      if (error !== null && exitCode !== null && exitCode !== 0) {
-        const signal = reportedSignal ?? child.signalCode;
-        const failure = describe({ kind: 'exited', code: exitCode, signal }, 'provider-exit', {
-          exitCode,
-          signal,
-          drain,
-        });
-        failure.message = error;
-        return { stdout, error, exitCode, failure, ...(facts ? { process: facts } : {}) };
-      }
-      if (facts) return { stdout, error, exitCode, process: facts };
-      return { stdout, error, exitCode };
+      return await this.runLaunched(child, launch, { spec, options, state });
     } catch (error) {
       if (error instanceof CancellationRequested) {
-        await this.stopOnCancel(child, options, launched);
+        await this.stopOnCancel(state.child, options, state.launched);
       }
       throw error;
     }
+  }
+
+  /** Starts a ready wrapper's provider, waits for it, and classifies how it ended. */
+  private async runLaunched(
+    child: ChildProcess,
+    launch: LaunchContext,
+    context: { spec: CommandSpec; options: RunOptions; state: RunState },
+  ): Promise<CommandResult> {
+    const { spec, options, state } = context;
+    const { onStart, onDebug } = options;
+    onDebug?.('wrapper ready');
+    if (onStart && child.pid !== undefined) onStart(collectProcessStartInfo(child.pid, launch.endpoint));
+    const reports = collectWrapperReports(child);
+    child.send({ type: WRAPPER_START });
+    state.launched = true;
+    onDebug?.('start sent');
+    const [stdout, error, exitCode, streamStats] = await this.wait(child, spec, options);
+    onDebug?.(`provider exit code=${exitCode} error=${error ?? 'none'}`);
+    // The process is gone; stderr is complete only once every pipe has closed (bounded wait).
+    const drain = streamStats === null ? stderrDrainOf(child) : await drainStdio(child);
+    // A cancel that lands while the pipes drain must not be persisted as a failure.
+    if (error !== null) throwIfCancelled();
+    return endedResult(child, launch, { stdout, error, exitCode, streamStats, drain, reports });
   }
 
   private async wait(
     child: ChildProcess,
     spec: CommandSpec,
     hooks: RunOptions = {},
-  ): Promise<[string, string | null, number | null, { bytes: number; lines: number } | null]> {
-    const { onOutput, onHeartbeat } = hooks;
+  ): Promise<WaitResult> {
     const startedAt = Date.now();
-    const queue = createLineQueue(child.stdout ?? null);
+    const queue = createLineQueue(child.stdout ?? null, cancellationSignal().onCancel);
     if ((spec.stdin !== null && spec.stdin !== undefined) && child.stdin) {
       child.stdin.write(spec.stdin);
       child.stdin.end();
@@ -388,41 +349,29 @@ export class CommandExecutor {
     let outputClosed = false;
     while (true) {
       throwIfCancelled();
-      let waitMs = this.progressIntervalSec * MS_PER_SECOND;
-      if (this.timeoutSec !== null) {
-        const remainingMs = this.timeoutSec * MS_PER_SECOND - (Date.now() - startedAt);
-        if (remainingMs <= 0) return this.timeout(child, hooks);
-        waitMs = Math.min(waitMs, remainingMs);
-      }
-      let line: string | null | 'timeout';
-      if (outputClosed) {
-        const finished = await waitForExit(child, waitMs);
-        if (finished === 'cancel') throwIfCancelled();
-        if (finished === true) break;
-        line = null;
-      } else {
-        line = await queue.get(waitMs);
-        if (line === 'cancel') throwIfCancelled();
-      }
+      const waitMs = this.nextWaitMs(startedAt);
+      if (waitMs === null) return this.timeout(child, hooks);
+      const line = await nextLine(child, queue, { outputClosed, waitMs });
+      if (line === EXITED) break;
       if (line === 'timeout') {
-        const elapsedSec = Math.floor((Date.now() - startedAt) / MS_PER_SECOND);
-        if (onHeartbeat) onHeartbeat(elapsedSec);
-        continue;
-      }
-      if (line === null) {
+        hooks.onHeartbeat?.(Math.floor((Date.now() - startedAt) / MS_PER_SECOND));
+      } else if (line === null) {
         outputClosed = true;
-        continue;
+      } else {
+        stdoutChunks.push(line);
+        hooks.onOutput?.(line.replace(/[\r\n]+$/g, ''));
       }
-      stdoutChunks.push(line);
-      if (onOutput) onOutput(line.replace(/[\r\n]+$/g, ''));
     }
     if (child.stdout) child.stdout.destroy();
-    const stdout = stdoutChunks.join('').trim();
-    const status = childStatus(child);
-    const stats = { bytes: queue.bytes(), lines: stdoutChunks.length };
-    if (status === 0) return [stdout, null, 0, stats];
-    if (status === null) return [stdout, 'CLI exited with code null.', null, stats];
-    return [stdout, `CLI exited with code ${status}.`, status, stats];
+    return exitedResult(child, stdoutChunks, queue.bytes());
+  }
+
+  /** The next wait slice, or null once the run timeout has elapsed. */
+  private nextWaitMs(startedAt: number): number | null {
+    const intervalMs = this.progressIntervalSec * MS_PER_SECOND;
+    if (this.timeoutSec === null) return intervalMs;
+    const remainingMs = this.timeoutSec * MS_PER_SECOND - (Date.now() - startedAt);
+    return remainingMs <= 0 ? null : Math.min(intervalMs, remainingMs);
   }
 
   private async timeout(child: ChildProcess, hooks: RunOptions): Promise<[string, string, null, null]> {
@@ -433,76 +382,131 @@ export class CommandExecutor {
   }
 }
 
-function createLineQueue(stream: Readable | null): {
-  get(timeoutMs: number): Promise<string | null | 'timeout' | 'cancel'>;
-  /** Bytes received on the stream so far, before any line normalization. */
-  bytes(): number;
-} {
-  let received = 0;
-  const lines: (string | null)[] = [];
-  let waiter: ((value: string | null | 'timeout' | 'cancel') => void) | null = null;
-  if (stream) {
-    stream.setEncoding('utf8');
-    let buffer = '';
-    const push = (line: string | null) => {
-      if (waiter) {
-        const pending = waiter;
-        waiter = null;
-        pending(line);
-      } else {
-        lines.push(line);
-      }
-    };
-    stream.on('data', (chunk: string) => {
-      received += Buffer.byteLength(chunk);
-      buffer += chunk.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-      let index = buffer.indexOf('\n');
-      while (index >= 0) {
-        push(buffer.slice(0, index + 1));
-        buffer = buffer.slice(index + 1);
-        index = buffer.indexOf('\n');
-      }
-    });
-    const finish = () => {
-      if (buffer.length > 0) {
-        push(buffer);
-        buffer = '';
-      }
-      push(null);
-    };
-    stream.on('end', finish);
-    stream.on('error', () => {
-      finish();
-    });
-  } else {
-    lines.push(null);
+type StreamStats = { bytes: number; lines: number };
+type WaitResult = [string, string | null, number | null, StreamStats | null];
+
+/** What `run` must know to clean up after a cancel. */
+interface RunState {
+  child: ChildProcess | null;
+  launched: boolean;
+}
+
+/** The latest failure report and exit signal the wrapper sent over IPC. */
+interface WrapperReports {
+  failed(): WrapperFailedMessage | null;
+  signal(): string | null;
+}
+
+/** Spawns the wrapper and waits for its readiness handshake. */
+async function spawnAndAwaitReady(
+  spec: CommandSpec,
+  context: { cwd: string; onDebug: RunOptions['onDebug'] },
+  state: RunState,
+): Promise<{ child: ChildProcess; launch: LaunchContext; started: StartResult }> {
+  const { cwd, onDebug } = context;
+  const endpoint = wrapperEndpoint(randomBytes(ENDPOINT_TOKEN_BYTES).toString('hex'));
+  onDebug?.(`endpoint ${endpoint} (length ${Buffer.byteLength(endpoint)})`);
+  const spawnedAt = new Date().toISOString();
+  const child = startWrapper(spec, { cwd, endpoint });
+  state.child = child;
+  onDebug?.(`wrapper spawned pid=${child.pid ?? 'none'}`);
+  if (onDebug) forwardWrapperSteps(child, onDebug);
+  const started = await waitForReady(child);
+  const executable = spec.argv[0] ?? 'command';
+  const argCount = Math.max(0, spec.argv.length - 1);
+  return { child, launch: { endpoint, executable, argCount, cwd, spawnedAt }, started };
+}
+
+/** Records a wrapper that never became ready, then stops its group. */
+async function startFailureResult(
+  child: ChildProcess,
+  launch: LaunchContext,
+  failed: { started: StartFailure; onDebug: RunOptions['onDebug'] },
+): Promise<CommandResult> {
+  const { started, onDebug } = failed;
+  onDebug?.(`wrapper failed: ${started.kind}`);
+  // Read stderr only after the pipes closed (bounded), so a late line is not lost.
+  await drainStdio(child);
+  const failure = describeExecutionFailure(child, launch, { result: started, kind: 'start' });
+  await stopProcessGroup(child);
+  // A cancel that lands before this point must never be persisted as a startup failure.
+  throwIfCancelled();
+  return { stdout: '', error: failure.message, exitCode: null, failure };
+}
+
+function collectWrapperReports(child: ChildProcess): WrapperReports {
+  let reported: WrapperFailedMessage | null = null;
+  let reportedSignal: string | null = null;
+  child.on('message', (message: unknown) => {
+    reported = parseFailedMessage(message) ?? reported;
+    reportedSignal = parseExitedSignal(message) ?? reportedSignal;
+  });
+  return { failed: () => reported, signal: () => reportedSignal };
+}
+
+/** Classifies a provider run that reached its end. */
+function endedResult(
+  child: ChildProcess,
+  launch: LaunchContext,
+  ended: {
+    stdout: string;
+    error: string | null;
+    exitCode: number | null;
+    streamStats: StreamStats | null;
+    drain: StderrDrain;
+    reports: WrapperReports;
+  },
+): CommandResult {
+  const { stdout, error, exitCode, streamStats, drain, reports } = ended;
+  const wrapperReport = reports.failed();
+  if (wrapperReport !== null && error !== null) {
+    const result: StartFailure = { kind: 'wrapper-reported', ...stripType(wrapperReport) };
+    const failure = describeExecutionFailure(child, launch, { result, kind: 'start' });
+    return { stdout, error: failure.message, exitCode: null, failure };
   }
-  return {
-    bytes: () => received,
-    get(timeoutMs: number) {
-      const queued = lines.shift();
-      if (queued !== undefined) return Promise.resolve(queued);
-      return new Promise((resolve) => {
-        const timer = setTimeout(() => {
-          waiter = null;
-          cancelWaiters.delete(wake);
-          resolve('timeout');
-        }, timeoutMs);
-        const wake = () => {
-          clearTimeout(timer);
-          waiter = null;
-          cancelWaiters.delete(wake);
-          resolve('cancel');
-        };
-        cancelWaiters.add(wake);
-        waiter = (value) => {
-          clearTimeout(timer);
-          cancelWaiters.delete(wake);
-          resolve(value);
-        };
-      });
-    },
-  };
+  const signal = reports.signal() ?? child.signalCode;
+  const facts = streamStats === null
+    ? undefined
+    : processFactsOf(child, launch, { exitCode, signal, drain, streamStats });
+  if (error !== null && exitCode !== null && exitCode !== 0) {
+    const failure = describeExecutionFailure(child, launch, {
+      result: { kind: 'exited', code: exitCode, signal },
+      kind: 'provider-exit',
+      process: { exitCode, signal, drain },
+    });
+    failure.message = error;
+    return { stdout, error, exitCode, failure, ...(facts ? { process: facts } : {}) };
+  }
+  if (facts) return { stdout, error, exitCode, process: facts };
+  return { stdout, error, exitCode };
+}
+
+/** Marks that the process exited after stdout closed; never a stdout line. */
+const EXITED: unique symbol = Symbol('exited');
+
+/** Reads the next stdout line, or, once stdout closed, waits for the process to exit. */
+async function nextLine(
+  child: ChildProcess,
+  queue: LineQueue,
+  step: { outputClosed: boolean; waitMs: number },
+): Promise<string | null | 'timeout' | typeof EXITED> {
+  if (step.outputClosed) {
+    const finished = await waitForExit(child, step.waitMs);
+    if (finished === 'cancel') throwIfCancelled();
+    return finished === true ? EXITED : null;
+  }
+  const line = await queue.get(step.waitMs);
+  if (line === 'cancel') throwIfCancelled();
+  return line;
+}
+
+function exitedResult(child: ChildProcess, stdoutChunks: string[], bytes: number): WaitResult {
+  const stdout = stdoutChunks.join('').trim();
+  const status = childStatus(child);
+  const stats = { bytes, lines: stdoutChunks.length };
+  if (status === 0) return [stdout, null, 0, stats];
+  if (status === null) return [stdout, 'CLI exited with code null.', null, stats];
+  return [stdout, `CLI exited with code ${status}.`, status, stats];
 }
 
 export function waitForExit(

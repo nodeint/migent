@@ -30,10 +30,6 @@ export function collectWorkflowDraft(data: Record<string, unknown>, source: stri
     emptyDraftResult({ problems, source, id: idUnit, schemaVersion, unknownKeys });
   if (idUnit.state === 'invalid' || versionUnit.state === 'invalid') return emptyResult(0);
   const schemaVersion = versionUnit.value;
-  const version2 = schemaVersion >= SCHEMA_V2;
-  const version3 = schemaVersion >= SCHEMA_V3;
-  const version5 = schemaVersion >= SCHEMA_V5;
-  const version7 = schemaVersion >= SCHEMA_V7_ARTIFACTS;
   if (schemaVersion > SCHEMA_VERSION) {
     problems.addMessage(
       'schema-newer',
@@ -43,7 +39,21 @@ export function collectWorkflowDraft(data: Record<string, unknown>, source: stri
     return emptyResult(schemaVersion);
   }
   collectSectionVersionProblems(data, { schemaVersion, unknownKeys, problems });
+  return collectDraftBody(data, { source, problems, id: idUnit, schemaVersion, emptyResult });
+}
 
+interface DraftBodyContext {
+  readonly source: string;
+  readonly problems: DraftProblems;
+  readonly id: DraftUnit<string>;
+  readonly schemaVersion: number;
+  readonly emptyResult: (schemaVersion: number) => WorkflowDraftParse;
+}
+
+/** Collects the stages and sections of a document whose id and schema version are readable. */
+function collectDraftBody(data: Record<string, unknown>, context: DraftBodyContext): WorkflowDraftParse {
+  const { source, problems, id: idUnit, schemaVersion, emptyResult } = context;
+  const { version2, version3, version5, version7 } = schemaFlags(schemaVersion);
   const rawStages: unknown[] = Array.isArray(data.stages) ? data.stages : [];
   const stagesDeclared = rawStages.length > 0;
   const { declaredStageIds, duplicateIndexes } = scanDeclaredStageIds(rawStages);
@@ -55,13 +65,8 @@ export function collectWorkflowDraft(data: Record<string, unknown>, source: stri
   const downstream = schemaVersion >= SCHEMA_V4_DOWNSTREAM
     ? collectDownstream(data.downstream, outputs, problems)
     : { sectionValid: true, entries: [] };
-  let requires: DraftUnit<WorkflowRequires | null>;
-  if (schemaVersion < SCHEMA_V4_DOWNSTREAM) requires = draftUnit(() => parseRequires(data.requires, version2), problems, ['requires']);
-  else if (Object.hasOwn(data, 'requires')) requires = { state: 'invalid' };
-  else requires = { state: 'absent', value: null };
-  // Top-level fields are leaf units of their own: they are read even when a stage is unreadable.
-  if (version2) draftUnit(() => parseConcurrency(data), problems, ['concurrency']);
-  collectStringItems(data.constraints, 'constraints', problems);
+  const requires = collectDraftRequires(data, schemaVersion, problems);
+  collectTopLevelLeafFields(data, version2, problems);
   const completion =
     !version2 && isRecord(data.completion) && declaredStageIds.size > 0
       ? collectCompletion(data.completion, stages, outputContext)
@@ -92,6 +97,41 @@ export function collectWorkflowDraft(data: Record<string, unknown>, source: stri
     outputsComplete: outputs.complete,
     catalogEntry: catalogEntryOfDraft(source, { id: idUnit, stagesDeclared, requires, downstream: downstream.entries }),
   }, problems);
+}
+
+interface SchemaFlags {
+  version2: boolean;
+  version3: boolean;
+  version5: boolean;
+  version7: boolean;
+}
+
+function schemaFlags(schemaVersion: number): SchemaFlags {
+  return {
+    version2: schemaVersion >= SCHEMA_V2,
+    version3: schemaVersion >= SCHEMA_V3,
+    version5: schemaVersion >= SCHEMA_V5,
+    version7: schemaVersion >= SCHEMA_V7_ARTIFACTS,
+  };
+}
+
+/** Reads `requires`, which schema 4 and later replace with `downstream`. */
+function collectDraftRequires(
+  data: Record<string, unknown>,
+  schemaVersion: number,
+  problems: DraftProblems,
+): DraftUnit<WorkflowRequires | null> {
+  if (schemaVersion < SCHEMA_V4_DOWNSTREAM) {
+    return draftUnit(() => parseRequires(data.requires, schemaVersion >= SCHEMA_V2), problems, ['requires']);
+  }
+  if (Object.hasOwn(data, 'requires')) return { state: 'invalid' };
+  return { state: 'absent', value: null };
+}
+
+/** Top-level fields are leaf units of their own: they are read even when a stage is unreadable. */
+function collectTopLevelLeafFields(data: Record<string, unknown>, version2: boolean, problems: DraftProblems): void {
+  if (version2) draftUnit(() => parseConcurrency(data), problems, ['concurrency']);
+  collectStringItems(data.constraints, 'constraints', problems);
 }
 
 /** The result for a document whose id, version or schema range stops collection before its stages. */

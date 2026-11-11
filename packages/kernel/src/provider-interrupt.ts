@@ -109,21 +109,26 @@ export async function interruptSession(
     if (attempts > 0) await sleep(policy.retryDelayMs);
     attempts += 1;
     const run = await runCleanupCommand(spec.argv, cwd, policy.commandTimeoutMs);
-    if (run.spawnError !== null) {
-      outcome = 'failed';
-      detail = `could not run the interrupt command: ${run.spawnError}`;
-      break;
-    }
-    if (run.timedOut) {
-      outcome = 'failed';
-      detail = `the interrupt command did not finish within ${policy.commandTimeoutMs}ms`;
-      break;
-    }
-    outcome = provider.classifyInterrupt?.(run.output, run.exitCode) ?? 'failed';
-    detail = outcome === 'failed' ? `interrupt exited with code ${run.exitCode ?? 'null'}` : outcome;
+    ({ outcome, detail } = classifyAttempt(provider, run, policy));
     if (outcome !== 'not-found') break;
   }
   return { agentId, outcome, attempts, detail };
+}
+
+/** The outcome of one interrupt attempt; a command that could not run or finish is a failure. */
+function classifyAttempt(
+  provider: CliClient,
+  run: Awaited<ReturnType<typeof runCleanupCommand>>,
+  policy: InterruptPolicy,
+): { outcome: InterruptOutcome; detail: string } {
+  if (run.spawnError !== null) {
+    return { outcome: 'failed', detail: `could not run the interrupt command: ${run.spawnError}` };
+  }
+  if (run.timedOut) {
+    return { outcome: 'failed', detail: `the interrupt command did not finish within ${policy.commandTimeoutMs}ms` };
+  }
+  const outcome = provider.classifyInterrupt?.(run.output, run.exitCode) ?? 'failed';
+  return { outcome, detail: outcome === 'failed' ? `interrupt exited with code ${run.exitCode ?? 'null'}` : outcome };
 }
 
 /** True when the report shows the server holds no running turn for the session. */

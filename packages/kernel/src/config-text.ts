@@ -101,63 +101,37 @@ function syncAgents(context: SyncContext, current: Record<string, unknown>, upda
       fresh.push(...agentLines(key, body, { indent: context.unit, unit: context.unit }));
       continue;
     }
-    if (section === null) throw new ConfigEditError('Cannot edit agents in this file.');
-    const block = childBlock(section, key);
-    if (block === null) throw new ConfigEditError(`Cannot edit agents.${key} in this file.`);
-    if (Object.keys(body).length === 0 && isRecord(currentAgents[key]) && Object.keys(currentAgents[key]).length > 0) {
-      context.edits.push([block.line, block.end, [withValue(context.lines[block.line] ?? '', '{}')]]);
-      continue;
-    }
-    if (Object.hasOwn(body, 'model')) syncScalar(context, block, { key: 'model', value: body.model, field: `agents.${key}.model` });
-    syncAgentClient(context, block, { key, before: currentAgents[key], after: body });
-    dropRemovedScalars(context, block, { before: currentAgents[key], after: body });
+    syncExistingAgent(context, section, { key, before: currentAgents[key], after: body });
   }
   if (fresh.length === 0) return;
   if (section === null) context.edits.push([0, 0, ['agents:', ...fresh]]);
   else context.edits.push([section.end, section.end, fresh]);
 }
 
+function syncExistingAgent(context: SyncContext, section: Block | null, change: BodyChange & { key: string }): void {
+  const { key, before, after: body } = change;
+  if (section === null) throw new ConfigEditError('Cannot edit agents in this file.');
+  const block = childBlock(section, key);
+  if (block === null) throw new ConfigEditError(`Cannot edit agents.${key} in this file.`);
+  if (Object.keys(body).length === 0 && isRecord(before) && Object.keys(before).length > 0) {
+    context.edits.push([block.line, block.end, [withValue(context.lines[block.line] ?? '', '{}')]]);
+    return;
+  }
+  if (Object.hasOwn(body, 'model')) syncScalar(context, block, { key: 'model', value: body.model, field: `agents.${key}.model` });
+  syncAgentClient(context, block, change);
+  dropRemovedScalars(context, block, change);
+}
+
 function syncRoles(context: SyncContext, current: Record<string, unknown>, updated: Record<string, unknown>): void {
   const { lines, blocks, unit, edits } = context;
   const currentRoles = mappingOrEmpty(current.roles);
-  const updatedRoles = mappingOrEmpty(updated.roles);
   const section = topSection(blocks, 'roles');
   const fresh: string[] = [];
-  for (const [key, body] of Object.entries(updatedRoles)) {
+  for (const [key, body] of Object.entries(mappingOrEmpty(updated.roles))) {
     if (!isRecord(body)) throw new ConfigurationError(`Missing or invalid roles.${key}.`);
-    if (!Object.hasOwn(currentRoles, key)) {
-      fresh.push(...roleLines(key, body, { indent: unit, unit }));
-      continue;
-    }
-    if (section === null) throw new ConfigEditError('Cannot edit roles in this file.');
-    const block = childBlock(section, key);
-    if (block === null) throw new ConfigEditError(`Cannot edit roles.${key} in this file.`);
-    const previous = currentRoles[key];
-    if (isRecord(body.agent) || (isRecord(previous) && isRecord(previous.agent))) {
-      const found = childBlock(block, 'agent');
-      if (!found) throw new ConfigEditError(`Cannot edit roles.${key}.agent in this file.`);
-      if (!isRecord(previous) || !deepEqual(previous.agent, body.agent)) {
-        if (isRecord(previous) && isRecord(previous.agent) && isRecord(body.agent)) {
-          // Reuse the field patchers so unchanged values keep their comments and order.
-          if (body.agent.model !== previous.agent.model) {
-            syncScalar(context, found, { key: 'model', value: body.agent.model, field: `roles.${key}.agent.model` });
-          }
-          syncAgentClient(context, found, { key, before: previous.agent, after: body.agent });
-          dropRemovedScalars(context, found, { before: previous.agent, after: body.agent });
-        } else {
-          const indent = block.indent + unit;
-          const base = lines.slice(found.line, found.end).map((line) => line.slice(indent)).join('\n');
-          const result = renderAuthoringYaml({ agent: body.agent }, base);
-          if (!result.preserved) throw new ConfigEditError(`Cannot preserve roles.${key}.agent: ${result.reason}.`);
-          const rendered = result.text.trimEnd().split('\n').map((line) => ' '.repeat(indent) + line);
-          edits.push([found.line, found.end, rendered]);
-        }
-      }
-    } else if (Object.hasOwn(body, 'agent')) {
-      syncScalar(context, block, { key: 'agent', value: body.agent, field: `roles.${key}.agent` });
-    }
-    syncRoleOptions(context, block, { key, before: currentRoles[key], after: body });
-    dropRemovedScalars(context, block, { before: currentRoles[key], after: body });
+    const before = currentRoles[key];
+    if (Object.hasOwn(currentRoles, key)) syncExistingRole(context, section, { key, before, after: body });
+    else fresh.push(...roleLines(key, body, { indent: unit, unit }));
   }
   if (fresh.length === 0) return;
   if (section === null) {
@@ -165,6 +139,42 @@ function syncRoles(context: SyncContext, current: Record<string, unknown>, updat
     return;
   }
   edits.push([section.end, section.end, fresh]);
+}
+
+function syncExistingRole(context: SyncContext, section: Block | null, change: BodyChange & { key: string }): void {
+  const { key, before: previous, after: body } = change;
+  if (section === null) throw new ConfigEditError('Cannot edit roles in this file.');
+  const block = childBlock(section, key);
+  if (block === null) throw new ConfigEditError(`Cannot edit roles.${key} in this file.`);
+  if (isRecord(body.agent) || (isRecord(previous) && isRecord(previous.agent))) {
+    syncRoleAgentMapping(context, block, change);
+  } else if (Object.hasOwn(body, 'agent')) {
+    syncScalar(context, block, { key: 'agent', value: body.agent, field: `roles.${key}.agent` });
+  }
+  syncRoleOptions(context, block, change);
+  dropRemovedScalars(context, block, change);
+}
+
+function syncRoleAgentMapping(context: SyncContext, block: Block, change: BodyChange & { key: string }): void {
+  const { key, before: previous, after: body } = change;
+  const found = childBlock(block, 'agent');
+  if (!found) throw new ConfigEditError(`Cannot edit roles.${key}.agent in this file.`);
+  if (isRecord(previous) && deepEqual(previous.agent, body.agent)) return;
+  if (isRecord(previous) && isRecord(previous.agent) && isRecord(body.agent)) {
+    // Reuse the field patchers so unchanged values keep their comments and order.
+    if (body.agent.model !== previous.agent.model) {
+      syncScalar(context, found, { key: 'model', value: body.agent.model, field: `roles.${key}.agent.model` });
+    }
+    syncAgentClient(context, found, { key, before: previous.agent, after: body.agent });
+    dropRemovedScalars(context, found, { before: previous.agent, after: body.agent });
+    return;
+  }
+  const indent = block.indent + context.unit;
+  const base = context.lines.slice(found.line, found.end).map((line) => line.slice(indent)).join('\n');
+  const result = renderAuthoringYaml({ agent: body.agent }, base);
+  if (!result.preserved) throw new ConfigEditError(`Cannot preserve roles.${key}.agent: ${result.reason}.`);
+  const rendered = result.text.trimEnd().split('\n').map((line) => ' '.repeat(indent) + line);
+  context.edits.push([found.line, found.end, rendered]);
 }
 
 function syncSchemaVersion(lines: string[], updated: Record<string, unknown>, edits: Edit[]): void {
@@ -177,13 +187,8 @@ function syncSchemaVersion(lines: string[], updated: Record<string, unknown>, ed
     edits.push([block.line, block.line + 1, [withValue(lines[block.line] ?? '', String(value))]]);
     return;
   }
-  let insert = lines.length;
-  for (let index = 0; index < lines.length; index += 1) {
-    if (contentIndent(lines[index] ?? '') !== null) {
-      insert = index;
-      break;
-    }
-  }
+  const first = lines.findIndex((line) => contentIndent(line) !== null);
+  const insert = first < 0 ? lines.length : first;
   edits.push([insert, insert, [rendered, '']]);
 }
 
@@ -216,14 +221,8 @@ function syncAgentClient(context: SyncContext, parent: Block, change: BodyChange
   const { key, before: beforeBody, after: afterBody } = change;
   const before = optionsDict(beforeBody, key);
   const after = optionsDict(afterBody, key);
-  const afterClient = isRecord(afterBody.client) ? afterBody.client : {};
-  const type = typeof afterClient.type === 'string' && afterClient.type.trim() !== ''
-    ? afterClient.type.trim()
-    : undefined;
-  const beforeClient = isRecord(beforeBody) && isRecord(beforeBody.client) ? beforeBody.client : {};
-  const beforeType = typeof beforeClient.type === 'string' && beforeClient.type.trim() !== ''
-    ? beforeClient.type.trim()
-    : undefined;
+  const type = clientType(afterBody);
+  const beforeType = clientType(beforeBody);
   if (recordEqual(before, after) && type === beforeType) return;
   const client = childBlock(parent, 'client');
   if (client !== null) {
@@ -234,6 +233,12 @@ function syncAgentClient(context: SyncContext, parent: Block, change: BodyChange
   }
   if (type === undefined && Object.keys(after).length === 0) return;
   edits.push([parent.end, parent.end, clientLines({ type, options: after }, { indent: parent.indent + unit, unit })]);
+}
+
+/** The trimmed, non-empty `client.type` of an agent body, if any. */
+function clientType(body: unknown): string | undefined {
+  const client = isRecord(body) && isRecord(body.client) ? body.client : {};
+  return typeof client.type === 'string' && client.type.trim() !== '' ? client.type.trim() : undefined;
 }
 
 function syncClientType(context: SyncContext, client: Block, value: string): void {
@@ -262,7 +267,7 @@ function syncOptionMap(
   parent: Block,
   change: { before: Record<string, string>; after: Record<string, string>; field: string },
 ): void {
-  const { lines, unit, edits } = context;
+  const { unit, edits } = context;
   const { before, after, field } = change;
   if (recordEqual(before, after)) return;
   const options = childBlock(parent, 'options');
@@ -281,6 +286,16 @@ function syncOptionMap(
     edits.push([parent.end, parent.end, body]);
     return;
   }
+  patchOptionEntries(context, options, { before, after });
+}
+
+function patchOptionEntries(
+  context: SyncContext,
+  options: Block,
+  change: { before: Record<string, string>; after: Record<string, string> },
+): void {
+  const { lines, unit, edits } = context;
+  const { before, after } = change;
   for (const name of sortedKeys(before).filter((key) => !Object.hasOwn(after, key))) {
     const found = childBlock(options, name);
     if (found !== null) edits.push([found.line, found.end, []]);
@@ -323,8 +338,7 @@ function agentLines(key: string, body: Record<string, unknown>, layout: Layout):
     `${parent}${key}:`,
     `${child}model: ${yamlScalar(stringValue(body.model, `agents.${key}.model`))}`,
   ];
-  const client = isRecord(body.client) ? body.client : {};
-  const type = typeof client.type === 'string' && client.type.trim() !== '' ? client.type.trim() : undefined;
+  const type = clientType(body);
   if (type === undefined) throw new ConfigEditError(`agents.${key} needs client.type before it can be written.`);
   const options = optionsDict(body, key);
   lines.push(...clientLines({ type, options }, { indent: indent + unit, unit }));
@@ -365,28 +379,27 @@ function parseLevel(lines: string[], span: Span, unit: number): Block[] {
     if (lineIndent < indent) break;
     if (lineIndent > indent) throw new ConfigEditError(`Invalid YAML indent at line ${lineIndex + 1}.`);
     const [key, value] = splitKey(lines[lineIndex] ?? '', lineIndex);
-    let childEnd = lineIndex + 1;
-    while (childEnd < end) {
-      const later = nextContent(lines, childEnd, end);
-      if (later === null) {
-        childEnd = end;
-        break;
-      }
-      const [laterIndex, laterIndent] = later;
-      if (laterIndent <= indent) {
-        childEnd = laterIndex;
-        break;
-      }
-      childEnd = laterIndex + 1;
-    }
-    const children =
-      value.trim() === '' && !isSequence(lines, { start: lineIndex + 1, end: childEnd, indent: indent + unit })
-        ? parseLevel(lines, { start: lineIndex + 1, end: childEnd, indent: indent + unit }, unit)
-        : [];
+    const childEnd = blockEnd(lines, { start: lineIndex + 1, end, indent });
+    const childSpan = { start: lineIndex + 1, end: childEnd, indent: indent + unit };
+    const children = value.trim() === '' && !isSequence(lines, childSpan) ? parseLevel(lines, childSpan, unit) : [];
     blocks.push({ key, indent, line: lineIndex, end: childEnd, value, children });
     index = childEnd;
   }
   return blocks;
+}
+
+/** The line after a block's last nested content line; `span.indent` is the block's own indent. */
+function blockEnd(lines: string[], span: Span): number {
+  const { end, indent } = span;
+  let childEnd = span.start;
+  while (childEnd < end) {
+    const later = nextContent(lines, childEnd, end);
+    if (later === null) return end;
+    const [laterIndex, laterIndent] = later;
+    if (laterIndent <= indent) return laterIndex;
+    childEnd = laterIndex + 1;
+  }
+  return childEnd;
 }
 
 function isSequence(lines: string[], span: Span): boolean {
@@ -500,19 +513,18 @@ function liftConfigLines(original: string): string {
     for (const agent of models.children) liftAgentLines(context, agent);
   }
   const roles = topSection(blocks, 'roles');
-  if (roles !== null) {
-    for (const role of roles.children) {
-      for (const child of role.children) {
-        if (child.key === 'default_model') {
-          renameKey(context, child, 'agent');
-          if (child.children.length > 0) liftAgentLines(context, child);
-        } else if (child.key === 'instructions') {
-          renameKey(context, child, 'responsibilities');
-        }
-      }
-    }
-  }
+  for (const child of (roles?.children ?? []).flatMap((role) => role.children)) liftRoleChild(context, child);
   return applyEdits(original, lines, edits);
+}
+
+function liftRoleChild(context: SyncContext, child: Block): void {
+  if (child.key === 'instructions') {
+    renameKey(context, child, 'responsibilities');
+    return;
+  }
+  if (child.key !== 'default_model') return;
+  renameKey(context, child, 'agent');
+  if (child.children.length > 0) liftAgentLines(context, child);
 }
 
 function renameKey(context: SyncContext, block: Block, key: string): void {

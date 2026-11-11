@@ -129,41 +129,19 @@ export class CodexClient implements CliClient {
     for (const rawLine of stdout.split(/\r\n|\n|\r/)) {
       const event = parseJsonObject(rawLine);
       if (event === null) continue;
-      const eventType = event.type;
-      if (eventType === 'thread.started') {
+      if (event.type === 'thread.started') {
         const threadId = event.thread_id;
         if (typeof threadId === 'string' && threadId) sessionId = threadId;
-      } else if (eventType === 'item.completed') {
-        const {item} = event;
-        if (isRecord(item) && item.type === 'agent_message') {
-          const {text} = item;
-          if (typeof text === 'string' && text) {
-            lastText = text;
-            lastSource = 'model';
-          }
-        }
-      } else if (eventType === 'turn.failed') {
-        const {error} = event;
-        const message = isRecord(error) ? error.message : undefined;
-        if (typeof message === 'string' && message) {
-          lastText = message;
-          lastSource = 'error';
-        }
-      } else if (eventType === 'error') {
-        const {message} = event;
-        if (typeof message === 'string' && message) {
-          lastText = message;
-          lastSource = 'error';
-        }
+        continue;
       }
+      const output = runEventOutput(event);
+      if (output !== null) ({ text: lastText, source: lastSource } = output);
     }
     const fileText = readExistingText(lastMessageFile);
-    if (fileText !== null) {
-      const stripped = fileText.trim();
-      if (stripped) {
-        lastText = stripped;
-        lastSource = 'model';
-      }
+    const stripped = fileText?.trim();
+    if (stripped) {
+      lastText = stripped;
+      lastSource = 'model';
     }
     if (lastText !== null) return { text: lastText, sessionId, source: lastSource };
     const raw = stdout.trim();
@@ -186,11 +164,10 @@ export class CodexClient implements CliClient {
       const {visibility} = item;
       if (visibility !== undefined && visibility !== null && visibility !== 'list') continue;
       const {slug} = item;
-      if (typeof slug === 'string' && slug && !ids.includes(slug)) {
-        ids.push(slug);
-        if (Array.isArray(item.supported_reasoning_levels)) {
-          optionValues.push([slug, CODEX_REASONING_OPTION, reasoningLevels(item.supported_reasoning_levels)]);
-        }
+      if (typeof slug !== 'string' || !slug || ids.includes(slug)) continue;
+      ids.push(slug);
+      if (Array.isArray(item.supported_reasoning_levels)) {
+        optionValues.push([slug, CODEX_REASONING_OPTION, reasoningLevels(item.supported_reasoning_levels)]);
       }
     }
     if (ids.length === 0) throw new Error('codex model catalog is empty.');
@@ -246,16 +223,10 @@ export class CodexClient implements CliClient {
     for (const rawLine of stdout.split(/\r\n|\n|\r/)) {
       const event = parseJsonObject(rawLine);
       if (event === null) continue;
-      if (event.type === 'turn.failed') {
-        const {error} = event;
-        const message = isRecord(error) ? error.message : undefined;
-        reported = typeof message === 'string' && message ? message : (reported ?? '');
-      } else if (event.type === 'error') {
-        const {message} = event;
-        // A control-plane warning is not a failed run.
-        if (exitCode === 0 && classifyProviderError(providerErrorMessage(event)).event === 'provider.warning') continue;
-        reported = typeof message === 'string' && message ? message : (reported ?? '');
-      }
+      if (event.type !== 'turn.failed' && event.type !== 'error') continue;
+      // A control-plane warning is not a failed run.
+      if (event.type === 'error' && exitCode === 0 && isProviderWarning(event)) continue;
+      reported = errorEventMessage(event) ?? reported ?? '';
     }
     if (reported !== null) return { origin: 'provider-error', message: reported.trim() || null, exitCode };
     if (exitCode === 0) return null;
@@ -306,4 +277,28 @@ export class CodexClient implements CliClient {
     if (values === null) throw new Error(`codex did not list ${option} values for ${model}.`);
     return values;
   }
+}
+
+/** The non-empty error message a `turn.failed` or `error` event carries. */
+function errorEventMessage(event: Record<string, unknown>): string | null {
+  let {message} = event;
+  if (event.type === 'turn.failed') message = isRecord(event.error) ? event.error.message : undefined;
+  return typeof message === 'string' && message ? message : null;
+}
+
+function isProviderWarning(event: Record<string, unknown>): boolean {
+  return classifyProviderError(providerErrorMessage(event)).event === 'provider.warning';
+}
+
+/** The text a run event contributes: an agent message, or an error report. */
+function runEventOutput(event: Record<string, unknown>): { text: string; source: CliRunOutput['source'] } | null {
+  if (event.type === 'item.completed') {
+    const {item} = event;
+    if (!isRecord(item) || item.type !== 'agent_message') return null;
+    const {text} = item;
+    return typeof text === 'string' && text ? { text, source: 'model' } : null;
+  }
+  if (event.type !== 'turn.failed' && event.type !== 'error') return null;
+  const message = errorEventMessage(event);
+  return message === null ? null : { text: message, source: 'error' };
 }

@@ -236,29 +236,19 @@ export class AgyClient implements CliClient {
   public parseRun(stdout: string, lastMessageFile: string): CliRunOutput {
     void lastMessageFile;
     let sessionId: string | null = null;
-    let text: string | null = null;
-    let source: CliRunOutput['source'] = 'none';
+    let output: { text: string; source: CliRunOutput['source'] } | null = null;
     let sawEvent = false;
     for (const rawLine of stdout.split(/\r\n|\n|\r/)) {
       const payload = parseJsonObject(rawLine);
       if (payload === null) continue;
       sawEvent = true;
-      const topLevelId = conversationId(payload.conversation_id);
-      if (topLevelId) sessionId = topLevelId;
+      sessionId = conversationId(payload.conversation_id) || sessionId;
       const result = resultBody(payload);
       if (result === null) continue;
-      const resultId = conversationId(result.conversation_id);
-      if (resultId) sessionId = resultId;
-      if (result.status === 'SUCCESS') {
-        const {response} = result;
-        text = typeof response === 'string' ? response.trim() : '';
-        source = text === '' ? 'none' : 'model';
-      } else {
-        text = failureText(result);
-        source = 'error';
-      }
+      sessionId = conversationId(result.conversation_id) || sessionId;
+      output = resultOutput(result);
     }
-    if (text !== null) return { text, sessionId, source };
+    if (output !== null) return { ...output, sessionId };
     if (sawEvent) return { text: '', sessionId, source: 'none' };
     const raw = stdout.trim();
     return { text: raw, sessionId: null, source: raw === '' ? 'none' : 'error' };
@@ -284,37 +274,12 @@ export class AgyClient implements CliClient {
   }
 
   public createEventParser(): (line: string) => Record<string, unknown> | null {
-    const toolSteps: Record<string, Record<string, unknown>> = {};
+    const toolSteps = new Map<string, Record<string, unknown>>();
     return (line) => {
       const payload = parseJsonObject(line);
       if (payload === null) return null;
       if (payload.event === 'step_update' && isRecord(payload.step_update)) {
-        const step = payload.step_update;
-        if (!isToolStep(step)) return null;
-        const state = typeof step.state === 'string' ? step.state.toUpperCase() : '';
-        const key = stepKey(step);
-        if (state === 'ACTIVE') {
-          if (key) toolSteps[key] = step;
-          return {
-            event: 'provider.item_started',
-            summary: toolSummary(step, 'started'),
-            details: toolDetails(step),
-          };
-        }
-        if (state === 'DONE' || state === 'FAILED' || state === 'ERROR') {
-          const remembered = key ? toolSteps[key] : undefined;
-          const merged = remembered ? { ...remembered, ...step } : step;
-          if (remembered && !isRecord(toolInfo(step).parameters) && isRecord(toolInfo(remembered).parameters)) {
-            merged.tool_info = { ...toolInfo(remembered), ...toolInfo(step) };
-          }
-          const action = toolFailed(merged) || state === 'FAILED' || state === 'ERROR' ? 'failed' : 'completed';
-          return {
-            event: 'provider.item_completed',
-            summary: toolSummary(merged, action),
-            details: toolDetails(merged),
-          };
-        }
-        return null;
+        return stepEvent(payload.step_update, toolSteps);
       }
       if (payload.event === 'result') {
         const result = resultBody(payload);
@@ -400,4 +365,53 @@ export class AgyClient implements CliClient {
     if (option !== 'effort') throw new Error(`agy does not list values for ${option}.`);
     return this.parseModels(stdout).valuesFor(model, option) ?? AGY_EFFORTS;
   }
+}
+
+/** The run output one result body yields: the model's response, or the failure text. */
+function resultOutput(result: Record<string, unknown>): { text: string; source: CliRunOutput['source'] } {
+  if (result.status !== 'SUCCESS') return { text: failureText(result), source: 'error' };
+  const {response} = result;
+  const text = typeof response === 'string' ? response.trim() : '';
+  return { text, source: text === '' ? 'none' : 'model' };
+}
+
+const FINISHED_STEP_STATES: ReadonlySet<string> = new Set(['DONE', 'FAILED', 'ERROR']);
+
+/** Maps one tool step update to a provider event, remembering active steps to merge their parameters later. */
+function stepEvent(
+  step: Record<string, unknown>,
+  toolSteps: Map<string, Record<string, unknown>>,
+): Record<string, unknown> | null {
+  if (!isToolStep(step)) return null;
+  const state = typeof step.state === 'string' ? step.state.toUpperCase() : '';
+  const key = stepKey(step);
+  if (state === 'ACTIVE') {
+    if (key) toolSteps.set(key, step);
+    return {
+      event: 'provider.item_started',
+      summary: toolSummary(step, 'started'),
+      details: toolDetails(step),
+    };
+  }
+  if (!FINISHED_STEP_STATES.has(state)) return null;
+  const merged = mergeRememberedStep(step, key ? toolSteps.get(key) : undefined);
+  const action = toolFailed(merged) || state === 'FAILED' || state === 'ERROR' ? 'failed' : 'completed';
+  return {
+    event: 'provider.item_completed',
+    summary: toolSummary(merged, action),
+    details: toolDetails(merged),
+  };
+}
+
+/** Completes a finished step with the parameters its active update carried. */
+function mergeRememberedStep(
+  step: Record<string, unknown>,
+  remembered: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  if (!remembered) return step;
+  const merged = { ...remembered, ...step };
+  if (!isRecord(toolInfo(step).parameters) && isRecord(toolInfo(remembered).parameters)) {
+    merged.tool_info = { ...toolInfo(remembered), ...toolInfo(step) };
+  }
+  return merged;
 }

@@ -44,14 +44,19 @@ function label(schema: unknown, from: string, root: Node | null): string {
   if (schema.const !== undefined) return code(JSON.stringify(schema.const));
   if (Array.isArray(schema.enum)) return schema.enum.map((item) => code(JSON.stringify(item))).join(' \\| ');
   if (schema.type === 'array') return `${group(label(schema.items, from, root))}[]`;
-  if (schema.type === 'object') {
-    if (isNode(schema.properties) && Object.keys(schema.properties).length > 0) return 'object';
-    const values = isNode(schema.patternProperties)
-      ? Object.values(schema.patternProperties)[0]
-      : schema.additionalProperties;
-    return isNode(values) ? `map of ${group(label(values, from, root))}` : 'object';
-  }
+  if (schema.type === 'object') return objectLabel(schema, from, root);
   return typeof schema.type === 'string' ? schema.type : 'any';
+}
+
+/** Values schema of a map-like object: the first pattern property, else `additionalProperties`. */
+function mapValues(schema: Node): unknown {
+  return isNode(schema.patternProperties) ? Object.values(schema.patternProperties)[0] : schema.additionalProperties;
+}
+
+function objectLabel(schema: Node, from: string, root: Node | null): string {
+  if (isNode(schema.properties) && Object.keys(schema.properties).length > 0) return 'object';
+  const values = mapValues(schema);
+  return isNode(values) ? `map of ${group(label(values, from, root))}` : 'object';
 }
 
 function notes(schema: Node): string {
@@ -77,9 +82,8 @@ interface RowsContext {
 
 /** Field rows of a schema: inline nested objects expand with a dotted path, identified ones are linked. */
 function rows(schema: unknown, prefix: string, context: RowsContext): void {
-  const { from, root, out } = context;
   if (!isNode(schema)) return;
-  if (typeof schema.$id === 'string' && schema !== root) return;
+  if (typeof schema.$id === 'string' && schema !== context.root) return;
   if (Array.isArray(schema.anyOf)) {
     for (const item of schema.anyOf) rows(item, prefix, context);
     return;
@@ -89,26 +93,27 @@ function rows(schema: unknown, prefix: string, context: RowsContext): void {
     return;
   }
   if (schema.type !== 'object') return;
-  const required = new Set(Array.isArray(schema.required) ? (schema.required as string[]) : []);
-  if (isNode(schema.properties)) {
-    for (const [name, property] of Object.entries(schema.properties)) {
-      const path = prefix ? `${prefix}.${name}` : name;
-      if (isNode(property)) {
-        out.push({
-          path,
-          type: label(property, from, root),
-          required: required.has(name),
-          notes: notes(property),
-          description: describeOf(property),
-        });
-        rows(property, path, context);
-      }
-    }
-  }
-  const values = isNode(schema.patternProperties)
-    ? Object.values(schema.patternProperties)[0]
-    : schema.additionalProperties;
+  propertyRows(schema, prefix, context);
+  const values = mapValues(schema);
   if (isNode(values)) rows(values, `${prefix}.*`, context);
+}
+
+function propertyRows(schema: Node, prefix: string, context: RowsContext): void {
+  if (!isNode(schema.properties)) return;
+  const { from, root, out } = context;
+  const required = new Set(Array.isArray(schema.required) ? (schema.required as string[]) : []);
+  for (const [name, property] of Object.entries(schema.properties)) {
+    if (!isNode(property)) continue;
+    const path = prefix ? `${prefix}.${name}` : name;
+    out.push({
+      path,
+      type: label(property, from, root),
+      required: required.has(name),
+      notes: notes(property),
+      description: describeOf(property),
+    });
+    rows(property, path, context);
+  }
 }
 
 function section(identity: string, node: Node, options: { from: string; extra?: string }): string {

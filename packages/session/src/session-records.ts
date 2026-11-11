@@ -106,6 +106,15 @@ export interface CreateWorkflowSessionOptions {
   readonly resolveClient?: ClientRegistry;
 }
 
+function selectTaskSummary(task: string | null | undefined, handoffTask: string | null | undefined): string {
+  const selectedTask = task ?? handoffTask;
+  if (!selectedTask) throw new ConfigurationError('Creating a session requires --task when the prior session has no matching downstream suggestion.');
+  assertSingleLineTask(selectedTask);
+  const taskSummary = selectedTask.trim();
+  if (!taskSummary) throw new ConfigurationError('Task summary must not be empty.');
+  return taskSummary;
+}
+
 export function createWorkflowSession(
   workspace: string,
   workflowId: string,
@@ -116,11 +125,7 @@ export function createWorkflowSession(
   const resolvedId = workflow.id;
   const resolvedPrior = resolvePriorSessionId(workspace, workflow, priorSessionId);
   const handoff = resolveHandoff(workspace, workflow.id, resolvedPrior);
-  const selectedTask = task ?? handoff?.task;
-  if (!selectedTask) throw new ConfigurationError('Creating a session requires --task when the prior session has no matching downstream suggestion.');
-  assertSingleLineTask(selectedTask);
-  const taskSummary = selectedTask.trim();
-  if (!taskSummary) throw new ConfigurationError('Task summary must not be empty.');
+  const taskSummary = selectTaskSummary(task, handoff?.task);
   const sessionsDirectory = path.join(workspace, '.migent', 'sessions');
   const [sessionId, sessionDirectory] = createNumericSessionDirectory(sessionsDirectory);
   const createdAt = utcNow();
@@ -301,6 +306,30 @@ export function requireAgentSession(workspace: string, sessionId: string): void 
   throw new ConfigurationError(`Session ${sessionId} was not created by agent.`);
 }
 
+/** The prior session's status; it must exist, run the required workflow, and be completed. */
+function requiredPriorStatus(
+  workspace: string,
+  priorSessionId: string,
+  requiredWorkflow: string,
+): Record<string, unknown> {
+  const priorStatusPath = path.join(workspace, '.migent', 'sessions', priorSessionId, 'status.json');
+  const priorRead = readStatusFileState(priorStatusPath);
+  if (priorRead.state === 'corrupt') throw new ConfigurationError(corruptStatusMessage(priorStatusPath));
+  const {status} = priorRead;
+  if (Object.keys(status).length === 0) {
+    throw new ConfigurationError(`Required session not found: ${priorSessionId}.`);
+  }
+  if (status.workflow_id !== requiredWorkflow) {
+    throw new ConfigurationError(
+      `--prior ${priorSessionId} is workflow ${pyLiteral(status.workflow_id)}, not ${pyRepr(requiredWorkflow)}.`,
+    );
+  }
+  if (status.status !== 'completed') {
+    throw new ConfigurationError(`--prior ${priorSessionId} is ${String(status.status)}, not completed.`);
+  }
+  return status;
+}
+
 export function resolvePriorSessionId(
   workspace: string,
   workflow: WorkflowDocument,
@@ -320,21 +349,7 @@ export function resolvePriorSessionId(
       : `completed ${workflow.requires.workflow} (${workflow.requires.decision})`;
     throw new ConfigurationError(`Workflow ${workflow.id} requires ${required}; pass --prior.`);
   }
-  const priorStatusPath = path.join(workspace, '.migent', 'sessions', priorSessionId, 'status.json');
-  const priorRead = readStatusFileState(priorStatusPath);
-  if (priorRead.state === 'corrupt') throw new ConfigurationError(corruptStatusMessage(priorStatusPath));
-  const {status} = priorRead;
-  if (Object.keys(status).length === 0) {
-    throw new ConfigurationError(`Required session not found: ${priorSessionId}.`);
-  }
-  if (status.workflow_id !== workflow.requires.workflow) {
-    throw new ConfigurationError(
-      `--prior ${priorSessionId} is workflow ${pyLiteral(status.workflow_id)}, not ${pyRepr(workflow.requires.workflow)}.`,
-    );
-  }
-  if (status.status !== 'completed') {
-    throw new ConfigurationError(`--prior ${priorSessionId} is ${String(status.status)}, not completed.`);
-  }
+  const status = requiredPriorStatus(workspace, priorSessionId, workflow.requires.workflow);
   if (isWorkflowV2(workflow)) return priorSessionId;
   const decision = status.latest_decision;
   const requiredDecision = workflow.requires.decision;

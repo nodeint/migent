@@ -35,9 +35,42 @@ export async function runVerifyOnlyStage(input: {
     commands: input.stage.verify,
   });
   const record = new AgentSessionRecord({ client: '', model: '', workspace: input.workspace, status: 'running' });
-  let result: VerifyRunResult;
+  const result = await runVerifyCommands(input, { store, context, record, reporter });
+  const passed = result.passed && result.infraError === null;
+  const red = passed ? 0 : 1;
+  const report = store.saveTurnVerify(
+    context,
+    VERIFY_TURN,
+    formatVerifyReport(result, {
+      run: 1,
+      red,
+      maxVerify: 1,
+      timeoutSec: input.stage.verifyTimeoutSec,
+    }),
+  );
+  if (passed) {
+    reporter.emit('verify.passed', 'all commands passed', { turn: VERIFY_TURN, report });
+    const outcome = new StageOutcome('complete');
+    store.saveExecution(context, record, { status: 'completed', outcome });
+    store.publishVerifyReport(context, VERIFY_TURN);
+    return executionJson(store, context, { outcomeStatus: 'complete', failureReason: '' });
+  }
+  return recordVerifyFailure({ store, context, record, reporter }, result, report);
+}
+
+// Runs the stage's verify list, marking the execution cancelled when the run is cancelled.
+async function runVerifyCommands(
+  input: { workspace: string; stage: VerifyOnlyStageSpec; verifyRunner: VerifyRunner },
+  target: {
+    store: SessionStore;
+    context: ExecutionContext;
+    record: AgentSessionRecord;
+    reporter: ProviderEventReporter;
+  },
+): Promise<VerifyRunResult> {
+  const { store, context, record, reporter } = target;
   try {
-    result = await input.verifyRunner.run({
+    return await input.verifyRunner.run({
       commands: input.stage.verify,
       workspace: input.workspace,
       executionDirectory: context.directory,
@@ -65,26 +98,6 @@ export async function runVerifyOnlyStage(input: {
     }
     throw error;
   }
-  const passed = result.passed && result.infraError === null;
-  const red = passed ? 0 : 1;
-  const report = store.saveTurnVerify(
-    context,
-    VERIFY_TURN,
-    formatVerifyReport(result, {
-      run: 1,
-      red,
-      maxVerify: 1,
-      timeoutSec: input.stage.verifyTimeoutSec,
-    }),
-  );
-  if (passed) {
-    reporter.emit('verify.passed', 'all commands passed', { turn: VERIFY_TURN, report });
-    const outcome = new StageOutcome('complete');
-    store.saveExecution(context, record, { status: 'completed', outcome });
-    store.publishVerifyReport(context, VERIFY_TURN);
-    return executionJson(store, context, { outcomeStatus: 'complete', failureReason: '' });
-  }
-  return recordVerifyFailure({ store, context, record, reporter }, result, report);
 }
 
 // Reports the failed command and marks the execution failed.

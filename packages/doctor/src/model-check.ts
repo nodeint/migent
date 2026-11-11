@@ -97,43 +97,62 @@ export async function checkModelAvailability(
   try { config = loadWorkspaceConfig(workspace); } catch { return {}; }
   const definitions = [...listAgentDefinitions(config), ...extra];
   const run = cached(runCommand);
-  const results = await Promise.all(definitions.map(async ({ key: alias, value: model, field: modelField }) => {
-    if (only !== undefined && !only.has(alias)) return null;
-    // Unmapped agents (empty definitions) are reported by the structural check.
-    if (!isRecord(model) || Object.keys(model).length === 0) return null;
-    if (typeof model.model !== 'string' || !model.model.trim()) return null;
-    if (clientUnusable(model)) return null;
-    const type = agentClientType(model, clients);
-    if (type === undefined) return null; // The structural check explains the missing client.
-    const field = `${modelField}.model`;
-    const name = model.model.trim();
-    const value = JSON.stringify(model.model);
-    let client: CliClient;
-    try {
-      client = clients.get(type);
-    } catch { return null; } // The structural check explains an unsupported client.
-    const source = clientCatalogSource(client as unknown as ClientCatalogInput);
-    const lookup = catalogName(client, name);
-    const check: ModelEffortCheck = {};
-    try {
-      const catalog = await loadCatalog(source, which, run);
-      try { knownModel(lookup, catalog); return null; } catch (error) {
-        missed.add(alias);
-        if (RELIABLE_CATALOGS.has(client.command)) {
-          const near = closest(lookup, catalog.ids);
-          const hint = near.length > 0 ? `\nDid you mean: ${near.join(', ')}` : '';
-          check.problem = `Invalid ${field}: ${value}\n${error instanceof Error ? error.message : String(error)}${hint}`;
-        } else {
-          check.warning = `Could not validate ${field}: ${value}\n${client.command} does not list ${name}; its model list may be incomplete.`;
-        }
-      }
-    } catch (error) {
-      unreadable.add(alias);
-      check.warning = `Could not validate ${field}: ${value}\n${error instanceof Error ? error.message : String(error)}`;
-    }
-    return [alias, check] as const;
+  const sinks = { unreadable, missed };
+  const results = await Promise.all(definitions.map(async (entry) => {
+    if (only !== undefined && !only.has(entry.key)) return null;
+    const target = availabilityTarget(entry.value, clients);
+    if (target === null) return null;
+    const check = await lookupModel(entry, target, { which, run, ...sinks });
+    return check === null ? null : [entry.key, check] as const;
   }));
   return Object.fromEntries(results.filter((entry) => entry !== null));
+}
+
+/** The client and trimmed model name to look up, or null when the structural check explains the definition. */
+interface AvailabilityTarget {
+  client: CliClient;
+  name: string;
+  value: string;
+}
+
+function availabilityTarget(model: unknown, clients: ClientRegistry): AvailabilityTarget | null {
+  // Unmapped agents (empty definitions) are reported by the structural check.
+  if (!isRecord(model) || Object.keys(model).length === 0) return null;
+  if (typeof model.model !== 'string' || !model.model.trim()) return null;
+  if (clientUnusable(model)) return null;
+  const type = agentClientType(model, clients);
+  if (type === undefined) return null; // The structural check explains the missing client.
+  try {
+    return { client: clients.get(type), name: model.model.trim(), value: JSON.stringify(model.model) };
+  } catch { return null; } // The structural check explains an unsupported client.
+}
+
+/** Looks one model up in its client's catalog; null when the catalog lists it. */
+async function lookupModel(
+  entry: AgentDefinitionEntry,
+  target: AvailabilityTarget,
+  machine: { which: Which; run: RunCommand; unreadable: Set<string>; missed: Set<string> },
+): Promise<ModelEffortCheck | null> {
+  const { client, name, value } = target;
+  const field = `${entry.field}.model`;
+  const source = clientCatalogSource(client as unknown as ClientCatalogInput);
+  const lookup = catalogName(client, name);
+  let catalog;
+  try {
+    catalog = await loadCatalog(source, machine.which, machine.run);
+  } catch (error) {
+    machine.unreadable.add(entry.key);
+    return { warning: `Could not validate ${field}: ${value}\n${error instanceof Error ? error.message : String(error)}` };
+  }
+  try { knownModel(lookup, catalog); return null; } catch (error) {
+    machine.missed.add(entry.key);
+    if (!RELIABLE_CATALOGS.has(client.command)) {
+      return { warning: `Could not validate ${field}: ${value}\n${client.command} does not list ${name}; its model list may be incomplete.` };
+    }
+    const near = closest(lookup, catalog.ids);
+    const hint = near.length > 0 ? `\nDid you mean: ${near.join(', ')}` : '';
+    return { problem: `Invalid ${field}: ${value}\n${error instanceof Error ? error.message : String(error)}${hint}` };
+  }
 }
 
 /** Edit-distance budget: at least this, growing with name length. */

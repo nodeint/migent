@@ -61,16 +61,17 @@ export async function runWorkspaceList(asJson: boolean): Promise<number> {
     printError('Registry response was invalid.');
     return 1;
   }
-  if (asJson) {
-    writeJson(WorkspaceList, { workspaces: rows as Static<typeof WorkspaceList>['workspaces'] });
-  } else {
-    for (const row of rows) {
-      const record = row && typeof row === 'object' ? (row as Record<string, unknown>) : {};
-      const available = record.available ? 'true' : 'false';
-      process.stdout.write(`${String(record.id)}  ${String(record.name)}  ${String(record.path)}  ${available}\n`);
-    }
-  }
+  if (asJson) writeJson(WorkspaceList, { workspaces: rows as Static<typeof WorkspaceList>['workspaces'] });
+  else printWorkspaceRows(rows);
   return 0;
+}
+
+function printWorkspaceRows(rows: readonly unknown[]): void {
+  for (const row of rows) {
+    const record = row && typeof row === 'object' ? (row as Record<string, unknown>) : {};
+    const available = record.available ? 'true' : 'false';
+    process.stdout.write(`${String(record.id)}  ${String(record.name)}  ${String(record.path)}  ${available}\n`);
+  }
 }
 
 export async function runRemove(workspaceId: string): Promise<number> {

@@ -26,22 +26,27 @@ export async function main(argv: string[] = process.argv.slice(ARGV_USER_OFFSET)
     }
     return status.code;
   } catch (error) {
-    if (error instanceof PromptCancelled) return EXIT_CANCELLED;
-    if (error instanceof ConfigurationError) {
-      printError(error.message);
-      return EXIT_CONFIG;
-    }
-    if (error instanceof CommanderError) {
-      if (error.exitCode !== 0 && authoring !== null) printInvocationEnvelope(authoring, error.message.replace(/^error: /, ''));
-      return error.exitCode === 0 ? EXIT_OK : EXIT_CONFIG;
-    }
-    throw error;
+    return exitForError(error, authoring);
   } finally {
     setInvocationCwd(undefined);
     cliHooks.which = null;
     cliHooks.runner = null;
     cliHooks.runCommand = null;
   }
+}
+
+/** The exit code for an error the CLI reports itself; rethrows anything else. */
+function exitForError(error: unknown, authoring: string | null): number {
+  if (error instanceof PromptCancelled) return EXIT_CANCELLED;
+  if (error instanceof ConfigurationError) {
+    printError(error.message);
+    return EXIT_CONFIG;
+  }
+  if (error instanceof CommanderError) {
+    if (error.exitCode !== 0 && authoring !== null) printInvocationEnvelope(authoring, error.message.replace(/^error: /, ''));
+    return error.exitCode === 0 ? EXIT_OK : EXIT_CONFIG;
+  }
+  throw error;
 }
 
 function isDirectRun(): boolean {
