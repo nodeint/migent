@@ -192,16 +192,7 @@ async function runVersion2Pool(run: ExecuteRun, limits: LoopLimits): Promise<Exe
   const flights: { promise: Promise<void>; settled: boolean }[] = [];
   const errors: unknown[] = [];
   const concurrency = workflow.concurrency ?? 1;
-  const observe = async (): Promise<void> => {
-    const [error] = errors;
-    if (error !== undefined) {
-      await Promise.allSettled(flights.map((flight) => flight.promise));
-      throw error;
-    }
-    for (let index = flights.length - 1; index >= 0; index -= 1) {
-      if (flights[index].settled) flights.splice(index, 1);
-    }
-  };
+  const observe = (): Promise<void> => observeFlights(flights, errors);
   const startStage = (
     stageId: string,
     status: Record<string, unknown>,
@@ -229,17 +220,7 @@ async function runVersion2Pool(run: ExecuteRun, limits: LoopLimits): Promise<Exe
     if (maxDispatches === null || dispatched < maxDispatches) return null;
     await Promise.allSettled(flights.map((flight) => flight.promise));
     await observe();
-    const endStatus = store.readSessionStatus(sessionId);
-    const endSnapshots = store.executionSnapshots(sessionId);
-    const endSession = text(endStatus.status);
-    const endBaselines = revisionBaselines(endStatus);
-    const endResumes = blockResumes(workspace, sessionId);
-    const endSchedule = { sessionStatus: endSession, revisionBaselines: endBaselines, resumes: endResumes };
-    const remaining = schedulableStageIds(workflow, endSnapshots, { ...endSchedule, verifyTried, verifyOnlyTried });
-    if (remaining.length > 0) return executeFinal(endStatus, 'dispatch_limit', stages);
-    const reason = version2IdleReason(workflow, endSnapshots, endSchedule);
-    if (reason === 'no eligible stage') return executeFinal(endStatus, 'dispatch_limit', stages);
-    return executeFinal(endStatus, reason, stages);
+    return dispatchLimitResult(run, { verifyTried, verifyOnlyTried }, stages);
   };
   while (true) {
     cancellationSignal().throwIfCancelled();
@@ -264,15 +245,7 @@ async function runVersion2Pool(run: ExecuteRun, limits: LoopLimits): Promise<Exe
     if (room > 0) {
       const cap = Math.min(concurrency, running.length + room);
       const starting = runnableNow(workflow, schedulable, { running, concurrency: cap, snapshots });
-      if (sessionStatus === 'blocked' && starting.length > 0) {
-        status.status = 'active';
-        delete status.blocked_by_execution_id;
-        delete status.blocked_by_execution_ids;
-        delete status.blocked_by_stage_id;
-        delete status.blocker;
-        delete status.terminal_execution_id;
-        writeJsonAtomic(path.join(workspace, '.migent', 'sessions', sessionId, 'status.json'), status);
-      }
+      if (sessionStatus === 'blocked' && starting.length > 0) reactivateBlockedSession(workspace, sessionId, status);
       for (const stageId of starting) startStage(stageId, status, snapshots);
     }
     const cappedAfterStart = await settleCeiling();
@@ -284,6 +257,53 @@ async function runVersion2Pool(run: ExecuteRun, limits: LoopLimits): Promise<Exe
     }
     await Promise.race(flights.map((flight) => flight.promise));
   }
+}
+
+// Rethrows the first dispatch error once every flight settles; otherwise drops settled flights.
+async function observeFlights(
+  flights: { promise: Promise<void>; settled: boolean }[],
+  errors: readonly unknown[],
+): Promise<void> {
+  const [error] = errors;
+  if (error !== undefined) {
+    await Promise.allSettled(flights.map((flight) => flight.promise));
+    throw error;
+  }
+  for (let index = flights.length - 1; index >= 0; index -= 1) {
+    if (flights[index].settled) flights.splice(index, 1);
+  }
+}
+
+// Builds the final result once the dispatch ceiling is reached and every flight has settled.
+function dispatchLimitResult(
+  run: ExecuteRun,
+  tried: { verifyTried: ReadonlySet<string>; verifyOnlyTried: ReadonlySet<string> },
+  stages: Record<string, unknown>[],
+): ExecuteResult {
+  const { workspace, store, workflow, sessionId } = run;
+  const { verifyTried, verifyOnlyTried } = tried;
+  const endStatus = store.readSessionStatus(sessionId);
+  const endSnapshots = store.executionSnapshots(sessionId);
+  const endSession = text(endStatus.status);
+  const endBaselines = revisionBaselines(endStatus);
+  const endResumes = blockResumes(workspace, sessionId);
+  const endSchedule = { sessionStatus: endSession, revisionBaselines: endBaselines, resumes: endResumes };
+  const remaining = schedulableStageIds(workflow, endSnapshots, { ...endSchedule, verifyTried, verifyOnlyTried });
+  if (remaining.length > 0) return executeFinal(endStatus, 'dispatch_limit', stages);
+  const reason = version2IdleReason(workflow, endSnapshots, endSchedule);
+  if (reason === 'no eligible stage') return executeFinal(endStatus, 'dispatch_limit', stages);
+  return executeFinal(endStatus, reason, stages);
+}
+
+// Marks a blocked session active again because a stage is about to start.
+function reactivateBlockedSession(workspace: string, sessionId: string, status: Record<string, unknown>): void {
+  status.status = 'active';
+  delete status.blocked_by_execution_id;
+  delete status.blocked_by_execution_ids;
+  delete status.blocked_by_stage_id;
+  delete status.blocker;
+  delete status.terminal_execution_id;
+  writeJsonAtomic(path.join(workspace, '.migent', 'sessions', sessionId, 'status.json'), status);
 }
 
 function runningStageIds(snapshots: readonly ExecutionSnapshot[]): string[] {

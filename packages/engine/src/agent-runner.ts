@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import type { CliClient, ClientRegistry, UsageCapture } from '@nodeint/migent-kernel';
+import type { CliClient, ClientRegistry, ExecutionSnapshot } from '@nodeint/migent-kernel';
 import { createNewSession, sessionOptions } from '@nodeint/migent-kernel';
 import { CommandExecutor, DEFAULT_TIMEOUT_SEC, type StopReason } from '@nodeint/migent-kernel';
 import {
@@ -15,19 +15,14 @@ import {
 import { StreamSummarizer } from '@nodeint/migent-kernel';
 import { VerifyRunner } from '@nodeint/migent-kernel';
 import { ConfigurationError } from '@nodeint/migent-kernel';
-import { debugEnabled, flattenHistory, log } from '@nodeint/migent-kernel';
-import { classifyGateError, type GateFailure, readCorrectionLedger, ruleForTurn } from '@nodeint/migent-kernel';
-import { StageOutcome } from '@nodeint/migent-kernel';
-import { HandoffFileError } from '@nodeint/migent-kernel';
-import { QuestionFileError } from '@nodeint/migent-kernel';
+import { flattenHistory } from '@nodeint/migent-kernel';
+import { readCorrectionLedger } from '@nodeint/migent-kernel';
 import {
   CURRENT_RESPONSE_PROTOCOL,
   LEGACY_RESPONSE_PROTOCOL,
-  renderProtocolUpdate,
   renderProviderPrompt,
 } from '@nodeint/migent-prompts';
-import { AgentSessionRecord, SessionStore, stringOptions } from '@nodeint/migent-session';
-import { isRecord } from '@nodeint/migent-workflow';
+import { type ExecutionContext, SessionStore, stringOptions } from '@nodeint/migent-session';
 
 import { ProviderEventReporter } from './provider-events.js';
 import {
@@ -35,22 +30,21 @@ import {
   readCliVersion,
   readExecutionJson,
   readGitFacts,
-  savedOutcome,
-  savedResponse,
   storedProtocol,
-  storedTurn,
   verifyProgress,
 } from './run-facts.js';
+import { loadRunningExecution, reopenConversation, resumePendingPrompt, savedVerdict } from './run-resume.js';
 import {
   carryExhaustedArtifact,
-  classifyFinishedProcess,
   loadRunStage,
   resolveWorkspace,
   type RunRequest,
+  type StageFacts,
   stageFacts,
   validateSessionProfile,
 } from './run-setup.js';
 import { TurnLoop } from './turn-loop.js';
+import { finishTurn, forwardProviderEvent, turnDebugStep } from './turn-process.js';
 import {
   handoffPath,
   promptArtifactFiles,
@@ -99,35 +93,16 @@ export class AgentToolRunner {
     const workspacePath = resolveWorkspace(request.workspace);
     const stageAttempt = request.stageAttempt ?? null;
     const executionOrder = request.executionOrder ?? null;
-    if (stageAttempt !== null && stageAttempt < 1) throw new Error('Stage attempt must be at least 1.');
-    if (executionOrder !== null && executionOrder < 1) {
-      throw new Error('Execution order must be at least 1.');
-    }
+    assertRunOrdering(stageAttempt, executionOrder);
     const clientId = request.client;
-    const client = this.registry.get(clientId);
-    const resolvedOptions = { ...(request.options ?? {}) };
-    client.validateOptions(resolvedOptions);
-    const profile = sessionOptions(client, resolvedOptions);
+    const { client, resolvedOptions, profile } = this.resolveClient(clientId, { ...(request.options ?? {}) });
     const store = new SessionStore(workspacePath, undefined, this.registry);
     const sessionId = request.sessionId ?? null;
     const stageId = request.stageId ?? 'agent';
-    const [record, isNew, context] = store.loadOrCreate(
-      {
-        client: clientId,
-        model: request.model,
-        options: profile,
-        workspace: workspacePath,
-        sessionId,
-        stageId,
-        stageAttempt,
-        executionOrder,
-        prompt: request.prompt,
-        resumeExecutionId: request.resumeExecutionId ?? null,
-        validateResume: (record) => validateSessionProfile(
-          record,
-          { client: clientId, model: request.model, options: profile },
-        ),
-      },
+    const [record, isNew, context] = loadOrCreateRun(
+      store,
+      request,
+      { workspacePath, stageAttempt, executionOrder, profile },
     );
     request.onExecution?.(context.executionId);
     const newSession = isNew ? createNewSession(client) : null;
@@ -136,10 +111,7 @@ export class AgentToolRunner {
     record.status = 'running';
     store.save(record, context);
     store.saveExecution(context, record, { status: 'running' });
-    const eventReporter = new ProviderEventReporter(
-      { store, context },
-      { client: clientId, model: request.model, itemProgress: this.itemProgress },
-    );
+    const eventReporter = this.eventReporterFor({ store, context }, clientId, request.model);
     const agentId = isNew ? null : record.agentId;
     let turnPrompt = request.prompt;
     if (!isNew && !agentId) {
@@ -147,39 +119,11 @@ export class AgentToolRunner {
     }
     const stage = sessionId === null ? null : loadRunStage(store, context.sessionId, stageId);
     const { decisionValues, ask, artifactFiles, artifactName, verifyCommands } = stageFacts(stage);
-    const source = request.resumeExecutionId
-      ? store.executionContext(context.sessionId, request.resumeExecutionId) : null;
-    const sourceMetadata = source === null ? null : readExecutionJson(source.directory);
-    // A new conversation takes the current protocol;
-    // a continued one keeps its source's, never past 2 from a legacy stamp.
-    const protocol = isNew || source === null
-      ? this.newConversationProtocol
-      : Math.max(LEGACY_RESPONSE_PROTOCOL, storedProtocol(sourceMetadata));
-    const previous = request.resumeExecutionId
-      ? store.executionSnapshots(context.sessionId).find((row) => row.executionId === request.resumeExecutionId
-        && row.stageId === stageId && row.outcomeStatus === 'question')
-      : undefined;
-    const previousMetadata = previous
-      ? JSON.parse(
-        readFileSync(path.join(path.dirname(previous.artifactDirectory), 'execution.json'), 'utf8'),
-      ) as Record<string, unknown>
-      : null;
-    const progress = previousMetadata ? verifyProgress(previousMetadata) : null;
-    // Answering a question on the same agent: the conversation already holds the contract and stage instructions.
-    const sameConversation = previous !== undefined && agentId !== null && agentId !== ''
-      && storedProtocol(previousMetadata) === protocol;
-    if (previous) {
-      for (const item of artifactFiles) {
-        store.carryVerifyArtifact(previous.artifactDirectory, context, item.artifact.file);
-      }
-    }
-    if (request.resumeExecutionId && verifyCommands.length > 0) {
-      for (const item of artifactFiles) carryExhaustedArtifact(
-        store,
-        context,
-        { resumeExecutionId: request.resumeExecutionId, artifactName: item.artifact.file },
-      );
-    }
+    const { protocol, previous, progress, sameConversation } = this.priorExecution(
+      { store, context, stageId, isNew, agentId },
+      request.resumeExecutionId ?? null,
+    );
+    carryPriorArtifacts({ store, context, artifactFiles, verifyCommands }, previous, request.resumeExecutionId ?? null);
     const conversationContract = sameConversation ? 'reminder' : 'full';
     turnPrompt = renderProviderPrompt(turnPrompt, { ...sessionPaths(context, sessionId),
       contract: sessionId === null ? false : conversationContract, turn: request.turn ?? null, decisionValues,
@@ -187,17 +131,11 @@ export class AgentToolRunner {
       protocol, questionFile: questionRequestPath(context), handoffFile: handoffPath(context),
       artifactDirectory: context.artifactDirectory, artifactName, artifactFiles: promptArtifactFiles(artifactFiles),
       previousArtifactDirectory: previous?.artifactDirectory ?? null,
-      previousVerifyReport: previous && progress?.lastReport
-        ? path.resolve(path.dirname(previous.artifactDirectory), progress.lastReport) : null,
+      previousVerifyReport: previousReportPath(previous, progress),
     });
     store.savePrompt(context, turnPrompt);
     store.saveExecutionProgress(context, record, { response_protocol: protocol, turn_kind: request.turn ?? null });
-    const started: Record<string, unknown> = {
-      cli_version: this.cachedCliVersion(client, clientId, workspacePath),
-      ...readGitFacts(workspacePath),
-    };
-    if (Object.keys(profile).length > 0) started.options = profile;
-    eventReporter.emit('provider.stage_started', `${clientId}/${request.model}`, started);
+    this.emitStageStarted({ client, clientId, model: request.model, workspacePath, profile }, eventReporter);
 
     return this.driveTurns({
       client,
@@ -220,11 +158,7 @@ export class AgentToolRunner {
       turn: 1,
       red: progress?.red ?? 0,
       verifyRuns: progress?.runs ?? 0,
-      lastReport: previous && progress?.lastReport
-        ? path.relative(
-          context.directory,
-          path.resolve(path.dirname(previous.artifactDirectory), progress.lastReport),
-        ) : null,
+      lastReport: previousReportPath(previous, progress, context.directory),
       lastResult: progress?.lastResult ?? null,
       currentPrompt: turnPrompt,
       currentAgentId: agentId,
@@ -239,33 +173,15 @@ export class AgentToolRunner {
   public async continueCancelled(workspace: string, sessionId: string, executionId: string): Promise<RunResult> {
     const workspacePath = resolveWorkspace(workspace);
     const store = new SessionStore(workspacePath, undefined, this.registry);
-    const context = store.executionContext(sessionId, executionId);
-    if (context === null) throw new Error(`Execution ${executionId} was not found in session ${sessionId}.`);
-    const metadata = JSON.parse(readFileSync(path.join(context.directory, 'execution.json'), 'utf8')) as unknown;
-    if (!isRecord(metadata)) throw new Error(`Execution ${executionId} is unreadable.`);
-    if (metadata.status !== 'running') {
-      throw new Error(`Execution ${executionId} is ${String(metadata.status)}, not running.`);
-    }
+    const { context, metadata } = loadRunningExecution(store, sessionId, executionId);
     const stageId = typeof metadata.stage_id === 'string' ? metadata.stage_id : 'agent';
     const clientId = store.executionClient(sessionId, executionId);
     const model = typeof metadata.model === 'string' ? metadata.model : '';
-    const client = this.registry.get(clientId);
-    const resolvedOptions = stringOptions(metadata.options);
-    client.validateOptions(resolvedOptions);
-    const profile = sessionOptions(client, resolvedOptions);
-    const record = AgentSessionRecord.fromJson(
-      JSON.parse(readFileSync(context.conversationReadPath, 'utf8')) as unknown,
-      { client: clientId, model, workspace: workspacePath },
-    );
-    record.client = clientId;
-    record.status = 'running';
-    store.save(record, context);
+    const { client, resolvedOptions, profile } = this.resolveClient(clientId, stringOptions(metadata.options));
+    const record = reopenConversation({ store, context }, { clientId, model, workspace: workspacePath });
     const stage = loadRunStage(store, sessionId, stageId);
-    const { decisionValues, ask, artifactFiles, artifactName, verifyCommands } = stageFacts(stage);
-    const eventReporter = new ProviderEventReporter(
-      { store, context },
-      { client: clientId, model, itemProgress: this.itemProgress },
-    );
+    const { decisionValues, ask, artifactName, verifyCommands } = stageFacts(stage);
+    const eventReporter = this.eventReporterFor({ store, context }, clientId, model);
     const progress = verifyProgress(metadata);
     const corrections = readCorrectionLedger(metadata);
     const questionFile = questionRequestPath(context);
@@ -301,8 +217,6 @@ export class AgentToolRunner {
       corrections,
       protocol,
     };
-    // The file a pending correction repairs must survive the first turn's cleanup.
-    let keepFile = false;
     const assistants = record.history.filter((item) => item.role === 'assistant').length;
     const last = record.history.at(-1);
     const lastRole = last && typeof last.role === 'string' ? last.role : '';
@@ -310,75 +224,31 @@ export class AgentToolRunner {
       if (lastRole !== 'user' || typeof last?.content !== 'string' || last.content === '') {
         throw new ConfigurationError(`Execution ${executionId} has no prompt to resume.`);
       }
-      const {agentId} = record;
-      // The first turn is sent as prompt.md, contract included. A later repair turn
-      // stores only the repair text, and the loop adds the contract again before sending.
-      let currentPrompt: string;
-      // The saved first prompt applies only while the history holds just that prompt. A correction
-      // queued after an empty reply adds a user message without an assistant one.
-      const userTurns = record.history.filter((item) => item.role === 'user').length;
-      const pendingCorrection = ruleForTurn(storedTurn(metadata));
-      if (assistants === 0 && userTurns <= 1) {
-        try {
-          currentPrompt = readFileSync(path.join(context.directory, 'prompt.md'), 'utf8');
-        } catch {
-          throw new ConfigurationError(`Execution ${executionId} has no prompt to resume.`);
-        }
-        // A first prompt saved under an older protocol carries the old question instructions.
-        if (sessionId !== null && ask !== null && stamped < LEGACY_RESPONSE_PROTOCOL) {
-          currentPrompt += renderProtocolUpdate({ ...sessionPaths(context, sessionId), turn: storedTurn(metadata),
-            decisionValues, decisionInstructions: stage?.decisionInstructions, ask, questionFile,
-          });
-          // The stamp now says protocol 2, so the saved prompt must carry the update for the next resume.
-          store.savePrompt(context, currentPrompt);
-        }
-      } else {
-        currentPrompt = agentId
-          ? last.content
-          : flattenHistory(record.history as { role: string; content: string }[]);
-        const contract = agentId && stamped >= LEGACY_RESPONSE_PROTOCOL
-          ? (pendingCorrection?.contract ?? 'reminder') : 'full';
-        keepFile = pendingCorrection?.keepFile ?? false;
-        currentPrompt = renderProviderPrompt(currentPrompt, {
-          ...sessionPaths(context, sessionId), contract, turn: storedTurn(metadata), decisionValues,
-          decisionInstructions: stage?.decisionInstructions, ask, protocol, questionFile, handoffFile,
-          artifactDirectory: context.artifactDirectory, artifactName, artifactFiles: promptArtifactFiles(artifactFiles),
-        });
-      }
+      const { agentId } = record;
+      const resumed = resumePendingPrompt(
+        { store, context, record, metadata, sessionId, stage, protocol, stamped },
+        { executionId, assistants, last: last.content },
+      );
       return this.driveTurns({
         ...common,
         turn: persistedTurn(metadata, Math.max(1, assistants + 1)),
-        currentPrompt,
+        currentPrompt: resumed.currentPrompt,
         currentAgentId: agentId,
         pendingVerify: null,
-        keepFile,
+        keepFile: resumed.keepFile,
       });
     }
     const turn = persistedTurn(metadata, Math.max(1, assistants));
-    const responseText = savedResponse(context, last);
-    let outcome: StageOutcome | null = null;
-    let invokeError: string | null = null;
-    let gateFailure: GateFailure | null = null;
-    try {
-      outcome = savedOutcome(
-        { store, context, turn },
-        responseText,
-        { required: sessionId !== null, decisionValues, ask, protocol, questionFile, handoffFile },
-      );
-    } catch (error) {
-      if (error instanceof QuestionFileError || error instanceof HandoffFileError) {
-        gateFailure = classifyGateError(error);
-      } else if (error instanceof Error) {
-        invokeError = error.message;
-        gateFailure = classifyGateError(error);
-      } else throw error;
-    }
+    const pendingVerify = savedVerdict(
+      { store, context, turn, last },
+      { required: sessionId !== null, decisionValues, ask, protocol, questionFile, handoffFile },
+    );
     return this.driveTurns({
       ...common,
       turn,
       currentPrompt: '',
       currentAgentId: record.agentId,
-      pendingVerify: { responseText, outcome, invokeError, gateFailure },
+      pendingVerify,
     });
   }
 
@@ -389,6 +259,125 @@ export class AgentToolRunner {
       this.verifyRunner,
     );
     return loop.drive();
+  }
+
+  private resolveClient(
+    clientId: string,
+    resolvedOptions: Record<string, string>,
+  ): { client: CliClient; resolvedOptions: Record<string, string>; profile: Record<string, string> } {
+    const client = this.registry.get(clientId);
+    client.validateOptions(resolvedOptions);
+    return { client, resolvedOptions, profile: sessionOptions(client, resolvedOptions) };
+  }
+
+  private eventReporterFor(
+    target: { store: SessionStore; context: ExecutionContext },
+    clientId: string,
+    model: string,
+  ): ProviderEventReporter {
+    return new ProviderEventReporter(target, { client: clientId, model, itemProgress: this.itemProgress });
+  }
+
+  // Reads the source execution a run resumes: its protocol, the answered question, and verify progress.
+  private priorExecution(
+    run: { store: SessionStore; context: ExecutionContext; stageId: string; isNew: boolean; agentId: string | null },
+    resumeExecutionId: string | null,
+  ): {
+    protocol: number;
+    previous: ExecutionSnapshot | undefined;
+    progress: ReturnType<typeof verifyProgress> | null;
+    sameConversation: boolean;
+  } {
+    const { store, context, stageId, isNew, agentId } = run;
+    const source = resumeExecutionId
+      ? store.executionContext(context.sessionId, resumeExecutionId) : null;
+    const sourceMetadata = source === null ? null : readExecutionJson(source.directory);
+    // A new conversation takes the current protocol;
+    // a continued one keeps its source's, never past 2 from a legacy stamp.
+    const protocol = isNew || source === null
+      ? this.newConversationProtocol
+      : Math.max(LEGACY_RESPONSE_PROTOCOL, storedProtocol(sourceMetadata));
+    const previous = resumeExecutionId
+      ? store.executionSnapshots(context.sessionId).find((row) => row.executionId === resumeExecutionId
+        && row.stageId === stageId && row.outcomeStatus === 'question')
+      : undefined;
+    const previousMetadata = previous
+      ? JSON.parse(
+        readFileSync(path.join(path.dirname(previous.artifactDirectory), 'execution.json'), 'utf8'),
+      ) as Record<string, unknown>
+      : null;
+    const progress = previousMetadata ? verifyProgress(previousMetadata) : null;
+    // Answering a question on the same agent: the conversation already holds the contract and stage instructions.
+    const sameConversation = previous !== undefined && agentId !== null && agentId !== ''
+      && storedProtocol(previousMetadata) === protocol;
+    return { protocol, previous, progress, sameConversation };
+  }
+
+  private emitStageStarted(
+    run: { client: CliClient; clientId: string; model: string; workspacePath: string; profile: Record<string, string> },
+    eventReporter: ProviderEventReporter,
+  ): void {
+    const { client, clientId, model, workspacePath, profile } = run;
+    const started: Record<string, unknown> = {
+      cli_version: this.cachedCliVersion(client, clientId, workspacePath),
+      ...readGitFacts(workspacePath),
+    };
+    if (Object.keys(profile).length > 0) started.options = profile;
+    eventReporter.emit('provider.stage_started', `${clientId}/${model}`, started);
+  }
+
+  // Tracks every session id a turn may own on the CLI's server and interrupts them on stop.
+  private trackTurnSessions(
+    turn: { client: CliClient; workspace: string; eventReporter: ProviderEventReporter },
+    expectedId: string | null,
+  ): {
+    observe: (reported: string) => void;
+    reportMismatch: (reported: string) => void;
+    cleanup: (phase: 'before' | 'after', reason: StopReason) => Promise<boolean>;
+  } {
+    const { client, workspace, eventReporter } = turn;
+    // Every id this turn may own on the CLI's server: the one Migent holds, and any
+    // different one the CLI reports. Cleanup targets all of them.
+    const knownIds = new Set<string>(expectedId ? [expectedId] : []);
+    const reports = new Map<string, InterruptReport>();
+    let mismatchReported = false;
+    const reportMismatch = (reported: string) => {
+      if (expectedId === null || reported === expectedId || mismatchReported) return;
+      mismatchReported = true;
+      eventReporter.emit(
+        'provider.warning',
+        `provider reported session ${reported}, not the expected ${expectedId}; both are targeted for cleanup`,
+        { expected_agent_id: expectedId, reported_agent_id: reported },
+      );
+    };
+    const cleanup = async (phase: 'before' | 'after', reason: StopReason): Promise<boolean> => {
+      let attempted = false;
+      for (const id of [...knownIds]) {
+        // After the process is gone, only sessions not yet seen interrupted are asked again.
+        if (phase === 'after' && reports.get(id)?.outcome === 'interrupted') continue;
+        const report = await interruptSession(client, { agentId: id, cwd: workspace }, this.interruptPolicy);
+        if (report === null) continue;
+        attempted = true;
+        reports.set(id, report);
+        const details = { agent_id: id, reason, phase, outcome: report.outcome, attempts: report.attempts };
+        if (isSettled(report)) {
+          eventReporter.emit('provider.interrupt', `session ${id}: ${report.outcome}`, details);
+        } else if (phase === 'after') {
+          eventReporter.emit(
+            'provider.warning',
+            `could not confirm session ${id} stopped (${report.detail}); agent id retained for recovery`,
+            details,
+          );
+        }
+      }
+      return attempted;
+    };
+    const observe = (reported: string): void => {
+      if (knownIds.has(reported)) return;
+      knownIds.add(reported);
+      reportMismatch(reported);
+    };
+    return { observe, reportMismatch, cleanup };
   }
 
   private cachedCliVersion(client: CliClient, clientId: string, workspace: string): string | null {
@@ -430,51 +419,11 @@ export class AgentToolRunner {
       });
       // One parser per turn: a client's parser may keep state between lines.
       const parseEvent = client.createEventParser();
-      const debugStep = debugEnabled()
-        ? (step: string, fromWrapper = false) => {
-            const line = `${new Date().toISOString()} turn=${turn} ${fromWrapper ? 'wrapper: ' : ''}${step}`;
-            // Wrapper lines already reached stderr through the tee.
-            if (!fromWrapper) log(`debug: ${line}`);
-            store.appendDebugLog(context, line);
-          }
-        : null;
-      // Every id this turn may own on the CLI's server: the one Migent holds, and any
-      // different one the CLI reports. Cleanup targets all of them.
-      const expectedId = agentId || newSession?.agentId || null;
-      const knownIds = new Set<string>(expectedId ? [expectedId] : []);
-      const reports = new Map<string, InterruptReport>();
-      let mismatchReported = false;
-      const reportMismatch = (reported: string) => {
-        if (expectedId === null || reported === expectedId || mismatchReported) return;
-        mismatchReported = true;
-        eventReporter.emit(
-          'provider.warning',
-          `provider reported session ${reported}, not the expected ${expectedId}; both are targeted for cleanup`,
-          { expected_agent_id: expectedId, reported_agent_id: reported },
-        );
-      };
-      const cleanup = async (phase: 'before' | 'after', reason: StopReason): Promise<boolean> => {
-        let attempted = false;
-        for (const id of [...knownIds]) {
-          // After the process is gone, only sessions not yet seen interrupted are asked again.
-          if (phase === 'after' && reports.get(id)?.outcome === 'interrupted') continue;
-          const report = await interruptSession(client, { agentId: id, cwd: workspace }, this.interruptPolicy);
-          if (report === null) continue;
-          attempted = true;
-          reports.set(id, report);
-          const details = { agent_id: id, reason, phase, outcome: report.outcome, attempts: report.attempts };
-          if (isSettled(report)) {
-            eventReporter.emit('provider.interrupt', `session ${id}: ${report.outcome}`, details);
-          } else if (phase === 'after') {
-            eventReporter.emit(
-              'provider.warning',
-              `could not confirm session ${id} stopped (${report.detail}); agent id retained for recovery`,
-              details,
-            );
-          }
-        }
-        return attempted;
-      };
+      const debugStep = turnDebugStep(store, context, turn);
+      const sessions = this.trackTurnSessions(
+        { client, workspace, eventReporter },
+        agentId || newSession?.agentId || null,
+      );
       const summarizer = new StreamSummarizer(client.eventLabel !== undefined);
       const result = await this.executor.run(spec, workspace, {
         onDebug: debugStep,
@@ -482,27 +431,14 @@ export class AgentToolRunner {
         ...(client.interruptCommand === undefined
           ? {}
           : {
-              onInterrupt: (reason: StopReason) => cleanup('before', reason),
-              onStopped: (reason: StopReason) => cleanup('after', reason),
+              onInterrupt: (reason: StopReason) => sessions.cleanup('before', reason),
+              onStopped: (reason: StopReason) => sessions.cleanup('after', reason),
             }),
         onOutput: (line) => {
           summarizer.add(line, client.eventLabel?.(line) ?? null);
           const reported = client.sessionIdFromLine?.(line) ?? null;
-          if (reported !== null && !knownIds.has(reported)) {
-            knownIds.add(reported);
-            reportMismatch(reported);
-          }
-          const event = parseEvent(line);
-          if (!isRecord(event) || typeof event.event !== 'string') return;
-          // The runner alone decides whether a turn failed. A protocol-level failure the CLI
-          // announces mid-stream stays visible as a diagnostic, never as a second verdict.
-          eventReporter.emit(
-            event.event === 'provider.turn_failed' || event.event === 'provider.turn_completed'
-              ? 'provider.error'
-              : event.event,
-            typeof event.summary === 'string' ? event.summary : null,
-            isRecord(event.details) ? event.details : null,
-          );
+          if (reported !== null) sessions.observe(reported);
+          forwardProviderEvent(eventReporter, parseEvent(line));
         },
         onHeartbeat: (elapsed) => {
           eventReporter.emit('provider.heartbeat', `running for ${elapsed}s`, {
@@ -513,35 +449,82 @@ export class AgentToolRunner {
           store.saveProcessMetadata(context, info);
         },
       });
-      const { stdout, error: executorError, exitCode, failure } = result;
-      const parsed = client.parseRun(stdout, lastMessageFile);
-      if (parsed.sessionId) reportMismatch(parsed.sessionId);
-      const classification = classifyFinishedProcess(client, { stdout, exitCode, executorError });
-      let invokeError = executorError;
-      if (exitCode === 0 && classification !== null) invokeError = classification.message;
-      let usage: UsageCapture | null = null;
-      try {
-        const captured = client.captureUsage(stdout);
-        usage = isRecord(captured) ? captured : null;
-      } catch {
-        usage = null;
-      }
-      return {
-        responseText: parsed.text,
-        sessionId: parsed.sessionId,
-        invokeError,
-        argv: spec.argv,
-        usage,
-        classification,
-        source: parsed.source,
-        exitCode,
-        ...(failure ? { failure } : {}),
-        ...(result.process ? { facts: result.process } : {}),
-        summarizer,
-      };
+      return finishTurn(client, { result, argv: spec.argv, lastMessageFile, summarizer }, sessions.reportMismatch);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
   }
 }
 
+function assertRunOrdering(stageAttempt: number | null, executionOrder: number | null): void {
+  if (stageAttempt !== null && stageAttempt < 1) throw new Error('Stage attempt must be at least 1.');
+  if (executionOrder !== null && executionOrder < 1) {
+    throw new Error('Execution order must be at least 1.');
+  }
+}
+
+/** The previous execution's last verify report, absolute or relative to `from` when given. */
+function previousReportPath(
+  previous: ExecutionSnapshot | undefined,
+  progress: { lastReport: string | null } | null,
+  from?: string,
+): string | null {
+  if (!previous || !progress?.lastReport) return null;
+  const report = path.resolve(path.dirname(previous.artifactDirectory), progress.lastReport);
+  return from === undefined ? report : path.relative(from, report);
+}
+
+// Carries the answered execution's artifacts, and an exhausted verify artifact, into the new execution.
+function carryPriorArtifacts(
+  run: { store: SessionStore; context: ExecutionContext; artifactFiles: StageFacts['artifactFiles']; verifyCommands: readonly string[] },
+  previous: ExecutionSnapshot | undefined,
+  resumeExecutionId: string | null,
+): void {
+  const { store, context, artifactFiles, verifyCommands } = run;
+  if (previous) {
+    for (const item of artifactFiles) {
+      store.carryVerifyArtifact(previous.artifactDirectory, context, item.artifact.file);
+    }
+  }
+  if (resumeExecutionId && verifyCommands.length > 0) {
+    for (const item of artifactFiles) carryExhaustedArtifact(
+      store,
+      context,
+      { resumeExecutionId, artifactName: item.artifact.file },
+    );
+  }
+}
+
+function loadOrCreateRun(
+  store: SessionStore,
+  request: RunRequest,
+  run: {
+    workspacePath: string;
+    stageAttempt: number | null;
+    executionOrder: number | null;
+    profile: Record<string, string>;
+  },
+): ReturnType<SessionStore['loadOrCreate']> {
+  const { workspacePath, stageAttempt, executionOrder, profile } = run;
+  const clientId = request.client;
+  const sessionId = request.sessionId ?? null;
+  const stageId = request.stageId ?? 'agent';
+  return store.loadOrCreate(
+    {
+      client: clientId,
+      model: request.model,
+      options: profile,
+      workspace: workspacePath,
+      sessionId,
+      stageId,
+      stageAttempt,
+      executionOrder,
+      prompt: request.prompt,
+      resumeExecutionId: request.resumeExecutionId ?? null,
+      validateResume: (record) => validateSessionProfile(
+        record,
+        { client: clientId, model: request.model, options: profile },
+      ),
+    },
+  );
+}

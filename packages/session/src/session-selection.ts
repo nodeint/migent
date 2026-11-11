@@ -52,6 +52,104 @@ export function assertSessionId(sessionId: string): void {
   }
 }
 
+type SessionManifestRecord = ReturnType<typeof readSessionManifest>;
+type SelectedWorkflow = Pick<SessionSelection, 'source' | 'document' | 'freeze'>;
+
+/** Selects the session's freeze when the runtime would use it; the selected fields when that settled the selection. */
+function selectFrozenWorkflow(
+  selection: SessionSelection,
+  session: { workspace: string; sessionDirectory: string; manifest: SessionManifestRecord },
+): SelectedWorkflow | null {
+  const { workspace, sessionDirectory, manifest } = session;
+  const { sessionId } = selection;
+  const found: SelectedWorkflow = { source: null, document: null, freeze: null };
+  // Activation writes the freeze before it records the start, so an interrupted one leaves a stale
+  // freeze on a session that is still prepared. Activation would re-read the draft, so check that.
+  const status = readStatusFileState(path.join(sessionDirectory, 'status.json'));
+  const prepared = status.state === 'ok' && status.status.status === 'prepared';
+  const freezePath = path.join(sessionDirectory, WORKFLOW_FREEZE_FILE);
+  if (existsSync(freezePath) && prepared) {
+    selection.warnings.push(`${display(workspace, freezePath)} is left from an interrupted start and is ignored while the session is prepared.`);
+  } else if (existsSync(freezePath)) {
+    const source: SessionSource = {
+      sessionId,
+      workflowId: manifest.workflowId,
+      kind: 'frozen',
+      path: display(workspace, freezePath),
+    };
+    found.source = source;
+    try {
+      const freeze = readWorkflowFreeze(sessionDirectory);
+      if (freeze === null) {
+        selection.problems.push(`Workflow freeze is not a file: ${source.path}.`);
+        return found;
+      }
+      found.freeze = freeze;
+      found.document = freeze.workflow;
+      source.workflowId = freeze.workflow.id;
+    } catch (error) {
+      if (!(error instanceof ConfigurationError)) throw error;
+      selection.problems.push(error.message);
+    }
+    return found;
+  }
+  return null;
+}
+
+/** Selects the recorded workflow source, or the project workflow by id when the recorded file is gone. */
+function selectRecordedWorkflow(
+  selection: SessionSelection,
+  session: { workspace: string; manifestPath: string; manifest: SessionManifestRecord },
+): SelectedWorkflow {
+  const { workspace, manifestPath, manifest } = session;
+  const { sessionId } = selection;
+  const found: SelectedWorkflow = { source: null, document: null, freeze: null };
+  const draftPath = `.migent/sessions/${sessionId}/workflow.yaml`;
+  const recorded = manifest.workflowPath;
+  if (!recorded && !manifest.workflowId) {
+    selection.problems.push(
+      `Session manifest names no workflow: ${display(workspace, manifestPath)} has no workflow_id or workflow_path.`,
+    );
+    return found;
+  }
+  const kind: SessionWorkflowKind = recorded === draftPath ? 'draft' : 'live';
+  let filePath: string | null = null;
+  if (recorded) filePath = path.isAbsolute(recorded) ? recorded : path.join(workspace, recorded);
+  if (filePath !== null && (kind === 'draft' || isFile(filePath))) {
+    found.source = { sessionId, workflowId: manifest.workflowId, kind, path: display(workspace, filePath) };
+    try {
+      found.document = loadSessionFile(filePath);
+    } catch (error) {
+      selection.problems.push(authoringMessage(error));
+      return found;
+    }
+  } else {
+    // The recorded file is gone or unrecorded: the runtime then looks the workflow up by id.
+    if (!manifest.workflowId) {
+      selection.problems.push(`Workflow file is missing: ${recorded ?? ''}.`);
+      return found;
+    }
+    if (recorded) selection.warnings.push(`Recorded workflow file ${recorded} is missing; using workflow ${manifest.workflowId} by id.`);
+    found.source = { sessionId, workflowId: manifest.workflowId, kind: 'live', path: `.migent/workflows (${manifest.workflowId})` };
+    try {
+      found.document = loadNamedWorkflow(workspace, manifest.workflowId, { quiet: true });
+    } catch (error) {
+      selection.problems.push(authoringMessage(error));
+      return found;
+    }
+    if (found.document.source !== null) found.source.path = display(workspace, found.document.source);
+  }
+  const {document} = found;
+  if (document === null) return found;
+  found.source.workflowId = document.id;
+  if (kind === 'draft' && manifest.workflowId && document.id !== manifest.workflowId) {
+    selection.problems.push(
+      `Session workflow id is ${document.id}, not ${manifest.workflowId}. Do not change id in workflow.yaml.`,
+    );
+  }
+  return found;
+}
+
 /**
  * Pick the workflow the runtime would use: a freeze when the file exists (a corrupt one is a
  * problem, never a reason to fall back), otherwise the recorded live source. Throws only for an
@@ -94,81 +192,8 @@ export function selectSessionWorkflow(workspace: string, sessionId: string): Ses
     return selection;
   }
 
-  // Activation writes the freeze before it records the start, so an interrupted one leaves a stale
-  // freeze on a session that is still prepared. Activation would re-read the draft, so check that.
-  const status = readStatusFileState(path.join(sessionDirectory, 'status.json'));
-  const prepared = status.state === 'ok' && status.status.status === 'prepared';
-  const freezePath = path.join(sessionDirectory, WORKFLOW_FREEZE_FILE);
-  if (existsSync(freezePath) && prepared) {
-    selection.warnings.push(`${display(workspace, freezePath)} is left from an interrupted start and is ignored while the session is prepared.`);
-  } else if (existsSync(freezePath)) {
-    const source: SessionSource = {
-      sessionId,
-      workflowId: manifest.workflowId,
-      kind: 'frozen',
-      path: display(workspace, freezePath),
-    };
-    selection.source = source;
-    try {
-      const freeze = readWorkflowFreeze(sessionDirectory);
-      if (freeze === null) {
-        selection.problems.push(`Workflow freeze is not a file: ${source.path}.`);
-        return selection;
-      }
-      selection.freeze = freeze;
-      selection.document = freeze.workflow;
-      source.workflowId = freeze.workflow.id;
-    } catch (error) {
-      if (!(error instanceof ConfigurationError)) throw error;
-      selection.problems.push(error.message);
-    }
-    return selection;
-  }
-
-  const draftPath = `.migent/sessions/${sessionId}/workflow.yaml`;
-  const recorded = manifest.workflowPath;
-  if (!recorded && !manifest.workflowId) {
-    selection.problems.push(
-      `Session manifest names no workflow: ${display(workspace, manifestPath)} has no workflow_id or workflow_path.`,
-    );
-    return selection;
-  }
-  const kind: SessionWorkflowKind = recorded === draftPath ? 'draft' : 'live';
-  let filePath: string | null = null;
-  if (recorded) filePath = path.isAbsolute(recorded) ? recorded : path.join(workspace, recorded);
-  if (filePath !== null && (kind === 'draft' || isFile(filePath))) {
-    selection.source = { sessionId, workflowId: manifest.workflowId, kind, path: display(workspace, filePath) };
-    try {
-      selection.document = loadSessionFile(filePath);
-    } catch (error) {
-      selection.problems.push(authoringMessage(error));
-      return selection;
-    }
-  } else {
-    // The recorded file is gone or unrecorded: the runtime then looks the workflow up by id.
-    if (!manifest.workflowId) {
-      selection.problems.push(`Workflow file is missing: ${recorded ?? ''}.`);
-      return selection;
-    }
-    if (recorded) selection.warnings.push(`Recorded workflow file ${recorded} is missing; using workflow ${manifest.workflowId} by id.`);
-    selection.source = { sessionId, workflowId: manifest.workflowId, kind: 'live', path: `.migent/workflows (${manifest.workflowId})` };
-    try {
-      selection.document = loadNamedWorkflow(workspace, manifest.workflowId, { quiet: true });
-    } catch (error) {
-      selection.problems.push(authoringMessage(error));
-      return selection;
-    }
-    if (selection.document.source !== null) selection.source.path = display(workspace, selection.document.source);
-  }
-  const {document} = selection;
-  if (document === null) return selection;
-  selection.source.workflowId = document.id;
-  if (kind === 'draft' && manifest.workflowId && document.id !== manifest.workflowId) {
-    selection.problems.push(
-      `Session workflow id is ${document.id}, not ${manifest.workflowId}. Do not change id in workflow.yaml.`,
-    );
-  }
-  return selection;
+  const frozen = selectFrozenWorkflow(selection, { workspace, sessionDirectory, manifest });
+  return Object.assign(selection, frozen ?? selectRecordedWorkflow(selection, { workspace, manifestPath, manifest }));
 }
 
 /**

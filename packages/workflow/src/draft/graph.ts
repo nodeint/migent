@@ -119,15 +119,17 @@ export interface GraphProblemsContext {
   readonly problems: DraftProblems;
 }
 
+/** The stage views and completeness flags every cross-stage rule reads. */
+interface GraphScope {
+  readonly stages: readonly DraftStage[];
+  readonly graph: Record<string, StageSpec>;
+  readonly stagesById: ReadonlyMap<string, DraftStage>;
+  readonly structurallyComplete: boolean;
+  readonly dependsComplete: boolean;
+}
+
 export function collectGraphProblems(stages: readonly DraftStage[], context: GraphProblemsContext): void {
-  const {
-    rawCount: rawStageCount,
-    declaredIds: declaredStageIds,
-    completionStage,
-    outputs,
-    version2,
-    problems,
-  } = context;
+  const { rawCount: rawStageCount, problems } = context;
   // An unreadable id or a duplicate leaves some stage's fields unknown, but each check below reads only
   // what its own finding needs, so the rest of the graph is still checked.
   const structurallyComplete = stages.length === rawStageCount;
@@ -136,26 +138,37 @@ export function collectGraphProblems(stages: readonly DraftStage[], context: Gra
   const stagesById = new Map(stages.map((stage) => [stage.id, stage]));
   const graph: Record<string, StageSpec> = Object.create(null);
   for (const stage of stages) graph[stage.id] = graphStageOf(stage);
+  const scope: GraphScope = { stages, graph, stagesById, structurallyComplete, dependsComplete };
 
   // A missing route set or an uncollected stage could hide the route back, so both must be readable.
-  if (routesComplete && structurallyComplete) {
-    const targets = new Set<string>();
-    for (const stage of Object.values(graph)) {
-      for (const value of Object.values(stage.routes)) {
-        for (const target of routeTargets(value)) if (target !== 'complete') targets.add(target);
-      }
-    }
-    for (const stage of stages) {
-      if (stage.maxRevisions.state === 'invalid' || stage.maxRevisions.value === null) continue;
-      if (targets.has(stage.id)) continue;
-      problems.addMessage(
-        'invalid-value',
-        `stages.${stage.id}.max_revisions requires a route back to ${stage.id}.`,
-        ['stages', stage.index, 'max_revisions'],
-      );
+  if (routesComplete && structurallyComplete) collectMaxRevisionsProblems(scope, problems);
+  collectConditionalReachProblems(scope, context);
+  collectVerifyPathProblems(scope, context);
+}
+
+/** Each `max_revisions` needs some route back to its stage. */
+function collectMaxRevisionsProblems(scope: GraphScope, problems: DraftProblems): void {
+  const targets = new Set<string>();
+  for (const stage of Object.values(scope.graph)) {
+    for (const value of Object.values(stage.routes)) {
+      for (const target of routeTargets(value)) if (target !== 'complete') targets.add(target);
     }
   }
+  for (const stage of scope.stages) {
+    if (stage.maxRevisions.state === 'invalid' || stage.maxRevisions.value === null) continue;
+    if (targets.has(stage.id)) continue;
+    problems.addMessage(
+      'invalid-value',
+      `stages.${stage.id}.max_revisions requires a route back to ${stage.id}.`,
+      ['stages', stage.index, 'max_revisions'],
+    );
+  }
+}
 
+/** A `run_when` skip must not bypass a verify or leave a published output missing. */
+function collectConditionalReachProblems(scope: GraphScope, context: GraphProblemsContext): void {
+  const { stages, graph } = scope;
+  const { declaredIds: declaredStageIds, outputs, problems } = context;
   // Conditional reach uses only readable edges; anything found this way is definitely reached, so an
   // unrelated broken `depends_on`, unreadable stage, or malformed route elsewhere hides nothing.
   const reachedBy = new Map<string, string>();
@@ -189,7 +202,30 @@ export function collectGraphProblems(stages: readonly DraftStage[], context: Gra
       ['outputs', outputs.indexes[at] ?? at, 'from_stage'],
     );
   });
+}
 
+/** Every verify stage must be on each provable path to complete. */
+function collectVerifyPathProblems(scope: GraphScope, context: GraphProblemsContext): void {
+  const { stages, graph } = scope;
+  const points = completionPoints(scope, context);
+  if (points.size === 0) return;
+  for (const stage of stages) {
+    if (stage.verify.state !== 'valid' || stage.verify.value.length === 0) continue;
+    for (const point of points) {
+      if (point === stage.id || dependencyClosure(graph, point).has(stage.id)) continue;
+      context.problems.addMessage(
+        'invalid-value',
+        `stages.${stage.id}.verify is not on every path to complete: ${point} does not depend on ${stage.id}.`,
+        ['stages', stage.index, 'verify'],
+      );
+    }
+  }
+}
+
+/** The completion points whose dependency closure the draft can read. */
+function completionPoints(scope: GraphScope, context: GraphProblemsContext): Set<string> {
+  const { stages, graph, stagesById, dependsComplete, structurallyComplete } = scope;
+  const { declaredIds: declaredStageIds, completionStage, version2 } = context;
   // Each completion point is checked against its own dependency closure. A malformed `depends_on` or an
   // uncollected stage elsewhere cannot make a point's path unknown, and an unreadable point's own chain
   // is the only reason to skip that point.
@@ -215,16 +251,5 @@ export function collectGraphProblems(stages: readonly DraftStage[], context: Gra
       if (isLeafStage(graph, graph[stage.id])) points.add(stage.id);
     }
   }
-  if (points.size === 0) return;
-  for (const stage of stages) {
-    if (stage.verify.state !== 'valid' || stage.verify.value.length === 0) continue;
-    for (const point of points) {
-      if (point === stage.id || dependencyClosure(graph, point).has(stage.id)) continue;
-      problems.addMessage(
-        'invalid-value',
-        `stages.${stage.id}.verify is not on every path to complete: ${point} does not depend on ${stage.id}.`,
-        ['stages', stage.index, 'verify'],
-      );
-    }
-  }
+  return points;
 }

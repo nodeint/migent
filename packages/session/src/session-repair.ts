@@ -128,6 +128,45 @@ function parsedFromDraft(draft: EventDraft): ParsedEvent {
   };
 }
 
+type RepairExecution = FoldInputs['executions'][number];
+
+/** The missing `execution.started` event of an execution. */
+function startedDraft(execution: RepairExecution): EventDraft {
+  return {
+    event: 'execution.started',
+    timestamp: execution.createdAt ?? utcNow(),
+    executionId: execution.executionId,
+    stageId: execution.stageId,
+    data: {
+      execution_order: execution.executionOrder,
+      stage_attempt: execution.stageAttempt,
+      client: execution.client,
+      model: execution.model,
+      resumes_execution_id: execution.resumesExecutionId,
+    },
+  };
+}
+
+/** The single session event the reduction attaches to the execution that settled the session. */
+function sessionDraft(
+  execution: RepairExecution,
+  change: { finalStatus: string; fromStatus: string; outcome: ReturnType<typeof stageOutcome> },
+): EventDraft {
+  const { finalStatus, outcome } = change;
+  const reason = sessionChangeReason(finalStatus, outcome, execution.error);
+  const data: Record<string, unknown> = { from: change.fromStatus || null };
+  if (reason !== null) data.reason = reason;
+  if (outcome !== null) data.outcome = outcome.toJson();
+  return {
+    event: `session.${finalStatus}`,
+    timestamp: execution.completedAt ?? execution.createdAt ?? utcNow(),
+    executionId: execution.executionId,
+    stageId: execution.stageId,
+    outcomeTopLevel: outcome ? outcome.toJson() : null,
+    data,
+  };
+}
+
 function reconcileDrafts(inputs: FoldInputs): EventDraft[] {
   const drafts: EventDraft[] = [];
   const executions = [...inputs.executions].sort(compareExecutions);
@@ -156,19 +195,7 @@ function reconcileDrafts(inputs: FoldInputs): EventDraft[] {
   let attachedSession = false;
   for (const execution of executions) {
     if (!planned('execution.started', execution.executionId)) {
-      drafts.push({
-        event: 'execution.started',
-        timestamp: execution.createdAt ?? utcNow(),
-        executionId: execution.executionId,
-        stageId: execution.stageId,
-        data: {
-          execution_order: execution.executionOrder,
-          stage_attempt: execution.stageAttempt,
-          client: execution.client,
-          model: execution.model,
-          resumes_execution_id: execution.resumesExecutionId,
-        },
-      });
+      drafts.push(startedDraft(execution));
     }
     if (!isTerminalExecution(execution.status)) continue;
     const outcome = stageOutcome(execution);
@@ -202,18 +229,7 @@ function reconcileDrafts(inputs: FoldInputs): EventDraft[] {
       !attachedSession &&
       !sessionPlanned(`session.${finalStatus}`)
     ) {
-      const reason = sessionChangeReason(finalStatus, outcome, execution.error);
-      const data: Record<string, unknown> = { from: fromStatus || null };
-      if (reason !== null) data.reason = reason;
-      if (outcome !== null) data.outcome = outcome.toJson();
-      drafts.push({
-        event: `session.${finalStatus}`,
-        timestamp: execution.completedAt ?? execution.createdAt ?? utcNow(),
-        executionId: execution.executionId,
-        stageId: execution.stageId,
-        outcomeTopLevel: outcome ? outcome.toJson() : null,
-        data,
-      });
+      drafts.push(sessionDraft(execution, { finalStatus, fromStatus, outcome }));
       attachedSession = true;
     }
   }

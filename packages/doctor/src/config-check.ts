@@ -56,7 +56,6 @@ export function analyzeConfig(
 ): ConfigAnalysis {
   const { effortChecks, ownerOf } = source;
   const diagnostics = new DiagnosticList();
-  const executableByClient: Record<string, string> = {};
   const error = (
     code: string,
     message: string,
@@ -92,6 +91,37 @@ export function analyzeConfig(
     if (!isRecord(role)) continue;
     try { validateRoleKeys(role, name); } catch (caught) { fromError(caught, ['roles', name, 'options']); }
   }
+  const ctx: AnalysisContext = { config, clients, effortChecks, structure, unmapped, diagnostics, error, fromError };
+  const executableByClient = checkAgentDefinitions(ctx);
+  const { roleNames, roleDescriptions } = checkRoles(ctx, roles);
+
+  for (const unknown of unknownRoleKeyEntries(config)) {
+    diagnostics.add({ severity: 'warning', code: unknown.code, message: unknown.message, path: unknown.path, source: { layer: ownerOf(unknown.path) } });
+  }
+  return { diagnostics, executableByClient, roleNames, roleDescriptions, unmapped };
+}
+
+type ReportError = (
+  code: string,
+  message: string,
+  where?: { path?: readonly (string | number)[]; detail?: string },
+) => void;
+
+interface AnalysisContext {
+  readonly config: Record<string, unknown>;
+  readonly clients: ClientRegistry;
+  readonly effortChecks: Readonly<Record<string, ModelEffortCheck>>;
+  readonly structure: StructuralIndex;
+  readonly unmapped: ReadonlySet<string>;
+  readonly diagnostics: DiagnosticList;
+  readonly error: ReportError;
+  readonly fromError: (caught: unknown, fallbackPath?: readonly (string | number)[]) => void;
+}
+
+/** Loads every mapped agent definition and binds its client; returns the executable each client runs. */
+function checkAgentDefinitions(ctx: AnalysisContext): Record<string, string> {
+  const { config, clients, effortChecks, structure, unmapped, diagnostics, error, fromError } = ctx;
+  const executableByClient: Record<string, string> = {};
   for (const entry of listAgentDefinitions(config)) {
     if (unmapped.has(entry.key)) continue;
     const effortCheck = effortChecks[entry.key];
@@ -131,7 +161,15 @@ export function analyzeConfig(
       );
     }
   }
+  return executableByClient;
+}
 
+/** Resolves every role's cascade in name order; unmapped roles count as known without further checks. */
+function checkRoles(
+  ctx: AnalysisContext,
+  roles: Record<string, unknown>,
+): { roleNames: string[]; roleDescriptions: Record<string, string> } {
+  const { config, clients, effortChecks, structure, unmapped, error, fromError } = ctx;
   const roleNames: string[] = [];
   const roleDescriptions: Record<string, string> = {};
   for (const roleKey of Object.keys(roles).sort()) {
@@ -168,11 +206,7 @@ export function analyzeConfig(
     }
     roleNames.push(roleKey);
   }
-
-  for (const unknown of unknownRoleKeyEntries(config)) {
-    diagnostics.add({ severity: 'warning', code: unknown.code, message: unknown.message, path: unknown.path, source: { layer: ownerOf(unknown.path) } });
-  }
-  return { diagnostics, executableByClient, roleNames, roleDescriptions, unmapped };
+  return { roleNames, roleDescriptions };
 }
 
 function unmappedMessage(aliases: readonly string[]): string {

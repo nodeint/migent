@@ -84,6 +84,21 @@ export async function runVerifyOnlyStage(input: {
     store.publishVerifyReport(context, VERIFY_TURN);
     return executionJson(store, context, { outcomeStatus: 'complete', failureReason: '' });
   }
+  return recordVerifyFailure({ store, context, record, reporter }, result, report);
+}
+
+// Reports the failed command and marks the execution failed.
+function recordVerifyFailure(
+  target: {
+    store: SessionStore;
+    context: ExecutionContext;
+    record: AgentSessionRecord;
+    reporter: ProviderEventReporter;
+  },
+  result: VerifyRunResult,
+  report: string,
+): RunResult {
+  const { store, context, record, reporter } = target;
   const failed = result.commands.find((item) => item.status === 'fail' || item.status === 'timed_out');
   const error = result.infraError ?? `Verify failed: ${failed?.command ?? 'verify'}`;
   reporter.emit('verify.failed', `${failed?.command ?? 'verify'} failed`, {

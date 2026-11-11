@@ -52,38 +52,116 @@ export interface Prompter {
   selectOption(name: string, values: readonly string[], allowDefault: boolean): string | Promise<string>;
 }
 
-export async function runInit(
-  workspace: string,
-  options: {
-    client?: string | null;
-    model?: string | null;
-    effort?: string | null;
-    options?: readonly string[];
-    plannerClient?: string | null;
-    plannerModel?: string | null;
-    plannerEffort?: string | null;
-    plannerOptions?: readonly string[];
-    reviewerClient?: string | null;
-    reviewerModel?: string | null;
-    reviewerEffort?: string | null;
-    reviewerOptions?: readonly string[];
-    interactive?: boolean;
-    clients?: import('@nodeint/migent-kernel').ClientRegistry | null;
-    which?: Which | null;
-    prompter?: Prompter | null;
-    runCommand?: RunCommand | null;
-  } = {},
-): Promise<number> {
-  const client = options.client ?? null;
-  const model = options.model ?? null;
-  const plannerClient = options.plannerClient ?? null;
-  const plannerModel = options.plannerModel ?? null;
-  const reviewerClient = options.reviewerClient ?? null;
-  const reviewerModel = options.reviewerModel ?? null;
+export interface InitOptions {
+  client?: string | null;
+  model?: string | null;
+  effort?: string | null;
+  options?: readonly string[];
+  plannerClient?: string | null;
+  plannerModel?: string | null;
+  plannerEffort?: string | null;
+  plannerOptions?: readonly string[];
+  reviewerClient?: string | null;
+  reviewerModel?: string | null;
+  reviewerEffort?: string | null;
+  reviewerOptions?: readonly string[];
+  interactive?: boolean;
+  clients?: import('@nodeint/migent-kernel').ClientRegistry | null;
+  which?: Which | null;
+  prompter?: Prompter | null;
+  runCommand?: RunCommand | null;
+}
+
+/** The model selection flags given for one role. */
+interface RoleFlags {
+  role: 'planner' | 'reviewer' | 'developer';
+  client: string | null;
+  model: string | null;
+  pairs: readonly string[];
+  effort: string | null;
+  prefix: string;
+}
+
+interface InitEnv {
+  clients: import('@nodeint/migent-kernel').ClientRegistry;
+  which: Which;
+  prompt: Prompter;
+  execute: RunCommand;
+  getCatalog: (name: string) => Promise<ModelCatalog>;
+}
+
+export async function runInit(workspace: string, options: InitOptions = {}): Promise<number> {
   const interactive = options.interactive ?? false;
-  const chosen = options.clients ?? clientRegistry();
-  const resolve = options.which ?? cliHooks.which ?? whichSync;
-  const prompt = options.prompter ?? new ClackPrompter();
+  const [planner, reviewer, developer] = roleFlagsOf(options);
+  const roles = [planner, reviewer, developer];
+  const env = initEnv(options);
+  const early = preflight(workspace, { env, roles, interactive });
+  if (early !== null) return early;
+  const models = roles.some((flags) => flags.client === null) ? await loadModels(env, Boolean(options.prompter)) : [];
+  if (models === null) return EXIT_CONFIG;
+  let selected: { planner: ModelChoice; reviewer: ModelChoice; developer: ModelChoice };
+  try {
+    selected = {
+      planner: await roleChoice(env, planner, models),
+      reviewer: await roleChoice(env, reviewer, models),
+      developer: await roleChoice(env, developer, models),
+    };
+  } catch (error) {
+    if (error instanceof PromptCancelled) throw error;
+    printError(error instanceof Error ? error.message : String(error));
+    return EXIT_CONFIG;
+  }
+  return writeInitProject(workspace, selected, { env, interactive });
+}
+
+/** The exit code when init stops before selecting models; null to continue. */
+function preflight(
+  workspace: string,
+  context: { env: InitEnv; roles: readonly RoleFlags[]; interactive: boolean },
+): number | null {
+  const { env, roles } = context;
+  const classified = classify(workspace, env.clients, env.which);
+  if (classified.state === 'ready') {
+    if (roles.some(hasSelectionFlags)) printError('Already initialized; ignoring model selection flags.');
+    printAlreadyInitialized();
+    printInitNextSteps();
+    return 0;
+  }
+  for (const flags of roles) {
+    const problem = roleFlagProblem(flags, context.interactive);
+    if (problem !== null) {
+      printError(problem);
+      return EXIT_CONFIG;
+    }
+  }
+  if (classified.state === 'conflict') {
+    printInitConflicts(classified.conflicts);
+    return 1;
+  }
+  return null;
+}
+
+function roleFlagsOf(options: InitOptions): [RoleFlags, RoleFlags, RoleFlags] {
+  return [
+    {
+      role: 'planner', client: options.plannerClient ?? null, model: options.plannerModel ?? null,
+      pairs: options.plannerOptions ?? [], effort: options.plannerEffort ?? null, prefix: 'planner-',
+    },
+    {
+      role: 'reviewer', client: options.reviewerClient ?? null, model: options.reviewerModel ?? null,
+      pairs: options.reviewerOptions ?? [], effort: options.reviewerEffort ?? null, prefix: 'reviewer-',
+    },
+    {
+      role: 'developer', client: options.client ?? null, model: options.model ?? null,
+      pairs: options.options ?? [], effort: options.effort ?? null, prefix: 'developer-',
+    },
+  ];
+}
+
+/** Resolves injected seams and memoizes client commands and catalogs for one init run. */
+function initEnv(options: InitOptions): InitEnv {
+  const clients = options.clients ?? clientRegistry();
+  const which = options.which ?? cliHooks.which ?? whichSync;
   const runCommand = options.runCommand ?? cliHooks.runCommand ?? runClientCommandAsync;
   const commands = new Map<string, Promise<string>>();
   const execute: RunCommand = (argv, input) => {
@@ -95,121 +173,84 @@ export async function runInit(
     }
     return pending;
   };
-  const optionPairs = options.options ?? [];
-  const plannerOptionPairs = options.plannerOptions ?? [];
-  const reviewerOptionPairs = options.reviewerOptions ?? [];
-  const classified = classify(workspace, chosen, resolve);
-  if (classified.state === 'ready') {
-    if (client !== null || model !== null ||
-        (options.effort !== null && options.effort !== undefined) || optionPairs.length > 0 ||
-        plannerClient !== null || plannerModel !== null ||
-        (options.plannerEffort !== null && options.plannerEffort !== undefined) || plannerOptionPairs.length > 0 ||
-        reviewerClient !== null || reviewerModel !== null ||
-        (options.reviewerEffort !== null && options.reviewerEffort !== undefined) || reviewerOptionPairs.length > 0) {
-      printError('Already initialized; ignoring model selection flags.');
-    }
-    printAlreadyInitialized();
-    printInitNextSteps();
-    return 0;
-  }
-  for (const [role, selectedClient, selectedModel, pairs, effort, prefix] of [
-    ['planner', plannerClient, plannerModel, plannerOptionPairs, options.plannerEffort, 'planner-'],
-    ['reviewer', reviewerClient, reviewerModel, reviewerOptionPairs, options.reviewerEffort, 'reviewer-'],
-    ['developer', client, model, optionPairs, options.effort, 'developer-'],
-  ] as const) {
-    const clientFlag = role === 'developer' ? '--client' : `--${prefix}client`;
-    const flags = `${clientFlag} and --${prefix}model`;
-    if ((selectedClient === null) !== (selectedModel === null)) {
-      printError(`Pass both ${flags} for ${role}, or omit both.\n${INIT_EXAMPLE}`);
-      return EXIT_CONFIG;
-    }
-    if (pairs.length > 0 && selectedClient === null) {
-      printError(`Pass ${flags} with --${prefix}option.`);
-      return EXIT_CONFIG;
-    }
-    if ((effort !== null && effort !== undefined) && selectedClient === null) {
-      printError(`Pass ${flags} with --${prefix}effort.`);
-      return EXIT_CONFIG;
-    }
-    if (selectedClient === null && !interactive) {
-      printError(`Pass ${flags} for ${role} when init is not interactive.\n${INIT_EXAMPLE}`);
-      return EXIT_CONFIG;
-    }
-  }
-  if (classified.state === 'conflict') {
-    printInitConflicts(classified.conflicts);
-    return 1;
-  }
   const catalogs = new Map<string, Promise<ModelCatalog>>();
   const getCatalog = (name: string): Promise<ModelCatalog> => {
     let catalog = catalogs.get(name);
     if (!catalog) {
-      catalog = loadCatalog(catalogSourceOf(chosen.get(name)), resolve, execute);
+      catalog = loadCatalog(catalogSourceOf(clients.get(name)), which, execute);
       catalogs.set(name, catalog);
     }
     return catalog;
   };
+  return { clients, which, prompt: options.prompter ?? new ClackPrompter(), execute, getCatalog };
+}
+
+function hasSelectionFlags(flags: RoleFlags): boolean {
+  return flags.client !== null || flags.model !== null || flags.effort !== null || flags.pairs.length > 0;
+}
+
+function roleFlagProblem(flags: RoleFlags, interactive: boolean): string | null {
+  const { role, prefix } = flags;
+  const clientFlag = role === 'developer' ? '--client' : `--${prefix}client`;
+  const names = `${clientFlag} and --${prefix}model`;
+  if ((flags.client === null) !== (flags.model === null)) {
+    return `Pass both ${names} for ${role}, or omit both.\n${INIT_EXAMPLE}`;
+  }
+  if (flags.pairs.length > 0 && flags.client === null) return `Pass ${names} with --${prefix}option.`;
+  if (flags.effort !== null && flags.client === null) return `Pass ${names} with --${prefix}effort.`;
+  if (flags.client === null && !interactive) {
+    return `Pass ${names} for ${role} when init is not interactive.\n${INIT_EXAMPLE}`;
+  }
+  return null;
+}
+
+/** Every model the installed clients list; null when none is available. */
+async function loadModels(env: InitEnv, injectedPrompter: boolean): Promise<ModelSelection[] | null> {
   const models: ModelSelection[] = [];
-  if ([plannerClient, reviewerClient, client].some((value) => value === null)) {
-    const loading = options.prompter ? null : spinner();
-    loading?.start('Loading models from installed clients...');
-    const rows = detected(resolve).filter(([, found]) => found !== null);
-    const results = await Promise.allSettled(rows.map(async ([name]) => ({ name, catalog: await getCatalog(name) })));
-    loading?.stop('Model catalogs loaded.');
-    const failures: string[] = [];
-    for (const [index, result] of results.entries()) {
-      if (result.status === 'fulfilled') {
-        const { name, catalog } = result.value;
-        models.push(...catalog.ids.map((id) => ({ client: name, model: id })));
-      } else {
-        failures.push(`${rows[index]?.[0]}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`);
-      }
-    }
-    for (const failure of failures) process.stderr.write(`Could not load models for ${failure}\n`);
-    if (models.length === 0) {
-      printError('No models available from installed clients.');
-      return EXIT_CONFIG;
+  const loading = injectedPrompter ? null : spinner();
+  loading?.start('Loading models from installed clients...');
+  const rows = detected(env.which).filter(([, found]) => found !== null);
+  const results = await Promise.allSettled(rows.map(async ([name]) => ({ name, catalog: await env.getCatalog(name) })));
+  loading?.stop('Model catalogs loaded.');
+  const failures: string[] = [];
+  for (const [index, result] of results.entries()) {
+    if (result.status === 'fulfilled') {
+      const { name, catalog } = result.value;
+      models.push(...catalog.ids.map((id) => ({ client: name, model: id })));
+    } else {
+      failures.push(`${rows[index]?.[0]}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`);
     }
   }
-  let developer: ModelChoice;
-  let planner: ModelChoice;
-  let reviewer: ModelChoice;
-  try {
-    planner = await choices({ clients: chosen, which: resolve, prompt }, {
-      role: 'Planner',
-      client: plannerClient,
-      model: plannerModel,
-      options: parseOptions(plannerOptionPairs),
-      effort: options.plannerEffort ?? null,
-      runCommand: execute,
-      models, getCatalog,
-    });
-    reviewer = await choices({ clients: chosen, which: resolve, prompt }, {
-      role: 'Reviewer',
-      client: reviewerClient,
-      model: reviewerModel,
-      options: parseOptions(reviewerOptionPairs),
-      effort: options.reviewerEffort ?? null,
-      runCommand: execute,
-      models, getCatalog,
-    });
-    developer = await choices({ clients: chosen, which: resolve, prompt }, {
-      role: 'Developer',
-      client,
-      model,
-      options: parseOptions(optionPairs),
-      effort: options.effort ?? null,
-      runCommand: execute,
-      models, getCatalog,
-    });
-  } catch (error) {
-    if (error instanceof PromptCancelled) throw error;
-    printError(error instanceof Error ? error.message : String(error));
-    return EXIT_CONFIG;
+  for (const failure of failures) process.stderr.write(`Could not load models for ${failure}\n`);
+  if (models.length === 0) {
+    printError('No models available from installed clients.');
+    return null;
   }
+  return models;
+}
+
+function roleChoice(env: InitEnv, flags: RoleFlags, models: readonly ModelSelection[]): Promise<ModelChoice> {
+  return choices({ clients: env.clients, which: env.which, prompt: env.prompt }, {
+    role: flags.role.charAt(0).toUpperCase() + flags.role.slice(1),
+    client: flags.client,
+    model: flags.model,
+    options: parseOptions(flags.pairs),
+    effort: flags.effort,
+    runCommand: env.execute,
+    models, getCatalog: env.getCatalog,
+  });
+}
+
+async function writeInitProject(
+  workspace: string,
+  selected: { planner: ModelChoice; reviewer: ModelChoice; developer: ModelChoice },
+  context: { env: InitEnv; interactive: boolean },
+): Promise<number> {
+  const { planner, reviewer, developer } = selected;
+  const { env } = context;
   let files: RenderedFile[];
   try {
-    files = renderProject({ planner, reviewer, developer });
+    files = renderProject(selected);
   } catch (error) {
     printError(error instanceof Error ? error.message : String(error));
     return EXIT_CONFIG;
@@ -220,11 +261,11 @@ export async function runInit(
     `Planner: ${planner.client}/${planner.model}. Reviewer: ${reviewer.client}/${reviewer.model}. Developer: ${developer.client}/${developer.model}. Workflows: implement, plan.`,
   );
   printRoleDescriptions(workspace);
-  if (interactive) {
-    const doctorCode = await runDoctor(workspace, { which: resolve, runCommand: execute });
-    if (doctorCode !== 0) writeDoctorProblems(workspace, chosen, resolve);
+  if (context.interactive) {
+    const doctorCode = await runDoctor(workspace, { which: env.which, runCommand: env.execute });
+    if (doctorCode !== 0) writeDoctorProblems(workspace, env.clients, env.which);
   } else {
-    writeDoctorProblems(workspace, chosen, resolve);
+    writeDoctorProblems(workspace, env.clients, env.which);
   }
   printInitNextSteps();
   return 0;

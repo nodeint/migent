@@ -125,16 +125,11 @@ interface SessionSource {
   readonly events: ParsedEvent[];
 }
 
-function sessionObject(
-  source: SessionSource,
-  clients: ClientRegistry,
-  agentRole: string | null,
-): Record<string, unknown> {
-  const { sessionId, status, workflow, executions, events } = source;
-  const known = new Set(executions.map((execution) => execution.id));
-  const executionClients = resolveExecutionClients(events, executions, status);
-  const turns = normalizeTurns(events, executionClients, clients).filter((turn) => known.has(turn.executionId));
-  const cancelled = countByExecution(events, 'provider.cancelled', known);
+/** Provider exit anomalies per known execution, with how many of them were accepted. */
+function anomalyCounts(
+  events: ParsedEvent[],
+  known: ReadonlySet<string>,
+): Map<string, { total: number; accepted: number }> {
   const anomalies = new Map<string, { total: number; accepted: number }>();
   for (const anomaly of exitAnomaliesOf(events)) {
     if (!known.has(anomaly.executionId)) continue;
@@ -143,20 +138,18 @@ function sessionObject(
     if (anomaly.accepted) count.accepted += 1;
     anomalies.set(anomaly.executionId, count);
   }
-  const revisionTargets = revisionMap(executions, workflow);
-  const routed = routedFrom(executions, workflow);
-  const executionObjects = executions.map((execution) =>
-    executionObject(
-      execution,
-      { events, turns, workflow, agentRole },
-      {
-        cancelled: cancelled.get(execution.id) ?? 0,
-        anomalies: anomalies.get(execution.id) ?? { total: 0, accepted: 0 },
-        routedFromId: routed.get(execution.id) ?? null,
-        client: executionClients.get(execution.id) ?? null,
-      },
-    ),
-  );
+  return anomalies;
+}
+
+/** Sums the per-execution counters and usage into session totals. */
+function sumExecutions(executionObjects: readonly ReturnType<typeof executionObject>[]): {
+  sessionTotals: ReturnType<typeof newUsageTotals>;
+  turnsCount: number;
+  uncaptured: number;
+  verifyMs: number;
+  anomalyTotal: number;
+  anomalyAccepted: number;
+} {
   let sessionTotals = newUsageTotals();
   let turnsCount = 0;
   let uncaptured = 0;
@@ -175,6 +168,36 @@ function sessionObject(
       execution.usage_missing as Record<UsageField, number>,
     );
   }
+  return { sessionTotals, turnsCount, uncaptured, verifyMs, anomalyTotal, anomalyAccepted };
+}
+
+function sessionObject(
+  source: SessionSource,
+  clients: ClientRegistry,
+  agentRole: string | null,
+): Record<string, unknown> {
+  const { sessionId, status, workflow, executions, events } = source;
+  const known = new Set(executions.map((execution) => execution.id));
+  const executionClients = resolveExecutionClients(events, executions, status);
+  const turns = normalizeTurns(events, executionClients, clients).filter((turn) => known.has(turn.executionId));
+  const cancelled = countByExecution(events, 'provider.cancelled', known);
+  const anomalies = anomalyCounts(events, known);
+  const revisionTargets = revisionMap(executions, workflow);
+  const routed = routedFrom(executions, workflow);
+  const executionObjects = executions.map((execution) =>
+    executionObject(
+      execution,
+      { events, turns, workflow, agentRole },
+      {
+        cancelled: cancelled.get(execution.id) ?? 0,
+        anomalies: anomalies.get(execution.id) ?? { total: 0, accepted: 0 },
+        routedFromId: routed.get(execution.id) ?? null,
+        client: executionClients.get(execution.id) ?? null,
+      },
+    ),
+  );
+  const totals = sumExecutions(executionObjects);
+  const { sessionTotals, turnsCount, uncaptured, verifyMs, anomalyTotal, anomalyAccepted } = totals;
   const wallMs = sessionWallMs(executions);
   const activeMs = executions.reduce((sum, execution) => {
     const elapsed = elapsedMs(execution.createdAt, execution.completedAt);

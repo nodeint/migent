@@ -168,6 +168,64 @@ function parseArgv(argv: string[]): WrapperOptions | null {
   return null;
 }
 
+/** Stops the running provider: SIGTERM to the group, a bounded grace, then SIGKILL to what is left. */
+async function stopProviderGroup(
+  running: { provider: ChildProcess; pid: number },
+  wrapper: { graceSec: number; endpoint: string; server: Server },
+  exit: (code: number) => never,
+): Promise<void> {
+  const { provider } = running;
+  if (process.platform === 'win32') {
+    try {
+      killProcessTree(running.pid, 'SIGKILL');
+    } catch {
+      // already gone
+    }
+    exit(1);
+  }
+  try {
+    killProcessTree(process.pid, 'SIGTERM');
+  } catch {
+    exit(1);
+  }
+  const deadline = Date.now() + wrapper.graceSec * MS_PER_SECOND;
+  while (Date.now() < deadline && provider.exitCode === null && provider.signalCode === null) {
+    await sleepMs(WRAPPER_POLL_MS);
+  }
+  wrapper.server.close();
+  removeStaleSocket(wrapper.endpoint);
+  // Also reaches anything the provider left in the group, and the wrapper itself.
+  try {
+    killProcessTree(process.pid, 'SIGKILL');
+  } catch {
+    // nothing left
+  }
+  process.exit(1);
+}
+
+/** Exits with the provider's status; a signal death is first reported to the owner by name. */
+function exitWithProviderStatus(
+  code: number | null,
+  signal: NodeJS.Signals | null,
+  exit: (code: number) => never,
+): void {
+  // A signal death keeps its identity as the shell's 128 + signal, so the owner can tell it from an exit.
+  const number = signal ? osConstants.signals[signal] : undefined;
+  const status = signal ? SHELL_SIGNAL_BASE + (number ?? 0) : (code ?? 1);
+  if (!signal || !process.send || !process.connected) return exit(status);
+  // Say which signal it was, separately from the exit code: a plain `exit 137` is not a SIGKILL.
+  const fallback = setTimeout(() => exit(status), SIGNAL_REPORT_FALLBACK_MS);
+  try {
+    process.send({ type: WRAPPER_EXITED, signal }, () => {
+      clearTimeout(fallback);
+      exit(status);
+    });
+  } catch {
+    clearTimeout(fallback);
+    exit(status);
+  }
+}
+
 async function main(argv: string[]): Promise<void> {
   const options = parseArgv(argv);
   if (options === null) return fail('argv', new Error('Invalid wrapper arguments.'), { exitCode: 1 });
@@ -204,32 +262,8 @@ async function main(argv: string[]): Promise<void> {
     stopping = true;
     const running = provider;
     if (running === null || running.pid === undefined) return exit(1);
-    if (process.platform === 'win32') {
-      try {
-        killProcessTree(running.pid, 'SIGKILL');
-      } catch {
-        // already gone
-      }
-      exit(1);
-    }
-    try {
-      killProcessTree(process.pid, 'SIGTERM');
-    } catch {
-      exit(1);
-    }
-    const deadline = Date.now() + options.graceSec * MS_PER_SECOND;
-    while (Date.now() < deadline && running.exitCode === null && running.signalCode === null) {
-      await sleepMs(WRAPPER_POLL_MS);
-    }
-    server.close();
-    removeStaleSocket(options.endpoint);
-    // Also reaches anything the provider left in the group, and the wrapper itself.
-    try {
-      killProcessTree(process.pid, 'SIGKILL');
-    } catch {
-      // nothing left
-    }
-    process.exit(1);
+    const wrapper = { graceSec: options.graceSec, endpoint: options.endpoint, server };
+    await stopProviderGroup({ provider: running, pid: running.pid }, wrapper, exit);
   };
 
   process.on('disconnect', () => {
@@ -260,21 +294,7 @@ async function main(argv: string[]): Promise<void> {
     started.on('exit', (code, signal) => {
       if (stopping) return;
       debug(`provider exit code=${code} signal=${signal}`);
-      // A signal death keeps its identity as the shell's 128 + signal, so the owner can tell it from an exit.
-      const number = signal ? osConstants.signals[signal] : undefined;
-      const status = signal ? SHELL_SIGNAL_BASE + (number ?? 0) : (code ?? 1);
-      if (!signal || !process.send || !process.connected) return exit(status);
-      // Say which signal it was, separately from the exit code: a plain `exit 137` is not a SIGKILL.
-      const fallback = setTimeout(() => exit(status), SIGNAL_REPORT_FALLBACK_MS);
-      try {
-        process.send({ type: WRAPPER_EXITED, signal }, () => {
-          clearTimeout(fallback);
-          exit(status);
-        });
-      } catch {
-        clearTimeout(fallback);
-        exit(status);
-      }
+      exitWithProviderStatus(code, signal, exit);
     });
   });
   process.send({ type: WRAPPER_READY });

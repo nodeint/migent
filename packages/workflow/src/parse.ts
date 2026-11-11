@@ -159,6 +159,89 @@ export interface ParseStagesVersions {
   readonly version7?: boolean;
 }
 
+interface StageCommonFields {
+  readonly stageId: string;
+  readonly description: StageSpec['description'];
+  readonly dependsOn: StageSpec['dependsOn'];
+  readonly verify: StageSpec['verify'];
+  readonly runWhen: StageSpec['runWhen'];
+}
+
+/** Parses a role-less stage, which schema_version 2+ allows only when it declares `verify`. */
+function parseVerifyStage(
+  item: Record<string, unknown>,
+  common: StageCommonFields,
+  version2: boolean,
+): StageSpec {
+  const { stageId, description, dependsOn, verify, runWhen } = common;
+  if (!version2 || verify.length === 0) {
+    throw new ConfigurationError(`stages.${stageId}.role is required.`);
+  }
+  rejectRoleOnlyKeys(item, stageId);
+  return stageSpecSchema.parse({
+    kind: 'verify',
+    id: stageId,
+    description,
+    role: null,
+    artifacts: [],
+    decisionArtifacts: {},
+    decisionValues: [],
+    dependsOn,
+    resumeFrom: null,
+    instructions: [],
+    agent: null,
+    options: {},
+    maxRevisions: null,
+    routes: {},
+    verify,
+    maxVerify: 0,
+    verifyTimeoutSec: stageVerifyTimeout(item, stageId, verify),
+    runWhen,
+  });
+}
+
+/** Parses a stage that runs a role; routes are resolved later, once every stage is known. */
+function parseRoleStage(
+  item: Record<string, unknown>,
+  common: StageCommonFields,
+  versions: Pick<ParseStagesVersions, 'version3' | 'version5' | 'version7'>,
+): StageSpec {
+  const { stageId, description, dependsOn, verify, runWhen } = common;
+  const { version3 = false, version5 = false, version7 = false } = versions;
+  const role = requiredString(item.role, `stages.${stageId}.role`);
+  if (version7 && Object.hasOwn(item, 'produces')) {
+    throw new ConfigurationError(`stages.${stageId}.produces was removed in schema_version 7. Declare top-level artifacts and run \`migent migrate\`.`);
+  }
+  const artifact = stageArtifact(item, stageId);
+  if (verify.length > 0 && artifact === VERIFY_ARTIFACT) {
+    throw new ConfigurationError(
+      `stages.${stageId}.produces.artifact cannot be ${VERIFY_ARTIFACT} on a stage with verify.`,
+    );
+  }
+  return stageSpecSchema.parse({
+    kind: 'role',
+    id: stageId,
+    description,
+    role,
+    ...(Object.hasOwn(item, 'ask') ? { ask: stageAsk(item, stageId) } : {}),
+    artifacts: artifact === null ? [] : [{ id: stageId, file: artifact, description: null, required: true, scope: 'local' }],
+    decisionArtifacts: {},
+    decisionValues: stageDecisionValues(item, stageId),
+    ...(version3 && isRecord(item.decision) ? { decisionInstructions: item.decision.instructions } : {}),
+    dependsOn,
+    resumeFrom: stageResumeFrom(item, stageId, dependsOn),
+    instructions: stringItems(item.instructions, `stages.${stageId}.instructions`),
+    agent: version5 ? stageAgent(item, stageId) : legacyStageModel(item, stageId),
+    options: version5 ? {} : stageOptions(item, stageId),
+    maxRevisions: stageMaxRevisions(item, stageId),
+    routes: {},
+    verify,
+    maxVerify: stageMaxVerify(item, stageId, verify),
+    verifyTimeoutSec: stageVerifyTimeout(item, stageId, verify),
+    runWhen,
+  });
+}
+
 export function parseStages(raw: unknown, versions: ParseStagesVersions = {}): Record<string, StageSpec> {
   const { version2 = false, version3 = false, version5 = false, version7 = false } = versions;
   if (!Array.isArray(raw) || raw.length === 0) return {};
@@ -175,67 +258,10 @@ export function parseStages(raw: unknown, versions: ParseStagesVersions = {}): R
     const dependsOn = stageDependsOn(item, stageId);
     const verify = stageVerify(item, stageId);
     const runWhen = stageRunWhen(item, stageId, { version2, verify });
-    if (!stageHasRole(item)) {
-      if (!version2 || verify.length === 0) {
-        throw new ConfigurationError(`stages.${stageId}.role is required.`);
-      }
-      rejectRoleOnlyKeys(item, stageId);
-      stages[stageId] = stageSpecSchema.parse({
-        kind: 'verify',
-        id: stageId,
-        description,
-        role: null,
-        artifacts: [],
-        decisionArtifacts: {},
-        decisionValues: [],
-        dependsOn,
-        resumeFrom: null,
-        instructions: [],
-        agent: null,
-        options: {},
-        maxRevisions: null,
-        routes: {},
-        verify,
-        maxVerify: 0,
-        verifyTimeoutSec: stageVerifyTimeout(item, stageId, verify),
-        runWhen,
-      });
-      items.push(item);
-      rawItems.push(rawItem);
-      continue;
-    }
-    const role = requiredString(item.role, `stages.${stageId}.role`);
-    if (version7 && Object.hasOwn(item, 'produces')) {
-      throw new ConfigurationError(`stages.${stageId}.produces was removed in schema_version 7. Declare top-level artifacts and run \`migent migrate\`.`);
-    }
-    const artifact = stageArtifact(item, stageId);
-    if (verify.length > 0 && artifact === VERIFY_ARTIFACT) {
-      throw new ConfigurationError(
-        `stages.${stageId}.produces.artifact cannot be ${VERIFY_ARTIFACT} on a stage with verify.`,
-      );
-    }
-    stages[stageId] = stageSpecSchema.parse({
-      kind: 'role',
-      id: stageId,
-      description,
-      role,
-      ...(Object.hasOwn(item, 'ask') ? { ask: stageAsk(item, stageId) } : {}),
-      artifacts: artifact === null ? [] : [{ id: stageId, file: artifact, description: null, required: true, scope: 'local' }],
-      decisionArtifacts: {},
-      decisionValues: stageDecisionValues(item, stageId),
-      ...(version3 && isRecord(item.decision) ? { decisionInstructions: item.decision.instructions } : {}),
-      dependsOn,
-      resumeFrom: stageResumeFrom(item, stageId, dependsOn),
-      instructions: stringItems(item.instructions, `stages.${stageId}.instructions`),
-      agent: version5 ? stageAgent(item, stageId) : legacyStageModel(item, stageId),
-      options: version5 ? {} : stageOptions(item, stageId),
-      maxRevisions: stageMaxRevisions(item, stageId),
-      routes: {},
-      verify,
-      maxVerify: stageMaxVerify(item, stageId, verify),
-      verifyTimeoutSec: stageVerifyTimeout(item, stageId, verify),
-      runWhen,
-    });
+    const common: StageCommonFields = { stageId, description, dependsOn, verify, runWhen };
+    stages[stageId] = stageHasRole(item)
+      ? parseRoleStage(item, common, { version3, version5, version7 })
+      : parseVerifyStage(item, common, version2);
     items.push(item);
     rawItems.push(rawItem);
     } catch (error) {

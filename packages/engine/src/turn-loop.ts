@@ -432,26 +432,7 @@ export class TurnLoop {
     });
     let result: VerifyRunResult;
     try {
-      result = await this.verifyRunner.run({
-        commands: verifyCommands,
-        workspace: this.workspacePath,
-        executionDirectory: context.directory,
-        turnDirectory: store.turnDirectory(context, this.turn),
-        timeoutSec: stage?.verifyTimeoutSec ?? null,
-        onStart: (info) => {
-          store.saveProcessMetadata(context, info);
-        },
-        onEnd: () => {
-          store.clearProcessEndpoint(context);
-        },
-        onHeartbeat: (command, elapsed) => {
-          eventReporter.emit('verify.heartbeat', `${command} running for ${elapsed}s`, {
-            turn: this.turn,
-            command,
-            elapsed_seconds: elapsed,
-          });
-        },
-      });
+      result = await this.runVerifyCommands();
     } catch (error) {
       return this.markCancelled(error);
     }
@@ -483,6 +464,12 @@ export class TurnLoop {
       store.publishVerifyReport(context, this.turn);
       return { kind: 'end', outcome: it.outcome };
     }
+    return this.handleVerifyFailure(result, lastReport);
+  }
+
+  // Counts a red run; ends the execution once the verify budget is exhausted, otherwise requests a repair.
+  private handleVerifyFailure(result: VerifyRunResult, lastReport: string): VerifyVerdict {
+    const { record, store, context, eventReporter, maxVerify } = this;
     this.red += 1;
     const failed = result.commands.find((item) => item.status === 'fail' || item.status === 'timed_out');
     eventReporter.emit('verify.failed', `${failed?.command ?? 'verify'} failed`, {
@@ -507,6 +494,31 @@ export class TurnLoop {
     }
     store.saveExecutionProgress(context, record, this.extraFields() ?? {});
     return { kind: 'repair', report: lastReport };
+  }
+
+  // Invokes the verify runner for the current turn, wiring process and heartbeat reporting.
+  private runVerifyCommands(): Promise<VerifyRunResult> {
+    const { store, context, eventReporter, verifyCommands, stage } = this;
+    return this.verifyRunner.run({
+      commands: verifyCommands,
+      workspace: this.workspacePath,
+      executionDirectory: context.directory,
+      turnDirectory: store.turnDirectory(context, this.turn),
+      timeoutSec: stage?.verifyTimeoutSec ?? null,
+      onStart: (info) => {
+        store.saveProcessMetadata(context, info);
+      },
+      onEnd: () => {
+        store.clearProcessEndpoint(context);
+      },
+      onHeartbeat: (command, elapsed) => {
+        eventReporter.emit('verify.heartbeat', `${command} running for ${elapsed}s`, {
+          turn: this.turn,
+          command,
+          elapsed_seconds: elapsed,
+        });
+      },
+    });
   }
 
   // Queues the repair turn that follows a failed verify run.

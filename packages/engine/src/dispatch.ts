@@ -23,7 +23,7 @@ import { freezeSessionTask } from '@nodeint/migent-session';
 import { bindPriorSessionId, createWorkflowSession } from '@nodeint/migent-session';
 import { SessionStore,stringOptions } from '@nodeint/migent-session';
 import { isRecord } from '@nodeint/migent-workflow';
-import { isRoleStage, loadNamedWorkflow, type StageSpec, type WorkflowDocument } from '@nodeint/migent-workflow';
+import { isRoleStage, loadNamedWorkflow, type RoleStageSpec, type StageSpec, type WorkflowDocument } from '@nodeint/migent-workflow';
 
 import { AgentToolRunner, type RunResult } from './agent-runner.js';
 import { EXECUTE_EXIT_CODES, type ExecuteResult, PendingStageReply } from './execute-state.js';
@@ -302,17 +302,7 @@ export async function dispatchExecuteStage(
   const skipped = skipUnlessRunWhenMatches({ workspace, sessionId, runner }, stageSpec, snapshots);
   if (skipped !== null) return skipped;
   if (!isRoleStage(stageSpec)) {
-    const result = await runVerifyOnlyStage({
-      workspace,
-      sessionId,
-      stage: stageSpec,
-      verifyRunner: runner.verifyRunner,
-      clients: runner.registry,
-      onExecution,
-    });
-    const outcome = result.failure_reason === VERIFY_FAILED ? 'verify_failed' : 'complete';
-    log(stageFinishLine({ workspace, sessionId }, { stageId, executionId: result.execution_id }, { outcome, decision: '' }));
-    return { ...result };
+    return dispatchVerifyOnly({ workspace, sessionId, runner }, { stageId, stageSpec }, onExecution);
   }
   const sessionDirectory = path.join(workspace, '.migent', 'sessions', sessionId);
   const freeze = readWorkflowFreeze(sessionDirectory);
@@ -340,26 +330,10 @@ export async function dispatchExecuteStage(
     priorOutputs: priorSessionOutputs(workspace, priorSessionId, sessionId),
     roleInstructions,
   };
-  const stageReply = reply?.take(stageId) ?? null;
-  const answers = stageReply !== null
-    && new SessionStore(workspace).questionStages(sessionId).some((row) => row.stageId === stageId);
-  const interrupted = stageReply !== null && interruptedExecutionId(snapshots, stageId) !== undefined;
-  let turn: TurnKind;
-  let prompt;
-  if (stageReply !== null) {
-    turn = answers && !interrupted ? 'answers' : 'reply';
-    prompt = buildStageReplyPrompt(stageReply, { answers, interrupted });
-  } else if (exhausted?.verifyReport) {
-    turn = 'repair';
-    prompt = buildVerifyRepairPrompt(
-      readFileSync(exhausted.verifyReport, 'utf8'),
-      { red: stageSpec.maxVerify, maxVerify: stageSpec.maxVerify, artifactPath: null },
-      { taskFile: frozen.taskFile, sessionDirectory: frozen.sessionDirectory },
-    );
-  } else {
-    turn = stagePromptAlreadyDelivered(workflow, snapshots, stageId) ? 'continue' : 'start';
-    prompt = turn === 'continue' ? buildStageResumePrompt(promptInput) : buildStagePrompt(promptInput);
-  }
+  const { turn, prompt } = selectStageTurn(
+    { workspace, workflow, sessionId, stageId, stageSpec, snapshots },
+    { stageReply: reply?.take(stageId) ?? null, exhausted, frozen, promptInput },
+  );
   const request: StageDispatchRequest = {
     workflowId,
     stageId,
@@ -384,17 +358,85 @@ export async function dispatchExecuteStage(
       );
     },
   });
+  logRoleStageFinish({ workspace, sessionId }, stageId, result);
+  return result.toJson();
+}
+
+// Logs a role stage's finish line with its outcome, or failed/finished when it has none.
+function logRoleStageFinish(
+  scope: { workspace: string; sessionId: string },
+  stageId: string,
+  result: StageDispatchResult,
+): void {
   const outcome =
     result.outcomeStatus ||
     (result.failureReason || result.failureKind || result.executionStatus === 'failed' ? 'failed' : 'finished');
   log(
     stageFinishLine(
-      { workspace, sessionId },
+      scope,
       { stageId, executionId: result.executionId },
       { outcome, decision: result.outcomeDecision },
     ),
   );
-  return result.toJson();
+}
+
+// Runs a verify-only stage and logs its finish line.
+async function dispatchVerifyOnly(
+  run: Pick<ExecuteRun, 'workspace' | 'sessionId' | 'runner'>,
+  stage: { stageId: string; stageSpec: Exclude<StageSpec, RoleStageSpec> },
+  onExecution?: (executionId: string) => void,
+): Promise<Record<string, unknown>> {
+  const { workspace, sessionId, runner } = run;
+  const { stageId, stageSpec } = stage;
+  const result = await runVerifyOnlyStage({
+    workspace,
+    sessionId,
+    stage: stageSpec,
+    verifyRunner: runner.verifyRunner,
+    clients: runner.registry,
+    onExecution,
+  });
+  const outcome = result.failure_reason === VERIFY_FAILED ? 'verify_failed' : 'complete';
+  log(stageFinishLine({ workspace, sessionId }, { stageId, executionId: result.execution_id }, { outcome, decision: '' }));
+  return { ...result };
+}
+
+// Picks the turn kind and prompt: a pending reply, a verify repair, a resume, or a fresh start.
+function selectStageTurn(
+  stage: {
+    workspace: string;
+    workflow: WorkflowDocument;
+    sessionId: string;
+    stageId: string;
+    stageSpec: RoleStageSpec;
+    snapshots: readonly ExecutionSnapshot[];
+  },
+  inputs: {
+    stageReply: string | null;
+    exhausted: ReturnType<typeof verifyExhaustedExecution>;
+    frozen: ReturnType<typeof freezeSessionTask>;
+    promptInput: Parameters<typeof buildStagePrompt>[0];
+  },
+): { turn: TurnKind; prompt: string } {
+  const { workspace, workflow, sessionId, stageId, stageSpec, snapshots } = stage;
+  const { stageReply, exhausted, frozen, promptInput } = inputs;
+  const answers = stageReply !== null
+    && new SessionStore(workspace).questionStages(sessionId).some((row) => row.stageId === stageId);
+  const interrupted = stageReply !== null && interruptedExecutionId(snapshots, stageId) !== undefined;
+  if (stageReply !== null) {
+    const turn = answers && !interrupted ? 'answers' : 'reply';
+    return { turn, prompt: buildStageReplyPrompt(stageReply, { answers, interrupted }) };
+  }
+  if (exhausted?.verifyReport) {
+    const prompt = buildVerifyRepairPrompt(
+      readFileSync(exhausted.verifyReport, 'utf8'),
+      { red: stageSpec.maxVerify, maxVerify: stageSpec.maxVerify, artifactPath: null },
+      { taskFile: frozen.taskFile, sessionDirectory: frozen.sessionDirectory },
+    );
+    return { turn: 'repair', prompt };
+  }
+  const turn = stagePromptAlreadyDelivered(workflow, snapshots, stageId) ? 'continue' : 'start';
+  return { turn, prompt: turn === 'continue' ? buildStageResumePrompt(promptInput) : buildStagePrompt(promptInput) };
 }
 
 /** A fresh visit of a run_when stage is evaluated. Retries and resumed blocks already passed the condition. */

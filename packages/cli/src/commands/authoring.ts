@@ -208,21 +208,71 @@ function execute(
   }
 }
 
+type Emit = (exit: number, items: Diagnostic[], extra?: Record<string, unknown>) => number;
+
+/** A validated draft and where it would be written. */
+interface Target {
+  draft: Record<string, unknown>;
+  diagnostics: Diagnostic[];
+  destination: string;
+  label: string;
+}
+
 function executeDraft(
   options: AuthoringOptions,
   context: Context,
-  output: { emit: (exit: number, items: Diagnostic[], extra?: Record<string, unknown>) => number; held: HeldLock },
+  output: { emit: Emit; held: HeldLock },
 ): number {
   const { emit, held } = output;
-  const { kind, mode } = options;
-  const invocation = (message: string): Finish => new Finish(EXIT_IO, [plain('invalid-invocation', message)]);
+  const { mode } = options;
+  const scope = checkInvocation(options);
+  if (options.kind === 'config') context.scope = scope;
+  const format = resolveFormat(options, invocation);
+  const text = (context.text = readDraft(options));
 
+  const workspace = locateWorkspace(scope, options.kind);
+  const session = openSessionDraft(workspace, options, held);
+  const draft = parseDraft(text, format, { options, context, scope, session });
+  const target = options.kind === 'config'
+    ? configTarget(workspace, scope, draft)
+    : workflowTarget(workspace, { options, context, session }, draft);
+  const { diagnostics } = target;
+
+  const invalid = diagnostics.some((item) => item.severity === 'error');
+  if (mode === 'validate' || invalid) return emit(invalid ? EXIT_INVALID : 0, diagnostics);
+
+  const preserve = options.preserveComments === true;
+  const base = preserve ? resolveBase(options, target) : { text: null };
+  const { conflict } = base;
+  if (conflict !== undefined) return emit(EXIT_CONFLICT, [...diagnostics, conflict.item], conflict.extra);
+  const rendered = renderAuthoringYaml(draft, base.text ?? undefined);
+  const preservation = preservationWarnings(target.label, rendered, preserve && base.text !== null);
+  if (mode === 'render') return emit(0, [...diagnostics, ...preservation], { rendered: rendered.text });
+  return saveDraft(options, target, { emit, rendered, preservation });
+}
+
+function preservationWarnings(
+  label: string,
+  rendered: ReturnType<typeof renderAuthoringYaml>,
+  hadBase: boolean,
+): Diagnostic[] {
+  if (!hadBase || rendered.preserved) return [];
+  const reason = rendered.reason ?? 'the file could not be kept in place';
+  return [plain('comments-not-preserved', `${label}: comments were not preserved (${reason}).`, 'warning')];
+}
+
+function invocation(message: string): Finish {
+  return new Finish(EXIT_IO, [plain('invalid-invocation', message)]);
+}
+
+/** Rejects flag combinations that do not apply; returns the config scope. */
+function checkInvocation(options: AuthoringOptions): 'project' | 'local' {
+  const { kind, mode } = options;
   let scope: 'project' | 'local' = 'project';
   if (kind === 'config') {
     const given = options.scope ?? 'project';
     if (given !== 'project' && given !== 'local') throw invocation('--scope must be project or local.');
     scope = given;
-    context.scope = scope;
   } else if (options.scope !== undefined) {
     throw invocation('--scope applies only to config.');
   }
@@ -239,36 +289,42 @@ function executeDraft(
   if (options.target !== undefined && !(FILE_NAME.test(options.target) && options.target.endsWith('.yaml'))) {
     throw invocation('--target must be a plain *.yaml file name.');
   }
+  return scope;
+}
 
-  const format = resolveFormat(options, invocation);
-  let text: string;
+function readDraft(options: AuthoringOptions): string {
   try {
-    text = options.draft === '-'
+    return options.draft === '-'
       ? (options.readStdin ?? (() => readFileSync(0, 'utf8')))()
       : readFileSync(path.resolve(invocationCwdPath(), options.draft), 'utf8');
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     throw new Finish(EXIT_IO, [plain('draft-unreadable', `Unable to read draft: ${reason}`)]);
   }
-  context.text = text;
+}
 
-  const workspace = locateWorkspace(scope, kind);
-  let session: SessionDraft | null = null;
-  if (options.session !== undefined) {
-    if (mode === 'save') {
-      const directory = locateSessionDirectory(workspace, options.session);
-      if (!held.tryAcquire(directory)) {
-        throw new Finish(EXIT_CONFLICT, [plain('session-locked', `Session ${options.session} is locked by a running process; try again when it stops.`)]);
-      }
+function openSessionDraft(workspace: string, options: AuthoringOptions, held: HeldLock): SessionDraft | null {
+  if (options.session === undefined) return null;
+  if (options.mode === 'save') {
+    const directory = locateSessionDirectory(workspace, options.session);
+    if (!held.tryAcquire(directory)) {
+      throw new Finish(EXIT_CONFLICT, [plain('session-locked', `Session ${options.session} is locked by a running process; try again when it stops.`)]);
     }
-    // Under the lock for a save, so the status it checks cannot change before the write.
-    session = resolveSessionDraft(workspace, options.session, { forSave: mode === 'save' });
   }
-  const clients = clientRegistry();
+  // Under the lock for a save, so the status it checks cannot change before the write.
+  return resolveSessionDraft(workspace, options.session, { forSave: options.mode === 'save' });
+}
+
+function parseDraft(
+  text: string,
+  format: DraftFormat,
+  state: { options: AuthoringOptions; context: Context; scope: 'project' | 'local'; session: SessionDraft | null },
+): Record<string, unknown> {
+  const { options, context, scope, session } = state;
+  const { kind } = options;
   const draftSource = kind === 'config' ? { layer: scope } as const : { workflow: session?.relativePath ?? options.target ?? '' };
-  let draft: Record<string, unknown>;
   try {
-    draft = parseDraftText(text, format);
+    return parseDraftText(text, format);
   } catch (error) {
     if (!(error instanceof ConfigurationError)) throw error;
     if (kind === 'workflow') context.file = session?.relativePath ?? options.target ?? '';
@@ -280,93 +336,99 @@ function executeDraft(
       ...(error.position === undefined ? {} : { position: error.position }),
     }]);
   }
+}
 
-  let diagnostics: Diagnostic[];
-  let destination: string;
-  let label: string;
-  if (kind === 'config') {
-    destination = scope === 'project' ? configPath(workspace) : localConfigPath(workspace);
-    label = scope === 'project' ? 'config.yaml' : 'config.local.yaml';
-    const other = scope === 'project' ? 'local' : 'project';
-    const otherPath = scope === 'project' ? localConfigPath(workspace) : configPath(workspace);
-    // A companion layer that does not load is one finding; the draft is still validated without it.
-    const companionProblems: Diagnostic[] = [];
-    let companion: Record<string, unknown> | null = null;
-    if (existsSync(otherPath)) {
-      try {
-        companion = loadYamlMapping(otherPath, other);
-      } catch (error) {
-        if (!(error instanceof ConfigurationError)) throw error;
-        companionProblems.push({
-          severity: 'error',
-          code: error.code ?? 'config-invalid',
-          message: error.message,
-          source: { layer: other },
-          ...(error.position === undefined ? {} : { position: error.position }),
-        });
-      }
-    } else if (scope === 'local') {
+function configTarget(workspace: string, scope: 'project' | 'local', draft: Record<string, unknown>): Target {
+  const destination = scope === 'project' ? configPath(workspace) : localConfigPath(workspace);
+  const label = scope === 'project' ? 'config.yaml' : 'config.local.yaml';
+  const other = scope === 'project' ? 'local' : 'project';
+  const otherPath = scope === 'project' ? localConfigPath(workspace) : configPath(workspace);
+  // A companion layer that does not load is one finding; the draft is still validated without it.
+  const companionProblems: Diagnostic[] = [];
+  let companion: Record<string, unknown> | null = null;
+  if (existsSync(otherPath)) {
+    try {
+      companion = loadYamlMapping(otherPath, other);
+    } catch (error) {
+      if (!(error instanceof ConfigurationError)) throw error;
       companionProblems.push({
         severity: 'error',
-        code: 'config-missing',
-        message: 'Missing .migent/config.yaml; the local config is validated against it.',
-        source: { layer: 'project' },
+        code: error.code ?? 'config-invalid',
+        message: error.message,
+        source: { layer: other },
+        ...(error.position === undefined ? {} : { position: error.position }),
       });
     }
-    diagnostics = [...companionProblems, ...validateConfigDraft({ scope, draft, companion }, clients)];
-  } else {
-    const config = loadConfigLayers(workspace);
-    if (session !== null) {
-      context.file = session.relativePath;
-      destination = session.draftPath;
-      label = session.relativePath;
-      const siblings = readSiblings(workflowsDirectory(workspace), '');
-      diagnostics = validateWorkflowDraft(
-        { draft, file: session.relativePath, siblings, config, session: { expectedId: session.workflowId } },
-        clients,
-      );
-    } else {
-      const {id} = draft;
-      const derived = typeof id === 'string' && FILE_NAME.test(id) ? `${id}.yaml` : null;
-      const file = options.target ?? derived;
-      context.file = file ?? '';
-      if (file === null && mode === 'save') {
-        throw new Finish(EXIT_INVALID, [{ severity: 'error', code: 'invalid-value', message: 'Cannot derive a file name from id; pass --target.', path: ['id'], source: { workflow: '' } }]);
-      }
-      const name = file ?? '';
-      destination = path.join(workflowsDirectory(workspace), name);
-      label = `workflows/${name}`;
-      const siblings = readSiblings(workflowsDirectory(workspace), name);
-      diagnostics = validateWorkflowDraft({ draft, file: name, siblings, config }, clients);
-    }
+  } else if (scope === 'local') {
+    companionProblems.push({
+      severity: 'error',
+      code: 'config-missing',
+      message: 'Missing .migent/config.yaml; the local config is validated against it.',
+      source: { layer: 'project' },
+    });
   }
+  const diagnostics = [...companionProblems, ...validateConfigDraft({ scope, draft, companion }, clientRegistry())];
+  return { draft, diagnostics, destination, label };
+}
 
-  const invalid = diagnostics.some((item) => item.severity === 'error');
-  if (mode === 'validate' || invalid) return emit(invalid ? EXIT_INVALID : 0, diagnostics);
+function workflowTarget(
+  workspace: string,
+  state: { options: AuthoringOptions; context: Context; session: SessionDraft | null },
+  draft: Record<string, unknown>,
+): Target {
+  const { options, context, session } = state;
+  const clients = clientRegistry();
+  const config = loadConfigLayers(workspace);
+  if (session !== null) {
+    context.file = session.relativePath;
+    const siblings = readSiblings(workflowsDirectory(workspace), '');
+    const diagnostics = validateWorkflowDraft(
+      { draft, file: session.relativePath, siblings, config, session: { expectedId: session.workflowId } },
+      clients,
+    );
+    return { draft, diagnostics, destination: session.draftPath, label: session.relativePath };
+  }
+  const {id} = draft;
+  const derived = typeof id === 'string' && FILE_NAME.test(id) ? `${id}.yaml` : null;
+  const file = options.target ?? derived;
+  context.file = file ?? '';
+  if (file === null && options.mode === 'save') {
+    throw new Finish(EXIT_INVALID, [{ severity: 'error', code: 'invalid-value', message: 'Cannot derive a file name from id; pass --target.', path: ['id'], source: { workflow: '' } }]);
+  }
+  const name = file ?? '';
+  const siblings = readSiblings(workflowsDirectory(workspace), name);
+  const diagnostics = validateWorkflowDraft({ draft, file: name, siblings, config }, clients);
+  return { draft, diagnostics, destination: path.join(workflowsDirectory(workspace), name), label: `workflows/${name}` };
+}
 
-  // The base is the target's current bytes. `save` only has a base when it is replacing a file.
+function staleBase(label: string, currentHash: string | null): { item: Diagnostic; extra: Record<string, unknown> } {
+  const item = plain('stale-base', currentHash === null
+    ? `${label} does not exist, so the base hash cannot match.`
+    : `${label} changed since the base hash was taken.`);
+  return { item, extra: { file: label, ...(currentHash === null ? {} : { current_hash: currentHash }) } };
+}
+
+/** The base is the target's current bytes. `save` only has a base when it is replacing a file. */
+function resolveBase(
+  options: AuthoringOptions,
+  target: Target,
+): { text: string | null; conflict?: { item: Diagnostic; extra: Record<string, unknown> } } {
+  if (options.mode === 'render') return { text: readExisting(target.destination) };
+  if (options.baseHash === undefined) return { text: null };
+  const current = readExisting(target.destination);
+  const currentHash = current === null ? null : sha256Hex(current);
+  if (currentHash !== options.baseHash) return { text: null, conflict: staleBase(target.label, currentHash) };
+  return { text: current };
+}
+
+function saveDraft(
+  options: AuthoringOptions,
+  target: Target,
+  output: { emit: Emit; rendered: ReturnType<typeof renderAuthoringYaml>; preservation: Diagnostic[] },
+): number {
+  const { emit, rendered, preservation } = output;
+  const { diagnostics, destination, label } = target;
   const preserve = options.preserveComments === true;
-  let base: string | null = null;
-  if (preserve) {
-    if (mode === 'render') {
-      base = readExisting(destination);
-    } else if (options.baseHash !== undefined) {
-      const current = readExisting(destination);
-      const currentHash = current === null ? null : sha256Hex(current);
-      if (currentHash !== options.baseHash) {
-        return emit(EXIT_CONFLICT, [...diagnostics, plain('stale-base', currentHash === null
-          ? `${label} does not exist, so the base hash cannot match.`
-          : `${label} changed since the base hash was taken.`)], { file: label, ...(currentHash === null ? {} : { current_hash: currentHash }) });
-      }
-      base = current;
-    }
-  }
-  const rendered = renderAuthoringYaml(draft, base ?? undefined);
-  const preservation = preserve && base !== null && !rendered.preserved
-    ? [plain('comments-not-preserved', `${label}: comments were not preserved (${rendered.reason ?? 'the file could not be kept in place'}).`, 'warning')]
-    : [];
-  if (mode === 'render') return emit(0, [...diagnostics, ...preservation], { rendered: rendered.text });
-
   let result;
   try {
     result = writeFileConditional(destination, rendered.text, { baseHash: options.baseHash ?? null });
@@ -375,10 +437,10 @@ function executeDraft(
     return emit(EXIT_IO, [...diagnostics, plain('write-failed', `Unable to write ${label}: ${reason}`)]);
   }
   switch (result.status) {
-    case 'stale-base':
-      return emit(EXIT_CONFLICT, [...diagnostics, plain('stale-base', result.currentHash === null
-        ? `${label} does not exist, so the base hash cannot match.`
-        : `${label} changed since the base hash was taken.`)], { file: label, ...(result.currentHash === null ? {} : { current_hash: result.currentHash }) });
+    case 'stale-base': {
+      const stale = staleBase(label, result.currentHash);
+      return emit(EXIT_CONFLICT, [...diagnostics, stale.item], stale.extra);
+    }
     case 'already-exists':
       return emit(EXIT_CONFLICT, [...diagnostics, plain('already-exists', `${label} already exists; pass --base-hash to replace it.`)], { file: label });
     case 'create-unsupported':

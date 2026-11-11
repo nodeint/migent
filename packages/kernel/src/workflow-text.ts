@@ -110,6 +110,40 @@ function syncChangedStages(patch: TextPatch, change: Change): void {
   }
 }
 
+/** Where the stage's block `options:` mapping, its entries and its `thinking` line sit, as absolute lines. */
+function scanStageOptions(
+  content: readonly [number, LineInfo][],
+  layout: { start: number; siblingIndent: number },
+): {
+  optionsAt: number | null;
+  optionIndent: number | null;
+  optionLines: Map<string, number>;
+  thinkingAt: number | null;
+} {
+  const { start, siblingIndent } = layout;
+  let optionsAt: number | null = null;
+  let optionIndent: number | null = null;
+  let inOptions = false;
+  const optionLines = new Map<string, number>();
+  let thinkingAt: number | null = null;
+  for (const [index, item] of content) {
+    if (inOptions && item.indent <= siblingIndent) inOptions = false;
+    if (inOptions && item.key !== null && item.rest !== '') {
+      if (optionIndent === null) optionIndent = item.indent;
+      if (item.indent === optionIndent) optionLines.set(item.key, start + index);
+      continue;
+    }
+    if (item.indent !== siblingIndent || item.key === null) continue;
+    if (item.key === 'options' && item.rest === '') {
+      optionsAt = start + index;
+      inOptions = true;
+      continue;
+    }
+    if (item.key === 'thinking' && item.rest !== '') thinkingAt = start + index;
+  }
+  return { optionsAt, optionIndent, optionLines, thinkingAt };
+}
+
 function patchStage(patch: TextPatch, stage: LineSpan, change: Change): void {
   const { lines, edits } = patch;
   const { start, end } = stage;
@@ -165,26 +199,7 @@ function patchStage(patch: TextPatch, stage: LineSpan, change: Change): void {
       break;
     }
   }
-  let optionsAt: number | null = null;
-  let optionIndent: number | null = null;
-  let inOptions = false;
-  const optionLines = new Map<string, number>();
-  let thinkingAt: number | null = null;
-  for (const [index, item] of content) {
-    if (inOptions && item.indent <= siblingIndent) inOptions = false;
-    if (inOptions && item.key !== null && item.rest !== '') {
-      if (optionIndent === null) optionIndent = item.indent;
-      if (item.indent === optionIndent) optionLines.set(item.key, start + index);
-      continue;
-    }
-    if (item.indent !== siblingIndent || item.key === null) continue;
-    if (item.key === 'options' && item.rest === '') {
-      optionsAt = start + index;
-      inOptions = true;
-      continue;
-    }
-    if (item.key === 'thinking' && item.rest !== '') thinkingAt = start + index;
-  }
+  const { optionsAt, optionIndent, optionLines, thinkingAt } = scanStageOptions(content, { start, siblingIndent });
   const beforeOptions = isRecord(before.options) ? before.options : {};
   const afterOptions = isRecord(after.options) ? after.options : {};
   if (!deepEqual(beforeOptions, afterOptions)) {

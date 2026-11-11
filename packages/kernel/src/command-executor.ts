@@ -175,6 +175,91 @@ export function waitForReady(child: ChildProcess, options: WaitForReadyOptions =
   return awaitReady(child, options, cancellationSignal());
 }
 
+/** The result for an argv the platform cannot pass to the provider, or null when it can. */
+function unpassableArguments(spec: CommandSpec): CommandResult | null {
+  try {
+    assertArgumentsPassable(spec.argv[0] ?? '', spec.argv.slice(1));
+  } catch (error) {
+    if (error instanceof UnpassableArgument) return { stdout: '', error: error.message, exitCode: null };
+    throw error;
+  }
+  return null;
+}
+
+/** What every failure and fact record repeats about one launched wrapper. */
+interface LaunchContext {
+  endpoint: string;
+  executable: string;
+  argCount: number;
+  cwd: string;
+  spawnedAt: string;
+}
+
+/** Builds the persisted failure record; process facts default to the child's current stderr drain. */
+function describeExecutionFailure(
+  child: ChildProcess,
+  launch: LaunchContext,
+  failed: {
+    result: StartFailure;
+    kind: ExecutionFailure['kind'];
+    process?: { exitCode: number | null; signal: string | null; drain: StderrDrain } | undefined;
+  },
+): ExecutionFailure {
+  const { result, kind } = failed;
+  const process = failed.process ?? { exitCode: null, signal: null, drain: stderrDrainOf(child) };
+  const stderrTail = stderrTailOf(child);
+  const detail = result.kind === 'wrapper-reported' || result.kind === 'spawn-error' ? result : null;
+  return {
+    kind,
+    result,
+    phase: result.kind === 'wrapper-reported' ? result.phase : null,
+    code: detail?.code ?? null,
+    errno: detail?.errno ?? null,
+    syscall: detail?.syscall ?? null,
+    path: detail?.path ?? null,
+    message: describeStartFailure(result, { command: launch.executable, stderrTail }),
+    stderrTail,
+    exitCode: process.exitCode,
+    signal: process.signal,
+    stderrTotalBytes: stderrTotalOf(child),
+    drain: process.drain,
+    endpoint: launch.endpoint,
+    executable: launch.executable,
+    argCount: launch.argCount,
+    cwd: launch.cwd,
+    spawnedAt: launch.spawnedAt,
+    failedAt: new Date().toISOString(),
+  };
+}
+
+/** The facts recorded about a provider process that ran to its end. */
+function processFactsOf(
+  child: ChildProcess,
+  launch: LaunchContext,
+  ended: {
+    exitCode: number | null;
+    signal: string | null;
+    drain: StderrDrain;
+    streamStats: { bytes: number; lines: number };
+  },
+): ProcessFacts {
+  return {
+    exitCode: ended.exitCode,
+    signal: ended.signal,
+    stderrTail: stderrTailOf(child),
+    stderrTotalBytes: stderrTotalOf(child),
+    drain: ended.drain,
+    stdoutBytes: ended.streamStats.bytes,
+    stdoutLines: ended.streamStats.lines,
+    endpoint: launch.endpoint,
+    executable: launch.executable,
+    argCount: launch.argCount,
+    cwd: launch.cwd,
+    spawnedAt: launch.spawnedAt,
+    endedAt: new Date().toISOString(),
+  };
+}
+
 export class CommandExecutor {
   public readonly timeoutSec: number | null;
   public readonly progressIntervalSec: number;
@@ -195,18 +280,25 @@ export class CommandExecutor {
     if (await notify(options.onInterrupt, reason)) await waitForExit(child, this.interruptExitGraceMs);
   }
 
+  /** Stops the sub-agent group for a cancel; the provider hooks run only once it was told to start. */
+  private async stopOnCancel(child: ChildProcess | null, options: RunOptions, launched: boolean): Promise<void> {
+    log('Cancellation requested; stopping the sub-agent group.');
+    if (child !== null) {
+      if (launched) await this.interrupt(child, options, 'cancel');
+      await stopProcessGroup(child);
+      if (launched) await notify(options.onStopped, 'cancel');
+    }
+    log('Sub-agent group stopped.');
+  }
+
   public async run(spec: CommandSpec, cwd: string, options: RunOptions = {}): Promise<CommandResult> {
     const { onStart, onDebug } = options;
     const executable = spec.argv[0] ?? 'command';
     let child: ChildProcess | null = null;
     // True once the provider was told to start; before that no server-side turn can exist.
     let launched = false;
-    try {
-      assertArgumentsPassable(spec.argv[0] ?? '', spec.argv.slice(1));
-    } catch (error) {
-      if (error instanceof UnpassableArgument) return { stdout: '', error: error.message, exitCode: null };
-      throw error;
-    }
+    const unpassable = unpassableArguments(spec);
+    if (unpassable !== null) return unpassable;
     try {
       const endpoint = wrapperEndpoint(randomBytes(ENDPOINT_TOKEN_BYTES).toString('hex'));
       onDebug?.(`endpoint ${endpoint} (length ${Buffer.byteLength(endpoint)})`);
@@ -215,39 +307,14 @@ export class CommandExecutor {
       onDebug?.(`wrapper spawned pid=${child.pid ?? 'none'}`);
       if (onDebug) forwardWrapperSteps(child, onDebug);
       const started = await waitForReady(child);
+      const argCount = Math.max(0, spec.argv.length - 1);
+      const launch: LaunchContext = { endpoint, executable, argCount, cwd, spawnedAt };
+      const running = child;
       const describe = (
         result: StartFailure,
         kind: ExecutionFailure['kind'],
-        process: { exitCode: number | null; signal: string | null; drain: StderrDrain } = {
-          exitCode: null,
-          signal: null,
-          drain: stderrDrainOf(child as ChildProcess),
-        },
-      ): ExecutionFailure => {
-        const stderrTail = stderrTailOf(child as ChildProcess);
-        const detail = result.kind === 'wrapper-reported' || result.kind === 'spawn-error' ? result : null;
-        return {
-          kind,
-          result,
-          phase: result.kind === 'wrapper-reported' ? result.phase : null,
-          code: detail?.code ?? null,
-          errno: detail?.errno ?? null,
-          syscall: detail?.syscall ?? null,
-          path: detail?.path ?? null,
-          message: describeStartFailure(result, { command: executable, stderrTail }),
-          stderrTail,
-          exitCode: process.exitCode,
-          signal: process.signal,
-          stderrTotalBytes: stderrTotalOf(child as ChildProcess),
-          drain: process.drain,
-          endpoint,
-          executable,
-          argCount: Math.max(0, spec.argv.length - 1),
-          cwd,
-          spawnedAt,
-          failedAt: new Date().toISOString(),
-        };
-      };
+        process?: { exitCode: number | null; signal: string | null; drain: StderrDrain },
+      ): ExecutionFailure => describeExecutionFailure(running, launch, { result, kind, process });
       if (started.kind === 'cancelled') throwIfCancelled();
       if (started.kind !== 'ready' && started.kind !== 'cancelled') {
         onDebug?.(`wrapper failed: ${started.kind}`);
@@ -282,24 +349,9 @@ export class CommandExecutor {
         const failure = describe(result, 'start');
         return { stdout, error: failure.message, exitCode: null, failure };
       }
-      let facts: ProcessFacts | undefined;
-      if (streamStats !== null) {
-        facts = {
-          exitCode,
-          signal: reportedSignal ?? child.signalCode,
-          stderrTail: stderrTailOf(child),
-          stderrTotalBytes: stderrTotalOf(child),
-          drain,
-          stdoutBytes: streamStats.bytes,
-          stdoutLines: streamStats.lines,
-          endpoint,
-          executable,
-          argCount: Math.max(0, spec.argv.length - 1),
-          cwd,
-          spawnedAt,
-          endedAt: new Date().toISOString(),
-        };
-      }
+      const facts = streamStats === null
+        ? undefined
+        : processFactsOf(child, launch, { exitCode, signal: reportedSignal ?? child.signalCode, drain, streamStats });
       if (error !== null && exitCode !== null && exitCode !== 0) {
         const signal = reportedSignal ?? child.signalCode;
         const failure = describe({ kind: 'exited', code: exitCode, signal }, 'provider-exit', {
@@ -314,13 +366,7 @@ export class CommandExecutor {
       return { stdout, error, exitCode };
     } catch (error) {
       if (error instanceof CancellationRequested) {
-        log('Cancellation requested; stopping the sub-agent group.');
-        if (child !== null) {
-          if (launched) await this.interrupt(child, options, 'cancel');
-          await stopProcessGroup(child);
-          if (launched) await notify(options.onStopped, 'cancel');
-        }
-        log('Sub-agent group stopped.');
+        await this.stopOnCancel(child, options, launched);
       }
       throw error;
     }

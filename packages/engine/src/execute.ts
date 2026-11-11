@@ -69,34 +69,12 @@ async function executeLocked(
     throw new ConfigurationError('A client registry is required to run a workflow.');
   }
   const {registry} = activeRunner;
-  const stageId = request.stageId ?? null;
-  const once = request.once ?? false;
-  const maxDispatches =
-    request.maxDispatches === undefined ? DEFAULT_MAX_DISPATCHES : request.maxDispatches;
-  if (!once && maxDispatches !== null && maxDispatches < 1) {
-    throw new ConfigurationError('--max-dispatches must be at least 1.');
-  }
+  const { stageId, once, maxDispatches } = dispatchLimits(request);
   const store = new SessionStore(workspace);
   const opened = await openExecuteSession(workspace, request, { held, registry, store });
   if (opened.kind === 'final') return opened.result;
   const { sessionId, workflow, workflowId, stageReply, resumeCancelled, reopenLatestCancelled } = opened;
-  const onSigint = () => {
-    try {
-      raiseCancellation(osConstants.signals.SIGINT);
-    } catch {
-      // The flag stays set; the command loop observes it.
-    }
-  };
-  const onSigterm = () => {
-    try {
-      raiseCancellation(osConstants.signals.SIGTERM);
-    } catch {
-      // The flag stays set; the command loop observes it.
-    }
-  };
-  process.on('SIGINT', onSigint);
-  process.on('SIGTERM', onSigterm);
-  held.lock?.onCancelRequest(onSigint);
+  const removeSignalHandlers = installSignalHandlers(held);
   const tasks = new Map<string, Promise<unknown>>();
   try {
     const stageJsons: Record<string, unknown>[] = [];
@@ -130,17 +108,7 @@ async function executeLocked(
       return executeFinal(store.readSessionStatus(sessionId), VERIFY_EXHAUSTED, stageJsons);
     }
     if (replySent && (once || stageId !== null)) {
-      const status = store.readSessionStatus(sessionId);
-      if (replyResult?.failure_kind === 'quota') return executeFinal(status, 'quota', stageJsons);
-      const after = text(status.status);
-      const stopReason = TERMINAL_SESSION_STATUSES.has(after) ? after : 'stage';
-      const result = executeFinal(status, stopReason, stageJsons);
-      if (replyResult?.outcome_status === 'question') {
-        result.code = 9;
-        result.stopReason = 'question';
-      }
-      if (stopReason === 'stage' && stageJsons.some((item) => item.outcome_status !== 'complete' && item.execution_status !== 'skipped')) result.code = stageJsons.some((item) => item.outcome_status === 'question') ? exitCode('question') : exitCode('blocked');
-      return result;
+      return replyStopResult(store.readSessionStatus(sessionId), replyResult, stageJsons);
     }
     const replyDispatches = replySent ? 1 : 0;
     const replyVerifyTried = replyExhausted && stageReply !== null ? [stageReply.stageId] : [];
@@ -165,35 +133,100 @@ async function executeLocked(
     if (stageJsons.length > 0) continued.stages = [...stageJsons, ...continued.stages];
     return continued;
   } catch (error) {
-    if (error instanceof CancellationRequested) {
-      await Promise.allSettled([...tasks.values()]);
-      log(error.message);
-      return executeFinal(store.readSessionStatus(sessionId), 'cancelled', []);
-    }
-    if (error instanceof OutputsMissing) {
-      process.stderr.write(`migent: ${error.message}\n`);
-      return executeFinal(store.readSessionStatus(sessionId), 'outputs_missing', []);
-    }
-    // ConfigurationError stays an exception. Callers map it to exit 2, matching Python.
-    if (error instanceof ConfigurationError) throw error;
-    if (error instanceof Error && !hasErrorCode(error)) {
-      process.stderr.write(`migent: ${error.message}\n`);
-      return {
-        code: 2,
-        status: '',
-        stopReason: 'configuration',
-        sessionId,
-        latestDecision: null,
-        latestExecutionId: null,
-        outputs: {},
-        stages: [],
-      };
-    }
-    throw error;
+    return await handleExecuteError(error, { store, sessionId, tasks });
   } finally {
+    removeSignalHandlers();
+  }
+}
+
+// Reads and validates the stage, once, and dispatch-ceiling options of a request.
+function dispatchLimits(
+  request: ExecuteRequest,
+): { stageId: string | null; once: boolean; maxDispatches: number | null } {
+  const stageId = request.stageId ?? null;
+  const once = request.once ?? false;
+  const maxDispatches =
+    request.maxDispatches === undefined ? DEFAULT_MAX_DISPATCHES : request.maxDispatches;
+  if (!once && maxDispatches !== null && maxDispatches < 1) {
+    throw new ConfigurationError('--max-dispatches must be at least 1.');
+  }
+  return { stageId, once, maxDispatches };
+}
+
+// Routes SIGINT, SIGTERM, and lock cancel requests to cooperative cancellation. Returns the uninstaller.
+function installSignalHandlers(held: HeldSession): () => void {
+  const onSigint = () => {
+    try {
+      raiseCancellation(osConstants.signals.SIGINT);
+    } catch {
+      // The flag stays set; the command loop observes it.
+    }
+  };
+  const onSigterm = () => {
+    try {
+      raiseCancellation(osConstants.signals.SIGTERM);
+    } catch {
+      // The flag stays set; the command loop observes it.
+    }
+  };
+  process.on('SIGINT', onSigint);
+  process.on('SIGTERM', onSigterm);
+  held.lock?.onCancelRequest(onSigint);
+  return () => {
     process.off('SIGINT', onSigint);
     process.off('SIGTERM', onSigterm);
+  };
+}
+
+// Builds the result when a sent reply ends a single-stage run.
+function replyStopResult(
+  status: Record<string, unknown>,
+  replyResult: Record<string, unknown> | undefined,
+  stageJsons: Record<string, unknown>[],
+): ExecuteResult {
+  if (replyResult?.failure_kind === 'quota') return executeFinal(status, 'quota', stageJsons);
+  const after = text(status.status);
+  const stopReason = TERMINAL_SESSION_STATUSES.has(after) ? after : 'stage';
+  const result = executeFinal(status, stopReason, stageJsons);
+  if (replyResult?.outcome_status === 'question') {
+    result.code = 9;
+    result.stopReason = 'question';
   }
+  if (stopReason === 'stage' && stageJsons.some((item) => item.outcome_status !== 'complete' && item.execution_status !== 'skipped')) result.code = stageJsons.some((item) => item.outcome_status === 'question') ? exitCode('question') : exitCode('blocked');
+  return result;
+}
+
+// Maps an execute failure to its final result, or rethrows it.
+async function handleExecuteError(
+  error: unknown,
+  scope: { store: SessionStore; sessionId: string; tasks: Map<string, Promise<unknown>> },
+): Promise<ExecuteResult> {
+  const { store, sessionId, tasks } = scope;
+  if (error instanceof CancellationRequested) {
+    await Promise.allSettled([...tasks.values()]);
+    log(error.message);
+    return executeFinal(store.readSessionStatus(sessionId), 'cancelled', []);
+  }
+  if (error instanceof OutputsMissing) {
+    process.stderr.write(`migent: ${error.message}\n`);
+    return executeFinal(store.readSessionStatus(sessionId), 'outputs_missing', []);
+  }
+  // ConfigurationError stays an exception. Callers map it to exit 2, matching Python.
+  if (error instanceof ConfigurationError) throw error;
+  if (error instanceof Error && !hasErrorCode(error)) {
+    process.stderr.write(`migent: ${error.message}\n`);
+    return {
+      code: 2,
+      status: '',
+      stopReason: 'configuration',
+      sessionId,
+      latestDecision: null,
+      latestExecutionId: null,
+      outputs: {},
+      stages: [],
+    };
+  }
+  throw error;
 }
 
 interface ReopenLimits {
@@ -212,51 +245,15 @@ async function resumeReopenedExecutions(
   limits: ReopenLimits,
   stageJsons: Record<string, unknown>[],
 ): Promise<ExecuteResult | null> {
-  const { workspace, store, workflow, sessionId, runner: activeRunner, tasks } = run;
+  const { store, sessionId } = run;
   const { once, stageId, maxDispatches, reopenLatestCancelled } = limits;
   const reopened = store.reopenCancelledExecutions(sessionId, reopenLatestCancelled);
   if (!reopenLatestCancelled || reopened.length > 0) {
     for (const item of reopened) {
       log(`session ${sessionId} was cancelled during ${item.executionId}. Resuming that execution.`);
     }
-    const settled = await Promise.allSettled(
-      reopened.map((item) =>
-        startTracked({ sessionId, executionId: item.executionId, tasks }, () =>
-          verifyOnlyExecution(workspace, sessionId, item.executionId)
-            ? runVerifyOnlyStage({
-                workspace,
-                sessionId,
-                stage: verifyOnlyStage(workflow, item.stageId),
-                verifyRunner: activeRunner.verifyRunner,
-                clients: activeRunner.registry,
-                executionId: item.executionId,
-              })
-            : activeRunner.continueCancelled(workspace, sessionId, item.executionId),
-        ),
-      ),
-    );
-    const rejected = settled.find((item) => item.status === 'rejected');
-    if (rejected && rejected.status === 'rejected') throw rejected.reason;
-    const continued = settled.flatMap((item) => (item.status === 'fulfilled' ? [item.value] : []));
-    for (let index = 0; index < reopened.length; index += 1) {
-      const item = reopened[index];
-      const result = continued[index];
-      const outcome =
-        result.failure_reason === VERIFY_FAILED
-          ? 'verify_failed'
-          : result.outcome_status ||
-            (result.failure_reason || result.failure_kind || result.execution_status === 'failed'
-              ? 'failed'
-              : 'finished');
-      log(
-        stageFinishLine(
-          { workspace, sessionId },
-          { stageId: item.stageId || 'stage', executionId: item.executionId },
-          { outcome, decision: result.outcome_decision || '' },
-        ),
-      );
-      stageJsons.push(runResultJson(result));
-    }
+    const continued = await continueReopened(run, reopened);
+    logReopenedFinishes(run, reopened, continued, stageJsons);
     const status = store.readSessionStatus(sessionId);
     const after = text(status.status);
     if (continued.some((item) => item.failure_reason === VERIFY_FAILED)) {
@@ -292,6 +289,62 @@ async function resumeReopenedExecutions(
     }
   }
   return null;
+}
+
+// Runs every reopened execution to its next stop; rethrows the first rejection.
+async function continueReopened(
+  run: ExecuteRun,
+  reopened: readonly { executionId: string; stageId: string }[],
+): Promise<RunResult[]> {
+  const { workspace, workflow, sessionId, runner: activeRunner, tasks } = run;
+  const settled = await Promise.allSettled(
+    reopened.map((item) =>
+      startTracked({ sessionId, executionId: item.executionId, tasks }, () =>
+        verifyOnlyExecution(workspace, sessionId, item.executionId)
+          ? runVerifyOnlyStage({
+              workspace,
+              sessionId,
+              stage: verifyOnlyStage(workflow, item.stageId),
+              verifyRunner: activeRunner.verifyRunner,
+              clients: activeRunner.registry,
+              executionId: item.executionId,
+            })
+          : activeRunner.continueCancelled(workspace, sessionId, item.executionId),
+      ),
+    ),
+  );
+  const rejected = settled.find((item) => item.status === 'rejected');
+  if (rejected && rejected.status === 'rejected') throw rejected.reason;
+  return settled.flatMap((item) => (item.status === 'fulfilled' ? [item.value] : []));
+}
+
+// Logs each reopened execution's finish line and records its stage JSON.
+function logReopenedFinishes(
+  run: ExecuteRun,
+  reopened: readonly { executionId: string; stageId: string }[],
+  continued: readonly RunResult[],
+  stageJsons: Record<string, unknown>[],
+): void {
+  const { workspace, sessionId } = run;
+  for (let index = 0; index < reopened.length; index += 1) {
+    const item = reopened[index];
+    const result = continued[index];
+    const outcome =
+      result.failure_reason === VERIFY_FAILED
+        ? 'verify_failed'
+        : result.outcome_status ||
+          (result.failure_reason || result.failure_kind || result.execution_status === 'failed'
+            ? 'failed'
+            : 'finished');
+    log(
+      stageFinishLine(
+        { workspace, sessionId },
+        { stageId: item.stageId || 'stage', executionId: item.executionId },
+        { outcome, decision: result.outcome_decision || '' },
+      ),
+    );
+    stageJsons.push(runResultJson(result));
+  }
 }
 
 function verifyOnlyStage(workflow: WorkflowDocument, stageId: string) {

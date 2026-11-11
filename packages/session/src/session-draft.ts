@@ -70,6 +70,58 @@ export function locateSessionDirectory(workspace: string, sessionId: string): st
 }
 
 /**
+ * The status of a session that can adopt a saved draft: prepared, or refreshable with a loadable freeze.
+ * The snapshot and the event fold must agree; anything else fails.
+ */
+function savableStatus(workspace: string, sessionDirectory: string, sessionId: string): string {
+  const read = readStatusFileState(path.join(sessionDirectory, 'status.json'));
+  if (read.state !== 'ok') {
+    fail('session-metadata-corrupt', `Session status file is ${read.state === 'missing' ? 'missing' : 'corrupt'}: .migent/sessions/${sessionId}/status.json.`);
+  }
+  const value = read.state === 'ok' ? read.status.status : undefined;
+  const status = typeof value === 'string' ? value : null;
+  if (status === null) fail('session-metadata-corrupt', `Session status names no status: .migent/sessions/${sessionId}/status.json.`);
+  // The snapshot can lag the events (a crash between an append and the commit). Read the fold, which
+  // writes nothing, and refuse a save the two disagree on: only a locked repair can settle which is true.
+  let folded: unknown;
+  try {
+    folded = readFoldedStatus(workspace, sessionDirectory).status;
+  } catch (error) {
+    if (!(error instanceof ConfigurationError)) throw error;
+    fail('session-metadata-corrupt', error.message);
+  }
+  if (typeof folded === 'string' && TERMINAL_STATUSES.has(folded) && folded !== status) {
+    fail('session-terminal', `Session ${sessionId} is ${folded} according to its events; it can no longer adopt a workflow draft.`);
+  }
+  if (folded !== status && !TERMINAL_STATUSES.has(status)) {
+    fail(
+      'session-status-inconsistent',
+      `Session ${sessionId} status.json says ${status}, but its events say ${String(folded)}. Run \`migent session continue ${sessionId}\` or repair the session first.`,
+    );
+  }
+  if (TERMINAL_STATUSES.has(status)) {
+    fail('session-terminal', `Session ${sessionId} is ${status}; it can no longer adopt a workflow draft.`);
+  }
+  if (status !== 'prepared') {
+    if (!REFRESHABLE_STATUSES.has(status)) {
+      fail('session-not-savable', `Session ${sessionId} is ${status}; a draft can be saved only for a prepared or stopped session.`);
+    }
+    const freezePath = path.join(sessionDirectory, WORKFLOW_FREEZE_FILE);
+    if (!existsSync(freezePath) || !statSync(freezePath).isFile()) {
+      fail('session-not-savable', `Session ${sessionId} has no frozen workflow, so it cannot adopt a draft through --refresh-workflow.`);
+    }
+    // A freeze that does not load makes refresh fail, so the saved draft could never be adopted.
+    try {
+      readWorkflowFreeze(sessionDirectory);
+    } catch (error) {
+      if (!(error instanceof ConfigurationError)) throw error;
+      fail('session-metadata-corrupt', error.message);
+    }
+  }
+  return status;
+}
+
+/**
  * Resolve the session-owned draft. Only a workflow session whose recorded source is its own
  * `workflow.yaml` qualifies. With `forSave`, the session must also be able to adopt a saved draft:
  * prepared (the draft is read at start), or started, stopped, and holding a freeze (an explicit
@@ -129,52 +181,6 @@ export function resolveSessionDraft(
   }
   if (!draftStat.isFile()) fail('session-draft-invalid', `Session draft is not a regular file: ${relativePath}.`);
 
-  let status: string | null = null;
-  if (options.forSave === true) {
-    const read = readStatusFileState(path.join(sessionDirectory, 'status.json'));
-    if (read.state !== 'ok') {
-      fail('session-metadata-corrupt', `Session status file is ${read.state === 'missing' ? 'missing' : 'corrupt'}: .migent/sessions/${sessionId}/status.json.`);
-    }
-    const value = read.state === 'ok' ? read.status.status : undefined;
-    status = typeof value === 'string' ? value : null;
-    if (status === null) fail('session-metadata-corrupt', `Session status names no status: .migent/sessions/${sessionId}/status.json.`);
-    // The snapshot can lag the events (a crash between an append and the commit). Read the fold, which
-    // writes nothing, and refuse a save the two disagree on: only a locked repair can settle which is true.
-    let folded: unknown;
-    try {
-      folded = readFoldedStatus(workspace, sessionDirectory).status;
-    } catch (error) {
-      if (!(error instanceof ConfigurationError)) throw error;
-      fail('session-metadata-corrupt', error.message);
-    }
-    if (typeof folded === 'string' && TERMINAL_STATUSES.has(folded) && folded !== status) {
-      fail('session-terminal', `Session ${sessionId} is ${folded} according to its events; it can no longer adopt a workflow draft.`);
-    }
-    if (folded !== status && !TERMINAL_STATUSES.has(status)) {
-      fail(
-        'session-status-inconsistent',
-        `Session ${sessionId} status.json says ${status}, but its events say ${String(folded)}. Run \`migent session continue ${sessionId}\` or repair the session first.`,
-      );
-    }
-    if (TERMINAL_STATUSES.has(status)) {
-      fail('session-terminal', `Session ${sessionId} is ${status}; it can no longer adopt a workflow draft.`);
-    }
-    if (status !== 'prepared') {
-      if (!REFRESHABLE_STATUSES.has(status)) {
-        fail('session-not-savable', `Session ${sessionId} is ${status}; a draft can be saved only for a prepared or stopped session.`);
-      }
-      const freezePath = path.join(sessionDirectory, WORKFLOW_FREEZE_FILE);
-      if (!existsSync(freezePath) || !statSync(freezePath).isFile()) {
-        fail('session-not-savable', `Session ${sessionId} has no frozen workflow, so it cannot adopt a draft through --refresh-workflow.`);
-      }
-      // A freeze that does not load makes refresh fail, so the saved draft could never be adopted.
-      try {
-        readWorkflowFreeze(sessionDirectory);
-      } catch (error) {
-        if (!(error instanceof ConfigurationError)) throw error;
-        fail('session-metadata-corrupt', error.message);
-      }
-    }
-  }
+  const status = options.forSave === true ? savableStatus(workspace, sessionDirectory, sessionId) : null;
   return { sessionId, sessionDirectory, draftPath, relativePath, workflowId: manifest.workflowId, status };
 }

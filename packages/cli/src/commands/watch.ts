@@ -53,28 +53,7 @@ export async function followSession(
   const exitWhenDone = options.exitWhenDone === true;
   const sessionDirectory = path.join(workspace, '.migent', 'sessions', sessionId);
   const eventsPath = path.join(sessionDirectory, 'events.jsonl');
-  const statusPath = path.join(sessionDirectory, 'status.json');
-  if (readStatusFileState(statusPath).state === 'corrupt') {
-    throw new ConfigurationError(corruptStatusMessage(statusPath));
-  }
-  if (!isFile(eventsPath) && !(once && isFile(path.join(sessionDirectory, 'status.json')))) {
-    throw new ConfigurationError(`No events found for session: ${sessionId}`);
-  }
-  // Reaping writes, so it needs the session lock. A live holder keeps the session; follow then tails read-only.
-  const reapLock = SessionLock.tryAcquire(sessionDirectory);
-  if (reapLock !== null) {
-    try {
-      new SessionStore(workspace).reapOrphanedExecutions(sessionId, 'ignore');
-    } finally {
-      reapLock.release();
-    }
-  }
-  let executionPath: string | null = null;
-  if (executionId !== null) {
-    const resolved = path.join(sessionDirectory, 'executions', executionId, 'execution.json');
-    executionPath = resolved;
-    if (!isFile(resolved)) throw new ConfigurationError(`No execution found: ${executionId}`);
-  }
+  const executionPath = prepareFollow(workspace, sessionId, { once, executionId });
   if (once) {
     const drift = statusDriftMessage(workspace, sessionId);
     if (drift) printNotice(drift);
@@ -100,23 +79,11 @@ export async function followSession(
       const batch = readBatch(logs);
       for (const item of batch) emitWatchEvent(item.line, executionId, jsonLines);
       if (batch.length > 0) continue;
-      if (untilTerminal) {
-        if (executionPath === null) throw new ConfigurationError('--until requires --execution.');
-        const record = readExecutionFile(executionPath);
-        if (record !== null && TERMINAL_EXECUTION_STATUSES.has(String(record.status))) {
-          const drained = readBatch(logs);
-          for (const item of drained) emitWatchEvent(item.line, executionId, jsonLines);
-          return untilTerminalExitCode(record);
-        }
-      }
-      if (exitWhenDone) {
-        const status = String(watchSnapshot(sessionDirectory, null).status ?? '');
-        const done = SESSION_DONE_EXITS[status];
-        if (done !== undefined) {
-          const drained = readBatch(logs);
-          for (const item of drained) emitWatchEvent(item.line, executionId, jsonLines);
-          return done;
-        }
+      const exit = followExit(sessionDirectory, { untilTerminal, executionPath, exitWhenDone });
+      if (exit !== null) {
+        const drained = readBatch(logs);
+        for (const item of drained) emitWatchEvent(item.line, executionId, jsonLines);
+        return exit;
       }
       await delay(POLL_MS);
     }
@@ -130,6 +97,56 @@ export async function followSession(
     for (const log of logs) closeSync(log.fd);
     unbind();
   }
+}
+
+/** Checks the session can be followed and reaps orphans; returns the execution file to watch, if any. */
+function prepareFollow(
+  workspace: string,
+  sessionId: string,
+  options: { once: boolean; executionId: string | null },
+): string | null {
+  const sessionDirectory = path.join(workspace, '.migent', 'sessions', sessionId);
+  const eventsPath = path.join(sessionDirectory, 'events.jsonl');
+  const statusPath = path.join(sessionDirectory, 'status.json');
+  if (readStatusFileState(statusPath).state === 'corrupt') {
+    throw new ConfigurationError(corruptStatusMessage(statusPath));
+  }
+  if (!isFile(eventsPath) && !(options.once && isFile(path.join(sessionDirectory, 'status.json')))) {
+    throw new ConfigurationError(`No events found for session: ${sessionId}`);
+  }
+  // Reaping writes, so it needs the session lock. A live holder keeps the session; follow then tails read-only.
+  const reapLock = SessionLock.tryAcquire(sessionDirectory);
+  if (reapLock !== null) {
+    try {
+      new SessionStore(workspace).reapOrphanedExecutions(sessionId, 'ignore');
+    } finally {
+      reapLock.release();
+    }
+  }
+  if (options.executionId === null) return null;
+  const resolved = path.join(sessionDirectory, 'executions', options.executionId, 'execution.json');
+  if (!isFile(resolved)) throw new ConfigurationError(`No execution found: ${options.executionId}`);
+  return resolved;
+}
+
+/** The exit code once an idle poll finds the followed execution or session done; null to keep polling. */
+function followExit(
+  sessionDirectory: string,
+  stop: { untilTerminal: boolean; executionPath: string | null; exitWhenDone: boolean },
+): number | null {
+  if (stop.untilTerminal) {
+    if (stop.executionPath === null) throw new ConfigurationError('--until requires --execution.');
+    const record = readExecutionFile(stop.executionPath);
+    if (record !== null && TERMINAL_EXECUTION_STATUSES.has(String(record.status))) {
+      return untilTerminalExitCode(record);
+    }
+  }
+  if (stop.exitWhenDone) {
+    const status = String(watchSnapshot(sessionDirectory, null).status ?? '');
+    const done = SESSION_DONE_EXITS[status];
+    if (done !== undefined) return done;
+  }
+  return null;
 }
 
 function printSnapshot(

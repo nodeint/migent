@@ -234,6 +234,13 @@ export type Settle = (action: () => number | Promise<number>) => Promise<void>;
 
 /** cancel, complete, rename, and repair. */
 export function registerSessionLifecycleCommands(session: Command, settle: Settle): void {
+  registerCancel(session, settle);
+  registerComplete(session, settle);
+  registerRename(session, settle);
+  registerRepair(session, settle);
+}
+
+function registerCancel(session: Command, settle: Settle): void {
   session
     .command('cancel')
     .description('Ask the process running a session to stop. Works on Windows, where signals cannot reach it.')
@@ -259,7 +266,9 @@ export function registerSessionLifecycleCommands(session: Command, settle: Settl
         return cancelSession(findWorkspace(invocationCwdPath()), id, cancelOptions);
       }),
     );
+}
 
+function registerComplete(session: Command, settle: Settle): void {
   session
     .command('complete')
     .description('Mark a stopped workflow session completed without running another stage.')
@@ -278,7 +287,9 @@ export function registerSessionLifecycleCommands(session: Command, settle: Settl
     .action((id: string, options: OptionValues) =>
       settle(() => completeSession(findWorkspace(invocationCwdPath()), id, options.json === true)),
     );
+}
 
+function registerRename(session: Command, settle: Settle): void {
   session
     .command('rename')
     .description("Change a session's display title. The task and the session state stay unchanged.")
@@ -298,7 +309,9 @@ export function registerSessionLifecycleCommands(session: Command, settle: Settl
     .action((id: string, title: string, options: OptionValues) =>
       settle(() => renameSession(findWorkspace(invocationCwdPath()), { sessionId: id, title }, options.json === true)),
     );
+}
 
+function registerRepair(session: Command, settle: Settle): void {
   session
     .command('repair')
     .description('Rebuild status.json from the session directory.')
@@ -320,6 +333,13 @@ export function registerSessionLifecycleCommands(session: Command, settle: Settl
 
 /** list, show, metrics, and follow. */
 export function registerSessionQueryCommands(session: Command, settle: Settle): void {
+  registerList(session, settle);
+  registerShow(session, settle);
+  registerMetrics(session, settle);
+  registerFollow(session, settle);
+}
+
+function registerList(session: Command, settle: Settle): void {
   session
     .command('list')
     .description('List sessions, newest first.')
@@ -348,7 +368,9 @@ export function registerSessionQueryCommands(session: Command, settle: Settle): 
         }),
       ),
     );
+}
 
+function registerShow(session: Command, settle: Settle): void {
   session
     .command('show')
     .description('Print one session snapshot.')
@@ -374,7 +396,9 @@ export function registerSessionQueryCommands(session: Command, settle: Settle): 
         }),
       ),
     );
+}
 
+function registerMetrics(session: Command, settle: Settle): void {
   session
     .command('metrics')
     .description('Print usage, time, and revision counts recorded for a completed workflow session.')
@@ -400,7 +424,9 @@ export function registerSessionQueryCommands(session: Command, settle: Settle): 
         }),
       ),
     );
+}
 
+function registerFollow(session: Command, settle: Settle): void {
   session
     .command('follow')
     .description("Follow a session's events until a signal.")

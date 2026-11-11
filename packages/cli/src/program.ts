@@ -88,7 +88,12 @@ export function createProgram(status: CliStatus, options: { quietErrors?: boolea
 /** init and config, then config drafts, workflow drafts, and the lookup commands. */
 function registerProjectCommands(program: Command, status: CliStatus): void {
   registerInitCommand(program, status);
+  registerLookupCommands(program, status);
+  registerMaintenanceCommands(program, status);
+}
 
+/** config with its draft subcommands, and the read-only get command. */
+function registerLookupCommands(program: Command, status: CliStatus): void {
   const config = program
     .command('config')
     .description('Print the effective config: .migent/config.yaml with .migent/config.local.yaml merged over it.')
@@ -142,7 +147,10 @@ ${exitText(['Exit 0 on success, including an empty list.', 'Exit 2 on a usage or
         }),
       );
     });
+}
 
+/** doctor, update, the hidden removed provider command, and migrate. */
+function registerMaintenanceCommands(program: Command, status: CliStatus): void {
   program
     .command('doctor')
     .description("Check config, workflows, and client CLIs, or one session's workflow.")
