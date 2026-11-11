@@ -43,5 +43,8 @@
   },
   "scripts": {
     "prepack": "pnpm -w run build && cp ../../LICENSE ."
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3"
   }
 }

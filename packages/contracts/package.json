@@ -45,6 +45,7 @@
     "typebox": "^1.4.4"
   },
   "devDependencies": {
-    "@types/node": "^26.6.4"
+    "@types/node": "^26.6.4",
+    "typescript": "^6.0.3"
   }
 }
