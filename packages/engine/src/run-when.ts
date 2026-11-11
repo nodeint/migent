@@ -60,7 +60,7 @@ function runGit(args: readonly string[], cwd: string): GitResult {
 }
 
 function hasRunWhen(workflow: WorkflowDocument): boolean {
-  return Object.values(workflow.stages).some((stage) => stage.runWhen != null);
+  return Object.values(workflow.stages).some((stage) => (stage.runWhen !== null && stage.runWhen !== undefined));
 }
 
 /**
@@ -143,7 +143,7 @@ export function changedPathsSinceBaseline(workspace: string, commit: string, lab
 /** Decide whether a `run_when` stage runs. Git problems throw; they are never a skip. */
 export function evaluateRunWhen(workspace: string, sessionId: string, stage: StageSpec): RunWhenEvaluation {
   const {runWhen} = stage;
-  if (runWhen == null) return { matched: '' };
+  if ((runWhen === null || runWhen === undefined)) return { matched: '' };
   const label = `stages.${stage.id}.run_when`;
   const baseline = readSessionBaseline(sessionDirectoryOf(workspace, sessionId));
   if (baseline === null) {

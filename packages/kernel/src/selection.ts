@@ -160,7 +160,7 @@ function blockResumed(
   executionId: string,
   resumes: readonly BlockResume[] | null | undefined,
 ): boolean {
-  if (sessionStatus !== 'active' || resumes == null) return false;
+  if (sessionStatus !== 'active' || (resumes === null || resumes === undefined)) return false;
   return resumes.some(
     (event) => event.event === 'session.active' && event.executionId === executionId && (event.data?.from === 'blocked' || event.data?.from === 'question'),
   );
@@ -171,7 +171,7 @@ function failedResumed(
   executionId: string,
   resumes: readonly BlockResume[] | null | undefined,
 ): boolean {
-  if (sessionStatus !== 'active' || resumes == null) return false;
+  if (sessionStatus !== 'active' || (resumes === null || resumes === undefined)) return false;
   return resumes.some(
     (event) => event.event === 'session.active' && event.executionId === executionId && event.data?.from === 'failed',
   );

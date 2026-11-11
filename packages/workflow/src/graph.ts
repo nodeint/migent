@@ -46,7 +46,7 @@ export function conditionalReach(stages: Record<string, StageSpec>, stageId: str
 export function conditionalStages(stages: Record<string, StageSpec>): Map<string, string> {
   const members = new Map<string, string>();
   for (const stage of Object.values(stages)) {
-    if (stage.runWhen == null) continue;
+    if ((stage.runWhen === null || stage.runWhen === undefined)) continue;
     for (const reached of conditionalReach(stages, stage.id)) {
       if (!members.has(reached)) members.set(reached, stage.id);
     }

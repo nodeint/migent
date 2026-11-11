@@ -216,7 +216,7 @@ export class ClaudeCodeClient implements CliClient {
       const id = payload.session_id;
       if (typeof id === 'string' && id) sessionId = id;
       const eventType = payload.type;
-      if (eventType === 'assistant' && payload.parent_tool_use_id == null) {
+      if (eventType === 'assistant' && (payload.parent_tool_use_id === null || payload.parent_tool_use_id === undefined)) {
         const text = assistantText(payload).trim();
         if (text) lastText = text;
       } else if (eventType === 'result') {
@@ -343,7 +343,7 @@ export class ClaudeCodeClient implements CliClient {
           };
         }
       }
-      if (payload.type === 'assistant' && payload.parent_tool_use_id == null) {
+      if (payload.type === 'assistant' && (payload.parent_tool_use_id === null || payload.parent_tool_use_id === undefined)) {
         const text = assistantText(payload).trim();
         if (text) human = text;
       }

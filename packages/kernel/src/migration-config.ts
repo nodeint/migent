@@ -64,7 +64,7 @@ function liftAgentBody(body: Record<string, unknown>, label: string, notes: stri
       client.type = value;
       notes.push(`${label}.client -> client.type`);
     } else if (key === 'options') {
-      if (value != null) client.options = value;
+      if ((value !== null && value !== undefined)) client.options = value;
       notes.push(`${label}.options -> client.options`);
     } else {
       lifted[key] = value;

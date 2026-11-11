@@ -140,7 +140,7 @@ function isToolStep(step: Record<string, unknown>): boolean {
 
 function toolFailed(step: Record<string, unknown>): boolean {
   const {error} = toolInfo(step);
-  if (error == null || error === false) return false;
+  if ((error === null || error === undefined) || error === false) return false;
   if (typeof error === 'string') return error.trim() !== '';
   return true;
 }

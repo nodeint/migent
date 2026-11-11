@@ -165,7 +165,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /** True when `client` is present but is not a mapping with a usable `type`: the structural check explains it. */
 function clientUnusable(definition: Record<string, unknown>): boolean {
   const {client} = definition;
-  if (client == null) return false;
+  if ((client === null || client === undefined)) return false;
   if (!isRecord(client)) return true;
-  return client.type != null && (typeof client.type !== 'string' || client.type.trim() === '');
+  return (client.type !== null && client.type !== undefined) && (typeof client.type !== 'string' || client.type.trim() === '');
 }

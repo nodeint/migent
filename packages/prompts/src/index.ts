@@ -71,7 +71,7 @@ function envelope(options: ProviderPromptOptions) {
     return { name, instruction: instructions[name] ?? null };
   });
   const handoff = (options.protocol ?? CURRENT_RESPONSE_PROTOCOL) >= 3;
-  const canAsk = mode !== null && options.ask != null;
+  const canAsk = mode !== null && (options.ask !== null && options.ask !== undefined);
   const artifactName = options.artifactName ?? null;
   const previousArtifactDirectory = artifactName ? options.previousArtifactDirectory ?? null : null;
   const previousVerifyReport = options.previousVerifyReport ?? null;
@@ -263,7 +263,7 @@ export function renderResponseCorrection(context: GateCorrectionContext): string
 
 /** The correction message sent when required artifacts or completion outputs are missing. */
 export function renderOutputCorrection(context: GateCorrectionContext): string {
-  return renderPrompt('output-correction', { ...context, handoff: context.handoffFile != null, handoffFile: context.handoffFile ?? '' });
+  return renderPrompt('output-correction', { ...context, handoff: (context.handoffFile !== null && context.handoffFile !== undefined), handoffFile: context.handoffFile ?? '' });
 }
 
 /**

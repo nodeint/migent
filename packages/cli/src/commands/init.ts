@@ -96,9 +96,9 @@ export async function runInit(
   const reviewerOptionPairs = options.reviewerOptions ?? [];
   const classified = classify(workspace, chosen, resolve);
   if (classified.state === 'ready') {
-    if (client !== null || model !== null || options.effort != null || optionPairs.length > 0 ||
-        plannerClient !== null || plannerModel !== null || options.plannerEffort != null || plannerOptionPairs.length > 0 ||
-        reviewerClient !== null || reviewerModel !== null || options.reviewerEffort != null || reviewerOptionPairs.length > 0) {
+    if (client !== null || model !== null || (options.effort !== null && options.effort !== undefined) || optionPairs.length > 0 ||
+        plannerClient !== null || plannerModel !== null || (options.plannerEffort !== null && options.plannerEffort !== undefined) || plannerOptionPairs.length > 0 ||
+        reviewerClient !== null || reviewerModel !== null || (options.reviewerEffort !== null && options.reviewerEffort !== undefined) || reviewerOptionPairs.length > 0) {
       printError('Already initialized; ignoring model selection flags.');
     }
     printAlreadyInitialized();
@@ -120,7 +120,7 @@ export async function runInit(
       printError(`Pass ${flags} with --${prefix}option.`);
       return 2;
     }
-    if (effort != null && selectedClient === null) {
+    if ((effort !== null && effort !== undefined) && selectedClient === null) {
       printError(`Pass ${flags} with --${prefix}effort.`);
       return 2;
     }
@@ -399,6 +399,6 @@ class ClackPrompter implements Prompter {
     if (!allowed.has(String(result ?? ''))) {
       throw new ConfigurationError(`Unknown ${name} value: ${String(result)}.`);
     }
-    return result == null ? '' : String(result);
+    return (result === null || result === undefined) ? '' : String(result);
   }
 }

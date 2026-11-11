@@ -33,7 +33,7 @@ import { effectiveTitleFrom, overlayTitle, readTitleRecord } from './session-tit
 
 /** A missing schema_version is 1. This is not config documentVersion, which maps a missing version to 0. */
 export function sessionSchemaVersion(document: Record<string, unknown> | null): number {
-  if (document === null || !Object.hasOwn(document, 'schema_version') || document.schema_version == null) return 1;
+  if (document === null || !Object.hasOwn(document, 'schema_version') || (document.schema_version === null || document.schema_version === undefined)) return 1;
   const raw = document.schema_version;
   if (typeof raw === 'number' && Number.isInteger(raw) && raw >= 1) return raw;
   if (typeof raw === 'string' && /^[1-9][0-9]*$/.test(raw)) return Number(raw);

@@ -947,7 +947,7 @@ function applyAgentOptions(body: Record<string, unknown>, key: string, updates: 
 }
 
 function optionRecord(value: unknown, field: string): Record<string, unknown> {
-  if (value == null) return {};
+  if ((value === null || value === undefined)) return {};
   if (!isRecord(value)) throw new ConfigurationError(field);
   return value;
 }
@@ -966,7 +966,7 @@ function writeOptions(options: Record<string, unknown>, updates: Record<string, 
 
 function roleOptionMap(role: Record<string, unknown>): Record<string, string> {
   const {options} = role;
-  if (options == null) return {};
+  if ((options === null || options === undefined)) return {};
   if (!isRecord(options)) throw new ConfigurationError('Missing or invalid roles.<role>.options.');
   return stringMap(options);
 }
@@ -974,10 +974,10 @@ function roleOptionMap(role: Record<string, unknown>): Record<string, string> {
 function optionsDict(body: unknown, key: string): Record<string, string> {
   if (!isRecord(body)) return {};
   const {client} = body;
-  if (client == null) return {};
+  if ((client === null || client === undefined)) return {};
   if (!isRecord(client)) throw new ConfigurationError(`Missing or invalid agents.${key}.client.`);
   const {options} = client;
-  if (options == null) return {};
+  if ((options === null || options === undefined)) return {};
   if (!isRecord(options)) throw new ConfigurationError(`Missing or invalid agents.${key}.client.options.`);
   return stringMap(options);
 }

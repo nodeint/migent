@@ -38,8 +38,8 @@ export function resolvePrompt(args: {
     if (text === '') throw new ConfigurationError('Prompt from stdin is empty.');
     return text;
   }
-  if (args.promptFile == null) {
-    if (args.prompt == null) throw new ConfigurationError('Pass one of --prompt, --file, or --stdin.');
+  if ((args.promptFile === null || args.promptFile === undefined)) {
+    if ((args.prompt === null || args.prompt === undefined)) throw new ConfigurationError('Pass one of --prompt, --file, or --stdin.');
     return args.prompt;
   }
   try {

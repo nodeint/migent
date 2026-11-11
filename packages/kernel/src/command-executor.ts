@@ -321,7 +321,7 @@ export class CommandExecutor {
   ): Promise<[string, string | null, number | null, { bytes: number; lines: number } | null]> {
     const startedAt = Date.now();
     const queue = createLineQueue(child.stdout ?? null);
-    if (spec.stdin != null && child.stdin) {
+    if ((spec.stdin !== null && spec.stdin !== undefined) && child.stdin) {
       child.stdin.write(spec.stdin);
       child.stdin.end();
     }
@@ -537,7 +537,7 @@ export function startWrapper(
   spec: CommandSpec,
   cwd: string,
   endpoint: string,
-  stdio: StdioOptions = [spec.stdin != null ? 'pipe' : 'inherit', 'pipe', 'pipe', 'ipc'],
+  stdio: StdioOptions = [(spec.stdin !== null && spec.stdin !== undefined) ? 'pipe' : 'inherit', 'pipe', 'pipe', 'ipc'],
 ): ChildProcess {
   const argv = wrapperArgv(spec.argv, { endpoint, graceSec: TERMINATION_GRACE_SEC });
   const child = spawn(argv[0] ?? '', argv.slice(1), {

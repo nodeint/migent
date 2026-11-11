@@ -127,7 +127,7 @@ export function mergeConfigLayers(
   project: Record<string, unknown>,
   local?: Record<string, unknown> | null,
 ): MergedConfig {
-  if (local == null) return { config: project, ownerOf: () => 'project' };
+  if ((local === null || local === undefined)) return { config: project, ownerOf: () => 'project' };
   const { schema_version: _ignored, ...layer } = local;
   const merged = mergeConfig(project, layer);
   // A role agent is a complete selection, including when both values are objects.
@@ -367,7 +367,7 @@ export function loadAgentDefinition(
   let client: string | undefined;
   let options: Record<string, string> = {};
   let optionsSet = false;
-  if (agentConfig.client != null) {
+  if ((agentConfig.client !== null && agentConfig.client !== undefined)) {
     ({ type: client, options, optionsSet } = readClient(agentConfig.client, clientField, index));
   }
   const model = requiredString(agentConfig.model, child(here, 'model'), index);
@@ -451,7 +451,7 @@ export function resolveRoleCascade(
   const roles = mapping(config.roles, field('roles'), index);
   const role = mapping(roles[roleKey], field('roles', roleKey), index);
   validateRoleKeys(role, roleKey);
-  const agentField = args?.agentField == null ? field('roles', roleKey, 'agent') : toField(args.agentField);
+  const agentField = (args?.agentField === null || args?.agentField === undefined) ? field('roles', roleKey, 'agent') : toField(args.agentField);
   const stageAgent = args?.agent ?? null;
   const selection: unknown =
     stageAgent === null ? role.agent : stageAgent.kind === 'named' ? stageAgent.name : stageAgent.value;
@@ -523,7 +523,7 @@ export function loadRoleDescription(
 ): string | null {
   const roles = mapping(config.roles, field('roles'), index);
   const role = mapping(roles[roleKey], field('roles', roleKey), index);
-  if (role.description == null) return null;
+  if ((role.description === null || role.description === undefined)) return null;
   const description = roleDescription(role.description, field('roles', roleKey, 'description'), index);
   if (/[\r\n]/.test(description)) {
     throw new ConfigurationError(`roles.${roleKey}.description must be one line.`, {
@@ -554,7 +554,7 @@ function mergeOptions(
 ): Record<string, string> {
   const merged: Record<string, string> = {};
   for (const layer of layers) {
-    if (layer == null) continue;
+    if ((layer === null || layer === undefined)) continue;
     Object.assign(merged, layer);
   }
   return merged;

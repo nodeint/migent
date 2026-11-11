@@ -30,7 +30,7 @@ export function collectOutputs(
 ): CollectedOutputs {
   const result: CollectedOutputs = { sectionValid: true, complete: true, names: new Set(), values: [], indexes: [] };
   let rawItems: unknown = raw === false ? [] : raw;
-  if (rawItems == null || (isRecord(rawItems) && Object.keys(rawItems).length === 0)) rawItems = [];
+  if ((rawItems === null || rawItems === undefined) || (isRecord(rawItems) && Object.keys(rawItems).length === 0)) rawItems = [];
   if (!Array.isArray(rawItems)) {
     problems.addMessage('invalid-value', `${field} must be a list.`, [...basePath]);
     return { sectionValid: false, complete: false, names: result.names, values: [], indexes: [] };
@@ -205,7 +205,7 @@ export function collectCompletion(
       );
     }
   }
-  if (raw.decision != null) {
+  if ((raw.decision !== null && raw.decision !== undefined)) {
     draftUnit(() => requiredString(raw.decision, 'completion.decision'), problems, ['completion', 'decision']);
   }
   collectOutputs(raw.outputs ?? [], stages, declaredIds, problems, 'completion.outputs', ['completion', 'outputs']);

@@ -49,7 +49,7 @@ export function parseWorkflowMappingUnchecked(data: Record<string, unknown>, sou
   if (schemaVersion < 4 && Object.hasOwn(data, 'downstream')) {
     throw new ConfigurationError('downstream requires schema_version 4.');
   }
-  if (version2 && Object.hasOwn(data, 'completion') && data.completion != null) {
+  if (version2 && Object.hasOwn(data, 'completion') && (data.completion !== null && data.completion !== undefined)) {
     throw new ConfigurationError('schema_version 2 does not allow completion. Run `migent migrate`.');
   }
   const version7 = schemaVersion >= 7;
@@ -136,13 +136,13 @@ export function parseDownstream(raw: unknown, outputs: readonly WorkflowOutput[]
 }
 
 export function parseConcurrency(data: Record<string, unknown>): number {
-  if (!Object.hasOwn(data, 'concurrency') || data.concurrency == null) return 1;
+  if (!Object.hasOwn(data, 'concurrency') || (data.concurrency === null || data.concurrency === undefined)) return 1;
   requireValid(DOCUMENT_FIELD_SCHEMAS.concurrency, data.concurrency, 'concurrency must be a positive integer.');
   return Number(typeof data.concurrency === 'string' ? data.concurrency.trim() : data.concurrency);
 }
 
 export function documentId(data: Record<string, unknown>, filePath: string): string {
-  if (!Object.hasOwn(data, 'id') || data.id == null) {
+  if (!Object.hasOwn(data, 'id') || (data.id === null || data.id === undefined)) {
     const stem = path.parse(filePath).name.trim();
     if (stem === '') throw new ConfigurationError('Missing or invalid id.');
     return stem;
@@ -258,10 +258,10 @@ export function locatedAtStage(error: unknown, index: number, item: unknown): un
 }
 
 export function parseRequires(raw: unknown, version2 = false): WorkflowRequires | null {
-  if (raw == null) return null;
+  if ((raw === null || raw === undefined)) return null;
   if (isRecord(raw) && Object.keys(raw).length === 0) return null;
   if (!isRecord(raw)) throw new ConfigurationError('requires must be a mapping.');
-  if (version2 && Object.hasOwn(raw, 'decision') && raw.decision != null) {
+  if (version2 && Object.hasOwn(raw, 'decision') && (raw.decision !== null && raw.decision !== undefined)) {
     throw new ConfigurationError('requires.decision is not allowed in schema_version 2.');
   }
   return workflowRequiresSchema.parse({

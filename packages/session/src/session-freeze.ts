@@ -366,7 +366,7 @@ function stageMapping(stage: StageSpec, version3 = false, version5 = false, vers
   if (!version5 && Object.keys(stage.options).length > 0) mapped.options = stage.options;
   if (stage.maxRevisions !== null) mapped.max_revisions = stage.maxRevisions;
   if (stage.resumeFrom !== null) mapped.session = { resume_from: stage.resumeFrom };
-  if (stage.runWhen != null) mapped.run_when = { changed_paths: stage.runWhen.changedPaths };
+  if ((stage.runWhen !== null && stage.runWhen !== undefined)) mapped.run_when = { changed_paths: stage.runWhen.changedPaths };
   if (stage.verify.length > 0) {
     mapped.verify = stage.verify;
     if (isRoleStage(stage) && stage.maxVerify !== 3) mapped.max_verify = stage.maxVerify;
@@ -438,7 +438,7 @@ function legacyTargetClient(
   filePath: string,
   stageId: string,
 ): string | null {
-  if (raw.client != null) {
+  if ((raw.client !== null && raw.client !== undefined)) {
     if (typeof raw.client !== 'string' || raw.client.trim() === '') {
       throw corrupt(filePath, `targets.${stageId}.client must be a non-empty string`);
     }
@@ -451,7 +451,7 @@ function legacyTargetClient(
 }
 
 function readOptionStrings(value: unknown, filePath: string, stageId: string): Record<string, string> {
-  if (value == null) return {};
+  if ((value === null || value === undefined)) return {};
   if (!isRecord(value)) throw corrupt(filePath, `targets.${stageId}.options must be a mapping`);
   const options: Record<string, string> = {};
   for (const [key, item] of Object.entries(value)) {

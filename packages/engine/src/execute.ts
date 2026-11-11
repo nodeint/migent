@@ -1145,7 +1145,7 @@ function skipUnlessRunWhenMatches(
   snapshots: readonly ExecutionSnapshot[],
   runner: AgentToolRunner,
 ): Record<string, unknown> | null {
-  if (stage.runWhen == null) return null;
+  if ((stage.runWhen === null || stage.runWhen === undefined)) return null;
   let latest: ExecutionSnapshot | null = null;
   for (const snapshot of snapshots) {
     if (snapshot.stageId !== stage.id) continue;

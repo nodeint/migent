@@ -30,7 +30,7 @@ export async function diagnoseSelection(
   const which = hooks.which ?? whichSync;
   let modelEffortChecks: Record<string, ModelEffortCheck> = {};
   const keys = sessionEffortKeys(workspace, selection);
-  if (keys.size > 0 && hooks.runCommand != null) {
+  if (keys.size > 0 && (hooks.runCommand !== null && hooks.runCommand !== undefined)) {
     const extra = selection.document === null ? [] : stageAgentDefinitions([selection.document]);
     modelEffortChecks = await checkModels(workspace, hooks.clients, which, hooks.runCommand, keys, extra);
   }

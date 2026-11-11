@@ -72,7 +72,7 @@ export function collectWorkflowDraft(data: Record<string, unknown>, source: stri
     const message = 'downstream requires schema_version 4.';
     problems.addMessage(workflowRuleCode(message), message, ['downstream']);
   }
-  if (version2 && Object.hasOwn(data, 'completion') && data.completion != null) {
+  if (version2 && Object.hasOwn(data, 'completion') && (data.completion !== null && data.completion !== undefined)) {
     const message = 'schema_version 2 does not allow completion. Run `migent migrate`.';
     problems.addMessage(workflowRuleCode(message), message, ['completion']);
   }
@@ -115,7 +115,7 @@ export function collectWorkflowDraft(data: Record<string, unknown>, source: stri
     const built = buildArtifactsV7(data, draftConditionalStages(stages, declaredStageIds));
     for (const problem of built.problems) problems.addMessage(problem.code, problem.message, problem.path);
     const names = new Set(Object.keys(isRecord(data.artifacts) ? data.artifacts : {}));
-    outputs = { sectionValid: isRecord(data.artifacts) || data.artifacts == null, complete: built.problems.length === 0, names, values: [], indexes: [] };
+    outputs = { sectionValid: isRecord(data.artifacts) || (data.artifacts === null || data.artifacts === undefined), complete: built.problems.length === 0, names, values: [], indexes: [] };
   } else if (Object.hasOwn(data, 'artifacts')) {
     problems.addMessage('invalid-artifact', 'artifacts requires schema_version 7.', ['artifacts']);
   }

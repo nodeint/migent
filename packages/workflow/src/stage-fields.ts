@@ -19,7 +19,7 @@ export function stageRunWhen(
   version2: boolean,
   verify: readonly string[],
 ): RunWhen | null {
-  if (!Object.hasOwn(stage, 'run_when') || stage.run_when == null) return null;
+  if (!Object.hasOwn(stage, 'run_when') || (stage.run_when === null || stage.run_when === undefined)) return null;
   const field = `stages.${stageId}.run_when`;
   if (!version2) throw new ConfigurationError(`${field} requires schema_version 2.`);
   const runWhen = stage.run_when;
@@ -55,13 +55,13 @@ export function stageRunWhen(
 }
 
 export function stringItems(raw: unknown, field: string): string[] {
-  if (raw == null) return [];
+  if ((raw === null || raw === undefined)) return [];
   requireContainer(STAGE_FIELD_SCHEMAS.instructions, raw, field);
   return (raw as unknown[]).map((item, index) => requiredString(item, `${field}[${index}]`));
 }
 
 export function stageDependsOn(stage: Record<string, unknown>, stageId: string): string[] {
-  if (!Object.hasOwn(stage, 'depends_on') || stage.depends_on == null) return [];
+  if (!Object.hasOwn(stage, 'depends_on') || (stage.depends_on === null || stage.depends_on === undefined)) return [];
   requireContainer(STAGE_FIELD_SCHEMAS.depends_on, stage.depends_on, `stages.${stageId}.depends_on`);
   const raw = stage.depends_on as unknown[];
   const parsed: string[] = [];
@@ -97,7 +97,7 @@ export function stageResumeFrom(
 
 /** Normalize the public v3 list into the scheduler's decision names and routes. */
 export function normalizeStageDecision(stage: Record<string, unknown>, version7 = false): Record<string, unknown> {
-  if (stage.decision == null) return stage;
+  if ((stage.decision === null || stage.decision === undefined)) return stage;
   const field = `stages.${String(stage.id)}.decision`;
   if (decisionListProblem(stage.decision)) {
     throw new ConfigurationError(`${field} must be a non-empty list in schema_version 3. Run \`migent migrate\` for older workflows.`);
@@ -204,13 +204,13 @@ export const ROLE_ONLY_KEYS = [
 ] as const;
 
 export function stageHasRole(stage: Record<string, unknown>): boolean {
-  return Object.hasOwn(stage, 'role') && stage.role != null;
+  return Object.hasOwn(stage, 'role') && (stage.role !== null && stage.role !== undefined);
 }
 
 export function rejectRoleOnlyKeys(stage: Record<string, unknown>, stageId: string): void {
   if (Object.hasOwn(stage, 'ask')) throw new ConfigurationError(`stages.${stageId}.ask requires a role.`);
   for (const key of ROLE_ONLY_KEYS) {
-    if (Object.hasOwn(stage, key) && stage[key] != null) {
+    if (Object.hasOwn(stage, key) && (stage[key] !== null && stage[key] !== undefined)) {
       throw new ConfigurationError(`stages.${stageId}.${key} requires a role.`);
     }
   }
@@ -223,7 +223,7 @@ export function stageDescription(stage: Record<string, unknown>, stageId: string
 }
 
 export function stageDecisionValues(stage: Record<string, unknown>, stageId: string): string[] {
-  if (!Object.hasOwn(stage, 'decision') || stage.decision == null) return [];
+  if (!Object.hasOwn(stage, 'decision') || (stage.decision === null || stage.decision === undefined)) return [];
   const {decision} = stage;
   if (isRecord(decision) && Object.keys(decision).length === 0) return [];
   if (!isRecord(decision)) {
@@ -247,13 +247,13 @@ export function stageDecisionValues(stage: Record<string, unknown>, stageId: str
 }
 
 export function stageArtifact(stage: Record<string, unknown>, stageId: string): string | null {
-  if (!Object.hasOwn(stage, 'produces') || stage.produces == null) return null;
+  if (!Object.hasOwn(stage, 'produces') || (stage.produces === null || stage.produces === undefined)) return null;
   const {produces} = stage;
   if (isRecord(produces) && Object.keys(produces).length === 0) return null;
   if (!isRecord(produces)) {
     throw new ConfigurationError(`stages.${stageId}.produces must be a mapping.`);
   }
-  if (!Object.hasOwn(produces, 'artifact') || produces.artifact == null) return null;
+  if (!Object.hasOwn(produces, 'artifact') || (produces.artifact === null || produces.artifact === undefined)) return null;
   return filename(produces.artifact, `stages.${stageId}.produces.artifact`);
 }
 
@@ -267,7 +267,7 @@ export function stageMaxRevisions(stage: Record<string, unknown>, stageId: strin
 }
 
 export function stageVerify(stage: Record<string, unknown>, stageId: string): string[] {
-  if (!Object.hasOwn(stage, 'verify') || stage.verify == null) return [];
+  if (!Object.hasOwn(stage, 'verify') || (stage.verify === null || stage.verify === undefined)) return [];
   const field = `stages.${stageId}.verify`;
   const raw = Array.isArray(stage.verify) ? stage.verify : [stage.verify];
   if (!isValid(stageField('verify'), stage.verify)) {
@@ -280,7 +280,7 @@ export function stageVerify(stage: Record<string, unknown>, stageId: string): st
 }
 
 export function stageMaxVerify(stage: Record<string, unknown>, stageId: string, verify: string[]): number {
-  if (!Object.hasOwn(stage, 'max_verify') || stage.max_verify == null) return 3;
+  if (!Object.hasOwn(stage, 'max_verify') || (stage.max_verify === null || stage.max_verify === undefined)) return 3;
   const field = `stages.${stageId}.max_verify`;
   if (verify.length === 0) throw new ConfigurationError(`${field} requires verify.`);
   return positiveInteger(stage.max_verify, field);
@@ -291,7 +291,7 @@ export function stageVerifyTimeout(
   stageId: string,
   verify: string[],
 ): number | null {
-  if (!Object.hasOwn(stage, 'verify_timeout') || stage.verify_timeout == null) return null;
+  if (!Object.hasOwn(stage, 'verify_timeout') || (stage.verify_timeout === null || stage.verify_timeout === undefined)) return null;
   const field = `stages.${stageId}.verify_timeout`;
   if (verify.length === 0) throw new ConfigurationError(`${field} requires verify.`);
   return positiveInteger(stage.verify_timeout, field, stageField('verify_timeout'));
@@ -304,7 +304,7 @@ export function positiveInteger(raw: unknown, field: string, schema: TSchema = s
 
 /** Schema_version 5: `agent` is a name in `agents` or a complete inline definition. */
 export function stageAgent(stage: Record<string, unknown>, stageId: string): StageAgent | null {
-  if (!Object.hasOwn(stage, 'agent') || stage.agent == null) return null;
+  if (!Object.hasOwn(stage, 'agent') || (stage.agent === null || stage.agent === undefined)) return null;
   const raw = stage.agent;
   if (isRecord(raw)) return { kind: 'inline', value: structuredClone(raw) };
   if (typeof raw !== 'string' || raw.trim() === '') {
@@ -320,7 +320,7 @@ export function legacyStageModel(stage: Record<string, unknown>, stageId: string
 }
 
 export function stageOptions(stage: Record<string, unknown>, stageId: string): Record<string, string> {
-  if (!Object.hasOwn(stage, 'options') || stage.options == null) return {};
+  if (!Object.hasOwn(stage, 'options') || (stage.options === null || stage.options === undefined)) return {};
   const raw = stage.options;
   if (!isRecord(raw)) throw new ConfigurationError(`Missing or invalid stages.${stageId}.options.`);
   return readOptionMap(raw, `stages.${stageId}.options`);
@@ -379,11 +379,11 @@ export const VERIFY_LINE: TSchema = WorkflowLine;
 
 /** Reads `session.resume_from` without the dependency rule, for stages whose depends_on is unreadable. */
 export function stageResumeFromUnchecked(stage: Record<string, unknown>, stageId: string): string | null {
-  if (!Object.hasOwn(stage, 'session') || stage.session == null) return null;
+  if (!Object.hasOwn(stage, 'session') || (stage.session === null || stage.session === undefined)) return null;
   const {session} = stage;
   if (isRecord(session) && Object.keys(session).length === 0) return null;
   requireContainer(STAGE_FIELD_SCHEMAS.session, session, `stages.${stageId}.session`);
   const sessionMap = session as Record<string, unknown>;
-  if (!Object.hasOwn(sessionMap, 'resume_from') || sessionMap.resume_from == null) return null;
+  if (!Object.hasOwn(sessionMap, 'resume_from') || (sessionMap.resume_from === null || sessionMap.resume_from === undefined)) return null;
   return requiredString(sessionMap.resume_from, `stages.${stageId}.session.resume_from`);
 }

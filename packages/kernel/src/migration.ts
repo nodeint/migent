@@ -230,7 +230,7 @@ function liftWorkflowAgents(workflow: Record<string, unknown>): void {
       const lifted: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(stage)) {
         if (key === 'model') {
-          if (value != null) lifted.agent = value;
+          if ((value !== null && value !== undefined)) lifted.agent = value;
         } else {
           lifted[key] = value;
         }
@@ -249,7 +249,7 @@ function liftWorkflowCompletion(workflow: Record<string, unknown>): void {
     refuseForeignCompleteRoutes(workflow, completion);
     const {outputs} = completion;
     const emptyOutputs =
-      outputs == null || outputs === false || (isRecord(outputs) && Object.keys(outputs).length === 0);
+      (outputs === null || outputs === undefined) || outputs === false || (isRecord(outputs) && Object.keys(outputs).length === 0);
     if (!emptyOutputs) workflow.outputs = deepCopy(outputs);
     delete workflow.completion;
   } else if (Object.hasOwn(workflow, 'completion')) {
@@ -265,7 +265,7 @@ function liftWorkflowCompletion(workflow: Record<string, unknown>): void {
 function liftWorkflowDecisions(workflow: Record<string, unknown>): void {
   if (!Array.isArray(workflow.stages)) return;
   for (const stage of workflow.stages) {
-    if (!isRecord(stage) || stage.decision == null || Array.isArray(stage.decision)) continue;
+    if (!isRecord(stage) || (stage.decision === null || stage.decision === undefined) || Array.isArray(stage.decision)) continue;
     const field = `stages.${String(stage.id)}.decision`;
     const {decision} = stage;
     if (isRecord(decision) && Object.keys(decision).length === 0) {
@@ -929,7 +929,7 @@ function nestedValueEnd(lines: string[], parentEnd: number, index: number, item:
 }
 
 function renderTopLevel(key: string, value: unknown): string[] {
-  if (value == null) return [];
+  if ((value === null || value === undefined)) return [];
   return splitLines(stringify({ [key]: value }, { lineWidth: 0 }));
 }
 

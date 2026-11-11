@@ -14,7 +14,7 @@ import { fail, filename, requiredString, stageHasRole } from './stage-fields.js'
 import { containerError, DOCUMENT_FIELD_SCHEMAS, stageField } from './structure.js';
 
 export function parseTopLevelOutputs(raw: unknown, stages: Record<string, StageSpec>): WorkflowOutput[] {
-  if (raw == null) return [];
+  if ((raw === null || raw === undefined)) return [];
   return parseOutputItems(raw, stages, 'outputs');
 }
 
@@ -308,7 +308,7 @@ export function parseCompletion(
   if (!Object.hasOwn(stages, stageId)) {
     throw new ConfigurationError(`completion.stage is not a declared stage: ${stageId}`);
   }
-  const decision = raw.decision == null ? null : requiredString(raw.decision, 'completion.decision');
+  const decision = (raw.decision === null || raw.decision === undefined) ? null : requiredString(raw.decision, 'completion.decision');
   const outputs = parseOutputItems(raw.outputs ?? [], stages, 'completion.outputs');
   return workflowCompletionSchema.parse({ stage: stageId, decision, outputs });
 }

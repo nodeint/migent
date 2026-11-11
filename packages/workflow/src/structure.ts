@@ -33,7 +33,7 @@ const typeIssue = (schema: TSchema, value: unknown): string | null =>
 
 /** `must be a list.` / `must be a mapping.` for a node of the wrong container type; null when it is fine. */
 export function containerError(schema: TSchema, value: unknown, field: string): ConfigurationError | null {
-  if (value == null || isValid(schema, value)) return null;
+  if ((value === null || value === undefined) || isValid(schema, value)) return null;
   const problem = typeIssue(schema, value);
   if (problem === 'must be array') return new ConfigurationError(`${field} must be a list.`);
   if (problem === 'must be object') return new ConfigurationError(`${field} must be a mapping.`);
@@ -88,7 +88,7 @@ export function decisionBodyProblems(body: unknown, version7: boolean): Decision
     if (unknown || (key === 'artifacts' && !version7)) problems.push({ kind: 'key', key });
   }
   if (issues.some((issue) => issue.path[0] === 'when')) problems.push({ kind: 'when' });
-  if (record.navigate == null) problems.push({ kind: 'navigate' });
+  if ((record.navigate === null || record.navigate === undefined)) problems.push({ kind: 'navigate' });
   return problems;
 }
 
@@ -101,7 +101,7 @@ export const stageMappingProblem = (raw: unknown): boolean =>
 /** `run_when.changed_paths` is absent (or null), which the contract requires. */
 export const runWhenPathsMissing = (runWhen: Record<string, unknown>, key: string): boolean => {
   const { [key]: paths, ...rest } = runWhen;
-  return paths == null && schemaIssues(WorkflowRunWhen, rest).some((issue) => issue.path.length === 0 && issue.keyword === 'required');
+  return (paths === null || paths === undefined) && schemaIssues(WorkflowRunWhen, rest).some((issue) => issue.path.length === 0 && issue.keyword === 'required');
 };
 
 export type DownstreamProblem =

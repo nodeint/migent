@@ -176,12 +176,12 @@ export function requiredString(value: unknown, where: Field, index?: StructuralI
 }
 
 export function optionalString(value: unknown, where: Field, index?: StructuralIndex): string | undefined {
-  return value == null ? undefined : requiredString(value, where, index);
+  return (value === null || value === undefined) ? undefined : requiredString(value, where, index);
 }
 
 /** Absent or null is an empty list. */
 export function stringItems(raw: unknown, where: Field, index?: StructuralIndex): string[] {
-  if (raw == null) return [];
+  if ((raw === null || raw === undefined)) return [];
   verdict(index, where, () => checkList(raw, where));
   return (raw as string[]).map((item) => item.trim());
 }
@@ -208,10 +208,10 @@ export function readClient(value: unknown, clientField: Field, index?: Structura
   }
   const typeField = { label: `${clientField.label}.type`, path: [...clientField.path, 'type'] };
   const type = optionalString(clientConfig.type, typeField, index);
-  const options = clientConfig.options == null
+  const options = (clientConfig.options === null || clientConfig.options === undefined)
     ? {}
     : readOptions(clientConfig.options, { label: `${clientField.label}.options`, path: [...clientField.path, 'options'] }, index);
-  return { type, options, optionsSet: clientConfig.options != null };
+  return { type, options, optionsSet: (clientConfig.options !== null && clientConfig.options !== undefined) };
 }
 
 /** A non-null `client.options` mapping, validated against `ClientOptions` and trimmed. */

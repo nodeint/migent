@@ -64,7 +64,7 @@ export async function runMigrate(
     for (const note of rewrite.notes) printNotice(note);
   }
   if (!options.assumeYes && !(await accepted(options.confirm ?? null))) {
-    return options.confirm == null && !process.stdin.isTTY ? 2 : 0;
+    return (options.confirm === null || options.confirm === undefined) && !process.stdin.isTTY ? 2 : 0;
   }
   const locks: SessionLock[] = [];
   try {

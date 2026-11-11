@@ -161,10 +161,10 @@ function listOnly(
 
 function selectSessionRows(rows: readonly string[][], options: SessionListOptions): string[][] {
   let selected = [...rows];
-  if (options.workflow != null) {
+  if ((options.workflow !== null && options.workflow !== undefined)) {
     selected = selected.filter((row) => row[SESSION_COLUMN.workflow] === options.workflow);
   }
-  if (options.status != null) {
+  if ((options.status !== null && options.status !== undefined)) {
     selected = selected.filter((row) => row[SESSION_COLUMN.status] === options.status);
   }
   const limit = options.latest ? 1 : (options.limit ?? null);
@@ -186,7 +186,7 @@ function sessionJson(row: readonly string[]): Static<typeof SessionRow> {
 }
 
 function hasListFilter(selection: SessionListOptions): boolean {
-  return selection.latest === true || selection.workflow != null || selection.status != null || selection.limit != null;
+  return selection.latest === true || (selection.workflow !== null && selection.workflow !== undefined) || (selection.status !== null && selection.status !== undefined) || (selection.limit !== null && selection.limit !== undefined);
 }
 
 function parseListSelection(options: {

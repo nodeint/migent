@@ -30,7 +30,7 @@ export function collectDecisionV3(
 ): CollectedDecision {
   const field = `stages.${stageId}.decision`;
   const raw = item.decision;
-  if (raw == null) {
+  if ((raw === null || raw === undefined)) {
     return { values: { state: 'absent', value: [] }, instructions: {}, routes: { state: 'absent', value: {} } };
   }
   const invalid: CollectedDecision = {
@@ -194,7 +194,7 @@ export function collectStage(
   if (kind === 'verify') {
     if (Object.hasOwn(rawItem, 'ask')) report(`stages.${stageId}.ask requires a role.`);
     for (const key of ROLE_ONLY_KEYS) {
-      if (Object.hasOwn(rawItem, key) && rawItem[key] != null) report(`stages.${stageId}.${key} requires a role.`);
+      if (Object.hasOwn(rawItem, key) && (rawItem[key] !== null && rawItem[key] !== undefined)) report(`stages.${stageId}.${key} requires a role.`);
     }
   }
 
@@ -205,7 +205,7 @@ export function collectStage(
     ? Object.hasOwn(rawItem, 'produces')
       ? (report(`stages.${stageId}.produces was removed in schema_version 7. Declare top-level artifacts and run \`migent migrate\`.`), { state: 'invalid' } as const)
       : { state: 'valid', value: null }
-    : kind === 'verify' && Object.hasOwn(rawItem, 'produces') && rawItem.produces != null
+    : kind === 'verify' && Object.hasOwn(rawItem, 'produces') && (rawItem.produces !== null && rawItem.produces !== undefined)
       ? { state: 'invalid' }
       : read(() => stageArtifact(rawItem, stageId));
   if (
@@ -257,14 +257,14 @@ export function collectStage(
     : { state: 'absent', value: null };
   const maxVerify = read(() =>
     verify.state === 'invalid'
-      ? Object.hasOwn(rawItem, 'max_verify') && rawItem.max_verify != null
+      ? Object.hasOwn(rawItem, 'max_verify') && (rawItem.max_verify !== null && rawItem.max_verify !== undefined)
         ? positiveInteger(rawItem.max_verify, `stages.${stageId}.max_verify`)
         : kind === 'verify' ? 0 : 3
       : stageMaxVerify(rawItem, stageId, verify.value),
   );
   const verifyTimeoutSec = read(() =>
     verify.state === 'invalid'
-      ? Object.hasOwn(rawItem, 'verify_timeout') && rawItem.verify_timeout != null
+      ? Object.hasOwn(rawItem, 'verify_timeout') && (rawItem.verify_timeout !== null && rawItem.verify_timeout !== undefined)
         ? positiveInteger(rawItem.verify_timeout, `stages.${stageId}.verify_timeout`)
         : null
       : stageVerifyTimeout(rawItem, stageId, verify.value),
@@ -368,7 +368,7 @@ export function collectStage(
 
 /** Reads a string list for a top-level field, reporting each bad item on its own. */
 export function collectStringItems(raw: unknown, field: string, problems: DraftProblems): void {
-  if (raw == null) return;
+  if ((raw === null || raw === undefined)) return;
   if (!Array.isArray(raw)) {
     problems.addMessage('invalid-value', `${field} must be a list.`, [field]);
     return;

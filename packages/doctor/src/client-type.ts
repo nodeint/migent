@@ -11,7 +11,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function agentClientType(definition: Record<string, unknown>, clients: ClientRegistry): string | undefined {
   const {client} = definition;
   if (isRecord(client) && typeof client.type === 'string' && client.type.trim() !== '') return client.type.trim();
-  if (isRecord(client) && client.options != null) return undefined;
+  if (isRecord(client) && (client.options !== null && client.options !== undefined)) return undefined;
   if (clients.clientsForModel === undefined || typeof definition.model !== 'string' || !definition.model.trim()) {
     return undefined;
   }

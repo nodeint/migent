@@ -26,7 +26,7 @@ export async function runVerifyOnlyStage(input: {
   const store = new SessionStore(input.workspace, undefined, input.clients);
   const context = openContext(store, input.sessionId, input.stage.id, input.executionId ?? null);
   input.onExecution?.(context.executionId);
-  if (input.executionId == null) log(startLine(input.stage, parseExecutionId(context.executionId)?.attempt ?? null));
+  if ((input.executionId === null || input.executionId === undefined)) log(startLine(input.stage, parseExecutionId(context.executionId)?.attempt ?? null));
   const reporter = new ProviderEventReporter(store, context, '', '', false);
   reporter.emit('verify.started', `${input.stage.verify.length} command(s)`, {
     turn: VERIFY_TURN,

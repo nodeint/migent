@@ -71,7 +71,7 @@ export async function updateSkill(options: SkillOptions = {}): Promise<number> {
   if (requested.length > 0 && wanted === null) return 2;
   const installed = scanInstalledSkills({ workspace: workspace ?? path.join(home, '\0none'), home }, skillSourceDirectory())
     .filter((entry) => entry.scope === 'global' || workspace !== null)
-    .filter((entry) => options.scope == null || entry.scope === options.scope)
+    .filter((entry) => (options.scope === null || options.scope === undefined) || entry.scope === options.scope)
     .filter((entry) => wanted === null || entry.clients.some((client) => wanted.some((target) => target.client === client)));
   if (installed.length === 0) {
     printError('Migent skill is not installed; run `migent skill install`.');
@@ -200,12 +200,12 @@ function pickTargets(clients: readonly string[]): SkillTarget[] | null {
 }
 
 async function resolveScope(options: SkillOptions): Promise<SkillScope | null> {
-  if (options.scope != null) return options.scope;
+  if ((options.scope !== null && options.scope !== undefined)) return options.scope;
   if (options.interactive !== true) {
     printError('Pass --project or --global.');
     return null;
   }
-  if (options.selectScope != null) return options.selectScope();
+  if ((options.selectScope !== null && options.selectScope !== undefined)) return options.selectScope();
   const result = await clackSelect<SkillScope>({
     message: 'Install the Migent skill for',
     options: [
@@ -219,7 +219,7 @@ async function resolveScope(options: SkillOptions): Promise<SkillScope | null> {
 }
 
 async function ask(options: SkillOptions, message: string): Promise<boolean | null> {
-  if (options.confirm != null) return options.confirm(message);
+  if ((options.confirm !== null && options.confirm !== undefined)) return options.confirm(message);
   if (!process.stdin.isTTY) return null;
   const result = await clackConfirm({ message, initialValue: false });
   if (isCancel(result)) throw new PromptCancelled();
