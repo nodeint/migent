@@ -14,6 +14,7 @@ import {
   waitForExit,
   waitForReady,
 } from './command-executor.js';
+import { ENDPOINT_TOKEN_BYTES, MS_PER_SECOND, PAD_WIDTH_2 } from './constants.js';
 import { collectProcessStartInfo, type ProcessStartInfo } from './process-ownership.js';
 import { wrapperEndpoint } from './process-wrapper.js';
 import { WRAPPER_START } from './wrapper-protocol.js';
@@ -85,7 +86,7 @@ export class VerifyRunner {
 
   public async run(input: VerifyRunInput): Promise<VerifyRunResult> {
     const startedAt = Date.now();
-    const deadline = input.timeoutSec === null ? null : startedAt + input.timeoutSec * 1000;
+    const deadline = input.timeoutSec === null ? null : startedAt + input.timeoutSec * MS_PER_SECOND;
     const commands: VerifyCommandResult[] = [];
     let stopped = false;
     for (const [index, command] of input.commands.entries()) {
@@ -118,7 +119,7 @@ export class VerifyRunner {
       return 'infra';
     }
     const cancellation = cancellationSignal();
-    const endpoint = wrapperEndpoint(randomBytes(16).toString('hex'));
+    const endpoint = wrapperEndpoint(randomBytes(ENDPOINT_TOKEN_BYTES).toString('hex'));
     // `exec 2>&1` merges stderr into stdout in arrival order.
     const child = startWrapper(
       { argv: [this.shell, '-c', `exec 2>&1; ${command}`] },
@@ -137,7 +138,7 @@ export class VerifyRunner {
       const startedAt = Date.now();
       let timedOut = false;
       while (true) {
-        let waitMs = this.progressIntervalSec * 1000;
+        let waitMs = this.progressIntervalSec * MS_PER_SECOND;
         if (deadline !== null) {
           const remainingMs = deadline - Date.now();
           if (remainingMs <= 0) {
@@ -156,7 +157,7 @@ export class VerifyRunner {
           timedOut = true;
           break;
         }
-        input.onHeartbeat?.(command, Math.floor((Date.now() - startedAt) / 1000));
+        input.onHeartbeat?.(command, Math.floor((Date.now() - startedAt) / MS_PER_SECOND));
       }
       if (timedOut) await stopProcessGroup(child);
       else await output.drain();
@@ -232,7 +233,7 @@ function captureOutput(child: ChildProcess): { tail(): string[]; drain(): Promis
 }
 
 function writeLog(input: VerifyRunInput, number: number, tail: string[]): string {
-  const name = `${String(number).padStart(2, '0')}.log`;
+  const name = `${String(number).padStart(PAD_WIDTH_2, '0')}.log`;
   const directory = path.join(input.turnDirectory, 'commands');
   mkdirSync(directory, { recursive: true });
   const file = path.join(directory, name);

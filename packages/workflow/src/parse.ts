@@ -1,6 +1,7 @@
 import path from 'node:path';
 
 import { buildArtifactsV7, outputOfArtifact, parseCompletion, parseTopLevelOutputs, validateVerifyPaths } from './artifacts.js';
+import { SCHEMA_V2, SCHEMA_V3, SCHEMA_V4_DOWNSTREAM, SCHEMA_V5, SCHEMA_V7_ARTIFACTS } from './constants.js';
 import { stageErrorPath, UNKNOWN_KEYS_ERROR_SCHEMA_VERSION, unknownWorkflowKeys, workflowErrorPath, workflowRuleCode } from './diagnostics.js';
 import { ConfigurationError } from './errors.js';
 import { conditionalStages, validateConditionalStages, validateStageGraph } from './graph.js';
@@ -36,21 +37,21 @@ export function parseWorkflowMappingUnchecked(data: Record<string, unknown>, sou
       `workflow schema_version ${schemaVersion} is newer than this Migent (${SCHEMA_VERSION}).`,
     );
   }
-  const version2 = schemaVersion >= 2;
+  const version2 = schemaVersion >= SCHEMA_V2;
   const unknown = unknownWorkflowKeys(data);
   if (unknown.length > 0 && schemaVersion >= UNKNOWN_KEYS_ERROR_SCHEMA_VERSION) {
     throw new ConfigurationError(`Unknown workflow keys: ${unknown.join(' ')}`);
   }
-  if (schemaVersion >= 4 && Object.hasOwn(data, 'requires')) {
+  if (schemaVersion >= SCHEMA_V4_DOWNSTREAM && Object.hasOwn(data, 'requires')) {
     throw new ConfigurationError('requires was removed in schema_version 4. Run `migent migrate`; use --prior for context and downstream for suggestions.');
   }
-  if (schemaVersion < 4 && Object.hasOwn(data, 'downstream')) {
+  if (schemaVersion < SCHEMA_V4_DOWNSTREAM && Object.hasOwn(data, 'downstream')) {
     throw new ConfigurationError('downstream requires schema_version 4.');
   }
   if (version2 && Object.hasOwn(data, 'completion') && (data.completion !== null && data.completion !== undefined)) {
     throw new ConfigurationError('schema_version 2 does not allow completion. Run `migent migrate`.');
   }
-  const version7 = schemaVersion >= 7;
+  const version7 = schemaVersion >= SCHEMA_V7_ARTIFACTS;
   if (version7 && Object.hasOwn(data, 'outputs')) {
     throw new ConfigurationError('outputs was removed in schema_version 7. Declare artifacts and run `migent migrate`.');
   }
@@ -59,7 +60,7 @@ export function parseWorkflowMappingUnchecked(data: Record<string, unknown>, sou
   }
   const stages = parseStages(
     data.stages,
-    { version2, version3: schemaVersion >= 3, version5: schemaVersion >= 5, version7 },
+    { version2, version3: schemaVersion >= SCHEMA_V3, version5: schemaVersion >= SCHEMA_V5, version7 },
   );
   const completion =
     !version2 && isRecord(data.completion) && Object.keys(stages).length > 0
@@ -95,7 +96,7 @@ export function parseWorkflowMappingUnchecked(data: Record<string, unknown>, sou
     ...(concurrency === undefined ? {} : { concurrency }),
     ...(outputs === undefined ? {} : { outputs }),
     ...(registry === undefined ? {} : { artifacts: registry }),
-    ...(schemaVersion >= 4 ? { downstream: parseDownstream(data.downstream, outputs ?? []) } : {}),
+    ...(schemaVersion >= SCHEMA_V4_DOWNSTREAM ? { downstream: parseDownstream(data.downstream, outputs ?? []) } : {}),
   });
   if (unknown.length > 0) document.warnings = unknown;
   return document;

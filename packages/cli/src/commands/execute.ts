@@ -8,6 +8,7 @@ import { type OptionValues } from 'commander';
 
 import { clientRegistry } from '../client.js';
 import { formatQuestion,printError, printReplyCommand, printResumeCommand } from '../display.js';
+import { EXIT_BLOCKED, EXIT_CANCELLED, EXIT_CONFIG, EXIT_QUOTA, EXIT_STAGE_FAILED, EXIT_VERIFY, EXIT_VERIFY_FAILED } from '../exits.js';
 import { cliHooks } from '../hooks.js';
 import { requireCurrentSchema } from '../migrate.js';
 import { runPreflight } from '../preflight.js';
@@ -81,13 +82,13 @@ function printResumeHint(workspace: string, result: ExecuteResult): void {
     if (result.status !== 'blocked') return;
   }
   printResumeCommand(result.sessionId);
-  if (result.status === 'cancelled' || result.code === 130) {
+  if (result.status === 'cancelled' || result.code === EXIT_CANCELLED) {
     const cancelled = new SessionStore(workspace).cancelledStages(result.sessionId);
     printReplyCommand(result.sessionId, cancelled.length === 1 ? cancelled[0]!.stageId : undefined);
   }
 }
 
-const INSPECT_EXIT_CODES = new Set([1, 3, 6, 8]);
+const INSPECT_EXIT_CODES = new Set([EXIT_BLOCKED, EXIT_STAGE_FAILED, EXIT_VERIFY, EXIT_QUOTA]);
 
 function printResult(workspace: string, result: ExecuteResult): void {
   // Printed before the completed branch: a retried attempt can fail and still end in a completed session.
@@ -121,7 +122,7 @@ function printResult(workspace: string, result: ExecuteResult): void {
     log(`response: executions/${result.latestExecutionId}/response.md`);
   }
   if (result.sessionId !== '') for (const line of questionFileFailures(workspace, result.sessionId)) log(line);
-  if (result.code === 7 && result.latestExecutionId) {
+  if (result.code === EXIT_VERIFY_FAILED && result.latestExecutionId) {
     log(`verify: executions/${result.latestExecutionId}/turns/01/verify.md`);
   }
 }
@@ -254,14 +255,14 @@ export function runWorkflowCommand(args: {
   options: OptionValues;
   output: { itemProgress: boolean };
 }): number | Promise<number> {
-  if (rejectOnce(args.options)) return 2;
+  if (rejectOnce(args.options)) return EXIT_CONFIG;
   const {workflowId} = args;
   const task = args.prepared ? null : args.task;
   const sessionId = args.prepared ? args.sessionId : null;
   const stageId = optionalText(args.options.stage);
   if (!args.once && stageId === null) {
     const ceiling = dispatchCeiling(args.options);
-    if (typeof ceiling === 'string') return 2;
+    if (typeof ceiling === 'string') return EXIT_CONFIG;
     return executeWorkflow(findWorkspace(invocationCwdPath()), {
       action: 'start',
       workflowId,

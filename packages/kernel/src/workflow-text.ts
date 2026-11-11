@@ -1,9 +1,10 @@
 /** Rewrite workflow.yaml text in place so migrations keep comments and key order. */
-import { documentVersion, isRecord, parseWorkflowMapping } from '@nodeint/migent-workflow';
+import { documentVersion, isRecord, parseWorkflowMapping, SCHEMA_V2 } from '@nodeint/migent-workflow';
 import { parseYamlDocument } from '@nodeint/migent-workflow';
 import { stringify } from 'yaml';
 
 import { renderAuthoringYaml } from './authoring.js';
+import { LIST_MARKER_LENGTH, QUOTE_PAIR_LENGTH, YAML_DEFAULT_INDENT } from './constants.js';
 import { ConfigurationError } from './errors.js';
 import { applyEdits, ConfigEditError, deepEqual, type Edit, splitComment, splitLines, yamlScalar } from './yaml-patch.js';
 
@@ -41,7 +42,7 @@ export function patchWorkflowText(original: string, updated: Readonly<Record<str
 
 /** The migrated document must load and must not retain removed fields. */
 function assertMigratedWorkflow(text: string, updated: Readonly<Record<string, unknown>>): void {
-  if (documentVersion(updated) < 2) return;
+  if (documentVersion(updated) < SCHEMA_V2) return;
   const parsed = parseYamlDocument(text);
   if (!isRecord(parsed)) throw new ConfigEditError('Workflow must be a mapping.');
   if (Object.hasOwn(parsed, 'completion')) {
@@ -124,7 +125,7 @@ function patchStage(patch: TextPatch, stage: LineSpan, change: Change): void {
   if (first === undefined) return;
   const firstIndent = first[1].indent;
   const siblingIndent = siblingIndentOf(content, firstIndent);
-  const unit = siblingIndent > firstIndent ? siblingIndent - firstIndent : 2;
+  const unit = siblingIndent > firstIndent ? siblingIndent - firstIndent : YAML_DEFAULT_INDENT;
   if (!deepEqual(before.agent, after.agent) && Object.hasOwn(after, 'agent') && !Object.hasOwn(before, 'model')) {
     const span = nestedKeySpan(lines, { start, end }, 'agent');
     if (span === null) throw new ConfigEditError('Cannot locate the stage agent to migrate.');
@@ -310,7 +311,7 @@ function stageSpans(lines: string[]): [string, number, number][] {
 }
 
 function idOnDash(text: string): string | null {
-  const body = text.startsWith('- ') ? text.slice(2).trim() : '';
+  const body = text.startsWith('- ') ? text.slice(LIST_MARKER_LENGTH).trim() : '';
   if (body === '') return null;
   const colon = body.indexOf(':');
   if (colon < 0) return null;
@@ -338,7 +339,7 @@ function lineInfo(line: string): LineInfo | null {
 function mappingKey(line: string): [string | null, string, string] {
   const [code, comment] = splitComment(line);
   let text = code.trim();
-  if (text.startsWith('- ')) text = text.slice(2).trim();
+  if (text.startsWith('- ')) text = text.slice(LIST_MARKER_LENGTH).trim();
   else if (text === '-') return [null, '', comment];
   const colon = text.indexOf(':');
   if (colon < 0) return [null, '', comment];
@@ -361,7 +362,7 @@ function contentIndent(line: string): number | null {
 }
 
 function unquote(value: string): string {
-  if (value.length >= 2 && value[0] === value[value.length - 1] && (value[0] === '"' || value[0] === "'")) {
+  if (value.length >= QUOTE_PAIR_LENGTH && value[0] === value[value.length - 1] && (value[0] === '"' || value[0] === "'")) {
     return value.slice(1, -1);
   }
   return value;

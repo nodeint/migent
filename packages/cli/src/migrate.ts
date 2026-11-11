@@ -2,12 +2,13 @@ import { lstatSync, readdirSync, readFileSync, realpathSync, writeFileSync } fro
 import path from 'node:path';
 
 import { confirm as clackConfirm, isCancel } from '@clack/prompts';
-import { assertConfigClientEquivalence, checkDocumentSchemaVersion, ConfigEditError, ConfigurationError,documentVersion, loadWorkspaceConfig, loadYamlMapping, localConfigPath, mergeConfigLayers, migrateConfig, migrateWorkflow, patchConfigText, patchWorkflowText, sha256Hex, stringifyConfig, yamlHasComments } from '@nodeint/migent-kernel';
+import { assertConfigClientEquivalence, checkDocumentSchemaVersion, CONFIG_CLIENTS_LIFT_FROM, ConfigEditError, ConfigurationError, documentVersion, loadWorkspaceConfig, loadYamlMapping, localConfigPath, mergeConfigLayers, migrateConfig, migrateWorkflow, patchConfigText, patchWorkflowText, sha256Hex, stringifyConfig, yamlHasComments } from '@nodeint/migent-kernel';
 import { SessionLock, SessionLockHeldError,WORKFLOW_FREEZE_FILE } from '@nodeint/migent-session';
 import { parseWorkflowMapping, parseYamlDocument,SCHEMA_VERSION, workflowsDirectory } from '@nodeint/migent-workflow';
 
 import { clientRegistry } from './client.js';
 import { printError, printNotice } from './display.js';
+import { EXIT_CONFIG } from './exits.js';
 import { isDirectory, isFile } from './fs-utils.js';
 
 function versionList(entries: readonly [string, number][]): string {
@@ -64,7 +65,7 @@ export async function runMigrate(
     for (const note of rewrite.notes) printNotice(note);
   }
   if (!options.assumeYes && !(await accepted(options.confirm ?? null))) {
-    return (options.confirm === null || options.confirm === undefined) && !process.stdin.isTTY ? 2 : 0;
+    return (options.confirm === null || options.confirm === undefined) && !process.stdin.isTTY ? EXIT_CONFIG : 0;
   }
   const locks: SessionLock[] = [];
   try {
@@ -89,7 +90,7 @@ export async function runMigrate(
   } catch (error) {
     if (!(error instanceof SessionLockHeldError || error instanceof ConfigurationError)) throw error;
     printError(`${error.message} Nothing was written.`);
-    return 2;
+    return EXIT_CONFIG;
   } finally {
     for (const lock of locks) lock.release();
   }
@@ -126,7 +127,9 @@ function pendingRewrites(workspace: string, clientIds: readonly string[]): Rewri
   const localOriginal = isFile(localPath) ? readConfigOriginal(localPath) : null;
   // Older layers must reach v5 before the client lift inspects their merged shape.
   const toV5 = (layer: Record<string, unknown>): Record<string, unknown> =>
-    documentVersion(layer) < 5 ? migrateConfig(layer, { current: 5, context: originalContext }).document : layer;
+    documentVersion(layer) < CONFIG_CLIENTS_LIFT_FROM
+      ? migrateConfig(layer, { current: CONFIG_CLIENTS_LIFT_FROM, context: originalContext }).document
+      : layer;
   const projectV5 = toV5(projectOriginal);
   const localV5 = localOriginal === null ? null : toV5(localOriginal);
   const context = mergeConfigLayers(projectV5, localV5).config;

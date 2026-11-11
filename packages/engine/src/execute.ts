@@ -1,3 +1,6 @@
+import { constants as osConstants } from 'node:os';
+
+import { exitCode } from '@nodeint/migent-contracts';
 import { CancellationRequested, raiseCancellation, resetCancellation } from '@nodeint/migent-kernel';
 import { ConfigurationError, OutputsMissing } from '@nodeint/migent-kernel';
 import { log } from '@nodeint/migent-kernel';
@@ -79,14 +82,14 @@ async function executeLocked(
   const { sessionId, workflow, workflowId, stageReply, resumeCancelled, reopenLatestCancelled } = opened;
   const onSigint = () => {
     try {
-      raiseCancellation(2);
+      raiseCancellation(osConstants.signals.SIGINT);
     } catch {
       // The flag stays set; the command loop observes it.
     }
   };
   const onSigterm = () => {
     try {
-      raiseCancellation(15);
+      raiseCancellation(osConstants.signals.SIGTERM);
     } catch {
       // The flag stays set; the command loop observes it.
     }
@@ -136,7 +139,7 @@ async function executeLocked(
         result.code = 9;
         result.stopReason = 'question';
       }
-      if (stopReason === 'stage' && stageJsons.some((item) => item.outcome_status !== 'complete' && item.execution_status !== 'skipped')) result.code = stageJsons.some((item) => item.outcome_status === 'question') ? 9 : 1;
+      if (stopReason === 'stage' && stageJsons.some((item) => item.outcome_status !== 'complete' && item.execution_status !== 'skipped')) result.code = stageJsons.some((item) => item.outcome_status === 'question') ? exitCode('question') : exitCode('blocked');
       return result;
     }
     const replyDispatches = replySent ? 1 : 0;
@@ -269,7 +272,7 @@ async function resumeReopenedExecutions(
     if (!reopenLatestCancelled && (once || stageId !== null || TERMINAL_SESSION_STATUSES.has(after))) {
       const stopReason = TERMINAL_SESSION_STATUSES.has(after) ? after : 'stage';
       const result = executeFinal(status, stopReason, stageJsons);
-      if (stopReason === 'stage' && continued.some((item) => item.outcome_status !== 'complete' && item.execution_status !== 'skipped')) result.code = continued.some((item) => item.outcome_status === 'question') ? 9 : 1;
+      if (stopReason === 'stage' && continued.some((item) => item.outcome_status !== 'complete' && item.execution_status !== 'skipped')) result.code = continued.some((item) => item.outcome_status === 'question') ? exitCode('question') : exitCode('blocked');
       return result;
     }
     if (!reopenLatestCancelled) {

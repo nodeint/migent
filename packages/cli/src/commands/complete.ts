@@ -7,6 +7,7 @@ import { formatNextCommand, isSessionLockLost, SessionLockHeldError, SessionStor
 import { clientRegistry } from '../client.js';
 import { printError } from '../display.js';
 import { writeJson } from '../emit.js';
+import { EXIT_CONFIG } from '../exits.js';
 import { requireCurrentSchema } from '../migrate.js';
 
 /** Mark a stopped workflow session completed. Exit 2 when the session cannot be completed. */
@@ -18,7 +19,7 @@ export function completeSession(workspace: string, sessionId: string, asJson: bo
   } catch (error) {
     if (error instanceof ConfigurationError || error instanceof SessionLockHeldError || isSessionLockLost(error)) {
       printError(error.message);
-      return 2;
+      return EXIT_CONFIG;
     }
     throw error;
   }

@@ -5,7 +5,11 @@ import { SCHEMA_VERSION } from '@nodeint/migent-workflow';
 import { parseYamlDocument } from '@nodeint/migent-workflow';
 import { type Document, isMap, isNode, isSeq, type Node as YamlNode, type Pair, parseDocument, stringify, visit, type YAMLMap, type YAMLSeq } from 'yaml';
 
+import { YAML_DEFAULT_INDENT as DEFAULT_INDENT } from './constants.js';
 import { ConfigurationError } from './errors.js';
+
+/** Largest indent width accepted when sniffing a document. */
+const MAX_INDENT = 10;
 
 export type DraftFormat = 'yaml' | 'json';
 
@@ -128,8 +132,8 @@ function applyLineEnding(text: string, ending: string): string {
 /** The indentation width the base uses, so a kept document keeps its shape. */
 function indentWidth(text: string): number {
   const match = /\n( +)\S/.exec(text.replace(/\r\n/g, '\n'));
-  const width = match === null ? 2 : match[1]!.length;
-  return width >= 1 && width <= 10 ? width : 2;
+  const width = match === null ? DEFAULT_INDENT : match[1]!.length;
+  return width >= 1 && width <= MAX_INDENT ? width : DEFAULT_INDENT;
 }
 
 /** Anchors, aliases, merge keys and custom tags cannot be reconciled node by node. */

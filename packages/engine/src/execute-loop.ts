@@ -1,6 +1,7 @@
 /** Once, loop, and pool dispatch for an opened session, plus the tracking of in-flight dispatches. */
 import path from 'node:path';
 
+import { exitCode } from '@nodeint/migent-contracts';
 import { cancellationSignal, ConfigurationError,type ExecutionSnapshot } from '@nodeint/migent-kernel';
 import { readyStages, revisionStop, runnableNow, schedulableStageIds, Stop, VERIFY_EXHAUSTED, VERIFY_FAILED, version2IdleReason, writeJsonAtomic } from '@nodeint/migent-kernel';
 import { clearInFlightExecution, noteInFlightExecution } from '@nodeint/migent-session';
@@ -46,7 +47,7 @@ export async function runExecuteOnce(run: ExecuteRun, stageId: string | null): P
     result.stopReason = 'question';
   }
   if (stopReason === 'stage' && stage.outcome_status !== 'complete' && stage.execution_status !== 'skipped') {
-    result.code = stage.outcome_status === 'question' ? 9 : 1;
+    result.code = stage.outcome_status === 'question' ? exitCode('question') : exitCode('blocked');
   }
   return result;
 }

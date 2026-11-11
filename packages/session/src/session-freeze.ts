@@ -27,6 +27,7 @@ import {
   type WorkflowDocument,
 } from '@nodeint/migent-workflow';
 import { parseYamlDocument } from '@nodeint/migent-workflow';
+import { DEFAULT_MAX_VERIFY, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4_DOWNSTREAM, SCHEMA_V5, SCHEMA_V7_ARTIFACTS } from '@nodeint/migent-workflow';
 import { stringify } from 'yaml';
 
 export const WORKFLOW_FREEZE_FILE = 'workflow.frozen.yaml';
@@ -297,7 +298,7 @@ function workflowMapping(workflow: WorkflowDocument): Record<string, unknown> {
 
 function version2WorkflowMapping(workflow: WorkflowDocument): Record<string, unknown> {
   const mapped: Record<string, unknown> = {
-    schema_version: workflow.schemaVersion ?? 2,
+    schema_version: workflow.schemaVersion ?? SCHEMA_V2,
     id: workflow.id,
     concurrency: workflow.concurrency ?? 1,
     constraints: workflow.constraints,
@@ -305,20 +306,20 @@ function version2WorkflowMapping(workflow: WorkflowDocument): Record<string, unk
       (stage) => stageMapping(
         stage,
         {
-          version3: (workflow.schemaVersion ?? 2) >= 3,
-          version5: (workflow.schemaVersion ?? 2) >= 5,
-          version7: (workflow.schemaVersion ?? 2) >= 7,
+          version3: (workflow.schemaVersion ?? SCHEMA_V2) >= SCHEMA_V3,
+          version5: (workflow.schemaVersion ?? SCHEMA_V2) >= SCHEMA_V5,
+          version7: (workflow.schemaVersion ?? SCHEMA_V2) >= SCHEMA_V7_ARTIFACTS,
         },
       ),
     ),
     requires: workflow.requires === null ? null : { workflow: workflow.requires.workflow },
   };
   const outputs = workflow.outputs ?? [];
-  if ((workflow.schemaVersion ?? 2) >= 4) {
+  if ((workflow.schemaVersion ?? SCHEMA_V2) >= SCHEMA_V4_DOWNSTREAM) {
     delete mapped.requires;
     if (workflow.downstream?.length) mapped.downstream = workflow.downstream;
   }
-  if ((workflow.schemaVersion ?? 2) >= 7) {
+  if ((workflow.schemaVersion ?? SCHEMA_V2) >= SCHEMA_V7_ARTIFACTS) {
     const registry = workflow.artifacts ?? [];
     if (registry.length > 0) {
       mapped.artifacts = Object.fromEntries(registry.map((artifact) => [artifact.id, artifactMapping(artifact)]));
@@ -380,7 +381,7 @@ function stageMapping(
   if ((stage.runWhen !== null && stage.runWhen !== undefined)) mapped.run_when = { changed_paths: stage.runWhen.changedPaths };
   if (stage.verify.length > 0) {
     mapped.verify = stage.verify;
-    if (isRoleStage(stage) && stage.maxVerify !== 3) mapped.max_verify = stage.maxVerify;
+    if (isRoleStage(stage) && stage.maxVerify !== DEFAULT_MAX_VERIFY) mapped.max_verify = stage.maxVerify;
     if (stage.verifyTimeoutSec !== null) mapped.verify_timeout = stage.verifyTimeoutSec;
   }
   return mapped;
@@ -421,7 +422,7 @@ function readRoles(value: unknown, filePath: string): Record<string, string[]> {
 
 function readTargets(value: unknown, filePath: string, schemaVersion: unknown): Record<string, StageTarget> {
   if (!isRecord(value)) throw corrupt(filePath, 'targets must be a mapping');
-  const legacy = typeof schemaVersion !== 'number' || schemaVersion < 2;
+  const legacy = typeof schemaVersion !== 'number' || schemaVersion < SCHEMA_V2;
   const targets: Record<string, StageTarget> = {};
   for (const [stageId, raw] of Object.entries(value)) {
     if (!isRecord(raw) || typeof raw.model !== 'string') {

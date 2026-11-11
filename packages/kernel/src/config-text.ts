@@ -4,6 +4,7 @@ import { parseYamlDocument } from '@nodeint/migent-workflow';
 import { stringify } from 'yaml';
 
 import { renderAuthoringYaml } from './authoring.js';
+import { NESTED_INDENT_LEVELS, QUOTE_PAIR_LENGTH, YAML_DEFAULT_INDENT } from './constants.js';
 import { ConfigurationError } from './errors.js';
 import { liftConfigAgents } from './migration-config.js';
 import { applyEdits, ConfigEditError, deepEqual, type Edit, splitComment, splitLines, yamlScalar } from './yaml-patch.js';
@@ -253,7 +254,7 @@ function syncOptionMap(
   }
   if (options === null) {
     const indent = ' '.repeat(parent.indent + unit);
-    const nested = ' '.repeat(parent.indent + unit * 2);
+    const nested = ' '.repeat(parent.indent + unit * NESTED_INDENT_LEVELS);
     const body = [`${indent}options:`];
     for (const name of sortedKeys(after)) body.push(`${nested}${name}: ${yamlScalar(after[name] ?? '')}`);
     edits.push([parent.end, parent.end, body]);
@@ -285,7 +286,7 @@ function clientLines(client: { type: string | undefined; options: Record<string,
   if (type !== undefined) lines.push(`${child}type: ${yamlScalar(type)}`);
   if (Object.keys(options).length > 0) {
     lines.push(`${child}options:`);
-    const nested = ' '.repeat(indent + unit * 2);
+    const nested = ' '.repeat(indent + unit * NESTED_INDENT_LEVELS);
     for (const [option, value] of Object.entries(options)) {
       lines.push(`${nested}${option}: ${yamlScalar(value)}`);
     }
@@ -320,7 +321,7 @@ function roleLines(key: string, body: Record<string, unknown>, layout: Layout): 
   const roleOptions = roleOptionMap(body);
   if (Object.keys(roleOptions).length > 0) {
     lines.push(`${child}options:`);
-    const nested = ' '.repeat(indent + unit * 2);
+    const nested = ' '.repeat(indent + unit * NESTED_INDENT_LEVELS);
     for (const [name, value] of Object.entries(roleOptions)) {
       lines.push(`${nested}${name}: ${yamlScalar(value)}`);
     }
@@ -430,7 +431,7 @@ function indentUnit(lines: string[]): number {
     const indent = contentIndent(line);
     if (indent !== null && indent > 0) indents.push(indent);
   }
-  if (indents.length === 0) return 2;
+  if (indents.length === 0) return YAML_DEFAULT_INDENT;
   return Math.min(...indents);
 }
 
@@ -572,7 +573,7 @@ export function stringValue(value: unknown, field: string): string {
 }
 
 export function scalarText(value: string): string {
-  if (value.length >= 2 && value[0] === value[value.length - 1] && (value[0] === '"' || value[0] === "'")) {
+  if (value.length >= QUOTE_PAIR_LENGTH && value[0] === value[value.length - 1] && (value[0] === '"' || value[0] === "'")) {
     return value.slice(1, -1);
   }
   return value;

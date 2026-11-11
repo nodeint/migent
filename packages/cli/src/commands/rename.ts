@@ -5,6 +5,7 @@ import { SessionStore } from '@nodeint/migent-session';
 import { clientRegistry } from '../client.js';
 import { printError } from '../display.js';
 import { writeJson } from '../emit.js';
+import { EXIT_CONFIG } from '../exits.js';
 import { requireCurrentSchema } from '../migrate.js';
 
 /** Change a session's display title without the session lock. Exit 2 for an unknown session or invalid title. */
@@ -21,7 +22,7 @@ export function renameSession(
   } catch (error) {
     if (error instanceof ConfigurationError) {
       printError(error.message);
-      return 2;
+      return EXIT_CONFIG;
     }
     throw error;
   }

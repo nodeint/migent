@@ -6,6 +6,7 @@ import { constants as osConstants, tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { ARGV_USER_OFFSET, EXIT_COMMAND_NOT_FOUND, EXIT_UNPASSABLE_ARGUMENT, EXIT_WRAPPER_FAILURE, MS_PER_SECOND, SHELL_SIGNAL_BASE, SIGNAL_REPORT_FALLBACK_MS, WRAPPER_POLL_MS } from './constants.ts';
 // `.ts` so `node process-wrapper.ts` resolves it from source; tsc rewrites it to `.js`.
 // `.ts` for the same reason; env.ts imports only types, so it runs from source.
 import { debugEnabled } from './env.ts';
@@ -73,10 +74,16 @@ function fail(
 }
 
 const POSIX_SOCKET_PATH_MAX = 100;
+/** Hex characters of the token hash kept in the endpoint name. */
+const ENDPOINT_NAME_HEX_LENGTH = 16;
+/** An option and its value (`--name value`) consume this many argv entries. */
+const OPTION_PAIR_LENGTH = 2;
+/** Length of the `--` option prefix. */
+const OPTION_PREFIX_LENGTH = 2;
 
 /** Local endpoint for one execution: a named pipe on Windows, a Unix socket elsewhere. */
 export function wrapperEndpoint(token: string): string {
-  const name = `migent-${createHash('sha256').update(token).digest('hex').slice(0, 16)}`;
+  const name = `migent-${createHash('sha256').update(token).digest('hex').slice(0, ENDPOINT_NAME_HEX_LENGTH)}`;
   if (process.platform === 'win32') return `\\\\.\\pipe\\${name}`;
   const candidate = path.join(tmpdir(), `${name}.sock`);
   if (Buffer.byteLength(candidate) <= POSIX_SOCKET_PATH_MAX) return candidate;
@@ -94,7 +101,7 @@ export function killProcessTree(pid: number, signal: NodeJS.Signals): void {
       windowsHide: true,
     });
     // 128: no such process.
-    if (result.status === 128) throw Object.assign(new Error('No such process'), { code: 'ESRCH' });
+    if (result.status === SHELL_SIGNAL_BASE) throw Object.assign(new Error('No such process'), { code: 'ESRCH' });
     return;
   }
   process.kill(-pid, signal);
@@ -152,8 +159,8 @@ function parseArgv(argv: string[]): WrapperOptions | null {
     if (item === '--endpoint' || item === '--grace-sec') {
       const value = argv[index + 1];
       if (value === undefined) return null;
-      options[item.slice(2).replaceAll('-', '_')] = value;
-      index += 2;
+      options[item.slice(OPTION_PREFIX_LENGTH).replaceAll('-', '_')] = value;
+      index += OPTION_PAIR_LENGTH;
       continue;
     }
     return null;
@@ -210,9 +217,9 @@ async function main(argv: string[]): Promise<void> {
     } catch {
       exit(1);
     }
-    const deadline = Date.now() + options.graceSec * 1000;
+    const deadline = Date.now() + options.graceSec * MS_PER_SECOND;
     while (Date.now() < deadline && running.exitCode === null && running.signalCode === null) {
-      await sleepMs(50);
+      await sleepMs(WRAPPER_POLL_MS);
     }
     server.close();
     removeStaleSocket(options.endpoint);
@@ -239,7 +246,7 @@ async function main(argv: string[]): Promise<void> {
       server.close();
       removeStaleSocket(options.endpoint);
       const unpassable = error instanceof UnpassableArgument;
-      void fail('spawn', error, { exitCode: unpassable ? 2 : 1, extra: unpassable ? { code: UNPASSABLE_ARGUMENT_CODE } : {} });
+      void fail('spawn', error, { exitCode: unpassable ? EXIT_UNPASSABLE_ARGUMENT : EXIT_WRAPPER_FAILURE, extra: unpassable ? { code: UNPASSABLE_ARGUMENT_CODE } : {} });
       return;
     }
     provider = started;
@@ -248,17 +255,17 @@ async function main(argv: string[]): Promise<void> {
       if (stopping) return;
       server.close();
       removeStaleSocket(options.endpoint);
-      void fail('spawn', error, { exitCode: error.code === 'ENOENT' ? 127 : 1, extra: { path: error.path ?? command[0] } });
+      void fail('spawn', error, { exitCode: error.code === 'ENOENT' ? EXIT_COMMAND_NOT_FOUND : EXIT_WRAPPER_FAILURE, extra: { path: error.path ?? command[0] } });
     });
     started.on('exit', (code, signal) => {
       if (stopping) return;
       debug(`provider exit code=${code} signal=${signal}`);
       // A signal death keeps its identity as the shell's 128 + signal, so the owner can tell it from an exit.
       const number = signal ? osConstants.signals[signal] : undefined;
-      const status = signal ? 128 + (number ?? 0) : (code ?? 1);
+      const status = signal ? SHELL_SIGNAL_BASE + (number ?? 0) : (code ?? 1);
       if (!signal || !process.send || !process.connected) return exit(status);
       // Say which signal it was, separately from the exit code: a plain `exit 137` is not a SIGKILL.
-      const fallback = setTimeout(() => exit(status), 500);
+      const fallback = setTimeout(() => exit(status), SIGNAL_REPORT_FALLBACK_MS);
       try {
         process.send({ type: WRAPPER_EXITED, signal }, () => {
           clearTimeout(fallback);
@@ -274,7 +281,7 @@ async function main(argv: string[]): Promise<void> {
 }
 
 if (runningAsMain()) {
-  main(process.argv.slice(2)).catch((error: unknown) => {
+  main(process.argv.slice(ARGV_USER_OFFSET)).catch((error: unknown) => {
     void fail('runtime', error, { exitCode: 1 });
   });
 }

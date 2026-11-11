@@ -8,6 +8,9 @@ import { FAILURE_FILENAME } from '@nodeint/migent-session';
 
 import { sessionFields } from './session-row.js';
 
+/** Column width of check names in doctor output. */
+const CHECK_NAME_WIDTH = 12;
+
 const require = createRequire(import.meta.url);
 const pc = require('picocolors') as {
   bold: (value: string) => string;
@@ -81,7 +84,7 @@ export function printDoctor(checks: readonly Check[], out: NodeJS.WriteStream = 
     let status: string;
     if (check.ok) status = tty ? pc.green('ok') : 'ok';
     else status = tty ? pc.red('failed') : 'failed';
-    out.write(`${check.name.padEnd(12)}${status}\n`);
+    out.write(`${check.name.padEnd(CHECK_NAME_WIDTH)}${status}\n`);
     for (const item of check.items) {
       const line = `  ${item}`;
       out.write(`${tty ? pc.dim(line) : line}\n`);

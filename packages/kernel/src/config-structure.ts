@@ -61,9 +61,16 @@ const isKeyIssue = (issue: SchemaIssue): boolean =>
  * Where an agent sits in an effective config: `agents.<name>` or `roles.<name>.agent`. Names are
  * data, so a node is identified by its full position, never by a segment that a name could equal.
  */
+/** Path depth of an agent mapping: `agents.<name>`. */
+const AGENTS_PATH_BASE = 2;
+/** Path depth of a role's inline agent: `roles.<role>.agent`. */
+const ROLE_AGENT_PATH_BASE = 3;
+/** Segments after the agent base for an option: `client.options.<key>`. */
+const OPTION_PATH_TAIL_LENGTH = 3;
+
 function agentBase(path: readonly (string | number)[]): number {
-  if (path[0] === 'agents' && path.length >= 2) return 2;
-  if (path[0] === 'roles' && path[2] === 'agent' && path.length >= 3) return 3;
+  if (path[0] === 'agents' && path.length >= AGENTS_PATH_BASE) return AGENTS_PATH_BASE;
+  if (path[0] === 'roles' && path[2] === 'agent' && path.length >= ROLE_AGENT_PATH_BASE) return ROLE_AGENT_PATH_BASE;
   return -1;
 }
 
@@ -76,7 +83,7 @@ function isClientNode(path: readonly (string | number)[]): boolean {
 /** `<agent>.client.options.<key>`. */
 function isOptionEntry(path: readonly (string | number)[]): boolean {
   const base = agentBase(path);
-  return base !== -1 && path.length === base + 3 && path[base] === 'client' && path[base + 1] === 'options';
+  return base !== -1 && path.length === base + OPTION_PATH_TAIL_LENGTH && path[base] === 'client' && path[base + 1] === 'options';
 }
 
 /** Maps one schema issue to the code and path Migent has always reported for it. */

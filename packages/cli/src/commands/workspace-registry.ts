@@ -2,10 +2,11 @@ import { realpathSync } from 'node:fs';
 import path from 'node:path';
 
 import { type Static,WorkspaceList, WorkspaceMutation } from '@nodeint/migent-contracts';
-import { callService, endpointFromHome, ensureRegistryHome, ServiceError, startDetached } from '@nodeint/migent-registry';
+import { callService, endpointFromHome, ensureRegistryHome, HTTP_CREATED, HTTP_NOT_FOUND, HTTP_OK, ServiceError, startDetached } from '@nodeint/migent-registry';
 
 import { printError } from '../display.js';
 import { writeJson } from '../emit.js';
+import { EXIT_CONFIG } from '../exits.js';
 import { PACKAGE_VERSION } from '../version.js';
 import { findWorkspace, invocationCwdPath } from '../workspace.js';
 
@@ -18,7 +19,7 @@ export async function runRegister(workspacePath: string | null, name: string | n
   const root = workspaceRoot(workspacePath);
   if (!path.isAbsolute(root)) {
     printError('Workspace path is not absolute.');
-    return 2;
+    return EXIT_CONFIG;
   }
   process.stderr.write(`Registering ${root}\n`);
   let endpoint;
@@ -35,7 +36,7 @@ export async function runRegister(workspacePath: string | null, name: string | n
   if (name !== null) body.name = name;
   if (!path.isAbsolute(String(body.path))) {
     printError('Workspace path is not absolute.');
-    return 2;
+    return EXIT_CONFIG;
   }
   return finish(endpoint, { method: 'POST', path: '/v1/workspaces', body });
 }
@@ -54,7 +55,7 @@ export async function runWorkspaceList(asJson: boolean): Promise<number> {
     printError(`Registry request failed: ${errorText(error)}`);
     return 1;
   }
-  if (status !== 200) return statusExit(status, payload);
+  if (status !== HTTP_OK) return statusExit(status, payload);
   const rows = payload.workspaces;
   if (!Array.isArray(rows)) {
     printError('Registry response was invalid.');
@@ -94,7 +95,7 @@ async function finish(
     printError(`Registry request failed: ${errorText(error)}`);
     return 1;
   }
-  if (status === 200 || status === 201) {
+  if (status === HTTP_OK || status === HTTP_CREATED) {
     writeJson(WorkspaceMutation, payload as Static<typeof WorkspaceMutation>);
     if (method === 'POST') {
       const id = typeof payload.id === 'string' && payload.id !== '' ? payload.id : 'workspace';
@@ -111,7 +112,7 @@ async function finish(
 function statusExit(status: number, payload: Record<string, unknown>): number {
   const {message} = payload;
   printError(typeof message === 'string' && message ? message : 'Registry request failed.');
-  return status === 404 ? 2 : 1;
+  return status === HTTP_NOT_FOUND ? EXIT_CONFIG : 1;
 }
 
 function workspaceRoot(workspacePath: string | null): string {

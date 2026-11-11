@@ -86,6 +86,16 @@ function quotaFromMessage(message: string): Pick<RawFailure, 'rateLimit'> {
   };
 }
 
+/** Random bytes behind the 12 hex digits of a session id. */
+const HEX_PREFIX_BYTES = 6;
+const HEX_RADIX = 16;
+const HEX_PAIR_WIDTH = 2;
+/** Base62 characters after the hex digits, and random bytes drawn per round. */
+const TAIL_LENGTH = 14;
+const TAIL_DRAW_BYTES = 16;
+const BASE62_SIZE = 62;
+/** Largest multiple of 62 that fits in a byte; larger bytes are rejected to keep digits uniform. */
+const BASE62_BYTE_LIMIT = 248;
 const BASE62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
 
 /**
@@ -93,12 +103,12 @@ const BASE62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
  * base62 characters. The server creates a session under any unused `ses_` id passed to `run -s`.
  */
 export function generateSessionId(random: (size: number) => Uint8Array = randomBytes): string {
-  const hex = Array.from(random(6), (byte) => byte.toString(16).padStart(2, '0')).join('');
+  const hex = Array.from(random(HEX_PREFIX_BYTES), (byte) => byte.toString(HEX_RADIX).padStart(HEX_PAIR_WIDTH, '0')).join('');
   let tail = '';
   // Rejection sampling keeps the base62 digits uniform.
-  while (tail.length < 14) {
-    for (const byte of random(16)) {
-      if (byte < 248 && tail.length < 14) tail += BASE62[byte % 62];
+  while (tail.length < TAIL_LENGTH) {
+    for (const byte of random(TAIL_DRAW_BYTES)) {
+      if (byte < BASE62_BYTE_LIMIT && tail.length < TAIL_LENGTH) tail += BASE62[byte % BASE62_SIZE];
     }
   }
   return `ses_${hex}${tail}`;

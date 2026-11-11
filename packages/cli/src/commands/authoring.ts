@@ -14,6 +14,7 @@ import { workflowsDirectory } from '@nodeint/migent-workflow';
 
 import { clientRegistry } from '../client.js';
 import { writeJson } from '../emit.js';
+import { EXIT_BLOCKED, EXIT_CONFIG, EXIT_STAGE_FAILED } from '../exits.js';
 import { findWorkspace, invocationCwdPath } from '../workspace.js';
 
 export type AuthoringKind = 'config' | 'workflow';
@@ -37,9 +38,10 @@ export interface AuthoringOptions {
   readStdin?: () => string;
 }
 
-const EXIT_INVALID = 1;
-const EXIT_IO = 2;
-const EXIT_CONFLICT = 3;
+/** Authoring exits: invalid draft, invocation or I/O error, and conflict. They share the catalog codes. */
+const EXIT_INVALID = EXIT_BLOCKED;
+const EXIT_IO = EXIT_CONFIG;
+const EXIT_CONFLICT = EXIT_STAGE_FAILED;
 const FILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 interface PublicDiagnostic {

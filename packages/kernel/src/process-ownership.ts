@@ -2,6 +2,7 @@ import { hostname as osHostname } from 'node:os';
 import path from 'node:path';
 import { Worker } from 'node:worker_threads';
 
+import { INT32_BYTES, PROBE_SLACK_MS } from './constants.js';
 import { wrapperEndpoint, wrapperEntry } from './process-wrapper.js';
 
 export const PID_PRESENT = 'present';
@@ -68,6 +69,11 @@ export function probePid(pid: number): string {
   }
 }
 
+/** Result codes the probe worker stores in the shared flag. */
+const PROBE_CONNECTED = 1;
+const PROBE_REFUSED = 2;
+const PROBE_UNKNOWN = 3;
+
 const PROBE_SOURCE = `
 const { workerData } = require("node:worker_threads");
 const net = require("node:net");
@@ -79,14 +85,14 @@ const done = (value) => {
 const socket = net.connect(workerData.endpoint);
 socket.setTimeout(workerData.timeoutMs, () => {
   socket.destroy();
-  done(3);
+  done(${PROBE_UNKNOWN});
 });
 socket.once("connect", () => {
   socket.destroy();
-  done(1);
+  done(${PROBE_CONNECTED});
 });
 socket.once("error", (error) => {
-  done(error.code === "ENOENT" || error.code === "ECONNREFUSED" ? 2 : 3);
+  done(error.code === "ENOENT" || error.code === "ECONNREFUSED" ? ${PROBE_REFUSED} : ${PROBE_UNKNOWN});
 });
 `;
 
@@ -95,18 +101,18 @@ socket.once("error", (error) => {
  * on a worker thread while this thread blocks on a shared flag.
  */
 export function probeEndpointSync(endpoint: string, timeoutMs: number): EndpointState {
-  const shared = new SharedArrayBuffer(4);
+  const shared = new SharedArrayBuffer(INT32_BYTES);
   const flag = new Int32Array(shared);
   const worker = new Worker(PROBE_SOURCE, { eval: true, workerData: { endpoint, timeoutMs, shared } });
   worker.unref();
   try {
-    Atomics.wait(flag, 0, 0, timeoutMs + 1000);
+    Atomics.wait(flag, 0, 0, timeoutMs + PROBE_SLACK_MS);
   } finally {
     void worker.terminate();
   }
   const result = Atomics.load(flag, 0);
-  if (result === 1) return ENDPOINT_ALIVE;
-  if (result === 2) return ENDPOINT_GONE;
+  if (result === PROBE_CONNECTED) return ENDPOINT_ALIVE;
+  if (result === PROBE_REFUSED) return ENDPOINT_GONE;
   return ENDPOINT_UNKNOWN;
 }
 

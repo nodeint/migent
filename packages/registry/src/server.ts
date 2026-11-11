@@ -1,5 +1,8 @@
 import { type AddressInfo, createServer, type Socket } from 'node:net';
 
+import { MS_PER_SECOND, NEWLINE_BYTE } from '@nodeint/migent-kernel';
+
+import { MAX_LINE_BYTES, MAX_LINE_PROBE_BYTES } from './constants.js';
 import { buildRouter, Call, Router, type WorkspaceRecords } from './routes.js';
 import type { RegistryStore } from './store.js';
 import { monotonic } from './time.js';
@@ -78,7 +81,7 @@ class SocketFeed {
         this.waiter = null;
         this.timer = null;
         reject(new RequestTimeout());
-      }, remaining * 1000);
+      }, remaining * MS_PER_SECOND);
       this.waiter = (chunk) => resolve(chunk);
     });
   }
@@ -118,7 +121,7 @@ class DeadlineReader {
 
   public async readLine(limit: number): Promise<Buffer> {
     for (;;) {
-      const newline = this.buffer.indexOf(0x0a);
+      const newline = this.buffer.indexOf(NEWLINE_BYTE);
       if (newline !== -1 && newline + 1 <= limit) {
         const data = this.buffer.subarray(0, newline + 1);
         this.buffer = this.buffer.subarray(newline + 1);
@@ -175,7 +178,7 @@ async function writeAll(socket: Socket, payload: Buffer, deadlineSec: number): P
     const timer = setTimeout(() => {
       socket.destroy();
       reject(new RequestTimeout());
-    }, remaining * 1000);
+    }, remaining * MS_PER_SECOND);
     socket.write(payload, (error) => {
       clearTimeout(timer);
       if (error) reject(error);
@@ -206,10 +209,17 @@ interface Reply {
   readonly close: boolean;
 }
 
+/** Default socket timeout, in seconds. */
+const DEFAULT_SOCKET_TIMEOUT_SEC = 0.2;
+/** Default read and write deadline per request, in seconds. */
+const DEFAULT_DEADLINE_SEC = 5;
+/** A request line is `METHOD TARGET VERSION`. */
+const REQUEST_LINE_PARTS = 3;
+
 export class RegistryHTTPServer {
   public static daemonThreads = true;
   public inFlight = 0;
-  public timeout = 0.2;
+  public timeout = DEFAULT_SOCKET_TIMEOUT_SEC;
   public readonly store: RegistryStore;
   public token: string;
   public instanceId: string;
@@ -258,8 +268,8 @@ export class RegistryHTTPServer {
     const server = new RegistryHTTPServer(
       { store, token, instanceId },
       {
-        readDeadlineSec: config.readDeadlineSec ?? 5,
-        writeDeadlineSec: config.writeDeadlineSec ?? 5,
+        readDeadlineSec: config.readDeadlineSec ?? DEFAULT_DEADLINE_SEC,
+        writeDeadlineSec: config.writeDeadlineSec ?? DEFAULT_DEADLINE_SEC,
         maxBodyBytes: config.maxBodyBytes ?? MAX_BODY_BYTES,
       },
     );
@@ -298,7 +308,7 @@ export class RegistryHTTPServer {
         if (this.acceptWaiter === finish) this.acceptWaiter = null;
         resolve(socket);
       };
-      const timer = setTimeout(() => finish(null), Math.max(0, timeout) * 1000);
+      const timer = setTimeout(() => finish(null), Math.max(0, timeout) * MS_PER_SECOND);
       this.acceptWaiter = finish;
     });
   }
@@ -349,9 +359,9 @@ export class RegistryHTTPServer {
     const exchange: Exchange = { socket, state };
     state.responseStarted = false;
     reader.setDeadline(monotonic() + this.readDeadlineSec);
-    const line = await reader.readLine(65537);
+    const line = await reader.readLine(MAX_LINE_PROBE_BYTES);
     if (line.length === 0) return true;
-    if (line.length > 65536) {
+    if (line.length > MAX_LINE_BYTES) {
       await this.sendJson(exchange, { status: 400, close: true }, errorBody('invalid_request', 'Request line is too long.'));
       return true;
     }
@@ -469,7 +479,7 @@ export class RegistryHTTPServer {
 function parseRequestLine(line: Buffer): { method: string; target: string; version: string } | null {
   const text = line.toString('utf8').replace(/\r?\n$/, '');
   const parts = text.split(' ');
-  if (parts.length !== 3) return null;
+  if (parts.length !== REQUEST_LINE_PARTS) return null;
   const [method, target, version] = parts;
   if (!method || !target || !version?.startsWith('HTTP/')) return null;
   return { method, target, version };
@@ -478,8 +488,8 @@ function parseRequestLine(line: Buffer): { method: string; target: string; versi
 async function readHeaders(reader: DeadlineReader): Promise<Buffer | null> {
   const chunks: Buffer[] = [];
   let total = 0;
-  while (total < 65536) {
-    const line = await reader.readLine(65537);
+  while (total < MAX_LINE_BYTES) {
+    const line = await reader.readLine(MAX_LINE_PROBE_BYTES);
     if (line.length === 0) return null;
     chunks.push(line);
     total += line.length;

@@ -10,6 +10,7 @@ import {
   StageOutcome, truncateText, VERIFY_EXHAUSTED, type VerifyRunner, type VerifyRunResult,
 } from '@nodeint/migent-kernel';
 import { renderProviderPrompt } from '@nodeint/migent-prompts';
+import { HANDOFF_FILE_PROTOCOL } from '@nodeint/migent-prompts';
 import type { AgentSessionRecord, ExecutionContext, SessionStore } from '@nodeint/migent-session';
 import { allStageArtifacts, isWorkflowV2,  stageArtifactsFor, type StageSpec } from '@nodeint/migent-workflow';
 
@@ -117,7 +118,7 @@ export class TurnLoop {
     this.questionFile = questionRequestPath(state.context);
     this.handoffFile = handoffPath(state.context);
     this.files = { protocol: state.protocol, questionFile: this.questionFile, handoffFile: this.handoffFile };
-    this.signalFile = state.protocol >= 3 ? this.handoffFile : this.questionFile;
+    this.signalFile = state.protocol >= HANDOFF_FILE_PROTOCOL ? this.handoffFile : this.questionFile;
     this.keepFile = state.keepFile ?? false;
   }
 

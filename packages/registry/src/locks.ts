@@ -2,8 +2,10 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { lstatSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 
+import { MS_PER_SECOND } from '@nodeint/migent-kernel';
 import lockfile from 'proper-lockfile';
 
+import { MIN_POLL_SEC } from './constants.js';
 import { monotonic, sleep } from './time.js';
 
 export class RegistryBusy extends Error {
@@ -93,7 +95,7 @@ export class ProcessLock {
           const index = this.waiters.indexOf(waiter);
           if (index >= 0) this.waiters.splice(index, 1);
           resolve(false);
-        }, seconds * 1000),
+        }, seconds * MS_PER_SECOND),
       };
       this.waiters.push(waiter);
     });
@@ -151,7 +153,7 @@ async function acquireFileLock(
     if (release !== null) return release;
     const remaining = deadline - monotonic();
     if (remaining <= 0) throw busyError();
-    await lockOps.sleep(Math.min(0.05, remaining));
+    await lockOps.sleep(Math.min(MIN_POLL_SEC, remaining));
   }
 }
 

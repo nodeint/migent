@@ -1,5 +1,10 @@
 import {
-  renderHandoffCorrection, renderOutputCorrection, renderQuestionCorrection, renderResponseCorrection, type TurnKind,
+  HANDOFF_FILE_PROTOCOL,
+  renderHandoffCorrection,
+  renderOutputCorrection,
+  renderQuestionCorrection,
+  renderResponseCorrection,
+  type TurnKind,
 } from '@nodeint/migent-prompts';
 
 import { HandoffFileError } from './handoff.js';
@@ -43,7 +48,10 @@ export const CORRECTION_POLICY: Readonly<Record<CorrectionKind, CorrectionRule>>
   stage_output: {
     budget: 1, contract: 'reminder', turnKind: 'output_correction',
     event: 'stage.output_missing', failureReason: 'stage_output_missing', keepFile: false,
-    render: (entry, files) => renderOutputCorrection({ ...parts(entry), handoffFile: files.protocol >= 3 ? files.handoffFile : null }),
+    render: (entry, files) => renderOutputCorrection({
+      ...parts(entry),
+      handoffFile: files.protocol >= HANDOFF_FILE_PROTOCOL ? files.handoffFile : null,
+    }),
     detail: plainDetail,
   },
   question_file: {

@@ -4,12 +4,14 @@ import { writeJsonAtomic } from '@nodeint/migent-kernel';
 import { storedQuestions } from '@nodeint/migent-kernel';
 import { isRecord } from '@nodeint/migent-workflow';
 
+import { MANIFEST_SCHEMA_EVENT_LOG } from './constants.js';
 import { readStatusFileState } from './query.js';
 import {
   CANCELLED_REPLY,
   type ParsedEvent,
   skipsStatusWrite,
 } from './session-events.js';
+import { EVENT_VERSION } from './session-events.js';
 import { loadFoldInputs, readSessionManifest } from './session-fold-read.js';
 import type { FoldExecution, FoldInputs, SessionManifest } from './session-fold-types.js';
 import { cloneRecord, decisionOf, differingKeys, eventExecutionOrder, isExecutionScoped, later, latestExecution, outcomeRecord, textOr, toStageOutcome } from './session-fold-util.js';
@@ -25,7 +27,7 @@ import { StatusDraft } from './session-status-draft.js';
 import { effectiveTitleFrom, overlayTitle } from './session-title.js';
 
 export function foldStatus(inputs: FoldInputs): Record<string, unknown> {
-  const draft = inputs.schemaVersion >= 2 ? foldSchema2(inputs) : foldV1(inputs);
+  const draft = inputs.schemaVersion >= MANIFEST_SCHEMA_EVENT_LOG ? foldSchema2(inputs) : foldV1(inputs);
   applyManualCompletion(draft, inputs.events);
   draft.applyTitle(effectiveTitleFrom(inputs.titleRecord, inputs.manifest.title));
   draft.addPathOnlyOutputs(inputs.outputFiles);
@@ -95,7 +97,7 @@ export function writeQuestionsFile(sessionDirectory: string, inputs: FoldInputs)
 export function statusDriftMessage(workspace: string, sessionId: string): string | null {
   const sessionDirectory = path.join(workspace, '.migent', 'sessions', sessionId);
   const manifest = readSessionManifest(sessionDirectory);
-  if (manifest.schemaVersion < 2) return null;
+  if (manifest.schemaVersion < MANIFEST_SCHEMA_EVENT_LOG) return null;
   const read = readStatusFileState(path.join(sessionDirectory, 'status.json'));
   if (read.state !== 'ok') return null;
   let folded: Record<string, unknown>;
@@ -116,7 +118,7 @@ function foldV1(inputs: FoldInputs): StatusDraft {
   const noted = new Map<string, RunningStage>();
   let updatedAt = textOr(draft.get('updated_at')) ?? inputs.manifest.createdAt;
   for (const event of inputs.events) {
-    if (event.v < 2) continue;
+    if (event.v < EVENT_VERSION) continue;
     if (event.event === 'workflow.refreshed') continue;
     if (applySharedEvent(draft, event, noted)) updatedAt = later(updatedAt, event.timestamp);
   }
@@ -351,7 +353,7 @@ function publishExecutionStatus(
   if (sessionStatus === 'completed' && !draft.get('completion_method')) {
     draft.set('completion_method', 'agent');
   }
-  if (inputs.schemaVersion < 2) {
+  if (inputs.schemaVersion < MANIFEST_SCHEMA_EVENT_LOG) {
     draft.noteLatestExecution(latest.executionId, latest.status, latest.stageId);
     draft.recordLatestDecision(decisionOfOutcome(latest.outcome));
   }
@@ -471,7 +473,7 @@ function latestSeenId(seen: ReadonlyMap<string, SeenExecution>): string | null {
 function initialStatus(manifest: SessionManifest, schemaVersion: number): StatusDraft {
   const draft = new StatusDraft({
     session_id: manifest.sessionId,
-    status: schemaVersion >= 2 ? 'active' : manifestStatusToSession(manifest.manifestStatus),
+    status: schemaVersion >= MANIFEST_SCHEMA_EVENT_LOG ? 'active' : manifestStatusToSession(manifest.manifestStatus),
   });
   draft.applyManifestIdentity(manifest);
   if (manifest.createdAt) draft.set('updated_at', manifest.createdAt);

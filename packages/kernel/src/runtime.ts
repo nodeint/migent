@@ -1,3 +1,5 @@
+import { MS_PER_SECOND, PAD_WIDTH_2, SECONDS_PER_HOUR, SECONDS_PER_MINUTE } from './constants.js';
+
 export { addArtifactContext, addStageOutcomeContract, flattenHistory, type ProviderPromptOptions,renderProviderPrompt } from '@nodeint/migent-prompts';
 export const MIGENT_DIRNAME = '.migent';
 export const EXECUTIONS_DIRNAME = 'executions';
@@ -14,18 +16,18 @@ export function log(message: string): void {
 
 /** Local time, `HH:MM:SS`. */
 export function formatClock(date = new Date()): string {
-  const hh = String(date.getHours()).padStart(2, '0');
-  const mm = String(date.getMinutes()).padStart(2, '0');
-  const ss = String(date.getSeconds()).padStart(2, '0');
+  const hh = String(date.getHours()).padStart(PAD_WIDTH_2, '0');
+  const mm = String(date.getMinutes()).padStart(PAD_WIDTH_2, '0');
+  const ss = String(date.getSeconds()).padStart(PAD_WIDTH_2, '0');
   return `${hh}:${mm}:${ss}`;
 }
 
 /** Whole seconds, as `12s`, `3m 4s`, or `1h 2m 3s`. */
 export function formatDuration(milliseconds: number): string {
-  const total = Math.max(0, Math.round(milliseconds / 1000));
-  const hours = Math.floor(total / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  const seconds = total % 60;
+  const total = Math.max(0, Math.round(milliseconds / MS_PER_SECOND));
+  const hours = Math.floor(total / SECONDS_PER_HOUR);
+  const minutes = Math.floor((total % SECONDS_PER_HOUR) / SECONDS_PER_MINUTE);
+  const seconds = total % SECONDS_PER_MINUTE;
   if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
   if (minutes > 0) return `${minutes}m ${seconds}s`;
   return `${seconds}s`;

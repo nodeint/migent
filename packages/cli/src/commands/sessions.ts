@@ -5,7 +5,7 @@ import { Command, type OptionValues } from 'commander';
 
 import { printError, printSessions } from '../display.js';
 import { writeJson } from '../emit.js';
-import { exitText } from '../exits.js';
+import { EXIT_CONFIG, exitText } from '../exits.js';
 import { SESSION_COLUMN, sessionFields } from '../session-row.js';
 import { optionalText } from '../text.js';
 import { findWorkspace, invocationCwdPath } from '../workspace.js';
@@ -51,13 +51,13 @@ export function runSessionMetrics(
 ): number {
   if (!options.asJson) {
     printError('session metrics requires --json.');
-    return 2;
+    return EXIT_CONFIG;
   }
   const selection = parseListSelection({ ...options, latest: false });
   const sessionId = optionalText(session);
   if (sessionId !== null && hasListFilter(selection)) {
     printError('List filters cannot be combined with a session.');
-    return 2;
+    return EXIT_CONFIG;
   }
   if (sessionId === null) {
     const rows = listSealedMetrics(workspace, {
@@ -71,11 +71,11 @@ export function runSessionMetrics(
   const sealed = readSealedMetrics(workspace, sessionId);
   if (sealed.state === 'missing') {
     printError(`No metrics for session: ${sessionId}. Metrics are recorded when a workflow session completes.`);
-    return 2;
+    return EXIT_CONFIG;
   }
   if (sealed.state === 'corrupt') {
     printError(`metrics.json for session ${sessionId} is not valid JSON.`);
-    return 2;
+    return EXIT_CONFIG;
   }
   writeJson(SealedMetrics, sealed.metrics);
   return 0;
@@ -101,24 +101,24 @@ export async function runSessions(
   const sessionId = optionalText(session);
   if (sessionId !== null && hasListFilter(selection)) {
     printError('List filters cannot be combined with a session.');
-    return 2;
+    return EXIT_CONFIG;
   }
   if (sessionId === null) return listOnly(workspace, options, selection);
   if (options.until && !options.follow) {
     printError('--until requires --follow.');
-    return 2;
+    return EXIT_CONFIG;
   }
   if (options.cursor !== undefined && !options.follow) {
     printError('--cursor requires --follow.');
-    return 2;
+    return EXIT_CONFIG;
   }
   if (options.exitWhenDone && !options.follow) {
     printError('--exit-when-done requires --follow.');
-    return 2;
+    return EXIT_CONFIG;
   }
   if (options.until && options.execution === null) {
     printError('--until requires --execution.');
-    return 2;
+    return EXIT_CONFIG;
   }
   const cursor = parseCursor(options.cursor);
   return followSession(workspace, sessionId, {
@@ -145,23 +145,23 @@ function listOnly(
 ): number {
   if (options.follow) {
     printError('--follow requires a session.');
-    return 2;
+    return EXIT_CONFIG;
   }
   if (options.until) {
     printError('--until requires --follow.');
-    return 2;
+    return EXIT_CONFIG;
   }
   if (options.cursor !== undefined) {
     printError('--cursor requires --follow.');
-    return 2;
+    return EXIT_CONFIG;
   }
   if (options.exitWhenDone) {
     printError('--exit-when-done requires --follow.');
-    return 2;
+    return EXIT_CONFIG;
   }
   if (options.execution !== null) {
     printError('--execution requires a session.');
-    return 2;
+    return EXIT_CONFIG;
   }
   return listSessions(workspace, { ...selection, asJson: options.asJson });
 }
@@ -250,7 +250,7 @@ export function registerSessionLifecycleCommands(session: Command, settle: Settl
         const wait = Number(options.wait);
         if (!Number.isFinite(wait) || wait < 0) {
           printError('--wait must be a number of seconds, 0 or more.');
-          return 2;
+          return EXIT_CONFIG;
         }
         return cancelSession(findWorkspace(invocationCwdPath()), id, { waitSeconds: wait, asJson: options.json === true });
       }),

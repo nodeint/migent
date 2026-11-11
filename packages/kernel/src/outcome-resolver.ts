@@ -1,3 +1,5 @@
+import { HANDOFF_FILE_PROTOCOL } from '@nodeint/migent-prompts';
+
 import { loadHandoffFile } from './handoff.js';
 import { loadQuestionFile } from './questions.js';
 import { type AskTarget,parseStageOutcome, StageOutcome } from './stage-outcome.js';
@@ -21,7 +23,7 @@ export interface OutcomeContext {
  * `status: question` the question request file; it throws QuestionFileError when that file is unusable.
  */
 export function resolveStageOutcome(response: string, context: OutcomeContext): StageOutcome | null {
-  if (context.protocol >= 3) {
+  if (context.protocol >= HANDOFF_FILE_PROTOCOL) {
     if (!context.required) return null;
     const handoff = loadHandoffFile(context.handoffFile, { decisionValues: context.decisionValues, ask: context.ask });
     if (handoff.status === 'question') {

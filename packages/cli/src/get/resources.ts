@@ -76,6 +76,11 @@ const configResource: ProjectResource<typeof GetConfig, typeof GetConfig> = {
 
 const PROJECT_RESOURCES: readonly Resource[] = [workflowResource, roleResource, agentResource, configResource];
 
+/** Aliases shown per resource in listings and usage text. */
+export const LISTED_NAMES = 2;
+/** Column width of the resource-name column in `get` help. */
+export const LIST_NAME_WIDTH = 18;
+
 export const RESOURCES: readonly Resource[] = [...PROJECT_RESOURCES, ...MACHINE_RESOURCES];
 
 export function findResource(type: string): Resource | undefined {
@@ -83,7 +88,7 @@ export function findResource(type: string): Resource | undefined {
 }
 
 export function resourceTypes(): string {
-  return RESOURCES.map((resource) => resource.names.slice(0, 2).join('|')).join(', ');
+  return RESOURCES.map((resource) => resource.names.slice(0, LISTED_NAMES).join('|')).join(', ');
 }
 
 /** Pure lookup: resolving a client never spawns a CLI. */

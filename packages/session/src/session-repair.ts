@@ -11,9 +11,11 @@ import { StageOutcome } from '@nodeint/migent-kernel';
 import { isRecord } from '@nodeint/migent-workflow';
 import { isWorkflowV2 } from '@nodeint/migent-workflow';
 
+import { MANIFEST_SCHEMA_EVENT_LOG } from './constants.js';
 import { publishNextSuggestions } from './next-handoff.js';
 import {
   appendLifecycleEvent,
+  EVENT_VERSION,
   type EventDraft,
   eventRecord,
   parseableTornTail,
@@ -70,13 +72,13 @@ export function repairSessionUnlocked(
   const before = loaded.previousStatus === null ? statusFileKind(statusPath) : 'ok';
   const acceptDraft = acceptTask && before === 'corrupt' ? acceptedTaskDraft(sessionDirectory, sessionId) : null;
   let inputs = loaded;
-  let drafts: EventDraft[] = manifest.schemaVersion >= 2 ? reconcileDrafts(inputs) : [];
+  let drafts: EventDraft[] = manifest.schemaVersion >= MANIFEST_SCHEMA_EVENT_LOG ? reconcileDrafts(inputs) : [];
   if (acceptDraft) drafts.push(acceptDraft);
   // Appending seals a torn tail. Fold that line first, and leave the file untouched on refusal.
   const torn = drafts.length > 0 ? parseableTornTail(path.join(sessionDirectory, 'events.jsonl')) : null;
   if (torn) {
     inputs = { ...loaded, events: [...loaded.events, torn] };
-    drafts = manifest.schemaVersion >= 2 ? reconcileDrafts(inputs) : [];
+    drafts = manifest.schemaVersion >= MANIFEST_SCHEMA_EVENT_LOG ? reconcileDrafts(inputs) : [];
     if (acceptDraft) drafts.push(acceptDraft);
   }
   const folded = foldStatus(withDrafts(inputs, drafts));
@@ -115,7 +117,7 @@ function parsedFromDraft(draft: EventDraft): ParsedEvent {
   const raw = eventRecord(0, draft);
   return {
     raw,
-    v: 2,
+    v: EVENT_VERSION,
     seq: null,
     event: draft.event,
     timestamp: draft.timestamp,
@@ -249,7 +251,7 @@ function replacementRefusal(
   if (typeof folded.workflow_id !== 'string' || folded.workflow_id === '') {
     reasons.push('workflow_id is missing from manifest.yaml');
   }
-  if (inputs.schemaVersion < 2 && before === 'corrupt' && !acceptTask) {
+  if (inputs.schemaVersion < MANIFEST_SCHEMA_EVENT_LOG && before === 'corrupt' && !acceptTask) {
     reasons.push('task_sha256 cannot be kept because status.json does not parse');
   }
   const previous = inputs.previousStatus;

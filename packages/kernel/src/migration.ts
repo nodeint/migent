@@ -8,6 +8,7 @@ version 0. Writes stay on the text patchers.
 import { documentVersion, isRecord } from '@nodeint/migent-workflow';
 import { conditionalStages, parseWorkflowMapping,SCHEMA_VERSION } from '@nodeint/migent-workflow';
 
+import { CONFIG_CLIENTS_LIFT_FROM } from './constants.js';
 import { ConfigurationError } from './errors.js';
 import { type ConfigLayerKind, liftConfigAgents, liftConfigClients, type Lifted, liftWorkflowClients } from './migration-config.js';
 import { migrateModels, migrateRoles, migrateStages } from './migration-legacy.js';
@@ -43,6 +44,15 @@ export interface MigrateConfigOptions extends MigrationLayer {
   context?: Readonly<Record<string, unknown>>;
 }
 
+// Each migration step runs on documents at exactly this schema version, then bumps it by one.
+const CONFIG_AGENTS_LIFT_FROM = 4;
+const WORKFLOW_COMPLETION_LIFT_FROM = 1;
+const WORKFLOW_DECISIONS_LIFT_FROM = 2;
+const WORKFLOW_REQUIRES_DROP_FROM = 3;
+const WORKFLOW_AGENTS_LIFT_FROM = 4;
+const WORKFLOW_CLIENTS_LIFT_FROM = 5;
+const WORKFLOW_ARTIFACTS_LIFT_FROM = 6;
+
 export function migrateConfig(
   config: Readonly<Record<string, unknown>>,
   options: MigrateConfigOptions = {},
@@ -58,13 +68,13 @@ export function migrateConfig(
     document = migrateModels(document, version, context);
     document = migrateRoles(document, version, context);
     // Version 4 to 5 renames and reshapes keys for every provider alike.
-    if (version === 4) {
+    if (version === CONFIG_AGENTS_LIFT_FROM) {
       providerStage = document;
       const lifted = liftConfigAgents(document);
       document = lifted.document;
       structural = lifted.notes;
     }
-    if (version === 5) {
+    if (version === CONFIG_CLIENTS_LIFT_FROM) {
       const lifted = liftConfigClients({
         layer: layers.layer ?? 'project',
         layerConfig: document,
@@ -104,17 +114,17 @@ export function migrateWorkflow(
   let document = deepCopyRecord(workflow);
   const semanticNotes: string[] = [];
   while (version < current) {
-    if (version === 6) {
+    if (version === WORKFLOW_ARTIFACTS_LIFT_FROM) {
       const lifted = liftWorkflowArtifacts(document);
       document = lifted.document;
       semanticNotes.push(...lifted.notes);
     }
     document = migrateStages(document, config, version);
-    if (version === 1) document = liftWorkflowCompletion(document);
-    if (version === 2) document = liftWorkflowDecisions(document);
-    if (version === 3) document = withoutKey(document, 'requires');
-    if (version === 4) document = liftWorkflowAgents(document);
-    if (version === 5) {
+    if (version === WORKFLOW_COMPLETION_LIFT_FROM) document = liftWorkflowCompletion(document);
+    if (version === WORKFLOW_DECISIONS_LIFT_FROM) document = liftWorkflowDecisions(document);
+    if (version === WORKFLOW_REQUIRES_DROP_FROM) document = withoutKey(document, 'requires');
+    if (version === WORKFLOW_AGENTS_LIFT_FROM) document = liftWorkflowAgents(document);
+    if (version === WORKFLOW_CLIENTS_LIFT_FROM) {
       const lifted = liftWorkflowClients(document, config, clientIds);
       document = lifted.document;
     }

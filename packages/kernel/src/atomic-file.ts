@@ -2,6 +2,8 @@ import { randomBytes } from 'node:crypto';
 import { closeSync, fstatSync, fsyncSync, openSync, readSync, renameSync, rmSync, writeSync } from 'node:fs';
 import path from 'node:path';
 
+import { INT32_BYTES, JSON_INDENT, NEWLINE_BYTE, TEMP_SUFFIX_BYTES } from './constants.js';
+
 const RENAME_RETRIES = 5;
 const RENAME_BACKOFF_MS = 10;
 const RETRYABLE_RENAME = new Set(['EPERM', 'EBUSY']);
@@ -14,7 +16,7 @@ export function isAtomicTempName(name: string): boolean {
 export function tempPathFor(destination: string): string {
   return path.join(
     path.dirname(destination),
-    `.${path.basename(destination)}.${randomBytes(6).toString('hex')}.tmp`,
+    `.${path.basename(destination)}.${randomBytes(TEMP_SUFFIX_BYTES).toString('hex')}.tmp`,
   );
 }
 
@@ -39,7 +41,7 @@ export function renameWithRetry(source: string, destination: string): void {
       if (process.platform !== 'win32' || !RETRYABLE_RENAME.has(code) || attempt >= RENAME_RETRIES) {
         throw error;
       }
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, RENAME_BACKOFF_MS * (attempt + 1));
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(INT32_BYTES)), 0, 0, RENAME_BACKOFF_MS * (attempt + 1));
     }
   }
 }
@@ -67,7 +69,7 @@ export function writeFileAtomic(destination: string, data: string): void {
 }
 
 export function writeJsonAtomic(destination: string, value: unknown): void {
-  writeFileAtomic(destination, JSON.stringify(value, null, 2));
+  writeFileAtomic(destination, JSON.stringify(value, null, JSON_INDENT));
 }
 
 /** Append one complete line in a single write, then fsync. A torn tail stays its own skipped line. */
@@ -103,7 +105,7 @@ function separateTornTail(fd: number): boolean {
   if (size === 0) return false;
   const last = Buffer.alloc(1);
   readSync(fd, last, 0, 1, size - 1);
-  if (last[0] === 0x0a) return false;
+  if (last[0] === NEWLINE_BYTE) return false;
   // `r+` leaves the offset at the start. Write the separator at the end.
   writeSync(fd, '\n', size);
   return true;

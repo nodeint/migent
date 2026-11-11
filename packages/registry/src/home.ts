@@ -4,6 +4,8 @@ import path from 'node:path';
 
 import { migentHomeOverride } from '@nodeint/migent-kernel';
 
+import { DIRECTORY_MODE } from './constants.js';
+
 export const homeOs = {
   homedir(): string {
     return homedir();
@@ -22,7 +24,7 @@ export function registryHomePath(): string {
 
 export function ensureRegistryHome(directory?: string): string {
   const target = directory ?? registryHomePath();
-  mkdirSync(target, { recursive: true, mode: 0o700 });
-  chmodSync(target, 0o700);
+  mkdirSync(target, { recursive: true, mode: DIRECTORY_MODE });
+  chmodSync(target, DIRECTORY_MODE);
   return target;
 }

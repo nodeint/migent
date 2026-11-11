@@ -11,6 +11,13 @@ import { PACKAGE_VERSION } from '../version.js';
 const PACKAGE_NAME = '@nodeint/migent';
 const REGISTRY_URL = `https://registry.npmjs.org/${PACKAGE_NAME.replace('/', '%2f')}/latest`;
 
+/** Time allowed for the registry lookup, in milliseconds. */
+const REGISTRY_TIMEOUT_MS = 10_000;
+/** A version is `core-prerelease`. */
+const VERSION_SPLIT_PARTS = 2;
+/** Compared version components: major, minor, patch. */
+const VERSION_COMPONENTS = 3;
+
 export type PackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun';
 
 export interface UpdateOptions {
@@ -32,7 +39,7 @@ export const updateHooks: { fetchLatest: FetchLatest | null; run: UpdateRunner |
 };
 
 async function fetchLatestVersion(): Promise<string> {
-  const response = await fetch(REGISTRY_URL, { signal: AbortSignal.timeout(10_000) });
+  const response = await fetch(REGISTRY_URL, { signal: AbortSignal.timeout(REGISTRY_TIMEOUT_MS) });
   if (!response.ok) throw new Error(`registry answered ${response.status}`);
   const body = (await response.json()) as { version?: unknown };
   if (typeof body.version !== 'string') throw new Error('registry response has no version');
@@ -42,12 +49,12 @@ async function fetchLatestVersion(): Promise<string> {
 /** Negative when `a` is older than `b`. Pre-release suffixes sort before the release. */
 export function compareVersions(a: string, b: string): number {
   const parse = (value: string): [number[], string] => {
-    const [core = '', pre = ''] = value.replace(/^v/, '').split('-', 2);
+    const [core = '', pre = ''] = value.replace(/^v/, '').split('-', VERSION_SPLIT_PARTS);
     return [core.split('.').map((part) => Number.parseInt(part, 10) || 0), pre];
   };
   const [left, leftPre] = parse(a);
   const [right, rightPre] = parse(b);
-  for (let index = 0; index < 3; index += 1) {
+  for (let index = 0; index < VERSION_COMPONENTS; index += 1) {
     const diff = (left[index] ?? 0) - (right[index] ?? 0);
     if (diff !== 0) return diff;
   }

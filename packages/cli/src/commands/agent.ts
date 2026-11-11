@@ -10,6 +10,7 @@ import { type OptionValues } from 'commander';
 import { clientRegistry, parseOptions } from '../client.js';
 import { printAgent, printError, printNotice, printReplyCommand,printResumeCommand } from '../display.js';
 import { writeJson } from '../emit.js';
+import { EXIT_CANCELLED,EXIT_CONFIG, EXIT_QUESTION, EXIT_VERIFY } from '../exits.js';
 import { cliHooks } from '../hooks.js';
 import { requireCurrentSchema } from '../migrate.js';
 import { bindCancellationSignals } from '../signals.js';
@@ -54,7 +55,7 @@ export async function dispatchAgent(
   } catch (error) {
     if (error instanceof Error) {
       printError(error.message);
-      return 2;
+      return EXIT_CONFIG;
     }
     throw error;
   }
@@ -63,7 +64,7 @@ export async function dispatchAgent(
   } catch (error) {
     if (isSessionLockLost(error)) {
       printError(error.message);
-      return 2;
+      return EXIT_CONFIG;
     }
     throw error;
   } finally {
@@ -131,12 +132,12 @@ export async function dispatchAgent(
     } catch (error) {
       if (error instanceof CancellationRequested) {
         log(error.message);
-        return finishRole(resolvedSessionId, 130);
+        return finishRole(resolvedSessionId, EXIT_CANCELLED);
       }
       if (error instanceof ConfigurationError) throw error;
       if (error instanceof Error) {
         printError(error.message);
-        return 2;
+        return EXIT_CONFIG;
       }
       throw error;
     } finally {
@@ -152,7 +153,7 @@ export async function dispatchAgent(
         );
       }
       if (resumedMany.some((item) => item.failure_reason === 'verify_exhausted')) {
-        return finishRole(resolvedSessionId, 6);
+        return finishRole(resolvedSessionId, EXIT_VERIFY);
       }
       return finishRole(resolvedSessionId, resumedMany.every((item) => item.outcome_status === 'complete') ? 0 : 1);
     }
@@ -175,7 +176,7 @@ export async function continueAgent(
   } catch (error) {
     if (error instanceof Error) {
       printError(error.message);
-      return 2;
+      return EXIT_CONFIG;
     }
     throw error;
   }
@@ -184,7 +185,7 @@ export async function continueAgent(
   } catch (error) {
     if (isSessionLockLost(error)) {
       printError(error.message);
-      return 2;
+      return EXIT_CONFIG;
     }
     throw error;
   } finally {
@@ -218,7 +219,7 @@ export async function continueAgent(
     const reply = args.reply ?? (pending ? store.questionReply(args.sessionId, pending.executionId) : null);
     if (sessionStatus === 'question' && reply === null) {
       printNotice(`Session ${args.sessionId} has a pending question. Continue with --reply.`);
-      return 9;
+      return EXIT_QUESTION;
     }
     const latest = store.latestExecution(args.sessionId);
     if (latest === null) throw new ConfigurationError(`Session ${args.sessionId} has no execution.`);
@@ -280,12 +281,12 @@ export async function continueAgent(
     } catch (error) {
       if (error instanceof CancellationRequested) {
         log(error.message);
-        return finishRole(args.sessionId, 130);
+        return finishRole(args.sessionId, EXIT_CANCELLED);
       }
       if (error instanceof ConfigurationError) throw error;
       if (error instanceof Error) {
         printError(error.message);
-        return 2;
+        return EXIT_CONFIG;
       }
       throw error;
     } finally {
@@ -334,7 +335,7 @@ async function runCancelledRole(
       workspace,
     );
   }
-  if (finished.some((item) => item.failure_reason === 'verify_exhausted')) return finishRole(sessionId, 6);
+  if (finished.some((item) => item.failure_reason === 'verify_exhausted')) return finishRole(sessionId, EXIT_VERIFY);
   return finishRole(sessionId, finished.every((item) => item.outcome_status === 'complete') ? 0 : 1);
 }
 
@@ -359,9 +360,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function finishRole(sessionId: string, code: number): number {
-  if (code === 9) printReplyCommand(sessionId);
-  if (code === 1 || code === 6 || code === 130) printResumeCommand(sessionId);
-  if (code === 130) printReplyCommand(sessionId);
+  if (code === EXIT_QUESTION) printReplyCommand(sessionId);
+  if (code === 1 || code === EXIT_VERIFY || code === EXIT_CANCELLED) printResumeCommand(sessionId);
+  if (code === EXIT_CANCELLED) printReplyCommand(sessionId);
   return code;
 }
 
@@ -391,7 +392,7 @@ function executionProfile(
 
 function roleExitCode(status: unknown): number {
   if (status === 'complete') return 0;
-  return status === 'question' ? 9 : 1;
+  return status === 'question' ? EXIT_QUESTION : 1;
 }
 
 function executionBlocker(directory: string): string | null {
@@ -450,10 +451,10 @@ export function continueRoleSession(
   if (options.refreshWorkflow === true) flags.push('--refresh-workflow');
   if (flags.length > 0) {
     printError(`Session ${sessionId} is a role session. Omit ${flags.join(', ')}.`);
-    return 2;
+    return EXIT_CONFIG;
   }
   const reply = readReply(options);
-  if (reply === 'invalid') return 2;
+  if (reply === 'invalid') return EXIT_CONFIG;
   return continueAgent(workspace, { sessionId, reply });
 }
 
@@ -461,17 +462,17 @@ export async function runAgent(options: OptionValues, sessionId: string | null):
   const role = optionalText(options.role);
   if (role === null) {
     printError('Pass --role.');
-    return 2;
+    return EXIT_CONFIG;
   }
   if (options.provider !== undefined) {
     printError(`--provider has been removed; use --client <id> (${CLIENT_MAPPING}).`);
-    return 2;
+    return EXIT_CONFIG;
   }
   const client = optionalText(options.client);
   const model = optionalText(options.model);
   if ((client === null) !== (model === null)) {
     printError('Pass both --client and --model, or omit both.');
-    return 2;
+    return EXIT_CONFIG;
   }
   const prompt = optionalText(options.prompt);
   const promptFile = optionalText(options.file);
@@ -479,7 +480,7 @@ export async function runAgent(options: OptionValues, sessionId: string | null):
   const selected = Number(prompt !== null) + Number(promptFile !== null) + Number(promptStdin);
   if (selected !== 1) {
     printError('Pass one of --prompt, --file, or --stdin.');
-    return 2;
+    return EXIT_CONFIG;
   }
   return dispatchAgent(findWorkspace(invocationCwdPath()), {
     role,

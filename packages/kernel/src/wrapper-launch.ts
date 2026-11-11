@@ -2,6 +2,7 @@
 import { type ChildProcess, spawn, type StdioOptions } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
 
+import { isShellSignalExitCode } from './constants.js';
 import { wrapperArgv } from './process-ownership.js';
 import { TailBuffer } from './tail-buffer.js';
 import {
@@ -122,7 +123,7 @@ export interface WaitForReadyOptions {
 }
 
 function signalLike(code: number | null, signal: string | null): boolean {
-  return signal !== null || (code !== null && code > 128 && code <= 128 + 64);
+  return signal !== null || (code !== null && isShellSignalExitCode(code));
 }
 
 /**

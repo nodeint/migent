@@ -136,10 +136,15 @@ export async function checkModelAvailability(
   return Object.fromEntries(results.filter((entry) => entry !== null));
 }
 
+/** Edit-distance budget: at least this, growing with name length. */
+const MIN_TYPO_DISTANCE = 2;
+const TYPO_LENGTH_DIVISOR = 4;
+const MAX_SUGGESTIONS = 5;
+
 /** Up to five catalog names that share a prefix with, or sit a few edits from, the typo. */
 export function closest(name: string, ids: readonly string[]): string[] {
   const target = name.toLowerCase();
-  const limit = Math.max(2, Math.ceil(target.length / 4));
+  const limit = Math.max(MIN_TYPO_DISTANCE, Math.ceil(target.length / TYPO_LENGTH_DIVISOR));
   return ids
     .map((id) => {
       const lower = id.toLowerCase();
@@ -148,7 +153,7 @@ export function closest(name: string, ids: readonly string[]): string[] {
     })
     .filter((entry) => entry.score <= limit)
     .sort((left, right) => left.score - right.score || left.id.localeCompare(right.id))
-    .slice(0, 5)
+    .slice(0, MAX_SUGGESTIONS)
     .map((entry) => entry.id);
 }
 

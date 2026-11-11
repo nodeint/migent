@@ -1,4 +1,5 @@
 
+import { SCHEMA_V2 } from './constants.js';
 import type { WorkflowDocument, WorkflowRequires } from './model.js';
 
 /** A cross-workflow finding. `workflow` is the id it concerns; `files` the declaring files, when known. */
@@ -147,7 +148,7 @@ export function checkRequires(
     }
     return problems;
   }
-  if ((documents[workflowId]?.schemaVersion ?? 1) >= 2) return problems;
+  if ((documents[workflowId]?.schemaVersion ?? 1) >= SCHEMA_V2) return problems;
   const decision = required.completion === null ? null : required.completion.decision;
   if (requires.decision === null || decision === null || decision.toLowerCase() !== requires.decision) {
     const actual = decision === null ? 'no decision' : decision;

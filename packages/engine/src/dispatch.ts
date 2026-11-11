@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
+import { EXIT_CATALOG, exitCode } from '@nodeint/migent-contracts';
 import type { ClientRegistry, ExecutionSnapshot, ScheduleState } from '@nodeint/migent-kernel';
 import { loadRoleResponsibilities, loadWorkspaceConfig, resolveStageTarget, type StageTarget } from '@nodeint/migent-kernel';
 import { ConfigurationError } from '@nodeint/migent-kernel';
@@ -264,18 +265,10 @@ function resultFromRun(result: RunResult, sessionId: string): StageDispatchResul
   });
 }
 
-export const EXECUTE_EXIT_CODES:Record<string, number> = {
-  completed: 0,
-  blocked: 1,
-  question: 9,
-  cancelled: 130,
-  stage_failed: 3,
-  revisions_exhausted: 4,
-  dispatch_limit: 5,
-  verify_exhausted: 6,
-  verify_failed: 7,
-  quota: 8,
-  stage: 0,
+/** Stop reason to exit code, derived from the contracts exit catalog. `stage` ends a one-stage run cleanly. */
+export const EXECUTE_EXIT_CODES: Record<string, number> = {
+  ...Object.fromEntries(EXIT_CATALOG.filter((entry) => entry.name !== 'config').map((entry) => [entry.name, entry.code])),
+  stage: exitCode('completed'),
 };
 
 export const TERMINAL_SESSION_STATUSES = new Set(['completed', 'blocked', 'question', 'cancelled']);
@@ -629,7 +622,7 @@ export function executeFinal(
   stages: Record<string, unknown>[],
 ): ExecuteResult {
   return {
-    code: EXECUTE_EXIT_CODES[stopReason] ?? 2,
+    code: EXECUTE_EXIT_CODES[stopReason] ?? exitCode('config'),
     status: text(status.status),
     stopReason,
     sessionId: text(status.session_id),

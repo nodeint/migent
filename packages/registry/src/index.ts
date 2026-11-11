@@ -16,6 +16,16 @@ import {
 export const REGISTRY_PLACEHOLDER = `registry:${KERNEL_PLACEHOLDER}`;
 
 export {
+  HTTP_BAD_REQUEST,
+  HTTP_CONFLICT,
+  HTTP_CREATED,
+  HTTP_METHOD_NOT_ALLOWED,
+  HTTP_NOT_FOUND,
+  HTTP_OK,
+  HTTP_UNAUTHORIZED,
+  MAX_PORT,
+} from './constants.js';
+export {
   callService,
   endpointFromHome,
   ensureRegistryHome,

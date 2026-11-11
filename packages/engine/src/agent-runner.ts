@@ -13,10 +13,10 @@ import { ConfigurationError } from '@nodeint/migent-kernel';
 import { debugEnabled, flattenHistory, log } from '@nodeint/migent-kernel';
 import { classifyGateError, type GateFailure, readCorrectionLedger, ruleForTurn } from '@nodeint/migent-kernel';
 import { StageOutcome } from '@nodeint/migent-kernel';
-import { platformHome } from '@nodeint/migent-kernel';
+import { isShellSignalExitCode, platformHome } from '@nodeint/migent-kernel';
 import { HandoffFileError } from '@nodeint/migent-kernel';
 import { QuestionFileError } from '@nodeint/migent-kernel';
-import { CURRENT_RESPONSE_PROTOCOL, renderProtocolUpdate, renderProviderPrompt, type TurnKind } from '@nodeint/migent-prompts';
+import { CURRENT_RESPONSE_PROTOCOL, LEGACY_RESPONSE_PROTOCOL, renderProtocolUpdate, renderProviderPrompt, type TurnKind } from '@nodeint/migent-prompts';
 import { loadFrozenWorkflow } from '@nodeint/migent-session';
 import { AgentSessionRecord, type ExecutionContext, SessionStore, stringOptions } from '@nodeint/migent-session';
 import { isRecord } from '@nodeint/migent-workflow';
@@ -131,7 +131,7 @@ export class AgentToolRunner {
     const source = request.resumeExecutionId ? store.executionContext(context.sessionId, request.resumeExecutionId) : null;
     const sourceMetadata = source === null ? null : readExecutionJson(source.directory);
     // A new conversation takes the current protocol; a continued one keeps its source's, never past 2 from a legacy stamp.
-    const protocol = isNew || source === null ? this.newConversationProtocol : Math.max(2, storedProtocol(sourceMetadata));
+    const protocol = isNew || source === null ? this.newConversationProtocol : Math.max(LEGACY_RESPONSE_PROTOCOL, storedProtocol(sourceMetadata));
     const previous = request.resumeExecutionId
       ? store.executionSnapshots(context.sessionId).find((row) => row.executionId === request.resumeExecutionId && row.stageId === stageId && row.outcomeStatus === 'question')
       : undefined;
@@ -237,7 +237,7 @@ export class AgentToolRunner {
     const questionFile = questionRequestPath(context);
     const handoffFile = handoffPath(context);
     const stamped = storedProtocol(metadata);
-    const protocol = Math.max(2, stamped);
+    const protocol = Math.max(LEGACY_RESPONSE_PROTOCOL, stamped);
     // A legacy execution continues under protocol 2 from here on; record it so later resumes, the
     // contract selection and the execution metadata agree.
     if (stamped !== protocol) store.saveExecutionProgress(context, record, { response_protocol: protocol });
@@ -291,7 +291,7 @@ export class AgentToolRunner {
           throw new ConfigurationError(`Execution ${executionId} has no prompt to resume.`);
         }
         // A first prompt saved under an older protocol carries the old question instructions.
-        if (sessionId !== null && ask !== null && stamped < 2) {
+        if (sessionId !== null && ask !== null && stamped < LEGACY_RESPONSE_PROTOCOL) {
           currentPrompt += renderProtocolUpdate({ ...sessionPaths(context, sessionId), turn: storedTurn(metadata),
             decisionValues, decisionInstructions: stage?.decisionInstructions, ask, questionFile,
           });
@@ -302,7 +302,7 @@ export class AgentToolRunner {
         currentPrompt = agentId
           ? last.content
           : flattenHistory(record.history as { role: string; content: string }[]);
-        const contract = agentId && stamped >= 2
+        const contract = agentId && stamped >= LEGACY_RESPONSE_PROTOCOL
           ? (pendingCorrection?.contract ?? 'reminder') : 'full';
         keepFile = pendingCorrection?.keepFile ?? false;
         currentPrompt = renderProviderPrompt(currentPrompt, { ...sessionPaths(context, sessionId), contract, turn: storedTurn(metadata), decisionValues, decisionInstructions: stage?.decisionInstructions, ask, protocol, questionFile, handoffFile, artifactDirectory: context.artifactDirectory, artifactName, artifactFiles: promptArtifactFiles(artifactFiles) });
@@ -527,7 +527,7 @@ function classifyFinishedProcess(
   if (exitCode === null) return { kind: 'provider', origin: 'start', message: executorError === null ? '' : executorError };
   const classified = classifyFailure(client, stdout, exitCode);
   // Signal death (negative, or the shell's 128 + signal) is not a normal exit: its reply never counts.
-  const signalled = exitCode < 0 || (exitCode > 128 && exitCode <= 128 + 64);
+  const signalled = exitCode < 0 || (isShellSignalExitCode(exitCode));
   return classified !== null && signalled ? { ...classified, origin: 'start' } : classified;
 }
 
@@ -605,9 +605,12 @@ function resolveWorkspace(workspace: string): string {
   }
 }
 
+/** Leading `~/` of a home-relative path. */
+const HOME_PREFIX = '~/';
+
 function expandHome(target: string): string {
   if (target === '~') return platformHome() || target;
-  if (target.startsWith('~/')) return path.join(platformHome() || '', target.slice(2));
+  if (target.startsWith(HOME_PREFIX)) return path.join(platformHome() || '', target.slice(HOME_PREFIX.length));
   return target;
 }
 

@@ -305,13 +305,15 @@ function locations(config: Readonly<Record<string, unknown>>): [string, unknown]
   return found;
 }
 
+const AGENTS_PREFIX = 'agents.';
+
 function findLocation(config: Readonly<Record<string, unknown>>, name: string): unknown {
   const match = /^roles\.(.+)\.agent$/.exec(name);
   if (match !== null && isRecord(config.roles)) {
     const role = config.roles[match[1] as string];
     return isRecord(role) ? role.agent : undefined;
   }
-  if (name.startsWith('agents.') && isRecord(config.agents)) return config.agents[name.slice(7)];
+  if (name.startsWith(AGENTS_PREFIX) && isRecord(config.agents)) return config.agents[name.slice(AGENTS_PREFIX.length)];
   return undefined;
 }
 

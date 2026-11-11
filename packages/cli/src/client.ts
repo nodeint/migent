@@ -26,6 +26,9 @@ import {
 import { cliHooks } from './hooks.js';
 
 // The catalog helpers belong to the doctor; commands keep importing them from here.
+/** Default time allowed for a client CLI probe, in milliseconds. */
+const DEFAULT_CLIENT_TIMEOUT_MS = 60_000;
+
 export type { CatalogSource, RunCommand, Which } from '@nodeint/migent-doctor';
 export { asCatalog, ClientCommandFailed, knownModel, loadCatalog, loadOptionValues } from '@nodeint/migent-doctor';
 
@@ -147,7 +150,7 @@ export function runClientCommand(
   if (command === undefined) throw new ClientCommandFailed('Client command is empty.');
   const completed = spawnProviderSync(command, args, {
     encoding: 'utf8',
-    timeout: options.timeoutMs ?? 60_000,
+    timeout: options.timeoutMs ?? DEFAULT_CLIENT_TIMEOUT_MS,
     ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
     windowsHide: true,
     ...(input === undefined ? {} : { input }),
@@ -191,8 +194,8 @@ export function runClientCommandAsync(
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ESRCH') child.kill();
       }
-      finish(() => reject(new Error(`${command} timed out after ${options.timeoutMs ?? 60_000}ms.`)));
-    }, options.timeoutMs ?? 60_000);
+      finish(() => reject(new Error(`${command} timed out after ${options.timeoutMs ?? DEFAULT_CLIENT_TIMEOUT_MS}ms.`)));
+    }, options.timeoutMs ?? DEFAULT_CLIENT_TIMEOUT_MS);
     child.stdout?.setEncoding('utf8').on('data', (chunk: string) => { stdout += chunk; });
     child.stderr?.setEncoding('utf8').on('data', (chunk: string) => { stderr += chunk; });
     child.on('error', (error) => finish(() => reject(new Error(error.message))));

@@ -1,5 +1,6 @@
 import { WorkflowDecisionEntry, WorkflowDocumentInput, WorkflowSession, WorkflowStage } from '@nodeint/migent-contracts';
 
+import { SCHEMA_V5 } from './constants.js';
 import { isRecord } from './record.js';
 
 /**
@@ -28,7 +29,7 @@ const SESSION_KEYS = keysOf(WorkflowSession);
 const DECISION_ENTRY_KEYS = keysOf(WorkflowDecisionEntry);
 
 /** From this schema version on, unknown keys are errors instead of warnings. */
-export const UNKNOWN_KEYS_ERROR_SCHEMA_VERSION = 5;
+export const UNKNOWN_KEYS_ERROR_SCHEMA_VERSION = SCHEMA_V5;
 
 export function distance(a: string, b: string): number {
   const row = Array.from({ length: b.length + 1 }, (_, index) => index);
@@ -44,9 +45,13 @@ export function distance(a: string, b: string): number {
   return row[b.length]!;
 }
 
+/** Edit-distance budget for "did you mean" suggestions: at least this, growing with key length. */
+const MIN_SUGGESTION_DISTANCE = 2;
+const SUGGESTION_LENGTH_DIVISOR = 3;
+
 export function closest(key: string, valid: readonly string[]): string | null {
   let best: string | null = null;
-  let bestDistance = Math.max(2, Math.floor(key.length / 3)) + 1;
+  let bestDistance = Math.max(MIN_SUGGESTION_DISTANCE, Math.floor(key.length / SUGGESTION_LENGTH_DIVISOR)) + 1;
   for (const candidate of valid) {
     const d = distance(key.toLowerCase(), candidate);
     if (d < bestDistance) { best = candidate; bestDistance = d; }
@@ -107,7 +112,7 @@ export function unknownWorkflowKeyEntries(data: Record<string, unknown>): Unknow
     if (!isRecord(stage) || typeof stage.id !== 'string') return;
     const location = `stages.${stage.id}`;
     const base = ['stages', index];
-    entries.push(...(version >= 5
+    entries.push(...(version >= SCHEMA_V5
       ? unknownKeyEntries(stage, { valid: STAGE_KEYS_V5, location, base, renamed: STAGE_V5_RENAMED })
       : unknownKeyEntries(stage, { valid: STAGE_KEYS_V4, location, base })));
     if (isRecord(stage.produces)) entries.push(...unknownKeyEntries(stage.produces, { valid: PRODUCES_KEYS, location: `${location}.produces`, base: [...base, 'produces'] }));

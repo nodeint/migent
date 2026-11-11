@@ -1,3 +1,5 @@
+import { constants as osConstants } from 'node:os';
+
 import { CancellationRequested, raiseCancellation, resetCancellation } from '@nodeint/migent-kernel';
 import { type SessionLock } from '@nodeint/migent-session';
 
@@ -16,8 +18,8 @@ function note(signalNumber: number): void {
 
 /** `lock` also lets `migent session cancel` stop the run, which is the only stop on Windows. */
 export function bindCancellationSignals(lock?: SessionLock): () => void {
-  const onSigint = () => note(2);
-  const onSigterm = () => note(15);
+  const onSigint = () => note(osConstants.signals.SIGINT);
+  const onSigterm = () => note(osConstants.signals.SIGTERM);
   process.on('SIGINT', onSigint);
   process.on('SIGTERM', onSigterm);
   lock?.onCancelRequest(onSigint);

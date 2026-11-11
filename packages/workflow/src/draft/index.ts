@@ -1,6 +1,7 @@
 
 import { buildArtifactsV7 } from '../artifacts.js';
 import type { WorkflowCatalogEntry } from '../catalog.js';
+import { SCHEMA_V2, SCHEMA_V3, SCHEMA_V4_DOWNSTREAM, SCHEMA_V5, SCHEMA_V7_ARTIFACTS } from '../constants.js';
 import { UNKNOWN_KEYS_ERROR_SCHEMA_VERSION, unknownWorkflowKeyEntries, workflowRuleCode } from '../diagnostics.js';
 import { collectGraphProblems, draftConditionalStages } from '../draft/graph.js';
 import type { CollectedOutputs } from '../draft/outputs.js';
@@ -48,10 +49,10 @@ export function collectWorkflowDraft(data: Record<string, unknown>, source: stri
   });
   if (idUnit.state === 'invalid' || versionUnit.state === 'invalid') return emptyResult(0);
   const schemaVersion = versionUnit.value;
-  const version2 = schemaVersion >= 2;
-  const version3 = schemaVersion >= 3;
-  const version5 = schemaVersion >= 5;
-  const version7 = schemaVersion >= 7;
+  const version2 = schemaVersion >= SCHEMA_V2;
+  const version3 = schemaVersion >= SCHEMA_V3;
+  const version5 = schemaVersion >= SCHEMA_V5;
+  const version7 = schemaVersion >= SCHEMA_V7_ARTIFACTS;
   if (schemaVersion > SCHEMA_VERSION) {
     problems.addMessage(
       'schema-newer',
@@ -63,11 +64,11 @@ export function collectWorkflowDraft(data: Record<string, unknown>, source: stri
   if (unknownKeys.length > 0 && schemaVersion >= UNKNOWN_KEYS_ERROR_SCHEMA_VERSION) {
     for (const entry of unknownKeys) problems.addMessage(entry.code, entry.message, entry.path);
   }
-  if (schemaVersion >= 4 && Object.hasOwn(data, 'requires')) {
+  if (schemaVersion >= SCHEMA_V4_DOWNSTREAM && Object.hasOwn(data, 'requires')) {
     const message = 'requires was removed in schema_version 4. Run `migent migrate`; use --prior for context and downstream for suggestions.';
     problems.addMessage(workflowRuleCode(message), message, ['requires']);
   }
-  if (schemaVersion < 4 && Object.hasOwn(data, 'downstream')) {
+  if (schemaVersion < SCHEMA_V4_DOWNSTREAM && Object.hasOwn(data, 'downstream')) {
     const message = 'downstream requires schema_version 4.';
     problems.addMessage(workflowRuleCode(message), message, ['downstream']);
   }
@@ -120,11 +121,11 @@ export function collectWorkflowDraft(data: Record<string, unknown>, source: stri
   } else if (Object.hasOwn(data, 'artifacts')) {
     problems.addMessage('invalid-artifact', 'artifacts requires schema_version 7.', ['artifacts']);
   }
-  const downstream = schemaVersion >= 4
+  const downstream = schemaVersion >= SCHEMA_V4_DOWNSTREAM
     ? collectDownstream(data.downstream, outputs, problems)
     : { sectionValid: true, entries: [] };
   let requires: DraftUnit<WorkflowRequires | null>;
-  if (schemaVersion < 4) requires = draftUnit(() => parseRequires(data.requires, version2), problems, ['requires']);
+  if (schemaVersion < SCHEMA_V4_DOWNSTREAM) requires = draftUnit(() => parseRequires(data.requires, version2), problems, ['requires']);
   else if (Object.hasOwn(data, 'requires')) requires = { state: 'invalid' };
   else requires = { state: 'absent', value: null };
   // Top-level fields are leaf units of their own: they are read even when a stage is unreadable.

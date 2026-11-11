@@ -6,6 +6,7 @@ import {
   readReadyLine as readReadyLineImpl,
   type SpawnedChild,
 } from './child.js';
+import { MAX_PORT, MAX_PROBE_SLICE_SEC, MIN_POLL_SEC, SECRET_BYTES } from './constants.js';
 import {
   type EndpointHello,
   type EndpointStatus,
@@ -33,6 +34,9 @@ import { monotonic, sleep } from './time.js';
 
 const SECRET = /^[A-Za-z0-9_-]{43}$/;
 const READY_KEYS = new Set(['pid', 'port', 'instance_id', 'token']);
+
+/** Timeout of the authenticated identity probe during status checks, in seconds. */
+const AUTH_PROBE_SEC = 2;
 
 export const START_LOCK_TIMEOUT_SEC = 8;
 export const IDENTITY_TIMEOUT_SEC = 5;
@@ -212,7 +216,7 @@ export async function serviceStatus(home: string): Promise<Record<string, unknow
   const loaded = readService(home);
   if (!loaded || loaded === CORRUPT || isLegacy(loaded)) return { state: 'stopped' };
   if (!names(await svc.queryEndpoint(home, 1), loaded)) return { state: 'stopped' };
-  const found = await svc.authenticatedInstanceId(loaded.port, loaded.token, 2);
+  const found = await svc.authenticatedInstanceId(loaded.port, loaded.token, AUTH_PROBE_SEC);
   if (found !== loaded.instance_id) return { state: 'stopped' };
   return { state: 'running', host: loaded.host, port: loaded.port, pid: loaded.pid };
 }
@@ -267,8 +271,8 @@ export async function serveForeground(
       const decision = await decide(directory, options.identityTimeout ?? IDENTITY_TIMEOUT_SEC);
       if (decision.kind === 'adopt') return decision.endpoint;
       if (decision.kind === 'error') throw new ServiceError(decision.message);
-      const instanceId = randomBytes(32).toString('base64url');
-      const token = randomBytes(32).toString('base64url');
+      const instanceId = randomBytes(SECRET_BYTES).toString('base64url');
+      const token = randomBytes(SECRET_BYTES).toString('base64url');
       lifetime = await svc.acquireServiceLock(directory, { instance_id: instanceId, pid: process.pid }, {
         token,
         onStop: () => {
@@ -367,7 +371,7 @@ type Decision =
 async function decide(home: string, identityTimeout: number): Promise<Decision> {
   const deadline = monotonic() + identityTimeout;
   for (;;) {
-    const remaining = Math.max(0.05, deadline - monotonic());
+    const remaining = Math.max(MIN_POLL_SEC, deadline - monotonic());
     const loaded = readService(home);
     const status = await svc.queryEndpoint(home, Math.min(1, remaining));
     if (status.state === 'gone') {
@@ -377,11 +381,12 @@ async function decide(home: string, identityTimeout: number): Promise<Decision> 
       return { kind: 'serve' };
     }
     if (loaded && loaded !== CORRUPT && names(status, loaded)) {
-      const found = await svc.authenticatedInstanceId(loaded.port, loaded.token, Math.min(0.5, remaining));
+      const slice = Math.min(MAX_PROBE_SLICE_SEC, remaining);
+      const found = await svc.authenticatedInstanceId(loaded.port, loaded.token, slice);
       if (found === loaded.instance_id) return { kind: 'adopt', endpoint: endpointFrom(loaded) };
     }
     if (monotonic() >= deadline) return { kind: 'error', message: UNVERIFIED };
-    await sleep(Math.min(0.05, Math.max(0, deadline - monotonic())));
+    await sleep(Math.min(MIN_POLL_SEC, Math.max(0, deadline - monotonic())));
   }
 }
 
@@ -431,14 +436,14 @@ async function spawnAndPublish(
 
 async function waitUntilHealthy(home: string, record: ServiceRecord, deadline: number): Promise<boolean> {
   for (;;) {
-    const listening = names(await svc.queryEndpoint(home, 0.5), record);
-    const found = listening ? await svc.authenticatedInstanceId(record.port, record.token, 0.5) : null;
+    const listening = names(await svc.queryEndpoint(home, MAX_PROBE_SLICE_SEC), record);
+    const found = listening ? await svc.authenticatedInstanceId(record.port, record.token, MAX_PROBE_SLICE_SEC) : null;
     if (found === record.instance_id) {
       const onDisk = readService(home);
       if (onDisk && onDisk !== CORRUPT && onDisk.instance_id === record.instance_id) return true;
     }
     if (monotonic() >= deadline) return false;
-    await sleep(Math.min(0.05, Math.max(0, deadline - monotonic())));
+    await sleep(Math.min(MIN_POLL_SEC, Math.max(0, deadline - monotonic())));
   }
 }
 
@@ -480,9 +485,9 @@ async function pollGone(home: string, grace: number): Promise<boolean> {
   const deadline = monotonic() + grace;
   for (;;) {
     const remaining = deadline - monotonic();
-    if ((await svc.queryEndpoint(home, Math.max(0.05, Math.min(0.5, remaining)))).state === 'gone') return true;
+    if ((await svc.queryEndpoint(home, Math.max(MIN_POLL_SEC, Math.min(MAX_PROBE_SLICE_SEC, remaining)))).state === 'gone') return true;
     if (deadline - monotonic() <= 0) return false;
-    await sleep(Math.min(0.05, Math.max(0, deadline - monotonic())));
+    await sleep(Math.min(MIN_POLL_SEC, Math.max(0, deadline - monotonic())));
   }
 }
 
@@ -519,7 +524,7 @@ function validateReady(payload: Record<string, unknown> | null, procPid: number,
   }
   const { pid, port, instance_id: instanceId, token } = payload;
   if (typeof pid !== 'number' || pid !== procPid) return null;
-  if (typeof port !== 'number' || !Number.isInteger(port) || port < 1 || port > 65535) return null;
+  if (typeof port !== 'number' || !Number.isInteger(port) || port < 1 || port > MAX_PORT) return null;
   if (requestedPort !== 0 && port !== requestedPort) return null;
   if (typeof instanceId !== 'string' || !SECRET.test(instanceId)) return null;
   if (typeof token !== 'string' || !SECRET.test(token)) return null;

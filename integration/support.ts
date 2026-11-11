@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { main } from '../packages/cli/src/index.ts';
+import { EXIT_CATALOG } from '../packages/contracts/src/index.ts';
 
 const INTEGRATION_ROOT = path.dirname(fileURLToPath(import.meta.url));
 export const PROVIDER_BIN = path.join(INTEGRATION_ROOT, 'fixtures', 'bin');
@@ -304,14 +305,8 @@ function sessionIdFromRun(workspace: string, argv: string[], stderr: string): st
 }
 
 function stopReasonFor(code: number, status: string): string {
-  if (code === 130) return 'cancelled';
-  if (code === 8) return 'quota';
-  if (code === 7) return 'verify_failed';
-  if (code === 6) return 'verify_exhausted';
-  if (code === 5) return 'dispatch_limit';
-  if (code === 4) return 'revisions_exhausted';
-  if (code === 3) return 'stage_failed';
-  if (code === 2) return 'configuration';
+  const named = EXIT_CATALOG.find((entry) => entry.code === code && !['completed', 'blocked', 'question'].includes(entry.name));
+  if (named !== undefined) return named.name === 'config' ? 'configuration' : named.name;
   if (status === 'completed') return 'completed';
   if (status === 'blocked') return 'blocked';
   if (status === 'cancelled') return 'cancelled';

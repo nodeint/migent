@@ -43,6 +43,7 @@
     "prepack": "pnpm -w run build && cp ../../LICENSE ."
   },
   "dependencies": {
+    "@nodeint/migent-contracts": "workspace:*",
     "@nodeint/migent-kernel": "workspace:*",
     "@nodeint/migent-session": "workspace:*",
     "@nodeint/migent-prompts": "workspace:*",

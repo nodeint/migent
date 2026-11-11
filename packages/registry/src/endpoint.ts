@@ -4,6 +4,10 @@ import { connect, createServer, type Server, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { MS_PER_SECOND } from '@nodeint/migent-kernel';
+
+import { ENDPOINT_HASH_LENGTH } from './constants.js';
+
 // The running service listens on a local endpoint for its whole life. Only one process can
 // listen at a time, and the OS frees it when the process dies, so the endpoint is the service's
 // lifetime lock. A client that connects reads one hello line naming the instance and its pid,
@@ -24,7 +28,7 @@ export type EndpointStatus =
 
 export function serviceEndpointPath(home: string): string {
   const resolved = path.resolve(home);
-  const name = `migent-registry-${createHash('sha256').update(resolved).digest('hex').slice(0, 16)}`;
+  const name = `migent-registry-${createHash('sha256').update(resolved).digest('hex').slice(0, ENDPOINT_HASH_LENGTH)}`;
   if (process.platform === 'win32') return `\\\\.\\pipe\\${name}`;
   const local = path.join(resolved, 'service.sock');
   if (Buffer.byteLength(local) <= POSIX_SOCKET_PATH_MAX) return local;
@@ -62,7 +66,7 @@ function exchange(
       socket.destroy();
       resolve({ status, reply });
     };
-    const timer = setTimeout(() => finish(hello ? { state: 'alive', hello } : { state: 'unknown' }), timeoutSec * 1000);
+    const timer = setTimeout(() => finish(hello ? { state: 'alive', hello } : { state: 'unknown' }), timeoutSec * MS_PER_SECOND);
     socket.setEncoding('utf8');
     socket.on('data', (chunk: string) => {
       buffer += chunk;

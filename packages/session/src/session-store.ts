@@ -141,12 +141,12 @@ export class SessionStore extends SessionStoreResume {
   }
 
   public saveTurnOutcome(context: ExecutionContext, turn: number, outcome: StageOutcome): void {
-    this.writeTurnFile(context, { turn, name: 'outcome.json', text: `${JSON.stringify(outcome.toJson(), null, 2)}\n` });
+    this.writeTurnFile(context, { turn, name: 'outcome.json', text: `${JSON.stringify(outcome.toJson(), null, JSON_INDENT)}\n` });
   }
 
   public saveTurnVerify(context: ExecutionContext, turn: number, report: string): string {
     this.writeTurnFile(context, { turn, name: 'verify.md', text: report });
-    return path.posix.join('turns', String(turn).padStart(2, '0'), 'verify.md');
+    return path.posix.join('turns', String(turn).padStart(TURN_PAD_WIDTH, '0'), 'verify.md');
   }
 
   private writeTurnFile(context: ExecutionContext, file: { turn: number; name: string; text: string }): void {
@@ -246,7 +246,7 @@ export class SessionStore extends SessionStoreResume {
     assertSessionLockHeld(sessionDirectory);
     const order = this.nextExecutionOrder(sessionId);
     const attempt = this.nextStageAttempt(sessionId, stageId);
-    const executionId = `${String(order).padStart(4, '0')}-${safeComponent(stageId)}--attempt-${String(attempt).padStart(2, '0')}`;
+    const executionId = `${String(order).padStart(ORDER_PAD_WIDTH, '0')}-${safeComponent(stageId)}--attempt-${String(attempt).padStart(TURN_PAD_WIDTH, '0')}`;
     const directory = path.join(sessionDirectory, EXECUTIONS_DIRNAME, executionId);
     mkdirSync(path.dirname(directory), { recursive: true });
     try {
@@ -591,7 +591,7 @@ export class SessionStore extends SessionStoreResume {
     const resolvedSession = sessionId ?? path.basename(createNumericSessionDirectory(this.sessionsDirectory)[1]);
     const order = executionOrder ? executionOrder : this.nextExecutionOrder(resolvedSession);
     const attempt = stageAttempt ? stageAttempt : this.nextStageAttempt(resolvedSession, stageId);
-    const executionId = `${String(order).padStart(4, '0')}-${safeComponent(stageId)}--attempt-${String(attempt).padStart(2, '0')}`;
+    const executionId = `${String(order).padStart(ORDER_PAD_WIDTH, '0')}-${safeComponent(stageId)}--attempt-${String(attempt).padStart(TURN_PAD_WIDTH, '0')}`;
     const directory = path.join(
       this.sessionsDirectory,
       resolvedSession,
@@ -681,3 +681,6 @@ export {
   noteInFlightExecution,
   stringOptions,
 } from './session-store-types.js';
+import { JSON_INDENT } from '@nodeint/migent-kernel';
+
+import { ORDER_PAD_WIDTH, TURN_PAD_WIDTH } from './constants.js';

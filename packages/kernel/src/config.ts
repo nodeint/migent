@@ -16,6 +16,7 @@ import {
   stringItems,
   type StructuralIndex,
 } from './config-structure.js';
+import { ROLE_AGENT_KEY_INDEX } from './constants.js';
 import { ConfigurationError } from './errors.js';
 
 export { documentVersion } from '@nodeint/migent-workflow';
@@ -151,7 +152,7 @@ export function mergeConfigLayers(
       if (!baseHas) return 'local';
       const baseValue = (base as Record<string, unknown>)[key];
       const overValue = (over as Record<string, unknown>)[key];
-      const wholesale = index === 2 && path[0] === 'roles' && key === 'agent';
+      const wholesale = index === ROLE_AGENT_KEY_INDEX && path[0] === 'roles' && key === 'agent';
       if (wholesale || !isRecord(baseValue) || !isRecord(overValue)) return 'local';
       base = baseValue;
       over = overValue;

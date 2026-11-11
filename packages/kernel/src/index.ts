@@ -106,6 +106,26 @@ export {
   upsertAgent,
 } from './config-edit.js';
 export { patchConfigText, upgradeConfigText } from './config-text.js';
+export {
+  ARGV_USER_OFFSET,
+  BYTES_PER_KIB,
+  BYTES_PER_MIB,
+  CONFIG_CLIENTS_LIFT_FROM,
+  EXIT_COMMAND_NOT_FOUND,
+  HEX_RADIX,
+  INT32_BYTES,
+  isShellSignalExitCode,
+  JSON_INDENT,
+  MS_PER_SECOND,
+  NEWLINE_BYTE,
+  PAD_WIDTH_2,
+  PAD_WIDTH_4,
+  SECONDS_PER_HOUR,
+  SECONDS_PER_MINUTE,
+  SHELL_SIGNAL_BASE,
+  SHELL_SIGNAL_RANGE,
+  YAML_DEFAULT_INDENT,
+} from './constants.js';
 export { CORRECTION_FAILURE_REASONS } from './correction-policy.js';
 export { debugEnabled, inheritedEnv, migentHomeOverride, noInputRequested, platformHome, skillsChildEnv } from './env.js';
 export type { ConfigurationErrorDetails, SourcePosition } from './errors.js';

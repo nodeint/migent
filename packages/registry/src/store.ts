@@ -17,9 +17,20 @@ import {
 } from 'node:fs';
 import path from 'node:path';
 
+import { JSON_INDENT, PAD_WIDTH_2, PAD_WIDTH_4 } from '@nodeint/migent-kernel';
+
+import { DIRECTORY_MODE, FILE_MODE, MAX_TOOL_NAME_LENGTH, MAX_TOOL_VERSION_LENGTH, MAX_WORKSPACE_NAME_LENGTH, WORKSPACE_HASH_LENGTH } from './constants.js';
 import { interprocessLock, RegistryBusy, registryBusy } from './locks.js';
 
 export { RegistryBusy };
+
+/** Upper bounds of the calendar fields accepted in a stored timestamp. */
+const MAX_MONTH = 12;
+const MAX_DAY = 31;
+const MAX_HOUR = 23;
+const MAX_MINUTE_OR_SECOND = 59;
+/** Random bytes in a temp-file name. */
+const TEMP_SUFFIX_BYTES = 8;
 
 const toolName = /^[A-Za-z0-9._-]+$/;
 const timestampText = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
@@ -90,30 +101,30 @@ export const storeFs = {
 };
 
 export function workspaceIdFor(filePath: string): string {
-  return `ws_${createHash('sha256').update(filePath, 'utf8').digest('hex').slice(0, 12)}`;
+  return `ws_${createHash('sha256').update(filePath, 'utf8').digest('hex').slice(0, WORKSPACE_HASH_LENGTH)}`;
 }
 
 export function utcTimestamp(now = new Date()): string {
-  const year = now.getUTCFullYear().toString().padStart(4, '0');
-  const month = String(now.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(now.getUTCDate()).padStart(2, '0');
-  const hour = String(now.getUTCHours()).padStart(2, '0');
-  const minute = String(now.getUTCMinutes()).padStart(2, '0');
-  const second = String(now.getUTCSeconds()).padStart(2, '0');
+  const year = now.getUTCFullYear().toString().padStart(PAD_WIDTH_4, '0');
+  const month = String(now.getUTCMonth() + 1).padStart(PAD_WIDTH_2, '0');
+  const day = String(now.getUTCDate()).padStart(PAD_WIDTH_2, '0');
+  const hour = String(now.getUTCHours()).padStart(PAD_WIDTH_2, '0');
+  const minute = String(now.getUTCMinutes()).padStart(PAD_WIDTH_2, '0');
+  const second = String(now.getUTCSeconds()).padStart(PAD_WIDTH_2, '0');
   return `${year}-${month}-${day}T${hour}:${minute}:${second}Z`;
 }
 
 export function atomicReplace(destination: string, payload: Buffer): void {
   const directory = path.dirname(destination);
-  mkdirSync(directory, { recursive: true, mode: 0o700 });
-  chmodSync(directory, 0o700);
-  const tmpPath = path.join(directory, `${path.basename(destination)}.tmp.${randomBytes(8).toString('hex')}`);
+  mkdirSync(directory, { recursive: true, mode: DIRECTORY_MODE });
+  chmodSync(directory, DIRECTORY_MODE);
+  const tmpPath = path.join(directory, `${path.basename(destination)}.tmp.${randomBytes(TEMP_SUFFIX_BYTES).toString('hex')}`);
   const flags = fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY;
-  const fd = openSync(tmpPath, flags, 0o600);
+  const fd = openSync(tmpPath, flags, FILE_MODE);
   let replaced = false;
   try {
     try {
-      fchmodSync(fd, 0o600);
+      fchmodSync(fd, FILE_MODE);
       let offset = 0;
       while (offset < payload.length) {
         const written = storeFs.write(fd, payload.subarray(offset));
@@ -126,7 +137,7 @@ export function atomicReplace(destination: string, payload: Buffer): void {
     }
     storeFs.replace(tmpPath, destination);
     replaced = true;
-    chmodSync(destination, 0o600);
+    chmodSync(destination, FILE_MODE);
     // Windows cannot open or fsync a directory; its rename is durable without it.
     if (process.platform !== 'win32') {
       const dirFd = openSync(directory, fsConstants.O_RDONLY);
@@ -171,12 +182,12 @@ function isTimestamp(value: string): boolean {
     minute === undefined ||
     second === undefined ||
     month < 1 ||
-    month > 12 ||
+    month > MAX_MONTH ||
     day < 1 ||
-    day > 31 ||
-    hour > 23 ||
-    minute > 59 ||
-    second > 59
+    day > MAX_DAY ||
+    hour > MAX_HOUR ||
+    minute > MAX_MINUTE_OR_SECOND ||
+    second > MAX_MINUTE_OR_SECOND
   ) {
     return false;
   }
@@ -221,13 +232,13 @@ function normalizeTool(tool: unknown): ToolRecord {
     throw new InvalidRecord('Tool name is invalid.');
   }
   const {name} = record;
-  if (typeof name !== 'string' || !toolName.test(name) || name.length === 0 || name.length > 80) {
+  if (typeof name !== 'string' || !toolName.test(name) || name.length === 0 || name.length > MAX_TOOL_NAME_LENGTH) {
     throw new InvalidRecord('Tool name is invalid.');
   }
   const stored: ToolRecord = { name };
   if (Object.hasOwn(record, 'version')) {
     const {version} = record;
-    if (typeof version !== 'string' || version.length > 40) throw new InvalidRecord('Tool version is invalid.');
+    if (typeof version !== 'string' || version.length > MAX_TOOL_VERSION_LENGTH) throw new InvalidRecord('Tool version is invalid.');
     stored.version = version;
   }
   return stored;
@@ -246,7 +257,7 @@ function prepareRegister(filePath: string, name: string | null, tool: unknown): 
   if (!path.isAbsolute(stored)) throw new NotAWorkspace('Workspace path is not absolute.');
   let chosen: string;
   if (name === null) chosen = path.basename(stored);
-  else if (typeof name === 'string' && name.length > 0 && name.length <= 200) chosen = name;
+  else if (typeof name === 'string' && name.length > 0 && name.length <= MAX_WORKSPACE_NAME_LENGTH) chosen = name;
   else throw new InvalidRecord('Workspace name must be 1 to 200 characters.');
   if (!chosen) throw new InvalidRecord('Workspace name must be 1 to 200 characters.');
   return [stored, chosen, normalizeTool(tool)];
@@ -267,7 +278,7 @@ function parseWorkspace(item: unknown): WorkspaceRecord {
   if (!tool || typeof tool !== 'object' || Array.isArray(tool) || !sameKeys(tool, toolKeys, false) || !('name' in tool)) {
     throw new RegistryCorrupt('registry.json has the wrong shape.');
   }
-  if (record.name!.length === 0 || record.name!.length > 200) {
+  if (record.name!.length === 0 || record.name!.length > MAX_WORKSPACE_NAME_LENGTH) {
     throw new RegistryCorrupt('registry.json has the wrong shape.');
   }
   if (!absoluteRegistryPath(record.path!)) throw new RegistryCorrupt('registry.json has the wrong shape.');
@@ -277,13 +288,13 @@ function parseWorkspace(item: unknown): WorkspaceRecord {
   }
   const toolRecord = tool as Record<string, unknown>;
   const {name} = toolRecord;
-  if (typeof name !== 'string' || !toolName.test(name) || name.length === 0 || name.length > 80) {
+  if (typeof name !== 'string' || !toolName.test(name) || name.length === 0 || name.length > MAX_TOOL_NAME_LENGTH) {
     throw new RegistryCorrupt('registry.json has the wrong shape.');
   }
   const storedTool: ToolRecord = { name };
   if (Object.hasOwn(toolRecord, 'version')) {
     const {version} = toolRecord;
-    if (typeof version !== 'string' || version.length > 40) {
+    if (typeof version !== 'string' || version.length > MAX_TOOL_VERSION_LENGTH) {
       throw new RegistryCorrupt('registry.json has the wrong shape.');
     }
     storedTool.version = version;
@@ -424,8 +435,8 @@ export class RegistryStore {
   }
 
   private async lock<T>(shared: boolean, body: () => Promise<T>): Promise<T> {
-    mkdirSync(this.directory, { recursive: true, mode: 0o700 });
-    chmodSync(this.directory, 0o700);
+    mkdirSync(this.directory, { recursive: true, mode: DIRECTORY_MODE });
+    chmodSync(this.directory, DIRECTORY_MODE);
     return interprocessLock(
       path.join(this.directory, 'registry.lock'),
       { shared, timeoutSec: this.timeoutSec, busyError: registryBusy },
@@ -449,7 +460,7 @@ export class RegistryStore {
       schema_version: 1,
       workspaces: ordered(records).map((record) => stored(record)),
     };
-    const payload = Buffer.from(`${JSON.stringify(document, null, 2)}\n`, 'utf8');
+    const payload = Buffer.from(`${JSON.stringify(document, null, JSON_INDENT)}\n`, 'utf8');
     atomicReplace(path.join(this.directory, 'registry.json'), payload);
   }
 }

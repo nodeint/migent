@@ -2,7 +2,7 @@ import { closeSync, openSync, readFileSync, readSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import { SessionFollowRecord, SessionSnapshot, SessionSnapshotLine, type Static } from '@nodeint/migent-contracts';
-import { CancellationRequested, ConfigurationError, log } from '@nodeint/migent-kernel';
+import { BYTES_PER_KIB, CancellationRequested, ConfigurationError, log } from '@nodeint/migent-kernel';
 import { corruptStatusMessage, readExecutionFile, readStatusFileState, SessionLock, SessionStore, statusDriftMessage, watchSnapshot } from '@nodeint/migent-session';
 
 import { printNotice, printWatchEvent, printWatchSnapshot } from '../display.js';
@@ -17,6 +17,12 @@ import {
 } from '../follow-log.js';
 import { isFile } from '../fs-utils.js';
 import { bindCancellationSignals, delay, throwIfCliCancelled } from '../signals.js';
+
+/** Pause between log polls, in milliseconds. */
+const POLL_MS = 250;
+/** Bytes read from a log per call. */
+const READ_CHUNK_KIB = 64;
+const READ_CHUNK_BYTES = READ_CHUNK_KIB * BYTES_PER_KIB;
 
 const SESSION_DONE_EXITS: Record<string, number> = {
   completed: EXIT_OK,
@@ -112,12 +118,12 @@ export async function followSession(
           return done;
         }
       }
-      await delay(250);
+      await delay(POLL_MS);
     }
   } catch (error) {
     if (error instanceof CancellationRequested) {
       log(error.message);
-      return 130;
+      return EXIT_CANCELLED;
     }
     throw error;
   } finally {
@@ -252,7 +258,7 @@ function readCompleteLines(
   carried: string,
 ): { lines: string[]; pending: string; position: number } {
   const chunks: Buffer[] = [];
-  const buffer = Buffer.alloc(64 * 1024);
+  const buffer = Buffer.alloc(READ_CHUNK_BYTES);
   let offset = position;
   for (;;) {
     const count = readSync(fd, buffer, 0, buffer.length, offset);

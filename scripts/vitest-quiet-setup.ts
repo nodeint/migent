@@ -9,6 +9,9 @@ process.stderr.write = noop as typeof process.stderr.write;
 // of `session run`. Tests that care assign their own `which`.
 import { cliHooks } from '../packages/cli/src/hooks.ts';
 
+/** Schema issues included in a violation message. */
+const MAX_REPORTED_ISSUES = 5;
+
 let injected: typeof cliHooks.which = null;
 Object.defineProperty(cliHooks, 'which', {
   get: () => injected ?? ((command: string) => `/fake/${command}`),
@@ -23,7 +26,7 @@ const emitted = ((globalThis as { __migentEmittedContracts?: Set<string> }).__mi
 cliHooks.validateJson = (schema, value) => {
   const issues = validationIssues(schema, value);
   if (issues.length > 0) {
-    throw new Error(`JSON output violates ${String(schema.$id)}: ${JSON.stringify(issues.slice(0, 5))}`);
+    throw new Error(`JSON output violates ${String(schema.$id)}: ${JSON.stringify(issues.slice(0, MAX_REPORTED_ISSUES))}`);
   }
   // Record the schema and, for a union, the variant this value matched.
   const shape = schema as { $id?: string; anyOf?: { $id?: string }[] };

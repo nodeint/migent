@@ -1,7 +1,8 @@
 import { printError } from '../display.js';
+import { EXIT_CONFIG } from '../exits.js';
 import { createDiscoveryContext } from '../get/discovery.js';
 import { OUTPUT_FORMATS, type OutputFormat,renderList, renderOne } from '../get/render.js';
-import { clientResolver, findResource, RESOURCES, resourceTypes } from '../get/resources.js';
+import { clientResolver, findResource, LIST_NAME_WIDTH, LISTED_NAMES, RESOURCES, resourceTypes } from '../get/resources.js';
 import { findWorkspace } from '../workspace.js';
 
 export interface GetOptions {
@@ -24,45 +25,45 @@ export async function runGet(
   const { type, name } = target;
   if (type === 'provider' || type === 'providers') {
     printError('get providers has been removed; use `migent get clients`.');
-    return 2;
+    return EXIT_CONFIG;
   }
   const resource = findResource(type);
   if (resource === undefined) {
     printError(`Unknown resource type: ${type}. Valid types: ${resourceTypes()}.`);
-    return 2;
+    return EXIT_CONFIG;
   }
   if (options.json === true && options.output !== undefined && options.output !== 'json') {
     printError(`--json conflicts with -o ${options.output}.`);
-    return 2;
+    return EXIT_CONFIG;
   }
   const format: string = options.output ?? (options.json === true ? 'json' : 'human');
   if (format !== 'human' && !OUTPUT_FORMATS.includes(format)) {
     printError(`Invalid output format: ${format}. Use json, yaml, or name.`);
-    return 2;
+    return EXIT_CONFIG;
   }
   if (resource.kind === 'config' && (format === 'name' || name !== null)) {
     printError(name !== null ? 'config takes no name.' : '-o name is not valid for config.');
-    return 2;
+    return EXIT_CONFIG;
   }
   const session = options.session ?? null;
   if (session !== null && resource.kind !== 'workflow') {
     printError('--session is only valid for workflows.');
-    return 2;
+    return EXIT_CONFIG;
   }
   const client = options.client ?? null;
   const native = options.native === true;
   if (native && resource.kind !== 'option') {
     printError('--native is only valid for options.');
-    return 2;
+    return EXIT_CONFIG;
   }
   if (resource.scope === 'project') {
     if (client !== null) {
       printError('--client is only valid for models, options, and efforts.');
-      return 2;
+      return EXIT_CONFIG;
     }
   } else if (client !== null && !resource.acceptsClient) {
     printError(`--client is not valid for ${resource.kind}s.`);
-    return 2;
+    return EXIT_CONFIG;
   }
 
   const output = format as OutputFormat;
@@ -98,5 +99,5 @@ export async function runGet(
 }
 
 export function getHelpTypes(): string {
-  return RESOURCES.map((resource) => `  ${resource.names.slice(0, 2).join(', ').padEnd(18)}${resource.summary}`).join('\n');
+  return RESOURCES.map((resource) => `  ${resource.names.slice(0, LISTED_NAMES).join(', ').padEnd(LIST_NAME_WIDTH)}${resource.summary}`).join('\n');
 }

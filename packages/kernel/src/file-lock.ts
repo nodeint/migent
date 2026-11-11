@@ -1,5 +1,7 @@
 import lockfile from 'proper-lockfile';
 
+import { INT32_BYTES } from './constants.js';
+
 // proper-lockfile holds a lock as a `<file>.lock` directory, which works the same on every
 // platform. A holder that dies without releasing leaves it stale after STALE_MS.
 const STALE_MS = 10_000;
@@ -29,7 +31,7 @@ export const fileLockOps = {
     }
   },
   sleepMs(ms: number): void {
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(INT32_BYTES)), 0, 0, ms);
   },
 };
 

@@ -8,8 +8,10 @@ import { isUnicodeAlnum, utcNow } from '@nodeint/migent-kernel';
 import { pyRepr } from '@nodeint/migent-workflow';
 import { parseYamlDocument } from '@nodeint/migent-workflow';
 import { isWorkflowV2, loadNamedWorkflow, type WorkflowDocument } from '@nodeint/migent-workflow';
+import { SCHEMA_V4_DOWNSTREAM } from '@nodeint/migent-workflow';
 import { stringify } from 'yaml';
 
+import { FIRST_SESSION_SUFFIX, MANIFEST_SCHEMA_EVENT_LOG, TURN_PAD_WIDTH } from './constants.js';
 import { completedPriorStatus, resolveHandoff, snapshotHandoff } from './next-handoff.js';
 import { corruptStatusMessage, readStatusFileState } from './query.js';
 import { appendLifecycleEvent } from './session-events.js';
@@ -51,7 +53,7 @@ export function relativeWorkflowPath(sessionId: string): string {
 export function createSessionDirectory(sessionsDirectory: string, sessionIdBase: string): [string, string] {
   mkdirSync(sessionsDirectory, { recursive: true });
   for (let suffix = 1; ; suffix += 1) {
-    const sessionId = suffix === 1 ? sessionIdBase : `${sessionIdBase}--${String(suffix).padStart(2, '0')}`;
+    const sessionId = suffix === 1 ? sessionIdBase : `${sessionIdBase}--${String(suffix).padStart(TURN_PAD_WIDTH, '0')}`;
     const sessionDirectory = path.join(sessionsDirectory, sessionId);
     try {
       mkdirSync(sessionDirectory);
@@ -64,9 +66,9 @@ export function createSessionDirectory(sessionsDirectory: string, sessionIdBase:
 
 export function allocateSessionId(sessionsDirectory: string, sessionIdBase: string): string {
   let sessionId = sessionIdBase;
-  let suffix = 2;
+  let suffix = FIRST_SESSION_SUFFIX;
   while (exists(path.join(sessionsDirectory, sessionId))) {
-    sessionId = `${sessionIdBase}--${String(suffix).padStart(2, '0')}`;
+    sessionId = `${sessionIdBase}--${String(suffix).padStart(TURN_PAD_WIDTH, '0')}`;
     suffix += 1;
   }
   return sessionId;
@@ -304,7 +306,7 @@ export function resolvePriorSessionId(
   workflow: WorkflowDocument,
   priorSessionId?: string | null,
 ): string | null {
-  if ((workflow.schemaVersion ?? 1) >= 4) {
+  if ((workflow.schemaVersion ?? 1) >= SCHEMA_V4_DOWNSTREAM) {
     if (priorSessionId) completedPriorStatus(workspace, priorSessionId);
     return priorSessionId || null;
   }
@@ -378,7 +380,7 @@ function pyLiteral(value: unknown): string {
 }
 
 function replaceManifestStatus(sessionDirectory: string, status: string): void {
-  if (readSessionManifest(sessionDirectory).schemaVersion >= 2) return;
+  if (readSessionManifest(sessionDirectory).schemaVersion >= MANIFEST_SCHEMA_EVENT_LOG) return;
   const manifestPath = path.join(sessionDirectory, 'manifest.yaml');
   try {
     if (!statSync(manifestPath).isFile()) return;

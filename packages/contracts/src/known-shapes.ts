@@ -12,8 +12,17 @@ const str = () => Type.String();
 
 // ---- lifecycle events -------------------------------------------------------------------------
 
+/** Version tag of the v2 lifecycle event record. */
+export const LIFECYCLE_EVENT_VERSION = 2;
+
 export const LifecycleEventV2 = Type.Object(
-  { v: Type.Literal(2), seq: num(), event: str(), timestamp: str(), data: Type.Record(str(), Type.Unknown()) },
+  {
+    v: Type.Literal(LIFECYCLE_EVENT_VERSION),
+    seq: num(),
+    event: str(),
+    timestamp: str(),
+    data: Type.Record(str(), Type.Unknown()),
+  },
   { $id: id('known/lifecycle-event-v2'), title: 'Lifecycle event (v2)' },
 );
 export type LifecycleEventV2 = Static<typeof LifecycleEventV2>;

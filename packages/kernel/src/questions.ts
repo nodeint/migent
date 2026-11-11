@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 
 import { z } from 'zod';
 
+import { MAX_QUESTION_OPTIONS, MIN_QUESTION_OPTIONS, OPTION_LETTER_BASE } from './constants.js';
 import { ConfigurationError } from './errors.js';
 
 const text = z.string().trim().min(1);
@@ -12,10 +13,10 @@ const questionSchema = z.object({
   question: text,
   context: text,
   selection: z.enum(['single', 'multiple']),
-  options: z.array(z.object({ id: optionId.optional(), label: text, description: text.optional() }).strict()).min(2).max(26),
+  options: z.array(z.object({ id: optionId.optional(), label: text, description: text.optional() }).strict()).min(MIN_QUESTION_OPTIONS).max(MAX_QUESTION_OPTIONS),
   recommended: z.array(optionId).min(1).optional(),
 }).strict().superRefine((question, ctx) => {
-  const ids = question.options.map((_, index) => String.fromCharCode(65 + index));
+  const ids = question.options.map((_, index) => String.fromCharCode(OPTION_LETTER_BASE + index));
   if (question.options.some((option, index) => option.id !== undefined && option.id !== ids[index])) {
     ctx.addIssue({ code: 'custom', message: 'Option IDs must follow order A, B, C, ...' });
   }
@@ -37,7 +38,7 @@ export const questionBatchSchema = z.array(questionSchema).min(1).superRefine((q
   }
 }).transform((questions) => questions.map((question, index) => ({
   ...question, id: String(index + 1), options: question.options.map((option, optionIndex) => ({
-    ...option, id: String.fromCharCode(65 + optionIndex),
+    ...option, id: String.fromCharCode(OPTION_LETTER_BASE + optionIndex),
   })),
 })));
 

@@ -3,6 +3,7 @@ import { isSessionLockLost, repairSession, SessionLockHeldError } from '@nodeint
 
 import { printError } from '../display.js';
 import { writeJson } from '../emit.js';
+import { EXIT_CONFIG } from '../exits.js';
 import { requireCurrentSchema } from '../migrate.js';
 
 export function repairWorkflowSession(workspace: string, sessionId: string, acceptTask: boolean): number {
@@ -18,7 +19,7 @@ export function repairWorkflowSession(workspace: string, sessionId: string, acce
   } catch (error) {
     if (error instanceof SessionLockHeldError || isSessionLockLost(error)) {
       printError(error.message);
-      return 2;
+      return EXIT_CONFIG;
     }
     throw error;
   }

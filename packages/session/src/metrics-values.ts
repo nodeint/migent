@@ -1,6 +1,9 @@
+import { MS_PER_SECOND } from '@nodeint/migent-kernel';
 import { isRecord } from '@nodeint/migent-workflow';
 
 import type { ParsedEvent } from './session-events.js';
+/** Seconds are rounded to one decimal place. */
+const TENTH_SCALE = 10;
 
 export function detailsOf(event: ParsedEvent | undefined): Record<string, unknown> {
   if (event === undefined) return {};
@@ -43,5 +46,5 @@ export function wallSeconds(start: string | null, end: string | null): number | 
 }
 
 export function roundSeconds(milliseconds: number): number {
-  return Math.round((milliseconds / 1000) * 10) / 10;
+  return Math.round((milliseconds / MS_PER_SECOND) * TENTH_SCALE) / TENTH_SCALE;
 }

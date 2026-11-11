@@ -18,6 +18,9 @@ import { compact, finite, isRecord, labelOf, parseJsonObject, picked } from './j
 
 // `claude` has no models subcommand; the stream-json `initialize` control
 // request answers with the model list the CLI itself offers.
+/** Milliseconds per second. Adapters stay independent of the kernel, so the unit is named here. */
+const MS_PER_SECOND = 1000;
+
 const MODEL_CATALOG_REQUEST = JSON.stringify({
   type: 'control_request',
   request_id: 'migent-models',
@@ -338,7 +341,7 @@ export class ClaudeCodeClient implements CliClient {
           rateLimit = {
             resetAt:
               typeof resetsAt === 'number' && Number.isFinite(resetsAt)
-                ? new Date(resetsAt * 1000).toISOString()
+                ? new Date(resetsAt * MS_PER_SECOND).toISOString()
                 : null,
             window: typeof info.rateLimitType === 'string' ? info.rateLimitType : null,
           };

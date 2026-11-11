@@ -1,6 +1,9 @@
 import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 
+import { JSON_INDENT, MS_PER_SECOND } from '@nodeint/migent-kernel';
+
+import { HTTP_OK, MAX_PORT } from './constants.js';
 import { LockNotHeld, threadHolds } from './locks.js';
 import { atomicReplace } from './store.js';
 
@@ -49,7 +52,7 @@ export function writeServiceJson(
 ): void {
   if (!threadHolds(startLockPath(home))) throw new LockNotHeld();
   beforePublish(home, record);
-  atomicReplace(serviceJsonPath(home), Buffer.from(`${JSON.stringify(record, null, 2)}\n`, 'utf8'));
+  atomicReplace(serviceJsonPath(home), Buffer.from(`${JSON.stringify(record, null, JSON_INDENT)}\n`, 'utf8'));
 }
 
 export async function removeServiceJsonIfUnchanged(
@@ -88,7 +91,7 @@ export async function authenticatedInstanceId(port: number, token: string, timeo
       body: null,
       timeoutSec,
     });
-    if (status !== 200) return null;
+    if (status !== HTTP_OK) return null;
     const payload = JSON.parse(raw.toString('utf8')) as unknown;
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
     const instanceId = (payload as { instance_id?: unknown }).instance_id;
@@ -128,7 +131,7 @@ export function parseServiceBytes(raw: Buffer): ServiceRecord {
     if (typeof record[key] !== 'number' || !Number.isInteger(record[key])) throw new ServiceCorrupt();
   }
   const port = record.port as number;
-  if (port < 1 || port > 65535) throw new ServiceCorrupt();
+  if (port < 1 || port > MAX_PORT) throw new ServiceCorrupt();
   return {
     schema_version: record.schema_version,
     instance_id: record.instance_id as string,
@@ -159,7 +162,7 @@ export async function requestLocal(port: number, request: LocalRequest): Promise
         method,
         path: requestPath,
         headers,
-        timeout: Math.max(1, timeoutSec * 1000),
+        timeout: Math.max(1, timeoutSec * MS_PER_SECOND),
       },
       (response) => {
         const chunks: Buffer[] = [];

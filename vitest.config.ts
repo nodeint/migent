@@ -3,6 +3,10 @@ import { fileURLToPath } from 'node:url';
 
 import { defineConfig } from 'vitest/config';
 
+/** Per-test timeout, in milliseconds. Windows runners start processes and touch files more slowly. */
+const TEST_TIMEOUT_MS = 10_000;
+const WINDOWS_TEST_TIMEOUT_MS = 30_000;
+
 const root = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
@@ -20,7 +24,7 @@ export default defineConfig({
   },
   test: {
     // Windows runners start processes and touch files more slowly.
-    testTimeout: process.platform === 'win32' ? 30_000 : 10_000,
+    testTimeout: process.platform === 'win32' ? WINDOWS_TEST_TIMEOUT_MS : TEST_TIMEOUT_MS,
     reporters: [['dot', { summary: false }]],
     silent: true,
     setupFiles: ['scripts/vitest-quiet-setup.ts'],

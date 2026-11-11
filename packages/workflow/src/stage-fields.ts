@@ -3,6 +3,7 @@ import type { TSchema } from '@nodeint/migent-contracts';
 import { isValid, NonBlankString, schemaIssues,WorkflowArtifact, WorkflowLine, WorkflowRunWhen } from '@nodeint/migent-contracts';
 
 import { compileChangedPathPattern } from './changed-paths.js';
+import { DEFAULT_MAX_VERIFY } from './constants.js';
 import { ConfigurationError } from './errors.js';
 import type { AskTarget } from './model.js';
 import type { RunWhen, StageAgent, StageSpec } from './model.js';
@@ -288,7 +289,7 @@ export function stageVerify(stage: Record<string, unknown>, stageId: string): st
 }
 
 export function stageMaxVerify(stage: Record<string, unknown>, stageId: string, verify: string[]): number {
-  if (!Object.hasOwn(stage, 'max_verify') || (stage.max_verify === null || stage.max_verify === undefined)) return 3;
+  if (!Object.hasOwn(stage, 'max_verify') || (stage.max_verify === null || stage.max_verify === undefined)) return DEFAULT_MAX_VERIFY;
   const field = `stages.${stageId}.max_verify`;
   if (verify.length === 0) throw new ConfigurationError(`${field} requires verify.`);
   return positiveInteger(stage.max_verify, field);

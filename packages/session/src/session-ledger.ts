@@ -15,6 +15,7 @@ import { StageOutcome } from '@nodeint/migent-kernel';
 import { isRecord } from '@nodeint/migent-workflow';
 import { isWorkflowV2, type WorkflowDocument } from '@nodeint/migent-workflow';
 
+import { MANIFEST_SCHEMA_EVENT_LOG } from './constants.js';
 import { sessionChangeReason } from './session-events.js';
 
 export interface LedgerOutput {
@@ -401,7 +402,7 @@ function manifestLine(
 ): string | null {
   const { schemaVersion, manifestStatus } = manifest;
   const { executionStatus, previousSessionStatus, sessionStatus } = change;
-  if (schemaVersion >= 2 || manifestStatus === null) return null;
+  if (schemaVersion >= MANIFEST_SCHEMA_EVENT_LOG || manifestStatus === null) return null;
   let desired: string | null = null;
   if (executionStatus === 'running' && previousSessionStatus === 'completed') desired = 'running';
   if (

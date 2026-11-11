@@ -1,7 +1,12 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
+import { JSON_INDENT, MS_PER_SECOND } from '@nodeint/migent-kernel';
+
 import { ensureRegistryHome } from '../src/home.ts';
+
+/** Poll interval while waiting for a condition in tests. */
+const POLL_MS = 20;
 
 export const TOOL = { name: 'migent', version: '0.1.0' };
 export const TOKEN = 'token-under-test-token-under-test-token-01';
@@ -30,7 +35,7 @@ export function serviceRecord(overrides: Record<string, unknown> = {}): Record<s
 
 export function writeService(home: string, record: Record<string, unknown>): void {
   ensureRegistryHome(home);
-  writeFileSync(path.join(home, 'service.json'), `${JSON.stringify(record, null, 2)}\n`);
+  writeFileSync(path.join(home, 'service.json'), `${JSON.stringify(record, null, JSON_INDENT)}\n`);
 }
 
 export function registryBytes(workspaces: unknown[]): Buffer {
@@ -38,10 +43,10 @@ export function registryBytes(workspaces: unknown[]): Buffer {
 }
 
 export async function waitFor(predicate: () => boolean, timeoutSec: number): Promise<boolean> {
-  const deadline = Date.now() + timeoutSec * 1000;
+  const deadline = Date.now() + timeoutSec * MS_PER_SECOND;
   while (Date.now() < deadline) {
     if (predicate()) return true;
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await new Promise((resolve) => setTimeout(resolve, POLL_MS));
   }
   return predicate();
 }

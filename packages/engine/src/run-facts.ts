@@ -6,13 +6,14 @@ import type { CliClient, OutcomeContext } from '@nodeint/migent-kernel';
 import { resolveStageOutcome, spawnProviderSync } from '@nodeint/migent-kernel';
 import { StageOutcome } from '@nodeint/migent-kernel';
 import type { TurnKind } from '@nodeint/migent-prompts';
+import { LEGACY_RESPONSE_PROTOCOL } from '@nodeint/migent-prompts';
 import type { ExecutionContext, SessionStore } from '@nodeint/migent-session';
 import { isRecord } from '@nodeint/migent-workflow';
 
 /** The protocol a stored stamp runs under. A missing or legacy stamp is read as 1. */
 export function storedProtocol(metadata: Record<string, unknown> | null): number {
   const value = metadata?.response_protocol;
-  return typeof value === 'number' && value >= 2 ? value : 1;
+  return typeof value === 'number' && value >= LEGACY_RESPONSE_PROTOCOL ? value : 1;
 }
 
 const TURN_KINDS: readonly TurnKind[] = [

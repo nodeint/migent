@@ -5,7 +5,9 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { inheritedEnv } from '@nodeint/migent-kernel';
+import { MS_PER_SECOND } from '@nodeint/migent-kernel';
 
+import { EXIT_USAGE, FILE_MODE, SECRET_BYTES } from './constants.js';
 import { ServiceEndpointServer } from './endpoint.js';
 import { ensureRegistryHome } from './home.js';
 import { RegistryHTTPServer } from './server.js';
@@ -66,7 +68,7 @@ function closeQuiet(fd: number): void {
 export async function launchChild(home: string, port: number): Promise<SpawnedChild> {
   const directory = ensureRegistryHome(home);
   const logPath = path.join(directory, 'service.log');
-  const logFd = openSync(logPath, fsConstants.O_CREAT | fsConstants.O_APPEND | fsConstants.O_WRONLY, 0o600);
+  const logFd = openSync(logPath, fsConstants.O_CREAT | fsConstants.O_APPEND | fsConstants.O_WRONLY, FILE_MODE);
   const invocation = childInvocation(childEntryScript());
   let proc: ChildProcess;
   try {
@@ -120,7 +122,7 @@ function trackChild(proc: ChildProcess): SpawnedChild {
         const timer = setTimeout(() => {
           proc.off('exit', onExit);
           resolve();
-        }, Math.max(0, timeoutSec) * 1000);
+        }, Math.max(0, timeoutSec) * MS_PER_SECOND);
         const onExit = (): void => {
           clearTimeout(timer);
           resolve();
@@ -139,7 +141,7 @@ function trackChild(proc: ChildProcess): SpawnedChild {
           readyWaiters.delete(check);
           resolve(value);
         };
-        const timer = setTimeout(check, Math.max(0, deadline - monotonic()) * 1000);
+        const timer = setTimeout(check, Math.max(0, deadline - monotonic()) * MS_PER_SECOND);
         readyWaiters.add(check);
         check();
       });
@@ -181,22 +183,25 @@ function waitForAck(deadline: number, stop: AbortSignal): Promise<boolean> {
       if (message && typeof message === 'object' && (message as { type?: unknown }).type === PUBLISHED) finish(true);
     };
     const onDisconnect = (): void => finish(false);
-    const timer = setTimeout(() => finish(false), Math.max(0, deadline - monotonic()) * 1000);
+    const timer = setTimeout(() => finish(false), Math.max(0, deadline - monotonic()) * MS_PER_SECOND);
     const poll = setInterval(() => {
       if (stop.aborted) finish(false);
-    }, 50);
+    }, CHILD_POLL_MS);
     process.on('message', onMessage);
     process.once('disconnect', onDisconnect);
     if (!process.connected) finish(false);
   });
 }
 
+/** Interval at which the child checks for an abort signal. */
+const CHILD_POLL_MS = 50;
+
 export async function serveChild(home: string, port: number): Promise<number> {
-  if (!process.send || !process.connected) return 2;
+  if (!process.send || !process.connected) return EXIT_USAGE;
   const send = process.send.bind(process);
   const directory = ensureRegistryHome(home);
-  const instanceId = randomBytes(32).toString('base64url');
-  const token = randomBytes(32).toString('base64url');
+  const instanceId = randomBytes(SECRET_BYTES).toString('base64url');
+  const token = randomBytes(SECRET_BYTES).toString('base64url');
   let server: RegistryHTTPServer | null = null;
   const stop = new AbortController();
   const onSignal = (): void => {
@@ -258,7 +263,7 @@ async function serveLoop(server: RegistryHTTPServer, stop: AbortSignal): Promise
 
 export async function childMain(argv: string[]): Promise<number> {
   const parsed = parseChildArgs(argv);
-  if (!parsed) return 2;
+  if (!parsed) return EXIT_USAGE;
   return serveChild(parsed.home, parsed.port);
 }
 

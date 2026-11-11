@@ -5,7 +5,10 @@ import path from 'node:path';
 
 import { writeJsonAtomic } from '@nodeint/migent-kernel';
 import { utcNow } from '@nodeint/migent-kernel';
+import { JSON_INDENT } from '@nodeint/migent-kernel';
 import { isRecord } from '@nodeint/migent-workflow';
+/** Random bytes in a lock owner nonce. */
+const LOCK_NONCE_BYTES = 12;
 
 export const SESSION_LOCK_FILENAME = 'session.lock';
 export const SESSION_LOCK_STALE_MS = 30_000;
@@ -117,7 +120,7 @@ export class SessionLock {
       host: os.hostname(),
       started_at: now,
       heartbeat_at: now,
-      nonce: randomBytes(12).toString('hex'),
+      nonce: randomBytes(LOCK_NONCE_BYTES).toString('hex'),
     };
     if (!createExclusive(lockPath, info)) {
       if (!takeOverStale(lockPath, staleMs)) return null;
@@ -232,7 +235,7 @@ function createExclusive(lockPath: string, info: LockInfo): boolean {
     throw error;
   }
   try {
-    writeSync(fd, JSON.stringify(info, null, 2));
+    writeSync(fd, JSON.stringify(info, null, JSON_INDENT));
   } finally {
     closeSync(fd);
   }

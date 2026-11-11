@@ -3,6 +3,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { RequestError } from '@hono/node-server';
 import { Hono } from 'hono';
 
+import { HTTP_BAD_REQUEST, HTTP_CONFLICT, HTTP_CREATED, HTTP_METHOD_NOT_ALLOWED, HTTP_NOT_FOUND, HTTP_OK, HTTP_UNAUTHORIZED, MAX_WORKSPACE_NAME_LENGTH } from './constants.js';
 import {
   InvalidRecord,
   NotAWorkspace,
@@ -111,18 +112,18 @@ export class Call {
     try {
       payload = JSON.parse(raw.toString('utf8'));
     } catch {
-      throw new HttpError(400, 'invalid_request', 'Request body is not JSON.');
+      throw new HttpError(HTTP_BAD_REQUEST, 'invalid_request', 'Request body is not JSON.');
     }
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-      throw new HttpError(400, 'invalid_request', 'Request fields are invalid.');
+      throw new HttpError(HTTP_BAD_REQUEST, 'invalid_request', 'Request fields are invalid.');
     }
     const record = payload as Record<string, unknown>;
     const keys = new Set(Object.keys(record));
     for (const key of keys) {
-      if (!allowed.has(key)) throw new HttpError(400, 'invalid_request', 'Request fields are invalid.');
+      if (!allowed.has(key)) throw new HttpError(HTTP_BAD_REQUEST, 'invalid_request', 'Request fields are invalid.');
     }
     for (const key of required) {
-      if (!keys.has(key)) throw new HttpError(400, 'invalid_request', 'Request fields are invalid.');
+      if (!keys.has(key)) throw new HttpError(HTTP_BAD_REQUEST, 'invalid_request', 'Request fields are invalid.');
     }
     return record;
   }
@@ -171,17 +172,17 @@ function failure(status: number, code: string, message: string): Result {
 }
 
 function unauthorized(): Result {
-  return failure(401, 'unauthorized', 'Bearer token is missing or incorrect.');
+  return failure(HTTP_UNAUTHORIZED, 'unauthorized', 'Bearer token is missing or incorrect.');
 }
 
 function failureForStore(error: unknown): Result | null {
-  if (error instanceof RegistryBusy) return failure(409, 'registry_busy', 'The registry is busy.');
+  if (error instanceof RegistryBusy) return failure(HTTP_CONFLICT, 'registry_busy', 'The registry is busy.');
   if (error instanceof RegistryCorrupt) {
-    return failure(409, 'registry_corrupt', 'registry.json is corrupt and was left unchanged.');
+    return failure(HTTP_CONFLICT, 'registry_corrupt', 'registry.json is corrupt and was left unchanged.');
   }
-  if (error instanceof WorkspaceNotFound) return failure(404, 'workspace_not_found', error.message);
+  if (error instanceof WorkspaceNotFound) return failure(HTTP_NOT_FOUND, 'workspace_not_found', error.message);
   if (error instanceof InvalidRecord || error instanceof NotAWorkspace) {
-    return failure(400, 'invalid_request', error.message);
+    return failure(HTTP_BAD_REQUEST, 'invalid_request', error.message);
   }
   return null;
 }
@@ -296,8 +297,8 @@ export class Router {
     const chosen = matched.filter(([route]) => route.method === call.method);
     if (chosen.length === 0) {
       if (authState(call.authorization, call.token) !== 'ok') return unauthorized();
-      if (matched.length === 0) return failure(404, 'workspace_not_found', 'Not found.');
-      return failure(405, 'method_not_allowed', 'Method is not allowed.');
+      if (matched.length === 0) return failure(HTTP_NOT_FOUND, 'workspace_not_found', 'Not found.');
+      return failure(HTTP_METHOD_NOT_ALLOWED, 'method_not_allowed', 'Method is not allowed.');
     }
     const [route, params] = chosen[0]!;
     if (route.auth !== 'health' && authState(call.authorization, call.token) !== 'ok') return unauthorized();
@@ -318,42 +319,42 @@ export function buildRouter(): Router {
   router.route('GET', '/v1/health', { auth: 'health', answerBeforeBody: true })((call) => {
     const state = authState(call.authorization, call.token);
     if (state === 'bad') return unauthorized();
-    if (state === 'ok') return new Result(200, { ok: true, instance_id: call.instanceId });
-    return new Result(200, { ok: true });
+    if (state === 'ok') return new Result(HTTP_OK, { ok: true, instance_id: call.instanceId });
+    return new Result(HTTP_OK, { ok: true });
   });
 
-  router.route('GET', '/v1/workspaces')(async (call) => new Result(200, { workspaces: await call.store.list() }));
+  router.route('GET', '/v1/workspaces')(async (call) => new Result(HTTP_OK, { workspaces: await call.store.list() }));
 
   router.route('POST', '/v1/workspaces')(async (call) => {
     const payload = call.jsonObject(new Set(['path', 'name', 'tool']), new Set(['path']));
     const rawPath = payload.path;
-    if (typeof rawPath !== 'string') throw new HttpError(400, 'invalid_request', 'Workspace path is not absolute.');
+    if (typeof rawPath !== 'string') throw new HttpError(HTTP_BAD_REQUEST, 'invalid_request', 'Workspace path is not absolute.');
     const {name} = payload;
-    if (Object.hasOwn(payload, 'name') && (typeof name !== 'string' || name.length === 0 || name.length > 200)) {
-      throw new HttpError(400, 'invalid_request', 'Workspace name is invalid.');
+    if (Object.hasOwn(payload, 'name') && (typeof name !== 'string' || name.length === 0 || name.length > MAX_WORKSPACE_NAME_LENGTH)) {
+      throw new HttpError(HTTP_BAD_REQUEST, 'invalid_request', 'Workspace name is invalid.');
     }
-    if (!Object.hasOwn(payload, 'tool')) throw new HttpError(400, 'invalid_request', 'Tool name is invalid.');
+    if (!Object.hasOwn(payload, 'tool')) throw new HttpError(HTTP_BAD_REQUEST, 'invalid_request', 'Tool name is invalid.');
     let root: string;
     try {
       root = locateWorkspace(rawPath);
     } catch (error) {
       if (error instanceof WorkspaceLocationError) {
-        throw new HttpError(400, 'invalid_request', error.message);
+        throw new HttpError(HTTP_BAD_REQUEST, 'invalid_request', error.message);
       }
       throw error;
     }
     const [record, created] = await call.store.register(root, typeof name === 'string' ? name : null, payload.tool);
-    return new Result(created ? 201 : 200, { ...record });
+    return new Result(created ? HTTP_CREATED : HTTP_OK, { ...record });
   });
 
   router.route('GET', '/v1/workspaces/{workspace_id}')(async (call) => {
     const record = await call.store.get(call.params.workspace_id ?? '');
-    return new Result(200, { ...record });
+    return new Result(HTTP_OK, { ...record });
   });
 
   router.route('DELETE', '/v1/workspaces/{workspace_id}')(async (call) => {
     const record = await call.store.remove(call.params.workspace_id ?? '');
-    return new Result(200, { ...record });
+    return new Result(HTTP_OK, { ...record });
   });
 
   return router;

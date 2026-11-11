@@ -1,5 +1,9 @@
 import path from 'node:path';
 
+import { WORKFLOW_SCHEMA_VERSION } from '@nodeint/migent-contracts';
+
+import { SCHEMA_V2 } from './constants.js';
+
 /** The recipient is separate from the question outcome; more recipients can be added later. */
 export type AskTarget = 'human';
 
@@ -138,10 +142,10 @@ export interface WorkflowDocument {
 }
 
 /** Accepted workflow and config document version. */
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = WORKFLOW_SCHEMA_VERSION;
 
 export function isWorkflowV2(workflow: WorkflowDocument | null | undefined): boolean {
-  return (workflow?.schemaVersion ?? 1) >= 2;
+  return (workflow?.schemaVersion ?? 1) >= SCHEMA_V2;
 }
 
 export interface WorkflowCatalog {

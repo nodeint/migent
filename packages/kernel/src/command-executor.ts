@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { constants as osConstants } from 'node:os';
 import type { Readable } from 'node:stream';
 
+import { ENDPOINT_TOKEN_BYTES, MS_PER_SECOND, TERMINATION_POLL_MS } from './constants.js';
 import { collectProcessStartInfo, type ProcessStartInfo } from './process-ownership.js';
 import { killProcessTree, wrapperEndpoint } from './process-wrapper.js';
 import { assertArgumentsPassable,UnpassableArgument } from './provider-spawn.js';
@@ -204,7 +205,7 @@ export class CommandExecutor {
       throw error;
     }
     try {
-      const endpoint = wrapperEndpoint(randomBytes(16).toString('hex'));
+      const endpoint = wrapperEndpoint(randomBytes(ENDPOINT_TOKEN_BYTES).toString('hex'));
       onDebug?.(`endpoint ${endpoint} (length ${Buffer.byteLength(endpoint)})`);
       const spawnedAt = new Date().toISOString();
       child = startWrapper(spec, { cwd, endpoint });
@@ -338,9 +339,9 @@ export class CommandExecutor {
     let outputClosed = false;
     while (true) {
       throwIfCancelled();
-      let waitMs = this.progressIntervalSec * 1000;
+      let waitMs = this.progressIntervalSec * MS_PER_SECOND;
       if (this.timeoutSec !== null) {
-        const remainingMs = this.timeoutSec * 1000 - (Date.now() - startedAt);
+        const remainingMs = this.timeoutSec * MS_PER_SECOND - (Date.now() - startedAt);
         if (remainingMs <= 0) return this.timeout(child, hooks);
         waitMs = Math.min(waitMs, remainingMs);
       }
@@ -355,7 +356,7 @@ export class CommandExecutor {
         if (line === 'cancel') throwIfCancelled();
       }
       if (line === 'timeout') {
-        const elapsedSec = Math.floor((Date.now() - startedAt) / 1000);
+        const elapsedSec = Math.floor((Date.now() - startedAt) / MS_PER_SECOND);
         if (onHeartbeat) onHeartbeat(elapsedSec);
         continue;
       }
@@ -500,10 +501,10 @@ export async function stopProcessGroup(child: ChildProcess): Promise<void> {
     throw error;
   }
   // The wrapper exits with the provider, but other group members may outlive both.
-  const deadline = Date.now() + TERMINATION_GRACE_SEC * 1000;
-  await waitForExit(child, TERMINATION_GRACE_SEC * 1000);
+  const deadline = Date.now() + TERMINATION_GRACE_SEC * MS_PER_SECOND;
+  await waitForExit(child, TERMINATION_GRACE_SEC * MS_PER_SECOND);
   while (processGroupAlive(child.pid) && Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await new Promise((resolve) => setTimeout(resolve, TERMINATION_POLL_MS));
   }
   if (processGroupAlive(child.pid) || (child.exitCode === null && child.signalCode === null)) {
     try {
@@ -511,7 +512,7 @@ export async function stopProcessGroup(child: ChildProcess): Promise<void> {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
     }
-    await waitForExit(child, 1000);
+    await waitForExit(child, MS_PER_SECOND);
   }
   child.stdout?.destroy();
 }

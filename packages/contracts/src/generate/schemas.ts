@@ -7,6 +7,7 @@ export const SCHEMA_DIALECT = 'https://json-schema.org/draft/2020-12/schema';
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 type Node = { [key: string]: unknown };
 
+const JSON_INDENT = 2;
 const isNode = (value: unknown): value is Node => typeof value === 'object' && value !== null && !Array.isArray(value);
 const idOf = (value: unknown): string | null => (isNode(value) && typeof value.$id === 'string' ? value.$id : null);
 
@@ -66,7 +67,7 @@ export function generateSchemaFiles(): Record<string, string> {
   for (const [identity, node] of collectIdentities()) {
     const body = plain(node, true, node) as Record<string, Json>;
     const { $id, ...rest } = body;
-    files[`packages/contracts/schemas/${schemaPath(identity)}`] = `${JSON.stringify({ $schema: SCHEMA_DIALECT, $id, ...rest }, null, 2)}\n`;
+    files[`packages/contracts/schemas/${schemaPath(identity)}`] = `${JSON.stringify({ $schema: SCHEMA_DIALECT, $id, ...rest }, null, JSON_INDENT)}\n`;
   }
   return files;
 }

@@ -33,10 +33,14 @@ import {
   printInitNextSteps,
 } from '../display.js';
 import { PromptCancelled } from '../errors.js';
+import { EXIT_CONFIG } from '../exits.js';
 import { exists, isDirectory, isFile } from '../fs-utils.js';
 import { cliHooks } from '../hooks.js';
 import { type ModelChoice, type RenderedFile,renderProject } from '../project-template.js';
 import { runDoctor } from './doctor.js';
+
+/** Column width of role names in the init summary. */
+const ROLE_NAME_WIDTH = 10;
 
 const INIT_EXAMPLE = 'Example: migent init --planner-client codex --planner-model gpt-5 --reviewer-client grok --reviewer-model grok-4.7 --client codex --developer-model gpt-5 --no-input';
 
@@ -114,19 +118,19 @@ export async function runInit(
     const flags = `${clientFlag} and --${prefix}model`;
     if ((selectedClient === null) !== (selectedModel === null)) {
       printError(`Pass both ${flags} for ${role}, or omit both.\n${INIT_EXAMPLE}`);
-      return 2;
+      return EXIT_CONFIG;
     }
     if (pairs.length > 0 && selectedClient === null) {
       printError(`Pass ${flags} with --${prefix}option.`);
-      return 2;
+      return EXIT_CONFIG;
     }
     if ((effort !== null && effort !== undefined) && selectedClient === null) {
       printError(`Pass ${flags} with --${prefix}effort.`);
-      return 2;
+      return EXIT_CONFIG;
     }
     if (selectedClient === null && !interactive) {
       printError(`Pass ${flags} for ${role} when init is not interactive.\n${INIT_EXAMPLE}`);
-      return 2;
+      return EXIT_CONFIG;
     }
   }
   if (classified.state === 'conflict') {
@@ -161,7 +165,7 @@ export async function runInit(
     for (const failure of failures) process.stderr.write(`Could not load models for ${failure}\n`);
     if (models.length === 0) {
       printError('No models available from installed clients.');
-      return 2;
+      return EXIT_CONFIG;
     }
   }
   let developer: ModelChoice;
@@ -198,14 +202,14 @@ export async function runInit(
   } catch (error) {
     if (error instanceof PromptCancelled) throw error;
     printError(error instanceof Error ? error.message : String(error));
-    return 2;
+    return EXIT_CONFIG;
   }
   let files: RenderedFile[];
   try {
     files = renderProject({ planner, reviewer, developer });
   } catch (error) {
     printError(error instanceof Error ? error.message : String(error));
-    return 2;
+    return EXIT_CONFIG;
   }
   const paths = writeProject(workspace, files);
   printCreated(
@@ -229,7 +233,7 @@ function printRoleDescriptions(workspace: string): void {
   const lines: string[] = [];
   for (const role of Object.keys(config.roles as Record<string, unknown>)) {
     const description = loadRoleDescription(config, role);
-    if (description !== null) lines.push(`  ${role.padEnd(10)} ${description}`);
+    if (description !== null) lines.push(`  ${role.padEnd(ROLE_NAME_WIDTH)} ${description}`);
   }
   if (lines.length > 0) process.stdout.write(`Roles:\n${lines.join('\n')}\n`);
 }

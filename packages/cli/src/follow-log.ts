@@ -1,6 +1,8 @@
 import { readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 
+import { NEWLINE_BYTE } from '@nodeint/migent-kernel';
+
 export interface FollowLine {
   line: string;
   source: 'events' | 'stream';
@@ -158,7 +160,7 @@ function lineSpans(text: string): { start: number; line: string }[] {
   const spans: { start: number; line: string }[] = [];
   let lineStart = 0;
   for (let index = 0; index < buffer.length; index += 1) {
-    if (buffer[index] !== 0x0a) continue;
+    if (buffer[index] !== NEWLINE_BYTE) continue;
     const line = buffer.subarray(lineStart, index).toString('utf8');
     if (line !== '') spans.push({ start: lineStart, line });
     lineStart = index + 1;

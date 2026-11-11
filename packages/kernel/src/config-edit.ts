@@ -5,6 +5,7 @@ import { isRoleStage, type RoleStageSpec, type WorkflowDocument } from '@nodeint
 import type { ClientRegistry } from './cli-client.js';
 import { loadAgentTarget, loadRoleDescription, loadRoleResponsibilities, resolveRoleCascade, resolveStageSpec } from './config.js';
 import { compareString, mappingOrEmpty, optionsDict, recordEqual, roleOptionMap } from './config-text.js';
+import { FIRST_DUPLICATE_SUFFIX } from './constants.js';
 import { ConfigurationError } from './errors.js';
 import { ConfigEditError, deepCopyRecord, deepEqual } from './yaml-patch.js';
 
@@ -530,7 +531,7 @@ function suggestAgentName(config: Record<string, unknown>, role: string): string
   const taken = isRecord(agents) ? agents : {};
   const base = NAME.test(role) ? role : 'agent';
   if (!Object.hasOwn(taken, base)) return base;
-  let index = 2;
+  let index = FIRST_DUPLICATE_SUFFIX;
   while (Object.hasOwn(taken, `${base}-${index}`)) index += 1;
   return `${base}-${index}`;
 }

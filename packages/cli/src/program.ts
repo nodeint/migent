@@ -192,11 +192,11 @@ ${exitText([
     .helpOption(false)
     .action(() => settle(status, () => {
       printError(PROVIDER_LIST_REMOVED);
-      return 2;
+      return EXIT_CONFIG;
     }));
   provider.action(() => settle(status, () => {
     printError(PROVIDER_LIST_REMOVED);
-    return 2;
+    return EXIT_CONFIG;
   }));
 
   program
@@ -239,7 +239,7 @@ function registerInitCommand(program: Command, status: CliStatus): void {
     settle(status, () => {
       if (options.skill === true) {
         printError('init --skill has been removed. Run `migent init`, then `migent skill install --project`.');
-        return 2;
+        return EXIT_CONFIG;
       }
       for (const [legacy, replacement] of [
         ['plannerProvider', '--planner-client'],
@@ -250,13 +250,13 @@ function registerInitCommand(program: Command, status: CliStatus): void {
         if (options[legacy] !== undefined) {
           const flag = `--${legacy.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`;
           printError(`${flag} has been removed; use ${replacement} <id> (${CLIENT_MAPPING}).`);
-          return 2;
+          return EXIT_CONFIG;
         }
       }
       for (const [name, legacy] of [['developerClient', 'client'], ['developerModel', 'model'], ['developerEffort', 'effort']] as const) {
         if (options[name] !== undefined && options[legacy] !== undefined) {
           printError(`Use only one of --${name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)} and --${legacy}.`);
-          return 2;
+          return EXIT_CONFIG;
         }
       }
       const client = optionalText(options.developerClient ?? options.client);
@@ -333,7 +333,7 @@ function registerAuthoringCommands(program: Command, status: CliStatus, config: 
       .action(() =>
         settle(status, () => {
           printError(removedConfigCommand(removed));
-          return 2;
+          return EXIT_CONFIG;
         }),
       );
   }
@@ -375,13 +375,13 @@ function registerSkillCommands(program: Command, status: CliStatus): void {
   scoped(skill.command('install').description("Install the Migent skill into the clients' skill directories.")).action(
     (options: OptionValues) => settle(status, () => {
       const resolved = skillOptions(options);
-      return resolved === null ? 2 : installSkill(resolved);
+      return resolved === null ? EXIT_CONFIG : installSkill(resolved);
     }),
   );
   scoped(skill.command('update').description('Reinstall installed Migent skill copies that differ from the bundled skill.')).action(
     (options: OptionValues) => settle(status, () => {
       const resolved = skillOptions(options);
-      return resolved === null ? 2 : updateSkill(resolved);
+      return resolved === null ? EXIT_CONFIG : updateSkill(resolved);
     }),
   );
   skill
@@ -516,20 +516,20 @@ function registerSessionRunCommands(session: Command, status: CliStatus): void {
 function runSessionCommand(options: OptionValues): number | Promise<number> {
   if (options.stage !== undefined && optionalText(options.stage) === null) {
     printError('--stage is empty.');
-    return 2;
+    return EXIT_CONFIG;
   }
   const workflowProvided = options.workflow !== undefined;
   const workflowId = optionalText(options.workflow);
   if (workflowProvided && workflowId === null) {
     printError('--workflow is empty.');
-    return 2;
+    return EXIT_CONFIG;
   }
   const sessionId = optionalText(options.session);
   const roleMode = roleFlagsPresent(options);
   const workflowMode = workflowFlagsPresent(options);
   if ((workflowId !== null && roleMode) || (workflowId === null && workflowMode && (roleMode || sessionId === null))) {
     printError(RUN_SPLIT);
-    return 2;
+    return EXIT_CONFIG;
   }
   // A session without role flags is a prepared workflow session; it records its own workflow.
   if (workflowId !== null || (sessionId !== null && !roleMode)) {
@@ -537,11 +537,11 @@ function runSessionCommand(options: OptionValues): number | Promise<number> {
     const prepared = sessionId !== null;
     if (prepared && task !== null) {
       printError('Pass --workflow and --task, or --session, not both.');
-      return 2;
+      return EXIT_CONFIG;
     }
     if (!prepared && task === null && options.prior === undefined) {
       printError('Pass --task.');
-      return 2;
+      return EXIT_CONFIG;
     }
     return runWorkflowCommand({
       workflowId,
@@ -555,7 +555,7 @@ function runSessionCommand(options: OptionValues): number | Promise<number> {
   }
   if (!roleMode) {
     printError(RUN_SPLIT);
-    return 2;
+    return EXIT_CONFIG;
   }
   return runAgent(options, optionalText(options.session));
 }
@@ -591,7 +591,7 @@ function workflowFlagsPresent(options: OptionValues): boolean {
 function continueSession(session: string, options: OptionValues): number | Promise<number> {
   if (options.stage !== undefined && optionalText(options.stage) === null) {
     printError('--stage is empty.');
-    return 2;
+    return EXIT_CONFIG;
   }
   const workspace = findWorkspace(invocationCwdPath());
   if (isAgentSession(workspace, session)) return continueRoleSession(
@@ -599,9 +599,9 @@ function continueSession(session: string, options: OptionValues): number | Promi
     options,
     readReply,
   );
-  if (rejectOnce(options)) return 2;
+  if (rejectOnce(options)) return EXIT_CONFIG;
   const reply = readReply(options);
-  if (reply === 'invalid') return 2;
+  if (reply === 'invalid') return EXIT_CONFIG;
   const stageId = optionalText(options.stage);
   // With --reply and no --once, --stage only picks the stage that receives the reply; the workflow keeps running.
   if (options.once === true || (stageId !== null && reply === null)) {
@@ -618,7 +618,7 @@ function continueSession(session: string, options: OptionValues): number | Promi
     });
   }
   const ceiling = dispatchCeiling(options);
-  if (typeof ceiling === 'string') return 2;
+  if (typeof ceiling === 'string') return EXIT_CONFIG;
   return executeWorkflow(findWorkspace(invocationCwdPath()), {
     action: 'continue',
     sessionId: session,

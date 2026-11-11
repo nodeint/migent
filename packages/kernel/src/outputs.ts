@@ -9,11 +9,20 @@ import {
 import path from 'node:path';
 
 import type { WorkflowDocument } from '@nodeint/migent-workflow';
+import { SCHEMA_V7_ARTIFACTS } from '@nodeint/migent-workflow';
 
 import { fsyncPath, renameWithRetry } from './atomic-file.js';
+import { CARRIAGE_RETURN_BYTE, FORM_FEED_BYTE, NEWLINE_BYTE, SPACE_BYTE, TAB_BYTE, TEMP_SUFFIX_BYTES, VERTICAL_TAB_BYTE } from './constants.js';
 import { StageOutcome } from './stage-outcome.js';
 
-const asciiSpace = new Set([0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x20]);
+const asciiSpace = new Set([
+  TAB_BYTE,
+  NEWLINE_BYTE,
+  VERTICAL_TAB_BYTE,
+  FORM_FEED_BYTE,
+  CARRIAGE_RETURN_BYTE,
+  SPACE_BYTE,
+]);
 
 export interface ExecutionSnapshot {
   executionId: string;
@@ -143,7 +152,7 @@ export function selectSourceExecution(
 }
 
 export function isArtifactSchema(workflow: WorkflowDocument): boolean {
-  return (workflow.schemaVersion ?? 1) >= 7;
+  return (workflow.schemaVersion ?? 1) >= SCHEMA_V7_ARTIFACTS;
 }
 
 /**
@@ -246,7 +255,7 @@ export function atomicCopy(source: string, destination: string): void {
   mkdirSync(path.dirname(destination), { recursive: true });
   const tmp = path.join(
     path.dirname(destination),
-    `.${path.basename(destination)}.${randomBytes(6).toString('hex')}.tmp`,
+    `.${path.basename(destination)}.${randomBytes(TEMP_SUFFIX_BYTES).toString('hex')}.tmp`,
   );
   try {
     copyFileSync(source, tmp);

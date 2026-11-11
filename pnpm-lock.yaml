@@ -134,6 +134,9 @@ importers:
 
   packages/engine:
     dependencies:
+      '@nodeint/migent-contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@nodeint/migent-kernel':
         specifier: workspace:*
         version: link:../kernel

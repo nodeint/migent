@@ -4,6 +4,14 @@ export { ConfigurationError } from './errors.js';
 export type { CatalogFact, CatalogProblem, WorkflowCatalogEntry } from './catalog.js';
 export { catalogEntryFromDocument, checkWorkflowCatalog } from './catalog.js';
 export { compileChangedPathPattern, matchesChangedPaths } from './changed-paths.js';
+export {
+  DEFAULT_MAX_VERIFY,
+  SCHEMA_V2,
+  SCHEMA_V3,
+  SCHEMA_V4_DOWNSTREAM,
+  SCHEMA_V5,
+  SCHEMA_V7_ARTIFACTS,
+} from './constants.js';
 export type { UnknownKey } from './diagnostics.js';
 export {
   closest,

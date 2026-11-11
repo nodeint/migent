@@ -8,12 +8,16 @@ import { loadWorkspaceConfig, skillsChildEnv, whichSync } from '@nodeint/migent-
 
 import { printError } from '../display.js';
 import { PromptCancelled } from '../errors.js';
+import { EXIT_CONFIG } from '../exits.js';
 import { isDirectory, isFile } from '../fs-utils.js';
 import { cliHooks } from '../hooks.js';
 import { scanInstalledSkills } from '../skill-scan.js';
 import { findTarget, SKILL_TARGETS, type SkillScope, type SkillTarget } from '../skill-targets.js';
 
-const MIN_NODE = [22, 20] as const;
+const MIN_NODE_MAJOR = 22;
+const MIN_NODE_MINOR = 20;
+
+const MIN_NODE = [MIN_NODE_MAJOR, MIN_NODE_MINOR] as const;
 
 /** Runs `npx` with the given arguments in `cwd` on inherited stdio and returns its exit code. */
 export type SkillRunner = (argv: string[], cwd: string) => number | Promise<number>;
@@ -48,7 +52,7 @@ export function printSkillPath(): number {
 
 export async function installSkill(options: SkillOptions = {}): Promise<number> {
   const scope = await resolveScope(options);
-  if (scope === null) return 2;
+  if (scope === null) return EXIT_CONFIG;
   const workspace = options.workspace ?? null;
   if (scope === 'project' && workspace === null) {
     printError('Project scope needs a Migent workspace; run `migent init` or pass --global.');
@@ -58,7 +62,7 @@ export async function installSkill(options: SkillOptions = {}): Promise<number> 
   const targets = pickTargets(
     requested.length > 0 || scope === 'global' || workspace === null ? requested : clientsFromConfig(workspace),
   );
-  if (targets === null) return 2;
+  if (targets === null) return EXIT_CONFIG;
   if (!preflight(options)) return 1;
   return runSkills(scope, targets, options);
 }
@@ -68,7 +72,7 @@ export async function updateSkill(options: SkillOptions = {}): Promise<number> {
   const home = options.home ?? homedir();
   const requested = options.clients ?? [];
   const wanted = requested.length === 0 ? null : pickTargets(requested);
-  if (requested.length > 0 && wanted === null) return 2;
+  if (requested.length > 0 && wanted === null) return EXIT_CONFIG;
   const installed = scanInstalledSkills({ workspace: workspace ?? path.join(home, '\0none'), home }, skillSourceDirectory())
     .filter((entry) => entry.scope === 'global' || workspace !== null)
     .filter((entry) => (options.scope === null || options.scope === undefined) || entry.scope === options.scope)
@@ -88,7 +92,7 @@ export async function updateSkill(options: SkillOptions = {}): Promise<number> {
     const answer = await ask(options, `Overwrite these copies with the bundled skill? Local edits are lost.\n${list}`);
     if (answer === null) {
       printError('Pass --yes to update without confirmation.');
-      return 2;
+      return EXIT_CONFIG;
     }
     if (!answer) return 0;
   }

@@ -1,5 +1,6 @@
 
 import { legacyArtifacts } from '../artifacts.js';
+import { DEFAULT_MAX_VERIFY } from '../constants.js';
 import { stageErrorPath, workflowRuleCode } from '../diagnostics.js';
 import type { DraftStage, DraftUnit } from '../draft/problems.js';
 import { declaredStagePlaceholders, DraftProblems, draftUnit } from '../draft/problems.js';
@@ -267,7 +268,7 @@ export function collectStage(rawItem: unknown, index: number, context: DraftStag
     if (Object.hasOwn(rawItem, 'max_verify') && (rawItem.max_verify !== null && rawItem.max_verify !== undefined)) {
       return positiveInteger(rawItem.max_verify, `stages.${stageId}.max_verify`);
     }
-    return kind === 'verify' ? 0 : 3;
+    return kind === 'verify' ? 0 : DEFAULT_MAX_VERIFY;
   });
   const verifyTimeoutSec = read(() => {
     if (verify.state !== 'invalid') return stageVerifyTimeout(rawItem, stageId, verify.value);
@@ -296,7 +297,7 @@ export function collectStage(rawItem: unknown, index: number, context: DraftStag
       maxRevisions: maxRevisions.state === 'invalid' ? null : maxRevisions.value,
       routes: decision.routes.state === 'invalid' ? {} : decision.routes.value,
       verify: verify.state === 'invalid' ? [] : verify.value,
-      maxVerify: maxVerify.state === 'invalid' ? 3 : maxVerify.value,
+      maxVerify: maxVerify.state === 'invalid' ? DEFAULT_MAX_VERIFY : maxVerify.value,
       verifyTimeoutSec: verifyTimeoutSec.state === 'invalid' ? null : verifyTimeoutSec.value,
       runWhen: runWhen.state === 'invalid' ? null : runWhen.value,
       artifacts: legacyArtifacts(stageId, artifact),
@@ -344,7 +345,7 @@ export function collectStage(rawItem: unknown, index: number, context: DraftStag
           maxRevisions: maxRevisions.state === 'invalid' ? null : maxRevisions.value,
           routes: decision.routes.state === 'invalid' ? {} : decision.routes.value,
           verify: verify.state === 'invalid' ? [] : verify.value,
-          maxVerify: maxVerify.state === 'invalid' ? 3 : maxVerify.value,
+          maxVerify: maxVerify.state === 'invalid' ? DEFAULT_MAX_VERIFY : maxVerify.value,
           verifyTimeoutSec: verifyTimeoutSec.state === 'invalid' ? null : verifyTimeoutSec.value,
           runWhen: runWhen.state === 'invalid' ? null : runWhen.value,
           role: role.value,

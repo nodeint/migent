@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 
-import { ConfigurationError } from '@nodeint/migent-kernel';
+import { BYTES_PER_MIB, ConfigurationError } from '@nodeint/migent-kernel';
 import { utcNow } from '@nodeint/migent-kernel';
 import type { SkipDetails } from '@nodeint/migent-session';
 import { appendLifecycleEvent, readParsedEvents, reservedExecutionOrders } from '@nodeint/migent-session';
@@ -9,7 +9,9 @@ import type { StageSpec, WorkflowDocument } from '@nodeint/migent-workflow';
 import { compileChangedPathPattern } from '@nodeint/migent-workflow';
 
 const GIT_TIMEOUT_MS = 60_000;
-const GIT_MAX_BUFFER = 64 * 1024 * 1024;
+/** Largest git output accepted, in MiB. */
+const GIT_MAX_BUFFER_MIB = 64;
+const GIT_MAX_BUFFER = GIT_MAX_BUFFER_MIB * BYTES_PER_MIB;
 const SKIP_REASON = 'no changed path matches run_when.changed_paths';
 
 export interface SessionBaseline {

@@ -27,7 +27,10 @@ const TURN_DIRECTIVES: Record<TurnKind, string> = {
 };
 
 /** Protocol 3: the stage result is the handoff file. Protocol 2: response headers plus a question file. */
-export const CURRENT_RESPONSE_PROTOCOL = 3;
+export const HANDOFF_FILE_PROTOCOL = 3;
+/** Oldest response protocol still understood. */
+export const LEGACY_RESPONSE_PROTOCOL = 2;
+export const CURRENT_RESPONSE_PROTOCOL = HANDOFF_FILE_PROTOCOL;
 
 function directive(turn: TurnKind | null, hasTask: boolean, handoff: boolean): string {
   if (handoff && turn === 'output_correction') return 'Write the missing files, then rewrite the handoff file.';
@@ -70,7 +73,7 @@ function envelope(options: ProviderPromptOptions) {
     const name = value.toLowerCase();
     return { name, instruction: instructions[name] ?? null };
   });
-  const handoff = (options.protocol ?? CURRENT_RESPONSE_PROTOCOL) >= 3;
+  const handoff = (options.protocol ?? CURRENT_RESPONSE_PROTOCOL) >= HANDOFF_FILE_PROTOCOL;
   const canAsk = mode !== null && (options.ask !== null && options.ask !== undefined);
   const artifactName = options.artifactName ?? null;
   const previousArtifactDirectory = artifactName ? options.previousArtifactDirectory ?? null : null;

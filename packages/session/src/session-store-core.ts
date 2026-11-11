@@ -12,6 +12,7 @@ import { withFileLockSync } from '@nodeint/migent-kernel';
 import { isRecord } from '@nodeint/migent-workflow';
 import { loadNamedWorkflow, loadWorkflowDocument, type WorkflowDocument } from '@nodeint/migent-workflow';
 
+import { MANIFEST_SCHEMA_EVENT_LOG, TURN_PAD_WIDTH } from './constants.js';
 import { readExecutionClient } from './legacy-execution-client.js';
 import { corruptStatusMessage, readStatusFileState } from './query.js';
 import { reservedExecutionOrders, reservedStageAttempts } from './session-events.js';
@@ -113,7 +114,7 @@ export class SessionStoreCore {
   }
 
   protected rewriteManifestStatus(sessionDirectory: string, status: string): void {
-    if (readSessionManifest(sessionDirectory).schemaVersion >= 2) return;
+    if (readSessionManifest(sessionDirectory).schemaVersion >= MANIFEST_SCHEMA_EVENT_LOG) return;
     const manifestPath = path.join(sessionDirectory, 'manifest.yaml');
     try {
       if (!statSync(manifestPath).isFile()) return;
@@ -217,7 +218,7 @@ export class SessionStoreCore {
   }
 
   public turnDirectory(context: ExecutionContext, turn: number): string {
-    return path.join(context.directory, 'turns', String(turn).padStart(2, '0'));
+    return path.join(context.directory, 'turns', String(turn).padStart(TURN_PAD_WIDTH, '0'));
   }
 
   /** Resolve and validate provenance before any resume changes persisted state. */

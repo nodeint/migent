@@ -1,5 +1,5 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { constants as osConstants, tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -247,7 +247,7 @@ export async function capture(
 export class CancelOnCommand extends ScriptedClient {
   public override buildCommand(input: BuildCommandInput): CommandSpec {
     super.buildCommand(input);
-    raiseCancellation(2);
+    raiseCancellation(osConstants.signals.SIGINT);
     return { argv: [process.execPath, '-e', 'process.exit(0)'] };
   }
 }

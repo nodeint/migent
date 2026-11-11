@@ -1,14 +1,6 @@
 import { ServiceStatus, type Static } from '@nodeint/migent-contracts';
 import { ConfigurationError } from '@nodeint/migent-kernel';
-import {
-  ensureRegistryHome,
-  registryHomePath,
-  serveForeground,
-  ServiceError,
-  serviceStatus,
-  startDetached,
-  stop,
-} from '@nodeint/migent-registry';
+import { ensureRegistryHome, MAX_PORT, registryHomePath, serveForeground, ServiceError, serviceStatus, startDetached, stop } from '@nodeint/migent-registry';
 
 import { printError } from '../display.js';
 import { writeJson } from '../emit.js';
@@ -68,6 +60,6 @@ export async function runServiceStatus(asJson: boolean): Promise<number> {
 export function parsePort(raw: string): number {
   if (!/^[0-9]+$/.test(raw)) throw new ConfigurationError('--port must be an integer from 1 to 65535.');
   const port = Number(raw);
-  if (port < 1 || port > 65535) throw new ConfigurationError('--port must be an integer from 1 to 65535.');
+  if (port < 1 || port > MAX_PORT) throw new ConfigurationError('--port must be an integer from 1 to 65535.');
   return port;
 }
