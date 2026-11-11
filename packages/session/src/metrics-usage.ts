@@ -40,16 +40,12 @@ export function addUsageRecord(totals: UsageTotals, usage: TurnUsage, missing: R
   }
 }
 
+function uniformFields<T>(value: T): Record<UsageField, T> {
+  return Object.fromEntries(USAGE_FIELDS.map((field) => [field, value])) as Record<UsageField, T>;
+}
+
 export function newUsageTotals(): UsageTotals {
-  const sums = {} as Record<UsageField, number>;
-  const seen = {} as Record<UsageField, boolean>;
-  const missing = {} as Record<UsageField, number>;
-  for (const field of USAGE_FIELDS) {
-    sums[field] = 0;
-    seen[field] = false;
-    missing[field] = 0;
-  }
-  return { sums, seen, missing };
+  return { sums: uniformFields(0), seen: uniformFields(false), missing: uniformFields(0) };
 }
 
 export function usageObject(totals: UsageTotals): TurnUsage {

@@ -525,7 +525,7 @@ function classifyFinishedProcess(
   exitCode: number | null,
   executorError: string | null,
 ): FailureClassification | null {
-  if (exitCode === null) return { kind: 'provider', origin: 'start', message: executorError ?? '' };
+  if (exitCode === null) return { kind: 'provider', origin: 'start', message: executorError === null ? '' : executorError };
   const classified = classifyFailure(client, stdout, exitCode);
   // Signal death (negative, or the shell's 128 + signal) is not a normal exit: its reply never counts.
   const signalled = exitCode < 0 || (exitCode > 128 && exitCode <= 128 + 64);

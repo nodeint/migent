@@ -55,7 +55,7 @@ export function executionFromRecord(
     executionOrder: asInt(metadata.execution_order),
     stageId: textOr(metadata.stage_id) ?? '',
     stageAttempt: asInt(metadata.stage_attempt),
-    client: client ?? '',
+    client: client === null ? '' : client,
     model: textOr(metadata.model) ?? '',
     resumesExecutionId: textOr(metadata.resumes_execution_id),
     status: textOr(metadata.status) ?? '',

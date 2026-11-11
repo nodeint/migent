@@ -40,7 +40,7 @@ export function writeFailureReport(
     if (window !== null) lines.push(`- Quota window: \`${window}\``);
   }
   if (typeof metadata.completed_at === 'string') lines.push(`- Completed at: ${metadata.completed_at}`);
-  lines.push('', '## Error', '', '```text', error ?? 'No error message was recorded.', '```');
+  lines.push('', '## Error', '', '```text', error === null ? 'No error message was recorded.' : error, '```');
   const diagnostics = readDiagnostics(context.directory);
   if (diagnostics !== null) {
     lines.push(

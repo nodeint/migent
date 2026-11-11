@@ -176,7 +176,10 @@ export function buildArtifactsV7(data: Record<string, unknown>, conditional: Rea
     const stageField = `stages.${stageId}`;
     const hasRole = stageHasRole(rawStage);
     const stageAt: (string | number)[] = ['stages', index];
-    const entry = { artifacts: [] as StageArtifact[], decisionArtifacts: {} as Record<string, StageArtifact[]> };
+    const entry: { artifacts: StageArtifact[]; decisionArtifacts: Record<string, StageArtifact[]> } = {
+      artifacts: [],
+      decisionArtifacts: {},
+    };
     perStage.set(stageId, entry);
     const filesInStage = new Map<string, string>();
     const localIds = new Set<string>();

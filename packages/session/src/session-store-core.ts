@@ -29,13 +29,13 @@ export class SessionStoreCore {
 
   constructor(
     workspace: string,
-    processInspector?: ProcessInspector,
-    metricsClients?: ClientRegistry,
+    processInspector: ProcessInspector = new SystemProcessInspector(),
+    metricsClients: ClientRegistry | null = null,
   ) {
     this.workspace = workspace;
     this.sessionsDirectory = path.join(workspace, MIGENT_DIRNAME, SESSIONS_DIRNAME);
-    this.processInspector = processInspector ?? new SystemProcessInspector();
-    this.metricsClients = metricsClients ?? null;
+    this.processInspector = processInspector;
+    this.metricsClients = metricsClients;
   }
 
   public executionContext(sessionId: string, executionId: string): ExecutionContext | null {

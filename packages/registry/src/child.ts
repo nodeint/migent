@@ -158,7 +158,7 @@ function trackChild(proc: ChildProcess): SpawnedChild {
     },
   };
   proc.on('exit', (code) => {
-    state.returncode = code ?? 1;
+    state.returncode = code === null ? 1 : code;
     wake();
   });
   return state;
