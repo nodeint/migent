@@ -42,11 +42,11 @@ test('v3 decisions carry agent instructions and route two approvals or a revisio
   }));
   for (const decision of ['approved', 'approved-with-note', 'revise']) {
     completed[1]!.outcomeDecision = decision;
-    const next = nextStage(workflow, completed, 'active');
+    const next = nextStage(workflow, completed, { sessionStatus: 'active' });
     if (decision === 'revise') expect(next).toEqual(new NextStage('implement'));
     else expect(version2GraphQuiet(workflow, completed, 'active')).toBe(true);
   }
-  const prompt = addStageOutcomeContract('Review the work.', review.decisionValues, review.decisionInstructions);
+  const prompt = addStageOutcomeContract('Review the work.', { decisionValues: review.decisionValues, decisionInstructions: review.decisionInstructions });
   expect(prompt).toContain('`decision` is one of approved|approved-with-note|revise.');
   expect(prompt).toContain('`approved-with-note`: Only minor findings remain. Record them in review.md.');
 });
@@ -67,7 +67,7 @@ test('decisions can omit when while retaining labels, routes, and optional guida
   expect(review.decisionValues).toEqual(['approved', 'revise']);
   expect(review.decisionInstructions).toEqual({ revise: 'Blocking findings remain.' });
   expect(review.routes.approved).toBe('complete');
-  const prompt = addStageOutcomeContract('Review.', review.decisionValues, review.decisionInstructions);
+  const prompt = addStageOutcomeContract('Review.', { decisionValues: review.decisionValues, decisionInstructions: review.decisionInstructions });
   expect(prompt).toContain('`decision` is one of approved|revise.');
   expect(prompt).toContain('Blocking findings remain.');
 });
@@ -148,7 +148,7 @@ test.each([2, 3])('freeze round-trip preserves schema v%i and its decision contr
     writeFileSync(path.join(workspace, '.migent/config.yaml'), 'roles:\n  developer:\n    agent: { client: { type: fake }, model: fake }\n  reviewer:\n    agent: { client: { type: fake }, model: fake }\n');
     const raw = version === 3 ? mapping() : mapping({ values: ['approved', 'revise'], routes: { approved: 'complete', revise: 'implement' } }, 2);
     const workflow = parseWorkflowMapping(raw, 'virtual.yaml');
-    writeWorkflowFreeze(workspace, workspace, workflow);
+    writeWorkflowFreeze(workspace, { workspace, workflow });
     const text = readFileSync(path.join(workspace, 'workflow.frozen.yaml'), 'utf8');
     expect(text).toContain(`schema_version: ${version}`);
     if (version === 3) expect(text).toContain('Only minor findings remain. Record them in review.md.');

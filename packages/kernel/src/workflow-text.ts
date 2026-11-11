@@ -12,6 +12,18 @@ export function artifactIdScalar(id: string): string {
   return AMBIGUOUS_SCALAR.test(id) ? JSON.stringify(id) : yamlScalar(id);
 }
 
+/** The text being patched. Edits accumulate in `edits`. */
+interface TextPatch {
+  readonly lines: string[];
+  readonly edits: Edit[];
+}
+
+/** A mapping before and after the migration. */
+interface Change {
+  readonly before: Readonly<Record<string, unknown>>;
+  readonly after: Readonly<Record<string, unknown>>;
+}
+
 export function patchWorkflowText(original: string, updated: Readonly<Record<string, unknown>>): string {
   if (original.includes('\t')) throw new ConfigEditError('Cannot edit a workflow that uses tabs.');
   const current = parseYamlDocument(original);
@@ -19,8 +31,9 @@ export function patchWorkflowText(original: string, updated: Readonly<Record<str
   const lines = splitLines(original);
   const edits: Edit[] = [];
   insertSchemaVersion(lines, updated, edits);
-  syncChangedStages(lines, current, updated, edits);
-  syncDocumentShape(lines, current, updated, edits);
+  const patch: TextPatch = { lines, edits };
+  syncChangedStages(patch, { before: current, after: updated });
+  syncDocumentShape(patch, { before: current, after: updated });
   const text = applyEdits(original, lines, edits);
   assertMigratedWorkflow(text, updated);
   return text;
@@ -82,12 +95,9 @@ function insertSchemaVersion(lines: string[], updated: Readonly<Record<string, u
   edits.push([insert, insert, [rendered, '']]);
 }
 
-function syncChangedStages(
-  lines: string[],
-  before: Readonly<Record<string, unknown>>,
-  after: Readonly<Record<string, unknown>>,
-  edits: Edit[],
-): void {
+function syncChangedStages(patch: TextPatch, change: Change): void {
+  const { lines } = patch;
+  const { before, after } = change;
   const beforeStages = stagesById(before.stages);
   const afterStages = stagesById(after.stages);
   for (const [stageId, start, end] of stageSpans(lines)) {
@@ -95,18 +105,14 @@ function syncChangedStages(
     const updated = afterStages.get(stageId);
     if (previous === undefined || updated === undefined) continue;
     if (deepEqual(previous, updated)) continue;
-    patchStage(lines, start, end, previous, updated, edits);
+    patchStage(patch, { start, end }, { before: previous, after: updated });
   }
 }
 
-function patchStage(
-  lines: string[],
-  start: number,
-  end: number,
-  before: Readonly<Record<string, unknown>>,
-  after: Readonly<Record<string, unknown>>,
-  edits: Edit[],
-): void {
+function patchStage(patch: TextPatch, stage: LineSpan, change: Change): void {
+  const { lines, edits } = patch;
+  const { start, end } = stage;
+  const { before, after } = change;
   const info = lines.slice(start, end).map((line) => lineInfo(line));
   const content: [number, LineInfo][] = [];
   for (let index = 0; index < info.length; index += 1) {
@@ -154,7 +160,7 @@ function patchStage(
     for (const [index, item] of content) {
       if (item.indent !== siblingIndent || item.key !== 'options' || item.rest === '') continue;
       // A flow-style `options: {..}` has no nested lines to sync; drop the whole entry.
-      edits.push([start + index, optionsEnd(lines, start + index, siblingIndent, end), []]);
+      edits.push([start + index, optionsEnd(lines, start + index, { siblingIndent, stageEnd: end }), []]);
       break;
     }
   }
@@ -181,41 +187,38 @@ function patchStage(
   const beforeOptions = isRecord(before.options) ? before.options : {};
   const afterOptions = isRecord(after.options) ? after.options : {};
   if (!deepEqual(beforeOptions, afterOptions)) {
-    syncStageOptions(
-      lines,
-      afterOptions,
-      beforeOptions,
+    syncStageOptions(patch, { before: beforeOptions, after: afterOptions }, {
       optionLines,
       optionsAt,
-      optionIndent ?? siblingIndent + unit,
+      optionIndent: optionIndent ?? siblingIndent + unit,
       siblingIndent,
-      end,
-      edits,
-    );
+      stageEnd: end,
+    });
   }
   if (Object.hasOwn(before, 'thinking') && !Object.hasOwn(after, 'thinking') && thinkingAt !== null) {
     edits.push([thinkingAt, thinkingAt + 1, []]);
   }
 }
 
-function syncStageOptions(
-  lines: string[],
-  after: Readonly<Record<string, unknown>>,
-  before: Readonly<Record<string, unknown>>,
-  optionLines: ReadonlyMap<string, number>,
-  optionsAt: number | null,
-  optionIndent: number,
-  siblingIndent: number,
-  stageEnd: number,
-  edits: Edit[],
-): void {
+interface OptionsLayout {
+  readonly optionLines: ReadonlyMap<string, number>;
+  readonly optionsAt: number | null;
+  readonly optionIndent: number;
+  readonly siblingIndent: number;
+  readonly stageEnd: number;
+}
+
+function syncStageOptions(patch: TextPatch, change: Change, layout: OptionsLayout): void {
+  const { lines, edits } = patch;
+  const { before, after } = change;
+  const { optionLines, optionsAt, optionIndent, siblingIndent, stageEnd } = layout;
   const afterText = new Map<string, string>();
   for (const [key, value] of Object.entries(after)) {
     if (typeof value === 'string' && value.trim() !== '') afterText.set(key, value.trim());
   }
   const beforeKeys = new Set(Object.keys(before));
   if (afterText.size === 0) {
-    if (optionsAt !== null) edits.push([optionsAt, optionsEnd(lines, optionsAt, siblingIndent, stageEnd), []]);
+    if (optionsAt !== null) edits.push([optionsAt, optionsEnd(lines, optionsAt, { siblingIndent, stageEnd }), []]);
     return;
   }
   if (optionsAt === null) {
@@ -235,7 +238,7 @@ function syncStageOptions(
     const rendered = `${' '.repeat(optionIndent)}${name}: ${yamlScalar(afterText.get(name) ?? '')}`;
     const lineIndex = optionLines.get(name);
     if (lineIndex === undefined) {
-      const insertAt = optionsEnd(lines, optionsAt, siblingIndent, stageEnd);
+      const insertAt = optionsEnd(lines, optionsAt, { siblingIndent, stageEnd });
       edits.push([insertAt, insertAt, [rendered]]);
       continue;
     }
@@ -252,7 +255,8 @@ function syncStageOptions(
   }
 }
 
-function optionsEnd(lines: string[], optionsAt: number, siblingIndent: number, stageEnd: number): number {
+function optionsEnd(lines: string[], optionsAt: number, bounds: { siblingIndent: number; stageEnd: number }): number {
+  const { siblingIndent, stageEnd } = bounds;
   let end = optionsAt + 1;
   for (let index = optionsAt + 1; index < stageEnd; index += 1) {
     const item = lineInfo(lines[index] ?? '');
@@ -368,12 +372,9 @@ interface LineSpan {
   end: number;
 }
 
-function syncDocumentShape(
-  lines: string[],
-  before: Readonly<Record<string, unknown>>,
-  after: Readonly<Record<string, unknown>>,
-  edits: Edit[],
-): void {
+function syncDocumentShape(patch: TextPatch, change: Change): void {
+  const { lines, edits } = patch;
+  const { before, after } = change;
   const spans = topLevelSpans(lines);
   for (const [key, span] of spans) {
     if (key === 'stages') continue;
@@ -434,12 +435,13 @@ function nestedKeySpan(lines: string[], parent: LineSpan, key: string): [number,
   for (let index = parent.start + 1; index < parent.end; index += 1) {
     const item = lineInfo(lines[index] ?? '');
     if (item === null || item.key !== key || item.indent !== childIndent) continue;
-    return [index, nestedValueEnd(lines, parent.end, index, item)];
+    return [index, nestedValueEnd(lines, parent.end, { index, item })];
   }
   return null;
 }
 
-function nestedValueEnd(lines: string[], parentEnd: number, index: number, item: LineInfo): number {
+function nestedValueEnd(lines: string[], parentEnd: number, key: { index: number; item: LineInfo }): number {
+  const { index, item } = key;
   let end = index + 1;
   for (let nested = index + 1; nested < parentEnd; nested += 1) {
     const next = lineInfo(lines[nested] ?? '');

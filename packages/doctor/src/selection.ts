@@ -32,7 +32,11 @@ export async function diagnoseSelection(
   const keys = sessionEffortKeys(workspace, selection);
   if (keys.size > 0 && (hooks.runCommand !== null && hooks.runCommand !== undefined)) {
     const extra = selection.document === null ? [] : stageAgentDefinitions([selection.document]);
-    modelEffortChecks = await checkModels(workspace, hooks.clients, which, hooks.runCommand, keys, extra);
+    modelEffortChecks = await checkModels(
+      workspace,
+      hooks.clients,
+      { which, runCommand: hooks.runCommand, only: keys, extra },
+    );
   }
   return diagnoseSession(workspace, selection, { clients: hooks.clients, which, modelEffortChecks });
 }
@@ -41,6 +45,10 @@ export async function diagnoseSelection(
 export async function diagnoseWorkspace(workspace: string, hooks: DiagnoseHooks & { runCommand: RunCommand }): Promise<Check[]> {
   const which = hooks.which ?? whichSync;
   const documents = Object.values(loadWorkflowCatalog(workspace, { quiet: true }).documents);
-  const modelEffortChecks = await checkModels(workspace, hooks.clients, which, hooks.runCommand, undefined, stageAgentDefinitions(documents));
+  const modelEffortChecks = await checkModels(
+    workspace,
+    hooks.clients,
+    { which, runCommand: hooks.runCommand, extra: stageAgentDefinitions(documents) },
+  );
   return diagnose(workspace, { clients: hooks.clients, which, modelEffortChecks });
 }

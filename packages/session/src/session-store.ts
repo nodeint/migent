@@ -24,26 +24,27 @@ import { planExecutionSave, type PlannedExecutionSave } from './session-ledger.j
 import { assertSessionLockHeld, SessionLock, SessionLockHeldError } from './session-lock.js';
 import { assertSessionId } from './session-selection.js';
 import { SessionStoreResume } from './session-store-resume.js';
-import type { ManualCompletionResult, SkipDetails } from './session-store-types.js';
+import type { ExecutionSaveInput, ExecutionStartInput, LoadOrCreateInput, ManualCompletionResult, SkipDetails } from './session-store-types.js';
 import { AgentSessionRecord, DEBUG_LOG_FILENAME, DIAGNOSTICS_FILENAME, ExecutionContext, inFlightExecutions, stringOptions } from './session-store-types.js';
 import { asInt, isDirectory, snapshotsIncludingSave } from './session-store-util.js';
 import { readJsonObject, textField } from './session-store-util.js';
 import { normalizeRenameTitle, writeTitleRecord } from './session-title.js';
 
 export class SessionStore extends SessionStoreResume {
-  public loadOrCreate(
-    client: string,
-    model: string,
-    options: Record<string, string> | null,
-    workspace: string,
-    sessionId: string | null,
-    stageId: string,
-    stageAttempt: number | null,
-    executionOrder: number | null,
-    prompt: string,
-    resumeExecutionId: string | null = null,
-    validateResume?: (record: AgentSessionRecord) => void,
-  ): [AgentSessionRecord, boolean, ExecutionContext] {
+  public loadOrCreate(input: LoadOrCreateInput): [AgentSessionRecord, boolean, ExecutionContext] {
+    const {
+      client,
+      model,
+      options,
+      workspace,
+      sessionId,
+      stageId,
+      stageAttempt,
+      executionOrder,
+      prompt,
+      validateResume,
+    } = input;
+    const resumeExecutionId = input.resumeExecutionId ?? null;
     if (resumeExecutionId !== null && sessionId === null) {
       throw new Error('Resuming an execution requires a session.');
     }
@@ -58,6 +59,20 @@ export class SessionStore extends SessionStoreResume {
     }
     if (previous === null) {
       const context = this.createExecution(
+        { client, model, options, sessionId, stageId, stageAttempt, executionOrder, prompt },
+      );
+      return [
+        new AgentSessionRecord({ client, model, workspace, options: { ...(options ?? {}) } }),
+        true,
+        context,
+      ];
+    }
+    const raw = JSON.parse(readFileSync(previous.conversationReadPath, 'utf8')) as unknown;
+    const record = AgentSessionRecord.fromJson(raw, { client, model, workspace });
+    record.client = this.executionClient(sessionId as string, previous.executionId);
+    validateResume?.(record);
+    const context = this.createExecution(
+      {
         client,
         model,
         options,
@@ -66,27 +81,8 @@ export class SessionStore extends SessionStoreResume {
         stageAttempt,
         executionOrder,
         prompt,
-      );
-      return [
-        new AgentSessionRecord(client, model, workspace, null, { ...(options ?? {}) }),
-        true,
-        context,
-      ];
-    }
-    const raw = JSON.parse(readFileSync(previous.conversationReadPath, 'utf8')) as unknown;
-    const record = AgentSessionRecord.fromJson(raw, client, model, workspace);
-    record.client = this.executionClient(sessionId as string, previous.executionId);
-    validateResume?.(record);
-    const context = this.createExecution(
-      client,
-      model,
-      options,
-      sessionId,
-      stageId,
-      stageAttempt,
-      executionOrder,
-      prompt,
-      previous.executionId,
+        resumesExecutionId: previous.executionId,
+      },
     );
     return [record, false, context];
   }
@@ -94,29 +90,21 @@ export class SessionStore extends SessionStoreResume {
   /** Start a verify-only execution. It has no prompt and no provider conversation. */
   public openVerifyExecution(sessionId: string, stageId: string): ExecutionContext {
     this.ensureSessionIsRunnable(sessionId);
-    return this.createExecution('', '', {}, sessionId, stageId, null, null, '', null, 'verify');
+    return this.createExecution({ client: '', model: '', options: {}, sessionId, stageId, stageAttempt: null, executionOrder: null, prompt: '', kind: 'verify' });
   }
 
   public clearVerifyTurn(context: ExecutionContext): void {
     rmSync(this.turnDirectory(context, 1), { recursive: true, force: true });
   }
 
-  public saveExecution(
-    context: ExecutionContext,
-    record: AgentSessionRecord,
-    status: string,
-    error: string | null = null,
-    outcome: StageOutcome | null = null,
-    locked = false,
-    extra: Record<string, unknown> | null = null,
-  ): void {
+  public saveExecution(context: ExecutionContext, record: AgentSessionRecord, result: ExecutionSaveInput): void {
     const filePath = path.join(context.directory, 'execution.json');
-    if (locked) {
-      this.saveExecutionUnlocked(context, record, status, error, outcome, extra);
+    if (result.locked === true) {
+      this.saveExecutionUnlocked(context, record, result);
       return;
     }
     this.withExecutionLock(filePath, () => {
-      this.saveExecutionUnlocked(context, record, status, error, outcome, extra);
+      this.saveExecutionUnlocked(context, record, result);
     });
   }
 
@@ -149,19 +137,20 @@ export class SessionStore extends SessionStoreResume {
   }
 
   public saveTurnResponse(context: ExecutionContext, turn: number, text: string): void {
-    this.writeTurnFile(context, turn, 'response.md', text);
+    this.writeTurnFile(context, { turn, name: 'response.md', text });
   }
 
   public saveTurnOutcome(context: ExecutionContext, turn: number, outcome: StageOutcome): void {
-    this.writeTurnFile(context, turn, 'outcome.json', `${JSON.stringify(outcome.toJson(), null, 2)}\n`);
+    this.writeTurnFile(context, { turn, name: 'outcome.json', text: `${JSON.stringify(outcome.toJson(), null, 2)}\n` });
   }
 
   public saveTurnVerify(context: ExecutionContext, turn: number, report: string): string {
-    this.writeTurnFile(context, turn, 'verify.md', report);
+    this.writeTurnFile(context, { turn, name: 'verify.md', text: report });
     return path.posix.join('turns', String(turn).padStart(2, '0'), 'verify.md');
   }
 
-  private writeTurnFile(context: ExecutionContext, turn: number, name: string, text: string): void {
+  private writeTurnFile(context: ExecutionContext, file: { turn: number; name: string; text: string }): void {
+    const { turn, name, text } = file;
     const directory = this.turnDirectory(context, turn);
     mkdirSync(directory, { recursive: true });
     writeFileAtomic(path.join(directory, name), text);
@@ -357,11 +346,9 @@ export class SessionStore extends SessionStoreResume {
   private saveExecutionUnlocked(
     context: ExecutionContext,
     record: AgentSessionRecord,
-    status: string,
-    error: string | null,
-    outcome: StageOutcome | null,
-    extra: Record<string, unknown> | null = null,
+    result: ExecutionSaveInput,
   ): void {
+    const { status, error = null, outcome = null, extra = null } = result;
     const filePath = path.join(context.directory, 'execution.json');
     const metadata = readJsonObject(filePath);
     const existingStatus = metadata.status;
@@ -566,7 +553,7 @@ export class SessionStore extends SessionStoreResume {
       const metadata = readJsonObject(filePath);
       const decision = classifyOrphanedExecution(metadata, context.directory, this.processInspector);
       if (decision.action === REAP_ALREADY_EXITED) {
-        this.failOrphanedExecution(context, metadata, decision.error || '', true);
+        this.failOrphanedExecution(context, metadata, { error: decision.error || '', locked: true });
         return;
       }
       if (decision.action === REAP_STILL_RUNNING || decision.action === REAP_UNVERIFIED) {
@@ -578,40 +565,29 @@ export class SessionStore extends SessionStoreResume {
   private failOrphanedExecution(
     context: ExecutionContext,
     metadata: Record<string, unknown>,
-    error: string,
-    locked: boolean,
+    failure: { error: string; locked: boolean },
   ): void {
+    const { error, locked } = failure;
     let record = new AgentSessionRecord(
-      textField(metadata.client) ?? legacyClientOf(textField(metadata.provider)) ?? 'unknown',
-      typeof metadata.model === 'string' ? metadata.model : 'unknown',
-      this.workspace,
-      typeof metadata.agent_id === 'string' ? metadata.agent_id : null,
-      stringOptions(metadata.options),
-      'failed',
+      { client: textField(metadata.client) ?? legacyClientOf(textField(metadata.provider)) ?? 'unknown', model: typeof metadata.model === 'string' ? metadata.model : 'unknown', workspace: this.workspace, agentId: typeof metadata.agent_id === 'string' ? metadata.agent_id : null, options: stringOptions(metadata.options), status: 'failed' },
     );
     const conversationPath = context.conversationReadPath;
     if (existsSync(conversationPath)) {
       const raw = JSON.parse(readFileSync(conversationPath, 'utf8')) as unknown;
-      record = AgentSessionRecord.fromJson(raw, record.client, record.model, record.workspace);
+      record = AgentSessionRecord.fromJson(
+        raw,
+        { client: record.client, model: record.model, workspace: record.workspace },
+      );
       record.status = 'failed';
       this.save(record, context);
     }
     const extra = metadata.kind === 'verify' ? { failure_reason: 'verify_failed' } : null;
-    this.saveExecution(context, record, 'failed', error, null, locked, extra);
+    this.saveExecution(context, record, { status: 'failed', error, locked, extra });
   }
 
-  private createExecution(
-    client: string,
-    model: string,
-    options: Record<string, string> | null,
-    sessionId: string | null,
-    stageId: string,
-    stageAttempt: number | null,
-    executionOrder: number | null,
-    prompt: string,
-    resumesExecutionId: string | null = null,
-    kind: 'verify' | null = null,
-  ): ExecutionContext {
+  private createExecution(input: ExecutionStartInput): ExecutionContext {
+    const { client, model, options, sessionId, stageId, stageAttempt, executionOrder, prompt } = input;
+    const { resumesExecutionId = null, kind = null } = input;
     const resolvedSession = sessionId ?? path.basename(createNumericSessionDirectory(this.sessionsDirectory)[1]);
     const order = executionOrder ? executionOrder : this.nextExecutionOrder(resolvedSession);
     const attempt = stageAttempt ? stageAttempt : this.nextStageAttempt(resolvedSession, stageId);
@@ -693,7 +669,7 @@ export class SessionStore extends SessionStoreResume {
 
 }
 
-export type { ManualCompletionResult, SkipDetails } from './session-store-types.js';
+export type { ExecutionSaveInput, ExecutionStartInput, LoadOrCreateInput, ManualCompletionResult, SessionRecordFallback, SessionRecordInit, SkipDetails } from './session-store-types.js';
 export {
   AgentSessionRecord,
   clearInFlightExecution,

@@ -89,7 +89,11 @@ interface WorkflowOrigin {
   problems?: readonly string[];
 }
 
-function stageView(stage: StageSpec, config: Loaded, origin: WorkflowOrigin, resolve?: ClientRegistry): View {
+function stageView(
+  stage: StageSpec,
+  context: { config: Loaded; origin: WorkflowOrigin; resolve?: ClientRegistry },
+): View {
+  const { config, origin, resolve } = context;
   const problems: string[] = [];
   let target: View | null = null;
   if (isRoleStage(stage)) {
@@ -99,7 +103,7 @@ function stageView(stage: StageSpec, config: Loaded, origin: WorkflowOrigin, res
     else if (config.config === null) problems.push(config.problem ?? 'Config could not be loaded.');
     else {
       try {
-        target = targetView(resolveStageSpec(config.config, stage, null, resolve));
+        target = targetView(resolveStageSpec(config.config, stage, { registry: resolve }));
       } catch (error) {
         problems.push(message(error));
       }
@@ -145,11 +149,11 @@ function roleNames(document: WorkflowDocument): string[] {
 }
 
 function roleResponsibilities(
-  config: Loaded,
+  scope: { config: Loaded; origin: WorkflowOrigin },
   roles: readonly string[],
-  origin: WorkflowOrigin,
   problems: string[],
 ): Record<string, string[]> {
+  const { config, origin } = scope;
   const result: Record<string, string[]> = {};
   for (const role of roles) {
     if (origin.frozenRoles !== undefined) {
@@ -170,13 +174,13 @@ function roleResponsibilities(
 function workflowView(
   workspace: string,
   document: WorkflowDocument,
-  origin: WorkflowOrigin,
-  resolve?: ClientRegistry,
+  source: { origin: WorkflowOrigin; resolve?: ClientRegistry },
 ): View {
+  const { origin, resolve } = source;
   const config = tryConfig(workspace);
-  const stages = Object.values(document.stages).map((stage) => stageView(stage, config, origin, resolve));
+  const stages = Object.values(document.stages).map((stage) => stageView(stage, { config, origin, resolve }));
   const instructionProblems: string[] = [];
-  const responsibilities = roleResponsibilities(config, roleNames(document), origin, instructionProblems);
+  const responsibilities = roleResponsibilities({ config, origin }, roleNames(document), instructionProblems);
   const view: View = {
     kind: 'workflow',
     name: document.id,
@@ -284,16 +288,16 @@ export function getWorkflowView(workspace: string, name: string, resolve?: Clien
   }
   const document = loadNamedWorkflow(workspace, name, { quiet: true });
   const file = document.source === null ? null : display(workspace, document.source);
-  return workflowView(workspace, document, { kind: 'project', path: file }, resolve);
+  return workflowView(workspace, document, { origin: { kind: 'project', path: file }, resolve });
 }
 
 /** The workflow a session runs: its draft, its frozen copy, or the live project file. */
 export function getSessionWorkflowView(
   workspace: string,
-  sessionId: string,
-  name: string | null,
+  session: { sessionId: string; name: string | null },
   resolve?: ClientRegistry,
 ): View {
+  const { sessionId, name } = session;
   const selection = selectSessionWorkflow(workspace, sessionId);
   const {document} = selection;
   if (document === null || selection.source === null) {
@@ -312,7 +316,7 @@ export function getSessionWorkflowView(
     origin.frozenTargets = selection.freeze.targets;
     origin.frozenRoles = selection.freeze.roles;
   }
-  const view = workflowView(workspace, document, origin, resolve);
+  const view = workflowView(workspace, document, { origin, resolve });
   view.file = selection.source.path;
   view.warnings = [...(view.warnings as string[]), ...selection.warnings];
   return view;
@@ -331,13 +335,12 @@ function configRecord(workspace: string, key: 'roles' | 'agents'): { config: Rec
 }
 
 function roleView(
-  workspace: string,
   config: Record<string, unknown>,
-  name: string,
-  role: unknown,
-  workflows: readonly WorkflowDocument[],
-  resolve?: ClientRegistry,
+  entry: { name: string; role: unknown },
+  scope: { workflows: readonly WorkflowDocument[]; resolve?: ClientRegistry },
 ): View {
+  const { name, role } = entry;
+  const { workflows, resolve } = scope;
   const problems: string[] = [];
   const selection = isRecord(role) ? role.agent : undefined;
   let agent: unknown = null;
@@ -345,7 +348,7 @@ function roleView(
   else if (isRecord(selection)) agent = { inline: true };
   let target: View | null = null;
   try {
-    target = targetView(resolveRoleCascade(config, name, undefined, resolve));
+    target = targetView(resolveRoleCascade(config, name, { registry: resolve }));
   } catch (error) {
     problems.push(message(error));
   }
@@ -373,13 +376,13 @@ function roleView(
 export function listRoleViews(workspace: string, resolve?: ClientRegistry): View[] {
   const { config, table } = configRecord(workspace, 'roles');
   const workflows = projectWorkflows(workspace);
-  return Object.entries(table).map(([name, role]) => roleView(workspace, config, name, role, workflows, resolve));
+  return Object.entries(table).map(([name, role]) => roleView(config, { name, role }, { workflows, resolve }));
 }
 
 export function getRoleView(workspace: string, name: string, resolve?: ClientRegistry): View {
   const { config, table } = configRecord(workspace, 'roles');
   if (!Object.hasOwn(table, name)) throw notFound('Role', name, Object.keys(table));
-  return roleView(workspace, config, name, table[name], projectWorkflows(workspace), resolve);
+  return roleView(config, { name, role: table[name] }, { workflows: projectWorkflows(workspace), resolve });
 }
 
 // ------------------------------------------------------------------- agents
@@ -387,15 +390,18 @@ export function getRoleView(workspace: string, name: string, resolve?: ClientReg
 function agentView(
   config: Record<string, unknown>,
   name: string,
-  roles: Record<string, unknown>,
-  workflows: readonly WorkflowDocument[],
-  local: ReadonlySet<string>,
-  resolve?: ClientRegistry,
+  scope: {
+    roles: Record<string, unknown>;
+    workflows: readonly WorkflowDocument[];
+    local: ReadonlySet<string>;
+    resolve?: ClientRegistry;
+  },
 ): View {
+  const { roles, workflows, local, resolve } = scope;
   const problems: string[] = [];
   let target: StageTarget | null = null;
   try {
-    target = loadAgentTarget(config, name, resolve);
+    target = loadAgentTarget(config, name, { registry: resolve });
   } catch (error) {
     problems.push(message(error));
   }
@@ -429,7 +435,7 @@ function agentViews(workspace: string, resolve?: ClientRegistry): { views: View[
   const roles = isRecord(config.roles) ? config.roles : {};
   const workflows = projectWorkflows(workspace);
   const local = new Set(hasLocalConfig(workspace) ? localAgentNames(workspace) : []);
-  return { views: Object.keys(table).map((name) => agentView(config, name, roles, workflows, local, resolve)) };
+  return { views: Object.keys(table).map((name) => agentView(config, name, { roles, workflows, local, resolve })) };
 }
 
 export function listAgentViews(workspace: string, resolve?: ClientRegistry): View[] {

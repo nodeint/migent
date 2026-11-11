@@ -44,7 +44,7 @@ export function diagnoseSession(
 ): SessionDiagnosis {
   const which = options.which ?? whichSync;
   const {source} = selection;
-  const sessionCheck = makeCheck('session', [], [...selection.problems], [...selection.warnings]);
+  const sessionCheck = makeCheck('session', { items: [], problems: [...selection.problems], warnings: [...selection.warnings] });
   sessionCheck.items.push(`session  ${selection.sessionId}`);
   if (source !== null) {
     if (source.workflowId !== null) sessionCheck.items.push(`workflow  ${source.workflowId}`);
@@ -62,14 +62,16 @@ export function diagnoseSession(
     drift = collectFrozenDrift(
       workspace,
       selection.freeze,
-      selection.workflowPath,
-      selection.manifestWorkflowId,
-      options.clients,
-      true,
+      {
+        workflowPath: selection.workflowPath,
+        workflowId: selection.manifestWorkflowId,
+        resolveClient: options.clients,
+        quiet: true,
+      },
     ).map((detail) => `Frozen workflow differs from the live files: ${detail}`);
   }
   const stages = Object.values(document.stages).filter(isRoleStage);
-  const workflowCheck = makeCheck('workflow', [document.id], workflowProblems, [...workflowWarnings, ...drift]);
+  const workflowCheck = makeCheck('workflow', { items: [document.id], problems: workflowProblems, warnings: [...workflowWarnings, ...drift] });
   if (workflowProblems.length > 0) return finish(source, [sessionCheck, workflowCheck]);
 
   const bindingItems: string[] = [];
@@ -86,23 +88,32 @@ export function diagnoseSession(
   };
 
   if (selection.freeze !== null) {
-    checkFrozenBindings(selection.freeze, stages, document.id, options, bindingProblems, record);
+    checkFrozenBindings(
+      selection.freeze,
+      { stages, workflowId: document.id, options, problems: bindingProblems, record },
+    );
   } else {
-    checkLiveBindings(workspace, stages, document.id, options, bindingProblems, bindingWarnings, record);
+    checkLiveBindings(
+      workspace,
+      { stages, workflowId: document.id, options, problems: bindingProblems, warnings: bindingWarnings, record },
+    );
   }
-  const bindingsCheck = makeCheck('bindings', bindingItems, bindingProblems, bindingWarnings);
+  const bindingsCheck = makeCheck('bindings', { items: bindingItems, problems: bindingProblems, warnings: bindingWarnings });
   const clientsCheck = checkExecutables(executables, which);
   return finish(source, [sessionCheck, workflowCheck, bindingsCheck, clientsCheck]);
 }
 
-function checkFrozenBindings(
-  freeze: WorkflowFreeze,
-  stages: readonly RoleStageSpec[],
-  workflowId: string,
-  options: DiagnoseSessionOptions,
-  problems: string[],
-  record: (target: StageTarget, effective: ClientInfo, stageId: string) => void,
-): void {
+/** The stages of one workflow, and where their binding findings and resolved clients go. */
+interface BindingScope {
+  readonly stages: readonly RoleStageSpec[];
+  readonly workflowId: string;
+  readonly options: DiagnoseSessionOptions;
+  readonly problems: string[];
+  readonly record: (target: StageTarget, effective: ClientInfo, stageId: string) => void;
+}
+
+function checkFrozenBindings(freeze: WorkflowFreeze, scope: BindingScope): void {
+  const { stages, workflowId, options, problems, record } = scope;
   for (const stage of stages) {
     const where = `${workflowId}.${stage.id}`;
     if (!Object.hasOwn(freeze.roles, stage.role)) {
@@ -113,20 +124,13 @@ function checkFrozenBindings(
       addUnique(problems, `${where}: workflow.frozen.yaml pins no target for stage ${stage.id}.`);
       continue;
     }
-    const effective = effectiveClient(options.clients, target, `targets.${stage.id}`, where, problems, true);
+    const effective = effectiveClient(options.clients, target, { field: `targets.${stage.id}`, where, problems, flat: true });
     if (effective !== null) record(target, effective, stage.id);
   }
 }
 
-function checkLiveBindings(
-  workspace: string,
-  stages: readonly RoleStageSpec[],
-  workflowId: string,
-  options: DiagnoseSessionOptions,
-  problems: string[],
-  warnings: string[],
-  record: (target: StageTarget, effective: ClientInfo, stageId: string) => void,
-): void {
+function checkLiveBindings(workspace: string, scope: BindingScope & { readonly warnings: string[] }): void {
+  const { stages, workflowId, options, problems, warnings, record } = scope;
   let config: Record<string, unknown>;
   try {
     config = loadWorkspaceConfig(workspace);
@@ -161,14 +165,14 @@ function checkLiveBindings(
     }
     let target: StageTarget;
     try {
-      target = resolveStageSpec(config, stage, undefined, options.clients);
+      target = resolveStageSpec(config, stage, { registry: options.clients });
     } catch (error) {
       if (!(error instanceof ConfigurationError)) throw error;
       addUnique(problems, `${where}: ${error.message}`);
       continue;
     }
     const field = stage.agent !== null ? `stages.${stage.id}.agent` : `roles.${stage.role}.agent`;
-    const effective = effectiveClient(options.clients, target, field, where, problems);
+    const effective = effectiveClient(options.clients, target, { field, where, problems });
     if (effective !== null) record(target, effective, stage.id);
   }
 }
@@ -177,11 +181,9 @@ function checkLiveBindings(
 function effectiveClient(
   clients: ClientRegistry,
   target: StageTarget,
-  field: string,
-  where: string,
-  problems: string[],
-  flat = false,
+  report: { field: string; where: string; problems: string[]; flat?: boolean },
 ): ClientInfo | null {
+  const { field, where, problems, flat = false } = report;
   const bound = resolveEffectiveClient(clients, target);
   if (bound.failure !== undefined) {
     addUnique(problems, `${where}: ${failureText(field, bound.failure, flat)}`);
@@ -202,7 +204,7 @@ function checkExecutables(
     if (found) items.push(`${[...entry.labels].sort().join(', ')}  ${found}`);
     else problems.push(`${command} is not on PATH (stages: ${entry.stages.join(', ')})`);
   }
-  return makeCheck('clients', items, problems, []);
+  return makeCheck('clients', { items, problems, warnings: [] });
 }
 
 /** The key an effort check is stored under: an agent name, or the role's inline agent field. */

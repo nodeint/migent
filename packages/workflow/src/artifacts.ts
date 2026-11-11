@@ -102,9 +102,9 @@ export function buildArtifactsV7(data: Record<string, unknown>, conditional: Rea
   const readDefinition = (
     id: string,
     body: unknown,
-    label: string,
-    at: (string | number)[],
+    where: { label: string; at: (string | number)[] },
   ): StageArtifact | null => {
+    const { label, at } = where;
     if (!ARTIFACT_ID.test(id)) {
       fail(`Invalid ${label} id: ${pyRepr(id)}.`, at);
       return null;
@@ -154,7 +154,7 @@ export function buildArtifactsV7(data: Record<string, unknown>, conditional: Rea
     else {
       const files = new Map<string, string>();
       for (const [id, body] of Object.entries(rawRegistry)) {
-        const definition = readDefinition(id, body, `artifacts.${id}`, ['artifacts', id]);
+        const definition = readDefinition(id, body, { label: `artifacts.${id}`, at: ['artifacts', id] });
         if (definition === null) continue;
         const clash = files.get(definition.file);
         if (clash !== undefined) {
@@ -192,7 +192,12 @@ export function buildArtifactsV7(data: Record<string, unknown>, conditional: Rea
       filesInStage.set(artifact.file, artifact.id);
       return true;
     };
-    const reference = (id: unknown, field: string, at: (string | number)[], decision: string | null): StageArtifact | null => {
+    const reference = (
+      id: unknown,
+      where: { field: string; at: (string | number)[] },
+      decision: string | null,
+    ): StageArtifact | null => {
+      const { field, at } = where;
       if (typeof id !== 'string' || id.trim() === '') {
         fail(`Missing or invalid ${field}.`, at);
         return null;
@@ -225,7 +230,7 @@ export function buildArtifactsV7(data: Record<string, unknown>, conditional: Rea
         const seen = new Set<string>();
         rawStage.artifacts.forEach((id, position) => {
           const itemAt = [...at, position];
-          const found = reference(id, `${stageField}.artifacts[${position}]`, itemAt, null);
+          const found = reference(id, { field: `${stageField}.artifacts[${position}]`, at: itemAt }, null);
           if (found === null) return;
           if (seen.has(found.id)) {
             fail(`Duplicate ${stageField}.artifacts item: ${found.id}`, itemAt);
@@ -255,7 +260,7 @@ export function buildArtifactsV7(data: Record<string, unknown>, conditional: Rea
         const seen = new Set<string>();
         body.artifacts.forEach((id, position) => {
           const itemAt = [...at, position];
-          const found = reference(id, `${field}[${position}]`, itemAt, name);
+          const found = reference(id, { field: `${field}[${position}]`, at: itemAt }, name);
           if (found === null) return;
           if (seen.has(found.id)) {
             fail(`Duplicate ${field} item: ${found.id}`, itemAt);
@@ -267,7 +272,7 @@ export function buildArtifactsV7(data: Record<string, unknown>, conditional: Rea
       } else if (isRecord(body.artifacts)) {
         for (const [id, definitionBody] of Object.entries(body.artifacts)) {
           const itemAt = [...at, id];
-          const definition = readDefinition(id, definitionBody, `${field}.${id}`, itemAt);
+          const definition = readDefinition(id, definitionBody, { label: `${field}.${id}`, at: itemAt });
           if (definition === null) continue;
           if (declared.has(id) || localIds.has(id)) {
             fail(`${field}.${id}: artifact id collides with ${declared.has(id) ? 'a top-level artifact' : 'another inline artifact of this stage'}.`, itemAt);

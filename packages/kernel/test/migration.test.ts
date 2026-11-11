@@ -89,7 +89,7 @@ test('an unknown provider without a client fails and names the field', () => {
     roles: {},
   };
   expect(() =>
-    migrateConfig(config, SCHEMA_VERSION, config, { clientIds: ['agy', 'claude-code', 'codex', 'grok', 'opencode'] }),
+    migrateConfig(config, { clientIds: ['agy', 'claude-code', 'codex', 'grok', 'opencode'] }),
   ).toThrow(
     'agents.custom: provider other has no default client; add agents.custom.client.type (one of: agy, claude-code, codex, grok, opencode) and rerun migrate.',
   );
@@ -166,7 +166,7 @@ test('an existing option wins over thinking', () => {
     options: { thinking: 'medium', 'reasoning-effort': 'low' },
     thinking: 'high',
   };
-  expect(applyLegacyMigration('model', 'grok', 0, body)).toEqual({ options: { 'reasoning-effort': 'low' } });
+  expect(applyLegacyMigration({ kind: 'model', provider: 'grok' }, 0, body)).toEqual({ options: { 'reasoning-effort': 'low' } });
 });
 
 const PLAN_V1 = `schema_version: 1
@@ -714,7 +714,8 @@ function migrateLayers(
 } {
   // The v5 merged view, read before either layer is rewritten.
   const merged = mergeConfigLayers(projectDocument, localDocument).config;
-  const { document: project, notes: projectNotes } = migrateConfig(projectDocument, SCHEMA_VERSION, merged, {
+  const { document: project, notes: projectNotes } = migrateConfig(projectDocument, {
+    context: merged,
     layer: 'project',
     project: projectDocument,
     local: localDocument,
@@ -724,7 +725,8 @@ function migrateLayers(
   const migratedLocal =
     localDocument === null
       ? null
-      : migrateConfig(localDocument, SCHEMA_VERSION, merged, {
+      : migrateConfig(localDocument, {
+          context: merged,
           layer: 'local',
           project: projectDocument,
           local: localDocument,

@@ -61,7 +61,7 @@ const read = (file: string): string => readFileSync(file, 'utf8');
 const codes = (json: { diagnostics: { code: string }[] }): string[] => json.diagnostics.map((item) => item.code);
 
 function prepare(): string {
-  return createPreparedSession(root, 'Session task', 'build');
+  return createPreparedSession(root, { title: 'Session task', workflowId: 'build' });
 }
 
 /** Prepared session whose task is filled in and that was then started: it owns a freeze. */

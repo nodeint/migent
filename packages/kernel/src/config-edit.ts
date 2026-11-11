@@ -73,7 +73,7 @@ export function inspectConfig(
   const roles = rolesOf(config);
   const agentViews: AgentView[] = [];
   for (const key of Object.keys(agents)) {
-    const target = loadAgentTarget(config, key, registry);
+    const target = loadAgentTarget(config, key, { registry });
     const usedBy = Object.keys(roles).filter((name) => {
       const role = roles[name];
       return isRecord(role) && role.agent === key;
@@ -91,7 +91,7 @@ export function inspectConfig(
   for (const [name, role] of Object.entries(roles)) {
     if (!isRecord(role)) throw new ConfigurationError(`Missing or invalid roles.${name}.`);
     const agentName = typeof role.agent === 'string' ? role.agent : null;
-    const target = resolveRoleCascade(config, name, undefined, registry);
+    const target = resolveRoleCascade(config, name, { registry });
     const shared = Object.keys(roles).filter((other) => {
       if (other === name) return false;
       const otherRole = roles[other];
@@ -147,15 +147,15 @@ export function upsertAgent(
   }
   if (options !== UNSET) body = withAgentOptions(body, key, options);
   agents[key] = body;
-  return describeChange(config, updated, args.workflows ?? [], { registry: args.registry });
+  return describeChange(config, updated, { workflows: args.workflows, registry: args.registry });
 }
 
 export function assignRoles(
   config: Record<string, unknown>,
   roles: readonly string[],
-  agentName: string,
-  args: { workflows?: readonly WorkflowDocument[]; registry?: ClientRegistry } = {},
+  args: { agentName: string; workflows?: readonly WorkflowDocument[]; registry?: ClientRegistry },
 ): ConfigChange {
+  const { agentName } = args;
   const names = roleNames(roles);
   const updated = copyConfig(config);
   const agents = agentsOf(updated);
@@ -171,7 +171,7 @@ export function assignRoles(
     if (!isRecord(role)) throw new ConfigurationError(`Missing or invalid roles.${name}.`);
     role.agent = agentName;
   }
-  return describeChange(config, updated, args.workflows ?? [], { registry: args.registry });
+  return describeChange(config, updated, { workflows: args.workflows, registry: args.registry });
 }
 
 export function placeRoleAgent(
@@ -214,7 +214,7 @@ export function placeRoleAgent(
     if (!isRecord(body)) throw new ConfigurationError(`Missing or invalid roles.${role}.`);
     body.agent = match;
   }
-  const change = describeChange(config, updated, workflows, { reusedAgent: reused, registry: args.registry });
+  const change = describeChange(config, updated, { workflows, reusedAgent: reused, registry: args.registry });
   if (created !== null) return { ...change, createdAgent: created, reusedAgent: null };
   return change;
 }
@@ -229,7 +229,7 @@ export function matchingAgentName(
   for (const key of Object.keys(agents)) {
     let target;
     try {
-      target = loadAgentTarget(config, key, registry);
+      target = loadAgentTarget(config, key, { registry });
     } catch (error) {
       if (error instanceof ConfigurationError) continue;
       throw error;
@@ -248,9 +248,9 @@ export function matchingAgentName(
 export function describeChange(
   before: Record<string, unknown>,
   after: Record<string, unknown>,
-  workflows: readonly WorkflowDocument[] = [],
-  args: { reusedAgent?: string | null; registry?: ClientRegistry } = {},
+  args: { workflows?: readonly WorkflowDocument[]; reusedAgent?: string | null; registry?: ClientRegistry } = {},
 ): ConfigChange {
+  const { workflows = [] } = args;
   const afterCopy = deepCopyRecord(after);
   const beforeRoles = mappingOrEmpty(before.roles);
   const afterRoles = mappingOrEmpty(afterCopy.roles);
@@ -282,7 +282,7 @@ export function describeChange(
         stagesUpdated.push([document.id, stage.id]);
         continue;
       }
-      const ignores = shields(stage, beforeRoles, afterRoles, beforeAgents, afterAgents, updated);
+      const ignores = shields(stage, { beforeRoles, afterRoles, beforeAgents, afterAgents, updatedAgents: updated });
       if (ignores.length > 0) {
         stagesUnchanged.push({ workflow: document.id, stage: stage.id, ignores });
       }
@@ -338,14 +338,17 @@ function roleStages(workflows: readonly WorkflowDocument[], role: string): Stage
   return found;
 }
 
-function shields(
-  stage: RoleStageSpec,
-  beforeRoles: Record<string, unknown>,
-  afterRoles: Record<string, unknown>,
-  beforeAgents: Record<string, unknown>,
-  afterAgents: Record<string, unknown>,
-  updatedAgents: readonly string[],
-): string[] {
+/** The roles and agents of both configs, and the agents whose definition changed. */
+interface ShieldChange {
+  readonly beforeRoles: Record<string, unknown>;
+  readonly afterRoles: Record<string, unknown>;
+  readonly beforeAgents: Record<string, unknown>;
+  readonly afterAgents: Record<string, unknown>;
+  readonly updatedAgents: readonly string[];
+}
+
+function shields(stage: RoleStageSpec, change: ShieldChange): string[] {
+  const { beforeRoles, afterRoles } = change;
   const beforeBinding = binding(beforeRoles[stage.role]);
   const afterBinding = binding(afterRoles[stage.role]);
   const ignores: string[] = [];
@@ -353,20 +356,15 @@ function shields(
   if (
     Object.keys(stage.options).length > 0 &&
     (!deepEqual(beforeBinding[1], afterBinding[1]) ||
-      agentOptionsChanged(stage, afterBinding, beforeAgents, afterAgents, updatedAgents))
+      agentOptionsChanged(stage, afterBinding, change))
   ) {
     ignores.push('role-options');
   }
   return ignores;
 }
 
-function agentOptionsChanged(
-  stage: RoleStageSpec,
-  afterBinding: Binding,
-  beforeAgents: Record<string, unknown>,
-  afterAgents: Record<string, unknown>,
-  updatedAgents: readonly string[],
-): boolean {
+function agentOptionsChanged(stage: RoleStageSpec, afterBinding: Binding, change: ShieldChange): boolean {
+  const { beforeAgents, afterAgents, updatedAgents } = change;
   const named = stage.agent?.kind === 'named' ? stage.agent.name : afterBinding[0];
   if (typeof named !== 'string' || !updatedAgents.includes(named)) return false;
   return !recordEqual(optionsDict(beforeAgents[named], named), optionsDict(afterAgents[named], named));
@@ -400,7 +398,7 @@ function resolvedRole(config: Record<string, unknown>, role: string, registry?: 
   const {roles} = config;
   if (!isRecord(roles) || !Object.hasOwn(roles, role)) return null;
   try {
-    const target = resolveRoleCascade(config, role, undefined, registry);
+    const target = resolveRoleCascade(config, role, { registry });
     return [target.client, target.model, sortedItems(target.options)];
   } catch (error) {
     if (error instanceof ConfigurationError) return null;
@@ -410,7 +408,7 @@ function resolvedRole(config: Record<string, unknown>, role: string, registry?: 
 
 function resolvedStage(config: Record<string, unknown>, stage: RoleStageSpec, registry?: ClientRegistry): ResolvedTarget | null {
   try {
-    const target = resolveStageSpec(config, stage, undefined, registry);
+    const target = resolveStageSpec(config, stage, { registry });
     return [target.client, target.model, sortedItems(target.options)];
   } catch (error) {
     if (error instanceof ConfigurationError) return null;

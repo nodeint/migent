@@ -16,50 +16,56 @@ export interface ContractEntry {
   commands: readonly string[];
 }
 
-const e = (key: string, schema: TSchema, cls: ContractClass, framing: Framing, commands: string[]): ContractEntry =>
-  ({ key, schema, class: cls, framing, commands });
+interface EntryShape {
+  class: ContractClass;
+  framing: Framing;
+  commands: string[];
+}
+
+const e = (key: string, schema: TSchema, shape: EntryShape): ContractEntry =>
+  ({ key, schema, class: shape.class, framing: shape.framing, commands: shape.commands });
 
 export const CLI_CONTRACTS: readonly ContractEntry[] = [
-  e('config', O.ConfigSummary, 'produced', 'document', ['config --json']),
-  e('authoring', O.AuthoringEnvelope, 'produced', 'document', ['config|workflow validate|render|save --json']),
-  e('doctor', O.DoctorReport, 'produced', 'document', ['doctor --json', 'doctor --session --json']),
-  e('get-workflow-summary-list', O.GetWorkflowSummaryList, 'produced', 'document', ['get workflows -o json']),
-  e('get-workflow', O.GetWorkflow, 'produced', 'document', ['get workflow <name> -o json']),
-  e('get-role-list', O.GetRoleList, 'produced', 'document', ['get roles -o json']),
-  e('get-role', O.GetRole, 'produced', 'document', ['get role <name> -o json']),
-  e('get-agent-list', O.GetAgentList, 'produced', 'document', ['get agents -o json']),
-  e('get-agent', O.GetAgent, 'produced', 'document', ['get agent <name> -o json']),
-  e('get-config', O.GetConfig, 'produced', 'document', ['get config -o json']),
-  e('get-client-list', O.GetClientList, 'produced', 'document', ['get clients -o json']),
-  e('get-client', O.GetClient, 'produced', 'document', ['get client <name> -o json']),
-  e('get-model-list', O.GetModelList, 'produced', 'document', ['get models -o json']),
-  e('get-model', O.GetModel, 'produced', 'document', ['get model <name> -o json']),
-  e('get-option-list', O.GetOptionList, 'produced', 'document', ['get options -o json']),
-  e('get-option', O.GetOption, 'produced', 'document', ['get option <name> -o json']),
-  e('get-native-option-list', O.GetNativeOptionList, 'produced', 'document', ['get options --native -o json']),
-  e('get-native-option', O.GetNativeOption, 'produced', 'document', ['get option <name> --native -o json']),
-  e('get-effort-list', O.GetEffortList, 'produced', 'document', ['get efforts -o json']),
-  e('get-effort', O.GetEffort, 'produced', 'document', ['get effort <name> -o json']),
-  e('session-rows', O.SessionRows, 'produced', 'document', ['session list --json']),
-  e('session-latest-row', O.SessionRow, 'produced', 'document', ['session list --latest --json']),
-  e('session-latest-none', O.SessionNone, 'produced', 'document', ['session list --latest --json']),
-  e('session-snapshot', O.SessionSnapshot, 'produced', 'document', ['session show --json']),
-  e('session-snapshot-line', O.SessionSnapshotLine, 'produced', 'json-lines', ['session follow --json']),
-  e('session-follow-record', O.SessionFollowRecord, 'passthrough', 'json-lines', ['session follow --json']),
-  e('session-metrics', O.SealedMetrics, 'passthrough', 'document', ['session metrics <id> --json']),
-  e('session-metrics-line', O.SealedMetricsLine, 'passthrough', 'json-lines', ['session metrics --json']),
-  e('cancel', O.CancelResult, 'produced', 'document', ['session cancel --json']),
-  e('complete', O.CompleteResult, 'produced', 'document', ['session complete --json']),
-  e('rename', O.RenameResult, 'produced', 'document', ['session rename --json']),
-  e('role-run', O.RoleRunResult, 'produced', 'document', ['session run --role --json']),
-  e('role-run-many', O.RoleRunResults, 'produced', 'document', ['session run --role --json (resumed cancelled executions)']),
-  e('prepare', O.PrepareResult, 'produced', 'document', ['session prepare']),
-  e('repair', O.RepairResult, 'produced', 'document', ['session repair']),
-  e('service-running', O.ServiceRunning, 'produced', 'document', ['service status --json']),
-  e('service-stopped', O.ServiceStopped, 'produced', 'document', ['service status --json']),
-  e('workspace-list', O.WorkspaceList, 'produced', 'document', ['workspace list --json']),
-  e('workspace-mutation', O.WorkspaceMutation, 'produced', 'document', ['workspace register', 'workspace remove']),
-  e('update', O.UpdateCheck, 'produced', 'document', ['update --json']),
+  e('config', O.ConfigSummary, { class: 'produced', framing: 'document', commands: ['config --json'] }),
+  e('authoring', O.AuthoringEnvelope, { class: 'produced', framing: 'document', commands: ['config|workflow validate|render|save --json'] }),
+  e('doctor', O.DoctorReport, { class: 'produced', framing: 'document', commands: ['doctor --json', 'doctor --session --json'] }),
+  e('get-workflow-summary-list', O.GetWorkflowSummaryList, { class: 'produced', framing: 'document', commands: ['get workflows -o json'] }),
+  e('get-workflow', O.GetWorkflow, { class: 'produced', framing: 'document', commands: ['get workflow <name> -o json'] }),
+  e('get-role-list', O.GetRoleList, { class: 'produced', framing: 'document', commands: ['get roles -o json'] }),
+  e('get-role', O.GetRole, { class: 'produced', framing: 'document', commands: ['get role <name> -o json'] }),
+  e('get-agent-list', O.GetAgentList, { class: 'produced', framing: 'document', commands: ['get agents -o json'] }),
+  e('get-agent', O.GetAgent, { class: 'produced', framing: 'document', commands: ['get agent <name> -o json'] }),
+  e('get-config', O.GetConfig, { class: 'produced', framing: 'document', commands: ['get config -o json'] }),
+  e('get-client-list', O.GetClientList, { class: 'produced', framing: 'document', commands: ['get clients -o json'] }),
+  e('get-client', O.GetClient, { class: 'produced', framing: 'document', commands: ['get client <name> -o json'] }),
+  e('get-model-list', O.GetModelList, { class: 'produced', framing: 'document', commands: ['get models -o json'] }),
+  e('get-model', O.GetModel, { class: 'produced', framing: 'document', commands: ['get model <name> -o json'] }),
+  e('get-option-list', O.GetOptionList, { class: 'produced', framing: 'document', commands: ['get options -o json'] }),
+  e('get-option', O.GetOption, { class: 'produced', framing: 'document', commands: ['get option <name> -o json'] }),
+  e('get-native-option-list', O.GetNativeOptionList, { class: 'produced', framing: 'document', commands: ['get options --native -o json'] }),
+  e('get-native-option', O.GetNativeOption, { class: 'produced', framing: 'document', commands: ['get option <name> --native -o json'] }),
+  e('get-effort-list', O.GetEffortList, { class: 'produced', framing: 'document', commands: ['get efforts -o json'] }),
+  e('get-effort', O.GetEffort, { class: 'produced', framing: 'document', commands: ['get effort <name> -o json'] }),
+  e('session-rows', O.SessionRows, { class: 'produced', framing: 'document', commands: ['session list --json'] }),
+  e('session-latest-row', O.SessionRow, { class: 'produced', framing: 'document', commands: ['session list --latest --json'] }),
+  e('session-latest-none', O.SessionNone, { class: 'produced', framing: 'document', commands: ['session list --latest --json'] }),
+  e('session-snapshot', O.SessionSnapshot, { class: 'produced', framing: 'document', commands: ['session show --json'] }),
+  e('session-snapshot-line', O.SessionSnapshotLine, { class: 'produced', framing: 'json-lines', commands: ['session follow --json'] }),
+  e('session-follow-record', O.SessionFollowRecord, { class: 'passthrough', framing: 'json-lines', commands: ['session follow --json'] }),
+  e('session-metrics', O.SealedMetrics, { class: 'passthrough', framing: 'document', commands: ['session metrics <id> --json'] }),
+  e('session-metrics-line', O.SealedMetricsLine, { class: 'passthrough', framing: 'json-lines', commands: ['session metrics --json'] }),
+  e('cancel', O.CancelResult, { class: 'produced', framing: 'document', commands: ['session cancel --json'] }),
+  e('complete', O.CompleteResult, { class: 'produced', framing: 'document', commands: ['session complete --json'] }),
+  e('rename', O.RenameResult, { class: 'produced', framing: 'document', commands: ['session rename --json'] }),
+  e('role-run', O.RoleRunResult, { class: 'produced', framing: 'document', commands: ['session run --role --json'] }),
+  e('role-run-many', O.RoleRunResults, { class: 'produced', framing: 'document', commands: ['session run --role --json (resumed cancelled executions)'] }),
+  e('prepare', O.PrepareResult, { class: 'produced', framing: 'document', commands: ['session prepare'] }),
+  e('repair', O.RepairResult, { class: 'produced', framing: 'document', commands: ['session repair'] }),
+  e('service-running', O.ServiceRunning, { class: 'produced', framing: 'document', commands: ['service status --json'] }),
+  e('service-stopped', O.ServiceStopped, { class: 'produced', framing: 'document', commands: ['service status --json'] }),
+  e('workspace-list', O.WorkspaceList, { class: 'produced', framing: 'document', commands: ['workspace list --json'] }),
+  e('workspace-mutation', O.WorkspaceMutation, { class: 'produced', framing: 'document', commands: ['workspace register', 'workspace remove'] }),
+  e('update', O.UpdateCheck, { class: 'produced', framing: 'document', commands: ['update --json'] }),
 ];
 
 /** Opt-in descriptions of persisted files; never referenced by a command contract. */

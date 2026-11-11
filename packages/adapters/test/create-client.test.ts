@@ -13,11 +13,7 @@ test('createClient maps an id to its client and rejects unknown ids', () => {
 });
 
 test('model effort follows the bound client through to Grok command arguments', () => {
-  const target = loadAgentTarget(
-    { agents: { fast: { client: { type: 'grok' }, model: 'test', effort: 'high' } } },
-    'fast',
-    registry,
-  );
+  const target = loadAgentTarget({ agents: { fast: { client: { type: 'grok' }, model: 'test', effort: 'high' } } }, 'fast', { registry });
   const client = new GrokClient();
   const command = client.runCommand({
     model: target.model, options: target.options, workspace: '.', prompt: 'test',

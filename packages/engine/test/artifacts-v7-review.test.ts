@@ -66,7 +66,7 @@ downstream:
     task: Implement the plan
 `);
   writeFileSync(path.join(workflows, 'implement.yaml'), 'schema_version: 7\nid: implement\nstages:\n  - { id: work, role: developer }\n');
-  const prior = createWorkflowSession(base, 'plan', 'Plan');
+  const prior = createWorkflowSession(base, 'plan', { task: 'Plan' });
   const directory = path.join(base, '.migent', 'sessions', prior);
   mkdirSync(path.join(directory, 'outputs'));
   writeFileSync(path.join(directory, 'outputs', 'plan.md'), 'The plan\n');
@@ -208,7 +208,7 @@ async function runGate(responses: string[], artifacts: { body: string; only: str
   mkdirSync(workflows, { recursive: true });
   writeFileSync(path.join(base, '.migent', 'config.yaml'), SESSION_CONFIG);
   writeFileSync(path.join(workflows, 'gated.yaml'), GATED);
-  const sessionId = createWorkflowSession(base, 'gated', 'Go');
+  const sessionId = createWorkflowSession(base, 'gated', { task: 'Go' });
   const client = new ScriptedClient(responses, artifacts);
   const result = await new AgentToolRunner(registryOf({ fake: client }), 10).run({
     client: 'fake', model: 'm1', prompt: 'go', workspace: base, sessionId, stageId: 'write',
@@ -245,7 +245,7 @@ test('watch snapshot reports optional artifacts that were not produced', () => {
   mkdirSync(workflows, { recursive: true });
   writeFileSync(path.join(base, '.migent', 'config.yaml'), SESSION_CONFIG);
   writeFileSync(path.join(workflows, 'gated.yaml'), GATED);
-  const sessionId = createWorkflowSession(base, 'gated', 'Go');
+  const sessionId = createWorkflowSession(base, 'gated', { task: 'Go' });
   const directory = path.join(base, '.migent', 'sessions', sessionId);
   expect(watchSnapshot(directory).outputs_not_produced).toEqual(['comments']);
 });

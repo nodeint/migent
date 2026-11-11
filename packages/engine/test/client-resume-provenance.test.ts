@@ -78,7 +78,7 @@ test.each([
 ])('legacy client evidence uses every turn: $commands', ({ commands, expected }) => {
   const { workspace, directory, metadata } = fixture(commands);
   try {
-    const {client} = readExecutionClient(directory, ID, metadata);
+    const {client} = readExecutionClient(directory, { executionId: ID, metadata });
     expect(client).toBe(expected);
     expect(readExecutions(directory)[0]?.client).toBe(client ?? '');
   } finally {

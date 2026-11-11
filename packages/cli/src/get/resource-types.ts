@@ -26,7 +26,7 @@ export interface ProjectResource<One extends TSchema = TSchema, Item extends TSc
   listContract: Item;
   summary: string;
   list?(workspace: string, resolve: ClientRegistry): Static<Item>[];
-  get(workspace: string, name: string | null, resolve: ClientRegistry, session: string | null): Static<One>;
+  get(workspace: string, lookup: { name: string | null; session: string | null }, resolve: ClientRegistry): Static<One>;
 }
 
 export interface MachineResource<One extends TSchema = TSchema, Item extends TSchema = One> {

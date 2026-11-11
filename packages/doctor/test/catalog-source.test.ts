@@ -35,10 +35,13 @@ test('a client option-values command keeps the shared loader behavior', async ()
   const client = new GrokClient();
   const catalog: CliModelCatalog = { ids: ['grok-4'], defaultId: null, optionValues: [], valuesFor: () => null };
   let seen: string[] | undefined;
-  const values = await loadOptionValues(clientCatalogSource(client), 'reasoning-effort', 'grok-4', catalog, () => '/bin/grok', (argv) => {
+  const values = await loadOptionValues(
+    { source: clientCatalogSource(client), name: 'reasoning-effort', model: 'grok-4', catalog },
+    { which: () => '/bin/grok', runCommand: (argv) => {
     seen = argv;
     return 'use one of: low, high';
-  });
+  } },
+  );
   expect(values).toEqual(['low', 'high']);
   expect(seen).toEqual(client.optionValuesCommand('reasoning-effort', 'grok-4')?.argv);
 });

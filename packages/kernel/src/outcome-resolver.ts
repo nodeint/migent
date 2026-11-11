@@ -25,12 +25,16 @@ export function resolveStageOutcome(response: string, context: OutcomeContext): 
     if (!context.required) return null;
     const handoff = loadHandoffFile(context.handoffFile, { decisionValues: context.decisionValues, ask: context.ask });
     if (handoff.status === 'question') {
-      return new StageOutcome('question', null, null, handoff.questions[0]!.question, handoff.questions);
+      return new StageOutcome('question', { question: handoff.questions[0]!.question, questions: handoff.questions });
     }
-    return new StageOutcome(handoff.status, handoff.blocker, handoff.decision);
+    return new StageOutcome(handoff.status, { blocker: handoff.blocker, decision: handoff.decision });
   }
-  const outcome = parseStageOutcome(response, context.required, context.decisionValues, context.ask);
+  const outcome = parseStageOutcome(
+    response,
+    context.required,
+    { decisionValues: context.decisionValues, ask: context.ask },
+  );
   if (outcome?.status !== 'question') return outcome;
   const questions = loadQuestionFile(context.questionFile);
-  return new StageOutcome('question', null, null, questions[0]!.question, questions);
+  return new StageOutcome('question', { question: questions[0]!.question, questions });
 }

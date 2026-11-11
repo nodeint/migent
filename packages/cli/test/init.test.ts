@@ -128,7 +128,7 @@ test('writes inline role models and both working presets', async () => {
     const clients = clientRegistry();
     expect(diagnose(workspace, { clients, which: which(new Set(['codex'])) }).every((check) => check.ok)).toBe(true);
     for (const [flow, stage] of [['implement', 'implement'], ['implement', 'review_work'], ['plan', 'plan'], ['plan', 'review_plan']] as const) {
-      expect(resolveStageTarget(workspace, flow, stage, undefined, clients)).toEqual({
+      expect(resolveStageTarget(workspace, { workflowId: flow, stageId: stage }, { registry: clients })).toEqual({
         client: 'codex', model: 'gpt-5', options: {},
       });
     }
@@ -239,12 +239,12 @@ test('planner has its own model and each workflow uses the reviewer model', asyn
     const workflow = readFileSync(path.join(workspace, '.migent', 'workflows', 'plan.yaml'), 'utf8');
     expect(code).toBe(0);
     const resolve = clientRegistry();
-    expect(resolveStageTarget(workspace, 'plan', 'plan', undefined, resolve)).toMatchObject({ client: 'grok', model: 'grok-4.6' });
-    expect(resolveStageTarget(workspace, 'plan', 'review_plan', undefined, resolve)).toMatchObject({ client: 'grok', model: 'grok-4.7' });
+    expect(resolveStageTarget(workspace, { workflowId: 'plan', stageId: 'plan' }, { registry: resolve })).toMatchObject({ client: 'grok', model: 'grok-4.6' });
+    expect(resolveStageTarget(workspace, { workflowId: 'plan', stageId: 'review_plan' }, { registry: resolve })).toMatchObject({ client: 'grok', model: 'grok-4.7' });
     expect(config).not.toContain('agents:');
     expect(config).toContain('planner:');
     expect(workflow).toContain('role: planner');
-    expect(resolveStageTarget(workspace, 'implement', 'review_work', undefined, resolve)).toMatchObject({ client: 'grok', model: 'grok-4.7' });
+    expect(resolveStageTarget(workspace, { workflowId: 'implement', stageId: 'review_work' }, { registry: resolve })).toMatchObject({ client: 'grok', model: 'grok-4.7' });
     expect(workflow).toContain('id: plan');
     expect(loadWorkflowDocument(path.join(workspace, '.migent', 'workflows', 'plan.yaml')).stages.review_plan?.routes.revise).toBe('plan');
     expect(workflow).toBe(readFileSync(new URL('../../../templates/workflows/plan.yaml', import.meta.url), 'utf8'));
@@ -587,9 +587,9 @@ test('non-interactive CLI requires all three role models and accepts the same mo
     ], workspace));
     expect(result.value, result.stderr).toBe(0);
     const resolve = clientRegistry();
-    expect(resolveStageTarget(workspace, 'plan', 'plan', undefined, resolve).options).toEqual({ model_reasoning_effort: 'medium' });
-    expect(resolveStageTarget(workspace, 'plan', 'review_plan', undefined, resolve).options).toEqual({ model_reasoning_effort: 'high' });
-    expect(resolveStageTarget(workspace, 'implement', 'implement', undefined, resolve).options).toEqual({ model_reasoning_effort: 'low' });
+    expect(resolveStageTarget(workspace, { workflowId: 'plan', stageId: 'plan' }, { registry: resolve }).options).toEqual({ model_reasoning_effort: 'medium' });
+    expect(resolveStageTarget(workspace, { workflowId: 'plan', stageId: 'review_plan' }, { registry: resolve }).options).toEqual({ model_reasoning_effort: 'high' });
+    expect(resolveStageTarget(workspace, { workflowId: 'implement', stageId: 'implement' }, { registry: resolve }).options).toEqual({ model_reasoning_effort: 'low' });
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }
@@ -626,9 +626,9 @@ test('init accepts independent effort flags and rejects conflicting or invalid v
     expect(local).toContain('effort: high');
     expect(local).toContain('effort: low');
     const resolve = clientRegistry();
-    expect(resolveStageTarget(workspace, 'plan', 'plan', undefined, resolve).options.model_reasoning_effort).toBe('medium');
-    expect(resolveStageTarget(workspace, 'plan', 'review_plan', undefined, resolve).options.model_reasoning_effort).toBe('high');
-    expect(resolveStageTarget(workspace, 'implement', 'implement', undefined, resolve).options.model_reasoning_effort).toBe('low');
+    expect(resolveStageTarget(workspace, { workflowId: 'plan', stageId: 'plan' }, { registry: resolve }).options.model_reasoning_effort).toBe('medium');
+    expect(resolveStageTarget(workspace, { workflowId: 'plan', stageId: 'review_plan' }, { registry: resolve }).options.model_reasoning_effort).toBe('high');
+    expect(resolveStageTarget(workspace, { workflowId: 'implement', stageId: 'implement' }, { registry: resolve }).options.model_reasoning_effort).toBe('low');
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }
@@ -653,13 +653,13 @@ test('interactive init saves each role independently without installing the skil
     expect(Object.keys(loadWorkspaceConfig(workspace).roles)).toEqual(['planner', 'reviewer', 'developer']);
     expect(result.stdout).toContain('migent skill install --project');
     const resolve = clientRegistry();
-    expect(resolveStageTarget(workspace, 'implement', 'implement', undefined, resolve)).toEqual({
+    expect(resolveStageTarget(workspace, { workflowId: 'implement', stageId: 'implement' }, { registry: resolve })).toEqual({
       client: 'codex', model: 'gpt-5', options: { model_reasoning_effort: 'xhigh' },
     });
-    expect(resolveStageTarget(workspace, 'plan', 'review_plan', undefined, resolve)).toEqual({
+    expect(resolveStageTarget(workspace, { workflowId: 'plan', stageId: 'review_plan' }, { registry: resolve })).toEqual({
       client: 'grok', model: 'grok-4.7', options: { 'reasoning-effort': 'high' },
     });
-    expect(resolveStageTarget(workspace, 'plan', 'plan', undefined, resolve)).toEqual({
+    expect(resolveStageTarget(workspace, { workflowId: 'plan', stageId: 'plan' }, { registry: resolve })).toEqual({
       client: 'codex', model: 'gpt-5', options: { model_reasoning_effort: 'low' },
     });
     expect(calls).toEqual([]);

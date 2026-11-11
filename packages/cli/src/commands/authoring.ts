@@ -196,7 +196,7 @@ function execute(
   // A session save holds the session lock from before it reads mutable session state until the write ends.
   const held = new HeldLock();
   try {
-    return executeDraft(options, context, emit, held);
+    return executeDraft(options, context, { emit, held });
   } finally {
     held.release();
   }
@@ -205,9 +205,9 @@ function execute(
 function executeDraft(
   options: AuthoringOptions,
   context: Context,
-  emit: (exit: number, items: Diagnostic[], extra?: Record<string, unknown>) => number,
-  held: HeldLock,
+  output: { emit: (exit: number, items: Diagnostic[], extra?: Record<string, unknown>) => number; held: HeldLock },
 ): number {
+  const { emit, held } = output;
   const { kind, mode } = options;
   const invocation = (message: string): Finish => new Finish(EXIT_IO, [plain('invalid-invocation', message)]);
 
@@ -360,7 +360,7 @@ function executeDraft(
 
   let result;
   try {
-    result = writeFileConditional(destination, rendered.text, options.baseHash ?? null);
+    result = writeFileConditional(destination, rendered.text, { baseHash: options.baseHash ?? null });
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     return emit(EXIT_IO, [...diagnostics, plain('write-failed', `Unable to write ${label}: ${reason}`)]);

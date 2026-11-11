@@ -92,13 +92,17 @@ export class SessionLock {
   private cancelTimer: NodeJS.Timeout | null = null;
   private lost = false;
 
+  public readonly sessionId: string;
+  private readonly lockPath: string;
+
   private constructor(
-    public readonly sessionId: string,
     private readonly directory: string,
-    private readonly lockPath: string,
     private readonly info: LockInfo,
     private readonly heartbeatMs: number,
-  ) {}
+  ) {
+    this.sessionId = path.basename(directory);
+    this.lockPath = path.join(directory, SESSION_LOCK_FILENAME);
+  }
 
   /** Take the lock, or return null while a live holder has it. */
   public static tryAcquire(sessionDirectory: string, timing: SessionLockTiming = {}): SessionLock | null {
@@ -120,7 +124,7 @@ export class SessionLock {
       if (!createExclusive(lockPath, info)) return null;
     }
     removeCancelMarker(directory);
-    const lock = new SessionLock(path.basename(directory), directory, lockPath, info, heartbeatMs);
+    const lock = new SessionLock(directory, info, heartbeatMs);
     held.set(directory, lock);
     lock.startHeartbeat();
     return lock;

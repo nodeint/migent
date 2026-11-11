@@ -60,12 +60,12 @@ function stageRun(
   outcome: StageOutcome | null,
   files: Record<string, string> = {},
 ): void {
-  const [record, , context] = store.loadOrCreate('fake', 'model', {}, workspace, sessionId, stageId, null, null, stageId);
+  const [record, , context] = store.loadOrCreate({ client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId, stageAttempt: null, executionOrder: null, prompt: stageId });
   const lock = SessionLock.acquire(directoryOf(workspace, sessionId));
   try {
-    store.saveExecution(context, record, 'running');
+    store.saveExecution(context, record, { status: 'running' });
     for (const [name, body] of Object.entries(files)) writeFileSync(path.join(context.artifactDirectory, name), body, 'utf8');
-    store.saveExecution(context, record, status, null, outcome);
+    store.saveExecution(context, record, { status, outcome });
   } finally {
     lock.release();
   }
@@ -73,7 +73,7 @@ function stageRun(
 
 function started(): { workspace: string; store: SessionStore; sessionId: string } {
   const workspace = workspaceWithPlan();
-  const sessionId = createWorkflowSession(workspace, 'plan', 'Write a plan');
+  const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
   freezeSessionTask(workspace, sessionId);
   return { workspace, store: new SessionStore(workspace, undefined, defaultClients()), sessionId };
 }
@@ -121,8 +121,8 @@ test('blocked, question, and cancelled sessions lose their stopped presentation'
     id: '1', question: 'Which?', context: 'Because.', selection: 'single', recommended: ['A'], options: [{ id: 'A', label: 'A', description: 'first' }, { id: 'B', label: 'B', description: 'second' }],
   };
   const cases: [string, string, StageOutcome | null][] = [
-    ['blocked', 'completed', new StageOutcome('blocked', 'needs a decision')],
-    ['question', 'completed', new StageOutcome('question', null, null, 'Which?', [question as never])],
+    ['blocked', 'completed', new StageOutcome('blocked', { blocker: 'needs a decision' })],
+    ['question', 'completed', new StageOutcome('question', { question: 'Which?', questions: [question as never] })],
     ['cancelled', 'cancelled', null],
   ];
   for (const [expected, executionStatus, outcome] of cases) {
@@ -158,7 +158,7 @@ test('a completed session is a no-op and stays terminal', () => {
   expect(again.next.path).toBe(path.join(directory, 'next.json'));
   expect(readFileSync(path.join(directory, 'events.jsonl'), 'utf8')).toBe(events);
   expect(readFileSync(path.join(directory, 'status.json'), 'utf8')).toBe(status);
-  expect(() => store.loadOrCreate('fake', 'model', {}, workspace, sessionId, 'extra', null, null, 'x')).toThrow(/start a new session/);
+  expect(() => store.loadOrCreate({ client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'extra', stageAttempt: null, executionOrder: null, prompt: 'x' })).toThrow(/start a new session/);
 });
 
 test('missing, prepared, role, and running sessions are rejected', () => {
@@ -166,7 +166,7 @@ test('missing, prepared, role, and running sessions are rejected', () => {
   expect(() => store.completeManually('nope')).toThrow(/does not exist/);
   expect(() => store.completeManually('..')).toThrow(ConfigurationError);
 
-  const prepared = createPreparedSession(workspace, 'Later', 'plan');
+  const prepared = createPreparedSession(workspace, { title: 'Later', workflowId: 'plan' });
   expect(() => store.completeManually(prepared)).toThrow(`migent session run --session ${prepared}`);
   expect(statusOf(workspace, prepared).status).toBe('prepared');
 
@@ -200,7 +200,7 @@ test('schema 2-6 outputs and version 1 completion.outputs publish from completed
     mkdirSync(path.join(workspace, '.migent', 'workflows'), { recursive: true });
     writeFileSync(path.join(workspace, '.migent', 'workflows', `${id}.yaml`), text, 'utf8');
     writeSessionConfig(workspace);
-    const sessionId = createWorkflowSession(workspace, id, 'Write a plan');
+    const sessionId = createWorkflowSession(workspace, id, { task: 'Write a plan' });
     freezeSessionTask(workspace, sessionId);
     const store = new SessionStore(workspace, undefined, defaultClients());
     stageRun(workspace, store, sessionId, 'draft', 'completed', new StageOutcome('complete'), { 'plan.md': '# Plan\n' });

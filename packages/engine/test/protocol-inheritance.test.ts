@@ -19,7 +19,7 @@ function setup(workflow: string): { workspace: string; sessionId: string } {
   mkdirSync(path.join(workspace, '.migent', 'workflows'), { recursive: true });
   writeFileSync(path.join(workspace, '.migent', 'config.yaml'), CONFIG);
   writeFileSync(path.join(workspace, '.migent', 'workflows', 'wf.yaml'), workflow);
-  return { workspace, sessionId: createWorkflowSession(workspace, 'wf', 'task') };
+  return { workspace, sessionId: createWorkflowSession(workspace, 'wf', { task: 'task' }) };
 }
 
 function records(workspace: string, sessionId: string): Record<string, any>[] {

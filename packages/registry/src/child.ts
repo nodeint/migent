@@ -207,7 +207,11 @@ export async function serveChild(home: string, port: number): Promise<number> {
       // socket already closed
     }
   };
-  const lifetime = await ServiceEndpointServer.listen(directory, { instance_id: instanceId, pid: process.pid }, token, onSignal);
+  const lifetime = await ServiceEndpointServer.listen(
+    directory,
+    { instance_id: instanceId, pid: process.pid },
+    { token, onStop: onSignal },
+  );
   if (lifetime === null) {
     process.stderr.write('Another registry service holds the service endpoint.\n');
     return 1;
@@ -216,7 +220,7 @@ export async function serveChild(home: string, port: number): Promise<number> {
   process.on('SIGTERM', onSignal);
   try {
     try {
-      server = await RegistryHTTPServer.open(new RegistryStore(directory), token, instanceId, '127.0.0.1', port);
+      server = await RegistryHTTPServer.open({ store: new RegistryStore(directory), token, instanceId, port });
     } catch (error) {
       process.stderr.write(`Cannot listen on 127.0.0.1:${port}: ${(error as Error).message}\n`);
       return 1;

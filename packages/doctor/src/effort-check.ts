@@ -19,17 +19,22 @@ import type { ModelEffortCheck } from './check.js';
 import { agentClientType } from './client-type.js';
 
 /** Catalog lookup is asynchronous and needs the machine, so it stays out of the static checks. */
+export interface EffortCheckOptions {
+  readonly which: Which;
+  readonly runCommand: RunCommand;
+  readonly only?: ReadonlySet<string>;
+  /** Keys whose model is already reported unknown: one root cause, one message. */
+  readonly skip?: ReadonlySet<string>;
+  /** Inline stage agents, checked like named ones. */
+  readonly extra?: readonly AgentDefinitionEntry[];
+}
+
 export async function checkModelEfforts(
   workspace: string,
   clients: ClientRegistry,
-  which: Which,
-  runCommand: RunCommand,
-  only?: ReadonlySet<string>,
-  /** Keys whose model is already reported unknown: one root cause, one message. */
-  skip?: ReadonlySet<string>,
-  /** Inline stage agents, checked like named ones. */
-  extra: readonly AgentDefinitionEntry[] = [],
+  options: EffortCheckOptions,
 ): Promise<Record<string, ModelEffortCheck>> {
+  const { which, runCommand, only, skip, extra = [] } = options;
   let config: Record<string, unknown>;
   try { config = loadWorkspaceConfig(workspace); } catch { return {}; }
   const definitions = [...listAgentDefinitions(config), ...extra];
@@ -53,7 +58,10 @@ export async function checkModelEfforts(
       if (client.effortOption === undefined) values = [];
       else {
         const catalog = await loadCatalog(source, which, run);
-        values = await loadOptionValues(source, client.effortOption, model.model.trim(), catalog, which, run);
+        values = await loadOptionValues(
+          { source, name: client.effortOption, model: model.model.trim(), catalog },
+          { which, runCommand: run },
+        );
         if (values === null) throw new Error(`The selected CLI does not list effort values for ${model.model}.`);
       }
     } catch (error) {

@@ -168,7 +168,7 @@ export async function runInit(
   let planner: ModelChoice;
   let reviewer: ModelChoice;
   try {
-    planner = await choices(chosen, resolve, prompt, {
+    planner = await choices({ clients: chosen, which: resolve, prompt }, {
       role: 'Planner',
       client: plannerClient,
       model: plannerModel,
@@ -177,7 +177,7 @@ export async function runInit(
       runCommand: execute,
       models, getCatalog,
     });
-    reviewer = await choices(chosen, resolve, prompt, {
+    reviewer = await choices({ clients: chosen, which: resolve, prompt }, {
       role: 'Reviewer',
       client: reviewerClient,
       model: reviewerModel,
@@ -186,7 +186,7 @@ export async function runInit(
       runCommand: execute,
       models, getCatalog,
     });
-    developer = await choices(chosen, resolve, prompt, {
+    developer = await choices({ clients: chosen, which: resolve, prompt }, {
       role: 'Developer',
       client,
       model,
@@ -246,9 +246,7 @@ function writeDoctorProblems(
 }
 
 async function choices(
-  clients: import('@nodeint/migent-kernel').ClientRegistry,
-  which: Which,
-  prompt: Prompter,
+  env: { clients: import('@nodeint/migent-kernel').ClientRegistry; which: Which; prompt: Prompter },
   args: {
     role: string;
     client: string | null;
@@ -260,6 +258,7 @@ async function choices(
     getCatalog: (name: string) => Promise<ModelCatalog>;
   },
 ): Promise<ModelChoice> {
+  const { clients, which, prompt } = env;
   let {client} = args;
   let {model} = args;
   let {effort} = args;
@@ -273,7 +272,7 @@ async function choices(
     model = selected.model;
     const impl = clients.get(client);
     const catalog = await args.getCatalog(client);
-    stored = await promptOptions(impl, model, catalog, which, args.runCommand, prompt);
+    stored = await promptOptions(impl, { model, catalog }, { which, runCommand: args.runCommand, prompt });
     // The prompt stores effort as a native option; keep it in the dedicated `effort` field instead.
     const promptedOption = impl.effortOption;
     if (promptedOption && Object.hasOwn(stored, promptedOption) && !(promptedOption === 'variant' && model.includes('#'))) {
@@ -296,7 +295,7 @@ async function choices(
     const requested = args.effort !== null && effortOption
       ? { ...args.options, [effortOption]: args.effort }
       : args.options;
-    stored = await acceptedOptions(impl, model, catalog, which, args.runCommand, requested);
+    stored = await acceptedOptions(impl, { model, catalog, which, runCommand: args.runCommand, options: requested });
     if (args.effort !== null && effortOption) delete stored[effortOption];
   }
   if (model.trim() === '') throw new ConfigurationError('Model is required.');
@@ -348,16 +347,18 @@ function writeProject(workspace: string, files: readonly RenderedFile[]): string
 
 async function promptOptions(
   client: import('@nodeint/migent-kernel').CliClient,
-  model: string,
-  catalog: ModelCatalog,
-  which: Which,
-  runCommand: RunCommand,
-  prompt: Prompter,
+  subject: { model: string; catalog: ModelCatalog },
+  env: { which: Which; runCommand: RunCommand; prompt: Prompter },
 ): Promise<Record<string, string>> {
+  const { model, catalog } = subject;
+  const { which, runCommand, prompt } = env;
   const stored: Record<string, string> = {};
   for (const spec of clientOptions(client)) {
     if (!spec.prompt) continue;
-    const values = await loadOptionValues(catalogSourceOf(client), spec.name, model, catalog, which, runCommand);
+    const values = await loadOptionValues(
+      { source: catalogSourceOf(client), name: spec.name, model, catalog },
+      { which, runCommand },
+    );
     if (values === null || values.length === 0) continue;
     const picked = await prompt.selectOption(spec.name, values, spec.allowDefault ?? false);
     if (picked) stored[spec.name] = picked;

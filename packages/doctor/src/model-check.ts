@@ -41,21 +41,31 @@ function catalogName(client: CliClient, model: string): string {
 
 /** Checks model availability, then efforts (skipped for unknown models), and merges both per key. */
 /** Name check and effort check, behind one entry. */
+export interface ModelCheckOptions {
+  readonly which: Which;
+  readonly runCommand: RunCommand;
+  readonly only?: ReadonlySet<string>;
+  /** Inline stage agents, checked like named ones. */
+  readonly extra?: readonly AgentDefinitionEntry[];
+}
+
 export async function checkModels(
   workspace: string,
   clients: ClientRegistry,
-  which: Which,
-  runCommand: RunCommand,
-  only?: ReadonlySet<string>,
-  extra: readonly AgentDefinitionEntry[] = [],
+  options: ModelCheckOptions,
 ): Promise<Record<string, ModelEffortCheck>> {
+  const { which, runCommand, only, extra } = options;
   const run = cached(runCommand);
   const unreadable = new Set<string>();
   const missed = new Set<string>();
-  const availability = await checkModelAvailability(workspace, clients, which, run, only, unreadable, missed, extra);
+  const availability = await checkModelAvailability(
+    workspace,
+    clients,
+    { which, runCommand: run, only, unreadable, missed, extra },
+  );
   // One root cause, one message: skip the effort check for any model the catalog does not list.
   const skip = new Set([...missed, ...Object.keys(availability).filter((key) => availability[key]?.problem)]);
-  const efforts = await checkModelEfforts(workspace, clients, which, run, only, skip, extra);
+  const efforts = await checkModelEfforts(workspace, clients, { which, runCommand: run, only, skip, extra });
   const merged: Record<string, ModelEffortCheck> = {};
   for (const key of new Set([...Object.keys(availability), ...Object.keys(efforts)])) {
     const problem = [availability[key]?.problem, efforts[key]?.problem].filter((item) => item !== undefined);
@@ -70,19 +80,19 @@ export async function checkModels(
   return merged;
 }
 
+export interface AvailabilityCheckOptions extends ModelCheckOptions {
+  /** Receives the keys whose client catalog could not be read. */
+  readonly unreadable?: Set<string>;
+  /** Receives the keys the catalog was read for but does not list, whatever the severity. */
+  readonly missed?: Set<string>;
+}
+
 export async function checkModelAvailability(
   workspace: string,
   clients: ClientRegistry,
-  which: Which,
-  runCommand: RunCommand,
-  only?: ReadonlySet<string>,
-  /** Receives the keys whose client catalog could not be read. */
-  unreadable: Set<string> = new Set(),
-  /** Receives the keys the catalog was read for but does not list, whatever the severity. */
-  missed: Set<string> = new Set(),
-  /** Inline stage agents, checked like named ones. */
-  extra: readonly AgentDefinitionEntry[] = [],
+  options: AvailabilityCheckOptions,
 ): Promise<Record<string, ModelEffortCheck>> {
+  const { which, runCommand, only, unreadable = new Set<string>(), missed = new Set<string>(), extra = [] } = options;
   let config: Record<string, unknown>;
   try { config = loadWorkspaceConfig(workspace); } catch { return {}; }
   const definitions = [...listAgentDefinitions(config), ...extra];

@@ -25,7 +25,7 @@ function workspaceWithWorkflow(): string {
 
 test('a one-line task is stored in task.md', () => {
   const workspace = workspaceWithWorkflow();
-  const sessionId = createWorkflowSession(workspace, 'solo', 'Write a plan');
+  const sessionId = createWorkflowSession(workspace, 'solo', { task: 'Write a plan' });
   const taskPath = path.join(workspace, '.migent', 'sessions', sessionId, 'task.md');
   expect(readFileSync(taskPath, 'utf8')).toBe('Write a plan\n');
   const status = JSON.parse(readFileSync(path.join(workspace, '.migent', 'sessions', sessionId, 'status.json'), 'utf8')) as {
@@ -40,18 +40,18 @@ test('a one-line task is stored in task.md', () => {
 
 test('a task with a newline is rejected before a session exists', () => {
   const workspace = workspaceWithWorkflow();
-  expect(() => createWorkflowSession(workspace, 'solo', 'one\ntwo')).toThrow(ConfigurationError);
-  expect(() => createWorkflowSession(workspace, 'solo', 'one\ntwo')).toThrow(/one line/);
-  expect(() => createWorkflowSession(workspace, 'solo', 'one\n')).toThrow(/one line/);
-  expect(() => createWorkflowSession(workspace, 'solo', 'one\r')).toThrow(/one line/);
+  expect(() => createWorkflowSession(workspace, 'solo', { task: 'one\ntwo' })).toThrow(ConfigurationError);
+  expect(() => createWorkflowSession(workspace, 'solo', { task: 'one\ntwo' })).toThrow(/one line/);
+  expect(() => createWorkflowSession(workspace, 'solo', { task: 'one\n' })).toThrow(/one line/);
+  expect(() => createWorkflowSession(workspace, 'solo', { task: 'one\r' })).toThrow(/one line/);
   expect(existsSync(path.join(workspace, '.migent', 'sessions'))).toBe(false);
 });
 
 test('prepare stores a title and waits for task.md', () => {
   const workspace = workspaceWithWorkflow();
-  expect(() => createPreparedSession(workspace, '   ', 'solo')).toThrow(/must not be empty/);
-  expect(() => createPreparedSession(workspace, 'one\ntwo', 'solo')).toThrow(/one line/);
-  const sessionId = createPreparedSession(workspace, '  some task title  ', 'solo');
+  expect(() => createPreparedSession(workspace, { title: '   ', workflowId: 'solo' })).toThrow(/must not be empty/);
+  expect(() => createPreparedSession(workspace, { title: 'one\ntwo', workflowId: 'solo' })).toThrow(/one line/);
+  const sessionId = createPreparedSession(workspace, { title: '  some task title  ', workflowId: 'solo' });
   expect(sessionId).toMatch(SESSION_NUMBER);
   const directory = path.join(workspace, '.migent', 'sessions', sessionId);
   expect(existsSync(path.join(directory, 'session.lock'))).toBe(false);
@@ -75,7 +75,7 @@ test('prepare stores a title and waits for task.md', () => {
   expect(events).toContain('"event":"session.created"');
   expect(events).toContain('"v":2');
   expect(events).toContain('"title":"some task title"');
-  const again = createPreparedSession(workspace, 'some task title', 'solo');
+  const again = createPreparedSession(workspace, { title: 'some task title', workflowId: 'solo' });
   expect(again).toMatch(SESSION_NUMBER);
   expect(again).not.toBe(sessionId);
   expect(() => activatePreparedSession(workspace, sessionId)).toThrow(/no task.md/);
@@ -95,7 +95,7 @@ test('prepare stores a title and waits for task.md', () => {
 
 test('an activated prepared session freezes its own workflow draft', () => {
   const workspace = workspaceWithWorkflow();
-  const sessionId = createPreparedSession(workspace, 'draft', 'solo');
+  const sessionId = createPreparedSession(workspace, { title: 'draft', workflowId: 'solo' });
   const directory = path.join(workspace, '.migent', 'sessions', sessionId);
   writeFileSync(path.join(directory, 'task.md'), 'Do the draft.\n', 'utf8');
   writeFileSync(
@@ -116,7 +116,7 @@ test('an activated prepared session freezes its own workflow draft', () => {
 
 test('a workflow draft may not change the session workflow id', () => {
   const workspace = workspaceWithWorkflow();
-  const sessionId = createPreparedSession(workspace, 'draft', 'solo');
+  const sessionId = createPreparedSession(workspace, { title: 'draft', workflowId: 'solo' });
   const directory = path.join(workspace, '.migent', 'sessions', sessionId);
   writeFileSync(path.join(directory, 'task.md'), 'Do the draft.\n', 'utf8');
   writeFileSync(
@@ -130,7 +130,7 @@ test('a workflow draft may not change the session workflow id', () => {
 
 test('activate keeps a lock the caller already holds', () => {
   const workspace = workspaceWithWorkflow();
-  const sessionId = createPreparedSession(workspace, 'wave-4', 'solo');
+  const sessionId = createPreparedSession(workspace, { title: 'wave-4', workflowId: 'solo' });
   const directory = path.join(workspace, '.migent', 'sessions', sessionId);
   writeFileSync(path.join(directory, 'task.md'), 'Migrate wave 4.\n', 'utf8');
   const lock = SessionLock.acquire(directory);
@@ -147,7 +147,7 @@ test('activate keeps a lock the caller already holds', () => {
 
 test('the first dispatch freezes task.md and a later edit fails', () => {
   const workspace = workspaceWithWorkflow();
-  const sessionId = createWorkflowSession(workspace, 'solo', 'Write a plan');
+  const sessionId = createWorkflowSession(workspace, 'solo', { task: 'Write a plan' });
   const directory = path.join(workspace, '.migent', 'sessions', sessionId);
   const frozen = freezeSessionTask(workspace, sessionId);
   expect(frozen.taskFile).toBe(path.join(directory, 'task.md'));
@@ -159,7 +159,7 @@ test('the first dispatch freezes task.md and a later edit fails', () => {
 
 test('whitespace after the first dispatch is a changed task', () => {
   const workspace = workspaceWithWorkflow();
-  const sessionId = createWorkflowSession(workspace, 'solo', 'Write a plan');
+  const sessionId = createWorkflowSession(workspace, 'solo', { task: 'Write a plan' });
   const taskPath = path.join(workspace, '.migent', 'sessions', sessionId, 'task.md');
   freezeSessionTask(workspace, sessionId);
   writeFileSync(taskPath, ' \n', 'utf8');
@@ -168,7 +168,7 @@ test('whitespace after the first dispatch is a changed task', () => {
 
 test('an activated prepared session does not invent task.md from its id', () => {
   const workspace = workspaceWithWorkflow();
-  const sessionId = createPreparedSession(workspace, 'wave-3', 'solo');
+  const sessionId = createPreparedSession(workspace, { title: 'wave-3', workflowId: 'solo' });
   const directory = path.join(workspace, '.migent', 'sessions', sessionId);
   const taskPath = path.join(directory, 'task.md');
   writeFileSync(taskPath, 'Real body\n', 'utf8');
@@ -180,7 +180,7 @@ test('an activated prepared session does not invent task.md from its id', () => 
 
 test('an older session gains task.md from its stored task', () => {
   const workspace = workspaceWithWorkflow();
-  const sessionId = createWorkflowSession(workspace, 'solo', 'Write a plan');
+  const sessionId = createWorkflowSession(workspace, 'solo', { task: 'Write a plan' });
   const directory = path.join(workspace, '.migent', 'sessions', sessionId);
   const taskPath = path.join(directory, 'task.md');
   unlinkSync(taskPath);

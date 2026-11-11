@@ -55,7 +55,12 @@ export type {
   Field,
   MergedConfig,
   ModelOverride,
+  ResolveContext,
+  ResolveSpecOptions,
+  ResolveTargetOptions,
+  RoleCascadeOptions,
   StageTarget,
+  StageTargetRef,
 } from './config.js';
 export {
   configPath,
@@ -113,7 +118,7 @@ export {
   LEGACY_PROVIDER_CLIENT,
   legacyClientOf,
 } from './legacy-provider.js';
-export type { MigrationFn, MigrationLayer, MigrationResult } from './migration.js';
+export type { MigrateConfigOptions, MigrateWorkflowOptions, MigrationFn, MigrationLayer, MigrationResult } from './migration.js';
 export { migrateConfig, migrateWorkflow } from './migration.js';
 export { assertConfigClientEquivalence } from './migration-config.js';
 export { resolveStageOutcome } from './outcome-resolver.js';
@@ -130,6 +135,7 @@ export {
   runnableViolation,
   selectSourceExecution,
   sessionStatusAfterExecution,
+  type SessionStatusInput,
   shouldPublishOutputs,
 } from './outputs.js';
 export type {
@@ -187,7 +193,7 @@ export {
   safeComponent,
   SESSIONS_DIRNAME,
 } from './runtime.js';
-export type { NextStageResult } from './selection.js';
+export type { BlockResume, NextStageResult, RunPool, SchedulableState, ScheduleState } from './selection.js';
 export {
   NextStage,
   nextStage,
@@ -200,6 +206,7 @@ export {
 export {
   failedStageCount,
   latestCompleteByStage,
+  type RevisionQuery,
   revisionResumeExecution,
   revisionStop,
   stageAgentExecution,

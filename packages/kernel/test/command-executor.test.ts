@@ -177,7 +177,7 @@ test('a wrapper that cannot listen reports the endpoint and stderr', async () =>
 });
 
 test('a spawn error that fired before waiting is still reported', async () => {
-  const child = startWrapper({ argv: ['x'] }, '/nonexistent-migent-cwd', '/tmp/x.sock');
+  const child = startWrapper({ argv: ['x'] }, { cwd: '/nonexistent-migent-cwd', endpoint: '/tmp/x.sock' });
   await new Promise((resolve) => setTimeout(resolve, 100));
   const result = await waitForReady(child, { settleMs: 20 });
   expect(result.kind).toBe('spawn-error');

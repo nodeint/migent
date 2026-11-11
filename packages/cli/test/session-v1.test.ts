@@ -13,7 +13,7 @@ import { capture, registryOf, removeWorkspace, repoWorkflowText, ScriptedClient,
 test('a v1 session works with show, list, follow, continue, and repair', async () => {
   const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText('plan') });
   try {
-    const sessionId = createWorkflowSession(workspace, 'plan', 'Write a plan');
+    const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
     const directory = path.join(workspace, '.migent', 'sessions', sessionId);
     const manifestPath = path.join(directory, 'manifest.yaml');
     const stripped = readFileSync(manifestPath, 'utf8').replace(/\nschema_version:.*(?:\n|$)/, '\n');

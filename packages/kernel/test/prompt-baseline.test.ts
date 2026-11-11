@@ -72,7 +72,7 @@ for (const protocol of [2, 3]) test(protocol === 2 ? 'prompt kinds under native 
   record('re-entry (resume_from)', 'again', 'continue', buildStageResumePrompt({ ...base, stageId: 'again', snapshots }));
   record('reply to human answer', 'make', 'answers', buildStageReplyPrompt('1. Pick one? (single)\n   - Selected: A. Yes', { answers: true }));
   record('reply to cancelled stage', 'make', 'reply', buildStageReplyPrompt('go on', { interrupted: true }));
-  record('verify repair', 'make', 'repair', buildVerifyRepairPrompt('check-one failed\n', 1, 3, path.join(session, 'make.md'), base.taskFile, session));
+  record('verify repair', 'make', 'repair', buildVerifyRepairPrompt('check-one failed\n', { red: 1, maxVerify: 3, artifactPath: path.join(session, 'make.md') }, { taskFile: base.taskFile, sessionDirectory: session }));
 
   const normalized = Object.fromEntries(Object.entries(kinds).map(([k, v]) => [k, normalize(v, root)]));
   expect(normalized).toMatchSnapshot();

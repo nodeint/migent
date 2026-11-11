@@ -38,17 +38,21 @@ export function readExecutions(sessionDirectory: string): FoldExecution[] {
       throw new ConfigurationError(`Execution file is corrupt: ${filePath}.`);
     }
     if (!isRecord(parsed)) throw new ConfigurationError(`Execution file is corrupt: ${filePath}.`);
-    executions.push(executionFromRecord(sessionDirectory, entry.name, parsed, clientOf(entry.name, parsed).client));
+    executions.push(
+      executionFromRecord(
+        sessionDirectory,
+        { executionId: entry.name, metadata: parsed, client: clientOf(entry.name, parsed).client },
+      ),
+    );
   }
   return executions;
 }
 
 export function executionFromRecord(
   sessionDirectory: string,
-  executionId: string,
-  metadata: Record<string, unknown>,
-  client: string | null,
+  record: { executionId: string; metadata: Record<string, unknown>; client: string | null },
 ): FoldExecution {
+  const { executionId, metadata, client } = record;
   const outcome = isRecord(metadata.outcome) ? metadata.outcome : null;
   return {
     executionId,

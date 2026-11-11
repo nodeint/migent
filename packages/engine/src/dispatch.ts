@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import type { ClientRegistry, ExecutionSnapshot } from '@nodeint/migent-kernel';
+import type { ClientRegistry, ExecutionSnapshot, ScheduleState } from '@nodeint/migent-kernel';
 import { loadRoleResponsibilities, loadWorkspaceConfig, resolveStageTarget, type StageTarget } from '@nodeint/migent-kernel';
 import { ConfigurationError } from '@nodeint/migent-kernel';
 import { buildStagePrompt, buildStageReplyPrompt, buildStageResumePrompt, buildVerifyRepairPrompt } from '@nodeint/migent-kernel';
@@ -48,23 +48,55 @@ export interface StageDispatchRequest {
   executionOrder?: number | null;
 }
 
+export interface StageDispatchInit {
+  sessionId: string;
+  executionId: string;
+  outcomeStatus: string;
+  outcomeDecision: string;
+  sessionStatus: string;
+  response: string;
+  agentId?: string;
+  options?: Record<string, string>;
+  artifactDirectory?: string;
+  failureReason?: string;
+  failureKind?: string;
+  resetAt?: string;
+  client?: string;
+  executionStatus?: string;
+}
+
 export class StageDispatchResult {
-  constructor(
-    public readonly sessionId: string,
-    public readonly executionId: string,
-    public readonly outcomeStatus: string,
-    public readonly outcomeDecision: string,
-    public readonly sessionStatus: string,
-    public readonly response: string,
-    public readonly agentId = '',
-    public readonly options: Record<string, string> = {},
-    public readonly artifactDirectory = '',
-    public readonly failureReason = '',
-    public readonly failureKind = '',
-    public readonly resetAt = '',
-    public readonly client = '',
-    public readonly executionStatus = '',
-  ) {}
+  public readonly sessionId: string;
+  public readonly executionId: string;
+  public readonly outcomeStatus: string;
+  public readonly outcomeDecision: string;
+  public readonly sessionStatus: string;
+  public readonly response: string;
+  public readonly agentId: string;
+  public readonly options: Record<string, string>;
+  public readonly artifactDirectory: string;
+  public readonly failureReason: string;
+  public readonly failureKind: string;
+  public readonly resetAt: string;
+  public readonly client: string;
+  public readonly executionStatus: string;
+
+  constructor(init: StageDispatchInit) {
+    this.sessionId = init.sessionId;
+    this.executionId = init.executionId;
+    this.outcomeStatus = init.outcomeStatus;
+    this.outcomeDecision = init.outcomeDecision;
+    this.sessionStatus = init.sessionStatus;
+    this.response = init.response;
+    this.agentId = init.agentId ?? '';
+    this.options = init.options ?? {};
+    this.artifactDirectory = init.artifactDirectory ?? '';
+    this.failureReason = init.failureReason ?? '';
+    this.failureKind = init.failureKind ?? '';
+    this.resetAt = init.resetAt ?? '';
+    this.client = init.client ?? '';
+    this.executionStatus = init.executionStatus ?? '';
+  }
 
   public toJson(): Record<string, unknown> {
     return {
@@ -86,13 +118,18 @@ export class StageDispatchResult {
   }
 }
 
+export interface NamedStageRun {
+  readonly runner: AgentToolRunner;
+  readonly resolved?: { workflow: WorkflowDocument; target: StageTarget } | null;
+  readonly onExecution?: (executionId: string) => void;
+}
+
 export async function dispatchNamedStage(
   workspace: string,
   request: StageDispatchRequest,
-  runner: AgentToolRunner,
-  resolved?: { workflow: WorkflowDocument; target: StageTarget } | null,
-  onExecution?: (executionId: string) => void,
+  run: NamedStageRun,
 ): Promise<StageDispatchResult> {
+  const { runner, resolved, onExecution } = run;
   const activeRunner = runner;
   const {registry} = activeRunner;
   let loaded = resolved ?? loadDispatchTarget(workspace, request, registry);
@@ -100,7 +137,11 @@ export async function dispatchNamedStage(
   let {target} = loaded;
   let sessionId = request.sessionId ?? null;
   if (sessionId === null) {
-    sessionId = createWorkflowSession(workspace, workflow.id, request.task, request.priorSessionId, registry);
+    sessionId = createWorkflowSession(
+      workspace,
+      workflow.id,
+      { task: request.task, priorSessionId: request.priorSessionId, resolveClient: registry },
+    );
     if (!resolved) {
       loaded = loadDispatchTarget(workspace, { ...request, sessionId }, registry);
       workflow = loaded.workflow;
@@ -109,7 +150,7 @@ export async function dispatchNamedStage(
   } else {
     bindPriorSessionId(workspace, sessionId, request.priorSessionId);
   }
-  assertStageDispatchable(workspace, workflow, sessionId, request.stageId);
+  assertStageDispatchable(workspace, workflow, { sessionId, stageId: request.stageId });
   const snapshots = new SessionStore(workspace).executionSnapshots(sessionId);
   const stage = workflow.stages[request.stageId];
   const ownAgent = stageAgentExecution(snapshots, request.stageId);
@@ -122,7 +163,7 @@ export async function dispatchNamedStage(
   else if (stage?.resumeFrom) {
     resumeExecutionId = verifyExhaustedExecution(snapshots, request.stageId)?.executionId ??
       revisionResumeExecution(workflow, snapshots, request.stageId) ??
-      resolveResumeExecution(workspace, workflow, sessionId, request.stageId);
+      resolveResumeExecution(workspace, workflow, { sessionId, stageId: request.stageId });
   } else resumeExecutionId = ownAgent;
   const result = await activeRunner.run({
     client: target.client,
@@ -144,9 +185,9 @@ export async function dispatchNamedStage(
 export function assertStageDispatchable(
   workspace: string,
   workflow: WorkflowDocument,
-  sessionId: string,
-  stageId: string,
+  target: { sessionId: string; stageId: string },
 ): void {
+  const { sessionId, stageId } = target;
   const store = new SessionStore(workspace);
   const snapshots = store.executionSnapshots(sessionId);
   const status = store.readSessionStatus(sessionId);
@@ -160,9 +201,9 @@ export function assertStageDispatchable(
 export function resolveResumeExecution(
   workspace: string,
   workflow: WorkflowDocument,
-  sessionId: string,
-  stageId: string,
+  target: { sessionId: string; stageId: string },
 ): string | null {
+  const { sessionId, stageId } = target;
   const stage = workflow.stages[stageId];
   if (stage === undefined || !stage.resumeFrom) return null;
   const snapshots = new SessionStore(workspace).executionSnapshots(sessionId);
@@ -196,27 +237,31 @@ function loadDispatchTarget(
   const workflow = loadNamedWorkflow(workspace, request.workflowId);
   return {
     workflow,
-    target: resolveStageTarget(workspace, workflow.id, request.stageId, override, registry),
+    target: resolveStageTarget(
+      workspace,
+      { workflowId: workflow.id, stageId: request.stageId },
+      { override, registry },
+    ),
   };
 }
 
 function resultFromRun(result: RunResult, sessionId: string): StageDispatchResult {
-  return new StageDispatchResult(
-    result.session_id || sessionId,
-    result.execution_id || '',
-    result.outcome_status || '',
-    result.outcome_decision || '',
-    result.session_status || '',
-    result.response || '',
-    result.agent_id || '',
-    isRecord(result.options) ? stringOptions(result.options) : {},
-    result.artifact_directory || '',
-    result.failure_reason || '',
-    result.failure_kind || '',
-    result.reset_at || '',
-    result.client || '',
-    result.execution_status || '',
-  );
+  return new StageDispatchResult({
+    sessionId: result.session_id || sessionId,
+    executionId: result.execution_id || '',
+    outcomeStatus: result.outcome_status || '',
+    outcomeDecision: result.outcome_decision || '',
+    sessionStatus: result.session_status || '',
+    response: result.response || '',
+    agentId: result.agent_id || '',
+    options: isRecord(result.options) ? stringOptions(result.options) : {},
+    artifactDirectory: result.artifact_directory || '',
+    failureReason: result.failure_reason || '',
+    failureKind: result.failure_kind || '',
+    resetAt: result.reset_at || '',
+    client: result.client || '',
+    executionStatus: result.execution_status || '',
+  });
 }
 
 export const EXECUTE_EXIT_CODES:Record<string, number> = {
@@ -275,10 +320,9 @@ export interface ExecuteResult {
 export function selectedStage(
   workflow: WorkflowDocument,
   snapshots: readonly ExecutionSnapshot[],
-  sessionStatus: string,
-  resumes: ReturnType<typeof blockResumes> = [],
+  state: ScheduleState,
 ): NextStage | Stop {
-  const selected = nextStage(workflow, snapshots, sessionStatus, resumes);
+  const selected = nextStage(workflow, snapshots, state);
   if (selected instanceof NextStageError) throw new ConfigurationError(selected.message);
   if (selected instanceof NextStage || selected instanceof Stop) return selected;
   throw new ConfigurationError('no eligible stage');
@@ -297,12 +341,11 @@ export function blockResumes(
 
 export function roleStartLine(
   stageId: string,
-  client: string,
-  model: string,
-  optionLabel: string,
-  description: string | null,
-  attempt: number | null,
+  target: { client: string; model: string; optionLabel: string },
+  detail: { description: string | null; attempt: number | null },
 ): string {
+  const { client, model, optionLabel } = target;
+  const { description, attempt } = detail;
   const parts = [`stage ${stageId}`];
   if (attempt !== null) parts.push(`attempt ${attempt}`);
   parts.push(formatClock(), `${client}/${model} (${optionLabel})`);
@@ -312,13 +355,13 @@ export function roleStartLine(
 }
 
 export function stageFinishLine(
-  workspace: string,
-  sessionId: string,
-  stageId: string,
-  executionId: string,
-  outcome: string,
-  decision: string,
+  session: { workspace: string; sessionId: string },
+  stage: { stageId: string; executionId: string },
+  result: { outcome: string; decision: string },
 ): string {
+  const { workspace, sessionId } = session;
+  const { stageId, executionId } = stage;
+  const { outcome, decision } = result;
   const parts = [`stage ${stageId}`];
   const attempt = parseExecutionId(executionId)?.attempt;
   if (attempt !== undefined) parts.push(`attempt ${attempt}`);
@@ -367,25 +410,39 @@ function parsedTime(value: unknown): number | null {
   return Number.isNaN(parsed) ? null : parsed;
 }
 
+/** What every step of one execute run shares. */
+export interface ExecuteRun {
+  readonly workspace: string;
+  readonly store: SessionStore;
+  readonly workflow: WorkflowDocument;
+  readonly workflowId: string;
+  readonly sessionId: string;
+  readonly runner: AgentToolRunner;
+  readonly tasks: Map<string, Promise<unknown>>;
+  readonly reply: PendingStageReply | null;
+}
+
+/** The stage to dispatch, with the session status and executions read just before it. */
+export interface StageDispatchTarget {
+  readonly stageId: string;
+  readonly status: Record<string, unknown>;
+  readonly snapshots: readonly ExecutionSnapshot[];
+}
+
 export async function dispatchExecuteStage(
-  workspace: string,
-  workflow: WorkflowDocument,
-  workflowId: string,
-  sessionId: string,
-  stageId: string,
-  status: Record<string, unknown>,
-  snapshots: readonly ExecutionSnapshot[],
-  runner: AgentToolRunner,
+  run: Pick<ExecuteRun, 'workspace' | 'workflow' | 'workflowId' | 'sessionId' | 'runner' | 'reply'>,
+  dispatch: StageDispatchTarget,
   onExecution?: (executionId: string) => void,
-  reply: PendingStageReply | null = null,
 ): Promise<Record<string, unknown>> {
+  const { workspace, workflow, workflowId, sessionId, runner, reply } = run;
+  const { stageId, status, snapshots } = dispatch;
   const stageSpec = workflow.stages[stageId];
   if (stageSpec === undefined) throw new ConfigurationError(`Stage not found: ${stageId}`);
   // Runs before the first await so two starts in one pool turn cannot both capture the baseline.
   if (ensureSessionBaseline(workspace, sessionId, workflow)) {
     commitFoldedStatus(workspace, path.join(workspace, '.migent', 'sessions', sessionId));
   }
-  const skipped = skipUnlessRunWhenMatches(workspace, sessionId, stageSpec, snapshots, runner);
+  const skipped = skipUnlessRunWhenMatches({ workspace, sessionId, runner }, stageSpec, snapshots);
   if (skipped !== null) return skipped;
   if (!isRoleStage(stageSpec)) {
     const result = await runVerifyOnlyStage({
@@ -397,14 +454,14 @@ export async function dispatchExecuteStage(
       onExecution,
     });
     const outcome = result.failure_reason === VERIFY_FAILED ? 'verify_failed' : 'complete';
-    log(stageFinishLine(workspace, sessionId, stageId, result.execution_id, outcome, ''));
+    log(stageFinishLine({ workspace, sessionId }, { stageId, executionId: result.execution_id }, { outcome, decision: '' }));
     return { ...result };
   }
   const sessionDirectory = path.join(workspace, '.migent', 'sessions', sessionId);
   const freeze = readWorkflowFreeze(sessionDirectory);
   const target = freeze
     ? frozenStageTarget(freeze, stageId)
-    : resolveStageTarget(workspace, workflowId, stageId, undefined, runner.registry);
+    : resolveStageTarget(workspace, { workflowId, stageId }, { registry: runner.registry });
   const optionLabel =
     Object.entries(target.options)
       .map(([key, value]) => `${key}: ${value}`)
@@ -440,11 +497,8 @@ export async function dispatchExecuteStage(
   } else if (turn === 'repair') {
     prompt = buildVerifyRepairPrompt(
       readFileSync(exhausted!.verifyReport!, 'utf8'),
-      stageSpec.maxVerify,
-      stageSpec.maxVerify,
-      null,
-      frozen.taskFile,
-      frozen.sessionDirectory,
+      { red: stageSpec.maxVerify, maxVerify: stageSpec.maxVerify, artifactPath: null },
+      { taskFile: frozen.taskFile, sessionDirectory: frozen.sessionDirectory },
     );
   } else prompt = turn === 'continue' ? buildStageResumePrompt(promptInput) : buildStagePrompt(promptInput);
   const request: StageDispatchRequest = {
@@ -455,42 +509,42 @@ export async function dispatchExecuteStage(
     sessionId,
   };
   let loggedStart = false;
-  const result: StageDispatchResult = await dispatchNamedStage(
-    workspace,
-    request,
+  const result: StageDispatchResult = await dispatchNamedStage(workspace, request, {
     runner,
-    { workflow, target },
-    (executionId) => {
+    resolved: { workflow, target },
+    onExecution: (executionId) => {
       onExecution?.(executionId);
       if (loggedStart) return;
       loggedStart = true;
       log(
         roleStartLine(
           stageId,
-          target.client,
-          target.model,
-          optionLabel,
-          stageSpec.description,
-          parseExecutionId(executionId)?.attempt ?? null,
+          { client: target.client, model: target.model, optionLabel },
+          { description: stageSpec.description, attempt: parseExecutionId(executionId)?.attempt ?? null },
         ),
       );
     },
-  );
+  });
   const outcome =
     result.outcomeStatus ||
     (result.failureReason || result.failureKind || result.executionStatus === 'failed' ? 'failed' : 'finished');
-  log(stageFinishLine(workspace, sessionId, stageId, result.executionId, outcome, result.outcomeDecision));
+  log(
+    stageFinishLine(
+      { workspace, sessionId },
+      { stageId, executionId: result.executionId },
+      { outcome, decision: result.outcomeDecision },
+    ),
+  );
   return result.toJson();
 }
 
 /** A fresh visit of a run_when stage is evaluated. Retries and resumed blocks already passed the condition. */
 export function skipUnlessRunWhenMatches(
-  workspace: string,
-  sessionId: string,
+  run: { workspace: string; sessionId: string; runner: AgentToolRunner },
   stage: StageSpec,
   snapshots: readonly ExecutionSnapshot[],
-  runner: AgentToolRunner,
 ): Record<string, unknown> | null {
+  const { workspace, sessionId, runner } = run;
   if ((stage.runWhen === null || stage.runWhen === undefined)) return null;
   let latest: ExecutionSnapshot | null = null;
   for (const snapshot of snapshots) {

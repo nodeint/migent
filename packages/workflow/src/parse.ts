@@ -57,7 +57,10 @@ export function parseWorkflowMappingUnchecked(data: Record<string, unknown>, sou
   if (!version7 && Object.hasOwn(data, 'artifacts')) {
     throw new ConfigurationError('artifacts requires schema_version 7.');
   }
-  const stages = parseStages(data.stages, version2, schemaVersion >= 3, schemaVersion >= 5, version7);
+  const stages = parseStages(
+    data.stages,
+    { version2, version3: schemaVersion >= 3, version5: schemaVersion >= 5, version7 },
+  );
   const completion =
     !version2 && isRecord(data.completion) && Object.keys(stages).length > 0
       ? parseCompletion(data.completion, stages)
@@ -148,7 +151,15 @@ export function documentId(data: Record<string, unknown>, filePath: string): str
   return requiredString(data.id, 'id');
 }
 
-export function parseStages(raw: unknown, version2 = false, version3 = false, version5 = false, version7 = false): Record<string, StageSpec> {
+export interface ParseStagesVersions {
+  readonly version2?: boolean;
+  readonly version3?: boolean;
+  readonly version5?: boolean;
+  readonly version7?: boolean;
+}
+
+export function parseStages(raw: unknown, versions: ParseStagesVersions = {}): Record<string, StageSpec> {
+  const { version2 = false, version3 = false, version5 = false, version7 = false } = versions;
   if (!Array.isArray(raw) || raw.length === 0) return {};
   const stages: Record<string, StageSpec> = {};
   const items: Record<string, unknown>[] = [];
@@ -162,7 +173,7 @@ export function parseStages(raw: unknown, version2 = false, version3 = false, ve
     const description = stageDescription(item, stageId);
     const dependsOn = stageDependsOn(item, stageId);
     const verify = stageVerify(item, stageId);
-    const runWhen = stageRunWhen(item, stageId, version2, verify);
+    const runWhen = stageRunWhen(item, stageId, { version2, verify });
     if (!stageHasRole(item)) {
       if (!version2 || verify.length === 0) {
         throw new ConfigurationError(`stages.${stageId}.role is required.`);
@@ -234,7 +245,7 @@ export function parseStages(raw: unknown, version2 = false, version3 = false, ve
     try {
       const stageId = requiredString(item.id, 'stages.id');
       const stage = stages[stageId]!;
-      stage.routes = stageRoutes(item, stageId, stage.decisionValues, stages, version2);
+      stage.routes = stageRoutes(item, stageId, { values: stage.decisionValues, stages, version2 });
     } catch (error) {
       throw locatedAtStage(error, index, rawItems[index]);
     }

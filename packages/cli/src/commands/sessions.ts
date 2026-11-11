@@ -292,7 +292,7 @@ export function registerSessionLifecycleCommands(session: Command, settle: Settl
 `,
     )
     .action((id: string, title: string, options: OptionValues) =>
-      settle(() => renameSession(findWorkspace(invocationCwdPath()), id, title, options.json === true)),
+      settle(() => renameSession(findWorkspace(invocationCwdPath()), { sessionId: id, title }, options.json === true)),
     );
 
   session

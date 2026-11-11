@@ -87,7 +87,7 @@ function mapping(value: unknown): Record<string, unknown> {
 }
 
 test('assign role keeps the shared model', () => {
-  const change = assignRoles(config(), ['reviewer'], 'other', { workflows: [workflow()] });
+  const change = assignRoles(config(), ['reviewer'], { agentName: 'other', workflows: [workflow()] });
   const models = mapping(change.config.agents);
   const roles = mapping(change.config.roles);
   const reviewer = mapping(roles.reviewer);
@@ -198,7 +198,7 @@ roles:
   reviewer:
     agent: review
 `;
-  const change = assignRoles(config(text), ['reviewer'], 'shared');
+  const change = assignRoles(config(text), ['reviewer'], { agentName: 'shared' });
   expect(change.orphanedAgents).toEqual(['review']);
   expect(mapping(change.config.agents)).toHaveProperty('review');
 });
@@ -208,7 +208,7 @@ test('patch keeps role instructions when the model changes', () => {
     '  developer:\n    agent: shared\n',
     '  developer:\n    agent: shared\n    instructions:\n      - Write production code.\n',
   );
-  const change = assignRoles(config(text), ['developer'], 'other');
+  const change = assignRoles(config(text), ['developer'], { agentName: 'other' });
   const patched = patchConfigText(text, change.config);
   const parsed = loadYamlMapping(writeConfig(patched));
   expect(loadRoleResponsibilities(parsed, 'developer')).toEqual(['Write production code.']);
@@ -220,7 +220,7 @@ test('patch keeps role instructions when the model changes', () => {
 });
 
 test('patch preserves comments and sibling options', () => {
-  const change = assignRoles(config(), ['reviewer'], 'other');
+  const change = assignRoles(config(), ['reviewer'], { agentName: 'other' });
   const patched = patchConfigText(SHARED, change.config);
   expect(patched).toContain('# project models');
   expect(patched).toContain('temperature: "0.2"  # stable');
@@ -238,7 +238,7 @@ test('patch adds a model and a role', () => {
     model: 'gpt-5',
     options: { 'reasoning-effort': 'low' },
   });
-  const assigned = assignRoles(created.config, ['security'], 'fast');
+  const assigned = assignRoles(created.config, ['security'], { agentName: 'fast' });
   const patched = patchConfigText(SHARED, assigned.config);
   const parsed = loadYamlMapping(writeConfig(patched));
   const models = mapping(parsed.agents);
@@ -258,7 +258,7 @@ test('rejects a partial client update', () => {
 });
 
 test('new role points at an existing model', () => {
-  const change = assignRoles(config(), ['security', 'planner'], 'other');
+  const change = assignRoles(config(), ['security', 'planner'], { agentName: 'other' });
   const roles = mapping(change.config.roles);
   expect(mapping(roles.security).agent).toBe('other');
   expect(mapping(roles.planner).agent).toBe('other');

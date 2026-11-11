@@ -74,8 +74,8 @@ test('failure reasons come from the policy table', () => {
 });
 
 test('a missing status header lists the statuses the stage allows', () => {
-  expect(() => parseStageOutcome('hello', true, [], null)).toThrow('`status: complete` or `status: blocked`');
-  expect(() => parseStageOutcome('hello', true, [], 'human')).toThrow('`status: complete`, `status: blocked` or `status: question`');
+  expect(() => parseStageOutcome('hello', true)).toThrow('`status: complete` or `status: blocked`');
+  expect(() => parseStageOutcome('hello', true, { ask: 'human' })).toThrow('`status: complete`, `status: blocked` or `status: question`');
 });
 
 test('a missing handoff gets one full-contract correction and the rewritten handoff completes', async () => {

@@ -188,7 +188,7 @@ test('resume from selects the source stage session', () => {
     }),
     'utf8',
   );
-  expect(resolveResumeExecution(workspace, gateWorkflow(), 'run-1', 'write-tests')).toBe(
+  expect(resolveResumeExecution(workspace, gateWorkflow(), { sessionId: 'run-1', stageId: 'write-tests' })).toBe(
     '0001-implement--attempt-01',
   );
 });
@@ -232,7 +232,7 @@ test('plan review walk', () => {
     ],
   ];
   for (const [snapshots, sessionStatus, expected] of cases) {
-    expectResult(nextStage(workflow, snapshots, sessionStatus), expected);
+    expectResult(nextStage(workflow, snapshots, { sessionStatus }), expected);
   }
 });
 
@@ -264,18 +264,22 @@ test('plan implement walk', () => {
     ],
   ];
   for (const [snapshots, sessionStatus, expected] of cases) {
-    expectResult(nextStage(workflow, snapshots, sessionStatus), expected);
+    expectResult(nextStage(workflow, snapshots, { sessionStatus }), expected);
   }
 });
 
 test('failed latest stays stopped until continue marks that execution', () => {
   const failed = [snapshot('plan', 1), snapshot('review-plan', 2, { status: 'failed', outcomeStatus: null })];
   const workflow = workflowFile('plan');
-  expectResult(nextStage(workflow, failed, 'active'), new Stop('stage_failed'));
+  expectResult(nextStage(workflow, failed, { sessionStatus: 'active' }), new Stop('stage_failed'));
   expectResult(
-    nextStage(workflow, failed, 'active', [
+    nextStage(
+      workflow,
+      failed,
+      { sessionStatus: 'active', resumes: [
       { event: 'session.active', executionId: failed[1]!.executionId, data: { from: 'failed' } },
-    ]),
+    ] },
+    ),
     new NextStage('review-plan'),
   );
 });
@@ -283,8 +287,8 @@ test('failed latest stays stopped until continue marks that execution', () => {
 test('terminal session status wins over a failed snapshot', () => {
   const failed = [snapshot('implement', 1, { status: 'failed', outcomeStatus: null })];
   const workflow = workflowFile('plan-implement');
-  expectResult(nextStage(workflow, failed, 'blocked'), new Stop('blocked'));
-  expectResult(nextStage(workflow, failed, 'cancelled'), new Stop('cancelled'));
+  expectResult(nextStage(workflow, failed, { sessionStatus: 'blocked' }), new Stop('blocked'));
+  expectResult(nextStage(workflow, failed, { sessionStatus: 'cancelled' }), new Stop('cancelled'));
 });
 
 test('running execution is an error', () => {
@@ -292,7 +296,7 @@ test('running execution is an error', () => {
     nextStage(
       workflowFile('plan'),
       [snapshot('plan', 1, { status: 'running', outcomeStatus: null })],
-      'active',
+      { sessionStatus: 'active' },
     ),
     new NextStageError('an execution is still running'),
   );
@@ -315,16 +319,16 @@ test('revision stop counts successful returns per stage', () => {
     source: null,
   };
   const firstReturn = [snapshot('plan', 1), snapshot('review', 2, { decision: 'revise' })];
-  expect(revisionStop(workflow, firstReturn, 'plan')).toBe(false);
-  expect(revisionStop(workflow, firstReturn, 'plan', { plan: 0 })).toBe(false);
-  expect(revisionStop(workflow, firstReturn, 'review')).toBe(false);
+  expect(revisionStop(workflow, firstReturn, { stageId: 'plan' })).toBe(false);
+  expect(revisionStop(workflow, firstReturn, { stageId: 'plan', revisionBaselines: { plan: 0 } })).toBe(false);
+  expect(revisionStop(workflow, firstReturn, { stageId: 'review' })).toBe(false);
   const spent = [...firstReturn, snapshot('plan', 3), snapshot('review', 4, { decision: 'revise' })];
-  expect(revisionStop(workflow, spent, 'plan')).toBe(true);
-  expect(revisionStop(workflow, spent, 'plan', { plan: 2 })).toBe(false);
+  expect(revisionStop(workflow, spent, { stageId: 'plan' })).toBe(true);
+  expect(revisionStop(workflow, spent, { stageId: 'plan', revisionBaselines: { plan: 2 } })).toBe(false);
   const retry = [...firstReturn, snapshot('plan', 3, { status: 'failed', outcomeStatus: null })];
-  expect(revisionStop(workflow, retry, 'plan')).toBe(false);
-  expect(revisionStop(workflow, [snapshot('write-tests', 1)], 'write-tests')).toBe(true);
-  expect(revisionStop(workflow, [], 'write-tests')).toBe(false);
+  expect(revisionStop(workflow, retry, { stageId: 'plan' })).toBe(false);
+  expect(revisionStop(workflow, [snapshot('write-tests', 1)], { stageId: 'write-tests' })).toBe(true);
+  expect(revisionStop(workflow, [], { stageId: 'write-tests' })).toBe(false);
 });
 
 test('two roots are ambiguous', () => {
@@ -339,7 +343,7 @@ test('two roots are ambiguous', () => {
     constraints: [],
     source: null,
   };
-  const result = nextStage(workflow, [], 'active');
+  const result = nextStage(workflow, [], { sessionStatus: 'active' });
   expect(result).toBeInstanceOf(NextStageError);
   if (result instanceof NextStageError) expect(result.message).toContain('ambiguous next stage');
 });

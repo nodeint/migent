@@ -43,7 +43,7 @@ async function cancelledAsk(responses: string[]) {
   writeFileSync(path.join(workspace, '.migent', 'workflows', 'wf.yaml'), [
     'schema_version: 3', 'id: wf', 'stages:', '  - { id: plan, role: planner, ask: human }', '',
   ].join('\n'));
-  const sessionId = createWorkflowSession(workspace, 'wf', 'Finish the notes');
+  const sessionId = createWorkflowSession(workspace, 'wf', { task: 'Finish the notes' });
   const provider = new HangFirstProvider(pidFile, responses);
   const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
   // An authentic protocol-2 conversation: its first prompt names the question file, not a handoff file.

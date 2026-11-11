@@ -21,7 +21,7 @@ function session(): { workspace: string; sessionId: string; directory: string } 
     plan: 'schema_version: 7\nid: plan\nstages:\n  - { id: draft, role: planner }\n',
   });
   workspaces.push(workspace);
-  const sessionId = createWorkflowSession(workspace, 'plan', 'Write a plan');
+  const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
   return { workspace, sessionId, directory: path.join(workspace, '.migent', 'sessions', sessionId) };
 }
 
@@ -112,15 +112,15 @@ function stopped(): { workspace: string; sessionId: string; directory: string } 
     plan: 'schema_version: 7\nid: plan\nartifacts:\n  plan: { file: plan.md }\nstages:\n  - { id: draft, role: planner, artifacts: [plan] }\n  - { id: extra, role: planner, depends_on: [draft] }\n',
   });
   workspaces.push(workspace);
-  const sessionId = createWorkflowSession(workspace, 'plan', 'Write a plan');
+  const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
   const directory = path.join(workspace, '.migent', 'sessions', sessionId);
   const store = new SessionStore(workspace);
-  const [record, , context] = store.loadOrCreate('fake', 'model', {}, workspace, sessionId, 'draft', null, null, 'draft');
+  const [record, , context] = store.loadOrCreate({ client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'draft', stageAttempt: null, executionOrder: null, prompt: 'draft' });
   const lock = SessionLock.acquire(directory);
   try {
-    store.saveExecution(context, record, 'running');
+    store.saveExecution(context, record, { status: 'running' });
     writeFileSync(path.join(context.artifactDirectory, 'plan.md'), '# Plan\n', 'utf8');
-    store.saveExecution(context, record, 'completed', null, new StageOutcome('complete'));
+    store.saveExecution(context, record, { status: 'completed', outcome: new StageOutcome('complete') });
   } finally {
     lock.release();
   }
@@ -205,7 +205,7 @@ test('rename works on a prepared session and a later run still requires task.md'
     plan: 'schema_version: 7\nid: plan\nstages:\n  - { id: draft, role: planner }\n',
   });
   workspaces.push(workspace);
-  const prepared = createPreparedSession(workspace, 'Original', 'plan');
+  const prepared = createPreparedSession(workspace, { title: 'Original', workflowId: 'plan' });
   const sessionId = typeof prepared === 'string' ? prepared : (prepared as { sessionId: string }).sessionId;
   expect((await capture(() => main(['session', 'rename', sessionId, 'Prepared new'], workspace))).value).toBe(0);
   const list = await capture(() => main(['session', 'list', '--latest', '--json'], workspace));

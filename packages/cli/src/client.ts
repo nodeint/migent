@@ -112,18 +112,21 @@ export function parseOptions(pairs: readonly string[]): Record<string, string> {
 
 export async function acceptedOptions(
   client: CliClient,
-  model: string,
-  catalog: CliModelCatalog,
-  which: Which,
-  runCommand: RunCommand,
-  options: Readonly<Record<string, string>>,
+  request: {
+    model: string;
+    catalog: CliModelCatalog;
+    which: Which;
+    runCommand: RunCommand;
+    options: Readonly<Record<string, string>>;
+  },
 ): Promise<Record<string, string>> {
+  const { model, catalog, which, runCommand, options } = request;
   if (Object.keys(options).length === 0) return {};
   client.validateOptions(options);
   const source = clientCatalogSource(client as unknown as ClientCatalogInput);
   const stored: Record<string, string> = {};
   for (const [name, value] of Object.entries(options)) {
-    const values = await loadOptionValues(source, name, model, catalog, which, runCommand);
+    const values = await loadOptionValues({ source, name, model, catalog }, { which, runCommand });
     if (values === null) {
       stored[name] = value;
       continue;

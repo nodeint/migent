@@ -13,14 +13,25 @@ export class ResponseContractError extends Error {
   }
 }
 
+export interface StageOutcomeInit {
+  blocker?: string | null;
+  decision?: string | null;
+  question?: string | null;
+  questions?: Question[];
+}
+
 export class StageOutcome {
-  constructor(
-    public readonly status: string,
-    public readonly blocker: string | null = null,
-    public readonly decision: string | null = null,
-    public readonly question: string | null = null,
-    public readonly questions: Question[] = [],
-  ) {}
+  public readonly blocker: string | null;
+  public readonly decision: string | null;
+  public readonly question: string | null;
+  public readonly questions: Question[];
+
+  constructor(public readonly status: string, init: StageOutcomeInit = {}) {
+    this.blocker = init.blocker ?? null;
+    this.decision = init.decision ?? null;
+    this.question = init.question ?? null;
+    this.questions = init.questions ?? [];
+  }
 
   public toJson(): Record<string, unknown> {
     const outcome: Record<string, unknown> = { status: this.status };
@@ -36,9 +47,9 @@ export class StageOutcome {
 export function parseStageOutcome(
   response: string,
   required: boolean,
-  decisionValues: readonly string[] = [],
-  ask: AskTarget | null = null,
+  options: { decisionValues?: readonly string[]; ask?: AskTarget | null } = {},
 ): StageOutcome | null {
+  const { decisionValues = [], ask = null } = options;
   const headers = leadingHeaders(response);
   const rawStatus = headers.get('status');
   if (rawStatus === undefined) {
@@ -61,7 +72,7 @@ export function parseStageOutcome(
     // Questions come from the question request file; see resolveStageOutcome.
     return new StageOutcome(status);
   }
-  return new StageOutcome(status, headers.get('blocker') ?? null, decision);
+  return new StageOutcome(status, { blocker: headers.get('blocker') ?? null, decision });
 }
 
 function parseDecision(

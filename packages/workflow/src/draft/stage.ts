@@ -18,15 +18,24 @@ export interface CollectedDecision {
   routes: DraftUnit<Record<string, string | string[]>>;
 }
 
+/** What every stage read shares: the schema version flags, the declared stage ids, and the problem sink. */
+export interface DraftStageContext {
+  readonly version2: boolean;
+  readonly version3: boolean;
+  readonly version5: boolean;
+  readonly version7: boolean;
+  readonly declaredIds: ReadonlySet<string>;
+  readonly problems: DraftProblems;
+}
+
 /** Reads the schema >= 3 decision list entry by entry, then resolves its routes one by one. */
 export function collectDecisionV3(
   item: Record<string, unknown>,
-  stageId: string,
-  index: number,
-  declaredIds: ReadonlySet<string>,
-  problems: DraftProblems,
-  version7 = false,
+  at: { readonly stageId: string; readonly index: number },
+  context: Pick<DraftStageContext, 'declaredIds' | 'problems' | 'version7'>,
 ): CollectedDecision {
+  const { stageId, index } = at;
+  const { problems, version7 } = context;
   const field = `stages.${stageId}.decision`;
   const raw = item.decision;
   if ((raw === null || raw === undefined)) {
@@ -94,7 +103,7 @@ export function collectDecisionV3(
     routesRaw[name] = body.navigate;
   });
   // Readable entries keep their route checks even when another entry is malformed.
-  const routes = collectRouteTargets(field, routesRaw, entryIndexByName, rawNameByName, index, declaredIds, problems);
+  const routes = collectRouteTargets({ field, routes: routesRaw, entryIndexByName, rawNameByName, index }, context);
   return {
     values: valid ? { state: 'valid', value: values } : { state: 'invalid' },
     instructions,
@@ -103,14 +112,17 @@ export function collectDecisionV3(
 }
 
 /** Resolves each route on its own, so one bad target does not hide the others. */
+export interface RouteTargetsInput {
+  readonly field: string;
+  readonly routes: Record<string, unknown>;
+  readonly entryIndexByName: ReadonlyMap<string, number>;
+  readonly rawNameByName: ReadonlyMap<string, string>;
+  readonly index: number;
+}
+
 export function collectRouteTargets(
-  field: string,
-  routes: Record<string, unknown>,
-  entryIndexByName: ReadonlyMap<string, number>,
-  rawNameByName: ReadonlyMap<string, string>,
-  index: number,
-  declaredIds: ReadonlySet<string>,
-  problems: DraftProblems,
+  { field, routes, entryIndexByName, rawNameByName, index }: RouteTargetsInput,
+  { declaredIds, problems }: Pick<DraftStageContext, 'declaredIds' | 'problems'>,
 ): DraftUnit<Record<string, string | string[]>> {
   const placeholders = declaredStagePlaceholders(declaredIds);
   const parsed: Record<string, string | string[]> = {};
@@ -131,7 +143,7 @@ export function collectRouteTargets(
     }
     try {
       // Schema >= 3 routes follow the runtime: a list is a fan-out, a scalar must be a stage.
-      const target = routeTarget(rawTarget, `${field}.routes.${key}`, placeholders, true);
+      const target = routeTarget(rawTarget, `${field}.routes.${key}`, { stages: placeholders, version2: true });
       if (typeof target === 'string' && target !== 'complete' && !declaredIds.has(target)) {
         throw new ConfigurationError(`${field}.routes.${key} is not a declared stage: ${target}`);
       }
@@ -144,16 +156,8 @@ export function collectRouteTargets(
   return valid ? { state: 'valid', value: parsed } : { state: 'invalid' };
 }
 
-export function collectStage(
-  rawItem: unknown,
-  index: number,
-  version2: boolean,
-  version3: boolean,
-  version5: boolean,
-  version7: boolean,
-  declaredIds: ReadonlySet<string>,
-  problems: DraftProblems,
-): DraftStage | null {
+export function collectStage(rawItem: unknown, index: number, context: DraftStageContext): DraftStage | null {
+  const { version2, version3, version5, version7, declaredIds, problems } = context;
   if (stageMappingProblem(rawItem) || !isRecord(rawItem)) {
     problems.addMessage('invalid-value', 'Workflow stage must be a mapping.', ['stages', index]);
     return null;
@@ -179,7 +183,7 @@ export function collectStage(
   const dependsOn = read(() => stageDependsOn(rawItem, stageId));
   const verify = read(() => stageVerify(rawItem, stageId));
   const runWhen = read(() =>
-    stageRunWhen(rawItem, stageId, version2, verify.state === 'invalid' ? [] : verify.value),
+    stageRunWhen(rawItem, stageId, { version2, verify: verify.state === 'invalid' ? [] : verify.value }),
   );
 
   const hasRole = stageHasRole(rawItem);
@@ -226,7 +230,7 @@ export function collectStage(
   let decision: CollectedDecision;
   if (!roleFields) {
     decision = { values: { state: 'absent', value: [] }, instructions: {}, routes: { state: 'absent', value: {} } };
-  } else if (version3) decision = collectDecisionV3(rawItem, stageId, index, declaredIds, problems, version7);
+  } else if (version3) decision = collectDecisionV3(rawItem, { stageId, index }, context);
   else {
     decision = {
       values: read(() => stageDecisionValues(rawItem, stageId)),
@@ -239,13 +243,11 @@ export function collectStage(
       decision.values.state === 'invalid'
         ? { state: 'invalid' }
         : read(() =>
-            stageRoutes(
-              rawItem,
-              stageId,
-              decision.values.state === 'invalid' ? [] : decision.values.value,
-              declaredStagePlaceholders(declaredIds),
+            stageRoutes(rawItem, stageId, {
+              values: decision.values.state === 'invalid' ? [] : decision.values.value,
+              stages: declaredStagePlaceholders(declaredIds),
               version2,
-            ),
+            }),
           );
   }
   const instructions: DraftUnit<string[]> = roleFields

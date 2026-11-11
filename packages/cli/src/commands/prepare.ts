@@ -7,12 +7,11 @@ import { requireCurrentSchema } from '../migrate.js';
 
 export function prepareWorkflowSession(
   workspace: string,
-  sessionId: string,
-  workflowId: string,
-  priorSessionId: string | null,
+  input: { sessionId: string; workflowId: string; priorSessionId: string | null },
 ): number {
+  const { sessionId, workflowId, priorSessionId } = input;
   requireCurrentSchema(workspace);
-  const id = createPreparedSession(workspace, sessionId, workflowId, priorSessionId);
+  const id = createPreparedSession(workspace, { title: sessionId, workflowId, priorSessionId });
   const payload: Static<typeof PrepareResult> = {
     session_id: id,
     title: sessionId.trim(),

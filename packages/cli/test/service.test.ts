@@ -91,7 +91,7 @@ test('stop still alive exits 1 and leaves the file', async () => {
 
 test('detached start prints the endpoint and not the token', async () => {
   await withHome(async () => {
-    const endpoint = new ServiceEndpoint('127.0.0.1', 47321, 'secret-token-value', 'instance', 3);
+    const endpoint = new ServiceEndpoint({ host: '127.0.0.1', port: 47321, token: 'secret-token-value', instanceId: 'instance', pid: 3 });
     let started = 0;
     let foreground = 0;
     serviceApi.startDetached = async () => {
@@ -113,7 +113,7 @@ test('detached start prints the endpoint and not the token', async () => {
 
 test('foreground start serves in process', async () => {
   await withHome(async () => {
-    const endpoint = new ServiceEndpoint('127.0.0.1', 47321, 'secret-token-value', 'instance', 3);
+    const endpoint = new ServiceEndpoint({ host: '127.0.0.1', port: 47321, token: 'secret-token-value', instanceId: 'instance', pid: 3 });
     let started = 0;
     let foreground = 0;
     serviceApi.serveForeground = async () => {

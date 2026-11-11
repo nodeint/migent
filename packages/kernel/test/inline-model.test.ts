@@ -28,14 +28,14 @@ function workspace(config: unknown, local?: unknown): string {
 
 test('inline-only role resolution validates models like aliases', () => {
   const root = workspace({ roles: { dev: { agent: model } } });
-  expect(resolveRoleTarget(root, 'dev', undefined, resolver)).toEqual({
+  expect(resolveRoleTarget(root, 'dev', { registry: resolver })).toEqual({
     client: 'codex', model: 'test-model', options: { model_reasoning_effort: 'high', temperature: '0.2' },
   });
   const config = loadWorkspaceConfig(root);
   const snapshot = structuredClone(config);
   const view = inspectConfig(config, [], resolver);
   expect(config).toEqual(snapshot);
-  expect(describeChange(config, structuredClone(config), [], { registry: resolver }).roles).toEqual([]);
+  expect(describeChange(config, structuredClone(config), { registry: resolver }).roles).toEqual([]);
   expect(view.agents).toEqual([]);
   expect(view.roles[0]).toMatchObject({ agentName: null, sharedWith: [], options: { model_reasoning_effort: 'high' } });
 });
@@ -44,14 +44,14 @@ test.each(['shared', model])('local inline selection replaces the whole shared d
   const local = { client: { type: 'grok' }, model: 'local-model' };
   const root = workspace({ agents: { shared: model }, roles: { dev: { agent: shared, responsibilities: ['keep'] } } },
     { roles: { dev: { agent: local } } });
-  expect(resolveRoleTarget(root, 'dev', undefined, resolver)).toEqual({ client: 'grok', model: 'local-model', options: {} });
+  expect(resolveRoleTarget(root, 'dev', { registry: resolver })).toEqual({ client: 'grok', model: 'local-model', options: {} });
   expect(loadWorkspaceConfig(root).roles).toEqual({ dev: { agent: local, responsibilities: ['keep'] } });
 });
 
 test('local alias replaces an inline default', () => {
   const root = workspace({ agents: { shared: model }, roles: { dev: { agent: model } } },
     { roles: { dev: { agent: 'shared' } } });
-  expect(resolveRoleTarget(root, 'dev', undefined, resolver).options.model_reasoning_effort).toBe('high');
+  expect(resolveRoleTarget(root, 'dev', { registry: resolver }).options.model_reasoning_effort).toBe('high');
 });
 
 test.each([
@@ -64,12 +64,12 @@ test.each([
   [{ ...model, client: { options: { temperature: {} } } }, 'roles.dev.agent.client.options.temperature'],
   ['test-model', 'roles.dev.agent: unknown agent "test-model"'],
 ])('invalid inline or alias selection points to the field: %j', (selection, error) => {
-  expect(() => resolveRoleCascade({ roles: { dev: { agent: selection } } }, 'dev', undefined, resolver)).toThrow(error);
+  expect(() => resolveRoleCascade({ roles: { dev: { agent: selection } } }, 'dev', { registry: resolver })).toThrow(error);
 });
 
 test.each([{}, null, { temperature: '0.2' }])('removed role options are rejected: %j', (options) => {
   const config = { roles: { dev: { agent: model, options } } };
-  expect(() => resolveRoleCascade(config, 'dev', undefined, resolver)).toThrow('roles.dev.options is no longer supported');
+  expect(() => resolveRoleCascade(config, 'dev', { registry: resolver })).toThrow('roles.dev.options is no longer supported');
 });
 
 test('stage model selection, stage options and CLI options override inline defaults', () => {
@@ -81,9 +81,9 @@ test('stage model selection, stage options and CLI options override inline defau
   const inline = workflow.stages.inline!;
   const named = workflow.stages.named!;
   if (inline.kind !== 'role' || named.kind !== 'role') throw new Error('expected roles');
-  expect(resolveStageSpec(config, inline, undefined, resolver).options.model_reasoning_effort).toBe('low');
-  expect(resolveStageSpec(config, inline, { model_reasoning_effort: 'medium' }, resolver).options.model_reasoning_effort).toBe('medium');
-  expect(resolveStageSpec(config, named, undefined, resolver)).toEqual({ client: 'grok', model: 'other', options: {} });
+  expect(resolveStageSpec(config, inline, { registry: resolver }).options.model_reasoning_effort).toBe('low');
+  expect(resolveStageSpec(config, inline, { options: { model_reasoning_effort: 'medium' }, registry: resolver }).options.model_reasoning_effort).toBe('medium');
+  expect(resolveStageSpec(config, named, { registry: resolver })).toEqual({ client: 'grok', model: 'other', options: {} });
 });
 
 test('text patching supports alias and inline transitions and keeps role instructions', () => {

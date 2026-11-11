@@ -192,7 +192,7 @@ export class CommandExecutor {
   }
 
   public async run(spec: CommandSpec, cwd: string, options: RunOptions = {}): Promise<CommandResult> {
-    const { onOutput, onHeartbeat, onStart, onDebug } = options;
+    const { onStart, onDebug } = options;
     const executable = spec.argv[0] ?? 'command';
     let child: ChildProcess | null = null;
     // True once the provider was told to start; before that no server-side turn can exist.
@@ -207,7 +207,7 @@ export class CommandExecutor {
       const endpoint = wrapperEndpoint(randomBytes(16).toString('hex'));
       onDebug?.(`endpoint ${endpoint} (length ${Buffer.byteLength(endpoint)})`);
       const spawnedAt = new Date().toISOString();
-      child = startWrapper(spec, cwd, endpoint);
+      child = startWrapper(spec, { cwd, endpoint });
       onDebug?.(`wrapper spawned pid=${child.pid ?? 'none'}`);
       if (onDebug) forwardWrapperSteps(child, onDebug);
       const started = await waitForReady(child);
@@ -266,7 +266,7 @@ export class CommandExecutor {
       child.send({ type: WRAPPER_START });
       launched = true;
       onDebug?.('start sent');
-      const [stdout, error, exitCode, streamStats] = await this.wait(child, spec, onOutput, onHeartbeat, options);
+      const [stdout, error, exitCode, streamStats] = await this.wait(child, spec, options);
       onDebug?.(`provider exit code=${exitCode} error=${error ?? 'none'}`);
       // The process is gone; stderr is complete only once every pipe has closed (bounded wait).
       const drain = streamStats === null ? stderrDrainOf(child) : await drainStdio(child);
@@ -325,10 +325,9 @@ export class CommandExecutor {
   private async wait(
     child: ChildProcess,
     spec: CommandSpec,
-    onOutput?: ((line: string) => void) | null,
-    onHeartbeat?: ((elapsedSec: number) => void) | null,
     hooks: RunOptions = {},
   ): Promise<[string, string | null, number | null, { bytes: number; lines: number } | null]> {
+    const { onOutput, onHeartbeat } = hooks;
     const startedAt = Date.now();
     const queue = createLineQueue(child.stdout ?? null);
     if ((spec.stdin !== null && spec.stdin !== undefined) && child.stdin) {

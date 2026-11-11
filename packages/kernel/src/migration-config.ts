@@ -35,7 +35,7 @@ export function liftConfigAgents(config: Readonly<Record<string, unknown>>): Lif
         }),
       );
     }
-    document = withRenamedKey(config, 'models', 'agents', agents);
+    document = withRenamedKey(config, { from: 'models', to: 'agents', value: agents });
     notes.unshift('models -> agents');
   }
   if (isRecord(document.roles)) {
@@ -117,10 +117,9 @@ function liftAgentBody(body: Record<string, unknown>, label: string): LiftedBody
 /** A copy of `record` with `from` renamed to `to` and set to `value`. The other keys keep their order. */
 function withRenamedKey(
   record: Readonly<Record<string, unknown>>,
-  from: string,
-  to: string,
-  value: unknown,
+  rename: { readonly from: string; readonly to: string; readonly value: unknown },
 ): Record<string, unknown> {
+  const { from, to, value } = rename;
   return Object.fromEntries(Object.entries(record).map(([key, item]) => (key === from ? [to, value] : [key, item])));
 }
 

@@ -31,7 +31,9 @@ class ServerFixture {
   }
 
   async open(readDeadlineSec = 5): Promise<void> {
-    this.server = await RegistryHTTPServer.open(this.store, TOKEN, INSTANCE, '127.0.0.1', 0, { readDeadlineSec });
+    this.server = await RegistryHTTPServer.open(
+      { store: this.store, token: TOKEN, instanceId: INSTANCE, port: 0, readDeadlineSec },
+    );
     this.port = this.server.port;
     this.server.timeout = 0.2;
     this.loop = this.serve();

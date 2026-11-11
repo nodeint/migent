@@ -7,16 +7,16 @@ const resolveTo = (resolved: string | null) => () => resolved;
 
 test('line breaks are refused only for Windows batch shims', () => {
   const args = ['--append-system-prompt', 'line one\nline two'];
-  expect(() => assertArgumentsPassable('claude', args, 'win32', resolveTo('C:\\npm\\claude.CMD'))).toThrow(
+  expect(() => assertArgumentsPassable('claude', args, { platform: 'win32', resolve: resolveTo('C:\\npm\\claude.CMD') })).toThrow(
     UnpassableArgument,
   );
-  expect(() => assertArgumentsPassable('tool', args, 'win32', resolveTo('C:\\bin\\tool.bat'))).toThrow(
+  expect(() => assertArgumentsPassable('tool', args, { platform: 'win32', resolve: resolveTo('C:\\bin\\tool.bat') })).toThrow(
     UnpassableArgument,
   );
-  expect(() => assertArgumentsPassable('claude', args, 'win32', resolveTo('C:\\bin\\claude.exe'))).not.toThrow();
-  expect(() => assertArgumentsPassable('claude', ['-p', 'one line'], 'win32', resolveTo('C:\\npm\\claude.cmd'))).not.toThrow();
-  expect(() => assertArgumentsPassable('claude', args, 'darwin', resolveTo('/usr/bin/claude'))).not.toThrow();
-  expect(() => assertArgumentsPassable('claude.cmd', args, 'win32', resolveTo(null))).toThrow(UnpassableArgument);
+  expect(() => assertArgumentsPassable('claude', args, { platform: 'win32', resolve: resolveTo('C:\\bin\\claude.exe') })).not.toThrow();
+  expect(() => assertArgumentsPassable('claude', ['-p', 'one line'], { platform: 'win32', resolve: resolveTo('C:\\npm\\claude.cmd') })).not.toThrow();
+  expect(() => assertArgumentsPassable('claude', args, { platform: 'darwin', resolve: resolveTo('/usr/bin/claude') })).not.toThrow();
+  expect(() => assertArgumentsPassable('claude.cmd', args, { platform: 'win32', resolve: resolveTo(null) })).toThrow(UnpassableArgument);
 });
 
 test('sync spawn runs a command and reports a missing one', () => {

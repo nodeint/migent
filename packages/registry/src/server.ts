@@ -184,6 +184,28 @@ async function writeAll(socket: Socket, payload: Buffer, deadlineSec: number): P
   });
 }
 
+export interface RegistryServerConfig {
+  readonly store: RegistryStore;
+  readonly token: string;
+  readonly instanceId: string;
+  readonly host?: string;
+  readonly port?: number;
+  readonly readDeadlineSec?: number;
+  readonly writeDeadlineSec?: number;
+  readonly maxBodyBytes?: number;
+}
+
+/** One response in flight on a connection: `state.responseStarted` keeps a second reply from being written. */
+interface Exchange {
+  readonly socket: Socket;
+  readonly state: { responseStarted: boolean };
+}
+
+interface Reply {
+  readonly status: number;
+  readonly close: boolean;
+}
+
 export class RegistryHTTPServer {
   public static daemonThreads = true;
   public inFlight = 0;
@@ -204,19 +226,15 @@ export class RegistryHTTPServer {
   private closed = false;
 
   private constructor(
-    store: RegistryStore,
-    token: string,
-    instanceId: string,
-    readDeadlineSec: number,
-    writeDeadlineSec: number,
-    maxBodyBytes: number,
+    identity: { store: RegistryStore; token: string; instanceId: string },
+    limits: { readDeadlineSec: number; writeDeadlineSec: number; maxBodyBytes: number },
   ) {
-    this.store = store;
-    this.token = token;
-    this.instanceId = instanceId;
-    this.readDeadlineSec = readDeadlineSec;
-    this.writeDeadlineSec = writeDeadlineSec;
-    this.maxBodyBytes = maxBodyBytes;
+    this.store = identity.store;
+    this.token = identity.token;
+    this.instanceId = identity.instanceId;
+    this.readDeadlineSec = limits.readDeadlineSec;
+    this.writeDeadlineSec = limits.writeDeadlineSec;
+    this.maxBodyBytes = limits.maxBodyBytes;
     this.router = buildRouter();
     this.tcp.on('connection', (socket) => {
       socket.on('error', () => undefined);
@@ -234,26 +252,16 @@ export class RegistryHTTPServer {
     });
   }
 
-  public static async open(
-    store: RegistryStore,
-    token: string,
-    instanceId: string,
-    host = '127.0.0.1',
-    port = DEFAULT_PORT,
-    options: {
-      readDeadlineSec?: number;
-      writeDeadlineSec?: number;
-      maxBodyBytes?: number;
-    } = {},
-  ): Promise<RegistryHTTPServer> {
+  public static async open(config: RegistryServerConfig): Promise<RegistryHTTPServer> {
+    const { store, token, instanceId, host = '127.0.0.1', port = DEFAULT_PORT } = config;
     if (host !== '127.0.0.1') throw new Error('The registry service binds 127.0.0.1 only.');
     const server = new RegistryHTTPServer(
-      store,
-      token,
-      instanceId,
-      options.readDeadlineSec ?? 5,
-      options.writeDeadlineSec ?? 5,
-      options.maxBodyBytes ?? MAX_BODY_BYTES,
+      { store, token, instanceId },
+      {
+        readDeadlineSec: config.readDeadlineSec ?? 5,
+        writeDeadlineSec: config.writeDeadlineSec ?? 5,
+        maxBodyBytes: config.maxBodyBytes ?? MAX_BODY_BYTES,
+      },
     );
     await new Promise<void>((resolve, reject) => {
       const onError = (error: Error): void => {
@@ -338,22 +346,23 @@ export class RegistryHTTPServer {
   }
 
   private async handleOne(socket: Socket, reader: DeadlineReader, state: { responseStarted: boolean }): Promise<boolean> {
+    const exchange: Exchange = { socket, state };
     state.responseStarted = false;
     reader.setDeadline(monotonic() + this.readDeadlineSec);
     const line = await reader.readLine(65537);
     if (line.length === 0) return true;
     if (line.length > 65536) {
-      await this.sendJson(socket, 400, errorBody('invalid_request', 'Request line is too long.'), true, state);
+      await this.sendJson(exchange, { status: 400, close: true }, errorBody('invalid_request', 'Request line is too long.'));
       return true;
     }
     const parsed = parseRequestLine(line);
     if (!parsed) {
-      await this.sendJson(socket, 400, errorBody('invalid_request', 'Invalid request.'), true, state);
+      await this.sendJson(exchange, { status: 400, close: true }, errorBody('invalid_request', 'Invalid request.'));
       return true;
     }
     const headerBytes = await readHeaders(reader);
     if (headerBytes === null) {
-      await this.sendJson(socket, 400, errorBody('invalid_request', 'Invalid request.'), true, state);
+      await this.sendJson(exchange, { status: 400, close: true }, errorBody('invalid_request', 'Invalid request.'));
       return true;
     }
     const headers = parseHeaders(headerBytes);
@@ -361,7 +370,7 @@ export class RegistryHTTPServer {
     const path = decodePath(parsed.target);
     let body: Buffer | null = null;
     if (this.router.shouldReadBody(parsed.method, path)) {
-      const limited = await this.readLimitedBody(socket, reader, parsed.method, headers, state);
+      const limited = await this.readLimitedBody(exchange, reader, { method: parsed.method, headers });
       if (limited === null) return true;
       body = limited;
     }
@@ -379,42 +388,41 @@ export class RegistryHTTPServer {
       call,
     });
     const payload = Buffer.from(await response.arrayBuffer());
-    await this.sendRaw(socket, response.status, payload, closeRequested, state);
+    await this.sendRaw(exchange, { status: response.status, close: closeRequested }, payload);
     return closeRequested;
   }
 
   private async readLimitedBody(
-    socket: Socket,
+    exchange: Exchange,
     reader: DeadlineReader,
-    method: string,
-    headers: Map<string, string[]>,
-    state: { responseStarted: boolean },
+    request: { method: string; headers: Map<string, string[]> },
   ): Promise<Buffer | null> {
+    const { method, headers } = request;
     if (method !== 'POST') return Buffer.alloc(0);
     if (headers.has('transfer-encoding')) {
-      await this.sendJson(socket, 400, errorBody('invalid_request', 'Transfer-Encoding is not accepted.'), false, state);
+      await this.sendJson(exchange, { status: 400, close: false }, errorBody('invalid_request', 'Transfer-Encoding is not accepted.'));
       return null;
     }
     const lengths = headers.get('content-length') ?? [];
     const [kind, length] = contentLength(lengths, this.maxBodyBytes);
     if (kind === 'too_large') {
-      await this.sendJson(socket, 413, errorBody('payload_too_large', 'Content-Length exceeds 65536 bytes.'), true, state);
+      await this.sendJson(exchange, { status: 413, close: true }, errorBody('payload_too_large', 'Content-Length exceeds 65536 bytes.'));
       return null;
     }
     if (kind !== 'ok' || length === null) {
-      await this.sendJson(socket, 400, errorBody('invalid_request', 'Content-Length is missing or invalid.'), false, state);
+      await this.sendJson(exchange, { status: 400, close: false }, errorBody('invalid_request', 'Content-Length is missing or invalid.'));
       return null;
     }
     try {
       const body = await reader.read(length);
       if (body.length !== length) {
-        await this.sendJson(socket, 400, errorBody('invalid_request', 'Request body was truncated.'), false, state);
+        await this.sendJson(exchange, { status: 400, close: false }, errorBody('invalid_request', 'Request body was truncated.'));
         return null;
       }
       return body;
     } catch (error) {
       if (error instanceof RequestTimeout) throw error;
-      await this.sendJson(socket, 400, errorBody('invalid_request', 'Request body was truncated.'), false, state);
+      await this.sendJson(exchange, { status: 400, close: false }, errorBody('invalid_request', 'Request body was truncated.'));
       return null;
     }
   }
@@ -423,34 +431,22 @@ export class RegistryHTTPServer {
     if (state.responseStarted || socket.destroyed) return;
     try {
       await this.sendJson(
-        socket,
-        408,
+        { socket, state },
+        { status: 408, close: true },
         errorBody('request_timeout', 'The request was not fully read before the deadline.'),
-        true,
-        state,
       );
     } catch {
       socket.destroy();
     }
   }
 
-  private async sendJson(
-    socket: Socket,
-    status: number,
-    payload: Record<string, unknown>,
-    close: boolean,
-    state: { responseStarted: boolean },
-  ): Promise<void> {
-    await this.sendRaw(socket, status, Buffer.from(JSON.stringify(payload)), close, state);
+  private async sendJson(exchange: Exchange, reply: Reply, payload: Record<string, unknown>): Promise<void> {
+    await this.sendRaw(exchange, reply, Buffer.from(JSON.stringify(payload)));
   }
 
-  private async sendRaw(
-    socket: Socket,
-    status: number,
-    payload: Buffer,
-    close: boolean,
-    state: { responseStarted: boolean },
-  ): Promise<void> {
+  private async sendRaw(exchange: Exchange, reply: Reply, payload: Buffer): Promise<void> {
+    const { socket, state } = exchange;
+    const { status, close } = reply;
     if (state.responseStarted) return;
     state.responseStarted = true;
     const reason = REASONS[status] ?? 'Error';

@@ -60,7 +60,7 @@ export function validateConfigDraft(input: ConfigDraftInput, clients: ClientRegi
   const local = input.scope === 'local' ? input.draft : input.companion;
   if (project === null) return out;
   const merged = mergeConfigLayers(project, local);
-  const analysis = analyzeConfig(merged.config, clients, {}, merged.ownerOf);
+  const analysis = analyzeConfig(merged.config, clients, { effortChecks: {}, ownerOf: merged.ownerOf });
   for (const item of analysis.diagnostics.items) {
     // The alias waits for this machine's mapping; that describes the machine, not the document.
     out.push(item.code === 'agent-unmapped' ? { ...item, severity: 'warning' } : item);
@@ -186,7 +186,7 @@ export function validateWorkflowDraft(input: WorkflowDraftInput, clients: Client
     const stagePath = (field: string): (string | number)[] => ['stages', index, field];
     let target;
     try {
-      target = resolveStageSpec(config, stage, undefined, clients);
+      target = resolveStageSpec(config, stage, { registry: clients });
     } catch (error) {
       if (!(error instanceof ConfigurationError)) throw error;
       const head = error.path?.[0];
@@ -203,7 +203,7 @@ export function validateWorkflowDraft(input: WorkflowDraftInput, clients: Client
       }
       continue;
     }
-    const failure = optionsFailure(config, stage, target, clients);
+    const failure = optionsFailure(config, stage, { target, clients });
     if (failure === null) continue;
     if (failure.path === null) {
       out.push({ severity: 'error', code: 'options-invalid', message: `${draftId ?? input.file}.${stage.id}: ${failure.message}`, path: stagePath('agent'), source });
@@ -223,9 +223,9 @@ export function validateWorkflowDraft(input: WorkflowDraftInput, clients: Client
 function optionsFailure(
   config: Mapping,
   stage: RoleStageSpec,
-  target: StageTarget,
-  clients: ClientRegistry,
+  resolved: { target: StageTarget; clients: ClientRegistry },
 ): { message: string; path: (string | number)[] | null } | null {
+  const { target, clients } = resolved;
   const validate = (candidate: StageTarget): string | null => {
     const bound = resolveEffectiveClient(clients, candidate);
     return bound.failure?.code === 'options-invalid' ? bound.failure.message : null;
@@ -241,13 +241,13 @@ function optionsFailure(
   else selected = isRecord(roleDefault) ? roleDefault.agent : undefined;
   if (typeof selected === 'string') {
     try {
-      const message = validate(loadAgentTarget(config, selected, clients));
+      const message = validate(loadAgentTarget(config, selected, { registry: clients }));
       if (message !== null) return { message, path: ['agents', selected, 'client', 'options'] };
     } catch (error) {
       if (!(error instanceof ConfigurationError)) throw error;
     }
   }
-  const withRole = resolveStageSpec(config, { ...stage, options: {} }, undefined, clients);
+  const withRole = resolveStageSpec(config, { ...stage, options: {} }, { registry: clients });
   const roleMessage = validate(withRole);
   if (roleMessage !== null) {
     const inline = stage.agent === null && isRecord(roleDefault) && isRecord(roleDefault.agent);

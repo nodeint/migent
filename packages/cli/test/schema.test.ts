@@ -84,26 +84,26 @@ test('config reference parses and names every key the config parser reads', () =
     writeFileSync(configPath, text, 'utf8');
     const reference = loadYamlMapping(configPath);
     expect(documentVersion(reference)).toBe(7);
-    const { document: config } = migrateConfig(reference, 7, reference, { layer: 'project', clientIds: clientIds() });
+    const { document: config } = migrateConfig(reference, { current: 7, context: reference, layer: 'project', clientIds: clientIds() });
     expect(documentVersion(config)).toBe(7);
     writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
     const clients = clientRegistry();
-    expect(loadAgentTarget(config, 'deep_reasoning', clients)).toEqual({
+    expect(loadAgentTarget(config, 'deep_reasoning', { registry: clients })).toEqual({
       client: 'grok',
       model: 'grok-4.7',
       options: { 'reasoning-effort': 'high' },
     });
-    expect(loadAgentTarget(config, 'code_generation', clients)).toMatchObject({
+    expect(loadAgentTarget(config, 'code_generation', { registry: clients })).toMatchObject({
       client: 'opencode',
       model: 'coding-plan/deepseek-v4-pro',
     });
     expect(loadRoleDescription(config, 'planner')).toBe('Designs the approach and writes the plan.');
-    expect(resolveRoleTarget(workspace, 'planner', undefined, clients)).toEqual({
+    expect(resolveRoleTarget(workspace, 'planner', { registry: clients })).toEqual({
       client: 'grok',
       model: 'grok-4.7',
       options: { 'reasoning-effort': 'medium', max_turns: '10' },
     });
-    expect(resolveRoleTarget(workspace, 'reviewer', undefined, clients)).toEqual({
+    expect(resolveRoleTarget(workspace, 'reviewer', { registry: clients })).toEqual({
       client: 'grok',
       model: 'grok-4.7',
       options: { 'reasoning-effort': 'high' },

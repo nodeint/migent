@@ -48,19 +48,21 @@ export interface WrittenFreeze {
   sourceSha256: string | null;
 }
 
-export function writeWorkflowFreeze(
-  sessionDirectory: string,
-  workspace: string,
-  workflow: WorkflowDocument,
-  resolveClient?: ClientRegistry,
-): WrittenFreeze {
+export interface FreezeSource {
+  readonly workspace: string;
+  readonly workflow: WorkflowDocument;
+  readonly resolveClient?: ClientRegistry;
+}
+
+export function writeWorkflowFreeze(sessionDirectory: string, source: FreezeSource): WrittenFreeze {
+  const { workspace, workflow, resolveClient } = source;
   const config = loadWorkspaceConfig(workspace);
   const roles: Record<string, string[]> = {};
   for (const role of roleNames(workflow)) roles[role] = loadRoleResponsibilities(config, role);
   const targets: Record<string, StageTarget> = {};
   for (const stage of Object.values(workflow.stages)) {
     if (!isRoleStage(stage)) continue;
-    const target = resolveStageSpec(config, stage, undefined, resolveClient);
+    const target = resolveStageSpec(config, stage, { registry: resolveClient });
     targets[stage.id] = copyTarget(target);
   }
   const sourceSha256 = sourceFileHash(workflow.source);
@@ -166,18 +168,20 @@ export function requireLiveWorkflow(
   throw new ConfigurationError('Workflow not found.');
 }
 
+/** Where the live workflow is read from, and whether authoring warnings stay off stderr (`quiet`). */
+export interface LiveWorkflowRef {
+  readonly workflowPath: string | null;
+  readonly workflowId: string | null;
+  readonly resolveClient?: ClientRegistry;
+  readonly quiet?: boolean;
+}
+
 /** Stderr only. A missing freeze file warns nothing. */
-export function warnIfFrozenDrift(
-  workspace: string,
-  sessionId: string,
-  workflowPath: string | null,
-  workflowId: string | null,
-  resolveClient?: ClientRegistry,
-): void {
+export function warnIfFrozenDrift(workspace: string, sessionId: string, live: LiveWorkflowRef): void {
   const sessionDirectory = path.join(workspace, '.migent', 'sessions', sessionId);
   const freeze = readWorkflowFreeze(sessionDirectory);
   if (freeze === null) return;
-  for (const detail of collectFrozenDrift(workspace, freeze, workflowPath, workflowId, resolveClient, false)) {
+  for (const detail of collectFrozenDrift(workspace, freeze, live)) {
     note(sessionId, detail);
   }
 }
@@ -186,14 +190,8 @@ export function warnIfFrozenDrift(
  * How the live source and config differ from what the freeze pinned. Read-only; a missing or
  * broken live file is a difference, never an error. `quiet` keeps authoring warnings off stderr.
  */
-export function collectFrozenDrift(
-  workspace: string,
-  freeze: WorkflowFreeze,
-  workflowPath: string | null,
-  workflowId: string | null,
-  resolveClient: ClientRegistry | undefined,
-  quiet: boolean,
-): string[] {
+export function collectFrozenDrift(workspace: string, freeze: WorkflowFreeze, ref: LiveWorkflowRef): string[] {
+  const { workflowPath, workflowId, resolveClient, quiet = false } = ref;
   const details: string[] = [];
   const filePath = workflowPath ? workflowFile(workspace, workflowPath) : null;
   let readable = false;
@@ -255,7 +253,7 @@ export function collectFrozenDrift(
 function liveTarget(config: Record<string, unknown>, stage: StageSpec, resolveClient?: ClientRegistry): StageTarget | null {
   if (!isRoleStage(stage)) return null;
   try {
-    return resolveStageSpec(config, stage, undefined, resolveClient);
+    return resolveStageSpec(config, stage, { registry: resolveClient });
   } catch (error) {
     if (error instanceof ConfigurationError) return null;
     throw error;
@@ -303,7 +301,16 @@ function version2WorkflowMapping(workflow: WorkflowDocument): Record<string, unk
     id: workflow.id,
     concurrency: workflow.concurrency ?? 1,
     constraints: workflow.constraints,
-    stages: Object.values(workflow.stages).map((stage) => stageMapping(stage, (workflow.schemaVersion ?? 2) >= 3, (workflow.schemaVersion ?? 2) >= 5, (workflow.schemaVersion ?? 2) >= 7)),
+    stages: Object.values(workflow.stages).map(
+      (stage) => stageMapping(
+        stage,
+        {
+          version3: (workflow.schemaVersion ?? 2) >= 3,
+          version5: (workflow.schemaVersion ?? 2) >= 5,
+          version7: (workflow.schemaVersion ?? 2) >= 7,
+        },
+      ),
+    ),
     requires: workflow.requires === null ? null : { workflow: workflow.requires.workflow },
   };
   const outputs = workflow.outputs ?? [];
@@ -333,7 +340,11 @@ function artifactMapping(artifact: StageArtifact): Record<string, unknown> {
   return mapped;
 }
 
-function stageMapping(stage: StageSpec, version3 = false, version5 = false, version7 = false): Record<string, unknown> {
+function stageMapping(
+  stage: StageSpec,
+  versions: { version3?: boolean; version5?: boolean; version7?: boolean } = {},
+): Record<string, unknown> {
+  const { version3 = false, version5 = false, version7 = false } = versions;
   const mapped: Record<string, unknown> = {
     id: stage.id,
     depends_on: stage.dependsOn,

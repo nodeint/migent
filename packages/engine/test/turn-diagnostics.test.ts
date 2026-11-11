@@ -106,7 +106,7 @@ function setup(ask = false): { workspace: string; sessionId: string } {
   mkdirSync(path.join(workspace, '.migent', 'workflows'), { recursive: true });
   writeFileSync(path.join(workspace, '.migent', 'config.yaml'), CONFIG, 'utf8');
   writeFileSync(path.join(workspace, '.migent', 'workflows', 'wf.yaml'), workflowText(ask), 'utf8');
-  return { workspace, sessionId: createWorkflowSession(workspace, 'wf', 'task') };
+  return { workspace, sessionId: createWorkflowSession(workspace, 'wf', { task: 'task' }) };
 }
 
 async function run(provider: DiagProvider, workspace: string, sessionId: string) {

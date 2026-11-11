@@ -82,11 +82,9 @@ export function executionCommands(events: readonly ParsedEvent[]): Map<string, s
 /** The shared execution reader for resume and status repair. */
 export function readExecutionClient(
   sessionDirectory: string,
-  executionId: string,
-  metadata: Record<string, unknown>,
-  frozen?: string | null,
+  execution: { executionId: string; metadata: Record<string, unknown>; frozen?: string | null },
 ): LegacyExecutionClient {
-  return executionClientReader(sessionDirectory)(executionId, metadata, frozen);
+  return executionClientReader(sessionDirectory)(execution.executionId, execution.metadata, execution.frozen);
 }
 
 /** Read a session's history once when folding many execution records. */

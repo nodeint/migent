@@ -93,7 +93,7 @@ function printResult(workspace: string, result: ExecuteResult): void {
   // Printed before the completed branch: a retried attempt can fail and still end in a completed session.
   for (const executionId of failedExecutionIds(result)) {
     const failure = `executions/${executionId}/${FAILURE_FILENAME}`;
-    if (executionFileExists(workspace, result.sessionId, executionId, FAILURE_FILENAME)) {
+    if (executionFileExists({ workspace, sessionId: result.sessionId }, executionId, FAILURE_FILENAME)) {
       log(`failure: ${failure}`);
     }
   }
@@ -116,7 +116,7 @@ function printResult(workspace: string, result: ExecuteResult): void {
   if (
     result.latestExecutionId &&
     INSPECT_EXIT_CODES.has(result.code) &&
-    executionFileExists(workspace, result.sessionId, result.latestExecutionId, 'response.md')
+    executionFileExists({ workspace, sessionId: result.sessionId }, result.latestExecutionId, 'response.md')
   ) {
     log(`response: executions/${result.latestExecutionId}/response.md`);
   }
@@ -142,11 +142,11 @@ function failedExecutionIds(result: ExecuteResult): string[] {
 }
 
 function executionFileExists(
-  workspace: string,
-  sessionId: string,
+  session: { workspace: string; sessionId: string },
   executionId: string,
   name: string,
 ): boolean {
+  const { workspace, sessionId } = session;
   if (sessionId === '') return false;
   return existsSync(
     path.join(workspace, '.migent', 'sessions', sessionId, 'executions', executionId, name),

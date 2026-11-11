@@ -26,16 +26,16 @@ export function preflightFailed(sessionId: string): ExecuteResult {
 export function requireEligibleStage(
   workflow: WorkflowDocument,
   snapshots: readonly ExecutionSnapshot[],
-  sessionStatus: string,
-  stageId: string,
+  target: { sessionStatus: string; stageId: string },
 ): string {
+  const { sessionStatus, stageId } = target;
   if (isWorkflowV2(workflow)) {
-    const ready = readyStages(workflow, snapshots, sessionStatus);
+    const ready = readyStages(workflow, snapshots, { sessionStatus });
     if (ready.includes(stageId)) return stageId;
-    const first = runnableNow(workflow, ready, [], workflow.concurrency ?? 1, snapshots)[0] ?? ready[0] ?? '';
+    const first = runnableNow(workflow, ready, { running: [], concurrency: workflow.concurrency ?? 1, snapshots })[0] ?? ready[0] ?? '';
     throw new ConfigurationError(`Stage ${stageId} is not the eligible stage ${first}.`);
   }
-  const selected = selectedStage(workflow, snapshots, sessionStatus);
+  const selected = selectedStage(workflow, snapshots, { sessionStatus });
   if (selected instanceof Stop) throw new ConfigurationError(`Session is ${selected.reason}.`);
   if (selected.stageId !== stageId) {
     throw new ConfigurationError(`Stage ${stageId} is not the eligible stage ${selected.stageId}.`);
@@ -53,9 +53,9 @@ export function verifyOnlyExecution(workspace: string, sessionId: string, execut
 function bindExecuteRun(
   workspace: string,
   sessionId: string,
-  workflowId: string | null | undefined,
-  priorSessionId: string | null | undefined,
+  requested: { workflowId: string | null | undefined; priorSessionId: string | null | undefined },
 ): { workflowId: string; status: Record<string, unknown> } {
+  const { workflowId, priorSessionId } = requested;
   const status = new SessionStore(workspace).readSessionStatus(sessionId);
   const storedWorkflow = status.workflow_id;
   if (Object.keys(status).length === 0 || typeof storedWorkflow !== 'string' || storedWorkflow === '') {
@@ -77,9 +77,9 @@ function bindExecuteRun(
 function refreshSessionWorkflow(
   workspace: string,
   sessionId: string,
-  startPrepared: boolean,
-  registry: ClientRegistry,
+  options: { startPrepared: boolean; registry: ClientRegistry },
 ): void {
+  const { startPrepared, registry } = options;
   const sessionDirectory = path.join(workspace, '.migent', 'sessions', sessionId);
   const freeze = readWorkflowFreeze(sessionDirectory);
   const status = new SessionStore(workspace).readSessionStatus(sessionId);
@@ -104,7 +104,7 @@ function refreshSessionWorkflow(
   const freezePath = path.join(sessionDirectory, WORKFLOW_FREEZE_FILE);
   const previousText = readFileSync(freezePath, 'utf8');
   const previousHash = createHash('sha256').update(previousText).digest('hex');
-  const written = writeWorkflowFreeze(sessionDirectory, workspace, live, registry);
+  const written = writeWorkflowFreeze(sessionDirectory, { workspace, workflow: live, resolveClient: registry });
   try {
     appendLifecycleEvent(sessionDirectory, {
       event: 'workflow.refreshed',
@@ -206,10 +206,9 @@ interface ResolvedReply {
 export async function openExecuteSession(
   workspace: string,
   request: ExecuteRequest,
-  held: HeldSession,
-  registry: ClientRegistry,
-  store: SessionStore,
+  deps: { held: HeldSession; registry: ClientRegistry; store: SessionStore },
 ): Promise<SessionOpenResult> {
+  const { held, registry, store } = deps;
   const stageId = request.stageId ?? null;
   const replyStageId = stageId ?? request.replyStageId ?? null;
   const replyText = typeof request.reply === 'string' ? request.reply : null;
@@ -222,14 +221,22 @@ export async function openExecuteSession(
   let sessionId: string;
   if (requestedId) {
     sessionId = requestedId;
-    const existing = openExistingSession(workspace, request, held, registry, sessionId);
+    const existing = openExistingSession(workspace, request, { held, registry, sessionId });
     workflowId = existing.workflowId;
-    const resolved = resolveStageReply(workspace, store, sessionId, replyText, replyStageId, existing.sessionStatus);
+    const resolved = resolveStageReply(
+      workspace,
+      store,
+      { sessionId, replyText, replyStageId, openedStatus: existing.sessionStatus },
+    );
     ({ stageReply, resumeCancelled, reopenLatestCancelled } = resolved);
-    const started = await startOrRejectPrepared(workspace, request, registry, sessionId, resolved.sessionStatus);
+    const started = await startOrRejectPrepared(
+      workspace,
+      request,
+      { registry, sessionId, sessionStatus: resolved.sessionStatus },
+    );
     if (started.rejected !== null) return { kind: 'final', result: started.rejected };
     let { sessionStatus } = started;
-    const resumed = resumeBlockedStages(store, sessionId, stageId, {
+    const resumed = resumeBlockedStages(store, { sessionId, stageId }, {
       sessionStatus,
       stageReply,
       cancelledReplyStage: resolved.cancelledReplyStage,
@@ -245,12 +252,16 @@ export async function openExecuteSession(
       return { kind: 'final', result: executeFinal(existing.status, sessionStatus, []) };
     }
   } else {
-    const created = await createExecuteSession(workspace, request, held, registry, replyText, stageId);
+    const created = await createExecuteSession(workspace, request, { held, registry, replyText, stageId });
     if ('code' in created) return { kind: 'final', result: created };
     ({ sessionId, workflow } = created);
     workflowId = workflow.id;
   }
-  const prepared = prepareSessionWorkflow(workspace, request, store, sessionId, stageId, workflow, workflowId);
+  const prepared = prepareSessionWorkflow(
+    workspace,
+    request,
+    { store, sessionId, stageId, opened: workflow, workflowId },
+  );
   return {
     kind: 'ready',
     sessionId,
@@ -266,21 +277,28 @@ export async function openExecuteSession(
 function openExistingSession(
   workspace: string,
   request: ExecuteRequest,
-  held: HeldSession,
-  registry: ClientRegistry,
-  sessionId: string,
+  open: { held: HeldSession; registry: ClientRegistry; sessionId: string },
 ): ExistingSession {
+  const { held, registry, sessionId } = open;
   if (!existsSync(path.join(workspace, '.migent', 'sessions', sessionId))) {
     throw new ConfigurationError(`Session not found: ${sessionId}.`);
   }
   held.acquire(workspace, sessionId);
   repairSessionUnlocked(workspace, sessionId);
-  if (request.refreshWorkflow && !request.startPrepared) refreshSessionWorkflow(workspace, sessionId, false, registry);
-  const bound = bindExecuteRun(workspace, sessionId, request.workflowId, request.priorSessionId);
+  if (request.refreshWorkflow && !request.startPrepared) refreshSessionWorkflow(
+    workspace,
+    sessionId,
+    { startPrepared: false, registry },
+  );
+  const bound = bindExecuteRun(
+    workspace,
+    sessionId,
+    { workflowId: request.workflowId, priorSessionId: request.priorSessionId },
+  );
   if (!request.refreshWorkflow) {
     const workflowPath = typeof bound.status.workflow_path === 'string' ? bound.status.workflow_path : null;
     const storedWorkflow = typeof bound.status.workflow_id === 'string' ? bound.status.workflow_id : null;
-    warnIfFrozenDrift(workspace, sessionId, workflowPath, storedWorkflow, registry);
+    warnIfFrozenDrift(workspace, sessionId, { workflowPath, workflowId: storedWorkflow, resolveClient: registry });
   }
   return {
     workflowId: bound.workflowId,
@@ -293,11 +311,9 @@ function openExistingSession(
 function resolveStageReply(
   workspace: string,
   store: SessionStore,
-  sessionId: string,
-  replyText: string | null,
-  replyStageId: string | null,
-  openedStatus: string,
+  reply: { sessionId: string; replyText: string | null; replyStageId: string | null; openedStatus: string },
 ): ResolvedReply {
+  const { sessionId, replyText, replyStageId, openedStatus } = reply;
   let sessionStatus = openedStatus;
   let resumeCancelled = false;
   let reopenLatestCancelled = false;
@@ -365,10 +381,9 @@ function resolveStageReply(
 async function startOrRejectPrepared(
   workspace: string,
   request: ExecuteRequest,
-  registry: ClientRegistry,
-  sessionId: string,
-  sessionStatus: string,
+  prepared: { registry: ClientRegistry; sessionId: string; sessionStatus: string },
 ): Promise<{ rejected: ExecuteResult | null; sessionStatus: string }> {
+  const { registry, sessionId, sessionStatus } = prepared;
   if (request.startPrepared) {
     if (sessionStatus !== 'prepared') {
       const hint =
@@ -400,10 +415,10 @@ async function startOrRejectPrepared(
  */
 function resumeBlockedStages(
   store: SessionStore,
-  sessionId: string,
-  stageId: string | null,
+  target: { sessionId: string; stageId: string | null },
   opened: { sessionStatus: string; stageReply: PendingStageReply | null; cancelledReplyStage: boolean },
 ): readonly { stageId: string; executionId: string }[] | null {
+  const { sessionId, stageId } = target;
   const { stageReply } = opened;
   const blockedReply = stageReply !== null && store.blockedStages(sessionId).some((row) => row.stageId === stageReply.stageId);
   if (opened.cancelledReplyStage || (opened.sessionStatus !== 'blocked' && !blockedReply)) return null;
@@ -424,11 +439,9 @@ function resumeBlockedStages(
 async function createExecuteSession(
   workspace: string,
   request: ExecuteRequest,
-  held: HeldSession,
-  registry: ClientRegistry,
-  replyText: string | null,
-  stageId: string | null,
+  creation: { held: HeldSession; registry: ClientRegistry; replyText: string | null; stageId: string | null },
 ): Promise<ExecuteResult | { sessionId: string; workflow: WorkflowDocument }> {
+  const { held, registry, replyText, stageId } = creation;
   if (replyText !== null) throw new ConfigurationError('--reply requires a blocked session.');
   if (request.refreshWorkflow) {
     throw new ConfigurationError('--refresh-workflow requires an existing session.');
@@ -436,13 +449,17 @@ async function createExecuteSession(
   if (!request.workflowId) throw new ConfigurationError('Creating a session requires a workflow.');
   const workflow = loadNamedWorkflow(workspace, request.workflowId);
   resolvePriorSessionId(workspace, workflow, request.priorSessionId);
-  if (stageId !== null) requireEligibleStage(workflow, [], 'active', stageId);
+  if (stageId !== null) requireEligibleStage(workflow, [], { sessionStatus: 'active', stageId });
   if (request.preflight) {
     // Argument errors come before the doctor checks.
     if (request.task) assertSingleLineTask(request.task);
     if (!(await request.preflight({ workflowId: request.workflowId, sessionId: null }))) return preflightFailed('');
   }
-  const sessionId = createWorkflowSession(workspace, workflow.id, request.task, request.priorSessionId, registry);
+  const sessionId = createWorkflowSession(
+    workspace,
+    workflow.id,
+    { task: request.task, priorSessionId: request.priorSessionId, resolveClient: registry },
+  );
   held.acquire(workspace, sessionId);
   log(`session_id: ${sessionId}`);
   return { sessionId, workflow };
@@ -452,12 +469,15 @@ async function createExecuteSession(
 function prepareSessionWorkflow(
   workspace: string,
   request: ExecuteRequest,
-  store: SessionStore,
-  sessionId: string,
-  stageId: string | null,
-  opened: WorkflowDocument | null,
-  workflowId: string,
+  session: {
+    store: SessionStore;
+    sessionId: string;
+    stageId: string | null;
+    opened: WorkflowDocument | null;
+    workflowId: string;
+  },
 ): WorkflowDocument {
+  const { store, sessionId, stageId, opened, workflowId } = session;
   let workflow = opened;
   const frozenDocument = loadFrozenWorkflow(path.join(workspace, '.migent', 'sessions', sessionId));
   if (frozenDocument) workflow = frozenDocument;
@@ -473,17 +493,19 @@ function prepareSessionWorkflow(
       // The reset is what lifts the cap, so the cap must not hide the stage continue is about to allow.
       const openBaselines: Record<string, number> = {};
       for (const stageId of Object.keys(workflow.stages)) openBaselines[stageId] = Number.MAX_SAFE_INTEGER;
-      const startable = schedulableStageIds(
-        workflow,
-        snapshots,
-        current,
-        openBaselines,
-        blockResumes(workspace, sessionId),
-        new Set(),
-      );
+      const startable = schedulableStageIds(workflow, snapshots, {
+        sessionStatus: current,
+        revisionBaselines: openBaselines,
+        resumes: blockResumes(workspace, sessionId),
+        verifyTried: new Set(),
+      });
       if (startable.length > 0) store.resetRevisionCounts(sessionId, snapshots);
     } else {
-      const selected = selectedStage(workflow, snapshots, current, blockResumes(workspace, sessionId));
+      const selected = selectedStage(
+        workflow,
+        snapshots,
+        { sessionStatus: current, resumes: blockResumes(workspace, sessionId) },
+      );
       if (selected instanceof NextStage) store.resetRevisionCounts(sessionId, snapshots);
     }
   }

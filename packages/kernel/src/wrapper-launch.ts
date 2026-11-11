@@ -74,12 +74,15 @@ export async function drainStdio(child: ChildProcess): Promise<StderrDrain> {
   return stderrDrainOf(child);
 }
 
-export function startWrapper(
-  spec: CommandSpec,
-  cwd: string,
-  endpoint: string,
-  stdio: StdioOptions = [(spec.stdin !== null && spec.stdin !== undefined) ? 'pipe' : 'inherit', 'pipe', 'pipe', 'ipc'],
-): ChildProcess {
+export interface WrapperLaunch {
+  readonly cwd: string;
+  readonly endpoint: string;
+  readonly stdio?: StdioOptions;
+}
+
+export function startWrapper(spec: CommandSpec, launch: WrapperLaunch): ChildProcess {
+  const { cwd, endpoint } = launch;
+  const stdio = launch.stdio ?? [(spec.stdin !== null && spec.stdin !== undefined) ? 'pipe' : 'inherit', 'pipe', 'pipe', 'ipc'];
   const argv = wrapperArgv(spec.argv, { endpoint, graceSec: TERMINATION_GRACE_SEC });
   const child = spawn(argv[0] ?? '', argv.slice(1), {
     cwd,

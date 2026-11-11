@@ -113,7 +113,7 @@ function setup(): { workspace: string; sessionId: string } {
   mkdirSync(path.join(workspace, '.migent', 'workflows'), { recursive: true });
   writeFileSync(path.join(workspace, '.migent', 'config.yaml'), CONFIG);
   writeFileSync(path.join(workspace, '.migent', 'workflows', 'wf.yaml'), WORKFLOW);
-  return { workspace, sessionId: createWorkflowSession(workspace, 'wf', 'task') };
+  return { workspace, sessionId: createWorkflowSession(workspace, 'wf', { task: 'task' }) };
 }
 
 test('continue on a session another process is running exits 2 and runs nothing', async () => {
@@ -185,7 +185,7 @@ test('session creation with one task never shares a directory', () => {
   mkdirSync(path.join(workspace, '.migent', 'workflows'), { recursive: true });
   writeFileSync(path.join(workspace, '.migent', 'config.yaml'), CONFIG);
   writeFileSync(path.join(workspace, '.migent', 'workflows', 'wf.yaml'), WORKFLOW);
-  const ids = new Set(Array.from({ length: 5 }, () => createWorkflowSession(workspace, 'wf', 'same task')));
+  const ids = new Set(Array.from({ length: 5 }, () => createWorkflowSession(workspace, 'wf', { task: 'same task' })));
   expect(ids.size).toBe(5);
 });
 
@@ -198,8 +198,8 @@ test('createSessionDirectory skips an existing id and a prepared title can repea
   mkdirSync(path.join(workspace, '.migent', 'workflows'), { recursive: true });
   writeFileSync(path.join(workspace, '.migent', 'config.yaml'), CONFIG);
   writeFileSync(path.join(workspace, '.migent', 'workflows', 'wf.yaml'), WORKFLOW);
-  const prepared = createPreparedSession(workspace, 'wave-1', 'wf');
-  const repeated = createPreparedSession(workspace, 'wave-1', 'wf');
+  const prepared = createPreparedSession(workspace, { title: 'wave-1', workflowId: 'wf' });
+  const repeated = createPreparedSession(workspace, { title: 'wave-1', workflowId: 'wf' });
   expect(prepared).not.toBe(repeated);
   expect(prepared).toMatch(/^[1-9][0-9]*$/);
 });
@@ -210,9 +210,9 @@ test('an execution directory that exists is an error, never shared', () => {
   const store = new SessionStore(workspace);
   const lock = SessionLock.acquire(dir);
   try {
-    const first = store.createExecution('fake', 'm1', null, sessionId, 'implement', null, null, 'p');
+    const first = store.createExecution({ client: 'fake', model: 'm1', options: null, sessionId, stageId: 'implement', stageAttempt: null, executionOrder: null, prompt: 'p' });
     expect(() =>
-      store.createExecution('fake', 'm1', null, sessionId, 'implement', 1, 1, 'p'),
+      store.createExecution({ client: 'fake', model: 'm1', options: null, sessionId, stageId: 'implement', stageAttempt: 1, executionOrder: 1, prompt: 'p' }),
     ).toThrow(/already exists/);
     expect(first.executionId).toMatch(/^0001-/);
   } finally {

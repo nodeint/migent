@@ -63,11 +63,11 @@ const LEGACY_MIGRATIONS: Readonly<
 
 /** Apply the historical step for one legacy provider, if it has one. */
 export function applyLegacyMigration(
-  kind: MigrationKind,
-  provider: string | null,
+  subject: { readonly kind: MigrationKind; readonly provider: string | null },
   version: number,
   body: MigrationBody,
 ): MigrationBody {
+  const { kind, provider } = subject;
   if (provider === null) return body;
   const step = LEGACY_MIGRATIONS[provider.trim().toLowerCase()]?.[kind]?.[version];
   return step === undefined ? body : step(body);
@@ -84,7 +84,7 @@ export function migrateModels(
     Object.entries(models).map(([name, body]) => {
       if (!isRecord(body)) return [name, body];
       const provider = providerName(body.provider) ?? modelProvider(context, name);
-      return [name, applyLegacyMigration('model', provider, version, body)];
+      return [name, applyLegacyMigration({ kind: 'model', provider }, version, body)];
     }),
   );
   return { ...config, models: migrated };
@@ -106,7 +106,7 @@ export function migrateRoles(
         context,
         Object.hasOwn(body, 'default_model') || Object.hasOwn(body, 'agent') || !isRecord(effectiveRole) ? body : effectiveRole,
       );
-      return [name, applyLegacyMigration('role', provider, version, body)];
+      return [name, applyLegacyMigration({ kind: 'role', provider }, version, body)];
     }),
   );
   return { ...config, roles: migrated };
@@ -120,7 +120,7 @@ export function migrateStages(
   const {stages} = workflow;
   if (!Array.isArray(stages)) return workflow;
   const migrated = stages.map((stage: unknown) =>
-    isRecord(stage) ? applyLegacyMigration('stage', stageProvider(config, stage), version, stage) : stage,
+    isRecord(stage) ? applyLegacyMigration({ kind: 'stage', provider: stageProvider(config, stage) }, version, stage) : stage,
   );
   return { ...workflow, stages: migrated };
 }

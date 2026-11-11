@@ -47,7 +47,7 @@ test('an alias only the project defines belongs to the project', () => {
 
 test('rule errors carry a code and the path of the field', () => {
   try {
-    resolveRoleCascade({ roles: { dev: { agent: 'nope' } } }, 'dev', undefined, defaultClients());
+    resolveRoleCascade({ roles: { dev: { agent: 'nope' } } }, 'dev', { registry: defaultClients() });
     throw new Error('expected a throw');
   } catch (error) {
     expect(error).toBeInstanceOf(ConfigurationError);
@@ -63,8 +63,8 @@ test('paths keep dotted and bracketed keys as single segments', () => {
     try { run(); } catch (error) { return error as ConfigurationError; }
     throw new Error('expected a throw');
   };
-  expect(thrown(() => resolveRoleCascade(config, 'a.b', undefined, defaultClients())).path).toEqual(['agents', 'gpt.5', 'model']);
-  expect(thrown(() => resolveRoleCascade({ roles: { 'a.b': {} } }, 'a.b', undefined, defaultClients())).path)
+  expect(thrown(() => resolveRoleCascade(config, 'a.b', { registry: defaultClients() })).path).toEqual(['agents', 'gpt.5', 'model']);
+  expect(thrown(() => resolveRoleCascade({ roles: { 'a.b': {} } }, 'a.b', { registry: defaultClients() })).path)
     .toEqual(['roles', 'a.b', 'agent']);
   expect(thrown(() => loadRoleResponsibilities({ roles: { 'a.b': { responsibilities: 'x' } } }, 'a.b')).path)
     .toEqual(['roles', 'a.b', 'responsibilities']);
@@ -80,7 +80,7 @@ test('paths keep dotted and bracketed keys as single segments', () => {
 test('option errors carry the exact option path', () => {
   const config = { agents: { x: { client: { type: 'codex', options: { a: 3 } }, model: 'm' } }, roles: { dev: { agent: 'x' } } };
   try {
-    resolveRoleCascade(config, 'dev', undefined, defaultClients());
+    resolveRoleCascade(config, 'dev', { registry: defaultClients() });
     throw new Error('expected a throw');
   } catch (error) {
     expect((error as ConfigurationError).code).toBe('option-invalid');

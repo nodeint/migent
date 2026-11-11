@@ -48,9 +48,9 @@ test('manifests keep numeric ids as strings, including prior', () => {
   mkdirSync(path.join(workspace, '.migent', 'workflows'), { recursive: true });
   writeSessionConfig(workspace);
   writeFileSync(path.join(workspace, '.migent', 'workflows', 'solo.yaml'), 'schema_version: 5\nid: solo\nstages:\n  - id: work\n    role: developer\n');
-  const first = createWorkflowSession(workspace, 'solo', 'task one');
+  const first = createWorkflowSession(workspace, 'solo', { task: 'task one' });
   writeFileSync(path.join(workspace, '.migent', 'sessions', first, 'status.json'), JSON.stringify({ session_id: first, workflow_id: 'solo', status: 'completed' }));
-  const second = createPreparedSession(workspace, 'task two', 'solo', first);
+  const second = createPreparedSession(workspace, { title: 'task two', workflowId: 'solo', priorSessionId: first });
   expect([first, second]).toEqual(['1', '2']);
   const dir = path.join(workspace, '.migent', 'sessions', second);
   expect(readFileSync(path.join(dir, 'manifest.yaml'), 'utf8')).toContain('prior_session_id: "1"');

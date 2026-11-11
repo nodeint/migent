@@ -88,13 +88,22 @@ export class ProviderEvent {
 }
 
 export class ProviderEventReporter {
+  public readonly store: SessionStore;
+  public readonly context: ExecutionContext;
+  public readonly client: string;
+  public readonly model: string;
+  public readonly itemProgress: boolean;
+
   constructor(
-    public readonly store: SessionStore,
-    public readonly context: ExecutionContext,
-    public readonly client: string,
-    public readonly model: string,
-    public readonly itemProgress = false,
-  ) {}
+    execution: { store: SessionStore; context: ExecutionContext },
+    provider: { client: string; model: string; itemProgress?: boolean },
+  ) {
+    this.store = execution.store;
+    this.context = execution.context;
+    this.client = provider.client;
+    this.model = provider.model;
+    this.itemProgress = provider.itemProgress ?? false;
+  }
 
   public emit(event: string, summary?: string | null, details?: Record<string, unknown> | null): void {
     const providerEvent = new ProviderEvent({

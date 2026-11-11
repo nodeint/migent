@@ -10,7 +10,7 @@ import { main } from '../src/index.ts';
 import { PACKAGE_VERSION } from '../src/version.ts';
 import { capture } from './support.ts';
 
-const endpoint = new ServiceEndpoint('127.0.0.1', 9, 'token', 'instance', 7);
+const endpoint = new ServiceEndpoint({ host: '127.0.0.1', port: 9, token: 'token', instanceId: 'instance', pid: 7 });
 
 async function withHome(fn: (root: string) => Promise<void>): Promise<void> {
   const root = mkdtempSync(path.join(tmpdir(), 'migent-cli-'));
@@ -49,14 +49,14 @@ test('register from a subdirectory sends the absolute root', async () => {
     };
     workspaceApi.callService = async (...args) => {
       calls.push(args);
-      const body = args[5] as { path: string };
+      const { body } = args[1] as unknown as { body: { path: string } };
       return [201, { id: 'ws_demo', name: 'demo', path: body.path, available: true }];
     };
     const captured = await capture(() => main(['workspace', 'register'], child));
     expect(captured.value).toBe(0);
     expect(started).toBe(1);
-    const body = calls[0]?.[5] as { path: string; tool: { name: string; version: string } };
-    expect(calls[0]?.[3]).toBe('POST');
+    const { body } = calls[0]?.[1] as { body: { path: string; tool: { name: string; version: string } } };
+    expect((calls[0]?.[1] as { method: string }).method).toBe('POST');
     const absolute = realpathSync(workspace);
     expect(body.path).toBe(absolute);
     expect(path.isAbsolute(body.path)).toBe(true);
@@ -76,12 +76,12 @@ test('register relative path resolves against the invocation cwd', async () => {
     workspaceApi.startDetached = async () => endpoint;
     workspaceApi.callService = async (...args) => {
       calls.push(args);
-      const body = args[5] as { path: string };
+      const { body } = args[1] as unknown as { body: { path: string } };
       return [201, { id: 'ws_demo', name: 'demo', path: body.path, available: true }];
     };
     const captured = await capture(() => main(['workspace', 'register', '--path', 'src/pkg'], workspace));
     expect(captured.value).toBe(0);
-    expect((calls[0]?.[5] as { path: string }).path).toBe(realpathSync(workspace));
+    expect((calls[0]?.[1] as { body: { path: string } }).body.path).toBe(realpathSync(workspace));
   });
 });
 
@@ -122,7 +122,7 @@ test('list json exits 0 and remove of unknown id exits 2', async () => {
     );
     const rows = [{ id: 'ws_abc', name: 'demo', path: '/tmp/demo', available: true }];
     workspaceApi.callService = async (...args) => {
-      if (args[3] === 'GET') return [200, { workspaces: rows }];
+      if ((args[1] as { method: string }).method === 'GET') return [200, { workspaces: rows }];
       return [404, { error: 'workspace_not_found', message: 'unknown id' }];
     };
     const listed = await capture(() => main(['workspace', 'list', '--json']));

@@ -61,13 +61,15 @@ export interface UnknownKey {
   path: (string | number)[];
 }
 
-export function unknownKeyEntries(
-  value: Record<string, unknown>,
-  valid: readonly string[],
-  location: string,
-  base: readonly (string | number)[],
-  renamed: Readonly<Record<string, string>> = {},
-): UnknownKey[] {
+export interface UnknownKeyScope {
+  readonly valid: readonly string[];
+  readonly location: string;
+  readonly base: readonly (string | number)[];
+  readonly renamed?: Readonly<Record<string, string>>;
+}
+
+export function unknownKeyEntries(value: Record<string, unknown>, scope: UnknownKeyScope): UnknownKey[] {
+  const { valid, location, base, renamed = {} } = scope;
   const entries: UnknownKey[] = [];
   for (const key of Object.keys(value)) {
     if (valid.includes(key)) continue;
@@ -98,7 +100,7 @@ export function unknownKeys(value: Record<string, unknown>, valid: readonly stri
 
 /** Unknown keys at the top level, stages, `produces`, `session` and decision entries, with author-coordinate paths. */
 export function unknownWorkflowKeyEntries(data: Record<string, unknown>): UnknownKey[] {
-  const entries = unknownKeyEntries(data, WORKFLOW_KEYS, '', []);
+  const entries = unknownKeyEntries(data, { valid: WORKFLOW_KEYS, location: '', base: [] });
   const version = typeof data.schema_version === 'number' ? data.schema_version : 0;
   if (!Array.isArray(data.stages)) return entries;
   data.stages.forEach((stage, index) => {
@@ -106,16 +108,16 @@ export function unknownWorkflowKeyEntries(data: Record<string, unknown>): Unknow
     const location = `stages.${stage.id}`;
     const base = ['stages', index];
     entries.push(...(version >= 5
-      ? unknownKeyEntries(stage, STAGE_KEYS_V5, location, base, STAGE_V5_RENAMED)
-      : unknownKeyEntries(stage, STAGE_KEYS_V4, location, base)));
-    if (isRecord(stage.produces)) entries.push(...unknownKeyEntries(stage.produces, PRODUCES_KEYS, `${location}.produces`, [...base, 'produces']));
-    if (isRecord(stage.session)) entries.push(...unknownKeyEntries(stage.session, SESSION_KEYS, `${location}.session`, [...base, 'session']));
+      ? unknownKeyEntries(stage, { valid: STAGE_KEYS_V5, location, base, renamed: STAGE_V5_RENAMED })
+      : unknownKeyEntries(stage, { valid: STAGE_KEYS_V4, location, base })));
+    if (isRecord(stage.produces)) entries.push(...unknownKeyEntries(stage.produces, { valid: PRODUCES_KEYS, location: `${location}.produces`, base: [...base, 'produces'] }));
+    if (isRecord(stage.session)) entries.push(...unknownKeyEntries(stage.session, { valid: SESSION_KEYS, location: `${location}.session`, base: [...base, 'session'] }));
     if (!Array.isArray(stage.decision)) return;
     stage.decision.forEach((entry, entryIndex) => {
       if (!isRecord(entry) || Object.keys(entry).length !== 1) return;
       const name = Object.keys(entry)[0]!;
       const body = entry[name];
-      if (isRecord(body)) entries.push(...unknownKeyEntries(body, DECISION_ENTRY_KEYS, `${location}.decision.${name}`, [...base, 'decision', entryIndex, name]));
+      if (isRecord(body)) entries.push(...unknownKeyEntries(body, { valid: DECISION_ENTRY_KEYS, location: `${location}.decision.${name}`, base: [...base, 'decision', entryIndex, name] }));
     });
   });
   return entries;

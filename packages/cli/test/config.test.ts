@@ -342,7 +342,7 @@ test('migrate writes inline workflow agents and keeps model and option comments'
     await capture(() => runMigrate(workspace, { assumeYes: true }));
     const config = loadWorkspaceConfig(workspace);
     const document = loadNamedWorkflow(workspace, 'wf');
-    expect(resolveStageSpec(config, document.stages.work!, undefined, clientRegistry())).toEqual({
+    expect(resolveStageSpec(config, document.stages.work!, { registry: clientRegistry() })).toEqual({
       client: 'codex', model: 'router/alias', options: { model_reasoning_effort: 'high' },
     });
     for (const file of [configPath, workflowPath]) {

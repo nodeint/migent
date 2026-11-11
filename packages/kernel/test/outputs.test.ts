@@ -54,7 +54,7 @@ function planReview(): WorkflowDocument {
 
 test('publish gate requires the completion decision', () => {
   const workflow = planReview();
-  const approved = new StageOutcome('complete', null, 'approved');
+  const approved = new StageOutcome('complete', { decision: 'approved' });
   expect(
     shouldPublishOutputs({
       workflowId: 'plan',
@@ -68,7 +68,7 @@ test('publish gate requires the completion decision', () => {
     shouldPublishOutputs({
       workflowId: 'plan',
       executionStatus: 'completed',
-      outcome: new StageOutcome('complete', null, 'revise'),
+      outcome: new StageOutcome('complete', { decision: 'revise' }),
       workflow,
       stageId: 'review-plan',
     }),
@@ -124,7 +124,7 @@ test('missing or empty artifact fails the producing stage', () => {
 
 test('prose approval without a decision header fails', () => {
   expect(() =>
-    parseStageOutcome('status: complete\n\nApproved.', true, ['approved', 'revise']),
+    parseStageOutcome('status: complete\n\nApproved.', true, { decisionValues: ['approved', 'revise'] }),
   ).toThrow(/decision:/);
 });
 

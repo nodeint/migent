@@ -92,6 +92,7 @@ export function collectWorkflowDraft(data: Record<string, unknown>, source: stri
     declaredStageIds.add(value);
   });
 
+  const stageContext = { version2, version3, version5, version7, declaredIds: declaredStageIds, problems };
   const stages: DraftStage[] = [];
   rawStages.forEach((item, index) => {
     if (duplicateIndexes.has(index)) {
@@ -99,12 +100,13 @@ export function collectWorkflowDraft(data: Record<string, unknown>, source: stri
       problems.addMessage('duplicate-stage-id', `Duplicate stage id: ${id}`, ['stages', index, 'id']);
       return;
     }
-    const stage = collectStage(item, index, version2, version3, version5, version7, declaredStageIds, problems);
+    const stage = collectStage(item, index, stageContext);
     if (stage !== null) stages.push(stage);
   });
 
+  const outputContext = { declaredIds: declaredStageIds, problems };
   let outputs: CollectedOutputs = version2 && !version7
-    ? collectOutputs(data.outputs, stages, declaredStageIds, problems)
+    ? collectOutputs(data.outputs, stages, outputContext)
     : { sectionValid: true, complete: true, names: new Set(), values: [], indexes: [] };
   if (version7) {
     if (Object.hasOwn(data, 'outputs')) {
@@ -130,7 +132,7 @@ export function collectWorkflowDraft(data: Record<string, unknown>, source: stri
   collectStringItems(data.constraints, 'constraints', problems);
   const completion =
     !version2 && isRecord(data.completion) && declaredStageIds.size > 0
-      ? collectCompletion(data.completion, stages, declaredStageIds, problems)
+      ? collectCompletion(data.completion, stages, outputContext)
       : { stage: null };
 
   const stagesById = new Map(stages.map((stage) => [stage.id, stage]));
@@ -150,7 +152,17 @@ export function collectWorkflowDraft(data: Record<string, unknown>, source: stri
     }
   }
 
-  collectGraphProblems(stages, rawStages.length, declaredStageIds, completion.stage, outputs, version2, problems);
+  collectGraphProblems(
+    stages,
+    {
+      rawCount: rawStages.length,
+      declaredIds: declaredStageIds,
+      completionStage: completion.stage,
+      outputs,
+      version2,
+      problems,
+    },
+  );
 
   if (problems.items.length === 0) {
     try {
@@ -164,7 +176,10 @@ export function collectWorkflowDraft(data: Record<string, unknown>, source: stri
         downstream: downstream.entries,
         outputNames: outputs.names,
         outputsComplete: outputs.complete,
-        catalogEntry: catalogEntryOfDraft(source, idUnit, stagesDeclared, requires, downstream.entries),
+        catalogEntry: catalogEntryOfDraft(
+          source,
+          { id: idUnit, stagesDeclared, requires, downstream: downstream.entries },
+        ),
       };
     } catch (error) {
       problems.add(error, draftPathFor(error instanceof Error ? error.message : String(error), data));
@@ -184,17 +199,19 @@ export function collectWorkflowDraft(data: Record<string, unknown>, source: stri
     outputNames: outputs.names,
     outputsComplete: outputs.complete,
     unknownKeys,
-    catalogEntry: catalogEntryOfDraft(source, idUnit, stagesDeclared, requires, downstream.entries),
+    catalogEntry: catalogEntryOfDraft(source, { id: idUnit, stagesDeclared, requires, downstream: downstream.entries }),
   };
 }
 
-export function catalogEntryOfDraft(
-  file: string,
-  id: DraftUnit<string>,
-  stagesDeclared: boolean,
-  requires: DraftUnit<WorkflowRequires | null>,
-  downstream: readonly DraftDownstreamEntry[],
-): WorkflowCatalogEntry {
+export interface DraftCatalogParts {
+  readonly id: DraftUnit<string>;
+  readonly stagesDeclared: boolean;
+  readonly requires: DraftUnit<WorkflowRequires | null>;
+  readonly downstream: readonly DraftDownstreamEntry[];
+}
+
+export function catalogEntryOfDraft(file: string, parts: DraftCatalogParts): WorkflowCatalogEntry {
+  const { id, stagesDeclared, requires, downstream } = parts;
   return {
     file,
     document: null,

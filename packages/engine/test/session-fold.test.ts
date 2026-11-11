@@ -55,7 +55,7 @@ function eventsText(workspace: string, sessionId: string): string {
 
 test('the fold matches status.json after each session write', () => {
   const workspace = workspaceWithPlan();
-  const sessionId = createWorkflowSession(workspace, 'plan', 'Write a plan');
+  const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
   const created = expectFold(workspace, sessionId);
   expect(created.status).toBe('active');
   expect(created.workflow_id).toBe('plan');
@@ -67,21 +67,13 @@ test('the fold matches status.json after each session write', () => {
 
   const store = new SessionStore(workspace);
   const [planRecord, , planContext] = store.loadOrCreate(
-    'fake',
-    'fake-model',
-    {},
-    workspace,
-    sessionId,
-    'plan',
-    null,
-    null,
-    'plan the work',
+    { client: 'fake', model: 'fake-model', options: {}, workspace, sessionId, stageId: 'plan', stageAttempt: null, executionOrder: null, prompt: 'plan the work' },
   );
   const started = expectFold(workspace, sessionId);
   expect(started.latest_execution_id).toBe(planContext.executionId);
   expect(started.latest_execution_status).toBe('running');
 
-  store.saveExecution(planContext, planRecord, 'running');
+  store.saveExecution(planContext, planRecord, { status: 'running' });
   expectFold(workspace, sessionId);
   const runningStatus = readFileSync(path.join(sessionDirectory(workspace, sessionId), 'status.json'), 'utf8');
   store.recordProviderEvent(planContext, {
@@ -135,25 +127,17 @@ test('the fold matches status.json after each session write', () => {
   expect(stream).toContain('provider.heartbeat');
 
   writeFileSync(path.join(planContext.artifactDirectory, 'plan.md'), '# Plan\n', 'utf8');
-  store.saveExecution(planContext, planRecord, 'completed', null, new StageOutcome('complete'));
+  store.saveExecution(planContext, planRecord, { status: 'completed', outcome: new StageOutcome('complete') });
   const planned = expectFold(workspace, sessionId);
   expect(planned.status).toBe('active');
   expect(planned.running_stages).toBeUndefined();
   expect(planned.current_stage).toBeUndefined();
 
   const [reviewRecord, , reviewContext] = store.loadOrCreate(
-    'fake',
-    'fake-model',
-    {},
-    workspace,
-    sessionId,
-    'review-plan',
-    null,
-    null,
-    'review the plan',
+    { client: 'fake', model: 'fake-model', options: {}, workspace, sessionId, stageId: 'review-plan', stageAttempt: null, executionOrder: null, prompt: 'review the plan' },
   );
   expectFold(workspace, sessionId);
-  store.saveExecution(reviewContext, reviewRecord, 'completed', null, new StageOutcome('complete', null, 'approved'));
+  store.saveExecution(reviewContext, reviewRecord, { status: 'completed', outcome: new StageOutcome('complete', { decision: 'approved' }) });
   const published = expectFold(workspace, sessionId);
   expect(published.status).toBe('completed');
   expect(published.outputs).toMatchObject({
@@ -189,7 +173,7 @@ test('the fold matches status.json for every workflow fixture', () => {
     writeFileSync(path.join(workflows, name), readFileSync(path.join(fixtures, name), 'utf8'), 'utf8');
     writeSessionConfig(workspace);
     const workflowId = name.slice(0, -'.yaml'.length);
-    const sessionId = createWorkflowSession(workspace, workflowId, 'Write the change');
+    const sessionId = createWorkflowSession(workspace, workflowId, { task: 'Write the change' });
     expectFold(workspace, sessionId);
     freezeSessionTask(workspace, sessionId);
     expectFold(workspace, sessionId);
@@ -197,7 +181,7 @@ test('the fold matches status.json for every workflow fixture', () => {
     const stageId = Object.values(workflow.stages)[0]?.id;
     if (!stageId) throw new Error(`${workflowId} declares no stages.`);
     const store = new SessionStore(workspace);
-    const [, , context] = store.loadOrCreate('fake', 'model', {}, workspace, sessionId, stageId, null, null, 'work');
+    const [, , context] = store.loadOrCreate({ client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId, stageAttempt: null, executionOrder: null, prompt: 'work' });
     const started = expectFold(workspace, sessionId);
     expect(started.latest_execution_id).toBe(context.executionId);
     expect(started.latest_execution_status).toBe('running');
@@ -206,7 +190,7 @@ test('the fold matches status.json for every workflow fixture', () => {
 
 test('a directory created before execution.json leaves no event and is not reused', () => {
   const workspace = workspaceWithPlan();
-  const sessionId = createWorkflowSession(workspace, 'plan', 'Write a plan');
+  const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
   const directory = sessionDirectory(workspace, sessionId);
   const before = eventsText(workspace, sessionId);
   mkdirSync(path.join(directory, 'executions', '0001-plan--attempt-01'), { recursive: true });
@@ -214,7 +198,7 @@ test('a directory created before execution.json leaves no event and is not reuse
   const store = new SessionStore(workspace);
   const lock = SessionLock.acquire(directory);
   try {
-    const [, , context] = store.loadOrCreate('fake', 'model', {}, workspace, sessionId, 'plan', null, null, 'plan');
+    const [, , context] = store.loadOrCreate({ client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'plan', stageAttempt: null, executionOrder: null, prompt: 'plan' });
     expect(context.executionId).toBe('0002-plan--attempt-02');
     expect(eventsText(workspace, sessionId)).not.toContain('0001-plan--attempt-01');
     expect(eventsText(workspace, sessionId)).toContain(`"execution_id":"${context.executionId}"`);
@@ -225,10 +209,10 @@ test('a directory created before execution.json leaves no event and is not reuse
 
 test('repair rebuilds a running execution whose started event is missing', () => {
   const workspace = workspaceWithPlan();
-  const sessionId = createWorkflowSession(workspace, 'plan', 'Write a plan');
+  const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
   const directory = sessionDirectory(workspace, sessionId);
   const store = new SessionStore(workspace);
-  const [, , context] = store.loadOrCreate('fake', 'model', {}, workspace, sessionId, 'plan', null, null, 'plan');
+  const [, , context] = store.loadOrCreate({ client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'plan', stageAttempt: null, executionOrder: null, prompt: 'plan' });
   const kept = eventsText(workspace, sessionId)
     .split('\n')
     .filter((line) => line.includes('"event":"session.created"'))
@@ -244,12 +228,12 @@ test('repair rebuilds a running execution whose started event is missing', () =>
 
 test('repair rebuilds a truncated schema 2 status.json', () => {
   const workspace = workspaceWithPlan();
-  const sessionId = createWorkflowSession(workspace, 'plan', 'Write a plan');
+  const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
   freezeSessionTask(workspace, sessionId);
   const store = new SessionStore(workspace);
-  const [record, , context] = store.loadOrCreate('fake', 'model', {}, workspace, sessionId, 'plan', null, null, 'plan');
+  const [record, , context] = store.loadOrCreate({ client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'plan', stageAttempt: null, executionOrder: null, prompt: 'plan' });
   writeFileSync(path.join(context.artifactDirectory, 'plan.md'), '# Plan\n', 'utf8');
-  store.saveExecution(context, record, 'completed', null, new StageOutcome('complete'));
+  store.saveExecution(context, record, { status: 'completed', outcome: new StageOutcome('complete') });
   const intact = readStatus(workspace, sessionId);
   writeFileSync(path.join(sessionDirectory(workspace, sessionId), 'status.json'), '{', 'utf8');
   const restored = repairSession(workspace, sessionId);
@@ -261,24 +245,16 @@ test('repair rebuilds a truncated schema 2 status.json', () => {
 
 test('continue repairs a status.json that missed its event, and refuses a destroyed one', async () => {
   const workspace = workspaceWithPlan();
-  const sessionId = createWorkflowSession(workspace, 'plan', 'Write a plan');
+  const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
   freezeSessionTask(workspace, sessionId);
   const store = new SessionStore(workspace);
-  const [record, , context] = store.loadOrCreate('fake', 'model', {}, workspace, sessionId, 'plan', null, null, 'plan');
+  const [record, , context] = store.loadOrCreate({ client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'plan', stageAttempt: null, executionOrder: null, prompt: 'plan' });
   writeFileSync(path.join(context.artifactDirectory, 'plan.md'), '# Plan\n', 'utf8');
-  store.saveExecution(context, record, 'completed', null, new StageOutcome('complete'));
+  store.saveExecution(context, record, { status: 'completed', outcome: new StageOutcome('complete') });
   const [reviewRecord, , reviewContext] = store.loadOrCreate(
-    'fake',
-    'model',
-    {},
-    workspace,
-    sessionId,
-    'review-plan',
-    null,
-    null,
-    'review',
+    { client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'review-plan', stageAttempt: null, executionOrder: null, prompt: 'review' },
   );
-  store.saveExecution(reviewContext, reviewRecord, 'completed', null, new StageOutcome('complete', null, 'approved'));
+  store.saveExecution(reviewContext, reviewRecord, { status: 'completed', outcome: new StageOutcome('complete', { decision: 'approved' }) });
   const directory = sessionDirectory(workspace, sessionId);
   const intact = readStatus(workspace, sessionId);
   expect(intact.status).toBe('completed');
@@ -333,12 +309,12 @@ test('continue repairs a status.json that missed its event, and refuses a destro
 
 test('a schema 2 repair rebuilds missing execution events and ignores a forged start', () => {
   const workspace = workspaceWithPlan();
-  const sessionId = createWorkflowSession(workspace, 'plan', 'Write a plan');
+  const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
   const directory = sessionDirectory(workspace, sessionId);
   markSchema2(workspace, sessionId);
   const store = new SessionStore(workspace);
-  const [record, , context] = store.loadOrCreate('fake', 'model', {}, workspace, sessionId, 'plan', null, null, 'plan');
-  store.saveExecution(context, record, 'completed', null, new StageOutcome('complete'));
+  const [record, , context] = store.loadOrCreate({ client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'plan', stageAttempt: null, executionOrder: null, prompt: 'plan' });
+  store.saveExecution(context, record, { status: 'completed', outcome: new StageOutcome('complete') });
   const kept = eventsText(workspace, sessionId)
     .split('\n')
     .filter((line) => line.includes('session.created'))
@@ -361,7 +337,7 @@ test('a schema 2 repair rebuilds missing execution events and ignores a forged s
   mkdirSync(path.join(directory, 'executions', '0003-plan--attempt-01'));
   const folded = readFoldedStatus(workspace, directory);
   expect(folded.latest_execution_id).not.toBe('0005-plan--attempt-01');
-  const [, , next] = store.loadOrCreate('fake', 'model', {}, workspace, sessionId, 'plan', null, null, 'again');
+  const [, , next] = store.loadOrCreate({ client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'plan', stageAttempt: null, executionOrder: null, prompt: 'again' });
   expect(next.executionId).toBe('0006-plan--attempt-02');
   expect(statusDriftMessage(workspace, sessionId)).toBeNull();
   const drifted = readStatus(workspace, sessionId);
@@ -372,10 +348,10 @@ test('a schema 2 repair rebuilds missing execution events and ignores a forged s
 
 test('a new running execution does not keep the previous current stage', () => {
   const workspace = workspaceWithPlan();
-  const sessionId = createWorkflowSession(workspace, 'plan', 'Write a plan');
+  const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
   const directory = sessionDirectory(workspace, sessionId);
   const store = new SessionStore(workspace);
-  const [record, , context] = store.loadOrCreate('fake', 'model', {}, workspace, sessionId, 'plan', null, null, 'plan');
+  const [record, , context] = store.loadOrCreate({ client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'plan', stageAttempt: null, executionOrder: null, prompt: 'plan' });
   expect(readExecutions(directory).find((execution) => execution.executionId === context.executionId)?.client).toBe('fake');
   appendLifecycleEvent(directory, {
     event: 'provider.stage_started',
@@ -384,17 +360,9 @@ test('a new running execution does not keep the previous current stage', () => {
     stageId: 'plan',
     summary: 'old',
   });
-  store.saveExecution(context, record, 'completed', null, new StageOutcome('complete'));
+  store.saveExecution(context, record, { status: 'completed', outcome: new StageOutcome('complete') });
   const [, , next] = store.loadOrCreate(
-    'fake',
-    'model',
-    {},
-    workspace,
-    sessionId,
-    'review-plan',
-    null,
-    null,
-    'review',
+    { client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'review-plan', stageAttempt: null, executionOrder: null, prompt: 'review' },
   );
   const started = readStatus(workspace, sessionId);
   expect(started.latest_execution_id).toBe(next.executionId);
@@ -429,7 +397,7 @@ test('a new running execution does not keep the previous current stage', () => {
 
 test('junk files in outputs are not recorded', () => {
   const workspace = workspaceWithPlan();
-  const sessionId = createWorkflowSession(workspace, 'plan', 'Write a plan');
+  const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
   markSchema2(workspace, sessionId);
   const outputs = path.join(sessionDirectory(workspace, sessionId), 'outputs');
   mkdirSync(outputs, { recursive: true });
@@ -450,7 +418,7 @@ test('junk files in outputs are not recorded', () => {
 
 test('a v1 show does not report fold drift', () => {
   const workspace = workspaceWithPlan();
-  const sessionId = createWorkflowSession(workspace, 'plan', 'Write a plan');
+  const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
   markSchema1(workspace, sessionId);
   const status = readStatus(workspace, sessionId);
   status.task = 'changed by hand';
@@ -460,7 +428,7 @@ test('a v1 show does not report fold drift', () => {
 
 test('repair refuses a parsed hash the fold would replace', () => {
   const workspace = workspaceWithPlan();
-  const sessionId = createWorkflowSession(workspace, 'plan', 'Write a plan');
+  const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
   freezeSessionTask(workspace, sessionId);
   const directory = sessionDirectory(workspace, sessionId);
   appendLifecycleEvent(directory, {
@@ -475,11 +443,11 @@ test('repair refuses a parsed hash the fold would replace', () => {
 
 test('an execution file without its started event is still visible to a v1 fold', () => {
   const workspace = workspaceWithPlan();
-  const sessionId = createWorkflowSession(workspace, 'plan', 'Write a plan');
+  const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
   markSchema1(workspace, sessionId);
   const store = new SessionStore(workspace);
-  const [record, , context] = store.loadOrCreate('fake', 'model', {}, workspace, sessionId, 'plan', null, null, 'plan');
-  store.saveExecution(context, record, 'failed', 'boom', null);
+  const [record, , context] = store.loadOrCreate({ client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'plan', stageAttempt: null, executionOrder: null, prompt: 'plan' });
+  store.saveExecution(context, record, { status: 'failed', error: 'boom' });
   const directory = sessionDirectory(workspace, sessionId);
   const lines = eventsText(workspace, sessionId)
     .split('\n')
@@ -508,24 +476,16 @@ function markSchema1(workspace: string, sessionId: string): void {
 
 test('a schema 2 fold keeps a finished execution when its started event is appended later', () => {
   const workspace = workspaceWithPlan();
-  const sessionId = createWorkflowSession(workspace, 'plan', 'Write a plan');
+  const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
   markSchema2(workspace, sessionId);
   const store = new SessionStore(workspace);
-  const [record, , context] = store.loadOrCreate('fake', 'model', {}, workspace, sessionId, 'plan', null, null, 'plan');
+  const [record, , context] = store.loadOrCreate({ client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'plan', stageAttempt: null, executionOrder: null, prompt: 'plan' });
   writeFileSync(path.join(context.artifactDirectory, 'plan.md'), '# Plan\n', 'utf8');
-  store.saveExecution(context, record, 'completed', null, new StageOutcome('complete'));
+  store.saveExecution(context, record, { status: 'completed', outcome: new StageOutcome('complete') });
   const [reviewRecord, , reviewContext] = store.loadOrCreate(
-    'fake',
-    'model',
-    {},
-    workspace,
-    sessionId,
-    'review-plan',
-    null,
-    null,
-    'review',
+    { client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'review-plan', stageAttempt: null, executionOrder: null, prompt: 'review' },
   );
-  store.saveExecution(reviewContext, reviewRecord, 'completed', null, new StageOutcome('complete', null, 'approved'));
+  store.saveExecution(reviewContext, reviewRecord, { status: 'completed', outcome: new StageOutcome('complete', { decision: 'approved' }) });
   const directory = sessionDirectory(workspace, sessionId);
   const withoutStarted = eventsText(workspace, sessionId)
     .split('\n')
@@ -554,12 +514,12 @@ test('a schema 2 fold keeps a finished execution when its started event is appen
 
 test('a refused repair does not append reconciled events', () => {
   const workspace = workspaceWithPlan();
-  const sessionId = createWorkflowSession(workspace, 'plan', 'Write a plan');
+  const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
   freezeSessionTask(workspace, sessionId);
   markSchema2(workspace, sessionId);
   const store = new SessionStore(workspace);
-  const [record, , context] = store.loadOrCreate('fake', 'model', {}, workspace, sessionId, 'plan', null, null, 'plan');
-  store.saveExecution(context, record, 'completed', null, new StageOutcome('complete'));
+  const [record, , context] = store.loadOrCreate({ client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'plan', stageAttempt: null, executionOrder: null, prompt: 'plan' });
+  store.saveExecution(context, record, { status: 'completed', outcome: new StageOutcome('complete') });
   const directory = sessionDirectory(workspace, sessionId);
   const stripped = eventsText(workspace, sessionId)
     .split('\n')
@@ -576,12 +536,12 @@ test('a refused repair does not append reconciled events', () => {
 
 test('a repair that would reveal a torn hash does not seal it', () => {
   const workspace = workspaceWithPlan();
-  const sessionId = createWorkflowSession(workspace, 'plan', 'Write a plan');
+  const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
   freezeSessionTask(workspace, sessionId);
   markSchema2(workspace, sessionId);
   const store = new SessionStore(workspace);
-  const [record, , context] = store.loadOrCreate('fake', 'model', {}, workspace, sessionId, 'plan', null, null, 'plan');
-  store.saveExecution(context, record, 'completed', null, new StageOutcome('complete'));
+  const [record, , context] = store.loadOrCreate({ client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'plan', stageAttempt: null, executionOrder: null, prompt: 'plan' });
+  store.saveExecution(context, record, { status: 'completed', outcome: new StageOutcome('complete') });
   const directory = sessionDirectory(workspace, sessionId);
   const eventsPath = path.join(directory, 'events.jsonl');
   const stripped = eventsText(workspace, sessionId)
@@ -604,13 +564,13 @@ test('a repair that would reveal a torn hash does not seal it', () => {
 
 test('a repair seals a torn tail that the fold keeps', () => {
   const workspace = workspaceWithPlan();
-  const sessionId = createWorkflowSession(workspace, 'plan', 'Write a plan');
+  const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
   freezeSessionTask(workspace, sessionId);
   markSchema2(workspace, sessionId);
   const kept = readStatus(workspace, sessionId).task_sha256;
   const store = new SessionStore(workspace);
-  const [record, , context] = store.loadOrCreate('fake', 'model', {}, workspace, sessionId, 'plan', null, null, 'plan');
-  store.saveExecution(context, record, 'completed', null, new StageOutcome('complete'));
+  const [record, , context] = store.loadOrCreate({ client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'plan', stageAttempt: null, executionOrder: null, prompt: 'plan' });
+  store.saveExecution(context, record, { status: 'completed', outcome: new StageOutcome('complete') });
   const directory = sessionDirectory(workspace, sessionId);
   const eventsPath = path.join(directory, 'events.jsonl');
   const stripped = eventsText(workspace, sessionId)
@@ -635,8 +595,8 @@ test('a partial agent status uses the manifest workflow id', () => {
   const workspace = tempDir('migent-fold-');
   const sessionId = createAgentSession(workspace, 'reviewer', 'Think');
   const store = new SessionStore(workspace);
-  const [record, , context] = store.loadOrCreate('fake', 'model', {}, workspace, sessionId, 'reviewer', null, null, 'think');
-  store.saveExecution(context, record, 'completed', null, new StageOutcome('complete'));
+  const [record, , context] = store.loadOrCreate({ client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'reviewer', stageAttempt: null, executionOrder: null, prompt: 'think' });
+  store.saveExecution(context, record, { status: 'completed', outcome: new StageOutcome('complete') });
   const status = readStatus(workspace, sessionId);
   status.workflow_id = 'plan';
   writeFileSync(path.join(sessionDirectory(workspace, sessionId), 'status.json'), JSON.stringify(status), 'utf8');
@@ -648,7 +608,7 @@ test('a partial agent status uses the manifest workflow id', () => {
 
 test('a torn event line does not consume the next sequence number', () => {
   const workspace = workspaceWithPlan();
-  const sessionId = createWorkflowSession(workspace, 'plan', 'Write a plan');
+  const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
   const directory = sessionDirectory(workspace, sessionId);
   const eventsPath = path.join(directory, 'events.jsonl');
   const before = readParsedEvents(eventsPath);
@@ -669,7 +629,7 @@ test('a torn event line does not consume the next sequence number', () => {
 
 test('a parseable torn tail is counted before the next sequence', () => {
   const workspace = workspaceWithPlan();
-  const sessionId = createWorkflowSession(workspace, 'plan', 'Write a plan');
+  const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
   const directory = sessionDirectory(workspace, sessionId);
   const eventsPath = path.join(directory, 'events.jsonl');
   const previousSeq = readParsedEvents(eventsPath).at(-1)?.seq ?? 0;
@@ -697,7 +657,7 @@ test('a parseable torn tail is counted before the next sequence', () => {
 
 test('a parseable torn stream line counts toward the next sequence', () => {
   const workspace = workspaceWithPlan();
-  const sessionId = createWorkflowSession(workspace, 'plan', 'Write a plan');
+  const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
   const directory = sessionDirectory(workspace, sessionId);
   const previousSeq = readParsedEvents(path.join(directory, 'events.jsonl')).at(-1)?.seq ?? 0;
   const executionDirectory = path.join(directory, 'executions', '0001-plan--attempt-01');
@@ -726,7 +686,7 @@ test('a parseable torn stream line counts toward the next sequence', () => {
 
 test('a missing workflow file does not stop the fold', () => {
   const workspace = workspaceWithPlan();
-  const sessionId = createWorkflowSession(workspace, 'plan', 'Write a plan');
+  const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
   const directory = sessionDirectory(workspace, sessionId);
   const manifestPath = path.join(directory, 'manifest.yaml');
   writeFileSync(
@@ -738,21 +698,13 @@ test('a missing workflow file does not stop the fold', () => {
   status.workflow_path = 'missing-workflow.yaml';
   writeFileSync(path.join(directory, 'status.json'), JSON.stringify(status), 'utf8');
   const store = new SessionStore(workspace);
-  const [record, , context] = store.loadOrCreate('fake', 'model', {}, workspace, sessionId, 'plan', null, null, 'plan');
+  const [record, , context] = store.loadOrCreate({ client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'plan', stageAttempt: null, executionOrder: null, prompt: 'plan' });
   writeFileSync(path.join(context.artifactDirectory, 'plan.md'), '# Plan\n', 'utf8');
-  store.saveExecution(context, record, 'completed', null, new StageOutcome('complete'));
+  store.saveExecution(context, record, { status: 'completed', outcome: new StageOutcome('complete') });
   const [reviewRecord, , reviewContext] = store.loadOrCreate(
-    'fake',
-    'model',
-    {},
-    workspace,
-    sessionId,
-    'review-plan',
-    null,
-    null,
-    'review',
+    { client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'review-plan', stageAttempt: null, executionOrder: null, prompt: 'review' },
   );
-  store.saveExecution(reviewContext, reviewRecord, 'completed', null, new StageOutcome('complete', null, 'approved'));
+  store.saveExecution(reviewContext, reviewRecord, { status: 'completed', outcome: new StageOutcome('complete', { decision: 'approved' }) });
   const folded = readStatus(workspace, sessionId);
   expect(folded.status).toBe('completed');
   expect(folded.workflow_id).toBe('plan');
@@ -761,24 +713,16 @@ test('a missing workflow file does not stop the fold', () => {
 
 test('a schema 2 fold keeps an earlier decision while a later execution has none', () => {
   const workspace = workspaceWithPlan();
-  const sessionId = createWorkflowSession(workspace, 'plan', 'Write a plan');
+  const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
   const store = new SessionStore(workspace);
-  const [record, , context] = store.loadOrCreate('fake', 'model', {}, workspace, sessionId, 'plan', null, null, 'plan');
+  const [record, , context] = store.loadOrCreate({ client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'plan', stageAttempt: null, executionOrder: null, prompt: 'plan' });
   writeFileSync(path.join(context.artifactDirectory, 'plan.md'), '# Plan\n', 'utf8');
-  store.saveExecution(context, record, 'completed', null, new StageOutcome('complete'));
+  store.saveExecution(context, record, { status: 'completed', outcome: new StageOutcome('complete') });
   const [reviewRecord, , reviewContext] = store.loadOrCreate(
-    'fake',
-    'model',
-    {},
-    workspace,
-    sessionId,
-    'review-plan',
-    null,
-    null,
-    'review',
+    { client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'review-plan', stageAttempt: null, executionOrder: null, prompt: 'review' },
   );
-  store.saveExecution(reviewContext, reviewRecord, 'completed', null, new StageOutcome('complete', null, 'revise'));
-  const [, , again] = store.loadOrCreate('fake', 'model', {}, workspace, sessionId, 'plan', null, null, 'again');
+  store.saveExecution(reviewContext, reviewRecord, { status: 'completed', outcome: new StageOutcome('complete', { decision: 'revise' }) });
+  const [, , again] = store.loadOrCreate({ client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'plan', stageAttempt: null, executionOrder: null, prompt: 'again' });
   markSchema2(workspace, sessionId);
   const folded = readFoldedStatus(workspace, sessionDirectory(workspace, sessionId));
   expect(folded.latest_execution_id).toBe(again.executionId);
@@ -789,39 +733,23 @@ test('a schema 2 fold keeps an earlier decision while a later execution has none
 
 test('a blocked stage stays blocked when a later sibling completes', () => {
   const workspace = workspaceWithPlan();
-  const sessionId = createWorkflowSession(workspace, 'plan', 'Write a plan');
+  const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
   const store = new SessionStore(workspace);
   let noted: string | null = null;
   try {
     const [planRecord, , plan] = store.loadOrCreate(
-      'fake',
-      'model',
-      {},
-      workspace,
-      sessionId,
-      'plan',
-      null,
-      null,
-      'plan',
+      { client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'plan', stageAttempt: null, executionOrder: null, prompt: 'plan' },
     );
     // The first save would block the session, and loadOrCreate refuses a blocked session.
     noted = plan.executionId;
     noteInFlightExecution(sessionId, plan.executionId);
     const [reviewRecord, , review] = store.loadOrCreate(
-      'fake',
-      'model',
-      {},
-      workspace,
-      sessionId,
-      'review-plan',
-      null,
-      null,
-      'review',
+      { client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'review-plan', stageAttempt: null, executionOrder: null, prompt: 'review' },
     );
     clearInFlightExecution(sessionId, plan.executionId);
     noted = null;
-    store.saveExecution(plan, planRecord, 'completed', null, new StageOutcome('blocked', 'plan gate'));
-    store.saveExecution(review, reviewRecord, 'completed', null, new StageOutcome('complete', null, 'approved'));
+    store.saveExecution(plan, planRecord, { status: 'completed', outcome: new StageOutcome('blocked', { blocker: 'plan gate' }) });
+    store.saveExecution(review, reviewRecord, { status: 'completed', outcome: new StageOutcome('complete', { decision: 'approved' }) });
     const status = expectFold(workspace, sessionId);
     expect(status.status).toBe('blocked');
     expect(status.latest_execution_id).toBe(review.executionId);
@@ -835,38 +763,22 @@ test('a blocked stage stays blocked when a later sibling completes', () => {
 
 test('a later complete execution of a blocked stage leaves a non-completion stage active', () => {
   const workspace = workspaceWithPlan();
-  const sessionId = createWorkflowSession(workspace, 'plan', 'Write a plan');
+  const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
   const store = new SessionStore(workspace);
   let noted: string | null = null;
   try {
     const [blockedRecord, , blocked] = store.loadOrCreate(
-      'fake',
-      'model',
-      {},
-      workspace,
-      sessionId,
-      'plan',
-      null,
-      null,
-      'plan',
+      { client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'plan', stageAttempt: null, executionOrder: null, prompt: 'plan' },
     );
     noted = blocked.executionId;
     noteInFlightExecution(sessionId, blocked.executionId);
     const [doneRecord, , done] = store.loadOrCreate(
-      'fake',
-      'model',
-      {},
-      workspace,
-      sessionId,
-      'plan',
-      null,
-      null,
-      'again',
+      { client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'plan', stageAttempt: null, executionOrder: null, prompt: 'again' },
     );
     clearInFlightExecution(sessionId, blocked.executionId);
     noted = null;
-    store.saveExecution(blocked, blockedRecord, 'completed', null, new StageOutcome('blocked', 'plan gate'));
-    store.saveExecution(done, doneRecord, 'completed', null, new StageOutcome('complete'));
+    store.saveExecution(blocked, blockedRecord, { status: 'completed', outcome: new StageOutcome('blocked', { blocker: 'plan gate' }) });
+    store.saveExecution(done, doneRecord, { status: 'completed', outcome: new StageOutcome('complete') });
     const status = expectFold(workspace, sessionId);
     expect(status.status).toBe('active');
     expect(status.latest_execution_id).toBe(done.executionId);
@@ -879,38 +791,22 @@ test('a later complete execution of a blocked stage leaves a non-completion stag
 
 test('repair of two terminal executions appends the blocked session status', () => {
   const workspace = workspaceWithPlan();
-  const sessionId = createWorkflowSession(workspace, 'plan', 'Write a plan');
+  const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
   const store = new SessionStore(workspace);
   let noted: string | null = null;
   try {
     const [planRecord, , plan] = store.loadOrCreate(
-      'fake',
-      'model',
-      {},
-      workspace,
-      sessionId,
-      'plan',
-      null,
-      null,
-      'plan',
+      { client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'plan', stageAttempt: null, executionOrder: null, prompt: 'plan' },
     );
     noted = plan.executionId;
     noteInFlightExecution(sessionId, plan.executionId);
     const [reviewRecord, , review] = store.loadOrCreate(
-      'fake',
-      'model',
-      {},
-      workspace,
-      sessionId,
-      'review-plan',
-      null,
-      null,
-      'review',
+      { client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'review-plan', stageAttempt: null, executionOrder: null, prompt: 'review' },
     );
     clearInFlightExecution(sessionId, plan.executionId);
     noted = null;
-    store.saveExecution(plan, planRecord, 'completed', null, new StageOutcome('blocked', 'plan gate'));
-    store.saveExecution(review, reviewRecord, 'completed', null, new StageOutcome('complete', null, 'approved'));
+    store.saveExecution(plan, planRecord, { status: 'completed', outcome: new StageOutcome('blocked', { blocker: 'plan gate' }) });
+    store.saveExecution(review, reviewRecord, { status: 'completed', outcome: new StageOutcome('complete', { decision: 'approved' }) });
     const directory = sessionDirectory(workspace, sessionId);
     const kept = eventsText(workspace, sessionId)
       .split('\n')

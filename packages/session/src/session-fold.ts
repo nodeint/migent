@@ -49,7 +49,7 @@ function applyManualCompletion(draft: StatusDraft, events: readonly ParsedEvent[
   if (event === null) return;
   draft.set('status', 'completed');
   draft.set('completion_method', 'manual');
-  draft.applyTerminalFields('completed', null, null);
+  draft.applyTerminalFields('completed', { source: null, reason: null });
   draft.clear('questions');
   draft.set('manual_completion', { completed_at: event.timestamp, from: textOr(event.data.from) });
   draft.set('updated_at', later(textOr(draft.get('updated_at')), event.timestamp));
@@ -263,7 +263,7 @@ function applySchema2Execution(
       if (sessionStatus === 'completed' && event.data.manual !== true) {
         draft.set('completion_method', 'agent');
       }
-      draft.applyTerminalFields(sessionStatus, null, textOr(event.data.reason));
+      draft.applyTerminalFields(sessionStatus, { source: null, reason: textOr(event.data.reason) });
       return true;
     }
     return false;
@@ -367,28 +367,23 @@ function publishExecutionStatus(
     stageId: row.stageId,
     blocker: textOr(inputs.executions.find((execution) => execution.executionId === row.executionId)?.outcome?.blocker),
   }));
-  draft.applyTerminalFields(
-    sessionStatus,
-    {
+  draft.applyTerminalFields(sessionStatus, {
+    source: {
       executionId: latest.executionId,
       stageId: latest.stageId,
       blocker: textOr(latest.outcome?.blocker),
     },
-    null,
+    reason: null,
     blocked,
-  );
-  const resumedAt = applyBlockedResume(
-    draft,
-    inputs.events,
-    [...blocked, ...questions].map((row) => row.executionId),
-    later(updatedAt, latest.completedAt ?? latest.createdAt),
-  );
-  return applyCancelledReply(
-    draft,
-    inputs.events,
-    latestPerStage(rows).filter((row) => row.status === 'cancelled').map((row) => row.executionId),
-    resumedAt,
-  );
+  });
+  const resumedAt = applyBlockedResume(draft, inputs.events, {
+    blockedIds: [...blocked, ...questions].map((row) => row.executionId),
+    updatedAt: later(updatedAt, latest.completedAt ?? latest.createdAt),
+  });
+  return applyCancelledReply(draft, inputs.events, {
+    cancelledIds: latestPerStage(rows).filter((row) => row.status === 'cancelled').map((row) => row.executionId),
+    updatedAt: resumedAt,
+  });
 }
 
 /**
@@ -399,9 +394,9 @@ function publishExecutionStatus(
 function applyCancelledReply(
   draft: StatusDraft,
   events: readonly ParsedEvent[],
-  cancelledIds: readonly string[],
-  updatedAt: string | null,
+  stopped: { cancelledIds: readonly string[]; updatedAt: string | null },
 ): string | null {
+  const { cancelledIds, updatedAt } = stopped;
   const current = draft.get('status');
   if ((current !== 'cancelled' && current !== 'blocked' && current !== 'question') || cancelledIds.length === 0) return updatedAt;
   let next = updatedAt;
@@ -415,7 +410,7 @@ function applyCancelledReply(
   }
   if (replied === 0) return updatedAt;
   draft.set('status', 'active');
-  draft.applyTerminalFields('active', null, null);
+  draft.applyTerminalFields('active', { source: null, reason: null });
   return next;
 }
 
@@ -438,9 +433,9 @@ function statusExecutionsFromFolds(executions: readonly FoldExecution[]): Status
 function applyBlockedResume(
   draft: StatusDraft,
   events: readonly ParsedEvent[],
-  blockedIds: readonly string[],
-  updatedAt: string | null,
+  stopped: { blockedIds: readonly string[]; updatedAt: string | null },
 ): string | null {
+  const { blockedIds, updatedAt } = stopped;
   const current = draft.get('status');
   if ((current !== 'blocked' && current !== 'question') || blockedIds.length === 0) return updatedAt;
   const resumes: ParsedEvent[] = [];
@@ -455,7 +450,7 @@ function applyBlockedResume(
   }
   if (resumes.length === 0) return updatedAt;
   draft.set('status', 'active');
-  draft.applyTerminalFields('active', null, null);
+  draft.applyTerminalFields('active', { source: null, reason: null });
   let next = updatedAt;
   for (const resume of resumes) next = later(next, resume.timestamp);
   return next;

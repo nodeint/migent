@@ -142,7 +142,7 @@ test('start adopts a verified instance, status requires auth, and stop asks the 
   expect(again.token).toBe(endpoint.token);
   expect(again.instanceId).toBe(endpoint.instanceId);
   expect(again.pid).toBe(endpoint.pid);
-  await callService(endpoint.host, endpoint.port, endpoint.token, 'GET', '/v1/health');
+  await callService(endpoint, { method: 'GET', path: '/v1/health' });
   expect(await queryEndpoint(home)).toEqual({
     state: 'alive',
     hello: { instance_id: endpoint.instanceId, pid: endpoint.pid },
@@ -150,7 +150,7 @@ test('start adopts a verified instance, status requires auth, and stop asks the 
   expect(await unauthenticatedInstance(endpoint.port)).toBeNull();
   const killed: number[] = [];
   svc.killPid = (pid) => killed.push(pid);
-  const stopped = await stop(home, 2, 0.4);
+  const stopped = await stop(home, { termGraceSec: 2, killGraceSec: 0.4 });
   expect(stopped.outcome).toBe('stopped');
   expect(killed).toEqual([]);
   expect(await waitFor(() => !pidAlive(endpoint.pid), 2)).toBe(true);
@@ -238,7 +238,7 @@ test('stop ends a foreground service through its endpoint', async () => {
   expect(await waitFor(() => statExists(serviceJsonPath(home)), 5)).toBe(true);
   const killed: number[] = [];
   svc.killPid = (pid) => killed.push(pid);
-  const result = await stop(home, 2, 0.2);
+  const result = await stop(home, { termGraceSec: 2, killGraceSec: 0.2 });
   expect(result.outcome).toBe('stopped');
   expect(killed).toEqual([]);
   await Promise.race([worker, sleep(5).then(() => Promise.reject(new Error('foreground did not stop')))]);
@@ -268,7 +268,7 @@ test('child exits when the service endpoint is held and leaves the file', async 
   const home = freshHome();
   const original = Buffer.from('{"untouched": true}\n');
   writeFileSync(serviceJsonPath(home), original);
-  const held = await ServiceEndpointServer.listen(home, { instance_id: 'holder', pid: process.pid }, 't', () => undefined);
+  const held = await ServiceEndpointServer.listen(home, { instance_id: 'holder', pid: process.pid }, { token: 't', onStop: () => undefined });
   expect(held).not.toBeNull();
   const child = await launchChild(home, 0);
   children.push(child.pid);
@@ -348,7 +348,7 @@ test('parent death before publish leaves service json absent', async () => {
   svc.beforeServiceJsonUnlink = () => {
     called.push(true);
   };
-  const result = await stop(home, 0.2, 0.2);
+  const result = await stop(home, { termGraceSec: 0.2, killGraceSec: 0.2 });
   expect(result.outcome).toBe('absent');
   expect(called).toEqual([]);
   expect(statExists(serviceJsonPath(home))).toBe(false);
@@ -364,13 +364,13 @@ test('stop refuses an endpoint that names another instance', async () => {
   const endpoint = new ScriptedEndpoint(record);
   endpoint.state = { state: 'alive', hello: { instance_id: 'someone-else', pid: 7 } };
   endpoint.install();
-  const result = await stop(home, 0.2, 0.2);
+  const result = await stop(home, { termGraceSec: 0.2, killGraceSec: 0.2 });
   expect(result.outcome).toBe('error');
   expect(endpoint.stopRequests).toBe(0);
   expect(endpoint.killed).toEqual([]);
   expect(readFileSync(serviceJsonPath(home))).toEqual(before);
   endpoint.state = { state: 'unknown' };
-  expect((await stop(home, 0.2, 0.2)).outcome).toBe('error');
+  expect((await stop(home, { termGraceSec: 0.2, killGraceSec: 0.2 })).outcome).toBe('error');
   expect(readFileSync(serviceJsonPath(home))).toEqual(before);
 });
 
@@ -381,7 +381,7 @@ test('stop unlinks when the service exits on request', async () => {
   const endpoint = new ScriptedEndpoint(record);
   endpoint.goneOnStop = true;
   endpoint.install();
-  const result = await stop(home, 0.2, 0.2);
+  const result = await stop(home, { termGraceSec: 0.2, killGraceSec: 0.2 });
   expect(result.outcome).toBe('stopped');
   expect(endpoint.stopRequests).toBe(1);
   expect(endpoint.killed).toEqual([]);
@@ -394,7 +394,7 @@ test("stop kills the endpoint's own pid when the request does not end it", async
   writeService(home, record);
   const endpoint = new ScriptedEndpoint(record);
   endpoint.install();
-  const result = await stop(home, 0.2, 0.2);
+  const result = await stop(home, { termGraceSec: 0.2, killGraceSec: 0.2 });
   expect(result.outcome).toBe('stopped');
   expect(endpoint.stopRequests).toBe(1);
   expect(endpoint.killed).toEqual([record.pid]);
@@ -414,7 +414,7 @@ test('stop still alive after kill keeps the file', async () => {
     called.push(true);
   };
   const started = monotonic();
-  const result = await stop(home, 0.2, 0.2);
+  const result = await stop(home, { termGraceSec: 0.2, killGraceSec: 0.2 });
   const elapsed = monotonic() - started;
   expect(result.outcome).toBe('error');
   expect(result.message).toContain('still alive');
@@ -446,7 +446,7 @@ test('stop holds start lock across the unlink', async () => {
   const stopped: { outcome: string }[] = [];
   const startedResult: unknown[] = [];
   // No endpoint is listening, so the record is stale.
-  const stopper = stop(home, 0.2, 0.2).then((result) => {
+  const stopper = stop(home, { termGraceSec: 0.2, killGraceSec: 0.2 }).then((result) => {
     stopped.push(result);
   });
   expect(await waitFor(() => entered, 2)).toBe(true);
@@ -472,7 +472,7 @@ test('stop holds start lock across the unlink', async () => {
   expect(document.instance_id).toBe(adopted.instanceId);
   expect(document.instance_id).not.toBe(record.instance_id);
   expect(published).toEqual([adopted.instanceId]);
-  await stop(home, 2, 0.4);
+  await stop(home, { termGraceSec: 2, killGraceSec: 0.4 });
   forget(adopted.pid);
 }, 20000);
 
@@ -487,7 +487,7 @@ test('unlink reread keeps a replaced document', async () => {
     const replacement = serviceRecord({ instance_id: 'replacement-instance', pid: 999111 });
     writeFileSync(serviceJsonPath(directory), `${JSON.stringify(replacement)}\n`);
   };
-  const result = await stop(home, 0.2, 0.2);
+  const result = await stop(home, { termGraceSec: 0.2, killGraceSec: 0.2 });
   expect(readFileSync(serviceJsonPath(home), 'utf8')).toContain('replacement-instance');
   expect(result.outcome).toBe('stopped');
   expect(result.message).toBe('');
@@ -533,7 +533,7 @@ test('a record whose endpoint is gone is replaced without a kill', async () => {
   expect(document.pid).toBe(endpoint.pid);
   expect(killed).toEqual([]);
   expect(threadHolds(startLockPath(home))).toBe(false);
-  await stop(home, 2, 0.4);
+  await stop(home, { termGraceSec: 2, killGraceSec: 0.4 });
   forget(endpoint.pid);
 }, 20000);
 
@@ -578,12 +578,12 @@ test('a live Migent 0.1 service blocks start and stop; a dead one is replaced', 
     throw new Error('start spawned');
   };
   await expect(startDetached(home, 0, { identityTimeout: 0.2 })).rejects.toThrow(/Migent 0\.1/);
-  const stopped = await stop(home, 0.2, 0.2);
+  const stopped = await stop(home, { termGraceSec: 0.2, killGraceSec: 0.2 });
   expect(stopped.outcome).toBe('error');
   expect(stopped.message).toMatch(/Migent 0\.1/);
   expect(readFileSync(serviceJsonPath(home))).toEqual(before);
   svc.pidAlive = () => false;
-  expect((await stop(home, 0.2, 0.2)).outcome).toBe('stopped');
+  expect((await stop(home, { termGraceSec: 0.2, killGraceSec: 0.2 })).outcome).toBe('stopped');
   expect(statExists(serviceJsonPath(home))).toBe(false);
 });
 

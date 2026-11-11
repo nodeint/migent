@@ -86,7 +86,7 @@ test('project doctor reports the note as a warning on a passing workflows check'
 
 test('session doctor reports the same note for a prepared draft', () => {
   const workspace = workspaceWithNotes();
-  const sessionId = createPreparedSession(workspace, 'wave', 'notes');
+  const sessionId = createPreparedSession(workspace, { title: 'wave', workflowId: 'notes' });
   const diagnosis = diagnoseSession(workspace, selectSessionWorkflow(workspace, sessionId), {
     clients: defaultClients(),
     which: whichFound(new Set(['codex', 'grok'])),

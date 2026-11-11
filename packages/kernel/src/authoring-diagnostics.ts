@@ -16,7 +16,7 @@ export function unknownRoleKeyEntries(config: Record<string, unknown>): UnknownK
   if (!isRecord(config.roles)) return [];
   return Object.entries(config.roles).flatMap(([name, role]) =>
     isRecord(role)
-      ? unknownKeyEntries(role, ROLE_KEYS, `roles.${name}`, ['roles', name], ROLE_V4_RENAMED)
+      ? unknownKeyEntries(role, { valid: ROLE_KEYS, location: `roles.${name}`, base: ['roles', name], renamed: ROLE_V4_RENAMED })
       : []);
 }
 

@@ -265,13 +265,24 @@ export function stringifyConfig(config: Record<string, unknown>): string {
   return stringify(config, { lineWidth: 0 });
 }
 
+/** The workflow stage a target is resolved for. */
+export interface StageTargetRef {
+  readonly workflowId: string;
+  readonly stageId: string;
+}
+
+export interface ResolveTargetOptions {
+  readonly override?: ModelOverride;
+  readonly registry?: ClientRegistry;
+}
+
 export function resolveStageTarget(
   workspace: string,
-  workflowId: string,
-  stageId: string,
-  override?: ModelOverride,
-  registry?: ClientRegistry,
+  ref: StageTargetRef,
+  resolve: ResolveTargetOptions = {},
 ): StageTarget {
+  const { workflowId, stageId } = ref;
+  const { override, registry } = resolve;
   const { client, model, options } = normalizeOverride(override);
   if ((client === null) !== (model === null)) {
     throw new ConfigurationError(
@@ -286,31 +297,33 @@ export function resolveStageTarget(
   if (stage === undefined) throw new ConfigurationError(`Stage not found: ${stageId}`);
   if (!isRoleStage(stage)) throw new ConfigurationError(`Stage ${stageId} has no role.`);
   const config = loadWorkspaceConfig(workspace);
-  return resolveStageSpec(config, stage, options, registry);
+  return resolveStageSpec(config, stage, { options, registry });
+}
+
+export interface ResolveSpecOptions {
+  readonly options?: Record<string, string> | null;
+  readonly registry?: ClientRegistry;
 }
 
 export function resolveStageSpec(
   config: Record<string, unknown>,
   stage: RoleStageSpec,
-  options?: Record<string, string> | null,
-  registry?: ClientRegistry,
+  resolve: ResolveSpecOptions = {},
 ): StageTarget {
+  const { options, registry } = resolve;
   const agentField =
     stage.agent !== null ? field('stages', stage.id, 'agent') : field('roles', stage.role, 'agent');
   const declared = resolveRoleCascade(config, stage.role, {
     agent: stage.agent,
     agentField,
     options: stage.options,
-  }, registry);
+    registry,
+  });
   return stageTarget(declared.client, declared.model, mergeOptions(declared.options, options));
 }
 
-export function resolveRoleTarget(
-  workspace: string,
-  role: string,
-  override?: ModelOverride,
-  registry?: ClientRegistry,
-): StageTarget {
+export function resolveRoleTarget(workspace: string, role: string, resolve: ResolveTargetOptions = {}): StageTarget {
+  const { override, registry } = resolve;
   const { client, model, options } = normalizeOverride(override);
   if ((client === null) !== (model === null)) {
     throw new ConfigurationError(
@@ -323,31 +336,33 @@ export function resolveRoleTarget(
     validateRoleKeys(mapping(roles[role], field('roles', role)), role);
     return stageTarget(client, model, { ...(options ?? {}) });
   }
-  return resolveRoleCascade(config, role, { options }, registry);
+  return resolveRoleCascade(config, role, { options, registry });
+}
+
+/** Where client ids are looked up, and the structural index that locates a failure in the source text. */
+export interface ResolveContext {
+  readonly registry?: ClientRegistry;
+  readonly index?: StructuralIndex;
 }
 
 export function loadAgentTarget(
   config: Record<string, unknown>,
   agentName: string,
-  registry?: ClientRegistry,
-  index?: StructuralIndex,
+  context: ResolveContext = {},
 ): StageTarget {
+  const { index } = context;
   rejectLegacyConfigKeys(config);
   const agents = mapping(config.agents, field('agents'), index);
   const label = field('agents', agentName);
-  return loadAgentDefinition(mapping(agents[agentName], label, index), label, registry, index);
+  return loadAgentDefinition(mapping(agents[agentName], label, index), label, context);
 }
 
 /**
  * Named and inline agents share exactly the same validation and option handling. `where` is a
  * dotted label, or a label with its literal key path when a key may itself contain dots.
  */
-export function loadAgentDefinition(
-  value: unknown,
-  where: string | Field,
-  registry?: ClientRegistry,
-  index?: StructuralIndex,
-): StageTarget {
+export function loadAgentDefinition(value: unknown, where: string | Field, context: ResolveContext = {}): StageTarget {
+  const { registry, index } = context;
   const here = toField(where);
   const {label} = here;
   const agentConfig = mapping(value, here, index);
@@ -436,17 +451,19 @@ function inferClient(registry: ClientRegistry | undefined, model: string, typeFi
   );
 }
 
+export interface RoleCascadeOptions extends ResolveContext {
+  readonly agent?: StageAgent | null;
+  readonly agentField?: string | Field | null;
+  readonly options?: Record<string, string> | null;
+}
+
 export function resolveRoleCascade(
   config: Record<string, unknown>,
   roleKey: string,
-  args?: {
-    agent?: StageAgent | null;
-    agentField?: string | Field | null;
-    options?: Record<string, string> | null;
-  },
-  registry?: ClientRegistry,
-  index?: StructuralIndex,
+  args?: RoleCascadeOptions,
 ): StageTarget {
+  const resolve: ResolveContext = args ?? {};
+  const { index } = resolve;
   rejectLegacyConfigKeys(config);
   const roles = mapping(config.roles, field('roles'), index);
   const role = mapping(roles[roleKey], field('roles', roleKey), index);
@@ -458,7 +475,7 @@ export function resolveRoleCascade(
   else selection = stageAgent.kind === 'named' ? stageAgent.name : stageAgent.value;
   let target: StageTarget;
   if (isRecord(selection)) {
-    target = loadAgentDefinition(selection, agentField, registry, index);
+    target = loadAgentDefinition(selection, agentField, resolve);
   } else {
     const name = requiredString(selection, agentField, index);
     if (!isRecord(config.agents) || !Object.hasOwn(config.agents, name)) {
@@ -467,7 +484,7 @@ export function resolveRoleCascade(
         path: agentField.path,
       });
     }
-    target = loadAgentTarget(config, name, registry, index);
+    target = loadAgentTarget(config, name, resolve);
   }
   return stageTarget(
     target.client,

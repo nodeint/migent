@@ -130,7 +130,7 @@ async function captureStderr<T>(fn: () => Promise<T>): Promise<{ value: T; stder
 
 test('an edited workflow still dispatches the frozen stage, model, and role', async () => {
   const workspace = workspaceWithFlow();
-  const sessionId = createWorkflowSession(workspace, 'flow', 'Write the notes');
+  const sessionId = createWorkflowSession(workspace, 'flow', { task: 'Write the notes' });
   const directory = sessionDirectory(workspace, sessionId);
   expect(readFoldedStatus(workspace, directory)).toEqual(readStatus(workspace, sessionId));
   editLiveFiles(workspace);
@@ -161,7 +161,7 @@ function noRunRunner(): AgentToolRunner {
 
 test('refresh adopts the edited route and does not change status by itself', async () => {
   const workspace = workspaceWithFlow();
-  const sessionId = createWorkflowSession(workspace, 'flow', 'Write the notes');
+  const sessionId = createWorkflowSession(workspace, 'flow', { task: 'Write the notes' });
   const directory = sessionDirectory(workspace, sessionId);
   editLiveFiles(workspace);
   const before = readStatus(workspace, sessionId);
@@ -199,7 +199,7 @@ test('refresh adopts the edited route and does not change status by itself', asy
 
 test('a session without a freeze follows the live workflow and refuses refresh', async () => {
   const workspace = workspaceWithFlow();
-  const sessionId = createWorkflowSession(workspace, 'flow', 'Write the notes');
+  const sessionId = createWorkflowSession(workspace, 'flow', { task: 'Write the notes' });
   markSchema1(workspace, sessionId);
   editLiveFiles(workspace);
   const provider = new ScriptedClient(['status: complete\n\ndone']);
@@ -277,7 +277,7 @@ test('a version 2 workflow round-trips through the freeze', () => {
   mkdirSync(path.join(workspace, '.migent', 'workflows'), { recursive: true });
   writeFileSync(path.join(workspace, '.migent', 'workflows', 'flow.yaml'), VERSION2, 'utf8');
   writeFileSync(path.join(workspace, '.migent', 'config.yaml'), FROZEN_CONFIG, 'utf8');
-  const sessionId = createWorkflowSession(workspace, 'flow', 'Write the notes');
+  const sessionId = createWorkflowSession(workspace, 'flow', { task: 'Write the notes' });
   const frozen = loadFrozenWorkflow(sessionDirectory(workspace, sessionId));
   const live = loadNamedWorkflow(workspace, 'flow');
   expect(frozen?.schemaVersion).toBe(2);
@@ -291,7 +291,7 @@ test('a version 2 workflow round-trips through the freeze', () => {
 
 test('refresh does not start a prepared session', async () => {
   const workspace = workspaceWithFlow();
-  const sessionId = createPreparedSession(workspace, 'wave-3', 'flow');
+  const sessionId = createPreparedSession(workspace, { title: 'wave-3', workflowId: 'flow' });
   const freezePath = path.join(sessionDirectory(workspace, sessionId), WORKFLOW_FREEZE_FILE);
   await expect(executeNamedWorkflow(workspace, { sessionId, refreshWorkflow: true }, noRunRunner())).rejects.toThrow(/is prepared/);
   expect(existsSync(freezePath)).toBe(false);
@@ -317,7 +317,7 @@ test('freezes the targets and native effort of the merged config', () => {
     'utf8',
   );
   const sessionDirectory = tempDir('migent-freeze-');
-  writeWorkflowFreeze(sessionDirectory, workspace, loadNamedWorkflow(workspace, 'plan-implement'), registry);
+  writeWorkflowFreeze(sessionDirectory, { workspace, workflow: loadNamedWorkflow(workspace, 'plan-implement'), resolveClient: registry });
   const frozen = readWorkflowFreeze(sessionDirectory);
   expect(frozen?.targets.implement?.model).toBe('grok-local');
   expect(frozen?.targets.implement?.options).toEqual({ 'reasoning-effort': 'medium' });

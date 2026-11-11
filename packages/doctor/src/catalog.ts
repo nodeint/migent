@@ -166,14 +166,26 @@ export function knownModel(model: string, catalog: CliModelCatalog): string {
   return value;
 }
 
+/** The option whose values are wanted for one model, and the catalog already read for it. */
+export interface OptionValuesRequest {
+  readonly source: CatalogSource;
+  readonly name: string;
+  readonly model: string;
+  readonly catalog: CliModelCatalog;
+}
+
+/** The machine a catalog lookup runs on. */
+export interface CatalogEnv {
+  readonly which: Which;
+  readonly runCommand: RunCommand;
+}
+
 export async function loadOptionValues(
-  source: CatalogSource,
-  name: string,
-  model: string,
-  catalog: CliModelCatalog,
-  which: Which,
-  runCommand: RunCommand,
+  request: OptionValuesRequest,
+  env: CatalogEnv,
 ): Promise<readonly string[] | null> {
+  const { source, name, model, catalog } = request;
+  const { which, runCommand } = env;
   const found = catalog.valuesFor(model, name);
   if (found !== null) return found;
   const catalogSource = asCatalog(source);

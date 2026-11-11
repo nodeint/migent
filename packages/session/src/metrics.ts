@@ -39,7 +39,7 @@ export function sessionMetrics(
   if (status.workflow_id === 'agent') {
     agentRole = typeof status.role === 'string' ? status.role : manifestRole(sessionDirectory);
   }
-  return sessionObject(sessionId, status, workflow, executions, events, clients, agentRole);
+  return sessionObject({ sessionId, status, workflow, executions, events }, clients, agentRole);
 }
 
 export function listSessionMetrics(
@@ -110,15 +110,21 @@ export function listSealedMetrics(
   return rows;
 }
 
+/** What one session's metrics are read from. */
+interface SessionSource {
+  readonly sessionId: string;
+  readonly status: Record<string, unknown>;
+  readonly workflow: WorkflowDocument | null;
+  readonly executions: ExecutionRow[];
+  readonly events: ParsedEvent[];
+}
+
 function sessionObject(
-  sessionId: string,
-  status: Record<string, unknown>,
-  workflow: WorkflowDocument | null,
-  executions: ExecutionRow[],
-  events: ParsedEvent[],
+  source: SessionSource,
   clients: ClientRegistry,
   agentRole: string | null,
 ): Record<string, unknown> {
+  const { sessionId, status, workflow, executions, events } = source;
   const known = new Set(executions.map((execution) => execution.id));
   const executionClients = resolveExecutionClients(events, executions, status);
   const turns = normalizeTurns(events, executionClients, clients).filter((turn) => known.has(turn.executionId));
@@ -136,14 +142,13 @@ function sessionObject(
   const executionObjects = executions.map((execution) =>
     executionObject(
       execution,
-      events,
-      turns,
-      cancelled.get(execution.id) ?? 0,
-      anomalies.get(execution.id) ?? { total: 0, accepted: 0 },
-      workflow,
-      routed.get(execution.id) ?? null,
-      agentRole,
-      executionClients.get(execution.id) ?? null,
+      { events, turns, workflow, agentRole },
+      {
+        cancelled: cancelled.get(execution.id) ?? 0,
+        anomalies: anomalies.get(execution.id) ?? { total: 0, accepted: 0 },
+        routedFromId: routed.get(execution.id) ?? null,
+        client: executionClients.get(execution.id) ?? null,
+      },
     ),
   );
   let sessionTotals = newUsageTotals();
@@ -208,17 +213,23 @@ function sessionObject(
   };
 }
 
-function executionObject(
-  execution: ExecutionRow,
-  events: ParsedEvent[],
-  turns: NormalizedTurn[],
-  cancelled: number,
-  anomalies: { total: number; accepted: number },
-  workflow: WorkflowDocument | null,
-  routedFromId: string | null,
-  agentRole: string | null,
-  client: string | null,
-): {
+/** What every execution of the session shares. */
+interface ExecutionShared {
+  readonly events: ParsedEvent[];
+  readonly turns: NormalizedTurn[];
+  readonly workflow: WorkflowDocument | null;
+  readonly agentRole: string | null;
+}
+
+/** What is known about one execution besides its row. */
+interface ExecutionFacts {
+  readonly cancelled: number;
+  readonly anomalies: { total: number; accepted: number };
+  readonly routedFromId: string | null;
+  readonly client: string | null;
+}
+
+function executionObject(execution: ExecutionRow, shared: ExecutionShared, facts: ExecutionFacts): {
   public: Record<string, unknown>;
   turns: number;
   uncaptured_turns: number;
@@ -228,6 +239,8 @@ function executionObject(
   verifyMs: number;
   verifyRed: number;
 } {
+  const { events, turns, workflow, agentRole } = shared;
+  const { cancelled, anomalies, routedFromId, client } = facts;
   const ownEvents = events.filter((event) => event.executionId === execution.id);
   const ownTurns = turns.filter((turn) => turn.executionId === execution.id);
   let totals = newUsageTotals();

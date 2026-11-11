@@ -37,7 +37,7 @@ export async function runRegister(workspacePath: string | null, name: string | n
     printError('Workspace path is not absolute.');
     return 2;
   }
-  return finish('POST', '/v1/workspaces', endpoint, body);
+  return finish(endpoint, { method: 'POST', path: '/v1/workspaces', body });
 }
 
 export async function runWorkspaceList(asJson: boolean): Promise<number> {
@@ -49,7 +49,7 @@ export async function runWorkspaceList(asJson: boolean): Promise<number> {
   let status: number;
   let payload: Record<string, unknown>;
   try {
-    [status, payload] = await workspaceApi.callService(endpoint.host, endpoint.port, endpoint.token, 'GET', '/v1/workspaces');
+    [status, payload] = await workspaceApi.callService(endpoint, { method: 'GET', path: '/v1/workspaces' });
   } catch (error) {
     printError(`Registry request failed: ${errorText(error)}`);
     return 1;
@@ -78,26 +78,18 @@ export async function runRemove(workspaceId: string): Promise<number> {
     printError('Registry service is not running.');
     return 1;
   }
-  return finish('DELETE', `/v1/workspaces/${workspaceId}`, endpoint, null);
+  return finish(endpoint, { method: 'DELETE', path: `/v1/workspaces/${workspaceId}`, body: null });
 }
 
 async function finish(
-  method: string,
-  requestPath: string,
   endpoint: { host: string; port: number; token: string },
-  body: Record<string, unknown> | null,
+  request: { method: string; path: string; body: Record<string, unknown> | null },
 ): Promise<number> {
+  const { method, path: requestPath, body } = request;
   let status: number;
   let payload: Record<string, unknown>;
   try {
-    [status, payload] = await workspaceApi.callService(
-      endpoint.host,
-      endpoint.port,
-      endpoint.token,
-      method,
-      requestPath,
-      body,
-    );
+    [status, payload] = await workspaceApi.callService(endpoint, { method, path: requestPath, body });
   } catch (error) {
     printError(`Registry request failed: ${errorText(error)}`);
     return 1;

@@ -96,7 +96,12 @@ export async function queryEndpoint(home: string, timeoutSec = 1): Promise<Endpo
 }
 
 /** Ask the instance to stop. True when it accepted; it shuts down right after replying. */
-export async function requestStop(home: string, instanceId: string, token: string, timeoutSec = 1): Promise<boolean> {
+export async function requestStop(
+  home: string,
+  target: { instanceId: string; token: string },
+  timeoutSec = 1,
+): Promise<boolean> {
+  const { instanceId, token } = target;
   const { status, reply } = await exchange(serviceEndpointPath(home), timeoutSec, (hello) =>
     hello.instance_id === instanceId ? `stop ${token}` : null,
   );
@@ -145,9 +150,9 @@ export class ServiceEndpointServer {
   public static async listen(
     home: string,
     hello: EndpointHello,
-    token: string,
-    onStop: () => void,
+    stop: { token: string; onStop: () => void },
   ): Promise<ServiceEndpointServer | null> {
+    const { token, onStop } = stop;
     const endpoint = serviceEndpointPath(home);
     const helloLine = `${JSON.stringify(hello)}\n`;
     const server = createServer((socket) => {

@@ -36,12 +36,19 @@ export interface MigrationLayer {
   local?: Record<string, unknown> | null;
 }
 
+export interface MigrateConfigOptions extends MigrationLayer {
+  /** The schema version to migrate to. Defaults to the current version. */
+  current?: number;
+  /** The document that fields are looked up in. Defaults to the migrated config. */
+  context?: Readonly<Record<string, unknown>>;
+}
+
 export function migrateConfig(
   config: Readonly<Record<string, unknown>>,
-  current = SCHEMA_VERSION,
-  context: Readonly<Record<string, unknown>> = config,
-  layers: MigrationLayer = {},
+  options: MigrateConfigOptions = {},
 ): MigrationResult {
+  const { current = SCHEMA_VERSION, context = config } = options;
+  const layers: MigrationLayer = options;
   let version = requireCurrent(documentVersion(config), current, 'config');
   if (version === current) return { document: deepCopyRecord(config), notes: [] };
   let document = deepCopyRecord(config);
@@ -81,11 +88,16 @@ export function migrateConfig(
   return { document, notes };
 }
 
+export interface MigrateWorkflowOptions {
+  /** The schema version to migrate to. Defaults to the current version. */
+  current?: number;
+  clientIds?: readonly string[];
+}
+
 export function migrateWorkflow(
   workflow: Readonly<Record<string, unknown>>,
   config: Readonly<Record<string, unknown>>,
-  current = SCHEMA_VERSION,
-  clientIds: readonly string[] = [],
+  { current = SCHEMA_VERSION, clientIds = [] }: MigrateWorkflowOptions = {},
 ): MigrationResult {
   let version = requireCurrent(documentVersion(workflow), current, 'workflow');
   if (version === current) return { document: deepCopyRecord(workflow), notes: [] };

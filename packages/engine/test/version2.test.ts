@@ -117,7 +117,7 @@ test('a migrated plan workflow publishes the same output as version 1', async ()
 
 test('version 2 two roots run in declaration order', async () => {
   const workspace = workspaceFor('two', `schema_version: 2\n${TWO}`);
-  const sessionId = createWorkflowSession(workspace, 'two', 'Run both');
+  const sessionId = createWorkflowSession(workspace, 'two', { task: 'Run both' });
   const result = await executeNamedWorkflow(
     workspace,
     { workflowId: 'two', sessionId },
@@ -141,7 +141,7 @@ test('version 1 two roots are still ambiguous', async () => {
 
 test('a missing output at quiescence exits 2 and continue reruns the producer', async () => {
   const workspace = workspaceFor('plan', migratedPlan());
-  const sessionId = createWorkflowSession(workspace, 'plan', 'Write a plan');
+  const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
   const provider = new DropPlanProvider([DONE, APPROVED, DONE, APPROVED], ['# plan\n', null, '# plan again\n', null], 1);
   const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
   const first = await executeNamedWorkflow(workspace, { workflowId: 'plan', sessionId }, runner);
@@ -162,7 +162,7 @@ test('a missing output at quiescence exits 2 and continue reruns the producer', 
 
 test('repair records session.completed when a version 2 graph becomes quiet', async () => {
   const workspace = workspaceFor('two', `schema_version: 2\n${TWO}`);
-  const sessionId = createWorkflowSession(workspace, 'two', 'Run both');
+  const sessionId = createWorkflowSession(workspace, 'two', { task: 'Run both' });
   const result = await executeNamedWorkflow(
     workspace,
     { workflowId: 'two', sessionId },
@@ -236,7 +236,7 @@ class StatusProvider extends ScriptedClient {
 // Eight sequential wrapper/provider launches need more time on Windows CI.
 test('a route back to a completed stage dispatches it and its dependents', async () => {
   const workspace = workspaceFor('fixback', FIX_BACK);
-  const sessionId = createWorkflowSession(workspace, 'fixback', 'Fix back');
+  const sessionId = createWorkflowSession(workspace, 'fixback', { task: 'Fix back' });
   const store = new SessionStore(workspace);
   const FIX_PRODUCTION = 'status: complete\ndecision: fix_production\n\nproduction defect';
   const provider = new StatusProvider(
@@ -285,7 +285,7 @@ test('a prepared session captures its baseline at the first dispatch, not at pre
   writeFileSync(path.join(workspace, '.gitignore'), '.migent/config.yaml\n.migent/workflows/\n');
   git('add', '-A');
   git('commit', '-m', 'initial');
-  const sessionId = createPreparedSession(workspace, 'wave-1', 'solo');
+  const sessionId = createPreparedSession(workspace, { title: 'wave-1', workflowId: 'solo' });
   writeFileSync(path.join(workspace, 'later.txt'), 'x\n');
   git('add', '-A');
   git('commit', '-m', 'between prepare and run');

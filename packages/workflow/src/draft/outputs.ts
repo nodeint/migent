@@ -18,14 +18,18 @@ export interface CollectedOutputs {
   indexes: number[];
 }
 
-export function collectOutputs(
-  raw: unknown,
-  stages: readonly DraftStage[],
-  declaredIds: ReadonlySet<string>,
-  problems: DraftProblems,
-  field = 'outputs',
-  basePath: readonly (string | number)[] = [field],
-): CollectedOutputs {
+export interface OutputsContext {
+  readonly declaredIds: ReadonlySet<string>;
+  readonly problems: DraftProblems;
+  /** Name of the section in messages. Defaults to `outputs`. */
+  readonly field?: string;
+  /** Author-coordinate path of the section. Defaults to `[field]`. */
+  readonly basePath?: readonly (string | number)[];
+}
+
+export function collectOutputs(raw: unknown, stages: readonly DraftStage[], context: OutputsContext): CollectedOutputs {
+  const { declaredIds, problems, field = 'outputs' } = context;
+  const { basePath = [field] } = context;
   const result: CollectedOutputs = { sectionValid: true, complete: true, names: new Set(), values: [], indexes: [] };
   let rawItems: unknown = raw === false ? [] : raw;
   if ((rawItems === null || rawItems === undefined) || (isRecord(rawItems) && Object.keys(rawItems).length === 0)) rawItems = [];
@@ -187,9 +191,9 @@ export interface CollectedCompletion {
 export function collectCompletion(
   raw: Record<string, unknown>,
   stages: readonly DraftStage[],
-  declaredIds: ReadonlySet<string>,
-  problems: DraftProblems,
+  context: OutputsContext,
 ): CollectedCompletion {
+  const { declaredIds, problems } = context;
   const stage = draftUnit(() => requiredString(raw.stage, 'completion.stage'), problems, ['completion', 'stage']);
   let stageId: string | null = null;
   if (stage.state === 'valid') {
@@ -206,6 +210,6 @@ export function collectCompletion(
   if ((raw.decision !== null && raw.decision !== undefined)) {
     draftUnit(() => requiredString(raw.decision, 'completion.decision'), problems, ['completion', 'decision']);
   }
-  collectOutputs(raw.outputs ?? [], stages, declaredIds, problems, 'completion.outputs', ['completion', 'outputs']);
+  collectOutputs(raw.outputs ?? [], stages, { declaredIds, problems, field: 'completion.outputs', basePath: ['completion', 'outputs'] });
   return { stage: stageId };
 }

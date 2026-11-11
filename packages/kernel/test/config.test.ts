@@ -22,13 +22,17 @@ const registry: ClientRegistry = { ids: () => clientIds(), get: (id: string) => 
 
 test('resolves role default, stage override, and cli override', () => {
   const workspace = writeStageWorkspace();
-  const roleDefault = resolveStageTarget(workspace, 'plan-implement', 'implement', undefined, registry);
-  const stageOverride = resolveStageTarget(workspace, 'plan-implement', 'review-work', undefined, registry);
-  const cliOverride = resolveStageTarget(workspace, 'plan-implement', 'implement', {
+  const roleDefault = resolveStageTarget(workspace, { workflowId: 'plan-implement', stageId: 'implement' }, { registry });
+  const stageOverride = resolveStageTarget(workspace, { workflowId: 'plan-implement', stageId: 'review-work' }, { registry });
+  const cliOverride = resolveStageTarget(
+    workspace,
+    { workflowId: 'plan-implement', stageId: 'implement' },
+    { override: {
     client: 'codex',
     model: 'gpt-5.6-terra',
     options: { model_reasoning_effort: 'medium' },
-  }, registry);
+  }, registry },
+  );
   expect([roleDefault.client, roleDefault.model, roleDefault.options['reasoning-effort']]).toEqual([
     'grok',
     'grok-4.6',
@@ -50,30 +54,34 @@ test('resolves role default, stage override, and cli override', () => {
 test('rejects a partial client model override', () => {
   const workspace = writeStageWorkspace();
   expect(() =>
-    resolveStageTarget(workspace, 'plan-implement', 'implement', { client: 'grok' }, registry),
+    resolveStageTarget(workspace, { workflowId: 'plan-implement', stageId: 'implement' }, { override: { client: 'grok' }, registry }),
   ).toThrow(ConfigurationError);
   expect(() =>
-    resolveStageTarget(workspace, 'plan-implement', 'implement', { client: 'grok' }, registry),
+    resolveStageTarget(workspace, { workflowId: 'plan-implement', stageId: 'implement' }, { override: { client: 'grok' }, registry }),
   ).toThrow(/both --client and --model/);
 });
 
 test('rejects a missing stage', () => {
   const workspace = writeStageWorkspace();
-  expect(() => resolveStageTarget(workspace, 'plan-implement', 'missing', undefined, registry)).toThrow(
+  expect(() => resolveStageTarget(workspace, { workflowId: 'plan-implement', stageId: 'missing' }, { registry })).toThrow(
     ConfigurationError,
   );
-  expect(() => resolveStageTarget(workspace, 'plan-implement', 'missing', undefined, registry)).toThrow(
+  expect(() => resolveStageTarget(workspace, { workflowId: 'plan-implement', stageId: 'missing' }, { registry })).toThrow(
     /Stage not found: missing/,
   );
 });
 
 test('cli override returns before workflow read', () => {
   const workspace = writeRoleWorkspace();
-  const target = resolveStageTarget(workspace, 'missing-workflow', 'missing-stage', {
+  const target = resolveStageTarget(
+    workspace,
+    { workflowId: 'missing-workflow', stageId: 'missing-stage' },
+    { override: {
     client: 'codex',
     model: 'gpt-5.6-terra',
     options: { model_reasoning_effort: 'medium' },
-  }, registry);
+  }, registry },
+  );
   expect([target.client, target.model, target.options.model_reasoning_effort]).toEqual([
     'codex',
     'gpt-5.6-terra',
@@ -89,7 +97,7 @@ test('stage option overrides model options', () => {
     readFileSync(workflow, 'utf8').replace('model_reasoning_effort: high', 'model_reasoning_effort: low'),
     'utf8',
   );
-  const target = resolveStageTarget(workspace, 'plan-implement', 'review-work', undefined, registry);
+  const target = resolveStageTarget(workspace, { workflowId: 'plan-implement', stageId: 'review-work' }, { registry });
   expect(target.options.model_reasoning_effort).toBe('low');
   expect(target.options.temperature).toBe('0.2');
 });
@@ -105,7 +113,7 @@ test('ignores a stray model field', () => {
     ),
     'utf8',
   );
-  const target = resolveStageTarget(workspace, 'plan-implement', 'implement', undefined, registry);
+  const target = resolveStageTarget(workspace, { workflowId: 'plan-implement', stageId: 'implement' }, { registry });
   expect(target.model).toBe('grok-4.6');
   expect(target.options).toEqual({});
 });
@@ -164,8 +172,8 @@ test('rejects a non-scalar model option', () => {
       '    model: grok-4\nroles:\n  developer:\n    agent: grok\n',
     'utf8',
   );
-  expect(() => resolveRoleTarget(workspace, 'developer', undefined, registry)).toThrow(ConfigurationError);
-  expect(() => resolveRoleTarget(workspace, 'developer', undefined, registry)).toThrow(
+  expect(() => resolveRoleTarget(workspace, 'developer', { registry })).toThrow(ConfigurationError);
+  expect(() => resolveRoleTarget(workspace, 'developer', { registry })).toThrow(
     /Missing or invalid agents\.grok\.client\.options\.reasoning-effort\./,
   );
 });
@@ -178,27 +186,31 @@ test('rejects a non-mapping configuration', () => {
 
 test('rejects a missing role even with a client model override', () => {
   const workspace = writeRoleWorkspace();
-  expect(() => resolveRoleTarget(workspace, 'missing', undefined, registry)).toThrow(ConfigurationError);
-  expect(() => resolveRoleTarget(workspace, 'missing', undefined, registry)).toThrow(/roles\.missing/);
+  expect(() => resolveRoleTarget(workspace, 'missing', { registry })).toThrow(ConfigurationError);
+  expect(() => resolveRoleTarget(workspace, 'missing', { registry })).toThrow(/roles\.missing/);
   expect(() =>
-    resolveRoleTarget(workspace, 'missing', { client: 'grok', model: 'grok-4.6' }, registry),
+    resolveRoleTarget(workspace, 'missing', { override: { client: 'grok', model: 'grok-4.6' }, registry }),
   ).toThrow(/roles\.missing/);
 });
 
 test('cli override skips the role cascade', () => {
   const workspace = writeRoleWorkspace();
-  const target = resolveRoleTarget(workspace, 'developer', {
+  const target = resolveRoleTarget(
+    workspace,
+    'developer',
+    { override: {
     client: 'codex',
     model: 'gpt-5.6-terra',
     options: { model_reasoning_effort: 'low' },
-  }, registry);
+  }, registry },
+  );
   expect(target.client).toBe('codex');
   expect(target.model).toBe('gpt-5.6-terra');
   expect(target.options.model_reasoning_effort).toBe('low');
-  expect(() => resolveRoleTarget(workspace, 'developer', { client: 'grok' }, registry)).toThrow(
+  expect(() => resolveRoleTarget(workspace, 'developer', { override: { client: 'grok' }, registry })).toThrow(
     ConfigurationError,
   );
-  expect(() => resolveRoleTarget(workspace, 'developer', { client: 'grok' }, registry)).toThrow(
+  expect(() => resolveRoleTarget(workspace, 'developer', { override: { client: 'grok' }, registry })).toThrow(
     /both --client and --model/,
   );
 });
@@ -259,17 +271,17 @@ test('config.local.yaml overrides role and stage resolution', () => {
   expect(loadWorkspaceConfig(workspace).schema_version).toBe(
     loadYamlMapping(path.join(workspace, '.migent', 'config.yaml')).schema_version,
   );
-  expect(resolveRoleTarget(workspace, 'developer', undefined, registry).model).toBe('grok-local');
-  expect(resolveStageTarget(workspace, 'plan-implement', 'implement', undefined, registry).model).toBe('grok-local');
-  expect(resolveRoleTarget(workspace, 'reviewer', undefined, registry).options.model_reasoning_effort).toBe('low');
+  expect(resolveRoleTarget(workspace, 'developer', { registry }).model).toBe('grok-local');
+  expect(resolveStageTarget(workspace, { workflowId: 'plan-implement', stageId: 'implement' }, { registry }).model).toBe('grok-local');
+  expect(resolveRoleTarget(workspace, 'reviewer', { registry }).options.model_reasoning_effort).toBe('low');
 });
 
 test('a malformed config.local.yaml names the file', () => {
   const workspace = writeStageWorkspace();
   const local = path.join(workspace, '.migent', 'config.local.yaml');
   writeFileSync(local, '- not-a-map\n', 'utf8');
-  expect(() => resolveRoleTarget(workspace, 'developer', undefined, registry)).toThrow(ConfigurationError);
-  expect(() => resolveRoleTarget(workspace, 'developer', undefined, registry)).toThrow('config.local.yaml');
+  expect(() => resolveRoleTarget(workspace, 'developer', { registry })).toThrow(ConfigurationError);
+  expect(() => resolveRoleTarget(workspace, 'developer', { registry })).toThrow('config.local.yaml');
   writeFileSync(local, 'agents: [unclosed\n', 'utf8');
   expect(() => loadWorkspaceConfig(workspace)).toThrow(ConfigurationError);
 });
@@ -285,7 +297,8 @@ test.each([
   ['opencode', 'codex', 'model_reasoning_effort'],
   ['codex', 'grok', 'reasoning-effort'],
 ])('resolves model effort for %s with client %s', (client, override, option) => {
-  const target = loadAgentTarget({
+  const target = loadAgentTarget(
+    {
     agents: {
       fast: {
         client: { type: override ?? client, options: { tools: 'read' } },
@@ -293,24 +306,27 @@ test.each([
         effort: ' xhigh ',
       },
     },
-  }, 'fast', registry);
+  },
+    'fast',
+    { registry },
+  );
   expect(target.options).toEqual({ [option!]: 'xhigh', tools: 'read' });
 });
 
 test.each([null, '', ' ', 3, true])('rejects invalid model effort %s', (effort) => {
-  expect(() => loadAgentTarget({ agents: { fast: { client: { type: 'codex' }, model: 'test', effort } } }, 'fast', registry)).toThrow(/agents.fast.effort/);
+  expect(() => loadAgentTarget({ agents: { fast: { client: { type: 'codex' }, model: 'test', effort } } }, 'fast', { registry })).toThrow(/agents.fast.effort/);
 });
 
 test.each([
   { client: { type: 'byteplus' } },
   { client: { type: 'codex-unknown' } },
 ])('rejects unsupported effort client %s', (mapping) => {
-  expect(() => loadAgentTarget({ agents: { fast: { ...mapping, model: 'test', effort: 'high' } } }, 'fast', registry)).toThrow(/agents.fast.effort/);
+  expect(() => loadAgentTarget({ agents: { fast: { ...mapping, model: 'test', effort: 'high' } } }, 'fast', { registry })).toThrow(/agents.fast.effort/);
 });
 
 test.each(['codex', 'grok', 'claude-code', 'agy', 'opencode'])('rejects model effort conflicts for %s', (client) => {
   const option = client === 'codex' ? 'model_reasoning_effort' : client === 'grok' ? 'reasoning-effort' : client === 'opencode' ? 'variant' : 'effort';
-  expect(() => loadAgentTarget({ agents: { fast: { client: { type: client, options: { [option]: 'low' } }, model: 'test', effort: 'high' } } }, 'fast', registry)).toThrow(/conflicts with agents.fast.client.options/);
+  expect(() => loadAgentTarget({ agents: { fast: { client: { type: client, options: { [option]: 'low' } }, model: 'test', effort: 'high' } } }, 'fast', { registry })).toThrow(/conflicts with agents.fast.client.options/);
 });
 
 test('local model effort replaces shared effort', () => {
@@ -323,8 +339,8 @@ test('local model effort replaces shared effort', () => {
   model.effort = 'low';
   writeFileSync(path.join(workspace, '.migent', 'config.yaml'), stringify(config));
   writeFileSync(path.join(workspace, '.migent', 'config.local.yaml'), stringify({ agents: { [alias]: { effort: 'medium' } } }));
-  expect(loadAgentTarget(loadWorkspaceConfig(workspace), alias, registry).options['reasoning-effort']).toBe('medium');
-  expect(resolveStageTarget(workspace, 'plan-implement', 'implement', undefined, registry).options['reasoning-effort']).toBe('medium');
+  expect(loadAgentTarget(loadWorkspaceConfig(workspace), alias, { registry }).options['reasoning-effort']).toBe('medium');
+  expect(resolveStageTarget(workspace, { workflowId: 'plan-implement', stageId: 'implement' }, { registry }).options['reasoning-effort']).toBe('medium');
 });
 
 
@@ -335,8 +351,8 @@ test('stage native effort overrides the model alias', () => {
     '    client:\n      type: codex\n      options:\n        model_reasoning_effort: medium\n        temperature: "0.2"',
     '    effort: low\n    client:\n      type: codex\n      options:\n        temperature: "0.2"',
   ));
-  expect(resolveRoleTarget(workspace, 'reviewer', undefined, registry).options.model_reasoning_effort).toBe('low');
-  expect(resolveStageTarget(workspace, 'plan-implement', 'review-work', undefined, registry).options.model_reasoning_effort).toBe('high');
+  expect(resolveRoleTarget(workspace, 'reviewer', { registry }).options.model_reasoning_effort).toBe('low');
+  expect(resolveStageTarget(workspace, { workflowId: 'plan-implement', stageId: 'review-work' }, { registry }).options.model_reasoning_effort).toBe('high');
 });
 
 
@@ -345,7 +361,7 @@ test('rejects effort conflicts introduced by local config merge', () => {
     { agents: { fast: { client: { type: 'codex' }, model: 'test', effort: 'high' } } },
     { agents: { fast: { client: { options: { model_reasoning_effort: 'low' } } } } },
   );
-  expect(() => loadAgentTarget(merged, 'fast', registry)).toThrow(/conflicts with agents.fast.client.options.model_reasoning_effort/);
+  expect(() => loadAgentTarget(merged, 'fast', { registry })).toThrow(/conflicts with agents.fast.client.options.model_reasoning_effort/);
 });
 
 
@@ -354,9 +370,9 @@ test('resolves effort through an injected client without knowing client names', 
     custom: Object.assign(new FakeClient('custom', 'custom-cli'), { effortOption: 'custom_thinking_level' }),
     alternate: Object.assign(new FakeClient('alternate', 'alternate-cli'), { effortOption: 'alternate_level' }),
   });
-  expect(loadAgentTarget({ agents: { fast: { client: { type: 'custom' }, model: 'm', effort: 'high' } } }, 'fast', custom).options)
+  expect(loadAgentTarget({ agents: { fast: { client: { type: 'custom' }, model: 'm', effort: 'high' } } }, 'fast', { registry: custom }).options)
     .toEqual({ custom_thinking_level: 'high' });
-  expect(loadAgentTarget({ agents: { fast: { client: { type: 'alternate' }, model: 'm', effort: 'max' } } }, 'fast', custom).options)
+  expect(loadAgentTarget({ agents: { fast: { client: { type: 'alternate' }, model: 'm', effort: 'max' } } }, 'fast', { registry: custom }).options)
     .toEqual({ alternate_level: 'max' });
 });
 
@@ -379,7 +395,7 @@ function lookupRegistry(lookup: { matches: string[]; searched?: string[]; skippe
 
 test('infers the client from the model and maps effort to its native option', () => {
   const workspace = inferenceWorkspace('      model: gpt-5\n      effort: high\n');
-  const target = resolveRoleTarget(workspace, 'developer', undefined, lookupRegistry({ matches: ['codex'] }));
+  const target = resolveRoleTarget(workspace, 'developer', { registry: lookupRegistry({ matches: ['codex'] }) });
   expect([target.client, target.model, target.options.model_reasoning_effort]).toEqual(['codex', 'gpt-5', 'high']);
 });
 
@@ -391,28 +407,28 @@ test('an explicit client.type starts no model lookup', () => {
       throw new Error('lookup must not run');
     },
   };
-  expect(resolveRoleTarget(workspace, 'developer', undefined, guarded).client).toBe('codex');
+  expect(resolveRoleTarget(workspace, 'developer', { registry: guarded }).client).toBe('codex');
 });
 
 test('reports a model no client lists and a model several clients list', () => {
   const workspace = inferenceWorkspace('      model: gpt-5\n');
   expect(() =>
-    resolveRoleTarget(workspace, 'developer', undefined, lookupRegistry({ matches: [], searched: ['codex'], skipped: ['grok'] })),
+    resolveRoleTarget(workspace, 'developer', { registry: lookupRegistry({ matches: [], searched: ['codex'], skipped: ['grok'] }) }),
   ).toThrow(/No client lists model gpt-5 \(searched: codex; not on PATH: grok\)/);
-  expect(() => resolveRoleTarget(workspace, 'developer', undefined, lookupRegistry({ matches: ['codex', 'agy'] }))).toThrow(
+  expect(() => resolveRoleTarget(workspace, 'developer', { registry: lookupRegistry({ matches: ['codex', 'agy'] }) })).toThrow(
     /Model gpt-5 is listed by several clients \(codex, agy\)/,
   );
 });
 
 test('client.options without client.type is rejected, and a registry without lookup keeps client.type required', () => {
   const withOptions = inferenceWorkspace('      model: gpt-5\n      client:\n        options:\n          a: b\n');
-  expect(() => resolveRoleTarget(withOptions, 'developer', undefined, lookupRegistry({ matches: ['codex'] }))).toThrow(
+  expect(() => resolveRoleTarget(withOptions, 'developer', { registry: lookupRegistry({ matches: ['codex'] }) })).toThrow(
     /client\.type is required when .*client\.options is set/,
   );
   const empty = inferenceWorkspace('      model: gpt-5\n      client:\n        options: {}\n');
-  expect(() => resolveRoleTarget(empty, 'developer', undefined, lookupRegistry({ matches: ['codex'] }))).toThrow(
+  expect(() => resolveRoleTarget(empty, 'developer', { registry: lookupRegistry({ matches: ['codex'] }) })).toThrow(
     /client\.type is required when .*client\.options is set/,
   );
   const plain = inferenceWorkspace('      model: gpt-5\n');
-  expect(() => resolveRoleTarget(plain, 'developer', undefined, registry)).toThrow(/Missing roles\.developer\.agent\.client\.type/);
+  expect(() => resolveRoleTarget(plain, 'developer', { registry })).toThrow(/Missing roles\.developer\.agent\.client\.type/);
 });

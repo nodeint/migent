@@ -62,7 +62,11 @@ function nativeOptionView(client: string, option: HeadlessOption): Static<typeof
   };
 }
 
-function effortView(client: string, model: string, option: string, values: readonly string[]): Static<typeof GetEffort> {
+function effortView(
+  client: string,
+  row: { model: string; option: string; values: readonly string[] },
+): Static<typeof GetEffort> {
+  const { model, option, values } = row;
   return { kind: 'effort' as const, name: model, client, model, option, values: [...values] };
 }
 
@@ -312,7 +316,7 @@ const effortResource: MachineResource<typeof GetEffort> = {
         warnOutcome(context, client.id, outcome);
         continue;
       }
-      for (const row of outcome.value) rows.push(effortView(client.id, row.model, row.option, row.values));
+      for (const row of outcome.value) rows.push(effortView(client.id, row));
     }
     return rows;
   },
@@ -332,7 +336,7 @@ const effortResource: MachineResource<typeof GetEffort> = {
         if (outcome.value === null) return { status: 'ok', value: [] };
         return {
           status: 'ok',
-          value: [effortView(client.id, name, client.effortOption ?? 'effort', outcome.value)],
+          value: [effortView(client.id, { model: name, option: client.effortOption ?? 'effort', values: outcome.value })],
         };
       },
     });

@@ -82,7 +82,7 @@ function workspace(): { repo: string; sessionId: string; base: string } {
   mkdirSync(path.join(repo, '.migent', 'workflows'), { recursive: true });
   writeFileSync(path.join(repo, '.migent', 'config.yaml'), CONFIG, 'utf8');
   writeFileSync(path.join(repo, '.migent', 'workflows', 'flow.yaml'), WORKFLOW, 'utf8');
-  const sessionId = createWorkflowSession(repo, 'flow', 'Do it');
+  const sessionId = createWorkflowSession(repo, 'flow', { task: 'Do it' });
   return { repo, sessionId, base: git(repo, 'rev-parse', 'HEAD') };
 }
 
@@ -227,7 +227,7 @@ test('a run_when workflow in a non-Git workspace fails before any execution', as
   mkdirSync(path.join(repo, '.migent', 'workflows'), { recursive: true });
   writeFileSync(path.join(repo, '.migent', 'config.yaml'), CONFIG, 'utf8');
   writeFileSync(path.join(repo, '.migent', 'workflows', 'flow.yaml'), WORKFLOW, 'utf8');
-  const sessionId = createWorkflowSession(repo, 'flow', 'Do it');
+  const sessionId = createWorkflowSession(repo, 'flow', { task: 'Do it' });
   const provider = new EditingProvider([DONE], ['# impl\n'], []);
   await expect(executeNamedWorkflow(repo, { workflowId: 'flow', sessionId }, runner(provider))).rejects.toThrow(
     new RegExp(`^Session ${sessionId} needs a Git commit for run_when: `),
@@ -274,7 +274,7 @@ stages:
 test('a skip stops the transitive downstream stages that completed before it', async () => {
   const { repo } = workspace();
   writeFileSync(path.join(repo, '.migent', 'workflows', 'flow.yaml'), TRANSITIVE, 'utf8');
-  const sessionId = createWorkflowSession(repo, 'flow', 'Do it');
+  const sessionId = createWorkflowSession(repo, 'flow', { task: 'Do it' });
   const docs = path.join(repo, 'docs', 'x.md');
   const restore = () => rmSync(docs, { force: true });
   const provider = new EditingProvider(

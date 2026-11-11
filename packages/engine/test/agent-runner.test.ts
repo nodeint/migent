@@ -26,12 +26,7 @@ function readJson(filePath: string): Record<string, unknown> {
 }
 
 test('reads legacy native session id as agent id', () => {
-  const record = AgentSessionRecord.fromJson(
-    { native_session_id: 'legacy-provider-id' },
-    'grok',
-    'grok-4.6',
-    '/repo',
-  );
+  const record = AgentSessionRecord.fromJson({ native_session_id: 'legacy-provider-id' }, { client: 'grok', model: 'grok-4.6', workspace: '/repo' });
   expect(record.agentId).toBe('legacy-provider-id');
   expect(record.toJson()).not.toHaveProperty('native_session_id');
 });
@@ -298,7 +293,7 @@ test('refuses another execution on a completed named workflow session', async ()
   mkdirSync(workflows, { recursive: true });
   writeFileSync(path.join(workflows, 'plan.yaml'), repoWorkflowText('plan'), 'utf8');
   writeSessionConfig(workspace);
-  const sessionId = createWorkflowSession(workspace, 'plan', 'Write a plan');
+  const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
   const statusPath = path.join(workspace, '.migent', 'sessions', sessionId, 'status.json');
   const status = readJson(statusPath);
   status.status = 'completed';
@@ -498,7 +493,7 @@ completion:
 `,
     'utf8',
   );
-  const sessionId = createWorkflowSession(workspace, 'wf', 'task');
+  const sessionId = createWorkflowSession(workspace, 'wf', { task: 'task' });
   const runner = new AgentToolRunner(
     registryOf({ fake: new ScriptedClient(['status: complete\n\ndone', 'status: complete\n\ndone', 'status: complete\n\ndone'], ['# notes\n', null, null]) }),
     10,

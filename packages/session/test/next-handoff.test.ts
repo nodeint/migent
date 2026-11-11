@@ -37,7 +37,7 @@ downstream:
     artifacts: { plan: approved_plan }
 `);
   writeFileSync(path.join(workflows, 'implement.yaml'), 'schema_version: 5\nid: implement\nstages:\n  - { id: work, role: developer }\n');
-  const prior = createWorkflowSession(root, 'plan', 'Plan the work');
+  const prior = createWorkflowSession(root, 'plan', { task: 'Plan the work' });
   const directory = path.join(root, '.migent', 'sessions', prior);
   mkdirSync(path.join(directory, 'outputs'));
   writeFileSync(path.join(directory, 'outputs', 'plan.md'), 'The approved plan\n');
@@ -66,7 +66,7 @@ test('suggestions have explicit mappings and argv, no hashes; source edits do no
 test('target loads current workflow and snapshots mapped artifacts with durable provenance', () => {
   const { root, prior, workflows, directory } = setup();
   writeFileSync(path.join(workflows, 'implement.yaml'), 'schema_version: 5\nid: implement\nstages:\n  - { id: changed, role: developer }\n');
-  const target = createWorkflowSession(root, 'implement', null, prior);
+  const target = createWorkflowSession(root, 'implement', { task: null, priorSessionId: prior });
   const targetDir = path.join(root, '.migent', 'sessions', target);
   expect(loadFrozenWorkflow(targetDir)?.stages.changed).toBeDefined();
   const status = readFoldedStatus(root, targetDir) as any;
@@ -79,35 +79,35 @@ test('target loads current workflow and snapshots mapped artifacts with durable 
   writeFileSync(path.join(directory, 'outputs', 'plan.md'), 'Changed after start');
   expect(readFileSync(path.join(targetDir, artifact.path), 'utf8')).toBe('The approved plan\n');
   expect((readFoldedStatus(root, targetDir) as any).handoff).toEqual(status.handoff);
-  const overridden = createWorkflowSession(root, 'implement', 'Explicit task', prior);
+  const overridden = createWorkflowSession(root, 'implement', { task: 'Explicit task', priorSessionId: prior });
   expect(readFoldedStatus(root, path.join(root, '.migent', 'sessions', overridden)).task).toBe('Explicit task');
 });
 
 test('fallback --prior passes all outputs, while consumers run standalone', () => {
   const { root, prior, workflows } = setup();
   writeFileSync(path.join(workflows, 'other.yaml'), 'schema_version: 5\nid: other\nstages:\n  - { id: work, role: developer }\n');
-  expect(() => createWorkflowSession(root, 'other', null, prior)).toThrow(/requires --task/);
-  const fallback = createWorkflowSession(root, 'other', 'Independent task', prior);
+  expect(() => createWorkflowSession(root, 'other', { task: null, priorSessionId: prior })).toThrow(/requires --task/);
+  const fallback = createWorkflowSession(root, 'other', { task: 'Independent task', priorSessionId: prior });
   const status = readFoldedStatus(root, path.join(root, '.migent', 'sessions', fallback)) as any;
   expect(status.handoff.artifacts.approved_plan.output).toBe('approved_plan');
-  expect(createWorkflowSession(root, 'implement', 'Standalone work')).toBeTruthy();
+  expect(createWorkflowSession(root, 'implement', { task: 'Standalone work' })).toBeTruthy();
 });
 
 test('invalid prior sources fail before allocating a target session', () => {
   const { root, prior, directory } = setup();
   const sessions = path.join(root, '.migent', 'sessions');
   const before = readdirSync(sessions);
-  expect(() => createWorkflowSession(root, 'implement', null, 'missing')).toThrow(/not found/);
+  expect(() => createWorkflowSession(root, 'implement', { task: null, priorSessionId: 'missing' })).toThrow(/not found/);
   rmSync(path.join(directory, 'outputs', 'plan.md'));
-  expect(() => createWorkflowSession(root, 'implement', null, prior)).toThrow(/missing or empty/);
+  expect(() => createWorkflowSession(root, 'implement', { task: null, priorSessionId: prior })).toThrow(/missing or empty/);
   writeFileSync(path.join(directory, 'status.json'), JSON.stringify({ status: 'active' }));
-  expect(() => createWorkflowSession(root, 'implement', 'Task', prior)).toThrow(/not completed/);
+  expect(() => createWorkflowSession(root, 'implement', { task: 'Task', priorSessionId: prior })).toThrow(/not completed/);
   expect(readdirSync(sessions)).toEqual(before);
 });
 
 test('prepare defers handoff snapshots until run, and binding failure stays prepared', () => {
   const { root, prior, workflows, directory } = setup();
-  const prepared = createPreparedSession(root, 'Prepared target', 'implement', prior);
+  const prepared = createPreparedSession(root, { title: 'Prepared target', workflowId: 'implement', priorSessionId: prior });
   const targetDir = path.join(root, '.migent', 'sessions', prepared);
   expect(existsSync(path.join(targetDir, 'workflow.frozen.yaml'))).toBe(false);
   expect(existsSync(path.join(targetDir, 'workflow.yaml'))).toBe(true);

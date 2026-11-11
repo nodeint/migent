@@ -3,57 +3,36 @@ import path from 'node:path';
 
 import { cancellationSignal, ConfigurationError,type ExecutionSnapshot } from '@nodeint/migent-kernel';
 import { readyStages, revisionStop, runnableNow, schedulableStageIds, Stop, VERIFY_EXHAUSTED, VERIFY_FAILED, version2IdleReason, writeJsonAtomic } from '@nodeint/migent-kernel';
-import { clearInFlightExecution, noteInFlightExecution, type SessionStore } from '@nodeint/migent-session';
-import { isRecord, isWorkflowV2, type WorkflowDocument } from '@nodeint/migent-workflow';
+import { clearInFlightExecution, noteInFlightExecution } from '@nodeint/migent-session';
+import { isRecord, isWorkflowV2 } from '@nodeint/migent-workflow';
 
-import type { AgentToolRunner } from './agent-runner.js';
 import {
   assertStageDispatchable,
   blockResumes,
   dispatchExecuteStage,
   executeFinal,
   type ExecuteResult,
-  type PendingStageReply,
+  type ExecuteRun,
   selectedStage,
   TERMINAL_SESSION_STATUSES,
   text,
 } from './dispatch.js';
 
 
-export async function runExecuteOnce(
-  workspace: string,
-  store: SessionStore,
-  workflow: WorkflowDocument,
-  workflowId: string,
-  sessionId: string,
-  stageId: string | null,
-  runner: AgentToolRunner,
-  tasks: Map<string, Promise<unknown>>,
-  reply: PendingStageReply | null,
-): Promise<ExecuteResult> {
+export async function runExecuteOnce(run: ExecuteRun, stageId: string | null): Promise<ExecuteResult> {
+  const { workspace, store, workflow, sessionId, tasks } = run;
   store.reapOrphanedExecutions(sessionId, 'raise');
   const snapshots = store.executionSnapshots(sessionId);
   let status = store.readSessionStatus(sessionId);
   const sessionStatus = text(status.status);
   if (TERMINAL_SESSION_STATUSES.has(sessionStatus)) return executeFinal(status, sessionStatus, []);
   const chosen = isWorkflowV2(workflow)
-    ? version2OnceStage(workspace, workflow, sessionId, snapshots, status, stageId)
-    : version1OnceStage(workspace, workflow, sessionId, snapshots, status, stageId);
+    ? version2OnceStage(run, { snapshots, status }, stageId)
+    : version1OnceStage(run, { snapshots, status }, stageId);
   if (typeof chosen !== 'string') return chosen;
-  assertStageDispatchable(workspace, workflow, sessionId, chosen);
+  assertStageDispatchable(workspace, workflow, { sessionId, stageId: chosen });
   const stage = await trackDispatch(sessionId, tasks, (note) =>
-    dispatchExecuteStage(
-      workspace,
-      workflow,
-      workflowId,
-      sessionId,
-      chosen,
-      status,
-      snapshots,
-      runner,
-      note,
-      reply,
-    ),
+    dispatchExecuteStage(run, { stageId: chosen, status, snapshots }, note),
   );
   status = store.readSessionStatus(sessionId);
   const after = text(status.status);
@@ -72,38 +51,47 @@ export async function runExecuteOnce(
   return result;
 }
 
+/** The executions and session status read at the start of a pass. */
+interface PassState {
+  readonly snapshots: readonly ExecutionSnapshot[];
+  readonly status: Record<string, unknown>;
+}
+
 function version1OnceStage(
-  workspace: string,
-  workflow: WorkflowDocument,
-  sessionId: string,
-  snapshots: readonly ExecutionSnapshot[],
-  status: Record<string, unknown>,
+  run: Pick<ExecuteRun, 'workspace' | 'workflow' | 'sessionId'>,
+  state: PassState,
   stageId: string | null,
 ): string | ExecuteResult {
-  const selected = selectedStage(workflow, snapshots, text(status.status), blockResumes(workspace, sessionId));
+  const { workspace, workflow, sessionId } = run;
+  const { snapshots, status } = state;
+  const selected = selectedStage(
+    workflow,
+    snapshots,
+    { sessionStatus: text(status.status), resumes: blockResumes(workspace, sessionId) },
+  );
   if (selected instanceof Stop) return executeFinal(status, selected.reason, []);
   if (stageId !== null && selected.stageId !== stageId) {
     throw new ConfigurationError(`Stage ${stageId} is not the eligible stage ${selected.stageId}.`);
   }
-  if (revisionStop(workflow, snapshots, selected.stageId, revisionBaselines(status))) {
+  if (revisionStop(workflow, snapshots, { stageId: selected.stageId, revisionBaselines: revisionBaselines(status) })) {
     return executeFinal(status, 'revisions_exhausted', []);
   }
   return selected.stageId;
 }
 
 function version2OnceStage(
-  workspace: string,
-  workflow: WorkflowDocument,
-  sessionId: string,
-  snapshots: readonly ExecutionSnapshot[],
-  status: Record<string, unknown>,
+  run: Pick<ExecuteRun, 'workspace' | 'workflow' | 'sessionId'>,
+  state: PassState,
   stageId: string | null,
 ): string | ExecuteResult {
+  const { workspace, workflow, sessionId } = run;
+  const { snapshots, status } = state;
   const sessionStatus = text(status.status);
   const baselines = revisionBaselines(status);
   const resumes = blockResumes(workspace, sessionId);
-  const ready = readyStages(workflow, snapshots, sessionStatus, baselines, resumes);
-  const schedulable = schedulableStageIds(workflow, snapshots, sessionStatus, baselines, resumes, new Set());
+  const schedule = { sessionStatus, revisionBaselines: baselines, resumes };
+  const ready = readyStages(workflow, snapshots, schedule);
+  const schedulable = schedulableStageIds(workflow, snapshots, { ...schedule, verifyTried: new Set() });
   const running = runningStageIds(snapshots);
   if (stageId !== null) {
     const latest = latestSnapshotForStage(snapshots, stageId);
@@ -121,58 +109,39 @@ function version2OnceStage(
       return executeFinal(status, 'stage_failed', []);
     }
     if (!schedulable.includes(stageId)) {
-      const first = runnableNow(workflow, schedulable, running, workflow.concurrency ?? 1, snapshots)[0] ?? ready[0] ?? '';
+      const first = runnableNow(workflow, schedulable, { running, concurrency: workflow.concurrency ?? 1, snapshots })[0] ?? ready[0] ?? '';
       throw new ConfigurationError(`Stage ${stageId} is not the eligible stage ${first}.`);
     }
-    if (revisionStop(workflow, snapshots, stageId, baselines)) {
+    if (revisionStop(workflow, snapshots, { stageId, revisionBaselines: baselines })) {
       return executeFinal(status, 'revisions_exhausted', []);
     }
     return stageId;
   }
-  const [next] = runnableNow(workflow, schedulable, running, workflow.concurrency ?? 1, snapshots);
+  const [next] = runnableNow(workflow, schedulable, { running, concurrency: workflow.concurrency ?? 1, snapshots });
   if (next === undefined) {
-    const reason = version2IdleReason(workflow, snapshots, sessionStatus, baselines, resumes);
+    const reason = version2IdleReason(workflow, snapshots, schedule);
     if (reason === 'no eligible stage') throw new ConfigurationError('no eligible stage');
     return executeFinal(status, reason, []);
   }
-  if (revisionStop(workflow, snapshots, next, baselines)) {
+  if (revisionStop(workflow, snapshots, { stageId: next, revisionBaselines: baselines })) {
     return executeFinal(status, 'revisions_exhausted', []);
   }
   return next;
 }
 
-export async function runExecuteLoop(
-  workspace: string,
-  store: SessionStore,
-  workflow: WorkflowDocument,
-  workflowId: string,
-  sessionId: string,
-  maxDispatches: number | null,
-  runner: AgentToolRunner,
-  tasks: Map<string, Promise<unknown>>,
-  reply: PendingStageReply | null,
-  alreadyDispatched = 0,
-  verifyTriedSeed: readonly string[] = [],
-  verifyOnlyTriedSeed: readonly string[] = [],
-): Promise<ExecuteResult> {
-  if (isWorkflowV2(workflow)) {
-    return runVersion2Pool(
-      workspace,
-      store,
-      workflow,
-      workflowId,
-      sessionId,
-      maxDispatches,
-      runner,
-      tasks,
-      reply,
-      alreadyDispatched,
-      verifyTriedSeed,
-      verifyOnlyTriedSeed,
-    );
-  }
+/** How far a loop may go, and what earlier dispatches of the run already used. */
+export interface LoopLimits {
+  readonly maxDispatches: number | null;
+  readonly alreadyDispatched?: number;
+  readonly verifyTriedSeed?: readonly string[];
+  readonly verifyOnlyTriedSeed?: readonly string[];
+}
+
+export async function runExecuteLoop(run: ExecuteRun, limits: LoopLimits): Promise<ExecuteResult> {
+  const { workspace, store, workflow, sessionId, tasks } = run;
+  if (isWorkflowV2(workflow)) return runVersion2Pool(run, limits);
   const stages: Record<string, unknown>[] = [];
-  let dispatched = alreadyDispatched;
+  let dispatched = limits.alreadyDispatched ?? 0;
   const accept = (stage: Record<string, unknown>): ExecuteResult | null => {
     stages.push(stage);
     if (stage.failure_reason === VERIFY_FAILED) {
@@ -189,48 +158,32 @@ export async function runExecuteLoop(
     store.reapOrphanedExecutions(sessionId, 'raise');
     const snapshots = store.executionSnapshots(sessionId);
     const status = store.readSessionStatus(sessionId);
-    const selected = selectedStage(workflow, snapshots, text(status.status), blockResumes(workspace, sessionId));
+    const selected = selectedStage(
+      workflow,
+      snapshots,
+      { sessionStatus: text(status.status), resumes: blockResumes(workspace, sessionId) },
+    );
     if (selected instanceof Stop) return executeFinal(status, selected.reason, stages);
-    if (revisionStop(workflow, snapshots, selected.stageId, revisionBaselines(status))) {
+    if (
+      revisionStop(workflow, snapshots, { stageId: selected.stageId, revisionBaselines: revisionBaselines(status) })
+    ) {
       return executeFinal(status, 'revisions_exhausted', stages);
     }
-    if (maxDispatches !== null && dispatched >= maxDispatches) {
+    if (limits.maxDispatches !== null && dispatched >= limits.maxDispatches) {
       return executeFinal(status, 'dispatch_limit', stages);
     }
     dispatched += 1;
     const dispatchedStage = await trackDispatch(sessionId, tasks, (note) =>
-      dispatchExecuteStage(
-        workspace,
-        workflow,
-        workflowId,
-        sessionId,
-        selected.stageId,
-        status,
-        snapshots,
-        runner,
-        note,
-        reply,
-      ),
+      dispatchExecuteStage(run, { stageId: selected.stageId, status, snapshots }, note),
     );
     const stopped = accept(dispatchedStage);
     if (stopped) return stopped;
   }
 }
 
-async function runVersion2Pool(
-  workspace: string,
-  store: SessionStore,
-  workflow: WorkflowDocument,
-  workflowId: string,
-  sessionId: string,
-  maxDispatches: number | null,
-  runner: AgentToolRunner,
-  tasks: Map<string, Promise<unknown>>,
-  reply: PendingStageReply | null,
-  alreadyDispatched = 0,
-  verifyTriedSeed: readonly string[] = [],
-  verifyOnlyTriedSeed: readonly string[] = [],
-): Promise<ExecuteResult> {
+async function runVersion2Pool(run: ExecuteRun, limits: LoopLimits): Promise<ExecuteResult> {
+  const { workspace, store, workflow, sessionId, tasks } = run;
+  const { maxDispatches, alreadyDispatched = 0, verifyTriedSeed = [], verifyOnlyTriedSeed = [] } = limits;
   const stages: Record<string, unknown>[] = [];
   let dispatched = alreadyDispatched;
   const verifyTried = new Set<string>(verifyTriedSeed);
@@ -255,18 +208,7 @@ async function runVersion2Pool(
   ): void => {
     const flight = { promise: Promise.resolve(), settled: false };
     flight.promise = trackDispatch(sessionId, tasks, (note) =>
-      dispatchExecuteStage(
-        workspace,
-        workflow,
-        workflowId,
-        sessionId,
-        stageId,
-        status,
-        snapshots,
-        runner,
-        note,
-        reply,
-      ),
+      dispatchExecuteStage(run, { stageId, status, snapshots }, note),
     )
       .then((stage) => {
         stages.push(stage);
@@ -291,17 +233,10 @@ async function runVersion2Pool(
     const endSession = text(endStatus.status);
     const endBaselines = revisionBaselines(endStatus);
     const endResumes = blockResumes(workspace, sessionId);
-    const remaining = schedulableStageIds(
-      workflow,
-      endSnapshots,
-      endSession,
-      endBaselines,
-      endResumes,
-      verifyTried,
-      verifyOnlyTried,
-    );
+    const endSchedule = { sessionStatus: endSession, revisionBaselines: endBaselines, resumes: endResumes };
+    const remaining = schedulableStageIds(workflow, endSnapshots, { ...endSchedule, verifyTried, verifyOnlyTried });
     if (remaining.length > 0) return executeFinal(endStatus, 'dispatch_limit', stages);
-    const reason = version2IdleReason(workflow, endSnapshots, endSession, endBaselines, endResumes);
+    const reason = version2IdleReason(workflow, endSnapshots, endSchedule);
     if (reason === 'no eligible stage') return executeFinal(endStatus, 'dispatch_limit', stages);
     return executeFinal(endStatus, reason, stages);
   };
@@ -320,21 +255,14 @@ async function runVersion2Pool(
     if (capped) return capped;
     const baselines = revisionBaselines(status);
     const resumes = blockResumes(workspace, sessionId);
-    const schedulable = schedulableStageIds(
-      workflow,
-      snapshots,
-      sessionStatus,
-      baselines,
-      resumes,
-      verifyTried,
-      verifyOnlyTried,
-);
+    const schedule = { sessionStatus, revisionBaselines: baselines, resumes };
+    const schedulable = schedulableStageIds(workflow, snapshots, { ...schedule, verifyTried, verifyOnlyTried });
     const running = runningStageIds(snapshots);
     const ceiling = maxDispatches === null ? Number.POSITIVE_INFINITY : maxDispatches;
     const room = ceiling - dispatched;
     if (room > 0) {
       const cap = Math.min(concurrency, running.length + room);
-      const starting = runnableNow(workflow, schedulable, running, cap, snapshots);
+      const starting = runnableNow(workflow, schedulable, { running, concurrency: cap, snapshots });
       if (sessionStatus === 'blocked' && starting.length > 0) {
         status.status = 'active';
         delete status.blocked_by_execution_id;
@@ -349,7 +277,7 @@ async function runVersion2Pool(
     const cappedAfterStart = await settleCeiling();
     if (cappedAfterStart) return cappedAfterStart;
     if (flights.length === 0) {
-      const reason = version2IdleReason(workflow, snapshots, sessionStatus, baselines, resumes);
+      const reason = version2IdleReason(workflow, snapshots, schedule);
       if (reason === 'no eligible stage') throw new ConfigurationError('no eligible stage');
       return executeFinal(status, reason, stages);
     }
@@ -420,11 +348,10 @@ export function trackDispatch(
 }
 
 export function startTracked<T>(
-  sessionId: string,
-  executionId: string,
-  tasks: Map<string, Promise<unknown>>,
+  track: { sessionId: string; executionId: string; tasks: Map<string, Promise<unknown>> },
   start: () => Promise<T>,
 ): Promise<T> {
+  const { sessionId, executionId, tasks } = track;
   noteInFlightExecution(sessionId, executionId);
   // Resolve first so every id is noted before any resume can reap.
   const task = Promise.resolve()

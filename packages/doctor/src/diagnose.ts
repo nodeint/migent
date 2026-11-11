@@ -24,15 +24,14 @@ export function diagnose(workspace: string, options: DiagnoseOptions): [Check, C
   const which = options.which ?? whichSync;
   const efforts = options.modelEffortChecks ?? {};
   const configResult = checkConfig(workspace, options.clients, efforts);
-  const workflowCheck = checkWorkflows(
-    workspace,
-    options.clients,
-    configResult.diagnostics,
-    configResult.config,
-    configResult.unmapped,
-    new Set(Object.keys(efforts).filter((key) => efforts[key]?.problem)),
+  const workflowCheck = checkWorkflows(workspace, {
+    clients: options.clients,
+    configDiagnostics: configResult.diagnostics,
+    config: configResult.config,
+    unmapped: configResult.unmapped,
+    invalidEffort: new Set(Object.keys(efforts).filter((key) => efforts[key]?.problem)),
     efforts,
-  );
+  });
   const clientCheck = checkClients(
     configResult.executableByClient,
     configResult.diagnostics.errors.length,
@@ -41,15 +40,25 @@ export function diagnose(workspace: string, options: DiagnoseOptions): [Check, C
   return [configResult.check, workflowCheck, clientCheck];
 }
 
-function checkWorkflows(
-  workspace: string,
-  clients: ClientRegistry,
-  configDiagnostics: DiagnosticList,
-  config: Record<string, unknown> | null,
-  unmapped: ReadonlySet<string>,
-  invalidEffort: ReadonlySet<string>,
-  efforts: Readonly<Record<string, ModelEffortCheck>>,
-): Check {
+/** What the workflow check knows from the config check and the environment. */
+interface WorkflowCheckContext {
+  readonly clients: ClientRegistry;
+  readonly configDiagnostics: DiagnosticList;
+  readonly config: Record<string, unknown> | null;
+  readonly unmapped: ReadonlySet<string>;
+  readonly invalidEffort: ReadonlySet<string>;
+  readonly efforts: Readonly<Record<string, ModelEffortCheck>>;
+}
+
+/** Where stage-binding findings are collected. */
+interface BindingSink {
+  readonly problems: string[];
+  readonly warnings: string[];
+  readonly failedWorkflows: Set<string>;
+}
+
+function checkWorkflows(workspace: string, context: WorkflowCheckContext): Check {
+  const { configDiagnostics, config } = context;
   const catalog = loadWorkflowCatalog(workspace);
   const problems = [...catalog.problems];
   const failedWorkflows = new Set<string>();
@@ -59,12 +68,16 @@ function checkWorkflows(
     const known = new Set(configDiagnostics.errors.map(identityKey));
     const knownOptionReasons = new Set(configDiagnostics.errors.flatMap((item) => (item.detail === undefined ? [] : [item.detail])));
     for (const document of Object.values(catalog.documents)) {
-      checkStageBindings(config, document, clients, known, knownOptionReasons, unmapped, invalidEffort, efforts, problems, stageWarnings, failedWorkflows);
+      checkStageBindings(
+        document,
+        { ...context, config, known, knownOptionReasons },
+        { problems, warnings: stageWarnings, failedWorkflows },
+      );
     }
   }
   const items = Object.keys(catalog.documents).filter((workflowId) => !workflowFailed(workflowId, catalog.problems, failedWorkflows));
   const warnings = [...Object.values(catalog.documents).flatMap(workflowWarnings), ...stageWarnings];
-  if (problems.length > 0) return failed('workflows', problems, items, warnings);
+  if (problems.length > 0) return failed('workflows', problems, { items, warnings });
   return passed('workflows', items, warnings);
 }
 
@@ -78,18 +91,16 @@ function workflowWarnings(document: WorkflowDocument): string[] {
 }
 
 function checkStageBindings(
-  config: Record<string, unknown>,
   document: WorkflowDocument,
-  clients: ClientRegistry,
-  known: ReadonlySet<string>,
-  knownOptionReasons: ReadonlySet<string>,
-  unmapped: ReadonlySet<string>,
-  invalidEffort: ReadonlySet<string>,
-  efforts: Readonly<Record<string, ModelEffortCheck>>,
-  problems: string[],
-  warnings: string[],
-  failedWorkflows: Set<string>,
+  context: Omit<WorkflowCheckContext, 'config' | 'configDiagnostics'> & {
+    readonly config: Record<string, unknown>;
+    readonly known: ReadonlySet<string>;
+    readonly knownOptionReasons: ReadonlySet<string>;
+  },
+  sink: BindingSink,
 ): void {
+  const { config, clients, known, knownOptionReasons, unmapped, invalidEffort, efforts } = context;
+  const { problems, warnings, failedWorkflows } = sink;
   const report = (stageId: string, message: string): void => {
     const text = `${document.id}.${stageId}: ${message}`;
     if (!problems.includes(text)) problems.push(text);
@@ -114,7 +125,7 @@ function checkStageBindings(
     }
     let target;
     try {
-      target = resolveStageSpec(config, stage, undefined, clients);
+      target = resolveStageSpec(config, stage, { registry: clients });
     } catch (error) {
       if (!(error instanceof ConfigurationError)) throw error;
       const identity = { code: error.code ?? 'config-invalid', ...(error.path === undefined ? {} : { path: error.path }), message: error.message };
@@ -160,6 +171,6 @@ function checkClients(
     if (found) items.push(`${client}  ${found}`);
     else problems.push(`${command} is not on PATH`);
   }
-  if (problems.length > 0) return failed('clients', problems, items);
+  if (problems.length > 0) return failed('clients', problems, { items });
   return passed('clients', items);
 }

@@ -78,7 +78,7 @@ export function checkWorkflowCatalog(
   }
   for (const [workflowId, group] of grouped) {
     if (group.length > 1) continue;
-    checkEntryReferences(group[0]!, workflowId, entries, documents, failed, problems, false);
+    checkEntryReferences(group[0]!, workflowId, { entries, documents, failed, problems, external: false });
   }
   // An external entry (a session draft) is checked against the catalog but is never part of it, so it
   // may share an id with a catalog workflow without a duplicate-id finding.
@@ -87,25 +87,28 @@ export function checkWorkflowCatalog(
     if (external.id.known && !external.stagesDeclared) {
       problems.push({ code: 'no-stages', message: `${workflowId}: declares no stages.`, workflow: workflowId, external: true });
     }
-    checkEntryReferences(external, workflowId, entries, documents, failed, problems, true);
+    checkEntryReferences(external, workflowId, { entries, documents, failed, problems, external: true });
   }
   return { documents, problems };
+}
+
+export interface EntryReferenceContext {
+  readonly entries: readonly WorkflowCatalogEntry[];
+  readonly documents: Record<string, WorkflowDocument>;
+  readonly failed: Set<string>;
+  readonly problems: CatalogProblem[];
+  readonly external: boolean;
 }
 
 export function checkEntryReferences(
   entry: WorkflowCatalogEntry,
   workflowId: string,
-  entries: readonly WorkflowCatalogEntry[],
-  documents: Record<string, WorkflowDocument>,
-  failed: Set<string>,
-  problems: CatalogProblem[],
-  external: boolean,
+  context: EntryReferenceContext,
 ): void {
+  const { entries, documents, failed, problems, external } = context;
   const mark = external ? { external: true as const } : {};
   if (entry.requires.known && entry.requires.value !== null && !isDraftEntry(entries, entry.requires.value.workflow)) {
-    const messages: string[] = [];
-    checkRequires(workflowId, entry.requires.value, documents, failed, messages);
-    for (const message of messages) problems.push({ code: 'requires-invalid', message, workflow: workflowId, ...mark });
+    for (const message of checkRequires(workflowId, entry.requires.value, { documents, failedIds: failed })) problems.push({ code: 'requires-invalid', message, workflow: workflowId, ...mark });
   }
   for (const [index, next] of entry.downstream.entries()) {
     if (!next.workflow.known) continue;
@@ -129,10 +132,10 @@ export function isDraftEntry(entries: readonly WorkflowCatalogEntry[], workflowI
 export function checkRequires(
   workflowId: string,
   requires: WorkflowRequires,
-  documents: Record<string, WorkflowDocument>,
-  failedIds: Set<string>,
-  problems: string[],
-): void {
+  lookup: { readonly documents: Record<string, WorkflowDocument>; readonly failedIds: Set<string> },
+): string[] {
+  const { documents, failedIds } = lookup;
+  const problems: string[] = [];
   const required = documents[requires.workflow];
   if (required === undefined) {
     if (failedIds.has(requires.workflow)) {
@@ -142,9 +145,9 @@ export function checkRequires(
         `${workflowId}: requires workflow ${requires.workflow}, which is not in .migent/workflows.`,
       );
     }
-    return;
+    return problems;
   }
-  if ((documents[workflowId]?.schemaVersion ?? 1) >= 2) return;
+  if ((documents[workflowId]?.schemaVersion ?? 1) >= 2) return problems;
   const decision = required.completion === null ? null : required.completion.decision;
   if (requires.decision === null || decision === null || decision.toLowerCase() !== requires.decision) {
     const actual = decision === null ? 'no decision' : decision;
@@ -152,4 +155,5 @@ export function checkRequires(
       `${workflowId}: requires ${requires.workflow} to complete with ${requires.decision}, but it completes with ${actual}.`,
     );
   }
+  return problems;
 }

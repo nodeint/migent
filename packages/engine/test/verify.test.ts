@@ -59,7 +59,7 @@ function setup(workflow: string): { workspace: string; sessionId: string } {
   mkdirSync(path.join(workspace, '.migent', 'workflows'), { recursive: true });
   writeFileSync(path.join(workspace, '.migent', 'config.yaml'), CONFIG, 'utf8');
   writeFileSync(path.join(workspace, '.migent', 'workflows', 'wf.yaml'), workflow, 'utf8');
-  return { workspace, sessionId: createWorkflowSession(workspace, 'wf', 'task') };
+  return { workspace, sessionId: createWorkflowSession(workspace, 'wf', { task: 'task' }) };
 }
 
 function runStage(runner: AgentToolRunner, workspace: string, sessionId: string, extra = {}) {
@@ -287,28 +287,12 @@ completion:
   let reviewId: string;
   try {
     const [implementRecord, , implement] = store.loadOrCreate(
-      'fake',
-      'm1',
-      {},
-      workspace,
-      sessionId,
-      'implement',
-      null,
-      null,
-      'go',
+      { client: 'fake', model: 'm1', options: {}, workspace, sessionId, stageId: 'implement', stageAttempt: null, executionOrder: null, prompt: 'go' },
     );
     noted = implement.executionId;
     noteInFlightExecution(sessionId, implement.executionId);
     const [reviewRecord, , review] = store.loadOrCreate(
-      'fake',
-      'm1',
-      {},
-      workspace,
-      sessionId,
-      'review',
-      null,
-      null,
-      'review',
+      { client: 'fake', model: 'm1', options: {}, workspace, sessionId, stageId: 'review', stageAttempt: null, executionOrder: null, prompt: 'review' },
     );
     clearInFlightExecution(sessionId, implement.executionId);
     noted = null;
@@ -317,8 +301,8 @@ completion:
     implementRecord.agentId = 'native-session-1';
     store.save(implementRecord, implement);
     store.save(reviewRecord, review);
-    store.saveExecution(implement, implementRecord, 'completed', null, new StageOutcome('blocked', 'implement gate'));
-    store.saveExecution(review, reviewRecord, 'cancelled');
+    store.saveExecution(implement, implementRecord, { status: 'completed', outcome: new StageOutcome('blocked', { blocker: 'implement gate' }) });
+    store.saveExecution(review, reviewRecord, { status: 'cancelled' });
     expect(store.readSessionStatus(sessionId).status).toBe('blocked');
   } finally {
     if (noted) clearInFlightExecution(sessionId, noted);
@@ -363,15 +347,7 @@ stages:
   try {
     const created = ['a', 'b', 'c'].map((stageId) => {
       const [record, , context] = store.loadOrCreate(
-        'fake',
-        'm1',
-        {},
-        workspace,
-        sessionId,
-        stageId,
-        null,
-        null,
-        stageId,
+        { client: 'fake', model: 'm1', options: {}, workspace, sessionId, stageId, stageAttempt: null, executionOrder: null, prompt: stageId },
       );
       noted.push(context.executionId);
       noteInFlightExecution(sessionId, context.executionId);
@@ -386,9 +362,9 @@ stages:
     created[1]!.record.agentId = 'native-session-1';
     store.save(created[1]!.record, created[1]!.context);
     store.save(cancelled.record, cancelled.context);
-    store.saveExecution(created[0]!.context, created[0]!.record, 'completed', null, new StageOutcome('blocked', 'a gate'));
-    store.saveExecution(created[1]!.context, created[1]!.record, 'completed', null, new StageOutcome('blocked', 'b gate'));
-    store.saveExecution(cancelled.context, cancelled.record, 'cancelled');
+    store.saveExecution(created[0]!.context, created[0]!.record, { status: 'completed', outcome: new StageOutcome('blocked', { blocker: 'a gate' }) });
+    store.saveExecution(created[1]!.context, created[1]!.record, { status: 'completed', outcome: new StageOutcome('blocked', { blocker: 'b gate' }) });
+    store.saveExecution(cancelled.context, cancelled.record, { status: 'cancelled' });
     expect(store.readSessionStatus(sessionId).status).toBe('blocked');
   } finally {
     for (const id of noted) clearInFlightExecution(sessionId, id);
@@ -597,13 +573,13 @@ test('reaper cannot fail an execution between verify commands', async () => {
 test('reap skips an in-flight sibling', () => {
   const { workspace, sessionId } = setup(workflowText('node -e "process.exit(0)"'));
   const store = new SessionStore(workspace);
-  const [, , sibling] = store.loadOrCreate('fake', 'm1', {}, workspace, sessionId, 'implement', null, null, 'go');
+  const [, , sibling] = store.loadOrCreate({ client: 'fake', model: 'm1', options: {}, workspace, sessionId, stageId: 'implement', stageAttempt: null, executionOrder: null, prompt: 'go' });
   try {
     expect(() => store.reapOrphanedExecutions(sessionId, 'raise', new Set([sibling.executionId]))).not.toThrow();
     noteInFlightExecution(sessionId, sibling.executionId);
     expect(() => store.reapOrphanedExecutions(sessionId, 'raise')).not.toThrow();
     expect(() =>
-      new SessionStore(workspace).loadOrCreate('fake', 'm1', {}, workspace, sessionId, 'review', null, null, 'next'),
+      new SessionStore(workspace).loadOrCreate({ client: 'fake', model: 'm1', options: {}, workspace, sessionId, stageId: 'review', stageAttempt: null, executionOrder: null, prompt: 'next' }),
     ).not.toThrow();
     clearInFlightExecution(sessionId, sibling.executionId);
     expect(() => store.reapOrphanedExecutions(sessionId, 'raise')).toThrow(/running|unverified|still/i);
@@ -625,7 +601,7 @@ test('a new execution records its owner so a dead owner can be reaped', () => {
     probeEndpoint: () => ENDPOINT_UNKNOWN,
   };
   const store = new SessionStore(workspace, inspector);
-  const [, , created] = store.loadOrCreate('fake', 'm1', {}, workspace, sessionId, 'implement', null, null, 'go');
+  const [, , created] = store.loadOrCreate({ client: 'fake', model: 'm1', options: {}, workspace, sessionId, stageId: 'implement', stageAttempt: null, executionOrder: null, prompt: 'go' });
   const recorded = execution(workspace, sessionId, created.executionId);
   expect(recorded.owner_pid).toBe(process.pid);
   expect(recorded.hostname).toBe(hostname());
@@ -642,34 +618,18 @@ test('resume reopens every blocked stage', () => {
   let noted: string | null = null;
   try {
     const [implementRecord, , implement] = store.loadOrCreate(
-      'fake',
-      'm1',
-      {},
-      workspace,
-      sessionId,
-      'implement',
-      null,
-      null,
-      'go',
+      { client: 'fake', model: 'm1', options: {}, workspace, sessionId, stageId: 'implement', stageAttempt: null, executionOrder: null, prompt: 'go' },
     );
     // Saving the first outcome blocks the session before the sibling exists.
     noted = implement.executionId;
     noteInFlightExecution(sessionId, implement.executionId);
     const [reviewRecord, , review] = store.loadOrCreate(
-      'fake',
-      'm1',
-      {},
-      workspace,
-      sessionId,
-      'review',
-      null,
-      null,
-      'review',
+      { client: 'fake', model: 'm1', options: {}, workspace, sessionId, stageId: 'review', stageAttempt: null, executionOrder: null, prompt: 'review' },
     );
     clearInFlightExecution(sessionId, implement.executionId);
     noted = null;
-    store.saveExecution(implement, implementRecord, 'completed', null, new StageOutcome('blocked', 'implement gate'));
-    store.saveExecution(review, reviewRecord, 'completed', null, new StageOutcome('blocked', 'review gate'));
+    store.saveExecution(implement, implementRecord, { status: 'completed', outcome: new StageOutcome('blocked', { blocker: 'implement gate' }) });
+    store.saveExecution(review, reviewRecord, { status: 'completed', outcome: new StageOutcome('blocked', { blocker: 'review gate' }) });
     const blocked = store.readSessionStatus(sessionId);
     expect(blocked.status).toBe('blocked');
     expect(blocked.blocked_by_execution_id).toBe(implement.executionId);
@@ -1067,7 +1027,7 @@ completion:
 `,
     'utf8',
   );
-  const sessionId = createWorkflowSession(workspace, 'wf', 'task');
+  const sessionId = createWorkflowSession(workspace, 'wf', { task: 'task' });
   const provider = new ScriptedClient(
     [
       'status: complete\n\ndraft',
@@ -1107,7 +1067,7 @@ function seedStages(
   const ids: Record<string, string> = {};
   try {
     const created = rows.map((row) => {
-      const [record, , context] = store.loadOrCreate('fake', 'm1', {}, workspace, sessionId, row.stageId, null, null, row.stageId);
+      const [record, , context] = store.loadOrCreate({ client: 'fake', model: 'm1', options: {}, workspace, sessionId, stageId: row.stageId, stageAttempt: null, executionOrder: null, prompt: row.stageId });
       noteInFlightExecution(sessionId, context.executionId);
       record.agentId = row.agentId;
       record.history.push({ role: 'user', content: row.stageId });
@@ -1115,7 +1075,7 @@ function seedStages(
       return { row, record, context };
     });
     for (const { row, record, context } of created) {
-      store.saveExecution(context, record, row.status, null, row.outcome);
+      store.saveExecution(context, record, { status: row.status, outcome: row.outcome });
       clearInFlightExecution(sessionId, context.executionId);
       ids[row.stageId] = context.executionId;
     }
@@ -1139,7 +1099,7 @@ stages:
 test('a reply to a cancelled stage keeps a blocked sibling blocked', async () => {
   const { workspace, sessionId } = setup(PARALLEL);
   const { store, ids } = seedStages(workspace, sessionId, [
-    { stageId: 'a', agentId: 'native-a', status: 'completed', outcome: new StageOutcome('blocked', 'a gate') },
+    { stageId: 'a', agentId: 'native-a', status: 'completed', outcome: new StageOutcome('blocked', { blocker: 'a gate' }) },
     { stageId: 'b', agentId: 'native-b', status: 'cancelled' },
   ]);
   const provider = new ScriptedClient([OK]);
@@ -1158,7 +1118,7 @@ test('a reply to a cancelled stage keeps a blocked sibling blocked', async () =>
 test('a saved reply to a cancelled stage is recovered beside a blocked sibling', async () => {
   const { workspace, sessionId } = setup(PARALLEL);
   const { store } = seedStages(workspace, sessionId, [
-    { stageId: 'a', agentId: 'native-a', status: 'completed', outcome: new StageOutcome('blocked', 'a gate') },
+    { stageId: 'a', agentId: 'native-a', status: 'completed', outcome: new StageOutcome('blocked', { blocker: 'a gate' }) },
     { stageId: 'b', agentId: 'native-b', status: 'cancelled' },
   ]);
   const lock = SessionLock.acquire(path.join(workspace, '.migent', 'sessions', sessionId));
@@ -1205,7 +1165,7 @@ stages:
 test('a reply needs --stage when a cancelled stage waits beside a blocked one', async () => {
   const { workspace, sessionId } = setup(PARALLEL);
   seedStages(workspace, sessionId, [
-    { stageId: 'a', agentId: 'native-a', status: 'completed', outcome: new StageOutcome('blocked', 'a gate') },
+    { stageId: 'a', agentId: 'native-a', status: 'completed', outcome: new StageOutcome('blocked', { blocker: 'a gate' }) },
     { stageId: 'b', agentId: 'native-b', status: 'cancelled' },
   ]);
   await expect(

@@ -352,7 +352,7 @@ export function writePlanReviewSession(): [string, string] {
   mkdirSync(workflows, { recursive: true });
   writeFileSync(path.join(workflows, 'plan.yaml'), PLAN_REVIEW_WORKFLOW, 'utf8');
   writeSessionConfig(workspace);
-  return [workspace, createWorkflowSession(workspace, 'plan', 'Write a plan')];
+  return [workspace, createWorkflowSession(workspace, 'plan', { task: 'Write a plan' })];
 }
 
 export function repoWorkflowText(workflowId: string): string {

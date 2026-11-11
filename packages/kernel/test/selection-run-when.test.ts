@@ -32,7 +32,7 @@ function skip(stageId: string, order: number): ExecutionSnapshot {
 }
 
 function ready(workflow: WorkflowDocument, snapshots: ExecutionSnapshot[]): string[] {
-  return readyStages(workflow, snapshots, 'active');
+  return readyStages(workflow, snapshots, { sessionStatus: 'active' });
 }
 
 const CHAIN = `\
@@ -197,7 +197,7 @@ test('(h) a transitive completion in the reach of a skip stays superseded', () =
   );
   expect(ready(workflow, snapshots)).not.toContain('D');
   expect(ready(workflow, snapshots)).not.toContain('C');
-  expect(schedulableStageIds(workflow, snapshots, 'active', null, null, new Set())).not.toContain('D');
+  expect(schedulableStageIds(workflow, snapshots, { sessionStatus: 'active', verifyTried: new Set() })).not.toContain('D');
   const control = snapshots.filter((item) => item.status !== 'skipped');
   expect(ready(workflow, control)).toContain('D');
 });
@@ -302,5 +302,5 @@ stages:
   expect(stageAgentExecution(snapshots, 'review')).toBe('0002-review');
   expect(stageAgentExecution([skip('review', 1)], 'review')).toBeNull();
   expect(revisionResumeExecution(workflow, [skip('review', 1)], 'review')).toBeNull();
-  expect(revisionStop(workflow, snapshots, 'review')).toBe(false);
+  expect(revisionStop(workflow, snapshots, { stageId: 'review' })).toBe(false);
 });

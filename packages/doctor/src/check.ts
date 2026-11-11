@@ -90,9 +90,9 @@ export function passed(name: string, items: readonly string[], warnings: readonl
 export function failed(
   name: string,
   problems: readonly string[],
-  items: readonly string[] = [],
-  warnings: readonly string[] = [],
+  extra: { items?: readonly string[]; warnings?: readonly string[] } = {},
 ): Check {
+  const { items = [], warnings = [] } = extra;
   return checkSchema.parse({
     name,
     ok: false,
@@ -102,7 +102,8 @@ export function failed(
   });
 }
 
-export function makeCheck(name: string, items: string[], problems: string[], warnings: string[]): Check {
+export function makeCheck(name: string, parts: { items: string[]; problems: string[]; warnings: string[] }): Check {
+  const { items, problems, warnings } = parts;
   return { name, ok: problems.length === 0, items, problems, warnings };
 }
 

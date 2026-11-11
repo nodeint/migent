@@ -45,7 +45,12 @@ function debug(step: string): void {
  * Report a wrapper-owned failure: one line on stderr, then `failed` over IPC when the channel
  * exists. Exits only after the send completes so the message is not lost with the process.
  */
-function fail(phase: WrapperPhase, error: unknown, exitCode: number, extra: Partial<WrapperFailedMessage> = {}): Promise<never> {
+function fail(
+  phase: WrapperPhase,
+  error: unknown,
+  exit: { exitCode: number; extra?: Partial<WrapperFailedMessage> },
+): Promise<never> {
+  const { exitCode, extra = {} } = exit;
   const err = (error instanceof Error ? error : new Error(String(error))) as NodeJS.ErrnoException;
   const message: WrapperFailedMessage = { type: WRAPPER_FAILED, phase, message: err.message, ...extra };
   if (typeof err.code === 'string' && message.code === undefined) message.code = err.code;
@@ -158,8 +163,8 @@ function parseArgv(argv: string[]): WrapperOptions | null {
 
 async function main(argv: string[]): Promise<void> {
   const options = parseArgv(argv);
-  if (options === null) return fail('argv', new Error('Invalid wrapper arguments.'), 1);
-  if (!process.send || !process.connected) return fail('ipc', new Error('No IPC channel to the owner.'), 1);
+  if (options === null) return fail('argv', new Error('Invalid wrapper arguments.'), { exitCode: 1 });
+  if (!process.send || !process.connected) return fail('ipc', new Error('No IPC channel to the owner.'), { exitCode: 1 });
   debug(`started pid=${process.pid} endpoint=${options.endpoint}`);
   // The owner signals the whole group on cancel and timeout; the wrapper outlives the
   // provider so it can report the provider's exit status.
@@ -172,11 +177,9 @@ async function main(argv: string[]): Promise<void> {
   } catch (error) {
     const length = Buffer.byteLength(options.endpoint);
     const cause = error as NodeJS.ErrnoException;
-    return fail('listen', new Error(`${cause.message} (endpoint ${options.endpoint}, length ${length})`), 1, {
-      code: cause.code,
-      errno: cause.errno,
-      syscall: cause.syscall,
-      path: options.endpoint,
+    return fail('listen', new Error(`${cause.message} (endpoint ${options.endpoint}, length ${length})`), {
+      exitCode: 1,
+      extra: { code: cause.code, errno: cause.errno, syscall: cause.syscall, path: options.endpoint },
     });
   }
   debug('listening');
@@ -236,7 +239,7 @@ async function main(argv: string[]): Promise<void> {
       server.close();
       removeStaleSocket(options.endpoint);
       const unpassable = error instanceof UnpassableArgument;
-      void fail('spawn', error, unpassable ? 2 : 1, unpassable ? { code: UNPASSABLE_ARGUMENT_CODE } : {});
+      void fail('spawn', error, { exitCode: unpassable ? 2 : 1, extra: unpassable ? { code: UNPASSABLE_ARGUMENT_CODE } : {} });
       return;
     }
     provider = started;
@@ -245,7 +248,7 @@ async function main(argv: string[]): Promise<void> {
       if (stopping) return;
       server.close();
       removeStaleSocket(options.endpoint);
-      void fail('spawn', error, error.code === 'ENOENT' ? 127 : 1, { path: error.path ?? command[0] });
+      void fail('spawn', error, { exitCode: error.code === 'ENOENT' ? 127 : 1, extra: { path: error.path ?? command[0] } });
     });
     started.on('exit', (code, signal) => {
       if (stopping) return;
@@ -272,7 +275,7 @@ async function main(argv: string[]): Promise<void> {
 
 if (runningAsMain()) {
   main(process.argv.slice(2)).catch((error: unknown) => {
-    void fail('runtime', error, 1);
+    void fail('runtime', error, { exitCode: 1 });
   });
 }
 

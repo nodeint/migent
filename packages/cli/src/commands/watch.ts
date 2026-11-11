@@ -72,7 +72,7 @@ export async function followSession(
   if (once) {
     const drift = statusDriftMessage(workspace, sessionId);
     if (drift) printNotice(drift);
-    printSnapshot(sessionDirectory, executionId, jsonLines);
+    printSnapshot(sessionDirectory, { executionId, jsonLines });
     return 0;
   }
   const tailOnly = cursor === null;
@@ -82,11 +82,11 @@ export async function followSession(
     // Snapshot and the notice can block. Capture offsets first so lines written then are still tailed.
     streamOffsets = new Map(listStreamFiles(sessionDirectory).map((stream) => [stream, fileSize(stream)]));
     followCursor = fileSize(eventsPath);
-    printSnapshot(sessionDirectory, executionId, jsonLines, followCursor);
+    printSnapshot(sessionDirectory, { executionId, jsonLines }, followCursor);
   }
   printNotice(`Watching session ${sessionId}.`);
   const unbind = bindCancellationSignals();
-  const logs = openFollowLogs(sessionDirectory, eventsPath, followCursor, tailOnly, streamOffsets);
+  const logs = openFollowLogs(sessionDirectory, eventsPath, { cursor: followCursor, tailOnly, streamOffsets });
   try {
     for (;;) {
       throwIfCliCancelled();
@@ -128,10 +128,10 @@ export async function followSession(
 
 function printSnapshot(
   sessionDirectory: string,
-  executionId: string | null,
-  jsonLines: boolean,
+  selection: { executionId: string | null; jsonLines: boolean },
   eventsCursor?: number,
 ): Record<string, unknown> {
+  const { executionId, jsonLines } = selection;
   const snapshot = watchSnapshot(sessionDirectory, executionId);
   if (eventsCursor !== undefined) snapshot.events_cursor = eventsCursor;
   if (jsonLines) writeJson(eventsCursor === undefined ? SessionSnapshot : SessionSnapshotLine, snapshotJson(snapshot));
@@ -184,17 +184,16 @@ interface OpenLog {
 function openFollowLogs(
   sessionDirectory: string,
   eventsPath: string,
-  cursor: number,
-  tailOnly: boolean,
-  streamOffsets: ReadonlyMap<string, number> | null,
+  follow: { cursor: number; tailOnly: boolean; streamOffsets: ReadonlyMap<string, number> | null },
 ): OpenLog[] {
+  const { cursor, tailOnly, streamOffsets } = follow;
   const eventsText = !tailOnly && cursor > 0 ? readText(eventsPath) : '';
-  const logs: OpenLog[] = [openLog(eventsPath, cursor, null, 'events')];
+  const logs: OpenLog[] = [openLog(eventsPath, { offset: cursor, minTimestampMs: null, source: 'events' })];
   for (const stream of listStreamFiles(sessionDirectory)) {
     const start = tailOnly
       ? { offset: tailOffset(stream, streamOffsets), minTimestampMs: null }
       : streamFollowStart(cursor, eventsText, fileSize(stream));
-    logs.push(openLog(stream, start.offset, start.minTimestampMs, 'stream'));
+    logs.push(openLog(stream, { offset: start.offset, minTimestampMs: start.minTimestampMs, source: 'stream' }));
   }
   return logs;
 }
@@ -208,7 +207,7 @@ function discoverStreams(sessionDirectory: string, logs: OpenLog[]): void {
   const known = new Set(logs.map((log) => log.path));
   for (const stream of listStreamFiles(sessionDirectory)) {
     if (known.has(stream)) continue;
-    logs.push(openLog(stream, 0, null, 'stream'));
+    logs.push(openLog(stream, { offset: 0, minTimestampMs: null, source: 'stream' }));
   }
 }
 
@@ -226,7 +225,8 @@ function readBatch(logs: OpenLog[]): FollowLine[] {
   return batch;
 }
 
-function openLog(filePath: string, offset: number, minTimestampMs: number | null, source: 'events' | 'stream'): OpenLog {
+function openLog(filePath: string, start: { offset: number; minTimestampMs: number | null; source: 'events' | 'stream' }): OpenLog {
+  const { offset, minTimestampMs, source } = start;
   return { path: filePath, fd: openSync(filePath, 'r'), offset, pending: '', minTimestampMs, source };
 }
 

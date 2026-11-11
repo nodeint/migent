@@ -65,18 +65,18 @@ test('racing updates from one base across processes: one winner, the rest are st
 test('the base hash covers raw bytes, even when they are not valid UTF-8', () => {
   const bytes = Buffer.from([0x61, 0xff, 0xfe, 0x0a]);
   writeFileSync(file, bytes);
-  const result = writeFileConditional(file, 'new\n', sha256Hex(bytes));
+  const result = writeFileConditional(file, 'new\n', { baseHash: sha256Hex(bytes) });
   expect(result.status).toBe('written');
   expect(readFileSync(file, 'utf8')).toBe('new\n');
 });
 
 test('a missing file never matches a base hash', () => {
-  expect(writeFileConditional(file, 'x\n', '0'.repeat(64))).toMatchObject({ status: 'stale-base', currentHash: null });
+  expect(writeFileConditional(file, 'x\n', { baseHash: '0'.repeat(64) })).toMatchObject({ status: 'stale-base', currentHash: null });
 });
 
 test('a filesystem without hard links writes nothing and reports create-unsupported', () => {
   const unsupported = () => { throw Object.assign(new Error('nope'), { code: 'EPERM' }); };
-  const result = writeFileConditional(file, 'x\n', null, { link: unsupported });
+  const result = writeFileConditional(file, 'x\n', { link: unsupported });
   expect(result.status).toBe('create-unsupported');
   expect(readdirSync(dir)).toEqual([]);
 });

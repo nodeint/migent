@@ -29,7 +29,7 @@ function setup(workflow: string): { workspace: string; sessionId: string } {
   mkdirSync(path.join(workspace, '.migent', 'workflows'), { recursive: true });
   writeFileSync(path.join(workspace, '.migent', 'config.yaml'), CONFIG, 'utf8');
   writeFileSync(path.join(workspace, '.migent', 'workflows', 'wf.yaml'), workflow, 'utf8');
-  return { workspace, sessionId: createWorkflowSession(workspace, 'wf', 'Finish the notes') };
+  return { workspace, sessionId: createWorkflowSession(workspace, 'wf', { task: 'Finish the notes' }) };
 }
 
 function executionIds(workspace: string, sessionId: string): string[] {
@@ -242,35 +242,19 @@ completion:
   let noted: string | null = null;
   try {
     const [implementRecord, , implement] = store.loadOrCreate(
-      'fake',
-      'm1',
-      {},
-      workspace,
-      sessionId,
-      'implement',
-      null,
-      null,
-      'go',
+      { client: 'fake', model: 'm1', options: {}, workspace, sessionId, stageId: 'implement', stageAttempt: null, executionOrder: null, prompt: 'go' },
     );
     noted = implement.executionId;
     noteInFlightExecution(sessionId, implement.executionId);
     const [reviewRecord, , review] = store.loadOrCreate(
-      'fake',
-      'm1',
-      {},
-      workspace,
-      sessionId,
-      'review',
-      null,
-      null,
-      'review',
+      { client: 'fake', model: 'm1', options: {}, workspace, sessionId, stageId: 'review', stageAttempt: null, executionOrder: null, prompt: 'review' },
     );
     clearInFlightExecution(sessionId, implement.executionId);
     noted = null;
     store.save(implementRecord, implement);
     store.save(reviewRecord, review);
-    store.saveExecution(implement, implementRecord, 'cancelled');
-    store.saveExecution(review, reviewRecord, 'cancelled');
+    store.saveExecution(implement, implementRecord, { status: 'cancelled' });
+    store.saveExecution(review, reviewRecord, { status: 'cancelled' });
     expect(store.readSessionStatus(sessionId).status).toBe('cancelled');
     const reopened = store.reopenCancelledExecutions(sessionId);
     expect(reopened.map((item) => item.executionId)).toEqual([implement.executionId, review.executionId]);
@@ -300,28 +284,12 @@ completion:
   let reviewId: string;
   try {
     const [implementRecord, , implement] = store.loadOrCreate(
-      'fake',
-      'm1',
-      {},
-      workspace,
-      sessionId,
-      'implement',
-      null,
-      null,
-      'go',
+      { client: 'fake', model: 'm1', options: {}, workspace, sessionId, stageId: 'implement', stageAttempt: null, executionOrder: null, prompt: 'go' },
     );
     noted = implement.executionId;
     noteInFlightExecution(sessionId, implement.executionId);
     const [reviewRecord, , review] = store.loadOrCreate(
-      'fake',
-      'm1',
-      {},
-      workspace,
-      sessionId,
-      'review',
-      null,
-      null,
-      'review',
+      { client: 'fake', model: 'm1', options: {}, workspace, sessionId, stageId: 'review', stageAttempt: null, executionOrder: null, prompt: 'review' },
     );
     clearInFlightExecution(sessionId, implement.executionId);
     noted = null;
@@ -329,8 +297,8 @@ completion:
     reviewRecord.history.push({ role: 'user', content: 'review' });
     store.save(implementRecord, implement);
     store.save(reviewRecord, review);
-    store.saveExecution(implement, implementRecord, 'completed', null, new StageOutcome('blocked', 'implement gate'));
-    store.saveExecution(review, reviewRecord, 'cancelled');
+    store.saveExecution(implement, implementRecord, { status: 'completed', outcome: new StageOutcome('blocked', { blocker: 'implement gate' }) });
+    store.saveExecution(review, reviewRecord, { status: 'cancelled' });
     expect(store.readSessionStatus(sessionId).status).toBe('blocked');
   } finally {
     if (noted) clearInFlightExecution(sessionId, noted);

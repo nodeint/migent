@@ -64,7 +64,7 @@ function continuationContext(
   dependsOn: readonly string[],
 ) {
   return {
-    upstream: upstreamArtifacts(input.workflow, dependsOn, input.snapshots, input.stageId),
+    upstream: upstreamArtifacts(input, dependsOn),
     routed: routedResultContext(input.workflow, input.stageId, input.snapshots),
     blocked: previousBlockedAttempt(input.stageId, input.snapshots),
     failed: previousFailedAttempt(input.stageId, input.snapshots),
@@ -73,12 +73,11 @@ function continuationContext(
 
 export function buildVerifyRepairPrompt(
   report: string,
-  red: number,
-  maxVerify: number,
-  artifactPath: string | null,
-  taskFile?: string | null,
-  sessionDirectory?: string | null,
+  state: { red: number; maxVerify: number; artifactPath: string | null },
+  files: { taskFile?: string | null; sessionDirectory?: string | null } = {},
 ): string {
+  const { red, maxVerify, artifactPath } = state;
+  const { taskFile, sessionDirectory } = files;
   return renderVerifyRepair({
     report, red, maxVerify, artifactPath,
     taskFile: taskFile && sessionDirectory ? resolvePath(taskFile) : null,
@@ -87,11 +86,10 @@ export function buildVerifyRepairPrompt(
 }
 
 function upstreamArtifacts(
-  workflow: WorkflowDocument,
+  input: { workflow: WorkflowDocument; snapshots: readonly ExecutionSnapshot[]; stageId: string },
   dependsOn: readonly string[],
-  snapshots: readonly ExecutionSnapshot[],
-  stageId: string,
 ): UpstreamLine[] {
+  const { workflow, snapshots, stageId } = input;
   const v7 = isArtifactSchema(workflow);
   const complete = v7 ? currentCompleteByStage(workflow, snapshots) : latestCompleteByStage(snapshots);
   const ownOrder = complete[stageId]?.executionOrder ?? 0; // 0: first visit, nothing counts as updated

@@ -149,7 +149,7 @@ export class TurnLoop {
       this.eventReporter.emit('provider.cancelled', 'cancellation requested');
       this.record.status = 'cancelled';
       this.store.save(this.record, this.context);
-      this.store.saveExecution(this.context, this.record, 'cancelled');
+      this.store.saveExecution(this.context, this.record, { status: 'cancelled' });
       log(`Execution ${this.context.executionId} marked cancelled.`);
     }
     throw error;
@@ -564,12 +564,21 @@ export class TurnLoop {
       if (it.gateFailure.kind === 'question_file' || it.gateFailure.kind === 'handoff') {
         record.status = 'failed';
         store.save(record, context);
-        store.saveExecution(context, record, 'failed', this.failureDetail, null, false, this.finalFields(this.outcomeFields()));
+        store.saveExecution(context, record, { status: 'failed', error: this.failureDetail, extra: this.finalFields(this.outcomeFields()) });
         return 'stop';
       }
     }
     if (!it.needsVerify || it.outcome === null) {
-      store.saveExecution(context, record, record.status, it.invokeError, it.outcome, false, this.finalFields(this.outcomeFields()));
+      store.saveExecution(
+        context,
+        record,
+        {
+          status: record.status,
+          error: it.invokeError,
+          outcome: it.outcome,
+          extra: this.finalFields(this.outcomeFields()),
+        },
+      );
       return 'stop';
     }
     return 'proceed';
@@ -584,7 +593,7 @@ export class TurnLoop {
       if (it.gateFailure.kind === 'question_file' || it.gateFailure.kind === 'handoff') {
         record.status = 'failed';
         store.save(record, context);
-        store.saveExecution(context, record, 'failed', this.failureDetail, null, false, this.finalFields(this.outcomeFields()));
+        store.saveExecution(context, record, { status: 'failed', error: this.failureDetail, extra: this.finalFields(this.outcomeFields()) });
         return 'stop';
       }
     }
@@ -597,7 +606,16 @@ export class TurnLoop {
     if (it.invokeError !== null || it.outcome === null || it.outcome.status !== 'complete' || this.verifyCommands.length === 0) {
       record.status = it.invokeError === null && it.outcome !== null ? 'completed' : 'failed';
       store.save(record, context);
-      store.saveExecution(context, record, record.status, it.invokeError, it.outcome, false, this.finalFields(this.outcomeFields()));
+      store.saveExecution(
+        context,
+        record,
+        {
+          status: record.status,
+          error: it.invokeError,
+          outcome: it.outcome,
+          extra: this.finalFields(this.outcomeFields()),
+        },
+      );
       return true;
     }
     return false;
@@ -661,14 +679,14 @@ export class TurnLoop {
     if (result.infraError !== null) {
       record.status = 'failed';
       store.save(record, context);
-      store.saveExecution(context, record, 'failed', result.infraError, null, false, this.finalFields(this.extraFields()));
+      store.saveExecution(context, record, { status: 'failed', error: result.infraError, extra: this.finalFields(this.extraFields()) });
       return { kind: 'end', outcome: it.outcome };
     }
     if (result.passed) {
       eventReporter.emit('verify.passed', 'all commands passed', { turn: this.turn, report: lastReport });
       record.status = 'completed';
       store.save(record, context);
-      store.saveExecution(context, record, 'completed', null, it.outcome, false, this.finalFields(this.extraFields()));
+      store.saveExecution(context, record, { status: 'completed', outcome: it.outcome, extra: this.finalFields(this.extraFields()) });
       store.publishVerifyReport(context, this.turn);
       return { kind: 'end', outcome: it.outcome };
     }
@@ -690,11 +708,7 @@ export class TurnLoop {
       store.saveExecution(
         context,
         record,
-        'failed',
-        `Verify failed ${this.red} times.`,
-        null,
-        false,
-        this.finalFields(this.extraFields(this.failureReason)),
+        { status: 'failed', error: `Verify failed ${this.red} times.`, extra: this.finalFields(this.extraFields(this.failureReason)) },
       );
       return { kind: 'end', outcome: null };
     }
@@ -716,11 +730,12 @@ export class TurnLoop {
     }
     const repair = buildVerifyRepairPrompt(
       report,
-      this.red,
-      this.maxVerify,
-      artifactName ? path.join(context.artifactDirectory, artifactName) : null,
-      taskPointer,
-      taskPointer === null ? null : sessionDirectory,
+      {
+        red: this.red,
+        maxVerify: this.maxVerify,
+        artifactPath: artifactName ? path.join(context.artifactDirectory, artifactName) : null,
+      },
+      { taskFile: taskPointer, sessionDirectory: taskPointer === null ? null : sessionDirectory },
     );
     record.history.push({ role: 'user', content: repair });
     store.save(record, context);

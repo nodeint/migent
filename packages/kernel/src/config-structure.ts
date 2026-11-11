@@ -120,7 +120,12 @@ function indexed(index: StructuralIndex | undefined, where: Field): Configuratio
  * Throws the structural error of a node. With an index the verdict comes from it. A node the
  * contract leaves optional but a consumer needs (`value` is absent) is still checked directly.
  */
-function verdict(index: StructuralIndex | undefined, where: Field, check: () => ConfigurationError | null, value?: unknown): void {
+function verdict(
+  node: { index: StructuralIndex | undefined; where: Field },
+  check: () => ConfigurationError | null,
+  value?: unknown,
+): void {
+  const { index, where } = node;
   const known = indexed(index, where);
   const problem = known === undefined || (known === null && value === undefined) ? check() : known;
   if (problem !== null) throw problem;
@@ -168,13 +173,13 @@ const checkList = (value: unknown, where: Field): ConfigurationError | null => {
 // ---- readers: validate (or consult the index), then normalize ---------------------------------
 
 export function mapping(value: unknown, where: Field, index?: StructuralIndex): Record<string, unknown> {
-  verdict(index, where, () => checkMapping(value, where), value);
+  verdict({ index, where }, () => checkMapping(value, where), value);
   return value as Record<string, unknown>;
 }
 
 /** A non-blank string, trimmed. */
 export function requiredString(value: unknown, where: Field, index?: StructuralIndex): string {
-  verdict(index, where, () => checkString(value, where), value);
+  verdict({ index, where }, () => checkString(value, where), value);
   return (value as string).trim();
 }
 
@@ -185,12 +190,12 @@ export function optionalString(value: unknown, where: Field, index?: StructuralI
 /** Absent or null is an empty list. */
 export function stringItems(raw: unknown, where: Field, index?: StructuralIndex): string[] {
   if ((raw === null || raw === undefined)) return [];
-  verdict(index, where, () => checkList(raw, where));
+  verdict({ index, where }, () => checkList(raw, where));
   return (raw as string[]).map((item) => item.trim());
 }
 
 export function roleDescription(value: unknown, where: Field, index?: StructuralIndex): string {
-  verdict(index, where, () => first(Description, value, where), value);
+  verdict({ index, where }, () => first(Description, value, where), value);
   return (value as string).trim();
 }
 
@@ -202,12 +207,12 @@ export interface ClientFields {
 
 /** Reads an agent's non-null `client` against the closed `ClientSelection` contract. */
 export function readClient(value: unknown, clientField: Field, index?: StructuralIndex): ClientFields {
-  verdict(index, clientField, () => checkClientNode(value, clientField), value);
+  verdict({ index, where: clientField }, () => checkClientNode(value, clientField), value);
   const clientConfig = value as Record<string, unknown>;
   for (const key of Object.keys(clientConfig)) {
     if (CLIENT_KEYS.includes(key)) continue;
     const at = { label: `${clientField.label}.${key}`, path: [...clientField.path, key] };
-    verdict(index, at, () => new ConfigurationError(`${at.label} is not used by Migent.`, { code: 'unknown-key', path: at.path }));
+    verdict({ index, where: at }, () => new ConfigurationError(`${at.label} is not used by Migent.`, { code: 'unknown-key', path: at.path }));
   }
   const typeField = { label: `${clientField.label}.type`, path: [...clientField.path, 'type'] };
   const type = optionalString(clientConfig.type, typeField, index);
@@ -219,7 +224,7 @@ export function readClient(value: unknown, clientField: Field, index?: Structura
 
 /** A non-null `client.options` mapping, validated against `ClientOptions` and trimmed. */
 export function readOptions(value: unknown, where: Field, index?: StructuralIndex): Record<string, string> {
-  verdict(index, where, () => checkMapping(value, where));
+  verdict({ index, where }, () => checkMapping(value, where));
   const raw = value as Record<string, unknown>;
   const known = index === undefined ? undefined : new Map<string, ConfigurationError>();
   const errors = known ?? optionErrors(raw, where);

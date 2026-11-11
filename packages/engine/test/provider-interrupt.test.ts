@@ -39,7 +39,7 @@ function setup(): { workspace: string; sessionId: string } {
   mkdirSync(path.join(workspace, '.migent', 'workflows'), { recursive: true });
   writeFileSync(path.join(workspace, '.migent', 'config.yaml'), CONFIG, 'utf8');
   writeFileSync(path.join(workspace, '.migent', 'workflows', 'wf.yaml'), WORKFLOW, 'utf8');
-  return { workspace, sessionId: createWorkflowSession(workspace, 'wf', 'Finish the notes') };
+  return { workspace, sessionId: createWorkflowSession(workspace, 'wf', { task: 'Finish the notes' }) };
 }
 
 /** Hangs like a client of a shared server; the interrupt command logs whether the client still lives. */
@@ -272,7 +272,11 @@ test('an interrupt command that hangs is killed at its timeout and reported fail
     argv: [process.execPath, '-e', `require("fs").writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));setInterval(()=>{},1000)`],
   });
   const startedAt = Date.now();
-  const report = await interruptSession(provider, PRE_ID, root, { attempts: 3, retryDelayMs: 10, commandTimeoutMs: 500 });
+  const report = await interruptSession(
+    provider,
+    { agentId: PRE_ID, cwd: root },
+    { attempts: 3, retryDelayMs: 10, commandTimeoutMs: 500 },
+  );
   expect(report?.outcome).toBe('failed');
   expect(report?.attempts).toBe(1);
   expect(Date.now() - startedAt).toBeLessThan(10_000);

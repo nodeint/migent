@@ -11,12 +11,17 @@ import { decisionBodyProblems, decisionEntryProblem, decisionListProblem, requir
 
 export const optionKey = /^[A-Za-z][A-Za-z0-9_.-]*$/;
 
+export interface StageRunWhenContext {
+  readonly version2: boolean;
+  readonly verify: readonly string[];
+}
+
 export function stageRunWhen(
   stage: Record<string, unknown>,
   stageId: string,
-  version2: boolean,
-  verify: readonly string[],
+  context: StageRunWhenContext,
 ): RunWhen | null {
+  const { version2, verify } = context;
   if (!Object.hasOwn(stage, 'run_when') || (stage.run_when === null || stage.run_when === undefined)) return null;
   const field = `stages.${stageId}.run_when`;
   if (!version2) throw new ConfigurationError(`${field} requires schema_version 2.`);
@@ -126,13 +131,18 @@ export function normalizeStageDecision(stage: Record<string, unknown>, version7 
   return { ...stage, decision: { values, routes, instructions } };
 }
 
+export interface StageRoutesContext {
+  readonly values: readonly string[];
+  readonly stages: Record<string, StageSpec>;
+  readonly version2?: boolean;
+}
+
 export function stageRoutes(
   stage: Record<string, unknown>,
   stageId: string,
-  values: readonly string[],
-  stages: Record<string, StageSpec>,
-  version2 = false,
+  context: StageRoutesContext,
 ): Record<string, string | string[]> {
+  const { values, stages, version2 = false } = context;
   if (values.length === 0) return {};
   const {decision} = stage;
   if (!isRecord(decision)) return {};
@@ -144,7 +154,7 @@ export function stageRoutes(
   for (const [rawKey, rawTarget] of Object.entries(routes)) {
     const key = requiredString(rawKey, `stages.${stageId}.decision.routes`).toLowerCase();
     const field = `stages.${stageId}.decision.routes.${key}`;
-    const target = routeTarget(rawTarget, field, stages, version2);
+    const target = routeTarget(rawTarget, field, { stages, version2 });
     if (typeof target === 'string' && target !== 'complete' && !Object.hasOwn(stages, target)) {
       throw new ConfigurationError(`${field} is not a declared stage: ${target}`);
     }
@@ -166,9 +176,9 @@ export function stageRoutes(
 export function routeTarget(
   raw: unknown,
   field: string,
-  stages: Record<string, StageSpec>,
-  version2: boolean,
+  scope: { readonly stages: Record<string, StageSpec>; readonly version2: boolean },
 ): string | string[] {
+  const { stages, version2 } = scope;
   if (!Array.isArray(raw)) return requiredString(raw, field);
   // A list is a fan-out route. Reporting it as a bad string would hide that.
   if (!version2) return requiredString(raw, field);

@@ -39,15 +39,15 @@ function stoppedSession(): { workspace: string; sessionId: string; directory: st
     implement: 'schema_version: 7\nid: implement\nstages:\n  - { id: work, role: developer }\n',
   });
   workspaces.push(workspace);
-  const sessionId = createWorkflowSession(workspace, 'plan', 'Write a plan');
+  const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
   const directory = path.join(workspace, '.migent', 'sessions', sessionId);
   const store = new SessionStore(workspace);
-  const [record, , context] = store.loadOrCreate('fake', 'model', {}, workspace, sessionId, 'draft', null, null, 'draft');
+  const [record, , context] = store.loadOrCreate({ client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'draft', stageAttempt: null, executionOrder: null, prompt: 'draft' });
   const lock = SessionLock.acquire(directory);
   try {
-    store.saveExecution(context, record, 'running');
+    store.saveExecution(context, record, { status: 'running' });
     writeFileSync(path.join(context.artifactDirectory, 'plan.md'), '# Plan\n', 'utf8');
-    store.saveExecution(context, record, 'completed', null, new StageOutcome('complete'));
+    store.saveExecution(context, record, { status: 'completed', outcome: new StageOutcome('complete') });
   } finally {
     lock.release();
   }
@@ -103,7 +103,7 @@ test('complete exits 2 for missing, prepared, role, and running sessions', async
   expect(missing.value).toBe(2);
   expect(missing.stderr).toContain('does not exist');
 
-  const prepared = createPreparedSession(workspace, 'Later', 'plan');
+  const prepared = createPreparedSession(workspace, { title: 'Later', workflowId: 'plan' });
   const notStarted = await capture(() => main(['session', 'complete', prepared], workspace));
   expect(notStarted.value).toBe(2);
   expect(notStarted.stderr).toContain(`migent session run --session ${prepared}`);

@@ -33,13 +33,16 @@ export interface PublishedOutput {
   publishedByExecutionId: string;
 }
 
-export function sessionStatusAfterExecution(
-  executionStatus: string,
-  outcome: StageOutcome | null,
-  previousStatus: Readonly<Record<string, unknown>>,
-  workflow: WorkflowDocument | null,
-  stageId: string,
-): string {
+export interface SessionStatusInput {
+  readonly executionStatus: string;
+  readonly outcome: StageOutcome | null;
+  readonly previousStatus: Readonly<Record<string, unknown>>;
+  readonly workflow: WorkflowDocument | null;
+  readonly stageId: string;
+}
+
+export function sessionStatusAfterExecution(input: SessionStatusInput): string {
+  const { executionStatus, outcome, previousStatus, workflow, stageId } = input;
   if (outcome && (outcome.status === 'blocked' || outcome.status === 'question')) return outcome.status;
   if (executionStatus === 'cancelled') return 'cancelled';
   if (previousStatus.workflow_id === 'agent') {

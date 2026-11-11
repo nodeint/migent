@@ -252,10 +252,14 @@ test('the client is registered', () => {
 
 test('model effort becomes an OpenCode V2 model variant on new and resumed runs', () => {
   const client = new OpencodeClient();
-  const target = loadAgentTarget({ agents: { fast: {
+  const target = loadAgentTarget(
+    { agents: { fast: {
     client: { type: 'opencode', options: { agent: 'build', thinking: 'true' } },
     model: 'openai/test', effort: 'high',
-  } } }, 'fast', registry);
+  } } },
+    'fast',
+    { registry },
+  );
   expect(target.options).toEqual({ variant: 'high', agent: 'build', thinking: 'true' });
   for (const agentId of [null, 'ses_x']) {
     const command = client.runCommand(input({ model: target.model, options: target.options, agentId }));

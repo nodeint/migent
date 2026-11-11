@@ -117,7 +117,10 @@ export function createDiscoveryContext(
     const known = loaded.value.valuesFor(model, option);
     if (known !== null) return { status: 'ok', value: known };
     try {
-      const probed = await loadOptionValues(source(target), option, model, loaded.value, which, run);
+      const probed = await loadOptionValues(
+        { source: source(target), name: option, model, catalog: loaded.value },
+        { which, runCommand: run },
+      );
       return { status: 'ok', value: probed ?? [] };
     } catch (error) {
       return { status: 'failed', message: messageOf(error) };
@@ -138,7 +141,10 @@ export function createDiscoveryContext(
         continue;
       }
       try {
-        const probed = await loadOptionValues(source(target), option, model, loaded.value, which, run);
+        const probed = await loadOptionValues(
+          { source: source(target), name: option, model, catalog: loaded.value },
+          { which, runCommand: run },
+        );
         rows.push({ model, option, values: probed ?? [] });
       } catch (error) {
         return { status: 'failed', message: messageOf(error) };

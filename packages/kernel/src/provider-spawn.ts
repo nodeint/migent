@@ -31,9 +31,12 @@ export class UnpassableArgument extends Error {
 export function assertArgumentsPassable(
   command: string,
   args: readonly string[],
-  platform: NodeJS.Platform = process.platform,
-  resolve: (command: string) => string | null = (name) => whichModule.sync(name, { nothrow: true }),
+  environment: { platform?: NodeJS.Platform; resolve?: (command: string) => string | null } = {},
 ): void {
+  const {
+    platform = process.platform,
+    resolve = (name: string) => whichModule.sync(name, { nothrow: true }),
+  } = environment;
   if (platform !== 'win32') return;
   if (!args.some((arg) => /[\r\n]/.test(arg))) return;
   const resolved = resolve(command) ?? command;

@@ -17,6 +17,32 @@ export interface Block {
   children: Block[];
 }
 
+/** The text being patched, shared by every sync step. Edits accumulate in `edits`. */
+interface SyncContext {
+  readonly lines: string[];
+  readonly blocks: Block[];
+  readonly unit: number;
+  readonly edits: Edit[];
+}
+
+/** An agent or role body before and after the edit. */
+interface BodyChange {
+  readonly before: unknown;
+  readonly after: Record<string, unknown>;
+}
+
+/** A line range at one indent level. */
+interface Span {
+  readonly start: number;
+  readonly end: number;
+  readonly indent: number;
+}
+
+interface Layout {
+  readonly indent: number;
+  readonly unit: number;
+}
+
 export function patchConfigText(original: string, updated: Record<string, unknown>): string {
   if (original.includes('\t')) throw new ConfigEditError('Cannot edit a config that uses tabs.');
   const parsed = parseYamlDocument(original);
@@ -32,8 +58,9 @@ export function patchConfigText(original: string, updated: Record<string, unknow
   const blocks = parseBlocks(lines, unit);
   const edits: Edit[] = [];
   syncSchemaVersion(lines, target, edits);
-  syncAgents(lines, blocks, current, target, unit, edits);
-  syncRoles(lines, blocks, current, target, unit, edits);
+  const context: SyncContext = { lines, blocks, unit, edits };
+  syncAgents(context, current, target);
+  syncRoles(context, current, target);
   const text = applyEdits(source, lines, edits);
   if (!deepEqual(parseYamlDocument(text), target)) {
     throw new ConfigEditError('Config text does not match the updated document.');
@@ -41,48 +68,35 @@ export function patchConfigText(original: string, updated: Record<string, unknow
   return text;
 }
 
-function syncAgents(
-  lines: string[],
-  blocks: Block[],
-  current: Record<string, unknown>,
-  updated: Record<string, unknown>,
-  unit: number,
-  edits: Edit[],
-): void {
+function syncAgents(context: SyncContext, current: Record<string, unknown>, updated: Record<string, unknown>): void {
   const currentAgents = mappingOrEmpty(current.agents);
   const updatedAgents = mappingOrEmpty(updated.agents);
-  const section = topSection(blocks, 'agents');
+  const section = topSection(context.blocks, 'agents');
   const fresh: string[] = [];
   for (const [key, body] of Object.entries(updatedAgents)) {
     if (!isRecord(body)) throw new ConfigurationError(`Missing or invalid agents.${key}.`);
     if (!Object.hasOwn(currentAgents, key)) {
-      fresh.push(...agentLines(key, body, unit, unit));
+      fresh.push(...agentLines(key, body, { indent: context.unit, unit: context.unit }));
       continue;
     }
     if (section === null) throw new ConfigEditError('Cannot edit agents in this file.');
     const block = childBlock(section, key);
     if (block === null) throw new ConfigEditError(`Cannot edit agents.${key} in this file.`);
     if (Object.keys(body).length === 0 && isRecord(currentAgents[key]) && Object.keys(currentAgents[key]).length > 0) {
-      edits.push([block.line, block.end, [withValue(lines[block.line] ?? '', '{}')]]);
+      context.edits.push([block.line, block.end, [withValue(context.lines[block.line] ?? '', '{}')]]);
       continue;
     }
-    if (Object.hasOwn(body, 'model')) syncScalar(lines, block, 'model', body.model, `agents.${key}.model`, edits);
-    syncAgentClient(lines, block, key, currentAgents[key], body, unit, edits);
-    dropRemovedScalars(block, currentAgents[key], body, edits);
+    if (Object.hasOwn(body, 'model')) syncScalar(context, block, { key: 'model', value: body.model, field: `agents.${key}.model` });
+    syncAgentClient(context, block, { key, before: currentAgents[key], after: body });
+    dropRemovedScalars(context, block, { before: currentAgents[key], after: body });
   }
   if (fresh.length === 0) return;
-  if (section === null) edits.push([0, 0, ['agents:', ...fresh]]);
-  else edits.push([section.end, section.end, fresh]);
+  if (section === null) context.edits.push([0, 0, ['agents:', ...fresh]]);
+  else context.edits.push([section.end, section.end, fresh]);
 }
 
-function syncRoles(
-  lines: string[],
-  blocks: Block[],
-  current: Record<string, unknown>,
-  updated: Record<string, unknown>,
-  unit: number,
-  edits: Edit[],
-): void {
+function syncRoles(context: SyncContext, current: Record<string, unknown>, updated: Record<string, unknown>): void {
+  const { lines, blocks, unit, edits } = context;
   const currentRoles = mappingOrEmpty(current.roles);
   const updatedRoles = mappingOrEmpty(updated.roles);
   const section = topSection(blocks, 'roles');
@@ -90,7 +104,7 @@ function syncRoles(
   for (const [key, body] of Object.entries(updatedRoles)) {
     if (!isRecord(body)) throw new ConfigurationError(`Missing or invalid roles.${key}.`);
     if (!Object.hasOwn(currentRoles, key)) {
-      fresh.push(...roleLines(key, body, unit, unit));
+      fresh.push(...roleLines(key, body, { indent: unit, unit }));
       continue;
     }
     if (section === null) throw new ConfigEditError('Cannot edit roles in this file.');
@@ -104,10 +118,10 @@ function syncRoles(
         if (isRecord(previous) && isRecord(previous.agent) && isRecord(body.agent)) {
           // Reuse the field patchers so unchanged values keep their comments and order.
           if (body.agent.model !== previous.agent.model) {
-            syncScalar(lines, found, 'model', body.agent.model, `roles.${key}.agent.model`, edits);
+            syncScalar(context, found, { key: 'model', value: body.agent.model, field: `roles.${key}.agent.model` });
           }
-          syncAgentClient(lines, found, key, previous.agent, body.agent, unit, edits);
-          dropRemovedScalars(found, previous.agent, body.agent, edits);
+          syncAgentClient(context, found, { key, before: previous.agent, after: body.agent });
+          dropRemovedScalars(context, found, { before: previous.agent, after: body.agent });
         } else {
           const indent = block.indent + unit;
           const base = lines.slice(found.line, found.end).map((line) => line.slice(indent)).join('\n');
@@ -118,10 +132,10 @@ function syncRoles(
         }
       }
     } else if (Object.hasOwn(body, 'agent')) {
-      syncScalar(lines, block, 'agent', body.agent, `roles.${key}.agent`, edits);
+      syncScalar(context, block, { key: 'agent', value: body.agent, field: `roles.${key}.agent` });
     }
-    syncRoleOptions(lines, block, currentRoles[key], body, key, unit, edits);
-    dropRemovedScalars(block, currentRoles[key], body, edits);
+    syncRoleOptions(context, block, { key, before: currentRoles[key], after: body });
+    dropRemovedScalars(context, block, { before: currentRoles[key], after: body });
   }
   if (fresh.length === 0) return;
   if (section === null) {
@@ -151,12 +165,9 @@ function syncSchemaVersion(lines: string[], updated: Record<string, unknown>, ed
   edits.push([insert, insert, [rendered, '']]);
 }
 
-function dropRemovedScalars(
-  parent: Block,
-  beforeBody: unknown,
-  afterBody: Record<string, unknown>,
-  edits: Edit[],
-): void {
+function dropRemovedScalars(context: SyncContext, parent: Block, change: BodyChange): void {
+  const { edits } = context;
+  const { before: beforeBody, after: afterBody } = change;
   if (!isRecord(beforeBody)) return;
   for (const [key, value] of Object.entries(beforeBody)) {
     if (Object.hasOwn(afterBody, key) || isRecord(value) || Array.isArray(value)) continue;
@@ -166,14 +177,9 @@ function dropRemovedScalars(
   }
 }
 
-function syncScalar(
-  lines: string[],
-  parent: Block,
-  key: string,
-  value: unknown,
-  field: string,
-  edits: Edit[],
-): void {
+function syncScalar(context: SyncContext, parent: Block, scalar: { key: string; value: unknown; field: string }): void {
+  const { lines, edits } = context;
+  const { key, value, field } = scalar;
   const found = childBlock(parent, key);
   if (found === null) throw new ConfigEditError(`Cannot edit ${field} in this file.`);
   if (typeof value !== 'string' || value.trim() === '') {
@@ -183,15 +189,9 @@ function syncScalar(
   edits.push([found.line, found.line + 1, [withValue(lines[found.line] ?? '', value)]]);
 }
 
-function syncAgentClient(
-  lines: string[],
-  parent: Block,
-  key: string,
-  beforeBody: unknown,
-  afterBody: Record<string, unknown>,
-  unit: number,
-  edits: Edit[],
-): void {
+function syncAgentClient(context: SyncContext, parent: Block, change: BodyChange & { key: string }): void {
+  const { unit, edits } = context;
+  const { key, before: beforeBody, after: afterBody } = change;
   const before = optionsDict(beforeBody, key);
   const after = optionsDict(afterBody, key);
   const afterClient = isRecord(afterBody.client) ? afterBody.client : {};
@@ -206,22 +206,16 @@ function syncAgentClient(
   const client = childBlock(parent, 'client');
   if (client !== null) {
     if (client.value.trim() !== '') throw new ConfigEditError(`Cannot edit agents.${key}.client in this file.`);
-    if (type !== undefined) syncClientType(lines, client, type, key, unit, edits);
-    syncOptionMap(lines, client, before, after, `agents.${key}.client.options`, unit, edits);
+    if (type !== undefined) syncClientType(context, client, type);
+    syncOptionMap(context, client, { before, after, field: `agents.${key}.client.options` });
     return;
   }
   if (type === undefined && Object.keys(after).length === 0) return;
-  edits.push([parent.end, parent.end, clientLines(type, after, parent.indent + unit, unit)]);
+  edits.push([parent.end, parent.end, clientLines({ type, options: after }, { indent: parent.indent + unit, unit })]);
 }
 
-function syncClientType(
-  lines: string[],
-  client: Block,
-  value: string,
-  key: string,
-  unit: number,
-  edits: Edit[],
-): void {
+function syncClientType(context: SyncContext, client: Block, value: string): void {
+  const { lines, unit, edits } = context;
   const found = childBlock(client, 'type');
   if (found === null) {
     const indent = ' '.repeat(client.indent + unit);
@@ -232,35 +226,22 @@ function syncClientType(
   edits.push([found.line, found.line + 1, [withValue(lines[found.line] ?? '', value)]]);
 }
 
-function syncRoleOptions(
-  lines: string[],
-  roleBlock: Block,
-  beforeBody: unknown,
-  afterBody: Record<string, unknown>,
-  key: string,
-  unit: number,
-  edits: Edit[],
-): void {
-  syncOptionMap(
-    lines,
-    roleBlock,
-    roleOptionMap(isRecord(beforeBody) ? beforeBody : {}),
-    roleOptionMap(afterBody),
-    `roles.${key}.options`,
-    unit,
-    edits,
-  );
+function syncRoleOptions(context: SyncContext, roleBlock: Block, change: BodyChange & { key: string }): void {
+  const { key, before: beforeBody, after: afterBody } = change;
+  syncOptionMap(context, roleBlock, {
+    before: roleOptionMap(isRecord(beforeBody) ? beforeBody : {}),
+    after: roleOptionMap(afterBody),
+    field: `roles.${key}.options`,
+  });
 }
 
 function syncOptionMap(
-  lines: string[],
+  context: SyncContext,
   parent: Block,
-  before: Record<string, string>,
-  after: Record<string, string>,
-  field: string,
-  unit: number,
-  edits: Edit[],
+  change: { before: Record<string, string>; after: Record<string, string>; field: string },
 ): void {
+  const { lines, unit, edits } = context;
+  const { before, after, field } = change;
   if (recordEqual(before, after)) return;
   const options = childBlock(parent, 'options');
   if (options !== null && options.value.trim() !== '') {
@@ -295,12 +276,9 @@ function syncOptionMap(
   }
 }
 
-function clientLines(
-  type: string | undefined,
-  options: Record<string, string>,
-  indent: number,
-  unit: number,
-): string[] {
+function clientLines(client: { type: string | undefined; options: Record<string, string> }, layout: Layout): string[] {
+  const { type, options } = client;
+  const { indent, unit } = layout;
   const parent = ' '.repeat(indent);
   const child = ' '.repeat(indent + unit);
   const lines = [`${parent}client:`];
@@ -315,7 +293,8 @@ function clientLines(
   return lines;
 }
 
-function agentLines(key: string, body: Record<string, unknown>, indent: number, unit: number): string[] {
+function agentLines(key: string, body: Record<string, unknown>, layout: Layout): string[] {
+  const { indent, unit } = layout;
   const parent = ' '.repeat(indent);
   const child = ' '.repeat(indent + unit);
   const lines = [
@@ -326,11 +305,12 @@ function agentLines(key: string, body: Record<string, unknown>, indent: number, 
   const type = typeof client.type === 'string' && client.type.trim() !== '' ? client.type.trim() : undefined;
   if (type === undefined) throw new ConfigEditError(`agents.${key} needs client.type before it can be written.`);
   const options = optionsDict(body, key);
-  lines.push(...clientLines(type, options, indent + unit, unit));
+  lines.push(...clientLines({ type, options }, { indent: indent + unit, unit }));
   return lines;
 }
 
-function roleLines(key: string, body: Record<string, unknown>, indent: number, unit: number): string[] {
+function roleLines(key: string, body: Record<string, unknown>, layout: Layout): string[] {
+  const { indent, unit } = layout;
   const parent = ' '.repeat(indent);
   const child = ' '.repeat(indent + unit);
   const lines = [
@@ -349,10 +329,11 @@ function roleLines(key: string, body: Record<string, unknown>, indent: number, u
 }
 
 export function parseBlocks(lines: string[], unit: number): Block[] {
-  return parseLevel(lines, 0, lines.length, 0, unit);
+  return parseLevel(lines, { start: 0, end: lines.length, indent: 0 }, unit);
 }
 
-function parseLevel(lines: string[], start: number, end: number, indent: number, unit: number): Block[] {
+function parseLevel(lines: string[], span: Span, unit: number): Block[] {
+  const { start, end, indent } = span;
   const blocks: Block[] = [];
   let index = start;
   while (index < end) {
@@ -377,8 +358,8 @@ function parseLevel(lines: string[], start: number, end: number, indent: number,
       childEnd = laterIndex + 1;
     }
     const children =
-      value.trim() === '' && !isSequence(lines, lineIndex + 1, childEnd, indent + unit)
-        ? parseLevel(lines, lineIndex + 1, childEnd, indent + unit, unit)
+      value.trim() === '' && !isSequence(lines, { start: lineIndex + 1, end: childEnd, indent: indent + unit })
+        ? parseLevel(lines, { start: lineIndex + 1, end: childEnd, indent: indent + unit }, unit)
         : [];
     blocks.push({ key, indent, line: lineIndex, end: childEnd, value, children });
     index = childEnd;
@@ -386,7 +367,8 @@ function parseLevel(lines: string[], start: number, end: number, indent: number,
   return blocks;
 }
 
-function isSequence(lines: string[], start: number, end: number, indent: number): boolean {
+function isSequence(lines: string[], span: Span): boolean {
+  const { start, end, indent } = span;
   const found = nextContent(lines, start, end);
   if (found === null) return false;
   const [lineIndex, lineIndent] = found;
@@ -489,20 +471,21 @@ function liftConfigLines(original: string): string {
   const unit = indentUnit(lines);
   const blocks = parseBlocks(lines, unit);
   const edits: Edit[] = [];
+  const context: SyncContext = { lines, blocks, unit, edits };
   const models = topSection(blocks, 'models');
   if (models !== null) {
-    renameKey(lines, models, 'agents', edits);
-    for (const agent of models.children) liftAgentLines(lines, agent, unit, edits);
+    renameKey(context, models, 'agents');
+    for (const agent of models.children) liftAgentLines(context, agent);
   }
   const roles = topSection(blocks, 'roles');
   if (roles !== null) {
     for (const role of roles.children) {
       for (const child of role.children) {
         if (child.key === 'default_model') {
-          renameKey(lines, child, 'agent', edits);
-          if (child.children.length > 0) liftAgentLines(lines, child, unit, edits);
+          renameKey(context, child, 'agent');
+          if (child.children.length > 0) liftAgentLines(context, child);
         } else if (child.key === 'instructions') {
-          renameKey(lines, child, 'responsibilities', edits);
+          renameKey(context, child, 'responsibilities');
         }
       }
     }
@@ -510,7 +493,8 @@ function liftConfigLines(original: string): string {
   return applyEdits(original, lines, edits);
 }
 
-function renameKey(lines: string[], block: Block, key: string, edits: Edit[]): void {
+function renameKey(context: SyncContext, block: Block, key: string): void {
+  const { lines, edits } = context;
   const line = lines[block.line] ?? '';
   const match = /^(\s*)(["']?)([^\s"':]+)\2(\s*:)/.exec(line);
   if (match === null) throw new ConfigEditError(`Cannot rename ${block.key} in this file.`);
@@ -524,7 +508,7 @@ function contentEnd(lines: string[], block: Block): number {
   return end;
 }
 
-function liftAgentLines(lines: string[], agent: Block, unit: number, edits: Edit[]): void {
+function liftAgentLines(context: SyncContext, agent: Block): void {
   const client = childBlock(agent, 'client');
   const options = childBlock(agent, 'options');
   if (client === null && options === null) return;
@@ -533,21 +517,21 @@ function liftAgentLines(lines: string[], agent: Block, unit: number, edits: Edit
   const {indent} = ((client ?? options)!);
   const moved: string[] = [];
   if (options !== null) {
-    for (const line of lines.slice(options.line, contentEnd(lines, options))) {
-      moved.push(line.trim() === '' ? line : ' '.repeat(unit) + line);
+    for (const line of context.lines.slice(options.line, contentEnd(context.lines, options))) {
+      moved.push(line.trim() === '' ? line : ' '.repeat(context.unit) + line);
     }
   }
   if (client !== null) {
-    const [code, comment] = splitComment(lines[client.line] ?? '');
+    const [code, comment] = splitComment(context.lines[client.line] ?? '');
     const colon = code.indexOf(':');
     const value = code.slice(colon + 1).trim();
     const head = `${' '.repeat(indent)}client:`;
-    const type = `${' '.repeat(indent + unit)}type: ${value}${comment === '' ? '' : ` ${comment}`}`;
-    edits.push([client.line, contentEnd(lines, client), [head, type, ...moved]]);
-    if (options !== null) edits.push([options.line, contentEnd(lines, options), []]);
+    const type = `${' '.repeat(indent + context.unit)}type: ${value}${comment === '' ? '' : ` ${comment}`}`;
+    context.edits.push([client.line, contentEnd(context.lines, client), [head, type, ...moved]]);
+    if (options !== null) context.edits.push([options.line, contentEnd(context.lines, options), []]);
     return;
   }
-  edits.push([options!.line, contentEnd(lines, options!), [`${' '.repeat(indent)}client:`, ...moved]]);
+  context.edits.push([options!.line, contentEnd(context.lines, options!), [`${' '.repeat(indent)}client:`, ...moved]]);
 }
 
 export function roleOptionMap(role: Record<string, unknown>): Record<string, string> {

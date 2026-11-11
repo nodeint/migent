@@ -103,7 +103,7 @@ describe('lazy runtime validation', () => {
 
 describe('option diagnostics after valid entries', () => {
   const load = (options: Record<string, unknown>, index?: ReturnType<typeof buildStructuralIndex>) =>
-    loadAgentDefinition({ model: 'm', client: { type: 'codex', options } }, 'agents.a', undefined, index);
+    loadAgentDefinition({ model: 'm', client: { type: 'codex', options } }, 'agents.a', { index });
 
   test.each([
     [{ good: 'x', bad: ' ' }, 'option-invalid', ['agents', 'a', 'client', 'options', 'bad']],
@@ -128,14 +128,14 @@ describe('entries named like contract fields', () => {
     const index = buildStructuralIndex(config);
     const lazy = code(() => resolveRoleCascade(config, 'r'));
     expect(lazy).toEqual(['missing-or-invalid', ['agents', 'client']]);
-    expect(code(() => resolveRoleCascade(config, 'r', undefined, undefined, index))).toEqual(lazy);
+    expect(code(() => resolveRoleCascade(config, 'r', { index }))).toEqual(lazy);
   });
 
   test('a role named client with a malformed agent', () => {
     const config = { roles: { client: { agent: 'oops' } } };
     const index = buildStructuralIndex(config);
     const lazy = code(() => resolveRoleCascade(config, 'client'));
-    expect(code(() => resolveRoleCascade(config, 'client', undefined, undefined, index))).toEqual(lazy);
+    expect(code(() => resolveRoleCascade(config, 'client', { index }))).toEqual(lazy);
   });
 
   test('a real string client still reports client-not-mapping, indexed and lazy', () => {
@@ -143,7 +143,7 @@ describe('entries named like contract fields', () => {
     const index = buildStructuralIndex(config);
     const expected = ['client-not-mapping', ['roles', 'client', 'agent', 'client']];
     expect(code(() => resolveRoleCascade(config, 'client'))).toEqual(expected);
-    expect(code(() => resolveRoleCascade(config, 'client', undefined, undefined, index))).toEqual(expected);
+    expect(code(() => resolveRoleCascade(config, 'client', { index }))).toEqual(expected);
   });
 
   test('an option named client is an option', () => {

@@ -46,12 +46,17 @@ const BLANK_USAGE: CliUsage = {
 class TestClient implements CliClient {
   public readonly optionsList: readonly ClientOption[] = [];
 
+  private readonly validate: (options: Readonly<Record<string, string>>) => void;
+  public readonly effortOption?: string;
+
   constructor(
     public readonly id: string,
     public readonly command: string,
-    private readonly validate: (options: Readonly<Record<string, string>>) => void,
-    public readonly effortOption?: string,
-  ) {}
+    behavior: { validate: (options: Readonly<Record<string, string>>) => void; effortOption?: string },
+  ) {
+    this.validate = behavior.validate;
+    this.effortOption = behavior.effortOption;
+  }
 
   public options(): readonly ClientOption[] {
     return this.optionsList;
@@ -112,7 +117,7 @@ class TestClient implements CliClient {
 
 /** A client with no option rules, for tests that only need distinct ids and commands. */
 export function testClient(id: string, command: string): CliClient {
-  return new TestClient(id, command, () => {});
+  return new TestClient(id, command, { validate: () => {} });
 }
 
 export function clientRegistryOf(clients: Record<string, CliClient>): ClientRegistry {
@@ -128,18 +133,24 @@ export function clientRegistryOf(clients: Record<string, CliClient>): ClientRegi
 
 export function defaultClients(): ClientRegistry {
   return clientRegistryOf({
-    codex: new TestClient('codex', 'codex', (options) => {
-      for (const [key, value] of Object.entries(options)) {
-        if (!optionKey.test(key)) throw new Error(`${key} is not a codex option.`);
-        if (value.trim() === '') throw new Error(`${key} is empty.`);
-      }
-    }, 'model_reasoning_effort'),
-    grok: new TestClient('grok', 'grok', (options) => {
-      for (const [key, value] of Object.entries(options)) {
-        if (!grokOptions.has(key)) throw new Error(`${key} is not a grok option.`);
-        if (value.trim() === '') throw new Error(`${key} is empty.`);
-      }
-    }, 'reasoning-effort'),
+    codex: new TestClient('codex', 'codex', {
+      validate: (options) => {
+        for (const [key, value] of Object.entries(options)) {
+          if (!optionKey.test(key)) throw new Error(`${key} is not a codex option.`);
+          if (value.trim() === '') throw new Error(`${key} is empty.`);
+        }
+      },
+      effortOption: 'model_reasoning_effort',
+    }),
+    grok: new TestClient('grok', 'grok', {
+      validate: (options) => {
+        for (const [key, value] of Object.entries(options)) {
+          if (!grokOptions.has(key)) throw new Error(`${key} is not a grok option.`);
+          if (value.trim() === '') throw new Error(`${key} is empty.`);
+        }
+      },
+      effortOption: 'reasoning-effort',
+    }),
   });
 }
 

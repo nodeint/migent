@@ -109,7 +109,7 @@ test('plan review walk', () => {
     ],
   ];
   for (const [, snapshots, sessionStatus, expected] of cases) {
-    expectResult(nextStage(workflow, snapshots, sessionStatus), expected);
+    expectResult(nextStage(workflow, snapshots, { sessionStatus }), expected);
   }
 });
 
@@ -141,19 +141,23 @@ test('plan implement walk', () => {
     ],
   ];
   for (const [snapshots, sessionStatus, expected] of cases) {
-    expectResult(nextStage(workflow, snapshots, sessionStatus), expected);
+    expectResult(nextStage(workflow, snapshots, { sessionStatus }), expected);
   }
 });
 
 test('failed latest stays stopped until continue marks that execution', () => {
   const failed = [snapshot('plan', 1), snapshot('review-plan', 2, { status: 'failed', outcomeStatus: null })];
   const workflow = workflowFile('plan');
-  expectResult(nextStage(workflow, failed, 'active'), new Stop('stage_failed'));
+  expectResult(nextStage(workflow, failed, { sessionStatus: 'active' }), new Stop('stage_failed'));
   const {executionId} = (failed[1]!);
   expectResult(
-    nextStage(workflow, failed, 'active', [
+    nextStage(
+      workflow,
+      failed,
+      { sessionStatus: 'active', resumes: [
       { event: 'session.active', executionId, data: { from: 'failed' } },
-    ]),
+    ] },
+    ),
     new NextStage('review-plan'),
   );
 });
@@ -161,8 +165,8 @@ test('failed latest stays stopped until continue marks that execution', () => {
 test('terminal session status wins over a failed snapshot', () => {
   const failed = [snapshot('implement', 1, { status: 'failed', outcomeStatus: null })];
   const workflow = workflowFile('plan-implement');
-  expectResult(nextStage(workflow, failed, 'blocked'), new Stop('blocked'));
-  expectResult(nextStage(workflow, failed, 'cancelled'), new Stop('cancelled'));
+  expectResult(nextStage(workflow, failed, { sessionStatus: 'blocked' }), new Stop('blocked'));
+  expectResult(nextStage(workflow, failed, { sessionStatus: 'cancelled' }), new Stop('cancelled'));
 });
 
 test('running execution is an error', () => {
@@ -170,7 +174,7 @@ test('running execution is an error', () => {
     nextStage(
       workflowFile('plan'),
       [snapshot('plan', 1, { status: 'running', outcomeStatus: null })],
-      'active',
+      { sessionStatus: 'active' },
     ),
     new NextStageError('an execution is still running'),
   );
@@ -193,20 +197,20 @@ test('revision stop counts successful returns per stage', () => {
     source: null,
   };
   const firstReturn = [snapshot('plan', 1), snapshot('review', 2, { decision: 'revise' })];
-  expect(revisionStop(workflow, firstReturn, 'plan')).toBe(false);
-  expect(revisionStop(workflow, firstReturn, 'plan', { plan: 0 })).toBe(false);
-  expect(revisionStop(workflow, firstReturn, 'review')).toBe(false);
+  expect(revisionStop(workflow, firstReturn, { stageId: 'plan' })).toBe(false);
+  expect(revisionStop(workflow, firstReturn, { stageId: 'plan', revisionBaselines: { plan: 0 } })).toBe(false);
+  expect(revisionStop(workflow, firstReturn, { stageId: 'review' })).toBe(false);
   const spent = [
     ...firstReturn,
     snapshot('plan', 3),
     snapshot('review', 4, { decision: 'revise' }),
   ];
-  expect(revisionStop(workflow, spent, 'plan')).toBe(true);
-  expect(revisionStop(workflow, spent, 'plan', { plan: 2 })).toBe(false);
+  expect(revisionStop(workflow, spent, { stageId: 'plan' })).toBe(true);
+  expect(revisionStop(workflow, spent, { stageId: 'plan', revisionBaselines: { plan: 2 } })).toBe(false);
   const retry = [...firstReturn, snapshot('plan', 3, { status: 'failed', outcomeStatus: null })];
-  expect(revisionStop(workflow, retry, 'plan')).toBe(false);
-  expect(revisionStop(workflow, [snapshot('write-tests', 1)], 'write-tests')).toBe(true);
-  expect(revisionStop(workflow, [], 'write-tests')).toBe(false);
+  expect(revisionStop(workflow, retry, { stageId: 'plan' })).toBe(false);
+  expect(revisionStop(workflow, [snapshot('write-tests', 1)], { stageId: 'write-tests' })).toBe(true);
+  expect(revisionStop(workflow, [], { stageId: 'write-tests' })).toBe(false);
 });
 
 test('readyStages omits a running stage and keeps declaration order', () => {
@@ -222,20 +226,24 @@ test('readyStages omits a running stage and keeps declaration order', () => {
     source: null,
   };
   const running = [snapshot('a', 1, { status: 'running', outcomeStatus: null })];
-  expect(readyStages(workflow, running, 'active')).toEqual(['b']);
-  expect(readyStages(workflow, [], 'active')).toEqual(['a', 'b']);
+  expect(readyStages(workflow, running, { sessionStatus: 'active' })).toEqual(['b']);
+  expect(readyStages(workflow, [], { sessionStatus: 'active' })).toEqual(['a', 'b']);
   const blocked = [snapshot('a', 1, { status: 'completed', outcomeStatus: 'blocked' })];
-  expect(readyStages(workflow, blocked, 'active')).toEqual(['b']);
+  expect(readyStages(workflow, blocked, { sessionStatus: 'active' })).toEqual(['b']);
   const {executionId} = (blocked[0]!);
   const resumed = [{ event: 'session.active', executionId, data: { from: 'blocked' } }];
-  expect(readyStages(workflow, blocked, 'active', null, resumed)).toEqual(['a', 'b']);
-  expect(readyStages(workflow, blocked, 'blocked', null, resumed)).toEqual(['b']);
+  expect(readyStages(workflow, blocked, { sessionStatus: 'active', resumes: resumed })).toEqual(['a', 'b']);
+  expect(readyStages(workflow, blocked, { sessionStatus: 'blocked', resumes: resumed })).toEqual(['b']);
   const failed = [snapshot('a', 1, { status: 'failed', outcomeStatus: null })];
-  expect(readyStages(workflow, failed, 'active')).toEqual(['b']);
+  expect(readyStages(workflow, failed, { sessionStatus: 'active' })).toEqual(['b']);
   expect(
-    readyStages(workflow, failed, 'active', null, [
+    readyStages(
+      workflow,
+      failed,
+      { sessionStatus: 'active', resumes: [
       { event: 'session.active', executionId: failed[0]!.executionId, data: { from: 'failed' } },
-    ]),
+    ] },
+    ),
   ).toEqual(['a', 'b']);
 });
 
@@ -251,7 +259,7 @@ test('two roots are ambiguous', () => {
     constraints: [],
     source: null,
   };
-  const result = nextStage(workflow, [], 'active');
+  const result = nextStage(workflow, [], { sessionStatus: 'active' });
   expect(result).toBeInstanceOf(NextStageError);
   expect(result).toMatchObject({ message: 'ambiguous next stage: a, b' });
 });
@@ -269,8 +277,8 @@ test('version 2 runs roots in declaration order', () => {
     constraints: [],
     source: null,
   };
-  expectResult(nextStage(workflow, [], 'active'), new NextStage('a'));
-  expectResult(nextStage(workflow, [snapshot('a', 1)], 'active'), new NextStage('b'));
+  expectResult(nextStage(workflow, [], { sessionStatus: 'active' }), new NextStage('a'));
+  expectResult(nextStage(workflow, [snapshot('a', 1)], { sessionStatus: 'active' }), new NextStage('b'));
 });
 
 test('version 2 reruns a missing producer when the latest route is not dispatchable', () => {
@@ -295,7 +303,7 @@ test('version 2 reruns a missing producer when the latest route is not dispatcha
     snapshot('draft', 1, { artifactDirectory: '/no/such/migent-output' }),
     snapshot('review', 2, { decision: 'approved', artifactDirectory: '/no/such/migent-output' }),
   ];
-  expectResult(nextStage(workflow, snapshots, 'active'), new NextStage('draft'));
+  expectResult(nextStage(workflow, snapshots, { sessionStatus: 'active' }), new NextStage('draft'));
 });
 
 test('version 2 keeps a bad route when no output is missing', () => {
@@ -326,8 +334,8 @@ test('version 2 keeps a bad route when no output is missing', () => {
     stages: { draft: workflow.stages.draft!, review: workflow.stages.review! },
     outputs: [] as WorkflowDocument['outputs'],
   };
-  expectResult(nextStage(settled, ran, 'active'), new NextStageError('Stage is not declared: missing.'));
-  expectResult(nextStage(workflow, ran, 'active'), new NextStageError('Stage is not declared: missing.'));
+  expectResult(nextStage(settled, ran, { sessionStatus: 'active' }), new NextStageError('Stage is not declared: missing.'));
+  expectResult(nextStage(workflow, ran, { sessionStatus: 'active' }), new NextStageError('Stage is not declared: missing.'));
 });
 
 test('version 2 route to complete leaves another root ready', () => {
@@ -343,7 +351,7 @@ test('version 2 route to complete leaves another root ready', () => {
     constraints: [],
     source: null,
   };
-  expectResult(nextStage(workflow, [snapshot('a', 1, { decision: 'done' })], 'active'), new NextStage('b'));
+  expectResult(nextStage(workflow, [snapshot('a', 1, { decision: 'done' })], { sessionStatus: 'active' }), new NextStage('b'));
 });
 
 test('version 2 requires every router that finished since the stage', () => {
@@ -522,7 +530,7 @@ test('runnableNow suspends a downstream stage while its upstream is ready', () =
     a: stage('a', 'developer'),
     b: stage('b', 'developer', { dependsOn: ['a'] }),
   });
-  expect(runnableNow(workflow, ['b', 'a'], [], 2)).toEqual(['a']);
+  expect(runnableNow(workflow, ['b', 'a'], { running: [], concurrency: 2 })).toEqual(['a']);
 });
 
 test('runnableNow runs a resume_from stage only alone', () => {
@@ -531,14 +539,14 @@ test('runnableNow runs a resume_from stage only alone', () => {
     other: stage('other', 'developer'),
     draft: stage('draft', 'developer'),
   });
-  expect(runnableNow(followFirst, ['follow', 'other'], [], 2)).toEqual(['follow']);
-  expect(runnableNow(followFirst, ['follow'], ['other'], 2)).toEqual([]);
+  expect(runnableNow(followFirst, ['follow', 'other'], { running: [], concurrency: 2 })).toEqual(['follow']);
+  expect(runnableNow(followFirst, ['follow'], { running: ['other'], concurrency: 2 })).toEqual([]);
   const otherFirst = bareWorkflow({
     other: stage('other', 'developer'),
     follow: stage('follow', 'developer', { dependsOn: ['draft'], resumeFrom: 'draft' }),
     draft: stage('draft', 'developer'),
   });
-  expect(runnableNow(otherFirst, ['follow', 'other'], [], 2)).toEqual(['other']);
+  expect(runnableNow(otherFirst, ['follow', 'other'], { running: [], concurrency: 2 })).toEqual(['other']);
   const revisited = bareWorkflow({
     follow: stage('follow', 'developer', { dependsOn: ['draft'], resumeFrom: 'draft' }),
     review: stage('review', 'reviewer', { decisionValues: ['revise'], routes: { revise: 'follow' } }),
@@ -546,7 +554,7 @@ test('runnableNow runs a resume_from stage only alone', () => {
     draft: stage('draft', 'developer'),
   });
   const routedBack = [snapshot('follow', 1), snapshot('review', 2, { decision: 'revise' })];
-  expect(runnableNow(revisited, ['follow', 'other'], [], 2, routedBack)).toEqual(['follow', 'other']);
+  expect(runnableNow(revisited, ['follow', 'other'], { running: [], concurrency: 2, snapshots: routedBack })).toEqual(['follow', 'other']);
 });
 
 test('runnableNow does not start a stage twice', () => {
@@ -554,9 +562,9 @@ test('runnableNow does not start a stage twice', () => {
     a: stage('a', 'developer'),
     b: stage('b', 'developer'),
   });
-  expect(runnableNow(workflow, ['a', 'a', 'b'], [], 2)).toEqual(['a', 'b']);
-  expect(runnableNow(workflow, ['b', 'a'], ['a'], 2)).toEqual(['b']);
-  expect(runnableNow(workflow, ['a', 'b'], ['a'], 1)).toEqual([]);
+  expect(runnableNow(workflow, ['a', 'a', 'b'], { running: [], concurrency: 2 })).toEqual(['a', 'b']);
+  expect(runnableNow(workflow, ['b', 'a'], { running: ['a'], concurrency: 2 })).toEqual(['b']);
+  expect(runnableNow(workflow, ['a', 'b'], { running: ['a'], concurrency: 1 })).toEqual([]);
 });
 
 test('stageDispatchError rejects a stage when one of two routers decides fail', () => {
@@ -601,10 +609,10 @@ test('verify_failed keeps dependents stopped and is schedulable once', () => {
     ...snapshot('prepare', 1, { status: 'failed', outcomeStatus: null }),
     failureReason: 'verify_failed',
   };
-  expect(readyStages(workflow, [failed], 'active')).toEqual([]);
-  expect(schedulableStageIds(workflow, [failed], 'active', null, null, new Set())).toEqual(['prepare']);
-  expect(schedulableStageIds(workflow, [failed], 'active', null, null, new Set(), new Set(['prepare']))).toEqual([]);
-  expect(version2IdleReason(workflow, [failed], 'active')).toBe('verify_failed');
+  expect(readyStages(workflow, [failed], { sessionStatus: 'active' })).toEqual([]);
+  expect(schedulableStageIds(workflow, [failed], { sessionStatus: 'active', verifyTried: new Set() })).toEqual(['prepare']);
+  expect(schedulableStageIds(workflow, [failed], { sessionStatus: 'active', verifyTried: new Set(), verifyOnlyTried: new Set(['prepare']) })).toEqual([]);
+  expect(version2IdleReason(workflow, [failed], { sessionStatus: 'active' })).toBe('verify_failed');
   expect(failedStageCount([failed], 'prepare')).toBe(0);
   expect(failedStageCount([failed], 'implement')).toBe(0);
 });
@@ -649,10 +657,10 @@ test('version 2 route back to a completed stage skips a forward decision from a 
   const workflow = routeBackWorkflow();
   const snapshots = routeBackSnapshots();
   expect(stageDispatchError(workflow, 'implement', snapshots)).toBeNull();
-  const schedulable = schedulableStageIds(workflow, snapshots, 'active', null, [], new Set());
+  const schedulable = schedulableStageIds(workflow, snapshots, { sessionStatus: 'active', resumes: [], verifyTried: new Set() });
   expect(schedulable).toContain('implement');
-  expect(runnableNow(workflow, schedulable, [], 1, snapshots)[0]).toBe('implement');
-  expectResult(nextStage(workflow, snapshots, 'active'), new NextStage('implement'));
+  expect(runnableNow(workflow, schedulable, { running: [], concurrency: 1, snapshots })[0]).toBe('implement');
+  expectResult(nextStage(workflow, snapshots, { sessionStatus: 'active' }), new NextStage('implement'));
   expect(version2GraphQuiet(routeBackWorkflow(false), snapshots, 'active')).toBe(false);
 });
 
@@ -664,8 +672,8 @@ test('version 2 downstream stages run again after a route back', () => {
     snapshot('review_work', 6, { decision: 'approved' }),
   ];
   expect(stageDispatchError(workflow, 'write_tests', snapshots)).toBeNull();
-  const schedulable = schedulableStageIds(workflow, snapshots, 'active', null, [], new Set());
-  const order = runnableNow(workflow, schedulable, [], 2, snapshots);
+  const schedulable = schedulableStageIds(workflow, snapshots, { sessionStatus: 'active', resumes: [], verifyTried: new Set() });
+  const order = runnableNow(workflow, schedulable, { running: [], concurrency: 2, snapshots });
   expect(order).toContain('write_tests');
   expect(order).not.toContain('review_tests');
 });

@@ -31,9 +31,9 @@ function readIfExists(file: string): Buffer | null {
 export function writeFileConditional(
   destination: string,
   data: string,
-  baseHash: string | null,
-  ops: { link: (existing: string, created: string) => void } = { link: linkSync },
+  options: { baseHash?: string | null; link?: (existing: string, created: string) => void } = {},
 ): ConditionalWrite {
+  const { baseHash = null, link = linkSync } = options;
   mkdirSync(path.dirname(destination), { recursive: true });
   return withFileLockSync(destination, (): ConditionalWrite => {
     const current = readIfExists(destination);
@@ -53,7 +53,7 @@ export function writeFileConditional(
         closeSync(fd);
       }
       try {
-        ops.link(tmp, destination);
+        link(tmp, destination);
       } catch (error) {
         const code = (error as NodeJS.ErrnoException).code ?? '';
         if (code === 'EEXIST') return { status: 'already-exists' };

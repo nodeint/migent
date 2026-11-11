@@ -93,7 +93,7 @@ export class VerifyRunner {
         commands.push({ command, status: 'skipped', exitCode: null, log: null, tail: [] });
         continue;
       }
-      const result = await this.runCommand(command, index + 1, deadline, input);
+      const result = await this.runCommand(command, { number: index + 1, deadline }, input);
       if (result === 'infra') {
         return { passed: false, commands, infraError: `Unable to start the verify shell for: ${command}` };
       }
@@ -105,10 +105,10 @@ export class VerifyRunner {
 
   private async runCommand(
     command: string,
-    number: number,
-    deadline: number | null,
+    step: { number: number; deadline: number | null },
     input: VerifyRunInput,
   ): Promise<VerifyCommandResult | 'infra'> {
+    const { number, deadline } = step;
     // The wrapper reports a missing executable as exit 127, which would look like a red
     // command. A shell that cannot run is infrastructure, so check it before spawning.
     try {
@@ -122,9 +122,7 @@ export class VerifyRunner {
     // `exec 2>&1` merges stderr into stdout in arrival order.
     const child = startWrapper(
       { argv: [this.shell, '-c', `exec 2>&1; ${command}`] },
-      input.workspace,
-      endpoint,
-      ['ignore', 'pipe', 'inherit', 'ipc'],
+      { cwd: input.workspace, endpoint, stdio: ['ignore', 'pipe', 'inherit', 'ipc'] },
     );
     try {
       const started = await waitForReady(child);

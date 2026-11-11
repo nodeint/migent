@@ -49,12 +49,20 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 export function analyzeConfig(
   config: Record<string, unknown>,
   clients: ClientRegistry,
-  effortChecks: Readonly<Record<string, ModelEffortCheck>>,
-  ownerOf: (path: readonly (string | number)[]) => ConfigOwner,
+  source: {
+    readonly effortChecks: Readonly<Record<string, ModelEffortCheck>>;
+    readonly ownerOf: (path: readonly (string | number)[]) => ConfigOwner;
+  },
 ): ConfigAnalysis {
+  const { effortChecks, ownerOf } = source;
   const diagnostics = new DiagnosticList();
   const executableByClient: Record<string, string> = {};
-  const error = (code: string, message: string, path?: readonly (string | number)[], detail?: string): void => {
+  const error = (
+    code: string,
+    message: string,
+    where: { path?: readonly (string | number)[]; detail?: string } = {},
+  ): void => {
+    const { path, detail } = where;
     diagnostics.add({
       severity: 'error',
       code,
@@ -65,20 +73,20 @@ export function analyzeConfig(
   };
   const fromError = (caught: unknown, fallbackPath?: readonly (string | number)[]): void => {
     if (!(caught instanceof ConfigurationError)) throw caught;
-    error(caught.code ?? 'config-invalid', caught.message, caught.path ?? fallbackPath);
+    error(caught.code ?? 'config-invalid', caught.message, { path: caught.path ?? fallbackPath });
   };
 
   try { rejectLegacyConfigKeys(config); } catch (caught) { fromError(caught, ['models']); }
   for (const issue of containerIssues(config)) fromError(issue);
   const agents: Record<string, unknown> = isRecord(config.agents) ? config.agents : {};
   const roles: Record<string, unknown> = isRecord(config.roles) ? config.roles : {};
-  if (isRecord(config.roles) && Object.keys(roles).length === 0) error('roles-empty', 'roles is empty.', ['roles']);
+  if (isRecord(config.roles) && Object.keys(roles).length === 0) error('roles-empty', 'roles is empty.', { path: ['roles'] });
 
   const structure: StructuralIndex = buildStructuralIndex(config);
   const unmapped = new Set(
     Object.keys(agents).filter((name) => isAgentPlaceholder(agents[name])),
   );
-  if (unmapped.size > 0) error('agent-unmapped', unmappedMessage([...unmapped].sort()), ['agents']);
+  if (unmapped.size > 0) error('agent-unmapped', unmappedMessage([...unmapped].sort()), { path: ['agents'] });
 
   for (const [name, role] of Object.entries(roles)) {
     if (!isRecord(role)) continue;
@@ -87,7 +95,7 @@ export function analyzeConfig(
   for (const entry of listAgentDefinitions(config)) {
     if (unmapped.has(entry.key)) continue;
     const effortCheck = effortChecks[entry.key];
-    if (effortCheck?.problem) error('model-unavailable', effortCheck.problem, entry.path);
+    if (effortCheck?.problem) error('model-unavailable', effortCheck.problem, { path: entry.path });
     if (effortCheck?.warning) {
       diagnostics.add({ severity: 'warning', code: 'model-unverified', message: effortCheck.warning, path: entry.path });
     }
@@ -101,7 +109,11 @@ export function analyzeConfig(
     }
     let target;
     try {
-      target = loadAgentDefinition(definition, { label: entry.field, path: entry.path }, clients, verdicts);
+      target = loadAgentDefinition(
+        definition,
+        { label: entry.field, path: entry.path },
+        { registry: clients, index: verdicts },
+      );
     } catch (caught) {
       fromError(caught, entry.path);
       continue;
@@ -115,8 +127,7 @@ export function analyzeConfig(
       error(
         failure.code,
         failureText(entry.field, failure),
-        [...entry.path, ...failurePath(failure)],
-        failure.code === 'options-invalid' ? failure.message : undefined,
+        { path: [...entry.path, ...failurePath(failure)], detail: failure.code === 'options-invalid' ? failure.message : undefined },
       );
     }
   }
@@ -137,7 +148,7 @@ export function analyzeConfig(
     if (effortChecks[`roles.${roleKey}.agent`]?.problem) continue;
     let resolved;
     try {
-      resolved = resolveRoleCascade(config, roleKey, { options: null }, clients, structure);
+      resolved = resolveRoleCascade(config, roleKey, { options: null, registry: clients, index: structure });
       loadRoleResponsibilities(config, roleKey, structure);
       const description = loadRoleDescription(config, roleKey, structure);
       if (description !== null) roleDescriptions[roleKey] = description;
@@ -152,8 +163,7 @@ export function analyzeConfig(
       error(
         bound.failure.code,
         bound.failure.part === 'options' ? `${where}: ${bound.failure.message}` : `${where}.${detail} ${bound.failure.message}`,
-        ['roles', roleKey, ...failurePath(bound.failure)],
-        bound.failure.code === 'options-invalid' ? bound.failure.message : undefined,
+        { path: ['roles', roleKey, ...failurePath(bound.failure)], detail: bound.failure.code === 'options-invalid' ? bound.failure.message : undefined },
       );
     }
     roleNames.push(roleKey);
@@ -186,7 +196,7 @@ export function validateConfigLayers(
   clients: ClientRegistry,
 ): Diagnostic[] {
   const merged = mergeConfigLayers(layers.project, layers.local);
-  const analysis = analyzeConfig(merged.config, clients, {}, merged.ownerOf);
+  const analysis = analyzeConfig(merged.config, clients, { effortChecks: {}, ownerOf: merged.ownerOf });
   return analysis.diagnostics.items;
 }
 
@@ -219,7 +229,7 @@ export function checkConfig(
       ...(caught.position === undefined ? {} : { position: caught.position }),
     });
     return {
-      check: failed('config', [caught.message], [], trackedLocalConfigWarnings(workspace)),
+      check: failed('config', [caught.message], { warnings: trackedLocalConfigWarnings(workspace) }),
       executableByClient: {},
       diagnostics,
       config: null,
@@ -227,14 +237,14 @@ export function checkConfig(
     };
   }
   const { config, ownerOf } = merged;
-  const analysis = analyzeConfig(config, clients, effortChecks, ownerOf);
+  const analysis = analyzeConfig(config, clients, { effortChecks, ownerOf });
   const warnings = [
     ...trackedLocalConfigWarnings(workspace),
     ...analysis.diagnostics.warnings.map((warning) => warning.message),
   ];
   const problems = analysis.diagnostics.errors.map((item) => item.message);
   return {
-    check: problems.length > 0 ? failed('config', problems, [], warnings) : passed('config', analysis.roleNames.map((name) => analysis.roleDescriptions[name] === undefined ? name : `${name}  ${analysis.roleDescriptions[name]}`), warnings),
+    check: problems.length > 0 ? failed('config', problems, { warnings }) : passed('config', analysis.roleNames.map((name) => analysis.roleDescriptions[name] === undefined ? name : `${name}  ${analysis.roleDescriptions[name]}`), warnings),
     executableByClient: analysis.executableByClient,
     diagnostics: analysis.diagnostics,
     config,

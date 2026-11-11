@@ -81,10 +81,13 @@ export async function removeServiceJsonIfUnchanged(
 
 export async function authenticatedInstanceId(port: number, token: string, timeoutSec: number): Promise<string | null> {
   try {
-    const { status, raw } = await requestLocal(port, 'GET', '/v1/health', {
-      Authorization: `Bearer ${token}`,
-      Connection: 'close',
-    }, null, timeoutSec);
+    const { status, raw } = await requestLocal(port, {
+      method: 'GET',
+      path: '/v1/health',
+      headers: { Authorization: `Bearer ${token}`, Connection: 'close' },
+      body: null,
+      timeoutSec,
+    });
     if (status !== 200) return null;
     const payload = JSON.parse(raw.toString('utf8')) as unknown;
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
@@ -137,14 +140,16 @@ export function parseServiceBytes(raw: Buffer): ServiceRecord {
   };
 }
 
-export async function requestLocal(
-  port: number,
-  method: string,
-  requestPath: string,
-  headers: Record<string, string>,
-  body: Buffer | null,
-  timeoutSec: number,
-): Promise<{ status: number; raw: Buffer }> {
+export interface LocalRequest {
+  readonly method: string;
+  readonly path: string;
+  readonly headers: Record<string, string>;
+  readonly body: Buffer | null;
+  readonly timeoutSec: number;
+}
+
+export async function requestLocal(port: number, request: LocalRequest): Promise<{ status: number; raw: Buffer }> {
+  const { method, path: requestPath, headers, body, timeoutSec } = request;
   const { request: httpRequest } = await import('node:http');
   return new Promise((resolve, reject) => {
     const req = httpRequest(

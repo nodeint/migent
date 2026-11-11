@@ -38,12 +38,12 @@ function rawManifest(workspace: string, id: string): Record<string, unknown> {
 
 function stopSession(workspace: string, sessionId: string): void {
   const store = new SessionStore(workspace);
-  const [record, , context] = store.loadOrCreate('fake', 'model', {}, workspace, sessionId, 'draft', null, null, 'draft');
+  const [record, , context] = store.loadOrCreate({ client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'draft', stageAttempt: null, executionOrder: null, prompt: 'draft' });
   const lock = SessionLock.acquire(sessionDir(workspace, sessionId));
   try {
-    store.saveExecution(context, record, 'running');
+    store.saveExecution(context, record, { status: 'running' });
     writeFileSync(path.join(context.artifactDirectory, 'plan.md'), '# Plan\n', 'utf8');
-    store.saveExecution(context, record, 'completed', null, new StageOutcome('complete'));
+    store.saveExecution(context, record, { status: 'completed', outcome: new StageOutcome('complete') });
   } finally {
     lock.release();
   }
@@ -51,25 +51,25 @@ function stopSession(workspace: string, sessionId: string): void {
 
 test('every manifest writer stores ids as YAML strings', () => {
   const workspace = workspaceOf();
-  const workflow = createWorkflowSession(workspace, 'plan', 'Plan it');
-  const prepared = createPreparedSession(workspace, 'Later', 'plan');
+  const workflow = createWorkflowSession(workspace, 'plan', { task: 'Plan it' });
+  const prepared = createPreparedSession(workspace, { title: 'Later', workflowId: 'plan' });
   const role = createAgentSession(workspace, 'planner', 'A role task');
   expect([workflow, prepared, role]).toEqual(['1', '2', '3']);
   for (const id of [workflow, prepared, role]) expect(rawManifest(workspace, id).session_id).toBe(id);
 
   const fallback = new SessionStore(workspace);
-  const [, , context] = fallback.loadOrCreate('fake', 'model', {}, workspace, null, 'draft', null, null, 'draft');
+  const [, , context] = fallback.loadOrCreate({ client: 'fake', model: 'model', options: {}, workspace, sessionId: null, stageId: 'draft', stageAttempt: null, executionOrder: null, prompt: 'draft' });
   expect(rawManifest(workspace, context.sessionId).session_id).toBe(context.sessionId);
   expect(context.sessionId).toMatch(/^[1-9][0-9]*$/);
 });
 
 test('a numeric prior id survives repair and prepared-session start', async () => {
   const workspace = workspaceOf();
-  const producer = createWorkflowSession(workspace, 'plan', 'Plan it');
+  const producer = createWorkflowSession(workspace, 'plan', { task: 'Plan it' });
   stopSession(workspace, producer);
   expect((await capture(() => main(['session', 'complete', producer], workspace))).value).toBe(0);
 
-  const prepared = createPreparedSession(workspace, 'Impl', 'implement', producer);
+  const prepared = createPreparedSession(workspace, { title: 'Impl', workflowId: 'implement', priorSessionId: producer });
   expect(rawManifest(workspace, prepared).prior_session_id).toBe(producer);
   const status = (): { prior_session_id?: unknown } =>
     JSON.parse(readFileSync(path.join(sessionDir(workspace, prepared), 'status.json'), 'utf8'));
@@ -78,7 +78,7 @@ test('a numeric prior id survives repair and prepared-session start', async () =
   expect(status().prior_session_id).toBe(producer);
   expect(() => bindPriorSessionId(workspace, prepared, producer)).not.toThrow();
 
-  const direct = createWorkflowSession(workspace, 'implement', 'Impl 2', producer);
+  const direct = createWorkflowSession(workspace, 'implement', { task: 'Impl 2', priorSessionId: producer });
   expect(rawManifest(workspace, direct).prior_session_id).toBe(producer);
   expect(() => bindPriorSessionId(workspace, direct, producer)).not.toThrow();
 });
@@ -103,7 +103,7 @@ function toUuidSession(workspace: string, id: string): void {
 
 test('a UUID-named session still lists, shows, completes, continues and serves as --prior', async () => {
   const workspace = workspaceOf();
-  const created = createWorkflowSession(workspace, 'plan', 'Plan it');
+  const created = createWorkflowSession(workspace, 'plan', { task: 'Plan it' });
   stopSession(workspace, created);
   toUuidSession(workspace, created);
 
@@ -122,7 +122,7 @@ test('a UUID-named session still lists, shows, completes, continues and serves a
   await capture(() => main(['session', 'continue', UUID], workspace));
   expect(readdirSync(executions)).toEqual(before);
 
-  const next = createPreparedSession(workspace, 'Impl', 'implement', UUID);
+  const next = createPreparedSession(workspace, { title: 'Impl', workflowId: 'implement', priorSessionId: UUID });
   expect(next).toBe('1');
   expect(rawManifest(workspace, next).prior_session_id).toBe(UUID);
   expect(() => bindPriorSessionId(workspace, next, UUID)).not.toThrow();
@@ -130,11 +130,11 @@ test('a UUID-named session still lists, shows, completes, continues and serves a
 
 test('session run --session --prior starts a prepared session and keeps the numeric prior', async () => {
   const workspace = workspaceOf();
-  const producer = createWorkflowSession(workspace, 'plan', 'Plan it');
+  const producer = createWorkflowSession(workspace, 'plan', { task: 'Plan it' });
   stopSession(workspace, producer);
   expect((await capture(() => main(['session', 'complete', producer], workspace))).value).toBe(0);
 
-  const prepared = createPreparedSession(workspace, 'Impl', 'implement', producer);
+  const prepared = createPreparedSession(workspace, { title: 'Impl', workflowId: 'implement', priorSessionId: producer });
   writeFileSync(path.join(sessionDir(workspace, prepared), 'task.md'), 'Implement the plan.\n', 'utf8');
   const provider = new ScriptedClient(['status: complete\n\ndone'], [null]);
   cliHooks.runner = new AgentToolRunner(registryOf({ fake: provider }), 10);

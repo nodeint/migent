@@ -32,9 +32,9 @@ function names(views: readonly Record<string, unknown>[]): string {
 export function renderList<S extends TSchema>(
   items: readonly Static<S>[],
   format: OutputFormat,
-  columns: readonly Column[],
-  itemContract: S,
+  shape: { columns: readonly Column[]; itemContract: S },
 ): string {
+  const { columns, itemContract } = shape;
   if (format === 'json') return `${serializeJson(listOf(itemContract), [...items], true)}\n`;
   const views = items as readonly Record<string, unknown>[];
   if (format === 'yaml') return views.length === 0 ? '[]\n' : yamlText(views);

@@ -252,7 +252,7 @@ export class SessionStoreResume extends SessionStoreCore {
       const client = this.executionClient(sessionId, item.context.executionId);
       const raw: unknown = JSON.parse(readFileSync(item.context.conversationReadPath, 'utf8'));
       const model = typeof item.metadata.model === 'string' ? item.metadata.model : '';
-      const record = AgentSessionRecord.fromJson(raw, client, model, this.workspace);
+      const record = AgentSessionRecord.fromJson(raw, { client, model, workspace: this.workspace });
       record.client = client;
       records.set(item.context.executionId, record);
     }

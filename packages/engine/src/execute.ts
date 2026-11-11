@@ -11,7 +11,7 @@ import {
   dispatchExecuteStage,
   executeFinal,
   type ExecuteResult,
-  type PendingStageReply,
+  type ExecuteRun,
   stageFinishLine,
   TERMINAL_SESSION_STATUSES,
   text,
@@ -33,7 +33,7 @@ export async function executeNamedWorkflow(
 ): Promise<ExecuteResult> {
   const held = new HeldSession();
   try {
-    return await executeLocked(workspace, request, held, runner);
+    return await executeLocked(workspace, request, { held, runner });
   } catch (error) {
     if (!(error instanceof SessionLockHeldError) && !isSessionLockLost(error)) throw error;
     // Same shape as any other plain Error in the run: stderr message, exit 2.
@@ -58,9 +58,9 @@ export async function executeNamedWorkflow(
 async function executeLocked(
   workspace: string,
   request: ExecuteRequest,
-  held: HeldSession,
-  runner?: AgentToolRunner,
+  session: { held: HeldSession; runner?: AgentToolRunner },
 ): Promise<ExecuteResult> {
+  const { held, runner } = session;
   const activeRunner = runner;
   if (activeRunner === undefined) {
     throw new ConfigurationError('A client registry is required to run a workflow.');
@@ -74,7 +74,7 @@ async function executeLocked(
     throw new ConfigurationError('--max-dispatches must be at least 1.');
   }
   const store = new SessionStore(workspace);
-  const opened = await openExecuteSession(workspace, request, held, registry, store);
+  const opened = await openExecuteSession(workspace, request, { held, registry, store });
   if (opened.kind === 'final') return opened.result;
   const { sessionId, workflow, workflowId, stageReply, resumeCancelled, reopenLatestCancelled } = opened;
   const onSigint = () => {
@@ -101,27 +101,20 @@ async function executeLocked(
       // Send the reply before a cancelled sibling can end the command or fold the session blocked.
       const replySnapshots = store.executionSnapshots(sessionId);
       const replyStatus = store.readSessionStatus(sessionId);
-      assertStageDispatchable(workspace, workflow, sessionId, stageReply.stageId);
+      assertStageDispatchable(workspace, workflow, { sessionId, stageId: stageReply.stageId });
       stageJsons.push(
         await trackDispatch(sessionId, tasks, (note) =>
           dispatchExecuteStage(
-            workspace,
-            workflow,
-            workflowId,
-            sessionId,
-            stageReply.stageId,
-            replyStatus,
-            replySnapshots,
-            activeRunner,
+            { workspace, workflow, workflowId, sessionId, runner: activeRunner, reply: stageReply },
+            { stageId: stageReply.stageId, status: replyStatus, snapshots: replySnapshots },
             note,
-            stageReply,
           ),
         ),
       );
     }
     if (resumeCancelled) {
       const resumed = await resumeReopenedExecutions(
-        { workspace, store, workflow, workflowId, sessionId, runner: activeRunner, tasks, stageReply },
+        { workspace, store, workflow, workflowId, sessionId, runner: activeRunner, tasks, reply: stageReply },
         { once, stageId, maxDispatches, reopenLatestCancelled },
         stageJsons,
       );
@@ -148,32 +141,24 @@ async function executeLocked(
     }
     const replyDispatches = replySent ? 1 : 0;
     const replyVerifyTried = replyExhausted && stageReply !== null ? [stageReply.stageId] : [];
+    const run: ExecuteRun = {
+      workspace,
+      store,
+      workflow,
+      workflowId,
+      sessionId,
+      runner: activeRunner,
+      tasks,
+      reply: stageReply,
+    };
     const continued = once || stageId !== null
-      ? await runExecuteOnce(
-          workspace,
-          store,
-          workflow,
-          workflowId,
-          sessionId,
-          stageId,
-          activeRunner,
-          tasks,
-          stageReply,
-        )
-      : await runExecuteLoop(
-          workspace,
-          store,
-          workflow,
-          workflowId,
-          sessionId,
+      ? await runExecuteOnce(run, stageId)
+      : await runExecuteLoop(run, {
           maxDispatches,
-          activeRunner,
-          tasks,
-          stageReply,
-          replyDispatches,
-          replyVerifyTried,
-          [],
-        );
+          alreadyDispatched: replyDispatches,
+          verifyTriedSeed: replyVerifyTried,
+          verifyOnlyTriedSeed: [],
+        });
     if (stageJsons.length > 0) continued.stages = [...stageJsons, ...continued.stages];
     return continued;
   } catch (error) {
@@ -208,18 +193,6 @@ async function executeLocked(
   }
 }
 
-/** What a reopened-execution resume needs from the run in progress. */
-interface ReopenRun {
-  workspace: string;
-  store: SessionStore;
-  workflow: WorkflowDocument;
-  workflowId: string;
-  sessionId: string;
-  runner: AgentToolRunner;
-  tasks: Map<string, Promise<unknown>>;
-  stageReply: PendingStageReply | null;
-}
-
 interface ReopenLimits {
   once: boolean;
   stageId: string | null;
@@ -232,11 +205,11 @@ interface ReopenLimits {
  * the caller should go on dispatching.
  */
 async function resumeReopenedExecutions(
-  run: ReopenRun,
+  run: ExecuteRun,
   limits: ReopenLimits,
   stageJsons: Record<string, unknown>[],
 ): Promise<ExecuteResult | null> {
-  const { workspace, store, workflow, workflowId, sessionId, runner: activeRunner, tasks, stageReply } = run;
+  const { workspace, store, workflow, sessionId, runner: activeRunner, tasks } = run;
   const { once, stageId, maxDispatches, reopenLatestCancelled } = limits;
   const reopened = store.reopenCancelledExecutions(sessionId, reopenLatestCancelled);
   if (!reopenLatestCancelled || reopened.length > 0) {
@@ -245,7 +218,7 @@ async function resumeReopenedExecutions(
     }
     const settled = await Promise.allSettled(
       reopened.map((item) =>
-        startTracked(sessionId, item.executionId, tasks, () =>
+        startTracked({ sessionId, executionId: item.executionId, tasks }, () =>
           verifyOnlyExecution(workspace, sessionId, item.executionId)
             ? runVerifyOnlyStage({
                 workspace,
@@ -274,12 +247,9 @@ async function resumeReopenedExecutions(
               : 'finished');
       log(
         stageFinishLine(
-          workspace,
-          sessionId,
-          item.stageId || 'stage',
-          item.executionId,
-          outcome,
-          result.outcome_decision || '',
+          { workspace, sessionId },
+          { stageId: item.stageId || 'stage', executionId: item.executionId },
+          { outcome, decision: result.outcome_decision || '' },
         ),
       );
       stageJsons.push(runResultJson(result));
@@ -303,22 +273,17 @@ async function resumeReopenedExecutions(
       return result;
     }
     if (!reopenLatestCancelled) {
-      const rest = await runExecuteLoop(
-        workspace,
-        store,
-        workflow,
-        workflowId,
-        sessionId,
+      const { reply: stageReply } = run;
+      const rest = await runExecuteLoop(run, {
         maxDispatches,
-        activeRunner,
-        tasks,
-        stageReply,
-        stageReply !== null && stageReply.consumed ? 1 : 0,
-        stageJsons[0]?.failure_reason === VERIFY_EXHAUSTED && stageReply !== null ? [stageReply.stageId] : [],
-        reopened
+        alreadyDispatched: stageReply !== null && stageReply.consumed ? 1 : 0,
+        verifyTriedSeed: stageJsons[0]?.failure_reason === VERIFY_EXHAUSTED && stageReply !== null ? [
+          stageReply.stageId,
+        ] : [],
+        verifyOnlyTriedSeed: reopened
           .filter((item, index) => continued[index]?.failure_reason === VERIFY_FAILED)
           .map((item) => item.stageId),
-      );
+      });
       rest.stages = [...stageJsons, ...rest.stages];
       return rest;
     }

@@ -57,12 +57,12 @@ export class ServiceEndpoint {
   public readonly instanceId: string;
   public readonly pid: number;
 
-  constructor(host: string, port: number, token: string, instanceId: string, pid: number) {
-    this.host = host;
-    this.port = port;
-    this.token = token;
-    this.instanceId = instanceId;
-    this.pid = pid;
+  constructor(init: { host: string; port: number; token: string; instanceId: string; pid: number }) {
+    this.host = init.host;
+    this.port = init.port;
+    this.token = init.token;
+    this.instanceId = init.instanceId;
+    this.pid = init.pid;
   }
 }
 
@@ -154,19 +154,25 @@ export function authenticatedInstanceId(port: number, token: string, timeoutSec:
 export function endpointFromHome(home: string): ServiceEndpoint | null {
   const loaded = readService(home);
   if (!loaded || loaded === CORRUPT) return null;
-  return new ServiceEndpoint(loaded.host, loaded.port, loaded.token, loaded.instance_id, loaded.pid);
+  return new ServiceEndpoint(
+    { host: loaded.host, port: loaded.port, token: loaded.token, instanceId: loaded.instance_id, pid: loaded.pid },
+  );
+}
+
+export interface ServiceCall {
+  readonly method: string;
+  readonly path: string;
+  readonly body?: Record<string, unknown> | null;
+  /** Seconds. Defaults to 5. */
+  readonly timeout?: number;
 }
 
 export async function callService(
-  host: string,
-  port: number,
-  token: string,
-  method: string,
-  requestPath: string,
-  body: Record<string, unknown> | null = null,
-  timeout = 5,
+  endpoint: { host: string; port: number; token: string },
+  call: ServiceCall,
 ): Promise<[number, Record<string, unknown>]> {
-  void host;
+  const { port, token } = endpoint;
+  const { method, path: requestPath, body = null, timeout = 5 } = call;
   const data = body === null ? null : Buffer.from(JSON.stringify(body));
   const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,
@@ -176,7 +182,7 @@ export async function callService(
     headers['Content-Type'] = 'application/json';
     headers['Content-Length'] = String(data.length);
   }
-  const response = await requestLocal(port, method, requestPath, headers, data, timeout);
+  const response = await requestLocal(port, { method, path: requestPath, headers, body: data, timeoutSec: timeout });
   let payload: unknown;
   try {
     payload = JSON.parse(response.raw.toString('utf8'));
@@ -263,14 +269,17 @@ export async function serveForeground(
       if (decision.kind === 'error') throw new ServiceError(decision.message);
       const instanceId = randomBytes(32).toString('base64url');
       const token = randomBytes(32).toString('base64url');
-      lifetime = await svc.acquireServiceLock(directory, { instance_id: instanceId, pid: process.pid }, token, () => {
-        stopRequested.abort();
-        server?.close();
+      lifetime = await svc.acquireServiceLock(directory, { instance_id: instanceId, pid: process.pid }, {
+        token,
+        onStop: () => {
+          stopRequested.abort();
+          server?.close();
+        },
       });
       if (lifetime === null) throw new ServiceError('Another registry service holds the service endpoint.');
       try {
-        server = await RegistryHTTPServer.open(new RegistryStore(directory), token, instanceId, '127.0.0.1', port);
-        const record = recordFor(instanceId, token, server.port);
+        server = await RegistryHTTPServer.open({ store: new RegistryStore(directory), token, instanceId, port });
+        const record = recordFor({ instanceId, token, port: server.port });
         svc.publishServiceJson(directory, record);
         return endpointFrom(record);
       } catch (error) {
@@ -287,16 +296,18 @@ export async function serveForeground(
   }
   if (!server || !lifetime) return endpoint;
   process.stderr.write(`${endpoint.host}:${endpoint.port}\n`);
-  await serveUntilSignal(server, lifetime, options.stopEvent ?? null, stopRequested.signal);
+  await serveUntilSignal(
+    { server, lifetime },
+    { stopEvent: options.stopEvent ?? null, stopRequested: stopRequested.signal },
+  );
   return endpoint;
 }
 
 export async function stop(
   home: string,
-  termGraceSec = TERM_GRACE_SEC,
-  killGraceSec = KILL_GRACE_SEC,
-  options: { startLockTimeout?: number } = {},
+  options: { termGraceSec?: number; killGraceSec?: number; startLockTimeout?: number } = {},
 ): Promise<StopResult> {
+  const { termGraceSec = TERM_GRACE_SEC, killGraceSec = KILL_GRACE_SEC } = options;
   const directory = ensureRegistryHome(home);
   try {
     return await svc.holdStartLock(directory, options.startLockTimeout ?? START_LOCK_TIMEOUT_SEC, () =>
@@ -309,11 +320,10 @@ export async function stop(
 }
 
 export async function serveUntilSignal(
-  server: RegistryHTTPServer,
-  lifetime: ServiceEndpointServer,
-  stopEvent: StopEvent | null = null,
-  stopRequested: AbortSignal = new AbortController().signal,
+  { server, lifetime }: { server: RegistryHTTPServer; lifetime: ServiceEndpointServer },
+  options: { stopEvent?: StopEvent | null; stopRequested?: AbortSignal } = {},
 ): Promise<void> {
+  const { stopEvent = null, stopRequested = new AbortController().signal } = options;
   let signalled = false;
   const onSignal = (): void => {
     signalled = true;
@@ -390,7 +400,7 @@ async function spawnAndPublish(
     if (!ready) {
       throw new ServiceError(`Registry service did not become ready. See ${path.join(home, 'service.log')}.`);
     }
-    const record = recordFor(ready.instance_id, ready.token, ready.port, ready.pid);
+    const record = recordFor({ instanceId: ready.instance_id, token: ready.token, port: ready.port, pid: ready.pid });
     svc.publishServiceJson(home, record);
     published = record;
     if (!proc.acknowledge()) throw new ServiceError('Registry service did not become ready.');
@@ -454,7 +464,7 @@ async function stopLocked(home: string, termGraceSec: number, killGraceSec: numb
   const status = await svc.queryEndpoint(home, 1);
   if (status.state === 'gone') return unlinkConfirmed(home, record);
   if (!names(status, record)) return new StopResult('error', UNVERIFIED);
-  if (await svc.requestStop(home, record.instance_id, record.token, 1)) {
+  if (await svc.requestStop(home, { instanceId: record.instance_id, token: record.token }, 1)) {
     if (await pollGone(home, termGraceSec)) return unlinkConfirmed(home, record);
   }
   // Kill only the pid the live endpoint itself reports for this instance.
@@ -482,7 +492,8 @@ async function unlinkConfirmed(home: string, record: ServiceRecord): Promise<Sto
   return new StopResult('error', 'service.json changed before it could be removed.');
 }
 
-function recordFor(instanceId: string, token: string, port: number, pid = process.pid): ServiceRecord {
+function recordFor(identity: { instanceId: string; token: string; port: number; pid?: number }): ServiceRecord {
+  const { instanceId, token, port, pid = process.pid } = identity;
   return {
     schema_version: SERVICE_SCHEMA_VERSION,
     instance_id: instanceId,
@@ -516,7 +527,9 @@ function validateReady(payload: Record<string, unknown> | null, procPid: number,
 }
 
 function endpointFrom(record: ServiceRecord): ServiceEndpoint {
-  return new ServiceEndpoint(record.host, record.port, record.token, record.instance_id, record.pid);
+  return new ServiceEndpoint(
+    { host: record.host, port: record.port, token: record.token, instanceId: record.instance_id, pid: record.pid },
+  );
 }
 
 export { CORRUPT, readService, serviceJsonPath, startLockPath, writeServiceJson };

@@ -218,7 +218,7 @@ function sessionIn(workspace: string, workflowText: string): string {
   mkdirSync(workflows, { recursive: true });
   writeFileSync(path.join(workspace, '.migent', 'config.yaml'), CONFIG, 'utf8');
   writeFileSync(path.join(workflows, 'flow.yaml'), workflowText, 'utf8');
-  return createWorkflowSession(workspace, 'flow', 'task');
+  return createWorkflowSession(workspace, 'flow', { task: 'task' });
 }
 
 function withLock<T>(workspace: string, sessionId: string, run: () => T): T {

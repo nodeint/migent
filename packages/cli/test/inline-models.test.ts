@@ -59,16 +59,16 @@ afterEach(() => {
 
 test('inline defaults support options, effort, clients, and local overrides', () => {
   const workspace = project({ client: { type: 'codex' }, model: 'test', effort: 'low' });
-  expect(resolveRoleTarget(workspace, 'developer', undefined, resolve)).toEqual({
+  expect(resolveRoleTarget(workspace, 'developer', { registry: resolve })).toEqual({
     client: 'codex', model: 'test', options: { model_reasoning_effort: 'low' },
   });
-  expect(resolveStageTarget(workspace, 'work', 'work', undefined, resolve).options).toEqual({ model_reasoning_effort: 'low' });
+  expect(resolveStageTarget(workspace, { workflowId: 'work', stageId: 'work' }, { registry: resolve }).options).toEqual({ model_reasoning_effort: 'low' });
   // A stage's inline agent replaces the role's wholesale, effort and client included.
   writeFileSync(path.join(workspace, '.migent', 'workflows', 'work.yaml'), stringifyConfig({
     schema_version: 7,
     stages: [{ id: 'work', role: 'developer', agent: { client: { type: 'codex', options: { model_reasoning_effort: 'high' } }, model: 'stage' } }],
   }));
-  expect(resolveStageTarget(workspace, 'work', 'work', undefined, resolve)).toEqual({
+  expect(resolveStageTarget(workspace, { workflowId: 'work', stageId: 'work' }, { registry: resolve })).toEqual({
     client: 'codex', model: 'stage', options: { model_reasoning_effort: 'high' },
   });
   writeFileSync(path.join(workspace, '.migent', 'workflows', 'work.yaml'), stringifyConfig({
@@ -80,7 +80,7 @@ test('inline defaults support options, effort, clients, and local overrides', ()
     schema_version: 7,
     roles: { developer: { agent: { client: { type: 'codex' }, model: 'local' } } },
   }));
-  expect(resolveRoleTarget(workspace, 'developer', undefined, resolve).model).toBe('local');
+  expect(resolveRoleTarget(workspace, 'developer', { registry: resolve }).model).toBe('local');
 });
 
 test('a named stage agent overrides an inline role default', () => {
@@ -90,8 +90,8 @@ test('a named stage agent overrides an inline role default', () => {
   writeFileSync(path.join(workspace, '.migent', 'workflows', 'work.yaml'), stringifyConfig({
     schema_version: 7, stages: [{ id: 'work', role: 'developer', agent: 'alternate' }],
   }));
-  expect(resolveStageTarget(workspace, 'work', 'work', undefined, resolve)).toMatchObject({ model: 'named' });
-  expect(resolveStageTarget(workspace, 'work', 'work', { client: 'grok', model: 'cli' }, resolve)).toEqual({
+  expect(resolveStageTarget(workspace, { workflowId: 'work', stageId: 'work' }, { registry: resolve })).toMatchObject({ model: 'named' });
+  expect(resolveStageTarget(workspace, { workflowId: 'work', stageId: 'work' }, { override: { client: 'grok', model: 'cli' }, registry: resolve })).toEqual({
     client: 'grok', model: 'cli', options: {},
   });
 });
@@ -136,7 +136,7 @@ test('a clientless agent resolves to the one client that lists its model', () =>
   catalogs.codex = codexModels('only-codex');
   const workspace = project({ model: 'only-codex', effort: 'high' });
   expect(diagnose(workspace, { clients: clientRegistry(), which }).every((check) => check.ok)).toBe(true);
-  expect(resolveRoleTarget(workspace, 'developer', undefined, clientRegistry())).toEqual({
+  expect(resolveRoleTarget(workspace, 'developer', { registry: clientRegistry() })).toEqual({
     client: 'codex', model: 'only-codex', options: { model_reasoning_effort: 'high' },
   });
 });
@@ -148,7 +148,7 @@ test('doctor reports a model that several clients list', () => {
   const [config] = diagnose(workspace, { clients: clientRegistry(), which });
   expect(config.ok).toBe(false);
   expect(config.problems.join('\n')).toMatch(/Model shared is listed by several clients \(codex, grok\)/);
-  expect(() => resolveRoleTarget(workspace, 'developer', undefined, clientRegistry())).toThrow(/several clients/);
+  expect(() => resolveRoleTarget(workspace, 'developer', { registry: clientRegistry() })).toThrow(/several clients/);
 });
 
 test.each(['high', 'typo'])('doctor validates effort against the inferred client: %s', async (effort) => {

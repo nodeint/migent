@@ -38,7 +38,7 @@ async function cancelledStage(responses: string[], protocol = 2) {
   writeFileSync(path.join(workspace, '.migent', 'workflows', 'wf.yaml'), [
     'schema_version: 7', 'id: wf', 'artifacts:', '  plan: { file: plan.md }', 'stages:', '  - { id: plan, role: planner, artifacts: [plan] }', '',
   ].join('\n'));
-  const sessionId = createWorkflowSession(workspace, 'wf', 'Finish the notes');
+  const sessionId = createWorkflowSession(workspace, 'wf', { task: 'Finish the notes' });
   const provider = new HangFirstProvider(pidFile, responses);
   const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
   // An authentic conversation: the first prompt and history are rendered under the requested protocol.

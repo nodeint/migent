@@ -48,7 +48,7 @@ export {
   statusDriftMessage,
 } from './session-fold.js';
 export { readExecutions, readSessionManifest, sessionSchemaVersion } from './session-fold-read.js';
-export type { WorkflowFreeze } from './session-freeze.js';
+export type { FreezeSource, LiveWorkflowRef, WorkflowFreeze } from './session-freeze.js';
 export { collectFrozenDrift,WORKFLOW_FREEZE_FILE } from './session-freeze.js';
 export { frozenRoleInstructions, frozenStageTarget, loadFrozenWorkflow, readWorkflowFreeze, requireLiveWorkflow, warnIfFrozenDrift, writeWorkflowFreeze } from './session-freeze.js';
 export type { CancelRequestResult } from './session-lock.js';
@@ -61,6 +61,7 @@ export {
   SessionLockHeldError,
 } from './session-lock.js';
 export { CANCEL_REQUEST_FILENAME, setBetweenStaleLockReads } from './session-lock.js';
+export type { CreatePreparedSessionInput, CreateWorkflowSessionOptions } from './session-records.js';
 export {
   activatePreparedSession,
   allocateSessionId,
@@ -83,8 +84,7 @@ export {
   selectRunWorkflow,
   selectSessionWorkflow,
 } from './session-selection.js';
-export type { ManualCompletionResult } from './session-store.js';
-export type { SkipDetails } from './session-store.js';
+export type { ExecutionSaveInput, LoadOrCreateInput, ManualCompletionResult, SessionRecordFallback, SessionRecordInit, SkipDetails } from './session-store.js';
 export {
   AgentSessionRecord,
   ExecutionContext,

@@ -191,12 +191,17 @@ export function revisionResumeExecution(
  * The first successful visit is free. A failed retry of the visit already
  * started does not count. A baseline is the successful visits at the last continue.
  */
+export interface RevisionQuery {
+  readonly stageId: string;
+  readonly revisionBaselines?: Readonly<Record<string, number>> | null;
+}
+
 export function revisionStop(
   workflow: WorkflowDocument,
   snapshots: readonly ExecutionSnapshot[],
-  stageId: string,
-  revisionBaselines?: Readonly<Record<string, number>> | null,
+  query: RevisionQuery,
 ): boolean {
+  const { stageId, revisionBaselines } = query;
   const stage = workflow.stages[stageId];
   if (stage === undefined || stage.maxRevisions === null) return false;
   const latest = latestStageSnapshot(snapshots, stageId);
@@ -235,15 +240,15 @@ export function relevantRouterSnapshots(
   stageId: string,
 ): ExecutionSnapshot[] | null {
   const view = scheduleView(workflow, snapshots);
-  return routersCompletedSince(workflow, view, stageId, latestVisitOrder(view, stageId));
+  return routersCompletedSince(workflow, view, { stageId, since: latestVisitOrder(view, stageId) });
 }
 
 export function routersCompletedSince(
   workflow: WorkflowDocument,
   view: ScheduleView,
-  stageId: string,
-  since: number,
+  visit: { readonly stageId: string; readonly since: number },
 ): ExecutionSnapshot[] | null {
+  const { stageId, since } = visit;
   const relevant: ExecutionSnapshot[] = [];
   for (const router of incomingRouters(workflow, stageId)) {
     if (routerSkippedSince(view, router.id, since)) {

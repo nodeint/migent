@@ -4,7 +4,7 @@ import { isRecord } from '@nodeint/migent-workflow';
 
 import type { SessionManifest } from './session-fold-types.js';
 import { cloneRecord } from './session-fold-util.js';
-import { terminalFields, type TerminalSource } from './session-ledger.js';
+import { type TerminalContext,terminalFields } from './session-ledger.js';
 
 /**
  * The status record while the fold builds it. The fold writes `status.json`, so the order in which
@@ -41,14 +41,9 @@ export class StatusDraft {
   }
 
   /** Replace the five terminal keys with those `sessionStatus` calls for. */
-  public applyTerminalFields(
-    sessionStatus: string,
-    source: TerminalSource | null,
-    reason: string | null,
-    blocked: readonly TerminalSource[] = [],
-  ): void {
+  public applyTerminalFields(sessionStatus: string, terminal: TerminalContext): void {
     for (const key of TERMINAL_KEYS) this.clear(key);
-    for (const [key, value] of Object.entries(terminalFields(sessionStatus, source, reason, blocked))) {
+    for (const [key, value] of Object.entries(terminalFields(sessionStatus, terminal))) {
       this.set(key, value);
     }
   }

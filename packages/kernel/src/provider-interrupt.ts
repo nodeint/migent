@@ -96,10 +96,10 @@ function sleep(ms: number): Promise<void> {
  */
 export async function interruptSession(
   provider: CliClient,
-  agentId: string,
-  cwd: string,
+  target: { agentId: string; cwd: string },
   policy: InterruptPolicy = DEFAULT_INTERRUPT_POLICY,
 ): Promise<InterruptReport | null> {
+  const { agentId, cwd } = target;
   const spec = provider.interruptCommand?.(agentId) ?? null;
   if (spec === null) return null;
   let outcome: InterruptOutcome = 'failed';

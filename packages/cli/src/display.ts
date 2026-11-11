@@ -108,11 +108,10 @@ export function printSessions(rows: readonly string[][]): void {
 
 export function printAgent(
   result: Record<string, unknown>,
-  role: string,
-  client: string,
-  model: string,
+  run: { role: string; client: string; model: string },
   workspace: string | null = null,
 ): void {
+  const { role, client, model } = run;
   const decision = String(result.outcome_decision ?? '');
   let outcome = String(result.outcome_status ?? 'failed');
   if (decision) outcome = `${outcome} ${decision}`;

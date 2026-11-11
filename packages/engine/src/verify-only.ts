@@ -24,15 +24,15 @@ export async function runVerifyOnlyStage(input: {
   onExecution?: (executionId: string) => void;
 }): Promise<RunResult> {
   const store = new SessionStore(input.workspace, undefined, input.clients);
-  const context = openContext(store, input.sessionId, input.stage.id, input.executionId ?? null);
+  const context = openContext(store, input);
   input.onExecution?.(context.executionId);
   if ((input.executionId === null || input.executionId === undefined)) log(startLine(input.stage, parseExecutionId(context.executionId)?.attempt ?? null));
-  const reporter = new ProviderEventReporter(store, context, '', '', false);
+  const reporter = new ProviderEventReporter({ store, context }, { client: '', model: '' });
   reporter.emit('verify.started', `${input.stage.verify.length} command(s)`, {
     turn: VERIFY_TURN,
     commands: input.stage.verify,
   });
-  const record = new AgentSessionRecord('', '', input.workspace, null, {}, 'running');
+  const record = new AgentSessionRecord({ client: '', model: '', workspace: input.workspace, status: 'running' });
   let result: VerifyRunResult;
   try {
     result = await input.verifyRunner.run({
@@ -58,7 +58,7 @@ export async function runVerifyOnlyStage(input: {
   } catch (error) {
     if (error instanceof CancellationRequested) {
       record.status = 'cancelled';
-      store.saveExecution(context, record, 'cancelled');
+      store.saveExecution(context, record, { status: 'cancelled' });
       log(`Execution ${context.executionId} marked cancelled.`);
     }
     throw error;
@@ -78,9 +78,9 @@ export async function runVerifyOnlyStage(input: {
   if (passed) {
     reporter.emit('verify.passed', 'all commands passed', { turn: VERIFY_TURN, report });
     const outcome = new StageOutcome('complete');
-    store.saveExecution(context, record, 'completed', null, outcome);
+    store.saveExecution(context, record, { status: 'completed', outcome });
     store.publishVerifyReport(context, VERIFY_TURN);
-    return executionJson(store, context, 'complete', '');
+    return executionJson(store, context, { outcomeStatus: 'complete', failureReason: '' });
   }
   const failed = result.commands.find((item) => item.status === 'fail' || item.status === 'timed_out');
   const error = result.infraError ?? `Verify failed: ${failed?.command ?? 'verify'}`;
@@ -91,16 +91,16 @@ export async function runVerifyOnlyStage(input: {
     exit_code: failed?.exitCode ?? null,
     report,
   });
-  store.saveExecution(context, record, 'failed', error, null, false, { failure_reason: VERIFY_FAILED });
-  return executionJson(store, context, '', VERIFY_FAILED);
+  store.saveExecution(context, record, { status: 'failed', error, extra: { failure_reason: VERIFY_FAILED } });
+  return executionJson(store, context, { outcomeStatus: '', failureReason: VERIFY_FAILED });
 }
 
 function openContext(
   store: SessionStore,
-  sessionId: string,
-  stageId: string,
-  executionId: string | null,
+  input: { sessionId: string; stage: { id: string }; executionId?: string | null },
 ): ExecutionContext {
+  const { sessionId, executionId = null } = input;
+  const stageId = input.stage.id;
   if (executionId === null) return store.openVerifyExecution(sessionId, stageId);
   const context = store.executionContext(sessionId, executionId);
   if (context === null) throw new Error(`Execution ${executionId} was not found in session ${sessionId}.`);
@@ -121,9 +121,9 @@ function startLine(stage: VerifyOnlyStageSpec, attempt: number | null): string {
 function executionJson(
   store: SessionStore,
   context: ExecutionContext,
-  outcomeStatus: string,
-  failureReason: string,
+  result: { outcomeStatus: string; failureReason: string },
 ): RunResult {
+  const { outcomeStatus, failureReason } = result;
   const sessionStatus = store.readSessionStatus(context.sessionId);
   return {
     agent_id: '',

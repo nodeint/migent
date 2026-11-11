@@ -13,7 +13,7 @@ export function draftConditionalStages(stages: readonly DraftStage[], declaredId
   const members = new Map<string, string>();
   for (const source of stages) {
     if (source.runWhen.state !== 'valid' || source.runWhen.value === null) continue;
-    for (const member of definiteConditionalReach(stages, graph, declaredIds, source.id)) {
+    for (const member of definiteConditionalReach({ stages, graph, declaredIds }, source.id)) {
       if (!members.has(member)) members.set(member, source.id);
     }
   }
@@ -68,11 +68,14 @@ export function dependencyClosureKnown(
 
 /** Stages a skip of `stageId` definitely leaves unreached, using only edges the draft made readable. */
 export function definiteConditionalReach(
-  stages: readonly DraftStage[],
-  graph: Record<string, StageSpec>,
-  declaredIds: ReadonlySet<string>,
+  scope: {
+    readonly stages: readonly DraftStage[];
+    readonly graph: Record<string, StageSpec>;
+    readonly declaredIds: ReadonlySet<string>;
+  },
   stageId: string,
 ): Set<string> {
+  const { stages, graph, declaredIds } = scope;
   const byId = new Map(stages.map((stage) => [stage.id, stage]));
   // A route target is forward only when the member's whole dependency chain is readable.
   const closureKnown = (id: string): boolean => dependencyClosureKnown(byId, declaredIds, id);
@@ -106,15 +109,24 @@ export function definiteConditionalReach(
 /** The runtime's cross-stage rules over whatever each stage could read. A rule is skipped only when a
  * unit it reads is unreadable — never because an unrelated field or stage failed.
  */
-export function collectGraphProblems(
-  stages: readonly DraftStage[],
-  rawStageCount: number,
-  declaredStageIds: ReadonlySet<string>,
-  completionStage: string | null,
-  outputs: CollectedOutputs,
-  version2: boolean,
-  problems: DraftProblems,
-): void {
+export interface GraphProblemsContext {
+  readonly rawCount: number;
+  readonly declaredIds: ReadonlySet<string>;
+  readonly completionStage: string | null;
+  readonly outputs: CollectedOutputs;
+  readonly version2: boolean;
+  readonly problems: DraftProblems;
+}
+
+export function collectGraphProblems(stages: readonly DraftStage[], context: GraphProblemsContext): void {
+  const {
+    rawCount: rawStageCount,
+    declaredIds: declaredStageIds,
+    completionStage,
+    outputs,
+    version2,
+    problems,
+  } = context;
   // An unreadable id or a duplicate leaves some stage's fields unknown, but each check below reads only
   // what its own finding needs, so the rest of the graph is still checked.
   const structurallyComplete = stages.length === rawStageCount;
@@ -148,7 +160,7 @@ export function collectGraphProblems(
   const reachedBy = new Map<string, string>();
   for (const source of stages) {
     if (source.runWhen.state !== 'valid' || source.runWhen.value === null) continue;
-    for (const member of definiteConditionalReach(stages, graph, declaredStageIds, source.id)) {
+    for (const member of definiteConditionalReach({ stages, graph, declaredIds: declaredStageIds }, source.id)) {
       if (!reachedBy.has(member)) reachedBy.set(member, source.id);
     }
   }

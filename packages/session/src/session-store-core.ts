@@ -229,7 +229,7 @@ export class SessionStoreCore {
     const freeze = readWorkflowFreeze(sessionDirectory);
     const stageId = typeof metadata.stage_id === 'string' ? metadata.stage_id : '';
     const frozen = freeze?.targets[stageId]?.client;
-    const decided = readExecutionClient(sessionDirectory, executionId, metadata, frozen);
+    const decided = readExecutionClient(sessionDirectory, { executionId, metadata, frozen });
     if (decided.client === null) {
       throw new ConfigurationError(`Cannot resume execution ${executionId}: ${decided.reason}. Start a new attempt.`);
     }

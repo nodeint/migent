@@ -30,11 +30,11 @@ const workflowResource: ProjectResource<typeof GetWorkflow, typeof GetWorkflowSu
   summary: "Workflows in .migent/workflows, or one session's workflow with --session.",
   columns: [field('NAME', 'name'), field('FILE', 'file'), field('STAGES', 'stages'), field('ROLES', 'roles'), count('PROBLEMS', 'problems')],
   list: (workspace) => listWorkflowViews(workspace).map((view) => asView(GetWorkflowSummary, view)),
-  get: (workspace, name, resolve, session) =>
+  get: (workspace, { name, session }, resolve) =>
     asView(
       GetWorkflow,
       session !== null
-        ? getSessionWorkflowView(workspace, session, name, resolve)
+        ? getSessionWorkflowView(workspace, { sessionId: session, name }, resolve)
         : getWorkflowView(workspace, requireName('workflow', name), resolve),
     ),
 };
@@ -48,7 +48,7 @@ const roleResource: ProjectResource<typeof GetRole, typeof GetRole> = {
   summary: 'Roles in the effective config with their agent and description.',
   columns: [field('NAME', 'name'), field('AGENT', 'agent'), targetField('CLIENT', 'client'), targetField('MODEL', 'model'), field('DESCRIPTION', 'description'), count('PROBLEMS', 'problems')],
   list: (workspace, resolve) => listRoleViews(workspace, resolve).map((view) => asView(GetRole, view)),
-  get: (workspace, name, resolve) => asView(GetRole, getRoleView(workspace, requireName('role', name), resolve)),
+  get: (workspace, { name }, resolve) => asView(GetRole, getRoleView(workspace, requireName('role', name), resolve)),
 };
 
 const agentResource: ProjectResource<typeof GetAgent, typeof GetAgent> = {
@@ -60,7 +60,7 @@ const agentResource: ProjectResource<typeof GetAgent, typeof GetAgent> = {
   summary: 'Agents the project names: client, model, effort, and CLI client options (see `migent get clients`).',
   columns: [field('NAME', 'name'), field('CLIENT', 'client'), field('MODEL', 'model'), field('LOCAL', 'local'), count('PROBLEMS', 'problems')],
   list: (workspace, resolve) => listAgentViews(workspace, resolve).map((view) => asView(GetAgent, view)),
-  get: (workspace, name, resolve) => asView(GetAgent, getAgentView(workspace, requireName('agent', name), resolve)),
+  get: (workspace, { name }, resolve) => asView(GetAgent, getAgentView(workspace, requireName('agent', name), resolve)),
 };
 
 const configResource: ProjectResource<typeof GetConfig, typeof GetConfig> = {

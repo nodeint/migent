@@ -11,6 +11,7 @@ export {
   UNKNOWN_KEYS_ERROR_SCHEMA_VERSION,
   unknownKeyEntries,
   unknownKeys,
+  type UnknownKeyScope,
   unknownWorkflowKeyEntries,
   unknownWorkflowKeys,
   workflowErrorPath,

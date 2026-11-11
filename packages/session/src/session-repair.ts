@@ -88,7 +88,7 @@ export function repairSessionUnlocked(
       );
     }
   }
-  const reasons = replacementRefusal(folded, inputs, before, acceptTask);
+  const reasons = replacementRefusal(folded, inputs, { before, acceptTask });
   if (reasons.length > 0) throw new ConfigurationError(repairRefusalMessage(sessionId, reasons));
   if (torn) sealSessionEventLogs(sessionDirectory);
   for (const draft of drafts) appendLifecycleEvent(sessionDirectory, draft);
@@ -170,13 +170,13 @@ function reconcileDrafts(inputs: FoldInputs): EventDraft[] {
     }
     if (!isTerminalExecution(execution.status)) continue;
     const outcome = stageOutcome(execution);
-    const ownStatus = sessionStatusAfterExecution(
-      execution.status,
+    const ownStatus = sessionStatusAfterExecution({
+      executionStatus: execution.status,
       outcome,
-      cursor,
-      inputs.workflow,
-      execution.stageId,
-    );
+      previousStatus: cursor,
+      workflow: inputs.workflow,
+      stageId: execution.stageId,
+    });
     if (!planned(`execution.${execution.status}`, execution.executionId)) {
       drafts.push({
         event: `execution.${execution.status}`,
@@ -242,9 +242,9 @@ function acceptedTaskDraft(sessionDirectory: string, sessionId: string): EventDr
 function replacementRefusal(
   folded: Record<string, unknown>,
   inputs: FoldInputs,
-  before: 'ok' | 'missing' | 'corrupt',
-  acceptTask: boolean,
+  state: { before: 'ok' | 'missing' | 'corrupt'; acceptTask: boolean },
 ): string[] {
+  const { before, acceptTask } = state;
   const reasons: string[] = [];
   if (typeof folded.workflow_id !== 'string' || folded.workflow_id === '') {
     reasons.push('workflow_id is missing from manifest.yaml');
@@ -320,7 +320,7 @@ function stageOutcome(execution: FoldExecution): StageOutcome | null {
   if (!isRecord(outcome) || typeof outcome.status !== 'string' || outcome.status === '') return null;
   const blocker = typeof outcome.blocker === 'string' && outcome.blocker ? outcome.blocker : null;
   const decision = typeof outcome.decision === 'string' && outcome.decision ? outcome.decision : null;
-  return new StageOutcome(outcome.status, blocker, decision, typeof outcome.question === 'string' ? outcome.question : null, storedQuestions(outcome));
+  return new StageOutcome(outcome.status, { blocker, decision, question: typeof outcome.question === 'string' ? outcome.question : null, questions: storedQuestions(outcome) });
 }
 
 function compareExecutions(left: FoldExecution, right: FoldExecution): number {

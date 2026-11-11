@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import type { CliClient, ClientRegistry, FailureClassification, NewSession, UsageCapture } from '@nodeint/migent-kernel';
+import type { CliClient, ClientRegistry, FailureClassification, UsageCapture } from '@nodeint/migent-kernel';
 import { classifyFailure, createNewSession, sessionOptions } from '@nodeint/migent-kernel';
 import { CommandExecutor, DEFAULT_TIMEOUT_SEC, type StopReason } from '@nodeint/migent-kernel';
 import { DEFAULT_INTERRUPT_POLICY, type InterruptPolicy, type InterruptReport, interruptSession, isSettled } from '@nodeint/migent-kernel';
@@ -25,7 +25,7 @@ import { allStageArtifacts, loadNamedWorkflow, loadStage, type StageSpec } from 
 import { ProviderEventReporter } from './provider-events.js';
 import { persistedTurn, readCliVersion,readExecutionJson, readGitFacts, savedOutcome, savedResponse, storedProtocol, storedTurn, verifyProgress } from './run-facts.js';
 import { TurnLoop } from './turn-loop.js';
-import { handoffPath, promptArtifactFiles, questionRequestPath, type RunResult, sessionPaths, type TurnDrive, type TurnResult } from './turn-types.js';
+import { handoffPath, promptArtifactFiles, questionRequestPath, type RunResult, type RunTurnArgs, sessionPaths, type TurnDrive, type TurnResult } from './turn-types.js';
 
 export type { RunResult } from './turn-types.js';
 
@@ -93,17 +93,22 @@ export class AgentToolRunner {
     const sessionId = request.sessionId ?? null;
     const stageId = request.stageId ?? 'agent';
     const [record, isNew, context] = store.loadOrCreate(
-      clientId,
-      request.model,
-      profile,
-      workspacePath,
-      sessionId,
-      stageId,
-      stageAttempt,
-      executionOrder,
-      request.prompt,
-      request.resumeExecutionId ?? null,
-      (record) => validateSessionProfile(record.client, record.model, record.options, clientId, request.model, profile),
+      {
+        client: clientId,
+        model: request.model,
+        options: profile,
+        workspace: workspacePath,
+        sessionId,
+        stageId,
+        stageAttempt,
+        executionOrder,
+        prompt: request.prompt,
+        resumeExecutionId: request.resumeExecutionId ?? null,
+        validateResume: (record) => validateSessionProfile(
+          record,
+          { client: clientId, model: request.model, options: profile },
+        ),
+      },
     );
     request.onExecution?.(context.executionId);
     const newSession = isNew ? createNewSession(client) : null;
@@ -111,13 +116,10 @@ export class AgentToolRunner {
     record.history.push({ role: 'user', content: request.prompt });
     record.status = 'running';
     store.save(record, context);
-    store.saveExecution(context, record, 'running');
+    store.saveExecution(context, record, { status: 'running' });
     const eventReporter = new ProviderEventReporter(
-      store,
-      context,
-      clientId,
-      request.model,
-      this.itemProgress,
+      { store, context },
+      { client: clientId, model: request.model, itemProgress: this.itemProgress },
     );
     const agentId = isNew ? null : record.agentId;
     let turnPrompt = request.prompt;
@@ -142,7 +144,11 @@ export class AgentToolRunner {
       && storedProtocol(previousMetadata) === protocol;
     if (previous) for (const item of artifactFiles) store.carryVerifyArtifact(previous.artifactDirectory, context, item.artifact.file);
     if (request.resumeExecutionId && verifyCommands.length > 0) {
-      for (const item of artifactFiles) this.carryExhaustedArtifact(store, context, request.resumeExecutionId, item.artifact.file);
+      for (const item of artifactFiles) this.carryExhaustedArtifact(
+        store,
+        context,
+        { resumeExecutionId: request.resumeExecutionId, artifactName: item.artifact.file },
+      );
     }
     const conversationContract = sameConversation ? 'reminder' : 'full';
     turnPrompt = renderProviderPrompt(turnPrompt, { ...sessionPaths(context, sessionId),
@@ -215,16 +221,17 @@ export class AgentToolRunner {
     const profile = sessionOptions(client, resolvedOptions);
     const record = AgentSessionRecord.fromJson(
       JSON.parse(readFileSync(context.conversationReadPath, 'utf8')) as unknown,
-      clientId,
-      model,
-      workspacePath,
+      { client: clientId, model, workspace: workspacePath },
     );
     record.client = clientId;
     record.status = 'running';
     store.save(record, context);
     const stage = loadRunStage(store, sessionId, stageId);
     const { decisionValues, ask, artifactFiles, artifactName, verifyCommands } = stageFacts(stage);
-    const eventReporter = new ProviderEventReporter(store, context, clientId, model, this.itemProgress);
+    const eventReporter = new ProviderEventReporter(
+      { store, context },
+      { client: clientId, model, itemProgress: this.itemProgress },
+    );
     const progress = verifyProgress(metadata);
     const corrections = readCorrectionLedger(metadata);
     const questionFile = questionRequestPath(context);
@@ -315,7 +322,11 @@ export class AgentToolRunner {
     let invokeError: string | null = null;
     let gateFailure: GateFailure | null = null;
     try {
-      outcome = savedOutcome(store, context, turn, responseText, { required: sessionId !== null, decisionValues, ask, protocol, questionFile, handoffFile });
+      outcome = savedOutcome(
+        { store, context, turn },
+        responseText,
+        { required: sessionId !== null, decisionValues, ask, protocol, questionFile, handoffFile },
+      );
     } catch (error) {
       if (error instanceof QuestionFileError || error instanceof HandoffFileError) gateFailure = classifyGateError(error);
       else if (error instanceof Error) {
@@ -335,20 +346,7 @@ export class AgentToolRunner {
   private driveTurns(state: TurnDrive): Promise<RunResult> {
     const loop = new TurnLoop(
       state,
-      (args) =>
-        this.runTurn(
-          args.client,
-          args.model,
-          args.workspace,
-          args.prompt,
-          args.agentId,
-          args.newSession,
-          args.options,
-          args.eventReporter,
-          args.store,
-          args.context,
-          args.turn,
-        ),
+      (args) => this.runTurn(args),
       this.verifyRunner,
     );
     return loop.drive();
@@ -357,9 +355,9 @@ export class AgentToolRunner {
   private carryExhaustedArtifact(
     store: SessionStore,
     context: ExecutionContext,
-    resumeExecutionId: string,
-    artifactName: string,
+    carry: { resumeExecutionId: string; artifactName: string },
   ): void {
+    const { resumeExecutionId, artifactName } = carry;
     const previous = store
       .executionSnapshots(context.sessionId)
       .find((snapshot) => snapshot.executionId === resumeExecutionId);
@@ -375,19 +373,20 @@ export class AgentToolRunner {
     return version;
   }
 
-  private async runTurn(
-    client: CliClient,
-    model: string,
-    workspace: string,
-    prompt: string,
-    agentId: string | null,
-    newSession: NewSession | null,
-    options: Record<string, string>,
-    eventReporter: ProviderEventReporter,
-    store: SessionStore,
-    context: ExecutionContext,
-    turn: number,
-  ): Promise<TurnResult> {
+  private async runTurn(args: RunTurnArgs): Promise<TurnResult> {
+    const {
+      client,
+      model,
+      workspace,
+      prompt,
+      agentId,
+      newSession,
+      options,
+      eventReporter,
+      store,
+      context,
+      turn,
+    } = args;
     const tmp = mkdtempSync(path.join(tmpdir(), 'migent_'));
     try {
       const promptFile = path.join(tmp, 'prompt.txt');
@@ -433,7 +432,7 @@ export class AgentToolRunner {
         for (const id of [...knownIds]) {
           // After the process is gone, only sessions not yet seen interrupted are asked again.
           if (phase === 'after' && reports.get(id)?.outcome === 'interrupted') continue;
-          const report = await interruptSession(client, id, workspace, this.interruptPolicy);
+          const report = await interruptSession(client, { agentId: id, cwd: workspace }, this.interruptPolicy);
           if (report === null) continue;
           attempted = true;
           reports.set(id, report);
@@ -491,7 +490,7 @@ export class AgentToolRunner {
       const { stdout, error: executorError, exitCode, failure } = result;
       const parsed = client.parseRun(stdout, lastMessageFile);
       if (parsed.sessionId) reportMismatch(parsed.sessionId);
-      const classification = classifyFinishedProcess(client, stdout, exitCode, executorError);
+      const classification = classifyFinishedProcess(client, { stdout, exitCode, executorError });
       let invokeError = executorError;
       if (exitCode === 0 && classification !== null) invokeError = classification.message;
       let usage: UsageCapture | null = null;
@@ -522,10 +521,9 @@ export class AgentToolRunner {
 
 function classifyFinishedProcess(
   client: CliClient,
-  stdout: string,
-  exitCode: number | null,
-  executorError: string | null,
+  run: { stdout: string; exitCode: number | null; executorError: string | null },
 ): FailureClassification | null {
+  const { stdout, exitCode, executorError } = run;
   if (exitCode === null) return { kind: 'provider', origin: 'start', message: executorError === null ? '' : executorError };
   const classified = classifyFailure(client, stdout, exitCode);
   // Signal death (negative, or the shell's 128 + signal) is not a normal exit: its reply never counts.
@@ -563,14 +561,16 @@ function loadRunStage(store: SessionStore, sessionId: string, stageId: string): 
   }
 }
 
-function validateSessionProfile(
-  previousClient: string,
-  previousModel: string,
-  previousOptions: Record<string, string>,
-  client: string,
-  model: string,
-  options: Record<string, string>,
-): void {
+/** The client, model and options a conversation runs under. */
+interface SessionProfile {
+  readonly client: string;
+  readonly model: string;
+  readonly options: Record<string, string>;
+}
+
+function validateSessionProfile(previous: SessionProfile, requested: SessionProfile): void {
+  const { client: previousClient, model: previousModel, options: previousOptions } = previous;
+  const { client, model, options } = requested;
   if (
     previousClient !== client ||
     previousModel !== model ||

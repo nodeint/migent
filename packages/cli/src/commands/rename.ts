@@ -8,7 +8,12 @@ import { writeJson } from '../emit.js';
 import { requireCurrentSchema } from '../migrate.js';
 
 /** Change a session's display title without the session lock. Exit 2 for an unknown session or invalid title. */
-export function renameSession(workspace: string, sessionId: string, title: string, asJson: boolean): number {
+export function renameSession(
+  workspace: string,
+  target: { sessionId: string; title: string },
+  asJson: boolean,
+): number {
+  const { sessionId, title } = target;
   requireCurrentSchema(workspace);
   let result;
   try {

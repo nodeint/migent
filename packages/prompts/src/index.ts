@@ -131,12 +131,10 @@ export function addArtifactContext(prompt: string, artifactDirectory: string, ar
   return renderProviderPrompt(prompt, { artifactDirectory, artifactName });
 }
 
-export function addStageOutcomeContract(
-  prompt: string,
-  decisionValues: readonly string[] = [],
-  decisionInstructions: Readonly<Record<string, string>> = {},
-  ask: AskTarget | null = null,
-): string {
+export type StageOutcomeContractOptions = Pick<ProviderPromptOptions, 'decisionValues' | 'decisionInstructions' | 'ask'>;
+
+export function addStageOutcomeContract(prompt: string, options: StageOutcomeContractOptions = {}): string {
+  const { decisionValues = [], decisionInstructions = {}, ask = null } = options;
   return renderProviderPrompt(prompt, { contract: true, decisionValues, decisionInstructions, ask });
 }
 

@@ -126,24 +126,24 @@ function pendingRewrites(workspace: string, clientIds: readonly string[]): Rewri
   const localOriginal = isFile(localPath) ? readConfigOriginal(localPath) : null;
   // Older layers must reach v5 before the client lift inspects their merged shape.
   const toV5 = (layer: Record<string, unknown>): Record<string, unknown> =>
-    documentVersion(layer) < 5 ? migrateConfig(layer, 5, originalContext).document : layer;
+    documentVersion(layer) < 5 ? migrateConfig(layer, { current: 5, context: originalContext }).document : layer;
   const projectV5 = toV5(projectOriginal);
   const localV5 = localOriginal === null ? null : toV5(localOriginal);
   const context = mergeConfigLayers(projectV5, localV5).config;
-  const [config, configRewrite] = configRewriteOf(configPath, projectOriginal, context, clientIds, {
-    layer: 'project',
-    project: projectV5,
-    local: localV5,
+  const [config, configRewrite] = configRewriteOf(configPath, projectOriginal, {
+    context,
+    clientIds,
+    layers: { layer: 'project', project: projectV5, local: localV5 },
   });
   if (config === null) return [];
   const rewrites: Rewrite[] = [];
   if (configRewrite !== null) rewrites.push(configRewrite);
   let effective = config;
   if (localOriginal !== null) {
-    const [local, rewrite] = configRewriteOf(localPath, localOriginal, context, clientIds, {
-      layer: 'local',
-      project: projectV5,
-      local: localV5,
+    const [local, rewrite] = configRewriteOf(localPath, localOriginal, {
+      context,
+      clientIds,
+      layers: { layer: 'local', project: projectV5, local: localV5 },
     });
     if (rewrite !== null) rewrites.push(rewrite);
     if (local !== null) effective = mergeConfigLayers(config, local).config;
@@ -194,16 +194,20 @@ function storedVersion(filePath: string): number | null {
 function configRewriteOf(
   filePath: string,
   originalDocument: Record<string, unknown>,
-  context: Record<string, unknown>,
-  clientIds: readonly string[],
-  layers: { layer: 'project' | 'local'; project: Record<string, unknown>; local: Record<string, unknown> | null },
+  migration: {
+    context: Record<string, unknown>;
+    clientIds: readonly string[];
+    layers: { layer: 'project' | 'local'; project: Record<string, unknown>; local: Record<string, unknown> | null };
+  },
 ): [Record<string, unknown> | null, Rewrite | null] {
+  const { context, clientIds, layers } = migration;
   const original = readFileSync(filePath, 'utf8');
   let updated: Record<string, unknown>;
   let notes: string[];
   try {
-    ({ document: updated, notes } = migrateConfig(originalDocument, SCHEMA_VERSION, context, {
+    ({ document: updated, notes } = migrateConfig(originalDocument, {
       ...layers,
+      context,
       merged: context,
       clientIds,
     }));
@@ -252,7 +256,7 @@ function workflowRewrites(
     let updated: Record<string, unknown>;
     let changed: string[];
     try {
-      ({ document: updated, notes: changed } = migrateWorkflow(parsed, config, SCHEMA_VERSION, clientIds));
+      ({ document: updated, notes: changed } = migrateWorkflow(parsed, config, { clientIds }));
     } catch (error) {
       if (error instanceof ConfigurationError) throw error;
       continue;
@@ -337,7 +341,7 @@ function sessionRewrites(
     let newDraftText: string | null = null;
     if (isRegularFile(draftPath)) {
       draftText = readFileSync(draftPath, 'utf8');
-      const result = migratedText(draftText, config, clientIds, `${label}/workflow.yaml`);
+      const result = migratedText(draftText, `${label}/workflow.yaml`, { config, clientIds });
       if (result !== null) {
         newDraftText = result.text;
         rewrites.push({ path: draftPath, text: result.text, notes: result.notes, session: { directory, original: draftText } });
@@ -359,7 +363,7 @@ function sessionRewrites(
     let migratedBody: Record<string, unknown>;
     let notes: string[];
     try {
-      ({ document: migratedBody, notes } = migrateWorkflow(body, config, SCHEMA_VERSION, clientIds));
+      ({ document: migratedBody, notes } = migrateWorkflow(body, config, { clientIds }));
     } catch (error) {
       if (error instanceof ConfigurationError) throw error;
       continue;
@@ -384,10 +388,10 @@ function sessionRewrites(
 
 function migratedText(
   original: string,
-  config: Record<string, unknown>,
-  clientIds: readonly string[],
   relative: string,
+  source: { config: Record<string, unknown>; clientIds: readonly string[] },
 ): { text: string; notes: string[] } | null {
+  const { config, clientIds } = source;
   let parsed: unknown;
   try {
     parsed = parseYamlDocument(original);
@@ -398,7 +402,7 @@ function migratedText(
   let updated: Record<string, unknown>;
   let changed: string[];
   try {
-    ({ document: updated, notes: changed } = migrateWorkflow(parsed, config, SCHEMA_VERSION, clientIds));
+    ({ document: updated, notes: changed } = migrateWorkflow(parsed, config, { clientIds }));
   } catch (error) {
     if (error instanceof ConfigurationError) throw error;
     return null;

@@ -67,16 +67,23 @@ function describeOf(schema: unknown): string {
   return '';
 }
 
+interface RowsContext {
+  readonly from: string;
+  readonly root: Node | null;
+  readonly out: Row[];
+}
+
 /** Field rows of a schema: inline nested objects expand with a dotted path, identified ones are linked. */
-function rows(schema: unknown, prefix: string, from: string, root: Node | null, out: Row[]): void {
+function rows(schema: unknown, prefix: string, context: RowsContext): void {
+  const { from, root, out } = context;
   if (!isNode(schema)) return;
   if (typeof schema.$id === 'string' && schema !== root) return;
   if (Array.isArray(schema.anyOf)) {
-    for (const item of schema.anyOf) rows(item, prefix, from, root, out);
+    for (const item of schema.anyOf) rows(item, prefix, context);
     return;
   }
   if (schema.type === 'array') {
-    rows(schema.items, `${prefix}[]`, from, root, out);
+    rows(schema.items, `${prefix}[]`, context);
     return;
   }
   if (schema.type !== 'object') return;
@@ -86,22 +93,23 @@ function rows(schema: unknown, prefix: string, from: string, root: Node | null, 
       const path = prefix ? `${prefix}.${name}` : name;
       if (isNode(property)) {
         out.push({ path, type: label(property, from, root), required: required.has(name), notes: notes(property), description: describeOf(property) });
-        rows(property, path, from, root, out);
+        rows(property, path, context);
       }
     }
   }
   const values = isNode(schema.patternProperties) ? Object.values(schema.patternProperties)[0] : schema.additionalProperties;
-  if (isNode(values)) rows(values, `${prefix}.*`, from, root, out);
+  if (isNode(values)) rows(values, `${prefix}.*`, context);
 }
 
-function section(identity: string, node: Node, from: string, extra = ''): string {
+function section(identity: string, node: Node, options: { from: string; extra?: string }): string {
+  const { from, extra = '' } = options;
   const title = String(node.title ?? schemaPath(identity));
   const lines = [`<a id="${anchor(identity)}"></a>`, `### ${title}`, '', `Schema: ${code(identity)}`, ''];
   if (typeof node.description === 'string') lines.push(node.description, '');
   if (extra) lines.push(extra, '');
   lines.push(`Type: ${label(node, from, node)}`, '');
   const out: Row[] = [];
-  rows(node, '', from, node, out);
+  rows(node, '', { from, root: node, out });
   if (out.length > 0) {
     lines.push('| Field | Type | Required | Notes | Description |', '| --- | --- | --- | --- | --- |');
     for (const row of out) lines.push(`| ${code(row.path)} | ${row.type} | ${row.required ? 'yes' : 'no'} | ${cell(row.notes)} | ${cell(row.description)} |`);
@@ -113,7 +121,7 @@ function section(identity: string, node: Node, from: string, extra = ''): string
 function sectionsFor(file: string, header: string[], extras: Map<string, string> = new Map()): string {
   const parts = [BANNER, ...header];
   for (const [identity, node] of collectIdentities()) {
-    if (fileFor(identity) === file) parts.push(section(identity, node, file, extras.get(identity)));
+    if (fileFor(identity) === file) parts.push(section(identity, node, { from: file, extra: extras.get(identity) }));
   }
   return `${parts.join('\n')}\n`.replace(/\n{3,}/g, '\n\n');
 }

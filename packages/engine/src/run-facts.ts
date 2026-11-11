@@ -68,27 +68,25 @@ export function savedResponse(context: ExecutionContext, last: Record<string, st
 }
 
 export function savedOutcome(
-  store: SessionStore,
-  context: ExecutionContext,
-  turn: number,
+  saved: { store: SessionStore; context: ExecutionContext; turn: number },
   responseText: string,
-  context2: OutcomeContext,
+  outcomeContext: OutcomeContext,
 ): StageOutcome | null {
+  const { store, context, turn } = saved;
   try {
     const raw = JSON.parse(
       readFileSync(path.join(store.turnDirectory(context, turn), 'outcome.json'), 'utf8'),
     ) as unknown;
     if (isRecord(raw) && raw.status === 'complete') {
-      return new StageOutcome(
-        raw.status,
-        typeof raw.blocker === 'string' && raw.blocker ? raw.blocker : null,
-        typeof raw.decision === 'string' && raw.decision ? raw.decision : null,
-      );
+      return new StageOutcome(raw.status, {
+        blocker: typeof raw.blocker === 'string' && raw.blocker ? raw.blocker : null,
+        decision: typeof raw.decision === 'string' && raw.decision ? raw.decision : null,
+      });
     }
   } catch {
     // The saved response is the fallback.
   }
-  return resolveStageOutcome(responseText, context2);
+  return resolveStageOutcome(responseText, outcomeContext);
 }
 
 export function readCliVersion(client: CliClient, workspace: string): string | null {

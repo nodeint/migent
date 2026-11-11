@@ -88,7 +88,15 @@ export function decisionOf(outcome: Record<string, unknown> | null): string | nu
 
 export function toStageOutcome(outcome: Record<string, unknown> | null): StageOutcome | null {
   if (outcome === null || typeof outcome.status !== 'string') return null;
-  return new StageOutcome(outcome.status, textOr(outcome.blocker), textOr(outcome.decision), textOr(outcome.question), storedQuestions(outcome));
+  return new StageOutcome(
+    outcome.status,
+    {
+      blocker: textOr(outcome.blocker),
+      decision: textOr(outcome.decision),
+      question: textOr(outcome.question),
+      questions: storedQuestions(outcome),
+    },
+  );
 }
 
 export function latestExecution(executions: readonly FoldExecution[]): FoldExecution | null {

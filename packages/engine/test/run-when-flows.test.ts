@@ -125,7 +125,7 @@ function workspaceFor(workflow: string): { repo: string; sessionId: string } {
   mkdirSync(path.join(repo, '.migent', 'workflows'), { recursive: true });
   writeFileSync(path.join(repo, '.migent', 'config.yaml'), CONFIG, 'utf8');
   writeFileSync(path.join(repo, '.migent', 'workflows', 'flow.yaml'), workflow, 'utf8');
-  return { repo, sessionId: createWorkflowSession(repo, 'flow', 'Do it') };
+  return { repo, sessionId: createWorkflowSession(repo, 'flow', { task: 'Do it' }) };
 }
 
 function write(repo: string, relative: string, body: string): () => void {

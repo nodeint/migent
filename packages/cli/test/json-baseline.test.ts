@@ -325,15 +325,15 @@ downstream:
 
 test('session complete --json and session follow --json on a stopped session', async () => {
   const workspace = fakeWorkspace({ partial: TWO_STAGE });
-  const sessionId = createWorkflowSession(workspace, 'partial', 'Write a plan');
+  const sessionId = createWorkflowSession(workspace, 'partial', { task: 'Write a plan' });
   const directory = path.join(workspace, '.migent', 'sessions', sessionId);
   const store = new SessionStore(workspace);
-  const [record, , context] = store.loadOrCreate('fake', 'model', {}, workspace, sessionId, 'draft', null, null, 'draft');
+  const [record, , context] = store.loadOrCreate({ client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'draft', stageAttempt: null, executionOrder: null, prompt: 'draft' });
   const lock = SessionLock.acquire(directory);
   try {
-    store.saveExecution(context, record, 'running');
+    store.saveExecution(context, record, { status: 'running' });
     writeFileSync(path.join(context.artifactDirectory, 'plan.md'), '# Plan\n', 'utf8');
-    store.saveExecution(context, record, 'completed', null, new StageOutcome('complete'));
+    store.saveExecution(context, record, { status: 'completed', outcome: new StageOutcome('complete') });
   } finally {
     lock.release();
   }
@@ -350,7 +350,7 @@ test('session complete --json and session follow --json on a stopped session', a
 
 test('session rename --json', async () => {
   const workspace = fakeWorkspace({ partial: TWO_STAGE });
-  const sessionId = createWorkflowSession(workspace, 'partial', 'Write a plan');
+  const sessionId = createWorkflowSession(workspace, 'partial', { task: 'Write a plan' });
   const result = await json(['session', 'rename', sessionId, 'Better title', '--json'], undefined, workspace);
   expect(result.stdout).toEqual({ session_id: sessionId, title: 'Better title', previous_title: 'Write a plan' });
 });
@@ -393,7 +393,7 @@ test('service status and workspace list --json with a running service', async ()
     JSON.stringify({ schema_version: 2, instance_id: 'instance', pid: 4242, host: '127.0.0.1', port: 47321, token: 'token', started_at: '2026-09-26T08:07:57Z' }),
   );
   workspaceApi.callService = (async (...args: unknown[]) => {
-    if (args[3] === 'GET') return [200, { workspaces: [{ id: 'ws_abc', name: 'demo', path: '/tmp/demo', available: true }] }];
+    if ((args[1] as { method: string }).method === 'GET') return [200, { workspaces: [{ id: 'ws_abc', name: 'demo', path: '/tmp/demo', available: true }] }];
     return [404, { error: 'workspace_not_found', message: 'unknown id' }];
   }) as unknown as typeof workspaceApi.callService;
   expect(await json(['workspace', 'list', '--json'])).toMatchSnapshot();
@@ -439,7 +439,7 @@ test('get options --native --json parses the CLI help', async () => {
 });
 
 test("doctor --session --json checks a prepared session's draft workflow", async () => {
-  const sessionId = createPreparedSession(root, 'Later', 'plan');
+  const sessionId = createPreparedSession(root, { title: 'Later', workflowId: 'plan' });
   expect(await json(['doctor', '--session', sessionId, '--json'])).toMatchSnapshot();
   expect(await json(['doctor', '--session', 'missing', '--json'])).toMatchSnapshot();
 });
@@ -462,7 +462,7 @@ test('session prepare, session repair, and workspace register/remove', async () 
   );
   workspaceApi.startDetached = (async () => ({ host: '127.0.0.1', port: 47321, token: 'token' })) as unknown as typeof workspaceApi.startDetached;
   workspaceApi.callService = (async (...args: unknown[]) =>
-    args[3] === 'POST'
+    (args[1] as { method: string }).method === 'POST'
       ? [201, { id: 'ws_abc', name: 'demo', path: workspace, available: true }]
       : [200, { id: 'ws_abc', name: 'demo', path: workspace, available: true }]) as unknown as typeof workspaceApi.callService;
   expect((await json(['workspace', 'register', '--path', workspace], undefined, workspace)).code).toBe(0);

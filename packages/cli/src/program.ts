@@ -99,7 +99,7 @@ function registerProjectCommands(program: Command, status: CliStatus): void {
   );
   registerAuthoringCommands(program, status, config);
 
-  program
+  const getCommand = program
     .command('get [type] [name]')
     .description("Look up workflows, roles, agents, the effective config, and this machine's clients, models, options, and efforts (read-only).")
     .option('-o, --output <format>', 'Output format: json, yaml, or name. Default is a table or YAML.')
@@ -125,15 +125,16 @@ ${exitText(['Exit 0 on success, including an empty list.', 'Exit 2 on a usage or
   migent get options --native --client codex
   migent get effort high --client agy
 `,
-    )
-    .action((type: string | undefined, name: string | undefined, options: OptionValues, command: Command) => {
+    );
+  getCommand.action((type: string | undefined, name: string | null = null) => {
+      const options = getCommand.opts<OptionValues>();
       if (type === undefined) {
-        command.outputHelp();
+        getCommand.outputHelp();
         status.showedHelp();
         return;
       }
       return settle(status, () =>
-        runGet(invocationCwdPath(), type, name ?? null, {
+        runGet(invocationCwdPath(), { type, name }, {
           output: optionalText(options.output) ?? undefined,
           json: options.json === true,
           session: optionalText(options.session) ?? undefined,
@@ -282,7 +283,8 @@ function registerInitCommand(program: Command, status: CliStatus): void {
 
 /** Config and workflow draft commands, and the removed config subcommands. */
 function registerAuthoringCommands(program: Command, status: CliStatus, config: Command): void {
-  const authoring = (parent: Command, kind: AuthoringKind, mode: AuthoringMode, summary: string): void => {
+  const authoring = (parent: Command, spec: { kind: AuthoringKind; mode: AuthoringMode }, summary: string): void => {
+    const { kind, mode } = spec;
     const sub = parent
       .command(`${mode} <draft>`)
       .description(summary)
@@ -316,11 +318,11 @@ function registerAuthoringCommands(program: Command, status: CliStatus, config: 
   };
   const modeVerbs = { validate: 'Validate', render: 'Print canonical YAML for', save: 'Validate and save' } as const;
   for (const mode of ['validate', 'render', 'save'] as const) {
-    authoring(config, 'config', mode, `${modeVerbs[mode]} a config draft (a file, or - for stdin).`);
+    authoring(config, { kind: 'config', mode }, `${modeVerbs[mode]} a config draft (a file, or - for stdin).`);
   }
   const workflow = program.command('workflow').description('Validate, render, or save workflow drafts.');
   for (const mode of ['validate', 'render', 'save'] as const) {
-    authoring(workflow, 'workflow', mode, `${modeVerbs[mode]} a workflow draft (a file, or - for stdin).`);
+    authoring(workflow, { kind: 'workflow', mode }, `${modeVerbs[mode]} a workflow draft (a file, or - for stdin).`);
   }
   for (const removed of ['show', 'model', 'role']) {
     config
@@ -486,7 +488,10 @@ function registerSessionRunCommands(session: Command, status: CliStatus): void {
     )
     .action((id: string, options: OptionValues) =>
       settle(status, () =>
-        prepareWorkflowSession(findWorkspace(invocationCwdPath()), id, String(options.workflow), optionalText(options.prior)),
+        prepareWorkflowSession(
+          findWorkspace(invocationCwdPath()),
+          { sessionId: id, workflowId: String(options.workflow), priorSessionId: optionalText(options.prior) },
+        ),
       ),
     );
 
@@ -589,7 +594,11 @@ function continueSession(session: string, options: OptionValues): number | Promi
     return 2;
   }
   const workspace = findWorkspace(invocationCwdPath());
-  if (isAgentSession(workspace, session)) return continueRoleSession(workspace, session, options, readReply);
+  if (isAgentSession(workspace, session)) return continueRoleSession(
+    { workspace, sessionId: session },
+    options,
+    readReply,
+  );
   if (rejectOnce(options)) return 2;
   const reply = readReply(options);
   if (reply === 'invalid') return 2;

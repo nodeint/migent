@@ -209,7 +209,7 @@ export async function runMain(
     const objects =
       printed.length > 0
         ? printed
-        : [workflowResult(workspace, argv, captured.value as number, captured.stderr, before)];
+        : [workflowResult(workspace, argv, { code: captured.value as number, stderr: captured.stderr, before })];
     return [captured.value as number, objects, captured.stderr];
   } finally {
     for (const [name, value] of previous) {
@@ -321,10 +321,9 @@ function stopReasonFor(code: number, status: string): string {
 function workflowResult(
   workspace: string,
   argv: string[],
-  code: number,
-  stderr: string,
-  before: ReadonlyMap<string, string>,
+  run: { code: number; stderr: string; before: ReadonlyMap<string, string> },
 ): Record<string, unknown> {
+  const { code, stderr, before } = run;
   const sessionId = sessionIdFromRun(workspace, argv, stderr);
   if (sessionId === null) return {};
   const stages: Record<string, unknown>[] = [];

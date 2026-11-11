@@ -30,8 +30,8 @@ function workspace(stages: string, extra = ''): string {
 
 test('question requires an opted-in recipient; the response headers carry no question data', () => {
   expect(() => parseStageOutcome(question, true)).toThrow('requires ask: human');
-  expect(parseStageOutcome('status: question\n\nSee the question request file.', true, [], 'human')?.toJson()).toEqual({ status: 'question' });
-  expect(parseStageOutcome(question.replace('status: question', 'status: question\ndecision: approved'), true, ['approved'], 'human')?.status).toBe('question');
+  expect(parseStageOutcome('status: question\n\nSee the question request file.', true, { ask: 'human' })?.toJson()).toEqual({ status: 'question' });
+  expect(parseStageOutcome(question.replace('status: question', 'status: question\ndecision: approved'), true, { decisionValues: ['approved'], ask: 'human' })?.status).toBe('question');
 });
 
 test.each(['jev', 'some-role', true, null, { when: 'Ask' }])('rejects unsupported ask recipient %j', (ask) => {

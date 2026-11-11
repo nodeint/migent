@@ -68,28 +68,25 @@ test('a v4 workflow keeps reading model and options for frozen sessions', () => 
 });
 
 test("stage agent resolution: named, inline, then the role's own", () => {
-  const dev = resolveStageSpec(CONFIG, stageOf(), undefined, resolver);
+  const dev = resolveStageSpec(CONFIG, stageOf(), { registry: resolver });
   expect(dev).toEqual({ client: 'codex', model: 'gpt-5', options: { temperature: '0.2' } });
-  expect(resolveStageSpec(CONFIG, stageOf({ agent: 'other' }), undefined, resolver)).toEqual({
+  expect(resolveStageSpec(CONFIG, stageOf({ agent: 'other' }), { registry: resolver })).toEqual({
     client: 'grok', model: 'grok-4', options: {},
   });
   // The inline agent replaces the role's wholesale: nothing is inherited from it.
-  expect(resolveStageSpec(CONFIG, stageOf({ agent: { client: { type: 'grok' }, model: 'x' } }), undefined, resolver)).toEqual({
+  expect(resolveStageSpec(CONFIG, stageOf({ agent: { client: { type: 'grok' }, model: 'x' } }), { registry: resolver })).toEqual({
     client: 'grok', model: 'x', options: {},
   });
-  expect(() => resolveStageSpec(CONFIG, stageOf({ agent: 'ghost' }), undefined, resolver)).toThrow(
+  expect(() => resolveStageSpec(CONFIG, stageOf({ agent: 'ghost' }), { registry: resolver })).toThrow(
     'stages.s.agent: unknown agent "ghost" in agents.',
   );
-  expect(() => resolveStageSpec(CONFIG, stageOf({ agent: { client: { type: 'codex' } } }), undefined, resolver)).toThrow(
+  expect(() => resolveStageSpec(CONFIG, stageOf({ agent: { client: { type: 'codex' } } }), { registry: resolver })).toThrow(
     'Missing or invalid stages.s.agent.model.',
   );
 });
 
 test('client is a mapping with type and options', () => {
-  const target = (client: unknown) => resolveRoleCascade(
-    { agents: { a: { client, model: 'm' } }, roles: { dev: { agent: 'a' } } },
-    'dev', undefined, resolver,
-  );
+  const target = (client: unknown) => resolveRoleCascade({ agents: { a: { client, model: 'm' } }, roles: { dev: { agent: 'a' } } }, 'dev', { registry: resolver });
   expect(target({ type: 'codex', options: { temperature: '0.2' } })).toEqual({
     client: 'codex', model: 'm', options: { temperature: '0.2' },
   });
@@ -100,7 +97,7 @@ test('client is a mapping with type and options', () => {
 test('v4 keys in a v6 config name their replacements', () => {
   const code = (config: Record<string, unknown>): string | undefined => {
     try {
-      resolveRoleCascade(config, 'dev', undefined, resolver);
+      resolveRoleCascade(config, 'dev', { registry: resolver });
     } catch (error) {
       return (error as ConfigurationError).message;
     }
@@ -149,7 +146,7 @@ test('a frozen v4 body keeps model and options; a v5 body writes agent', () => {
     writeFileSync(path.join(workspace, '.migent', 'workflows', 'w.yaml'), stringify({
       schema_version: version, id: 'w', stages: [{ id: 's', role: 'dev', depends_on: [], ...stage }],
     }));
-    writeWorkflowFreeze(session, workspace, loadNamedWorkflow(workspace, 'w'), resolver);
+    writeWorkflowFreeze(session, { workspace, workflow: loadNamedWorkflow(workspace, 'w'), resolveClient: resolver });
     return readWorkflowFreeze(session);
   };
   const v4 = write(4, { model: 'other', options: { max_turns: '3' } });
