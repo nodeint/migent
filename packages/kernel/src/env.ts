@@ -6,12 +6,12 @@
 /** `MIGENT_DEBUG=1|true`. */
 export function debugEnabled(): boolean {
   const value = process.env.MIGENT_DEBUG;
-  return value === "1" || value === "true";
+  return value === '1' || value === 'true';
 }
 
 /** `MIGENT_NO_INPUT=1`. */
 export function noInputRequested(): boolean {
-  return process.env.MIGENT_NO_INPUT === "1";
+  return process.env.MIGENT_NO_INPUT === '1';
 }
 
 /** Non-empty `MIGENT_HOME`, verbatim; otherwise undefined. */
@@ -21,7 +21,7 @@ export function migentHomeOverride(): string | undefined {
 
 /** Inherited environment plus `DISABLE_TELEMETRY=1` unless already set (empty string kept). */
 export function skillsChildEnv(): NodeJS.ProcessEnv {
-  return { ...process.env, DISABLE_TELEMETRY: process.env.DISABLE_TELEMETRY ?? "1" };
+  return { ...process.env, DISABLE_TELEMETRY: process.env.DISABLE_TELEMETRY ?? '1' };
 }
 
 /** The full inherited environment, for detached children. */

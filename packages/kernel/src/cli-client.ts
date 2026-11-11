@@ -1,9 +1,9 @@
-import type { CommandSpec } from "./command-executor.js";
+import type { CommandSpec } from './command-executor.js';
 
 /** What a client extracted from a failed run, before any provider policy. */
 export interface RawFailure {
   /** `provider-error`: the CLI reported an error. `exit-only`: a non-zero exit and nothing else. */
-  origin: "provider-error" | "exit-only";
+  origin: 'provider-error' | 'exit-only';
   message: string | null;
   exitCode: number | null;
   /** Set only when the CLI's own protocol states the limit. */
@@ -52,7 +52,7 @@ export interface TurnUsage {
 export interface CliModelCatalog {
   readonly ids: readonly string[];
   readonly defaultId: string | null;
-  readonly optionValues: ReadonlyArray<readonly [string, string, readonly string[]]>;
+  readonly optionValues: readonly (readonly [string, string, readonly string[]])[];
   valuesFor(modelId: string, option: string): readonly string[] | null;
 }
 
@@ -75,16 +75,16 @@ export interface CliRunOutput {
  * `is_error`, a failed result). `exit-only`: a non-zero exit with no reported error. `start`: no usable
  * exit code at all (spawn failure, an unpassable argument, signal death).
  */
-export type FailureOrigin = "provider-error" | "exit-only" | "start";
+export type FailureOrigin = 'provider-error' | 'exit-only' | 'start';
 
 /**
  * What the reply text of one run is. `model`: assistant output. `error`: text from an error payload or
  * unparsed stdout. `none`: no text.
  */
-export type ResponseSource = "model" | "error" | "none";
+export type ResponseSource = 'model' | 'error' | 'none';
 
 export interface QuotaClassification {
-  kind: "quota";
+  kind: 'quota';
   origin: FailureOrigin;
   message: string;
   /** UTC ISO instant, or null when the provider did not name one. */
@@ -93,7 +93,7 @@ export interface QuotaClassification {
 }
 
 export interface ProviderClassification {
-  kind: "provider";
+  kind: 'provider';
   origin: FailureOrigin;
   message: string;
 }
@@ -106,7 +106,7 @@ export type FailureClassification = QuotaClassification | ProviderClassification
  * `idle`: the server holds the session and nothing was running. `not-found`: the server does not
  * know the session (yet). `failed`: the interrupt could not be completed or verified.
  */
-export type InterruptOutcome = "interrupted" | "idle" | "not-found" | "failed";
+export type InterruptOutcome = 'interrupted' | 'idle' | 'not-found' | 'failed';
 
 /**
  * The CLI itself: how to invoke it and how to read what it prints. A client
@@ -185,5 +185,5 @@ export interface ModelClientLookup {
   /** Clients whose executable is not on PATH. */
   skipped: readonly string[];
   /** Clients whose list command failed, with the reason. */
-  failed: ReadonlyArray<{ client: string; reason: string }>;
+  failed: readonly { client: string; reason: string }[];
 }

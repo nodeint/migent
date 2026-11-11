@@ -1,13 +1,14 @@
-import { ConfigurationError, loadRoleResponsibilities, loadWorkspaceConfig, resolveEffectiveClient, resolveStageSpec, whichSync, type ClientInfo, type ClientRegistry, type StageTarget } from "@nodeint/migent-kernel";
-import { collectFrozenDrift, type SessionSelection, type SessionSource, type WorkflowFreeze } from "@nodeint/migent-session";
-import { isRoleStage, type RoleStageSpec, type WorkflowDocument } from "@nodeint/migent-workflow";
-import { addUnique, makeCheck, type Check, type DiagnoseOptions } from "./check.js";
-import { failureText } from "./clients.js";
-import { optionalArtifactMappings } from "./artifact-notes.js";
-import { stageAgentKey } from "./stage-agents.js";
+import { type ClientInfo, type ClientRegistry, ConfigurationError, loadRoleResponsibilities, loadWorkspaceConfig, resolveEffectiveClient, resolveStageSpec, type StageTarget,whichSync } from '@nodeint/migent-kernel';
+import { collectFrozenDrift, type SessionSelection, type SessionSource, type WorkflowFreeze } from '@nodeint/migent-session';
+import { isRoleStage, type RoleStageSpec, type WorkflowDocument } from '@nodeint/migent-workflow';
+
+import { optionalArtifactMappings } from './artifact-notes.js';
+import { addUnique, type Check, type DiagnoseOptions,makeCheck } from './check.js';
+import { failureText } from './clients.js';
+import { stageAgentKey } from './stage-agents.js';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
+  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 export interface SessionDiagnosis {
   ok: boolean;
@@ -42,14 +43,14 @@ export function diagnoseSession(
   options: DiagnoseSessionOptions,
 ): SessionDiagnosis {
   const which = options.which ?? whichSync;
-  const source = selection.source;
-  const sessionCheck = makeCheck("session", [], [...selection.problems], [...selection.warnings]);
+  const {source} = selection;
+  const sessionCheck = makeCheck('session', [], [...selection.problems], [...selection.warnings]);
   sessionCheck.items.push(`session  ${selection.sessionId}`);
   if (source !== null) {
     if (source.workflowId !== null) sessionCheck.items.push(`workflow  ${source.workflowId}`);
     sessionCheck.items.push(`source  ${source.kind}  ${source.path}`);
   }
-  const document = selection.document;
+  const {document} = selection;
   if (document === null) return finish(source, [sessionCheck]); // Nothing further can be checked.
 
   const label = source === null ? document.id : source.path;
@@ -68,7 +69,7 @@ export function diagnoseSession(
     ).map((detail) => `Frozen workflow differs from the live files: ${detail}`);
   }
   const stages = Object.values(document.stages).filter(isRoleStage);
-  const workflowCheck = makeCheck("workflow", [document.id], workflowProblems, [...workflowWarnings, ...drift]);
+  const workflowCheck = makeCheck('workflow', [document.id], workflowProblems, [...workflowWarnings, ...drift]);
   if (workflowProblems.length > 0) return finish(source, [sessionCheck, workflowCheck]);
 
   const bindingItems: string[] = [];
@@ -89,7 +90,7 @@ export function diagnoseSession(
   } else {
     checkLiveBindings(workspace, stages, document.id, options, bindingProblems, bindingWarnings, record);
   }
-  const bindingsCheck = makeCheck("bindings", bindingItems, bindingProblems, bindingWarnings);
+  const bindingsCheck = makeCheck('bindings', bindingItems, bindingProblems, bindingWarnings);
   const clientsCheck = checkExecutables(executables, which);
   return finish(source, [sessionCheck, workflowCheck, bindingsCheck, clientsCheck]);
 }
@@ -198,18 +199,18 @@ function checkExecutables(
   for (const command of [...executables.keys()].sort()) {
     const entry = executables.get(command)!;
     const found = which(command);
-    if (found) items.push(`${[...entry.labels].sort().join(", ")}  ${found}`);
-    else problems.push(`${command} is not on PATH (stages: ${entry.stages.join(", ")})`);
+    if (found) items.push(`${[...entry.labels].sort().join(', ')}  ${found}`);
+    else problems.push(`${command} is not on PATH (stages: ${entry.stages.join(', ')})`);
   }
-  return makeCheck("clients", items, problems, []);
+  return makeCheck('clients', items, problems, []);
 }
 
 /** The key an effort check is stored under: an agent name, or the role's inline agent field. */
 function modelKey(config: Record<string, unknown>, stage: RoleStageSpec, workflowId: string): string | null {
-  if (stage.agent !== null) return stage.agent.kind === "named" ? stage.agent.name : stageAgentKey(workflowId, stage.id);
+  if (stage.agent !== null) return stage.agent.kind === 'named' ? stage.agent.name : stageAgentKey(workflowId, stage.id);
   const role = isRecord(config.roles) ? config.roles[stage.role] : undefined;
   if (!isRecord(role)) return null;
-  if (typeof role.agent === "string") return role.agent;
+  if (typeof role.agent === 'string') return role.agent;
   if (isRecord(role.agent)) return `roles.${stage.role}.agent`;
   return null;
 }

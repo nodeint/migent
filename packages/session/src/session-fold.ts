@@ -1,40 +1,42 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
-import { writeJsonAtomic } from "@nodeint/migent-kernel";
-import { ConfigurationError } from "@nodeint/migent-kernel";
-import {
-  applyTerminalFields,
-  blockedExecutions,
-  latestPerStage,
-  decisionOfOutcome,
-  latestDecision,
-  recordLatestDecision,
-  sessionStatusFromExecutions,
-  type StatusExecution,
-} from "./session-ledger.js";
-import { readStatusFileState, type StatusFileState } from "./query.js";
-import { isRecord } from "@nodeint/migent-workflow";
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
+import { writeJsonAtomic } from '@nodeint/migent-kernel';
+import { ConfigurationError } from '@nodeint/migent-kernel';
+import { StageOutcome } from '@nodeint/migent-kernel';
+import { storedQuestions } from '@nodeint/migent-kernel';
+import { isRecord } from '@nodeint/migent-workflow';
+import { parseYamlDocument } from '@nodeint/migent-workflow';
+
+import { readStatusFileState, type StatusFileState } from './query.js';
 import {
   CANCELLED_REPLY,
+  type ParsedEvent,
   parseExecutionId,
   readParsedEvents,
   skipsStatusWrite,
-  type ParsedEvent,
-} from "./session-events.js";
-import { effectiveTitleFrom, overlayTitle, readTitleRecord } from "./session-title.js";
-import { StageOutcome } from "@nodeint/migent-kernel";
-import { storedQuestions } from "@nodeint/migent-kernel";
-import type { FoldExecution, FoldInputs, SessionManifest } from "./session-fold-types.js";
-import { asInt, cloneRecord, differingKeys, identityText, later, textOr } from "./session-fold-util.js";
-import { listOutputFiles, loadSessionWorkflow, readExecutions } from "./session-fold-read.js";
-import { parseYamlDocument } from "@nodeint/migent-workflow";
+} from './session-events.js';
+import { listOutputFiles, loadSessionWorkflow, readExecutions } from './session-fold-read.js';
+import type { FoldExecution, FoldInputs, SessionManifest } from './session-fold-types.js';
+import { asInt, cloneRecord, differingKeys, identityText, later, textOr } from './session-fold-util.js';
+import {
+  applyTerminalFields,
+  blockedExecutions,
+  decisionOfOutcome,
+  latestDecision,
+  latestPerStage,
+  recordLatestDecision,
+  sessionStatusFromExecutions,
+  type StatusExecution,
+} from './session-ledger.js';
+import { effectiveTitleFrom, overlayTitle, readTitleRecord } from './session-title.js';
 
 /** A missing schema_version is 1. This is not config documentVersion, which maps a missing version to 0. */
 export function sessionSchemaVersion(document: Record<string, unknown> | null): number {
-  if (document === null || !Object.hasOwn(document, "schema_version") || document.schema_version == null) return 1;
+  if (document === null || !Object.hasOwn(document, 'schema_version') || document.schema_version == null) return 1;
   const raw = document.schema_version;
-  if (typeof raw === "number" && Number.isInteger(raw) && raw >= 1) return raw;
-  if (typeof raw === "string" && /^[1-9][0-9]*$/.test(raw)) return Number(raw);
+  if (typeof raw === 'number' && Number.isInteger(raw) && raw >= 1) return raw;
+  if (typeof raw === 'string' && /^[1-9][0-9]*$/.test(raw)) return Number(raw);
   return 1;
 }
 
@@ -53,7 +55,7 @@ export function foldStatus(inputs: FoldInputs): Record<string, unknown> {
 export function manualCompletionEvent(events: readonly ParsedEvent[]): ParsedEvent | null {
   let found: ParsedEvent | null = null;
   for (const event of events) {
-    if (event.event === "session.completed" && event.executionId === null && event.data.manual === true) found = event;
+    if (event.event === 'session.completed' && event.executionId === null && event.data.manual === true) found = event;
   }
   return found;
 }
@@ -61,19 +63,19 @@ export function manualCompletionEvent(events: readonly ParsedEvent[]): ParsedEve
 function applyManualCompletion(status: Record<string, unknown>, events: readonly ParsedEvent[]): void {
   const event = manualCompletionEvent(events);
   if (event === null) return;
-  status.status = "completed";
-  status.completion_method = "manual";
-  applyTerminalFields(status, "completed", null, null);
+  status.status = 'completed';
+  status.completion_method = 'manual';
+  applyTerminalFields(status, 'completed', null, null);
   delete status.questions;
   status.manual_completion = { completed_at: event.timestamp, from: textOr(event.data.from) };
   status.updated_at = later(textOr(status.updated_at), event.timestamp);
 }
 
 export function readSessionManifest(sessionDirectory: string): SessionManifest {
-  const manifestPath = path.join(sessionDirectory, "manifest.yaml");
+  const manifestPath = path.join(sessionDirectory, 'manifest.yaml');
   let text: string;
   try {
-    text = readFileSync(manifestPath, "utf8");
+    text = readFileSync(manifestPath, 'utf8');
   } catch {
     return emptyManifest(path.basename(sessionDirectory));
   }
@@ -107,7 +109,7 @@ export function commitFoldedStatus(workspace: string, sessionDirectory: string):
   const inputs = loadFoldInputs(workspace, sessionDirectory);
   const folded = foldStatus(inputs);
   writeQuestionsFile(sessionDirectory, inputs);
-  writeJsonAtomic(path.join(sessionDirectory, "status.json"), folded);
+  writeJsonAtomic(path.join(sessionDirectory, 'status.json'), folded);
   return folded;
 }
 
@@ -116,29 +118,29 @@ export function writeQuestionsFile(sessionDirectory: string, inputs: FoldInputs)
   const latest = new Set(latestPerStage(statusExecutionsFromFolds(inputs.executions)).map((row) => row.executionId));
   const manuallyCompleted = manualCompletionEvent(inputs.events) !== null;
   const questions = inputs.executions.flatMap((execution) => {
-    if (execution.outcome?.status !== "question") return [];
+    if (execution.outcome?.status !== 'question') return [];
     const reply = [...inputs.events].reverse().find((event) =>
-      event.event === "session.active" && event.executionId === execution.executionId && event.data.from === "question",
+      event.event === 'session.active' && event.executionId === execution.executionId && event.data.from === 'question',
     );
     const answers = Array.isArray(reply?.data.answers) ? reply.data.answers.filter(isRecord) : [];
     return storedQuestions(execution.outcome).map((question) => ({
       ...question, execution_id: execution.executionId, stage_id: execution.stageId,
-      recipient: inputs.workflow?.stages[execution.stageId]?.ask ?? "human",
-      status: reply ? "answered" : latest.has(execution.executionId) && !manuallyCompleted ? "pending" : "superseded",
+      recipient: inputs.workflow?.stages[execution.stageId]?.ask ?? 'human',
+      status: reply ? 'answered' : latest.has(execution.executionId) && !manuallyCompleted ? 'pending' : 'superseded',
       answer: answers.find((answer) => answer.question_id === question.id) ?? null,
       ...(reply ? { answered_at: reply.timestamp } : {}),
     }));
   });
-  writeJsonAtomic(path.join(sessionDirectory, "questions.json"), { schema_version: 1, questions });
+  writeJsonAtomic(path.join(sessionDirectory, 'questions.json'), { schema_version: 1, questions });
 }
 
 /** Schema 2 only. Show prints this on stderr and does not rewrite status.json. */
 export function statusDriftMessage(workspace: string, sessionId: string): string | null {
-  const sessionDirectory = path.join(workspace, ".migent", "sessions", sessionId);
+  const sessionDirectory = path.join(workspace, '.migent', 'sessions', sessionId);
   const manifest = readSessionManifest(sessionDirectory);
   if (manifest.schemaVersion < 2) return null;
-  const read = readStatusFileState(path.join(sessionDirectory, "status.json"));
-  if (read.state !== "ok") return null;
+  const read = readStatusFileState(path.join(sessionDirectory, 'status.json'));
+  if (read.state !== 'ok') return null;
   let folded: Record<string, unknown>;
   try {
     folded = readFoldedStatus(workspace, sessionDirectory);
@@ -147,19 +149,19 @@ export function statusDriftMessage(workspace: string, sessionId: string): string
   }
   const fields = differingKeys(overlayTitle({ ...read.status }, sessionDirectory), folded);
   if (fields.length === 0) return null;
-  return `status.json differs from the event fold: ${fields.join(", ")}.`;
+  return `status.json differs from the event fold: ${fields.join(', ')}.`;
 }
 
 export function loadFoldInputs(workspace: string, sessionDirectory: string): FoldInputs {
   const manifest = readSessionManifest(sessionDirectory);
-  const previous = readStatusFileState(path.join(sessionDirectory, "status.json"));
-  const previousStatus = previous.state === "ok" ? previous.status : null;
+  const previous = readStatusFileState(path.join(sessionDirectory, 'status.json'));
+  const previousStatus = previous.state === 'ok' ? previous.status : null;
   const executions = readExecutions(sessionDirectory);
   const identity = statusIdentity(manifest, previousStatus);
   return {
     schemaVersion: manifest.schemaVersion,
     manifest,
-    events: readParsedEvents(path.join(sessionDirectory, "events.jsonl")),
+    events: readParsedEvents(path.join(sessionDirectory, 'events.jsonl')),
     executions,
     presentExecutionIds: new Set(executions.map((execution) => execution.executionId)),
     previousStatus,
@@ -170,7 +172,7 @@ export function loadFoldInputs(workspace: string, sessionDirectory: string): Fol
 }
 
 export function statusFileState(sessionDirectory: string): StatusFileState {
-  return readStatusFileState(path.join(sessionDirectory, "status.json"));
+  return readStatusFileState(path.join(sessionDirectory, 'status.json'));
 }
 
 function foldV1(inputs: FoldInputs): Record<string, unknown> {
@@ -181,7 +183,7 @@ function foldV1(inputs: FoldInputs): Record<string, unknown> {
   let updatedAt = textOr(status.updated_at) ?? inputs.manifest.createdAt;
   for (const event of inputs.events) {
     if (event.v < 2) continue;
-    if (event.event === "workflow.refreshed") continue;
+    if (event.event === 'workflow.refreshed') continue;
     if (applySharedEvent(status, event, noted)) updatedAt = later(updatedAt, event.timestamp);
   }
   updatedAt = publishExecutionStatus(status, inputs, updatedAt);
@@ -203,7 +205,7 @@ function foldSchema2(inputs: FoldInputs): Record<string, unknown> {
   const noted = new Map<string, RunningStage>();
   let updatedAt = inputs.manifest.createdAt;
   for (const event of inputs.events) {
-    if (event.event === "workflow.refreshed") continue;
+    if (event.event === 'workflow.refreshed') continue;
     if (event.executionId && !inputs.presentExecutionIds.has(event.executionId) && isExecutionScoped(event.event)) {
       continue;
     }
@@ -234,7 +236,7 @@ function publishSkippedStages(status: Record<string, unknown>, executions: reado
     }
   }
   const rows = [...latest.values()]
-    .filter((execution) => execution.status === "skipped")
+    .filter((execution) => execution.status === 'skipped')
     .sort((left, right) => left.executionOrder - right.executionOrder)
     .map((execution) => ({ stage_id: execution.stageId, execution_id: execution.executionId }));
   if (rows.length > 0) status.skipped_stages = rows;
@@ -254,28 +256,28 @@ function applySharedEvent(
   event: ParsedEvent,
   noted: Map<string, RunningStage>,
 ): boolean {
-  if (event.event === "workflow.refreshed") return false;
-  if (event.event === "session.created") {
+  if (event.event === 'workflow.refreshed') return false;
+  if (event.event === 'session.created') {
     if (isRecord(event.data.handoff)) status.handoff = cloneRecord(event.data.handoff);
     if (event.data.prepared === true) {
-      status.status = "prepared";
+      status.status = 'prepared';
       return true;
     }
     return false;
   }
-  if (event.event === "handoff.bound") {
+  if (event.event === 'handoff.bound') {
     if (isRecord(event.data.handoff)) status.handoff = cloneRecord(event.data.handoff);
     return true;
   }
-  if (event.event === "task.frozen") {
+  if (event.event === 'task.frozen') {
     const hash = textOr(event.data.sha256);
     if (hash) status.task_sha256 = hash;
     return true;
   }
-  if (event.event === "baseline.captured") {
+  if (event.event === 'baseline.captured') {
     if (!isRecord(status.baseline)) {
       const baseline: Record<string, unknown> = {
-        commit: typeof event.data.commit === "string" ? event.data.commit : null,
+        commit: typeof event.data.commit === 'string' ? event.data.commit : null,
         captured_at: event.timestamp,
       };
       const error = textOr(event.data.error);
@@ -284,19 +286,19 @@ function applySharedEvent(
     }
     return true;
   }
-  if (event.event === "revisions.reset") {
+  if (event.event === 'revisions.reset') {
     if (isRecord(event.data.baselines)) status.revision_baselines = cloneRecord(event.data.baselines);
     return true;
   }
-  if (event.event === "outputs.published") {
+  if (event.event === 'outputs.published') {
     mergePublished(status, event.data.outputs);
     return true;
   }
-  if (event.event === "session.activated") {
-    status.status = "active";
+  if (event.event === 'session.activated') {
+    status.status = 'active';
     return true;
   }
-  if (event.event.startsWith("provider.") || event.event.startsWith("verify.")) {
+  if (event.event.startsWith('provider.') || event.event.startsWith('verify.')) {
     if (skipsStatusWrite(event.event)) return false;
     status.latest_provider_event = event.raw;
     if (event.executionId) {
@@ -319,40 +321,40 @@ function applySchema2Execution(
   event: ParsedEvent,
   seen: Map<string, SeenExecution>,
 ): boolean {
-  if (event.event === "workflow.refreshed") return false;
+  if (event.event === 'workflow.refreshed') return false;
   if (!event.executionId) {
-    if (event.event.startsWith("session.") && event.event !== "session.created" && event.event !== "session.activated") {
-      const sessionStatus = event.event.slice("session.".length);
+    if (event.event.startsWith('session.') && event.event !== 'session.created' && event.event !== 'session.activated') {
+      const sessionStatus = event.event.slice('session.'.length);
       status.status = sessionStatus;
-      if (sessionStatus === "completed" && event.data.manual !== true) {
-        status.completion_method = "agent";
+      if (sessionStatus === 'completed' && event.data.manual !== true) {
+        status.completion_method = 'agent';
       }
       applyTerminalFields(status, sessionStatus, null, textOr(event.data.reason));
       return true;
     }
     return false;
   }
-  if (event.event === "execution.started") {
+  if (event.event === 'execution.started') {
     const current = seen.get(event.executionId);
     const order = Math.max(current?.order ?? 0, eventExecutionOrder(event));
-    if (current && current.status !== "running") {
+    if (current && current.status !== 'running') {
       current.order = order;
       if (event.stageId) current.stageId = event.stageId;
       return true;
     }
     seen.set(event.executionId, {
       order,
-      stageId: event.stageId ?? current?.stageId ?? "",
-      status: "running",
+      stageId: event.stageId ?? current?.stageId ?? '',
+      status: 'running',
       outcome: null,
     });
     return true;
   }
-  if (event.event.startsWith("execution.")) {
-    const executionStatus = event.event.slice("execution.".length);
+  if (event.event.startsWith('execution.')) {
+    const executionStatus = event.event.slice('execution.'.length);
     const current = seen.get(event.executionId) ?? {
       order: 0,
-      stageId: event.stageId ?? "",
+      stageId: event.stageId ?? '',
       status: executionStatus,
       outcome: null,
     };
@@ -363,11 +365,11 @@ function applySchema2Execution(
     seen.set(event.executionId, current);
     return true;
   }
-  if (event.event.startsWith("stage.")) {
+  if (event.event.startsWith('stage.')) {
     const outcome = outcomeRecord(event);
     return decisionOf(outcome) !== null;
   }
-  if (event.event.startsWith("session.") && event.event !== "session.created") return true;
+  if (event.event.startsWith('session.') && event.event !== 'session.created') return true;
   return false;
 }
 
@@ -391,7 +393,7 @@ function publishRunningStages(
   delete status.current_stage;
   delete status.running_stages;
   const rows = executions
-    .filter((execution) => execution.status === "running" && noted.has(execution.executionId))
+    .filter((execution) => execution.status === 'running' && noted.has(execution.executionId))
     .sort((left, right) => {
       if (left.executionOrder !== right.executionOrder) return left.executionOrder - right.executionOrder;
       if (left.executionId < right.executionId) return -1;
@@ -413,18 +415,18 @@ function publishExecutionStatus(
   const rows = statusExecutionsFromFolds(inputs.executions);
   const sessionStatus = sessionStatusFromExecutions(rows, status, inputs.workflow);
   status.status = sessionStatus;
-  if (sessionStatus === "completed" && !status.completion_method) {
-    status.completion_method = "agent";
+  if (sessionStatus === 'completed' && !status.completion_method) {
+    status.completion_method = 'agent';
   }
   if (inputs.schemaVersion < 2) {
     noteLatest(status, latest.executionId, latest.status, latest.stageId);
     recordLatestDecision(status, decisionOfOutcome(latest.outcome));
   }
-  const questions = latestPerStage(rows).filter((row) => row.outcome?.status === "question" && row.status !== "running");
+  const questions = latestPerStage(rows).filter((row) => row.outcome?.status === 'question' && row.status !== 'running');
   status.questions = questions.flatMap((row) => row.outcome!.questions.map((question) => ({
     ...question, execution_id: row.executionId, stage_id: row.stageId,
-    recipient: inputs.workflow?.stages[row.stageId]?.ask ?? "human",
-    file: "executions/" + row.executionId + "/questions.json",
+    recipient: inputs.workflow?.stages[row.stageId]?.ask ?? 'human',
+    file: 'executions/' + row.executionId + '/questions.json',
   })));
   if (questions.length === 0) delete status.questions;
   const blocked = blockedExecutions(rows, status, inputs.workflow).map((row) => ({
@@ -452,7 +454,7 @@ function publishExecutionStatus(
   return applyCancelledReply(
     status,
     inputs.events,
-    latestPerStage(rows).filter((row) => row.status === "cancelled").map((row) => row.executionId),
+    latestPerStage(rows).filter((row) => row.status === 'cancelled').map((row) => row.executionId),
     resumedAt,
   );
 }
@@ -469,19 +471,19 @@ function applyCancelledReply(
   updatedAt: string | null,
 ): string | null {
   const current = status.status;
-  if ((current !== "cancelled" && current !== "blocked" && current !== "question") || cancelledIds.length === 0) return updatedAt;
+  if ((current !== 'cancelled' && current !== 'blocked' && current !== 'question') || cancelledIds.length === 0) return updatedAt;
   let next = updatedAt;
   let replied = 0;
   for (const executionId of cancelledIds) {
     const replies = events.filter((event) =>
-      event.event === "session.active" && event.executionId === executionId && event.data.from === CANCELLED_REPLY);
+      event.event === 'session.active' && event.executionId === executionId && event.data.from === CANCELLED_REPLY);
     if (replies.length === 0) continue;
     replied += 1;
     for (const reply of replies) next = later(next, reply.timestamp);
   }
   if (replied === 0) return updatedAt;
-  status.status = "active";
-  applyTerminalFields(status, "active", null, null);
+  status.status = 'active';
+  applyTerminalFields(status, 'active', null, null);
   return next;
 }
 
@@ -512,20 +514,20 @@ function applyBlockedResume(
   blockedIds: readonly string[],
   updatedAt: string | null,
 ): string | null {
-  if ((status.status !== "blocked" && status.status !== "question") || blockedIds.length === 0) return updatedAt;
+  if ((status.status !== 'blocked' && status.status !== 'question') || blockedIds.length === 0) return updatedAt;
   const resumes: ParsedEvent[] = [];
   for (const executionId of blockedIds) {
     let resume: ParsedEvent | null = null;
     for (const event of events) {
-      if (event.event !== "session.active" || event.executionId !== executionId) continue;
-      if (event.data.from !== "blocked" && event.data.from !== "question") continue;
+      if (event.event !== 'session.active' || event.executionId !== executionId) continue;
+      if (event.data.from !== 'blocked' && event.data.from !== 'question') continue;
       resume = event;
     }
     if (resume !== null) resumes.push(resume);
   }
   if (resumes.length === 0) return updatedAt;
-  status.status = "active";
-  applyTerminalFields(status, "active", null, null);
+  status.status = 'active';
+  applyTerminalFields(status, 'active', null, null);
   let next = updatedAt;
   for (const resume of resumes) next = later(next, resume.timestamp);
   return next;
@@ -551,11 +553,11 @@ function latestSeenId(seen: ReadonlyMap<string, SeenExecution>): string | null {
 
 function isExecutionScoped(eventName: string): boolean {
   return (
-    eventName.startsWith("execution.") ||
-    eventName.startsWith("stage.") ||
-    eventName.startsWith("provider.") ||
-    eventName.startsWith("verify.") ||
-    (eventName.startsWith("session.") && eventName !== "session.created" && eventName !== "session.activated")
+    eventName.startsWith('execution.') ||
+    eventName.startsWith('stage.') ||
+    eventName.startsWith('provider.') ||
+    eventName.startsWith('verify.') ||
+    (eventName.startsWith('session.') && eventName !== 'session.created' && eventName !== 'session.activated')
   );
 }
 
@@ -563,11 +565,11 @@ function mergePublished(status: Record<string, unknown>, raw: unknown): void {
   if (!Array.isArray(raw)) return;
   const outputs = isRecord(status.outputs) ? cloneRecord(status.outputs) : {};
   for (const entry of raw) {
-    if (!isRecord(entry) || typeof entry.name !== "string" || entry.name === "") continue;
+    if (!isRecord(entry) || typeof entry.name !== 'string' || entry.name === '') continue;
     const row: Record<string, unknown> = {};
-    if (typeof entry.path === "string") row.path = entry.path;
-    if (typeof entry.source_execution_id === "string") row.source_execution_id = entry.source_execution_id;
-    if (typeof entry.published_by_execution_id === "string") {
+    if (typeof entry.path === 'string') row.path = entry.path;
+    if (typeof entry.source_execution_id === 'string') row.source_execution_id = entry.source_execution_id;
+    if (typeof entry.published_by_execution_id === 'string') {
       row.published_by_execution_id = entry.published_by_execution_id;
     }
     outputs[entry.name] = row;
@@ -580,7 +582,7 @@ function addPathOnlyOutputs(status: Record<string, unknown>, outputFiles: readon
   const outputs = isRecord(status.outputs) ? cloneRecord(status.outputs) : {};
   const recorded = new Set<string>();
   for (const value of Object.values(outputs)) {
-    if (isRecord(value) && typeof value.path === "string" && value.path !== "") recorded.add(path.basename(value.path));
+    if (isRecord(value) && typeof value.path === 'string' && value.path !== '') recorded.add(path.basename(value.path));
   }
   for (const name of outputFiles) {
     if (Object.hasOwn(outputs, name) || recorded.has(name)) continue;
@@ -592,7 +594,7 @@ function addPathOnlyOutputs(status: Record<string, unknown>, outputFiles: readon
 function initialStatus(manifest: SessionManifest, schemaVersion: number): Record<string, unknown> {
   const status: Record<string, unknown> = {
     session_id: manifest.sessionId,
-    status: schemaVersion >= 2 ? "active" : manifestStatusToSession(manifest.manifestStatus),
+    status: schemaVersion >= 2 ? 'active' : manifestStatusToSession(manifest.manifestStatus),
   };
   applyManifestIdentity(status, manifest);
   if (manifest.createdAt) status.updated_at = manifest.createdAt;
@@ -617,20 +619,20 @@ function applyManifestIdentity(status: Record<string, unknown>, manifest: Sessio
 }
 
 function manifestStatusToSession(manifestStatus: string | null): string {
-  if (manifestStatus === "prepared") return "prepared";
-  if (manifestStatus === "completed" || manifestStatus === "blocked" || manifestStatus === "question" || manifestStatus === "cancelled") {
+  if (manifestStatus === 'prepared') return 'prepared';
+  if (manifestStatus === 'completed' || manifestStatus === 'blocked' || manifestStatus === 'question' || manifestStatus === 'cancelled') {
     return manifestStatus;
   }
-  return "active";
+  return 'active';
 }
 
 function outcomeRecord(event: ParsedEvent): Record<string, unknown> | null {
   if (isRecord(event.data.outcome)) return event.data.outcome;
   const top: Record<string, unknown> = {};
-  if (typeof event.raw.status === "string") top.status = event.raw.status;
-  if (typeof event.raw.blocker === "string") top.blocker = event.raw.blocker;
-  if (typeof event.raw.decision === "string") top.decision = event.raw.decision;
-  if (typeof event.raw.question === "string") top.question = event.raw.question;
+  if (typeof event.raw.status === 'string') top.status = event.raw.status;
+  if (typeof event.raw.blocker === 'string') top.blocker = event.raw.blocker;
+  if (typeof event.raw.decision === 'string') top.decision = event.raw.decision;
+  if (typeof event.raw.question === 'string') top.question = event.raw.question;
   return Object.keys(top).length > 0 ? top : null;
 }
 
@@ -640,7 +642,7 @@ function decisionOf(outcome: Record<string, unknown> | null): string | null {
 }
 
 function toStageOutcome(outcome: Record<string, unknown> | null): StageOutcome | null {
-  if (outcome === null || typeof outcome.status !== "string") return null;
+  if (outcome === null || typeof outcome.status !== 'string') return null;
   return new StageOutcome(outcome.status, textOr(outcome.blocker), textOr(outcome.decision), textOr(outcome.question), storedQuestions(outcome));
 }
 
@@ -681,5 +683,5 @@ function emptyManifest(sessionId: string): SessionManifest {
   };
 }
 
-export type { FoldExecution, FoldInputs, SessionManifest } from "./session-fold-types.js";
-export { readExecutions } from "./session-fold-read.js";
+export { readExecutions } from './session-fold-read.js';
+export type { FoldExecution, FoldInputs, SessionManifest } from './session-fold-types.js';

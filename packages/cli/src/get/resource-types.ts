@@ -1,7 +1,8 @@
-import type { ClientRegistry } from "@nodeint/migent-kernel";
-import type { Static, TSchema } from "@nodeint/migent-contracts";
-import type { DiscoveryContext } from "./discovery.js";
-import type { Column } from "./render.js";
+import type { Static, TSchema } from '@nodeint/migent-contracts';
+import type { ClientRegistry } from '@nodeint/migent-kernel';
+
+import type { DiscoveryContext } from './discovery.js';
+import type { Column } from './render.js';
 
 /** Machine types answer from the host, so they take a discovery context instead of a workspace. */
 export interface MachineQuery {
@@ -16,7 +17,7 @@ export interface MachineQuery {
  * match its contract does not compile. Kernel views are asserted at this boundary with `asView`.
  */
 export interface ProjectResource<One extends TSchema = TSchema, Item extends TSchema = One> {
-  scope: "project";
+  scope: 'project';
   kind: string;
   /** Accepted type names, singular first. */
   names: readonly string[];
@@ -29,7 +30,7 @@ export interface ProjectResource<One extends TSchema = TSchema, Item extends TSc
 }
 
 export interface MachineResource<One extends TSchema = TSchema, Item extends TSchema = One> {
-  scope: "machine";
+  scope: 'machine';
   kind: string;
   /** Accepted type names, singular first. */
   names: readonly string[];

@@ -1,4 +1,4 @@
-import { isRecord } from "@nodeint/migent-workflow";
+import { isRecord } from '@nodeint/migent-workflow';
 
 
 
@@ -37,17 +37,17 @@ export function later(current: string | null, next: string | null): string | nul
 }
 
 export function textOr(value: unknown): string | null {
-  return typeof value === "string" && value !== "" ? value : null;
+  return typeof value === 'string' && value !== '' ? value : null;
 }
 
 /** Session ids are strings; a hand-edited manifest may hold an unquoted integer. */
 export function identityText(value: unknown): string | null {
-  if (typeof value === "number" && Number.isSafeInteger(value) && value > 0) return String(value);
+  if (typeof value === 'number' && Number.isSafeInteger(value) && value > 0) return String(value);
   return textOr(value);
 }
 
 export function asInt(value: unknown): number {
-  if (typeof value === "number" && Number.isFinite(value)) return Math.trunc(value);
-  if (typeof value === "string" && /^-?\d+$/.test(value)) return Number(value);
+  if (typeof value === 'number' && Number.isFinite(value)) return Math.trunc(value);
+  if (typeof value === 'string' && /^-?\d+$/.test(value)) return Number(value);
   return 0;
 }

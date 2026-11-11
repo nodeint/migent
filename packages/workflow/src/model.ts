@@ -1,9 +1,9 @@
-import path from "node:path";
+import path from 'node:path';
 
 /** The recipient is separate from the question outcome; more recipients can be added later. */
-export type AskTarget = "human";
+export type AskTarget = 'human';
 
-export const VERIFY_ARTIFACT = "verify.md";
+export const VERIFY_ARTIFACT = 'verify.md';
 
 /** Run the stage only when a changed Git path matches one of the globs. */
 export interface RunWhen {
@@ -15,8 +15,8 @@ export interface RunWhen {
  * mapping for the config loader to validate. `null` means the role's own agent.
  */
 export type StageAgent =
-  | { kind: "named"; name: string }
-  | { kind: "inline"; value: Record<string, unknown> };
+  | { kind: 'named'; name: string }
+  | { kind: 'inline'; value: Record<string, unknown> };
 
 export interface StageFields {
   ask?: AskTarget;
@@ -43,12 +43,12 @@ export interface StageFields {
 }
 
 export interface RoleStageSpec extends StageFields {
-  kind: "role";
+  kind: 'role';
   role: string;
 }
 
 export interface VerifyOnlyStageSpec extends StageFields {
-  kind: "verify";
+  kind: 'verify';
   role: null;
   verify: string[];
   maxVerify: 0;
@@ -57,7 +57,7 @@ export interface VerifyOnlyStageSpec extends StageFields {
 export type StageSpec = RoleStageSpec | VerifyOnlyStageSpec;
 
 export function isRoleStage(stage: StageSpec): stage is RoleStageSpec {
-  return stage.kind === "role";
+  return stage.kind === 'role';
 }
 
 /** One file a stage writes into its artifacts directory. */
@@ -67,7 +67,7 @@ export interface StageArtifact {
   description: string | null;
   required: boolean;
   /** `published` artifacts come from the registry; `local` ones are defined inline on a decision. */
-  scope: "published" | "local";
+  scope: 'published' | 'local';
 }
 
 /** A top-level (published) artifact of a schema 7 workflow and its single producer. */
@@ -92,8 +92,8 @@ export function stageArtifactsFor(stage: StageSpec, decision: string | null): St
 }
 
 /** Every file a stage may write, with the decision that adds it (null for stage-level). */
-export function allStageArtifacts(stage: StageSpec): Array<{ artifact: StageArtifact; decision: string | null }> {
-  const all: Array<{ artifact: StageArtifact; decision: string | null }> = stage.artifacts.map((artifact) => ({ artifact, decision: null }));
+export function allStageArtifacts(stage: StageSpec): { artifact: StageArtifact; decision: string | null }[] {
+  const all: { artifact: StageArtifact; decision: string | null }[] = stage.artifacts.map((artifact) => ({ artifact, decision: null }));
   for (const [decision, list] of Object.entries(stage.decisionArtifacts)) {
     for (const artifact of list) all.push({ artifact, decision });
   }
@@ -151,10 +151,10 @@ export interface WorkflowCatalog {
 
 export function isPathReference(reference: string): boolean {
   return (
-    reference.endsWith(".yaml") ||
-    reference.endsWith(".yml") ||
-    reference.includes("/") ||
-    reference.includes("\\") ||
+    reference.endsWith('.yaml') ||
+    reference.endsWith('.yml') ||
+    reference.includes('/') ||
+    reference.includes('\\') ||
     path.isAbsolute(reference)
   );
 }

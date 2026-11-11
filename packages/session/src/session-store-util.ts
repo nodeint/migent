@@ -1,17 +1,18 @@
-import { readFileSync, statSync } from "node:fs";
-import path from "node:path";
-import { isRecord } from "@nodeint/migent-workflow";
+import { readFileSync, statSync } from 'node:fs';
+import path from 'node:path';
+
+import { isRecord } from '@nodeint/migent-workflow';
 
 export function nonempty(value: unknown): string | null {
-  return typeof value === "string" && value !== "" ? value : null;
+  return typeof value === 'string' && value !== '' ? value : null;
 }
 
 export function textField(value: unknown): string | null {
-  return typeof value === "string" && value ? value : null;
+  return typeof value === 'string' && value ? value : null;
 }
 
 export function readJsonObject(filePath: string): Record<string, unknown> {
-  const value = JSON.parse(readFileSync(filePath, "utf8")) as unknown;
+  const value = JSON.parse(readFileSync(filePath, 'utf8')) as unknown;
   if (!isRecord(value)) throw new Error(`Expected a JSON object: ${filePath}`);
   return value;
 }
@@ -21,7 +22,7 @@ export function latestExecutionPerStage<
 >(rows: readonly T[]): T[] {
   const byStage = new Map<string, T>();
   for (const row of rows) {
-    const stageId = typeof row.metadata.stage_id === "string" ? row.metadata.stage_id : "";
+    const stageId = typeof row.metadata.stage_id === 'string' ? row.metadata.stage_id : '';
     const current = byStage.get(stageId);
     if (
       current === undefined ||
@@ -34,7 +35,7 @@ export function latestExecutionPerStage<
 }
 
 export function verifyReportPath(directory: string, verify: unknown): string | null {
-  if (!isRecord(verify) || typeof verify.last_report !== "string" || verify.last_report === "") {
+  if (!isRecord(verify) || typeof verify.last_report !== 'string' || verify.last_report === '') {
     return null;
   }
   return path.join(directory, verify.last_report);
@@ -49,8 +50,8 @@ export function isDirectory(directory: string): boolean {
 }
 
 export function asInt(value: unknown): number {
-  if (typeof value === "number" && Number.isFinite(value)) return Math.trunc(value);
-  if (typeof value === "string" && /^-?\d+$/.test(value)) return Number(value);
+  if (typeof value === 'number' && Number.isFinite(value)) return Math.trunc(value);
+  if (typeof value === 'string' && /^-?\d+$/.test(value)) return Number(value);
   return 0;
 }
 

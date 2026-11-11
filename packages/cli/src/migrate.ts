@@ -1,16 +1,18 @@
-import { lstatSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
-import path from "node:path";
-import { confirm as clackConfirm, isCancel } from "@clack/prompts";
-import { documentVersion, checkDocumentSchemaVersion, loadYamlMapping, loadWorkspaceConfig, localConfigPath, mergeConfigLayers, assertConfigClientEquivalence, migrateConfig, migrateWorkflow, patchConfigText, patchWorkflowText, stringifyConfig, sha256Hex, yamlHasComments, ConfigEditError, ConfigurationError } from "@nodeint/migent-kernel";
-import { WORKFLOW_FREEZE_FILE, SessionLock, SessionLockHeldError } from "@nodeint/migent-session";
-import { SCHEMA_VERSION, parseWorkflowMapping, workflowsDirectory, parseYamlDocument } from "@nodeint/migent-workflow";
-import { printError, printNotice } from "./display.js";
-import { clientRegistry } from "./client.js";
-import { isDirectory, isFile } from "./fs-utils.js";
+import { lstatSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 
-function versionList(entries: ReadonlyArray<[string, number]>): string {
+import { confirm as clackConfirm, isCancel } from '@clack/prompts';
+import { assertConfigClientEquivalence, checkDocumentSchemaVersion, ConfigEditError, ConfigurationError,documentVersion, loadWorkspaceConfig, loadYamlMapping, localConfigPath, mergeConfigLayers, migrateConfig, migrateWorkflow, patchConfigText, patchWorkflowText, sha256Hex, stringifyConfig, yamlHasComments } from '@nodeint/migent-kernel';
+import { SessionLock, SessionLockHeldError,WORKFLOW_FREEZE_FILE } from '@nodeint/migent-session';
+import { parseWorkflowMapping, parseYamlDocument,SCHEMA_VERSION, workflowsDirectory } from '@nodeint/migent-workflow';
+
+import { clientRegistry } from './client.js';
+import { printError, printNotice } from './display.js';
+import { isDirectory, isFile } from './fs-utils.js';
+
+function versionList(entries: readonly [string, number][]): string {
   const width = Math.max(...entries.map(([label]) => label.length));
-  return entries.map(([label, version]) => `  ${label.padEnd(width)}  v${version}`).join("\n");
+  return entries.map(([label, version]) => `  ${label.padEnd(width)}  v${version}`).join('\n');
 }
 
 interface Rewrite {
@@ -23,9 +25,9 @@ interface Rewrite {
 
 /** `configOnly` skips `.migent/workflows/`, for a check that never reads the project catalog. */
 export function requireCurrentSchema(workspace: string, options: { configOnly?: boolean } = {}): void {
-  const newer: Array<[string, number]> = [];
-  const older: Array<[string, number]> = [];
-  const files = schemaFiles(workspace).filter(([label]) => options.configOnly !== true || !label.includes("/workflows/"));
+  const newer: [string, number][] = [];
+  const older: [string, number][] = [];
+  const files = schemaFiles(workspace).filter(([label]) => options.configOnly !== true || !label.includes('/workflows/'));
   for (const [label, filePath] of files) {
     const version = storedVersion(filePath);
     if (version === null || version === SCHEMA_VERSION) continue;
@@ -34,7 +36,7 @@ export function requireCurrentSchema(workspace: string, options: { configOnly?: 
   if (older.length > 0) {
     throw new ConfigurationError(
       `Schema is outdated (this Migent uses v${SCHEMA_VERSION}).\n${versionList(older)}\n\n` +
-        "Run `migent migrate` to update.",
+        'Run `migent migrate` to update.',
     );
   }
   if (newer.length > 0) {
@@ -55,7 +57,7 @@ export async function runMigrate(
   const clientIds = options.clientIds ?? clientRegistry().ids();
   const rewrites = pendingRewrites(workspace, clientIds);
   if (rewrites.length === 0) {
-    process.stdout.write("Schema is current.\n");
+    process.stdout.write('Schema is current.\n');
     return 0;
   }
   for (const rewrite of rewrites) {
@@ -75,7 +77,7 @@ export async function runMigrate(
       if (rewrite.session === undefined) continue;
       let current: string | null = null;
       try {
-        if (lstatSync(rewrite.path).isFile()) current = readFileSync(rewrite.path, "utf8");
+        if (lstatSync(rewrite.path).isFile()) current = readFileSync(rewrite.path, 'utf8');
       } catch {
         // Treated as changed below.
       }
@@ -83,7 +85,7 @@ export async function runMigrate(
         throw new ConfigurationError(`${path.relative(workspace, rewrite.path)} changed during migration. Nothing was written; run \`migent migrate\` again.`);
       }
     }
-    for (const rewrite of rewrites) writeFileSync(rewrite.path, rewrite.text, "utf8");
+    for (const rewrite of rewrites) writeFileSync(rewrite.path, rewrite.text, 'utf8');
   } catch (error) {
     if (!(error instanceof SessionLockHeldError || error instanceof ConfigurationError)) throw error;
     printError(`${error.message} Nothing was written.`);
@@ -99,23 +101,23 @@ async function accepted(confirm: ((message: string) => boolean | Promise<boolean
   const question = `Upgrade schema to version ${SCHEMA_VERSION}?`;
   if (confirm !== null) {
     if (await confirm(question)) return true;
-    process.stdout.write("Left unchanged.\n");
+    process.stdout.write('Left unchanged.\n');
     return false;
   }
   if (!process.stdin.isTTY) {
-    printError("Pass --yes to upgrade without confirmation.");
+    printError('Pass --yes to upgrade without confirmation.');
     return false;
   }
   const result = await clackConfirm({ message: question, initialValue: false });
   if (isCancel(result) || result !== true) {
-    process.stdout.write("Left unchanged.\n");
+    process.stdout.write('Left unchanged.\n');
     return false;
   }
   return true;
 }
 
 function pendingRewrites(workspace: string, clientIds: readonly string[]): Rewrite[] {
-  const configPath = path.join(workspace, ".migent", "config.yaml");
+  const configPath = path.join(workspace, '.migent', 'config.yaml');
   if (!isFile(configPath)) return [];
   const originalContext = loadWorkspaceConfig(workspace);
   const projectOriginal = readConfigOriginal(configPath);
@@ -130,7 +132,7 @@ function pendingRewrites(workspace: string, clientIds: readonly string[]): Rewri
   }
   const context = mergeConfigLayers(projectV5, localV5).config;
   const [config, configRewrite] = configRewriteOf(configPath, projectOriginal, context, clientIds, {
-    layer: "project",
+    layer: 'project',
     project: projectV5,
     local: localV5,
   });
@@ -140,7 +142,7 @@ function pendingRewrites(workspace: string, clientIds: readonly string[]): Rewri
   let effective = config;
   if (localOriginal !== null) {
     const [local, rewrite] = configRewriteOf(localPath, localOriginal, context, clientIds, {
-      layer: "local",
+      layer: 'local',
       project: projectV5,
       local: localV5,
     });
@@ -167,12 +169,12 @@ function readConfigOriginal(filePath: string): Record<string, unknown> | null {
   }
 }
 
-function schemaFiles(workspace: string): Array<[string, string]> {
-  const files: Array<[string, string]> = [[".migent/config.yaml", path.join(workspace, ".migent", "config.yaml")]];
-  files.push([".migent/config.local.yaml", localConfigPath(workspace)]);
+function schemaFiles(workspace: string): [string, string][] {
+  const files: [string, string][] = [['.migent/config.yaml', path.join(workspace, '.migent', 'config.yaml')]];
+  files.push(['.migent/config.local.yaml', localConfigPath(workspace)]);
   const directory = workflowsDirectory(workspace);
   if (isDirectory(directory)) {
-    for (const name of readdirSync(directory).filter((item) => item.endsWith(".yaml")).sort()) {
+    for (const name of readdirSync(directory).filter((item) => item.endsWith('.yaml')).sort()) {
       const filePath = path.join(directory, name);
       if (isFile(filePath)) files.push([`.migent/workflows/${name}`, filePath]);
     }
@@ -184,7 +186,7 @@ function storedVersion(filePath: string): number | null {
   if (!isFile(filePath)) return null;
   try {
     const result = checkDocumentSchemaVersion(loadYamlMapping(filePath));
-    return result.status === "invalid" ? null : result.version;
+    return result.status === 'invalid' ? null : result.version;
   } catch {
     return null;
   }
@@ -195,9 +197,9 @@ function configRewriteOf(
   originalDocument: Record<string, unknown>,
   context: Record<string, unknown>,
   clientIds: readonly string[],
-  layers: { layer: "project" | "local"; project: Record<string, unknown>; local: Record<string, unknown> | null },
+  layers: { layer: 'project' | 'local'; project: Record<string, unknown>; local: Record<string, unknown> | null },
 ): [Record<string, unknown> | null, Rewrite | null] {
-  const original = readFileSync(filePath, "utf8");
+  const original = readFileSync(filePath, 'utf8');
   const updated = structuredClone(originalDocument);
   let notes: string[];
   try {
@@ -221,7 +223,7 @@ function configRewriteOf(
   }
   if (rewritten === original) return [updated, null];
   const labeled = notes.map((note) =>
-    note.startsWith("schema_version") ? `Migrated .migent/${path.basename(filePath)} ${note}` : note,
+    note.startsWith('schema_version') ? `Migrated .migent/${path.basename(filePath)} ${note}` : note,
   );
   // The text patcher keeps comments; when it cannot (flow-style mappings), say so instead of dropping them silently.
   if (yamlHasComments(original) && !yamlHasComments(rewritten)) {
@@ -238,10 +240,10 @@ function workflowRewrites(
   const directory = workflowsDirectory(workspace);
   if (!isDirectory(directory)) return [];
   const rewrites: Rewrite[] = [];
-  for (const name of readdirSync(directory).filter((item) => item.endsWith(".yaml")).sort()) {
+  for (const name of readdirSync(directory).filter((item) => item.endsWith('.yaml')).sort()) {
     const filePath = path.join(directory, name);
     if (!isFile(filePath)) continue;
-    const original = readFileSync(filePath, "utf8");
+    const original = readFileSync(filePath, 'utf8');
     let parsed: Record<string, unknown>;
     try {
       parsed = loadYamlMapping(filePath);
@@ -265,12 +267,12 @@ function workflowRewrites(
       // The line patcher cannot edit this layout (flow-style stages, a key on the dash line, empty
       // entries): write the migrated document as canonical YAML. Comments are reported below.
       rewritten = stringifyConfig(updated);
-      parseWorkflowMapping(updated, "migrated workflow");
+      parseWorkflowMapping(updated, 'migrated workflow');
     }
     if (rewritten === original) continue;
     const relative = `.migent/workflows/${name}`;
     const notes = changed.map((note) =>
-      note.startsWith("schema_version") ? `Migrated ${relative} ${note}` : `${relative}: ${note}`,
+      note.startsWith('schema_version') ? `Migrated ${relative} ${note}` : `${relative}: ${note}`,
     );
     if (yamlHasComments(original) && !yamlHasComments(rewritten)) {
       notes.push(`${relative}: comments could not be preserved by this migration`);
@@ -303,7 +305,7 @@ function isRegularFile(target: string): boolean {
 function realSessionsRoot(workspace: string, root: string): string | null {
   try {
     const realRoot = realpathSync(root);
-    return realRoot === path.join(realpathSync(workspace), ".migent", "sessions") ? realRoot : null;
+    return realRoot === path.join(realpathSync(workspace), '.migent', 'sessions') ? realRoot : null;
   } catch {
     return null;
   }
@@ -322,7 +324,7 @@ function sessionRewrites(
   config: Record<string, unknown>,
   clientIds: readonly string[],
 ): Rewrite[] {
-  const root = path.join(workspace, ".migent", "sessions");
+  const root = path.join(workspace, '.migent', 'sessions');
   const realRoot = realSessionsRoot(workspace, root);
   if (realRoot === null || !isRealDirectory(root)) return [];
   const rewrites: Rewrite[] = [];
@@ -330,12 +332,12 @@ function sessionRewrites(
     const directory = path.join(root, id);
     // A symlinked session directory or file could point outside the workspace; leave it alone.
     if (!isRealDirectory(directory) || !isDirectChild(realRoot, directory)) continue;
-    const draftPath = path.join(directory, "workflow.yaml");
+    const draftPath = path.join(directory, 'workflow.yaml');
     const label = `.migent/sessions/${id}`;
     let draftText: string | null = null;
     let newDraftText: string | null = null;
     if (isRegularFile(draftPath)) {
-      draftText = readFileSync(draftPath, "utf8");
+      draftText = readFileSync(draftPath, 'utf8');
       const result = migratedText(draftText, config, clientIds, `${label}/workflow.yaml`);
       if (result !== null) {
         newDraftText = result.text;
@@ -344,7 +346,7 @@ function sessionRewrites(
     }
     const frozenPath = path.join(directory, WORKFLOW_FREEZE_FILE);
     if (!isRegularFile(frozenPath)) continue;
-    const frozenText = readFileSync(frozenPath, "utf8");
+    const frozenText = readFileSync(frozenPath, 'utf8');
     let document: Record<string, unknown>;
     try {
       const parsed = parseYamlDocument(frozenText);
@@ -372,7 +374,7 @@ function sessionRewrites(
       text: stringifyConfig(document),
       session: { directory, original: frozenText },
       notes: notes.map((note) =>
-        note.startsWith("schema_version") ? `Migrated ${label}/${WORKFLOW_FREEZE_FILE} ${note}` : `${label}/${WORKFLOW_FREEZE_FILE}: ${note}`,
+        note.startsWith('schema_version') ? `Migrated ${label}/${WORKFLOW_FREEZE_FILE} ${note}` : `${label}/${WORKFLOW_FREEZE_FILE}: ${note}`,
       ),
     });
   }
@@ -407,11 +409,11 @@ function migratedText(
   } catch (error) {
     if (!(error instanceof ConfigurationError)) throw error;
     text = stringifyConfig(updated);
-    parseWorkflowMapping(updated, "migrated workflow");
+    parseWorkflowMapping(updated, 'migrated workflow');
   }
   if (text === original) return null;
   const notes = changed.map((note) =>
-    note.startsWith("schema_version") ? `Migrated ${relative} ${note}` : `${relative}: ${note}`,
+    note.startsWith('schema_version') ? `Migrated ${relative} ${note}` : `${relative}: ${note}`,
   );
   if (yamlHasComments(original) && !yamlHasComments(text)) {
     notes.push(`${relative}: comments could not be preserved by this migration`);
@@ -420,5 +422,5 @@ function migratedText(
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

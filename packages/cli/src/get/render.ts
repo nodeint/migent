@@ -1,9 +1,10 @@
-import { stringify } from "yaml";
-import { listOf, type Static, type TSchema } from "@nodeint/migent-contracts";
-import { serializeJson } from "../emit.js";
+import { listOf, type Static, type TSchema } from '@nodeint/migent-contracts';
+import { stringify } from 'yaml';
 
-export type OutputFormat = "human" | "json" | "yaml" | "name";
-export const OUTPUT_FORMATS: readonly string[] = ["json", "yaml", "name"];
+import { serializeJson } from '../emit.js';
+
+export type OutputFormat = 'human' | 'json' | 'yaml' | 'name';
+export const OUTPUT_FORMATS: readonly string[] = ['json', 'yaml', 'name'];
 
 export interface Column {
   header: string;
@@ -18,13 +19,13 @@ function table(views: readonly Record<string, unknown>[], columns: readonly Colu
   const rows = [columns.map((column) => column.header), ...views.map((view) => columns.map((column) => column.cell(view)))];
   const widths = columns.map((_, index) => Math.max(...rows.map((row) => row[index]!.length)));
   return rows
-    .map((row) => row.map((cell, index) => (index === row.length - 1 ? cell : cell.padEnd(widths[index]!))).join("  ").trimEnd())
-    .join("\n")
-    .concat("\n");
+    .map((row) => row.map((cell, index) => (index === row.length - 1 ? cell : cell.padEnd(widths[index]!))).join('  ').trimEnd())
+    .join('\n')
+    .concat('\n');
 }
 
 function names(views: readonly Record<string, unknown>[]): string {
-  return views.map((view) => String(view.name)).join("\n").concat(views.length > 0 ? "\n" : "");
+  return views.map((view) => String(view.name)).join('\n').concat(views.length > 0 ? '\n' : '');
 }
 
 /** Renders a list of views in the requested format. */
@@ -34,24 +35,24 @@ export function renderList<S extends TSchema>(
   columns: readonly Column[],
   itemContract: S,
 ): string {
-  if (format === "json") return `${serializeJson(listOf(itemContract), [...items], true)}\n`;
+  if (format === 'json') return `${serializeJson(listOf(itemContract), [...items], true)}\n`;
   const views = items as readonly Record<string, unknown>[];
-  if (format === "yaml") return views.length === 0 ? "[]\n" : yamlText(views);
-  if (format === "name") return names(views);
-  return views.length === 0 ? "" : table(views, columns);
+  if (format === 'yaml') return views.length === 0 ? '[]\n' : yamlText(views);
+  if (format === 'name') return names(views);
+  return views.length === 0 ? '' : table(views, columns);
 }
 
 /** Renders one view. The human format is the YAML view. */
 export function renderOne<S extends TSchema>(item: Static<S>, format: OutputFormat, contract: S): string {
-  if (format === "json") return `${serializeJson(contract, item, true)}\n`;
+  if (format === 'json') return `${serializeJson(contract, item, true)}\n`;
   const view = item as Record<string, unknown>;
-  if (format === "name") return `${String(view.name)}\n`;
+  if (format === 'name') return `${String(view.name)}\n`;
   return yamlText(view);
 }
 
 export function cell(value: unknown): string {
-  if (value === null || value === undefined) return "-";
-  if (Array.isArray(value)) return value.length === 0 ? "-" : value.map(String).join(",");
-  if (typeof value === "object" && (value as { inline?: unknown }).inline === true) return "(inline)";
+  if (value === null || value === undefined) return '-';
+  if (Array.isArray(value)) return value.length === 0 ? '-' : value.map(String).join(',');
+  if (typeof value === 'object' && (value as { inline?: unknown }).inline === true) return '(inline)';
   return String(value);
 }

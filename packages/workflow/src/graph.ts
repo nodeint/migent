@@ -1,7 +1,7 @@
-import { ConfigurationError } from "./errors.js";
-import { pyRepr } from "./record.js";
-import { isRoleStage } from "./model.js";
-import type { StageSpec, WorkflowOutput } from "./model.js";
+import { ConfigurationError } from './errors.js';
+import type { StageSpec, WorkflowOutput } from './model.js';
+import { isRoleStage } from './model.js';
+import { pyRepr } from './record.js';
 
 export const reachCache = new WeakMap<Record<string, StageSpec>, Map<string, Set<string>>>();
 
@@ -29,7 +29,7 @@ export function conditionalReach(stages: Record<string, StageSpec>, stageId: str
     const closure = dependencyClosure(stages, member);
     for (const value of Object.values(stages[member]?.routes ?? {})) {
       for (const target of routeTargets(value)) {
-        if (target !== "complete" && !closure.has(target)) found.push(target);
+        if (target !== 'complete' && !closure.has(target)) found.push(target);
       }
     }
     for (const next of found) {
@@ -79,7 +79,7 @@ export function validateConditionalStages(stages: Record<string, StageSpec>, out
 
 /** A route value is one stage id, `complete`, or a list of stage ids. */
 export function routeTargets(target: string | readonly string[] | undefined): readonly string[] {
-  if (typeof target === "string") return [target];
+  if (typeof target === 'string') return [target];
   if (Array.isArray(target)) return target;
   return [];
 }
@@ -93,7 +93,7 @@ export function validateStageGraph(stages: Record<string, StageSpec>): void {
   for (const stage of Object.values(stages)) {
     for (const value of Object.values(stage.routes)) {
       for (const target of routeTargets(value)) {
-        if (target !== "complete") targets.add(target);
+        if (target !== 'complete') targets.add(target);
       }
     }
   }

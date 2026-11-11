@@ -1,20 +1,22 @@
-import { SessionFollowRecord, SessionSnapshot, SessionSnapshotLine, type Static } from "@nodeint/migent-contracts";
-import { writeJson } from "../emit.js";
-import { openSync, readFileSync, readSync, closeSync, statSync } from "node:fs";
-import path from "node:path";
-import { CancellationRequested, ConfigurationError, log } from "@nodeint/migent-kernel";
-import { corruptStatusMessage, SessionLock, SessionStore, readStatusFileState, readExecutionFile, statusDriftMessage, watchSnapshot } from "@nodeint/migent-session";
-import { printNotice, printWatchEvent, printWatchSnapshot } from "../display.js";
-import { EXIT_BLOCKED, EXIT_CANCELLED, EXIT_OK, EXIT_QUESTION } from "../exits.js";
+import { closeSync, openSync, readFileSync, readSync, statSync } from 'node:fs';
+import path from 'node:path';
+
+import { SessionFollowRecord, SessionSnapshot, SessionSnapshotLine, type Static } from '@nodeint/migent-contracts';
+import { CancellationRequested, ConfigurationError, log } from '@nodeint/migent-kernel';
+import { corruptStatusMessage, readExecutionFile, readStatusFileState, SessionLock, SessionStore, statusDriftMessage, watchSnapshot } from '@nodeint/migent-session';
+
+import { printNotice, printWatchEvent, printWatchSnapshot } from '../display.js';
+import { writeJson } from '../emit.js';
+import { EXIT_BLOCKED, EXIT_CANCELLED, EXIT_OK, EXIT_QUESTION } from '../exits.js';
 import {
   compareFollowLines,
+  type FollowLine,
   includeStreamLine,
   listStreamFiles,
   streamFollowStart,
-  type FollowLine,
-} from "../follow-log.js";
-import { isFile } from "../fs-utils.js";
-import { bindCancellationSignals, delay, throwIfCliCancelled } from "../signals.js";
+} from '../follow-log.js';
+import { isFile } from '../fs-utils.js';
+import { bindCancellationSignals, delay, throwIfCliCancelled } from '../signals.js';
 
 const SESSION_DONE_EXITS: Record<string, number> = {
   completed: EXIT_OK,
@@ -23,7 +25,7 @@ const SESSION_DONE_EXITS: Record<string, number> = {
   cancelled: EXIT_CANCELLED,
 };
 
-const TERMINAL_EXECUTION_STATUSES = new Set(["completed", "failed", "cancelled", "skipped"]);
+const TERMINAL_EXECUTION_STATUSES = new Set(['completed', 'failed', 'cancelled', 'skipped']);
 
 export async function followSession(
   workspace: string,
@@ -43,27 +45,27 @@ export async function followSession(
   const executionId = options.executionId ?? null;
   const cursor = options.cursor === undefined ? null : options.cursor;
   const exitWhenDone = options.exitWhenDone === true;
-  const sessionDirectory = path.join(workspace, ".migent", "sessions", sessionId);
-  const eventsPath = path.join(sessionDirectory, "events.jsonl");
-  const statusPath = path.join(sessionDirectory, "status.json");
-  if (readStatusFileState(statusPath).state === "corrupt") {
+  const sessionDirectory = path.join(workspace, '.migent', 'sessions', sessionId);
+  const eventsPath = path.join(sessionDirectory, 'events.jsonl');
+  const statusPath = path.join(sessionDirectory, 'status.json');
+  if (readStatusFileState(statusPath).state === 'corrupt') {
     throw new ConfigurationError(corruptStatusMessage(statusPath));
   }
-  if (!isFile(eventsPath) && !(once && isFile(path.join(sessionDirectory, "status.json")))) {
+  if (!isFile(eventsPath) && !(once && isFile(path.join(sessionDirectory, 'status.json')))) {
     throw new ConfigurationError(`No events found for session: ${sessionId}`);
   }
   // Reaping writes, so it needs the session lock. A live holder keeps the session; follow then tails read-only.
   const reapLock = SessionLock.tryAcquire(sessionDirectory);
   if (reapLock !== null) {
     try {
-      new SessionStore(workspace).reapOrphanedExecutions(sessionId, "ignore");
+      new SessionStore(workspace).reapOrphanedExecutions(sessionId, 'ignore');
     } finally {
       reapLock.release();
     }
   }
   let executionPath: string | null = null;
   if (executionId !== null) {
-    const resolved = path.join(sessionDirectory, "executions", executionId, "execution.json");
+    const resolved = path.join(sessionDirectory, 'executions', executionId, 'execution.json');
     executionPath = resolved;
     if (!isFile(resolved)) throw new ConfigurationError(`No execution found: ${executionId}`);
   }
@@ -93,7 +95,7 @@ export async function followSession(
       for (const item of batch) emitWatchEvent(item.line, executionId, jsonLines);
       if (batch.length > 0) continue;
       if (untilTerminal) {
-        if (executionPath === null) throw new ConfigurationError("--until requires --execution.");
+        if (executionPath === null) throw new ConfigurationError('--until requires --execution.');
         const record = readExecutionFile(executionPath);
         if (record !== null && TERMINAL_EXECUTION_STATUSES.has(String(record.status))) {
           const drained = readBatch(logs);
@@ -102,7 +104,7 @@ export async function followSession(
         }
       }
       if (exitWhenDone) {
-        const status = String(watchSnapshot(sessionDirectory, null).status ?? "");
+        const status = String(watchSnapshot(sessionDirectory, null).status ?? '');
         const done = SESSION_DONE_EXITS[status];
         if (done !== undefined) {
           const drained = readBatch(logs);
@@ -160,11 +162,11 @@ function emitWatchEvent(line: string, executionId: string | null, jsonLines: boo
 }
 
 function untilTerminalExitCode(record: Record<string, unknown>): number {
-  if (record.status === "skipped") return 0;
-  if (record.status === "completed") {
-    const outcome = record.outcome;
-    if (isRecord(outcome) && outcome.status === "complete") return 0;
-    if (isRecord(outcome) && outcome.status === "question") return EXIT_QUESTION;
+  if (record.status === 'skipped') return 0;
+  if (record.status === 'completed') {
+    const {outcome} = record;
+    if (isRecord(outcome) && outcome.status === 'complete') return 0;
+    if (isRecord(outcome) && outcome.status === 'question') return EXIT_QUESTION;
     return 1;
   }
   return 1;
@@ -176,7 +178,7 @@ interface OpenLog {
   offset: number;
   pending: string;
   minTimestampMs: number | null;
-  source: "events" | "stream";
+  source: 'events' | 'stream';
 }
 
 function openFollowLogs(
@@ -186,13 +188,13 @@ function openFollowLogs(
   tailOnly: boolean,
   streamOffsets: ReadonlyMap<string, number> | null,
 ): OpenLog[] {
-  const eventsText = !tailOnly && cursor > 0 ? readText(eventsPath) : "";
-  const logs: OpenLog[] = [openLog(eventsPath, cursor, null, "events")];
+  const eventsText = !tailOnly && cursor > 0 ? readText(eventsPath) : '';
+  const logs: OpenLog[] = [openLog(eventsPath, cursor, null, 'events')];
   for (const stream of listStreamFiles(sessionDirectory)) {
     const start = tailOnly
       ? { offset: tailOffset(stream, streamOffsets), minTimestampMs: null }
       : streamFollowStart(cursor, eventsText, fileSize(stream));
-    logs.push(openLog(stream, start.offset, start.minTimestampMs, "stream"));
+    logs.push(openLog(stream, start.offset, start.minTimestampMs, 'stream'));
   }
   return logs;
 }
@@ -206,7 +208,7 @@ function discoverStreams(sessionDirectory: string, logs: OpenLog[]): void {
   const known = new Set(logs.map((log) => log.path));
   for (const stream of listStreamFiles(sessionDirectory)) {
     if (known.has(stream)) continue;
-    logs.push(openLog(stream, 0, null, "stream"));
+    logs.push(openLog(stream, 0, null, 'stream'));
   }
 }
 
@@ -224,8 +226,8 @@ function readBatch(logs: OpenLog[]): FollowLine[] {
   return batch;
 }
 
-function openLog(filePath: string, offset: number, minTimestampMs: number | null, source: "events" | "stream"): OpenLog {
-  return { path: filePath, fd: openSync(filePath, "r"), offset, pending: "", minTimestampMs, source };
+function openLog(filePath: string, offset: number, minTimestampMs: number | null, source: 'events' | 'stream'): OpenLog {
+  return { path: filePath, fd: openSync(filePath, 'r'), offset, pending: '', minTimestampMs, source };
 }
 
 function fileSize(filePath: string): number {
@@ -238,9 +240,9 @@ function fileSize(filePath: string): number {
 
 function readText(filePath: string): string {
   try {
-    return readFileSync(filePath, "utf8");
+    return readFileSync(filePath, 'utf8');
   } catch {
-    return "";
+    return '';
   }
 }
 
@@ -259,12 +261,12 @@ function readCompleteLines(
     offset += count;
   }
   if (chunks.length === 0) return { lines: [], pending, position };
-  pending += Buffer.concat(chunks).toString("utf8");
-  const pieces = pending.split("\n");
-  const rest = pieces.pop() ?? "";
+  pending += Buffer.concat(chunks).toString('utf8');
+  const pieces = pending.split('\n');
+  const rest = pieces.pop() ?? '';
   return { lines: pieces, pending: rest, position: offset };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

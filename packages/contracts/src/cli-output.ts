@@ -1,5 +1,6 @@
-import Type, { type Static } from "typebox";
-import { Diagnostic, NextSuggestion, id, listOf, nullable } from "./common.js";
+import Type, { type Static } from 'typebox';
+
+import { Diagnostic, id, listOf, NextSuggestion, nullable } from './common.js';
 
 const strings = () => Type.Array(Type.String());
 const record = () => Type.Record(Type.String(), Type.Unknown());
@@ -13,7 +14,7 @@ export const ConfigSummary = Type.Object(
     config: record(),
     local: nullable(Type.Object({ file: Type.String(), agents: strings() })),
   },
-  { $id: id("cli/config"), title: "config --json", description: "Effective config and the local overlay." },
+  { $id: id('cli/config'), title: 'config --json', description: 'Effective config and the local overlay.' },
 );
 export type ConfigSummary = Static<typeof ConfigSummary>;
 
@@ -22,16 +23,16 @@ export type ConfigSummary = Static<typeof ConfigSummary>;
 export const AuthoringEnvelope = Type.Object(
   {
     schema_version: Type.Literal(1),
-    command: Type.String({ description: "config|workflow . validate|render|save." }),
+    command: Type.String({ description: 'config|workflow . validate|render|save.' }),
     valid: Type.Boolean(),
     diagnostics: Type.Array(Diagnostic),
-    rendered: Type.Optional(Type.String({ description: "render: the canonical text." })),
-    file: Type.Optional(Type.String({ description: "save: the target label." })),
-    hash: Type.Optional(Type.String({ description: "save: SHA-256 of the written file." })),
+    rendered: Type.Optional(Type.String({ description: 'render: the canonical text.' })),
+    file: Type.Optional(Type.String({ description: 'save: the target label.' })),
+    hash: Type.Optional(Type.String({ description: 'save: SHA-256 of the written file.' })),
     written: Type.Optional(Type.Boolean()),
-    current_hash: Type.Optional(Type.String({ description: "save conflict: hash on disk." })),
+    current_hash: Type.Optional(Type.String({ description: 'save conflict: hash on disk.' })),
   },
-  { $id: id("cli/authoring"), title: "config|workflow validate|render|save --json", description: "Versioned authoring envelope; also used for invocation errors." },
+  { $id: id('cli/authoring'), title: 'config|workflow validate|render|save --json', description: 'Versioned authoring envelope; also used for invocation errors.' },
 );
 export type AuthoringEnvelope = Static<typeof AuthoringEnvelope>;
 
@@ -39,7 +40,7 @@ export type AuthoringEnvelope = Static<typeof AuthoringEnvelope>;
 
 export const DoctorCheck = Type.Object(
   { name: Type.String(), ok: Type.Boolean(), items: strings(), problems: strings(), warnings: strings() },
-  { $id: id("common/check"), title: "Doctor check" },
+  { $id: id('common/check'), title: 'Doctor check' },
 );
 export const DoctorReport = Type.Object(
   {
@@ -54,7 +55,7 @@ export const DoctorReport = Type.Object(
       }),
     ),
   },
-  { $id: id("cli/doctor"), title: "doctor --json", description: "Checks; `session` is present with --session." },
+  { $id: id('cli/doctor'), title: 'doctor --json', description: 'Checks; `session` is present with --session.' },
 );
 export type DoctorReport = Static<typeof DoctorReport>;
 
@@ -69,7 +70,7 @@ const StageArtifactView = Type.Object({
   file: Type.String(),
   description: nullable(Type.String()),
   required: Type.Boolean(),
-  scope: Type.Union([Type.Literal("published"), Type.Literal("local")]),
+  scope: Type.Union([Type.Literal('published'), Type.Literal('local')]),
 });
 const Route = Type.Union([Type.String(), Type.Array(Type.String())]);
 const ArtifactProducer = Type.Object({ stage: Type.String(), decision: nullable(Type.String()) });
@@ -96,23 +97,23 @@ export const StageView = Type.Object(
     target: nullable(Target),
     problems: strings(),
   },
-  { $id: id("common/stage-view"), title: "Workflow stage view" },
+  { $id: id('common/stage-view'), title: 'Workflow stage view' },
 );
 
 export const GetWorkflowSummary = Type.Object(
   {
-    kind: Type.Literal("workflow"),
+    kind: Type.Literal('workflow'),
     name: nullable(Type.String()),
     file: nullable(Type.String()),
     stages: strings(),
     roles: strings(),
     problems: strings(),
   },
-  { $id: id("cli/get-workflow-summary"), title: "get workflows -o json item" },
+  { $id: id('cli/get-workflow-summary'), title: 'get workflows -o json item' },
 );
 export const GetWorkflow = Type.Object(
   {
-    kind: Type.Literal("workflow"),
+    kind: Type.Literal('workflow'),
     name: Type.String(),
     file: nullable(Type.String()),
     source: Type.Object({ kind: Type.String(), path: nullable(Type.String()) }),
@@ -130,11 +131,11 @@ export const GetWorkflow = Type.Object(
     warnings: strings(),
     problems: strings(),
   },
-  { $id: id("cli/get-workflow"), title: "get workflow <name> -o json" },
+  { $id: id('cli/get-workflow'), title: 'get workflow <name> -o json' },
 );
 export const GetRole = Type.Object(
   {
-    kind: Type.Literal("role"),
+    kind: Type.Literal('role'),
     name: Type.String(),
     agent: nullable(Type.String()),
     description: nullable(Type.String()),
@@ -143,11 +144,11 @@ export const GetRole = Type.Object(
     used_by: Type.Array(UsedByStage),
     problems: strings(),
   },
-  { $id: id("cli/get-role"), title: "get role(s) -o json" },
+  { $id: id('cli/get-role'), title: 'get role(s) -o json' },
 );
 export const GetAgent = Type.Object(
   {
-    kind: Type.Literal("agent"),
+    kind: Type.Literal('agent'),
     name: Type.String(),
     client: nullable(Type.String()),
     model: nullable(Type.String()),
@@ -157,15 +158,15 @@ export const GetAgent = Type.Object(
     used_by: Type.Array(Type.Union([Type.Object({ role: Type.String() }), UsedByStage])),
     problems: strings(),
   },
-  { $id: id("cli/get-agent"), title: "get agent(s) -o json" },
+  { $id: id('cli/get-agent'), title: 'get agent(s) -o json' },
 );
 export const GetConfig = Type.Object(
-  { kind: Type.Literal("config"), name: Type.Literal("config"), config: record(), local_file: nullable(Type.String()), local_agents: strings() },
-  { $id: id("cli/get-config"), title: "get config -o json" },
+  { kind: Type.Literal('config'), name: Type.Literal('config'), config: record(), local_file: nullable(Type.String()), local_agents: strings() },
+  { $id: id('cli/get-config'), title: 'get config -o json' },
 );
 export const GetClient = Type.Object(
   {
-    kind: Type.Literal("client"),
+    kind: Type.Literal('client'),
     name: Type.String(),
     command: Type.String(),
     available: Type.Boolean(),
@@ -173,30 +174,30 @@ export const GetClient = Type.Object(
     effort_option: nullable(Type.String()),
     problems: strings(),
   },
-  { $id: id("cli/get-client"), title: "get client(s) -o json" },
+  { $id: id('cli/get-client'), title: 'get client(s) -o json' },
 );
 export const GetModel = Type.Object(
-  { kind: Type.Literal("model"), name: Type.String(), client: Type.String(), default: Type.Boolean() },
-  { $id: id("cli/get-model"), title: "get model(s) -o json" },
+  { kind: Type.Literal('model'), name: Type.String(), client: Type.String(), default: Type.Boolean() },
+  { $id: id('cli/get-model'), title: 'get model(s) -o json' },
 );
 export const GetOption = Type.Object(
   {
-    kind: Type.Literal("option"),
+    kind: Type.Literal('option'),
     name: Type.String(),
     client: Type.String(),
-    source: Type.Literal("configured"),
+    source: Type.Literal('configured'),
     prompt: Type.Boolean(),
     allow_default: Type.Boolean(),
     overridable: Type.Boolean(),
   },
-  { $id: id("cli/get-option"), title: "get option(s) -o json" },
+  { $id: id('cli/get-option'), title: 'get option(s) -o json' },
 );
 export const GetNativeOption = Type.Object(
   {
-    kind: Type.Literal("option"),
+    kind: Type.Literal('option'),
     name: Type.String(),
     client: Type.String(),
-    source: Type.Literal("native"),
+    source: Type.Literal('native'),
     flags: strings(),
     description: Type.String(),
     argument: nullable(Type.String()),
@@ -205,20 +206,20 @@ export const GetNativeOption = Type.Object(
     choices: nullable(strings()),
     default: nullable(Type.String()),
   },
-  { $id: id("cli/get-native-option"), title: "get options --native -o json" },
+  { $id: id('cli/get-native-option'), title: 'get options --native -o json' },
 );
 /** What `get option` can print; the command picks the branch by `--native`. */
 export const GetAnyOption = Type.Union([GetOption, GetNativeOption]);
 export const GetEffort = Type.Object(
   {
-    kind: Type.Literal("effort"),
+    kind: Type.Literal('effort'),
     name: Type.String(),
     client: Type.String(),
     model: Type.String(),
     option: nullable(Type.String()),
     values: strings(),
   },
-  { $id: id("cli/get-effort"), title: "get effort(s) -o json" },
+  { $id: id('cli/get-effort'), title: 'get effort(s) -o json' },
 );
 
 export const GetWorkflowSummaryList = listOf(GetWorkflowSummary);
@@ -242,10 +243,10 @@ export const SessionRow = Type.Object(
     decision: Type.String(),
     outputs: Type.String(),
   },
-  { $id: id("cli/session-row"), title: "session list --latest --json (a session)" },
+  { $id: id('cli/session-row'), title: 'session list --latest --json (a session)' },
 );
-export const SessionNone = Type.Null({ $id: id("cli/session-none"), title: "session list --latest --json (no session)" });
-export const SessionRowOrNull = Type.Union([SessionRow, SessionNone], { $id: id("cli/session-latest"), title: "session list --latest --json" });
+export const SessionNone = Type.Null({ $id: id('cli/session-none'), title: 'session list --latest --json (no session)' });
+export const SessionRowOrNull = Type.Union([SessionRow, SessionNone], { $id: id('cli/session-latest'), title: 'session list --latest --json' });
 export const SessionRows = listOf(SessionRow);
 
 const Option = Type.Object({ id: Type.String(), label: Type.String(), description: Type.Optional(Type.String()) });
@@ -254,11 +255,11 @@ export const Question = Type.Object(
     id: Type.String(),
     question: Type.String(),
     context: Type.String(),
-    selection: Type.Union([Type.Literal("single"), Type.Literal("multiple")]),
+    selection: Type.Union([Type.Literal('single'), Type.Literal('multiple')]),
     options: Type.Array(Option),
     recommended: Type.Optional(strings()),
   },
-  { $id: id("common/question"), title: "Question an agent asked" },
+  { $id: id('common/question'), title: 'Question an agent asked' },
 );
 const SnapshotQuestion = Type.Object({
   ...Question.properties,
@@ -274,7 +275,7 @@ export const StageOutcomeView = Type.Object(
     question: Type.Optional(Type.String()),
     questions: Type.Optional(Type.Array(Question)),
   },
-  { $id: id("common/stage-outcome"), title: "Stage outcome" },
+  { $id: id('common/stage-outcome'), title: 'Stage outcome' },
 );
 export const OutputRef = Type.Object(
   {
@@ -282,7 +283,7 @@ export const OutputRef = Type.Object(
     source_execution_id: Type.Optional(Type.String()),
     published_by_execution_id: Type.Optional(Type.String()),
   },
-  { $id: id("common/output-ref"), title: "Published output reference" },
+  { $id: id('common/output-ref'), title: 'Published output reference' },
 );
 const RunningStage = Type.Object({
   execution_id: nullable(Type.String()),
@@ -342,42 +343,42 @@ const snapshotProperties = {
     ),
   ),
 };
-export const SessionSnapshot = Type.Object(snapshotProperties, { $id: id("cli/session-snapshot"), title: "session show --json" });
+export const SessionSnapshot = Type.Object(snapshotProperties, { $id: id('cli/session-snapshot'), title: 'session show --json' });
 export type SessionSnapshot = Static<typeof SessionSnapshot>;
 /** The first line of `session follow --json`: the same snapshot, framed as a JSON line. */
-export const SessionSnapshotLine = Type.Object(snapshotProperties, { $id: id("cli/session-snapshot-line"), title: "session follow --json first line" });
+export const SessionSnapshotLine = Type.Object(snapshotProperties, { $id: id('cli/session-snapshot-line'), title: 'session follow --json first line' });
 
 /** Persisted passthrough: the reader accepts any JSON object. */
 export const SessionFollowRecord = Type.Record(Type.String(), Type.Unknown(), {
-  $id: id("cli/session-follow-record"),
-  title: "session follow --json record line",
-  description: "Any JSON object, forwarded from events.jsonl or stream.jsonl. See the known-shape schemas for what a line may look like.",
+  $id: id('cli/session-follow-record'),
+  title: 'session follow --json record line',
+  description: 'Any JSON object, forwarded from events.jsonl or stream.jsonl. See the known-shape schemas for what a line may look like.',
 });
 export const SealedMetrics = Type.Record(Type.String(), Type.Unknown(), {
-  $id: id("cli/session-metrics"),
-  title: "session metrics <id> --json",
-  description: "Any JSON object, forwarded from metrics.json. See the known-shape schemas for what a file may look like.",
+  $id: id('cli/session-metrics'),
+  title: 'session metrics <id> --json',
+  description: 'Any JSON object, forwarded from metrics.json. See the known-shape schemas for what a file may look like.',
 });
 export const SealedMetricsLine = Type.Record(Type.String(), Type.Unknown(), {
-  $id: id("cli/session-metrics-line"),
-  title: "session metrics --json line",
-  description: "One line per sealed session; any JSON object.",
+  $id: id('cli/session-metrics-line'),
+  title: 'session metrics --json line',
+  description: 'One line per sealed session; any JSON object.',
 });
 
 export const CancelResult = Type.Object(
   { session_id: Type.String(), cancelled: Type.Boolean(), status: nullable(Type.String()) },
-  { $id: id("cli/cancel"), title: "session cancel --json" },
+  { $id: id('cli/cancel'), title: 'session cancel --json' },
 );
 export const CompleteResult = Type.Object(
   {
     session_id: Type.String(),
-    status: Type.Literal("completed"),
+    status: Type.Literal('completed'),
     already_completed: Type.Boolean(),
     outputs: Type.Array(Type.Object({ name: Type.String(), path: Type.String() })),
     missing_outputs: strings(),
     next: Type.Object({ path: nullable(Type.String()), suggestions: Type.Array(NextSuggestion) }),
   },
-  { $id: id("cli/complete"), title: "session complete --json" },
+  { $id: id('cli/complete'), title: 'session complete --json' },
 );
 export const RenameResult = Type.Object(
   {
@@ -385,7 +386,7 @@ export const RenameResult = Type.Object(
     title: Type.String(),
     previous_title: nullable(Type.String()),
   },
-  { $id: id("cli/rename"), title: "session rename --json" },
+  { $id: id('cli/rename'), title: 'session rename --json' },
 );
 export const RoleRunResult = Type.Object(
   {
@@ -407,29 +408,29 @@ export const RoleRunResult = Type.Object(
     questions: Type.Optional(Type.Array(Question)),
     questions_file: Type.Optional(Type.String()),
   },
-  { $id: id("cli/role-run"), title: "session run --role --json" },
+  { $id: id('cli/role-run'), title: 'session run --role --json' },
 );
 export const RoleRunResults = listOf(RoleRunResult);
 export const PrepareResult = Type.Object(
-  { session_id: Type.String(), title: Type.String(), status: Type.Literal("prepared"), task_path: Type.String(), workflow_path: Type.String() },
-  { $id: id("cli/prepare"), title: "session prepare" },
+  { session_id: Type.String(), title: Type.String(), status: Type.Literal('prepared'), task_path: Type.String(), workflow_path: Type.String() },
+  { $id: id('cli/prepare'), title: 'session prepare' },
 );
 export const RepairResult = Type.Object(
   { session_id: Type.String(), status: nullable(Type.String()) },
-  { $id: id("cli/repair"), title: "session repair" },
+  { $id: id('cli/repair'), title: 'session repair' },
 );
 
 // ---- service / workspace / update -------------------------------------------------------------
 
 export const ServiceRunning = Type.Object(
-  { state: Type.Literal("running"), host: Type.String(), port: int(), pid: int() },
-  { $id: id("cli/service-running"), title: "service status --json (running)" },
+  { state: Type.Literal('running'), host: Type.String(), port: int(), pid: int() },
+  { $id: id('cli/service-running'), title: 'service status --json (running)' },
 );
 export const ServiceStopped = Type.Object(
-  { state: Type.Literal("stopped") },
-  { $id: id("cli/service-stopped"), title: "service status --json (stopped)" },
+  { state: Type.Literal('stopped') },
+  { $id: id('cli/service-stopped'), title: 'service status --json (stopped)' },
 );
-export const ServiceStatus = Type.Union([ServiceRunning, ServiceStopped], { $id: id("cli/service-status"), title: "service status --json" });
+export const ServiceStatus = Type.Union([ServiceRunning, ServiceStopped], { $id: id('cli/service-status'), title: 'service status --json' });
 
 const workspaceProperties = {
   id: Type.String(),
@@ -440,14 +441,14 @@ const workspaceProperties = {
   updated_at: Type.Optional(Type.String()),
   tool: Type.Optional(Type.Object({ name: Type.String(), version: Type.Optional(Type.String()) })),
 };
-export const WorkspaceRow = Type.Object(workspaceProperties, { $id: id("cli/workspace"), title: "A registered workspace" });
+export const WorkspaceRow = Type.Object(workspaceProperties, { $id: id('cli/workspace'), title: 'A registered workspace' });
 export const WorkspaceList = Type.Object(
   { workspaces: Type.Array(WorkspaceRow) },
-  { $id: id("cli/workspace-list"), title: "workspace list --json" },
+  { $id: id('cli/workspace-list'), title: 'workspace list --json' },
 );
 export const WorkspaceMutation = Type.Object(workspaceProperties, {
-  $id: id("cli/workspace-mutation"),
-  title: "workspace register|remove",
+  $id: id('cli/workspace-mutation'),
+  title: 'workspace register|remove',
   description: "The registry's workspace record, passed through.",
 });
 export const UpdateCheck = Type.Object(
@@ -459,5 +460,5 @@ export const UpdateCheck = Type.Object(
     command: Type.Optional(Type.String()),
     next: Type.Optional(strings()),
   },
-  { $id: id("cli/update"), title: "update --json" },
+  { $id: id('cli/update'), title: 'update --json' },
 );

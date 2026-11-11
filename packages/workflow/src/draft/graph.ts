@@ -1,10 +1,11 @@
-import path from "node:path";
-import { pyRepr } from "../record.js";
-import type { CollectedOutputs } from "../draft/outputs.js";
-import { DraftProblems } from "../draft/problems.js";
-import type { DraftStage } from "../draft/problems.js";
-import { dependencyClosure, isLeafStage, routeTargets } from "../graph.js";
-import type { StageSpec } from "../model.js";
+import path from 'node:path';
+
+import type { CollectedOutputs } from '../draft/outputs.js';
+import type { DraftStage } from '../draft/problems.js';
+import { DraftProblems } from '../draft/problems.js';
+import { dependencyClosure, isLeafStage, routeTargets } from '../graph.js';
+import type { StageSpec } from '../model.js';
+import { pyRepr } from '../record.js';
 
 /** The conditional (`run_when`) membership the draft can prove from readable edges. */
 export function draftConditionalStages(stages: readonly DraftStage[], declaredIds: ReadonlySet<string>): Map<string, string> {
@@ -12,7 +13,7 @@ export function draftConditionalStages(stages: readonly DraftStage[], declaredId
   for (const stage of stages) graph[stage.id] = graphStageOf(stage);
   const members = new Map<string, string>();
   for (const source of stages) {
-    if (source.runWhen.state !== "valid" || source.runWhen.value === null) continue;
+    if (source.runWhen.state !== 'valid' || source.runWhen.value === null) continue;
     for (const member of definiteConditionalReach(stages, graph, declaredIds, source.id)) {
       if (!members.has(member)) members.set(member, source.id);
     }
@@ -23,24 +24,24 @@ export function draftConditionalStages(stages: readonly DraftStage[], declaredId
 /** A stage view carrying only the fields the cross-stage rules read. */
 export function graphStageOf(stage: DraftStage): StageSpec {
   return {
-    kind: "verify",
+    kind: 'verify',
     role: null,
     id: stage.id,
     description: null,
     artifacts: [],
     decisionArtifacts: {},
     decisionValues: [],
-    dependsOn: stage.dependsOn.state === "valid" ? stage.dependsOn.value : [],
+    dependsOn: stage.dependsOn.state === 'valid' ? stage.dependsOn.value : [],
     resumeFrom: null,
     instructions: [],
     agent: null,
     options: {},
-    maxRevisions: stage.maxRevisions.state === "valid" ? stage.maxRevisions.value : null,
-    routes: stage.routes.state === "valid" ? stage.routes.value : {},
-    verify: stage.verify.state === "valid" ? stage.verify.value : [],
+    maxRevisions: stage.maxRevisions.state === 'valid' ? stage.maxRevisions.value : null,
+    routes: stage.routes.state === 'valid' ? stage.routes.value : {},
+    verify: stage.verify.state === 'valid' ? stage.verify.value : [],
     maxVerify: 0,
     verifyTimeoutSec: null,
-    runWhen: stage.runWhen.state === "valid" ? stage.runWhen.value : null,
+    runWhen: stage.runWhen.state === 'valid' ? stage.runWhen.value : null,
   };
 }
 
@@ -60,7 +61,7 @@ export function dependencyClosureKnown(
     if (!declaredIds.has(next)) return false;
     const stage = stagesById.get(next);
     if (stage === undefined) return false;
-    if (stage.dependsOn.state !== "valid") return false;
+    if (stage.dependsOn.state !== 'valid') return false;
     pending.push(...stage.dependsOn.value);
   }
   return true;
@@ -82,15 +83,15 @@ export function definiteConditionalReach(
     const member = pending.pop()!;
     const found: string[] = [];
     for (const other of stages) {
-      if (other.dependsOn.state !== "valid") continue;
+      if (other.dependsOn.state !== 'valid') continue;
       if (other.dependsOn.value.includes(member)) found.push(other.id);
     }
     const stage = byId.get(member);
-    if (stage !== undefined && stage.routes.state === "valid" && closureKnown(member)) {
+    if (stage !== undefined && stage.routes.state === 'valid' && closureKnown(member)) {
       const closure = dependencyClosure(graph, member);
       for (const value of Object.values(stage.routes.value)) {
         for (const target of routeTargets(value)) {
-          if (target !== "complete" && !closure.has(target)) found.push(target);
+          if (target !== 'complete' && !closure.has(target)) found.push(target);
         }
       }
     }
@@ -118,8 +119,8 @@ export function collectGraphProblems(
   // An unreadable id or a duplicate leaves some stage's fields unknown, but each check below reads only
   // what its own finding needs, so the rest of the graph is still checked.
   const structurallyComplete = stages.length === rawStageCount;
-  const routesComplete = !stages.some((stage) => stage.routes.state === "invalid");
-  const dependsComplete = !stages.some((stage) => stage.dependsOn.state === "invalid");
+  const routesComplete = !stages.some((stage) => stage.routes.state === 'invalid');
+  const dependsComplete = !stages.some((stage) => stage.dependsOn.state === 'invalid');
   const stagesById = new Map(stages.map((stage) => [stage.id, stage]));
   const graph: Record<string, StageSpec> = Object.create(null);
   for (const stage of stages) graph[stage.id] = graphStageOf(stage);
@@ -129,16 +130,16 @@ export function collectGraphProblems(
     const targets = new Set<string>();
     for (const stage of Object.values(graph)) {
       for (const value of Object.values(stage.routes)) {
-        for (const target of routeTargets(value)) if (target !== "complete") targets.add(target);
+        for (const target of routeTargets(value)) if (target !== 'complete') targets.add(target);
       }
     }
     for (const stage of stages) {
-      if (stage.maxRevisions.state === "invalid" || stage.maxRevisions.value === null) continue;
+      if (stage.maxRevisions.state === 'invalid' || stage.maxRevisions.value === null) continue;
       if (targets.has(stage.id)) continue;
       problems.addMessage(
-        "invalid-value",
+        'invalid-value',
         `stages.${stage.id}.max_revisions requires a route back to ${stage.id}.`,
-        ["stages", stage.index, "max_revisions"],
+        ['stages', stage.index, 'max_revisions'],
       );
     }
   }
@@ -147,7 +148,7 @@ export function collectGraphProblems(
   // unrelated broken `depends_on`, unreadable stage, or malformed route elsewhere hides nothing.
   const reachedBy = new Map<string, string>();
   for (const source of stages) {
-    if (source.runWhen.state !== "valid" || source.runWhen.value === null) continue;
+    if (source.runWhen.state !== 'valid' || source.runWhen.value === null) continue;
     for (const member of definiteConditionalReach(stages, graph, declaredStageIds, source.id)) {
       if (!reachedBy.has(member)) reachedBy.set(member, source.id);
     }
@@ -155,12 +156,12 @@ export function collectGraphProblems(
   for (const stage of stages) {
     const source = reachedBy.get(stage.id);
     if (source === undefined) continue;
-    if (stage.verify.state === "invalid") continue;
-    if (stage.verify.state === "valid" && stage.verify.value.length === 0) continue;
+    if (stage.verify.state === 'invalid') continue;
+    if (stage.verify.state === 'valid' && stage.verify.value.length === 0) continue;
     problems.addMessage(
-      "invalid-value",
+      'invalid-value',
       `stages.${stage.id}.verify is reached through run_when stage ${source}; a skip would bypass this verify.`,
-      ["stages", stage.index, "verify"],
+      ['stages', stage.index, 'verify'],
     );
   }
   outputs.values.forEach((output, at) => {
@@ -171,9 +172,9 @@ export function collectGraphProblems(
         ? `run_when stage ${source}`
         : `stages.${output.fromStage}, which is reached through run_when stage ${source}`;
     problems.addMessage(
-      "invalid-artifact",
+      'invalid-artifact',
       `outputs ${pyRepr(output.name)} comes from ${origin}; a skip would leave it missing.`,
-      ["outputs", outputs.indexes[at] ?? at, "from_stage"],
+      ['outputs', outputs.indexes[at] ?? at, 'from_stage'],
     );
   });
 
@@ -189,8 +190,8 @@ export function collectGraphProblems(
     points.add(completionStage);
   }
   for (const stage of stages) {
-    if (stage.routes.state === "invalid") continue;
-    if (!Object.values(stage.routes.value).some((value) => routeTargets(value).includes("complete"))) continue;
+    if (stage.routes.state === 'invalid') continue;
+    if (!Object.values(stage.routes.value).some((value) => routeTargets(value).includes('complete'))) continue;
     if (!dependencyClosureKnown(stagesById, declaredStageIds, stage.id)) continue;
     points.add(stage.id);
   }
@@ -198,19 +199,19 @@ export function collectGraphProblems(
   // own routes are readable too (an absent route set means it has none).
   if (version2 && dependsComplete && structurallyComplete) {
     for (const stage of stages) {
-      if (stage.routes.state === "invalid") continue;
+      if (stage.routes.state === 'invalid') continue;
       if (isLeafStage(graph, graph[stage.id]!)) points.add(stage.id);
     }
   }
   if (points.size === 0) return;
   for (const stage of stages) {
-    if (stage.verify.state !== "valid" || stage.verify.value.length === 0) continue;
+    if (stage.verify.state !== 'valid' || stage.verify.value.length === 0) continue;
     for (const point of points) {
       if (point === stage.id || dependencyClosure(graph, point).has(stage.id)) continue;
       problems.addMessage(
-        "invalid-value",
+        'invalid-value',
         `stages.${stage.id}.verify is not on every path to complete: ${point} does not depend on ${stage.id}.`,
-        ["stages", stage.index, "verify"],
+        ['stages', stage.index, 'verify'],
       );
     }
   }

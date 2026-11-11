@@ -1,5 +1,6 @@
-import { isRecord } from "@nodeint/migent-workflow";
-import type { ParsedEvent } from "./session-events.js";
+import { isRecord } from '@nodeint/migent-workflow';
+
+import type { ParsedEvent } from './session-events.js';
 
 export function detailsOf(event: ParsedEvent | undefined): Record<string, unknown> {
   if (event === undefined) return {};
@@ -7,24 +8,24 @@ export function detailsOf(event: ParsedEvent | undefined): Record<string, unknow
 }
 
 export function coerceNumber(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 }
 
 export function finiteNumber(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
 export function text(value: unknown): string | null {
-  return typeof value === "string" ? value : null;
+  return typeof value === 'string' ? value : null;
 }
 
 export function stringList(value: unknown): string[] | null {
-  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) return null;
+  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) return null;
   return value;
 }
 
 export function parseTime(value: unknown): number | null {
-  if (typeof value !== "string" || value === "") return null;
+  if (typeof value !== 'string' || value === '') return null;
   const parsed = Date.parse(value);
   return Number.isNaN(parsed) ? null : parsed;
 }

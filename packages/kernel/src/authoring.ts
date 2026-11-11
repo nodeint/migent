@@ -1,15 +1,17 @@
-import { createHash } from "node:crypto";
-import { isMap, isNode, isSeq, parseDocument, stringify, visit, type Document, type Node as YamlNode, type Pair, type YAMLMap, type YAMLSeq } from "yaml";
-import { ConfigurationError } from "./errors.js";
-import { documentVersion, isRecord } from "@nodeint/migent-workflow";
-import { SCHEMA_VERSION } from "@nodeint/migent-workflow";
-import { parseYamlDocument } from "@nodeint/migent-workflow";
+import { createHash } from 'node:crypto';
 
-export type DraftFormat = "yaml" | "json";
+import { documentVersion, isRecord } from '@nodeint/migent-workflow';
+import { SCHEMA_VERSION } from '@nodeint/migent-workflow';
+import { parseYamlDocument } from '@nodeint/migent-workflow';
+import { type Document, isMap, isNode, isSeq, type Node as YamlNode, type Pair, parseDocument, stringify, visit, type YAMLMap, type YAMLSeq } from 'yaml';
+
+import { ConfigurationError } from './errors.js';
+
+export type DraftFormat = 'yaml' | 'json';
 
 /** SHA-256 of raw bytes, lowercase hex. The hash `save --base-hash` compares. */
 export function sha256Hex(data: string | Uint8Array): string {
-  return createHash("sha256").update(data).digest("hex");
+  return createHash('sha256').update(data).digest('hex');
 }
 
 function jsonErrorPosition(text: string, message: string): { line: number; column: number } | undefined {
@@ -17,7 +19,7 @@ function jsonErrorPosition(text: string, message: string): { line: number; colum
   if (lineColumn) return { line: Number(lineColumn[1]), column: Number(lineColumn[2]) };
   const offset = /position (\d+)/.exec(message);
   if (!offset) return undefined;
-  const lines = text.slice(0, Number(offset[1])).split("\n");
+  const lines = text.slice(0, Number(offset[1])).split('\n');
   return { line: lines.length, column: lines[lines.length - 1]!.length + 1 };
 }
 
@@ -26,18 +28,18 @@ function jsonErrorPosition(text: string, message: string): { line: number; colum
  * comes from the YAML parser so both formats treat duplicate keys the same way.
  */
 export function parseDraftText(text: string, format: DraftFormat): Record<string, unknown> {
-  if (format === "json") {
+  if (format === 'json') {
     try {
       JSON.parse(text);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const position = jsonErrorPosition(text, message);
-      throw new ConfigurationError(message, { code: "json-syntax", ...(position === undefined ? {} : { position }) });
+      throw new ConfigurationError(message, { code: 'json-syntax', ...(position === undefined ? {} : { position }) });
     }
   }
   const parsed = parseYamlDocument(text);
   if (!isRecord(parsed)) {
-    throw new ConfigurationError("Invalid document: expected a mapping.", { code: "not-a-mapping" });
+    throw new ConfigurationError('Invalid document: expected a mapping.', { code: 'not-a-mapping' });
   }
   return parsed;
 }
@@ -64,7 +66,7 @@ export function renderAuthoringYaml(mapping: Record<string, unknown>, base?: str
   try {
     data = parseYamlDocument(base);
   } catch {
-    return { text: canonical, preserved: false, reason: "the base is not valid YAML" };
+    return { text: canonical, preserved: false, reason: 'the base is not valid YAML' };
   }
   // Tier 1: the base already holds this data, so its bytes are the output.
   if (deepEqual(data, mapping)) return { text: base, preserved: true };
@@ -73,27 +75,27 @@ export function renderAuthoringYaml(mapping: Record<string, unknown>, base?: str
   try {
     doc = parseDocument(base);
   } catch {
-    return { text: canonical, preserved: false, reason: "the base could not be read as YAML" };
+    return { text: canonical, preserved: false, reason: 'the base could not be read as YAML' };
   }
   const unsupported = unsupportedBaseReason(doc);
   if (unsupported !== null) return { text: canonical, preserved: false, reason: unsupported };
   if (!isMap(doc.contents)) {
-    return { text: canonical, preserved: false, reason: "the base is not a mapping" };
+    return { text: canonical, preserved: false, reason: 'the base is not a mapping' };
   }
   let text: string;
   try {
     reconcileMap(doc, doc.contents, mapping);
     text = applyLineEnding(doc.toString({ lineWidth: 0, indent: indentWidth(base) }), lineEndingOf(base));
   } catch {
-    return { text: canonical, preserved: false, reason: "the base could not be updated in place" };
+    return { text: canonical, preserved: false, reason: 'the base could not be updated in place' };
   }
   // Tier 2 is only trusted once the result holds exactly the draft's data.
   try {
     if (!deepEqual(parseYamlDocument(text), mapping)) {
-      return { text: canonical, preserved: false, reason: "updating the base in place changed its data" };
+      return { text: canonical, preserved: false, reason: 'updating the base in place changed its data' };
     }
   } catch {
-    return { text: canonical, preserved: false, reason: "updating the base in place produced invalid YAML" };
+    return { text: canonical, preserved: false, reason: 'updating the base in place produced invalid YAML' };
   }
   return { text, preserved: true };
 }
@@ -116,35 +118,35 @@ function deepEqual(left: unknown, right: unknown): boolean {
 }
 
 function lineEndingOf(text: string): string {
-  return text.includes("\r\n") ? "\r\n" : "\n";
+  return text.includes('\r\n') ? '\r\n' : '\n';
 }
 
 function applyLineEnding(text: string, ending: string): string {
-  return ending === "\r\n" ? text.replace(/\r?\n/g, "\r\n") : text.replace(/\r\n/g, "\n");
+  return ending === '\r\n' ? text.replace(/\r?\n/g, '\r\n') : text.replace(/\r\n/g, '\n');
 }
 
 /** The indentation width the base uses, so a kept document keeps its shape. */
 function indentWidth(text: string): number {
-  const match = /\n( +)\S/.exec(text.replace(/\r\n/g, "\n"));
+  const match = /\n( +)\S/.exec(text.replace(/\r\n/g, '\n'));
   const width = match === null ? 2 : match[1]!.length;
   return width >= 1 && width <= 10 ? width : 2;
 }
 
 /** Anchors, aliases, merge keys and custom tags cannot be reconciled node by node. */
 function unsupportedBaseReason(doc: Document.Parsed): string | null {
-  if (doc.errors.length > 0) return "the base is not valid YAML";
+  if (doc.errors.length > 0) return 'the base is not valid YAML';
   let reason: string | null = null;
   visit(doc, {
     Alias() {
-      reason ??= "the base uses an alias";
+      reason ??= 'the base uses an alias';
     },
     Node(_key, node: YamlNode) {
-      if (node.anchor !== undefined) reason ??= "the base uses an anchor";
-      const tag = node.tag;
-      if (tag !== undefined && !tag.startsWith("tag:yaml.org,2002:")) reason ??= "the base uses a custom tag";
+      if (node.anchor !== undefined) reason ??= 'the base uses an anchor';
+      const {tag} = node;
+      if (tag !== undefined && !tag.startsWith('tag:yaml.org,2002:')) reason ??= 'the base uses a custom tag';
     },
     Pair(_key, pair: Pair) {
-      if (isNode(pair.key) && String(pair.key.toJSON()) === "<<") reason ??= "the base uses a merge key";
+      if (isNode(pair.key) && String(pair.key.toJSON()) === '<<') reason ??= 'the base uses a merge key';
     },
   });
   return reason;
@@ -218,11 +220,11 @@ function replaceValue(
 
 /** Stages and outputs are matched by `id` when every item has one, so reordering keeps comments. */
 function reconcileSeq(doc: Document, seq: YAMLSeq, items: readonly unknown[]): void {
-  const ids = items.map((item) => (isRecord(item) && typeof item.id === "string" ? item.id : null));
+  const ids = items.map((item) => (isRecord(item) && typeof item.id === 'string' ? item.id : null));
   const baseIds = seq.items.map((item) => {
     if (!isMap(item)) return null;
-    const pair = item.items.find((entry) => isNode(entry.key) && String(entry.key.toJSON()) === "id");
-    return pair !== undefined && isNode(pair.value) && typeof pair.value.toJSON() === "string"
+    const pair = item.items.find((entry) => isNode(entry.key) && String(entry.key.toJSON()) === 'id');
+    return pair !== undefined && isNode(pair.value) && typeof pair.value.toJSON() === 'string'
       ? String(pair.value.toJSON())
       : null;
   });
@@ -272,10 +274,10 @@ export function yamlHasComments(text: string): boolean {
 }
 
 export type SchemaVersionStatus =
-  | { status: "current"; version: number }
-  | { status: "outdated"; version: number }
-  | { status: "newer"; version: number }
-  | { status: "invalid"; message: string };
+  | { status: 'current'; version: number }
+  | { status: 'outdated'; version: number }
+  | { status: 'newer'; version: number }
+  | { status: 'invalid'; message: string };
 
 /** The per-document schema rule runtime applies: only the current version is accepted. Missing is 0. */
 export function checkDocumentSchemaVersion(document: Record<string, unknown>): SchemaVersionStatus {
@@ -283,8 +285,8 @@ export function checkDocumentSchemaVersion(document: Record<string, unknown>): S
   try {
     version = documentVersion(document);
   } catch (error) {
-    return { status: "invalid", message: error instanceof Error ? error.message : String(error) };
+    return { status: 'invalid', message: error instanceof Error ? error.message : String(error) };
   }
-  if (version === SCHEMA_VERSION) return { status: "current", version };
-  return { status: version > SCHEMA_VERSION ? "newer" : "outdated", version };
+  if (version === SCHEMA_VERSION) return { status: 'current', version };
+  return { status: version > SCHEMA_VERSION ? 'newer' : 'outdated', version };
 }

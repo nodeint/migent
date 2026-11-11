@@ -1,12 +1,13 @@
-import { ROLE_KEYS } from "./config-structure.js";
-import { isRecord } from "@nodeint/migent-workflow";
-import { unknownKeyEntries } from "@nodeint/migent-workflow";
-import type { UnknownKey } from "@nodeint/migent-workflow";
+import type { UnknownKey } from '@nodeint/migent-workflow';
+import { isRecord } from '@nodeint/migent-workflow';
+import { unknownKeyEntries } from '@nodeint/migent-workflow';
+
+import { ROLE_KEYS } from './config-structure.js';
 
 /** Role-key feedback for config documents. Workflow-key feedback lives in `@nodeint/migent-workflow`. */
 const ROLE_V4_RENAMED: Readonly<Record<string, string>> = {
-  default_model: "was renamed to {location}.agent in schema_version 5. Run `migent migrate`.",
-  instructions: "was renamed to {location}.responsibilities in schema_version 5. Run `migent migrate`.",
+  default_model: 'was renamed to {location}.agent in schema_version 5. Run `migent migrate`.',
+  instructions: 'was renamed to {location}.responsibilities in schema_version 5. Run `migent migrate`.',
   options: "is no longer supported. Move options into the role's agent under client.options.",
 };
 
@@ -15,7 +16,7 @@ export function unknownRoleKeyEntries(config: Record<string, unknown>): UnknownK
   if (!isRecord(config.roles)) return [];
   return Object.entries(config.roles).flatMap(([name, role]) =>
     isRecord(role)
-      ? unknownKeyEntries(role, ROLE_KEYS, `roles.${name}`, ["roles", name], ROLE_V4_RENAMED)
+      ? unknownKeyEntries(role, ROLE_KEYS, `roles.${name}`, ['roles', name], ROLE_V4_RENAMED)
       : []);
 }
 

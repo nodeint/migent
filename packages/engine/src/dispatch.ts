@@ -1,21 +1,23 @@
-import type { TurnKind } from "@nodeint/migent-prompts";
-import type { ClientRegistry } from "@nodeint/migent-kernel";
-import path from "node:path";
-import { AgentToolRunner, type RunResult } from "./agent-runner.js";
-import { resolveStageTarget, type StageTarget } from "@nodeint/migent-kernel";
-import { ConfigurationError } from "@nodeint/migent-kernel";
-import { isRecord } from "@nodeint/migent-workflow";
-import { frozenStageTarget, readWorkflowFreeze } from "@nodeint/migent-session";
-import { bindPriorSessionId, createWorkflowSession } from "@nodeint/migent-session";
+import path from 'node:path';
+
+import type { ClientRegistry } from '@nodeint/migent-kernel';
+import { resolveStageTarget, type StageTarget } from '@nodeint/migent-kernel';
+import { ConfigurationError } from '@nodeint/migent-kernel';
 import {
   missingOutputProducers,
   revisionResumeExecution,
   stageAgentExecution,
   stageDispatchError,
   verifyExhaustedExecution,
-} from "@nodeint/migent-kernel";
-import { stringOptions, SessionStore } from "@nodeint/migent-session";
-import { loadNamedWorkflow, type WorkflowDocument } from "@nodeint/migent-workflow";
+} from '@nodeint/migent-kernel';
+import type { TurnKind } from '@nodeint/migent-prompts';
+import { frozenStageTarget, readWorkflowFreeze } from '@nodeint/migent-session';
+import { bindPriorSessionId, createWorkflowSession } from '@nodeint/migent-session';
+import { SessionStore,stringOptions } from '@nodeint/migent-session';
+import { isRecord } from '@nodeint/migent-workflow';
+import { loadNamedWorkflow, type WorkflowDocument } from '@nodeint/migent-workflow';
+
+import { AgentToolRunner, type RunResult } from './agent-runner.js';
 
 export interface StageDispatchRequest {
   workflowId: string;
@@ -41,14 +43,14 @@ export class StageDispatchResult {
     readonly outcomeDecision: string,
     readonly sessionStatus: string,
     readonly response: string,
-    readonly agentId = "",
+    readonly agentId = '',
     readonly options: Record<string, string> = {},
-    readonly artifactDirectory = "",
-    readonly failureReason = "",
-    readonly failureKind = "",
-    readonly resetAt = "",
-    readonly client = "",
-    readonly executionStatus = "",
+    readonly artifactDirectory = '',
+    readonly failureReason = '',
+    readonly failureKind = '',
+    readonly resetAt = '',
+    readonly client = '',
+    readonly executionStatus = '',
   ) {}
 
   toJson(): Record<string, unknown> {
@@ -79,10 +81,10 @@ export async function dispatchNamedStage(
   onExecution?: (executionId: string) => void,
 ): Promise<StageDispatchResult> {
   const activeRunner = runner;
-  const registry = activeRunner.registry;
+  const {registry} = activeRunner;
   let loaded = resolved ?? loadDispatchTarget(workspace, request, registry);
-  let workflow = loaded.workflow;
-  let target = loaded.target;
+  let {workflow} = loaded;
+  let {target} = loaded;
   let sessionId = request.sessionId ?? null;
   if (sessionId === null) {
     sessionId = createWorkflowSession(workspace, workflow.id, request.task, request.priorSessionId, registry);
@@ -98,9 +100,9 @@ export async function dispatchNamedStage(
   const snapshots = new SessionStore(workspace).executionSnapshots(sessionId);
   const stage = workflow.stages[request.stageId];
   const ownAgent = stageAgentExecution(snapshots, request.stageId);
-  const question = snapshots.find((row) => row.executionId === ownAgent && row.outcomeStatus === "question");
+  const question = snapshots.find((row) => row.executionId === ownAgent && row.outcomeStatus === 'question');
   // A reply to a stopped turn continues that turn's own conversation, even for a resume_from stage.
-  const interrupted = snapshots.find((row) => row.executionId === ownAgent && row.status === "cancelled");
+  const interrupted = snapshots.find((row) => row.executionId === ownAgent && row.status === 'cancelled');
   const resumeExecutionId = question
     ? question.executionId
     : interrupted
@@ -136,7 +138,7 @@ export function assertStageDispatchable(
   const store = new SessionStore(workspace);
   const snapshots = store.executionSnapshots(sessionId);
   const status = store.readSessionStatus(sessionId);
-  const sessionStatus = typeof status.status === "string" ? status.status : "active";
+  const sessionStatus = typeof status.status === 'string' ? status.status : 'active';
   // continue reruns a producer whose artifact is missing after the branch ended.
   if (missingOutputProducers(workflow, snapshots, sessionStatus).includes(stageId)) return;
   const error = stageDispatchError(workflow, stageId, snapshots);
@@ -155,7 +157,7 @@ export function resolveResumeExecution(
   let latest: (typeof snapshots)[number] | null = null;
   for (const snapshot of snapshots) {
     if (snapshot.stageId !== stage.resumeFrom) continue;
-    if (snapshot.status !== "completed" || snapshot.outcomeStatus !== "complete") continue;
+    if (snapshot.status !== 'completed' || snapshot.outcomeStatus !== 'complete') continue;
     if (latest === null || snapshot.executionOrder > latest.executionOrder) latest = snapshot;
   }
   if (latest === null) {
@@ -174,7 +176,7 @@ function loadDispatchTarget(
   const sessionId = request.sessionId ?? null;
   const override = { client: request.client, model: request.model, options: request.options };
   if (sessionId) {
-    const freeze = readWorkflowFreeze(path.join(workspace, ".migent", "sessions", sessionId));
+    const freeze = readWorkflowFreeze(path.join(workspace, '.migent', 'sessions', sessionId));
     if (freeze) {
       return { workflow: freeze.workflow, target: frozenStageTarget(freeze, request.stageId, override) };
     }
@@ -189,18 +191,18 @@ function loadDispatchTarget(
 function resultFromRun(result: RunResult, sessionId: string): StageDispatchResult {
   return new StageDispatchResult(
     result.session_id || sessionId,
-    result.execution_id || "",
-    result.outcome_status || "",
-    result.outcome_decision || "",
-    result.session_status || "",
-    result.response || "",
-    result.agent_id || "",
+    result.execution_id || '',
+    result.outcome_status || '',
+    result.outcome_decision || '',
+    result.session_status || '',
+    result.response || '',
+    result.agent_id || '',
     isRecord(result.options) ? stringOptions(result.options) : {},
-    result.artifact_directory || "",
-    result.failure_reason || "",
-    result.failure_kind || "",
-    result.reset_at || "",
-    result.client || "",
-    result.execution_status || "",
+    result.artifact_directory || '',
+    result.failure_reason || '',
+    result.failure_kind || '',
+    result.reset_at || '',
+    result.client || '',
+    result.execution_status || '',
   );
 }

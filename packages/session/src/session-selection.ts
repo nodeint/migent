@@ -1,23 +1,25 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
-import path from "node:path";
-import { ZodError } from "zod";
-import { ConfigurationError } from "@nodeint/migent-kernel";
-import { isRecord } from "@nodeint/migent-workflow";
-import { readStatusFileState } from "./query.js";
-import { readSessionManifest } from "./session-fold.js";
-import {
-  WORKFLOW_FREEZE_FILE,
-  readWorkflowFreeze,
-  type WorkflowFreeze,
-} from "./session-freeze.js";
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import path from 'node:path';
+
+import { ConfigurationError } from '@nodeint/migent-kernel';
+import { isRecord } from '@nodeint/migent-workflow';
 import {
   loadNamedWorkflow,
   parseWorkflowMapping,
   type WorkflowDocument,
-} from "@nodeint/migent-workflow";
-import { parseYamlDocument } from "@nodeint/migent-workflow";
+} from '@nodeint/migent-workflow';
+import { parseYamlDocument } from '@nodeint/migent-workflow';
+import { ZodError } from 'zod';
 
-export type SessionWorkflowKind = "draft" | "live" | "frozen";
+import { readStatusFileState } from './query.js';
+import { readSessionManifest } from './session-fold.js';
+import {
+  readWorkflowFreeze,
+  WORKFLOW_FREEZE_FILE,
+  type WorkflowFreeze,
+} from './session-freeze.js';
+
+export type SessionWorkflowKind = 'draft' | 'live' | 'frozen';
 
 export interface SessionSource {
   sessionId: string;
@@ -45,7 +47,7 @@ const SESSION_ID_ERROR = (sessionId: string): string => `Invalid session id: ${s
 
 /** Rejects ids that could leave `.migent/sessions`. The rule matches the one used for `--prior`. */
 export function assertSessionId(sessionId: string): void {
-  if (!sessionId || sessionId === "." || sessionId === ".." || /[\\/]/.test(sessionId) || path.isAbsolute(sessionId)) {
+  if (!sessionId || sessionId === '.' || sessionId === '..' || /[\\/]/.test(sessionId) || path.isAbsolute(sessionId)) {
     throw new ConfigurationError(SESSION_ID_ERROR(sessionId));
   }
 }
@@ -67,12 +69,12 @@ export function selectSessionWorkflow(workspace: string, sessionId: string): Ses
     problems: [],
     warnings: [],
   };
-  const sessionDirectory = path.join(workspace, ".migent", "sessions", sessionId);
+  const sessionDirectory = path.join(workspace, '.migent', 'sessions', sessionId);
   if (!isDirectory(sessionDirectory)) {
     selection.problems.push(`Session not found: ${sessionId}.`);
     return selection;
   }
-  const manifestPath = path.join(sessionDirectory, "manifest.yaml");
+  const manifestPath = path.join(sessionDirectory, 'manifest.yaml');
   if (!isFile(manifestPath)) {
     selection.problems.push(`Session manifest is missing: ${display(workspace, manifestPath)}.`);
     return selection;
@@ -87,15 +89,15 @@ export function selectSessionWorkflow(workspace: string, sessionId: string): Ses
   }
   selection.workflowPath = manifest.workflowPath;
   selection.manifestWorkflowId = manifest.workflowId;
-  if (manifest.workflowId === "agent" || manifest.role !== null) {
+  if (manifest.workflowId === 'agent' || manifest.role !== null) {
     selection.problems.push(`Session ${sessionId} is a role session; it has no workflow to validate.`);
     return selection;
   }
 
   // Activation writes the freeze before it records the start, so an interrupted one leaves a stale
   // freeze on a session that is still prepared. Activation would re-read the draft, so check that.
-  const status = readStatusFileState(path.join(sessionDirectory, "status.json"));
-  const prepared = status.state === "ok" && status.status.status === "prepared";
+  const status = readStatusFileState(path.join(sessionDirectory, 'status.json'));
+  const prepared = status.state === 'ok' && status.status.status === 'prepared';
   const freezePath = path.join(sessionDirectory, WORKFLOW_FREEZE_FILE);
   if (existsSync(freezePath) && prepared) {
     selection.warnings.push(`${display(workspace, freezePath)} is left from an interrupted start and is ignored while the session is prepared.`);
@@ -103,7 +105,7 @@ export function selectSessionWorkflow(workspace: string, sessionId: string): Ses
     const source: SessionSource = {
       sessionId,
       workflowId: manifest.workflowId,
-      kind: "frozen",
+      kind: 'frozen',
       path: display(workspace, freezePath),
     };
     selection.source = source;
@@ -131,9 +133,9 @@ export function selectSessionWorkflow(workspace: string, sessionId: string): Ses
     );
     return selection;
   }
-  const kind: SessionWorkflowKind = recorded === draftPath ? "draft" : "live";
+  const kind: SessionWorkflowKind = recorded === draftPath ? 'draft' : 'live';
   const filePath = recorded ? (path.isAbsolute(recorded) ? recorded : path.join(workspace, recorded)) : null;
-  if (filePath !== null && (kind === "draft" || isFile(filePath))) {
+  if (filePath !== null && (kind === 'draft' || isFile(filePath))) {
     selection.source = { sessionId, workflowId: manifest.workflowId, kind, path: display(workspace, filePath) };
     try {
       selection.document = loadSessionFile(filePath);
@@ -144,11 +146,11 @@ export function selectSessionWorkflow(workspace: string, sessionId: string): Ses
   } else {
     // The recorded file is gone or unrecorded: the runtime then looks the workflow up by id.
     if (!manifest.workflowId) {
-      selection.problems.push(`Workflow file is missing: ${recorded ?? ""}.`);
+      selection.problems.push(`Workflow file is missing: ${recorded ?? ''}.`);
       return selection;
     }
     if (recorded) selection.warnings.push(`Recorded workflow file ${recorded} is missing; using workflow ${manifest.workflowId} by id.`);
-    selection.source = { sessionId, workflowId: manifest.workflowId, kind: "live", path: `.migent/workflows (${manifest.workflowId})` };
+    selection.source = { sessionId, workflowId: manifest.workflowId, kind: 'live', path: `.migent/workflows (${manifest.workflowId})` };
     try {
       selection.document = loadNamedWorkflow(workspace, manifest.workflowId, { quiet: true });
     } catch (error) {
@@ -157,10 +159,10 @@ export function selectSessionWorkflow(workspace: string, sessionId: string): Ses
     }
     if (selection.document.source !== null) selection.source.path = display(workspace, selection.document.source);
   }
-  const document = selection.document;
+  const {document} = selection;
   if (document === null) return selection;
   selection.source!.workflowId = document.id;
-  if (kind === "draft" && manifest.workflowId && document.id !== manifest.workflowId) {
+  if (kind === 'draft' && manifest.workflowId && document.id !== manifest.workflowId) {
     selection.problems.push(
       `Session workflow id is ${document.id}, not ${manifest.workflowId}. Do not change id in workflow.yaml.`,
     );
@@ -174,7 +176,7 @@ export function selectSessionWorkflow(workspace: string, sessionId: string): Ses
  */
 export function selectRunWorkflow(workspace: string, workflowId: string): SessionSelection {
   const selection: SessionSelection = {
-    sessionId: "(new)",
+    sessionId: '(new)',
     source: null,
     document: null,
     freeze: null,
@@ -189,11 +191,11 @@ export function selectRunWorkflow(workspace: string, workflowId: string): Sessio
     selection.problems.push(authoringMessage(error));
     return selection;
   }
-  const document = selection.document;
+  const {document} = selection;
   selection.source = {
     sessionId: selection.sessionId,
     workflowId: document.id,
-    kind: "live",
+    kind: 'live',
     path: document.source === null ? `.migent/workflows (${document.id})` : display(workspace, document.source),
   };
   return selection;
@@ -203,7 +205,7 @@ export function selectRunWorkflow(workspace: string, workflowId: string): Sessio
 function loadSessionFile(filePath: string): WorkflowDocument {
   let text: string;
   try {
-    text = readFileSync(filePath, "utf8");
+    text = readFileSync(filePath, 'utf8');
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     throw new ConfigurationError(`Unable to read workflow: ${filePath} (${reason})`);
@@ -216,14 +218,14 @@ function loadSessionFile(filePath: string): WorkflowDocument {
 /** Message of a workflow loading failure; rethrows anything that is not an authoring error. */
 export function authoringMessage(error: unknown): string {
   if (error instanceof ConfigurationError) return error.message;
-  if (error instanceof ZodError) return error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ");
+  if (error instanceof ZodError) return error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; ');
   throw error;
 }
 
 function display(workspace: string, target: string): string {
   const relative = path.relative(workspace, target);
-  if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) return target;
-  return relative.split(path.sep).join("/");
+  if (relative === '' || relative.startsWith('..') || path.isAbsolute(relative)) return target;
+  return relative.split(path.sep).join('/');
 }
 
 function isDirectory(target: string): boolean {

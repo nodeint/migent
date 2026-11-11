@@ -1,5 +1,5 @@
-import Value from "typebox/value";
-import type { Static, TSchema } from "typebox";
+import type { Static, TSchema } from 'typebox';
+import Value from 'typebox/value';
 
 export interface ValidationIssue {
   path: string;
@@ -37,10 +37,10 @@ export function schemaIssues(schema: TSchema, value: unknown): SchemaIssue[] {
   return Value.Errors(schema, value).map((error) => {
     const path: (string | number)[] = [];
     let node: unknown = value;
-    for (const raw of error.instancePath.split("/").slice(1)) {
-      const key = raw.replaceAll("~1", "/").replaceAll("~0", "~");
+    for (const raw of error.instancePath.split('/').slice(1)) {
+      const key = raw.replaceAll('~1', '/').replaceAll('~0', '~');
       path.push(Array.isArray(node) ? Number(key) : key);
-      node = typeof node === "object" && node !== null ? (node as Record<string, unknown>)[key] : undefined;
+      node = typeof node === 'object' && node !== null ? (node as Record<string, unknown>)[key] : undefined;
     }
     return { keyword: error.keyword, schemaPath: error.schemaPath, path, message: error.message, params: error.params as Record<string, unknown>, value: node };
   });

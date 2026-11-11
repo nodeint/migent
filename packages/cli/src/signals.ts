@@ -1,5 +1,5 @@
-import { CancellationRequested, raiseCancellation, resetCancellation } from "@nodeint/migent-kernel";
-import { type SessionLock } from "@nodeint/migent-session";
+import { CancellationRequested, raiseCancellation, resetCancellation } from '@nodeint/migent-kernel';
+import { type SessionLock } from '@nodeint/migent-session';
 
 let pending: CancellationRequested | null = null;
 const waiters = new Set<() => void>();
@@ -18,12 +18,12 @@ function note(signalNumber: number): void {
 export function bindCancellationSignals(lock?: SessionLock): () => void {
   const onSigint = () => note(2);
   const onSigterm = () => note(15);
-  process.on("SIGINT", onSigint);
-  process.on("SIGTERM", onSigterm);
+  process.on('SIGINT', onSigint);
+  process.on('SIGTERM', onSigterm);
   lock?.onCancelRequest(onSigint);
   return () => {
-    process.off("SIGINT", onSigint);
-    process.off("SIGTERM", onSigterm);
+    process.off('SIGINT', onSigint);
+    process.off('SIGTERM', onSigterm);
     pending = null;
     resetCancellation();
   };

@@ -1,16 +1,24 @@
+export {
+  appendLineSynced,
+  isAtomicTempName,
+  sealTornTail,
+  writeFileAtomic,
+  writeJsonAtomic,
+} from './atomic-file.js';
+export { unknownRoleKeyEntries } from './authoring-diagnostics.js';
 export type {
   BuildCommandInput,
   CliClient,
-  CliModelCatalog,
-  CliRunOutput,
-  CliUsage,
   ClientInfo,
   ClientOption,
   ClientRegistry,
-  ModelClientLookup,
+  CliModelCatalog,
+  CliRunOutput,
+  CliUsage,
   FailureClassification,
   FailureOrigin,
   InterruptOutcome,
+  ModelClientLookup,
   NewSession,
   ProviderClassification,
   QuotaClassification,
@@ -18,171 +26,8 @@ export type {
   ResponseSource,
   TurnUsage,
   UsageCapture,
-} from "./cli-client.js";
-export {
-  LOCAL_CONFIG_FILE,
-  configPath,
-  documentVersion,
-  hasLocalConfig,
-  loadAgentTarget,
-  loadAgentDefinition,
-  loadRoleResponsibilities,
-  loadRoleDescription,
-  loadMergedConfig,
-  loadWorkspaceConfig,
-  loadYamlMapping,
-  listAgentDefinitions,
-  field,
-  readConfigLayer,
-  mergeConfigLayers,
-  resolveEffectiveClient,
-  localConfigPath,
-  mergeConfig,
-  resolveRoleTarget,
-  resolveRoleCascade,
-  resolveStageSpec,
-  resolveStageTarget,
-  stringifyConfig,
-  validateRoleKeys,
-  rejectLegacyConfigKeys,
-} from "./config.js";
-export type {
-  ConfigLayer,
-  Field,
-  ConfigOwner,
-  EffectiveClientFailure,
-  MergedConfig,
-  AgentDefinitionEntry,
-  ModelOverride,
-  StageTarget,
-} from "./config.js";
-export {
-  ConfigEditError,
-  assignRoles,
-  describeChange,
-  inspectConfig,
-  matchingAgentName,
-  patchConfigText,
-  placeRoleAgent,
-  upsertAgent,
-  upgradeConfigText,
-  yamlScalar,
-} from "./config-edit.js";
-export { migrateConfig, migrateWorkflow, patchWorkflowText } from "./migration.js";
-export { assertConfigClientEquivalence } from "./migration-config.js";
-export { classifyFailure, createNewSession, normalizeUsage, sessionOptions } from "./client-policy.js";
-export {
-  LEGACY_COMMAND_CLIENT,
-  LEGACY_PROVIDER_CLIENT,
-  clientOfCommand,
-  legacyClientOf,
-} from "./legacy-provider.js";
-
-export type { MigrationLayer, MigrationFn } from "./migration.js";
-export type {
-  ConfigChange,
-  ConfigView,
-  AgentView,
-  RoleView,
-  StageRef,
-  StageShield,
-} from "./config-edit.js";
-export { whichSync } from "./which.js";
-
-export { ConfigurationError, OutputsMissing } from "./errors.js";
-export type { ConfigurationErrorDetails, SourcePosition } from "./errors.js";
-export { unknownRoleKeyEntries } from "./authoring-diagnostics.js";
-
-export {
-  appendLineSynced,
-  isAtomicTempName,
-  sealTornTail,
-  writeFileAtomic,
-  writeJsonAtomic,
-} from "./atomic-file.js";
-export {
-  atomicCopy,
-  isArtifactSchema,
-  resolveArtifactSources,
-  isCompletionDecision,
-  missingCompletionOutputNames,
-  missingWorkflowOutputNames,
-  nonemptyArtifact,
-  publishOutputFiles,
-  runnableViolation,
-  selectSourceExecution,
-  sessionStatusAfterExecution,
-  shouldPublishOutputs,
-} from "./outputs.js";
-export type { ExecutionSnapshot, PublishedOutput } from "./outputs.js";
-export { buildStagePrompt, buildStageReplyPrompt, buildStageResumePrompt, prependRoleInstructions } from "./prompt.js";
-export type { TurnKind } from "@nodeint/migent-prompts";
-export {
-  failedStageCount,
-  latestCompleteByStage,
-  nextStage,
-  readyStages,
-  runnableNow,
-  revisionResumeExecution,
-  revisionStop,
-  stageAgentExecution,
-  stagePromptAlreadyDelivered,
-  stageDispatchError,
-  VERIFY_FAILED,
-  verifyExhaustedExecution,
-  verifyFailedExecution,
-  NextStage,
-  NextStageError,
-  Stop,
-} from "./selection.js";
-export type { NextStageResult } from "./selection.js";
-export { outcomeStatuses, parseStageOutcome, StageOutcome } from "./stage-outcome.js";
-export type { AskTarget } from "./stage-outcome.js";
-export { resolveStageOutcome } from "./outcome-resolver.js";
-export { HandoffFileError, loadHandoffFile } from "./handoff.js";
-export { QuestionFileError, answerQuestions, formatQuestionAnswers, loadQuestionFile, storedQuestions } from "./questions.js";
-export type { Question, QuestionAnswer } from "./questions.js";
-export { log, utcNow } from "./runtime.js";
-export { debugEnabled, inheritedEnv, migentHomeOverride, noInputRequested, platformHome, skillsChildEnv } from "./env.js";
-export {
-  MIGENT_DIRNAME,
-  EXECUTIONS_DIRNAME,
-  SESSIONS_DIRNAME,
-  CONVERSATION_FILENAME,
-  LEGACY_CONVERSATION_FILENAME,
-  EXECUTION_SCHEMA_VERSION,
-  addArtifactContext,
-  addStageOutcomeContract,
-  flattenHistory,
-  isUnicodeAlnum,
-  formatClock,
-  formatDuration,
-  logProgress,
-  safeComponent,
-} from "./runtime.js";
-export { STATUS_PROVIDER_EVENTS } from "./event-kinds.js";
-
-export { CORRECTION_FAILURE_REASONS } from "./correction-policy.js";
-export { VerifyRunner, formatVerifyReport } from "./verify-runner.js";
-export type { VerifyRunResult, VerifyCommandResult } from "./verify-runner.js";
-
-export { killProcessTree, wrapperEndpoint } from "./process-wrapper.js";
-export {
-  UnpassableArgument,
-  assertArgumentsPassable,
-  spawnProvider,
-  spawnProviderSync,
-} from "./provider-spawn.js";
-export {
-  CancellationRequested,
-  CommandExecutor,
-  DEFAULT_TIMEOUT_SEC,
-  PROGRESS_INTERVAL_SEC,
-  TERMINATION_GRACE_SEC,
-  raiseCancellation,
-  resetCancellation,
-  stopProcessGroup,
-} from "./command-executor.js";
+} from './cli-client.js';
+export { classifyFailure, createNewSession, normalizeUsage, sessionOptions } from './client-policy.js';
 export type {
   CommandResult,
   CommandSpec,
@@ -190,70 +35,214 @@ export type {
   RunOptions,
   StartFailure,
   StartResult,
-} from "./command-executor.js";
-export { describeStartFailure } from "./command-executor.js";
-
+} from './command-executor.js';
 export {
-  ENDPOINT_ALIVE,
-  ENDPOINT_GONE,
-  ENDPOINT_UNKNOWN,
-  ERROR_ALREADY_EXITED,
-  PID_GONE,
-  PID_PRESENT,
-  PID_UNVERIFIED,
-  REAP_ALREADY_EXITED,
-  REAP_NOOP,
-  REAP_STILL_RUNNING,
-  REAP_UNVERIFIED,
-  SystemProcessInspector,
-  ownerMetadataPayload,
-  classifyOrphanedExecution,
-  collectProcessStartInfo,
-  probeEndpointSync,
-  probePid,
-  processMetadataPayload,
-  raiseReapDecision,
-  wrapperArgv,
-} from "./process-ownership.js";
+  CancellationRequested,
+  CommandExecutor,
+  DEFAULT_TIMEOUT_SEC,
+  PROGRESS_INTERVAL_SEC,
+  raiseCancellation,
+  resetCancellation,
+  stopProcessGroup,
+  TERMINATION_GRACE_SEC,
+} from './command-executor.js';
+export { describeStartFailure } from './command-executor.js';
+export type {
+  AgentDefinitionEntry,
+  ConfigLayer,
+  ConfigOwner,
+  EffectiveClientFailure,
+  Field,
+  MergedConfig,
+  ModelOverride,
+  StageTarget,
+} from './config.js';
+export {
+  configPath,
+  documentVersion,
+  field,
+  hasLocalConfig,
+  listAgentDefinitions,
+  loadAgentDefinition,
+  loadAgentTarget,
+  loadMergedConfig,
+  loadRoleDescription,
+  loadRoleResponsibilities,
+  loadWorkspaceConfig,
+  loadYamlMapping,
+  LOCAL_CONFIG_FILE,
+  localConfigPath,
+  mergeConfig,
+  mergeConfigLayers,
+  readConfigLayer,
+  rejectLegacyConfigKeys,
+  resolveEffectiveClient,
+  resolveRoleCascade,
+  resolveRoleTarget,
+  resolveStageSpec,
+  resolveStageTarget,
+  stringifyConfig,
+  validateRoleKeys,
+} from './config.js';
+export type {
+  AgentView,
+  ConfigChange,
+  ConfigView,
+  RoleView,
+  StageRef,
+  StageShield,
+} from './config-edit.js';
+export {
+  assignRoles,
+  ConfigEditError,
+  describeChange,
+  inspectConfig,
+  matchingAgentName,
+  patchConfigText,
+  placeRoleAgent,
+  upgradeConfigText,
+  upsertAgent,
+  yamlScalar,
+} from './config-edit.js';
+export { CORRECTION_FAILURE_REASONS } from './correction-policy.js';
+export { debugEnabled, inheritedEnv, migentHomeOverride, noInputRequested, platformHome, skillsChildEnv } from './env.js';
+export type { ConfigurationErrorDetails, SourcePosition } from './errors.js';
+export { ConfigurationError, OutputsMissing } from './errors.js';
+export { STATUS_PROVIDER_EVENTS } from './event-kinds.js';
+export { HandoffFileError, loadHandoffFile } from './handoff.js';
+export {
+  clientOfCommand,
+  LEGACY_COMMAND_CLIENT,
+  LEGACY_PROVIDER_CLIENT,
+  legacyClientOf,
+} from './legacy-provider.js';
+export type { MigrationFn,MigrationLayer } from './migration.js';
+export { migrateConfig, migrateWorkflow, patchWorkflowText } from './migration.js';
+export { assertConfigClientEquivalence } from './migration-config.js';
+export { resolveStageOutcome } from './outcome-resolver.js';
+export type { ExecutionSnapshot, PublishedOutput } from './outputs.js';
+export {
+  atomicCopy,
+  isArtifactSchema,
+  isCompletionDecision,
+  missingCompletionOutputNames,
+  missingWorkflowOutputNames,
+  nonemptyArtifact,
+  publishOutputFiles,
+  resolveArtifactSources,
+  runnableViolation,
+  selectSourceExecution,
+  sessionStatusAfterExecution,
+  shouldPublishOutputs,
+} from './outputs.js';
 export type {
   EndpointState,
   ProcessInspector,
   ProcessStartInfo,
   ReapDecision,
-} from "./process-ownership.js";
+} from './process-ownership.js';
+export {
+  classifyOrphanedExecution,
+  collectProcessStartInfo,
+  ENDPOINT_ALIVE,
+  ENDPOINT_GONE,
+  ENDPOINT_UNKNOWN,
+  ERROR_ALREADY_EXITED,
+  ownerMetadataPayload,
+  PID_GONE,
+  PID_PRESENT,
+  PID_UNVERIFIED,
+  probeEndpointSync,
+  probePid,
+  processMetadataPayload,
+  raiseReapDecision,
+  REAP_ALREADY_EXITED,
+  REAP_NOOP,
+  REAP_STILL_RUNNING,
+  REAP_UNVERIFIED,
+  SystemProcessInspector,
+  wrapperArgv,
+} from './process-ownership.js';
+export { killProcessTree, wrapperEndpoint } from './process-wrapper.js';
+export { buildStagePrompt, buildStageReplyPrompt, buildStageResumePrompt, prependRoleInstructions } from './prompt.js';
+export {
+  assertArgumentsPassable,
+  spawnProvider,
+  spawnProviderSync,
+  UnpassableArgument,
+} from './provider-spawn.js';
+export type { Question, QuestionAnswer } from './questions.js';
+export { answerQuestions, formatQuestionAnswers, loadQuestionFile, QuestionFileError, storedQuestions } from './questions.js';
+export { log, utcNow } from './runtime.js';
+export {
+  addArtifactContext,
+  addStageOutcomeContract,
+  CONVERSATION_FILENAME,
+  EXECUTION_SCHEMA_VERSION,
+  EXECUTIONS_DIRNAME,
+  flattenHistory,
+  formatClock,
+  formatDuration,
+  isUnicodeAlnum,
+  LEGACY_CONVERSATION_FILENAME,
+  logProgress,
+  MIGENT_DIRNAME,
+  safeComponent,
+  SESSIONS_DIRNAME,
+} from './runtime.js';
+export type { NextStageResult } from './selection.js';
+export {
+  failedStageCount,
+  latestCompleteByStage,
+  NextStage,
+  nextStage,
+  NextStageError,
+  readyStages,
+  revisionResumeExecution,
+  revisionStop,
+  runnableNow,
+  stageAgentExecution,
+  stageDispatchError,
+  stagePromptAlreadyDelivered,
+  Stop,
+  VERIFY_FAILED,
+  verifyExhaustedExecution,
+  verifyFailedExecution,
+} from './selection.js';
+export type { AskTarget } from './stage-outcome.js';
+export { outcomeStatuses, parseStageOutcome, StageOutcome } from './stage-outcome.js';
+export type { VerifyCommandResult,VerifyRunResult } from './verify-runner.js';
+export { formatVerifyReport,VerifyRunner } from './verify-runner.js';
+export { whichSync } from './which.js';
+export type { TurnKind } from '@nodeint/migent-prompts';
 
-export const KERNEL_PLACEHOLDER = "kernel";
+export const KERNEL_PLACEHOLDER = 'kernel';
 
+export type { AuthoringRender, DraftFormat, SchemaVersionStatus } from './authoring.js';
 export {
   checkDocumentSchemaVersion,
   parseDraftText,
   renderAuthoringYaml,
   sha256Hex,
   yamlHasComments,
-} from "./authoring.js";
-export type { AuthoringRender, DraftFormat, SchemaVersionStatus } from "./authoring.js";
-export { buildDraftSourceMap } from "./draft-source.js";
-export type { DraftRange, DraftSourceMap } from "./draft-source.js";
-export { writeFileConditional } from "./conditional-write.js";
-export type { ConditionalWrite } from "./conditional-write.js";
-export { containerIssues, isAgentPlaceholder, buildStructuralIndex, type StructuralIndex } from "./config-structure.js";
-
-export { CORRECTION_POLICY, classifyGateError, decideCorrection, readCorrectionLedger, ruleForTurn } from "./correction-policy.js";
-export type { CorrectionFiles, CorrectionLedger, GateFailure } from "./correction-policy.js";
-export { DEFAULT_INTERRUPT_POLICY, interruptSession, isSettled } from "./provider-interrupt.js";
-export type { InterruptPolicy, InterruptReport } from "./provider-interrupt.js";
-export { StreamSummarizer, buildTurnDiagnostics, observeTurn, truncateText } from "./turn-diagnostics.js";
-export type { Gates } from "./turn-diagnostics.js";
-export type { OutcomeContext } from "./outcome-resolver.js";
-export { cancellationSignal } from "./command-executor.js";
-export type { ProcessFacts, StopReason } from "./command-executor.js";
-
-export { VERIFY_EXHAUSTED, currentCompleteByStage, missingOutputNames, readyOutsideStoppedBranches, missingOutputProducers, schedulableStageIds, version2IdleReason } from "./selection.js";
-
-export { buildVerifyRepairPrompt } from "./prompt.js";
-
-export { ResponseContractError } from "./stage-outcome.js";
-export { version2GraphQuiet } from "./selection.js";
-
-export { renderProviderDiagnostics } from "./turn-diagnostics.js";
-export { withFileLockSync } from "./file-lock.js";
+} from './authoring.js';
+export type { ProcessFacts, StopReason } from './command-executor.js';
+export { cancellationSignal } from './command-executor.js';
+export type { ConditionalWrite } from './conditional-write.js';
+export { writeFileConditional } from './conditional-write.js';
+export { buildStructuralIndex, containerIssues, isAgentPlaceholder, type StructuralIndex } from './config-structure.js';
+export type { CorrectionFiles, CorrectionLedger, GateFailure } from './correction-policy.js';
+export { classifyGateError, CORRECTION_POLICY, decideCorrection, readCorrectionLedger, ruleForTurn } from './correction-policy.js';
+export type { DraftRange, DraftSourceMap } from './draft-source.js';
+export { buildDraftSourceMap } from './draft-source.js';
+export { withFileLockSync } from './file-lock.js';
+export type { OutcomeContext } from './outcome-resolver.js';
+export { buildVerifyRepairPrompt } from './prompt.js';
+export type { InterruptPolicy, InterruptReport } from './provider-interrupt.js';
+export { DEFAULT_INTERRUPT_POLICY, interruptSession, isSettled } from './provider-interrupt.js';
+export { currentCompleteByStage, missingOutputNames, missingOutputProducers, readyOutsideStoppedBranches, schedulableStageIds, VERIFY_EXHAUSTED, version2IdleReason } from './selection.js';
+export { version2GraphQuiet } from './selection.js';
+export { ResponseContractError } from './stage-outcome.js';
+export type { Gates } from './turn-diagnostics.js';
+export { buildTurnDiagnostics, observeTurn, StreamSummarizer, truncateText } from './turn-diagnostics.js';
+export { renderProviderDiagnostics } from './turn-diagnostics.js';

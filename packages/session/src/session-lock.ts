@@ -1,18 +1,19 @@
-import { randomBytes } from "node:crypto";
-import { closeSync, openSync, readFileSync, rmSync, statSync, writeSync } from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { writeJsonAtomic } from "@nodeint/migent-kernel";
-import { isRecord } from "@nodeint/migent-workflow";
-import { utcNow } from "@nodeint/migent-kernel";
+import { randomBytes } from 'node:crypto';
+import { closeSync, openSync, readFileSync, rmSync, statSync, writeSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
-export const SESSION_LOCK_FILENAME = "session.lock";
+import { writeJsonAtomic } from '@nodeint/migent-kernel';
+import { utcNow } from '@nodeint/migent-kernel';
+import { isRecord } from '@nodeint/migent-workflow';
+
+export const SESSION_LOCK_FILENAME = 'session.lock';
 export const SESSION_LOCK_STALE_MS = 30_000;
 export const SESSION_LOCK_HEARTBEAT_MS = 10_000;
-export const CANCEL_REQUEST_FILENAME = "cancel.requested";
+export const CANCEL_REQUEST_FILENAME = 'cancel.requested';
 const CANCEL_POLL_MS = 500;
 
-export type CancelRequestResult = "requested" | "not-running" | "foreign-host";
+export type CancelRequestResult = 'requested' | 'not-running' | 'foreign-host';
 
 /**
  * Ask the process that holds the session lock to stop. Writes `cancel.requested` with the holder's
@@ -24,15 +25,15 @@ export function requestSessionCancel(
 ): CancelRequestResult {
   const directory = path.resolve(sessionDirectory);
   const info = readLock(path.join(directory, SESSION_LOCK_FILENAME));
-  if (info === null) return "not-running";
-  if (info.host !== os.hostname()) return "foreign-host";
-  if (isStale({ heartbeat: info.heartbeat_at, info }, staleMs)) return "not-running";
+  if (info === null) return 'not-running';
+  if (info.host !== os.hostname()) return 'foreign-host';
+  if (isStale({ heartbeat: info.heartbeat_at, info }, staleMs)) return 'not-running';
   writeJsonAtomic(path.join(directory, CANCEL_REQUEST_FILENAME), {
     nonce: info.nonce,
     requested_at: utcNow(),
     requested_by_pid: process.pid,
   });
-  return "requested";
+  return 'requested';
 }
 
 /** True while the lock file exists and its owner is alive. */
@@ -59,13 +60,13 @@ interface LockInfo {
 
 /** A holder lost the lock after another process took it over. */
 export function isSessionLockLost(error: unknown): error is Error {
-  return error instanceof Error && error.message.includes("lock was taken by another process");
+  return error instanceof Error && error.message.includes('lock was taken by another process');
 }
 
 export class SessionLockHeldError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "SessionLockHeldError";
+    this.name = 'SessionLockHeldError';
   }
 }
 
@@ -112,7 +113,7 @@ export class SessionLock {
       host: os.hostname(),
       started_at: now,
       heartbeat_at: now,
-      nonce: randomBytes(12).toString("hex"),
+      nonce: randomBytes(12).toString('hex'),
     };
     if (!createExclusive(lockPath, info)) {
       if (!takeOverStale(lockPath, staleMs)) return null;
@@ -131,7 +132,7 @@ export class SessionLock {
     if (lock !== null) return lock;
     const holder = readLock(path.join(path.resolve(sessionDirectory), SESSION_LOCK_FILENAME));
     const sessionId = path.basename(path.resolve(sessionDirectory));
-    const who = holder === null ? "another process" : `pid ${holder.pid} on ${holder.host}`;
+    const who = holder === null ? 'another process' : `pid ${holder.pid} on ${holder.host}`;
     throw new SessionLockHeldError(`Session ${sessionId} is being run by ${who}.`);
   }
 
@@ -202,8 +203,8 @@ export class SessionLock {
 
 function readCancelMarker(markerPath: string): string | null {
   try {
-    const parsed = JSON.parse(readFileSync(markerPath, "utf8")) as unknown;
-    if (isRecord(parsed) && typeof parsed.nonce === "string") return parsed.nonce;
+    const parsed = JSON.parse(readFileSync(markerPath, 'utf8')) as unknown;
+    if (isRecord(parsed) && typeof parsed.nonce === 'string') return parsed.nonce;
   } catch {
     // Missing, or created but not yet written.
   }
@@ -221,9 +222,9 @@ function removeCancelMarker(directory: string): void {
 function createExclusive(lockPath: string, info: LockInfo): boolean {
   let fd: number;
   try {
-    fd = openSync(lockPath, "wx");
+    fd = openSync(lockPath, 'wx');
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false;
     throw error;
   }
   try {
@@ -236,13 +237,13 @@ function createExclusive(lockPath: string, info: LockInfo): boolean {
 
 function readLock(lockPath: string): LockInfo | null {
   try {
-    const parsed = JSON.parse(readFileSync(lockPath, "utf8")) as unknown;
+    const parsed = JSON.parse(readFileSync(lockPath, 'utf8')) as unknown;
     if (
       isRecord(parsed) &&
-      typeof parsed.pid === "number" &&
-      typeof parsed.host === "string" &&
-      typeof parsed.heartbeat_at === "string" &&
-      typeof parsed.nonce === "string"
+      typeof parsed.pid === 'number' &&
+      typeof parsed.host === 'string' &&
+      typeof parsed.heartbeat_at === 'string' &&
+      typeof parsed.nonce === 'string'
     ) {
       return parsed as unknown as LockInfo;
     }
@@ -257,7 +258,7 @@ function snapshot(lockPath: string): { nonce: string; heartbeat: string; info: L
   const info = readLock(lockPath);
   if (info !== null) return { nonce: info.nonce, heartbeat: info.heartbeat_at, info };
   try {
-    return { nonce: "", heartbeat: statSync(lockPath).mtime.toISOString(), info: null };
+    return { nonce: '', heartbeat: statSync(lockPath).mtime.toISOString(), info: null };
   } catch {
     return null;
   }
@@ -274,7 +275,7 @@ function pidAlive(pid: number): boolean {
     process.kill(pid, 0);
     return true;
   } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
+    return (error as NodeJS.ErrnoException).code === 'EPERM';
   }
 }
 

@@ -23,13 +23,13 @@ export interface SessionFields {
 
 export function sessionFields(row: readonly string[]): SessionFields {
   return {
-    session: row[SESSION_COLUMN.session] ?? "",
-    title: row[SESSION_COLUMN.title] ?? "",
-    workflow: row[SESSION_COLUMN.workflow] ?? "",
-    status: row[SESSION_COLUMN.status] ?? "",
-    execution: row[SESSION_COLUMN.execution] ?? "",
-    decision: row[SESSION_COLUMN.decision] ?? "",
-    outputs: row[SESSION_COLUMN.outputs] ?? "",
-    task: row[SESSION_COLUMN.task] ?? "",
+    session: row[SESSION_COLUMN.session] ?? '',
+    title: row[SESSION_COLUMN.title] ?? '',
+    workflow: row[SESSION_COLUMN.workflow] ?? '',
+    status: row[SESSION_COLUMN.status] ?? '',
+    execution: row[SESSION_COLUMN.execution] ?? '',
+    decision: row[SESSION_COLUMN.decision] ?? '',
+    outputs: row[SESSION_COLUMN.outputs] ?? '',
+    task: row[SESSION_COLUMN.task] ?? '',
   };
 }

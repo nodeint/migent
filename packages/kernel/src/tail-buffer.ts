@@ -7,7 +7,7 @@ export class TailBuffer {
   constructor(readonly limit = 8192) {}
 
   append(chunk: Buffer | string): void {
-    const data = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
+    const data = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
     if (data.length === 0) return;
     this.seen += data.length;
     this.chunks.push(data);
@@ -29,6 +29,6 @@ export class TailBuffer {
 
   toString(): string {
     const joined = Buffer.concat(this.chunks);
-    return joined.subarray(Math.max(0, joined.length - this.limit)).toString("utf8").replace(/^�+/, "");
+    return joined.subarray(Math.max(0, joined.length - this.limit)).toString('utf8').replace(/^�+/, '');
   }
 }

@@ -5,15 +5,16 @@ import {
   ConfigMapping,
   Description,
   EffectiveConfig,
+  isValid,
   NonBlankString,
   Responsibilities,
   RoleEntry,
-  isValid,
-  schemaIssues,
   type SchemaIssue,
+  schemaIssues,
   type TSchema,
-} from "@nodeint/migent-contracts";
-import { ConfigurationError } from "./errors.js";
+} from '@nodeint/migent-contracts';
+
+import { ConfigurationError } from './errors.js';
 
 /**
  * Translates the structural contracts in `@nodeint/migent-contracts` into Migent errors. The
@@ -43,36 +44,36 @@ const keyOf = (path: readonly (string | number)[]): string => JSON.stringify(pat
 
 const labelOf = (where: Field, rest: readonly (string | number)[]): string =>
   rest.reduce<string>(
-    (text, segment) => (typeof segment === "number" ? `${text}[${segment}]` : text === "" ? segment : `${text}.${segment}`),
+    (text, segment) => (typeof segment === 'number' ? `${text}[${segment}]` : text === '' ? segment : `${text}.${segment}`),
     where.label,
   );
 
-const isUnusedKey = (issue: SchemaIssue): boolean => issue.keyword === "additionalProperties" || issue.keyword === "boolean";
+const isUnusedKey = (issue: SchemaIssue): boolean => issue.keyword === 'additionalProperties' || issue.keyword === 'boolean';
 
 /** A property name rejected by the contract's `propertyNames` (an option key). */
 const isKeyIssue = (issue: SchemaIssue): boolean =>
-  issue.schemaPath.endsWith("/propertyNames") && issue.path.length > 0 && issue.keyword !== "propertyNames";
+  issue.schemaPath.endsWith('/propertyNames') && issue.path.length > 0 && issue.keyword !== 'propertyNames';
 
 /**
  * Where an agent sits in an effective config: `agents.<name>` or `roles.<name>.agent`. Names are
  * data, so a node is identified by its full position, never by a segment that a name could equal.
  */
 function agentBase(path: readonly (string | number)[]): number {
-  if (path[0] === "agents" && path.length >= 2) return 2;
-  if (path[0] === "roles" && path[2] === "agent" && path.length >= 3) return 3;
+  if (path[0] === 'agents' && path.length >= 2) return 2;
+  if (path[0] === 'roles' && path[2] === 'agent' && path.length >= 3) return 3;
   return -1;
 }
 
 /** `<agent>.client`, with the issue pointing at the client node itself. */
 function isClientNode(path: readonly (string | number)[]): boolean {
   const base = agentBase(path);
-  return base !== -1 && path.length === base + 1 && path[base] === "client";
+  return base !== -1 && path.length === base + 1 && path[base] === 'client';
 }
 
 /** `<agent>.client.options.<key>`. */
 function isOptionEntry(path: readonly (string | number)[]): boolean {
   const base = agentBase(path);
-  return base !== -1 && path.length === base + 3 && path[base] === "client" && path[base + 1] === "options";
+  return base !== -1 && path.length === base + 3 && path[base] === 'client' && path[base + 1] === 'options';
 }
 
 /** Maps one schema issue to the code and path Migent has always reported for it. */
@@ -80,25 +81,25 @@ function translate(issue: SchemaIssue, where: Field): ConfigurationError {
   const rest = issue.path;
   const at = { label: labelOf(where, rest), path: [...where.path, ...rest] };
   if (isUnusedKey(issue)) {
-    return new ConfigurationError(`${at.label} is not used by Migent.`, { code: "unknown-key", path: at.path });
+    return new ConfigurationError(`${at.label} is not used by Migent.`, { code: 'unknown-key', path: at.path });
   }
   if (isKeyIssue(issue) && isOptionEntry(at.path)) {
     const parent = labelOf(where, rest.slice(0, -1));
-    return new ConfigurationError(`Missing or invalid ${parent} key.`, { code: "option-key-invalid", path: at.path });
+    return new ConfigurationError(`Missing or invalid ${parent} key.`, { code: 'option-key-invalid', path: at.path });
   }
   if (isOptionEntry(at.path)) {
-    return new ConfigurationError(`Missing or invalid ${at.label}.`, { code: "option-invalid", path: at.path });
+    return new ConfigurationError(`Missing or invalid ${at.label}.`, { code: 'option-invalid', path: at.path });
   }
-  if (isClientNode(at.path) && typeof issue.value === "string") {
+  if (isClientNode(at.path) && typeof issue.value === 'string') {
     return new ConfigurationError(
       `${at.label} must be a mapping: use ${at.label}.type. Run \`migent migrate\`.`,
-      { code: "client-not-mapping", path: at.path },
+      { code: 'client-not-mapping', path: at.path },
     );
   }
-  if (issue.keyword === "type" && issue.message === "must be array") {
-    return new ConfigurationError(`${at.label} must be a list.`, { code: "not-a-list", path: at.path });
+  if (issue.keyword === 'type' && issue.message === 'must be array') {
+    return new ConfigurationError(`${at.label} must be a list.`, { code: 'not-a-list', path: at.path });
   }
-  return new ConfigurationError(`Missing or invalid ${at.label}.`, { code: "missing-or-invalid", path: at.path });
+  return new ConfigurationError(`Missing or invalid ${at.label}.`, { code: 'missing-or-invalid', path: at.path });
 }
 
 function first(schema: TSchema, value: unknown, where: Field): ConfigurationError | null {
@@ -108,7 +109,7 @@ function first(schema: TSchema, value: unknown, where: Field): ConfigurationErro
 
 /** Looks the verdict of a node up in the index. Only `agents` and `roles` nodes are indexed. */
 function indexed(index: StructuralIndex | undefined, where: Field): ConfigurationError | null | undefined {
-  if (index === undefined || (where.path[0] !== "agents" && where.path[0] !== "roles")) return undefined;
+  if (index === undefined || (where.path[0] !== 'agents' && where.path[0] !== 'roles')) return undefined;
   return index.get(keyOf(where.path)) ?? null;
 }
 
@@ -128,10 +129,10 @@ const checkMapping = (value: unknown, where: Field) => first(ConfigMapping, valu
 const checkString = (value: unknown, where: Field) => first(NonBlankString, value, where);
 
 function checkClientNode(value: unknown, where: Field): ConfigurationError | null {
-  if (typeof value === "string") {
+  if (typeof value === 'string') {
     return new ConfigurationError(
       `${where.label} must be a mapping: use ${where.label}.type. Run \`migent migrate\`.`,
-      { code: "client-not-mapping", path: where.path },
+      { code: 'client-not-mapping', path: where.path },
     );
   }
   return checkMapping(value, where);
@@ -147,9 +148,9 @@ function optionErrors(value: Record<string, unknown>, where: Field): Map<string,
     const valueIssue = own.find((issue) => !isKeyIssue(issue));
     const at = [...where.path, key];
     if (keyIssue !== undefined) {
-      errors.set(key, new ConfigurationError(`Missing or invalid ${where.label} key.`, { code: "option-key-invalid", path: at }));
+      errors.set(key, new ConfigurationError(`Missing or invalid ${where.label} key.`, { code: 'option-key-invalid', path: at }));
     } else if (valueIssue !== undefined) {
-      errors.set(key, new ConfigurationError(`Missing or invalid ${where.label}.${key}.`, { code: "option-invalid", path: at }));
+      errors.set(key, new ConfigurationError(`Missing or invalid ${where.label}.${key}.`, { code: 'option-invalid', path: at }));
     }
   }
   return errors;
@@ -203,13 +204,13 @@ export function readClient(value: unknown, clientField: Field, index?: Structura
   for (const key of Object.keys(clientConfig)) {
     if (CLIENT_KEYS.includes(key)) continue;
     const at = { label: `${clientField.label}.${key}`, path: [...clientField.path, key] };
-    verdict(index, at, () => new ConfigurationError(`${at.label} is not used by Migent.`, { code: "unknown-key", path: at.path }));
+    verdict(index, at, () => new ConfigurationError(`${at.label} is not used by Migent.`, { code: 'unknown-key', path: at.path }));
   }
-  const typeField = { label: `${clientField.label}.type`, path: [...clientField.path, "type"] };
+  const typeField = { label: `${clientField.label}.type`, path: [...clientField.path, 'type'] };
   const type = optionalString(clientConfig.type, typeField, index);
   const options = clientConfig.options == null
     ? {}
-    : readOptions(clientConfig.options, { label: `${clientField.label}.options`, path: [...clientField.path, "options"] }, index);
+    : readOptions(clientConfig.options, { label: `${clientField.label}.options`, path: [...clientField.path, 'options'] }, index);
   return { type, options, optionsSet: clientConfig.options != null };
 }
 
@@ -244,7 +245,7 @@ export function isAgentPlaceholder(value: unknown): boolean {
 type JsonSchema = Record<string, unknown>;
 
 const typeOfValue = (value: unknown): string =>
-  value === null ? "null" : Array.isArray(value) ? "array" : typeof value;
+  value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value;
 
 /**
  * The instance path of the schema node a `schemaPath` reaches, with every `anyOf` branch that
@@ -252,15 +253,15 @@ const typeOfValue = (value: unknown): string =>
  * does. This is how a union such as "named agent or placeholder" reports one set of issues.
  */
 function onChosenBranches(issue: SchemaIssue, owner: readonly (string | number)[], root: unknown): boolean {
-  const segments = issue.schemaPath.replace(/^#\/?/, "").split("/").map((part) => part.replaceAll("~1", "/").replaceAll("~0", "~"));
+  const segments = issue.schemaPath.replace(/^#\/?/, '').split('/').map((part) => part.replaceAll('~1', '/').replaceAll('~0', '~'));
   let node: unknown = EffectiveConfig;
   let depth = 0;
   for (let at = 0; at < segments.length; at += 1) {
     const segment = segments[at]!;
     const container = node as JsonSchema | unknown[];
-    if (segment === "anyOf") {
+    if (segment === 'anyOf') {
       const value = owner.slice(0, depth).reduce<unknown>(
-        (current, key) => (typeof current === "object" && current !== null ? (current as Record<string | number, unknown>)[key] : undefined),
+        (current, key) => (typeof current === 'object' && current !== null ? (current as Record<string | number, unknown>)[key] : undefined),
         root,
       );
       const branches = (container as JsonSchema).anyOf as JsonSchema[];
@@ -271,14 +272,14 @@ function onChosenBranches(issue: SchemaIssue, owner: readonly (string | number)[
       at += 1;
       continue;
     }
-    if (segment === "properties" || segment === "patternProperties") {
+    if (segment === 'properties' || segment === 'patternProperties') {
       node = (container as JsonSchema)[segment];
       node = (node as JsonSchema)[segments[at + 1]!];
       at += 1;
       depth += 1;
       continue;
     }
-    if (segment === "items") depth += 1;
+    if (segment === 'items') depth += 1;
     node = (container as JsonSchema)[segment];
     if (node === undefined) break;
   }
@@ -293,18 +294,18 @@ function onChosenBranches(issue: SchemaIssue, owner: readonly (string | number)[
  */
 export function buildStructuralIndex(config: Record<string, unknown>): StructuralIndex {
   const index = new Map<string, ConfigurationError>();
-  const root: Field = { label: "", path: [] };
+  const root: Field = { label: '', path: [] };
   for (const raw of schemaIssues(EffectiveConfig, config)) {
-    if (raw.keyword === "anyOf" || raw.keyword === "additionalProperties" || raw.keyword === "propertyNames") continue;
+    if (raw.keyword === 'anyOf' || raw.keyword === 'additionalProperties' || raw.keyword === 'propertyNames') continue;
     if (!onChosenBranches(raw, raw.path, config)) continue;
-    const required = raw.keyword === "required" ? (raw.params.requiredProperties as string[]) : null;
+    const required = raw.keyword === 'required' ? (raw.params.requiredProperties as string[]) : null;
     const issues = required === null ? [raw] : required.map((key) => ({ ...raw, path: [...raw.path, key] }));
     for (const issue of issues) {
       const key = keyOf(issue.path);
       const problem = translate(issue, root);
       const current = index.get(key);
       // A bad option key outranks a bad value at the same entry, as when options are read directly.
-      if (current === undefined || (current.code === "option-invalid" && problem.code === "option-key-invalid")) {
+      if (current === undefined || (current.code === 'option-invalid' && problem.code === 'option-key-invalid')) {
         index.set(key, problem);
       }
     }
@@ -316,11 +317,11 @@ export function buildStructuralIndex(config: Record<string, unknown>): Structura
 export function containerIssues(config: Record<string, unknown>): ConfigurationError[] {
   const index = buildStructuralIndex(config);
   const issues: ConfigurationError[] = [];
-  if (index.has(keyOf(["agents"]))) {
-    issues.push(new ConfigurationError("Missing or invalid agents.", { code: "agents-invalid", path: ["agents"] }));
+  if (index.has(keyOf(['agents']))) {
+    issues.push(new ConfigurationError('Missing or invalid agents.', { code: 'agents-invalid', path: ['agents'] }));
   }
-  if (index.has(keyOf(["roles"]))) {
-    issues.push(new ConfigurationError("Missing or invalid roles.", { code: "roles-invalid", path: ["roles"] }));
+  if (index.has(keyOf(['roles']))) {
+    issues.push(new ConfigurationError('Missing or invalid roles.', { code: 'roles-invalid', path: ['roles'] }));
   }
   return issues;
 }

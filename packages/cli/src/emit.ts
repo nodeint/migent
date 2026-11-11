@@ -1,5 +1,6 @@
-import type { Static, TSchema } from "@nodeint/migent-contracts";
-import { cliHooks } from "./hooks.js";
+import type { Static, TSchema } from '@nodeint/migent-contracts';
+
+import { cliHooks } from './hooks.js';
 
 /**
  * The only place that serializes `--json` / `-o json` output. The value is typed from the

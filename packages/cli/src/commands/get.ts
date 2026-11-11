@@ -1,8 +1,8 @@
-import { printError } from "../display.js";
-import { createDiscoveryContext } from "../get/discovery.js";
-import { OUTPUT_FORMATS, renderList, renderOne, type OutputFormat } from "../get/render.js";
-import { RESOURCES, findResource, clientResolver, resourceTypes } from "../get/resources.js";
-import { findWorkspace } from "../workspace.js";
+import { printError } from '../display.js';
+import { createDiscoveryContext } from '../get/discovery.js';
+import { OUTPUT_FORMATS, type OutputFormat,renderList, renderOne } from '../get/render.js';
+import { clientResolver, findResource, RESOURCES, resourceTypes } from '../get/resources.js';
+import { findWorkspace } from '../workspace.js';
 
 export interface GetOptions {
   output?: string | undefined;
@@ -17,8 +17,8 @@ export interface GetOptions {
  * host and may run discovery. Exit 0 on success, 2 on a usage or configuration error.
  */
 export async function runGet(cwd: string, type: string, name: string | null, options: GetOptions): Promise<number> {
-  if (type === "provider" || type === "providers") {
-    printError("get providers has been removed; use `migent get clients`.");
+  if (type === 'provider' || type === 'providers') {
+    printError('get providers has been removed; use `migent get clients`.');
     return 2;
   }
   const resource = findResource(type);
@@ -26,33 +26,33 @@ export async function runGet(cwd: string, type: string, name: string | null, opt
     printError(`Unknown resource type: ${type}. Valid types: ${resourceTypes()}.`);
     return 2;
   }
-  if (options.json === true && options.output !== undefined && options.output !== "json") {
+  if (options.json === true && options.output !== undefined && options.output !== 'json') {
     printError(`--json conflicts with -o ${options.output}.`);
     return 2;
   }
-  const format: string = options.output ?? (options.json === true ? "json" : "human");
-  if (format !== "human" && !OUTPUT_FORMATS.includes(format)) {
+  const format: string = options.output ?? (options.json === true ? 'json' : 'human');
+  if (format !== 'human' && !OUTPUT_FORMATS.includes(format)) {
     printError(`Invalid output format: ${format}. Use json, yaml, or name.`);
     return 2;
   }
-  if (resource.kind === "config" && (format === "name" || name !== null)) {
-    printError(name !== null ? "config takes no name." : "-o name is not valid for config.");
+  if (resource.kind === 'config' && (format === 'name' || name !== null)) {
+    printError(name !== null ? 'config takes no name.' : '-o name is not valid for config.');
     return 2;
   }
   const session = options.session ?? null;
-  if (session !== null && resource.kind !== "workflow") {
-    printError("--session is only valid for workflows.");
+  if (session !== null && resource.kind !== 'workflow') {
+    printError('--session is only valid for workflows.');
     return 2;
   }
   const client = options.client ?? null;
   const native = options.native === true;
-  if (native && resource.kind !== "option") {
-    printError("--native is only valid for options.");
+  if (native && resource.kind !== 'option') {
+    printError('--native is only valid for options.');
     return 2;
   }
-  if (resource.scope === "project") {
+  if (resource.scope === 'project') {
     if (client !== null) {
-      printError("--client is only valid for models, options, and efforts.");
+      printError('--client is only valid for models, options, and efforts.');
       return 2;
     }
   } else if (client !== null && !resource.acceptsClient) {
@@ -61,7 +61,7 @@ export async function runGet(cwd: string, type: string, name: string | null, opt
   }
 
   const output = format as OutputFormat;
-  if (resource.scope === "project") {
+  if (resource.scope === 'project') {
     const workspace = findWorkspace(cwd);
     const resolve = clientResolver();
     if (resource.list !== undefined && name === null && session === null) {
@@ -85,5 +85,5 @@ export async function runGet(cwd: string, type: string, name: string | null, opt
 }
 
 export function getHelpTypes(): string {
-  return RESOURCES.map((resource) => `  ${resource.names.slice(0, 2).join(", ").padEnd(18)}${resource.summary}`).join("\n");
+  return RESOURCES.map((resource) => `  ${resource.names.slice(0, 2).join(', ').padEnd(18)}${resource.summary}`).join('\n');
 }

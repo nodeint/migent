@@ -1,37 +1,38 @@
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import type {
   BuildCommandInput,
   CliClient,
+  ClientRegistry,
   CliModelCatalog,
   CliRunOutput,
   CliUsage,
-  ClientRegistry,
   CommandSpec,
   TurnUsage,
   UsageCapture,
-} from "../src/cli-client.ts";
+} from '../src/cli-client.ts';
 
 const optionKey = /^[A-Za-z][A-Za-z0-9_.-]*$/;
 
 const grokOptions = new Set([
-  "reasoning-effort",
-  "max_turns",
-  "tools",
-  "disallowed_tools",
-  "permission_mode",
-  "rules",
-  "allow",
-  "deny",
-  "sandbox",
+  'reasoning-effort',
+  'max_turns',
+  'tools',
+  'disallowed_tools',
+  'permission_mode',
+  'rules',
+  'allow',
+  'deny',
+  'sandbox',
 ]);
 
 export function defaultClients(): ClientRegistry {
   return registryOf({
-    codex: new FakeClient("codex", "codex"),
-    grok: new FakeClient("grok", "grok"),
+    codex: new FakeClient('codex', 'codex'),
+    grok: new FakeClient('grok', 'grok'),
   });
 }
 
@@ -41,7 +42,7 @@ export function registryOf(clients: Record<string, CliClient>): ClientRegistry {
     get: (id: string): CliClient => {
       const client = Object.hasOwn(clients, id) ? clients[id] : undefined;
       if (client === undefined) {
-        throw new Error(`Unknown CLI client: ${id}. Supported: ${Object.keys(clients).join(", ")}.`);
+        throw new Error(`Unknown CLI client: ${id}. Supported: ${Object.keys(clients).join(', ')}.`);
       }
       return client;
     },
@@ -69,8 +70,8 @@ roles:
 `;
 
 export function writeSessionConfig(workspace: string): void {
-  mkdirSync(path.join(workspace, ".migent"), { recursive: true });
-  writeFileSync(path.join(workspace, ".migent", "config.yaml"), SESSION_CONFIG, "utf8");
+  mkdirSync(path.join(workspace, '.migent'), { recursive: true });
+  writeFileSync(path.join(workspace, '.migent', 'config.yaml'), SESSION_CONFIG, 'utf8');
 }
 
 export const STAGE_CONFIG = `\
@@ -125,26 +126,26 @@ export function tempDir(prefix: string): string {
 }
 
 export function writeConfig(contents: string): string {
-  const directory = tempDir("migent-config-");
-  const filePath = path.join(directory, "config.yaml");
-  writeFileSync(filePath, contents, "utf8");
+  const directory = tempDir('migent-config-');
+  const filePath = path.join(directory, 'config.yaml');
+  writeFileSync(filePath, contents, 'utf8');
   return filePath;
 }
 
 export function writeStageWorkspace(): string {
-  const workspace = tempDir("migent-stage-");
-  const workflows = path.join(workspace, ".migent", "workflows");
+  const workspace = tempDir('migent-stage-');
+  const workflows = path.join(workspace, '.migent', 'workflows');
   mkdirSync(workflows, { recursive: true });
-  writeFileSync(path.join(workspace, ".migent", "config.yaml"), STAGE_CONFIG, "utf8");
-  writeFileSync(path.join(workflows, "plan-implement.yaml"), STAGE_WORKFLOW, "utf8");
+  writeFileSync(path.join(workspace, '.migent', 'config.yaml'), STAGE_CONFIG, 'utf8');
+  writeFileSync(path.join(workflows, 'plan-implement.yaml'), STAGE_WORKFLOW, 'utf8');
   return workspace;
 }
 
 export function writeRoleWorkspace(): string {
-  const workspace = tempDir("migent-role-");
-  const migent = path.join(workspace, ".migent");
+  const workspace = tempDir('migent-role-');
+  const migent = path.join(workspace, '.migent');
   mkdirSync(migent);
-  writeFileSync(path.join(migent, "config.yaml"), STAGE_CONFIG, "utf8");
+  writeFileSync(path.join(migent, 'config.yaml'), STAGE_CONFIG, 'utf8');
   return workspace;
 }
 
@@ -175,22 +176,22 @@ export class FakeClient implements CliClient {
     },
     cumulative: [],
   });
-  versionCommand: () => CommandSpec = () => ({ argv: [this.command, "--version"] });
+  versionCommand: () => CommandSpec = () => ({ argv: [this.command, '--version'] });
   parseVersion: (stdout: string) => string | null = (stdout) => stdout.trim() || null;
 
-  constructor(id = "fake", command = "fake") {
+  constructor(id = 'fake', command = 'fake') {
     this.id = id;
     this.command = command;
   }
 
   options() {
-    return [{ name: "effort", prompt: true, allowDefault: true, overridable: true }];
+    return [{ name: 'effort', prompt: true, allowDefault: true, overridable: true }];
   }
 
   validateOptions(options: Readonly<Record<string, string>>): void {
     for (const [key, value] of Object.entries(options)) {
       if (!optionKey.test(key)) throw new Error(`${key} is not a ${this.id} option.`);
-      if (value.trim() === "") throw new Error(`${key} is empty.`);
+      if (value.trim() === '') throw new Error(`${key} is empty.`);
     }
   }
 
@@ -204,14 +205,14 @@ export class FakeClient implements CliClient {
       promptFile: input.promptFile,
       options: { ...input.options },
     });
-    const responseInput = (input.prompt.split(/\r\n|\n|\r/)[0] ?? "").replace(/^user: /, "");
+    const responseInput = (input.prompt.split(/\r\n|\n|\r/)[0] ?? '').replace(/^user: /, '');
     const payload = JSON.stringify({
       text: `status: complete\necho:${responseInput}`,
-      sessionId: "native-session-1",
+      sessionId: 'native-session-1',
       call: this.calls.length - 1,
     });
     return {
-      argv: [process.execPath, "-e", "process.stdout.write(process.argv[1])", payload],
+      argv: [process.execPath, '-e', 'process.stdout.write(process.argv[1])', payload],
     };
   }
 
@@ -228,27 +229,27 @@ export class FakeClient implements CliClient {
   protected parsingCall: number | null = null;
 
   protected parsedPrompt(): string {
-    return (this.parsingCall === null ? this.calls.at(-1) : this.calls[this.parsingCall])?.prompt ?? "";
+    return (this.parsingCall === null ? this.calls.at(-1) : this.calls[this.parsingCall])?.prompt ?? '';
   }
 
   parseRun(stdout: string, lastMessageFile: string): CliRunOutput {
     void lastMessageFile;
     try {
-      const call = (JSON.parse(stdout) as { call?: unknown }).call;
-      this.parsingCall = typeof call === "number" ? call : null;
+      const {call} = (JSON.parse(stdout) as { call?: unknown });
+      this.parsingCall = typeof call === 'number' ? call : null;
     } catch {
       this.parsingCall = null;
     }
     const [text, sessionId] = this.parseResponse(stdout);
-    return { text, sessionId, source: "model" };
+    return { text, sessionId, source: 'model' };
   }
 
   modelsCommand(): CommandSpec {
-    return { argv: [this.command, "models"] };
+    return { argv: [this.command, 'models'] };
   }
 
   parseModels(stdout: string): CliModelCatalog {
-    const ids = stdout.split(/\r\n|\n|\r/).map((line) => line.trim()).filter((line) => line !== "");
+    const ids = stdout.split(/\r\n|\n|\r/).map((line) => line.trim()).filter((line) => line !== '');
     return { ids, defaultId: null, optionValues: [], valuesFor: () => null };
   }
 
@@ -261,10 +262,10 @@ export class FakeClient implements CliClient {
     return null;
   }
 
-  extractFailure(stdout: string, exitCode: number): ReturnType<CliClient["extractFailure"]> {
+  extractFailure(stdout: string, exitCode: number): ReturnType<CliClient['extractFailure']> {
     void stdout;
     if (exitCode === 0) return null;
-    return { origin: "exit-only", message: `exited ${exitCode}`, exitCode };
+    return { origin: 'exit-only', message: `exited ${exitCode}`, exitCode };
   }
 
   optionValuesCommand(option: string, model: string): CommandSpec | null {
@@ -283,21 +284,21 @@ export class FakeClient implements CliClient {
 
 export class BlockedClient extends FakeClient {
   override parseResponse(): [string, string | null] {
-    return [writeHandoffFromReply(this.parsedPrompt(), "status: blocked\nblocker: missing approved design"), "native-session-1"];
+    return [writeHandoffFromReply(this.parsedPrompt(), 'status: blocked\nblocker: missing approved design'), 'native-session-1'];
   }
 }
 
 export class MissingOutcomeClient extends FakeClient {
   override parseResponse(): [string, string | null] {
-    return ["implementation report without a status header", "native-session-1"];
+    return ['implementation report without a status header', 'native-session-1'];
   }
 }
 
 export class ScriptedClient extends FakeClient {
   private responses: string[];
-  private artifacts: Array<string | null | { body: string; only: string[] }>;
+  private artifacts: (string | null | { body: string; only: string[] })[];
 
-  constructor(responses: string[], artifacts?: Array<string | null | { body: string; only: string[] }> | null) {
+  constructor(responses: string[], artifacts?: (string | null | { body: string; only: string[] })[] | null) {
     super();
     this.responses = [...responses];
     this.artifacts = artifacts ? [...artifacts] : [];
@@ -308,13 +309,13 @@ export class ScriptedClient extends FakeClient {
       const next = this.artifacts.shift() ?? null;
       const prompt = this.calls.at(-1)?.prompt;
       if (next !== null && prompt !== undefined) {
-        if (typeof next === "string") writePromptArtifact(prompt, next);
+        if (typeof next === 'string') writePromptArtifact(prompt, next);
         else writePromptArtifact(prompt, next.body, next.only);
       }
     }
     const response = this.responses.shift();
-    if (response === undefined) throw new Error("scripted client has no response left");
-    return [writeHandoffFromReply(this.parsedPrompt(), response), "native-session-1"];
+    if (response === undefined) throw new Error('scripted client has no response left');
+    return [writeHandoffFromReply(this.parsedPrompt(), response), 'native-session-1'];
   }
 }
 
@@ -324,16 +325,16 @@ function writePromptArtifact(prompt: string, body: string, only?: readonly strin
   const names = promptArtifactNames(prompt).filter((name) => only === undefined || only.includes(name));
   if (!directory || names.length === 0) return;
   mkdirSync(directory, { recursive: true });
-  for (const name of names) writeFileSync(path.join(directory, name), body, "utf8");
+  for (const name of names) writeFileSync(path.join(directory, name), body, 'utf8');
 }
 
 /** File names the latest prompt asks for: the single-artifact line or the multi-file list. */
 function promptArtifactNames(prompt: string): string[] {
   const single = [...prompt.matchAll(/^Write the artifact as `(.+?)`/gm)].at(-1)?.[1];
   if (single) return [single];
-  const at = prompt.lastIndexOf("Write these artifacts in the artifacts directory:");
+  const at = prompt.lastIndexOf('Write these artifacts in the artifacts directory:');
   if (at < 0) return [];
-  return [...prompt.slice(at).split("\n").slice(1).join("\n").matchAll(/^- `(.+?)`/gm)].map((match) => match[1]!);
+  return [...prompt.slice(at).split('\n').slice(1).join('\n').matchAll(/^- `(.+?)`/gm)].map((match) => match[1]!);
 }
 
 export const PLAN_REVIEW_WORKFLOW = `\
@@ -366,8 +367,8 @@ completion:
 `;
 
 export function repoWorkflowText(workflowId: string): string {
-  const fixtures = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "workflows");
-  return readFileSync(path.join(fixtures, `${workflowId}.yaml`), "utf8");
+  const fixtures = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'workflows');
+  return readFileSync(path.join(fixtures, `${workflowId}.yaml`), 'utf8');
 }
 
 /**
@@ -378,56 +379,56 @@ export function repoWorkflowText(workflowId: string): string {
 export function writeHandoffFromReply(prompt: string, response: string): string {
   if (!/^- Handoff file: `/m.test(prompt)) return writeQuestionRequestFromReply(prompt, response);
   const target = [...prompt.matchAll(/^- Handoff file: `(.+)`$/gm)].at(-1)?.[1];
-  const marker = "\n<<FILE>>";
+  const marker = '\n<<FILE>>';
   const split = response.indexOf(marker);
   const report = split >= 0 ? response.slice(0, split) : response;
   const raw = split >= 0 ? response.slice(split + marker.length) : null;
   if (!target) return report;
   const headers = new Map<string, string>();
   for (const line of report.split(/\r\n|\n|\r/)) {
-    const at = line.indexOf(":");
-    if (line.trim() === "" || at <= 0) break;
+    const at = line.indexOf(':');
+    if (line.trim() === '' || at <= 0) break;
     headers.set(line.slice(0, at).trim().toLowerCase(), line.slice(at + 1).trim());
   }
-  const status = headers.get("status");
+  const status = headers.get('status');
   if (status === undefined && raw === null) return report;
-  const questionHead = "status: question\n\n";
+  const questionHead = 'status: question\n\n';
   let content: string | null = null;
   if (raw !== null) {
     try {
       const parsed = JSON.parse(raw) as Record<string, unknown>;
-      content = parsed !== null && typeof parsed === "object" && !("status" in parsed) && status === "question"
-        ? JSON.stringify({ ...parsed, status: "question" }) : raw;
+      content = parsed !== null && typeof parsed === 'object' && !('status' in parsed) && status === 'question'
+        ? JSON.stringify({ ...parsed, status: 'question' }) : raw;
     } catch {
       content = raw;
     }
-  } else if (status === "question") {
-    const body = report.startsWith(questionHead) ? report.slice(questionHead.length) : "";
-    if (!body.startsWith("{")) return report;
-    content = JSON.stringify({ ...(JSON.parse(body) as Record<string, unknown>), status: "question" });
-    writeFileSync(target, content, "utf8");
-    return questionHead + "The questions are in the handoff file.";
-  } else if (status === "blocked") {
-    content = JSON.stringify({ schema_version: 1, status, blocker: headers.get("blocker") ?? "" });
-  } else if (status === "complete") {
-    const decision = headers.get("decision");
+  } else if (status === 'question') {
+    const body = report.startsWith(questionHead) ? report.slice(questionHead.length) : '';
+    if (!body.startsWith('{')) return report;
+    content = JSON.stringify({ ...(JSON.parse(body) as Record<string, unknown>), status: 'question' });
+    writeFileSync(target, content, 'utf8');
+    return questionHead + 'The questions are in the handoff file.';
+  } else if (status === 'blocked') {
+    content = JSON.stringify({ schema_version: 1, status, blocker: headers.get('blocker') ?? '' });
+  } else if (status === 'complete') {
+    const decision = headers.get('decision');
     content = JSON.stringify({ schema_version: 1, status, ...(decision ? { decision } : {}) });
   }
-  if (content !== null) writeFileSync(target, content, "utf8");
+  if (content !== null) writeFileSync(target, content, 'utf8');
   return report;
 }
 
 /** Protocol 2 shim: `status: question` plus a JSON body, or a `<<FILE>>` section, becomes the question request file. */
 export function writeQuestionRequestFromReply(prompt: string, response: string): string {
   const target = [...prompt.matchAll(/^- Question file: `(.+)`$/gm)].at(-1)?.[1];
-  const marker = "\n<<FILE>>";
+  const marker = '\n<<FILE>>';
   const split = response.indexOf(marker);
   if (split >= 0) {
-    if (target) writeFileSync(target, response.slice(split + marker.length), "utf8");
+    if (target) writeFileSync(target, response.slice(split + marker.length), 'utf8');
     return response.slice(0, split);
   }
-  const head = "status: question\n\n";
-  if (!response.startsWith(head) || !response.slice(head.length).startsWith("{")) return response;
-  if (target) writeFileSync(target, response.slice(head.length), "utf8");
-  return head + "The questions are in the request file.";
+  const head = 'status: question\n\n';
+  if (!response.startsWith(head) || !response.slice(head.length).startsWith('{')) return response;
+  if (target) writeFileSync(target, response.slice(head.length), 'utf8');
+  return head + 'The questions are in the request file.';
 }

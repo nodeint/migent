@@ -1,10 +1,11 @@
-import { RenameResult } from "@nodeint/migent-contracts";
-import { writeJson } from "../emit.js";
-import { ConfigurationError, log } from "@nodeint/migent-kernel";
-import { SessionStore } from "@nodeint/migent-session";
-import { clientRegistry } from "../client.js";
-import { printError } from "../display.js";
-import { requireCurrentSchema } from "../migrate.js";
+import { RenameResult } from '@nodeint/migent-contracts';
+import { ConfigurationError, log } from '@nodeint/migent-kernel';
+import { SessionStore } from '@nodeint/migent-session';
+
+import { clientRegistry } from '../client.js';
+import { printError } from '../display.js';
+import { writeJson } from '../emit.js';
+import { requireCurrentSchema } from '../migrate.js';
 
 /** Change a session's display title without the session lock. Exit 2 for an unknown session or invalid title. */
 export function renameSession(workspace: string, sessionId: string, title: string, asJson: boolean): number {

@@ -1,9 +1,10 @@
-import { expect, test } from "vitest";
-import { conditionalReach, conditionalStages, parseWorkflowMapping } from "../src/index.ts";
-import { parseYamlDocument } from "../src/index.ts";
+import { expect, test } from 'vitest';
+
+import { conditionalReach, conditionalStages, parseWorkflowMapping } from '../src/index.ts';
+import { parseYamlDocument } from '../src/index.ts';
 
 function parseText(text: string) {
-  return parseWorkflowMapping(parseYamlDocument(text) as Record<string, unknown>, "t.yaml");
+  return parseWorkflowMapping(parseYamlDocument(text) as Record<string, unknown>, 't.yaml');
 }
 
 function runWhenWorkflow(stageExtra: string): string {
@@ -28,35 +29,35 @@ const GOOD_RUN_WHEN = `\
         - "**/README.md"
 `;
 
-test("run_when parses onto the stage", () => {
+test('run_when parses onto the stage', () => {
   const document = parseText(runWhenWorkflow(GOOD_RUN_WHEN));
-  expect(document.stages.review_docs?.runWhen).toEqual({ changedPaths: ["docs/**/*", "**/README.md"] });
+  expect(document.stages.review_docs?.runWhen).toEqual({ changedPaths: ['docs/**/*', '**/README.md'] });
   expect(document.stages.docs?.runWhen).toBeNull();
 });
 
-test("run_when null means absent and a decision on a run_when stage is accepted", () => {
-  expect(parseText(runWhenWorkflow("    run_when: null\n")).stages.review_docs?.runWhen).toBeNull();
+test('run_when null means absent and a decision on a run_when stage is accepted', () => {
+  expect(parseText(runWhenWorkflow('    run_when: null\n')).stages.review_docs?.runWhen).toBeNull();
   const decided = runWhenWorkflow(
     `${GOOD_RUN_WHEN}    decision:\n      values: [approved, revise]\n      routes:\n        approved: complete\n        revise: docs\n`,
   );
   expect(parseText(decided).stages.review_docs?.runWhen).not.toBeNull();
 });
 
-test("run_when errors", () => {
-  const cases: Array<[string, string]> = [
-    ["    run_when: nope\n", "stages.review_docs.run_when must be a mapping."],
-    ["    run_when: {}\n", "stages.review_docs.run_when.changed_paths is required."],
-    ["    run_when:\n      changed_paths: null\n", "stages.review_docs.run_when.changed_paths is required."],
-    ["    run_when:\n      changed_paths: [a]\n      other: 1\n", "stages.review_docs.run_when.other is not supported."],
-    ["    run_when:\n      changed_paths: docs\n", "stages.review_docs.run_when.changed_paths must be a list."],
-    ["    run_when:\n      changed_paths: []\n", "stages.review_docs.run_when.changed_paths must be a non-empty list."],
-    ['    run_when:\n      changed_paths: [""]\n', "Missing or invalid stages.review_docs.run_when.changed_paths[0]."],
-    ["    run_when:\n      changed_paths: [a, a]\n", "Duplicate stages.review_docs.run_when.changed_paths item: a"],
+test('run_when errors', () => {
+  const cases: [string, string][] = [
+    ['    run_when: nope\n', 'stages.review_docs.run_when must be a mapping.'],
+    ['    run_when: {}\n', 'stages.review_docs.run_when.changed_paths is required.'],
+    ['    run_when:\n      changed_paths: null\n', 'stages.review_docs.run_when.changed_paths is required.'],
+    ['    run_when:\n      changed_paths: [a]\n      other: 1\n', 'stages.review_docs.run_when.other is not supported.'],
+    ['    run_when:\n      changed_paths: docs\n', 'stages.review_docs.run_when.changed_paths must be a list.'],
+    ['    run_when:\n      changed_paths: []\n', 'stages.review_docs.run_when.changed_paths must be a non-empty list.'],
+    ['    run_when:\n      changed_paths: [""]\n', 'Missing or invalid stages.review_docs.run_when.changed_paths[0].'],
+    ['    run_when:\n      changed_paths: [a, a]\n', 'Duplicate stages.review_docs.run_when.changed_paths item: a'],
     [
       '    run_when:\n      changed_paths: ["a**"]\n',
       "Invalid stages.review_docs.run_when.changed_paths[0]: 'a**' (** must be a whole segment).",
     ],
-    [`${GOOD_RUN_WHEN}    verify: [pnpm test]\n`, "stages.review_docs.run_when cannot be combined with verify."],
+    [`${GOOD_RUN_WHEN}    verify: [pnpm test]\n`, 'stages.review_docs.run_when cannot be combined with verify.'],
   ];
   for (const [extra, message] of cases) {
     expect(() => parseText(runWhenWorkflow(extra)), extra).toThrow(message);
@@ -70,7 +71,7 @@ stages:
     run_when:
       changed_paths: ["a"]
 `;
-  expect(() => parseText(verifyOnly)).toThrow("stages.check.run_when cannot be combined with verify.");
+  expect(() => parseText(verifyOnly)).toThrow('stages.check.run_when cannot be combined with verify.');
   const version1 = `\
 id: t
 stages:
@@ -79,7 +80,7 @@ stages:
     run_when:
       changed_paths: ["a"]
 `;
-  expect(() => parseText(version1)).toThrow("stages.a.run_when requires schema_version 2.");
+  expect(() => parseText(version1)).toThrow('stages.a.run_when requires schema_version 2.');
 });
 
 const CONDITIONAL_BASE = `\
@@ -113,22 +114,22 @@ stages:
       artifact: y.md
 `;
 
-test("outputs from the conditional set are rejected", () => {
+test('outputs from the conditional set are rejected', () => {
   const withOutput = (stage: string) =>
     `${CONDITIONAL_BASE}outputs:\n  - name: ${stage}\n    from_stage: ${stage}\n    artifact: ${stage}.md\n`;
-  expect(() => parseText(withOutput("x"))).toThrow(
+  expect(() => parseText(withOutput('x'))).toThrow(
     "outputs 'x' comes from stages.x, which is reached through run_when stage r; a skip would leave it missing.",
   );
-  expect(() => parseText(withOutput("y"))).toThrow(
+  expect(() => parseText(withOutput('y'))).toThrow(
     "outputs 'y' comes from stages.y, which is reached through run_when stage r; a skip would leave it missing.",
   );
-  expect(() => parseText(withOutput("r"))).toThrow(
+  expect(() => parseText(withOutput('r'))).toThrow(
     "outputs 'r' comes from run_when stage r; a skip would leave it missing.",
   );
-  expect(() => parseText(withOutput("base"))).not.toThrow();
+  expect(() => parseText(withOutput('base'))).not.toThrow();
 });
 
-test("a forward route chain and a verify stage in the conditional set are rejected", () => {
+test('a forward route chain and a verify stage in the conditional set are rejected', () => {
   const chain = `\
 schema_version: 2
 id: t
@@ -178,11 +179,11 @@ stages:
     verify: [pnpm test]
 `;
   expect(() => parseText(verifyRouted)).toThrow(
-    "stages.v.verify is reached through run_when stage r; a skip would bypass this verify.",
+    'stages.v.verify is reached through run_when stage r; a skip would bypass this verify.',
   );
 });
 
-test("a route back is not in the conditional set and the motivating workflow keeps its outputs", () => {
+test('a route back is not in the conditional set and the motivating workflow keeps its outputs', () => {
   const motivating = `\
 schema_version: 2
 id: t
@@ -220,11 +221,11 @@ outputs:
     artifact: docs.md
 `;
   const document = parseText(motivating);
-  expect([...conditionalReach(document.stages, "review_docs")]).toEqual(["review_docs"]);
-  expect([...conditionalStages(document.stages).keys()]).toEqual(["review_docs"]);
+  expect([...conditionalReach(document.stages, 'review_docs')]).toEqual(['review_docs']);
+  expect([...conditionalStages(document.stages).keys()]).toEqual(['review_docs']);
 });
 
-test("the first run_when stage in declaration order names overlapping members", () => {
+test('the first run_when stage in declaration order names overlapping members', () => {
   const text = `\
 schema_version: 2
 id: t
@@ -252,7 +253,7 @@ outputs:
   );
 });
 
-test("conditionalReach covers dependents, forward targets, route backs, and diamonds", () => {
+test('conditionalReach covers dependents, forward targets, route backs, and diamonds', () => {
   const text = `\
 schema_version: 2
 id: t
@@ -286,7 +287,7 @@ stages:
     depends_on: [t1]
 `;
   const document = parseText(text);
-  expect([...conditionalReach(document.stages, "b")].sort()).toEqual(["b", "c", "c2", "d", "t1", "t2"]);
-  expect(conditionalReach(document.stages, "b").has("a")).toBe(false);
-  expect([...conditionalReach(document.stages, "c")].sort()).toEqual(["c", "d"]);
+  expect([...conditionalReach(document.stages, 'b')].sort()).toEqual(['b', 'c', 'c2', 'd', 't1', 't2']);
+  expect(conditionalReach(document.stages, 'b').has('a')).toBe(false);
+  expect([...conditionalReach(document.stages, 'c')].sort()).toEqual(['c', 'd']);
 });

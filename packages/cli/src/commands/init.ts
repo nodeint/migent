@@ -1,26 +1,16 @@
-import { mkdirSync, readdirSync, writeFileSync } from "node:fs";
-import path from "node:path";
-import { autocomplete, isCancel, select as clackSelect, spinner } from "@clack/prompts";
-import type { ModelCatalog } from "@nodeint/migent-adapters";
-import { diagnose } from "@nodeint/migent-doctor";
+import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+
+import { autocomplete, isCancel, select as clackSelect, spinner } from '@clack/prompts';
+import type { ModelCatalog } from '@nodeint/migent-adapters';
+import { diagnose } from '@nodeint/migent-doctor';
 import {
   ConfigurationError,
   loadRoleDescription,
   loadWorkspaceConfig,
   whichSync,
-} from "@nodeint/migent-kernel";
-import { PromptCancelled } from "../errors.js";
-import { exists, isDirectory, isFile } from "../fs-utils.js";
-import {
-  printAlreadyInitialized,
-  printCreated,
-  printError,
-  printInitConflicts,
-  printInitNextSteps,
-} from "../display.js";
-import { cliHooks } from "../hooks.js";
-import { renderProject, type ModelChoice, type RenderedFile } from "../project-template.js";
-import { runDoctor } from "./doctor.js";
+} from '@nodeint/migent-kernel';
+
 import {
   acceptedOptions,
   asCatalog,
@@ -34,9 +24,21 @@ import {
   runClientCommandAsync,
   type RunCommand,
   type Which,
-} from "../client.js";
+} from '../client.js';
+import {
+  printAlreadyInitialized,
+  printCreated,
+  printError,
+  printInitConflicts,
+  printInitNextSteps,
+} from '../display.js';
+import { PromptCancelled } from '../errors.js';
+import { exists, isDirectory, isFile } from '../fs-utils.js';
+import { cliHooks } from '../hooks.js';
+import { type ModelChoice, type RenderedFile,renderProject } from '../project-template.js';
+import { runDoctor } from './doctor.js';
 
-const INIT_EXAMPLE = "Example: migent init --planner-client codex --planner-model gpt-5 --reviewer-client grok --reviewer-model grok-4.7 --client codex --developer-model gpt-5 --no-input";
+const INIT_EXAMPLE = 'Example: migent init --planner-client codex --planner-model gpt-5 --reviewer-client grok --reviewer-model grok-4.7 --client codex --developer-model gpt-5 --no-input';
 
 
 export interface ModelSelection { client: string; model: string }
@@ -62,7 +64,7 @@ export async function runInit(
     reviewerEffort?: string | null;
     reviewerOptions?: readonly string[];
     interactive?: boolean;
-    clients?: import("@nodeint/migent-kernel").ClientRegistry | null;
+    clients?: import('@nodeint/migent-kernel').ClientRegistry | null;
     which?: Which | null;
     prompter?: Prompter | null;
     runCommand?: RunCommand | null;
@@ -93,22 +95,22 @@ export async function runInit(
   const plannerOptionPairs = options.plannerOptions ?? [];
   const reviewerOptionPairs = options.reviewerOptions ?? [];
   const classified = classify(workspace, chosen, resolve);
-  if (classified.state === "ready") {
+  if (classified.state === 'ready') {
     if (client !== null || model !== null || options.effort != null || optionPairs.length > 0 ||
         plannerClient !== null || plannerModel !== null || options.plannerEffort != null || plannerOptionPairs.length > 0 ||
         reviewerClient !== null || reviewerModel !== null || options.reviewerEffort != null || reviewerOptionPairs.length > 0) {
-      printError("Already initialized; ignoring model selection flags.");
+      printError('Already initialized; ignoring model selection flags.');
     }
     printAlreadyInitialized();
     printInitNextSteps();
     return 0;
   }
   for (const [role, selectedClient, selectedModel, pairs, effort, prefix] of [
-    ["planner", plannerClient, plannerModel, plannerOptionPairs, options.plannerEffort, "planner-"],
-    ["reviewer", reviewerClient, reviewerModel, reviewerOptionPairs, options.reviewerEffort, "reviewer-"],
-    ["developer", client, model, optionPairs, options.effort, "developer-"],
+    ['planner', plannerClient, plannerModel, plannerOptionPairs, options.plannerEffort, 'planner-'],
+    ['reviewer', reviewerClient, reviewerModel, reviewerOptionPairs, options.reviewerEffort, 'reviewer-'],
+    ['developer', client, model, optionPairs, options.effort, 'developer-'],
   ] as const) {
-    const clientFlag = role === "developer" ? "--client" : `--${prefix}client`;
+    const clientFlag = role === 'developer' ? '--client' : `--${prefix}client`;
     const flags = `${clientFlag} and --${prefix}model`;
     if ((selectedClient === null) !== (selectedModel === null)) {
       printError(`Pass both ${flags} for ${role}, or omit both.\n${INIT_EXAMPLE}`);
@@ -127,7 +129,7 @@ export async function runInit(
       return 2;
     }
   }
-  if (classified.state === "conflict") {
+  if (classified.state === 'conflict') {
     printInitConflicts(classified.conflicts);
     return 1;
   }
@@ -140,16 +142,16 @@ export async function runInit(
     }
     return catalog;
   };
-  let models: ModelSelection[] = [];
+  const models: ModelSelection[] = [];
   if ([plannerClient, reviewerClient, client].some((value) => value === null)) {
     const loading = options.prompter ? null : spinner();
-    loading?.start("Loading models from installed clients...");
+    loading?.start('Loading models from installed clients...');
     const rows = detected(resolve).filter(([, found]) => found !== null);
     const results = await Promise.allSettled(rows.map(async ([name]) => ({ name, catalog: await getCatalog(name) })));
-    loading?.stop("Model catalogs loaded.");
+    loading?.stop('Model catalogs loaded.');
     const failures: string[] = [];
     for (const [index, result] of results.entries()) {
-      if (result.status === "fulfilled") {
+      if (result.status === 'fulfilled') {
         const { name, catalog } = result.value;
         models.push(...catalog.ids.map((id) => ({ client: name, model: id })));
       } else {
@@ -158,7 +160,7 @@ export async function runInit(
     }
     for (const failure of failures) process.stderr.write(`Could not load models for ${failure}\n`);
     if (models.length === 0) {
-      printError("No models available from installed clients.");
+      printError('No models available from installed clients.');
       return 2;
     }
   }
@@ -167,7 +169,7 @@ export async function runInit(
   let reviewer: ModelChoice;
   try {
     planner = await choices(chosen, resolve, prompt, {
-      role: "Planner",
+      role: 'Planner',
       client: plannerClient,
       model: plannerModel,
       options: parseOptions(plannerOptionPairs),
@@ -176,7 +178,7 @@ export async function runInit(
       models, getCatalog,
     });
     reviewer = await choices(chosen, resolve, prompt, {
-      role: "Reviewer",
+      role: 'Reviewer',
       client: reviewerClient,
       model: reviewerModel,
       options: parseOptions(reviewerOptionPairs),
@@ -185,7 +187,7 @@ export async function runInit(
       models, getCatalog,
     });
     developer = await choices(chosen, resolve, prompt, {
-      role: "Developer",
+      role: 'Developer',
       client,
       model,
       options: parseOptions(optionPairs),
@@ -229,22 +231,22 @@ function printRoleDescriptions(workspace: string): void {
     const description = loadRoleDescription(config, role);
     if (description !== null) lines.push(`  ${role.padEnd(10)} ${description}`);
   }
-  if (lines.length > 0) process.stdout.write(`Roles:\n${lines.join("\n")}\n`);
+  if (lines.length > 0) process.stdout.write(`Roles:\n${lines.join('\n')}\n`);
 }
 
 function writeDoctorProblems(
   workspace: string,
-  clients: import("@nodeint/migent-kernel").ClientRegistry,
+  clients: import('@nodeint/migent-kernel').ClientRegistry,
   which: Which,
 ): void {
   const problems = diagnose(workspace, { clients, which }).flatMap((check) => check.problems);
   if (problems.length === 0) return;
-  process.stderr.write("Doctor reported problems:\n");
+  process.stderr.write('Doctor reported problems:\n');
   for (const problem of problems) process.stderr.write(`${problem}\n`);
 }
 
 async function choices(
-  clients: import("@nodeint/migent-kernel").ClientRegistry,
+  clients: import('@nodeint/migent-kernel').ClientRegistry,
   which: Which,
   prompt: Prompter,
   args: {
@@ -258,14 +260,14 @@ async function choices(
     getCatalog: (name: string) => Promise<ModelCatalog>;
   },
 ): Promise<ModelChoice> {
-  let client = args.client;
-  let model = args.model;
-  let effort = args.effort;
+  let {client} = args;
+  let {model} = args;
+  let {effort} = args;
   let stored: Record<string, string>;
   if (client === null) {
     const selected = await prompt.selectModel(args.models, `${args.role} model`);
     if (!args.models.some((item) => item.client === selected.client && item.model === selected.model)) {
-      throw new ConfigurationError("Unknown client or model.");
+      throw new ConfigurationError('Unknown client or model.');
     }
     client = selected.client;
     model = selected.model;
@@ -274,21 +276,21 @@ async function choices(
     stored = await promptOptions(impl, model, catalog, which, args.runCommand, prompt);
     // The prompt stores effort as a native option; keep it in the dedicated `effort` field instead.
     const promptedOption = impl.effortOption;
-    if (promptedOption && Object.hasOwn(stored, promptedOption) && !(promptedOption === "variant" && model.includes("#"))) {
+    if (promptedOption && Object.hasOwn(stored, promptedOption) && !(promptedOption === 'variant' && model.includes('#'))) {
       effort = stored[promptedOption] ?? null;
       delete stored[promptedOption];
     }
   } else {
     const impl = clients.get(client);
-    if (model === null) throw new ConfigurationError("Model is required.");
+    if (model === null) throw new ConfigurationError('Model is required.');
     const catalog = await args.getCatalog(client);
     model = knownModel(model, catalog);
-    const effortOption = impl.effortOption;
+    const {effortOption} = impl;
     if (args.effort !== null && !effortOption) throw new ConfigurationError(`${args.role} client does not support effort.`);
     if (args.effort !== null && effortOption && Object.hasOwn(args.options, effortOption)) {
       throw new ConfigurationError(`${args.role} effort conflicts with option ${effortOption}; use only one.`);
     }
-    if (args.effort !== null && model.includes("#") && effortOption === "variant") {
+    if (args.effort !== null && model.includes('#') && effortOption === 'variant') {
       throw new ConfigurationError(`${args.role} model already selects a #variant; omit effort.`);
     }
     const requested = args.effort !== null && effortOption
@@ -297,55 +299,55 @@ async function choices(
     stored = await acceptedOptions(impl, model, catalog, which, args.runCommand, requested);
     if (args.effort !== null && effortOption) delete stored[effortOption];
   }
-  if (model.trim() === "") throw new ConfigurationError("Model is required.");
+  if (model.trim() === '') throw new ConfigurationError('Model is required.');
   const primary = { client, model: model.trim(), options: stored, ...(effort !== null ? { effort } : {}) };
   return primary;
 }
 
 function classify(
   workspace: string,
-  clients: import("@nodeint/migent-kernel").ClientRegistry,
+  clients: import('@nodeint/migent-kernel').ClientRegistry,
   which: Which,
-): { state: "create" | "ready" | "conflict"; conflicts: string[] } {
-  const root = path.join(workspace, ".migent");
-  const config = path.join(root, "config.yaml");
-  const workflows = path.join(root, "workflows");
-  const gitignore = path.join(root, ".gitignore");
+): { state: 'create' | 'ready' | 'conflict'; conflicts: string[] } {
+  const root = path.join(workspace, '.migent');
+  const config = path.join(root, 'config.yaml');
+  const workflows = path.join(root, 'workflows');
+  const gitignore = path.join(root, '.gitignore');
   const owned: string[] = [];
-  if (exists(config)) owned.push(".migent/config.yaml");
-  if (exists(path.join(root, "config.local.yaml"))) owned.push(".migent/config.local.yaml");
+  if (exists(config)) owned.push('.migent/config.yaml');
+  if (exists(path.join(root, 'config.local.yaml'))) owned.push('.migent/config.local.yaml');
   if (exists(workflows) && !(isDirectory(workflows) && readdirSync(workflows).length === 0)) {
-    owned.push(".migent/workflows");
+    owned.push('.migent/workflows');
     if (isDirectory(workflows)) {
-      for (const name of readdirSync(workflows).filter((item) => item.endsWith(".yaml")).sort()) {
+      for (const name of readdirSync(workflows).filter((item) => item.endsWith('.yaml')).sort()) {
         if (isFile(path.join(workflows, name))) owned.push(`.migent/workflows/${name}`);
       }
     }
   }
-  if (exists(gitignore)) owned.push(".migent/.gitignore");
-  if (owned.length === 0) return { state: "create", conflicts: [] };
+  if (exists(gitignore)) owned.push('.migent/.gitignore');
+  if (owned.length === 0) return { state: 'create', conflicts: [] };
   const yamlFiles = isDirectory(workflows)
-    ? readdirSync(workflows).filter((name) => name.endsWith(".yaml") && isFile(path.join(workflows, name)))
+    ? readdirSync(workflows).filter((name) => name.endsWith('.yaml') && isFile(path.join(workflows, name)))
     : [];
   if (isFile(config) && yamlFiles.length > 0) {
     const checks = diagnose(workspace, { clients, which });
     const byName = new Map(checks.map((check) => [check.name, check]));
-    if (byName.get("config")?.ok && byName.get("workflows")?.ok) return { state: "ready", conflicts: [] };
+    if (byName.get('config')?.ok && byName.get('workflows')?.ok) return { state: 'ready', conflicts: [] };
   }
-  return { state: "conflict", conflicts: owned };
+  return { state: 'conflict', conflicts: owned };
 }
 
 function writeProject(workspace: string, files: readonly RenderedFile[]): string[] {
   for (const file of files) {
     const target = path.join(workspace, file.path);
     mkdirSync(path.dirname(target), { recursive: true });
-    writeFileSync(target, file.content, "utf8");
+    writeFileSync(target, file.content, 'utf8');
   }
   return files.map((file) => file.path);
 }
 
 async function promptOptions(
-  client: import("@nodeint/migent-kernel").CliClient,
+  client: import('@nodeint/migent-kernel').CliClient,
   model: string,
   catalog: ModelCatalog,
   which: Which,
@@ -363,7 +365,7 @@ async function promptOptions(
   return stored;
 }
 
-function clientOptions(client: import("@nodeint/migent-kernel").CliClient) {
+function clientOptions(client: import('@nodeint/migent-kernel').CliClient) {
   return asCatalog(catalogSourceOf(client)).clientOptions();
 }
 
@@ -371,32 +373,32 @@ class ClackPrompter implements Prompter {
   async selectModel(models: readonly ModelSelection[], message: string): Promise<ModelSelection> {
     const result = await autocomplete({
       message,
-      placeholder: "Search client or model...",
+      placeholder: 'Search client or model...',
       options: models.map((item, index) => ({ value: String(index), label: `${item.client} / ${item.model}` })),
-      filter: (search, option) => (option.label ?? "").toLowerCase().includes(search.toLowerCase()),
+      filter: (search, option) => (option.label ?? '').toLowerCase().includes(search.toLowerCase()),
     });
     if (isCancel(result)) throw new PromptCancelled();
     const selected = models[Number(result)];
-    if (!selected) throw new ConfigurationError("Model is required.");
+    if (!selected) throw new ConfigurationError('Model is required.');
     return selected;
   }
 
   async selectOption(name: string, values: readonly string[], allowDefault: boolean): Promise<string> {
-    if (values.length === 0) return "";
+    if (values.length === 0) return '';
     const options = [
-      ...(allowDefault ? [{ value: "", label: "client default" }] : []),
+      ...(allowDefault ? [{ value: '', label: 'client default' }] : []),
       ...values.map((value) => ({ value, label: value })),
     ];
     const result = await clackSelect({
       message: name,
       options,
-      initialValue: allowDefault ? "" : values[0],
+      initialValue: allowDefault ? '' : values[0],
     });
-    const allowed = new Set(allowDefault ? ["", ...values] : values);
+    const allowed = new Set(allowDefault ? ['', ...values] : values);
     if (isCancel(result)) throw new PromptCancelled();
-    if (!allowed.has(String(result ?? ""))) {
+    if (!allowed.has(String(result ?? ''))) {
       throw new ConfigurationError(`Unknown ${name} value: ${String(result)}.`);
     }
-    return result == null ? "" : String(result);
+    return result == null ? '' : String(result);
   }
 }

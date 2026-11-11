@@ -1,34 +1,35 @@
-import type { ClientRegistry } from "@nodeint/migent-kernel";
-import { legacyClientOf } from "@nodeint/migent-kernel";
-import { createHash } from "node:crypto";
-import { readFileSync, statSync } from "node:fs";
-import path from "node:path";
-import { stringify } from "yaml";
-import { writeFileAtomic } from "@nodeint/migent-kernel";
+import { createHash } from 'node:crypto';
+import { readFileSync, statSync } from 'node:fs';
+import path from 'node:path';
+
+import type { ClientRegistry } from '@nodeint/migent-kernel';
+import { legacyClientOf } from '@nodeint/migent-kernel';
+import { writeFileAtomic } from '@nodeint/migent-kernel';
 import {
   loadRoleResponsibilities,
   loadWorkspaceConfig,
-  resolveStageSpec,
   type ModelOverride,
+  resolveStageSpec,
   type StageTarget,
-} from "@nodeint/migent-kernel";
-import { ConfigurationError } from "@nodeint/migent-kernel";
-import { isRecord } from "@nodeint/migent-workflow";
-import { log } from "@nodeint/migent-kernel";
+} from '@nodeint/migent-kernel';
+import { ConfigurationError } from '@nodeint/migent-kernel';
+import { log } from '@nodeint/migent-kernel';
+import { isRecord } from '@nodeint/migent-workflow';
 import {
   isRoleStage,
   isWorkflowV2,
   loadNamedWorkflow,
   loadWorkflowDocument,
   parseWorkflowMapping,
+  type StageArtifact,
   type StageSpec,
   type WorkflowCompletion,
   type WorkflowDocument,
-  type StageArtifact,
-} from "@nodeint/migent-workflow";
-import { parseYamlDocument } from "@nodeint/migent-workflow";
+} from '@nodeint/migent-workflow';
+import { parseYamlDocument } from '@nodeint/migent-workflow';
+import { stringify } from 'yaml';
 
-export const WORKFLOW_FREEZE_FILE = "workflow.frozen.yaml";
+export const WORKFLOW_FREEZE_FILE = 'workflow.frozen.yaml';
 
 /** Canonical YAML for an editable workflow source. The id is always written. */
 export function renderWorkflowSource(workflow: WorkflowDocument): string {
@@ -80,9 +81,9 @@ export function readWorkflowFreeze(sessionDirectory: string): WorkflowFreeze | n
   let text: string;
   try {
     if (!statSync(filePath).isFile()) return null;
-    text = readFileSync(filePath, "utf8");
+    text = readFileSync(filePath, 'utf8');
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
     throw corrupt(filePath, error instanceof Error ? error.message : String(error));
   }
   let parsed: unknown;
@@ -91,13 +92,13 @@ export function readWorkflowFreeze(sessionDirectory: string): WorkflowFreeze | n
   } catch (error) {
     throw corrupt(filePath, error instanceof Error ? error.message : String(error));
   }
-  if (!isRecord(parsed)) throw corrupt(filePath, "expected a mapping");
-  if (!Object.hasOwn(parsed, "source_sha256")) throw corrupt(filePath, "missing source_sha256");
+  if (!isRecord(parsed)) throw corrupt(filePath, 'expected a mapping');
+  if (!Object.hasOwn(parsed, 'source_sha256')) throw corrupt(filePath, 'missing source_sha256');
   const sourceSha256 = parsed.source_sha256;
-  if (sourceSha256 !== null && typeof sourceSha256 !== "string") {
-    throw corrupt(filePath, "source_sha256 must be a string or null");
+  if (sourceSha256 !== null && typeof sourceSha256 !== 'string') {
+    throw corrupt(filePath, 'source_sha256 must be a string or null');
   }
-  if (!isRecord(parsed.workflow)) throw corrupt(filePath, "workflow must be a mapping");
+  if (!isRecord(parsed.workflow)) throw corrupt(filePath, 'workflow must be a mapping');
   let workflow: WorkflowDocument;
   try {
     workflow = parseWorkflowMapping(parsed.workflow, filePath);
@@ -126,7 +127,7 @@ export function frozenStageTarget(
   const options = override?.options ?? null;
   if ((client === null) !== (model === null)) {
     throw new ConfigurationError(
-      "Pass both --client and --model to override the resolved stage model, or omit both.",
+      'Pass both --client and --model to override the resolved stage model, or omit both.',
     );
   }
   if (client !== null && model !== null) {
@@ -162,7 +163,7 @@ export function requireLiveWorkflow(
     return document;
   }
   if (workflowId) return loadNamedWorkflow(workspace, workflowId);
-  throw new ConfigurationError("Workflow not found.");
+  throw new ConfigurationError('Workflow not found.');
 }
 
 /** Stderr only. A missing freeze file warns nothing. */
@@ -173,7 +174,7 @@ export function warnIfFrozenDrift(
   workflowId: string | null,
   resolveClient?: ClientRegistry,
 ): void {
-  const sessionDirectory = path.join(workspace, ".migent", "sessions", sessionId);
+  const sessionDirectory = path.join(workspace, '.migent', 'sessions', sessionId);
   const freeze = readWorkflowFreeze(sessionDirectory);
   if (freeze === null) return;
   for (const detail of collectFrozenDrift(workspace, freeze, workflowPath, workflowId, resolveClient, false)) {
@@ -197,13 +198,13 @@ export function collectFrozenDrift(
   const filePath = workflowPath ? workflowFile(workspace, workflowPath) : null;
   let readable = false;
   if (filePath === null || !isFile(filePath)) {
-    details.push("The workflow file is missing.");
+    details.push('The workflow file is missing.');
   } else {
     const digest = sourceFileHash(filePath);
-    if (digest === null) details.push("The workflow file cannot be loaded.");
+    if (digest === null) details.push('The workflow file cannot be loaded.');
     else {
       readable = true;
-      if (digest !== freeze.sourceSha256) details.push("The workflow file differs.");
+      if (digest !== freeze.sourceSha256) details.push('The workflow file differs.');
     }
   }
   let live: WorkflowDocument | null = null;
@@ -212,7 +213,7 @@ export function collectFrozenDrift(
       live = loadWorkflowDocument(filePath, { quiet });
     } catch (error) {
       if (!(error instanceof ConfigurationError)) throw error;
-      details.push("The workflow file cannot be loaded.");
+      details.push('The workflow file cannot be loaded.');
     }
   } else if (filePath === null && workflowId) {
     try {
@@ -350,7 +351,7 @@ function stageMapping(stage: StageSpec, version3 = false, version5 = false, vers
           const body: Record<string, unknown> = { when: stage.decisionInstructions?.[name], navigate: stage.routes[name] };
           const added = stage.decisionArtifacts[name] ?? [];
           if (version7 && added.length > 0) {
-            body.artifacts = added.every((artifact) => artifact.scope === "published")
+            body.artifacts = added.every((artifact) => artifact.scope === 'published')
               ? added.map((artifact) => artifact.id)
               : Object.fromEntries(added.map((artifact) => [artifact.id, artifactMapping(artifact)]));
           }
@@ -359,8 +360,8 @@ function stageMapping(stage: StageSpec, version3 = false, version5 = false, vers
       : { values: stage.decisionValues, routes: stage.routes };
   }
   if (stage.agent !== null) {
-    const selected = stage.agent.kind === "named" ? stage.agent.name : stage.agent.value;
-    mapped[version5 ? "agent" : "model"] = selected;
+    const selected = stage.agent.kind === 'named' ? stage.agent.name : stage.agent.value;
+    mapped[version5 ? 'agent' : 'model'] = selected;
   }
   if (!version5 && Object.keys(stage.options).length > 0) mapped.options = stage.options;
   if (stage.maxRevisions !== null) mapped.max_revisions = stage.maxRevisions;
@@ -396,10 +397,10 @@ function roleNames(workflow: WorkflowDocument): string[] {
 }
 
 function readRoles(value: unknown, filePath: string): Record<string, string[]> {
-  if (!isRecord(value)) throw corrupt(filePath, "roles must be a mapping");
+  if (!isRecord(value)) throw corrupt(filePath, 'roles must be a mapping');
   const roles: Record<string, string[]> = {};
   for (const [role, raw] of Object.entries(value)) {
-    if (!Array.isArray(raw) || raw.some((item) => typeof item !== "string")) {
+    if (!Array.isArray(raw) || raw.some((item) => typeof item !== 'string')) {
       throw corrupt(filePath, `roles.${role} must be a list of strings`);
     }
     roles[role] = [...raw];
@@ -408,18 +409,18 @@ function readRoles(value: unknown, filePath: string): Record<string, string[]> {
 }
 
 function readTargets(value: unknown, filePath: string, schemaVersion: unknown): Record<string, StageTarget> {
-  if (!isRecord(value)) throw corrupt(filePath, "targets must be a mapping");
-  const legacy = typeof schemaVersion !== "number" || schemaVersion < 2;
+  if (!isRecord(value)) throw corrupt(filePath, 'targets must be a mapping');
+  const legacy = typeof schemaVersion !== 'number' || schemaVersion < 2;
   const targets: Record<string, StageTarget> = {};
   for (const [stageId, raw] of Object.entries(value)) {
-    if (!isRecord(raw) || typeof raw.model !== "string") {
+    if (!isRecord(raw) || typeof raw.model !== 'string') {
       throw corrupt(filePath, `targets.${stageId} must name a client and model`);
     }
     const client = legacy ? legacyTargetClient(raw, filePath, stageId) : raw.client;
-    if (typeof client !== "string") {
+    if (typeof client !== 'string') {
       throw corrupt(filePath, `targets.${stageId} must name a client and model`);
     }
-    if (raw.model.trim() === "") {
+    if (raw.model.trim() === '') {
       throw corrupt(filePath, `targets.${stageId} must name a client and model`);
     }
     targets[stageId] = {
@@ -438,15 +439,15 @@ function legacyTargetClient(
   stageId: string,
 ): string | null {
   if (raw.client != null) {
-    if (typeof raw.client !== "string" || raw.client.trim() === "") {
+    if (typeof raw.client !== 'string' || raw.client.trim() === '') {
       throw corrupt(filePath, `targets.${stageId}.client must be a non-empty string`);
     }
     return raw.client;
   }
-  if (typeof raw.provider !== "string" || raw.provider.trim() === "") {
+  if (typeof raw.provider !== 'string' || raw.provider.trim() === '') {
     throw corrupt(filePath, `targets.${stageId} must name a provider and model`);
   }
-  return legacyClientOf(raw.provider) ?? "";
+  return legacyClientOf(raw.provider) ?? '';
 }
 
 function readOptionStrings(value: unknown, filePath: string, stageId: string): Record<string, string> {
@@ -454,7 +455,7 @@ function readOptionStrings(value: unknown, filePath: string, stageId: string): R
   if (!isRecord(value)) throw corrupt(filePath, `targets.${stageId}.options must be a mapping`);
   const options: Record<string, string> = {};
   for (const [key, item] of Object.entries(value)) {
-    if (typeof item !== "string") throw corrupt(filePath, `targets.${stageId}.options.${key} must be a string`);
+    if (typeof item !== 'string') throw corrupt(filePath, `targets.${stageId}.options.${key} must be a string`);
     options[key] = item;
   }
   return options;
@@ -474,7 +475,7 @@ function sourceFileHash(source: string | null): string | null {
 }
 
 function sha256(data: string | Buffer): string {
-  return createHash("sha256").update(data).digest("hex");
+  return createHash('sha256').update(data).digest('hex');
 }
 
 function isFile(filePath: string): boolean {

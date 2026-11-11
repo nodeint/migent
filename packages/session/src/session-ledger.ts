@@ -1,18 +1,20 @@
-import path from "node:path";
+import path from 'node:path';
+
 import {
+  type ExecutionSnapshot,
   isArtifactSchema,
   publishOutputFiles,
   resolveArtifactSources,
   selectSourceExecution,
   sessionStatusAfterExecution,
   shouldPublishOutputs,
-  type ExecutionSnapshot,
-} from "@nodeint/migent-kernel";
-import { isRecord } from "@nodeint/migent-workflow";
-import { sessionChangeReason } from "./session-events.js";
-import { currentCompleteByStage, missingOutputNames, readyOutsideStoppedBranches, version2GraphQuiet } from "@nodeint/migent-kernel";
-import { StageOutcome } from "@nodeint/migent-kernel";
-import { isWorkflowV2, type WorkflowDocument } from "@nodeint/migent-workflow";
+} from '@nodeint/migent-kernel';
+import { currentCompleteByStage, missingOutputNames, readyOutsideStoppedBranches, version2GraphQuiet } from '@nodeint/migent-kernel';
+import { StageOutcome } from '@nodeint/migent-kernel';
+import { isRecord } from '@nodeint/migent-workflow';
+import { isWorkflowV2, type WorkflowDocument } from '@nodeint/migent-workflow';
+
+import { sessionChangeReason } from './session-events.js';
 
 export interface LedgerOutput {
   name: string;
@@ -75,9 +77,9 @@ export function sessionStatusFromExecutions(
   workflow: WorkflowDocument | null,
 ): string {
   const latest = latestPerStage(executions);
-  if (latest.some((execution) => execution.status === "running")) return "active";
+  if (latest.some((execution) => execution.status === 'running')) return 'active';
   let cancelled = false;
-  let stopped: "blocked" | "question" | null = null;
+  let stopped: 'blocked' | 'question' | null = null;
   let completed = false;
   for (const execution of latest) {
     const status = sessionStatusForExecution(
@@ -87,38 +89,38 @@ export function sessionStatusFromExecutions(
       workflow,
       execution.stageId,
     );
-    if (status === "blocked" || status === "question") {
+    if (status === 'blocked' || status === 'question') {
       if (workflow !== null && isWorkflowV2(workflow)) {
         const snapshots = snapshotsFromStatus(executions);
         const startable = readyOutsideStoppedBranches(
           workflow,
           snapshots,
-          "active",
+          'active',
           revisionBaselinesFrom(previousStatus),
         ).filter((stageId) => {
           const row = latest.find((execution) => execution.stageId === stageId);
           // A failed stage stays stopped until continue writes `from: failed` for that execution.
-          return row === undefined || (row.status !== "cancelled" && row.status !== "failed");
+          return row === undefined || (row.status !== 'cancelled' && row.status !== 'failed');
         });
-        if (startable.length > 0) return "active";
+        if (startable.length > 0) return 'active';
       }
-      if (status === "blocked" || stopped === null) stopped = status;
+      if (status === 'blocked' || stopped === null) stopped = status;
     }
-    if (status === "cancelled") cancelled = true;
-    else if (status === "completed") completed = true;
+    if (status === 'cancelled') cancelled = true;
+    else if (status === 'completed') completed = true;
   }
   if (stopped !== null) return stopped;
-  if (cancelled) return "cancelled";
+  if (cancelled) return 'cancelled';
   if (workflow !== null && isWorkflowV2(workflow)) {
     const snapshots = snapshotsFromStatus(executions);
-    const sessionStatus = typeof previousStatus.status === "string" ? previousStatus.status : "active";
+    const sessionStatus = typeof previousStatus.status === 'string' ? previousStatus.status : 'active';
     // Quiescence, not one stage's decision. A missing output keeps the session active.
-    if (!version2GraphQuiet(workflow, snapshots, sessionStatus)) return "active";
-    if (missingOutputNames(workflow, snapshots).length > 0) return "active";
-    return "completed";
+    if (!version2GraphQuiet(workflow, snapshots, sessionStatus)) return 'active';
+    if (missingOutputNames(workflow, snapshots).length > 0) return 'active';
+    return 'completed';
   }
-  if (completed) return "completed";
-  return "active";
+  if (completed) return 'completed';
+  return 'active';
 }
 
 /** Latest blocked execution of each stage, lowest execution order first. */
@@ -128,7 +130,7 @@ export function blockedExecutions(
   workflow: WorkflowDocument | null,
 ): StatusExecution[] {
   return latestPerStage(executions)
-    .filter((execution) => execution.status !== "running")
+    .filter((execution) => execution.status !== 'running')
     .filter(
       (execution) =>
         sessionStatusForExecution(
@@ -137,7 +139,7 @@ export function blockedExecutions(
           previousStatus,
           workflow,
           execution.stageId,
-        ) === "blocked",
+        ) === 'blocked',
     )
     .sort(compareStatusExecutions);
 }
@@ -181,7 +183,7 @@ export function planExecutionSave(input: {
     input.workflow,
   );
   const published = publishForSave(input);
-  const previousSessionStatus = typeof input.previousStatus.status === "string" ? input.previousStatus.status : "";
+  const previousSessionStatus = typeof input.previousStatus.status === 'string' ? input.previousStatus.status : '';
   return {
     sessionStatus,
     outputs: published.outputs,
@@ -217,8 +219,8 @@ export function latestDecision(
 
 export function decisionOfOutcome(outcome: Record<string, unknown> | null): string | null {
   if (outcome === null) return null;
-  const decision = outcome.decision;
-  return typeof decision === "string" && decision !== "" ? decision : null;
+  const {decision} = outcome;
+  return typeof decision === 'string' && decision !== '' ? decision : null;
 }
 
 export function recordLatestDecision(status: Record<string, unknown>, decision: string | null): void {
@@ -237,15 +239,15 @@ export function applyTerminalFields(
   delete status.blocked_by_execution_ids;
   delete status.blocked_by_stage_id;
   delete status.blocker;
-  if (sessionStatus !== "blocked" && sessionStatus !== "completed" && sessionStatus !== "cancelled") return;
+  if (sessionStatus !== 'blocked' && sessionStatus !== 'completed' && sessionStatus !== 'cancelled') return;
   const rows = blocked.length > 0 ? blocked : source ? [source] : [];
   if (rows.length === 0) {
-    if (sessionStatus === "blocked" && reason) status.blocker = reason;
+    if (sessionStatus === 'blocked' && reason) status.blocker = reason;
     return;
   }
   const first = rows[0]!;
   status.terminal_execution_id = source?.executionId ?? first.executionId;
-  if (sessionStatus === "blocked") {
+  if (sessionStatus === 'blocked') {
     status.blocked_by_execution_id = first.executionId;
     status.blocked_by_execution_ids = rows.map((row) => row.executionId);
     status.blocked_by_stage_id = first.stageId;
@@ -277,12 +279,12 @@ function publishForSave(input: {
   workflow: WorkflowDocument | null;
   snapshots: readonly ExecutionSnapshot[];
 }): { outputs: LedgerOutput[]; outputsMissing: string[] } {
-  if (input.executionStatus === "running" || input.workflow === null) return { outputs: [], outputsMissing: [] };
+  if (input.executionStatus === 'running' || input.workflow === null) return { outputs: [], outputsMissing: [] };
   if (isWorkflowV2(input.workflow)) return publishVersion2({ ...input, workflow: input.workflow });
   const workflowId = input.previousStatus.workflow_id;
   if (
     !shouldPublishOutputs({
-      workflowId: typeof workflowId === "string" ? workflowId : null,
+      workflowId: typeof workflowId === 'string' ? workflowId : null,
       executionStatus: input.executionStatus,
       outcome: input.outcome,
       workflow: input.workflow,
@@ -291,7 +293,7 @@ function publishForSave(input: {
   ) {
     return { outputs: [], outputsMissing: [] };
   }
-  const completion = input.workflow.completion;
+  const {completion} = input.workflow;
   if (completion === null) return { outputs: [], outputsMissing: [] };
   const sources: Record<string, readonly [string, string]> = {};
   for (const output of completion.outputs) {
@@ -312,11 +314,11 @@ function publishVersion2(input: {
   snapshots: readonly ExecutionSnapshot[];
 }): { outputs: LedgerOutput[]; outputsMissing: string[] } {
   const completedStage =
-    input.executionStatus === "completed" && input.outcome !== null && input.outcome.status === "complete";
-  if (!completedStage && input.executionStatus !== "skipped") {
+    input.executionStatus === 'completed' && input.outcome !== null && input.outcome.status === 'complete';
+  if (!completedStage && input.executionStatus !== 'skipped') {
     return { outputs: [], outputsMissing: [] };
   }
-  const sessionStatus = typeof input.previousStatus.status === "string" ? input.previousStatus.status : "active";
+  const sessionStatus = typeof input.previousStatus.status === 'string' ? input.previousStatus.status : 'active';
   if (!version2GraphQuiet(input.workflow, input.snapshots, sessionStatus)) {
     return { outputs: [], outputsMissing: [] };
   }
@@ -359,7 +361,7 @@ function revisionBaselinesFrom(previousStatus: Readonly<Record<string, unknown>>
   if (!isRecord(raw)) return null;
   const baselines: Record<string, number> = {};
   for (const [key, value] of Object.entries(raw)) {
-    if (typeof value === "number") baselines[key] = value;
+    if (typeof value === 'number') baselines[key] = value;
   }
   return baselines;
 }
@@ -371,7 +373,7 @@ function snapshotsFromStatus(executions: readonly StatusExecution[]): ExecutionS
     executionOrder: execution.executionOrder,
     status: execution.status,
     outcomeStatus: execution.outcome?.status ?? null,
-    artifactDirectory: execution.artifactDirectory ?? "",
+    artifactDirectory: execution.artifactDirectory ?? '',
     outcomeDecision: execution.outcome?.decision || null,
     failureReason: execution.failureReason ?? null,
   }));
@@ -399,10 +401,10 @@ function manifestLine(
 ): string | null {
   if (schemaVersion >= 2 || manifestStatus === null) return null;
   let desired: string | null = null;
-  if (executionStatus === "running" && previousSessionStatus === "completed") desired = "running";
+  if (executionStatus === 'running' && previousSessionStatus === 'completed') desired = 'running';
   if (
     sessionStatus !== previousSessionStatus &&
-    (sessionStatus === "completed" || sessionStatus === "blocked" || sessionStatus === "question" || sessionStatus === "cancelled")
+    (sessionStatus === 'completed' || sessionStatus === 'blocked' || sessionStatus === 'question' || sessionStatus === 'cancelled')
   ) {
     desired = sessionStatus;
   }

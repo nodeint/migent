@@ -1,192 +1,194 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import path from "node:path";
-import { type BuildCommandInput, type CommandSpec } from "@nodeint/migent-kernel";
-import { AgentToolRunner } from "@nodeint/migent-engine";
-import { expect, test } from "vitest";
-import { cliHooks } from "../src/hooks.ts";
-import { main } from "../src/index.ts";
-import { CancelOnCommand, ScriptedClient, capture, registryOf, removeWorkspace, repoWorkflowText, writeFakeWorkflowWorkspace } from "./support.ts";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 
-const SPLIT = "Pass --workflow for a workflow run, or --role for an agent run.";
+import { AgentToolRunner } from '@nodeint/migent-engine';
+import { type BuildCommandInput, type CommandSpec } from '@nodeint/migent-kernel';
+import { expect, test } from 'vitest';
 
-test("session without a subcommand prints help", async () => {
-  const captured = await capture(() => main(["session"]));
+import { cliHooks } from '../src/hooks.ts';
+import { main } from '../src/index.ts';
+import { CancelOnCommand, capture, registryOf, removeWorkspace, repoWorkflowText, ScriptedClient, writeFakeWorkflowWorkspace } from './support.ts';
+
+const SPLIT = 'Pass --workflow for a workflow run, or --role for an agent run.';
+
+test('session without a subcommand prints help', async () => {
+  const captured = await capture(() => main(['session']));
   expect(captured.value).toBe(2);
-  expect(captured.stdout).toContain("Usage: migent session");
-  expect(captured.stdout).toContain("run");
-  expect(captured.stdout).toContain("list");
-  expect(captured.stdout).toContain("show");
-  expect(captured.stdout).toContain("follow");
+  expect(captured.stdout).toContain('Usage: migent session');
+  expect(captured.stdout).toContain('run');
+  expect(captured.stdout).toContain('list');
+  expect(captured.stdout).toContain('show');
+  expect(captured.stdout).toContain('follow');
 });
 
-test("session prepare help names the workflow start", async () => {
-  const captured = await capture(() => main(["session", "prepare", "--help"]));
+test('session prepare help names the workflow start', async () => {
+  const captured = await capture(() => main(['session', 'prepare', '--help']));
   expect(captured.value).toBe(0);
-  expect(captured.stdout.replaceAll(/\s+/g, " ")).toContain(
-    "session run --session <id>.",
+  expect(captured.stdout.replaceAll(/\s+/g, ' ')).toContain(
+    'session run --session <id>.',
   );
 });
 
-test("session run help shows both modes", async () => {
-  const captured = await capture(() => main(["session", "run", "--help"]));
+test('session run help shows both modes', async () => {
+  const captured = await capture(() => main(['session', 'run', '--help']));
   expect(captured.value).toBe(0);
-  expect(captured.stdout).toContain("migent session run --workflow plan --task");
-  expect(captured.stdout).toContain("migent session run --session <prepared-session>");
-  expect(captured.stdout).toContain("migent session run --role reviewer --prompt");
-  expect(captured.stdout).toContain("Workflow run:");
-  expect(captured.stdout).toContain("Role run:");
+  expect(captured.stdout).toContain('migent session run --workflow plan --task');
+  expect(captured.stdout).toContain('migent session run --session <prepared-session>');
+  expect(captured.stdout).toContain('migent session run --role reviewer --prompt');
+  expect(captured.stdout).toContain('Workflow run:');
+  expect(captured.stdout).toContain('Role run:');
 });
 
-test("session continue help shows reply", async () => {
-  const captured = await capture(() => main(["session", "continue", "--help"]));
+test('session continue help shows reply', async () => {
+  const captured = await capture(() => main(['session', 'continue', '--help']));
   expect(captured.value).toBe(0);
-  expect(captured.stdout).toContain("--reply");
-  expect(captured.stdout).toContain("--reply-file");
+  expect(captured.stdout).toContain('--reply');
+  expect(captured.stdout).toContain('--reply-file');
   expect(captured.stdout).toContain('migent session continue <session> --reply "<reply>"');
-  expect(captured.stdout).toContain("Role session:");
+  expect(captured.stdout).toContain('Role session:');
 });
 
-test("session continue rejects an empty or double reply", async () => {
-  const empty = await capture(() => main(["session", "continue", "wave-3", "--reply", "   "]));
+test('session continue rejects an empty or double reply', async () => {
+  const empty = await capture(() => main(['session', 'continue', 'wave-3', '--reply', '   ']));
   expect(empty.value).toBe(2);
-  expect(empty.stderr).toContain("--reply is empty.");
+  expect(empty.stderr).toContain('--reply is empty.');
   const both = await capture(() =>
-    main(["session", "continue", "wave-3", "--reply", "answer", "--reply-file", "answer.md"]),
+    main(['session', 'continue', 'wave-3', '--reply', 'answer', '--reply-file', 'answer.md']),
   );
   expect(both.value).toBe(2);
-  expect(both.stderr).toContain("Pass only one of --reply or --reply-file.");
+  expect(both.stderr).toContain('Pass only one of --reply or --reply-file.');
 });
 
-test("session run requires a workflow or a role", async () => {
-  const neither = await capture(() => main(["session", "run"]));
+test('session run requires a workflow or a role', async () => {
+  const neither = await capture(() => main(['session', 'run']));
   expect(neither.value).toBe(2);
   expect(neither.stderr).toContain(SPLIT);
 
-  const both = await capture(() => main(["session", "run", "--workflow", "plan", "--role", "reviewer", "--prompt", "x"]));
+  const both = await capture(() => main(['session', 'run', '--workflow', 'plan', '--role', 'reviewer', '--prompt', 'x']));
   expect(both.value).toBe(2);
   expect(both.stderr).toContain(SPLIT);
 
-  const once = await capture(() => main(["session", "run", "--role", "reviewer", "--prompt", "x", "--once"]));
+  const once = await capture(() => main(['session', 'run', '--role', 'reviewer', '--prompt', 'x', '--once']));
   expect(once.value).toBe(2);
   expect(once.stderr).toContain(SPLIT);
 
   const refresh = await capture(() =>
-    main(["session", "run", "--role", "reviewer", "--prompt", "x", "--refresh-workflow"]),
+    main(['session', 'run', '--role', 'reviewer', '--prompt', 'x', '--refresh-workflow']),
   );
   expect(refresh.value).toBe(2);
   expect(refresh.stderr).toContain(SPLIT);
 
-  for (const flag of [["--once"], ["--stage", "plan"], ["--refresh-workflow"], ["--prior", "x"]]) {
+  for (const flag of [['--once'], ['--stage', 'plan'], ['--refresh-workflow'], ['--prior', 'x']]) {
     const mixed = await capture(() =>
-      main(["session", "run", "--role", "reviewer", "--session", "wave-3", "--prompt", "x", ...flag]),
+      main(['session', 'run', '--role', 'reviewer', '--session', 'wave-3', '--prompt', 'x', ...flag]),
     );
     expect(mixed.value).toBe(2);
     expect(mixed.stderr).toContain(SPLIT);
   }
 
-  const empty = await capture(() => main(["session", "run", "--workflow", " "]));
+  const empty = await capture(() => main(['session', 'run', '--workflow', ' ']));
   expect(empty.value).toBe(2);
-  expect(empty.stderr).toContain("--workflow is empty.");
+  expect(empty.stderr).toContain('--workflow is empty.');
 });
 
-test("session run --refresh-workflow requires an existing session", async () => {
-  const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
+test('session run --refresh-workflow requires an existing session', async () => {
+  const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText('plan') });
   try {
     const captured = await capture(() =>
-      main(["session", "run", "--workflow", "plan", "--task", "Write a plan", "--refresh-workflow"], workspace),
+      main(['session', 'run', '--workflow', 'plan', '--task', 'Write a plan', '--refresh-workflow'], workspace),
     );
     expect(captured.value).toBe(2);
-    expect(captured.stderr).toContain("--refresh-workflow requires an existing session.");
-    expect(existsSync(path.join(workspace, ".migent", "sessions"))).toBe(false);
+    expect(captured.stderr).toContain('--refresh-workflow requires an existing session.');
+    expect(existsSync(path.join(workspace, '.migent', 'sessions'))).toBe(false);
   } finally {
     removeWorkspace(workspace);
   }
 });
 
-test("session run --workflow dispatches one stage", async () => {
-  const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
-  const configPath = path.join(workspace, ".migent", "config.yaml");
+test('session run --workflow dispatches one stage', async () => {
+  const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText('plan') });
+  const configPath = path.join(workspace, '.migent', 'config.yaml');
   writeFileSync(
     configPath,
-    readFileSync(configPath, "utf8").replace(
-      "  planner:\n    agent: fake-model\n",
-      "  planner:\n    agent: fake-model\n    responsibilities:\n      - Stay inside the task.\n",
+    readFileSync(configPath, 'utf8').replace(
+      '  planner:\n    agent: fake-model\n',
+      '  planner:\n    agent: fake-model\n    responsibilities:\n      - Stay inside the task.\n',
     ),
   );
-  const provider = new ScriptedClient(["status: complete\n\nplanned"], ["# Plan\n"]);
+  const provider = new ScriptedClient(['status: complete\n\nplanned'], ['# Plan\n']);
   cliHooks.runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
   try {
     const captured = await capture(() =>
-      main(["session", "run", "--workflow", "plan", "--task", "Write a plan", "--once"], workspace),
+      main(['session', 'run', '--workflow', 'plan', '--task', 'Write a plan', '--once'], workspace),
     );
     expect(captured.value).toBe(0);
-    expect(captured.stdout).toBe("");
-    expect(captured.stderr).not.toContain("deprecated");
+    expect(captured.stdout).toBe('');
+    expect(captured.stderr).not.toContain('deprecated');
     const sessionMatch = /session_id: (\S+)/.exec(captured.stderr);
-    const sessionId = sessionMatch?.[1] ?? "";
+    const sessionId = sessionMatch?.[1] ?? '';
     expect(sessionId).toMatch(/^[1-9][0-9]*$/);
     const status = JSON.parse(
-      readFileSync(path.join(workspace, ".migent", "sessions", sessionId, "status.json"), "utf8"),
+      readFileSync(path.join(workspace, '.migent', 'sessions', sessionId, 'status.json'), 'utf8'),
     ) as { status?: string; title?: string };
-    expect(status.status).toBe("active");
-    expect(status.title).toBe("Write a plan");
-    const prompt = provider.calls[0]?.prompt ?? "";
-    const roleAt = prompt.indexOf("### Role\n\n- Stay inside the task.");
-    expect(roleAt).toBeGreaterThan(prompt.indexOf("## Stage: plan (role: planner)"));
-    expect(prompt.indexOf("### Constraints")).toBeGreaterThan(roleAt);
+    expect(status.status).toBe('active');
+    expect(status.title).toBe('Write a plan');
+    const prompt = provider.calls[0]?.prompt ?? '';
+    const roleAt = prompt.indexOf('### Role\n\n- Stay inside the task.');
+    expect(roleAt).toBeGreaterThan(prompt.indexOf('## Stage: plan (role: planner)'));
+    expect(prompt.indexOf('### Constraints')).toBeGreaterThan(roleAt);
 
-    const listed = await capture(() => main(["session", "list", "--latest", "--json"], workspace));
+    const listed = await capture(() => main(['session', 'list', '--latest', '--json'], workspace));
     expect(listed.value).toBe(0);
     expect(JSON.parse(listed.stdout)).toMatchObject({
       session: sessionId,
-      title: "Write a plan",
-      workflow: "plan",
-      status: "active",
+      title: 'Write a plan',
+      workflow: 'plan',
+      status: 'active',
     });
 
-    const shown = await capture(() => main(["session", "show", sessionId, "--json"], workspace));
+    const shown = await capture(() => main(['session', 'show', sessionId, '--json'], workspace));
     expect(shown.value).toBe(0);
-    expect(JSON.parse(shown.stdout)).toMatchObject({ session_id: sessionId, status: "active" });
+    expect(JSON.parse(shown.stdout)).toMatchObject({ session_id: sessionId, status: 'active' });
   } finally {
     cliHooks.runner = null;
     removeWorkspace(workspace);
   }
 });
 
-test("session run without --workflow runs one role", async () => {
-  const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
-  const configPath = path.join(workspace, ".migent", "config.yaml");
+test('session run without --workflow runs one role', async () => {
+  const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText('plan') });
+  const configPath = path.join(workspace, '.migent', 'config.yaml');
   writeFileSync(
     configPath,
-    readFileSync(configPath, "utf8").replace(
-      "  reviewer:\n    agent: fake-model\n",
-      "  reviewer:\n    agent: fake-model\n    responsibilities:\n      - Judge the change.\n",
+    readFileSync(configPath, 'utf8').replace(
+      '  reviewer:\n    agent: fake-model\n',
+      '  reviewer:\n    agent: fake-model\n    responsibilities:\n      - Judge the change.\n',
     ),
   );
-  const provider = new ScriptedClient(["status: complete\n\ndone", "status: complete\n\nagain"]);
+  const provider = new ScriptedClient(['status: complete\n\ndone', 'status: complete\n\nagain']);
   try {
     cliHooks.runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
     const captured = await capture(() =>
-      main(["session", "run", "--role", "reviewer", "--prompt", "Review the latest changes", "--json"], workspace),
+      main(['session', 'run', '--role', 'reviewer', '--prompt', 'Review the latest changes', '--json'], workspace),
     );
     expect(captured.value).toBe(0);
     const payload = JSON.parse(captured.stdout) as { outcome_status: string; session_id: string };
-    expect(payload.outcome_status).toBe("complete");
+    expect(payload.outcome_status).toBe('complete');
     expect(provider.calls[0]?.prompt).toContain(
-      "## Role\n\n- Judge the change.\n\nReview the latest changes",
+      '## Role\n\n- Judge the change.\n\nReview the latest changes',
     );
 
     cliHooks.runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
     const again = await capture(() =>
       main(
-        ["session", "run", "--role", "reviewer", "--session", payload.session_id, "--prompt", "Summarize the risks", "--json"],
+        ['session', 'run', '--role', 'reviewer', '--session', payload.session_id, '--prompt', 'Summarize the risks', '--json'],
         workspace,
       ),
     );
     expect(again.value).toBe(0);
-    expect(JSON.parse(again.stdout)).toMatchObject({ session_id: payload.session_id, outcome_status: "complete" });
+    expect(JSON.parse(again.stdout)).toMatchObject({ session_id: payload.session_id, outcome_status: 'complete' });
     expect(provider.calls[1]?.prompt).toContain(
-      "## Role\n\n- Judge the change.\n\nSummarize the risks",
+      '## Role\n\n- Judge the change.\n\nSummarize the risks',
     );
   } finally {
     cliHooks.runner = null;
@@ -194,43 +196,43 @@ test("session run without --workflow runs one role", async () => {
   }
 });
 
-test("session prepare starts through session run --workflow", async () => {
+test('session prepare starts through session run --workflow', async () => {
   const workspace = writeFakeWorkflowWorkspace({
-    plan: repoWorkflowText("plan"),
-    "plan-implement": repoWorkflowText("plan-implement"),
+    plan: repoWorkflowText('plan'),
+    'plan-implement': repoWorkflowText('plan-implement'),
   });
   try {
-    const prepared = await capture(() => main(["session", "prepare", "some task title", "--workflow", "plan"], workspace));
+    const prepared = await capture(() => main(['session', 'prepare', 'some task title', '--workflow', 'plan'], workspace));
     expect(prepared.value).toBe(0);
     const preparedBody = JSON.parse(prepared.stdout) as { session_id: string; title: string; task_path: string; workflow_path: string };
     expect(preparedBody).toEqual({
       session_id: expect.stringMatching(/^[1-9][0-9]*$/),
-      title: "some task title",
-      status: "prepared",
+      title: 'some task title',
+      status: 'prepared',
       task_path: `.migent/sessions/${preparedBody.session_id}/task.md`,
       workflow_path: `.migent/sessions/${preparedBody.session_id}/workflow.yaml`,
     });
     const sessionId = preparedBody.session_id;
 
     const missing = await capture(() =>
-      main(["session", "run", "--session", sessionId, "--workflow", "plan", "--once"], workspace),
+      main(['session', 'run', '--session', sessionId, '--workflow', 'plan', '--once'], workspace),
     );
     expect(missing.value).toBe(2);
-    expect(missing.stderr).toContain("no task.md");
+    expect(missing.stderr).toContain('no task.md');
 
-    writeFileSync(path.join(workspace, ".migent", "sessions", sessionId, "task.md"), "Migrate the plugin API.\n", "utf8");
+    writeFileSync(path.join(workspace, '.migent', 'sessions', sessionId, 'task.md'), 'Migrate the plugin API.\n', 'utf8');
     const mismatch = await capture(() =>
-      main(["session", "run", "--session", sessionId, "--workflow", "plan-implement", "--once"], workspace),
+      main(['session', 'run', '--session', sessionId, '--workflow', 'plan-implement', '--once'], workspace),
     );
     expect(mismatch.value).toBe(2);
-    expect(mismatch.stderr).toContain("does not match");
+    expect(mismatch.stderr).toContain('does not match');
 
-    cliHooks.runner = new AgentToolRunner(registryOf({ fake: new ScriptedClient(["status: complete\n\nplanned"], ["# Plan\n"]) }), 10);
+    cliHooks.runner = new AgentToolRunner(registryOf({ fake: new ScriptedClient(['status: complete\n\nplanned'], ['# Plan\n']) }), 10);
     const started = await capture(() =>
-      main(["session", "run", "--session", sessionId, "--workflow", "plan", "--once"], workspace),
+      main(['session', 'run', '--session', sessionId, '--workflow', 'plan', '--once'], workspace),
     );
     expect(started.value).toBe(0);
-    expect(started.stdout).toBe("");
+    expect(started.stdout).toBe('');
     expect(started.stderr).toMatch(/stage plan · attempt 1 ·/);
   } finally {
     cliHooks.runner = null;
@@ -238,26 +240,26 @@ test("session prepare starts through session run --workflow", async () => {
   }
 });
 
-test("session run --session alone starts a prepared session from its edited workflow", async () => {
-  const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
+test('session run --session alone starts a prepared session from its edited workflow', async () => {
+  const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText('plan') });
   try {
-    const prepared = await capture(() => main(["session", "prepare", "some task title", "--workflow", "plan"], workspace));
+    const prepared = await capture(() => main(['session', 'prepare', 'some task title', '--workflow', 'plan'], workspace));
     const sessionId = (JSON.parse(prepared.stdout) as { session_id: string }).session_id;
-    const sessionDirectory = path.join(workspace, ".migent", "sessions", sessionId);
-    writeFileSync(path.join(sessionDirectory, "task.md"), "Migrate the plugin API.\n", "utf8");
-    const draftPath = path.join(sessionDirectory, "workflow.yaml");
-    const draft = readFileSync(draftPath, "utf8");
-    expect(draft).toContain("role: planner");
-    writeFileSync(draftPath, draft.replace("role: planner", "role: planner\n    instructions:\n      - Edited before the first run."));
+    const sessionDirectory = path.join(workspace, '.migent', 'sessions', sessionId);
+    writeFileSync(path.join(sessionDirectory, 'task.md'), 'Migrate the plugin API.\n', 'utf8');
+    const draftPath = path.join(sessionDirectory, 'workflow.yaml');
+    const draft = readFileSync(draftPath, 'utf8');
+    expect(draft).toContain('role: planner');
+    writeFileSync(draftPath, draft.replace('role: planner', 'role: planner\n    instructions:\n      - Edited before the first run.'));
 
-    const provider = new ScriptedClient(["status: complete\n\nplanned"], ["# Plan\n"]);
+    const provider = new ScriptedClient(['status: complete\n\nplanned'], ['# Plan\n']);
     cliHooks.runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
-    const started = await capture(() => main(["session", "run", "--session", sessionId, "--once"], workspace));
+    const started = await capture(() => main(['session', 'run', '--session', sessionId, '--once'], workspace));
     expect(started.value).toBe(0);
-    expect(provider.calls[0]?.prompt).toContain("Edited before the first run.");
-    expect(readFileSync(path.join(sessionDirectory, "workflow.frozen.yaml"), "utf8")).toContain("Edited before the first run");
+    expect(provider.calls[0]?.prompt).toContain('Edited before the first run.');
+    expect(readFileSync(path.join(sessionDirectory, 'workflow.frozen.yaml'), 'utf8')).toContain('Edited before the first run');
 
-    const again = await capture(() => main(["session", "run", "--session", sessionId], workspace));
+    const again = await capture(() => main(['session', 'run', '--session', sessionId], workspace));
     expect(again.value).toBe(2);
     expect(again.stderr).toContain(`migent session continue ${sessionId}`);
   } finally {
@@ -266,25 +268,25 @@ test("session run --session alone starts a prepared session from its edited work
   }
 });
 
-test("session run --session accepts a matching --workflow and rejects a different one", async () => {
+test('session run --session accepts a matching --workflow and rejects a different one', async () => {
   const workspace = writeFakeWorkflowWorkspace({
-    plan: repoWorkflowText("plan"),
-    "plan-implement": repoWorkflowText("plan-implement"),
+    plan: repoWorkflowText('plan'),
+    'plan-implement': repoWorkflowText('plan-implement'),
   });
   try {
-    const prepared = await capture(() => main(["session", "prepare", "some task title", "--workflow", "plan"], workspace));
+    const prepared = await capture(() => main(['session', 'prepare', 'some task title', '--workflow', 'plan'], workspace));
     const sessionId = (JSON.parse(prepared.stdout) as { session_id: string }).session_id;
-    writeFileSync(path.join(workspace, ".migent", "sessions", sessionId, "task.md"), "Task.\n", "utf8");
+    writeFileSync(path.join(workspace, '.migent', 'sessions', sessionId, 'task.md'), 'Task.\n', 'utf8');
 
     const mismatch = await capture(() =>
-      main(["session", "run", "--session", sessionId, "--workflow", "plan-implement", "--once"], workspace),
+      main(['session', 'run', '--session', sessionId, '--workflow', 'plan-implement', '--once'], workspace),
     );
     expect(mismatch.value).toBe(2);
-    expect(mismatch.stderr).toContain("Workflow plan-implement does not match session plan.");
+    expect(mismatch.stderr).toContain('Workflow plan-implement does not match session plan.');
 
-    cliHooks.runner = new AgentToolRunner(registryOf({ fake: new ScriptedClient(["status: complete\n\nplanned"], ["# Plan\n"]) }), 10);
+    cliHooks.runner = new AgentToolRunner(registryOf({ fake: new ScriptedClient(['status: complete\n\nplanned'], ['# Plan\n']) }), 10);
     const matching = await capture(() =>
-      main(["session", "run", "--session", sessionId, "--workflow", "plan", "--once"], workspace),
+      main(['session', 'run', '--session', sessionId, '--workflow', 'plan', '--once'], workspace),
     );
     expect(matching.value).toBe(0);
   } finally {
@@ -293,18 +295,18 @@ test("session run --session accepts a matching --workflow and rejects a differen
   }
 });
 
-test("session run --session reports a missing session and rejects --task", async () => {
-  const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
+test('session run --session reports a missing session and rejects --task', async () => {
+  const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText('plan') });
   try {
-    const missing = await capture(() => main(["session", "run", "--session", "wave-3"], workspace));
+    const missing = await capture(() => main(['session', 'run', '--session', 'wave-3'], workspace));
     expect(missing.value).toBe(2);
-    expect(missing.stderr).toContain("Session not found: wave-3.");
+    expect(missing.stderr).toContain('Session not found: wave-3.');
 
-    const both = await capture(() => main(["session", "run", "--session", "wave-3", "--task", "x"], workspace));
+    const both = await capture(() => main(['session', 'run', '--session', 'wave-3', '--task', 'x'], workspace));
     expect(both.value).toBe(2);
-    expect(both.stderr).toContain("not both");
+    expect(both.stderr).toContain('not both');
 
-    const creating = await capture(() => main(["session", "run", "--task", "x"], workspace));
+    const creating = await capture(() => main(['session', 'run', '--task', 'x'], workspace));
     expect(creating.value).toBe(2);
     expect(creating.stderr).toContain(SPLIT);
   } finally {
@@ -312,8 +314,8 @@ test("session run --session reports a missing session and rejects --task", async
   }
 });
 
-test("removed session aliases are unknown commands", async () => {
-  for (const name of ["start", "prepare", "continue", "sessions", "agent", "stage", "watch"]) {
+test('removed session aliases are unknown commands', async () => {
+  for (const name of ['start', 'prepare', 'continue', 'sessions', 'agent', 'stage', 'watch']) {
     const captured = await capture(() => main([name]));
     expect(captured.value).toBe(2);
     expect(captured.stderr).toContain(name);
@@ -325,36 +327,36 @@ function writeMetricsSession(
   sessionId: string,
   workflow: string,
   updatedAt: string,
-  metrics: Record<string, unknown> | null = { session_id: sessionId, workflow_id: workflow, status: "completed" },
+  metrics: Record<string, unknown> | null = { session_id: sessionId, workflow_id: workflow, status: 'completed' },
 ): void {
-  const directory = path.join(workspace, ".migent", "sessions", sessionId);
+  const directory = path.join(workspace, '.migent', 'sessions', sessionId);
   mkdirSync(directory, { recursive: true });
   writeFileSync(
-    path.join(directory, "status.json"),
-    JSON.stringify({ session_id: sessionId, workflow_id: workflow, status: "completed", updated_at: updatedAt }),
+    path.join(directory, 'status.json'),
+    JSON.stringify({ session_id: sessionId, workflow_id: workflow, status: 'completed', updated_at: updatedAt }),
   );
   writeFileSync(
-    path.join(directory, "events.jsonl"),
-    `${JSON.stringify({ v: 2, seq: 1, event: "session.created", timestamp: updatedAt, data: {} })}\n`,
+    path.join(directory, 'events.jsonl'),
+    `${JSON.stringify({ v: 2, seq: 1, event: 'session.created', timestamp: updatedAt, data: {} })}\n`,
   );
-  if (metrics !== null) writeFileSync(path.join(directory, "metrics.json"), JSON.stringify(metrics));
+  if (metrics !== null) writeFileSync(path.join(directory, 'metrics.json'), JSON.stringify(metrics));
 }
 
-test("session metrics prints one object", async () => {
-  const workspace = writeFakeWorkflowWorkspace({ plan: "id: plan\n" });
+test('session metrics prints one object', async () => {
+  const workspace = writeFakeWorkflowWorkspace({ plan: 'id: plan\n' });
   try {
-    writeMetricsSession(workspace, "wave-3", "plan", "2026-10-20T00:00:01.000+00:00", {
-      session_id: "wave-3",
-      workflow_id: "plan",
-      status: "completed",
+    writeMetricsSession(workspace, 'wave-3', 'plan', '2026-10-20T00:00:01.000+00:00', {
+      session_id: 'wave-3',
+      workflow_id: 'plan',
+      status: 'completed',
       totals: { usage: { input_tokens: 4 } },
     });
-    const captured = await capture(() => main(["session", "metrics", "wave-3", "--json"], workspace));
+    const captured = await capture(() => main(['session', 'metrics', 'wave-3', '--json'], workspace));
     expect(captured.value).toBe(0);
     expect(JSON.parse(captured.stdout)).toEqual({
-      session_id: "wave-3",
-      workflow_id: "plan",
-      status: "completed",
+      session_id: 'wave-3',
+      workflow_id: 'plan',
+      status: 'completed',
       totals: { usage: { input_tokens: 4 } },
     });
   } finally {
@@ -362,171 +364,171 @@ test("session metrics prints one object", async () => {
   }
 });
 
-test("session metrics lists sessions as JSON lines", async () => {
-  const workspace = writeFakeWorkflowWorkspace({ plan: "id: plan\n" });
+test('session metrics lists sessions as JSON lines', async () => {
+  const workspace = writeFakeWorkflowWorkspace({ plan: 'id: plan\n' });
   try {
-    writeMetricsSession(workspace, "older", "plan", "2026-10-20T00:00:01.000+00:00");
-    writeMetricsSession(workspace, "newer", "plan", "2026-10-20T00:00:02.000+00:00");
-    writeMetricsSession(workspace, "other", "implement", "2026-10-20T00:00:03.000+00:00");
-    writeMetricsSession(workspace, "open", "plan", "2026-10-20T00:00:04.000+00:00", null);
+    writeMetricsSession(workspace, 'older', 'plan', '2026-10-20T00:00:01.000+00:00');
+    writeMetricsSession(workspace, 'newer', 'plan', '2026-10-20T00:00:02.000+00:00');
+    writeMetricsSession(workspace, 'other', 'implement', '2026-10-20T00:00:03.000+00:00');
+    writeMetricsSession(workspace, 'open', 'plan', '2026-10-20T00:00:04.000+00:00', null);
     const captured = await capture(() =>
-      main(["session", "metrics", "--json", "--workflow", "plan"], workspace),
+      main(['session', 'metrics', '--json', '--workflow', 'plan'], workspace),
     );
     expect(captured.value).toBe(0);
-    const rows = captured.stdout.trim().split("\n").map((line) => JSON.parse(line) as { session_id: string });
-    expect(rows.map((row) => row.session_id)).toEqual(["newer", "older"]);
-    const empty = await capture(() => main(["session", "metrics", "--json", "--workflow", "missing"], workspace));
+    const rows = captured.stdout.trim().split('\n').map((line) => JSON.parse(line) as { session_id: string });
+    expect(rows.map((row) => row.session_id)).toEqual(['newer', 'older']);
+    const empty = await capture(() => main(['session', 'metrics', '--json', '--workflow', 'missing'], workspace));
     expect(empty.value).toBe(0);
-    expect(empty.stdout).toBe("");
+    expect(empty.stdout).toBe('');
   } finally {
     removeWorkspace(workspace);
   }
 });
 
 function resumeCommand(stderr: string): string | undefined {
-  const lines = stderr.trimEnd().split("\n");
-  const label = lines.lastIndexOf("Resume with:");
+  const lines = stderr.trimEnd().split('\n');
+  const label = lines.lastIndexOf('Resume with:');
   if (label === -1) return undefined;
   return lines[label + 1];
 }
 
-test("session continue retries an active role session with its last prompt", async () => {
-  const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
+test('session continue retries an active role session with its last prompt', async () => {
+  const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText('plan') });
   try {
-    cliHooks.runner = new AgentToolRunner(registryOf({ fake: new ScriptedClient(["not a status header", "still not a status header"]) }), 10);
+    cliHooks.runner = new AgentToolRunner(registryOf({ fake: new ScriptedClient(['not a status header', 'still not a status header']) }), 10);
     const failed = await capture(() =>
-      main(["session", "run", "--role", "reviewer", "--prompt", "Review the change", "--json"], workspace),
+      main(['session', 'run', '--role', 'reviewer', '--prompt', 'Review the change', '--json'], workspace),
     );
     const payload = JSON.parse(failed.stdout) as { session_id: string };
     expect(failed.value).toBe(1);
     expect(resumeCommand(failed.stderr)).toBe(`migent session continue ${payload.session_id}`);
 
-    const retried = new ScriptedClient(["status: complete\n\ndone"]);
+    const retried = new ScriptedClient(['status: complete\n\ndone']);
     cliHooks.runner = new AgentToolRunner(registryOf({ fake: retried }), 10);
-    const resumed = await capture(() => main(["session", "continue", payload.session_id], workspace));
+    const resumed = await capture(() => main(['session', 'continue', payload.session_id], workspace));
     expect(resumed.value).toBe(0);
     // The last prompt is the correction turn sent into the same conversation.
-    expect(retried.calls[0]?.prompt).toContain("## Invalid handoff file");
+    expect(retried.calls[0]?.prompt).toContain('## Invalid handoff file');
   } finally {
     cliHooks.runner = null;
     removeWorkspace(workspace);
   }
 });
 
-test("session continue resumes a role session with the same command", async () => {
-  const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
+test('session continue resumes a role session with the same command', async () => {
+  const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText('plan') });
   try {
     cliHooks.runner = new AgentToolRunner(
-      registryOf({ fake: new ScriptedClient(["status: blocked\nblocker: missing design\n\nneed a decision"]) }),
+      registryOf({ fake: new ScriptedClient(['status: blocked\nblocker: missing design\n\nneed a decision']) }),
       10,
     );
     const blocked = await capture(() =>
-      main(["session", "run", "--role", "reviewer", "--prompt", "Review the change", "--json"], workspace),
+      main(['session', 'run', '--role', 'reviewer', '--prompt', 'Review the change', '--json'], workspace),
     );
     const blockedPayload = JSON.parse(blocked.stdout) as { session_id: string; outcome_status: string };
     expect(blocked.value).toBe(1);
-    expect(blockedPayload.outcome_status).toBe("blocked");
+    expect(blockedPayload.outcome_status).toBe('blocked');
     expect(resumeCommand(blocked.stderr)).toBe(`migent session continue ${blockedPayload.session_id}`);
 
-    const continued = new ScriptedClient(["status: complete\n\ndone"]);
+    const continued = new ScriptedClient(['status: complete\n\ndone']);
     cliHooks.runner = new AgentToolRunner(registryOf({ fake: continued }), 10);
-    const resumed = await capture(() => main(["session", "continue", blockedPayload.session_id], workspace));
+    const resumed = await capture(() => main(['session', 'continue', blockedPayload.session_id], workspace));
     expect(resumed.value).toBe(0);
-    expect(resumed.stdout).toContain("complete");
-    expect(continued.calls[0]?.prompt).toContain("missing design");
-    expect(continued.calls[0]?.prompt).toContain("handled outside this session");
-    expect(resumed.stderr).not.toContain("Resume with:");
+    expect(resumed.stdout).toContain('complete');
+    expect(continued.calls[0]?.prompt).toContain('missing design');
+    expect(continued.calls[0]?.prompt).toContain('handled outside this session');
+    expect(resumed.stderr).not.toContain('Resume with:');
 
     const workflowOnly = await capture(() =>
-      main(["session", "continue", blockedPayload.session_id, "--once"], workspace),
+      main(['session', 'continue', blockedPayload.session_id, '--once'], workspace),
     );
     expect(workflowOnly.value).toBe(2);
-    expect(workflowOnly.stderr).toContain("role session");
-    expect(workflowOnly.stderr).toContain("--once");
+    expect(workflowOnly.stderr).toContain('role session');
+    expect(workflowOnly.stderr).toContain('--once');
   } finally {
     cliHooks.runner = null;
     removeWorkspace(workspace);
   }
 });
 
-test("session continue resumes a cancelled role session and leaves a completed one stopped", async () => {
-  const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
+test('session continue resumes a cancelled role session and leaves a completed one stopped', async () => {
+  const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText('plan') });
   try {
     cliHooks.runner = new AgentToolRunner(registryOf({ fake: new CancelOnCommand([]) }), 10);
     const cancelled = await capture(() =>
-      main(["session", "run", "--role", "reviewer", "--prompt", "Review the saved turn", "--json"], workspace),
+      main(['session', 'run', '--role', 'reviewer', '--prompt', 'Review the saved turn', '--json'], workspace),
     );
     expect(cancelled.value).toBe(130);
-    const sessionId = resumeCommand(cancelled.stderr)?.slice("migent session continue ".length);
+    const sessionId = resumeCommand(cancelled.stderr)?.slice('migent session continue '.length);
     expect(sessionId).toBeTruthy();
 
-    const resumedProvider = new ScriptedClient(["status: complete\n\ndone"]);
+    const resumedProvider = new ScriptedClient(['status: complete\n\ndone']);
     cliHooks.runner = new AgentToolRunner(registryOf({ fake: resumedProvider }), 10);
-    const resumed = await capture(() => main(["session", "continue", String(sessionId)], workspace));
+    const resumed = await capture(() => main(['session', 'continue', String(sessionId)], workspace));
     expect(resumed.value).toBe(0);
-    expect(resumedProvider.calls[0]?.prompt).toContain("Review the saved turn");
-    expect(resumed.stderr).not.toContain("Resume with:");
+    expect(resumedProvider.calls[0]?.prompt).toContain('Review the saved turn');
+    expect(resumed.stderr).not.toContain('Resume with:');
 
-    const idle = new ScriptedClient(["status: complete\n\nshould not run"]);
+    const idle = new ScriptedClient(['status: complete\n\nshould not run']);
     cliHooks.runner = new AgentToolRunner(registryOf({ fake: idle }), 10);
-    const again = await capture(() => main(["session", "continue", String(sessionId)], workspace));
+    const again = await capture(() => main(['session', 'continue', String(sessionId)], workspace));
     expect(again.value).toBe(0);
     expect(again.stderr).toContain(`Session ${sessionId} is completed.`);
     expect(idle.calls).toEqual([]);
 
-    const replied = new ScriptedClient(["status: complete\n\nnext"]);
+    const replied = new ScriptedClient(['status: complete\n\nnext']);
     cliHooks.runner = new AgentToolRunner(registryOf({ fake: replied }), 10);
     const next = await capture(() =>
-      main(["session", "continue", String(sessionId), "--reply", "Look at the risks"], workspace),
+      main(['session', 'continue', String(sessionId), '--reply', 'Look at the risks'], workspace),
     );
     expect(next.value).toBe(0);
-    expect(replied.calls[0]?.prompt).toContain("Look at the risks");
+    expect(replied.calls[0]?.prompt).toContain('Look at the risks');
   } finally {
     cliHooks.runner = null;
     removeWorkspace(workspace);
   }
 });
 
-test("session metrics requires --json", async () => {
-  const workspace = writeFakeWorkflowWorkspace({ plan: "id: plan\n" });
+test('session metrics requires --json', async () => {
+  const workspace = writeFakeWorkflowWorkspace({ plan: 'id: plan\n' });
   try {
-    const captured = await capture(() => main(["session", "metrics", "wave-3"], workspace));
+    const captured = await capture(() => main(['session', 'metrics', 'wave-3'], workspace));
     expect(captured.value).toBe(2);
-    expect(captured.stderr).toContain("session metrics requires --json.");
+    expect(captured.stderr).toContain('session metrics requires --json.');
   } finally {
     removeWorkspace(workspace);
   }
 });
 
-test("session metrics rejects a session with no sealed file", async () => {
-  const workspace = writeFakeWorkflowWorkspace({ plan: "id: plan\n" });
+test('session metrics rejects a session with no sealed file', async () => {
+  const workspace = writeFakeWorkflowWorkspace({ plan: 'id: plan\n' });
   try {
-    writeMetricsSession(workspace, "open", "plan", "2026-10-20T00:00:01.000+00:00", null);
-    const missing = await capture(() => main(["session", "metrics", "missing", "--json"], workspace));
+    writeMetricsSession(workspace, 'open', 'plan', '2026-10-20T00:00:01.000+00:00', null);
+    const missing = await capture(() => main(['session', 'metrics', 'missing', '--json'], workspace));
     expect(missing.value).toBe(2);
     expect(missing.stderr).toContain(
-      "No metrics for session: missing. Metrics are recorded when a workflow session completes.",
+      'No metrics for session: missing. Metrics are recorded when a workflow session completes.',
     );
-    const open = await capture(() => main(["session", "metrics", "open", "--json"], workspace));
+    const open = await capture(() => main(['session', 'metrics', 'open', '--json'], workspace));
     expect(open.value).toBe(2);
     expect(open.stderr).toContain(
-      "No metrics for session: open. Metrics are recorded when a workflow session completes.",
+      'No metrics for session: open. Metrics are recorded when a workflow session completes.',
     );
   } finally {
     removeWorkspace(workspace);
   }
 });
 
-test("session metrics leaves a corrupt sealed file in place", async () => {
-  const workspace = writeFakeWorkflowWorkspace({ plan: "id: plan\n" });
+test('session metrics leaves a corrupt sealed file in place', async () => {
+  const workspace = writeFakeWorkflowWorkspace({ plan: 'id: plan\n' });
   try {
-    writeMetricsSession(workspace, "wave-3", "plan", "2026-10-20T00:00:01.000+00:00", null);
-    const file = path.join(workspace, ".migent", "sessions", "wave-3", "metrics.json");
-    writeFileSync(file, "not-json");
-    const captured = await capture(() => main(["session", "metrics", "wave-3", "--json"], workspace));
+    writeMetricsSession(workspace, 'wave-3', 'plan', '2026-10-20T00:00:01.000+00:00', null);
+    const file = path.join(workspace, '.migent', 'sessions', 'wave-3', 'metrics.json');
+    writeFileSync(file, 'not-json');
+    const captured = await capture(() => main(['session', 'metrics', 'wave-3', '--json'], workspace));
     expect(captured.value).toBe(2);
-    expect(captured.stderr).toContain("metrics.json for session wave-3 is not valid JSON.");
-    expect(readFileSync(file, "utf8")).toBe("not-json");
+    expect(captured.stderr).toContain('metrics.json for session wave-3 is not valid JSON.');
+    expect(readFileSync(file, 'utf8')).toBe('not-json');
   } finally {
     removeWorkspace(workspace);
   }
@@ -569,7 +571,7 @@ stages:
 
 class ShowDuringRevisitProvider extends ScriptedClient {
   shown: Promise<{ value: number; stdout: string }> | null = null;
-  sessionId = "";
+  sessionId = '';
 
   constructor(
     responses: readonly string[],
@@ -581,14 +583,14 @@ class ShowDuringRevisitProvider extends ScriptedClient {
   override buildCommand(input: BuildCommandInput): CommandSpec {
     const spec = super.buildCommand(input);
     if (this.calls.length !== 5) return spec;
-    const flag = path.join(this.workspace, "show-done");
-    this.shown = capture(() => main(["session", "show", this.sessionId, "--json"], this.workspace)).finally(() =>
-      writeFileSync(flag, ""),
+    const flag = path.join(this.workspace, 'show-done');
+    this.shown = capture(() => main(['session', 'show', this.sessionId, '--json'], this.workspace)).finally(() =>
+      writeFileSync(flag, ''),
     );
     return {
       argv: [
         process.execPath,
-        "-e",
+        '-e',
         "const fs=require('fs');const f=process.argv[1];const t=setInterval(()=>{if(fs.existsSync(f)){clearInterval(t);}},20);setTimeout(()=>clearInterval(t),8000);",
         flag,
       ],
@@ -596,30 +598,30 @@ class ShowDuringRevisitProvider extends ScriptedClient {
   }
 }
 
-test("session show reports active while a routed-back stage runs", async () => {
+test('session show reports active while a routed-back stage runs', async () => {
   const workspace = writeFakeWorkflowWorkspace({ fixback: FIXBACK });
-  const done = "status: complete\n\ndone";
-  const approved = "status: complete\ndecision: approved\n\nok";
-  const fixProduction = "status: complete\ndecision: fix_production\n\nproduction defect";
+  const done = 'status: complete\n\ndone';
+  const approved = 'status: complete\ndecision: approved\n\nok';
+  const fixProduction = 'status: complete\ndecision: fix_production\n\nproduction defect';
   const provider = new ShowDuringRevisitProvider(
     [done, approved, done, fixProduction, done, approved, done, approved],
     workspace,
   );
   try {
-    const prepared = await capture(() => main(["session", "prepare", "fix back", "--workflow", "fixback"], workspace));
+    const prepared = await capture(() => main(['session', 'prepare', 'fix back', '--workflow', 'fixback'], workspace));
     const sessionId = (JSON.parse(prepared.stdout) as { session_id: string }).session_id;
     provider.sessionId = sessionId;
-    writeFileSync(path.join(workspace, ".migent", "sessions", sessionId, "task.md"), "Fix back.\n", "utf8");
+    writeFileSync(path.join(workspace, '.migent', 'sessions', sessionId, 'task.md'), 'Fix back.\n', 'utf8');
     cliHooks.runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
     const run = await capture(() =>
-      main(["session", "run", "--session", sessionId, "--workflow", "fixback"], workspace),
+      main(['session', 'run', '--session', sessionId, '--workflow', 'fixback'], workspace),
     );
     expect(run.value).toBe(0);
     const shown = await provider.shown;
     expect(shown?.value).toBe(0);
-    expect(JSON.parse(shown?.stdout ?? "")).toMatchObject({ session_id: sessionId, status: "active" });
-    const after = await capture(() => main(["session", "show", sessionId, "--json"], workspace));
-    expect(JSON.parse(after.stdout)).toMatchObject({ session_id: sessionId, status: "completed" });
+    expect(JSON.parse(shown?.stdout ?? '')).toMatchObject({ session_id: sessionId, status: 'active' });
+    const after = await capture(() => main(['session', 'show', sessionId, '--json'], workspace));
+    expect(JSON.parse(after.stdout)).toMatchObject({ session_id: sessionId, status: 'completed' });
   } finally {
     cliHooks.runner = null;
     removeWorkspace(workspace);

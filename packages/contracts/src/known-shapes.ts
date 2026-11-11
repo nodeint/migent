@@ -1,5 +1,6 @@
-import Type, { type Static } from "typebox";
-import { id, nullable } from "./common.js";
+import Type, { type Static } from 'typebox';
+
+import { id, nullable } from './common.js';
 
 /**
  * Opt-in descriptions of persisted files written by Migent. They are never the guarantee of a
@@ -13,19 +14,19 @@ const str = () => Type.String();
 
 export const LifecycleEventV2 = Type.Object(
   { v: Type.Literal(2), seq: num(), event: str(), timestamp: str(), data: Type.Record(str(), Type.Unknown()) },
-  { $id: id("known/lifecycle-event-v2"), title: "Lifecycle event (v2)" },
+  { $id: id('known/lifecycle-event-v2'), title: 'Lifecycle event (v2)' },
 );
 export type LifecycleEventV2 = Static<typeof LifecycleEventV2>;
 
 export const LegacyLifecycleEvent = Type.Object(
   { v: Type.Optional(Type.Literal(1)), event: str() },
-  { $id: id("known/lifecycle-event-legacy"), title: "Lifecycle event (unversioned or v1)" },
+  { $id: id('known/lifecycle-event-legacy'), title: 'Lifecycle event (unversioned or v1)' },
 );
 
 export const ProviderStreamRecord = Type.Record(str(), Type.Unknown(), {
-  $id: id("known/provider-stream-record"),
-  title: "Provider stream record",
-  description: "Opaque; documentation only.",
+  $id: id('known/provider-stream-record'),
+  title: 'Provider stream record',
+  description: 'Opaque; documentation only.',
 });
 
 // ---- sealed metrics ---------------------------------------------------------------------------
@@ -127,7 +128,7 @@ export const SealedMetricsCurrent = Type.Object(
     stages: Type.Record(str(), CurrentStage),
     executions: Type.Array(CurrentExecution),
   },
-  { $id: id("known/metrics-current"), title: "Sealed metrics, current producer" },
+  { $id: id('known/metrics-current'), title: 'Sealed metrics, current producer' },
 );
 
 /**
@@ -151,5 +152,5 @@ export const SealedMetricsHistorical = Type.Object(
     stages: Type.Optional(Type.Record(str(), Type.Partial(CurrentStage))),
     executions: Type.Optional(Type.Array(Type.Partial(CurrentExecution))),
   },
-  { $id: id("known/metrics-historical"), title: "Sealed metrics, known historical fields", description: "All optional; absence means not recorded." },
+  { $id: id('known/metrics-historical'), title: 'Sealed metrics, known historical fields', description: 'All optional; absence means not recorded.' },
 );

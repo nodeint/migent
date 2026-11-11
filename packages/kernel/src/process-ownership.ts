@@ -1,20 +1,21 @@
-import { hostname as osHostname } from "node:os";
-import path from "node:path";
-import { Worker } from "node:worker_threads";
-import { wrapperEndpoint, wrapperEntry } from "./process-wrapper.js";
+import { hostname as osHostname } from 'node:os';
+import path from 'node:path';
+import { Worker } from 'node:worker_threads';
 
-export const PID_PRESENT = "present";
-export const PID_GONE = "gone";
-export const PID_UNVERIFIED = "unverified";
-export const ENDPOINT_ALIVE = "alive";
-export const ENDPOINT_GONE = "gone";
-export const ENDPOINT_UNKNOWN = "unknown";
-export const REAP_STILL_RUNNING = "still-running";
-export const REAP_ALREADY_EXITED = "already-exited";
-export const REAP_UNVERIFIED = "unverified";
-export const REAP_NOOP = "noop";
+import { wrapperEndpoint, wrapperEntry } from './process-wrapper.js';
+
+export const PID_PRESENT = 'present';
+export const PID_GONE = 'gone';
+export const PID_UNVERIFIED = 'unverified';
+export const ENDPOINT_ALIVE = 'alive';
+export const ENDPOINT_GONE = 'gone';
+export const ENDPOINT_UNKNOWN = 'unknown';
+export const REAP_STILL_RUNNING = 'still-running';
+export const REAP_ALREADY_EXITED = 'already-exited';
+export const REAP_UNVERIFIED = 'unverified';
+export const REAP_NOOP = 'noop';
 export const ERROR_ALREADY_EXITED =
-  "Owner process is not running; provider process already exited.";
+  'Owner process is not running; provider process already exited.';
 
 const ENDPOINT_PROBE_TIMEOUT_MS = 2000;
 
@@ -60,9 +61,9 @@ export function probePid(pid: number): string {
     process.kill(pid, 0);
     return PID_PRESENT;
   } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === "EPERM") return PID_PRESENT;
-    if (code === "ESRCH") return PID_GONE;
+    const {code} = (error as NodeJS.ErrnoException);
+    if (code === 'EPERM') return PID_PRESENT;
+    if (code === 'ESRCH') return PID_GONE;
     return PID_UNVERIFIED;
   }
 }
@@ -116,11 +117,11 @@ export function wrapperArgv(
   return [
     options.executable ?? process.execPath,
     wrapperEntry(),
-    "--endpoint",
+    '--endpoint',
     options.endpoint,
-    "--grace-sec",
+    '--grace-sec',
     String(options.graceSec),
-    "--",
+    '--',
     ...specArgv,
   ];
 }
@@ -168,15 +169,15 @@ export function classifyOrphanedExecution(
   executionDirectory: string,
   inspector: ProcessInspector,
 ): ReapDecision {
-  const sessionId = metadata.session_id ? String(metadata.session_id) : "";
+  const sessionId = metadata.session_id ? String(metadata.session_id) : '';
   const executionId = metadata.execution_id
     ? String(metadata.execution_id)
     : path.basename(executionDirectory);
-  if (metadata.status !== "running") {
+  if (metadata.status !== 'running') {
     return { action: REAP_NOOP, sessionId, executionId };
   }
   const recordedHost = metadata.hostname;
-  if (typeof recordedHost === "string" && recordedHost !== inspector.hostname()) {
+  if (typeof recordedHost === 'string' && recordedHost !== inspector.hostname()) {
     return { action: REAP_UNVERIFIED, sessionId, executionId };
   }
   const ownerPid = optionalInt(metadata.owner_pid);
@@ -218,13 +219,13 @@ export function processMetadataPayload(info: ProcessStartInfo): Record<string, u
 }
 
 function optionalInt(value: unknown): number | null {
-  if (typeof value === "boolean" || typeof value !== "number" || !Number.isInteger(value)) {
+  if (typeof value === 'boolean' || typeof value !== 'number' || !Number.isInteger(value)) {
     return null;
   }
   return value;
 }
 
 function presentStr(value: unknown): string | null {
-  if (typeof value === "string" && value) return value;
+  if (typeof value === 'string' && value) return value;
   return null;
 }

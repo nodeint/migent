@@ -1,5 +1,5 @@
-import { type AgentDefinitionEntry } from "@nodeint/migent-kernel";
-import { isRoleStage, type WorkflowDocument } from "@nodeint/migent-workflow";
+import { type AgentDefinitionEntry } from '@nodeint/migent-kernel';
+import { isRoleStage, type WorkflowDocument } from '@nodeint/migent-workflow';
 
 /** The key an availability or effort check of a stage's inline agent is stored under. */
 export function stageAgentKey(workflowId: string, stageId: string): string {
@@ -14,12 +14,12 @@ export function stageAgentDefinitions(documents: Iterable<WorkflowDocument>): Ag
   const entries: AgentDefinitionEntry[] = [];
   for (const document of documents) {
     for (const stage of Object.values(document.stages)) {
-      if (!isRoleStage(stage) || stage.agent?.kind !== "inline") continue;
+      if (!isRoleStage(stage) || stage.agent?.kind !== 'inline') continue;
       entries.push({
         key: stageAgentKey(document.id, stage.id),
         value: stage.agent.value,
         field: `stages.${stage.id}.agent`,
-        path: ["stages", stage.id, "agent"],
+        path: ['stages', stage.id, 'agent'],
       });
     }
   }

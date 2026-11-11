@@ -1,9 +1,9 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes } from 'node:crypto';
 import {
   chmodSync,
   closeSync,
-  existsSync,
   constants as fsConstants,
+  existsSync,
   fchmodSync,
   fsyncSync,
   mkdirSync,
@@ -14,23 +14,24 @@ import {
   statSync,
   unlinkSync,
   writeSync,
-} from "node:fs";
-import path from "node:path";
-import { RegistryBusy, interprocessLock, registryBusy } from "./locks.js";
+} from 'node:fs';
+import path from 'node:path';
+
+import { interprocessLock, RegistryBusy, registryBusy } from './locks.js';
 
 export { RegistryBusy };
 
 const toolName = /^[A-Za-z0-9._-]+$/;
 const timestampText = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
-const topKeys = new Set(["schema_version", "workspaces"]);
-const workspaceKeys = new Set(["id", "name", "path", "registered_at", "updated_at", "tool"]);
-const toolKeys = new Set(["name", "version"]);
-const stringFields = ["id", "name", "path", "registered_at", "updated_at"] as const;
+const topKeys = new Set(['schema_version', 'workspaces']);
+const workspaceKeys = new Set(['id', 'name', 'path', 'registered_at', 'updated_at', 'tool']);
+const toolKeys = new Set(['name', 'version']);
+const stringFields = ['id', 'name', 'path', 'registered_at', 'updated_at'] as const;
 
 export class RegistryCorrupt extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "RegistryCorrupt";
+    this.name = 'RegistryCorrupt';
   }
 }
 
@@ -39,7 +40,7 @@ export class WorkspaceNotFound extends Error {
 
   constructor(workspaceId: string) {
     super(`Workspace was not found: ${workspaceId}`);
-    this.name = "WorkspaceNotFound";
+    this.name = 'WorkspaceNotFound';
     this.workspaceId = workspaceId;
   }
 }
@@ -47,14 +48,14 @@ export class WorkspaceNotFound extends Error {
 export class NotAWorkspace extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "NotAWorkspace";
+    this.name = 'NotAWorkspace';
   }
 }
 
 export class InvalidRecord extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "InvalidRecord";
+    this.name = 'InvalidRecord';
   }
 }
 
@@ -89,16 +90,16 @@ export const storeFs = {
 };
 
 export function workspaceIdFor(filePath: string): string {
-  return `ws_${createHash("sha256").update(filePath, "utf8").digest("hex").slice(0, 12)}`;
+  return `ws_${createHash('sha256').update(filePath, 'utf8').digest('hex').slice(0, 12)}`;
 }
 
 export function utcTimestamp(now = new Date()): string {
-  const year = now.getUTCFullYear().toString().padStart(4, "0");
-  const month = String(now.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(now.getUTCDate()).padStart(2, "0");
-  const hour = String(now.getUTCHours()).padStart(2, "0");
-  const minute = String(now.getUTCMinutes()).padStart(2, "0");
-  const second = String(now.getUTCSeconds()).padStart(2, "0");
+  const year = now.getUTCFullYear().toString().padStart(4, '0');
+  const month = String(now.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(now.getUTCDate()).padStart(2, '0');
+  const hour = String(now.getUTCHours()).padStart(2, '0');
+  const minute = String(now.getUTCMinutes()).padStart(2, '0');
+  const second = String(now.getUTCSeconds()).padStart(2, '0');
   return `${year}-${month}-${day}T${hour}:${minute}:${second}Z`;
 }
 
@@ -106,7 +107,7 @@ export function atomicReplace(destination: string, payload: Buffer): void {
   const directory = path.dirname(destination);
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   chmodSync(directory, 0o700);
-  const tmpPath = path.join(directory, `${path.basename(destination)}.tmp.${randomBytes(8).toString("hex")}`);
+  const tmpPath = path.join(directory, `${path.basename(destination)}.tmp.${randomBytes(8).toString('hex')}`);
   const flags = fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY;
   const fd = openSync(tmpPath, flags, 0o600);
   let replaced = false;
@@ -116,7 +117,7 @@ export function atomicReplace(destination: string, payload: Buffer): void {
       let offset = 0;
       while (offset < payload.length) {
         const written = storeFs.write(fd, payload.subarray(offset));
-        if (written <= 0) throw new Error("short write publishing registry file");
+        if (written <= 0) throw new Error('short write publishing registry file');
         offset += written;
       }
       storeFs.fsync(fd);
@@ -127,7 +128,7 @@ export function atomicReplace(destination: string, payload: Buffer): void {
     replaced = true;
     chmodSync(destination, 0o600);
     // Windows cannot open or fsync a directory; its rename is durable without it.
-    if (process.platform !== "win32") {
+    if (process.platform !== 'win32') {
       const dirFd = openSync(directory, fsConstants.O_RDONLY);
       try {
         storeFs.fsync(dirFd);
@@ -140,8 +141,8 @@ export function atomicReplace(destination: string, payload: Buffer): void {
       try {
         unlinkSync(tmpPath);
       } catch (error) {
-        const code = (error as NodeJS.ErrnoException).code;
-        if (code !== "ENOENT") throw error;
+        const {code} = (error as NodeJS.ErrnoException);
+        if (code !== 'ENOENT') throw error;
       }
     }
   }
@@ -163,10 +164,10 @@ function sameKeys(value: object, expected: Set<string>, exact: boolean): boolean
 
 function isTimestamp(value: string): boolean {
   if (!timestampText.test(value)) return false;
-  const [date, time] = value.slice(0, -1).split("T");
+  const [date, time] = value.slice(0, -1).split('T');
   if (!date || !time) return false;
-  const [year, month, day] = date.split("-").map(Number);
-  const [hour, minute, second] = time.split(":").map(Number);
+  const [year, month, day] = date.split('-').map(Number);
+  const [hour, minute, second] = time.split(':').map(Number);
   if (
     !year ||
     !month ||
@@ -196,7 +197,7 @@ function isTimestamp(value: string): boolean {
 }
 
 function absoluteRegistryPath(filePath: string): boolean {
-  if (filePath.includes("\0")) return false;
+  if (filePath.includes('\0')) return false;
   try {
     return path.isAbsolute(filePath);
   } catch {
@@ -210,7 +211,7 @@ function schemaVersionToken(text: string): string | null {
 }
 
 function isWorkspace(filePath: string): boolean {
-  const config = path.join(filePath, ".migent", "config.yaml");
+  const config = path.join(filePath, '.migent', 'config.yaml');
   try {
     return statSync(config).isFile();
   } catch {
@@ -219,27 +220,27 @@ function isWorkspace(filePath: string): boolean {
 }
 
 function normalizeTool(tool: unknown): ToolRecord {
-  if (!tool || typeof tool !== "object" || Array.isArray(tool)) throw new InvalidRecord("Tool name is invalid.");
+  if (!tool || typeof tool !== 'object' || Array.isArray(tool)) throw new InvalidRecord('Tool name is invalid.');
   const record = tool as Record<string, unknown>;
-  if (!sameKeys(record, toolKeys, false) || !Object.hasOwn(record, "name")) {
-    throw new InvalidRecord("Tool name is invalid.");
+  if (!sameKeys(record, toolKeys, false) || !Object.hasOwn(record, 'name')) {
+    throw new InvalidRecord('Tool name is invalid.');
   }
-  const name = record.name;
-  if (typeof name !== "string" || !toolName.test(name) || name.length < 1 || name.length > 80) {
-    throw new InvalidRecord("Tool name is invalid.");
+  const {name} = record;
+  if (typeof name !== 'string' || !toolName.test(name) || name.length === 0 || name.length > 80) {
+    throw new InvalidRecord('Tool name is invalid.');
   }
   const stored: ToolRecord = { name };
-  if (Object.hasOwn(record, "version")) {
-    const version = record.version;
-    if (typeof version !== "string" || version.length > 40) throw new InvalidRecord("Tool version is invalid.");
+  if (Object.hasOwn(record, 'version')) {
+    const {version} = record;
+    if (typeof version !== 'string' || version.length > 40) throw new InvalidRecord('Tool version is invalid.');
     stored.version = version;
   }
   return stored;
 }
 
 function prepareRegister(filePath: string, name: string | null, tool: unknown): [string, string, ToolRecord] {
-  if (typeof filePath !== "string" || filePath.includes("\0") || !path.isAbsolute(filePath)) {
-    throw new NotAWorkspace("Workspace path is not absolute.");
+  if (typeof filePath !== 'string' || filePath.includes('\0') || !path.isAbsolute(filePath)) {
+    throw new NotAWorkspace('Workspace path is not absolute.');
   }
   let stored = filePath;
   try {
@@ -247,48 +248,48 @@ function prepareRegister(filePath: string, name: string | null, tool: unknown): 
   } catch {
     stored = path.resolve(filePath);
   }
-  if (!path.isAbsolute(stored)) throw new NotAWorkspace("Workspace path is not absolute.");
+  if (!path.isAbsolute(stored)) throw new NotAWorkspace('Workspace path is not absolute.');
   let chosen: string;
   if (name === null) chosen = path.basename(stored);
-  else if (typeof name === "string" && name.length >= 1 && name.length <= 200) chosen = name;
-  else throw new InvalidRecord("Workspace name must be 1 to 200 characters.");
-  if (!chosen) throw new InvalidRecord("Workspace name must be 1 to 200 characters.");
+  else if (typeof name === 'string' && name.length > 0 && name.length <= 200) chosen = name;
+  else throw new InvalidRecord('Workspace name must be 1 to 200 characters.');
+  if (!chosen) throw new InvalidRecord('Workspace name must be 1 to 200 characters.');
   return [stored, chosen, normalizeTool(tool)];
 }
 
 function parseWorkspace(item: unknown): WorkspaceRecord {
-  if (!item || typeof item !== "object" || Array.isArray(item) || !sameKeys(item, workspaceKeys, true)) {
-    throw new RegistryCorrupt("registry.json has the wrong shape.");
+  if (!item || typeof item !== 'object' || Array.isArray(item) || !sameKeys(item, workspaceKeys, true)) {
+    throw new RegistryCorrupt('registry.json has the wrong shape.');
   }
   const source = item as Record<string, unknown>;
   const record: Partial<WorkspaceRecord> = {};
   for (const key of stringFields) {
     const value = source[key];
-    if (typeof value !== "string" || value === "") throw new RegistryCorrupt("registry.json has the wrong shape.");
+    if (typeof value !== 'string' || value === '') throw new RegistryCorrupt('registry.json has the wrong shape.');
     record[key] = value;
   }
-  const tool = source.tool;
-  if (!tool || typeof tool !== "object" || Array.isArray(tool) || !sameKeys(tool, toolKeys, false) || !("name" in tool)) {
-    throw new RegistryCorrupt("registry.json has the wrong shape.");
+  const {tool} = source;
+  if (!tool || typeof tool !== 'object' || Array.isArray(tool) || !sameKeys(tool, toolKeys, false) || !('name' in tool)) {
+    throw new RegistryCorrupt('registry.json has the wrong shape.');
   }
-  if (record.name!.length < 1 || record.name!.length > 200) {
-    throw new RegistryCorrupt("registry.json has the wrong shape.");
+  if (record.name!.length === 0 || record.name!.length > 200) {
+    throw new RegistryCorrupt('registry.json has the wrong shape.');
   }
-  if (!absoluteRegistryPath(record.path!)) throw new RegistryCorrupt("registry.json has the wrong shape.");
-  if (record.id !== workspaceIdFor(record.path!)) throw new RegistryCorrupt("registry.json has the wrong shape.");
+  if (!absoluteRegistryPath(record.path!)) throw new RegistryCorrupt('registry.json has the wrong shape.');
+  if (record.id !== workspaceIdFor(record.path!)) throw new RegistryCorrupt('registry.json has the wrong shape.');
   if (!isTimestamp(record.registered_at!) || !isTimestamp(record.updated_at!)) {
-    throw new RegistryCorrupt("registry.json has the wrong shape.");
+    throw new RegistryCorrupt('registry.json has the wrong shape.');
   }
   const toolRecord = tool as Record<string, unknown>;
-  const name = toolRecord.name;
-  if (typeof name !== "string" || !toolName.test(name) || name.length < 1 || name.length > 80) {
-    throw new RegistryCorrupt("registry.json has the wrong shape.");
+  const {name} = toolRecord;
+  if (typeof name !== 'string' || !toolName.test(name) || name.length === 0 || name.length > 80) {
+    throw new RegistryCorrupt('registry.json has the wrong shape.');
   }
   const storedTool: ToolRecord = { name };
-  if (Object.hasOwn(toolRecord, "version")) {
-    const version = toolRecord.version;
-    if (typeof version !== "string" || version.length > 40) {
-      throw new RegistryCorrupt("registry.json has the wrong shape.");
+  if (Object.hasOwn(toolRecord, 'version')) {
+    const {version} = toolRecord;
+    if (typeof version !== 'string' || version.length > 40) {
+      throw new RegistryCorrupt('registry.json has the wrong shape.');
     }
     storedTool.version = version;
   }
@@ -303,30 +304,30 @@ function parseWorkspace(item: unknown): WorkspaceRecord {
 }
 
 function parseRegistry(raw: Buffer): WorkspaceRecord[] {
-  if (raw.toString("utf8").trim() === "") throw new RegistryCorrupt("registry.json is empty.");
+  if (raw.toString('utf8').trim() === '') throw new RegistryCorrupt('registry.json is empty.');
   let text: string;
   try {
-    text = raw.toString("utf8");
-    if (text.includes("\uFFFD") && !Buffer.from(text, "utf8").equals(raw)) {
-      throw new Error("bad encoding");
+    text = raw.toString('utf8');
+    if (text.includes('\uFFFD') && !Buffer.from(text, 'utf8').equals(raw)) {
+      throw new Error('bad encoding');
     }
   } catch {
-    throw new RegistryCorrupt("registry.json is not valid JSON.");
+    throw new RegistryCorrupt('registry.json is not valid JSON.');
   }
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch {
-    throw new RegistryCorrupt("registry.json is not valid JSON.");
+    throw new RegistryCorrupt('registry.json is not valid JSON.');
   }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || !sameKeys(parsed, topKeys, true)) {
-    throw new RegistryCorrupt("registry.json has the wrong shape.");
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || !sameKeys(parsed, topKeys, true)) {
+    throw new RegistryCorrupt('registry.json has the wrong shape.');
   }
   const token = schemaVersionToken(text);
   const version = (parsed as { schema_version?: unknown }).schema_version;
-  const workspaces = (parsed as { workspaces?: unknown }).workspaces;
-  if (token !== "1" || typeof version !== "number" || !Number.isInteger(version) || version !== 1 || !Array.isArray(workspaces)) {
-    throw new RegistryCorrupt("registry.json has the wrong shape.");
+  const {workspaces} = (parsed as { workspaces?: unknown });
+  if (token !== '1' || typeof version !== 'number' || !Number.isInteger(version) || version !== 1 || !Array.isArray(workspaces)) {
+    throw new RegistryCorrupt('registry.json has the wrong shape.');
   }
   return workspaces.map((item) => parseWorkspace(item));
 }
@@ -431,20 +432,20 @@ export class RegistryStore {
     mkdirSync(this.directory, { recursive: true, mode: 0o700 });
     chmodSync(this.directory, 0o700);
     return interprocessLock(
-      path.join(this.directory, "registry.lock"),
+      path.join(this.directory, 'registry.lock'),
       { shared, timeoutSec: this.timeoutSec, busyError: registryBusy },
       body,
     );
   }
 
   private load(): WorkspaceRecord[] {
-    const file = path.join(this.directory, "registry.json");
+    const file = path.join(this.directory, 'registry.json');
     if (!existsSync(file)) return [];
     try {
       return parseRegistry(readFileSync(file));
     } catch (error) {
       if (error instanceof RegistryCorrupt) throw error;
-      throw new RegistryCorrupt("registry.json is unreadable.");
+      throw new RegistryCorrupt('registry.json is unreadable.');
     }
   }
 
@@ -453,7 +454,7 @@ export class RegistryStore {
       schema_version: 1,
       workspaces: ordered(records).map((record) => stored(record)),
     };
-    const payload = Buffer.from(`${JSON.stringify(document, null, 2)}\n`, "utf8");
-    atomicReplace(path.join(this.directory, "registry.json"), payload);
+    const payload = Buffer.from(`${JSON.stringify(document, null, 2)}\n`, 'utf8');
+    atomicReplace(path.join(this.directory, 'registry.json'), payload);
   }
 }

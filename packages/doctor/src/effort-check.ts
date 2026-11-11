@@ -1,21 +1,22 @@
 import {
-  listAgentDefinitions,
-  loadWorkspaceConfig,
   type AgentDefinitionEntry,
   type CliClient,
   type ClientRegistry,
-} from "@nodeint/migent-kernel";
-import { agentClientType } from "./client-type.js";
-import type { ModelEffortCheck } from "./check.js";
+  listAgentDefinitions,
+  loadWorkspaceConfig,
+} from '@nodeint/migent-kernel';
+
 import {
   cached,
+  type ClientCatalogInput,
   clientCatalogSource,
   loadCatalog,
   loadOptionValues,
-  type ClientCatalogInput,
   type RunCommand,
   type Which,
-} from "./catalog.js";
+} from './catalog.js';
+import type { ModelEffortCheck } from './check.js';
+import { agentClientType } from './client-type.js';
 
 /** Catalog lookup is asynchronous and needs the machine, so it stays out of the static checks. */
 export async function checkModelEfforts(
@@ -36,14 +37,14 @@ export async function checkModelEfforts(
   const results = await Promise.all(definitions.map(async ({ key: alias, value: model, field: modelField }) => {
     if (only !== undefined && !only.has(alias)) return null;
     if (skip?.has(alias)) return null;
-    if (!isRecord(model) || !Object.hasOwn(model, "effort")) return null;
-    if (typeof model.model !== "string" || !model.model.trim()) return null;
+    if (!isRecord(model) || !Object.hasOwn(model, 'effort')) return null;
+    if (typeof model.model !== 'string' || !model.model.trim()) return null;
     if (clientUnusable(model)) return null;
     const type = agentClientType(model, clients);
     if (type === undefined) return null; // The structural check explains the missing client.
     const field = `${modelField}.effort`;
     const value = JSON.stringify(model.effort);
-    const invalidType = typeof model.effort !== "string" || model.effort.trim() === "";
+    const invalidType = typeof model.effort !== 'string' || model.effort.trim() === '';
     let values: readonly string[] | null = null;
     let warning: string | undefined;
     try {
@@ -61,7 +62,7 @@ export async function checkModelEfforts(
     const check: ModelEffortCheck = {};
     if (warning) check.warning = warning;
     if (invalidType || (values !== null && !values.includes((model.effort as string).trim()))) {
-      const valid = values === null ? "unavailable (could not verify)" : values.length === 0 ? "none (omit effort)" : values.join(", ");
+      const valid = values === null ? 'unavailable (could not verify)' : values.length === 0 ? 'none (omit effort)' : values.join(', ');
       check.problem = `Invalid ${field}: ${value}\nValid values: ${valid}`;
     }
     return [alias, check] as const;
@@ -70,13 +71,13 @@ export async function checkModelEfforts(
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /** True when `client` is present but is not a mapping with a usable `type`: the structural check explains it. */
 function clientUnusable(definition: Record<string, unknown>): boolean {
-  const client = definition.client;
+  const {client} = definition;
   if (client == null) return false;
   if (!isRecord(client)) return true;
-  return client.type != null && (typeof client.type !== "string" || client.type.trim() === "");
+  return client.type != null && (typeof client.type !== 'string' || client.type.trim() === '');
 }

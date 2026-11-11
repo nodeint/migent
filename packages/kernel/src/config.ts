@@ -1,22 +1,24 @@
-import type { ClientInfo, ClientRegistry } from "./cli-client.js";
-import { readFileSync, statSync } from "node:fs";
-import path from "node:path";
-import { stringify } from "yaml";
+import { readFileSync, statSync } from 'node:fs';
+import path from 'node:path';
+
+import { isRecord } from '@nodeint/migent-workflow';
+import { isRoleStage, loadNamedWorkflow, type RoleStageSpec, type StageAgent } from '@nodeint/migent-workflow';
+import { parseYamlDocument } from '@nodeint/migent-workflow';
+import { stringify } from 'yaml';
+
+import type { ClientInfo, ClientRegistry } from './cli-client.js';
 import {
+  type Field,
   mapping,
   readClient,
   requiredString,
   roleDescription,
   stringItems,
-  type Field,
   type StructuralIndex,
-} from "./config-structure.js";
-import { ConfigurationError } from "./errors.js";
-import { isRecord } from "@nodeint/migent-workflow";
-import { isRoleStage, loadNamedWorkflow, type RoleStageSpec, type StageAgent } from "@nodeint/migent-workflow";
-import { parseYamlDocument } from "@nodeint/migent-workflow";
+} from './config-structure.js';
+import { ConfigurationError } from './errors.js';
 
-export { documentVersion } from "@nodeint/migent-workflow";
+export { documentVersion } from '@nodeint/migent-workflow';
 
 export interface StageTarget {
   /** CLI client id, resolved through the registry. Always present on an effective agent. */
@@ -31,17 +33,17 @@ export interface ModelOverride {
   options?: Record<string, string> | null;
 }
 
-export type ConfigLayer = "project" | "local";
+export type ConfigLayer = 'project' | 'local';
 
 export function loadYamlMapping(filePath: string, layer?: ConfigLayer): Record<string, unknown> {
   const withLayer = layer === undefined ? {} : { layer };
   let text: string;
   try {
-    text = readFileSync(filePath, "utf8");
+    text = readFileSync(filePath, 'utf8');
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     throw new ConfigurationError(`Unable to read configuration: ${filePath} (${reason})`, {
-      code: "config-unreadable",
+      code: 'config-unreadable',
       ...withLayer,
     });
   }
@@ -59,7 +61,7 @@ export function loadYamlMapping(filePath: string, layer?: ConfigLayer): Record<s
     throw error;
   }
   if (!isRecord(parsed)) {
-    throw new ConfigurationError("Invalid configuration: expected a mapping.", { code: "config-not-mapping", ...withLayer });
+    throw new ConfigurationError('Invalid configuration: expected a mapping.', { code: 'config-not-mapping', ...withLayer });
   }
   return parsed;
 }
@@ -69,14 +71,14 @@ export function readConfigLayer(filePath: string, layer: ConfigLayer): Record<st
   return loadYamlMapping(filePath, layer);
 }
 
-export const LOCAL_CONFIG_FILE = "config.local.yaml";
+export const LOCAL_CONFIG_FILE = 'config.local.yaml';
 
 export function configPath(workspace: string): string {
-  return path.join(workspace, ".migent", "config.yaml");
+  return path.join(workspace, '.migent', 'config.yaml');
 }
 
 export function localConfigPath(workspace: string): string {
-  return path.join(workspace, ".migent", LOCAL_CONFIG_FILE);
+  return path.join(workspace, '.migent', LOCAL_CONFIG_FILE);
 }
 
 export function hasLocalConfig(workspace: string): boolean {
@@ -104,7 +106,7 @@ export function mergeConfig(
 }
 
 /** Who supplies the value at a path of the effective config. */
-export type ConfigOwner = "project" | "local" | "merged";
+export type ConfigOwner = 'project' | 'local' | 'merged';
 
 export interface MergedConfig {
   config: Record<string, unknown>;
@@ -125,36 +127,36 @@ export function mergeConfigLayers(
   project: Record<string, unknown>,
   local?: Record<string, unknown> | null,
 ): MergedConfig {
-  if (local == null) return { config: project, ownerOf: () => "project" };
+  if (local == null) return { config: project, ownerOf: () => 'project' };
   const { schema_version: _ignored, ...layer } = local;
   const merged = mergeConfig(project, layer);
   // A role agent is a complete selection, including when both values are objects.
   if (isRecord(layer.roles) && isRecord(merged.roles)) {
     for (const [name, role] of Object.entries(layer.roles)) {
       const target = merged.roles[name];
-      if (isRecord(role) && isRecord(target) && Object.hasOwn(role, "agent")) {
+      if (isRecord(role) && isRecord(target) && Object.hasOwn(role, 'agent')) {
         target.agent = role.agent;
       }
     }
   }
   const ownerOf = (path: readonly (string | number)[]): ConfigOwner => {
-    if (path[0] === "schema_version") return "project";
+    if (path[0] === 'schema_version') return 'project';
     let base: unknown = project;
     let over: unknown = layer;
     for (const [index, key] of path.entries()) {
       const baseHas = isRecord(base) && Object.hasOwn(base, key);
       const overHas = isRecord(over) && Object.hasOwn(over, key);
-      if (!baseHas && !overHas) return "merged";
-      if (!overHas) return "project";
-      if (!baseHas) return "local";
+      if (!baseHas && !overHas) return 'merged';
+      if (!overHas) return 'project';
+      if (!baseHas) return 'local';
       const baseValue = (base as Record<string, unknown>)[key];
       const overValue = (over as Record<string, unknown>)[key];
-      const wholesale = index === 2 && path[0] === "roles" && key === "agent";
-      if (wholesale || !isRecord(baseValue) || !isRecord(overValue)) return "local";
+      const wholesale = index === 2 && path[0] === 'roles' && key === 'agent';
+      if (wholesale || !isRecord(baseValue) || !isRecord(overValue)) return 'local';
       base = baseValue;
       over = overValue;
     }
-    return "merged";
+    return 'merged';
   };
   return { config: merged, ownerOf };
 }
@@ -169,17 +171,17 @@ export function loadWorkspaceConfig(workspace: string): Record<string, unknown> 
 
 /** Like `loadWorkspaceConfig`, with the path-ownership lookup of the merge. */
 export function loadMergedConfig(workspace: string): MergedConfig {
-  const base = readConfigLayer(configPath(workspace), "project");
+  const base = readConfigLayer(configPath(workspace), 'project');
   if (!hasLocalConfig(workspace)) return mergeConfigLayers(base, null);
   let loaded: Record<string, unknown>;
   try {
-    loaded = readConfigLayer(localConfigPath(workspace), "local");
+    loaded = readConfigLayer(localConfigPath(workspace), 'local');
   } catch (error) {
     if (!(error instanceof ConfigurationError)) throw error;
     throw new ConfigurationError(`${error.message} (${localConfigPath(workspace)})`, {
       ...(error.code === undefined ? {} : { code: error.code }),
       ...(error.position === undefined ? {} : { position: error.position }),
-      layer: "local",
+      layer: 'local',
     });
   }
   return mergeConfigLayers(base, loaded);
@@ -202,25 +204,25 @@ export function listAgentDefinitions(config: Record<string, unknown>): AgentDefi
   const entries: AgentDefinitionEntry[] = [];
   if (isRecord(config.agents)) {
     for (const name of Object.keys(config.agents).sort()) {
-      entries.push({ key: name, value: config.agents[name], field: `agents.${name}`, path: ["agents", name] });
+      entries.push({ key: name, value: config.agents[name], field: `agents.${name}`, path: ['agents', name] });
     }
   }
   if (isRecord(config.roles)) {
     for (const [name, role] of Object.entries(config.roles)) {
       if (!isRecord(role) || !isRecord(role.agent)) continue;
       const field = `roles.${name}.agent`;
-      entries.push({ key: field, value: role.agent, field, path: ["roles", name, "agent"] });
+      entries.push({ key: field, value: role.agent, field, path: ['roles', name, 'agent'] });
     }
   }
   return entries;
 }
 
 export interface EffectiveClientFailure {
-  code: "client-required" | "client-unsupported" | "options-invalid";
+  code: 'client-required' | 'client-unsupported' | 'options-invalid';
   /** Text that follows the field label, e.g. `is not supported: x`. For options it is the bare reason. */
   message: string;
   /** Which part of the target failed, relative to its field. */
-  part: "client" | "options";
+  part: 'client' | 'options';
 }
 
 /**
@@ -232,9 +234,9 @@ export function resolveEffectiveClient(
   registry: ClientRegistry,
   target: StageTarget,
 ): { client?: ClientInfo; failure?: EffectiveClientFailure } {
-  if (target.client.trim() === "") {
+  if (target.client.trim() === '') {
     return {
-      failure: { code: "client-required", part: "client", message: "is required: the agent names no client.type." },
+      failure: { code: 'client-required', part: 'client', message: 'is required: the agent names no client.type.' },
     };
   }
   let client: ClientInfo;
@@ -243,8 +245,8 @@ export function resolveEffectiveClient(
   } catch (error) {
     return {
       failure: {
-        code: "client-unsupported",
-        part: "client",
+        code: 'client-unsupported',
+        part: 'client',
         message: `is not supported: ${error instanceof Error ? error.message : String(error)}`,
       },
     };
@@ -254,7 +256,7 @@ export function resolveEffectiveClient(
   } catch (error) {
     if (!(error instanceof Error)) throw error;
     // The client is still bound, so callers can report its executable next to the options problem.
-    return { client, failure: { code: "options-invalid", part: "options", message: error.message } };
+    return { client, failure: { code: 'options-invalid', part: 'options', message: error.message } };
   }
   return { client };
 }
@@ -273,7 +275,7 @@ export function resolveStageTarget(
   const { client, model, options } = normalizeOverride(override);
   if ((client === null) !== (model === null)) {
     throw new ConfigurationError(
-      "Pass both --client and --model to override the resolved stage model, or omit both.",
+      'Pass both --client and --model to override the resolved stage model, or omit both.',
     );
   }
   if (client !== null && model !== null) {
@@ -294,7 +296,7 @@ export function resolveStageSpec(
   registry?: ClientRegistry,
 ): StageTarget {
   const agentField =
-    stage.agent !== null ? field("stages", stage.id, "agent") : field("roles", stage.role, "agent");
+    stage.agent !== null ? field('stages', stage.id, 'agent') : field('roles', stage.role, 'agent');
   const declared = resolveRoleCascade(config, stage.role, {
     agent: stage.agent,
     agentField,
@@ -312,13 +314,13 @@ export function resolveRoleTarget(
   const { client, model, options } = normalizeOverride(override);
   if ((client === null) !== (model === null)) {
     throw new ConfigurationError(
-      "Pass both --client and --model to override the resolved model, or omit both.",
+      'Pass both --client and --model to override the resolved model, or omit both.',
     );
   }
   const config = loadWorkspaceConfig(workspace);
   if (client !== null && model !== null) {
-    const roles = mapping(config.roles, field("roles"));
-    validateRoleKeys(mapping(roles[role], field("roles", role)), role);
+    const roles = mapping(config.roles, field('roles'));
+    validateRoleKeys(mapping(roles[role], field('roles', role)), role);
     return stageTarget(client, model, { ...(options ?? {}) });
   }
   return resolveRoleCascade(config, role, { options }, registry);
@@ -331,8 +333,8 @@ export function loadAgentTarget(
   index?: StructuralIndex,
 ): StageTarget {
   rejectLegacyConfigKeys(config);
-  const agents = mapping(config.agents, field("agents"), index);
-  const label = field("agents", agentName);
+  const agents = mapping(config.agents, field('agents'), index);
+  const label = field('agents', agentName);
   return loadAgentDefinition(mapping(agents[agentName], label, index), label, registry, index);
 }
 
@@ -347,42 +349,42 @@ export function loadAgentDefinition(
   index?: StructuralIndex,
 ): StageTarget {
   const here = toField(where);
-  const label = here.label;
+  const {label} = here;
   const agentConfig = mapping(value, here, index);
-  if (Object.hasOwn(agentConfig, "options")) {
+  if (Object.hasOwn(agentConfig, 'options')) {
     throw new ConfigurationError(
       `${label}.options moved to ${label}.client.options. Run \`migent migrate\`.`,
-      { code: "agent-options-moved", path: [...here.path, "options"] },
+      { code: 'agent-options-moved', path: [...here.path, 'options'] },
     );
   }
-  if (Object.hasOwn(agentConfig, "provider")) {
+  if (Object.hasOwn(agentConfig, 'provider')) {
     throw new ConfigurationError(
       `${label}.provider was removed in schema_version 6; set ${label}.client.type. Run \`migent migrate\`.`,
-      { code: "legacy-key", path: [...here.path, "provider"] },
+      { code: 'legacy-key', path: [...here.path, 'provider'] },
     );
   }
-  const clientField = child(here, "client");
+  const clientField = child(here, 'client');
   let client: string | undefined;
   let options: Record<string, string> = {};
   let optionsSet = false;
   if (agentConfig.client != null) {
     ({ type: client, options, optionsSet } = readClient(agentConfig.client, clientField, index));
   }
-  const model = requiredString(agentConfig.model, child(here, "model"), index);
+  const model = requiredString(agentConfig.model, child(here, 'model'), index);
   if (client === undefined) {
-    const typeField = child(clientField, "type");
+    const typeField = child(clientField, 'type');
     if (optionsSet) {
       throw new ConfigurationError(
         `${typeField.label} is required when ${clientField.label}.options is set: native options belong to one client.`,
-        { code: "client-required", path: typeField.path },
+        { code: 'client-required', path: typeField.path },
       );
     }
     client = inferClient(registry, model, typeField);
   }
-  if (Object.hasOwn(agentConfig, "effort")) {
-    const effortField = child(here, "effort");
+  if (Object.hasOwn(agentConfig, 'effort')) {
+    const effortField = child(here, 'effort');
     const effort = requiredString(agentConfig.effort, effortField, index);
-    const details = { code: "effort-unsupported", path: effortField.path };
+    const details = { code: 'effort-unsupported', path: effortField.path };
     if (registry === undefined) {
       throw new ConfigurationError(`${label}.effort requires a client registry.`, details);
     }
@@ -398,7 +400,7 @@ export function loadAgentDefinition(
     if (Object.hasOwn(options, option)) {
       throw new ConfigurationError(
         `${label}.effort conflicts with ${label}.client.options.${option}; keep only one.`,
-        { code: "effort-conflict", path: effortField.path },
+        { code: 'effort-conflict', path: effortField.path },
       );
     }
     options[option] = effort;
@@ -412,25 +414,25 @@ function inferClient(registry: ClientRegistry | undefined, model: string, typeFi
   if (registry?.clientsForModel === undefined) {
     throw new ConfigurationError(
       `Missing ${typeField.label}. Set the agent's CLI client (for example, ${typeField.label}: opencode).`,
-      details("client-required"),
+      details('client-required'),
     );
   }
   const lookup = registry.clientsForModel(model);
   if (lookup.matches.length === 1) return lookup.matches[0]!;
   if (lookup.matches.length > 1) {
     throw new ConfigurationError(
-      `Model ${model} is listed by several clients (${lookup.matches.join(", ")}); set ${typeField.label}.`,
-      details("client-ambiguous"),
+      `Model ${model} is listed by several clients (${lookup.matches.join(', ')}); set ${typeField.label}.`,
+      details('client-ambiguous'),
     );
   }
-  const parts = [`searched: ${lookup.searched.join(", ") || "none"}`];
-  if (lookup.skipped.length > 0) parts.push(`not on PATH: ${lookup.skipped.join(", ")}`);
+  const parts = [`searched: ${lookup.searched.join(', ') || 'none'}`];
+  if (lookup.skipped.length > 0) parts.push(`not on PATH: ${lookup.skipped.join(', ')}`);
   if (lookup.failed.length > 0) {
-    parts.push(`failed: ${lookup.failed.map((entry) => `${entry.client} (${entry.reason})`).join("; ")}`);
+    parts.push(`failed: ${lookup.failed.map((entry) => `${entry.client} (${entry.reason})`).join('; ')}`);
   }
   throw new ConfigurationError(
-    `No client lists model ${model} (${parts.join("; ")}); set ${typeField.label}.`,
-    details("client-not-found"),
+    `No client lists model ${model} (${parts.join('; ')}); set ${typeField.label}.`,
+    details('client-not-found'),
   );
 }
 
@@ -446,13 +448,13 @@ export function resolveRoleCascade(
   index?: StructuralIndex,
 ): StageTarget {
   rejectLegacyConfigKeys(config);
-  const roles = mapping(config.roles, field("roles"), index);
-  const role = mapping(roles[roleKey], field("roles", roleKey), index);
+  const roles = mapping(config.roles, field('roles'), index);
+  const role = mapping(roles[roleKey], field('roles', roleKey), index);
   validateRoleKeys(role, roleKey);
-  const agentField = args?.agentField == null ? field("roles", roleKey, "agent") : toField(args.agentField);
+  const agentField = args?.agentField == null ? field('roles', roleKey, 'agent') : toField(args.agentField);
   const stageAgent = args?.agent ?? null;
   const selection: unknown =
-    stageAgent === null ? role.agent : stageAgent.kind === "named" ? stageAgent.name : stageAgent.value;
+    stageAgent === null ? role.agent : stageAgent.kind === 'named' ? stageAgent.name : stageAgent.value;
   let target: StageTarget;
   if (isRecord(selection)) {
     target = loadAgentDefinition(selection, agentField, registry, index);
@@ -460,7 +462,7 @@ export function resolveRoleCascade(
     const name = requiredString(selection, agentField, index);
     if (!isRecord(config.agents) || !Object.hasOwn(config.agents, name)) {
       throw new ConfigurationError(`${agentField.label}: unknown agent "${name}" in agents.`, {
-        code: "unknown-agent",
+        code: 'unknown-agent',
         path: agentField.path,
       });
     }
@@ -475,27 +477,27 @@ export function resolveRoleCascade(
 
 /** A v4 top-level key in a current document names its v5 replacement. */
 export function rejectLegacyConfigKeys(config: Record<string, unknown>): void {
-  if (Object.hasOwn(config, "models")) {
-    throw new ConfigurationError("models was renamed to agents in schema_version 5. Run `migent migrate`.", {
-      code: "legacy-key",
-      path: ["models"],
+  if (Object.hasOwn(config, 'models')) {
+    throw new ConfigurationError('models was renamed to agents in schema_version 5. Run `migent migrate`.', {
+      code: 'legacy-key',
+      path: ['models'],
     });
   }
 }
 
 /** Keys a role no longer accepts, each with the v5 key that replaces it. */
 export function validateRoleKeys(role: Record<string, unknown>, roleKey: string): void {
-  if (Object.hasOwn(role, "options")) {
+  if (Object.hasOwn(role, 'options')) {
     throw new ConfigurationError(
       `roles.${roleKey}.options is no longer supported. Move options into roles.${roleKey}.agent (inline agent) or the referenced agents entry, under client.options.`,
-      { code: "role-options-unsupported", path: ["roles", roleKey, "options"] },
+      { code: 'role-options-unsupported', path: ['roles', roleKey, 'options'] },
     );
   }
-  for (const [old, replacement] of [["default_model", "agent"], ["instructions", "responsibilities"]] as const) {
+  for (const [old, replacement] of [['default_model', 'agent'], ['instructions', 'responsibilities']] as const) {
     if (Object.hasOwn(role, old)) {
       throw new ConfigurationError(
         `roles.${roleKey}.${old} was renamed to roles.${roleKey}.${replacement} in schema_version 5. Run \`migent migrate\`.`,
-        { code: "legacy-key", path: ["roles", roleKey, old] },
+        { code: 'legacy-key', path: ['roles', roleKey, old] },
       );
     }
   }
@@ -507,10 +509,10 @@ export function loadRoleResponsibilities(
   roleKey: string,
   index?: StructuralIndex,
 ): string[] {
-  const roles = mapping(config.roles, field("roles"), index);
-  const role = mapping(roles[roleKey], field("roles", roleKey), index);
+  const roles = mapping(config.roles, field('roles'), index);
+  const role = mapping(roles[roleKey], field('roles', roleKey), index);
   validateRoleKeys(role, roleKey);
-  return stringItems(role.responsibilities, field("roles", roleKey, "responsibilities"), index);
+  return stringItems(role.responsibilities, field('roles', roleKey, 'responsibilities'), index);
 }
 
 /** The optional one-line description of a role, or null. */
@@ -519,24 +521,24 @@ export function loadRoleDescription(
   roleKey: string,
   index?: StructuralIndex,
 ): string | null {
-  const roles = mapping(config.roles, field("roles"), index);
-  const role = mapping(roles[roleKey], field("roles", roleKey), index);
+  const roles = mapping(config.roles, field('roles'), index);
+  const role = mapping(roles[roleKey], field('roles', roleKey), index);
   if (role.description == null) return null;
-  const description = roleDescription(role.description, field("roles", roleKey, "description"), index);
+  const description = roleDescription(role.description, field('roles', roleKey, 'description'), index);
   if (/[\r\n]/.test(description)) {
     throw new ConfigurationError(`roles.${roleKey}.description must be one line.`, {
-      code: "not-one-line",
-      path: ["roles", roleKey, "description"],
+      code: 'not-one-line',
+      path: ['roles', roleKey, 'description'],
     });
   }
   return description;
 }
 
-export type { Field, StructuralIndex } from "./config-structure.js";
+export type { Field, StructuralIndex } from './config-structure.js';
 
 /** A `Field` from literal key segments. */
 export function field(...keys: string[]): Field {
-  return { label: keys.join("."), path: keys };
+  return { label: keys.join('.'), path: keys };
 }
 
 function child(parent: Field, key: string): Field {
@@ -544,11 +546,11 @@ function child(parent: Field, key: string): Field {
 }
 
 function toField(value: string | Field): Field {
-  return typeof value === "string" ? { label: value, path: value.split(".") } : value;
+  return typeof value === 'string' ? { label: value, path: value.split('.') } : value;
 }
 
 function mergeOptions(
-  ...layers: Array<Record<string, string> | null | undefined>
+  ...layers: (Record<string, string> | null | undefined)[]
 ): Record<string, string> {
   const merged: Record<string, string> = {};
   for (const layer of layers) {

@@ -1,13 +1,14 @@
-import { whichSync, type ClientRegistry } from "@nodeint/migent-kernel";
-import { type SessionSelection } from "@nodeint/migent-session";
-import { loadWorkflowCatalog } from "@nodeint/migent-workflow";
-import type { ModelEffortCheck } from "./check.js";
-import type { RunCommand, Which } from "./catalog.js";
-import { diagnose } from "./diagnose.js";
-import { checkModels } from "./model-check.js";
-import { diagnoseSession, sessionEffortKeys, type SessionDiagnosis } from "./session.js";
-import { stageAgentDefinitions } from "./stage-agents.js";
-import type { Check } from "./check.js";
+import { type ClientRegistry,whichSync } from '@nodeint/migent-kernel';
+import { type SessionSelection } from '@nodeint/migent-session';
+import { loadWorkflowCatalog } from '@nodeint/migent-workflow';
+
+import type { RunCommand, Which } from './catalog.js';
+import type { ModelEffortCheck } from './check.js';
+import type { Check } from './check.js';
+import { diagnose } from './diagnose.js';
+import { checkModels } from './model-check.js';
+import { diagnoseSession, type SessionDiagnosis,sessionEffortKeys } from './session.js';
+import { stageAgentDefinitions } from './stage-agents.js';
 
 export interface DiagnoseHooks {
   clients: ClientRegistry;

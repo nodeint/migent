@@ -1,13 +1,14 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { main } from "../packages/cli/src/index.ts";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { main } from '../packages/cli/src/index.ts';
 
 const INTEGRATION_ROOT = path.dirname(fileURLToPath(import.meta.url));
-export const PROVIDER_BIN = path.join(INTEGRATION_ROOT, "fixtures", "bin");
-export const GROK_SESSION = "fake-grok-session";
-export const CODEX_THREAD = "fake-codex-thread";
+export const PROVIDER_BIN = path.join(INTEGRATION_ROOT, 'fixtures', 'bin');
+export const GROK_SESSION = 'fake-grok-session';
+export const CODEX_THREAD = 'fake-codex-thread';
 
 export const GROK_CONFIG = `\
 schema_version: 7
@@ -90,16 +91,16 @@ stages:
     artifacts: [write]
 `;
 
-export const FAKE_SCRIPT = ".migent-fake.json";
-export const FAKE_CURSOR = ".migent-fake.cursor";
-export const FAKE_LOG = ".migent-fake.log";
+export const FAKE_SCRIPT = '.migent-fake.json';
+export const FAKE_CURSOR = '.migent-fake.cursor';
+export const FAKE_LOG = '.migent-fake.log';
 
-export const COMPLETE = "status: complete\n\nready";
-export const APPROVED = "status: complete\ndecision: approved\n\nok";
-export const REVISE = "status: complete\ndecision: revise\n\nagain";
-export const BLOCKED = "status: blocked\nblocker: missing schema\n\nnope";
+export const COMPLETE = 'status: complete\n\nready';
+export const APPROVED = 'status: complete\ndecision: approved\n\nok';
+export const REVISE = 'status: complete\ndecision: revise\n\nagain';
+export const BLOCKED = 'status: blocked\nblocker: missing schema\n\nnope';
 
-const FAKE_ENV = ["MIGENT_FAKE_OUTCOME", "MIGENT_FAKE_SCRIPT", "MIGENT_FAKE_CURSOR", "MIGENT_FAKE_LOG", "PATH"] as const;
+const FAKE_ENV = ['MIGENT_FAKE_OUTCOME', 'MIGENT_FAKE_SCRIPT', 'MIGENT_FAKE_CURSOR', 'MIGENT_FAKE_LOG', 'PATH'] as const;
 
 export function resumedNotes(role: string): string {
   return `\
@@ -126,7 +127,7 @@ stages:
 }
 
 export function tempWorkspace(): string {
-  return mkdtempSync(path.join(tmpdir(), "migent-integration-"));
+  return mkdtempSync(path.join(tmpdir(), 'migent-integration-'));
 }
 
 export function removeWorkspace(workspace: string): void {
@@ -134,24 +135,24 @@ export function removeWorkspace(workspace: string): void {
 }
 
 export function installScript(root: string, steps: readonly unknown[]): void {
-  writeFileSync(path.join(root, FAKE_SCRIPT), JSON.stringify(steps), "utf8");
-  writeFileSync(path.join(root, FAKE_CURSOR), "0", "utf8");
+  writeFileSync(path.join(root, FAKE_SCRIPT), JSON.stringify(steps), 'utf8');
+  writeFileSync(path.join(root, FAKE_CURSOR), '0', 'utf8');
   const log = path.join(root, FAKE_LOG);
   if (existsSync(log)) unlinkSync(log);
 }
 
-export function providerInvocations(root: string): Array<Record<string, unknown>> {
+export function providerInvocations(root: string): Record<string, unknown>[] {
   const log = path.join(root, FAKE_LOG);
   if (!existsSync(log)) return [];
-  return readFileSync(log, "utf8")
-    .split("\n")
-    .filter((line) => line.trim() !== "")
+  return readFileSync(log, 'utf8')
+    .split('\n')
+    .filter((line) => line.trim() !== '')
     .map((line) => JSON.parse(line) as Record<string, unknown>);
 }
 
 export function invocationArgv(root: string): string[][] {
   return providerInvocations(root).map((item) => {
-    if (!Array.isArray(item.argv)) throw new Error("provider invocation is missing argv");
+    if (!Array.isArray(item.argv)) throw new Error('provider invocation is missing argv');
     return item.argv.map((part) => String(part));
   });
 }
@@ -172,22 +173,22 @@ export function hasArgs(argv: readonly string[], ...parts: string[]): boolean {
 }
 
 export function writeWorkspace(root: string, config: string, workflows: Record<string, string>): void {
-  const workflowDir = path.join(root, ".migent", "workflows");
+  const workflowDir = path.join(root, '.migent', 'workflows');
   mkdirSync(workflowDir, { recursive: true });
-  writeFileSync(path.join(root, ".migent", "config.yaml"), config, "utf8");
+  writeFileSync(path.join(root, '.migent', 'config.yaml'), config, 'utf8');
   for (const [workflowId, document] of Object.entries(workflows)) {
-    writeFileSync(path.join(workflowDir, `${workflowId}.yaml`), document, "utf8");
+    writeFileSync(path.join(workflowDir, `${workflowId}.yaml`), document, 'utf8');
   }
 }
 
 export async function runMain(
   workspace: string,
   argv: string[],
-  outcome = "complete",
-): Promise<[number, Array<Record<string, unknown>>, string]> {
+  outcome = 'complete',
+): Promise<[number, Record<string, unknown>[], string]> {
   const previous = new Map<string, string | undefined>();
   for (const name of FAKE_ENV) previous.set(name, process.env[name]);
-  process.env.PATH = `${PROVIDER_BIN}${path.delimiter}${process.env.PATH ?? ""}`;
+  process.env.PATH = `${PROVIDER_BIN}${path.delimiter}${process.env.PATH ?? ''}`;
   process.env.MIGENT_FAKE_OUTCOME = outcome;
   const script = path.join(workspace, FAKE_SCRIPT);
   if (existsSync(script)) {
@@ -201,9 +202,9 @@ export async function runMain(
   }
   const before = executionTexts(workspace);
   // These tests exercise stage execution; the preflight would add its own catalog calls to the fake CLIs.
-  const skip = argv[0] === "session" && argv[1] === "run" && !argv.includes("--role") && !argv.includes("--skip-preflight");
+  const skip = argv[0] === 'session' && argv[1] === 'run' && !argv.includes('--role') && !argv.includes('--skip-preflight');
   try {
-    const captured = await capture(() => main(skip ? [...argv, "--skip-preflight"] : argv, workspace));
+    const captured = await capture(() => main(skip ? [...argv, '--skip-preflight'] : argv, workspace));
     const printed = jsonObjects(captured.stdout);
     const objects =
       printed.length > 0
@@ -219,26 +220,26 @@ export async function runMain(
 }
 
 export function executionStatuses(workspace: string): string[] {
-  return executionRecords(workspace).map((record) => String(record.status ?? ""));
+  return executionRecords(workspace).map((record) => String(record.status ?? ''));
 }
 
-export function executionRecords(workspace: string, sessionId?: string): Array<Record<string, unknown>> {
-  const runs = path.join(workspace, ".migent", "sessions");
+export function executionRecords(workspace: string, sessionId?: string): Record<string, unknown>[] {
+  const runs = path.join(workspace, '.migent', 'sessions');
   if (!existsSync(runs)) return [];
   const sessions = sessionId === undefined ? readdirSync(runs) : [sessionId];
-  const records: Array<Record<string, unknown>> = [];
+  const records: Record<string, unknown>[] = [];
   for (const id of sessions) {
-    const executions = path.join(runs, id, "executions");
+    const executions = path.join(runs, id, 'executions');
     if (!existsSync(executions)) continue;
     for (const executionId of readdirSync(executions)) {
-      const filePath = path.join(executions, executionId, "execution.json");
+      const filePath = path.join(executions, executionId, 'execution.json');
       if (!existsSync(filePath)) continue;
-      records.push(JSON.parse(readFileSync(filePath, "utf8")) as Record<string, unknown>);
+      records.push(JSON.parse(readFileSync(filePath, 'utf8')) as Record<string, unknown>);
     }
   }
   records.sort((left, right) => {
-    const leftSession = String(left.session_id ?? "");
-    const rightSession = String(right.session_id ?? "");
+    const leftSession = String(left.session_id ?? '');
+    const rightSession = String(right.session_id ?? '');
     if (leftSession < rightSession) return -1;
     if (leftSession > rightSession) return 1;
     return Number(left.execution_order ?? 0) - Number(right.execution_order ?? 0);
@@ -247,33 +248,33 @@ export function executionRecords(workspace: string, sessionId?: string): Array<R
 }
 
 export function sessionStatus(workspace: string, sessionId: string): Record<string, unknown> {
-  const filePath = path.join(workspace, ".migent", "sessions", sessionId, "status.json");
-  return JSON.parse(readFileSync(filePath, "utf8")) as Record<string, unknown>;
+  const filePath = path.join(workspace, '.migent', 'sessions', sessionId, 'status.json');
+  return JSON.parse(readFileSync(filePath, 'utf8')) as Record<string, unknown>;
 }
 
 export function asRecord(value: unknown): Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Error("expected object");
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error('expected object');
   }
   return value as Record<string, unknown>;
 }
 
-export function asRecords(value: unknown): Array<Record<string, unknown>> {
-  if (!Array.isArray(value)) throw new Error("expected array");
+export function asRecords(value: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(value)) throw new Error('expected array');
   return value.map((item) => asRecord(item));
 }
 
 function executionTexts(workspace: string): Map<string, string> {
-  const root = path.join(workspace, ".migent", "sessions");
+  const root = path.join(workspace, '.migent', 'sessions');
   const files = new Map<string, string>();
   if (!existsSync(root)) return files;
   for (const sessionId of readdirSync(root)) {
-    const executions = path.join(root, sessionId, "executions");
+    const executions = path.join(root, sessionId, 'executions');
     if (!existsSync(executions)) continue;
     for (const executionId of readdirSync(executions)) {
-      const filePath = path.join(executions, executionId, "execution.json");
+      const filePath = path.join(executions, executionId, 'execution.json');
       if (!existsSync(filePath)) continue;
-      files.set(`${sessionId}/${executionId}`, readFileSync(filePath, "utf8"));
+      files.set(`${sessionId}/${executionId}`, readFileSync(filePath, 'utf8'));
     }
   }
   return files;
@@ -292,29 +293,29 @@ function executionFingerprint(text: string): string {
 function sessionIdFromRun(workspace: string, argv: string[], stderr: string): string | null {
   const match = /session_id: (\S+)/.exec(stderr);
   if (match?.[1]) return match[1];
-  const continueAt = argv.indexOf("continue");
-  if (continueAt >= 0 && argv[continueAt + 1] && !argv[continueAt + 1].startsWith("-")) return argv[continueAt + 1] ?? null;
-  const sessionAt = argv.indexOf("--session");
-  if (sessionAt >= 0 && argv[sessionAt + 1] && !argv[sessionAt + 1].startsWith("-")) return argv[sessionAt + 1] ?? null;
-  const root = path.join(workspace, ".migent", "sessions");
+  const continueAt = argv.indexOf('continue');
+  if (continueAt >= 0 && argv[continueAt + 1] && !argv[continueAt + 1].startsWith('-')) return argv[continueAt + 1] ?? null;
+  const sessionAt = argv.indexOf('--session');
+  if (sessionAt >= 0 && argv[sessionAt + 1] && !argv[sessionAt + 1].startsWith('-')) return argv[sessionAt + 1] ?? null;
+  const root = path.join(workspace, '.migent', 'sessions');
   if (!existsSync(root)) return null;
-  const ids = readdirSync(root).filter((name) => existsSync(path.join(root, name, "status.json")));
+  const ids = readdirSync(root).filter((name) => existsSync(path.join(root, name, 'status.json')));
   return ids.length === 1 ? (ids[0] ?? null) : null;
 }
 
 function stopReasonFor(code: number, status: string): string {
-  if (code === 130) return "cancelled";
-  if (code === 8) return "quota";
-  if (code === 7) return "verify_failed";
-  if (code === 6) return "verify_exhausted";
-  if (code === 5) return "dispatch_limit";
-  if (code === 4) return "revisions_exhausted";
-  if (code === 3) return "stage_failed";
-  if (code === 2) return "configuration";
-  if (status === "completed") return "completed";
-  if (status === "blocked") return "blocked";
-  if (status === "cancelled") return "cancelled";
-  return "stage";
+  if (code === 130) return 'cancelled';
+  if (code === 8) return 'quota';
+  if (code === 7) return 'verify_failed';
+  if (code === 6) return 'verify_exhausted';
+  if (code === 5) return 'dispatch_limit';
+  if (code === 4) return 'revisions_exhausted';
+  if (code === 3) return 'stage_failed';
+  if (code === 2) return 'configuration';
+  if (status === 'completed') return 'completed';
+  if (status === 'blocked') return 'blocked';
+  if (status === 'cancelled') return 'cancelled';
+  return 'stage';
 }
 
 function workflowResult(
@@ -326,7 +327,7 @@ function workflowResult(
 ): Record<string, unknown> {
   const sessionId = sessionIdFromRun(workspace, argv, stderr);
   if (sessionId === null) return {};
-  const stages: Array<Record<string, unknown>> = [];
+  const stages: Record<string, unknown>[] = [];
   for (const [key, text] of executionTexts(workspace)) {
     if (!key.startsWith(`${sessionId}/`)) continue;
     const previous = before.get(key);
@@ -334,16 +335,16 @@ function workflowResult(
     const record = JSON.parse(text) as Record<string, unknown>;
     const executionId = String(record.execution_id ?? key.slice(sessionId.length + 1));
     const outcome =
-      typeof record.outcome === "object" && record.outcome !== null && !Array.isArray(record.outcome)
+      typeof record.outcome === 'object' && record.outcome !== null && !Array.isArray(record.outcome)
         ? (record.outcome as Record<string, unknown>)
         : {};
     stages.push({
       execution_id: executionId,
       execution_order: record.execution_order,
-      agent_id: record.agent_id ?? "",
-      outcome_status: typeof outcome.status === "string" ? outcome.status : "",
-      outcome_decision: typeof outcome.decision === "string" ? outcome.decision : "",
-      artifact_directory: path.join(workspace, ".migent", "sessions", sessionId, "executions", executionId, "artifacts"),
+      agent_id: record.agent_id ?? '',
+      outcome_status: typeof outcome.status === 'string' ? outcome.status : '',
+      outcome_decision: typeof outcome.decision === 'string' ? outcome.decision : '',
+      artifact_directory: path.join(workspace, '.migent', 'sessions', sessionId, 'executions', executionId, 'artifacts'),
       response: executionResponse(workspace, sessionId, executionId),
     });
   }
@@ -354,7 +355,7 @@ function workflowResult(
   } catch {
     status = {};
   }
-  const sessionStatusText = typeof status.status === "string" ? status.status : "";
+  const sessionStatusText = typeof status.status === 'string' ? status.status : '';
   return {
     session_id: sessionId,
     session_status: sessionStatusText,
@@ -365,32 +366,32 @@ function workflowResult(
 }
 
 function executionResponse(workspace: string, sessionId: string, executionId: string): string {
-  const filePath = path.join(workspace, ".migent", "sessions", sessionId, "executions", executionId, "response.md");
-  if (!existsSync(filePath)) return "";
-  return readFileSync(filePath, "utf8");
+  const filePath = path.join(workspace, '.migent', 'sessions', sessionId, 'executions', executionId, 'response.md');
+  if (!existsSync(filePath)) return '';
+  return readFileSync(filePath, 'utf8');
 }
 
-function jsonObjects(text: string): Array<Record<string, unknown>> {
-  const objects: Array<Record<string, unknown>> = [];
-  for (const line of text.split("\n")) {
+function jsonObjects(text: string): Record<string, unknown>[] {
+  const objects: Record<string, unknown>[] = [];
+  for (const line of text.split('\n')) {
     const stripped = line.trim();
-    if (!stripped.startsWith("{")) continue;
+    if (!stripped.startsWith('{')) continue;
     objects.push(JSON.parse(stripped) as Record<string, unknown>);
   }
   return objects;
 }
 
 async function capture(fn: () => Promise<unknown> | unknown): Promise<{ stdout: string; stderr: string; value: unknown }> {
-  let stdout = "";
-  let stderr = "";
+  let stdout = '';
+  let stderr = '';
   const out = process.stdout.write;
   const err = process.stderr.write;
   process.stdout.write = ((chunk: string | Uint8Array) => {
-    stdout += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
+    stdout += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8');
     return true;
   }) as typeof process.stdout.write;
   process.stderr.write = ((chunk: string | Uint8Array) => {
-    stderr += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
+    stderr += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8');
     return true;
   }) as typeof process.stderr.write;
   try {

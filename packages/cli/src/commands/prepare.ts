@@ -1,9 +1,10 @@
-import { PrepareResult, type Static } from "@nodeint/migent-contracts";
-import { writeJson } from "../emit.js";
-import { clientRegistry } from "../client.js";
-import { log } from "@nodeint/migent-kernel";
-import { createPreparedSession, relativeTaskPath, relativeWorkflowPath } from "@nodeint/migent-session";
-import { requireCurrentSchema } from "../migrate.js";
+import { PrepareResult, type Static } from '@nodeint/migent-contracts';
+import { log } from '@nodeint/migent-kernel';
+import { createPreparedSession, relativeTaskPath, relativeWorkflowPath } from '@nodeint/migent-session';
+
+import { clientRegistry } from '../client.js';
+import { writeJson } from '../emit.js';
+import { requireCurrentSchema } from '../migrate.js';
 
 export function prepareWorkflowSession(
   workspace: string,
@@ -16,7 +17,7 @@ export function prepareWorkflowSession(
   const payload: Static<typeof PrepareResult> = {
     session_id: id,
     title: sessionId.trim(),
-    status: "prepared" as const,
+    status: 'prepared' as const,
     task_path: relativeTaskPath(id),
     workflow_path: relativeWorkflowPath(id),
   };

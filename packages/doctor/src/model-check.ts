@@ -1,23 +1,24 @@
 import {
-  listAgentDefinitions,
-  loadWorkspaceConfig,
   type AgentDefinitionEntry,
   type CliClient,
   type ClientRegistry,
-} from "@nodeint/migent-kernel";
-import type { ModelEffortCheck } from "./check.js";
+  listAgentDefinitions,
+  loadWorkspaceConfig,
+} from '@nodeint/migent-kernel';
+
 import {
   cached,
   catalogLookupName,
+  type ClientCatalogInput,
   clientCatalogSource,
   knownModel,
   loadCatalog,
-  type ClientCatalogInput,
   type RunCommand,
   type Which,
-} from "./catalog.js";
-import { agentClientType } from "./client-type.js";
-import { checkModelEfforts } from "./effort-check.js";
+} from './catalog.js';
+import type { ModelEffortCheck } from './check.js';
+import { agentClientType } from './client-type.js';
+import { checkModelEfforts } from './effort-check.js';
 
 /**
  * A name missing from the catalog is a hard error only for these client CLIs, keyed by command.
@@ -32,7 +33,7 @@ import { checkModelEfforts } from "./effort-check.js";
  *   depends on the signed-in account.
  * An unknown client command defaults to warning-only.
  */
-const RELIABLE_CATALOGS: ReadonlySet<string> = new Set(["opencode", "grok", "agy"]);
+const RELIABLE_CATALOGS: ReadonlySet<string> = new Set(['opencode', 'grok', 'agy']);
 
 function catalogName(client: CliClient, model: string): string {
   return catalogLookupName(client.command, model);
@@ -62,8 +63,8 @@ export async function checkModels(
     const effortWarning = unreadable.has(key) ? undefined : efforts[key]?.warning;
     const warning = [availability[key]?.warning, effortWarning].filter((item) => item !== undefined);
     const check: ModelEffortCheck = {};
-    if (problem.length > 0) check.problem = problem.join("\n");
-    if (warning.length > 0) check.warning = warning.join("\n");
+    if (problem.length > 0) check.problem = problem.join('\n');
+    if (warning.length > 0) check.warning = warning.join('\n');
     if (check.problem !== undefined || check.warning !== undefined) merged[key] = check;
   }
   return merged;
@@ -90,7 +91,7 @@ export async function checkModelAvailability(
     if (only !== undefined && !only.has(alias)) return null;
     // Unmapped agents (empty definitions) are reported by the structural check.
     if (!isRecord(model) || Object.keys(model).length === 0) return null;
-    if (typeof model.model !== "string" || !model.model.trim()) return null;
+    if (typeof model.model !== 'string' || !model.model.trim()) return null;
     if (clientUnusable(model)) return null;
     const type = agentClientType(model, clients);
     if (type === undefined) return null; // The structural check explains the missing client.
@@ -110,7 +111,7 @@ export async function checkModelAvailability(
         missed.add(alias);
         if (RELIABLE_CATALOGS.has(client.command)) {
           const near = closest(lookup, catalog.ids);
-          const hint = near.length > 0 ? `\nDid you mean: ${near.join(", ")}` : "";
+          const hint = near.length > 0 ? `\nDid you mean: ${near.join(', ')}` : '';
           check.problem = `Invalid ${field}: ${value}\n${error instanceof Error ? error.message : String(error)}${hint}`;
         } else {
           check.warning = `Could not validate ${field}: ${value}\n${client.command} does not list ${name}; its model list may be incomplete.`;
@@ -158,13 +159,13 @@ function distance(left: string, right: string): number {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /** True when `client` is present but is not a mapping with a usable `type`: the structural check explains it. */
 function clientUnusable(definition: Record<string, unknown>): boolean {
-  const client = definition.client;
+  const {client} = definition;
   if (client == null) return false;
   if (!isRecord(client)) return true;
-  return client.type != null && (typeof client.type !== "string" || client.type.trim() === "");
+  return client.type != null && (typeof client.type !== 'string' || client.type.trim() === '');
 }

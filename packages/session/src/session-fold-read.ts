@@ -1,11 +1,13 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import path from "node:path";
-import { ConfigurationError, EXECUTIONS_DIRNAME, isAtomicTempName } from "@nodeint/migent-kernel";
-import { isRecord, loadNamedWorkflow, loadWorkflowDocument, type WorkflowDocument } from "@nodeint/migent-workflow";
-import { executionClientReader } from "./legacy-execution-client.js";
-import { loadFrozenWorkflow } from "./session-freeze.js";
-import type { FoldExecution, } from "./session-fold-types.js";
-import { asInt, textOr } from "./session-fold-util.js";
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import path from 'node:path';
+
+import { ConfigurationError, EXECUTIONS_DIRNAME, isAtomicTempName } from '@nodeint/migent-kernel';
+import { isRecord, loadNamedWorkflow, loadWorkflowDocument, type WorkflowDocument } from '@nodeint/migent-workflow';
+
+import { executionClientReader } from './legacy-execution-client.js';
+import type { FoldExecution, } from './session-fold-types.js';
+import { asInt, textOr } from './session-fold-util.js';
+import { loadFrozenWorkflow } from './session-freeze.js';
 
 export function readExecutions(sessionDirectory: string): FoldExecution[] {
   const directory = path.join(sessionDirectory, EXECUTIONS_DIRNAME);
@@ -19,10 +21,10 @@ export function readExecutions(sessionDirectory: string): FoldExecution[] {
   const clientOf = executionClientReader(sessionDirectory);
   for (const entry of entries) {
     if (!entry.isDirectory() || isAtomicTempName(entry.name)) continue;
-    const filePath = path.join(directory, entry.name, "execution.json");
+    const filePath = path.join(directory, entry.name, 'execution.json');
     let text: string;
     try {
-      text = readFileSync(filePath, "utf8");
+      text = readFileSync(filePath, 'utf8');
     } catch {
       continue;
     }
@@ -48,30 +50,30 @@ export function executionFromRecord(
   return {
     executionId,
     executionOrder: asInt(metadata.execution_order),
-    stageId: textOr(metadata.stage_id) ?? "",
+    stageId: textOr(metadata.stage_id) ?? '',
     stageAttempt: asInt(metadata.stage_attempt),
-    client: client ?? "",
-    model: textOr(metadata.model) ?? "",
+    client: client ?? '',
+    model: textOr(metadata.model) ?? '',
     resumesExecutionId: textOr(metadata.resumes_execution_id),
-    status: textOr(metadata.status) ?? "",
+    status: textOr(metadata.status) ?? '',
     outcome,
     error: textOr(metadata.error),
     failureReason: textOr(metadata.failure_reason),
     createdAt: textOr(metadata.created_at),
     completedAt: textOr(metadata.completed_at),
-    artifactDirectory: path.join(sessionDirectory, EXECUTIONS_DIRNAME, executionId, "artifacts"),
+    artifactDirectory: path.join(sessionDirectory, EXECUTIONS_DIRNAME, executionId, 'artifacts'),
   };
 }
 
 /** Finder, Explorer, and editor backups are not published artifacts. */
 export function isIgnoredOutputName(name: string): boolean {
-  if (name.startsWith(".") || name.endsWith("~")) return true;
+  if (name.startsWith('.') || name.endsWith('~')) return true;
   const lower = name.toLowerCase();
-  return lower === "thumbs.db" || lower === "desktop.ini";
+  return lower === 'thumbs.db' || lower === 'desktop.ini';
 }
 
 export function listOutputFiles(sessionDirectory: string): string[] {
-  const directory = path.join(sessionDirectory, "outputs");
+  const directory = path.join(sessionDirectory, 'outputs');
   let entries;
   try {
     entries = readdirSync(directory, { withFileTypes: true });
@@ -92,11 +94,11 @@ export function loadSessionWorkflow(
   sessionDirectory: string,
   status: Record<string, unknown>,
 ): WorkflowDocument | null {
-  if (status.workflow_id === "agent") return null;
+  if (status.workflow_id === 'agent') return null;
   const frozen = loadFrozenWorkflow(sessionDirectory);
   if (frozen) return frozen;
   const workflowPath = status.workflow_path;
-  if (typeof workflowPath === "string" && workflowPath) {
+  if (typeof workflowPath === 'string' && workflowPath) {
     const filePath = path.isAbsolute(workflowPath) ? workflowPath : path.join(workspace, workflowPath);
     if (isReadableFile(filePath)) {
       try {
@@ -107,7 +109,7 @@ export function loadSessionWorkflow(
     }
   }
   const workflowId = status.workflow_id;
-  if (typeof workflowId !== "string" || workflowId === "") return null;
+  if (typeof workflowId !== 'string' || workflowId === '') return null;
   try {
     return loadNamedWorkflow(workspace, workflowId);
   } catch (error) {

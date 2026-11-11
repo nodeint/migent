@@ -1,11 +1,13 @@
-import { WorkspaceList, WorkspaceMutation, type Static } from "@nodeint/migent-contracts";
-import { writeJson } from "../emit.js";
-import { realpathSync } from "node:fs";
-import path from "node:path";
-import { ServiceError, callService, endpointFromHome, ensureRegistryHome, startDetached } from "@nodeint/migent-registry";
-import { printError } from "../display.js";
-import { PACKAGE_VERSION } from "../version.js";
-import { findWorkspace, invocationCwdPath } from "../workspace.js";
+import { realpathSync } from 'node:fs';
+import path from 'node:path';
+
+import { type Static,WorkspaceList, WorkspaceMutation } from '@nodeint/migent-contracts';
+import { callService, endpointFromHome, ensureRegistryHome, ServiceError, startDetached } from '@nodeint/migent-registry';
+
+import { printError } from '../display.js';
+import { writeJson } from '../emit.js';
+import { PACKAGE_VERSION } from '../version.js';
+import { findWorkspace, invocationCwdPath } from '../workspace.js';
 
 export const workspaceApi = {
   startDetached,
@@ -15,7 +17,7 @@ export const workspaceApi = {
 export async function runRegister(workspacePath: string | null, name: string | null): Promise<number> {
   const root = workspaceRoot(workspacePath);
   if (!path.isAbsolute(root)) {
-    printError("Workspace path is not absolute.");
+    printError('Workspace path is not absolute.');
     return 2;
   }
   process.stderr.write(`Registering ${root}\n`);
@@ -29,25 +31,25 @@ export async function runRegister(workspacePath: string | null, name: string | n
     }
     throw error;
   }
-  const body: Record<string, unknown> = { path: root, tool: { name: "migent", version: PACKAGE_VERSION } };
+  const body: Record<string, unknown> = { path: root, tool: { name: 'migent', version: PACKAGE_VERSION } };
   if (name !== null) body.name = name;
   if (!path.isAbsolute(String(body.path))) {
-    printError("Workspace path is not absolute.");
+    printError('Workspace path is not absolute.');
     return 2;
   }
-  return finish("POST", "/v1/workspaces", endpoint, body);
+  return finish('POST', '/v1/workspaces', endpoint, body);
 }
 
 export async function runWorkspaceList(asJson: boolean): Promise<number> {
   const endpoint = endpointFromHome(ensureRegistryHome());
   if (endpoint === null) {
-    printError("Registry service is not running.");
+    printError('Registry service is not running.');
     return 1;
   }
   let status: number;
   let payload: Record<string, unknown>;
   try {
-    [status, payload] = await workspaceApi.callService(endpoint.host, endpoint.port, endpoint.token, "GET", "/v1/workspaces");
+    [status, payload] = await workspaceApi.callService(endpoint.host, endpoint.port, endpoint.token, 'GET', '/v1/workspaces');
   } catch (error) {
     printError(`Registry request failed: ${errorText(error)}`);
     return 1;
@@ -55,15 +57,15 @@ export async function runWorkspaceList(asJson: boolean): Promise<number> {
   if (status !== 200) return statusExit(status, payload);
   const rows = payload.workspaces;
   if (!Array.isArray(rows)) {
-    printError("Registry response was invalid.");
+    printError('Registry response was invalid.');
     return 1;
   }
   if (asJson) {
-    writeJson(WorkspaceList, { workspaces: rows as Static<typeof WorkspaceList>["workspaces"] });
+    writeJson(WorkspaceList, { workspaces: rows as Static<typeof WorkspaceList>['workspaces'] });
   } else {
     for (const row of rows) {
-      const record = row && typeof row === "object" ? (row as Record<string, unknown>) : {};
-      const available = record.available ? "true" : "false";
+      const record = row && typeof row === 'object' ? (row as Record<string, unknown>) : {};
+      const available = record.available ? 'true' : 'false';
       process.stdout.write(`${String(record.id)}  ${String(record.name)}  ${String(record.path)}  ${available}\n`);
     }
   }
@@ -73,10 +75,10 @@ export async function runWorkspaceList(asJson: boolean): Promise<number> {
 export async function runRemove(workspaceId: string): Promise<number> {
   const endpoint = endpointFromHome(ensureRegistryHome());
   if (endpoint === null) {
-    printError("Registry service is not running.");
+    printError('Registry service is not running.');
     return 1;
   }
-  return finish("DELETE", `/v1/workspaces/${workspaceId}`, endpoint, null);
+  return finish('DELETE', `/v1/workspaces/${workspaceId}`, endpoint, null);
 }
 
 async function finish(
@@ -102,11 +104,11 @@ async function finish(
   }
   if (status === 200 || status === 201) {
     writeJson(WorkspaceMutation, payload as Static<typeof WorkspaceMutation>);
-    if (method === "POST") {
-      const id = typeof payload.id === "string" && payload.id !== "" ? payload.id : "workspace";
+    if (method === 'POST') {
+      const id = typeof payload.id === 'string' && payload.id !== '' ? payload.id : 'workspace';
       process.stderr.write(`Registered ${id}.\n`);
-    } else if (method === "DELETE") {
-      const id = requestPath.split("/").pop() ?? "workspace";
+    } else if (method === 'DELETE') {
+      const id = requestPath.split('/').pop() ?? 'workspace';
       process.stderr.write(`Removed ${id}.\n`);
     }
     return 0;
@@ -115,8 +117,8 @@ async function finish(
 }
 
 function statusExit(status: number, payload: Record<string, unknown>): number {
-  const message = payload.message;
-  printError(typeof message === "string" && message ? message : "Registry request failed.");
+  const {message} = payload;
+  printError(typeof message === 'string' && message ? message : 'Registry request failed.');
   return status === 404 ? 2 : 1;
 }
 

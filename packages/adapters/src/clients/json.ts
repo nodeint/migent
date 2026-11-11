@@ -1,7 +1,7 @@
-import type { TurnUsage } from "../types.js";
+import type { TurnUsage } from '../types.js';
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 export function parseJsonObject(line: string): Record<string, unknown> | null {
@@ -17,12 +17,12 @@ export function parseJsonObject(line: string): Record<string, unknown> | null {
 
 /** A label from a closed vocabulary: any value the client does not list becomes `other`. */
 export function labelOf(value: unknown, allowed: ReadonlySet<string>): string | null {
-  if (typeof value !== "string" || value === "") return null;
-  return allowed.has(value) ? value : "other";
+  if (typeof value !== 'string' || value === '') return null;
+  return allowed.has(value) ? value : 'other';
 }
 
 export function compact(value: string, limit = 160): string {
-  const text = value.split(/\s+/).filter((part) => part !== "").join(" ");
+  const text = value.split(/\s+/).filter((part) => part !== '').join(' ');
   return text.length <= limit ? text : `${text.slice(0, limit - 1)}…`;
 }
 
@@ -35,7 +35,7 @@ export function picked(source: Record<string, unknown>, keys: readonly string[])
 }
 
 export function finite(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 }
 
 export function emptyUsage(): TurnUsage {

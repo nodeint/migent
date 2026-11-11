@@ -1,25 +1,26 @@
-import { type ChildProcess, type StdioOptions, spawn } from "node:child_process";
-import { randomBytes } from "node:crypto";
-import type { Readable } from "node:stream";
-import { StringDecoder } from "node:string_decoder";
-import { constants as osConstants } from "node:os";
-import { log } from "./runtime.js";
-import { collectProcessStartInfo, type ProcessStartInfo, wrapperArgv } from "./process-ownership.js";
-import { UnpassableArgument, assertArgumentsPassable } from "./provider-spawn.js";
-import { killProcessTree, wrapperEndpoint } from "./process-wrapper.js";
-import { TailBuffer } from "./tail-buffer.js";
+import { type ChildProcess, spawn,type StdioOptions } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
+import { constants as osConstants } from 'node:os';
+import type { Readable } from 'node:stream';
+import { StringDecoder } from 'node:string_decoder';
+
+import { collectProcessStartInfo, type ProcessStartInfo, wrapperArgv } from './process-ownership.js';
+import { killProcessTree, wrapperEndpoint } from './process-wrapper.js';
+import { assertArgumentsPassable,UnpassableArgument } from './provider-spawn.js';
+import { log } from './runtime.js';
+import { TailBuffer } from './tail-buffer.js';
 import {
+  parseExitedSignal,
+  parseFailedMessage,
+  type StartFailure,
+  type StartResult,
   UNPASSABLE_ARGUMENT_CODE,
   WRAPPER_READY,
   WRAPPER_START,
-  type StartFailure,
-  type StartResult,
   type WrapperFailedMessage,
-  parseExitedSignal,
-  parseFailedMessage,
-} from "./wrapper-protocol.js";
+} from './wrapper-protocol.js';
 
-export type { StartFailure, StartResult } from "./wrapper-protocol.js";
+export type { StartFailure, StartResult } from './wrapper-protocol.js';
 
 export const DEFAULT_TIMEOUT_SEC: number | null = null;
 export const PROGRESS_INTERVAL_SEC = 30;
@@ -34,7 +35,7 @@ export interface CommandSpec {
 
 /** A wrapper-level failure of one provider turn, for the caller to record. */
 export interface ExecutionFailure {
-  kind: "start" | "provider-exit";
+  kind: 'start' | 'provider-exit';
   /** The typed handshake outcome for `start`; the wrapper's own report after start, if any. */
   result: StartFailure | null;
   phase: string | null;
@@ -60,7 +61,7 @@ export interface ExecutionFailure {
   failedAt: string;
 }
 
-export type StderrDrain = "closed" | "grace-expired";
+export type StderrDrain = 'closed' | 'grace-expired';
 
 /** What the process did, observed by the executor. No stdout semantics: only sizes as received. */
 export interface ProcessFacts {
@@ -104,7 +105,7 @@ export interface RunOptions {
   onStopped?: ((reason: StopReason) => Promise<void | boolean>) | null;
 }
 
-export type StopReason = "cancel" | "timeout";
+export type StopReason = 'cancel' | 'timeout';
 
 /** Runs a hook; true unless it reports (by returning false) that it did nothing. */
 async function notify(hook: ((reason: StopReason) => Promise<void | boolean>) | null | undefined, reason: StopReason): Promise<boolean> {
@@ -122,7 +123,7 @@ export class CancellationRequested extends Error {
 
   constructor(signalNumber: number) {
     super(`Received signal ${signalNumber}.`);
-    this.name = "CancellationRequested";
+    this.name = 'CancellationRequested';
     this.signalNumber = signalNumber;
   }
 }
@@ -182,27 +183,27 @@ export class CommandExecutor {
 
   async run(spec: CommandSpec, cwd: string, options: RunOptions = {}): Promise<CommandResult> {
     const { onOutput, onHeartbeat, onStart, onDebug } = options;
-    const executable = spec.argv[0] ?? "command";
+    const executable = spec.argv[0] ?? 'command';
     let child: ChildProcess | null = null;
     // True once the provider was told to start; before that no server-side turn can exist.
     let launched = false;
     try {
-      assertArgumentsPassable(spec.argv[0] ?? "", spec.argv.slice(1));
+      assertArgumentsPassable(spec.argv[0] ?? '', spec.argv.slice(1));
     } catch (error) {
-      if (error instanceof UnpassableArgument) return { stdout: "", error: error.message, exitCode: null };
+      if (error instanceof UnpassableArgument) return { stdout: '', error: error.message, exitCode: null };
       throw error;
     }
     try {
-      const endpoint = wrapperEndpoint(randomBytes(16).toString("hex"));
+      const endpoint = wrapperEndpoint(randomBytes(16).toString('hex'));
       onDebug?.(`endpoint ${endpoint} (length ${Buffer.byteLength(endpoint)})`);
       const spawnedAt = new Date().toISOString();
       child = startWrapper(spec, cwd, endpoint);
-      onDebug?.(`wrapper spawned pid=${child.pid ?? "none"}`);
+      onDebug?.(`wrapper spawned pid=${child.pid ?? 'none'}`);
       if (onDebug) forwardWrapperSteps(child, onDebug);
       const started = await waitForReady(child);
       const describe = (
         result: StartFailure,
-        kind: ExecutionFailure["kind"],
+        kind: ExecutionFailure['kind'],
         process: { exitCode: number | null; signal: string | null; drain: StderrDrain } = {
           exitCode: null,
           signal: null,
@@ -210,11 +211,11 @@ export class CommandExecutor {
         },
       ): ExecutionFailure => {
         const stderrTail = stderrTailOf(child as ChildProcess);
-        const detail = result.kind === "wrapper-reported" || result.kind === "spawn-error" ? result : null;
+        const detail = result.kind === 'wrapper-reported' || result.kind === 'spawn-error' ? result : null;
         return {
           kind,
           result,
-          phase: result.kind === "wrapper-reported" ? result.phase : null,
+          phase: result.kind === 'wrapper-reported' ? result.phase : null,
           code: detail?.code ?? null,
           errno: detail?.errno ?? null,
           syscall: detail?.syscall ?? null,
@@ -233,38 +234,38 @@ export class CommandExecutor {
           failedAt: new Date().toISOString(),
         };
       };
-      if (started.kind === "cancelled") throwIfCancelled();
-      if (started.kind !== "ready" && started.kind !== "cancelled") {
+      if (started.kind === 'cancelled') throwIfCancelled();
+      if (started.kind !== 'ready' && started.kind !== 'cancelled') {
         onDebug?.(`wrapper failed: ${started.kind}`);
         // Read stderr only after the pipes closed (bounded), so a late line is not lost.
         await drainStdio(child);
-        const failure = describe(started, "start");
+        const failure = describe(started, 'start');
         await stopProcessGroup(child);
         // A cancel that lands before this point must never be persisted as a startup failure.
         throwIfCancelled();
-        return { stdout: "", error: failure.message, exitCode: null, failure };
+        return { stdout: '', error: failure.message, exitCode: null, failure };
       }
-      onDebug?.("wrapper ready");
+      onDebug?.('wrapper ready');
       if (onStart && child.pid !== undefined) onStart(collectProcessStartInfo(child.pid, endpoint));
       let reported: WrapperFailedMessage | null = null;
       let reportedSignal: string | null = null;
-      child.on("message", (message: unknown) => {
+      child.on('message', (message: unknown) => {
         reported = parseFailedMessage(message) ?? reported;
         reportedSignal = parseExitedSignal(message) ?? reportedSignal;
       });
       child.send({ type: WRAPPER_START });
       launched = true;
-      onDebug?.("start sent");
+      onDebug?.('start sent');
       const [stdout, error, exitCode, streamStats] = await this.wait(child, spec, onOutput, onHeartbeat, options);
-      onDebug?.(`provider exit code=${exitCode} error=${error ?? "none"}`);
+      onDebug?.(`provider exit code=${exitCode} error=${error ?? 'none'}`);
       // The process is gone; stderr is complete only once every pipe has closed (bounded wait).
       const drain = streamStats === null ? stderrDrainOf(child) : await drainStdio(child);
       // A cancel that lands while the pipes drain must not be persisted as a failure.
       if (error !== null) throwIfCancelled();
       const wrapperReport = reported as WrapperFailedMessage | null;
       if (wrapperReport !== null && error !== null) {
-        const result: StartFailure = { kind: "wrapper-reported", ...stripType(wrapperReport) };
-        const failure = describe(result, "start");
+        const result: StartFailure = { kind: 'wrapper-reported', ...stripType(wrapperReport) };
+        const failure = describe(result, 'start');
         return { stdout, error: failure.message, exitCode: null, failure };
       }
       let facts: ProcessFacts | undefined;
@@ -287,7 +288,7 @@ export class CommandExecutor {
       }
       if (error !== null && exitCode !== null && exitCode !== 0) {
         const signal = reportedSignal ?? child.signalCode;
-        const failure = describe({ kind: "exited", code: exitCode, signal }, "provider-exit", {
+        const failure = describe({ kind: 'exited', code: exitCode, signal }, 'provider-exit', {
           exitCode,
           signal,
           drain,
@@ -299,13 +300,13 @@ export class CommandExecutor {
       return { stdout, error, exitCode };
     } catch (error) {
       if (error instanceof CancellationRequested) {
-        log("Cancellation requested; stopping the sub-agent group.");
+        log('Cancellation requested; stopping the sub-agent group.');
         if (child !== null) {
-          if (launched) await this.interrupt(child, options, "cancel");
+          if (launched) await this.interrupt(child, options, 'cancel');
           await stopProcessGroup(child);
-          if (launched) await notify(options.onStopped, "cancel");
+          if (launched) await notify(options.onStopped, 'cancel');
         }
-        log("Sub-agent group stopped.");
+        log('Sub-agent group stopped.');
       }
       throw error;
     }
@@ -334,17 +335,17 @@ export class CommandExecutor {
         if (remainingMs <= 0) return this.timeout(child, hooks);
         waitMs = Math.min(waitMs, remainingMs);
       }
-      let line: string | null | "timeout";
+      let line: string | null | 'timeout';
       if (outputClosed) {
         const finished = await waitForExit(child, waitMs);
-        if (finished === "cancel") throwIfCancelled();
+        if (finished === 'cancel') throwIfCancelled();
         if (finished === true) break;
         line = null;
       } else {
         line = await queue.get(waitMs);
-        if (line === "cancel") throwIfCancelled();
+        if (line === 'cancel') throwIfCancelled();
       }
-      if (line === "timeout") {
+      if (line === 'timeout') {
         const elapsedSec = Math.floor((Date.now() - startedAt) / 1000);
         if (onHeartbeat) onHeartbeat(elapsedSec);
         continue;
@@ -354,36 +355,36 @@ export class CommandExecutor {
         continue;
       }
       stdoutChunks.push(line);
-      if (onOutput) onOutput(line.replace(/[\r\n]+$/g, ""));
+      if (onOutput) onOutput(line.replace(/[\r\n]+$/g, ''));
     }
     if (child.stdout) child.stdout.destroy();
-    const stdout = stdoutChunks.join("").trim();
+    const stdout = stdoutChunks.join('').trim();
     const status = childStatus(child);
     const stats = { bytes: queue.bytes(), lines: stdoutChunks.length };
     if (status === 0) return [stdout, null, 0, stats];
-    if (status === null) return [stdout, "CLI exited with code null.", null, stats];
+    if (status === null) return [stdout, 'CLI exited with code null.', null, stats];
     return [stdout, `CLI exited with code ${status}.`, status, stats];
   }
 
   private async timeout(child: ChildProcess, hooks: RunOptions): Promise<[string, string, null, null]> {
-    await this.interrupt(child, hooks, "timeout");
+    await this.interrupt(child, hooks, 'timeout');
     await stopProcessGroup(child);
-    await notify(hooks.onStopped, "timeout");
-    return ["", `Sub-agent timed out after ${this.timeoutSec}s.`, null, null];
+    await notify(hooks.onStopped, 'timeout');
+    return ['', `Sub-agent timed out after ${this.timeoutSec}s.`, null, null];
   }
 }
 
 function createLineQueue(stream: Readable | null): {
-  get(timeoutMs: number): Promise<string | null | "timeout" | "cancel">;
+  get(timeoutMs: number): Promise<string | null | 'timeout' | 'cancel'>;
   /** Bytes received on the stream so far, before any line normalization. */
   bytes(): number;
 } {
   let received = 0;
-  const lines: Array<string | null> = [];
-  let waiter: ((value: string | null | "timeout" | "cancel") => void) | null = null;
+  const lines: (string | null)[] = [];
+  let waiter: ((value: string | null | 'timeout' | 'cancel') => void) | null = null;
   if (stream) {
-    stream.setEncoding("utf8");
-    let buffer = "";
+    stream.setEncoding('utf8');
+    let buffer = '';
     const push = (line: string | null) => {
       if (waiter) {
         const pending = waiter;
@@ -393,25 +394,25 @@ function createLineQueue(stream: Readable | null): {
         lines.push(line);
       }
     };
-    stream.on("data", (chunk: string) => {
+    stream.on('data', (chunk: string) => {
       received += Buffer.byteLength(chunk);
-      buffer += chunk.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-      let index = buffer.indexOf("\n");
+      buffer += chunk.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+      let index = buffer.indexOf('\n');
       while (index >= 0) {
         push(buffer.slice(0, index + 1));
         buffer = buffer.slice(index + 1);
-        index = buffer.indexOf("\n");
+        index = buffer.indexOf('\n');
       }
     });
     const finish = () => {
       if (buffer.length > 0) {
         push(buffer);
-        buffer = "";
+        buffer = '';
       }
       push(null);
     };
-    stream.on("end", finish);
-    stream.on("error", () => {
+    stream.on('end', finish);
+    stream.on('error', () => {
       finish();
     });
   } else {
@@ -426,13 +427,13 @@ function createLineQueue(stream: Readable | null): {
         const timer = setTimeout(() => {
           waiter = null;
           cancelWaiters.delete(wake);
-          resolve("timeout");
+          resolve('timeout');
         }, timeoutMs);
         const wake = () => {
           clearTimeout(timer);
           waiter = null;
           cancelWaiters.delete(wake);
-          resolve("cancel");
+          resolve('cancel');
         };
         cancelWaiters.add(wake);
         waiter = (value) => {
@@ -448,11 +449,11 @@ function createLineQueue(stream: Readable | null): {
 export function waitForExit(
   child: ChildProcess,
   timeoutMs: number,
-): Promise<boolean | "cancel"> {
+): Promise<boolean | 'cancel'> {
   if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve(true);
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
-      child.off("exit", onExit);
+      child.off('exit', onExit);
       cancelWaiters.delete(wake);
       resolve(false);
     }, timeoutMs);
@@ -463,20 +464,20 @@ export function waitForExit(
     };
     const wake = () => {
       clearTimeout(timer);
-      child.off("exit", onExit);
+      child.off('exit', onExit);
       cancelWaiters.delete(wake);
-      resolve("cancel");
+      resolve('cancel');
     };
     cancelWaiters.add(wake);
-    child.once("exit", onExit);
+    child.once('exit', onExit);
   });
 }
 
 export function childStatus(child: ChildProcess): number | null {
-  if (typeof child.exitCode === "number") return child.exitCode;
+  if (typeof child.exitCode === 'number') return child.exitCode;
   if (child.signalCode) {
     const signal = osConstants.signals[child.signalCode];
-    if (typeof signal === "number") return -signal;
+    if (typeof signal === 'number') return -signal;
   }
   return null;
 }
@@ -487,7 +488,7 @@ let stderrGuarded = false;
 function forwardToOwnerStderr(chunk: Buffer): void {
   if (!stderrGuarded) {
     stderrGuarded = true;
-    process.stderr.on("error", () => undefined);
+    process.stderr.on('error', () => undefined);
   }
   if (process.stderr.destroyed || process.stderr.writableEnded) return;
   try {
@@ -508,7 +509,7 @@ const diagnostics = new WeakMap<ChildProcess, WrapperDiagnostics>();
 
 /** The last stderr the wrapper (and the provider, which shares its fd 2) wrote. */
 export function stderrTailOf(child: ChildProcess): string {
-  return diagnostics.get(child)?.stderr.toString() ?? "";
+  return diagnostics.get(child)?.stderr.toString() ?? '';
 }
 
 export function stderrTotalOf(child: ChildProcess): number {
@@ -519,7 +520,7 @@ export function stderrTotalOf(child: ChildProcess): number {
 export function stderrDrainOf(child: ChildProcess): StderrDrain {
   const record = diagnostics.get(child);
   // A child that never started has no pipes to wait for.
-  return record?.closed === true || child.pid === undefined ? "closed" : "grace-expired";
+  return record?.closed === true || child.pid === undefined ? 'closed' : 'grace-expired';
 }
 
 /**
@@ -527,7 +528,7 @@ export function stderrDrainOf(child: ChildProcess): StderrDrain {
  * child that is still running cannot close, so it is not waited for.
  */
 export async function drainStdio(child: ChildProcess): Promise<StderrDrain> {
-  if (stderrDrainOf(child) === "closed") return "closed";
+  if (stderrDrainOf(child) === 'closed') return 'closed';
   if (child.exitCode !== null || child.signalCode !== null) await channelDrained(child);
   return stderrDrainOf(child);
 }
@@ -536,33 +537,33 @@ export function startWrapper(
   spec: CommandSpec,
   cwd: string,
   endpoint: string,
-  stdio: StdioOptions = [spec.stdin != null ? "pipe" : "inherit", "pipe", "pipe", "ipc"],
+  stdio: StdioOptions = [spec.stdin != null ? 'pipe' : 'inherit', 'pipe', 'pipe', 'ipc'],
 ): ChildProcess {
   const argv = wrapperArgv(spec.argv, { endpoint, graceSec: TERMINATION_GRACE_SEC });
-  const child = spawn(argv[0] ?? "", argv.slice(1), {
+  const child = spawn(argv[0] ?? '', argv.slice(1), {
     cwd,
     // POSIX: a new process group, so the whole provider tree can be signalled at once.
     // Windows: `taskkill /T` follows the tree instead, and detaching would open a new console.
-    detached: process.platform !== "win32",
+    detached: process.platform !== 'win32',
     stdio,
     windowsHide: true,
   });
   const record: WrapperDiagnostics = { spawnError: null, stderr: new TailBuffer(), closed: false };
   diagnostics.set(child, record);
-  child.once("close", () => {
+  child.once('close', () => {
     record.closed = true;
   });
-  child.on("error", (error: NodeJS.ErrnoException) => {
+  child.on('error', (error: NodeJS.ErrnoException) => {
     record.spawnError = error;
   });
   // Tee for the whole life of the child, so a full pipe can never block the provider.
-  const stderr = child.stderr;
+  const {stderr} = child;
   if (stderr) {
-    stderr.on("data", (chunk: Buffer) => {
+    stderr.on('data', (chunk: Buffer) => {
       record.stderr.append(chunk);
       forwardToOwnerStderr(chunk);
     });
-    stderr.on("error", () => undefined);
+    stderr.on('error', () => undefined);
   }
   return child;
 }
@@ -593,10 +594,10 @@ export function waitForReady(child: ChildProcess, options: WaitForReadyOptions =
       if (done) return;
       done = true;
       if (timer) clearTimeout(timer);
-      child.off("message", onMessage);
-      child.off("exit", onExit);
-      child.off("close", onClose);
-      child.off("error", onError);
+      child.off('message', onMessage);
+      child.off('exit', onExit);
+      child.off('close', onClose);
+      child.off('error', onError);
       cancelWaiters.delete(onCancel);
       resolve(result);
     };
@@ -605,43 +606,43 @@ export function waitForReady(child: ChildProcess, options: WaitForReadyOptions =
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
         // The flag can be set with no waiter call left (callback order is not guaranteed).
-        finish(cancelled !== null ? { kind: "cancelled" } : (candidate as StartFailure));
+        finish(cancelled !== null ? { kind: 'cancelled' } : (candidate as StartFailure));
       }, delayMs);
     };
     const onMessage = (message: unknown) => {
       if (done) return;
-      if (message && typeof message === "object" && (message as { type?: unknown }).type === WRAPPER_READY) {
-        finish({ kind: "ready" });
+      if (message && typeof message === 'object' && (message as { type?: unknown }).type === WRAPPER_READY) {
+        finish({ kind: 'ready' });
         return;
       }
       const failed = parseFailedMessage(message);
       if (failed !== null) {
         const { type: _type, ...rest } = failed;
-        settle({ kind: "wrapper-reported", ...rest }, 0);
+        settle({ kind: 'wrapper-reported', ...rest }, 0);
       }
     };
     const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
       if (done) return;
       // A wrapper-reported failure already explains this exit.
-      if (candidate?.kind === "wrapper-reported") return;
-      const next: StartFailure = { kind: "exited", code, signal };
+      if (candidate?.kind === 'wrapper-reported') return;
+      const next: StartFailure = { kind: 'exited', code, signal };
       // Plain exits wait for the pipes to close so stderr and a `failed` message can land.
       settle(next, signalLike(code, signal) ? settleMs : EXIT_DRAIN_MS);
     };
     const onClose = () => {
       if (done || candidate === null) return;
-      if (candidate.kind === "exited" && signalLike(candidate.code, candidate.signal)) return;
+      if (candidate.kind === 'exited' && signalLike(candidate.code, candidate.signal)) return;
       settle(candidate, 0);
     };
     const onError = (error: NodeJS.ErrnoException) => {
       const { message, code, errno, syscall, path } = error;
-      settle({ kind: "spawn-error", message, code, errno, syscall, path }, 0);
+      settle({ kind: 'spawn-error', message, code, errno, syscall, path }, 0);
     };
-    const onCancel = () => finish({ kind: "cancelled" });
-    child.on("message", onMessage);
-    child.once("exit", onExit);
-    child.once("close", onClose);
-    child.once("error", onError);
+    const onCancel = () => finish({ kind: 'cancelled' });
+    child.on('message', onMessage);
+    child.once('exit', onExit);
+    child.once('close', onClose);
+    child.once('error', onError);
     cancelWaiters.add(onCancel);
     // Events that fired before this listener was attached.
     const early = diagnostics.get(child)?.spawnError;
@@ -650,7 +651,7 @@ export function waitForReady(child: ChildProcess, options: WaitForReadyOptions =
   });
 }
 
-function stripType(message: WrapperFailedMessage): Omit<WrapperFailedMessage, "type"> {
+function stripType(message: WrapperFailedMessage): Omit<WrapperFailedMessage, 'type'> {
   const { type: _type, ...rest } = message;
   return rest;
 }
@@ -662,14 +663,14 @@ function channelDrained(child: ChildProcess): Promise<void> {
     const timer = setTimeout(done, EXIT_DRAIN_MS);
     function done() {
       clearTimeout(timer);
-      child.off("close", done);
+      child.off('close', done);
       resolve();
     }
-    child.once("close", done);
+    child.once('close', done);
   });
 }
 
-const WRAPPER_STEP_PREFIX = "[migent-wrapper] ";
+const WRAPPER_STEP_PREFIX = '[migent-wrapper] ';
 
 const MAX_STEP_LINE_CHARS = 4096;
 
@@ -678,27 +679,27 @@ const MAX_STEP_LINE_CHARS = 4096;
  * with the wrapper prefix, or grows past the limit, is dropped up to its next newline.
  */
 export function createWrapperStepParser(onStep: (step: string) => void): (chunk: string) => void {
-  let partial = "";
+  let partial = '';
   let discarding = false;
   return (chunk) => {
     let rest = chunk;
     while (rest.length > 0) {
-      const newline = rest.indexOf("\n");
+      const newline = rest.indexOf('\n');
       const piece = newline === -1 ? rest : rest.slice(0, newline);
-      rest = newline === -1 ? "" : rest.slice(newline + 1);
+      rest = newline === -1 ? '' : rest.slice(newline + 1);
       if (!discarding) {
         partial += piece;
         const prefixLength = Math.min(partial.length, WRAPPER_STEP_PREFIX.length);
         if (partial.slice(0, prefixLength) !== WRAPPER_STEP_PREFIX.slice(0, prefixLength) || partial.length > MAX_STEP_LINE_CHARS) {
           discarding = true;
-          partial = "";
+          partial = '';
         }
       }
       if (newline === -1) continue;
       if (!discarding && partial.startsWith(WRAPPER_STEP_PREFIX)) {
-        onStep(partial.slice(WRAPPER_STEP_PREFIX.length).replace(/\r$/, "").replace(/^\S+Z /, ""));
+        onStep(partial.slice(WRAPPER_STEP_PREFIX.length).replace(/\r$/, '').replace(/^\S+Z /, ''));
       }
-      partial = "";
+      partial = '';
       discarding = false;
     }
   };
@@ -707,17 +708,17 @@ export function createWrapperStepParser(onStep: (step: string) => void): (chunk:
 /** Hands the wrapper's own `[migent-wrapper]` trace lines to the debug sink as they arrive. */
 function forwardWrapperSteps(child: ChildProcess, onDebug: (step: string, fromWrapper?: boolean) => void): void {
   const parse = createWrapperStepParser((step) => onDebug(step, true));
-  const stderr = child.stderr;
+  const {stderr} = child;
   if (!stderr) return;
-  const decoder = new StringDecoder("utf8");
-  stderr.on("data", (chunk: Buffer) => parse(decoder.write(chunk)));
+  const decoder = new StringDecoder('utf8');
+  stderr.on('data', (chunk: Buffer) => parse(decoder.write(chunk)));
 }
 
 const STDERR_EXCERPT_LINES = 3;
 
 function stderrExcerpt(stderrTail: string): string {
   const lines = stderrTail.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0);
-  return lines.slice(-STDERR_EXCERPT_LINES).join(" | ");
+  return lines.slice(-STDERR_EXCERPT_LINES).join(' | ');
 }
 
 /** The user-facing message for a failed start. Pure. */
@@ -725,29 +726,29 @@ export function describeStartFailure(
   failure: StartFailure,
   context: { command: string; stderrTail?: string },
 ): string {
-  const excerpt = stderrExcerpt(context.stderrTail ?? "");
+  const excerpt = stderrExcerpt(context.stderrTail ?? '');
   const withExcerpt = (text: string) => (excerpt ? `${text} stderr: ${excerpt}` : text);
   switch (failure.kind) {
-    case "spawn-error": {
-      const where = failure.path ?? "node";
-      const cause = [failure.code, failure.syscall ? `(${failure.syscall})` : null].filter(Boolean).join(" ");
-      return `Could not launch ${where}: ${cause ? `${cause} ` : ""}${failure.message}`.trim();
+    case 'spawn-error': {
+      const where = failure.path ?? 'node';
+      const cause = [failure.code, failure.syscall ? `(${failure.syscall})` : null].filter(Boolean).join(' ');
+      return `Could not launch ${where}: ${cause ? `${cause} ` : ''}${failure.message}`.trim();
     }
-    case "exited": {
-      const how = failure.signal ? `signal ${failure.signal}` : `code ${failure.code ?? "null"}`;
+    case 'exited': {
+      const how = failure.signal ? `signal ${failure.signal}` : `code ${failure.code ?? 'null'}`;
       return withExcerpt(`Provider process wrapper exited before it was ready (${how}).`);
     }
-    case "wrapper-reported": {
-      if (failure.phase === "spawn") {
-        if (failure.code === "ENOENT") return `CLI executable not found: ${context.command}`;
+    case 'wrapper-reported': {
+      if (failure.phase === 'spawn') {
+        if (failure.code === 'ENOENT') return `CLI executable not found: ${context.command}`;
         if (failure.code === UNPASSABLE_ARGUMENT_CODE) return failure.message;
         if (failure.code) {
-          const syscall = failure.syscall ? ` (${failure.syscall})` : "";
+          const syscall = failure.syscall ? ` (${failure.syscall})` : '';
           return `Provider CLI could not be started: ${context.command}: ${failure.code}${syscall} ${failure.message}`;
         }
       }
-      const early = failure.phase === "argv" || failure.phase === "ipc" || failure.phase === "listen";
-      const head = early ? "Provider wrapper failed to start" : "Provider wrapper failed";
+      const early = failure.phase === 'argv' || failure.phase === 'ipc' || failure.phase === 'listen';
+      const head = early ? 'Provider wrapper failed to start' : 'Provider wrapper failed';
       return withExcerpt(`${head} (${failure.phase}): ${failure.message}`);
     }
   }
@@ -756,9 +757,9 @@ export function describeStartFailure(
 export async function stopProcessGroup(child: ChildProcess): Promise<void> {
   if (child.pid === undefined) return;
   try {
-    killProcessTree(child.pid, "SIGTERM");
+    killProcessTree(child.pid, 'SIGTERM');
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ESRCH") return;
+    if ((error as NodeJS.ErrnoException).code === 'ESRCH') return;
     throw error;
   }
   // The wrapper exits with the provider, but other group members may outlive both.
@@ -769,9 +770,9 @@ export async function stopProcessGroup(child: ChildProcess): Promise<void> {
   }
   if (processGroupAlive(child.pid) || (child.exitCode === null && child.signalCode === null)) {
     try {
-      killProcessTree(child.pid, "SIGKILL");
+      killProcessTree(child.pid, 'SIGKILL');
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+      if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
     }
     await waitForExit(child, 1000);
   }
@@ -779,11 +780,11 @@ export async function stopProcessGroup(child: ChildProcess): Promise<void> {
 }
 
 function processGroupAlive(pgid: number): boolean {
-  if (process.platform === "win32") return false;
+  if (process.platform === 'win32') return false;
   try {
     process.kill(-pgid, 0);
     return true;
   } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
+    return (error as NodeJS.ErrnoException).code === 'EPERM';
   }
 }

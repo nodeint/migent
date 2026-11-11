@@ -1,19 +1,21 @@
-import path from "node:path";
+import path from 'node:path';
+
 import {
+  type ExecutionSnapshot,
   isArtifactSchema,
   missingCompletionOutputNames,
   missingWorkflowOutputNames,
   publishOutputFiles,
   resolveArtifactSources,
   selectSourceExecution,
-  type ExecutionSnapshot,
-} from "@nodeint/migent-kernel";
-import { currentCompleteByStage } from "@nodeint/migent-kernel";
-import type { LedgerOutput } from "./session-ledger.js";
-import { isWorkflowV2, type WorkflowDocument } from "@nodeint/migent-workflow";
+} from '@nodeint/migent-kernel';
+import { currentCompleteByStage } from '@nodeint/migent-kernel';
+import { isWorkflowV2, type WorkflowDocument } from '@nodeint/migent-workflow';
+
+import type { LedgerOutput } from './session-ledger.js';
 
 /** `published_by_execution_id` for outputs published by `migent session complete`. */
-export const MANUAL_PUBLISHER = "manual";
+export const MANUAL_PUBLISHER = 'manual';
 
 export interface ManualCompletionPlan {
   outputs: LedgerOutput[];

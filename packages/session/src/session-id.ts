@@ -1,6 +1,7 @@
-import { mkdirSync, readdirSync } from "node:fs";
-import path from "node:path";
-import { ConfigurationError } from "@nodeint/migent-kernel";
+import { mkdirSync, readdirSync } from 'node:fs';
+import path from 'node:path';
+
+import { ConfigurationError } from '@nodeint/migent-kernel';
 
 const CANONICAL_NUMBER = /^[1-9][0-9]*$/u;
 
@@ -39,7 +40,7 @@ export function createNumericSessionDirectory(sessionsDirectory: string): [strin
       mkdirSync(sessionDirectory);
       return [sessionId, sessionDirectory];
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
     }
   }
 }

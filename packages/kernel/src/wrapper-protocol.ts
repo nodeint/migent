@@ -6,23 +6,23 @@
 //   wrapper -> owner  {type: "failed"}  when the wrapper itself cannot go on
 //   wrapper -> owner  {type: "exited"}  the provider was ended by a signal; `signal` names it
 
-export const WRAPPER_READY = "ready";
-export const WRAPPER_START = "start";
-export const WRAPPER_FAILED = "failed";
-export const WRAPPER_EXITED = "exited";
+export const WRAPPER_READY = 'ready';
+export const WRAPPER_START = 'start';
+export const WRAPPER_FAILED = 'failed';
+export const WRAPPER_EXITED = 'exited';
 
 /** The signal that ended the provider, when the wrapper reported one. Unchecked shapes are ignored. */
 export function parseExitedSignal(message: unknown): string | null {
-  if (!message || typeof message !== "object") return null;
+  if (!message || typeof message !== 'object') return null;
   const value = message as Record<string, unknown>;
   if (value.type !== WRAPPER_EXITED) return null;
-  return typeof value.signal === "string" && /^SIG[A-Z0-9]{1,12}$/.test(value.signal) ? value.signal : null;
+  return typeof value.signal === 'string' && /^SIG[A-Z0-9]{1,12}$/.test(value.signal) ? value.signal : null;
 }
 
 /** The wrapper phase that failed. `ipc` can only ever reach the owner through stderr. */
-export type WrapperPhase = "argv" | "ipc" | "listen" | "spawn" | "runtime";
+export type WrapperPhase = 'argv' | 'ipc' | 'listen' | 'spawn' | 'runtime';
 
-const PHASES: readonly string[] = ["argv", "ipc", "listen", "spawn", "runtime"];
+const PHASES: readonly string[] = ['argv', 'ipc', 'listen', 'spawn', 'runtime'];
 
 export interface WrapperFailedMessage {
   type: typeof WRAPPER_FAILED;
@@ -35,35 +35,35 @@ export interface WrapperFailedMessage {
 }
 
 /** `code` the wrapper reports when the provider command line cannot be passed (Windows batch shims). */
-export const UNPASSABLE_ARGUMENT_CODE = "UNPASSABLE_ARGUMENT";
+export const UNPASSABLE_ARGUMENT_CODE = 'UNPASSABLE_ARGUMENT';
 
 /** Validates an incoming message. The owner never trusts an unchecked shape. */
 export function parseFailedMessage(message: unknown): WrapperFailedMessage | null {
-  if (!message || typeof message !== "object") return null;
+  if (!message || typeof message !== 'object') return null;
   const value = message as Record<string, unknown>;
   if (value.type !== WRAPPER_FAILED) return null;
-  if (typeof value.phase !== "string" || !PHASES.includes(value.phase)) return null;
-  if (typeof value.message !== "string") return null;
+  if (typeof value.phase !== 'string' || !PHASES.includes(value.phase)) return null;
+  if (typeof value.message !== 'string') return null;
   const parsed: WrapperFailedMessage = {
     type: WRAPPER_FAILED,
     phase: value.phase as WrapperPhase,
     message: value.message,
   };
-  if (typeof value.code === "string") parsed.code = value.code;
-  if (typeof value.errno === "number") parsed.errno = value.errno;
-  if (typeof value.syscall === "string") parsed.syscall = value.syscall;
-  if (typeof value.path === "string") parsed.path = value.path;
+  if (typeof value.code === 'string') parsed.code = value.code;
+  if (typeof value.errno === 'number') parsed.errno = value.errno;
+  if (typeof value.syscall === 'string') parsed.syscall = value.syscall;
+  if (typeof value.path === 'string') parsed.path = value.path;
   return parsed;
 }
 
-export type WrapperReported = Omit<WrapperFailedMessage, "type"> & { kind: "wrapper-reported" };
+export type WrapperReported = Omit<WrapperFailedMessage, 'type'> & { kind: 'wrapper-reported' };
 
 /** The outcome of the start handshake, as the owner sees it. */
 export type StartResult =
-  | { kind: "ready" }
+  | { kind: 'ready' }
   | WrapperReported
-  | { kind: "exited"; code: number | null; signal: string | null }
-  | { kind: "spawn-error"; message: string; code?: string; errno?: number; syscall?: string; path?: string }
-  | { kind: "cancelled" };
+  | { kind: 'exited'; code: number | null; signal: string | null }
+  | { kind: 'spawn-error'; message: string; code?: string; errno?: number; syscall?: string; path?: string }
+  | { kind: 'cancelled' };
 
-export type StartFailure = Exclude<StartResult, { kind: "ready" } | { kind: "cancelled" }>;
+export type StartFailure = Exclude<StartResult, { kind: 'ready' } | { kind: 'cancelled' }>;

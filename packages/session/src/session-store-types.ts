@@ -1,15 +1,17 @@
-import { existsSync } from "node:fs";
-import path from "node:path";
-import { CONVERSATION_FILENAME, LEGACY_CONVERSATION_FILENAME, legacyClientOf } from "@nodeint/migent-kernel";
-import { isRecord } from "@nodeint/migent-workflow";
-import type { NextSuggestion } from "./next-handoff.js";
-import { nonempty } from "./session-store-util.js";
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+
+import { CONVERSATION_FILENAME, LEGACY_CONVERSATION_FILENAME, legacyClientOf } from '@nodeint/migent-kernel';
+import { isRecord } from '@nodeint/migent-workflow';
+
+import type { NextSuggestion } from './next-handoff.js';
+import { nonempty } from './session-store-util.js';
 
 export function stringOptions(value: unknown): Record<string, string> {
   if (!isRecord(value)) return {};
   const options: Record<string, string> = {};
   for (const [key, item] of Object.entries(value)) {
-    if (typeof item === "string") options[key] = item;
+    if (typeof item === 'string') options[key] = item;
   }
   return options;
 }
@@ -21,7 +23,7 @@ export class AgentSessionRecord {
   agentId: string | null;
   options: Record<string, string>;
   status: string;
-  history: Array<Record<string, string>>;
+  history: Record<string, string>[];
 
   constructor(
     client: string,
@@ -29,8 +31,8 @@ export class AgentSessionRecord {
     workspace: string,
     agentId: string | null = null,
     options: Record<string, string> = {},
-    status = "new",
-    history: Array<Record<string, string>> = [],
+    status = 'new',
+    history: Record<string, string>[] = [],
   ) {
     this.client = client;
     this.model = model;
@@ -54,19 +56,19 @@ export class AgentSessionRecord {
         workspace,
         null,
         {},
-        "new",
-        raw as Array<Record<string, string>>,
+        'new',
+        raw as Record<string, string>[],
       );
     }
     if (!isRecord(raw)) return new AgentSessionRecord(client, model, workspace);
-    const history = Array.isArray(raw.history) ? (raw.history as Array<Record<string, string>>) : [];
+    const history = Array.isArray(raw.history) ? (raw.history as Record<string, string>[]) : [];
     return new AgentSessionRecord(
       nonempty(raw.client) ?? legacyClientOf(nonempty(raw.provider)) ?? client,
       nonempty(raw.model) ?? model,
       nonempty(raw.workspace) ?? workspace,
       nonempty(raw.agent_id) ?? nonempty(raw.native_session_id),
       stringOptions(raw.options),
-      nonempty(raw.status) ?? "unknown",
+      nonempty(raw.status) ?? 'unknown',
       history,
     );
   }
@@ -101,7 +103,7 @@ export class ExecutionContext {
   }
 
   get artifactDirectory(): string {
-    return path.join(this.directory, "artifacts");
+    return path.join(this.directory, 'artifacts');
   }
 }
 
@@ -132,9 +134,9 @@ export function clearInFlightExecutions(sessionId: string): void {
   inFlightBySession.delete(sessionId);
 }
 
-export const DIAGNOSTICS_FILENAME = "diagnostics.json";
-export const FAILURE_FILENAME = "failure.md";
-export const DEBUG_LOG_FILENAME = "debug.log";
+export const DIAGNOSTICS_FILENAME = 'diagnostics.json';
+export const FAILURE_FILENAME = 'failure.md';
+export const DEBUG_LOG_FILENAME = 'debug.log';
 
 export interface ManualCompletionResult {
   alreadyCompleted: boolean;

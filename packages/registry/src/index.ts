@@ -1,30 +1,31 @@
-import { KERNEL_PLACEHOLDER } from "@nodeint/migent-kernel";
-import { migentHomePath, ensureRegistryHome, registryHomePath } from "./home.js";
+import { KERNEL_PLACEHOLDER } from '@nodeint/migent-kernel';
+
+import { ensureRegistryHome, migentHomePath, registryHomePath } from './home.js';
 import {
-  ServiceEndpoint,
-  ServiceError,
-  StopResult,
   callService,
   endpointFromHome,
   serveForeground,
+  ServiceEndpoint,
+  ServiceError,
   serviceStatus,
   startDetached,
   stop,
-} from "./service.js";
+  StopResult,
+} from './service.js';
 
 export const REGISTRY_PLACEHOLDER = `registry:${KERNEL_PLACEHOLDER}`;
 
 export {
-  ServiceEndpoint,
-  ServiceError,
-  StopResult,
-  migentHomePath,
   callService,
   endpointFromHome,
   ensureRegistryHome,
+  migentHomePath,
   registryHomePath,
   serveForeground,
+  ServiceEndpoint,
+  ServiceError,
   serviceStatus,
   startDetached,
   stop,
+  StopResult,
 };

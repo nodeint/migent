@@ -1,13 +1,14 @@
-import type { TurnUsage } from "@nodeint/migent-kernel";
-import { coerceNumber } from "./metrics-values.js";
+import type { TurnUsage } from '@nodeint/migent-kernel';
+
+import { coerceNumber } from './metrics-values.js';
 
 export const USAGE_FIELDS = [
-  "input_tokens",
-  "output_tokens",
-  "reasoning_tokens",
-  "cache_read_tokens",
-  "cache_write_tokens",
-  "cost_usd",
+  'input_tokens',
+  'output_tokens',
+  'reasoning_tokens',
+  'cache_read_tokens',
+  'cache_write_tokens',
+  'cost_usd',
 ] as const;
 
 export type UsageField = (typeof USAGE_FIELDS)[number];

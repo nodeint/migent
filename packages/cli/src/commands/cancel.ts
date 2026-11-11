@@ -1,10 +1,12 @@
-import { CancelResult } from "@nodeint/migent-contracts";
-import { writeJson } from "../emit.js";
-import { existsSync } from "node:fs";
-import path from "node:path";
-import { requestSessionCancel, SessionStore, sessionLockAlive } from "@nodeint/migent-session";
-import { printError, printNotice } from "../display.js";
-import { requireCurrentSchema } from "../migrate.js";
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+
+import { CancelResult } from '@nodeint/migent-contracts';
+import { requestSessionCancel, sessionLockAlive,SessionStore } from '@nodeint/migent-session';
+
+import { printError, printNotice } from '../display.js';
+import { writeJson } from '../emit.js';
+import { requireCurrentSchema } from '../migrate.js';
 
 const POLL_MS = 250;
 
@@ -14,17 +16,17 @@ export async function cancelSession(
   args: { waitSeconds: number; asJson: boolean },
 ): Promise<number> {
   requireCurrentSchema(workspace);
-  const directory = path.join(workspace, ".migent", "sessions", sessionId);
+  const directory = path.join(workspace, '.migent', 'sessions', sessionId);
   if (!existsSync(directory)) {
     printError(`Session ${sessionId} does not exist.`);
     return 2;
   }
   const outcome = requestSessionCancel(directory);
-  if (outcome === "foreign-host") {
+  if (outcome === 'foreign-host') {
     printError(`Session ${sessionId} is running on another machine. Cancel it there.`);
     return 2;
   }
-  if (outcome === "not-running") {
+  if (outcome === 'not-running') {
     printError(
       `Session ${sessionId} is not running. Resume it with: migent session continue ${sessionId}, or fix it with: migent session repair ${sessionId}`,
     );
@@ -37,7 +39,7 @@ export async function cancelSession(
   const stopped = !sessionLockAlive(directory);
   if (args.asJson) {
     const current = new SessionStore(workspace).readSessionStatus(sessionId);
-    const status = typeof current.status === "string" ? current.status : null;
+    const status = typeof current.status === 'string' ? current.status : null;
     writeJson(CancelResult, { session_id: sessionId, cancelled: stopped, status });
   } else if (stopped) {
     printNotice(`Session ${sessionId} cancelled.`);

@@ -1,32 +1,33 @@
-import { type HeadlessOption, clientIds, createClient } from "@nodeint/migent-adapters";
+import { clientIds, createClient,type HeadlessOption } from '@nodeint/migent-adapters';
 import {
-  ClientCommandFailed,
-  clientCatalogSource,
-  clientsListingModel,
-  loadCatalogSync,
-  loadOptionValues,
   type CatalogOutcome,
   type CatalogSource,
   type ClientCatalogInput,
+  clientCatalogSource,
+  ClientCommandFailed,
+  clientsListingModel,
+  loadCatalogSync,
+  loadOptionValues,
   type RunCommand,
   type Which,
-} from "@nodeint/migent-doctor";
+} from '@nodeint/migent-doctor';
 import {
+  type CliClient,
+  type ClientRegistry,
+  type CliModelCatalog,
   ConfigurationError,
   killProcessTree,
-  whichSync,
+  type ModelClientLookup,
   spawnProvider,
   spawnProviderSync,
-  type CliClient,
-  type CliModelCatalog,
-  type ClientRegistry,
-  type ModelClientLookup,
-} from "@nodeint/migent-kernel";
-import { cliHooks } from "./hooks.js";
+  whichSync,
+} from '@nodeint/migent-kernel';
+
+import { cliHooks } from './hooks.js';
 
 // The catalog helpers belong to the doctor; commands keep importing them from here.
-export { ClientCommandFailed, asCatalog, knownModel, loadCatalog, loadOptionValues } from "@nodeint/migent-doctor";
-export type { CatalogSource, RunCommand, Which } from "@nodeint/migent-doctor";
+export type { CatalogSource, RunCommand, Which } from '@nodeint/migent-doctor';
+export { asCatalog, ClientCommandFailed, knownModel, loadCatalog, loadOptionValues } from '@nodeint/migent-doctor';
 
 /**
  * The CLI composition root: every client is built from the adapters' own factories. Model-to-client
@@ -43,17 +44,17 @@ export function clientRegistry(): ClientRegistry {
     const run = (argv: string[], input?: string): string => {
       if (injected === null) return runClientCommand(argv, input);
       const out = injected(argv, input);
-      if (typeof out !== "string") throw new ClientCommandFailed("Model lookup needs a synchronous command runner.");
+      if (typeof out !== 'string') throw new ClientCommandFailed('Model lookup needs a synchronous command runner.');
       return out;
     };
     const client = createClient(id);
     let outcome: CatalogOutcome;
-    if (which(client.command) === null) outcome = { status: "skipped" };
+    if (which(client.command) === null) outcome = { status: 'skipped' };
     else {
       try {
-        outcome = { status: "loaded", ids: loadCatalogSync(catalogSourceOf(client), which, run).ids };
+        outcome = { status: 'loaded', ids: loadCatalogSync(catalogSourceOf(client), which, run).ids };
       } catch (error) {
-        outcome = { status: "failed", reason: error instanceof Error ? error.message : String(error) };
+        outcome = { status: 'failed', reason: error instanceof Error ? error.message : String(error) };
       }
     }
     outcomes.set(id, outcome);
@@ -63,7 +64,7 @@ export function clientRegistry(): ClientRegistry {
     ids: () => clientIds(),
     get: (id: string): CliClient => {
       if (!clientIds().includes(id)) {
-        throw new ConfigurationError(`Unknown CLI client: ${id}. Supported: ${clientIds().join(", ")}.`);
+        throw new ConfigurationError(`Unknown CLI client: ${id}. Supported: ${clientIds().join(', ')}.`);
       }
       return createClient(id);
     },
@@ -81,7 +82,7 @@ export function catalogSourceOf(client: CliClient): CatalogSource {
 }
 
 /** Every known client with its executable, installed ones first. */
-export function detected(which: Which): Array<[string, string | null, CliClient]> {
+export function detected(which: Which): [string, string | null, CliClient][] {
   const rows = clientIds().map(
     (id) => [id, which(createClient(id).command), createClient(id)] as [string, string | null, CliClient],
   );
@@ -99,11 +100,11 @@ export function detected(which: Which): Array<[string, string | null, CliClient]
 export function parseOptions(pairs: readonly string[]): Record<string, string> {
   const parsed: Record<string, string> = {};
   for (const pair of pairs) {
-    if (!pair.includes("=")) throw new ClientCommandFailed(`Option must be KEY=VALUE: ${pair}.`);
-    const index = pair.indexOf("=");
+    if (!pair.includes('=')) throw new ClientCommandFailed(`Option must be KEY=VALUE: ${pair}.`);
+    const index = pair.indexOf('=');
     const name = pair.slice(0, index).trim();
     const value = pair.slice(index + 1).trim();
-    if (name === "" || value === "") throw new ClientCommandFailed(`Option must be KEY=VALUE: ${pair}.`);
+    if (name === '' || value === '') throw new ClientCommandFailed(`Option must be KEY=VALUE: ${pair}.`);
     parsed[name] = value;
   }
   return parsed;
@@ -129,7 +130,7 @@ export async function acceptedOptions(
     }
     if (!values.includes(value)) {
       if (values.length === 0) throw new ClientCommandFailed(`${model} does not accept ${name}.`);
-      throw new ClientCommandFailed(`${name} must be one of: ${values.join(", ")}.`);
+      throw new ClientCommandFailed(`${name} must be one of: ${values.join(', ')}.`);
     }
     stored[name] = value;
   }
@@ -140,9 +141,9 @@ export function runClientCommand(
   argv: string[], input?: string, options: { cwd?: string; timeoutMs?: number } = {},
 ): string {
   const [command, ...args] = argv;
-  if (command === undefined) throw new ClientCommandFailed("Client command is empty.");
+  if (command === undefined) throw new ClientCommandFailed('Client command is empty.');
   const completed = spawnProviderSync(command, args, {
-    encoding: "utf8",
+    encoding: 'utf8',
     timeout: options.timeoutMs ?? 60_000,
     ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
     windowsHide: true,
@@ -152,10 +153,10 @@ export function runClientCommand(
     throw new Error(completed.error.message);
   }
   if (completed.status !== 0) {
-    const detail = (completed.stderr || completed.stdout || "").trim();
+    const detail = (completed.stderr || completed.stdout || '').trim();
     throw new ClientCommandFailed(detail || `${command} exited ${completed.status}.`);
   }
-  return completed.stdout ?? "";
+  return completed.stdout ?? '';
 }
 
 /** Like `runClientCommand`, but does not block the event loop, so lookups run side by side. */
@@ -163,17 +164,17 @@ export function runClientCommandAsync(
   argv: string[], input?: string, options: { cwd?: string; timeoutMs?: number } = {},
 ): Promise<string> {
   const [command, ...args] = argv;
-  if (command === undefined) return Promise.reject(new ClientCommandFailed("Client command is empty."));
+  if (command === undefined) return Promise.reject(new ClientCommandFailed('Client command is empty.'));
   return new Promise((resolve, reject) => {
     const child = spawnProvider(command, args, {
       ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
       windowsHide: true,
       // Its own process group on POSIX, so a timeout can end the whole tree.
-      detached: process.platform !== "win32",
-      stdio: ["pipe", "pipe", "pipe"],
+      detached: process.platform !== 'win32',
+      stdio: ['pipe', 'pipe', 'pipe'],
     });
-    let stdout = "";
-    let stderr = "";
+    let stdout = '';
+    let stderr = '';
     let settled = false;
     const finish = (action: () => void): void => {
       if (settled) return;
@@ -183,20 +184,20 @@ export function runClientCommandAsync(
     };
     const timer = setTimeout(() => {
       try {
-        if (child.pid !== undefined) killProcessTree(child.pid, "SIGKILL");
+        if (child.pid !== undefined) killProcessTree(child.pid, 'SIGKILL');
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ESRCH") child.kill();
+        if ((error as NodeJS.ErrnoException).code !== 'ESRCH') child.kill();
       }
       finish(() => reject(new Error(`${command} timed out after ${options.timeoutMs ?? 60_000}ms.`)));
     }, options.timeoutMs ?? 60_000);
-    child.stdout?.setEncoding("utf8").on("data", (chunk: string) => { stdout += chunk; });
-    child.stderr?.setEncoding("utf8").on("data", (chunk: string) => { stderr += chunk; });
-    child.on("error", (error) => finish(() => reject(new Error(error.message))));
-    child.on("close", (status) => finish(() => {
+    child.stdout?.setEncoding('utf8').on('data', (chunk: string) => { stdout += chunk; });
+    child.stderr?.setEncoding('utf8').on('data', (chunk: string) => { stderr += chunk; });
+    child.on('error', (error) => finish(() => reject(new Error(error.message))));
+    child.on('close', (status) => finish(() => {
       if (status === 0) resolve(stdout);
       else reject(new ClientCommandFailed((stderr || stdout).trim() || `${command} exited ${status}.`));
     }));
-    child.stdin?.on("error", () => {});
+    child.stdin?.on('error', () => {});
     child.stdin?.end(input);
   });
 }
@@ -207,7 +208,7 @@ export async function loadHeadlessOptions(
   runCommand: RunCommand,
 ): Promise<HeadlessOption[]> {
   const candidate = source as Partial<CatalogSource>;
-  if (typeof candidate.optionsCommand !== "function" || typeof candidate.parseOptions !== "function") {
+  if (typeof candidate.optionsCommand !== 'function' || typeof candidate.parseOptions !== 'function') {
     throw new ClientCommandFailed(`${source.command} does not discover headless options.`);
   }
   const command = candidate.optionsCommand();
@@ -218,13 +219,13 @@ export async function loadHeadlessOptions(
 /** Help may be printed on stderr even when the command succeeds (Agy). */
 export const runOptionsCommand: RunCommand = (argv, input) => {
   const [command, ...args] = argv;
-  if (!command) throw new ClientCommandFailed("Options command is empty.");
+  if (!command) throw new ClientCommandFailed('Options command is empty.');
   const completed = spawnProviderSync(command, args, {
-    encoding: "utf8", timeout: 15_000, windowsHide: true,
+    encoding: 'utf8', timeout: 15_000, windowsHide: true,
     ...(input === undefined ? {} : { input }),
   });
   if (completed.error) throw completed.error;
-  const output = [completed.stdout, completed.stderr].filter(Boolean).join("\n");
+  const output = [completed.stdout, completed.stderr].filter(Boolean).join('\n');
   if (completed.status !== 0) throw new ClientCommandFailed(output.trim() || `${command} exited ${completed.status}.`);
   return output;
 };

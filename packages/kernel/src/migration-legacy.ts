@@ -6,21 +6,21 @@
 
 export type MigrationBody = Record<string, unknown>;
 export type MigrationFn = (body: MigrationBody) => void;
-export type MigrationKind = "model" | "role" | "stage";
+export type MigrationKind = 'model' | 'role' | 'stage';
 
-const CODEX_REASONING_OPTION = "model_reasoning_effort";
-const GROK_REASONING_OPTION = "reasoning-effort";
+const CODEX_REASONING_OPTION = 'model_reasoning_effort';
+const GROK_REASONING_OPTION = 'reasoning-effort';
 
 function nonempty(value: unknown): value is string {
-  return typeof value === "string" && value.trim() !== "";
+  return typeof value === 'string' && value.trim() !== '';
 }
 
 /** Renames the generic `thinking` setting to the CLI's own option, never overwriting one already set. */
 export function moveThinkingTo(option: string): MigrationFn {
   return (body) => {
-    const options = body.options;
-    if ("options" in body && !isRecord(options)) return;
-    if (isRecord(options) && "thinking" in options) {
+    const {options} = body;
+    if ('options' in body && !isRecord(options)) return;
+    if (isRecord(options) && 'thinking' in options) {
       const value = options.thinking;
       if (nonempty(value)) {
         if (!nonempty(options[option])) options[option] = value.trim();
@@ -40,7 +40,7 @@ export function moveThinkingTo(option: string): MigrationFn {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 const moveCodexThinking = moveThinkingTo(CODEX_REASONING_OPTION);

@@ -1,5 +1,5 @@
-import { z } from "zod";
-import type { ClientRegistry, ConfigOwner, SourcePosition } from "@nodeint/migent-kernel";
+import type { ClientRegistry, ConfigOwner, SourcePosition } from '@nodeint/migent-kernel';
+import { z } from 'zod';
 
 export interface Check {
   name: string;
@@ -33,7 +33,7 @@ export interface DiagnoseOptions {
  * `message` is the text users see today; the rest is internal until the public schema is fixed.
  */
 export interface Diagnostic {
-  severity: "error" | "warning";
+  severity: 'error' | 'warning';
   /** Stable rule id. Kernel rules keep the code they were thrown with. */
   code: string;
   message: string;
@@ -48,15 +48,15 @@ export interface Diagnostic {
 }
 
 /** Identity of a finding independent of its wording: the rule and where it applies. */
-export function diagnosticKey(diagnostic: Pick<Diagnostic, "code" | "path" | "message">): string {
-  return `${diagnostic.code}|${diagnostic.path === undefined ? "" : JSON.stringify(diagnostic.path)}|${diagnostic.message}`;
+export function diagnosticKey(diagnostic: Pick<Diagnostic, 'code' | 'path' | 'message'>): string {
+  return `${diagnostic.code}|${diagnostic.path === undefined ? '' : JSON.stringify(diagnostic.path)}|${diagnostic.message}`;
 }
 
 /**
  * What two findings must share to be the same root cause: the rule and the path when there is one,
  * otherwise the text.
  */
-export function identityKey(diagnostic: Pick<Diagnostic, "code" | "path" | "message">): string {
+export function identityKey(diagnostic: Pick<Diagnostic, 'code' | 'path' | 'message'>): string {
   return diagnostic.path === undefined
     ? `text|${diagnostic.message}`
     : `${diagnostic.code}|${JSON.stringify(diagnostic.path)}`;
@@ -75,11 +75,11 @@ export class DiagnosticList {
   }
 
   get errors(): Diagnostic[] {
-    return this.items.filter((item) => item.severity === "error");
+    return this.items.filter((item) => item.severity === 'error');
   }
 
   get warnings(): Diagnostic[] {
-    return this.items.filter((item) => item.severity === "warning");
+    return this.items.filter((item) => item.severity === 'warning');
   }
 }
 

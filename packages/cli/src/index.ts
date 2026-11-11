@@ -1,15 +1,17 @@
 #!/usr/bin/env node
-import { realpathSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { CommanderError } from "commander";
-import { ConfigurationError } from "@nodeint/migent-kernel";
-import { authoringCommandOf, printInvocationEnvelope } from "./commands/authoring.js";
-import { printError } from "./display.js";
-import { PromptCancelled } from "./errors.js";
-import { EXIT_CANCELLED, EXIT_CONFIG } from "./exits.js";
-import { cliHooks } from "./hooks.js";
-import { createProgram, type CliStatus } from "./program.js";
-import { setInvocationCwd } from "./workspace.js";
+import { realpathSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+import { ConfigurationError } from '@nodeint/migent-kernel';
+import { CommanderError } from 'commander';
+
+import { authoringCommandOf, printInvocationEnvelope } from './commands/authoring.js';
+import { printError } from './display.js';
+import { PromptCancelled } from './errors.js';
+import { EXIT_CANCELLED, EXIT_CONFIG } from './exits.js';
+import { cliHooks } from './hooks.js';
+import { type CliStatus,createProgram } from './program.js';
+import { setInvocationCwd } from './workspace.js';
 
 export async function main(argv: string[] = process.argv.slice(2), cwd?: string): Promise<number> {
   setInvocationCwd(cwd);
@@ -17,7 +19,7 @@ export async function main(argv: string[] = process.argv.slice(2), cwd?: string)
   const authoring = authoringCommandOf(argv);
   try {
     const program = createProgram(status, { quietErrors: authoring !== null });
-    await program.parseAsync(argv, { from: "user" });
+    await program.parseAsync(argv, { from: 'user' });
     if (!status.handled) {
       program.outputHelp();
       return 2;
@@ -30,7 +32,7 @@ export async function main(argv: string[] = process.argv.slice(2), cwd?: string)
       return EXIT_CONFIG;
     }
     if (error instanceof CommanderError) {
-      if (error.exitCode !== 0 && authoring !== null) printInvocationEnvelope(authoring, error.message.replace(/^error: /, ""));
+      if (error.exitCode !== 0 && authoring !== null) printInvocationEnvelope(authoring, error.message.replace(/^error: /, ''));
       return error.exitCode === 0 ? 0 : 2;
     }
     throw error;

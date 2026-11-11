@@ -5,18 +5,19 @@ Version steps are built into this module. The v0 "thinking" tables live in
 the steps and writes the resulting schema_version. A missing schema_version is
 version 0. Writes stay on the text patchers.
 */
-import { stringify } from "yaml";
-import { ConfigEditError, yamlScalar } from "./config-edit.js";
-import { ConfigurationError } from "./errors.js";
-import { liftConfigAgents, liftConfigClients, liftWorkflowClients, type ConfigLayerKind } from "./migration-config.js";
-import { applyLegacyMigration, type MigrationKind } from "./migration-legacy.js";
-import { documentVersion, isRecord } from "@nodeint/migent-workflow";
-import { SCHEMA_VERSION, conditionalStages, parseWorkflowMapping } from "@nodeint/migent-workflow";
-import { parseYamlDocument } from "@nodeint/migent-workflow";
-import { renderAuthoringYaml } from "./authoring.js";
+import { documentVersion, isRecord } from '@nodeint/migent-workflow';
+import { conditionalStages, parseWorkflowMapping,SCHEMA_VERSION } from '@nodeint/migent-workflow';
+import { parseYamlDocument } from '@nodeint/migent-workflow';
+import { stringify } from 'yaml';
+
+import { renderAuthoringYaml } from './authoring.js';
+import { ConfigEditError, yamlScalar } from './config-edit.js';
+import { ConfigurationError } from './errors.js';
+import { type ConfigLayerKind,liftConfigAgents, liftConfigClients, liftWorkflowClients } from './migration-config.js';
+import { applyLegacyMigration, type MigrationKind } from './migration-legacy.js';
 
 
-const SCHEMA_VERSION_FIELD = "schema_version";
+const SCHEMA_VERSION_FIELD = 'schema_version';
 
 export type MigrationFn = (entry: Record<string, unknown>) => void;
 
@@ -42,7 +43,7 @@ export function migrateConfig(
   context: Readonly<Record<string, unknown>> = config,
   layers: MigrationLayer = {},
 ): string[] {
-  let version = requireCurrent(documentVersion(config), current, "config");
+  let version = requireCurrent(documentVersion(config), current, 'config');
   if (version === current) return [];
   const before = deepCopyRecord(config);
   let providerStage: Record<string, unknown> | null = null;
@@ -57,7 +58,7 @@ export function migrateConfig(
     }
     if (version === 5) {
       structural.push(...liftConfigClients({
-        layer: layers.layer ?? "project",
+        layer: layers.layer ?? 'project',
         layerConfig: config,
         project: layers.project ?? config,
         local: layers.local ?? null,
@@ -71,8 +72,8 @@ export function migrateConfig(
   const notes = [`${SCHEMA_VERSION_FIELD} -> ${String(config[SCHEMA_VERSION_FIELD])}`];
   // Provider steps ran on the shape they were written for; compare that shape, then list the lifts.
   const compared = providerStage ?? config;
-  notes.push(...namedNotes(before.models ?? before.agents, compared.models ?? compared.agents, "models"));
-  notes.push(...namedNotes(before.roles, compared.roles, "roles"));
+  notes.push(...namedNotes(before.models ?? before.agents, compared.models ?? compared.agents, 'models'));
+  notes.push(...namedNotes(before.roles, compared.roles, 'roles'));
   notes.push(...structural);
   return notes;
 }
@@ -83,7 +84,7 @@ export function migrateWorkflow(
   current = SCHEMA_VERSION,
   clientIds: readonly string[] = [],
 ): string[] {
-  let version = requireCurrent(documentVersion(workflow), current, "workflow");
+  let version = requireCurrent(documentVersion(workflow), current, 'workflow');
   if (version === current) return [];
   const before = deepCopyRecord(workflow);
   const semanticNotes: string[] = [];
@@ -116,21 +117,21 @@ function artifactIdScalar(id: string): string {
  */
 function liftWorkflowArtifacts(workflow: Record<string, unknown>): string[] {
   const rawStages = Array.isArray(workflow.stages) ? workflow.stages : [];
-  const hasProduces = rawStages.some((stage) => isRecord(stage) && Object.hasOwn(stage, "produces"));
-  if (!hasProduces && !Object.hasOwn(workflow, "outputs")) return [];
+  const hasProduces = rawStages.some((stage) => isRecord(stage) && Object.hasOwn(stage, 'produces'));
+  if (!hasProduces && !Object.hasOwn(workflow, 'outputs')) return [];
   const probe = deepCopyRecord(workflow);
   probe[SCHEMA_VERSION_FIELD] = 6;
-  const parsed = parseWorkflowMapping(probe, "migrating workflow");
+  const parsed = parseWorkflowMapping(probe, 'migrating workflow');
   const conditional = conditionalStages(parsed.stages);
   const outputs = parsed.outputs ?? [];
   const problems: string[] = [];
   const notes: string[] = [];
-  const plans: Array<{ stage: Record<string, unknown>; stageId: string; id: string; file: string; required: boolean }> = [];
+  const plans: { stage: Record<string, unknown>; stageId: string; id: string; file: string; required: boolean }[] = [];
   const byId = new Map<string, string>();
   const byFile = new Map<string, string>();
   const aliasTarget = new Map<string, string>();
   for (const raw of rawStages) {
-    if (!isRecord(raw) || typeof raw.id !== "string") continue;
+    if (!isRecord(raw) || typeof raw.id !== 'string') continue;
     const stageId = raw.id.trim();
     const spec = parsed.stages[stageId];
     const file = spec?.artifacts[0]?.file;
@@ -138,7 +139,7 @@ function liftWorkflowArtifacts(workflow: Record<string, unknown>): string[] {
     const named = outputs.filter((output) => output.fromStage === stageId);
     const id = named[0]?.name ?? stageId;
     if (!ARTIFACT_ID.test(id)) {
-      problems.push(`stages.${stageId}: cannot derive an artifact id from ${named[0] === undefined ? "the stage id" : `output ${JSON.stringify(id)}`}; rename it to letters, digits, "_" or "-" and start with a letter.`);
+      problems.push(`stages.${stageId}: cannot derive an artifact id from ${named[0] === undefined ? 'the stage id' : `output ${JSON.stringify(id)}`}; rename it to letters, digits, "_" or "-" and start with a letter.`);
       continue;
     }
     const clash = byId.get(id);
@@ -161,7 +162,7 @@ function liftWorkflowArtifacts(workflow: Record<string, unknown>): string[] {
     for (const alias of named.slice(1)) notes.push(`output alias ${alias.name} merged into artifact ${id}; downstream runs without a mapping now receive one context name`);
   }
   if (problems.length > 0) {
-    throw new ConfigurationError(`Cannot migrate artifacts to schema_version 7:\n- ${problems.join("\n- ")}`);
+    throw new ConfigurationError(`Cannot migrate artifacts to schema_version 7:\n- ${problems.join('\n- ')}`);
   }
   const registry: Record<string, unknown> = {};
   for (const plan of plans) {
@@ -170,7 +171,7 @@ function liftWorkflowArtifacts(workflow: Record<string, unknown>): string[] {
     plan.stage.artifacts = [plan.id];
   }
   for (const raw of rawStages) {
-    if (isRecord(raw) && Object.hasOwn(raw, "produces")) delete raw.produces;
+    if (isRecord(raw) && Object.hasOwn(raw, 'produces')) delete raw.produces;
   }
   if (Object.keys(registry).length > 0) workflow.artifacts = registry;
   delete workflow.outputs;
@@ -178,7 +179,7 @@ function liftWorkflowArtifacts(workflow: Record<string, unknown>): string[] {
     for (const entry of workflow.downstream) {
       if (!isRecord(entry) || !isRecord(entry.artifacts)) continue;
       for (const [name, value] of Object.entries(entry.artifacts)) {
-        if (typeof value === "string" && aliasTarget.has(value)) entry.artifacts[name] = aliasTarget.get(value);
+        if (typeof value === 'string' && aliasTarget.has(value)) entry.artifacts[name] = aliasTarget.get(value);
       }
     }
   }
@@ -186,9 +187,9 @@ function liftWorkflowArtifacts(workflow: Record<string, unknown>): string[] {
 }
 
 export function patchWorkflowText(original: string, updated: Readonly<Record<string, unknown>>): string {
-  if (original.includes("\t")) throw new ConfigEditError("Cannot edit a workflow that uses tabs.");
+  if (original.includes('\t')) throw new ConfigEditError('Cannot edit a workflow that uses tabs.');
   const current = parseYamlDocument(original);
-  if (!isRecord(current)) throw new ConfigEditError("Workflow must be a mapping.");
+  if (!isRecord(current)) throw new ConfigEditError('Workflow must be a mapping.');
   const lines = splitLines(original);
   const edits: Edit[] = [];
   insertSchemaVersion(lines, updated, edits);
@@ -203,17 +204,17 @@ export function patchWorkflowText(original: string, updated: Readonly<Record<str
 function assertMigratedWorkflow(text: string, updated: Readonly<Record<string, unknown>>): void {
   if (documentVersion(updated) < 2) return;
   const parsed = parseYamlDocument(text);
-  if (!isRecord(parsed)) throw new ConfigEditError("Workflow must be a mapping.");
-  if (Object.hasOwn(parsed, "completion")) {
-    throw new ConfigurationError("migration left completion in the workflow.");
+  if (!isRecord(parsed)) throw new ConfigEditError('Workflow must be a mapping.');
+  if (Object.hasOwn(parsed, 'completion')) {
+    throw new ConfigurationError('migration left completion in the workflow.');
   }
-  const requires = parsed.requires;
-  if (isRecord(requires) && Object.hasOwn(requires, "decision")) {
-    throw new ConfigurationError("migration left requires.decision in the workflow.");
+  const {requires} = parsed;
+  if (isRecord(requires) && Object.hasOwn(requires, 'decision')) {
+    throw new ConfigurationError('migration left requires.decision in the workflow.');
   }
-  parseWorkflowMapping(parsed, "migrated workflow");
+  parseWorkflowMapping(parsed, 'migrated workflow');
   if (!deepEqual(parsed, updated)) {
-    throw new ConfigEditError("Workflow text does not match the migrated document.");
+    throw new ConfigEditError('Workflow text does not match the migrated document.');
   }
 }
 
@@ -222,13 +223,13 @@ function liftWorkflowAgents(workflow: Record<string, unknown>): void {
   if (!Array.isArray(workflow.stages)) return;
   for (const stage of workflow.stages) {
     if (!isRecord(stage)) continue;
-    if (Object.hasOwn(stage, "model")) {
-      if (Object.hasOwn(stage, "agent")) {
+    if (Object.hasOwn(stage, 'model')) {
+      if (Object.hasOwn(stage, 'agent')) {
         throw new ConfigurationError(`stages.${String(stage.id)} has both model and agent.`);
       }
       const lifted: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(stage)) {
-        if (key === "model") {
+        if (key === 'model') {
           if (value != null) lifted.agent = value;
         } else {
           lifted[key] = value;
@@ -243,18 +244,18 @@ function liftWorkflowAgents(workflow: Record<string, unknown>): void {
 
 /** Version 2 has no completion block and no requires.decision. */
 function liftWorkflowCompletion(workflow: Record<string, unknown>): void {
-  const completion = workflow.completion;
+  const {completion} = workflow;
   if (isRecord(completion)) {
     refuseForeignCompleteRoutes(workflow, completion);
-    const outputs = completion.outputs;
+    const {outputs} = completion;
     const emptyOutputs =
       outputs == null || outputs === false || (isRecord(outputs) && Object.keys(outputs).length === 0);
     if (!emptyOutputs) workflow.outputs = deepCopy(outputs);
     delete workflow.completion;
-  } else if (Object.hasOwn(workflow, "completion")) {
+  } else if (Object.hasOwn(workflow, 'completion')) {
     delete workflow.completion;
   }
-  const requires = workflow.requires;
+  const {requires} = workflow;
   if (!isRecord(requires)) return;
   delete requires.decision;
   if (Object.keys(requires).length === 0) delete workflow.requires;
@@ -266,7 +267,7 @@ function liftWorkflowDecisions(workflow: Record<string, unknown>): void {
   for (const stage of workflow.stages) {
     if (!isRecord(stage) || stage.decision == null || Array.isArray(stage.decision)) continue;
     const field = `stages.${String(stage.id)}.decision`;
-    const decision = stage.decision;
+    const {decision} = stage;
     if (isRecord(decision) && Object.keys(decision).length === 0) {
       delete stage.decision;
       continue;
@@ -274,8 +275,8 @@ function liftWorkflowDecisions(workflow: Record<string, unknown>): void {
     if (!isRecord(decision) || !Array.isArray(decision.values) || !isRecord(decision.routes)) {
       throw new ConfigurationError(`${field} requires values and routes before migration.`);
     }
-    const routes = decision.routes;
-    const names = decision.values.map((value) => typeof value === "string" ? value.trim().toLowerCase() : "");
+    const {routes} = decision;
+    const names = decision.values.map((value) => typeof value === 'string' ? value.trim().toLowerCase() : '');
     const targets = new Map(Object.entries(routes).map(([key, value]) => [key.trim().toLowerCase(), value]));
     if (names.length === 0 || names.some((name) => !name || !targets.has(name)) ||
         new Set(names).size !== names.length || targets.size !== Object.keys(routes).length ||
@@ -292,24 +293,24 @@ function refuseForeignCompleteRoutes(
   workflow: Record<string, unknown>,
   completion: Record<string, unknown>,
 ): void {
-  const completionStage = typeof completion.stage === "string" ? completion.stage.trim() : "";
+  const completionStage = typeof completion.stage === 'string' ? completion.stage.trim() : '';
   const completionDecision =
-    typeof completion.decision === "string" && completion.decision.trim() !== ""
+    typeof completion.decision === 'string' && completion.decision.trim() !== ''
       ? completion.decision.trim().toLowerCase()
       : null;
-  const stages = workflow.stages;
+  const {stages} = workflow;
   if (!Array.isArray(stages)) return;
   for (const stage of stages) {
     if (!isRecord(stage)) continue;
-    const stageId = typeof stage.id === "string" ? stage.id.trim() : "";
-    const decision = stage.decision;
+    const stageId = typeof stage.id === 'string' ? stage.id.trim() : '';
+    const {decision} = stage;
     if (!isRecord(decision) || !isRecord(decision.routes)) continue;
     for (const [rawKey, rawTarget] of Object.entries(decision.routes)) {
       const routeKey = rawKey.trim().toLowerCase();
       if (!routeListsComplete(rawTarget)) continue;
       if (stageId !== completionStage) {
         throw new ConfigurationError(
-          `stages.${stageId}.decision.routes.${routeKey} routes to complete, but completion.stage is ${completionStage || "missing"}.`,
+          `stages.${stageId}.decision.routes.${routeKey} routes to complete, but completion.stage is ${completionStage || 'missing'}.`,
         );
       }
       if (completionDecision !== null && routeKey !== completionDecision) {
@@ -322,9 +323,9 @@ function refuseForeignCompleteRoutes(
 }
 
 function routeListsComplete(target: unknown): boolean {
-  if (typeof target === "string") return target.trim() === "complete";
+  if (typeof target === 'string') return target.trim() === 'complete';
   if (!Array.isArray(target)) return false;
-  return target.some((item) => typeof item === "string" && item.trim() === "complete");
+  return target.some((item) => typeof item === 'string' && item.trim() === 'complete');
 }
 
 function requireCurrent(version: number, current: number, label: string): number {
@@ -341,12 +342,12 @@ function migrateModels(
   version: number,
   context: Readonly<Record<string, unknown>>,
 ): void {
-  const models = config.models;
+  const {models} = config;
   if (!isRecord(models)) return;
   for (const [name, body] of Object.entries(models)) {
     if (!isRecord(body)) continue;
     const provider = providerName(body.provider) ?? modelProvider(context, name);
-    applyLegacyMigration("model", provider, version, body);
+    applyLegacyMigration('model', provider, version, body);
   }
 }
 
@@ -355,7 +356,7 @@ function migrateRoles(
   version: number,
   context: Readonly<Record<string, unknown>>,
 ): void {
-  const roles = config.roles;
+  const {roles} = config;
   if (!isRecord(roles)) return;
   for (const [name, body] of Object.entries(roles)) {
     if (!isRecord(body)) continue;
@@ -363,9 +364,9 @@ function migrateRoles(
     const effectiveRole = isRecord(effectiveRoles) ? effectiveRoles[name] : null;
     const provider = roleProvider(
       context,
-      Object.hasOwn(body, "default_model") || Object.hasOwn(body, "agent") ? body : isRecord(effectiveRole) ? effectiveRole : body,
+      Object.hasOwn(body, 'default_model') || Object.hasOwn(body, 'agent') ? body : isRecord(effectiveRole) ? effectiveRole : body,
     );
-    applyLegacyMigration("role", provider, version, body);
+    applyLegacyMigration('role', provider, version, body);
   }
 }
 
@@ -374,30 +375,30 @@ function migrateStages(
   config: Readonly<Record<string, unknown>>,
   version: number,
 ): void {
-  const stages = workflow.stages;
+  const {stages} = workflow;
   if (!Array.isArray(stages)) return;
   for (const stage of stages) {
     if (!isRecord(stage)) continue;
     const provider = stageProvider(config, stage);
-    applyLegacyMigration("stage", provider, version, stage);
+    applyLegacyMigration('stage', provider, version, stage);
   }
 }
 
 /** Reads the provider of a role's agent in either document shape: `agent` or the earlier `default_model`. */
 function roleProvider(config: Readonly<Record<string, unknown>>, role: Readonly<Record<string, unknown>>): string | null {
-  const selection = Object.hasOwn(role, "agent") ? role.agent : role.default_model;
+  const selection = Object.hasOwn(role, 'agent') ? role.agent : role.default_model;
   if (isRecord(selection)) return bodyProvider(selection);
-  if (typeof selection !== "string") return null;
+  if (typeof selection !== 'string') return null;
   return modelProvider(config, selection);
 }
 
 function stageProvider(config: Readonly<Record<string, unknown>>, stage: Readonly<Record<string, unknown>>): string | null {
-  const selection = Object.hasOwn(stage, "agent") ? stage.agent : stage.model;
+  const selection = Object.hasOwn(stage, 'agent') ? stage.agent : stage.model;
   if (isRecord(selection)) return bodyProvider(selection);
-  if (typeof selection === "string" && selection.trim() !== "") return modelProvider(config, selection);
+  if (typeof selection === 'string' && selection.trim() !== '') return modelProvider(config, selection);
   const roleName = stage.role;
-  if (typeof roleName !== "string") return null;
-  const roles = config.roles;
+  if (typeof roleName !== 'string') return null;
+  const {roles} = config;
   if (!isRecord(roles)) return null;
   const role = roles[roleName.trim()];
   if (!isRecord(role)) return null;
@@ -416,30 +417,30 @@ function modelProvider(config: Readonly<Record<string, unknown>>, modelName: str
 function bodyProvider(body: Readonly<Record<string, unknown>>): string | null {
   const provider = providerName(body.provider);
   if (provider !== null) return provider;
-  const client = body.client;
+  const {client} = body;
   return providerName(isRecord(client) ? client.type : client);
 }
 
 function providerName(value: unknown): string | null {
-  if (typeof value !== "string" || value.trim() === "") return null;
+  if (typeof value !== 'string' || value.trim() === '') return null;
   return value.trim();
 }
 
 function workflowNotes(before: Readonly<Record<string, unknown>>, after: Readonly<Record<string, unknown>>): string[] {
   const notes = stageNotes(before, after);
-  if (Object.hasOwn(before, "completion") && !Object.hasOwn(after, "completion")) notes.push("completion removed");
-  if (!Object.hasOwn(before, "outputs") && Object.hasOwn(after, "outputs")) notes.push("completion.outputs -> outputs");
+  if (Object.hasOwn(before, 'completion') && !Object.hasOwn(after, 'completion')) notes.push('completion removed');
+  if (!Object.hasOwn(before, 'outputs') && Object.hasOwn(after, 'outputs')) notes.push('completion.outputs -> outputs');
   const beforeRequires = isRecord(before.requires) ? before.requires : null;
   const afterRequires = isRecord(after.requires) ? after.requires : null;
-  if (Object.hasOwn(before, "requires") && !Object.hasOwn(after, "requires")) {
-    notes.push("requires removed; use --prior for context and add downstream suggestions to the producer manually");
+  if (Object.hasOwn(before, 'requires') && !Object.hasOwn(after, 'requires')) {
+    notes.push('requires removed; use --prior for context and add downstream suggestions to the producer manually');
   }
   if (
     beforeRequires !== null &&
-    Object.hasOwn(beforeRequires, "decision") &&
-    (afterRequires === null || !Object.hasOwn(afterRequires, "decision"))
+    Object.hasOwn(beforeRequires, 'decision') &&
+    (afterRequires === null || !Object.hasOwn(afterRequires, 'decision'))
   ) {
-    notes.push("requires.decision removed");
+    notes.push('requires.decision removed');
   }
   return notes;
 }
@@ -452,7 +453,7 @@ function stageNotes(before: Readonly<Record<string, unknown>>, after: Readonly<R
     const updated = afterStages.get(stageId);
     if (updated === undefined) continue;
     notes.push(...bodyNotes(stage, updated, `stages.${stageId}`));
-    if (Object.hasOwn(stage, "model") && Object.hasOwn(updated, "agent") && !Object.hasOwn(updated, "model")) {
+    if (Object.hasOwn(stage, 'model') && Object.hasOwn(updated, 'agent') && !Object.hasOwn(updated, 'model')) {
       notes.push(`stages.${stageId}.model -> agent`);
     }
     if (!deepEqual(stage.decision, updated.decision)) {
@@ -481,7 +482,7 @@ function stagesById(raw: unknown): Map<string, Record<string, unknown>> {
   for (const stage of raw) {
     if (!isRecord(stage)) continue;
     const stageId = stage.id;
-    if (typeof stageId === "string" && stageId.trim() !== "") found.set(stageId.trim(), stage);
+    if (typeof stageId === 'string' && stageId.trim() !== '') found.set(stageId.trim(), stage);
   }
   return found;
 }
@@ -496,10 +497,10 @@ function bodyNotes(
   const afterOptions = isRecord(after.options) ? after.options : {};
   const removed = Object.keys(beforeOptions).filter((key) => !Object.hasOwn(afterOptions, key));
   const added = Object.keys(afterOptions).filter((key) => !Object.hasOwn(beforeOptions, key));
-  const renamedOption = removed.length === 1 && removed[0] === "thinking" && added.length === 1;
+  const renamedOption = removed.length === 1 && removed[0] === 'thinking' && added.length === 1;
   const movedScalar =
-    Object.hasOwn(before, "thinking") &&
-    !Object.hasOwn(after, "thinking") &&
+    Object.hasOwn(before, 'thinking') &&
+    !Object.hasOwn(after, 'thinking') &&
     removed.length === 0 &&
     added.length === 1;
   const addedName = added[0];
@@ -509,11 +510,11 @@ function bodyNotes(
     notes.push(`${label}.thinking -> options.${addedName}`);
   } else {
     notes.push(...removed.map((key) => `${label}.options.${key} removed`));
-    if (label.startsWith("stages.") && removed.length > 0 && !Object.hasOwn(after, "options")) {
+    if (label.startsWith('stages.') && removed.length > 0 && !Object.hasOwn(after, 'options')) {
       notes.push(`${label}.options removed in schema_version 5; set options on an inline ${label}.agent if the stage still needs them`);
     }
     notes.push(...added.map((key) => `${label}.options.${key} set`));
-    if (Object.hasOwn(before, "thinking") && !Object.hasOwn(after, "thinking")) {
+    if (Object.hasOwn(before, 'thinking') && !Object.hasOwn(after, 'thinking')) {
       notes.push(`${label}.thinking removed`);
     }
   }
@@ -522,29 +523,29 @@ function bodyNotes(
 
 function insertSchemaVersion(lines: string[], updated: Readonly<Record<string, unknown>>, edits: Edit[]): void {
   const value = updated[SCHEMA_VERSION_FIELD];
-  if (typeof value === "boolean" || typeof value !== "number" || !Number.isInteger(value)) return;
+  if (typeof value === 'boolean' || typeof value !== 'number' || !Number.isInteger(value)) return;
   const rendered = `${SCHEMA_VERSION_FIELD}: ${value}`;
   for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index] ?? "";
+    const line = lines[index] ?? '';
     const [key] = mappingKey(line);
     if (key === SCHEMA_VERSION_FIELD && contentIndent(line) === 0) {
       const [current, comment] = splitComment(line);
-      const raw = current.split(":").slice(1).join(":");
+      const raw = current.split(':').slice(1).join(':');
       if (raw.trim() === String(value)) return;
       let replacement = `${SCHEMA_VERSION_FIELD}: ${value}`;
-      if (comment !== "") replacement = `${replacement} ${comment}`;
+      if (comment !== '') replacement = `${replacement} ${comment}`;
       edits.push([index, index + 1, [replacement]]);
       return;
     }
   }
   let insert = lines.length;
   for (let index = 0; index < lines.length; index += 1) {
-    if (contentIndent(lines[index] ?? "") !== null) {
+    if (contentIndent(lines[index] ?? '') !== null) {
       insert = index;
       break;
     }
   }
-  edits.push([insert, insert, [rendered, ""]]);
+  edits.push([insert, insert, [rendered, '']]);
 }
 
 function syncChangedStages(
@@ -573,7 +574,7 @@ function patchStage(
   edits: Edit[],
 ): void {
   const info = lines.slice(start, end).map((line) => lineInfo(line));
-  const content: Array<[number, LineInfo]> = [];
+  const content: [number, LineInfo][] = [];
   for (let index = 0; index < info.length; index += 1) {
     const item = info[index];
     if (item !== null) content.push([index, item]);
@@ -584,40 +585,40 @@ function patchStage(
   const firstIndent = first[1].indent;
   const siblingIndent = siblingIndentOf(content, firstIndent);
   const unit = siblingIndent > firstIndent ? siblingIndent - firstIndent : 2;
-  if (!deepEqual(before.agent, after.agent) && Object.hasOwn(after, "agent") && !Object.hasOwn(before, "model")) {
-    const span = nestedKeySpan(lines, { start, end }, "agent");
-    if (span === null) throw new ConfigEditError("Cannot locate the stage agent to migrate.");
-    const base = lines.slice(span[0], span[1]).map((line) => line.slice(siblingIndent)).join("\n");
+  if (!deepEqual(before.agent, after.agent) && Object.hasOwn(after, 'agent') && !Object.hasOwn(before, 'model')) {
+    const span = nestedKeySpan(lines, { start, end }, 'agent');
+    if (span === null) throw new ConfigEditError('Cannot locate the stage agent to migrate.');
+    const base = lines.slice(span[0], span[1]).map((line) => line.slice(siblingIndent)).join('\n');
     const result = renderAuthoringYaml({ agent: after.agent }, base);
     if (!result.preserved) throw new ConfigEditError(`Cannot preserve the stage agent: ${result.reason}.`);
-    edits.push([span[0], span[1], result.text.trimEnd().split("\n").map((line) => `${" ".repeat(siblingIndent)}${line}`)]);
+    edits.push([span[0], span[1], result.text.trimEnd().split('\n').map((line) => `${' '.repeat(siblingIndent)}${line}`)]);
   }
-  if (Object.hasOwn(before, "produces") && !Object.hasOwn(after, "produces")) {
-    const span = nestedKeySpan(lines, { start, end }, "produces");
-    if (span === null) throw new ConfigEditError("Cannot locate the stage produces to migrate.");
+  if (Object.hasOwn(before, 'produces') && !Object.hasOwn(after, 'produces')) {
+    const span = nestedKeySpan(lines, { start, end }, 'produces');
+    if (span === null) throw new ConfigEditError('Cannot locate the stage produces to migrate.');
     const ids = Array.isArray(after.artifacts) ? after.artifacts : [];
-    edits.push([span[0], span[1], ids.length > 0 ? [`${" ".repeat(siblingIndent)}artifacts: [${ids.map((id) => artifactIdScalar(String(id))).join(", ")}]`] : []]);
+    edits.push([span[0], span[1], ids.length > 0 ? [`${' '.repeat(siblingIndent)}artifacts: [${ids.map((id) => artifactIdScalar(String(id))).join(', ')}]`] : []]);
   }
   if (!deepEqual(before.decision, after.decision)) {
-    const span = nestedKeySpan(lines, { start, end }, "decision");
-    if (span === null) throw new ConfigEditError("Cannot locate the stage decision to migrate.");
-    const replacement = Object.hasOwn(after, "decision")
-      ? renderTopLevel("decision", after.decision).map((line) => `${" ".repeat(siblingIndent)}${line}`)
+    const span = nestedKeySpan(lines, { start, end }, 'decision');
+    if (span === null) throw new ConfigEditError('Cannot locate the stage decision to migrate.');
+    const replacement = Object.hasOwn(after, 'decision')
+      ? renderTopLevel('decision', after.decision).map((line) => `${' '.repeat(siblingIndent)}${line}`)
       : [];
     edits.push([span[0], span[1], replacement]);
   }
-  if (Object.hasOwn(before, "model") && Object.hasOwn(after, "agent") && !Object.hasOwn(after, "model")) {
+  if (Object.hasOwn(before, 'model') && Object.hasOwn(after, 'agent') && !Object.hasOwn(after, 'model')) {
     for (const [index, item] of content) {
-      if (item.indent !== siblingIndent || item.key !== "model") continue;
-      const text = lines[start + index] ?? "";
+      if (item.indent !== siblingIndent || item.key !== 'model') continue;
+      const text = lines[start + index] ?? '';
       const match = /^(\s*)(["']?)model\2(\s*:)/.exec(text);
       if (match !== null) edits.push([start + index, start + index + 1, [`${match[1]}agent${text.slice(match[0].length - match[3]!.length)}`]]);
       break;
     }
   }
-  if (Object.hasOwn(before, "options") && !Object.hasOwn(after, "options")) {
+  if (Object.hasOwn(before, 'options') && !Object.hasOwn(after, 'options')) {
     for (const [index, item] of content) {
-      if (item.indent !== siblingIndent || item.key !== "options" || item.rest === "") continue;
+      if (item.indent !== siblingIndent || item.key !== 'options' || item.rest === '') continue;
       // A flow-style `options: {..}` has no nested lines to sync; drop the whole entry.
       edits.push([start + index, optionsEnd(lines, start + index, siblingIndent, end), []]);
       break;
@@ -630,18 +631,18 @@ function patchStage(
   let thinkingAt: number | null = null;
   for (const [index, item] of content) {
     if (inOptions && item.indent <= siblingIndent) inOptions = false;
-    if (inOptions && item.key !== null && item.rest !== "") {
+    if (inOptions && item.key !== null && item.rest !== '') {
       if (optionIndent === null) optionIndent = item.indent;
       if (item.indent === optionIndent) optionLines.set(item.key, start + index);
       continue;
     }
     if (item.indent !== siblingIndent || item.key === null) continue;
-    if (item.key === "options" && item.rest === "") {
+    if (item.key === 'options' && item.rest === '') {
       optionsAt = start + index;
       inOptions = true;
       continue;
     }
-    if (item.key === "thinking" && item.rest !== "") thinkingAt = start + index;
+    if (item.key === 'thinking' && item.rest !== '') thinkingAt = start + index;
   }
   const beforeOptions = isRecord(before.options) ? before.options : {};
   const afterOptions = isRecord(after.options) ? after.options : {};
@@ -658,7 +659,7 @@ function patchStage(
       edits,
     );
   }
-  if (Object.hasOwn(before, "thinking") && !Object.hasOwn(after, "thinking") && thinkingAt !== null) {
+  if (Object.hasOwn(before, 'thinking') && !Object.hasOwn(after, 'thinking') && thinkingAt !== null) {
     edits.push([thinkingAt, thinkingAt + 1, []]);
   }
 }
@@ -676,7 +677,7 @@ function syncStageOptions(
 ): void {
   const afterText = new Map<string, string>();
   for (const [key, value] of Object.entries(after)) {
-    if (typeof value === "string" && value.trim() !== "") afterText.set(key, value.trim());
+    if (typeof value === 'string' && value.trim() !== '') afterText.set(key, value.trim());
   }
   const beforeKeys = new Set(Object.keys(before));
   if (afterText.size === 0) {
@@ -684,10 +685,10 @@ function syncStageOptions(
     return;
   }
   if (optionsAt === null) {
-    const indent = " ".repeat(siblingIndent);
-    const nested = " ".repeat(optionIndent);
+    const indent = ' '.repeat(siblingIndent);
+    const nested = ' '.repeat(optionIndent);
     const block = [`${indent}options:`];
-    for (const name of sorted(afterText.keys())) block.push(`${nested}${name}: ${yamlScalar(afterText.get(name) ?? "")}`);
+    for (const name of sorted(afterText.keys())) block.push(`${nested}${name}: ${yamlScalar(afterText.get(name) ?? '')}`);
     edits.push([stageEnd, stageEnd, block]);
     return;
   }
@@ -697,21 +698,21 @@ function syncStageOptions(
     if (lineIndex !== undefined) edits.push([lineIndex, lineIndex + 1, []]);
   }
   for (const name of sorted(afterText.keys())) {
-    const rendered = `${" ".repeat(optionIndent)}${name}: ${yamlScalar(afterText.get(name) ?? "")}`;
+    const rendered = `${' '.repeat(optionIndent)}${name}: ${yamlScalar(afterText.get(name) ?? '')}`;
     const lineIndex = optionLines.get(name);
     if (lineIndex === undefined) {
       const insertAt = optionsEnd(lines, optionsAt, siblingIndent, stageEnd);
       edits.push([insertAt, insertAt, [rendered]]);
       continue;
     }
-    const [current] = splitComment(lines[lineIndex] ?? "");
-    const raw = current.split(":").slice(1).join(":");
+    const [current] = splitComment(lines[lineIndex] ?? '');
+    const raw = current.split(':').slice(1).join(':');
     if (unquote(raw.trim()) !== afterText.get(name)) {
-      const [code, comment] = splitComment(lines[lineIndex] ?? "");
-      const colon = code.indexOf(":");
+      const [code, comment] = splitComment(lines[lineIndex] ?? '');
+      const colon = code.indexOf(':');
       const key = colon < 0 ? code : code.slice(0, colon);
-      let updated = `${key}: ${yamlScalar(afterText.get(name) ?? "")}`;
-      if (comment !== "") updated = `${updated} ${comment}`;
+      let updated = `${key}: ${yamlScalar(afterText.get(name) ?? '')}`;
+      if (comment !== '') updated = `${updated} ${comment}`;
       edits.push([lineIndex, lineIndex + 1, [updated]]);
     }
   }
@@ -720,7 +721,7 @@ function syncStageOptions(
 function optionsEnd(lines: string[], optionsAt: number, siblingIndent: number, stageEnd: number): number {
   let end = optionsAt + 1;
   for (let index = optionsAt + 1; index < stageEnd; index += 1) {
-    const item = lineInfo(lines[index] ?? "");
+    const item = lineInfo(lines[index] ?? '');
     if (item === null) continue;
     if (item.indent <= siblingIndent) break;
     end = index + 1;
@@ -728,7 +729,7 @@ function optionsEnd(lines: string[], optionsAt: number, siblingIndent: number, s
   return end;
 }
 
-function siblingIndentOf(content: Array<[number, LineInfo]>, firstIndent: number): number {
+function siblingIndentOf(content: [number, LineInfo][], firstIndent: number): number {
   let sibling: number | null = null;
   for (const [, item] of content.slice(1)) {
     if (item.indent <= firstIndent) continue;
@@ -737,18 +738,18 @@ function siblingIndentOf(content: Array<[number, LineInfo]>, firstIndent: number
   return sibling === null ? firstIndent : sibling;
 }
 
-function stageSpans(lines: string[]): Array<[string, number, number]> {
-  const spans: Array<[string, number, number]> = [];
+function stageSpans(lines: string[]): [string, number, number][] {
+  const spans: [string, number, number][] = [];
   let inStages = false;
   let listIndent: number | null = null;
   let start: number | null = null;
   let stageId: string | null = null;
   for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index] ?? "";
+    const line = lines[index] ?? '';
     const item = lineInfo(line);
     if (item === null) continue;
     if (!inStages) {
-      if (item.indent === 0 && item.key === "stages" && item.rest === "") inStages = true;
+      if (item.indent === 0 && item.key === 'stages' && item.rest === '') inStages = true;
       continue;
     }
     if (item.indent === 0) {
@@ -757,27 +758,27 @@ function stageSpans(lines: string[]): Array<[string, number, number]> {
       break;
     }
     const text = codeOf(line);
-    if (listIndent === null && (text.startsWith("- ") || text === "-")) listIndent = item.indent;
-    if (listIndent !== null && item.indent === listIndent && (text.startsWith("- ") || text === "-")) {
+    if (listIndent === null && (text.startsWith('- ') || text === '-')) listIndent = item.indent;
+    if (listIndent !== null && item.indent === listIndent && (text.startsWith('- ') || text === '-')) {
       if (start !== null && stageId !== null) spans.push([stageId, start, index]);
       start = index;
       stageId = idOnDash(text);
       continue;
     }
-    if (start !== null && stageId === null && item.key === "id" && item.rest !== "") stageId = unquote(item.rest);
+    if (start !== null && stageId === null && item.key === 'id' && item.rest !== '') stageId = unquote(item.rest);
   }
   if (start !== null && stageId !== null) spans.push([stageId, start, lines.length]);
   return spans;
 }
 
 function idOnDash(text: string): string | null {
-  const body = text.startsWith("- ") ? text.slice(2).trim() : "";
-  if (body === "") return null;
-  const colon = body.indexOf(":");
+  const body = text.startsWith('- ') ? text.slice(2).trim() : '';
+  if (body === '') return null;
+  const colon = body.indexOf(':');
   if (colon < 0) return null;
   const key = body.slice(0, colon).trim();
   const rest = body.slice(colon + 1);
-  if (key !== "id" || rest.trim() === "") return null;
+  if (key !== 'id' || rest.trim() === '') return null;
   const first = rest.trim().split(/\s+/)[0];
   return first === undefined ? null : unquote(first);
 }
@@ -799,12 +800,12 @@ function lineInfo(line: string): LineInfo | null {
 function mappingKey(line: string): [string | null, string, string] {
   const [code, comment] = splitComment(line);
   let text = code.trim();
-  if (text.startsWith("- ")) text = text.slice(2).trim();
-  else if (text === "-") return [null, "", comment];
-  const colon = text.indexOf(":");
-  if (colon < 0) return [null, "", comment];
+  if (text.startsWith('- ')) text = text.slice(2).trim();
+  else if (text === '-') return [null, '', comment];
+  const colon = text.indexOf(':');
+  if (colon < 0) return [null, '', comment];
   const key = unquote(text.slice(0, colon).trim());
-  if (key === "") return [null, "", comment];
+  if (key === '') return [null, '', comment];
   return [key, text.slice(colon + 1).trim(), comment];
 }
 
@@ -815,9 +816,9 @@ function codeOf(line: string): string {
 
 function contentIndent(line: string): number | null {
   const [code] = splitComment(line);
-  if (code.trim() === "") return null;
+  if (code.trim() === '') return null;
   let index = 0;
-  while (index < code.length && code[index] === " ") index += 1;
+  while (index < code.length && code[index] === ' ') index += 1;
   return index;
 }
 
@@ -828,9 +829,9 @@ function splitComment(line: string): [string, string] {
     const char = line[index];
     if (char === "'" && !inDouble) inSingle = !inSingle;
     else if (char === '"' && !inSingle) inDouble = !inDouble;
-    else if (char === "#" && !inSingle && !inDouble) return [line.slice(0, index).trimEnd(), line.slice(index)];
+    else if (char === '#' && !inSingle && !inDouble) return [line.slice(0, index).trimEnd(), line.slice(index)];
   }
-  return [line.trimEnd(), ""];
+  return [line.trimEnd(), ''];
 }
 
 function unquote(value: string): string {
@@ -853,28 +854,28 @@ function syncDocumentShape(
 ): void {
   const spans = topLevelSpans(lines);
   for (const [key, span] of spans) {
-    if (key === "stages") continue;
+    if (key === 'stages') continue;
     if (!Object.hasOwn(after, key)) edits.push([span.start, span.end, []]);
   }
   for (const key of Object.keys(after)) {
-    if (key === SCHEMA_VERSION_FIELD || key === "stages") continue;
+    if (key === SCHEMA_VERSION_FIELD || key === 'stages') continue;
     if (spans.has(key) || Object.hasOwn(before, key)) continue;
     const rendered = renderTopLevel(key, after[key]);
     if (rendered.length > 0) edits.push([lines.length, lines.length, rendered]);
   }
   for (const [key, span] of spans) {
-    if (key === "stages" || !Object.hasOwn(after, key)) continue;
+    if (key === 'stages' || !Object.hasOwn(after, key)) continue;
     const previous = before[key];
     const next = after[key];
-    if (key === "downstream" && !deepEqual(previous, next)) {
+    if (key === 'downstream' && !deepEqual(previous, next)) {
       edits.push([span.start, span.end, renderTopLevel(key, next)]);
       continue;
     }
     if (!isRecord(previous) || !isRecord(next)) continue;
     const removed = Object.keys(previous).filter((nested) => !Object.hasOwn(next, nested));
     if (removed.length === 0) continue;
-    const header = lineInfo(lines[span.start] ?? "");
-    const flow = header !== null && (header.rest.startsWith("{") || header.rest.startsWith("["));
+    const header = lineInfo(lines[span.start] ?? '');
+    const flow = header !== null && (header.rest.startsWith('{') || header.rest.startsWith('['));
     // A flow value has no nested key line. Rewrite the parent from the migrated mapping.
     if (flow || removed.some((nested) => nestedKeySpan(lines, span, nested) === null)) {
       edits.push([span.start, span.end, renderTopLevel(key, next)]);
@@ -891,7 +892,7 @@ function topLevelSpans(lines: string[]): Map<string, LineSpan> {
   const spans = new Map<string, LineSpan>();
   let current: { key: string; start: number } | null = null;
   for (let index = 0; index < lines.length; index += 1) {
-    const item = lineInfo(lines[index] ?? "");
+    const item = lineInfo(lines[index] ?? '');
     if (item === null || item.indent !== 0 || item.key === null) continue;
     if (current !== null && !spans.has(current.key)) spans.set(current.key, { start: current.start, end: index });
     current = { key: item.key, start: index };
@@ -903,13 +904,13 @@ function topLevelSpans(lines: string[]): Map<string, LineSpan> {
 function nestedKeySpan(lines: string[], parent: LineSpan, key: string): [number, number] | null {
   let childIndent: number | null = null;
   for (let index = parent.start + 1; index < parent.end; index += 1) {
-    const item = lineInfo(lines[index] ?? "");
+    const item = lineInfo(lines[index] ?? '');
     if (item === null || item.key === null) continue;
     if (childIndent === null || item.indent < childIndent) childIndent = item.indent;
   }
   if (childIndent === null) return null;
   for (let index = parent.start + 1; index < parent.end; index += 1) {
-    const item = lineInfo(lines[index] ?? "");
+    const item = lineInfo(lines[index] ?? '');
     if (item === null || item.key !== key || item.indent !== childIndent) continue;
     return [index, nestedValueEnd(lines, parent.end, index, item)];
   }
@@ -919,7 +920,7 @@ function nestedKeySpan(lines: string[], parent: LineSpan, key: string): [number,
 function nestedValueEnd(lines: string[], parentEnd: number, index: number, item: LineInfo): number {
   let end = index + 1;
   for (let nested = index + 1; nested < parentEnd; nested += 1) {
-    const next = lineInfo(lines[nested] ?? "");
+    const next = lineInfo(lines[nested] ?? '');
     // A blank or comment line stays in the value. The next sibling key ends it.
     if (next !== null && next.key !== null && next.indent <= item.indent) break;
     end = nested + 1;
@@ -943,8 +944,8 @@ function applyEdits(original: string, lines: string[], edits: Edit[]): string {
     const [start, end, replacement] = edit;
     lines.splice(start, end - start, ...replacement);
   }
-  let text = lines.join("\n");
-  if (original.endsWith("\n") || original === "") text += "\n";
+  let text = lines.join('\n');
+  if (original.endsWith('\n') || original === '') text += '\n';
   return text;
 }
 
@@ -979,8 +980,8 @@ function deepCopyRecord(value: Readonly<Record<string, unknown>>): Record<string
 
 // Python str.splitlines(): a trailing break does not yield an empty line.
 function splitLines(text: string): string[] {
-  if (text === "") return [];
+  if (text === '') return [];
   const lines = text.split(/\r\n|[\n\r\v\f\u0085\u2028\u2029]/);
-  if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+  if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
   return lines;
 }

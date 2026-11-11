@@ -1,25 +1,27 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import path from "node:path";
-import { appendLineSynced, isAtomicTempName, sealTornTail } from "@nodeint/migent-kernel";
-import { isRecord } from "@nodeint/migent-workflow";
-import { EXECUTIONS_DIRNAME, utcNow } from "@nodeint/migent-kernel";
-import { assertSessionLockHeld } from "./session-lock.js";
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import path from 'node:path';
+
+import { appendLineSynced, isAtomicTempName, sealTornTail } from '@nodeint/migent-kernel';
+import { EXECUTIONS_DIRNAME, utcNow } from '@nodeint/migent-kernel';
+import { isRecord } from '@nodeint/migent-workflow';
+
+import { assertSessionLockHeld } from './session-lock.js';
 
 export const EVENT_VERSION = 2;
 
 /** `session.active` `data.from` for a reply that supersedes a cancelled execution. */
-export const CANCELLED_REPLY = "cancelled_reply";
+export const CANCELLED_REPLY = 'cancelled_reply';
 
-const ENVELOPE_KEYS = new Set(["v", "seq", "event", "timestamp", "data"]);
+const ENVELOPE_KEYS = new Set(['v', 'seq', 'event', 'timestamp', 'data']);
 
 /** Item traces and provider heartbeats are per execution, not session lifecycle. */
 export function isProviderStreamEvent(eventName: string): boolean {
-  return eventName === "provider.heartbeat" || eventName.startsWith("provider.item_");
+  return eventName === 'provider.heartbeat' || eventName.startsWith('provider.item_');
 }
 
 /** Heartbeats are appended and never folded into status.json. */
 export function skipsStatusWrite(eventName: string): boolean {
-  return eventName === "provider.heartbeat" || eventName === "verify.heartbeat";
+  return eventName === 'provider.heartbeat' || eventName === 'verify.heartbeat';
 }
 
 export interface EventDraft {
@@ -73,7 +75,7 @@ export function eventRecord(seq: number, draft: EventDraft): Record<string, unkn
 
 /** One session-wide sequence. A parseable line counts, including v1. A trailing partial line does not. */
 export function nextEventSequence(sessionDirectory: string): number {
-  let count = countCompleteLines(path.join(sessionDirectory, "events.jsonl"));
+  let count = countCompleteLines(path.join(sessionDirectory, 'events.jsonl'));
   for (const stream of streamFiles(sessionDirectory)) count += countCompleteLines(stream);
   return count + 1;
 }
@@ -81,34 +83,34 @@ export function nextEventSequence(sessionDirectory: string): number {
 export function appendLifecycleEvent(sessionDirectory: string, draft: EventDraft): void {
   assertSessionLockHeld(sessionDirectory);
   const record = eventRecord(assignEventSequence(sessionDirectory), draft);
-  appendLineSynced(path.join(sessionDirectory, "events.jsonl"), JSON.stringify(record));
+  appendLineSynced(path.join(sessionDirectory, 'events.jsonl'), JSON.stringify(record));
 }
 
 /** Keep the caller's top-level keys. Stream events go to that execution's stream.jsonl. */
 export function appendRecordedEvent(sessionDirectory: string, event: Record<string, unknown>): void {
-  const name = typeof event.event === "string" ? event.event : "";
-  const executionId = typeof event.execution_id === "string" ? event.execution_id : null;
+  const name = typeof event.event === 'string' ? event.event : '';
+  const executionId = typeof event.execution_id === 'string' ? event.execution_id : null;
   assertSessionLockHeld(sessionDirectory);
   const record = eventRecord(assignEventSequence(sessionDirectory), {
     event: name,
-    timestamp: typeof event.timestamp === "string" ? event.timestamp : utcNow(),
+    timestamp: typeof event.timestamp === 'string' ? event.timestamp : utcNow(),
     executionId,
-    stageId: typeof event.stage_id === "string" ? event.stage_id : null,
-    summary: typeof event.summary === "string" ? event.summary : null,
+    stageId: typeof event.stage_id === 'string' ? event.stage_id : null,
+    summary: typeof event.summary === 'string' ? event.summary : null,
     topLevel: event,
     data: {},
   });
   const destination =
     executionId && isProviderStreamEvent(name)
-      ? path.join(sessionDirectory, EXECUTIONS_DIRNAME, executionId, "stream.jsonl")
-      : path.join(sessionDirectory, "events.jsonl");
+      ? path.join(sessionDirectory, EXECUTIONS_DIRNAME, executionId, 'stream.jsonl')
+      : path.join(sessionDirectory, 'events.jsonl');
   appendLineSynced(destination, JSON.stringify(record));
 }
 
 export function readParsedEvents(filePath: string): ParsedEvent[] {
   let text: string;
   try {
-    text = readFileSync(filePath, "utf8");
+    text = readFileSync(filePath, 'utf8');
   } catch {
     return [];
   }
@@ -122,8 +124,8 @@ export function readParsedEvents(filePath: string): ParsedEvent[] {
 
 export function executionIdsStartedInLog(sessionDirectory: string): string[] {
   const ids: string[] = [];
-  for (const event of readParsedEvents(path.join(sessionDirectory, "events.jsonl"))) {
-    if (event.event === "execution.started" && event.executionId) ids.push(event.executionId);
+  for (const event of readParsedEvents(path.join(sessionDirectory, 'events.jsonl'))) {
+    if (event.event === 'execution.started' && event.executionId) ids.push(event.executionId);
   }
   return ids;
 }
@@ -136,7 +138,7 @@ export function parseExecutionId(
 ): { order: number; stageId: string; attempt: number } | null {
   const match = EXECUTION_ID_PATTERN.exec(executionId);
   if (!match) return null;
-  return { order: Number(match[1]), stageId: match[2] ?? "", attempt: Number(match[3]) };
+  return { order: Number(match[1]), stageId: match[2] ?? '', attempt: Number(match[3]) };
 }
 
 export interface ReservedAttempt {
@@ -184,17 +186,17 @@ export function sessionChangeReason(
   outcome: { blocker?: string | null; decision?: string | null; question?: string | null } | null,
   error: string | null,
 ): string | null {
-  if (sessionStatus === "question") return outcome?.question || "question";
-  if (sessionStatus === "blocked") return outcome?.blocker || "blocked";
-  if (sessionStatus === "cancelled") return "cancelled";
-  if (sessionStatus === "completed") return outcome?.decision || "completed";
+  if (sessionStatus === 'question') return outcome?.question || 'question';
+  if (sessionStatus === 'blocked') return outcome?.blocker || 'blocked';
+  if (sessionStatus === 'cancelled') return 'cancelled';
+  if (sessionStatus === 'completed') return outcome?.decision || 'completed';
   if (error) return error;
   return null;
 }
 
 function startedEvents(sessionDirectory: string): ParsedEvent[] {
-  return readParsedEvents(path.join(sessionDirectory, "events.jsonl")).filter(
-    (event) => event.event === "execution.started",
+  return readParsedEvents(path.join(sessionDirectory, 'events.jsonl')).filter(
+    (event) => event.event === 'execution.started',
   );
 }
 
@@ -215,8 +217,8 @@ function executionDirectoryNames(sessionDirectory: string): string[] {
 }
 
 function asInt(value: unknown): number {
-  if (typeof value === "number" && Number.isFinite(value)) return Math.trunc(value);
-  if (typeof value === "string" && /^-?\d+$/.test(value)) return Number(value);
+  if (typeof value === 'number' && Number.isFinite(value)) return Math.trunc(value);
+  if (typeof value === 'string' && /^-?\d+$/.test(value)) return Number(value);
   return 0;
 }
 
@@ -231,7 +233,7 @@ export function streamFiles(sessionDirectory: string): string[] {
   const files: string[] = [];
   for (const entry of entries) {
     if (!entry.isDirectory() || isAtomicTempName(entry.name)) continue;
-    const stream = path.join(root, entry.name, "stream.jsonl");
+    const stream = path.join(root, entry.name, 'stream.jsonl');
     try {
       if (statSync(stream).isFile()) files.push(stream);
     } catch {
@@ -244,7 +246,7 @@ export function streamFiles(sessionDirectory: string): string[] {
 
 /** A torn tail can already be valid JSON. Close every log before the sequence count. */
 export function sealSessionEventLogs(sessionDirectory: string): void {
-  sealTornTail(path.join(sessionDirectory, "events.jsonl"));
+  sealTornTail(path.join(sessionDirectory, 'events.jsonl'));
   for (const stream of streamFiles(sessionDirectory)) sealTornTail(stream);
 }
 
@@ -252,12 +254,12 @@ export function sealSessionEventLogs(sessionDirectory: string): void {
 export function parseableTornTail(filePath: string): ParsedEvent | null {
   let text: string;
   try {
-    text = readFileSync(filePath, "utf8");
+    text = readFileSync(filePath, 'utf8');
   } catch {
     return null;
   }
-  if (text.length === 0 || text.endsWith("\n")) return null;
-  return parseEventLine(text.slice(text.lastIndexOf("\n") + 1));
+  if (text.length === 0 || text.endsWith('\n')) return null;
+  return parseEventLine(text.slice(text.lastIndexOf('\n') + 1));
 }
 
 function assignEventSequence(sessionDirectory: string): number {
@@ -268,7 +270,7 @@ function assignEventSequence(sessionDirectory: string): number {
 function countCompleteLines(filePath: string): number {
   let text: string;
   try {
-    text = readFileSync(filePath, "utf8");
+    text = readFileSync(filePath, 'utf8');
   } catch {
     return 0;
   }
@@ -277,10 +279,10 @@ function countCompleteLines(filePath: string): number {
 
 /** Drop a trailing fragment that has no newline. Blank lines are not events. */
 export function completeLines(text: string): string[] {
-  if (!text.includes("\n")) return [];
-  const pieces = text.split("\n");
-  if (!text.endsWith("\n")) pieces.pop();
-  return pieces.filter((line) => line !== "");
+  if (!text.includes('\n')) return [];
+  const pieces = text.split('\n');
+  if (!text.endsWith('\n')) pieces.pop();
+  return pieces.filter((line) => line !== '');
 }
 
 function parseEventLine(line: string): ParsedEvent | null {
@@ -290,19 +292,19 @@ function parseEventLine(line: string): ParsedEvent | null {
   } catch {
     return null;
   }
-  if (!isRecord(value) || typeof value.event !== "string" || value.event === "") return null;
+  if (!isRecord(value) || typeof value.event !== 'string' || value.event === '') return null;
   const version = value.v;
-  const v = typeof version === "number" && Number.isInteger(version) ? version : 1;
-  const seq = typeof value.seq === "number" && Number.isInteger(value.seq) ? value.seq : null;
+  const v = typeof version === 'number' && Number.isInteger(version) ? version : 1;
+  const seq = typeof value.seq === 'number' && Number.isInteger(value.seq) ? value.seq : null;
   return {
     raw: value,
     v,
     seq,
     event: value.event,
-    timestamp: typeof value.timestamp === "string" ? value.timestamp : "",
-    executionId: typeof value.execution_id === "string" ? value.execution_id : null,
-    stageId: typeof value.stage_id === "string" ? value.stage_id : null,
-    summary: typeof value.summary === "string" ? value.summary : null,
+    timestamp: typeof value.timestamp === 'string' ? value.timestamp : '',
+    executionId: typeof value.execution_id === 'string' ? value.execution_id : null,
+    stageId: typeof value.stage_id === 'string' ? value.stage_id : null,
+    summary: typeof value.summary === 'string' ? value.summary : null,
     data: isRecord(value.data) ? value.data : {},
   };
 }

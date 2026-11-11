@@ -1,28 +1,29 @@
-import path from "node:path";
+import path from 'node:path';
+
+import type { ClientRegistry } from '@nodeint/migent-kernel';
 import {
-  LOCAL_CONFIG_FILE,
   hasLocalConfig,
   loadAgentTarget,
   loadRoleDescription,
   loadRoleResponsibilities,
   loadWorkspaceConfig,
   loadYamlMapping,
+  LOCAL_CONFIG_FILE,
   resolveRoleCascade,
   resolveStageSpec,
   type StageTarget,
-} from "@nodeint/migent-kernel";
-import { selectSessionWorkflow } from "@nodeint/migent-session";
-import { ConfigurationError } from "@nodeint/migent-kernel";
-import type { ClientRegistry } from "@nodeint/migent-kernel";
-import { isRecord } from "@nodeint/migent-workflow";
+} from '@nodeint/migent-kernel';
+import { ConfigurationError } from '@nodeint/migent-kernel';
+import { selectSessionWorkflow } from '@nodeint/migent-session';
+import { isRecord } from '@nodeint/migent-workflow';
 import {
   isRoleStage,
   loadNamedWorkflow,
   loadWorkflowCatalog,
+  type StageArtifact,
   type StageSpec,
   type WorkflowDocument,
-  type StageArtifact,
-} from "@nodeint/migent-workflow";
+} from '@nodeint/migent-workflow';
 
 /**
  * Read-only views of what a project defines. They are the public contract of `migent get`: plain,
@@ -35,8 +36,8 @@ export const LOCAL_CONFIG_LABEL = `.migent/${LOCAL_CONFIG_FILE}`;
 
 /** Names of the agents entries that `config.local.yaml` sets. */
 export function localAgentNames(workspace: string): string[] {
-  const local = loadYamlMapping(path.join(workspace, ".migent", LOCAL_CONFIG_FILE));
-  const agents = local.agents;
+  const local = loadYamlMapping(path.join(workspace, '.migent', LOCAL_CONFIG_FILE));
+  const {agents} = local;
   return isRecord(agents) ? Object.keys(agents).sort() : [];
 }
 
@@ -69,13 +70,13 @@ function targetView(target: StageTarget): View {
 
 function display(workspace: string, target: string): string {
   const relative = path.relative(workspace, target);
-  if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) return target;
-  return relative.split(path.sep).join("/");
+  if (relative === '' || relative.startsWith('..') || path.isAbsolute(relative)) return target;
+  return relative.split(path.sep).join('/');
 }
 
 // ---------------------------------------------------------------- workflows
 
-export type WorkflowSourceKind = "project" | "draft" | "frozen" | "live";
+export type WorkflowSourceKind = 'project' | 'draft' | 'frozen' | 'live';
 
 interface WorkflowOrigin {
   kind: WorkflowSourceKind;
@@ -95,7 +96,7 @@ function stageView(stage: StageSpec, config: Loaded, origin: WorkflowOrigin, res
     const pinned = origin.frozenTargets?.[stage.id];
     if (pinned !== undefined) target = targetView(pinned);
     else if (origin.frozenTargets !== undefined) problems.push(`No pinned target for stage ${stage.id}.`);
-    else if (config.config === null) problems.push(config.problem ?? "Config could not be loaded.");
+    else if (config.config === null) problems.push(config.problem ?? 'Config could not be loaded.');
     else {
       try {
         target = targetView(resolveStageSpec(config.config, stage, null, resolve));
@@ -109,7 +110,7 @@ function stageView(stage: StageSpec, config: Loaded, origin: WorkflowOrigin, res
     role: isRoleStage(stage) ? stage.role : null,
     description: stage.description,
     depends_on: [...stage.dependsOn],
-    agent: stage.agent === null ? null : stage.agent.kind === "named" ? stage.agent.name : { inline: true },
+    agent: stage.agent === null ? null : stage.agent.kind === 'named' ? stage.agent.name : { inline: true },
     options: { ...stage.options },
     artifact: stage.artifacts[0]?.file ?? null,
     artifacts: stage.artifacts.map(artifactView),
@@ -175,7 +176,7 @@ function workflowView(
   const instructionProblems: string[] = [];
   const responsibilities = roleResponsibilities(config, roleNames(document), origin, instructionProblems);
   const view: View = {
-    kind: "workflow",
+    kind: 'workflow',
     name: document.id,
     file: document.source === null ? origin.path : display(workspace, document.source),
     source: { kind: origin.kind, path: origin.path },
@@ -211,12 +212,12 @@ function workflowView(
 }
 
 /** Catalog messages that only say the project has no workflows; an empty list says the same. */
-const EMPTY_DIRECTORY_PROBLEMS = ["No workflows in ", "Workflows directory not found"];
+const EMPTY_DIRECTORY_PROBLEMS = ['No workflows in ', 'Workflows directory not found'];
 
 /** The file name a catalog problem starts with (`broken.yaml: ...`), or null. */
 function problemFile(problem: string): string | null {
-  const name = problem.split(":", 1)[0] ?? "";
-  return name.endsWith(".yaml") || name.endsWith(".yml") ? name : null;
+  const name = problem.split(':', 1)[0] ?? '';
+  return name.endsWith('.yaml') || name.endsWith('.yml') ? name : null;
 }
 
 /** Summaries of every workflow in the project. A broken file is listed with its problems. */
@@ -232,7 +233,7 @@ export function listWorkflowViews(workspace: string): View[] {
     );
     for (const problem of problems) claimed.add(problem);
     return {
-      kind: "workflow",
+      kind: 'workflow',
       name: document.id,
       file,
       stages: Object.keys(document.stages),
@@ -249,7 +250,7 @@ export function listWorkflowViews(workspace: string): View[] {
   for (const [file, problems] of broken) {
     for (const problem of problems) claimed.add(problem);
     views.push({
-      kind: "workflow",
+      kind: 'workflow',
       name: path.parse(file).name,
       file: `.migent/workflows/${file}`,
       stages: [],
@@ -259,13 +260,13 @@ export function listWorkflowViews(workspace: string): View[] {
   }
   for (const problem of catalog.problems) {
     if (EMPTY_DIRECTORY_PROBLEMS.some((prefix) => problem.startsWith(prefix))) continue;
-    if (!claimed.has(problem)) views.push({ kind: "workflow", name: null, file: null, stages: [], roles: [], problems: [problem] });
+    if (!claimed.has(problem)) views.push({ kind: 'workflow', name: null, file: null, stages: [], roles: [], problems: [problem] });
   }
   return views;
 }
 
 function notFound(label: string, name: string, available: readonly string[]): ConfigurationError {
-  const list = available.length > 0 ? ` Available: ${available.join(", ")}.` : "";
+  const list = available.length > 0 ? ` Available: ${available.join(', ')}.` : '';
   return new ConfigurationError(`${label} not found: ${name}.${list}`);
 }
 
@@ -277,11 +278,11 @@ export function getWorkflowView(workspace: string, name: string, resolve?: Clien
       (problem) => problem.startsWith(`${name}:`) || problemFile(problem) === `${name}.yaml` || problemFile(problem) === `${name}.yml`,
     );
     if (failed !== undefined) throw new ConfigurationError(failed);
-    throw notFound("Workflow", name, Object.keys(catalog.documents));
+    throw notFound('Workflow', name, Object.keys(catalog.documents));
   }
   const document = loadNamedWorkflow(workspace, name, { quiet: true });
   const file = document.source === null ? null : display(workspace, document.source);
-  return workflowView(workspace, document, { kind: "project", path: file }, resolve);
+  return workflowView(workspace, document, { kind: 'project', path: file }, resolve);
 }
 
 /** The workflow a session runs: its draft, its frozen copy, or the live project file. */
@@ -292,7 +293,7 @@ export function getSessionWorkflowView(
   resolve?: ClientRegistry,
 ): View {
   const selection = selectSessionWorkflow(workspace, sessionId);
-  const document = selection.document;
+  const {document} = selection;
   if (document === null || selection.source === null) {
     throw new ConfigurationError(selection.problems[0] ?? `Session workflow could not be read: ${sessionId}.`);
   }
@@ -321,7 +322,7 @@ function projectWorkflows(workspace: string): WorkflowDocument[] {
   return Object.values(loadWorkflowCatalog(workspace, { quiet: true }).documents);
 }
 
-function configRecord(workspace: string, key: "roles" | "agents"): { config: Record<string, unknown>; table: Record<string, unknown> } {
+function configRecord(workspace: string, key: 'roles' | 'agents'): { config: Record<string, unknown>; table: Record<string, unknown> } {
   const config = loadWorkspaceConfig(workspace);
   const table = config[key];
   return { config, table: isRecord(table) ? table : {} };
@@ -338,7 +339,7 @@ function roleView(
   const problems: string[] = [];
   const selection = isRecord(role) ? role.agent : undefined;
   let agent: unknown = null;
-  if (typeof selection === "string") agent = selection;
+  if (typeof selection === 'string') agent = selection;
   else if (isRecord(selection)) agent = { inline: true };
   let target: View | null = null;
   try {
@@ -364,18 +365,18 @@ function roleView(
       if (isRoleStage(stage) && stage.role === name) usedBy.push({ workflow: workflow.id, stage: stage.id });
     }
   }
-  return { kind: "role", name, description, agent, target, responsibilities, used_by: usedBy, problems };
+  return { kind: 'role', name, description, agent, target, responsibilities, used_by: usedBy, problems };
 }
 
 export function listRoleViews(workspace: string, resolve?: ClientRegistry): View[] {
-  const { config, table } = configRecord(workspace, "roles");
+  const { config, table } = configRecord(workspace, 'roles');
   const workflows = projectWorkflows(workspace);
   return Object.entries(table).map(([name, role]) => roleView(workspace, config, name, role, workflows, resolve));
 }
 
 export function getRoleView(workspace: string, name: string, resolve?: ClientRegistry): View {
-  const { config, table } = configRecord(workspace, "roles");
-  if (!Object.hasOwn(table, name)) throw notFound("Role", name, Object.keys(table));
+  const { config, table } = configRecord(workspace, 'roles');
+  if (!Object.hasOwn(table, name)) throw notFound('Role', name, Object.keys(table));
   return roleView(workspace, config, name, table[name], projectWorkflows(workspace), resolve);
 }
 
@@ -398,21 +399,21 @@ function agentView(
   }
   const definition = isRecord(config.agents) && isRecord(config.agents[name]) ? config.agents[name] : {};
   const clientConfig = isRecord(definition) && isRecord(definition.client) ? definition.client : {};
-  const effort = isRecord(definition) && typeof definition.effort === "string" ? definition.effort : null;
+  const effort = isRecord(definition) && typeof definition.effort === 'string' ? definition.effort : null;
   const usedBy: View[] = [];
   for (const [role, value] of Object.entries(roles)) {
     if (isRecord(value) && value.agent === name) usedBy.push({ role });
   }
   for (const workflow of workflows) {
     for (const stage of Object.values(workflow.stages)) {
-      if (isRoleStage(stage) && stage.agent?.kind === "named" && stage.agent.name === name) usedBy.push({ workflow: workflow.id, stage: stage.id });
+      if (isRoleStage(stage) && stage.agent?.kind === 'named' && stage.agent.name === name) usedBy.push({ workflow: workflow.id, stage: stage.id });
     }
   }
   return {
-    kind: "agent",
+    kind: 'agent',
     name,
-    model: target?.model ?? (isRecord(definition) && typeof definition.model === "string" ? definition.model : null),
-    client: target?.client ?? (typeof clientConfig.type === "string" ? clientConfig.type : null),
+    model: target?.model ?? (isRecord(definition) && typeof definition.model === 'string' ? definition.model : null),
+    client: target?.client ?? (typeof clientConfig.type === 'string' ? clientConfig.type : null),
     effort,
     options: target === null ? {} : { ...target.options },
     local: local.has(name),
@@ -422,7 +423,7 @@ function agentView(
 }
 
 function agentViews(workspace: string, resolve?: ClientRegistry): { views: View[] } {
-  const { config, table } = configRecord(workspace, "agents");
+  const { config, table } = configRecord(workspace, 'agents');
   const roles = isRecord(config.roles) ? config.roles : {};
   const workflows = projectWorkflows(workspace);
   const local = new Set(hasLocalConfig(workspace) ? localAgentNames(workspace) : []);
@@ -434,9 +435,9 @@ export function listAgentViews(workspace: string, resolve?: ClientRegistry): Vie
 }
 
 export function getAgentView(workspace: string, name: string, resolve?: ClientRegistry): View {
-  const views = agentViews(workspace, resolve).views;
+  const {views} = agentViews(workspace, resolve);
   const found = views.find((view) => view.name === name);
-  if (found === undefined) throw notFound("Agent", name, views.map((view) => String(view.name)));
+  if (found === undefined) throw notFound('Agent', name, views.map((view) => String(view.name)));
   return found;
 }
 
@@ -446,8 +447,8 @@ export function getAgentView(workspace: string, name: string, resolve?: ClientRe
 export function getConfigView(workspace: string): View {
   const local = hasLocalConfig(workspace);
   return {
-    kind: "config",
-    name: "config",
+    kind: 'config',
+    name: 'config',
     local_file: local ? LOCAL_CONFIG_LABEL : null,
     local_agents: local ? localAgentNames(workspace) : [],
     config: loadWorkspaceConfig(workspace),

@@ -1,19 +1,21 @@
-import path from "node:path";
-import { ARTIFACT_ID_PATTERN, WorkflowArtifact, WorkflowDecisionEntry, isValid } from "@nodeint/migent-contracts";
-import type { TSchema } from "@nodeint/migent-contracts";
-import { ConfigurationError } from "./errors.js";
-import { isRecord, pyRepr } from "./record.js";
-import { DOCUMENT_FIELD_SCHEMAS, containerError, stageField } from "./structure.js";
-import type { DraftUnit } from "./draft/problems.js";
-import { dependencyClosure, isLeafStage, routeTargets } from "./graph.js";
-import { VERIFY_ARTIFACT } from "./model.js";
-import type { ArtifactSpec, StageArtifact, StageSpec, WorkflowCompletion, WorkflowOutput } from "./model.js";
-import { workflowCompletionSchema, workflowOutputSchema } from "./schema.js";
-import { fail, filename, requiredString, stageHasRole } from "./stage-fields.js";
+import path from 'node:path';
+
+import type { TSchema } from '@nodeint/migent-contracts';
+import { ARTIFACT_ID_PATTERN, isValid,WorkflowArtifact, WorkflowDecisionEntry } from '@nodeint/migent-contracts';
+
+import type { DraftUnit } from './draft/problems.js';
+import { ConfigurationError } from './errors.js';
+import { dependencyClosure, isLeafStage, routeTargets } from './graph.js';
+import type { ArtifactSpec, StageArtifact, StageSpec, WorkflowCompletion, WorkflowOutput } from './model.js';
+import { VERIFY_ARTIFACT } from './model.js';
+import { isRecord, pyRepr } from './record.js';
+import { workflowCompletionSchema, workflowOutputSchema } from './schema.js';
+import { fail, filename, requiredString, stageHasRole } from './stage-fields.js';
+import { containerError, DOCUMENT_FIELD_SCHEMAS, stageField } from './structure.js';
 
 export function parseTopLevelOutputs(raw: unknown, stages: Record<string, StageSpec>): WorkflowOutput[] {
   if (raw == null) return [];
-  return parseOutputItems(raw, stages, "outputs");
+  return parseOutputItems(raw, stages, 'outputs');
 }
 
 export function parseOutputItems(
@@ -48,15 +50,15 @@ export function parseOutputItems(
       );
     }
     seen.add(name);
-    source.artifacts[0]!.scope = "published";
+    source.artifacts[0]!.scope = 'published';
     outputs.push(workflowOutputSchema.parse({ name, fromStage, artifact }));
   }
   return outputs;
 }
 
 export function legacyArtifacts(stageId: string, artifact: DraftUnit<string | null>): StageArtifact[] {
-  return artifact.state === "valid" && artifact.value !== null
-    ? [{ id: stageId, file: artifact.value, description: null, required: true, scope: "local" }]
+  return artifact.state === 'valid' && artifact.value !== null
+    ? [{ id: stageId, file: artifact.value, description: null, required: true, scope: 'local' }]
     : [];
 }
 
@@ -97,7 +99,7 @@ export const ARTIFACT_KEYS: readonly string[] = Object.keys(WorkflowArtifact.pro
 export function buildArtifactsV7(data: Record<string, unknown>, conditional: ReadonlyMap<string, string>): ArtifactBuild {
   const problems: ArtifactProblem[] = [];
   const fail = (message: string, at: (string | number)[]): void => {
-    problems.push({ code: "invalid-artifact", message, path: at });
+    problems.push({ code: 'invalid-artifact', message, path: at });
   };
   const readDefinition = (
     id: string,
@@ -121,44 +123,44 @@ export function buildArtifactsV7(data: Record<string, unknown>, conditional: Rea
         ok = false;
       }
     }
-    let file = "";
+    let file = '';
     try {
       file = filename(body.file, `${label}.file`);
       if (file === VERIFY_ARTIFACT) throw new ConfigurationError(`${label}.file cannot be ${VERIFY_ARTIFACT}.`);
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error), [...at, "file"]);
+      fail(error instanceof Error ? error.message : String(error), [...at, 'file']);
       ok = false;
     }
     let description: string | null = null;
     if (body.description !== undefined && body.description !== null) {
       if (!isValid(WorkflowArtifact.properties.description, body.description)) {
-        fail(`Missing or invalid ${label}.description.`, [...at, "description"]);
+        fail(`Missing or invalid ${label}.description.`, [...at, 'description']);
         ok = false;
       } else description = body.description.trim();
     }
     let required = true;
     if (body.required !== undefined && body.required !== null) {
       if (!isValid(WorkflowArtifact.properties.required, body.required)) {
-        fail(`${label}.required must be true or false.`, [...at, "required"]);
+        fail(`${label}.required must be true or false.`, [...at, 'required']);
         ok = false;
       } else required = body.required;
     }
-    return ok ? { id, file, description, required, scope: "published" } : null;
+    return ok ? { id, file, description, required, scope: 'published' } : null;
   };
 
   const declared = new Map<string, StageArtifact>();
   const rawRegistry = data.artifacts;
   if (rawRegistry !== undefined && rawRegistry !== null) {
-    const registryError = containerError(DOCUMENT_FIELD_SCHEMAS.artifacts, rawRegistry, "artifacts");
-    if (registryError !== null) fail(registryError.message, ["artifacts"]);
+    const registryError = containerError(DOCUMENT_FIELD_SCHEMAS.artifacts, rawRegistry, 'artifacts');
+    if (registryError !== null) fail(registryError.message, ['artifacts']);
     else {
       const files = new Map<string, string>();
       for (const [id, body] of Object.entries(rawRegistry)) {
-        const definition = readDefinition(id, body, `artifacts.${id}`, ["artifacts", id]);
+        const definition = readDefinition(id, body, `artifacts.${id}`, ['artifacts', id]);
         if (definition === null) continue;
         const clash = files.get(definition.file);
         if (clash !== undefined) {
-          fail(`artifacts.${id}.file ${pyRepr(definition.file)} is already used by artifacts.${clash}; outputs share one directory.`, ["artifacts", id, "file"]);
+          fail(`artifacts.${id}.file ${pyRepr(definition.file)} is already used by artifacts.${clash}; outputs share one directory.`, ['artifacts', id, 'file']);
           continue;
         }
         files.set(definition.file, id);
@@ -168,14 +170,14 @@ export function buildArtifactsV7(data: Record<string, unknown>, conditional: Rea
   }
 
   const producers = new Map<string, { stage: string; decision: string | null }[]>();
-  const perStage: ArtifactBuild["perStage"] = new Map();
+  const perStage: ArtifactBuild['perStage'] = new Map();
   const rawStages = Array.isArray(data.stages) ? data.stages : [];
   rawStages.forEach((rawStage, index) => {
-    if (!isRecord(rawStage) || typeof rawStage.id !== "string" || rawStage.id.trim() === "") return;
+    if (!isRecord(rawStage) || typeof rawStage.id !== 'string' || rawStage.id.trim() === '') return;
     const stageId = rawStage.id.trim();
     const stageField = `stages.${stageId}`;
     const hasRole = stageHasRole(rawStage);
-    const stageAt: (string | number)[] = ["stages", index];
+    const stageAt: (string | number)[] = ['stages', index];
     const entry = { artifacts: [] as StageArtifact[], decisionArtifacts: {} as Record<string, StageArtifact[]> };
     perStage.set(stageId, entry);
     const filesInStage = new Map<string, string>();
@@ -190,7 +192,7 @@ export function buildArtifactsV7(data: Record<string, unknown>, conditional: Rea
       return true;
     };
     const reference = (id: unknown, field: string, at: (string | number)[], decision: string | null): StageArtifact | null => {
-      if (typeof id !== "string" || id.trim() === "") {
+      if (typeof id !== 'string' || id.trim() === '') {
         fail(`Missing or invalid ${field}.`, at);
         return null;
       }
@@ -215,7 +217,7 @@ export function buildArtifactsV7(data: Record<string, unknown>, conditional: Rea
     };
 
     if (rawStage.artifacts !== undefined && rawStage.artifacts !== null) {
-      const at = [...stageAt, "artifacts"];
+      const at = [...stageAt, 'artifacts'];
       if (!Array.isArray(rawStage.artifacts)) fail(`${stageField}.artifacts must be a list of artifact ids.`, at);
       else if (!hasRole && rawStage.artifacts.length > 0) fail(`${stageField}.artifacts requires a role.`, at);
       else {
@@ -242,7 +244,7 @@ export function buildArtifactsV7(data: Record<string, unknown>, conditional: Rea
       const body = rawEntry[rawName];
       if (!isRecord(body) || body.artifacts === undefined || body.artifacts === null) return;
       const field = `${stageField}.decision.${name}.artifacts`;
-      const at: (string | number)[] = [...stageAt, "decision", entryIndex, rawName, "artifacts"];
+      const at: (string | number)[] = [...stageAt, 'decision', entryIndex, rawName, 'artifacts'];
       if (!hasRole) {
         fail(`${field} requires a role.`, at);
         return;
@@ -267,12 +269,12 @@ export function buildArtifactsV7(data: Record<string, unknown>, conditional: Rea
           const definition = readDefinition(id, definitionBody, `${field}.${id}`, itemAt);
           if (definition === null) continue;
           if (declared.has(id) || localIds.has(id)) {
-            fail(`${field}.${id}: artifact id collides with ${declared.has(id) ? "a top-level artifact" : "another inline artifact of this stage"}.`, itemAt);
+            fail(`${field}.${id}: artifact id collides with ${declared.has(id) ? 'a top-level artifact' : 'another inline artifact of this stage'}.`, itemAt);
             continue;
           }
           localIds.add(id);
-          const local: StageArtifact = { ...definition, scope: "local" };
-          if (noteFile(local, [...itemAt, "file"])) list.push(local);
+          const local: StageArtifact = { ...definition, scope: 'local' };
+          if (noteFile(local, [...itemAt, 'file'])) list.push(local);
         }
       } else {
         fail(`${field} must be a list of artifact ids or a mapping of inline artifacts.`, at);
@@ -285,12 +287,12 @@ export function buildArtifactsV7(data: Record<string, unknown>, conditional: Rea
   for (const [id, artifact] of declared) {
     const found = producers.get(id) ?? [];
     if (found.length === 0) {
-      fail(`artifacts.${id} is not produced by any stage; reference it from a stage or decision.`, ["artifacts", id]);
+      fail(`artifacts.${id} is not produced by any stage; reference it from a stage or decision.`, ['artifacts', id]);
       continue;
     }
     if (found.length > 1) {
-      const where = found.map((item) => (item.decision === null ? item.stage : `${item.stage}.${item.decision}`)).join(", ");
-      fail(`artifacts.${id} has more than one producer: ${where}.`, ["artifacts", id]);
+      const where = found.map((item) => (item.decision === null ? item.stage : `${item.stage}.${item.decision}`)).join(', ');
+      fail(`artifacts.${id} has more than one producer: ${where}.`, ['artifacts', id]);
       continue;
     }
     registry.push({ ...artifact, producer: found[0]! });
@@ -302,12 +304,12 @@ export function parseCompletion(
   raw: Record<string, unknown>,
   stages: Record<string, StageSpec>,
 ): WorkflowCompletion {
-  const stageId = requiredString(raw.stage, "completion.stage");
+  const stageId = requiredString(raw.stage, 'completion.stage');
   if (!Object.hasOwn(stages, stageId)) {
     throw new ConfigurationError(`completion.stage is not a declared stage: ${stageId}`);
   }
-  const decision = raw.decision == null ? null : requiredString(raw.decision, "completion.decision");
-  const outputs = parseOutputItems(raw.outputs ?? [], stages, "completion.outputs");
+  const decision = raw.decision == null ? null : requiredString(raw.decision, 'completion.decision');
+  const outputs = parseOutputItems(raw.outputs ?? [], stages, 'completion.outputs');
   return workflowCompletionSchema.parse({ stage: stageId, decision, outputs });
 }
 
@@ -319,7 +321,7 @@ export function validateVerifyPaths(
   const points = new Set<string>();
   if (!version2 && completion !== null) points.add(completion.stage);
   for (const stage of Object.values(stages)) {
-    if (Object.values(stage.routes).some((value) => routeTargets(value).includes("complete"))) points.add(stage.id);
+    if (Object.values(stage.routes).some((value) => routeTargets(value).includes('complete'))) points.add(stage.id);
     if (version2 && isLeafStage(stages, stage)) points.add(stage.id);
   }
   if (points.size === 0) return;

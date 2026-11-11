@@ -1,10 +1,12 @@
-import path from "node:path";
-import { readFileSync } from "node:fs";
-import { isRecord } from "@nodeint/migent-workflow";
-import { clientOfCommand, legacyClientOf } from "@nodeint/migent-kernel";
-import { readParsedEvents, type ParsedEvent } from "./session-events.js";
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 
-export type LegacyProvenance = "recorded" | "executable" | "code-path";
+import { clientOfCommand, legacyClientOf } from '@nodeint/migent-kernel';
+import { isRecord } from '@nodeint/migent-workflow';
+
+import { type ParsedEvent,readParsedEvents } from './session-events.js';
+
+export type LegacyProvenance = 'recorded' | 'executable' | 'code-path';
 
 export type LegacyExecutionClient =
   | { client: string; provenance: LegacyProvenance }
@@ -31,23 +33,23 @@ export interface LegacyExecutionEvidence {
  * evidence refuses resume rather than guessing.
  */
 export function legacyExecutionClient(evidence: LegacyExecutionEvidence): LegacyExecutionClient {
-  const candidates: Array<{ client: string; provenance: LegacyProvenance }> = [];
+  const candidates: { client: string; provenance: LegacyProvenance }[] = [];
   const recorded = nonempty(evidence.recorded);
-  if (recorded !== null) candidates.push({ client: recorded, provenance: "recorded" });
+  if (recorded !== null) candidates.push({ client: recorded, provenance: 'recorded' });
   for (const command of [evidence.executable, ...(evidence.executables ?? [])]) {
     const executable = clientOfCommand(command);
-    if (executable !== null) candidates.push({ client: executable, provenance: "executable" });
+    if (executable !== null) candidates.push({ client: executable, provenance: 'executable' });
   }
   if (evidence.roleSession === true) {
     const roleClient = legacyClientOf(evidence.provider);
-    if (roleClient !== null) candidates.push({ client: roleClient, provenance: "code-path" });
+    if (roleClient !== null) candidates.push({ client: roleClient, provenance: 'code-path' });
   }
   const clients = [...new Set(candidates.map((candidate) => candidate.client))];
   if (clients.length === 0) {
-    return { client: null, reason: "no execution record names the CLI that ran it" };
+    return { client: null, reason: 'no execution record names the CLI that ran it' };
   }
   if (clients.length > 1) {
-    return { client: null, reason: `the recorded evidence names conflicting CLIs: ${clients.join(", ")}` };
+    return { client: null, reason: `the recorded evidence names conflicting CLIs: ${clients.join(', ')}` };
   }
   const client = clients[0] as string;
   const frozen = nonempty(evidence.frozen);
@@ -66,10 +68,10 @@ export function executionCommands(events: readonly ParsedEvent[]): Map<string, s
   const commands = new Map<string, string[]>();
   for (const event of events) {
     if (event.executionId === null) continue;
-    if (event.event !== "provider.turn_completed" && event.event !== "provider.turn_failed") continue;
+    if (event.event !== 'provider.turn_completed' && event.event !== 'provider.turn_failed') continue;
     const details = isRecord(event.raw.details) ? event.raw.details : {};
-    const argv = details.argv;
-    if (!Array.isArray(argv) || typeof argv[0] !== "string" || argv[0] === "") continue;
+    const {argv} = details;
+    if (!Array.isArray(argv) || typeof argv[0] !== 'string' || argv[0] === '') continue;
     const own = commands.get(event.executionId) ?? [];
     if (!own.includes(argv[0])) own.push(argv[0]);
     commands.set(event.executionId, own);
@@ -93,17 +95,17 @@ export function executionClientReader(sessionDirectory: string): (
   metadata: Record<string, unknown>,
   frozen?: string | null,
 ) => LegacyExecutionClient {
-  const commands = executionCommands(readParsedEvents(path.join(sessionDirectory, "events.jsonl")));
+  const commands = executionCommands(readParsedEvents(path.join(sessionDirectory, 'events.jsonl')));
   let roleSession = false;
   try {
-    const status: unknown = JSON.parse(readFileSync(path.join(sessionDirectory, "status.json"), "utf8"));
-    roleSession = isRecord(status) && status.workflow_id === "agent";
+    const status: unknown = JSON.parse(readFileSync(path.join(sessionDirectory, 'status.json'), 'utf8'));
+    roleSession = isRecord(status) && status.workflow_id === 'agent';
   } catch {
     // A missing status cannot prove a role-session code path.
   }
   return (executionId, metadata, frozen) => legacyExecutionClient({
-    recorded: typeof metadata.client === "string" ? metadata.client : null,
-    provider: typeof metadata.provider === "string" ? metadata.provider : null,
+    recorded: typeof metadata.client === 'string' ? metadata.client : null,
+    provider: typeof metadata.provider === 'string' ? metadata.provider : null,
     executables: commands.get(executionId),
     roleSession,
     frozen,
@@ -111,7 +113,7 @@ export function executionClientReader(sessionDirectory: string): (
 }
 
 function nonempty(value: string | null | undefined): string | null {
-  if (typeof value !== "string") return null;
+  if (typeof value !== 'string') return null;
   const trimmed = value.trim();
-  return trimmed === "" ? null : trimmed;
+  return trimmed === '' ? null : trimmed;
 }

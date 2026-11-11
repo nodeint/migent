@@ -1,26 +1,27 @@
-import type { ChildProcess } from "node:child_process";
-import { randomBytes } from "node:crypto";
-import { accessSync, constants as fsConstants, mkdirSync, writeFileSync } from "node:fs";
-import { createRequire } from "node:module";
-import path from "node:path";
+import type { ChildProcess } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
+import { accessSync, constants as fsConstants, mkdirSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import path from 'node:path';
+
 import {
   CancellationRequested,
-  PROGRESS_INTERVAL_SEC,
   cancellationSignal,
   childStatus,
+  PROGRESS_INTERVAL_SEC,
   startWrapper,
   stopProcessGroup,
   waitForExit,
   waitForReady,
-} from "./command-executor.js";
-import { collectProcessStartInfo, type ProcessStartInfo } from "./process-ownership.js";
-import { wrapperEndpoint } from "./process-wrapper.js";
-import { WRAPPER_START } from "./wrapper-protocol.js";
+} from './command-executor.js';
+import { collectProcessStartInfo, type ProcessStartInfo } from './process-ownership.js';
+import { wrapperEndpoint } from './process-wrapper.js';
+import { WRAPPER_START } from './wrapper-protocol.js';
 
 export const VERIFY_TAIL_LINES = 200;
 const OUTPUT_DRAIN_MS = 1000;
 
-export type VerifyCommandStatus = "pass" | "fail" | "timed_out" | "skipped";
+export type VerifyCommandStatus = 'pass' | 'fail' | 'timed_out' | 'skipped';
 
 export interface VerifyCommandResult {
   command: string;
@@ -54,20 +55,20 @@ export interface VerifyRunInput {
 
 const require = createRequire(import.meta.url);
 const whichSync = (
-  require("which") as { sync(command: string, options?: { nothrow?: boolean }): string | null }
+  require('which') as { sync(command: string, options?: { nothrow?: boolean }): string | null }
 ).sync;
 
 /** `/bin/sh` when it exists. On Windows, the `sh` on PATH (Git for Windows). */
 export function defaultVerifyShell(): string {
-  const posix = "/bin/sh";
+  const posix = '/bin/sh';
   try {
     accessSync(posix, fsConstants.X_OK);
     return posix;
   } catch {
     // Missing here is normal on Windows.
   }
-  if (process.platform === "win32") {
-    const found = whichSync("sh", { nothrow: true });
+  if (process.platform === 'win32') {
+    const found = whichSync('sh', { nothrow: true });
     if (found) return found;
   }
   return posix;
@@ -89,15 +90,15 @@ export class VerifyRunner {
     let stopped = false;
     for (const [index, command] of input.commands.entries()) {
       if (stopped) {
-        commands.push({ command, status: "skipped", exitCode: null, log: null, tail: [] });
+        commands.push({ command, status: 'skipped', exitCode: null, log: null, tail: [] });
         continue;
       }
       const result = await this.runCommand(command, index + 1, deadline, input);
-      if (result === "infra") {
+      if (result === 'infra') {
         return { passed: false, commands, infraError: `Unable to start the verify shell for: ${command}` };
       }
       commands.push(result);
-      if (result.status !== "pass") stopped = true;
+      if (result.status !== 'pass') stopped = true;
     }
     return { passed: !stopped, commands, infraError: null };
   }
@@ -107,30 +108,30 @@ export class VerifyRunner {
     number: number,
     deadline: number | null,
     input: VerifyRunInput,
-  ): Promise<VerifyCommandResult | "infra"> {
+  ): Promise<VerifyCommandResult | 'infra'> {
     // The wrapper reports a missing executable as exit 127, which would look like a red
     // command. A shell that cannot run is infrastructure, so check it before spawning.
     try {
       accessSync(this.shell, fsConstants.X_OK);
     } catch {
       input.onEnd?.();
-      return "infra";
+      return 'infra';
     }
     const cancellation = cancellationSignal();
-    const endpoint = wrapperEndpoint(randomBytes(16).toString("hex"));
+    const endpoint = wrapperEndpoint(randomBytes(16).toString('hex'));
     // `exec 2>&1` merges stderr into stdout in arrival order.
     const child = startWrapper(
-      { argv: [this.shell, "-c", `exec 2>&1; ${command}`] },
+      { argv: [this.shell, '-c', `exec 2>&1; ${command}`] },
       input.workspace,
       endpoint,
-      ["ignore", "pipe", "inherit", "ipc"],
+      ['ignore', 'pipe', 'inherit', 'ipc'],
     );
     try {
       const started = await waitForReady(child);
       cancellation.throwIfCancelled();
-      if (started.kind !== "ready") {
+      if (started.kind !== 'ready') {
         await stopProcessGroup(child);
-        return "infra";
+        return 'infra';
       }
       if (child.pid !== undefined) input.onStart?.(collectProcessStartInfo(child.pid, endpoint));
       const output = captureOutput(child);
@@ -148,7 +149,7 @@ export class VerifyRunner {
           waitMs = Math.min(waitMs, remainingMs);
         }
         const finished = await waitForExit(child, waitMs);
-        if (finished === "cancel") {
+        if (finished === 'cancel') {
           cancellation.throwIfCancelled();
           continue;
         }
@@ -166,10 +167,10 @@ export class VerifyRunner {
       const tail = output.tail();
       const log = writeLog(input, number, tail);
       if (timedOut) {
-        return { command, status: "timed_out", exitCode: null, log, tail };
+        return { command, status: 'timed_out', exitCode: null, log, tail };
       }
-      if (status === 0) return { command, status: "pass", exitCode: 0, log, tail: [] };
-      return { command, status: "fail", exitCode: status, log, tail };
+      if (status === 0) return { command, status: 'pass', exitCode: 0, log, tail: [] };
+      return { command, status: 'fail', exitCode: status, log, tail };
     } catch (error) {
       if (error instanceof CancellationRequested) await stopProcessGroup(child);
       throw error;
@@ -181,10 +182,10 @@ export class VerifyRunner {
 
 function captureOutput(child: ChildProcess): { tail(): string[]; drain(): Promise<void> } {
   const lines: string[] = [];
-  let partial = "";
+  let partial = '';
   let ended = false;
   const stream = child.stdout;
-  const waiters: Array<() => void> = [];
+  const waiters: (() => void)[] = [];
   const push = (line: string) => {
     lines.push(line);
     if (lines.length > VERIFY_TAIL_LINES) lines.shift();
@@ -193,23 +194,23 @@ function captureOutput(child: ChildProcess): { tail(): string[]; drain(): Promis
     if (ended) return;
     ended = true;
     if (partial.length > 0) push(partial);
-    partial = "";
+    partial = '';
     for (const waiter of waiters.splice(0)) waiter();
   };
   if (stream) {
-    stream.setEncoding("utf8");
-    stream.on("data", (chunk: string) => {
-      partial += chunk.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-      let index = partial.indexOf("\n");
+    stream.setEncoding('utf8');
+    stream.on('data', (chunk: string) => {
+      partial += chunk.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+      let index = partial.indexOf('\n');
       while (index >= 0) {
         push(partial.slice(0, index));
         partial = partial.slice(index + 1);
-        index = partial.indexOf("\n");
+        index = partial.indexOf('\n');
       }
     });
-    stream.on("end", finish);
-    stream.on("error", finish);
-    stream.on("close", finish);
+    stream.on('end', finish);
+    stream.on('error', finish);
+    stream.on('close', finish);
   } else {
     ended = true;
   }
@@ -233,12 +234,12 @@ function captureOutput(child: ChildProcess): { tail(): string[]; drain(): Promis
 }
 
 function writeLog(input: VerifyRunInput, number: number, tail: string[]): string {
-  const name = `${String(number).padStart(2, "0")}.log`;
-  const directory = path.join(input.turnDirectory, "commands");
+  const name = `${String(number).padStart(2, '0')}.log`;
+  const directory = path.join(input.turnDirectory, 'commands');
   mkdirSync(directory, { recursive: true });
   const file = path.join(directory, name);
-  writeFileSync(file, tail.length > 0 ? `${tail.join("\n")}\n` : "", "utf8");
-  return path.relative(input.executionDirectory, file).split(path.sep).join("/");
+  writeFileSync(file, tail.length > 0 ? `${tail.join('\n')}\n` : '', 'utf8');
+  return path.relative(input.executionDirectory, file).split(path.sep).join('/');
 }
 
 export interface VerifyReportInput {
@@ -250,22 +251,22 @@ export interface VerifyReportInput {
 
 export function formatVerifyReport(result: VerifyRunResult, input: VerifyReportInput): string {
   const lines = [
-    `verify: ${result.passed ? "pass" : "fail"}`,
+    `verify: ${result.passed ? 'pass' : 'fail'}`,
     `run: ${input.run}`,
     `red: ${input.red} of ${input.maxVerify}`,
-    "",
-    "commands:",
+    '',
+    'commands:',
   ];
   for (const entry of result.commands) {
     lines.push(`- [${entry.status}] ${entry.command}`);
-    if (entry.status === "timed_out") lines.push(`  timed_out: ${input.timeoutSec ?? 0}s`);
+    if (entry.status === 'timed_out') lines.push(`  timed_out: ${input.timeoutSec ?? 0}s`);
     else if (entry.exitCode !== null) lines.push(`  exit_code: ${entry.exitCode}`);
     if (entry.log !== null) lines.push(`  log: ${entry.log}`);
   }
   for (const entry of result.commands) {
-    if (entry.status !== "fail" && entry.status !== "timed_out") continue;
-    lines.push("", `tail of ${entry.command} (last ${VERIFY_TAIL_LINES} lines):`, "```");
-    lines.push(...entry.tail, "```");
+    if (entry.status !== 'fail' && entry.status !== 'timed_out') continue;
+    lines.push('', `tail of ${entry.command} (last ${VERIFY_TAIL_LINES} lines):`, '```');
+    lines.push(...entry.tail, '```');
   }
-  return `${lines.join("\n")}\n`;
+  return `${lines.join('\n')}\n`;
 }

@@ -1,5 +1,6 @@
-import { WorkflowDecisionEntry, WorkflowDocumentInput, WorkflowSession, WorkflowStage } from "@nodeint/migent-contracts";
-import { isRecord } from "./record.js";
+import { WorkflowDecisionEntry, WorkflowDocumentInput, WorkflowSession, WorkflowStage } from '@nodeint/migent-contracts';
+
+import { isRecord } from './record.js';
 
 /**
  * Authoring feedback. These helpers report what Migent cannot use in a workflow or config document.
@@ -12,17 +13,17 @@ import { isRecord } from "./record.js";
  * their "removed in schema_version N, run `migent migrate`" messages instead of "not used".
  */
 const keysOf = (schema: { properties: object }): string[] => Object.keys(schema.properties);
-const WORKFLOW_KEYS = [...keysOf(WorkflowDocumentInput), "outputs", "requires"];
-const STAGE_KEYS_COMMON_LEGACY = ["produces"];
+const WORKFLOW_KEYS = [...keysOf(WorkflowDocumentInput), 'outputs', 'requires'];
+const STAGE_KEYS_COMMON_LEGACY = ['produces'];
 /** Stage keys through schema_version 4 select a model alias and tune options. */
-const STAGE_KEYS_V4 = [...keysOf(WorkflowStage).filter((key) => key !== "agent"), ...STAGE_KEYS_COMMON_LEGACY, "model", "options"];
+const STAGE_KEYS_V4 = [...keysOf(WorkflowStage).filter((key) => key !== 'agent'), ...STAGE_KEYS_COMMON_LEGACY, 'model', 'options'];
 /** Schema_version 5 and later select an agent instead. */
 const STAGE_KEYS_V5 = [...keysOf(WorkflowStage), ...STAGE_KEYS_COMMON_LEGACY];
 const STAGE_V5_RENAMED: Readonly<Record<string, string>> = {
-  model: "was renamed to {location}.agent in schema_version 5. Run `migent migrate`.",
-  options: "was removed in schema_version 5. Set options on an inline {location}.agent under client.options.",
+  model: 'was renamed to {location}.agent in schema_version 5. Run `migent migrate`.',
+  options: 'was removed in schema_version 5. Set options on an inline {location}.agent under client.options.',
 };
-const PRODUCES_KEYS = ["artifact"];
+const PRODUCES_KEYS = ['artifact'];
 const SESSION_KEYS = keysOf(WorkflowSession);
 const DECISION_ENTRY_KEYS = keysOf(WorkflowDecisionEntry);
 
@@ -55,7 +56,7 @@ export function closest(key: string, valid: readonly string[]): string | null {
 
 /** A key Migent does not use, with where it sits. */
 export interface UnknownKey {
-  code: "unknown-key";
+  code: 'unknown-key';
   message: string;
   path: (string | number)[];
 }
@@ -71,13 +72,13 @@ export function unknownKeyEntries(
   for (const key of Object.keys(value)) {
     if (valid.includes(key)) continue;
     const suggestion = closest(key, valid);
-    const path = location === "" ? key : `${location}.${key}`;
-    const hint = Object.hasOwn(renamed, key) ? renamed[key]!.replaceAll("{location}", location) : null;
+    const path = location === '' ? key : `${location}.${key}`;
+    const hint = Object.hasOwn(renamed, key) ? renamed[key]!.replaceAll('{location}', location) : null;
     entries.push({
-      code: "unknown-key",
+      code: 'unknown-key',
       message: hint !== null
         ? `${path} ${hint}`
-        : `${path} is not used by Migent.${suggestion === null ? "" : ` Did you mean ${location === "" ? suggestion : `${location}.${suggestion}`}?`}`,
+        : `${path} is not used by Migent.${suggestion === null ? '' : ` Did you mean ${location === '' ? suggestion : `${location}.${suggestion}`}?`}`,
       path: [...base, key],
     });
   }
@@ -89,32 +90,32 @@ export function unknownKeys(value: Record<string, unknown>, valid: readonly stri
   for (const key of Object.keys(value)) {
     if (valid.includes(key)) continue;
     const suggestion = closest(key, valid);
-    const path = location === "" ? key : `${location}.${key}`;
-    messages.push(`${path} is not used by Migent.${suggestion === null ? "" : ` Did you mean ${location === "" ? suggestion : `${location}.${suggestion}`}?`}`);
+    const path = location === '' ? key : `${location}.${key}`;
+    messages.push(`${path} is not used by Migent.${suggestion === null ? '' : ` Did you mean ${location === '' ? suggestion : `${location}.${suggestion}`}?`}`);
   }
   return messages;
 }
 
 /** Unknown keys at the top level, stages, `produces`, `session` and decision entries, with author-coordinate paths. */
 export function unknownWorkflowKeyEntries(data: Record<string, unknown>): UnknownKey[] {
-  const entries = unknownKeyEntries(data, WORKFLOW_KEYS, "", []);
-  const version = typeof data.schema_version === "number" ? data.schema_version : 0;
+  const entries = unknownKeyEntries(data, WORKFLOW_KEYS, '', []);
+  const version = typeof data.schema_version === 'number' ? data.schema_version : 0;
   if (!Array.isArray(data.stages)) return entries;
   data.stages.forEach((stage, index) => {
-    if (!isRecord(stage) || typeof stage.id !== "string") return;
+    if (!isRecord(stage) || typeof stage.id !== 'string') return;
     const location = `stages.${stage.id}`;
-    const base = ["stages", index];
+    const base = ['stages', index];
     entries.push(...(version >= 5
       ? unknownKeyEntries(stage, STAGE_KEYS_V5, location, base, STAGE_V5_RENAMED)
       : unknownKeyEntries(stage, STAGE_KEYS_V4, location, base)));
-    if (isRecord(stage.produces)) entries.push(...unknownKeyEntries(stage.produces, PRODUCES_KEYS, `${location}.produces`, [...base, "produces"]));
-    if (isRecord(stage.session)) entries.push(...unknownKeyEntries(stage.session, SESSION_KEYS, `${location}.session`, [...base, "session"]));
+    if (isRecord(stage.produces)) entries.push(...unknownKeyEntries(stage.produces, PRODUCES_KEYS, `${location}.produces`, [...base, 'produces']));
+    if (isRecord(stage.session)) entries.push(...unknownKeyEntries(stage.session, SESSION_KEYS, `${location}.session`, [...base, 'session']));
     if (!Array.isArray(stage.decision)) return;
     stage.decision.forEach((entry, entryIndex) => {
       if (!isRecord(entry) || Object.keys(entry).length !== 1) return;
       const name = Object.keys(entry)[0]!;
       const body = entry[name];
-      if (isRecord(body)) entries.push(...unknownKeyEntries(body, DECISION_ENTRY_KEYS, `${location}.decision.${name}`, [...base, "decision", entryIndex, name]));
+      if (isRecord(body)) entries.push(...unknownKeyEntries(body, DECISION_ENTRY_KEYS, `${location}.decision.${name}`, [...base, 'decision', entryIndex, name]));
     });
   });
   return entries;
@@ -125,25 +126,25 @@ export function unknownWorkflowKeys(data: Record<string, unknown>): string[] {
   return unknownWorkflowKeyEntries(data).map((entry) => entry.message);
 }
 
-const RULES: ReadonlyArray<[RegExp, string]> = [
-  [/^Unknown workflow keys/, "unknown-key"],
-  [/newer than this Migent/, "schema-newer"],
-  [/schema_version/, "schema-version-invalid"],
-  [/^Duplicate stage id/, "duplicate-stage-id"],
-  [/is required\.$/, "missing-required"],
-  [/depends on unknown|unknown stage|Unknown stage|unknown dependency|not a stage/i, "unknown-stage"],
-  [/cycle|circular/i, "dependency-cycle"],
-  [/must be a (list|mapping|string|non-negative|positive|integer|boolean)|must be (one of|a)|invalid/i, "invalid-value"],
-  [/unknown output|unknown artifact|artifact/i, "invalid-artifact"],
-  [/downstream/i, "invalid-downstream"],
-  [/verify/i, "invalid-verify"],
-  [/decision|route|navigate/i, "invalid-decision"],
+const RULES: readonly [RegExp, string][] = [
+  [/^Unknown workflow keys/, 'unknown-key'],
+  [/newer than this Migent/, 'schema-newer'],
+  [/schema_version/, 'schema-version-invalid'],
+  [/^Duplicate stage id/, 'duplicate-stage-id'],
+  [/is required\.$/, 'missing-required'],
+  [/depends on unknown|unknown stage|Unknown stage|unknown dependency|not a stage/i, 'unknown-stage'],
+  [/cycle|circular/i, 'dependency-cycle'],
+  [/must be a (list|mapping|string|non-negative|positive|integer|boolean)|must be (one of|a)|invalid/i, 'invalid-value'],
+  [/unknown output|unknown artifact|artifact/i, 'invalid-artifact'],
+  [/downstream/i, 'invalid-downstream'],
+  [/verify/i, 'invalid-verify'],
+  [/decision|route|navigate/i, 'invalid-decision'],
 ];
 
 /** Stable code for a parser message that carries none. */
 export function workflowRuleCode(message: string): string {
   for (const [pattern, code] of RULES) if (pattern.test(message)) return code;
-  return "workflow-invalid";
+  return 'workflow-invalid';
 }
 
 /** Key and index segments at the start of `rest` (`.options.foo`, `[2]`), followed only while the data has them. */
@@ -158,14 +159,14 @@ function fieldPathWithin(item: unknown, rest: string): { path: (string | number)
     text = text.slice(match[0].length);
     const key: string | number = match[1] !== undefined ? match[1] : Number(match[2]);
     if (out.length > 0) {
-      const present = typeof key === "number"
+      const present = typeof key === 'number'
         ? Array.isArray(current) && key < current.length
         : isRecord(current) && Object.hasOwn(current, key);
       if (!present) break;
     }
     out.push(key);
-    if (typeof key === "number" ? Array.isArray(current) && key < current.length : isRecord(current) && Object.hasOwn(current, key)) confirmed += 1;
-    current = typeof key === "number" ? (current as unknown[])[key] : (current as Record<string, unknown>)[key];
+    if (typeof key === 'number' ? Array.isArray(current) && key < current.length : isRecord(current) && Object.hasOwn(current, key)) confirmed += 1;
+    current = typeof key === 'number' ? (current as unknown[])[key] : (current as Record<string, unknown>)[key];
   }
   return { path: out, confirmed };
 }
@@ -182,18 +183,18 @@ function routeAuthorPath(item: Record<string, unknown>, rest: string): (string |
   const name = match[1]!;
   const index = item.decision.findIndex((entry) =>
     isRecord(entry) && Object.keys(entry).length === 1 && Object.keys(entry)[0]!.trim().toLowerCase() === name);
-  if (index === -1) return ["decision"];
-  const tail = [...(match[2] ?? "").matchAll(/\[(\d+)\]/g)].map((m) => Number(m[1]));
-  return ["decision", index, Object.keys(item.decision[index] as object)[0]!, "navigate", ...tail];
+  if (index === -1) return ['decision'];
+  const tail = [...(match[2] ?? '').matchAll(/\[(\d+)\]/g)].map((m) => Number(m[1]));
+  return ['decision', index, Object.keys(item.decision[index] as object)[0]!, 'navigate', ...tail];
 }
 
 /** Path for a message raised while reading the stage at `index`: the stage is known, so only the field is derived. */
 export function stageErrorPath(message: string, index: number, item: unknown): (string | number)[] {
-  const base: (string | number)[] = ["stages", index];
+  const base: (string | number)[] = ['stages', index];
   if (!isRecord(item)) return base;
-  if (/^Duplicate stage id\b/.test(message) || MISSING_STAGE_ID.test(message)) return [...base, "id"];
-  const id = item.id;
-  if (typeof id === "string" && id.trim() !== "") {
+  if (/^Duplicate stage id\b/.test(message) || MISSING_STAGE_ID.test(message)) return [...base, 'id'];
+  const {id} = item;
+  if (typeof id === 'string' && id.trim() !== '') {
     const needle = `stages.${id}`;
     for (let at = message.indexOf(needle); at !== -1; at = message.indexOf(needle, at + 1)) {
       const rest = message.slice(at + needle.length);
@@ -213,20 +214,20 @@ export function workflowErrorPath(message: string, data: Record<string, unknown>
   const duplicate = /^Duplicate stage id: (.*)$/.exec(message);
   if (duplicate) {
     const at = stages.flatMap((stage, index) => (isRecord(stage) && stage.id === duplicate[1] ? [index] : []));
-    if (at.length > 1) return ["stages", at[1]!, "id"];
+    if (at.length > 1) return ['stages', at[1]!, 'id'];
   }
   if (MISSING_STAGE_ID.test(message)) {
-    const at = stages.findIndex((stage) => isRecord(stage) && (typeof stage.id !== "string" || stage.id.trim() === ""));
-    if (at !== -1) return ["stages", at, "id"];
+    const at = stages.findIndex((stage) => isRecord(stage) && (typeof stage.id !== 'string' || stage.id.trim() === ''));
+    if (at !== -1) return ['stages', at, 'id'];
   }
-  if (message.startsWith("Workflow stage must be a mapping")) {
+  if (message.startsWith('Workflow stage must be a mapping')) {
     const at = stages.findIndex((stage) => !isRecord(stage));
-    if (at !== -1) return ["stages", at];
+    if (at !== -1) return ['stages', at];
   }
   // Several ids can prefix one message (`a` and `a.options`): take the one whose fields the draft really has.
   let best: { path: (string | number)[]; confirmed: number; length: number } | null = null;
   stages.forEach((stage, index) => {
-    if (!isRecord(stage) || typeof stage.id !== "string" || stage.id.trim() === "") return;
+    if (!isRecord(stage) || typeof stage.id !== 'string' || stage.id.trim() === '') return;
     const needle = `stages.${stage.id}`;
     for (let at = message.indexOf(needle); at !== -1; at = message.indexOf(needle, at + 1)) {
       const rest = message.slice(at + needle.length);
@@ -234,7 +235,7 @@ export function workflowErrorPath(message: string, data: Record<string, unknown>
       const mapped = routeAuthorPath(stage, rest);
       const found = mapped !== undefined ? { path: mapped, confirmed: mapped.length } : fieldPathWithin(stage, rest);
       if (best === null || found.confirmed > best.confirmed || (found.confirmed === best.confirmed && needle.length > best.length)) {
-        best = { path: ["stages", index, ...found.path], confirmed: found.confirmed, length: needle.length };
+        best = { path: ['stages', index, ...found.path], confirmed: found.confirmed, length: needle.length };
       }
       break;
     }

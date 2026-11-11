@@ -1,7 +1,8 @@
-import { chmodSync, mkdirSync } from "node:fs";
-import { homedir } from "node:os";
-import path from "node:path";
-import { migentHomeOverride } from "@nodeint/migent-kernel";
+import { chmodSync, mkdirSync } from 'node:fs';
+import { homedir } from 'node:os';
+import path from 'node:path';
+
+import { migentHomeOverride } from '@nodeint/migent-kernel';
 
 export const homeOs = {
   homedir(): string {
@@ -12,11 +13,11 @@ export const homeOs = {
 export function migentHomePath(): string {
   const override = migentHomeOverride();
   if (override) return override;
-  return path.join(homeOs.homedir(), ".migent");
+  return path.join(homeOs.homedir(), '.migent');
 }
 
 export function registryHomePath(): string {
-  return path.join(migentHomePath(), "registry");
+  return path.join(migentHomePath(), 'registry');
 }
 
 export function ensureRegistryHome(directory?: string): string {

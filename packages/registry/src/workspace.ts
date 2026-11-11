@@ -1,12 +1,12 @@
-import { realpathSync, statSync } from "node:fs";
-import path from "node:path";
+import { realpathSync, statSync } from 'node:fs';
+import path from 'node:path';
 
 export class WorkspaceLocationError extends Error {
   readonly reason: string;
 
   constructor(reason: string, message: string) {
     super(message);
-    this.name = "WorkspaceLocationError";
+    this.name = 'WorkspaceLocationError';
     this.reason = reason;
   }
 }
@@ -40,22 +40,22 @@ function walk(start: string): string[] {
 }
 
 export function locateWorkspace(input: string): string {
-  if (typeof input !== "string" || input === "" || input.includes("\0") || !path.isAbsolute(input)) {
-    throw new WorkspaceLocationError("relative", "Workspace path is not absolute.");
+  if (typeof input !== 'string' || input === '' || input.includes('\0') || !path.isAbsolute(input)) {
+    throw new WorkspaceLocationError('relative', 'Workspace path is not absolute.');
   }
   const start = resolveExisting(input);
   let stats;
   try {
     stats = statSync(start);
   } catch {
-    throw new WorkspaceLocationError("not_directory", "Workspace path is not a directory.");
+    throw new WorkspaceLocationError('not_directory', 'Workspace path is not a directory.');
   }
-  if (stats.isFile()) throw new WorkspaceLocationError("file", "Workspace path is a file.");
+  if (stats.isFile()) throw new WorkspaceLocationError('file', 'Workspace path is a file.');
   if (!stats.isDirectory()) {
-    throw new WorkspaceLocationError("not_directory", "Workspace path is not a directory.");
+    throw new WorkspaceLocationError('not_directory', 'Workspace path is not a directory.');
   }
   for (const candidate of walk(start)) {
-    if (isFile(path.join(candidate, ".migent", "config.yaml"))) {
+    if (isFile(path.join(candidate, '.migent', 'config.yaml'))) {
       try {
         return realpathSync(candidate);
       } catch {
@@ -64,7 +64,7 @@ export function locateWorkspace(input: string): string {
     }
   }
   throw new WorkspaceLocationError(
-    "not_workspace",
-    "Could not find .migent/config.yaml in this directory or its parents.",
+    'not_workspace',
+    'Could not find .migent/config.yaml in this directory or its parents.',
   );
 }

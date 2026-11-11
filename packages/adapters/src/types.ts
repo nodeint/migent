@@ -46,16 +46,16 @@ export interface TurnUsage {
  * `is_error`, a failed result). `exit-only`: a non-zero exit with no reported error. `start`: no usable
  * exit code at all (spawn failure, an unpassable argument, signal death).
  */
-export type FailureOrigin = "provider-error" | "exit-only" | "start";
+export type FailureOrigin = 'provider-error' | 'exit-only' | 'start';
 
 /**
  * What the reply text of one run is. `model`: assistant output. `error`: text from an error payload or
  * unparsed stdout. `none`: no text.
  */
-export type ResponseSource = "model" | "error" | "none";
+export type ResponseSource = 'model' | 'error' | 'none';
 
 export interface QuotaClassification {
-  kind: "quota";
+  kind: 'quota';
   origin: FailureOrigin;
   message: string;
   /** UTC ISO instant, or null when the provider did not name one. */
@@ -64,7 +64,7 @@ export interface QuotaClassification {
 }
 
 export interface ProviderClassification {
-  kind: "provider";
+  kind: 'provider';
   origin: FailureOrigin;
   message: string;
 }
@@ -77,12 +77,12 @@ export type FailureClassification = QuotaClassification | ProviderClassification
  * `idle`: the server holds the session and nothing was running. `not-found`: the server does not
  * know the session (yet). `failed`: the interrupt could not be completed or verified.
  */
-export type InterruptOutcome = "interrupted" | "idle" | "not-found" | "failed";
+export type InterruptOutcome = 'interrupted' | 'idle' | 'not-found' | 'failed';
 
 /** What a client extracted from a failed run, before any provider policy. */
 export interface RawFailure {
   /** `provider-error`: the CLI reported an error. `exit-only`: a non-zero exit and nothing else. */
-  origin: "provider-error" | "exit-only";
+  origin: 'provider-error' | 'exit-only';
   message: string | null;
   exitCode: number | null;
   /** Set only when the CLI's own protocol states the limit. */
@@ -96,7 +96,7 @@ export interface RawFailure {
 export interface CliModelCatalog {
   readonly ids: readonly string[];
   readonly defaultId: string | null;
-  readonly optionValues: ReadonlyArray<readonly [string, string, readonly string[]]>;
+  readonly optionValues: readonly (readonly [string, string, readonly string[]])[];
   valuesFor(modelId: string, option: string): readonly string[] | null;
 }
 
@@ -166,49 +166,49 @@ export interface CliClient {
 
 // ============ Constant và hàm từ kernel ============
 
-export const KERNEL_PLACEHOLDER = "kernel";
+export const KERNEL_PLACEHOLDER = 'kernel';
 
 export const STATUS_PROVIDER_EVENTS = new Set([
-  "provider.stage_started",
-  "provider.turn_completed",
-  "provider.turn_failed",
-  "provider.quota",
-  "provider.cancelled",
-  "provider.error",
-  "provider.warning",
-  "provider.heartbeat",
-  "verify.started",
-  "verify.heartbeat",
-  "verify.failed",
-  "verify.passed",
+  'provider.stage_started',
+  'provider.turn_completed',
+  'provider.turn_failed',
+  'provider.quota',
+  'provider.cancelled',
+  'provider.error',
+  'provider.warning',
+  'provider.heartbeat',
+  'verify.started',
+  'verify.heartbeat',
+  'verify.failed',
+  'verify.passed',
 ]);
 
-const CONTROL_PLANE_WARNING_MARKERS = ["failed to refresh available models"];
+const CONTROL_PLANE_WARNING_MARKERS = ['failed to refresh available models'];
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 export function providerErrorMessage(payload: Record<string, unknown>): string | null {
-  const message = payload.message;
-  if (typeof message === "string" && message.trim()) return message.trim();
-  const error = payload.error;
+  const {message} = payload;
+  if (typeof message === 'string' && message.trim()) return message.trim();
+  const {error} = payload;
   if (isRecord(error)) {
     const nested = error.message;
-    if (typeof nested === "string" && nested.trim()) return nested.trim();
+    if (typeof nested === 'string' && nested.trim()) return nested.trim();
   }
-  if (typeof error === "string" && error.trim()) return error.trim();
+  if (typeof error === 'string' && error.trim()) return error.trim();
   return null;
 }
 
 export function classifyProviderError(message: string | null): { event: string; summary: string } {
-  let summary = typeof message === "string" && message.trim() ? message.trim() : "";
-  if (!summary) summary = "provider emitted an error";
+  let summary = typeof message === 'string' && message.trim() ? message.trim() : '';
+  if (!summary) summary = 'provider emitted an error';
   const lowered = summary.toLowerCase();
   let event = CONTROL_PLANE_WARNING_MARKERS.some((marker) => lowered.includes(marker))
-    ? "provider.warning"
-    : "provider.error";
-  if (!STATUS_PROVIDER_EVENTS.has(event)) event = "provider.error";
+    ? 'provider.warning'
+    : 'provider.error';
+  if (!STATUS_PROVIDER_EVENTS.has(event)) event = 'provider.error';
   return { event, summary };
 }
 
@@ -218,8 +218,8 @@ export interface HeadlessOption {
   flags: string[];
   description: string;
   argument: string | null;
-  valueMode: "required" | "optional" | "none" | "unknown";
-  type: "string" | "number" | "boolean" | "array" | "unknown";
+  valueMode: 'required' | 'optional' | 'none' | 'unknown';
+  type: 'string' | 'number' | 'boolean' | 'array' | 'unknown';
   choices: string[] | null;
   defaultValue: string | null;
 }

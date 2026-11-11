@@ -1,14 +1,16 @@
-import { spawn, type ChildProcess } from "node:child_process";
-import { randomBytes } from "node:crypto";
-import { closeSync, constants as fsConstants, openSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { inheritedEnv } from "@nodeint/migent-kernel";
-import { ServiceEndpointServer } from "./endpoint.js";
-import { ensureRegistryHome } from "./home.js";
-import { RegistryHTTPServer } from "./server.js";
-import { RegistryStore } from "./store.js";
-import { monotonic } from "./time.js";
+import { type ChildProcess,spawn } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
+import { closeSync, constants as fsConstants, openSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+import { inheritedEnv } from '@nodeint/migent-kernel';
+
+import { ServiceEndpointServer } from './endpoint.js';
+import { ensureRegistryHome } from './home.js';
+import { RegistryHTTPServer } from './server.js';
+import { RegistryStore } from './store.js';
+import { monotonic } from './time.js';
 
 // Handshake over the IPC channel:
 //   child -> parent  {type: "ready", pid, port, instance_id, token}  endpoint and HTTP are listening
@@ -16,8 +18,8 @@ import { monotonic } from "./time.js";
 // The child serves only after "published". If the channel closes first, the parent died before
 // publishing and the child exits without ever being reachable through service.json.
 
-export const READY = "ready";
-export const PUBLISHED = "published";
+export const READY = 'ready';
+export const PUBLISHED = 'published';
 const ACK_TIMEOUT_SEC = 5;
 
 export interface SpawnedChild {
@@ -34,13 +36,13 @@ export interface SpawnedChild {
 }
 
 export function childInvocation(script: string): { execPath: string; args: string[]; script: string } {
-  const tsSibling = script.endsWith(".ts");
+  const tsSibling = script.endsWith('.ts');
   if (tsSibling) {
-    const register = path.join(path.dirname(script), "..", "hooks", "register.mjs");
+    const register = path.join(path.dirname(script), '..', 'hooks', 'register.mjs');
     return {
       execPath: process.execPath,
       // --import takes a URL; a bare Windows path (C:\...) is not one.
-      args: ["--experimental-strip-types", "--import", pathToFileURL(path.resolve(register)).href],
+      args: ['--experimental-strip-types', '--import', pathToFileURL(path.resolve(register)).href],
       script,
     };
   }
@@ -49,8 +51,8 @@ export function childInvocation(script: string): { execPath: string; args: strin
 
 export function childEntryScript(): string {
   const directory = path.dirname(fileURLToPath(import.meta.url));
-  if (import.meta.url.includes(".ts")) return path.join(directory, "main.ts");
-  return path.join(directory, "main.js");
+  if (import.meta.url.includes('.ts')) return path.join(directory, 'main.ts');
+  return path.join(directory, 'main.js');
 }
 
 function closeQuiet(fd: number): void {
@@ -63,18 +65,18 @@ function closeQuiet(fd: number): void {
 
 export async function launchChild(home: string, port: number): Promise<SpawnedChild> {
   const directory = ensureRegistryHome(home);
-  const logPath = path.join(directory, "service.log");
+  const logPath = path.join(directory, 'service.log');
   const logFd = openSync(logPath, fsConstants.O_CREAT | fsConstants.O_APPEND | fsConstants.O_WRONLY, 0o600);
   const invocation = childInvocation(childEntryScript());
   let proc: ChildProcess;
   try {
     proc = spawn(
       invocation.execPath,
-      [...invocation.args, invocation.script, "--child", "--home", directory, "--port", String(port)],
+      [...invocation.args, invocation.script, '--child', '--home', directory, '--port', String(port)],
       {
         cwd: directory,
         detached: true,
-        stdio: ["ignore", logFd, logFd, "ipc"],
+        stdio: ['ignore', logFd, logFd, 'ipc'],
         env: inheritedEnv(),
         windowsHide: true,
       },
@@ -84,9 +86,9 @@ export async function launchChild(home: string, port: number): Promise<SpawnedCh
   }
   if (proc.pid === undefined) {
     proc.kill();
-    throw new Error("child pid is unavailable");
+    throw new Error('child pid is unavailable');
   }
-  proc.on("error", () => undefined);
+  proc.on('error', () => undefined);
   proc.unref();
   return trackChild(proc);
 }
@@ -97,33 +99,33 @@ function trackChild(proc: ChildProcess): SpawnedChild {
   const wake = (): void => {
     for (const waiter of readyWaiters) waiter();
   };
-  proc.on("message", (message: unknown) => {
-    if (ready !== null || !message || typeof message !== "object") return;
+  proc.on('message', (message: unknown) => {
+    if (ready !== null || !message || typeof message !== 'object') return;
     const payload = message as Record<string, unknown>;
     if (payload.type !== READY) return;
     const { type: _type, ...rest } = payload;
     ready = rest;
     wake();
   });
-  proc.on("disconnect", wake);
+  proc.on('disconnect', wake);
   const state: SpawnedChild = {
     pid: proc.pid ?? -1,
     returncode: null,
-    kill(signal = "SIGTERM") {
+    kill(signal = 'SIGTERM') {
       proc.kill(signal);
     },
     wait(timeoutSec: number) {
       if (state.returncode !== null || proc.exitCode !== null || proc.signalCode !== null) return Promise.resolve();
       return new Promise((resolve) => {
         const timer = setTimeout(() => {
-          proc.off("exit", onExit);
+          proc.off('exit', onExit);
           resolve();
         }, Math.max(0, timeoutSec) * 1000);
         const onExit = (): void => {
           clearTimeout(timer);
           resolve();
         };
-        proc.once("exit", onExit);
+        proc.once('exit', onExit);
       });
     },
     readReady(deadline: number) {
@@ -155,7 +157,7 @@ function trackChild(proc: ChildProcess): SpawnedChild {
       if (proc.connected) proc.disconnect();
     },
   };
-  proc.on("exit", (code) => {
+  proc.on('exit', (code) => {
     state.returncode = code ?? 1;
     wake();
   });
@@ -171,20 +173,20 @@ function waitForAck(deadline: number, stop: { flag: boolean }): Promise<boolean>
     const finish = (ok: boolean): void => {
       clearTimeout(timer);
       clearInterval(poll);
-      process.off("message", onMessage);
-      process.off("disconnect", onDisconnect);
+      process.off('message', onMessage);
+      process.off('disconnect', onDisconnect);
       resolve(ok);
     };
     const onMessage = (message: unknown): void => {
-      if (message && typeof message === "object" && (message as { type?: unknown }).type === PUBLISHED) finish(true);
+      if (message && typeof message === 'object' && (message as { type?: unknown }).type === PUBLISHED) finish(true);
     };
     const onDisconnect = (): void => finish(false);
     const timer = setTimeout(() => finish(false), Math.max(0, deadline - monotonic()) * 1000);
     const poll = setInterval(() => {
       if (stop.flag) finish(false);
     }, 50);
-    process.on("message", onMessage);
-    process.once("disconnect", onDisconnect);
+    process.on('message', onMessage);
+    process.once('disconnect', onDisconnect);
     if (!process.connected) finish(false);
   });
 }
@@ -193,8 +195,8 @@ export async function serveChild(home: string, port: number): Promise<number> {
   if (!process.send || !process.connected) return 2;
   const send = process.send.bind(process);
   const directory = ensureRegistryHome(home);
-  const instanceId = randomBytes(32).toString("base64url");
-  const token = randomBytes(32).toString("base64url");
+  const instanceId = randomBytes(32).toString('base64url');
+  const token = randomBytes(32).toString('base64url');
   let server: RegistryHTTPServer | null = null;
   const stop = { flag: false };
   const onSignal = (): void => {
@@ -207,14 +209,14 @@ export async function serveChild(home: string, port: number): Promise<number> {
   };
   const lifetime = await ServiceEndpointServer.listen(directory, { instance_id: instanceId, pid: process.pid }, token, onSignal);
   if (lifetime === null) {
-    process.stderr.write("Another registry service holds the service endpoint.\n");
+    process.stderr.write('Another registry service holds the service endpoint.\n');
     return 1;
   }
-  process.on("SIGINT", onSignal);
-  process.on("SIGTERM", onSignal);
+  process.on('SIGINT', onSignal);
+  process.on('SIGTERM', onSignal);
   try {
     try {
-      server = await RegistryHTTPServer.open(new RegistryStore(directory), token, instanceId, "127.0.0.1", port);
+      server = await RegistryHTTPServer.open(new RegistryStore(directory), token, instanceId, '127.0.0.1', port);
     } catch (error) {
       process.stderr.write(`Cannot listen on 127.0.0.1:${port}: ${(error as Error).message}\n`);
       return 1;
@@ -229,8 +231,8 @@ export async function serveChild(home: string, port: number): Promise<number> {
     await serveLoop(server, stop);
     return 0;
   } finally {
-    process.off("SIGINT", onSignal);
-    process.off("SIGTERM", onSignal);
+    process.off('SIGINT', onSignal);
+    process.off('SIGTERM', onSignal);
     server?.close();
     lifetime.close();
   }
@@ -242,8 +244,8 @@ async function serveLoop(server: RegistryHTTPServer, stop: { flag: boolean }): P
     try {
       await server.handleRequest();
     } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code === "EINTR") continue;
+      const {code} = (error as NodeJS.ErrnoException);
+      if (code === 'EINTR') continue;
       if (stop.flag) break;
       throw error;
     }
@@ -263,19 +265,19 @@ function parseChildArgs(argv: string[]): { home: string; port: number } | null {
   let sawChild = false;
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
-    if (arg === "--child") {
+    if (arg === '--child') {
       if (sawChild) return null;
       sawChild = true;
       continue;
     }
     const next = argv[index + 1];
-    if (arg === "--home" && next !== undefined && !next.startsWith("--")) {
+    if (arg === '--home' && next !== undefined && !next.startsWith('--')) {
       if (home !== null) return null;
       home = next;
       index += 1;
       continue;
     }
-    if (arg === "--port" && next !== undefined && /^-?\d+$/.test(next)) {
+    if (arg === '--port' && next !== undefined && /^-?\d+$/.test(next)) {
       if (port !== null) return null;
       port = Number(next);
       index += 1;

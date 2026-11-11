@@ -1,13 +1,15 @@
-import path from "node:path";
-import { z } from "zod";
-import { NonBlankString, WorkflowArtifact, WorkflowLine, WorkflowRunWhen, isValid, schemaIssues } from "@nodeint/migent-contracts";
-import type { TSchema } from "@nodeint/migent-contracts";
-import { ConfigurationError } from "./errors.js";
-import { isRecord, pyRepr } from "./record.js";
-import { RUN_WHEN_KEYS, runWhenPathsMissing, STAGE_FIELD_SCHEMAS, decisionBodyProblems, decisionEntryProblem, decisionListProblem, requireContainer, requireValid, stageField } from "./structure.js";
-import { compileChangedPathPattern } from "./changed-paths.js";
-import type { AskTarget } from "./model.js";
-import type { RunWhen, StageAgent, StageSpec } from "./model.js";
+import path from 'node:path';
+
+import type { TSchema } from '@nodeint/migent-contracts';
+import { isValid, NonBlankString, schemaIssues,WorkflowArtifact, WorkflowLine, WorkflowRunWhen } from '@nodeint/migent-contracts';
+import { z } from 'zod';
+
+import { compileChangedPathPattern } from './changed-paths.js';
+import { ConfigurationError } from './errors.js';
+import type { AskTarget } from './model.js';
+import type { RunWhen, StageAgent, StageSpec } from './model.js';
+import { isRecord, pyRepr } from './record.js';
+import { decisionBodyProblems, decisionEntryProblem, decisionListProblem, requireContainer, requireValid, RUN_WHEN_KEYS, runWhenPathsMissing, STAGE_FIELD_SCHEMAS, stageField } from './structure.js';
 
 export const optionKey = /^[A-Za-z][A-Za-z0-9_.-]*$/;
 
@@ -17,7 +19,7 @@ export function stageRunWhen(
   version2: boolean,
   verify: readonly string[],
 ): RunWhen | null {
-  if (!Object.hasOwn(stage, "run_when") || stage.run_when == null) return null;
+  if (!Object.hasOwn(stage, 'run_when') || stage.run_when == null) return null;
   const field = `stages.${stageId}.run_when`;
   if (!version2) throw new ConfigurationError(`${field} requires schema_version 2.`);
   const runWhen = stage.run_when;
@@ -27,13 +29,13 @@ export function stageRunWhen(
     if (!RUN_WHEN_KEYS.includes(key)) throw new ConfigurationError(`${field}.${key} is not supported.`);
   }
   // Reading the value only; whether it is required (absent or null) is the contract's verdict.
-  const rawPaths = Object.hasOwn(runWhenMap, "changed_paths") ? runWhenMap.changed_paths : undefined;
-  if (runWhenPathsMissing(runWhenMap, "changed_paths")) {
+  const rawPaths = Object.hasOwn(runWhenMap, 'changed_paths') ? runWhenMap.changed_paths : undefined;
+  if (runWhenPathsMissing(runWhenMap, 'changed_paths')) {
     throw new ConfigurationError(`${field}.changed_paths is required.`);
   }
   requireContainer(WorkflowRunWhen.properties.changed_paths, rawPaths, `${field}.changed_paths`);
   const raw = rawPaths as unknown[];
-  if (schemaIssues(WorkflowRunWhen.properties.changed_paths, raw).some((issue) => issue.path.length === 0 && issue.keyword === "minItems")) throw new ConfigurationError(`${field}.changed_paths must be a non-empty list.`);
+  if (schemaIssues(WorkflowRunWhen.properties.changed_paths, raw).some((issue) => issue.path.length === 0 && issue.keyword === 'minItems')) throw new ConfigurationError(`${field}.changed_paths must be a non-empty list.`);
   const changedPaths: string[] = [];
   raw.forEach((entry, index) => {
     const pattern = requiredString(entry, `${field}.changed_paths[${index}]`);
@@ -41,7 +43,7 @@ export function stageRunWhen(
       throw new ConfigurationError(`Duplicate ${field}.changed_paths item: ${pattern}`);
     }
     const compiled = compileChangedPathPattern(pattern);
-    if ("error" in compiled) {
+    if ('error' in compiled) {
       throw new ConfigurationError(
         `Invalid ${field}.changed_paths[${index}]: ${pyRepr(pattern)} (${compiled.error}).`,
       );
@@ -59,7 +61,7 @@ export function stringItems(raw: unknown, field: string): string[] {
 }
 
 export function stageDependsOn(stage: Record<string, unknown>, stageId: string): string[] {
-  if (!Object.hasOwn(stage, "depends_on") || stage.depends_on == null) return [];
+  if (!Object.hasOwn(stage, 'depends_on') || stage.depends_on == null) return [];
   requireContainer(STAGE_FIELD_SCHEMAS.depends_on, stage.depends_on, `stages.${stageId}.depends_on`);
   const raw = stage.depends_on as unknown[];
   const parsed: string[] = [];
@@ -113,9 +115,9 @@ export function normalizeStageDecision(stage: Record<string, unknown>, version7 
     const body = entry[rawName];
     const found = decisionBodyProblems(body, version7)[0];
     if (found !== undefined) {
-      if (found.kind === "body") throw new ConfigurationError(`${field}.${name} must be a mapping.`);
-      if (found.kind === "key") throw new ConfigurationError(`${field}.${name}.${found.key} is not allowed.`);
-      if (found.kind === "when") throw new ConfigurationError(`Missing or invalid ${field}.${name}.when.`);
+      if (found.kind === 'body') throw new ConfigurationError(`${field}.${name} must be a mapping.`);
+      if (found.kind === 'key') throw new ConfigurationError(`${field}.${name}.${found.key} is not allowed.`);
+      if (found.kind === 'when') throw new ConfigurationError(`Missing or invalid ${field}.${name}.when.`);
       throw new ConfigurationError(`${field}.${name}.navigate is required.`);
     }
     const accepted = body as Record<string, unknown>;
@@ -134,9 +136,9 @@ export function stageRoutes(
   version2 = false,
 ): Record<string, string | string[]> {
   if (values.length === 0) return {};
-  const decision = stage.decision;
+  const {decision} = stage;
   if (!isRecord(decision)) return {};
-  const routes = decision.routes;
+  const {routes} = decision;
   if (!isRecord(routes) || Object.keys(routes).length === 0) {
     throw new ConfigurationError(`stages.${stageId}.decision.routes must be a mapping.`);
   }
@@ -145,7 +147,7 @@ export function stageRoutes(
     const key = requiredString(rawKey, `stages.${stageId}.decision.routes`).toLowerCase();
     const field = `stages.${stageId}.decision.routes.${key}`;
     const target = routeTarget(rawTarget, field, stages, version2);
-    if (typeof target === "string" && target !== "complete" && !Object.hasOwn(stages, target)) {
+    if (typeof target === 'string' && target !== 'complete' && !Object.hasOwn(stages, target)) {
       throw new ConfigurationError(`${field} is not a declared stage: ${target}`);
     }
     if (Object.hasOwn(parsed, key)) {
@@ -174,7 +176,7 @@ export function routeTarget(
   if (!version2) return requiredString(raw, field);
   if (raw.length === 0) throw new ConfigurationError(`${field} must be a non-empty list.`);
   const targets = raw.map((item, index) => requiredString(item, `${field}[${index}]`));
-  if (targets.includes("complete")) throw new ConfigurationError(`${field} cannot list complete.`);
+  if (targets.includes('complete')) throw new ConfigurationError(`${field} cannot list complete.`);
   for (const target of targets) {
     if (!Object.hasOwn(stages, target)) {
       throw new ConfigurationError(`${field} is not a declared stage: ${target}`);
@@ -189,24 +191,24 @@ export function stageAsk(stage: Record<string, unknown>, stageId: string): AskTa
 }
 
 export const ROLE_ONLY_KEYS = [
-  "ask",
-  "instructions",
-  "model",
-  "options",
-  "agent",
-  "session",
-  "produces",
-  "decision",
-  "max_revisions",
-  "max_verify",
+  'ask',
+  'instructions',
+  'model',
+  'options',
+  'agent',
+  'session',
+  'produces',
+  'decision',
+  'max_revisions',
+  'max_verify',
 ] as const;
 
 export function stageHasRole(stage: Record<string, unknown>): boolean {
-  return Object.hasOwn(stage, "role") && stage.role != null;
+  return Object.hasOwn(stage, 'role') && stage.role != null;
 }
 
 export function rejectRoleOnlyKeys(stage: Record<string, unknown>, stageId: string): void {
-  if (Object.hasOwn(stage, "ask")) throw new ConfigurationError(`stages.${stageId}.ask requires a role.`);
+  if (Object.hasOwn(stage, 'ask')) throw new ConfigurationError(`stages.${stageId}.ask requires a role.`);
   for (const key of ROLE_ONLY_KEYS) {
     if (Object.hasOwn(stage, key) && stage[key] != null) {
       throw new ConfigurationError(`stages.${stageId}.${key} requires a role.`);
@@ -215,19 +217,19 @@ export function rejectRoleOnlyKeys(stage: Record<string, unknown>, stageId: stri
 }
 
 export function stageDescription(stage: Record<string, unknown>, stageId: string): string | null {
-  const description = optionalStageString(stage, "description", stageId);
-  if (description !== null) requireValid(stageField("description"), description, `stages.${stageId}.description must be one line.`);
+  const description = optionalStageString(stage, 'description', stageId);
+  if (description !== null) requireValid(stageField('description'), description, `stages.${stageId}.description must be one line.`);
   return description;
 }
 
 export function stageDecisionValues(stage: Record<string, unknown>, stageId: string): string[] {
-  if (!Object.hasOwn(stage, "decision") || stage.decision == null) return [];
-  const decision = stage.decision;
+  if (!Object.hasOwn(stage, 'decision') || stage.decision == null) return [];
+  const {decision} = stage;
   if (isRecord(decision) && Object.keys(decision).length === 0) return [];
   if (!isRecord(decision)) {
     throw new ConfigurationError(`stages.${stageId}.decision must be a mapping.`);
   }
-  const values = decision.values;
+  const {values} = decision;
   if (!Array.isArray(values) || values.length === 0) {
     throw new ConfigurationError(`stages.${stageId}.decision.values must be a non-empty list.`);
   }
@@ -245,40 +247,40 @@ export function stageDecisionValues(stage: Record<string, unknown>, stageId: str
 }
 
 export function stageArtifact(stage: Record<string, unknown>, stageId: string): string | null {
-  if (!Object.hasOwn(stage, "produces") || stage.produces == null) return null;
-  const produces = stage.produces;
+  if (!Object.hasOwn(stage, 'produces') || stage.produces == null) return null;
+  const {produces} = stage;
   if (isRecord(produces) && Object.keys(produces).length === 0) return null;
   if (!isRecord(produces)) {
     throw new ConfigurationError(`stages.${stageId}.produces must be a mapping.`);
   }
-  if (!Object.hasOwn(produces, "artifact") || produces.artifact == null) return null;
+  if (!Object.hasOwn(produces, 'artifact') || produces.artifact == null) return null;
   return filename(produces.artifact, `stages.${stageId}.produces.artifact`);
 }
 
 export function stageMaxRevisions(stage: Record<string, unknown>, stageId: string): number | null {
-  if (!Object.hasOwn(stage, "max_revisions")) return null;
+  if (!Object.hasOwn(stage, 'max_revisions')) return null;
   const raw = stage.max_revisions;
   const field = `stages.${stageId}.max_revisions`;
   // yaml@2 yields numbers. Digit strings match the subset parser.
-  requireValid(stageField("max_revisions"), raw, `${field} must be a non-negative integer.`);
-  return Number(typeof raw === "string" ? raw.trim() : raw);
+  requireValid(stageField('max_revisions'), raw, `${field} must be a non-negative integer.`);
+  return Number(typeof raw === 'string' ? raw.trim() : raw);
 }
 
 export function stageVerify(stage: Record<string, unknown>, stageId: string): string[] {
-  if (!Object.hasOwn(stage, "verify") || stage.verify == null) return [];
+  if (!Object.hasOwn(stage, 'verify') || stage.verify == null) return [];
   const field = `stages.${stageId}.verify`;
   const raw = Array.isArray(stage.verify) ? stage.verify : [stage.verify];
-  if (!isValid(stageField("verify"), stage.verify)) {
+  if (!isValid(stageField('verify'), stage.verify)) {
     if (raw.length === 0) throw new ConfigurationError(`${field} must not be empty.`);
     const bad = raw.find((entry) => !isValid(VERIFY_LINE, entry));
-    if (typeof bad !== "string" || bad.trim() === "") throw new ConfigurationError(`Missing or invalid ${field} item.`);
+    if (typeof bad !== 'string' || bad.trim() === '') throw new ConfigurationError(`Missing or invalid ${field} item.`);
     throw new ConfigurationError(`${field} items must be one shell line.`);
   }
   return raw.map((entry) => (entry as string).trim());
 }
 
 export function stageMaxVerify(stage: Record<string, unknown>, stageId: string, verify: string[]): number {
-  if (!Object.hasOwn(stage, "max_verify") || stage.max_verify == null) return 3;
+  if (!Object.hasOwn(stage, 'max_verify') || stage.max_verify == null) return 3;
   const field = `stages.${stageId}.max_verify`;
   if (verify.length === 0) throw new ConfigurationError(`${field} requires verify.`);
   return positiveInteger(stage.max_verify, field);
@@ -289,36 +291,36 @@ export function stageVerifyTimeout(
   stageId: string,
   verify: string[],
 ): number | null {
-  if (!Object.hasOwn(stage, "verify_timeout") || stage.verify_timeout == null) return null;
+  if (!Object.hasOwn(stage, 'verify_timeout') || stage.verify_timeout == null) return null;
   const field = `stages.${stageId}.verify_timeout`;
   if (verify.length === 0) throw new ConfigurationError(`${field} requires verify.`);
-  return positiveInteger(stage.verify_timeout, field, stageField("verify_timeout"));
+  return positiveInteger(stage.verify_timeout, field, stageField('verify_timeout'));
 }
 
-export function positiveInteger(raw: unknown, field: string, schema: TSchema = stageField("max_verify")): number {
+export function positiveInteger(raw: unknown, field: string, schema: TSchema = stageField('max_verify')): number {
   requireValid(schema, raw, `${field} must be an integer of at least 1.`);
-  return Number(typeof raw === "string" ? raw.trim() : raw);
+  return Number(typeof raw === 'string' ? raw.trim() : raw);
 }
 
 /** Schema_version 5: `agent` is a name in `agents` or a complete inline definition. */
 export function stageAgent(stage: Record<string, unknown>, stageId: string): StageAgent | null {
-  if (!Object.hasOwn(stage, "agent") || stage.agent == null) return null;
+  if (!Object.hasOwn(stage, 'agent') || stage.agent == null) return null;
   const raw = stage.agent;
-  if (isRecord(raw)) return { kind: "inline", value: structuredClone(raw) };
-  if (typeof raw !== "string" || raw.trim() === "") {
+  if (isRecord(raw)) return { kind: 'inline', value: structuredClone(raw) };
+  if (typeof raw !== 'string' || raw.trim() === '') {
     throw new ConfigurationError(`Missing or invalid stages.${stageId}.agent.`);
   }
-  return { kind: "named", name: raw.trim() };
+  return { kind: 'named', name: raw.trim() };
 }
 
 /** Schema_version 4 and earlier: `model` names an entry of the config's model aliases. */
 export function legacyStageModel(stage: Record<string, unknown>, stageId: string): StageAgent | null {
-  const name = optionalStageString(stage, "model", stageId);
-  return name === null ? null : { kind: "named", name };
+  const name = optionalStageString(stage, 'model', stageId);
+  return name === null ? null : { kind: 'named', name };
 }
 
 export function stageOptions(stage: Record<string, unknown>, stageId: string): Record<string, string> {
-  if (!Object.hasOwn(stage, "options") || stage.options == null) return {};
+  if (!Object.hasOwn(stage, 'options') || stage.options == null) return {};
   const raw = stage.options;
   if (!isRecord(raw)) throw new ConfigurationError(`Missing or invalid stages.${stageId}.options.`);
   return readOptionMap(raw, `stages.${stageId}.options`);
@@ -334,13 +336,13 @@ export function readOptionMap(
   for (const [key, item] of Object.entries(raw)) {
     if (!optionKey.test(key)) {
       throw new ConfigurationError(`Missing or invalid ${field} key.`, {
-        code: "option-key-invalid",
+        code: 'option-key-invalid',
         ...(path === undefined ? {} : { path: [...path, key] }),
       });
     }
-    if (typeof item !== "string" || item.trim() === "") {
+    if (typeof item !== 'string' || item.trim() === '') {
       throw new ConfigurationError(`Missing or invalid ${field}.${key}.`, {
-        code: "option-invalid",
+        code: 'option-invalid',
         ...(path === undefined ? {} : { path: [...path, key] }),
       });
     }
@@ -377,11 +379,11 @@ export const VERIFY_LINE: TSchema = WorkflowLine;
 
 /** Reads `session.resume_from` without the dependency rule, for stages whose depends_on is unreadable. */
 export function stageResumeFromUnchecked(stage: Record<string, unknown>, stageId: string): string | null {
-  if (!Object.hasOwn(stage, "session") || stage.session == null) return null;
-  const session = stage.session;
+  if (!Object.hasOwn(stage, 'session') || stage.session == null) return null;
+  const {session} = stage;
   if (isRecord(session) && Object.keys(session).length === 0) return null;
   requireContainer(STAGE_FIELD_SCHEMAS.session, session, `stages.${stageId}.session`);
   const sessionMap = session as Record<string, unknown>;
-  if (!Object.hasOwn(sessionMap, "resume_from") || sessionMap.resume_from == null) return null;
+  if (!Object.hasOwn(sessionMap, 'resume_from') || sessionMap.resume_from == null) return null;
   return requiredString(sessionMap.resume_from, `stages.${stageId}.session.resume_from`);
 }

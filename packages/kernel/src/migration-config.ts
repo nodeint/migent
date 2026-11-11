@@ -1,6 +1,7 @@
-import { ConfigurationError } from "./errors.js";
-import { legacyClientOf } from "./legacy-provider.js";
-import { isRecord } from "@nodeint/migent-workflow";
+import { isRecord } from '@nodeint/migent-workflow';
+
+import { ConfigurationError } from './errors.js';
+import { legacyClientOf } from './legacy-provider.js';
 
 /**
  * The schema_version 4 to 5 rewrite of a config mapping, in place:
@@ -10,21 +11,21 @@ import { isRecord } from "@nodeint/migent-workflow";
  */
 export function liftConfigAgents(config: Record<string, unknown>): string[] {
   const notes: string[] = [];
-  if (Object.hasOwn(config, "models")) {
-    if (Object.hasOwn(config, "agents")) {
-      throw new ConfigurationError("config has both models and agents; merge them into agents before migrating.");
+  if (Object.hasOwn(config, 'models')) {
+    if (Object.hasOwn(config, 'agents')) {
+      throw new ConfigurationError('config has both models and agents; merge them into agents before migrating.');
     }
-    const models = config.models;
+    const {models} = config;
     if (isRecord(models)) {
       const agents: Record<string, unknown> = {};
       for (const [name, body] of Object.entries(models)) {
         agents[name] = isRecord(body) ? liftAgentBody(body, `agents.${name}`, notes) : body;
       }
-      renameKey(config, "models", "agents", agents);
+      renameKey(config, 'models', 'agents', agents);
     } else {
-      renameKey(config, "models", "agents", models);
+      renameKey(config, 'models', 'agents', models);
     }
-    notes.unshift("models -> agents");
+    notes.unshift('models -> agents');
   }
   if (isRecord(config.roles)) {
     for (const [name, role] of Object.entries(config.roles)) {
@@ -32,12 +33,12 @@ export function liftConfigAgents(config: Record<string, unknown>): string[] {
       const label = `roles.${name}`;
       const lifted: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(role)) {
-        if (key === "default_model") {
-          if (Object.hasOwn(role, "agent")) throw new ConfigurationError(`${label} has both default_model and agent.`);
+        if (key === 'default_model') {
+          if (Object.hasOwn(role, 'agent')) throw new ConfigurationError(`${label} has both default_model and agent.`);
           lifted.agent = isRecord(value) ? liftAgentBody(value, `${label}.agent`, notes) : value;
           notes.push(`${label}.default_model -> agent`);
-        } else if (key === "instructions") {
-          if (Object.hasOwn(role, "responsibilities")) {
+        } else if (key === 'instructions') {
+          if (Object.hasOwn(role, 'responsibilities')) {
             throw new ConfigurationError(`${label} has both instructions and responsibilities.`);
           }
           lifted.responsibilities = value;
@@ -53,16 +54,16 @@ export function liftConfigAgents(config: Record<string, unknown>): string[] {
 }
 
 function liftAgentBody(body: Record<string, unknown>, label: string, notes: string[]): Record<string, unknown> {
-  const hasClientString = typeof body.client === "string";
-  const hasOptions = Object.hasOwn(body, "options");
+  const hasClientString = typeof body.client === 'string';
+  const hasOptions = Object.hasOwn(body, 'options');
   if (!hasClientString && !hasOptions) return body;
   const lifted: Record<string, unknown> = {};
   const client: Record<string, unknown> = isRecord(body.client) ? { ...body.client } : {};
   for (const [key, value] of Object.entries(body)) {
-    if (key === "client" && hasClientString) {
+    if (key === 'client' && hasClientString) {
       client.type = value;
       notes.push(`${label}.client -> client.type`);
-    } else if (key === "options") {
+    } else if (key === 'options') {
       if (value != null) client.options = value;
       notes.push(`${label}.options -> client.options`);
     } else {
@@ -92,7 +93,7 @@ function renameKey(target: Record<string, unknown>, from: string, to: string, va
 }
 
 /** Which document a v5 to v6 lift is rewriting. */
-export type ConfigLayerKind = "project" | "local";
+export type ConfigLayerKind = 'project' | 'local';
 
 export interface LiftConfigClientsInput {
   layer: ConfigLayerKind;
@@ -129,12 +130,12 @@ export function liftConfigClients(input: LiftConfigClientsInput): string[] {
       if (!isRecord(raw)) continue;
       const label = `agents.${name}`;
       const mergedBody = isRecord(mergedAgents[name]) ? mergedAgents[name] : null;
-      const otherBody = layer === "project"
+      const otherBody = layer === 'project'
         ? (isRecord(localAgents[name]) ? localAgents[name] : null)
         : (isRecord(projectAgents[name]) ? projectAgents[name] : null);
       liftBody(raw, label, {
         layer,
-        kind: "named",
+        kind: 'named',
         mergedBody,
         otherBody,
         clientIds,
@@ -153,11 +154,11 @@ export function liftConfigClients(input: LiftConfigClientsInput): string[] {
       // A role agent is replaced whole by the layer that declares it.
       const mergedRole = isRecord(mergedRoles[name]) ? mergedRoles[name] : null;
       const mergedBody = mergedRole !== null && isRecord(mergedRole.agent) ? mergedRole.agent : null;
-      const otherRole = layer === "project" ? localRoles[name] : projectRoles[name];
+      const otherRole = layer === 'project' ? localRoles[name] : projectRoles[name];
       const otherBody = isRecord(otherRole) && isRecord(otherRole.agent) ? otherRole.agent : null;
       liftBody(rawRole.agent, label, {
         layer,
-        kind: "role",
+        kind: 'role',
         mergedBody,
         otherBody,
         clientIds,
@@ -170,7 +171,7 @@ export function liftConfigClients(input: LiftConfigClientsInput): string[] {
 
 interface LiftBodyContext {
   layer: ConfigLayerKind;
-  kind: "named" | "role";
+  kind: 'named' | 'role';
   mergedBody: Record<string, unknown> | null;
   otherBody: Record<string, unknown> | null;
   clientIds: readonly string[];
@@ -178,8 +179,8 @@ interface LiftBodyContext {
 }
 
 function liftBody(body: Record<string, unknown>, label: string, context: LiftBodyContext): void {
-  if (!Object.hasOwn(body, "provider")) return;
-  const provider = typeof body.provider === "string" ? body.provider.trim() : "";
+  if (!Object.hasOwn(body, 'provider')) return;
+  const provider = typeof body.provider === 'string' ? body.provider.trim() : '';
   const explicit = explicitClient(body);
   // Rule 1: an explicit client in this body wins; the provider is only noise.
   if (explicit !== null) {
@@ -191,9 +192,9 @@ function liftBody(body: Record<string, unknown>, label: string, context: LiftBod
   // default must survive for project-alone use; only an unresolvable project
   // provider relies on a client supplied by the local layer.
   const mergedExplicit = explicitClient(context.mergedBody);
-  if (mergedExplicit !== null && (context.layer === "local" || legacyClientOf(provider) === null)) {
+  if (mergedExplicit !== null && (context.layer === 'local' || legacyClientOf(provider) === null)) {
     delete body.provider;
-    const source = context.layer === "local" ? "config.yaml" : "config.local.yaml";
+    const source = context.layer === 'local' ? 'config.yaml' : 'config.local.yaml';
     context.notes.push(`${label}.provider dropped (client from ${source})`);
     return;
   }
@@ -201,7 +202,7 @@ function liftBody(body: Record<string, unknown>, label: string, context: LiftBod
   if (effective === null) {
     // Rule 4: no view supplies a client, so migration cannot invent one.
     throw new ConfigurationError(
-      `${label}: provider ${provider || "(empty)"} has no default client; add ${label}.client.type (one of: ${context.clientIds.join(", ")}) and rerun migrate.`,
+      `${label}: provider ${provider || '(empty)'} has no default client; add ${label}.client.type (one of: ${context.clientIds.join(', ')}) and rerun migrate.`,
     );
   }
   // Rule 2: write the synthesized client into the layer that supplied the provider.
@@ -212,8 +213,8 @@ function liftBody(body: Record<string, unknown>, label: string, context: LiftBod
 
 function explicitClient(body: Record<string, unknown> | null): string | null {
   if (body === null || !isRecord(body.client)) return null;
-  const type = body.client.type;
-  return typeof type === "string" && type.trim() !== "" ? type.trim() : null;
+  const {type} = body.client;
+  return typeof type === 'string' && type.trim() !== '' ? type.trim() : null;
 }
 
 function setClientType(body: Record<string, unknown>, client: string): void {
@@ -227,7 +228,7 @@ export function effectiveClientValue(body: unknown): string | null {
   if (!isRecord(body)) return null;
   const explicit = explicitClient(body);
   if (explicit !== null) return explicit;
-  const provider = typeof body.provider === "string" ? body.provider : null;
+  const provider = typeof body.provider === 'string' ? body.provider : null;
   return legacyClientOf(provider);
 }
 
@@ -243,8 +244,8 @@ export function assertConfigClientEquivalence(input: {
   updatedMerged: Readonly<Record<string, unknown>>;
 }): void {
   // The plan's two views: project alone and project merged with local.
-  compareView("config.yaml", input.originalProject, input.updatedProject);
-  compareView("merged config", input.originalMerged, input.updatedMerged);
+  compareView('config.yaml', input.originalProject, input.updatedProject);
+  compareView('merged config', input.originalMerged, input.updatedMerged);
 }
 
 function compareView(label: string, before: Readonly<Record<string, unknown>>, after: Readonly<Record<string, unknown>>): void {
@@ -254,14 +255,14 @@ function compareView(label: string, before: Readonly<Record<string, unknown>>, a
     const nextClient = effectiveClientValue(next);
     if (previousClient !== nextClient) {
       throw new ConfigurationError(
-        `migration would change ${label} ${name} from client ${previousClient ?? "(none)"} to ${nextClient ?? "(none)"}; nothing was written.`,
+        `migration would change ${label} ${name} from client ${previousClient ?? '(none)'} to ${nextClient ?? '(none)'}; nothing was written.`,
       );
     }
   }
 }
 
-function locations(config: Readonly<Record<string, unknown>>): Array<[string, unknown]> {
-  const found: Array<[string, unknown]> = [];
+function locations(config: Readonly<Record<string, unknown>>): [string, unknown][] {
+  const found: [string, unknown][] = [];
   if (isRecord(config.agents)) {
     for (const [name, body] of Object.entries(config.agents)) found.push([`agents.${name}`, body]);
   }
@@ -279,7 +280,7 @@ function findLocation(config: Readonly<Record<string, unknown>>, name: string): 
     const role = config.roles[match[1] as string];
     return isRecord(role) ? role.agent : undefined;
   }
-  if (name.startsWith("agents.") && isRecord(config.agents)) return config.agents[name.slice(7)];
+  if (name.startsWith('agents.') && isRecord(config.agents)) return config.agents[name.slice(7)];
   return undefined;
 }
 
@@ -292,12 +293,12 @@ export function liftWorkflowClients(
   const notes: string[] = [];
   if (!Array.isArray(workflow.stages)) return notes;
   for (const stage of workflow.stages) {
-    if (!isRecord(stage) || !isRecord(stage.agent) || !Object.hasOwn(stage.agent, "provider")) continue;
-    const label = `stages.${typeof stage.id === "string" ? stage.id : "?"}.agent`;
+    if (!isRecord(stage) || !isRecord(stage.agent) || !Object.hasOwn(stage.agent, 'provider')) continue;
+    const label = `stages.${typeof stage.id === 'string' ? stage.id : '?'}.agent`;
     const body = stage.agent;
     liftBody(body, label, {
-      layer: "project",
-      kind: "role",
+      layer: 'project',
+      kind: 'role',
       mergedBody: isRecord(config) ? body : null,
       otherBody: null,
       clientIds,

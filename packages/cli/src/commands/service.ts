@@ -1,16 +1,17 @@
-import { ServiceStatus, type Static } from "@nodeint/migent-contracts";
-import { writeJson } from "../emit.js";
-import { ConfigurationError } from "@nodeint/migent-kernel";
+import { ServiceStatus, type Static } from '@nodeint/migent-contracts';
+import { ConfigurationError } from '@nodeint/migent-kernel';
 import {
-  ServiceError,
   ensureRegistryHome,
   registryHomePath,
   serveForeground,
+  ServiceError,
   serviceStatus,
   startDetached,
   stop,
-} from "@nodeint/migent-registry";
-import { printError } from "../display.js";
+} from '@nodeint/migent-registry';
+
+import { printError } from '../display.js';
+import { writeJson } from '../emit.js';
 
 const DEFAULT_PORT = 47321;
 
@@ -43,11 +44,11 @@ export async function runServiceStart(port: number | null, foreground: boolean):
 
 export async function runServiceStop(): Promise<number> {
   const result = await serviceApi.stop(ensureRegistryHome());
-  if (result.outcome === "error") {
-    printError(result.message || "Registry service did not stop.");
+  if (result.outcome === 'error') {
+    printError(result.message || 'Registry service did not stop.');
     return 1;
   }
-  process.stderr.write(result.outcome === "absent" ? "Not running.\n" : "Stopped.\n");
+  process.stderr.write(result.outcome === 'absent' ? 'Not running.\n' : 'Stopped.\n');
   return 0;
 }
 
@@ -55,18 +56,18 @@ export async function runServiceStatus(asJson: boolean): Promise<number> {
   const report = await serviceApi.serviceStatus(registryHomePath());
   if (asJson) {
     writeJson(ServiceStatus, report as Static<typeof ServiceStatus>);
-  } else if (report.state === "running") {
-    process.stdout.write("running\n");
+  } else if (report.state === 'running') {
+    process.stdout.write('running\n');
     process.stdout.write(`${String(report.host)}:${String(report.port)} pid=${String(report.pid)}\n`);
   } else {
-    process.stdout.write("stopped\n");
+    process.stdout.write('stopped\n');
   }
-  return report.state === "running" ? 0 : 1;
+  return report.state === 'running' ? 0 : 1;
 }
 
 export function parsePort(raw: string): number {
-  if (!/^[0-9]+$/.test(raw)) throw new ConfigurationError("--port must be an integer from 1 to 65535.");
+  if (!/^[0-9]+$/.test(raw)) throw new ConfigurationError('--port must be an integer from 1 to 65535.');
   const port = Number(raw);
-  if (port < 1 || port > 65535) throw new ConfigurationError("--port must be an integer from 1 to 65535.");
+  if (port < 1 || port > 65535) throw new ConfigurationError('--port must be an integer from 1 to 65535.');
   return port;
 }

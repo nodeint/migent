@@ -1,10 +1,12 @@
-import path from "node:path";
-import { z } from "zod";
-import { ConfigurationError } from "../errors.js";
-import { workflowErrorPath, workflowRuleCode } from "../diagnostics.js";
-import type { UnknownKey } from "../diagnostics.js";
-import type { WorkflowCatalogEntry } from "../catalog.js";
-import type { RoleStageSpec, RunWhen, StageAgent, StageSpec, WorkflowDocument, WorkflowRequires } from "../model.js";
+import path from 'node:path';
+
+import { z } from 'zod';
+
+import type { WorkflowCatalogEntry } from '../catalog.js';
+import type { UnknownKey } from '../diagnostics.js';
+import { workflowErrorPath, workflowRuleCode } from '../diagnostics.js';
+import { ConfigurationError } from '../errors.js';
+import type { RoleStageSpec, RunWhen, StageAgent, StageSpec, WorkflowDocument, WorkflowRequires } from '../model.js';
 
 /* ------------------------------------------------------------------------------------------------
  * Collecting draft parse
@@ -24,15 +26,15 @@ export interface DraftProblem {
 
 /** One leaf value: written, omitted (its default applies), or unreadable. */
 export type DraftUnit<T> =
-  | { state: "valid"; value: T }
-  | { state: "absent"; value: T }
-  | { state: "invalid" };
+  | { state: 'valid'; value: T }
+  | { state: 'absent'; value: T }
+  | { state: 'invalid' };
 
 /** One stage as far as the draft could be read. `spec` is set when every field parsed. */
 export interface DraftStage {
   index: number;
   id: string;
-  kind: "role" | "verify" | null;
+  kind: 'role' | 'verify' | null;
   role: DraftUnit<string>;
   options: DraftUnit<Record<string, string>>;
   dependsOn: DraftUnit<string[]>;
@@ -81,8 +83,8 @@ export class DraftProblems {
   add(error: unknown, fallbackPath?: readonly (string | number)[]): void {
     if (error instanceof z.ZodError) {
       this.items.push({
-        code: "invalid-value",
-        message: error.issues.map((issue) => issue.message).join("; "),
+        code: 'invalid-value',
+        message: error.issues.map((issue) => issue.message).join('; '),
         ...(fallbackPath === undefined ? {} : { path: [...fallbackPath] }),
       });
       return;
@@ -107,10 +109,10 @@ export function draftUnit<T>(
   fallbackPath?: readonly (string | number)[],
 ): DraftUnit<T> {
   try {
-    return { state: "valid", value: read() };
+    return { state: 'valid', value: read() };
   } catch (error) {
     problems.add(error, fallbackPath);
-    return { state: "invalid" };
+    return { state: 'invalid' };
   }
 }
 
@@ -123,5 +125,5 @@ export function declaredStagePlaceholders(ids: Iterable<string>): Record<string,
 
 /** Author-coordinate path for a message raised after the per-stage reads. */
 export function draftPathFor(message: string, data: Record<string, unknown>): (string | number)[] {
-  return workflowErrorPath(message, data) ?? ["stages"];
+  return workflowErrorPath(message, data) ?? ['stages'];
 }

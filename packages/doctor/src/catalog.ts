@@ -1,4 +1,4 @@
-import type { CliModelCatalog, ClientOption, CommandSpec } from "@nodeint/migent-kernel";
+import type { ClientOption, CliModelCatalog, CommandSpec } from '@nodeint/migent-kernel';
 
 export type Which = (command: string) => string | null;
 export type RunCommand = (argv: string[], input?: string) => string | Promise<string>;
@@ -16,8 +16,8 @@ export interface HeadlessOptionFact {
   flags: string[];
   description: string;
   argument: string | null;
-  valueMode: "required" | "optional" | "none" | "unknown";
-  type: "string" | "number" | "boolean" | "array" | "unknown";
+  valueMode: 'required' | 'optional' | 'none' | 'unknown';
+  type: 'string' | 'number' | 'boolean' | 'array' | 'unknown';
   choices: string[] | null;
   defaultValue: string | null;
 }
@@ -67,7 +67,7 @@ export function clientCatalogSource(client: ClientCatalogInput): CatalogSource {
 /** Widen a client into the catalog surface, refusing one that lists no models. */
 export function asCatalog(source: CatalogSource): CatalogSource {
   const candidate = source as Partial<CatalogSource>;
-  if (typeof candidate.modelCatalogCommand !== "function" || typeof candidate.parseModelCatalog !== "function") {
+  if (typeof candidate.modelCatalogCommand !== 'function' || typeof candidate.parseModelCatalog !== 'function') {
     throw new ClientCommandFailed(`${source.command} does not list models.`);
   }
   return candidate as CatalogSource;
@@ -127,31 +127,31 @@ export function loadCatalogSync(
 
 /** One client's catalog outcome: its model ids, not on PATH, or a failure. */
 export type CatalogOutcome =
-  | { status: "loaded"; ids: readonly string[] }
-  | { status: "skipped" }
-  | { status: "failed"; reason: string };
+  | { status: 'loaded'; ids: readonly string[] }
+  | { status: 'skipped' }
+  | { status: 'failed'; reason: string };
 
 /** The same lookup name `model-check` uses: opencode's `#variant` suffix is not in its catalog. */
 export function catalogLookupName(command: string, model: string): string {
-  const hash = model.indexOf("#");
-  return command === "opencode" && hash > 0 ? model.slice(0, hash) : model;
+  const hash = model.indexOf('#');
+  return command === 'opencode' && hash > 0 ? model.slice(0, hash) : model;
 }
 
 /** Pure lookup policy: which clients list `model`, given every client's catalog outcome. */
 export function clientsListingModel(
   model: string,
-  clients: ReadonlyArray<{ id: string; command: string; outcome: CatalogOutcome }>,
+  clients: readonly { id: string; command: string; outcome: CatalogOutcome }[],
 ): {
   matches: string[];
   searched: string[];
   skipped: string[];
-  failed: Array<{ client: string; reason: string }>;
+  failed: { client: string; reason: string }[];
 } {
-  const result = { matches: [] as string[], searched: [] as string[], skipped: [] as string[], failed: [] as Array<{ client: string; reason: string }> };
+  const result = { matches: [] as string[], searched: [] as string[], skipped: [] as string[], failed: [] as { client: string; reason: string }[] };
   const name = model.trim();
   for (const { id, command, outcome } of clients) {
-    if (outcome.status === "skipped") result.skipped.push(id);
-    else if (outcome.status === "failed") result.failed.push({ client: id, reason: outcome.reason });
+    if (outcome.status === 'skipped') result.skipped.push(id);
+    else if (outcome.status === 'failed') result.failed.push({ client: id, reason: outcome.reason });
     else {
       result.searched.push(id);
       if (outcome.ids.includes(catalogLookupName(command, name))) result.matches.push(id);

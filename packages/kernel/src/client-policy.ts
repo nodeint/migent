@@ -5,11 +5,11 @@ import type {
   NewSession,
   TurnUsage,
   UsageCapture,
-} from "./cli-client.js";
+} from './cli-client.js';
 
 /** The options Migent persists in a session: the client's overridable options only. */
 export function sessionOptions(
-  client: Pick<CliClient, "options">,
+  client: Pick<CliClient, 'options'>,
   options: Readonly<Record<string, string>>,
 ): Record<string, string> {
   const names = new Set(
@@ -24,7 +24,7 @@ export function sessionOptions(
   return profile;
 }
 
-function optionsFor(client: Pick<CliClient, "options">): readonly ClientOption[] {
+function optionsFor(client: Pick<CliClient, 'options'>): readonly ClientOption[] {
   return client.options();
 }
 
@@ -34,7 +34,7 @@ function optionsFor(client: Pick<CliClient, "options">): readonly ClientOption[]
  * historical provider policy.
  */
 export function classifyFailure(
-  client: Pick<CliClient, "extractFailure">,
+  client: Pick<CliClient, 'extractFailure'>,
   stdout: string,
   exitCode: number,
 ): FailureClassification | null {
@@ -42,19 +42,19 @@ export function classifyFailure(
   if (raw === null) return null;
   if (raw.rateLimit !== undefined) {
     return {
-      kind: "quota",
+      kind: 'quota',
       origin: raw.origin,
-      message: raw.message || "quota",
+      message: raw.message || 'quota',
       resetAt: raw.rateLimit.resetAt,
       window: raw.rateLimit.window,
     };
   }
-  return { kind: "provider", origin: raw.origin, message: raw.message || `CLI exited with code ${exitCode}.` };
+  return { kind: 'provider', origin: raw.origin, message: raw.message || `CLI exited with code ${exitCode}.` };
 }
 
 /** Running totals become this turn's share; per-turn figures pass through. */
 export function normalizeUsage(
-  client: Pick<CliClient, "readUsage">,
+  client: Pick<CliClient, 'readUsage'>,
   current: UsageCapture,
   previous: UsageCapture | null,
 ): TurnUsage {
@@ -71,7 +71,7 @@ export function normalizeUsage(
 }
 
 /** The fresh native identity a client accepts on its first run. */
-export function createNewSession(client: Pick<CliClient, "newSessionId">): NewSession {
+export function createNewSession(client: Pick<CliClient, 'newSessionId'>): NewSession {
   const agentId = client.newSessionId?.() ?? null;
   return agentId === null ? {} : { agentId };
 }

@@ -1,13 +1,14 @@
-import { existsSync, readFileSync, readdirSync } from "node:fs";
-import path from "node:path";
-import { EXECUTIONS_DIRNAME, SESSIONS_DIRNAME, MIGENT_DIRNAME } from "@nodeint/migent-kernel";
+import { existsSync, readdirSync,readFileSync } from 'node:fs';
+import path from 'node:path';
 
-const DIAGNOSTICS_FILE = "diagnostics.json";
+import { EXECUTIONS_DIRNAME, MIGENT_DIRNAME,SESSIONS_DIRNAME } from '@nodeint/migent-kernel';
+
+const DIAGNOSTICS_FILE = 'diagnostics.json';
 
 function readObject(file: string): Record<string, unknown> | null {
   try {
-    const value: unknown = JSON.parse(readFileSync(file, "utf8"));
-    return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+    const value: unknown = JSON.parse(readFileSync(file, 'utf8'));
+    return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
   } catch {
     return null;
   }
@@ -42,9 +43,9 @@ function latestPerStageIn(sessionDirectory: string) {
     if (!existsSync(file)) continue;
     const data = readObject(file);
     if (data === null) continue;
-    const metadata = readObject(path.join(root, name, "execution.json")) ?? {};
-    const stage = typeof metadata.stage_id === "string" ? metadata.stage_id : name;
-    const order = typeof metadata.execution_order === "number" ? metadata.execution_order : 0;
+    const metadata = readObject(path.join(root, name, 'execution.json')) ?? {};
+    const stage = typeof metadata.stage_id === 'string' ? metadata.stage_id : name;
+    const order = typeof metadata.execution_order === 'number' ? metadata.execution_order : 0;
     const current = byStage.get(stage);
     if (current && current.order > order) continue;
     byStage.set(stage, {

@@ -1,14 +1,14 @@
-import * as contracts from "../index.js";
-import { SCHEMA_BASE } from "../common.js";
+import { SCHEMA_BASE } from '../common.js';
+import * as contracts from '../index.js';
 
 /** JSON Schema dialect written at the root of every generated file. */
-export const SCHEMA_DIALECT = "https://json-schema.org/draft/2020-12/schema";
+export const SCHEMA_DIALECT = 'https://json-schema.org/draft/2020-12/schema';
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 type Node = { [key: string]: unknown };
 
-const isNode = (value: unknown): value is Node => typeof value === "object" && value !== null && !Array.isArray(value);
-const idOf = (value: unknown): string | null => (isNode(value) && typeof value.$id === "string" ? value.$id : null);
+const isNode = (value: unknown): value is Node => typeof value === 'object' && value !== null && !Array.isArray(value);
+const idOf = (value: unknown): string | null => (isNode(value) && typeof value.$id === 'string' ? value.$id : null);
 
 /** Plain JSON copy: own string keys only, `undefined` and functions dropped. */
 function plain(value: unknown, replaceIdentities: boolean, root: unknown): Json {
@@ -19,14 +19,14 @@ function plain(value: unknown, replaceIdentities: boolean, root: unknown): Json 
   const out: Record<string, Json> = {};
   for (const key of Object.keys(value)) {
     const item = value[key];
-    if (item === undefined || typeof item === "function") continue;
+    if (item === undefined || typeof item === 'function') continue;
     out[key] = plain(item, replaceIdentities, root);
   }
   return out;
 }
 
 function walk(value: unknown, visit: (node: Node) => void, seen = new Set<unknown>()): void {
-  if (typeof value !== "object" || value === null || seen.has(value)) return;
+  if (typeof value !== 'object' || value === null || seen.has(value)) return;
   seen.add(value);
   if (Array.isArray(value)) {
     for (const item of value) walk(item, visit, seen);

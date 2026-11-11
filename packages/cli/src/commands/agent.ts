@@ -1,16 +1,18 @@
-import { RoleRunResult, RoleRunResults } from "@nodeint/migent-contracts";
-import { writeJson } from "../emit.js";
-import { readFileSync } from "node:fs";
-import path from "node:path";
-import { CancellationRequested, ConfigurationError, loadRoleResponsibilities, loadYamlMapping, log, buildStageReplyPrompt, prependRoleInstructions, legacyClientOf, loadWorkspaceConfig, resolveRoleTarget, type TurnKind } from "@nodeint/migent-kernel";
-import { SessionStore, createAgentSession, requireAgentSession, isSessionLockLost, repairSessionUnlocked, SessionLock, stringOptions } from "@nodeint/migent-session";
-import { AgentToolRunner, type RunResult } from "@nodeint/migent-engine";
-import { printAgent, printError, printNotice, printResumeCommand, printReplyCommand } from "../display.js";
-import { cliHooks } from "../hooks.js";
-import { requireCurrentSchema } from "../migrate.js";
-import { bindCancellationSignals } from "../signals.js";
-import { clientRegistry, parseOptions } from "../client.js";
-import { resolvePrompt } from "../workspace.js";
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
+import { RoleRunResult, RoleRunResults } from '@nodeint/migent-contracts';
+import { AgentToolRunner, type RunResult } from '@nodeint/migent-engine';
+import { buildStageReplyPrompt, CancellationRequested, ConfigurationError, legacyClientOf, loadRoleResponsibilities, loadWorkspaceConfig, loadYamlMapping, log, prependRoleInstructions, resolveRoleTarget, type TurnKind } from '@nodeint/migent-kernel';
+import { createAgentSession, isSessionLockLost, repairSessionUnlocked, requireAgentSession, SessionLock, SessionStore, stringOptions } from '@nodeint/migent-session';
+
+import { clientRegistry, parseOptions } from '../client.js';
+import { printAgent, printError, printNotice, printReplyCommand,printResumeCommand } from '../display.js';
+import { writeJson } from '../emit.js';
+import { cliHooks } from '../hooks.js';
+import { requireCurrentSchema } from '../migrate.js';
+import { bindCancellationSignals } from '../signals.js';
+import { resolvePrompt } from '../workspace.js';
 
 export async function dispatchAgent(
   workspace: string,
@@ -40,7 +42,7 @@ export async function dispatchAgent(
   if (createdSession) log(`session_id: ${resolvedSessionId}`);
   let lock: SessionLock;
   try {
-    lock = SessionLock.acquire(path.join(workspace, ".migent", "sessions", resolvedSessionId));
+    lock = SessionLock.acquire(path.join(workspace, '.migent', 'sessions', resolvedSessionId));
   } catch (error) {
     if (error instanceof Error) {
       printError(error.message);
@@ -66,7 +68,7 @@ export async function dispatchAgent(
     if (!createdSession) {
       repairSessionUnlocked(workspace, resolvedSessionId);
       const store = new SessionStore(workspace);
-      if (store.readSessionStatus(resolvedSessionId).status === "cancelled") {
+      if (store.readSessionStatus(resolvedSessionId).status === 'cancelled') {
         resumeCancelled = true;
       } else {
         const previous = store.latestExecution(resolvedSessionId);
@@ -76,11 +78,11 @@ export async function dispatchAgent(
     const optionLabel =
       Object.entries(target.options)
         .map(([key, value]) => `${key}: ${value}`)
-        .join(", ") || "default";
+        .join(', ') || 'default';
     printNotice(`agent ${args.role} · ${target.client}/${target.model} (${optionLabel}).`);
     const unbind = bindCancellationSignals(lock);
-    let result: Awaited<ReturnType<AgentToolRunner["run"]>> | undefined;
-    let resumedMany: Array<Awaited<ReturnType<AgentToolRunner["run"]>>> | null = null;
+    let result: Awaited<ReturnType<AgentToolRunner['run']>> | undefined;
+    let resumedMany: Awaited<ReturnType<AgentToolRunner['run']>>[] | null = null;
     try {
       if (resumeCancelled) {
         const reopened = new SessionStore(workspace).reopenCancelledExecutions(resolvedSessionId);
@@ -90,9 +92,9 @@ export async function dispatchAgent(
         const settled = await Promise.allSettled(
           reopened.map((item) => runner.continueCancelled(workspace, resolvedSessionId, item.executionId)),
         );
-        const rejected = settled.find((item) => item.status === "rejected");
-        if (rejected && rejected.status === "rejected") throw rejected.reason;
-        const continued = settled.flatMap((item) => (item.status === "fulfilled" ? [item.value] : []));
+        const rejected = settled.find((item) => item.status === 'rejected');
+        if (rejected && rejected.status === 'rejected') throw rejected.reason;
+        const continued = settled.flatMap((item) => (item.status === 'fulfilled' ? [item.value] : []));
         if (continued.length === 0) {
           throw new ConfigurationError(`Session ${resolvedSessionId} is cancelled without an execution.`);
         }
@@ -137,15 +139,15 @@ export async function dispatchAgent(
       else {
         for (const item of resumedMany) printAgent({ ...item }, args.role, target.client, target.model, workspace);
       }
-      if (resumedMany.some((item) => item.failure_reason === "verify_exhausted")) {
+      if (resumedMany.some((item) => item.failure_reason === 'verify_exhausted')) {
         return finishRole(resolvedSessionId, 6);
       }
-      return finishRole(resolvedSessionId, resumedMany.every((item) => item.outcome_status === "complete") ? 0 : 1);
+      return finishRole(resolvedSessionId, resumedMany.every((item) => item.outcome_status === 'complete') ? 0 : 1);
     }
-    if (result === undefined) throw new Error("Agent run produced no result.");
+    if (result === undefined) throw new Error('Agent run produced no result.');
     if (args.asJson) writeJson(RoleRunResult, result);
     else printAgent({ ...result }, args.role, target.client, target.model, workspace);
-    return finishRole(resolvedSessionId, result.outcome_status === "complete" ? 0 : result.outcome_status === "question" ? 9 : 1);
+    return finishRole(resolvedSessionId, result.outcome_status === 'complete' ? 0 : result.outcome_status === 'question' ? 9 : 1);
   }
 }
 
@@ -157,7 +159,7 @@ export async function continueAgent(
   requireAgentSession(workspace, args.sessionId);
   let lock: SessionLock;
   try {
-    lock = SessionLock.acquire(path.join(workspace, ".migent", "sessions", args.sessionId));
+    lock = SessionLock.acquire(path.join(workspace, '.migent', 'sessions', args.sessionId));
   } catch (error) {
     if (error instanceof Error) {
       printError(error.message);
@@ -181,13 +183,13 @@ export async function continueAgent(
     repairSessionUnlocked(workspace, args.sessionId);
     const store = new SessionStore(workspace);
     const status = store.readSessionStatus(args.sessionId);
-    let sessionStatus = typeof status.status === "string" ? status.status : "";
-    const role = typeof status.role === "string" ? status.role : "";
-    if (role === "") throw new ConfigurationError(`Session ${args.sessionId} has no role.`);
+    let sessionStatus = typeof status.status === 'string' ? status.status : '';
+    const role = typeof status.role === 'string' ? status.role : '';
+    if (role === '') throw new ConfigurationError(`Session ${args.sessionId} has no role.`);
     // A reply to a stopped turn supersedes it: the cancelled execution stays cancelled and the reply runs as a new turn.
     let cancelledReply: { executionId: string; text: string } | null = null;
     const pendingCancelled = store.pendingCancelledReply(args.sessionId, role);
-    if (args.reply !== null && (sessionStatus === "cancelled" || pendingCancelled !== null)) {
+    if (args.reply !== null && (sessionStatus === 'cancelled' || pendingCancelled !== null)) {
       const target = store.cancelledStages(args.sessionId).find((row) => row.stageId === role);
       if (!target) throw new ConfigurationError(`Session ${args.sessionId} has no cancelled execution to reply to.`);
       store.supersedeCancelled(args.sessionId, role, args.reply);
@@ -195,14 +197,14 @@ export async function continueAgent(
     } else if (pendingCancelled !== null) {
       cancelledReply = { executionId: pendingCancelled.executionId, text: pendingCancelled.reply };
     }
-    if (cancelledReply !== null) sessionStatus = "active";
-    if (sessionStatus === "completed" && args.reply === null) {
+    if (cancelledReply !== null) sessionStatus = 'active';
+    if (sessionStatus === 'completed' && args.reply === null) {
       printNotice(`Session ${args.sessionId} is completed.`);
       return 0;
     }
     const pending = cancelledReply === null ? store.questionStages(args.sessionId).find((row) => row.stageId === role) : undefined;
     const reply = args.reply ?? (pending ? store.questionReply(args.sessionId, pending.executionId) : null);
-    if (sessionStatus === "question" && reply === null) {
+    if (sessionStatus === 'question' && reply === null) {
       printNotice(`Session ${args.sessionId} has a pending question. Continue with --reply.`);
       return 9;
     }
@@ -212,12 +214,12 @@ export async function continueAgent(
     const optionLabel =
       Object.entries(profile.options)
         .map(([key, value]) => `${key}: ${value}`)
-        .join(", ") || "default";
+        .join(', ') || 'default';
     printNotice(`agent ${role} · ${profile.client}/${profile.model} (${optionLabel}).`);
     const unbind = bindCancellationSignals(lock);
     try {
       const runner = args.runner ?? cliHooks.runner ?? new AgentToolRunner(clientRegistry());
-      if (sessionStatus === "cancelled") {
+      if (sessionStatus === 'cancelled') {
         return await runCancelledRole(
           workspace,
           args.sessionId,
@@ -233,29 +235,29 @@ export async function continueAgent(
       if (cancelledReply !== null) {
         log(`session ${args.sessionId} was stopped during ${cancelledReply.executionId}. Sending your reply to ${role}.`);
         prompt = rolePrompt(workspace, role, buildStageReplyPrompt(cancelledReply.text, { interrupted: true }));
-        turn = "reply";
+        turn = 'reply';
         resumeId = cancelledReply.executionId;
       } else if (reply !== null) {
         const answers = pending && args.reply !== null;
         const answer = answers ? store.resumeQuestion(args.sessionId, role, reply) : reply;
         prompt = rolePrompt(workspace, role, buildStageReplyPrompt(answer, { answers }));
-        turn = answers ? "answers" : "reply";
-      } else if (sessionStatus === "blocked") {
+        turn = answers ? 'answers' : 'reply';
+      } else if (sessionStatus === 'blocked') {
         const blocker = executionBlocker(latest.directory);
         const resumed = store.resumeBlockedSession(args.sessionId);
         for (const item of resumed) {
           log(`session ${args.sessionId} was blocked by ${item.executionId}. Resuming ${role}.`);
         }
-        const lines = ["Previous attempt:", `- execution: ${latest.executionId}`];
+        const lines = ['Previous attempt:', `- execution: ${latest.executionId}`];
         if (blocker) lines.push(`- blocker: ${blocker}`);
-        lines.push("That attempt ended blocked. The blocker was handled outside this session. Continue.");
-        prompt = rolePrompt(workspace, role, lines.join("\n"));
-        turn = "continue";
-      } else if (sessionStatus === "active") {
+        lines.push('That attempt ended blocked. The blocker was handled outside this session. Continue.');
+        prompt = rolePrompt(workspace, role, lines.join('\n'));
+        turn = 'continue';
+      } else if (sessionStatus === 'active') {
         log(`session ${args.sessionId} is active. Resuming ${role} with its last prompt.`);
         prompt = lastUserPrompt(workspace, args.sessionId, latest.executionId);
       } else {
-        throw new ConfigurationError(`Session ${args.sessionId} is ${sessionStatus || "unknown"}.`);
+        throw new ConfigurationError(`Session ${args.sessionId} is ${sessionStatus || 'unknown'}.`);
       }
       const result = await runner.run({
         client: profile.client,
@@ -269,7 +271,7 @@ export async function continueAgent(
         stageId: role,
       });
       printAgent({ ...result }, role, profile.client, profile.model, workspace);
-      return finishRole(args.sessionId, result.outcome_status === "complete" ? 0 : result.outcome_status === "question" ? 9 : 1);
+      return finishRole(args.sessionId, result.outcome_status === 'complete' ? 0 : result.outcome_status === 'question' ? 9 : 1);
     } catch (error) {
       if (error instanceof CancellationRequested) {
         log(error.message);
@@ -302,36 +304,36 @@ async function runCancelledRole(
   const settled = await Promise.allSettled(
     reopened.map((item) => runner.continueCancelled(workspace, sessionId, item.executionId)),
   );
-  const rejected = settled.find((item) => item.status === "rejected");
-  if (rejected && rejected.status === "rejected") throw rejected.reason;
-  const continued = settled.flatMap((item) => (item.status === "fulfilled" ? [item.value] : []));
+  const rejected = settled.find((item) => item.status === 'rejected');
+  if (rejected && rejected.status === 'rejected') throw rejected.reason;
+  const continued = settled.flatMap((item) => (item.status === 'fulfilled' ? [item.value] : []));
   if (continued.length === 0) {
     throw new ConfigurationError(`Session ${sessionId} is cancelled without an execution.`);
   }
   const finished: RunResult[] = continued;
   if (finished.length === 1) {
     const result = finished[0];
-    if (result === undefined) throw new Error("Agent run produced no result.");
+    if (result === undefined) throw new Error('Agent run produced no result.');
     if (asJson) writeJson(RoleRunResult, result);
     else printAgent({ ...result }, role, profile.client, profile.model, workspace);
-    return finishRole(sessionId, result.outcome_status === "complete" ? 0 : result.outcome_status === "question" ? 9 : 1);
+    return finishRole(sessionId, result.outcome_status === 'complete' ? 0 : result.outcome_status === 'question' ? 9 : 1);
   }
   if (asJson) writeJson(RoleRunResults, finished);
   else {
     for (const item of finished) printAgent({ ...item }, role, profile.client, profile.model, workspace);
   }
-  if (finished.some((item) => item.failure_reason === "verify_exhausted")) return finishRole(sessionId, 6);
-  return finishRole(sessionId, finished.every((item) => item.outcome_status === "complete") ? 0 : 1);
+  if (finished.some((item) => item.failure_reason === 'verify_exhausted')) return finishRole(sessionId, 6);
+  return finishRole(sessionId, finished.every((item) => item.outcome_status === 'complete') ? 0 : 1);
 }
 
 function lastUserPrompt(workspace: string, sessionId: string, executionId: string): string {
   const context = new SessionStore(workspace).executionContext(sessionId, executionId);
   if (context === null) throw new ConfigurationError(`Execution ${executionId} was not found.`);
-  const raw = JSON.parse(readFileSync(context.conversationReadPath, "utf8")) as unknown;
+  const raw = JSON.parse(readFileSync(context.conversationReadPath, 'utf8')) as unknown;
   const history = Array.isArray(raw) ? raw : isRecord(raw) && Array.isArray(raw.history) ? raw.history : [];
   for (let index = history.length - 1; index >= 0; index -= 1) {
     const entry = history[index];
-    if (isRecord(entry) && entry.role === "user" && typeof entry.content === "string" && entry.content !== "") {
+    if (isRecord(entry) && entry.role === 'user' && typeof entry.content === 'string' && entry.content !== '') {
       return entry.content;
     }
   }
@@ -339,13 +341,13 @@ function lastUserPrompt(workspace: string, sessionId: string, executionId: strin
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function finishRole(sessionId: string, code: number): number {
   if (code === 9) printReplyCommand(sessionId);
   if (code === 1 || code === 6 || code === 130) printResumeCommand(sessionId);
-  if (code === 130) printReplyCommand(sessionId, undefined, "steer");
+  if (code === 130) printReplyCommand(sessionId, undefined, 'steer');
   return code;
 }
 
@@ -360,13 +362,13 @@ function executionProfile(
   directory: string,
   executionId: string,
 ): { client: string; model: string; options: Record<string, string> } {
-  const raw = JSON.parse(readFileSync(path.join(directory, "execution.json"), "utf8")) as unknown;
+  const raw = JSON.parse(readFileSync(path.join(directory, 'execution.json'), 'utf8')) as unknown;
   const client = isRecord(raw)
-    ? typeof raw.client === "string" && raw.client !== ""
+    ? typeof raw.client === 'string' && raw.client !== ''
       ? raw.client
-      : legacyClientOf(typeof raw.provider === "string" ? raw.provider : null)
+      : legacyClientOf(typeof raw.provider === 'string' ? raw.provider : null)
     : null;
-  if (!isRecord(raw) || client === null || typeof raw.model !== "string" || raw.model === "") {
+  if (!isRecord(raw) || client === null || typeof raw.model !== 'string' || raw.model === '') {
     throw new ConfigurationError(`Execution ${executionId} has no client.`);
   }
   return { client, model: raw.model, options: stringOptions(raw.options) };
@@ -374,9 +376,9 @@ function executionProfile(
 
 function executionBlocker(directory: string): string | null {
   try {
-    const raw = JSON.parse(readFileSync(path.join(directory, "execution.json"), "utf8")) as unknown;
+    const raw = JSON.parse(readFileSync(path.join(directory, 'execution.json'), 'utf8')) as unknown;
     if (!isRecord(raw) || !isRecord(raw.outcome)) return null;
-    return typeof raw.outcome.blocker === "string" && raw.outcome.blocker !== "" ? raw.outcome.blocker : null;
+    return typeof raw.outcome.blocker === 'string' && raw.outcome.blocker !== '' ? raw.outcome.blocker : null;
   } catch {
     return null;
   }
@@ -388,8 +390,8 @@ function resolveSession(
   role: string,
   task: string | null,
 ): [string, boolean] {
-  if (sessionId !== null && typeof task === "string" && task.trim() !== "") {
-    throw new ConfigurationError("--task cannot be combined with a session.");
+  if (sessionId !== null && typeof task === 'string' && task.trim() !== '') {
+    throw new ConfigurationError('--task cannot be combined with a session.');
   }
   if (sessionId !== null) {
     requireAgentSession(workspace, sessionId);

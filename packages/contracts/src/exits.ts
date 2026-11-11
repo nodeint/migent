@@ -1,5 +1,6 @@
-import Type, { type Static } from "typebox";
-import { id } from "./common.js";
+import Type, { type Static } from 'typebox';
+
+import { id } from './common.js';
 
 /**
  * Process exit codes of user-facing commands. Pure data describing current behavior. The CLI builds
@@ -7,139 +8,139 @@ import { id } from "./common.js";
  */
 
 /** Command families that share one exit vocabulary. */
-export const EXIT_FAMILIES = ["run", "run_once", "role_run", "preflight", "authoring", "doctor", "get", "complete"] as const;
+export const EXIT_FAMILIES = ['run', 'run_once', 'role_run', 'preflight', 'authoring', 'doctor', 'get', 'complete'] as const;
 export type ExitFamily = (typeof EXIT_FAMILIES)[number];
 
 export const EXIT_FAMILY_TITLES: Record<ExitFamily, string> = {
-  run: "Workflow run (`session run`, `session continue`)",
-  run_once: "Workflow run with `--once` or `--stage`",
-  role_run: "Role run (`session run --role`)",
-  preflight: "Preflight before a workflow run",
-  authoring: "Authoring (`config|workflow validate|render|save`)",
-  doctor: "`doctor`",
-  get: "`get`",
-  complete: "`session complete`",
+  run: 'Workflow run (`session run`, `session continue`)',
+  run_once: 'Workflow run with `--once` or `--stage`',
+  role_run: 'Role run (`session run --role`)',
+  preflight: 'Preflight before a workflow run',
+  authoring: 'Authoring (`config|workflow validate|render|save`)',
+  doctor: '`doctor`',
+  get: '`get`',
+  complete: '`session complete`',
 };
 
 export const ExitCodeEntry = Type.Object(
   {
-    code: Type.Integer({ minimum: 0, maximum: 255, description: "The process exit code." }),
-    name: Type.String({ description: "Stable name. The stop reason where one exists." }),
+    code: Type.Integer({ minimum: 0, maximum: 255, description: 'The process exit code.' }),
+    name: Type.String({ description: 'Stable name. The stop reason where one exists.' }),
     descriptions: Type.Record(Type.String(), Type.String(), {
       propertyNames: { enum: [...EXIT_FAMILIES] },
-      description: "Per command family: the text that follows `Exit <code> `.",
+      description: 'Per command family: the text that follows `Exit <code> `.',
     }),
   },
-  { $id: id("exit/exit-code"), title: "Exit code", description: "One exit code and what it means for each command family." },
+  { $id: id('exit/exit-code'), title: 'Exit code', description: 'One exit code and what it means for each command family.' },
 );
 export type ExitCodeEntry = Static<typeof ExitCodeEntry>;
 
 export const EXIT_CATALOG = [
   {
     code: 0,
-    name: "completed",
+    name: 'completed',
     descriptions: {
-      run: "when the session is completed.",
-      run_once: "when the stage outcome is complete, or the session is already completed.",
-      role_run: "when the outcome is complete, or the role session is already completed.",
-      authoring: "ok (warnings allowed).",
-      doctor: "when every check passes.",
-      get: "on success, including an empty list.",
-      complete: "on success and when already completed.",
+      run: 'when the session is completed.',
+      run_once: 'when the stage outcome is complete, or the session is already completed.',
+      role_run: 'when the outcome is complete, or the role session is already completed.',
+      authoring: 'ok (warnings allowed).',
+      doctor: 'when every check passes.',
+      get: 'on success, including an empty list.',
+      complete: 'on success and when already completed.',
     },
   },
   {
     code: 1,
-    name: "blocked",
+    name: 'blocked',
     descriptions: {
-      run: "when the session is blocked. session continue runs that stage again.",
-      run_once: "when the stage is not complete, or the session is blocked.",
-      role_run: "when the outcome is not complete.",
-      authoring: "for an invalid draft.",
-      doctor: "when a check fails.",
+      run: 'when the session is blocked. session continue runs that stage again.',
+      run_once: 'when the stage is not complete, or the session is blocked.',
+      role_run: 'when the outcome is not complete.',
+      authoring: 'for an invalid draft.',
+      doctor: 'when a check fails.',
     },
   },
   {
     code: 2,
-    name: "config",
+    name: 'config',
     descriptions: {
-      run: "on a configuration error.",
-      run_once: "on a configuration error.",
-      role_run: "on a configuration error.",
-      preflight: "when the preflight check finds a problem. Nothing is created or frozen. Pass --skip-preflight to bypass it.",
-      authoring: "for an invocation or I/O error.",
-      doctor: "for an invalid session id or an unreadable session.",
-      get: "on a usage or configuration error, or when the name is not found.",
-      complete: "on a usage error or an invalid session.",
+      run: 'on a configuration error.',
+      run_once: 'on a configuration error.',
+      role_run: 'on a configuration error.',
+      preflight: 'when the preflight check finds a problem. Nothing is created or frozen. Pass --skip-preflight to bypass it.',
+      authoring: 'for an invocation or I/O error.',
+      doctor: 'for an invalid session id or an unreadable session.',
+      get: 'on a usage or configuration error, or when the name is not found.',
+      complete: 'on a usage error or an invalid session.',
     },
   },
   {
     code: 3,
-    name: "stage_failed",
+    name: 'stage_failed',
     descriptions: {
-      run: "when a stage fails. The session stays active.",
-      run_once: "when a non-continue --once or --stage finds a failed stage with no resume marker.",
-      authoring: "for a conflict (`stale-base`, `already-exists`, `session-locked`).",
+      run: 'when a stage fails. The session stays active.',
+      run_once: 'when a non-continue --once or --stage finds a failed stage with no resume marker.',
+      authoring: 'for a conflict (`stale-base`, `already-exists`, `session-locked`).',
     },
   },
   {
     code: 4,
-    name: "revisions_exhausted",
+    name: 'revisions_exhausted',
     descriptions: {
-      run: "when a route would exceed max_revisions. The session stays active.",
-      run_once: "when a route would exceed max_revisions. The session stays active.",
+      run: 'when a route would exceed max_revisions. The session stays active.',
+      run_once: 'when a route would exceed max_revisions. The session stays active.',
     },
   },
   {
     code: 5,
-    name: "dispatch_limit",
-    descriptions: { run: "when --max-dispatches is spent. The session stays active." },
+    name: 'dispatch_limit',
+    descriptions: { run: 'when --max-dispatches is spent. The session stays active.' },
   },
   {
     code: 6,
-    name: "verify_exhausted",
+    name: 'verify_exhausted',
     descriptions: {
-      run: "when verify fails max_verify times. The session stays active.",
-      run_once: "when verify fails max_verify times. The session stays active.",
-      role_run: "when a cancelled role session reopened more than one execution and one exhausted verify.",
+      run: 'when verify fails max_verify times. The session stays active.',
+      run_once: 'when verify fails max_verify times. The session stays active.',
+      role_run: 'when a cancelled role session reopened more than one execution and one exhausted verify.',
     },
   },
   {
     code: 7,
-    name: "verify_failed",
+    name: 'verify_failed',
     descriptions: {
-      run: "when a stage with no role fails verify. The session stays active.",
-      run_once: "when a stage with no role fails verify. The session stays active.",
+      run: 'when a stage with no role fails verify. The session stays active.',
+      run_once: 'when a stage with no role fails verify. The session stays active.',
     },
   },
   {
     code: 8,
-    name: "quota",
+    name: 'quota',
     descriptions: {
-      run: "when --once or --stage hits a client quota. The session stays active.",
-      run_once: "when --once or --stage hits a client quota.",
+      run: 'when --once or --stage hits a client quota. The session stays active.',
+      run_once: 'when --once or --stage hits a client quota.',
     },
   },
   {
     code: 9,
-    name: "question",
+    name: 'question',
     descriptions: {
-      run: "when waiting for a reply to a question.",
-      run_once: "when waiting for a reply to a question.",
+      run: 'when waiting for a reply to a question.',
+      run_once: 'when waiting for a reply to a question.',
     },
   },
   {
     code: 130,
-    name: "cancelled",
+    name: 'cancelled',
     descriptions: {
-      run: "when cancelled. session continue resumes that execution.",
-      run_once: "when cancelled. session continue resumes that execution.",
-      role_run: "when cancelled. session continue resumes that execution.",
+      run: 'when cancelled. session continue resumes that execution.',
+      run_once: 'when cancelled. session continue resumes that execution.',
+      role_run: 'when cancelled. session continue resumes that execution.',
     },
   },
 ] as const satisfies readonly ExitCodeEntry[];
 
-export type ExitName = (typeof EXIT_CATALOG)[number]["name"];
+export type ExitName = (typeof EXIT_CATALOG)[number]['name'];
 
 /** Numeric code for a catalog name. */
 export function exitCode(name: ExitName): number {

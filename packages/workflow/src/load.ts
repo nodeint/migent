@@ -1,16 +1,17 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import path from "node:path";
-import { ConfigurationError } from "./errors.js";
-import { isRecord } from "./record.js";
-import { parseYamlDocument } from "./yaml.js";
-import { catalogEntryFromDocument, checkWorkflowCatalog } from "./catalog.js";
-import { isPathReference } from "./model.js";
-import type { StageSpec, WorkflowCatalog, WorkflowDocument } from "./model.js";
-import { parseWorkflowMapping } from "./parse.js";
-import { fail } from "./stage-fields.js";
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import path from 'node:path';
+
+import { catalogEntryFromDocument, checkWorkflowCatalog } from './catalog.js';
+import { ConfigurationError } from './errors.js';
+import type { StageSpec, WorkflowCatalog, WorkflowDocument } from './model.js';
+import { isPathReference } from './model.js';
+import { parseWorkflowMapping } from './parse.js';
+import { isRecord } from './record.js';
+import { fail } from './stage-fields.js';
+import { parseYamlDocument } from './yaml.js';
 
 export function workflowsDirectory(workspace: string): string {
-  return path.join(workspace, ".migent", "workflows");
+  return path.join(workspace, '.migent', 'workflows');
 }
 
 /** `quiet` keeps authoring warnings off stderr; they remain on `document.warnings`. */
@@ -30,7 +31,7 @@ export function loadNamedWorkflow(
   }
   const matches = readWorkflowDirectory(workspace, options).loaded.filter((entry) => entry.document.id === workflowId);
   if (matches.length > 1) {
-    const names = matches.map((entry) => path.basename(entry.path)).join(", ");
+    const names = matches.map((entry) => path.basename(entry.path)).join(', ');
     fail(`${workflowId}: id is declared by ${names}.`);
   }
   if (matches.length === 0) fail(`Workflow not found: ${workflowId}`);
@@ -50,7 +51,7 @@ export function loadWorkflowCatalog(workspace: string, options: LoadWorkflowOpti
 export function loadWorkflowDocument(filePath: string, options: LoadWorkflowOptions = {}): WorkflowDocument {
   let text: string;
   try {
-    text = readFileSync(filePath, "utf8");
+    text = readFileSync(filePath, 'utf8');
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     throw new ConfigurationError(`Unable to read workflow: ${filePath} (${reason})`);
@@ -102,15 +103,15 @@ export interface LoadedWorkflow {
 export function readWorkflowDirectory(workspace: string, options: LoadWorkflowOptions = {}): { loaded: LoadedWorkflow[]; problems: string[] } {
   const directory = workflowsDirectory(workspace);
   if (!isDir(directory)) {
-    return { loaded: [], problems: ["Workflows directory not found: .migent/workflows"] };
+    return { loaded: [], problems: ['Workflows directory not found: .migent/workflows'] };
   }
   const paths = readdirSync(directory)
-    .filter((name) => name.endsWith(".yaml"))
+    .filter((name) => name.endsWith('.yaml'))
     .map((name) => path.join(directory, name))
     .filter((filePath) => isFile(filePath))
     .sort();
   if (paths.length === 0) {
-    return { loaded: [], problems: ["No workflows in .migent/workflows."] };
+    return { loaded: [], problems: ['No workflows in .migent/workflows.'] };
   }
   const loaded: LoadedWorkflow[] = [];
   const problems: string[] = [];
@@ -128,8 +129,8 @@ export function readWorkflowDirectory(workspace: string, options: LoadWorkflowOp
 export function unreadableWorkflowIds(problems: readonly string[]): Set<string> {
   const found = new Set<string>();
   for (const problem of problems) {
-    const name = problem.split(":", 1)[0] ?? "";
-    if (name.endsWith(".yaml") || name.endsWith(".yml")) found.add(path.parse(name).name);
+    const name = problem.split(':', 1)[0] ?? '';
+    if (name.endsWith('.yaml') || name.endsWith('.yml')) found.add(path.parse(name).name);
   }
   return found;
 }
@@ -143,7 +144,7 @@ export function resolveWorkflowPath(workspace: string, reference: string): strin
   if (path.isAbsolute(reference)) return isFile(reference) ? reference : null;
   const relative = path.join(workspace, reference);
   if (isFile(relative)) return relative;
-  if (path.dirname(reference) === ".") {
+  if (path.dirname(reference) === '.') {
     const named = path.join(workflowsDirectory(workspace), path.basename(reference));
     if (isFile(named)) return named;
   }

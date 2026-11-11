@@ -1,11 +1,12 @@
-import type { CliClient, HeadlessOption } from "@nodeint/migent-adapters";
-import { ConfigurationError, type ClientOption } from "@nodeint/migent-kernel";
-import { type View } from "@nodeint/migent-engine";
-import { GetAnyOption, GetClient, GetEffort, GetModel, GetNativeOption, GetOption, type Static } from "@nodeint/migent-contracts";
-import { field } from "./columns.js";
-import type { Column } from "./render.js";
-import type { DiscoveryContext, DiscoveryOutcome } from "./discovery.js";
-import { asView, type MachineQuery, type MachineResource } from "./resource-types.js";
+import type { CliClient, HeadlessOption } from '@nodeint/migent-adapters';
+import { GetAnyOption, GetClient, GetEffort, GetModel, GetNativeOption, GetOption, type Static } from '@nodeint/migent-contracts';
+import { type View } from '@nodeint/migent-engine';
+import { type ClientOption,ConfigurationError } from '@nodeint/migent-kernel';
+
+import { field } from './columns.js';
+import type { DiscoveryContext, DiscoveryOutcome } from './discovery.js';
+import type { Column } from './render.js';
+import { asView, type MachineQuery, type MachineResource } from './resource-types.js';
 
 function requireName(label: string, name: string | null): string {
   if (name === null) throw new ConfigurationError(`Pass a ${label} name.`);
@@ -20,7 +21,7 @@ function clientView(context: DiscoveryContext, id: string): Static<typeof GetCli
   const client = context.client(id);
   const path = context.pathOf(client);
   return {
-    kind: "client" as const,
+    kind: 'client' as const,
     name: id,
     command: client.command,
     available: path !== null,
@@ -31,15 +32,15 @@ function clientView(context: DiscoveryContext, id: string): Static<typeof GetCli
 }
 
 function modelView(client: string, model: string, isDefault: boolean): Static<typeof GetModel> {
-  return { kind: "model" as const, name: model, client, default: isDefault };
+  return { kind: 'model' as const, name: model, client, default: isDefault };
 }
 
 function optionView(client: string, option: ClientOption): Static<typeof GetOption> {
   return {
-    kind: "option" as const,
+    kind: 'option' as const,
     name: option.name,
     client,
-    source: "configured" as const,
+    source: 'configured' as const,
     prompt: option.prompt === true,
     allow_default: option.allowDefault === true,
     overridable: option.overridable === true,
@@ -48,10 +49,10 @@ function optionView(client: string, option: ClientOption): Static<typeof GetOpti
 
 function nativeOptionView(client: string, option: HeadlessOption): Static<typeof GetNativeOption> {
   return {
-    kind: "option" as const,
+    kind: 'option' as const,
     name: option.name,
     client,
-    source: "native" as const,
+    source: 'native' as const,
     flags: option.flags,
     description: option.description,
     argument: option.argument,
@@ -63,11 +64,11 @@ function nativeOptionView(client: string, option: HeadlessOption): Static<typeof
 }
 
 function effortView(client: string, model: string, option: string, values: readonly string[]): Static<typeof GetEffort> {
-  return { kind: "effort" as const, name: model, client, model, option, values: [...values] };
+  return { kind: 'effort' as const, name: model, client, model, option, values: [...values] };
 }
 
 function outcomeMessage(outcome: DiscoveryOutcome<unknown>): string {
-  return outcome.status === "ok" ? "" : outcome.message;
+  return outcome.status === 'ok' ? '' : outcome.message;
 }
 
 /** The clients a machine list or lookup considers: one when --client narrows it. */
@@ -79,8 +80,8 @@ function selectedClients(context: DiscoveryContext, query: MachineQuery): CliCli
 
 /** One stderr warning per skipped or failed client in a list. */
 function warnOutcome(context: DiscoveryContext, clientId: string, outcome: DiscoveryOutcome<unknown>): void {
-  if (outcome.status === "skipped") context.warn(`${clientId}: ${outcome.message}; skipped.`);
-  else if (outcome.status === "failed") context.warn(`${clientId}: ${outcome.message}`);
+  if (outcome.status === 'skipped') context.warn(`${clientId}: ${outcome.message}; skipped.`);
+  else if (outcome.status === 'failed') context.warn(`${clientId}: ${outcome.message}`);
 }
 
 interface ClientRows<Row> {
@@ -103,9 +104,9 @@ async function lookupView<Row extends { name: string }>(options: {
   const results: ClientRows<Row>[] = await Promise.all(
     options.candidates.map(async (client) => ({ client: client.id, outcome: await options.rowsFor(client) })),
   );
-  const matches: Array<{ client: string; view: Row }> = [];
+  const matches: { client: string; view: Row }[] = [];
   for (const result of results) {
-    if (result.outcome.status !== "ok") continue;
+    if (result.outcome.status !== 'ok') continue;
     for (const view of result.outcome.value) {
       if (view.name === name) matches.push({ client: result.client, view });
     }
@@ -113,31 +114,31 @@ async function lookupView<Row extends { name: string }>(options: {
   if (matches.length === 1) return matches[0]!.view;
   if (matches.length > 1) {
     throw new ConfigurationError(
-      `${capitalized(label)} ${name} matches more than one client: ${matches.map((match) => match.client).join(", ")}. Pass --client to choose one.`,
+      `${capitalized(label)} ${name} matches more than one client: ${matches.map((match) => match.client).join(', ')}. Pass --client to choose one.`,
     );
   }
 
-  const skipped = results.filter((result) => result.outcome.status === "skipped");
-  const failed = results.filter((result) => result.outcome.status === "failed");
+  const skipped = results.filter((result) => result.outcome.status === 'skipped');
+  const failed = results.filter((result) => result.outcome.status === 'failed');
   if (scoped !== null) {
     const first = skipped[0] ?? failed[0];
     const reason = first === undefined ? undefined : outcomeMessage(first.outcome);
     throw new ConfigurationError(
-      reason === undefined || reason === ""
+      reason === undefined || reason === ''
         ? `${capitalized(label)} not found: ${name} for client ${scoped}.`
         : `${capitalized(label)} ${name} is not available for client ${scoped}: ${reason}`,
     );
   }
 
-  const searched = results.filter((result) => result.outcome.status === "ok").map((result) => result.client);
-  const parts = [`No ${label} ${name} found.`, `Searched: ${searched.length > 0 ? searched.join(", ") : "none"}.`];
+  const searched = results.filter((result) => result.outcome.status === 'ok').map((result) => result.client);
+  const parts = [`No ${label} ${name} found.`, `Searched: ${searched.length > 0 ? searched.join(', ') : 'none'}.`];
   if (skipped.length > 0) {
-    parts.push(`Skipped: ${skipped.map((item) => `${item.client} (${outcomeMessage(item.outcome)})`).join(", ")}.`);
+    parts.push(`Skipped: ${skipped.map((item) => `${item.client} (${outcomeMessage(item.outcome)})`).join(', ')}.`);
   }
   if (failed.length > 0) {
-    parts.push(`Failed: ${failed.map((item) => `${item.client} (${outcomeMessage(item.outcome)})`).join(", ")}.`);
+    parts.push(`Failed: ${failed.map((item) => `${item.client} (${outcomeMessage(item.outcome)})`).join(', ')}.`);
   }
-  throw new ConfigurationError(parts.join(" "));
+  throw new ConfigurationError(parts.join(' '));
 }
 
 /** Clients with an effort option are the only candidates for an effort probe. */
@@ -149,41 +150,41 @@ function effortCandidates(context: DiscoveryContext, scoped: string | null): Cli
 }
 
 const clientResource: MachineResource<typeof GetClient> = {
-  scope: "machine",
-  kind: "client",
+  scope: 'machine',
+  kind: 'client',
   contract: GetClient,
   listContract: GetClient,
-  names: ["client", "clients"],
-  summary: "Registered CLI clients with their command, PATH availability, and effort option.",
+  names: ['client', 'clients'],
+  summary: 'Registered CLI clients with their command, PATH availability, and effort option.',
   acceptsClient: false,
   acceptsNative: false,
   columns: [
-    field("NAME", "name"),
-    field("COMMAND", "command"),
-    field("AVAILABLE", "available"),
-    field("PATH", "path"),
-    field("EFFORT_OPTION", "effort_option"),
+    field('NAME', 'name'),
+    field('COMMAND', 'command'),
+    field('AVAILABLE', 'available'),
+    field('PATH', 'path'),
+    field('EFFORT_OPTION', 'effort_option'),
   ],
   // PATH facts only: this type runs no discovery.
   list: async (context) => context.clientIds.map((id) => clientView(context, id)),
-  get: async (context, query) => clientView(context, requireName("client", query.name)),
+  get: async (context, query) => clientView(context, requireName('client', query.name)),
 };
 
 const modelResource: MachineResource<typeof GetModel> = {
-  scope: "machine",
-  kind: "model",
+  scope: 'machine',
+  kind: 'model',
   contract: GetModel,
   listContract: GetModel,
-  names: ["model", "models"],
+  names: ['model', 'models'],
   summary: "Model ids each CLI client reports, with the client's default model.",
   acceptsClient: true,
   acceptsNative: false,
-  columns: [field("NAME", "name"), field("CLIENT", "client"), field("DEFAULT", "default")],
+  columns: [field('NAME', 'name'), field('CLIENT', 'client'), field('DEFAULT', 'default')],
   list: async (context, query) => {
     const rows: Static<typeof GetModel>[] = [];
     for (const client of selectedClients(context, query)) {
       const outcome = await context.catalog(client);
-      if (outcome.status !== "ok") {
+      if (outcome.status !== 'ok') {
         warnOutcome(context, client.id, outcome);
         continue;
       }
@@ -193,46 +194,46 @@ const modelResource: MachineResource<typeof GetModel> = {
     return rows;
   },
   get: async (context, query) => {
-    const name = requireName("model", query.name);
+    const name = requireName('model', query.name);
     return lookupView({
-      label: "model",
+      label: 'model',
       name,
       scoped: query.client,
       candidates: selectedClients(context, query),
       rowsFor: async (client) => {
         const outcome = await context.catalog(client);
-        if (outcome.status !== "ok") return outcome;
-        return { status: "ok", value: outcome.value.ids.map((model) => modelView(client.id, model, model === outcome.value.defaultId)) };
+        if (outcome.status !== 'ok') return outcome;
+        return { status: 'ok', value: outcome.value.ids.map((model) => modelView(client.id, model, model === outcome.value.defaultId)) };
       },
     });
   },
 };
 
 const CONFIGURED_OPTION_COLUMNS: readonly Column[] = [
-  field("CLIENT", "client"),
-  field("NAME", "name"),
-  field("PROMPT", "prompt"),
-  field("ALLOW_DEFAULT", "allow_default"),
-  field("OVERRIDABLE", "overridable"),
+  field('CLIENT', 'client'),
+  field('NAME', 'name'),
+  field('PROMPT', 'prompt'),
+  field('ALLOW_DEFAULT', 'allow_default'),
+  field('OVERRIDABLE', 'overridable'),
 ];
 
 const NATIVE_OPTION_COLUMNS: readonly Column[] = [
-  field("CLIENT", "client"),
-  field("NAME", "name"),
-  field("ARGUMENT", "argument"),
-  field("VALUE_MODE", "value_mode"),
-  field("TYPE", "type"),
-  field("CHOICES", "choices"),
-  field("DEFAULT", "default"),
+  field('CLIENT', 'client'),
+  field('NAME', 'name'),
+  field('ARGUMENT', 'argument'),
+  field('VALUE_MODE', 'value_mode'),
+  field('TYPE', 'type'),
+  field('CHOICES', 'choices'),
+  field('DEFAULT', 'default'),
 ];
 
 const optionResource: MachineResource<typeof GetAnyOption> = {
-  scope: "machine",
-  kind: "option",
+  scope: 'machine',
+  kind: 'option',
   contract: GetAnyOption,
   listContract: GetAnyOption,
   contractFor: (query) => (query.native ? { one: GetNativeOption, item: GetNativeOption } : { one: GetOption, item: GetOption }),
-  names: ["option", "options"],
+  names: ['option', 'options'],
   summary: "Migent's option metadata per client, or the CLI's native headless options with --native.",
   acceptsClient: true,
   acceptsNative: true,
@@ -241,27 +242,27 @@ const optionResource: MachineResource<typeof GetAnyOption> = {
   list: async (context, query) =>
     query.native ? listNativeOptions(context, query) : listConfiguredOptions(context, query),
   get: async (context, query) => {
-    const name = requireName("option", query.name);
+    const name = requireName('option', query.name);
     if (query.native) {
       return lookupView({
-        label: "option",
+        label: 'option',
         name,
         scoped: query.client,
         candidates: selectedClients(context, query),
         rowsFor: async (client) => {
           const outcome = await context.nativeOptions(client);
-          if (outcome.status !== "ok") return outcome;
-          return { status: "ok", value: outcome.value.map((option) => nativeOptionView(client.id, option)) };
+          if (outcome.status !== 'ok') return outcome;
+          return { status: 'ok', value: outcome.value.map((option) => nativeOptionView(client.id, option)) };
         },
       });
     }
     return lookupView({
-      label: "option",
+      label: 'option',
       name,
       scoped: query.client,
       candidates: selectedClients(context, query),
       rowsFor: async (client) => ({
-        status: "ok",
+        status: 'ok',
         value: client.options().map((option) => optionView(client.id, option)),
       }),
     });
@@ -280,7 +281,7 @@ async function listNativeOptions(context: DiscoveryContext, query: MachineQuery)
   const rows: Static<typeof GetNativeOption>[] = [];
   for (const client of selectedClients(context, query)) {
     const outcome = await context.nativeOptions(client);
-    if (outcome.status !== "ok") {
+    if (outcome.status !== 'ok') {
       warnOutcome(context, client.id, outcome);
       continue;
     }
@@ -290,25 +291,25 @@ async function listNativeOptions(context: DiscoveryContext, query: MachineQuery)
 }
 
 const effortResource: MachineResource<typeof GetEffort> = {
-  scope: "machine",
-  kind: "effort",
+  scope: 'machine',
+  kind: 'effort',
   contract: GetEffort,
   listContract: GetEffort,
-  names: ["effort", "efforts"],
+  names: ['effort', 'efforts'],
   summary: "Effort values per client and model, under the client's native option name.",
   acceptsClient: true,
   acceptsNative: false,
   columns: [
-    field("CLIENT", "client"),
-    field("MODEL", "model"),
-    field("OPTION", "option"),
-    field("VALUES", "values"),
+    field('CLIENT', 'client'),
+    field('MODEL', 'model'),
+    field('OPTION', 'option'),
+    field('VALUES', 'values'),
   ],
   list: async (context, query) => {
     const rows: Static<typeof GetEffort>[] = [];
     for (const client of selectedClients(context, query)) {
       const outcome = await context.efforts(client);
-      if (outcome.status !== "ok") {
+      if (outcome.status !== 'ok') {
         warnOutcome(context, client.id, outcome);
         continue;
       }
@@ -317,22 +318,22 @@ const effortResource: MachineResource<typeof GetEffort> = {
     return rows;
   },
   get: async (context, query) => {
-    const name = requireName("effort", query.name);
+    const name = requireName('effort', query.name);
     const candidates = effortCandidates(context, query.client);
     return lookupView({
-      label: "effort",
+      label: 'effort',
       name,
       scoped: query.client,
       candidates,
       rowsFor: async (client) => {
         const outcome = await context.effort(client, name);
-        if (outcome.status !== "ok") return outcome;
+        if (outcome.status !== 'ok') return outcome;
         // A known empty list is a real row (the model takes no effort values);
         // only a model absent from the catalog yields no row.
-        if (outcome.value === null) return { status: "ok", value: [] };
+        if (outcome.value === null) return { status: 'ok', value: [] };
         return {
-          status: "ok",
-          value: [effortView(client.id, name, client.effortOption ?? "effort", outcome.value)],
+          status: 'ok',
+          value: [effortView(client.id, name, client.effortOption ?? 'effort', outcome.value)],
         };
       },
     });

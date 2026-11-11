@@ -1,55 +1,57 @@
-import type { TurnKind } from "@nodeint/migent-prompts";
-import type { ClientRegistry } from "@nodeint/migent-kernel";
-import { createHash } from "node:crypto";
-import { AgentToolRunner, type RunResult } from "./agent-runner.js";
-import { writeFileAtomic, writeJsonAtomic } from "@nodeint/migent-kernel";
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+
+import type { ClientRegistry } from '@nodeint/migent-kernel';
+import type { ExecutionSnapshot } from '@nodeint/migent-kernel';
+import { writeFileAtomic, writeJsonAtomic } from '@nodeint/migent-kernel';
 import {
   CancellationRequested,
   cancellationSignal,
   raiseCancellation,
   resetCancellation,
-} from "@nodeint/migent-kernel";
-import { loadRoleResponsibilities, loadWorkspaceConfig, resolveStageTarget } from "@nodeint/migent-kernel";
-import { ConfigurationError, OutputsMissing } from "@nodeint/migent-kernel";
+} from '@nodeint/migent-kernel';
+import { loadRoleResponsibilities, loadWorkspaceConfig, resolveStageTarget } from '@nodeint/migent-kernel';
+import { ConfigurationError, OutputsMissing } from '@nodeint/migent-kernel';
+import { buildStagePrompt, buildStageReplyPrompt, buildStageResumePrompt, buildVerifyRepairPrompt } from '@nodeint/migent-kernel';
+import { formatClock, formatDuration, log, utcNow } from '@nodeint/migent-kernel';
 import {
-  assertStageDispatchable,
-  dispatchNamedStage,
-  type StageDispatchRequest,
-  type StageDispatchResult,
-} from "./dispatch.js";
-import { isRecord } from "@nodeint/migent-workflow";
-import { buildStagePrompt, buildStageReplyPrompt, buildStageResumePrompt, buildVerifyRepairPrompt } from "@nodeint/migent-kernel";
-import { ProviderEventReporter } from "./provider-events.js";
-import { formatClock, formatDuration, log, utcNow } from "@nodeint/migent-kernel";
-import { appendLifecycleEvent, parseExecutionId, readParsedEvents } from "@nodeint/migent-session";
-import { commitFoldedStatus } from "@nodeint/migent-session";
-import { WORKFLOW_FREEZE_FILE, frozenRoleInstructions, frozenStageTarget, loadFrozenWorkflow, readWorkflowFreeze, requireLiveWorkflow, warnIfFrozenDrift, writeWorkflowFreeze } from "@nodeint/migent-session";
-import {
-  VERIFY_EXHAUSTED,
-  VERIFY_FAILED,
+  NextStage,
   nextStage,
+  NextStageError,
   readyStages,
   revisionStop,
   runnableNow,
   schedulableStageIds,
   stagePromptAlreadyDelivered,
+  Stop,
+  VERIFY_EXHAUSTED,
+  VERIFY_FAILED,
   verifyExhaustedExecution,
   version2IdleReason,
-  NextStage,
-  NextStageError,
-  Stop,
-} from "@nodeint/migent-kernel";
-import { repairSessionUnlocked } from "@nodeint/migent-session";
-import { activatePreparedSession, bindPriorSessionId, createWorkflowSession, resolvePriorSessionId } from "@nodeint/migent-session";
-import { assertSingleLineTask, freezeSessionTask, requireTaskBody } from "@nodeint/migent-session";
-import { isSessionLockLost, SessionLock, SessionLockHeldError } from "@nodeint/migent-session";
-import { clearInFlightExecution, clearInFlightExecutions, noteInFlightExecution, SessionStore } from "@nodeint/migent-session";
-import { existsSync, readFileSync } from "node:fs";
-import path from "node:path";
-import { evaluateRunWhen, ensureSessionBaseline } from "./run-when.js";
-import { isRoleStage, isWorkflowV2, loadNamedWorkflow, type StageSpec, type WorkflowDocument } from "@nodeint/migent-workflow";
-import { runVerifyOnlyStage } from "./verify-only.js";
-import type { ExecutionSnapshot } from "@nodeint/migent-kernel";
+} from '@nodeint/migent-kernel';
+import type { TurnKind } from '@nodeint/migent-prompts';
+import { appendLifecycleEvent, parseExecutionId, readParsedEvents } from '@nodeint/migent-session';
+import { commitFoldedStatus } from '@nodeint/migent-session';
+import { frozenRoleInstructions, frozenStageTarget, loadFrozenWorkflow, readWorkflowFreeze, requireLiveWorkflow, warnIfFrozenDrift, WORKFLOW_FREEZE_FILE, writeWorkflowFreeze } from '@nodeint/migent-session';
+import { repairSessionUnlocked } from '@nodeint/migent-session';
+import { activatePreparedSession, bindPriorSessionId, createWorkflowSession, resolvePriorSessionId } from '@nodeint/migent-session';
+import { assertSingleLineTask, freezeSessionTask, requireTaskBody } from '@nodeint/migent-session';
+import { isSessionLockLost, SessionLock, SessionLockHeldError } from '@nodeint/migent-session';
+import { clearInFlightExecution, clearInFlightExecutions, noteInFlightExecution, SessionStore } from '@nodeint/migent-session';
+import { isRecord } from '@nodeint/migent-workflow';
+import { isRoleStage, isWorkflowV2, loadNamedWorkflow, type StageSpec, type WorkflowDocument } from '@nodeint/migent-workflow';
+
+import { AgentToolRunner, type RunResult } from './agent-runner.js';
+import {
+  assertStageDispatchable,
+  dispatchNamedStage,
+  type StageDispatchRequest,
+  type StageDispatchResult,
+} from './dispatch.js';
+import { ProviderEventReporter } from './provider-events.js';
+import { ensureSessionBaseline,evaluateRunWhen } from './run-when.js';
+import { runVerifyOnlyStage } from './verify-only.js';
 
 export const DEFAULT_MAX_DISPATCHES = 20;
 
@@ -67,7 +69,7 @@ export const EXECUTE_EXIT_CODES:Record<string, number> = {
   stage: 0,
 };
 
-const TERMINAL_SESSION_STATUSES = new Set(["completed", "blocked", "question", "cancelled"]);
+const TERMINAL_SESSION_STATUSES = new Set(['completed', 'blocked', 'question', 'cancelled']);
 
 export interface ExecuteRequest {
   workflowId?: string | null;
@@ -106,7 +108,7 @@ export interface ExecuteResult {
   latestDecision: string | null;
   latestExecutionId: string | null;
   outputs: Record<string, unknown>;
-  stages: Array<Record<string, unknown>>;
+  stages: Record<string, unknown>[];
 }
 
 export async function executeNamedWorkflow(
@@ -123,9 +125,9 @@ export async function executeNamedWorkflow(
     process.stderr.write(`migent: ${error.message}\n`);
     return {
       code: 2,
-      status: "",
-      stopReason: "configuration",
-      sessionId: request.sessionId ?? "",
+      status: '',
+      stopReason: 'configuration',
+      sessionId: request.sessionId ?? '',
       latestDecision: null,
       latestExecutionId: null,
       outputs: {},
@@ -141,8 +143,8 @@ export async function executeNamedWorkflow(
 function preflightFailed(sessionId: string): ExecuteResult {
   return {
     code: 2,
-    status: "",
-    stopReason: "configuration",
+    status: '',
+    stopReason: 'configuration',
     sessionId,
     latestDecision: null,
     latestExecutionId: null,
@@ -159,16 +161,16 @@ async function executeLocked(
 ): Promise<ExecuteResult> {
   const activeRunner = runner;
   if (activeRunner === undefined) {
-    throw new ConfigurationError("A client registry is required to run a workflow.");
+    throw new ConfigurationError('A client registry is required to run a workflow.');
   }
-  const registry = activeRunner.registry;
+  const {registry} = activeRunner;
   const stageId = request.stageId ?? null;
   const replyStageId = stageId ?? request.replyStageId ?? null;
   const once = request.once ?? false;
   const maxDispatches =
     request.maxDispatches === undefined ? DEFAULT_MAX_DISPATCHES : request.maxDispatches;
   if (!once && maxDispatches !== null && maxDispatches < 1) {
-    throw new ConfigurationError("--max-dispatches must be at least 1.");
+    throw new ConfigurationError('--max-dispatches must be at least 1.');
   }
   const store = new SessionStore(workspace);
   let sessionId = request.sessionId ?? null;
@@ -179,44 +181,44 @@ async function executeLocked(
   // A cancelled-stage reply never resumes blocked siblings; they keep their blockers.
   let cancelledReplyStage = false;
   let stageReply: PendingStageReply | null = null;
-  const replyText = typeof request.reply === "string" ? request.reply : null;
+  const replyText = typeof request.reply === 'string' ? request.reply : null;
   if (sessionId) {
-    if (!existsSync(path.join(workspace, ".migent", "sessions", sessionId))) {
+    if (!existsSync(path.join(workspace, '.migent', 'sessions', sessionId))) {
       throw new ConfigurationError(`Session not found: ${sessionId}.`);
     }
     held.sessionId = sessionId;
-    held.lock = SessionLock.acquire(path.join(workspace, ".migent", "sessions", sessionId));
+    held.lock = SessionLock.acquire(path.join(workspace, '.migent', 'sessions', sessionId));
     repairSessionUnlocked(workspace, sessionId);
     if (request.refreshWorkflow && !request.startPrepared) refreshSessionWorkflow(workspace, sessionId, false, registry);
     const bound = bindExecuteRun(workspace, sessionId, request.workflowId, request.priorSessionId);
     workflowId = bound.workflowId;
     if (!request.refreshWorkflow) {
-      const workflowPath = typeof bound.status.workflow_path === "string" ? bound.status.workflow_path : null;
-      const storedWorkflow = typeof bound.status.workflow_id === "string" ? bound.status.workflow_id : null;
+      const workflowPath = typeof bound.status.workflow_path === 'string' ? bound.status.workflow_path : null;
+      const storedWorkflow = typeof bound.status.workflow_id === 'string' ? bound.status.workflow_id : null;
       warnIfFrozenDrift(workspace, sessionId, workflowPath, storedWorkflow, registry);
     }
-    let sessionStatus = typeof bound.status.status === "string" ? bound.status.status : "";
-    if (replyText !== null && replyText.trim() === "") {
-      throw new ConfigurationError("--reply is empty.");
+    let sessionStatus = typeof bound.status.status === 'string' ? bound.status.status : '';
+    if (replyText !== null && replyText.trim() === '') {
+      throw new ConfigurationError('--reply is empty.');
     }
     if (replyText !== null) {
       const cancelled = store.cancelledStages(sessionId);
       const waiting = [...store.blockedStages(sessionId), ...store.questionStages(sessionId), ...cancelled];
-      if (waiting.length === 0) throw new ConfigurationError("--reply requires a blocked, cancelled, or question stage.");
-      if (waiting.length > 1 && replyStageId === null) throw new ConfigurationError(`--reply needs --stage when more than one stage is waiting: ${waiting.map((row) => row.stageId).join(", ")}.`);
+      if (waiting.length === 0) throw new ConfigurationError('--reply requires a blocked, cancelled, or question stage.');
+      if (waiting.length > 1 && replyStageId === null) throw new ConfigurationError(`--reply needs --stage when more than one stage is waiting: ${waiting.map((row) => row.stageId).join(', ')}.`);
       const target = replyStageId ?? waiting[0]!.stageId;
       if (!waiting.some((row) => row.stageId === target)) throw new ConfigurationError(`Stage ${target} is not waiting for a reply.`);
       stageReply = { stageId: target, text: replyText };
       const cancelledTarget = cancelled.find((row) => row.stageId === target);
       if (store.questionStages(sessionId).some((row) => row.stageId === target)) {
         stageReply.text = store.resumeQuestion(sessionId, target, replyText);
-        sessionStatus = "active";
+        sessionStatus = 'active';
       } else if (cancelledTarget) {
         if (verifyOnlyExecution(workspace, sessionId, cancelledTarget.executionId)) {
           throw new ConfigurationError(`Stage ${target} has no agent to reply to. Omit --reply to run its verify list again.`);
         }
         store.supersedeCancelled(sessionId, target, replyText);
-        sessionStatus = "active";
+        sessionStatus = 'active';
         cancelledReplyStage = true;
         resumeCancelled = true;
         reopenLatestCancelled = true;
@@ -232,7 +234,7 @@ async function executeLocked(
         const pending = store.pendingCancelledReply(sessionId, replyStageId);
         if (pending) {
           stageReply = { stageId: pending.stageId, text: pending.reply };
-          sessionStatus = "active";
+          sessionStatus = 'active';
           cancelledReplyStage = true;
           resumeCancelled = true;
           reopenLatestCancelled = true;
@@ -248,11 +250,11 @@ async function executeLocked(
       }
     }
     if (request.startPrepared) {
-      if (sessionStatus !== "prepared") {
+      if (sessionStatus !== 'prepared') {
         const hint =
-          sessionStatus === "active"
+          sessionStatus === 'active'
             ? `Session ${sessionId} is active. Resume with: migent session continue ${sessionId}`
-            : `Session ${sessionId} is ${sessionStatus || "unknown"}. migent session run --session only starts a prepared session.`;
+            : `Session ${sessionId} is ${sessionStatus || 'unknown'}. migent session run --session only starts a prepared session.`;
         throw new ConfigurationError(hint);
       }
       if (request.preflight) {
@@ -260,61 +262,61 @@ async function executeLocked(
         if (!(await request.preflight({ workflowId: null, sessionId }))) return preflightFailed(sessionId);
       }
       activatePreparedSession(workspace, sessionId, registry);
-      sessionStatus = "active";
-    } else if (sessionStatus === "prepared") {
+      sessionStatus = 'active';
+    } else if (sessionStatus === 'prepared') {
       throw new ConfigurationError(
         `Session ${sessionId} is prepared. Run: ${preparedRunHint(sessionId)}`,
       );
     }
-    if (!cancelledReplyStage && (sessionStatus === "blocked" || (stageReply !== null && store.blockedStages(sessionId).some((row) => row.stageId === stageReply!.stageId)))) {
+    if (!cancelledReplyStage && (sessionStatus === 'blocked' || (stageReply !== null && store.blockedStages(sessionId).some((row) => row.stageId === stageReply!.stageId)))) {
       const resumed = store.resumeBlockedSession(
         sessionId,
         stageReply?.stageId ?? stageId,
       );
-      sessionStatus = "active";
+      sessionStatus = 'active';
       for (const item of resumed) {
-        const stageLabel = item.stageId || "its stage";
-        const withReply = stageReply?.stageId === item.stageId ? " with a reply" : "";
+        const stageLabel = item.stageId || 'its stage';
+        const withReply = stageReply?.stageId === item.stageId ? ' with a reply' : '';
         log(`session ${sessionId} was blocked by ${item.executionId}. Resuming ${stageLabel}${withReply}.`);
       }
       // Decision 8 hides a cancelled sibling. Reopen that stage in place before new work.
       resumeCancelled = true;
       reopenLatestCancelled = true;
     }
-    if (sessionStatus === "cancelled") {
+    if (sessionStatus === 'cancelled') {
       resumeCancelled = true;
     } else if (!reopenLatestCancelled && TERMINAL_SESSION_STATUSES.has(sessionStatus)) {
       return executeFinal(bound.status, sessionStatus, []);
     }
   } else {
-    if (replyText !== null) throw new ConfigurationError("--reply requires a blocked session.");
+    if (replyText !== null) throw new ConfigurationError('--reply requires a blocked session.');
     if (request.refreshWorkflow) {
-      throw new ConfigurationError("--refresh-workflow requires an existing session.");
+      throw new ConfigurationError('--refresh-workflow requires an existing session.');
     }
-    if (!request.workflowId) throw new ConfigurationError("Creating a session requires a workflow.");
+    if (!request.workflowId) throw new ConfigurationError('Creating a session requires a workflow.');
     workflow = loadNamedWorkflow(workspace, request.workflowId);
     workflowId = workflow.id;
     resolvePriorSessionId(workspace, workflow, request.priorSessionId);
-    if (stageId !== null) requireEligibleStage(workflow, [], "active", stageId);
+    if (stageId !== null) requireEligibleStage(workflow, [], 'active', stageId);
     if (request.preflight) {
       // Argument errors come before the doctor checks.
       if (request.task) assertSingleLineTask(request.task);
-      if (!(await request.preflight({ workflowId: request.workflowId, sessionId: null }))) return preflightFailed("");
+      if (!(await request.preflight({ workflowId: request.workflowId, sessionId: null }))) return preflightFailed('');
     }
     sessionId = createWorkflowSession(workspace, workflowId, request.task, request.priorSessionId, registry);
     held.sessionId = sessionId;
-    held.lock = SessionLock.acquire(path.join(workspace, ".migent", "sessions", sessionId));
+    held.lock = SessionLock.acquire(path.join(workspace, '.migent', 'sessions', sessionId));
     log(`session_id: ${sessionId}`);
   }
-  const frozenDocument = loadFrozenWorkflow(path.join(workspace, ".migent", "sessions", sessionId));
+  const frozenDocument = loadFrozenWorkflow(path.join(workspace, '.migent', 'sessions', sessionId));
   if (frozenDocument) workflow = frozenDocument;
   else if (workflow === null) workflow = loadNamedWorkflow(workspace, workflowId);
   if (request.resetRevisions) {
-    store.reapOrphanedExecutions(sessionId, "raise");
+    store.reapOrphanedExecutions(sessionId, 'raise');
     const snapshots = store.executionSnapshots(sessionId);
     const status = store.readSessionStatus(sessionId);
     const current = text(status.status);
-    if (current === "cancelled") {
+    if (current === 'cancelled') {
       store.resetRevisionCounts(sessionId, snapshots);
     } else if (isWorkflowV2(workflow)) {
       // The reset is what lifts the cap, so the cap must not hide the stage continue is about to allow.
@@ -349,12 +351,12 @@ async function executeLocked(
       // The flag stays set; the command loop observes it.
     }
   };
-  process.on("SIGINT", onSigint);
-  process.on("SIGTERM", onSigterm);
+  process.on('SIGINT', onSigint);
+  process.on('SIGTERM', onSigterm);
   held.lock?.onCancelRequest(onSigint);
   const tasks = new Map<string, Promise<unknown>>();
   try {
-    const stageJsons: Array<Record<string, unknown>> = [];
+    const stageJsons: Record<string, unknown>[] = [];
     if (stageReply !== null) {
       // Send the reply before a cancelled sibling can end the command or fold the session blocked.
       const replySnapshots = store.executionSnapshots(sessionId);
@@ -399,27 +401,27 @@ async function executeLocked(
             ),
           ),
         );
-        const rejected = settled.find((item) => item.status === "rejected");
-        if (rejected && rejected.status === "rejected") throw rejected.reason;
-        const continued = settled.flatMap((item) => (item.status === "fulfilled" ? [item.value] : []));
+        const rejected = settled.find((item) => item.status === 'rejected');
+        if (rejected && rejected.status === 'rejected') throw rejected.reason;
+        const continued = settled.flatMap((item) => (item.status === 'fulfilled' ? [item.value] : []));
         for (let index = 0; index < reopened.length; index += 1) {
           const item = reopened[index]!;
           const result = continued[index]!;
           const outcome =
             result.failure_reason === VERIFY_FAILED
-              ? "verify_failed"
+              ? 'verify_failed'
               : result.outcome_status ||
-                (result.failure_reason || result.failure_kind || result.execution_status === "failed"
-                  ? "failed"
-                  : "finished");
+                (result.failure_reason || result.failure_kind || result.execution_status === 'failed'
+                  ? 'failed'
+                  : 'finished');
           log(
             stageFinishLine(
               workspace,
               sessionId,
-              item.stageId || "stage",
+              item.stageId || 'stage',
               item.executionId,
               outcome,
-              result.outcome_decision || "",
+              result.outcome_decision || '',
             ),
           );
           stageJsons.push(runResultJson(result));
@@ -432,14 +434,14 @@ async function executeLocked(
         if (continued.some((item) => item.failure_reason === VERIFY_EXHAUSTED)) {
           return executeFinal(status, VERIFY_EXHAUSTED, stageJsons);
         }
-        if (continued.some((item) => item.failure_kind === "quota") && (once || stageId !== null)) {
-          return executeFinal(status, "quota", stageJsons);
+        if (continued.some((item) => item.failure_kind === 'quota') && (once || stageId !== null)) {
+          return executeFinal(status, 'quota', stageJsons);
         }
         // A cancelled session stops here for one stage. A blocked sibling still needs dispatch.
         if (!reopenLatestCancelled && (once || stageId !== null || TERMINAL_SESSION_STATUSES.has(after))) {
-          const stopReason = TERMINAL_SESSION_STATUSES.has(after) ? after : "stage";
+          const stopReason = TERMINAL_SESSION_STATUSES.has(after) ? after : 'stage';
           const result = executeFinal(status, stopReason, stageJsons);
-          if (stopReason === "stage" && continued.some((item) => item.outcome_status !== "complete" && item.execution_status !== "skipped")) result.code = continued.some((item) => item.outcome_status === "question") ? 9 : 1;
+          if (stopReason === 'stage' && continued.some((item) => item.outcome_status !== 'complete' && item.execution_status !== 'skipped')) result.code = continued.some((item) => item.outcome_status === 'question') ? 9 : 1;
           return result;
         }
         if (!reopenLatestCancelled) {
@@ -472,15 +474,15 @@ async function executeLocked(
     }
     if (replySent && (once || stageId !== null)) {
       const status = store.readSessionStatus(sessionId);
-      if (replyResult?.failure_kind === "quota") return executeFinal(status, "quota", stageJsons);
+      if (replyResult?.failure_kind === 'quota') return executeFinal(status, 'quota', stageJsons);
       const after = text(status.status);
-      const stopReason = TERMINAL_SESSION_STATUSES.has(after) ? after : "stage";
+      const stopReason = TERMINAL_SESSION_STATUSES.has(after) ? after : 'stage';
       const result = executeFinal(status, stopReason, stageJsons);
-      if (replyResult?.outcome_status === "question") {
+      if (replyResult?.outcome_status === 'question') {
         result.code = 9;
-        result.stopReason = "question";
+        result.stopReason = 'question';
       }
-      if (stopReason === "stage" && stageJsons.some((item) => item.outcome_status !== "complete" && item.execution_status !== "skipped")) result.code = stageJsons.some((item) => item.outcome_status === "question") ? 9 : 1;
+      if (stopReason === 'stage' && stageJsons.some((item) => item.outcome_status !== 'complete' && item.execution_status !== 'skipped')) result.code = stageJsons.some((item) => item.outcome_status === 'question') ? 9 : 1;
       return result;
     }
     const replyDispatches = replySent ? 1 : 0;
@@ -517,11 +519,11 @@ async function executeLocked(
     if (error instanceof CancellationRequested) {
       await Promise.allSettled([...tasks.values()]);
       log(error.message);
-      return executeFinal(store.readSessionStatus(sessionId), "cancelled", []);
+      return executeFinal(store.readSessionStatus(sessionId), 'cancelled', []);
     }
     if (error instanceof OutputsMissing) {
       process.stderr.write(`migent: ${error.message}\n`);
-      return executeFinal(store.readSessionStatus(sessionId), "outputs_missing", []);
+      return executeFinal(store.readSessionStatus(sessionId), 'outputs_missing', []);
     }
     // ConfigurationError stays an exception. Callers map it to exit 2, matching Python.
     if (error instanceof ConfigurationError) throw error;
@@ -529,8 +531,8 @@ async function executeLocked(
       process.stderr.write(`migent: ${error.message}\n`);
       return {
         code: 2,
-        status: "",
-        stopReason: "configuration",
+        status: '',
+        stopReason: 'configuration',
         sessionId,
         latestDecision: null,
         latestExecutionId: null,
@@ -540,8 +542,8 @@ async function executeLocked(
     }
     throw error;
   } finally {
-    process.off("SIGINT", onSigint);
-    process.off("SIGTERM", onSigterm);
+    process.off('SIGINT', onSigint);
+    process.off('SIGTERM', onSigterm);
   }
 }
 
@@ -554,7 +556,7 @@ function requireEligibleStage(
   if (isWorkflowV2(workflow)) {
     const ready = readyStages(workflow, snapshots, sessionStatus);
     if (ready.includes(stageId)) return stageId;
-    const first = runnableNow(workflow, ready, [], workflow.concurrency ?? 1, snapshots)[0] ?? ready[0] ?? "";
+    const first = runnableNow(workflow, ready, [], workflow.concurrency ?? 1, snapshots)[0] ?? ready[0] ?? '';
     throw new ConfigurationError(`Stage ${stageId} is not the eligible stage ${first}.`);
   }
   const selected = selectedStage(workflow, snapshots, sessionStatus);
@@ -574,7 +576,7 @@ function selectedStage(
   const selected = nextStage(workflow, snapshots, sessionStatus, resumes);
   if (selected instanceof NextStageError) throw new ConfigurationError(selected.message);
   if (selected instanceof NextStage || selected instanceof Stop) return selected;
-  throw new ConfigurationError("no eligible stage");
+  throw new ConfigurationError('no eligible stage');
 }
 
 async function runExecuteOnce(
@@ -588,7 +590,7 @@ async function runExecuteOnce(
   tasks: Map<string, Promise<unknown>>,
   reply: PendingStageReply | null,
 ): Promise<ExecuteResult> {
-  store.reapOrphanedExecutions(sessionId, "raise");
+  store.reapOrphanedExecutions(sessionId, 'raise');
   const snapshots = store.executionSnapshots(sessionId);
   let status = store.readSessionStatus(sessionId);
   const sessionStatus = text(status.status);
@@ -596,7 +598,7 @@ async function runExecuteOnce(
   const chosen = isWorkflowV2(workflow)
     ? version2OnceStage(workspace, workflow, sessionId, snapshots, status, stageId)
     : version1OnceStage(workspace, workflow, sessionId, snapshots, status, stageId);
-  if (typeof chosen !== "string") return chosen;
+  if (typeof chosen !== 'string') return chosen;
   assertStageDispatchable(workspace, workflow, sessionId, chosen);
   const stage = await trackDispatch(sessionId, tasks, (note) =>
     dispatchExecuteStage(
@@ -616,15 +618,15 @@ async function runExecuteOnce(
   const after = text(status.status);
   if (stage.failure_reason === VERIFY_FAILED) return executeFinal(status, VERIFY_FAILED, [stage]);
   if (stage.failure_reason === VERIFY_EXHAUSTED) return executeFinal(status, VERIFY_EXHAUSTED, [stage]);
-  if (stage.failure_kind === "quota") return executeFinal(status, "quota", [stage]);
-  const stopReason = TERMINAL_SESSION_STATUSES.has(after) ? after : "stage";
+  if (stage.failure_kind === 'quota') return executeFinal(status, 'quota', [stage]);
+  const stopReason = TERMINAL_SESSION_STATUSES.has(after) ? after : 'stage';
   const result = executeFinal(status, stopReason, [stage]);
-  if (stage.outcome_status === "question") {
+  if (stage.outcome_status === 'question') {
     result.code = 9;
-    result.stopReason = "question";
+    result.stopReason = 'question';
   }
-  if (stopReason === "stage" && stage.outcome_status !== "complete" && stage.execution_status !== "skipped") {
-    result.code = stage.outcome_status === "question" ? 9 : 1;
+  if (stopReason === 'stage' && stage.outcome_status !== 'complete' && stage.execution_status !== 'skipped') {
+    result.code = stage.outcome_status === 'question' ? 9 : 1;
   }
   return result;
 }
@@ -643,7 +645,7 @@ function version1OnceStage(
     throw new ConfigurationError(`Stage ${stageId} is not the eligible stage ${selected.stageId}.`);
   }
   if (revisionStop(workflow, snapshots, selected.stageId, revisionBaselines(status))) {
-    return executeFinal(status, "revisions_exhausted", []);
+    return executeFinal(status, 'revisions_exhausted', []);
   }
   return selected.stageId;
 }
@@ -665,35 +667,35 @@ function version2OnceStage(
   if (stageId !== null) {
     const latest = latestSnapshotForStage(snapshots, stageId);
     if (
-      latest?.status === "failed" &&
+      latest?.status === 'failed' &&
       latest.failureReason !== VERIFY_EXHAUSTED &&
       latest.failureReason !== VERIFY_FAILED &&
       !resumes.some(
         (event) =>
-          event.event === "session.active" &&
+          event.event === 'session.active' &&
           event.executionId === latest.executionId &&
-          event.data?.from === "failed",
+          event.data?.from === 'failed',
       )
     ) {
-      return executeFinal(status, "stage_failed", []);
+      return executeFinal(status, 'stage_failed', []);
     }
     if (!schedulable.includes(stageId)) {
-      const first = runnableNow(workflow, schedulable, running, workflow.concurrency ?? 1, snapshots)[0] ?? ready[0] ?? "";
+      const first = runnableNow(workflow, schedulable, running, workflow.concurrency ?? 1, snapshots)[0] ?? ready[0] ?? '';
       throw new ConfigurationError(`Stage ${stageId} is not the eligible stage ${first}.`);
     }
     if (revisionStop(workflow, snapshots, stageId, baselines)) {
-      return executeFinal(status, "revisions_exhausted", []);
+      return executeFinal(status, 'revisions_exhausted', []);
     }
     return stageId;
   }
   const next = runnableNow(workflow, schedulable, running, workflow.concurrency ?? 1, snapshots)[0];
   if (next === undefined) {
     const reason = version2IdleReason(workflow, snapshots, sessionStatus, baselines, resumes);
-    if (reason === "no eligible stage") throw new ConfigurationError("no eligible stage");
+    if (reason === 'no eligible stage') throw new ConfigurationError('no eligible stage');
     return executeFinal(status, reason, []);
   }
   if (revisionStop(workflow, snapshots, next, baselines)) {
-    return executeFinal(status, "revisions_exhausted", []);
+    return executeFinal(status, 'revisions_exhausted', []);
   }
   return next;
 }
@@ -728,7 +730,7 @@ async function runExecuteLoop(
       verifyOnlyTriedSeed,
     );
   }
-  const stages: Array<Record<string, unknown>> = [];
+  const stages: Record<string, unknown>[] = [];
   let dispatched = alreadyDispatched;
   const accept = (stage: Record<string, unknown>): ExecuteResult | null => {
     stages.push(stage);
@@ -743,16 +745,16 @@ async function runExecuteLoop(
   };
   while (true) {
     cancellationSignal().throwIfCancelled();
-    store.reapOrphanedExecutions(sessionId, "raise");
+    store.reapOrphanedExecutions(sessionId, 'raise');
     const snapshots = store.executionSnapshots(sessionId);
     const status = store.readSessionStatus(sessionId);
     const selected = selectedStage(workflow, snapshots, text(status.status), blockResumes(workspace, sessionId));
     if (selected instanceof Stop) return executeFinal(status, selected.reason, stages);
     if (revisionStop(workflow, snapshots, selected.stageId, revisionBaselines(status))) {
-      return executeFinal(status, "revisions_exhausted", stages);
+      return executeFinal(status, 'revisions_exhausted', stages);
     }
     if (maxDispatches !== null && dispatched >= maxDispatches) {
-      return executeFinal(status, "dispatch_limit", stages);
+      return executeFinal(status, 'dispatch_limit', stages);
     }
     dispatched += 1;
     const dispatchedStage = await trackDispatch(sessionId, tasks, (note) =>
@@ -788,11 +790,11 @@ async function runVersion2Pool(
   verifyTriedSeed: readonly string[] = [],
   verifyOnlyTriedSeed: readonly string[] = [],
 ): Promise<ExecuteResult> {
-  const stages: Array<Record<string, unknown>> = [];
+  const stages: Record<string, unknown>[] = [];
   let dispatched = alreadyDispatched;
   const verifyTried = new Set<string>(verifyTriedSeed);
   const verifyOnlyTried = new Set<string>(verifyOnlyTriedSeed);
-  const flights: Array<{ promise: Promise<void>; settled: boolean }> = [];
+  const flights: { promise: Promise<void>; settled: boolean }[] = [];
   const errors: unknown[] = [];
   const concurrency = workflow.concurrency ?? 1;
   const observe = async (): Promise<void> => {
@@ -857,21 +859,21 @@ async function runVersion2Pool(
       verifyTried,
       verifyOnlyTried,
     );
-    if (remaining.length > 0) return executeFinal(endStatus, "dispatch_limit", stages);
+    if (remaining.length > 0) return executeFinal(endStatus, 'dispatch_limit', stages);
     const reason = version2IdleReason(workflow, endSnapshots, endSession, endBaselines, endResumes);
-    if (reason === "no eligible stage") return executeFinal(endStatus, "dispatch_limit", stages);
+    if (reason === 'no eligible stage') return executeFinal(endStatus, 'dispatch_limit', stages);
     return executeFinal(endStatus, reason, stages);
   };
   while (true) {
     cancellationSignal().throwIfCancelled();
     await observe();
-    store.reapOrphanedExecutions(sessionId, "raise");
-    let snapshots = store.executionSnapshots(sessionId);
-    let status = store.readSessionStatus(sessionId);
-    let sessionStatus = text(status.status);
-    if (sessionStatus === "cancelled") {
+    store.reapOrphanedExecutions(sessionId, 'raise');
+    const snapshots = store.executionSnapshots(sessionId);
+    const status = store.readSessionStatus(sessionId);
+    const sessionStatus = text(status.status);
+    if (sessionStatus === 'cancelled') {
       await Promise.allSettled(flights.map((flight) => flight.promise));
-      return executeFinal(status, "cancelled", []);
+      return executeFinal(status, 'cancelled', []);
     }
     const capped = await settleCeiling();
     if (capped) return capped;
@@ -892,14 +894,14 @@ async function runVersion2Pool(
     if (room > 0) {
       const cap = Math.min(concurrency, running.length + room);
       const starting = runnableNow(workflow, schedulable, running, cap, snapshots);
-      if (sessionStatus === "blocked" && starting.length > 0) {
-        status.status = "active";
+      if (sessionStatus === 'blocked' && starting.length > 0) {
+        status.status = 'active';
         delete status.blocked_by_execution_id;
         delete status.blocked_by_execution_ids;
         delete status.blocked_by_stage_id;
         delete status.blocker;
         delete status.terminal_execution_id;
-        writeJsonAtomic(path.join(workspace, ".migent", "sessions", sessionId, "status.json"), status);
+        writeJsonAtomic(path.join(workspace, '.migent', 'sessions', sessionId, 'status.json'), status);
       }
       for (const stageId of starting) startStage(stageId, status, snapshots);
     }
@@ -907,7 +909,7 @@ async function runVersion2Pool(
     if (cappedAfterStart) return cappedAfterStart;
     if (flights.length === 0) {
       const reason = version2IdleReason(workflow, snapshots, sessionStatus, baselines, resumes);
-      if (reason === "no eligible stage") throw new ConfigurationError("no eligible stage");
+      if (reason === 'no eligible stage') throw new ConfigurationError('no eligible stage');
       return executeFinal(status, reason, stages);
     }
     await Promise.race(flights.map((flight) => flight.promise));
@@ -917,13 +919,13 @@ async function runVersion2Pool(
 function runningStageIds(snapshots: readonly ExecutionSnapshot[]): string[] {
   const ids: string[] = [];
   for (const snapshot of snapshots) {
-    if (snapshot.status === "running" && !ids.includes(snapshot.stageId)) ids.push(snapshot.stageId);
+    if (snapshot.status === 'running' && !ids.includes(snapshot.stageId)) ids.push(snapshot.stageId);
   }
   return ids;
 }
 
 function blockResumes(workspace: string, sessionId: string) {
-  return readParsedEvents(path.join(workspace, ".migent", "sessions", sessionId, "events.jsonl")).map((event) => ({
+  return readParsedEvents(path.join(workspace, '.migent', 'sessions', sessionId, 'events.jsonl')).map((event) => ({
     event: event.event,
     executionId: event.executionId,
     data: event.data,
@@ -933,8 +935,8 @@ function blockResumes(workspace: string, sessionId: string) {
 function verifyOnlyExecution(workspace: string, sessionId: string, executionId: string): boolean {
   const context = new SessionStore(workspace).executionContext(sessionId, executionId);
   if (context === null) return false;
-  const metadata = JSON.parse(readFileSync(path.join(context.directory, "execution.json"), "utf8")) as unknown;
-  return isRecord(metadata) && metadata.kind === "verify";
+  const metadata = JSON.parse(readFileSync(path.join(context.directory, 'execution.json'), 'utf8')) as unknown;
+  return isRecord(metadata) && metadata.kind === 'verify';
 }
 
 function verifyOnlyStage(workflow: WorkflowDocument, stageId: string) {
@@ -956,7 +958,7 @@ function roleStartLine(
   const parts = [`stage ${stageId}`];
   if (attempt !== null) parts.push(`attempt ${attempt}`);
   parts.push(formatClock(), `${client}/${model} (${optionLabel})`);
-  const base = parts.join(" · ");
+  const base = parts.join(' · ');
   if (description === null) return `${base}.`;
   return `${base} — ${description}.`;
 }
@@ -975,19 +977,19 @@ function stageFinishLine(
   const duration = stageDurationLabel(workspace, sessionId, executionId);
   if (duration !== null) parts.push(duration);
   const tail = decision ? `${outcome} decision=${decision}` : outcome;
-  return `${parts.join(" · ")} · ${tail}.`;
+  return `${parts.join(' · ')} · ${tail}.`;
 }
 
 function stageDurationLabel(workspace: string, sessionId: string, executionId: string): string | null {
-  if (executionId === "") return null;
+  if (executionId === '') return null;
   const filePath = path.join(
     workspace,
-    ".migent",
-    "sessions",
+    '.migent',
+    'sessions',
     sessionId,
-    "executions",
+    'executions',
     executionId,
-    "execution.json",
+    'execution.json',
   );
   const elapsed = elapsedMs(readExecutionTimes(filePath));
   return elapsed === null ? null : formatDuration(elapsed);
@@ -995,7 +997,7 @@ function stageDurationLabel(workspace: string, sessionId: string, executionId: s
 
 function readExecutionTimes(filePath: string): { started: number | null; finished: number | null } {
   try {
-    const metadata = JSON.parse(readFileSync(filePath, "utf8")) as unknown;
+    const metadata = JSON.parse(readFileSync(filePath, 'utf8')) as unknown;
     if (!isRecord(metadata)) return { started: null, finished: null };
     return {
       started: parsedTime(metadata.created_at),
@@ -1012,7 +1014,7 @@ function elapsedMs(times: { started: number | null; finished: number | null }): 
 }
 
 function parsedTime(value: unknown): number | null {
-  if (typeof value !== "string" || value === "") return null;
+  if (typeof value !== 'string' || value === '') return null;
   const parsed = Date.parse(value);
   return Number.isNaN(parsed) ? null : parsed;
 }
@@ -1033,7 +1035,7 @@ async function dispatchExecuteStage(
   if (stageSpec === undefined) throw new ConfigurationError(`Stage not found: ${stageId}`);
   // Runs before the first await so two starts in one pool turn cannot both capture the baseline.
   if (ensureSessionBaseline(workspace, sessionId, workflow)) {
-    commitFoldedStatus(workspace, path.join(workspace, ".migent", "sessions", sessionId));
+    commitFoldedStatus(workspace, path.join(workspace, '.migent', 'sessions', sessionId));
   }
   const skipped = skipUnlessRunWhenMatches(workspace, sessionId, stageSpec, snapshots, runner);
   if (skipped !== null) return skipped;
@@ -1046,11 +1048,11 @@ async function dispatchExecuteStage(
       clients: runner.registry,
       onExecution,
     });
-    const outcome = result.failure_reason === VERIFY_FAILED ? "verify_failed" : "complete";
-    log(stageFinishLine(workspace, sessionId, stageId, result.execution_id, outcome, ""));
+    const outcome = result.failure_reason === VERIFY_FAILED ? 'verify_failed' : 'complete';
+    log(stageFinishLine(workspace, sessionId, stageId, result.execution_id, outcome, ''));
     return { ...result };
   }
-  const sessionDirectory = path.join(workspace, ".migent", "sessions", sessionId);
+  const sessionDirectory = path.join(workspace, '.migent', 'sessions', sessionId);
   const freeze = readWorkflowFreeze(sessionDirectory);
   const target = freeze
     ? frozenStageTarget(freeze, stageId)
@@ -1058,7 +1060,7 @@ async function dispatchExecuteStage(
   const optionLabel =
     Object.entries(target.options)
       .map(([key, value]) => `${key}: ${value}`)
-      .join(", ") || "default";
+      .join(', ') || 'default';
   const priorSessionId = storedPriorSessionId(status);
   const frozen = freezeSessionTask(workspace, sessionId);
   const exhausted = verifyExhaustedExecution(snapshots, stageId);
@@ -1081,22 +1083,22 @@ async function dispatchExecuteStage(
     && new SessionStore(workspace).questionStages(sessionId).some((row) => row.stageId === stageId);
   const interrupted = stageReply !== null && interruptedExecutionId(snapshots, stageId) !== undefined;
   const turn: TurnKind = stageReply !== null
-    ? (answers && !interrupted ? "answers" : "reply")
-    : exhausted?.verifyReport ? "repair"
-      : stagePromptAlreadyDelivered(workflow, snapshots, stageId) ? "continue" : "start";
+    ? (answers && !interrupted ? 'answers' : 'reply')
+    : exhausted?.verifyReport ? 'repair'
+      : stagePromptAlreadyDelivered(workflow, snapshots, stageId) ? 'continue' : 'start';
   const prompt =
-    turn === "answers" || turn === "reply"
+    turn === 'answers' || turn === 'reply'
       ? buildStageReplyPrompt(stageReply!, { answers, interrupted })
-      : turn === "repair"
+      : turn === 'repair'
         ? buildVerifyRepairPrompt(
-            readFileSync(exhausted!.verifyReport!, "utf8"),
+            readFileSync(exhausted!.verifyReport!, 'utf8'),
             stageSpec.maxVerify,
             stageSpec.maxVerify,
             null,
             frozen.taskFile,
             frozen.sessionDirectory,
           )
-        : turn === "continue"
+        : turn === 'continue'
           ? buildStageResumePrompt(promptInput)
           : buildStagePrompt(promptInput);
   const request: StageDispatchRequest = {
@@ -1130,7 +1132,7 @@ async function dispatchExecuteStage(
   );
   const outcome =
     result.outcomeStatus ||
-    (result.failureReason || result.failureKind || result.executionStatus === "failed" ? "failed" : "finished");
+    (result.failureReason || result.failureKind || result.executionStatus === 'failed' ? 'failed' : 'finished');
   log(stageFinishLine(workspace, sessionId, stageId, result.executionId, outcome, result.outcomeDecision));
   return result.toJson();
 }
@@ -1151,11 +1153,11 @@ function skipUnlessRunWhenMatches(
   }
   const fresh =
     latest === null ||
-    latest.status === "skipped" ||
-    (latest.status === "completed" && latest.outcomeStatus !== "blocked" && latest.outcomeStatus !== "question");
+    latest.status === 'skipped' ||
+    (latest.status === 'completed' && latest.outcomeStatus !== 'blocked' && latest.outcomeStatus !== 'question');
   if (!fresh) return null;
   const evaluation = evaluateRunWhen(workspace, sessionId, stage);
-  if ("matched" in evaluation) {
+  if ('matched' in evaluation) {
     log(`stage ${stage.id} · run_when matched ${evaluation.matched}.`);
     return null;
   }
@@ -1169,15 +1171,15 @@ function skipUnlessRunWhenMatches(
     session_id: sessionId,
     execution_id: context.executionId,
     artifact_directory: context.artifactDirectory,
-    failure_reason: "",
-    failure_kind: "",
-    reset_at: "",
-    client: "",
-    outcome_status: "",
-    outcome_decision: "",
+    failure_reason: '',
+    failure_kind: '',
+    reset_at: '',
+    client: '',
+    outcome_status: '',
+    outcome_decision: '',
     session_status: text(store.readSessionStatus(sessionId).status),
-    response: "",
-    execution_status: "skipped",
+    response: '',
+    execution_status: 'skipped',
     skip: {
       reason: evaluation.skip.reason,
       baseline: evaluation.skip.baseline,
@@ -1191,15 +1193,15 @@ function skipUnlessRunWhenMatches(
 function interruptedExecutionId(snapshots: readonly ExecutionSnapshot[], stageId: string): string | undefined {
   let latest: ExecutionSnapshot | null = null;
   for (const snapshot of snapshots) {
-    if (snapshot.stageId !== stageId || snapshot.status === "skipped") continue;
+    if (snapshot.stageId !== stageId || snapshot.status === 'skipped') continue;
     if (latest === null || snapshot.executionOrder > latest.executionOrder) latest = snapshot;
   }
-  return latest?.status === "cancelled" ? latest.executionId : undefined;
+  return latest?.status === 'cancelled' ? latest.executionId : undefined;
 }
 
 function takeStageReply(reply: PendingStageReply | null, stageId: string): string | null {
   if (reply === null || reply.stageId !== stageId || reply.text === null) return null;
-  const text = reply.text;
+  const {text} = reply;
   reply.text = null;
   return text;
 }
@@ -1212,10 +1214,10 @@ function bindExecuteRun(
 ): { workflowId: string; status: Record<string, unknown> } {
   const status = new SessionStore(workspace).readSessionStatus(sessionId);
   const storedWorkflow = status.workflow_id;
-  if (Object.keys(status).length === 0 || typeof storedWorkflow !== "string" || storedWorkflow === "") {
+  if (Object.keys(status).length === 0 || typeof storedWorkflow !== 'string' || storedWorkflow === '') {
     throw new ConfigurationError(`Session not found: ${sessionId}.`);
   }
-  if (storedWorkflow === "agent") {
+  if (storedWorkflow === 'agent') {
     throw new ConfigurationError(`Session ${sessionId} is not a named workflow session.`);
   }
   if (workflowId && workflowId !== storedWorkflow) {
@@ -1234,34 +1236,34 @@ function refreshSessionWorkflow(
   startPrepared: boolean,
   registry: ClientRegistry,
 ): void {
-  const sessionDirectory = path.join(workspace, ".migent", "sessions", sessionId);
+  const sessionDirectory = path.join(workspace, '.migent', 'sessions', sessionId);
   const freeze = readWorkflowFreeze(sessionDirectory);
   const status = new SessionStore(workspace).readSessionStatus(sessionId);
-  const sessionStatus = typeof status.status === "string" ? status.status : "";
-  if (sessionStatus === "completed" || sessionStatus === "cancelled") {
+  const sessionStatus = typeof status.status === 'string' ? status.status : '';
+  if (sessionStatus === 'completed' || sessionStatus === 'cancelled') {
     throw new ConfigurationError(`Session ${sessionId} is ${sessionStatus}.`);
   }
-  if (!startPrepared && sessionStatus === "prepared") {
+  if (!startPrepared && sessionStatus === 'prepared') {
     throw new ConfigurationError(`Session ${sessionId} is prepared. Run: ${preparedRunHint(sessionId)}`);
   }
   if (freeze === null) throw new ConfigurationError(`Session ${sessionId} has no frozen workflow.`);
-  if (startPrepared && sessionStatus !== "prepared") {
+  if (startPrepared && sessionStatus !== 'prepared') {
     const hint =
-      sessionStatus === "active"
+      sessionStatus === 'active'
         ? `Session ${sessionId} is active. Resume with: migent session continue ${sessionId}`
-        : `Session ${sessionId} is ${sessionStatus || "unknown"}. migent session run --session only starts a prepared session.`;
+        : `Session ${sessionId} is ${sessionStatus || 'unknown'}. migent session run --session only starts a prepared session.`;
     throw new ConfigurationError(hint);
   }
-  const workflowPath = typeof status.workflow_path === "string" ? status.workflow_path : null;
-  const workflowId = typeof status.workflow_id === "string" ? status.workflow_id : null;
+  const workflowPath = typeof status.workflow_path === 'string' ? status.workflow_path : null;
+  const workflowId = typeof status.workflow_id === 'string' ? status.workflow_id : null;
   const live = requireLiveWorkflow(workspace, workflowPath, workflowId);
   const freezePath = path.join(sessionDirectory, WORKFLOW_FREEZE_FILE);
-  const previousText = readFileSync(freezePath, "utf8");
-  const previousHash = createHash("sha256").update(previousText).digest("hex");
+  const previousText = readFileSync(freezePath, 'utf8');
+  const previousHash = createHash('sha256').update(previousText).digest('hex');
   const written = writeWorkflowFreeze(sessionDirectory, workspace, live, registry);
   try {
     appendLifecycleEvent(sessionDirectory, {
-      event: "workflow.refreshed",
+      event: 'workflow.refreshed',
       timestamp: utcNow(),
       data: {
         hash: written.hash,
@@ -1282,7 +1284,7 @@ function preparedRunHint(sessionId: string): string {
 
 function storedPriorSessionId(status: Record<string, unknown>): string | null {
   const prior = status.prior_session_id;
-  return typeof prior === "string" && prior ? prior : null;
+  return typeof prior === 'string' && prior ? prior : null;
 }
 
 function priorSessionOutputs(
@@ -1292,15 +1294,15 @@ function priorSessionOutputs(
 ): Record<string, unknown> | null {
   if (!priorSessionId) return null;
   if (sessionId) {
-    const handoff = new SessionStore(workspace).readSessionStatus(sessionId).handoff;
+    const {handoff} = new SessionStore(workspace).readSessionStatus(sessionId);
     if (isRecord(handoff) && isRecord(handoff.artifacts)) {
       return Object.fromEntries(Object.entries(handoff.artifacts).map(([name, value]) => {
         const record = isRecord(value) ? value : {};
-        return [name, { ...record, path: path.resolve(workspace, ".migent", "sessions", sessionId, String(record.path)) }];
+        return [name, { ...record, path: path.resolve(workspace, '.migent', 'sessions', sessionId, String(record.path)) }];
       }));
     }
   }
-  const outputs = new SessionStore(workspace).readSessionStatus(priorSessionId).outputs;
+  const {outputs} = new SessionStore(workspace).readSessionStatus(priorSessionId);
   return isRecord(outputs) ? outputs : {};
 }
 
@@ -1309,7 +1311,7 @@ function revisionBaselines(status: Record<string, unknown>): Record<string, numb
   if (!isRecord(raw)) return null;
   const baselines: Record<string, number> = {};
   for (const [key, value] of Object.entries(raw)) {
-    if (typeof value === "number") baselines[key] = value;
+    if (typeof value === 'number') baselines[key] = value;
   }
   return baselines;
 }
@@ -1329,7 +1331,7 @@ function runResultJson(result: RunResult): Record<string, unknown> {
     outcome_decision: result.outcome_decision,
     session_status: result.session_status,
     response: result.response,
-    execution_status: result.execution_status ?? "",
+    execution_status: result.execution_status ?? '',
   };
 }
 
@@ -1348,7 +1350,7 @@ function latestSnapshotForStage(
 function executeFinal(
   status: Record<string, unknown>,
   stopReason: string,
-  stages: Array<Record<string, unknown>>,
+  stages: Record<string, unknown>[],
 ): ExecuteResult {
   return {
     code: EXECUTE_EXIT_CODES[stopReason] ?? 2,
@@ -1363,11 +1365,11 @@ function executeFinal(
 }
 
 function optionalText(value: unknown): string | null {
-  return typeof value === "string" && value ? value : null;
+  return typeof value === 'string' && value ? value : null;
 }
 
 function text(value: unknown): string {
-  return typeof value === "string" ? value : "";
+  return typeof value === 'string' ? value : '';
 }
 
 function trackDispatch(
@@ -1421,7 +1423,7 @@ function startTracked<T>(
 }
 
 function hasErrorCode(error: Error): boolean {
-  return "code" in error && typeof (error as { code?: unknown }).code === "string";
+  return 'code' in error && typeof (error as { code?: unknown }).code === 'string';
 }
 
 /** The reply prompt names a lone question; several questions are spelled out in the formatted answers. */

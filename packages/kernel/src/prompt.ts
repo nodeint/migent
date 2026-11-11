@@ -1,10 +1,12 @@
-import { buildStageReplyPrompt, prependRoleInstructions, renderStageContinue, renderStageStart, renderVerifyRepair } from "@nodeint/migent-prompts";
-import { readFileSync, realpathSync, statSync } from "node:fs";
-import path from "node:path";
-import { isArtifactSchema, nonemptyArtifact, type ExecutionSnapshot } from "./outputs.js";
-import { isRecord } from "@nodeint/migent-workflow";
-import { currentCompleteByStage, latestCompleteByStage, relevantRouterSnapshots } from "./selection.js";
-import { isRoleStage, isWorkflowV2, routeListsStage, stageArtifactsFor, VERIFY_ARTIFACT, type StageSpec, type WorkflowDocument } from "@nodeint/migent-workflow";
+import { readFileSync, realpathSync, statSync } from 'node:fs';
+import path from 'node:path';
+
+import { buildStageReplyPrompt, prependRoleInstructions, renderStageContinue, renderStageStart, renderVerifyRepair } from '@nodeint/migent-prompts';
+import { isRecord } from '@nodeint/migent-workflow';
+import { isRoleStage, isWorkflowV2, routeListsStage, stageArtifactsFor, type StageSpec, VERIFY_ARTIFACT, type WorkflowDocument } from '@nodeint/migent-workflow';
+
+import { type ExecutionSnapshot,isArtifactSchema, nonemptyArtifact } from './outputs.js';
+import { currentCompleteByStage, latestCompleteByStage, relevantRouterSnapshots } from './selection.js';
 
 export function buildStagePrompt(input: {
   workflow: WorkflowDocument;
@@ -21,8 +23,8 @@ export function buildStagePrompt(input: {
   if (stage === undefined) throw new Error(`Stage is not declared: ${input.stageId}.`);
   if (!isRoleStage(stage)) throw new Error(`Stage ${stage.id} has no role.`);
   const sessionDirectory =
-    input.sessionDirectory ?? path.join(input.workspace, ".migent", "sessions", "session");
-  const taskFile = input.taskFile ?? path.join(sessionDirectory, "task.md");
+    input.sessionDirectory ?? path.join(input.workspace, '.migent', 'sessions', 'session');
+  const taskFile = input.taskFile ?? path.join(sessionDirectory, 'task.md');
   return renderStageStart({
     taskFile: resolvePath(taskFile),
     sessionDirectory: resolvePath(sessionDirectory),
@@ -47,12 +49,12 @@ export function buildStageResumePrompt(input: {
 }): string {
   const stage = input.workflow.stages[input.stageId];
   if (stage === undefined) throw new Error(`Stage is not declared: ${input.stageId}.`);
-  const sessionDirectory = input.sessionDirectory ?? path.join(input.workspace, ".migent", "sessions", "session");
+  const sessionDirectory = input.sessionDirectory ?? path.join(input.workspace, '.migent', 'sessions', 'session');
   const previous = latestCompleteByStage(input.snapshots)[input.stageId];
-  const response = previous ? resolvePath(path.join(path.dirname(previous.artifactDirectory), "response.md")) : null;
+  const response = previous ? resolvePath(path.join(path.dirname(previous.artifactDirectory), 'response.md')) : null;
   return renderStageContinue({
     ...continuationContext(input, stage.dependsOn),
-    taskFile: resolvePath(input.taskFile ?? path.join(sessionDirectory, "task.md")),
+    taskFile: resolvePath(input.taskFile ?? path.join(sessionDirectory, 'task.md')),
     previousResponse: response !== null && isFile(response) ? response : null,
   });
 }
@@ -135,16 +137,16 @@ function routedResultContext(workflow: WorkflowDocument, stageId: string, snapsh
     routed = relevantRouterSnapshots(workflow, snapshots, stageId) ?? [];
   } else {
     const candidates = snapshots.filter((snapshot) => {
-      if (snapshot.status !== "completed" || snapshot.outcomeStatus !== "complete") return false;
+      if (snapshot.status !== 'completed' || snapshot.outcomeStatus !== 'complete') return false;
       if (snapshot.executionOrder <= previousOrder) return false;
       const source = workflow.stages[snapshot.stageId];
-      return source !== undefined && routeListsStage(source.routes[(snapshot.outcomeDecision ?? "").toLowerCase()], stageId);
+      return source !== undefined && routeListsStage(source.routes[(snapshot.outcomeDecision ?? '').toLowerCase()], stageId);
     });
     routed = candidates.length === 0 ? [] : [candidates.reduce((a, b) => b.executionOrder > a.executionOrder ? b : a)];
   }
   if (routed.length === 0) return null;
   const decisions = routed.map((decision) => {
-    const response = resolvePath(path.join(path.dirname(decision.artifactDirectory), "response.md"));
+    const response = resolvePath(path.join(path.dirname(decision.artifactDirectory), 'response.md'));
     if (!isFile(response)) throw new Error(`Routed stage response is missing: ${response}`);
     return { stageId: decision.stageId, decision: decision.outcomeDecision, path: response };
   });
@@ -191,10 +193,10 @@ function previousBlockedAttempt(stageId: string, snapshots: readonly ExecutionSn
     if (snapshot.stageId !== stageId) continue;
     if (latest === null || snapshot.executionOrder > latest.executionOrder) latest = snapshot;
   }
-  if (latest === null || latest.status !== "completed" || latest.outcomeStatus !== "blocked") return null;
+  if (latest === null || latest.status !== 'completed' || latest.outcomeStatus !== 'blocked') return null;
   const executionDirectory = path.dirname(latest.artifactDirectory);
-  const blocker = readOutcomeBlocker(path.join(executionDirectory, "execution.json"));
-  const responsePath = path.join(executionDirectory, "response.md");
+  const blocker = readOutcomeBlocker(path.join(executionDirectory, 'execution.json'));
+  const responsePath = path.join(executionDirectory, 'response.md');
   return { executionId: latest.executionId, blocker, response: isFile(responsePath) ? resolvePath(responsePath) : null };
 }
 
@@ -208,21 +210,21 @@ function previousFailedAttempt(stageId: string, snapshots: readonly ExecutionSna
     if (snapshot.stageId !== stageId) continue;
     if (latest === null || snapshot.executionOrder > latest.executionOrder) latest = snapshot;
   }
-  if (latest === null || latest.status !== "failed" || latest.failureReason) return null;
-  const responsePath = path.join(path.dirname(latest.artifactDirectory), "response.md");
+  if (latest === null || latest.status !== 'failed' || latest.failureReason) return null;
+  const responsePath = path.join(path.dirname(latest.artifactDirectory), 'response.md');
   return isFile(responsePath) ? { response: resolvePath(responsePath) } : null;
 }
 
 function readOutcomeBlocker(filePath: string): string | null {
   let raw: unknown;
   try {
-    raw = JSON.parse(readFileSync(filePath, "utf8")) as unknown;
+    raw = JSON.parse(readFileSync(filePath, 'utf8')) as unknown;
   } catch {
     return null;
   }
   if (!isRecord(raw) || !isRecord(raw.outcome)) return null;
-  const blocker = raw.outcome.blocker;
-  return typeof blocker === "string" && blocker ? blocker : null;
+  const {blocker} = raw.outcome;
+  return typeof blocker === 'string' && blocker ? blocker : null;
 }
 
 function priorResultContext(
@@ -246,11 +248,11 @@ function absoluteOutputPath(
 ): string | null {
   if (!isRecord(entry)) return null;
   const raw = entry.path;
-  if (typeof raw !== "string" || raw.trim() === "") return null;
+  if (typeof raw !== 'string' || raw.trim() === '') return null;
   const trimmed = raw.trim();
   if (path.isAbsolute(trimmed)) return path.normalize(trimmed);
   return resolvePath(
-    path.join(workspace, ".migent", "sessions", priorSessionId, trimmed),
+    path.join(workspace, '.migent', 'sessions', priorSessionId, trimmed),
   );
 }
 
@@ -264,10 +266,10 @@ function resolvePath(target: string): string {
       return suffix.length === 0 ? real : path.join(real, ...suffix);
     } catch (error) {
       const code =
-        typeof error === "object" && error !== null && "code" in error
+        typeof error === 'object' && error !== null && 'code' in error
           ? (error as { code?: unknown }).code
           : undefined;
-      if (code !== "ENOENT" && code !== "ENOTDIR") throw error;
+      if (code !== 'ENOENT' && code !== 'ENOTDIR') throw error;
       const parent = path.dirname(cursor);
       if (parent === cursor) return absolute;
       suffix.unshift(path.basename(cursor));

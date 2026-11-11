@@ -1,15 +1,15 @@
-import { z } from "zod";
+import { z } from 'zod';
 
 export const stageArtifactSchema = z.object({
   id: z.string(),
   file: z.string(),
   description: z.string().nullable(),
   required: z.boolean(),
-  scope: z.enum(["published", "local"]),
+  scope: z.enum(['published', 'local']),
 });
 
 export const stageFieldSchema = {
-  ask: z.literal("human").optional(),
+  ask: z.literal('human').optional(),
   id: z.string(),
   description: z.string().nullable(),
   artifacts: z.array(stageArtifactSchema),
@@ -20,9 +20,9 @@ export const stageFieldSchema = {
   resumeFrom: z.string().nullable(),
   instructions: z.array(z.string()),
   agent: z
-    .discriminatedUnion("kind", [
-      z.object({ kind: z.literal("named"), name: z.string() }),
-      z.object({ kind: z.literal("inline"), value: z.record(z.string(), z.unknown()) }),
+    .discriminatedUnion('kind', [
+      z.object({ kind: z.literal('named'), name: z.string() }),
+      z.object({ kind: z.literal('inline'), value: z.record(z.string(), z.unknown()) }),
     ])
     .nullable(),
   options: z.record(z.string(), z.string()),
@@ -33,16 +33,16 @@ export const stageFieldSchema = {
   runWhen: z.object({ changedPaths: z.array(z.string()).min(1) }).nullable(),
 };
 
-export const stageSpecSchema = z.discriminatedUnion("kind", [
+export const stageSpecSchema = z.discriminatedUnion('kind', [
   z.object({
     ...stageFieldSchema,
-    kind: z.literal("role"),
+    kind: z.literal('role'),
     role: z.string(),
     maxVerify: z.number().int().min(1),
   }),
   z.object({
     ...stageFieldSchema,
-    kind: z.literal("verify"),
+    kind: z.literal('verify'),
     role: z.null(),
     verify: z.array(z.string()).min(1),
     maxVerify: z.literal(0),

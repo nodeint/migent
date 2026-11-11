@@ -1,32 +1,33 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { clientIds, createClient } from "@nodeint/migent-adapters";
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+
+import { clientIds, createClient } from '@nodeint/migent-adapters';
 import type {
   BuildCommandInput,
   CliClient,
+  ClientOption,
+  ClientRegistry,
   CliModelCatalog,
   CliRunOutput,
   CliUsage,
-  ClientOption,
-  ClientRegistry,
   CommandSpec,
   RawFailure,
   UsageCapture,
-} from "@nodeint/migent-kernel";
+} from '@nodeint/migent-kernel';
 
 const optionKey = /^[A-Za-z][A-Za-z0-9_.-]*$/;
 
 const grokOptions = new Set([
-  "reasoning-effort",
-  "max_turns",
-  "tools",
-  "disallowed_tools",
-  "permission_mode",
-  "rules",
-  "allow",
-  "deny",
-  "sandbox",
+  'reasoning-effort',
+  'max_turns',
+  'tools',
+  'disallowed_tools',
+  'permission_mode',
+  'rules',
+  'allow',
+  'deny',
+  'sandbox',
 ]);
 
 const BLANK_USAGE: CliUsage = {
@@ -61,19 +62,19 @@ class TestClient implements CliClient {
   }
 
   runCommand(_input: BuildCommandInput): CommandSpec {
-    throw new Error("doctor tests never run a client turn.");
+    throw new Error('doctor tests never run a client turn.');
   }
 
   modelsCommand(): CommandSpec {
-    throw new Error("doctor tests never list models.");
+    throw new Error('doctor tests never list models.');
   }
 
   versionCommand(): CommandSpec {
-    throw new Error("doctor tests never read a version.");
+    throw new Error('doctor tests never read a version.');
   }
 
   parseRun(_stdout: string, _lastMessageFile: string): CliRunOutput {
-    throw new Error("doctor tests never parse a turn.");
+    throw new Error('doctor tests never parse a turn.');
   }
 
   parseModels(_stdout: string): CliModelCatalog {
@@ -127,18 +128,18 @@ export function clientRegistryOf(clients: Record<string, CliClient>): ClientRegi
 
 export function defaultClients(): ClientRegistry {
   return clientRegistryOf({
-    codex: new TestClient("codex", "codex", (options) => {
+    codex: new TestClient('codex', 'codex', (options) => {
       for (const [key, value] of Object.entries(options)) {
         if (!optionKey.test(key)) throw new Error(`${key} is not a codex option.`);
-        if (value.trim() === "") throw new Error(`${key} is empty.`);
+        if (value.trim() === '') throw new Error(`${key} is empty.`);
       }
-    }, "model_reasoning_effort"),
-    grok: new TestClient("grok", "grok", (options) => {
+    }, 'model_reasoning_effort'),
+    grok: new TestClient('grok', 'grok', (options) => {
       for (const [key, value] of Object.entries(options)) {
         if (!grokOptions.has(key)) throw new Error(`${key} is not a grok option.`);
-        if (value.trim() === "") throw new Error(`${key} is empty.`);
+        if (value.trim() === '') throw new Error(`${key} is empty.`);
       }
-    }, "reasoning-effort"),
+    }, 'reasoning-effort'),
   });
 }
 
@@ -200,17 +201,17 @@ export function tempDir(prefix: string): string {
 }
 
 export function writeConfig(contents: string): string {
-  const directory = tempDir("migent-config-");
-  const filePath = path.join(directory, "config.yaml");
-  writeFileSync(filePath, contents, "utf8");
+  const directory = tempDir('migent-config-');
+  const filePath = path.join(directory, 'config.yaml');
+  writeFileSync(filePath, contents, 'utf8');
   return filePath;
 }
 
 export function writeStageWorkspace(): string {
-  const workspace = tempDir("migent-stage-");
-  const workflows = path.join(workspace, ".migent", "workflows");
+  const workspace = tempDir('migent-stage-');
+  const workflows = path.join(workspace, '.migent', 'workflows');
   mkdirSync(workflows, { recursive: true });
-  writeFileSync(path.join(workspace, ".migent", "config.yaml"), STAGE_CONFIG, "utf8");
-  writeFileSync(path.join(workflows, "plan-implement.yaml"), STAGE_WORKFLOW, "utf8");
+  writeFileSync(path.join(workspace, '.migent', 'config.yaml'), STAGE_CONFIG, 'utf8');
+  writeFileSync(path.join(workflows, 'plan-implement.yaml'), STAGE_WORKFLOW, 'utf8');
   return workspace;
 }

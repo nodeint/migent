@@ -1,9 +1,10 @@
-import path from "node:path";
-import type { WorkflowDocument, WorkflowRequires } from "./model.js";
+import path from 'node:path';
+
+import type { WorkflowDocument, WorkflowRequires } from './model.js';
 
 /** A cross-workflow finding. `workflow` is the id it concerns; `files` the declaring files, when known. */
 export interface CatalogProblem {
-  code: "duplicate-id" | "no-stages" | "unknown-downstream" | "requires-invalid";
+  code: 'duplicate-id' | 'no-stages' | 'unknown-downstream' | 'requires-invalid';
   message: string;
   workflow: string;
   files?: string[];
@@ -28,7 +29,7 @@ export interface WorkflowCatalogEntry {
   stagesDeclared: boolean;
   requires: CatalogFact<WorkflowRequires | null>;
   /** `index` is the entry's position in the author's list, kept when earlier entries were unreadable. */
-  downstream: ReadonlyArray<{ workflow: CatalogFact<string>; index?: number }>;
+  downstream: readonly { workflow: CatalogFact<string>; index?: number }[];
 }
 
 /** Adapts a parsed document to a fully known catalog entry. */
@@ -49,7 +50,7 @@ export function catalogEntryFromDocument(file: string, document: WorkflowDocumen
  * know, so the results for fully parsed documents are unchanged.
  */
 export function checkWorkflowCatalog(
-  entries: ReadonlyArray<WorkflowCatalogEntry>,
+  entries: readonly WorkflowCatalogEntry[],
   failedIds: ReadonlySet<string> = new Set(),
   external: WorkflowCatalogEntry | null = null,
 ): { documents: Record<string, WorkflowDocument>; problems: CatalogProblem[] } {
@@ -66,14 +67,14 @@ export function checkWorkflowCatalog(
   for (const [workflowId, group] of grouped) {
     if (group.length > 1) {
       const files = group.map((entry) => entry.file);
-      problems.push({ code: "duplicate-id", message: `${workflowId}: id is declared by ${files.join(", ")}.`, workflow: workflowId, files });
+      problems.push({ code: 'duplicate-id', message: `${workflowId}: id is declared by ${files.join(', ')}.`, workflow: workflowId, files });
       failed.add(workflowId);
       continue;
     }
     const entry = group[0]!;
     if (entry.document !== null) documents[workflowId] = entry.document;
     if (!entry.stagesDeclared) {
-      problems.push({ code: "no-stages", message: `${workflowId}: declares no stages.`, workflow: workflowId });
+      problems.push({ code: 'no-stages', message: `${workflowId}: declares no stages.`, workflow: workflowId });
     }
   }
   for (const [workflowId, group] of grouped) {
@@ -83,9 +84,9 @@ export function checkWorkflowCatalog(
   // An external entry (a session draft) is checked against the catalog but is never part of it, so it
   // may share an id with a catalog workflow without a duplicate-id finding.
   if (external !== null) {
-    const workflowId = external.id.known ? external.id.value : "";
+    const workflowId = external.id.known ? external.id.value : '';
     if (external.id.known && !external.stagesDeclared) {
-      problems.push({ code: "no-stages", message: `${workflowId}: declares no stages.`, workflow: workflowId, external: true });
+      problems.push({ code: 'no-stages', message: `${workflowId}: declares no stages.`, workflow: workflowId, external: true });
     }
     checkEntryReferences(external, workflowId, entries, documents, failed, problems, true);
   }
@@ -105,16 +106,16 @@ export function checkEntryReferences(
   if (entry.requires.known && entry.requires.value !== null && !isDraftEntry(entries, entry.requires.value.workflow)) {
     const messages: string[] = [];
     checkRequires(workflowId, entry.requires.value, documents, failed, messages);
-    for (const message of messages) problems.push({ code: "requires-invalid", message, workflow: workflowId, ...mark });
+    for (const message of messages) problems.push({ code: 'requires-invalid', message, workflow: workflowId, ...mark });
   }
   for (const [index, next] of entry.downstream.entries()) {
     if (!next.workflow.known) continue;
     if (!Object.hasOwn(documents, next.workflow.value) && !isDraftEntry(entries, next.workflow.value)) {
       problems.push({
-        code: "unknown-downstream",
+        code: 'unknown-downstream',
         message: `${workflowId}: downstream workflow ${next.workflow.value} is not in .migent/workflows.`,
         workflow: workflowId,
-        path: ["downstream", next.index ?? index, "workflow"],
+        path: ['downstream', next.index ?? index, 'workflow'],
         ...mark,
       });
     }
@@ -147,7 +148,7 @@ export function checkRequires(
   if ((documents[workflowId]?.schemaVersion ?? 1) >= 2) return;
   const decision = required.completion === null ? null : required.completion.decision;
   if (requires.decision === null || decision === null || decision.toLowerCase() !== requires.decision) {
-    const actual = decision === null ? "no decision" : decision;
+    const actual = decision === null ? 'no decision' : decision;
     problems.push(
       `${workflowId}: requires ${requires.workflow} to complete with ${requires.decision}, but it completes with ${actual}.`,
     );

@@ -1,14 +1,16 @@
-import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
-import path from "node:path";
-import { formatDuration, log, CORRECTION_FAILURE_REASONS } from "@nodeint/migent-kernel";
-import { FAILURE_FILENAME, SessionStore, publishNextSuggestions, formatNextCommand } from "@nodeint/migent-session";
-import { AgentToolRunner, DEFAULT_MAX_DISPATCHES, executeNamedWorkflow, type ExecuteResult } from "@nodeint/migent-engine";
-import { printResumeCommand, printReplyCommand, formatQuestion } from "../display.js";
-import { cliHooks } from "../hooks.js";
-import { requireCurrentSchema } from "../migrate.js";
-import { runPreflight } from "../preflight.js";
-import { clientRegistry } from "../client.js";
-import { text } from "../text.js";
+import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
+import path from 'node:path';
+
+import { AgentToolRunner, DEFAULT_MAX_DISPATCHES, executeNamedWorkflow, type ExecuteResult } from '@nodeint/migent-engine';
+import { CORRECTION_FAILURE_REASONS,formatDuration, log } from '@nodeint/migent-kernel';
+import { FAILURE_FILENAME, formatNextCommand,publishNextSuggestions, SessionStore } from '@nodeint/migent-session';
+
+import { clientRegistry } from '../client.js';
+import { formatQuestion,printReplyCommand, printResumeCommand } from '../display.js';
+import { cliHooks } from '../hooks.js';
+import { requireCurrentSchema } from '../migrate.js';
+import { runPreflight } from '../preflight.js';
+import { text } from '../text.js';
 
 export interface ExecuteWorkflowOptions {
   action: string;
@@ -30,10 +32,10 @@ export interface ExecuteWorkflowOptions {
 
 export async function executeWorkflow(workspace: string, options: ExecuteWorkflowOptions): Promise<number> {
   requireCurrentSchema(workspace);
-  const once = options.action === "stage";
+  const once = options.action === 'stage';
   const startPrepared = options.startPrepared === true;
   const sessionId = text(options.sessionId);
-  const creating = !startPrepared && (options.action === "start" || (once && sessionId === null));
+  const creating = !startPrepared && (options.action === 'start' || (once && sessionId === null));
   const maxDispatches = options.maxDispatches === undefined ? DEFAULT_MAX_DISPATCHES : options.maxDispatches;
   const runner = options.runner ?? cliHooks.runner ?? new AgentToolRunner(clientRegistry());
   runner.itemProgress = options.itemProgress === true;
@@ -49,11 +51,11 @@ export async function executeWorkflow(workspace: string, options: ExecuteWorkflo
       continueFailed: options.continueFailed === true,
       stageId: options.stageId ?? null,
       once,
-      resetRevisions: options.action === "continue",
+      resetRevisions: options.action === 'continue',
       refreshWorkflow: options.refreshWorkflow === true,
       preflight: !creating && !startPrepared ? undefined : async (target) => {
         if (options.skipPreflight === true) {
-          process.stderr.write("preflight skipped (--skip-preflight)\n");
+          process.stderr.write('preflight skipped (--skip-preflight)\n');
           return true;
         }
         return runPreflight(workspace, target, { clients: runner.registry });
@@ -69,17 +71,17 @@ export async function executeWorkflow(workspace: string, options: ExecuteWorkflo
 }
 
 function printResumeHint(workspace: string, result: ExecuteResult): void {
-  if (result.sessionId === "" || result.status === "completed" || result.stopReason === "completed") return;
-  if (result.stopReason === "configuration") return;
+  if (result.sessionId === '' || result.status === 'completed' || result.stopReason === 'completed') return;
+  if (result.stopReason === 'configuration') return;
   const questions = new SessionStore(workspace).questionStages(result.sessionId);
   if (questions.length > 0) {
     for (const question of questions) printReplyCommand(result.sessionId, question.stageId);
-    if (result.status !== "blocked") return;
+    if (result.status !== 'blocked') return;
   }
   printResumeCommand(result.sessionId);
-  if (result.status === "cancelled" || result.code === 130) {
+  if (result.status === 'cancelled' || result.code === 130) {
     const cancelled = new SessionStore(workspace).cancelledStages(result.sessionId);
-    printReplyCommand(result.sessionId, cancelled.length === 1 ? cancelled[0]!.stageId : undefined, "steer");
+    printReplyCommand(result.sessionId, cancelled.length === 1 ? cancelled[0]!.stageId : undefined, 'steer');
   }
 }
 
@@ -93,9 +95,9 @@ function printResult(workspace: string, result: ExecuteResult): void {
       log(`failure: ${failure}`);
     }
   }
-  if (result.status === "completed" || result.stopReason === "completed") {
+  if (result.status === 'completed' || result.stopReason === 'completed') {
     const duration = sessionDurationLabel(workspace, result.sessionId);
-    log(duration === null ? "completed" : `completed · ${duration}`);
+    log(duration === null ? 'completed' : `completed · ${duration}`);
     for (const filePath of artifactPaths(workspace, result.sessionId, result.outputs)) {
       log(`artifact: ${filePath}`);
     }
@@ -104,7 +106,7 @@ function printResult(workspace: string, result: ExecuteResult): void {
     for (const next of suggestions.next) log(formatNextCommand(next.argv));
     return;
   }
-  const questions = result.sessionId === "" ? [] : new SessionStore(workspace).questionStages(result.sessionId);
+  const questions = result.sessionId === '' ? [] : new SessionStore(workspace).questionStages(result.sessionId);
   if (questions.length > 0) log(`questions: .migent/sessions/${result.sessionId}/questions.json`);
   for (const stage of questions) {
     for (const question of stage.questions) log(formatQuestion({ ...question, stage_id: stage.stageId }));
@@ -112,11 +114,11 @@ function printResult(workspace: string, result: ExecuteResult): void {
   if (
     result.latestExecutionId &&
     INSPECT_EXIT_CODES.has(result.code) &&
-    executionFileExists(workspace, result.sessionId, result.latestExecutionId, "response.md")
+    executionFileExists(workspace, result.sessionId, result.latestExecutionId, 'response.md')
   ) {
     log(`response: executions/${result.latestExecutionId}/response.md`);
   }
-  if (result.sessionId !== "") for (const line of questionFileFailures(workspace, result.sessionId)) log(line);
+  if (result.sessionId !== '') for (const line of questionFileFailures(workspace, result.sessionId)) log(line);
   if (result.code === 7 && result.latestExecutionId) {
     log(`verify: executions/${result.latestExecutionId}/turns/01/verify.md`);
   }
@@ -129,9 +131,9 @@ function printResult(workspace: string, result: ExecuteResult): void {
 function failedExecutionIds(result: ExecuteResult): string[] {
   const ids = new Set<string>();
   for (const stage of result.stages) {
-    if (stage.execution_status !== "failed") continue;
+    if (stage.execution_status !== 'failed') continue;
     const executionId = stage.execution_id;
-    if (typeof executionId === "string" && executionId !== "") ids.add(executionId);
+    if (typeof executionId === 'string' && executionId !== '') ids.add(executionId);
   }
   if (ids.size === 0 && result.latestExecutionId) ids.add(result.latestExecutionId);
   return [...ids];
@@ -143,9 +145,9 @@ function executionFileExists(
   executionId: string,
   name: string,
 ): boolean {
-  if (sessionId === "") return false;
+  if (sessionId === '') return false;
   return existsSync(
-    path.join(workspace, ".migent", "sessions", sessionId, "executions", executionId, name),
+    path.join(workspace, '.migent', 'sessions', sessionId, 'executions', executionId, name),
   );
 }
 
@@ -154,7 +156,7 @@ function executionFileExists(
  * Every stage is checked, so a newer successful sibling does not hide the failure.
  */
 function questionFileFailures(workspace: string, sessionId: string): string[] {
-  const directory = path.join(workspace, ".migent", "sessions", sessionId, "executions");
+  const directory = path.join(workspace, '.migent', 'sessions', sessionId, 'executions');
   let names: string[];
   try {
     names = readdirSync(directory).sort();
@@ -164,15 +166,15 @@ function questionFileFailures(workspace: string, sessionId: string): string[] {
   const latest = new Map<string, Record<string, unknown>>();
   for (const name of names) {
     try {
-      const metadata: unknown = JSON.parse(readFileSync(path.join(directory, name, "execution.json"), "utf8"));
-      if (isRecord(metadata) && typeof metadata.stage_id === "string") latest.set(metadata.stage_id, metadata);
+      const metadata: unknown = JSON.parse(readFileSync(path.join(directory, name, 'execution.json'), 'utf8'));
+      if (isRecord(metadata) && typeof metadata.stage_id === 'string') latest.set(metadata.stage_id, metadata);
     } catch {
       continue;
     }
   }
   const lines: string[] = [];
   for (const [stageId, metadata] of latest) {
-    if (typeof metadata.failure_reason === "string" && CORRECTION_FAILURE_REASONS.includes(metadata.failure_reason) && typeof metadata.error === "string") {
+    if (typeof metadata.failure_reason === 'string' && CORRECTION_FAILURE_REASONS.includes(metadata.failure_reason) && typeof metadata.error === 'string') {
       lines.push(`stage ${stageId}: ${metadata.error}`);
     }
   }
@@ -180,12 +182,12 @@ function questionFileFailures(workspace: string, sessionId: string): string[] {
 }
 
 function artifactPaths(workspace: string, sessionId: string, outputs: Record<string, unknown>): string[] {
-  if (sessionId === "") return [];
-  const sessionDir = path.resolve(workspace, ".migent", "sessions", sessionId);
+  if (sessionId === '') return [];
+  const sessionDir = path.resolve(workspace, '.migent', 'sessions', sessionId);
   const paths: string[] = [];
   for (const [name, value] of Object.entries(outputs)) {
     const record = isRecord(value) ? value : {};
-    const relative = typeof record.path === "string" && record.path !== "" ? record.path : path.join("outputs", name);
+    const relative = typeof record.path === 'string' && record.path !== '' ? record.path : path.join('outputs', name);
     paths.push(absoluteFromRoot(path.resolve(sessionDir, relative)));
   }
   return paths;
@@ -200,8 +202,8 @@ function absoluteFromRoot(target: string): string {
 }
 
 function sessionDurationLabel(workspace: string, sessionId: string): string | null {
-  if (sessionId === "") return null;
-  const executions = path.join(workspace, ".migent", "sessions", sessionId, "executions");
+  if (sessionId === '') return null;
+  const executions = path.join(workspace, '.migent', 'sessions', sessionId, 'executions');
   let names: string[];
   try {
     names = readdirSync(executions);
@@ -211,7 +213,7 @@ function sessionDurationLabel(workspace: string, sessionId: string): string | nu
   let total = 0;
   let counted = false;
   for (const name of names) {
-    const elapsed = executionElapsedMs(path.join(executions, name, "execution.json"));
+    const elapsed = executionElapsedMs(path.join(executions, name, 'execution.json'));
     if (elapsed === null) continue;
     total += elapsed;
     counted = true;
@@ -221,7 +223,7 @@ function sessionDurationLabel(workspace: string, sessionId: string): string | nu
 
 function executionElapsedMs(filePath: string): number | null {
   try {
-    const metadata = JSON.parse(readFileSync(filePath, "utf8")) as unknown;
+    const metadata = JSON.parse(readFileSync(filePath, 'utf8')) as unknown;
     if (!isRecord(metadata)) return null;
     const started = parsedTime(metadata.created_at);
     if (started === null) return null;
@@ -232,11 +234,11 @@ function executionElapsedMs(filePath: string): number | null {
 }
 
 function parsedTime(value: unknown): number | null {
-  if (typeof value !== "string" || value === "") return null;
+  if (typeof value !== 'string' || value === '') return null;
   const parsed = Date.parse(value);
   return Number.isNaN(parsed) ? null : parsed;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

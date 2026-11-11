@@ -1,4 +1,4 @@
-import { isMap, isNode, isSeq, LineCounter, parseDocument } from "yaml";
+import { isMap, isNode, isSeq, LineCounter, parseDocument } from 'yaml';
 
 /** One-based start and exclusive end of a node in the draft text. */
 export interface DraftRange {
@@ -28,14 +28,14 @@ function locate(contents: unknown, path: readonly (string | number)[]): Located 
   let value: unknown = contents;
   let key: unknown = null;
   for (const segment of path) {
-    if (isMap(value) && typeof segment === "string") {
+    if (isMap(value) && typeof segment === 'string') {
       const pair = value.items.find((item) => isNode(item.key) && String(item.key.toJSON()) === segment);
       if (pair === undefined) return null;
       value = pair.value;
       key = pair.key;
       continue;
     }
-    if (isSeq(value) && typeof segment === "number") {
+    if (isSeq(value) && typeof segment === 'number') {
       if (segment < 0 || segment >= value.items.length) return null;
       value = value.items[segment];
       key = null;
@@ -64,7 +64,7 @@ export function buildDraftSourceMap(text: string): DraftSourceMap {
     return EMPTY;
   }
   if (doc.contents === null || doc.errors.length > 0) return EMPTY;
-  const contents = doc.contents;
+  const {contents} = doc;
   return {
     rangeOf(path) {
       const found = locate(contents, path);
