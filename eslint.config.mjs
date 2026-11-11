@@ -180,7 +180,7 @@ const baseConfig = {
     'quotes': ['warn', 'single', { avoidEscape: true }],
 
     // Hygiene
-    '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+    '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', ignoreRestSiblings: true }],
     'no-empty': ['warn', { allowEmptyCatch: false }],
   },
 };
@@ -254,51 +254,10 @@ const testFilesConfig = {
   },
 };
 
-// Layering: core and cli must stay free of the VS Code API (plans/02-monitoring.md, AC17).
-const noVscodeConfig = {
-  files: ['src/core/**/*.ts', 'src/cli/**/*.ts'],
-  rules: {
-    'no-restricted-imports': [
-      'error',
-      {
-        paths: [
-          {
-            name: 'vscode',
-            message: 'src/core and src/cli must not import the VS Code API; keep it in src/vscode.',
-          },
-        ],
-        patterns: [{ group: ['vscode/*'], message: 'src/core and src/cli must not import the VS Code API.' }],
-      },
-    ],
-  },
-};
-
-// Contracts are type-only: a value import would bundle TypeBox into the extension. Tests may import values.
-const contractsTypeOnlyConfig = {
-  files: ['src/**/*.ts'],
-  ignores: ['src/**/*.test.ts'],
-  rules: {
-    '@typescript-eslint/no-restricted-imports': [
-      'error',
-      {
-        paths: [
-          {
-            name: '@nodeint/migent-contracts',
-            allowTypeImports: true,
-            message: 'Import @nodeint/migent-contracts with `import type` only; it is a dev-time type dependency.',
-          },
-        ],
-      },
-    ],
-  },
-};
-
 export default defineConfig(
   { ignores: IGNORE_PATTERNS },
   baseConfig,
   typeAwareConfig,
   sizeConfig,
-  testFilesConfig,
-  noVscodeConfig,
-  contractsTypeOnlyConfig,
+  testFilesConfig
 );

@@ -158,7 +158,6 @@ export function createPreparedSession(
   title: string,
   workflowId: string,
   priorSessionId?: string | null,
-  resolveClient?: ClientRegistry,
 ): string {
   const sessionTitle = title.trim();
   assertSessionTitle(sessionTitle);

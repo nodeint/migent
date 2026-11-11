@@ -43,7 +43,7 @@ class ExitProvider extends ScriptedClient {
   }
 
   override buildCommand(input: Parameters<ScriptedClient['buildCommand']>[0]) {
-    const spec = super.buildCommand(input);
+    super.buildCommand(input);
     this.current = this.turns.shift() ?? null;
     const code = this.current?.exit ?? 0;
     return { argv: [process.execPath, '-e', `process.exit(${code})`] };

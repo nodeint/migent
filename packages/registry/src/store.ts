@@ -13,7 +13,6 @@ import {
   renameSync,
   statSync,
   rmSync,
-  unlinkSync,
   writeSync,
 } from 'node:fs';
 import path from 'node:path';

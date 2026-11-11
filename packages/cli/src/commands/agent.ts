@@ -347,7 +347,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function finishRole(sessionId: string, code: number): number {
   if (code === 9) printReplyCommand(sessionId);
   if (code === 1 || code === 6 || code === 130) printResumeCommand(sessionId);
-  if (code === 130) printReplyCommand(sessionId, undefined, 'steer');
+  if (code === 130) printReplyCommand(sessionId);
   return code;
 }
 

@@ -63,7 +63,6 @@ export type DoctorReport = Static<typeof DoctorReport>;
 
 const UsedByStage = Type.Object({ stage: Type.String(), workflow: Type.String() });
 const Target = Type.Object({ client: Type.String(), model: Type.String(), options: options() });
-const ArtifactView = Type.Object({ id: Type.Optional(Type.String()), file: Type.String() });
 
 const StageArtifactView = Type.Object({
   id: Type.String(),

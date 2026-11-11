@@ -447,7 +447,6 @@ export class AgentToolRunner {
   private async driveTurns(state: TurnDrive): Promise<RunResult> {
     const {
       client,
-      clientId,
       model,
       workspacePath,
       resolvedOptions,

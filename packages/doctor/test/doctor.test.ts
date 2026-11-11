@@ -36,7 +36,7 @@ test('rejects an unsupported client without checking its command', () => {
     readFileSync(configPath, 'utf8').replace('      type: grok\n', '      type: claude\n'),
     'utf8',
   );
-  const [config, _workflows, clients] = diagnose(workspace, {
+  const [config, , clients] = diagnose(workspace, {
     clients: defaultClients(),
     which,
   });
@@ -69,7 +69,7 @@ test('rejects role instructions that are not a list', () => {
 test('reports a missing client command', () => {
   const workspace = tempDir('migent-doctor-');
   writeStageProject(workspace);
-  const [_config, _workflows, clients] = diagnose(workspace, {
+  const [, , clients] = diagnose(workspace, {
     clients: defaultClients(),
     which: whichFound(new Set(['codex'])),
   });
@@ -128,7 +128,7 @@ test('accepts a file whose id differs from its name', () => {
     'id: other\nstages:\n  - id: implement\n    role: developer\n',
     'utf8',
   );
-  const [_config, workflows] = diagnose(workspace, {
+  const [, workflows] = diagnose(workspace, {
     clients: defaultClients(),
     which: whichFound(new Set(['codex', 'grok'])),
   });
@@ -201,7 +201,7 @@ test('reports a missing workflows directory', () => {
   const workspace = tempDir('migent-doctor-');
   mkdirSync(path.join(workspace, '.migent'));
   writeFileSync(path.join(workspace, '.migent', 'config.yaml'), STAGE_CONFIG, 'utf8');
-  const [_config, workflows] = diagnose(workspace, {
+  const [, workflows] = diagnose(workspace, {
     clients: defaultClients(),
     which: whichFound(new Set(['codex', 'grok'])),
   });
@@ -226,7 +226,7 @@ test('reports a verify stage that is not on every path to complete', () => {
     'id: skip\nstages:\n  - id: a\n    role: developer\n    verify: x\n  - id: b\n    role: developer\ncompletion:\n  stage: b\n',
     'utf8',
   );
-  const [_config, report] = diagnose(workspace, {
+  const [, report] = diagnose(workspace, {
     clients: defaultClients(),
     which: whichFound(new Set(['codex', 'grok'])),
   });

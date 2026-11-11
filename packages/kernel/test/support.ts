@@ -7,18 +7,6 @@ import type { BuildCommandInput, CliClient, ClientRegistry, CliModelCatalog, Cli
 
 const optionKey = /^[A-Za-z][A-Za-z0-9_.-]*$/;
 
-const grokOptions = new Set([
-  'reasoning-effort',
-  'max_turns',
-  'tools',
-  'disallowed_tools',
-  'permission_mode',
-  'rules',
-  'allow',
-  'deny',
-  'sandbox',
-]);
-
 export function defaultClients(): ClientRegistry {
   return registryOf({
     codex: new FakeClient('codex', 'codex'),

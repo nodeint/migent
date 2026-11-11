@@ -201,7 +201,7 @@ function parserKeys(source: string, kind: 'config' | 'workflow'): string[] {
     for (const match of source.matchAll(/\bdecision\.(values|routes)\b/g)) keys.add(match[1] ?? '');
     if (source.includes('body.navigate')) keys.add('navigate');
     if (source.includes('entry.artifacts')) keys.add('artifacts');
-    for (const match of source.matchAll(/\braw\.outputs\b/g)) keys.add('outputs');
+    if (/\braw\.outputs\b/.test(source)) keys.add('outputs');
   }
   keys.delete('');
   return [...keys].sort();
