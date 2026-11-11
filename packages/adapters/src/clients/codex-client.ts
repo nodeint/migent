@@ -66,30 +66,30 @@ const CODEX_ITEM_TYPES: ReadonlySet<string> = new Set([
 ]);
 
 export class CodexClient implements CliClient {
-  optionsCommand(): CommandSpec {
+  public optionsCommand(): CommandSpec {
     return { argv: [this.command, 'exec', '--help'] };
   }
 
-  parseOptions(help: string) {
+  public parseOptions(help: string) {
     return parseHelpOptions(help, { section: /^Options:\s*$/, inferArgumentType: true });
   }
 
-  readonly effortOption = 'model_reasoning_effort';
-  readonly id = 'codex';
-  readonly command = 'codex';
+  public readonly effortOption = 'model_reasoning_effort';
+  public readonly id = 'codex';
+  public readonly command = 'codex';
 
-  options(): readonly ClientOption[] {
+  public options(): readonly ClientOption[] {
     return [{ name: CODEX_REASONING_OPTION, prompt: true, allowDefault: true, overridable: true }];
   }
 
-  validateOptions(options: Readonly<Record<string, string>>): void {
+  public validateOptions(options: Readonly<Record<string, string>>): void {
     for (const [key, value] of Object.entries(options)) {
       if (!OPTION_KEY.test(key)) throw new Error(`${key} is not a codex option.`);
       if (value.trim() === '') throw new Error(`${key} is empty.`);
     }
   }
 
-  runCommand(input: BuildCommandInput): CommandSpec {
+  public runCommand(input: BuildCommandInput): CommandSpec {
     const argv = [
       this.command,
       'exec',
@@ -113,15 +113,15 @@ export class CodexClient implements CliClient {
     return { argv, stdin: input.prompt };
   }
 
-  modelsCommand(): CommandSpec {
+  public modelsCommand(): CommandSpec {
     return { argv: [this.command, 'debug', 'models'] };
   }
 
-  versionCommand(): CommandSpec {
+  public versionCommand(): CommandSpec {
     return { argv: [this.command, '--version'] };
   }
 
-  parseRun(stdout: string, lastMessageFile: string): CliRunOutput {
+  public parseRun(stdout: string, lastMessageFile: string): CliRunOutput {
     let sessionId: string | null = null;
     let lastText: string | null = null;
     let lastSource: CliRunOutput['source'] = 'none';
@@ -169,7 +169,7 @@ export class CodexClient implements CliClient {
     return { text: raw, sessionId, source: raw === '' ? 'none' : 'error' };
   }
 
-  parseModels(stdout: string): ModelCatalog {
+  public parseModels(stdout: string): ModelCatalog {
     let payload: unknown;
     try {
       payload = JSON.parse(stdout);
@@ -196,12 +196,12 @@ export class CodexClient implements CliClient {
     return new ModelCatalog(ids, null, optionValues);
   }
 
-  parseVersion(stdout: string): string | null {
+  public parseVersion(stdout: string): string | null {
     const line = (stdout.split(/\r\n|\n|\r/, 1)[0] ?? '').trim();
     return line === '' ? null : line;
   }
 
-  createEventParser(): (line: string) => Record<string, unknown> | null {
+  public createEventParser(): (line: string) => Record<string, unknown> | null {
     return (line) => {
       const payload = parseJsonObject(line);
       if (payload === null) return null;
@@ -227,7 +227,7 @@ export class CodexClient implements CliClient {
     };
   }
 
-  eventLabel(line: string): string | null {
+  public eventLabel(line: string): string | null {
     const payload = parseJsonObject(line);
     if (payload === null) return null;
     const type = labelOf(payload.type, CODEX_EVENT_TYPES);
@@ -239,7 +239,7 @@ export class CodexClient implements CliClient {
     return type;
   }
 
-  extractFailure(stdout: string, exitCode: number): RawFailure | null {
+  public extractFailure(stdout: string, exitCode: number): RawFailure | null {
     // `turn.failed` and `error` events are the CLI's own error report, even when model text exists too.
     let reported: string | null = null;
     for (const rawLine of stdout.split(/\r\n|\n|\r/)) {
@@ -262,7 +262,7 @@ export class CodexClient implements CliClient {
     return { origin: 'exit-only', message: text || null, exitCode };
   }
 
-  captureUsage(stdout: string): UsageCapture | null {
+  public captureUsage(stdout: string): UsageCapture | null {
     const turnCompleted: Record<string, unknown>[] = [];
     for (const rawLine of stdout.split(/\r\n|\n|\r/)) {
       const event = parseJsonObject(rawLine);
@@ -273,7 +273,7 @@ export class CodexClient implements CliClient {
     return { turn_completed: turnCompleted };
   }
 
-  readUsage(capture: UsageCapture): CliUsage {
+  public readUsage(capture: UsageCapture): CliUsage {
     const list = capture.turn_completed;
     const last = Array.isArray(list) && list.length > 0 ? list[list.length - 1] : null;
     const usage = isRecord(last) ? last : null;
@@ -294,12 +294,12 @@ export class CodexClient implements CliClient {
     };
   }
 
-  optionValuesCommand(option: string, model: string): CommandSpec | null {
+  public optionValuesCommand(option: string, model: string): CommandSpec | null {
     void model;
     return option === CODEX_REASONING_OPTION ? this.modelsCommand() : null;
   }
 
-  parseOptionValues(option: string, stdout: string, model: string): readonly string[] {
+  public parseOptionValues(option: string, stdout: string, model: string): readonly string[] {
     if (option !== CODEX_REASONING_OPTION) throw new Error(`codex does not list values for ${option}.`);
     const values = this.parseModels(stdout).valuesFor(model, option);
     if (values === null) throw new Error(`codex did not list ${option} values for ${model}.`);

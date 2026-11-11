@@ -2,7 +2,7 @@ import { realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 export class WorkspaceLocationError extends Error {
-  readonly reason: string;
+  public readonly reason: string;
 
   constructor(reason: string, message: string) {
     super(message);

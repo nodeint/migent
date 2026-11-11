@@ -78,9 +78,9 @@ export interface WorkflowDraftParse {
 }
 
 export class DraftProblems {
-  readonly items: DraftProblem[] = [];
+  public readonly items: DraftProblem[] = [];
 
-  add(error: unknown, fallbackPath?: readonly (string | number)[]): void {
+  public add(error: unknown, fallbackPath?: readonly (string | number)[]): void {
     if (error instanceof z.ZodError) {
       this.items.push({
         code: 'invalid-value',
@@ -98,7 +98,7 @@ export class DraftProblems {
     });
   }
 
-  addMessage(code: string, message: string, path: readonly (string | number)[]): void {
+  public addMessage(code: string, message: string, path: readonly (string | number)[]): void {
     this.items.push({ code, message, path: [...path] });
   }
 }

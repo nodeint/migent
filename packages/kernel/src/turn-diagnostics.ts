@@ -54,7 +54,7 @@ export class StreamSummarizer {
 
   constructor(private readonly labelled: boolean) {}
 
-  add(line: string, label: string | null): void {
+  public add(line: string, label: string | null): void {
     if (label === null) {
       if (line.trim() !== '' && !jsonObjectLine(line)) this.nonJson += 1;
       return;
@@ -71,7 +71,7 @@ export class StreamSummarizer {
     return OTHER;
   }
 
-  finish(raw: { bytes: number; lines: number }, errorMessages: readonly string[]): StreamSummary {
+  public finish(raw: { bytes: number; lines: number }, errorMessages: readonly string[]): StreamSummary {
     return {
       stdout_bytes: raw.bytes,
       lines: raw.lines,

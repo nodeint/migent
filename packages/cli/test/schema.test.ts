@@ -188,7 +188,7 @@ test('workflow reference parses and names every key the workflow parser reads', 
 
 function parserKeys(source: string, kind: 'config' | 'workflow'): string[] {
   const keys = new Set<string>();
-  for (const match of source.matchAll(/Object\.hasOwn\(\w+, "([^"]+)"\)/g)) keys.add(match[1] ?? '');
+  for (const match of source.matchAll(/Object\.hasOwn\(\w+, ["']([^"']+)["']\)/g)) keys.add(match[1] ?? '');
   if (kind === 'config') {
     for (const match of source.matchAll(/\bconfig\.(agents|roles)\b/g)) keys.add(match[1] ?? '');
     for (const match of source.matchAll(/\bagentConfig\.(provider|model|client)\b/g)) keys.add(match[1] ?? '');
@@ -196,7 +196,7 @@ function parserKeys(source: string, kind: 'config' | 'workflow'): string[] {
     for (const match of source.matchAll(/\brole\.(agent|description|responsibilities)\b/g)) keys.add(match[1] ?? '');
   } else {
     for (const match of source.matchAll(/(?:requiredString|stringItems|filename)\(\w+\.(\w+)/g)) keys.add(match[1] ?? '');
-    for (const match of source.matchAll(/optionalStageString\(\w+, "([^"]+)"/g)) keys.add(match[1] ?? '');
+    for (const match of source.matchAll(/optionalStageString\(\w+, ["']([^"']+)["']/g)) keys.add(match[1] ?? '');
     for (const match of source.matchAll(/\bdata\.(stages|completion|requires|outputs|concurrency)\b/g)) keys.add(match[1] ?? '');
     for (const match of source.matchAll(/\bdecision\.(values|routes)\b/g)) keys.add(match[1] ?? '');
     if (source.includes('body.navigate')) keys.add('navigate');

@@ -370,7 +370,7 @@ function clientOptions(client: import('@nodeint/migent-kernel').CliClient) {
 }
 
 class ClackPrompter implements Prompter {
-  async selectModel(models: readonly ModelSelection[], message: string): Promise<ModelSelection> {
+  public async selectModel(models: readonly ModelSelection[], message: string): Promise<ModelSelection> {
     const result = await autocomplete({
       message,
       placeholder: 'Search client or model...',
@@ -383,7 +383,7 @@ class ClackPrompter implements Prompter {
     return selected;
   }
 
-  async selectOption(name: string, values: readonly string[], allowDefault: boolean): Promise<string> {
+  public async selectOption(name: string, values: readonly string[], allowDefault: boolean): Promise<string> {
     if (values.length === 0) return '';
     const options = [
       ...(allowDefault ? [{ value: '', label: 'client default' }] : []),

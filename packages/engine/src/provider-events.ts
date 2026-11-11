@@ -43,14 +43,14 @@ export function classifyProviderError(message: string | null): { event: string; 
 }
 
 export class ProviderEvent {
-  readonly event: string;
-  readonly client: string;
-  readonly sessionId: string;
-  readonly executionId: string;
-  readonly stageId: string;
-  readonly timestamp: string;
-  readonly summary: string | null;
-  readonly details: Record<string, unknown>;
+  public readonly event: string;
+  public readonly client: string;
+  public readonly sessionId: string;
+  public readonly executionId: string;
+  public readonly stageId: string;
+  public readonly timestamp: string;
+  public readonly summary: string | null;
+  public readonly details: Record<string, unknown>;
 
   constructor(input: {
     event: string;
@@ -72,7 +72,7 @@ export class ProviderEvent {
     this.details = input.details ?? {};
   }
 
-  toJson(): Record<string, unknown> {
+  public toJson(): Record<string, unknown> {
     const payload: Record<string, unknown> = {
       event: this.event,
       client: this.client,
@@ -89,14 +89,14 @@ export class ProviderEvent {
 
 export class ProviderEventReporter {
   constructor(
-    readonly store: SessionStore,
-    readonly context: ExecutionContext,
-    readonly client: string,
-    readonly model: string,
-    readonly itemProgress = false,
+    public readonly store: SessionStore,
+    public readonly context: ExecutionContext,
+    public readonly client: string,
+    public readonly model: string,
+    public readonly itemProgress = false,
   ) {}
 
-  emit(event: string, summary?: string | null, details?: Record<string, unknown> | null): void {
+  public emit(event: string, summary?: string | null, details?: Record<string, unknown> | null): void {
     const providerEvent = new ProviderEvent({
       event,
       client: this.client,

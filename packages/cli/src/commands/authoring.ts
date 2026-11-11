@@ -134,7 +134,7 @@ export function printInvocationEnvelope(command: string, message: string): void 
 }
 
 class Finish extends Error {
-  constructor(readonly exit: number, readonly items: Diagnostic[], readonly extra: Record<string, unknown> = {}) {
+  constructor(public readonly exit: number, public readonly items: Diagnostic[], public readonly extra: Record<string, unknown> = {}) {
     super('finish');
   }
 }

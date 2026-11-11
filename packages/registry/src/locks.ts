@@ -77,13 +77,13 @@ export class ProcessLock {
     timer: NodeJS.Timeout;
   }[] = [];
 
-  tryAcquire(): boolean {
+  public tryAcquire(): boolean {
     if (this.locked) return false;
     this.locked = true;
     return true;
   }
 
-  acquireTimeout(seconds: number): Promise<boolean> {
+  public acquireTimeout(seconds: number): Promise<boolean> {
     if (this.tryAcquire()) return Promise.resolve(true);
     if (seconds <= 0) return Promise.resolve(false);
     return new Promise((resolve) => {
@@ -99,7 +99,7 @@ export class ProcessLock {
     });
   }
 
-  release(): void {
+  public release(): void {
     const next = this.waiters.shift();
     if (!next) {
       this.locked = false;

@@ -52,17 +52,17 @@ const BLANK_USAGE: CliUsage = {
 };
 
 export class FakeClient implements CliClient {
-  readonly id = 'fake';
-  readonly command = 'fake';
-  readonly calls: ClientCall[] = [];
+  public readonly id = 'fake';
+  public readonly command = 'fake';
+  public readonly calls: ClientCall[] = [];
 
-  options(): readonly ClientOption[] {
+  public options(): readonly ClientOption[] {
     return [{ name: 'effort', overridable: true }];
   }
 
-  validateOptions(_options: Readonly<Record<string, string>>): void {}
+  public validateOptions(_options: Readonly<Record<string, string>>): void {}
 
-  runCommand(input: BuildCommandInput): CommandSpec {
+  public runCommand(input: BuildCommandInput): CommandSpec {
     return this.buildCommand(input);
   }
 
@@ -80,7 +80,7 @@ export class FakeClient implements CliClient {
     return { argv: [process.execPath, '-e', `process.stdout.write(${JSON.stringify(JSON.stringify({ call: this.calls.length - 1 }))})`] };
   }
 
-  parseRun(stdout: string, lastMessageFile: string): CliRunOutput {
+  public parseRun(stdout: string, lastMessageFile: string): CliRunOutput {
     const [text, sessionId] = this.parseResponse(stdout, lastMessageFile);
     return { text, sessionId, source: text === '' ? 'none' : 'model' };
   }
@@ -99,43 +99,43 @@ export class FakeClient implements CliClient {
     return [writeHandoffFromReply(this.promptFor(stdout), data.text ?? ''), data.sessionId ?? null];
   }
 
-  modelsCommand(): CommandSpec {
+  public modelsCommand(): CommandSpec {
     return { argv: [process.execPath, '-e', "process.stdout.write('{}')"] };
   }
 
-  parseModels(_stdout: string): CliModelCatalog {
+  public parseModels(_stdout: string): CliModelCatalog {
     return { ids: [], defaultId: null, optionValues: [], valuesFor: () => null };
   }
 
-  versionCommand(): CommandSpec {
+  public versionCommand(): CommandSpec {
     return { argv: [process.execPath, '-e', "process.stdout.write('fake/1.0.0')"] };
   }
 
-  parseVersion(stdout: string): string | null {
+  public parseVersion(stdout: string): string | null {
     return stdout.trim() === '' ? null : stdout.trim();
   }
 
-  createEventParser(): (line: string) => Record<string, unknown> | null {
+  public createEventParser(): (line: string) => Record<string, unknown> | null {
     return () => null;
   }
 
-  extractFailure(_stdout: string, _exitCode: number): RawFailure | null {
+  public extractFailure(_stdout: string, _exitCode: number): RawFailure | null {
     return null;
   }
 
-  captureUsage(_stdout: string): UsageCapture | null {
+  public captureUsage(_stdout: string): UsageCapture | null {
     return null;
   }
 
-  readUsage(_capture: UsageCapture): CliUsage {
+  public readUsage(_capture: UsageCapture): CliUsage {
     return BLANK_USAGE;
   }
 
-  optionValuesCommand(_option: string, _model: string): CommandSpec | null {
+  public optionValuesCommand(_option: string, _model: string): CommandSpec | null {
     return null;
   }
 
-  parseOptionValues(_option: string, _stdout: string, _model: string): readonly string[] {
+  public parseOptionValues(_option: string, _stdout: string, _model: string): readonly string[] {
     return [];
   }
 }
@@ -245,7 +245,7 @@ export async function capture(
 
 /** A scripted client whose first turn raises a cancellation, so the session stays resumable. */
 export class CancelOnCommand extends ScriptedClient {
-  override buildCommand(input: BuildCommandInput): CommandSpec {
+  public override buildCommand(input: BuildCommandInput): CommandSpec {
     super.buildCommand(input);
     raiseCancellation(2);
     return { argv: [process.execPath, '-e', 'process.exit(0)'] };

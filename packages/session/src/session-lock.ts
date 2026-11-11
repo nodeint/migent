@@ -93,7 +93,7 @@ export class SessionLock {
   private lost = false;
 
   private constructor(
-    readonly sessionId: string,
+    public readonly sessionId: string,
     private readonly directory: string,
     private readonly lockPath: string,
     private readonly info: LockInfo,
@@ -101,7 +101,7 @@ export class SessionLock {
   ) {}
 
   /** Take the lock, or return null while a live holder has it. */
-  static tryAcquire(sessionDirectory: string, timing: SessionLockTiming = {}): SessionLock | null {
+  public static tryAcquire(sessionDirectory: string, timing: SessionLockTiming = {}): SessionLock | null {
     const staleMs = timing.staleMs ?? SESSION_LOCK_STALE_MS;
     const heartbeatMs = timing.heartbeatMs ?? SESSION_LOCK_HEARTBEAT_MS;
     const directory = path.resolve(sessionDirectory);
@@ -127,7 +127,7 @@ export class SessionLock {
   }
 
   /** Take the lock or throw a plain Error naming the holder. */
-  static acquire(sessionDirectory: string, timing: SessionLockTiming = {}): SessionLock {
+  public static acquire(sessionDirectory: string, timing: SessionLockTiming = {}): SessionLock {
     const lock = SessionLock.tryAcquire(sessionDirectory, timing);
     if (lock !== null) return lock;
     const holder = readLock(path.join(path.resolve(sessionDirectory), SESSION_LOCK_FILENAME));
@@ -136,7 +136,7 @@ export class SessionLock {
     throw new SessionLockHeldError(`Session ${sessionId} is being run by ${who}.`);
   }
 
-  assertHeld(): void {
+  public assertHeld(): void {
     const current = readLock(this.lockPath);
     if (this.lost || current === null || current.nonce !== this.info.nonce) {
       this.lost = true;
@@ -144,7 +144,7 @@ export class SessionLock {
     }
   }
 
-  release(): void {
+  public release(): void {
     if (this.timer !== null) clearInterval(this.timer);
     this.timer = null;
     if (this.cancelTimer !== null) clearInterval(this.cancelTimer);
@@ -165,7 +165,7 @@ export class SessionLock {
    * Call `handler` once when `migent session cancel` writes a marker for this lock. Only a run
    * registers one; a short-lived holder such as repair ignores cancel requests.
    */
-  onCancelRequest(handler: () => void): void {
+  public onCancelRequest(handler: () => void): void {
     if (this.cancelTimer !== null) clearInterval(this.cancelTimer);
     const markerPath = path.join(this.directory, CANCEL_REQUEST_FILENAME);
     this.cancelTimer = setInterval(() => {
@@ -180,7 +180,7 @@ export class SessionLock {
   }
 
   /** Write one heartbeat now. Does nothing once the lock is lost. */
-  refresh(): void {
+  public refresh(): void {
     if (this.lost) return;
     const current = readLock(this.lockPath);
     if (current === null || current.nonce !== this.info.nonce) {

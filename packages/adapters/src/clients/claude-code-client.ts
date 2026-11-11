@@ -134,23 +134,23 @@ const CLAUDE_EVENT_TYPES: ReadonlySet<string> = new Set([
 ]);
 
 export class ClaudeCodeClient implements CliClient {
-  optionsCommand(): CommandSpec {
+  public optionsCommand(): CommandSpec {
     return { argv: [this.command, '-p', '--help'] };
   }
 
-  parseOptions(help: string) {
+  public parseOptions(help: string) {
     return parseHelpOptions(help, { section: /^Options:\s*$/, inferArgumentType: true });
   }
 
-  readonly effortOption = 'effort';
-  readonly id = 'claude-code';
-  readonly command = 'claude';
+  public readonly effortOption = 'effort';
+  public readonly id = 'claude-code';
+  public readonly command = 'claude';
 
-  options(): readonly ClientOption[] {
+  public options(): readonly ClientOption[] {
     return CLAUDE_OPTIONS;
   }
 
-  validateOptions(options: Readonly<Record<string, string>>): void {
+  public validateOptions(options: Readonly<Record<string, string>>): void {
     for (const [key, value] of Object.entries(options)) {
       const check = CLAUDE_OPTION_CHECKS[key];
       if (check === undefined) throw new Error(`${key} is not a claude option.`);
@@ -159,7 +159,7 @@ export class ClaudeCodeClient implements CliClient {
     }
   }
 
-  runCommand(input: BuildCommandInput): CommandSpec {
+  public runCommand(input: BuildCommandInput): CommandSpec {
     const options = { ...input.options };
     // Execution default only: never persisted, and an explicit option wins.
     if (options.permission_mode === undefined) options.permission_mode = DEFAULT_PERMISSION_MODE;
@@ -179,11 +179,11 @@ export class ClaudeCodeClient implements CliClient {
     return { argv, stdin: input.prompt };
   }
 
-  newSessionId(): string {
+  public newSessionId(): string {
     return randomUUID();
   }
 
-  modelsCommand(): CommandSpec {
+  public modelsCommand(): CommandSpec {
     return {
       argv: [
         this.command,
@@ -198,11 +198,11 @@ export class ClaudeCodeClient implements CliClient {
     };
   }
 
-  versionCommand(): CommandSpec {
+  public versionCommand(): CommandSpec {
     return { argv: [this.command, '--version'] };
   }
 
-  parseRun(stdout: string, lastMessageFile: string): CliRunOutput {
+  public parseRun(stdout: string, lastMessageFile: string): CliRunOutput {
     void lastMessageFile;
     let sessionId: string | null = null;
     let lastText: string | null = null;
@@ -237,7 +237,7 @@ export class ClaudeCodeClient implements CliClient {
     return { text: raw, sessionId: null, source: raw === '' ? 'none' : 'error' };
   }
 
-  parseModels(stdout: string): ModelCatalog {
+  public parseModels(stdout: string): ModelCatalog {
     let models: unknown[] | null = null;
     for (const rawLine of stdout.split(/\r\n|\n|\r/)) {
       const payload = parseJsonObject(rawLine);
@@ -266,12 +266,12 @@ export class ClaudeCodeClient implements CliClient {
     return new ModelCatalog(ids, null, efforts);
   }
 
-  parseVersion(stdout: string): string | null {
+  public parseVersion(stdout: string): string | null {
     const line = (stdout.split(/\r\n|\n|\r/, 1)[0] ?? '').trim();
     return line === '' ? null : line;
   }
 
-  createEventParser(): (line: string) => Record<string, unknown> | null {
+  public createEventParser(): (line: string) => Record<string, unknown> | null {
     const toolUses: Record<string, Record<string, unknown>> = {};
     return (line) => {
       const payload = parseJsonObject(line);
@@ -308,7 +308,7 @@ export class ClaudeCodeClient implements CliClient {
     };
   }
 
-  eventLabel(line: string): string | null {
+  public eventLabel(line: string): string | null {
     const payload = parseJsonObject(line);
     if (payload === null) return null;
     const type = labelOf(payload.type, CLAUDE_EVENT_TYPES);
@@ -322,7 +322,7 @@ export class ClaudeCodeClient implements CliClient {
     return type;
   }
 
-  extractFailure(stdout: string, exitCode: number): RawFailure | null {
+  public extractFailure(stdout: string, exitCode: number): RawFailure | null {
     let rateLimit: { resetAt: string | null; window: string | null } | null = null;
     let human: string | null = null;
     let providerMessage: string | null = null;
@@ -360,7 +360,7 @@ export class ClaudeCodeClient implements CliClient {
     return null;
   }
 
-  captureUsage(stdout: string): UsageCapture | null {
+  public captureUsage(stdout: string): UsageCapture | null {
     let result: Record<string, unknown> | null = null;
     for (const rawLine of stdout.split(/\r\n|\n|\r/)) {
       const payload = parseJsonObject(rawLine);
@@ -379,7 +379,7 @@ export class ClaudeCodeClient implements CliClient {
     };
   }
 
-  readUsage(capture: UsageCapture): CliUsage {
+  public readUsage(capture: UsageCapture): CliUsage {
     const result = isRecord(capture.result) ? capture.result : null;
     const usage = result !== null && isRecord(result.usage) ? result.usage : null;
     const details = usage !== null && isRecord(usage.output_tokens_details) ? usage.output_tokens_details : null;
@@ -396,13 +396,13 @@ export class ClaudeCodeClient implements CliClient {
     };
   }
 
-  optionValuesCommand(option: string, model: string): CommandSpec | null {
+  public optionValuesCommand(option: string, model: string): CommandSpec | null {
     void option;
     void model;
     return null;
   }
 
-  parseOptionValues(option: string, stdout: string, model: string): readonly string[] {
+  public parseOptionValues(option: string, stdout: string, model: string): readonly string[] {
     const values = this.parseModels(stdout).valuesFor(model, option);
     if (values === null) throw new Error(`claude does not list ${option} values for ${model}.`);
     return values;

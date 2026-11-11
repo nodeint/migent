@@ -17,13 +17,13 @@ export function stringOptions(value: unknown): Record<string, string> {
 }
 
 export class AgentSessionRecord {
-  client: string;
-  model: string;
-  workspace: string;
-  agentId: string | null;
-  options: Record<string, string>;
-  status: string;
-  history: Record<string, string>[];
+  public client: string;
+  public model: string;
+  public workspace: string;
+  public agentId: string | null;
+  public options: Record<string, string>;
+  public status: string;
+  public history: Record<string, string>[];
 
   constructor(
     client: string,
@@ -43,7 +43,7 @@ export class AgentSessionRecord {
     this.history = history;
   }
 
-  static fromJson(
+  public static fromJson(
     raw: unknown,
     client: string,
     model: string,
@@ -73,7 +73,7 @@ export class AgentSessionRecord {
     );
   }
 
-  toJson(): Record<string, unknown> {
+  public toJson(): Record<string, unknown> {
     return {
       client: this.client,
       model: this.model,
@@ -88,21 +88,21 @@ export class AgentSessionRecord {
 
 export class ExecutionContext {
   constructor(
-    readonly sessionId: string,
-    readonly executionId: string,
-    readonly directory: string,
+    public readonly sessionId: string,
+    public readonly executionId: string,
+    public readonly directory: string,
   ) {}
 
-  get conversationPath(): string {
+  public get conversationPath(): string {
     return path.join(this.directory, CONVERSATION_FILENAME);
   }
 
-  get conversationReadPath(): string {
+  public get conversationReadPath(): string {
     if (existsSync(this.conversationPath)) return this.conversationPath;
     return path.join(this.directory, LEGACY_CONVERSATION_FILENAME);
   }
 
-  get artifactDirectory(): string {
+  public get artifactDirectory(): string {
     return path.join(this.directory, 'artifacts');
   }
 }

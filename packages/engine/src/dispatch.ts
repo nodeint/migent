@@ -37,23 +37,23 @@ export interface StageDispatchRequest {
 
 export class StageDispatchResult {
   constructor(
-    readonly sessionId: string,
-    readonly executionId: string,
-    readonly outcomeStatus: string,
-    readonly outcomeDecision: string,
-    readonly sessionStatus: string,
-    readonly response: string,
-    readonly agentId = '',
-    readonly options: Record<string, string> = {},
-    readonly artifactDirectory = '',
-    readonly failureReason = '',
-    readonly failureKind = '',
-    readonly resetAt = '',
-    readonly client = '',
-    readonly executionStatus = '',
+    public readonly sessionId: string,
+    public readonly executionId: string,
+    public readonly outcomeStatus: string,
+    public readonly outcomeDecision: string,
+    public readonly sessionStatus: string,
+    public readonly response: string,
+    public readonly agentId = '',
+    public readonly options: Record<string, string> = {},
+    public readonly artifactDirectory = '',
+    public readonly failureReason = '',
+    public readonly failureKind = '',
+    public readonly resetAt = '',
+    public readonly client = '',
+    public readonly executionStatus = '',
   ) {}
 
-  toJson(): Record<string, unknown> {
+  public toJson(): Record<string, unknown> {
     return {
       agent_id: this.agentId,
       options: { ...this.options },

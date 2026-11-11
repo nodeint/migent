@@ -20,7 +20,7 @@ import { asInt, compareSortKey, latestExecutionPerStage } from './session-store-
 import { readJsonObject, textField } from './session-store-util.js';
 export class SessionStoreResume extends SessionStoreCore {
   /** Latest blocked execution of each stage, in resume order. */
-  blockedStages(sessionId: string): { executionId: string; stageId: string }[] {
+  public blockedStages(sessionId: string): { executionId: string; stageId: string }[] {
     return this.blockedStageRows(sessionId).map((row) => ({
       executionId: row.executionId,
       stageId: row.stageId,
@@ -28,7 +28,7 @@ export class SessionStoreResume extends SessionStoreCore {
   }
 
   /** Latest cancelled execution of each stage, in execution order. */
-  cancelledStages(sessionId: string): { executionId: string; stageId: string }[] {
+  public cancelledStages(sessionId: string): { executionId: string; stageId: string }[] {
     const latest = new Map<string, ExecutionSnapshot>();
     for (const row of this.executionSnapshots(sessionId)) {
       if (row.status === 'skipped') continue;
@@ -42,7 +42,7 @@ export class SessionStoreResume extends SessionStoreCore {
   }
 
   /** Cancelled executions that a reply replaced. They are never reopened in place. */
-  supersededExecutionIds(sessionId: string): Set<string> {
+  public supersededExecutionIds(sessionId: string): Set<string> {
     const ids = new Set<string>();
     for (const event of readParsedEvents(path.join(this.sessionsDirectory, sessionId, 'events.jsonl'))) {
       if (event.event === 'session.active' && event.data.from === CANCELLED_REPLY && event.executionId) ids.add(event.executionId);
@@ -54,7 +54,7 @@ export class SessionStoreResume extends SessionStoreCore {
    * Record a reply that supersedes a cancelled stage execution. The execution stays cancelled;
    * the reply is dispatched as a new execution that continues its conversation.
    */
-  supersedeCancelled(sessionId: string, stageId: string, reply: string): void {
+  public supersedeCancelled(sessionId: string, stageId: string, reply: string): void {
     const directory = path.join(this.sessionsDirectory, sessionId);
     assertSessionLockHeld(directory);
     const target = this.cancelledStages(sessionId).find((row) => row.stageId === stageId);
@@ -70,7 +70,7 @@ export class SessionStoreResume extends SessionStoreCore {
   }
 
   /** A recorded reply whose superseded execution is still the latest of its stage, so it was not dispatched yet. */
-  pendingCancelledReply(sessionId: string, stageId: string | null = null): { executionId: string; stageId: string; reply: string } | null {
+  public pendingCancelledReply(sessionId: string, stageId: string | null = null): { executionId: string; stageId: string; reply: string } | null {
     const events = readParsedEvents(path.join(this.sessionsDirectory, sessionId, 'events.jsonl'));
     for (const row of this.cancelledStages(sessionId)) {
       if (stageId !== null && row.stageId !== stageId) continue;
@@ -83,7 +83,7 @@ export class SessionStoreResume extends SessionStoreCore {
   }
 
   /** Questions are execution outcomes; the recipient is configured by the stage. */
-  questionStages(sessionId: string): { executionId: string; stageId: string; question: string; questions: Question[] }[] {
+  public questionStages(sessionId: string): { executionId: string; stageId: string; question: string; questions: Question[] }[] {
     const latest = new Map<string, ExecutionSnapshot>();
     for (const row of this.executionSnapshots(sessionId)) {
       const prev = latest.get(row.stageId);
@@ -101,7 +101,7 @@ export class SessionStoreResume extends SessionStoreCore {
   }
 
   /** A reply unlocks only its selected question. No automatic resume without a reply. */
-  resumeQuestion(sessionId: string, stageId: string, reply: string): string {
+  public resumeQuestion(sessionId: string, stageId: string, reply: string): string {
     const directory = path.join(this.sessionsDirectory, sessionId);
     assertSessionLockHeld(directory);
     const target = this.questionStages(sessionId).find((row) => row.stageId === stageId);
@@ -118,7 +118,7 @@ export class SessionStoreResume extends SessionStoreCore {
     return formatted;
   }
 
-  questionReply(sessionId: string, executionId: string): string | null {
+  public questionReply(sessionId: string, executionId: string): string | null {
     const events = readParsedEvents(path.join(this.sessionsDirectory, sessionId, 'events.jsonl'));
     const event = events.reverse().find((row) =>
       row.event === 'session.active' && row.executionId === executionId && row.data.from === 'question',
@@ -130,7 +130,7 @@ export class SessionStoreResume extends SessionStoreCore {
    * Record that continue is running blocked stages again. The caller holds the session lock.
    * `stageId` resumes that stage only. Other blocked stages stay blocked.
    */
-  resumeBlockedSession(sessionId: string, stageId: string | null = null): { executionId: string; stageId: string }[] {
+  public resumeBlockedSession(sessionId: string, stageId: string | null = null): { executionId: string; stageId: string }[] {
     const sessionDirectory = path.join(this.sessionsDirectory, sessionId);
     assertSessionLockHeld(sessionDirectory);
     const status = this.readSessionStatus(sessionId);
@@ -172,7 +172,7 @@ export class SessionStoreResume extends SessionStoreCore {
    * Append `session.active` with `data.from: failed` for each failed non-verify stage.
    * Does not rewrite the manifest or commit the fold. The session need not be active.
    */
-  markFailedResumes(sessionId: string, stageId: string | null = null): void {
+  public markFailedResumes(sessionId: string, stageId: string | null = null): void {
     const sessionDirectory = path.join(this.sessionsDirectory, sessionId);
     assertSessionLockHeld(sessionDirectory);
     const latest = new Map<string, ExecutionSnapshot>();
@@ -217,7 +217,7 @@ export class SessionStoreResume extends SessionStoreCore {
    * Reopen every cancelled execution in place. The caller holds the session lock.
    * Execution ids and stage attempts stay the same.
    */
-  reopenCancelledExecutions(
+  public reopenCancelledExecutions(
     sessionId: string,
     latestPerStage = false,
   ): { executionId: string; stageId: string }[] {
@@ -299,7 +299,7 @@ export class SessionStoreResume extends SessionStoreCore {
     return reopened;
   }
 
-  resetRevisionCounts(sessionId: string, snapshots: readonly ExecutionSnapshot[]): void {
+  public resetRevisionCounts(sessionId: string, snapshots: readonly ExecutionSnapshot[]): void {
     const sessionDirectory = path.join(this.sessionsDirectory, sessionId);
     assertSessionLockHeld(sessionDirectory);
     const counts: Record<string, number> = {};

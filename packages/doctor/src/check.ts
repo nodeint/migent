@@ -64,21 +64,21 @@ export function identityKey(diagnostic: Pick<Diagnostic, 'code' | 'path' | 'mess
 
 /** Collects findings in order and drops exact repeats. */
 export class DiagnosticList {
-  readonly items: Diagnostic[] = [];
+  public readonly items: Diagnostic[] = [];
   private readonly seen = new Set<string>();
 
-  add(diagnostic: Diagnostic): void {
+  public add(diagnostic: Diagnostic): void {
     const key = `${diagnostic.severity}|${diagnosticKey(diagnostic)}`;
     if (this.seen.has(key)) return;
     this.seen.add(key);
     this.items.push(diagnostic);
   }
 
-  get errors(): Diagnostic[] {
+  public get errors(): Diagnostic[] {
     return this.items.filter((item) => item.severity === 'error');
   }
 
-  get warnings(): Diagnostic[] {
+  public get warnings(): Diagnostic[] {
     return this.items.filter((item) => item.severity === 'warning');
   }
 }

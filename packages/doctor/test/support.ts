@@ -44,68 +44,68 @@ const BLANK_USAGE: CliUsage = {
 
 /** A client for doctor checks: only the metadata the doctor reads carries behavior. */
 class TestClient implements CliClient {
-  readonly optionsList: readonly ClientOption[] = [];
+  public readonly optionsList: readonly ClientOption[] = [];
 
   constructor(
-    readonly id: string,
-    readonly command: string,
+    public readonly id: string,
+    public readonly command: string,
     private readonly validate: (options: Readonly<Record<string, string>>) => void,
-    readonly effortOption?: string,
+    public readonly effortOption?: string,
   ) {}
 
-  options(): readonly ClientOption[] {
+  public options(): readonly ClientOption[] {
     return this.optionsList;
   }
 
-  validateOptions(options: Readonly<Record<string, string>>): void {
+  public validateOptions(options: Readonly<Record<string, string>>): void {
     this.validate(options);
   }
 
-  runCommand(_input: BuildCommandInput): CommandSpec {
+  public runCommand(_input: BuildCommandInput): CommandSpec {
     throw new Error('doctor tests never run a client turn.');
   }
 
-  modelsCommand(): CommandSpec {
+  public modelsCommand(): CommandSpec {
     throw new Error('doctor tests never list models.');
   }
 
-  versionCommand(): CommandSpec {
+  public versionCommand(): CommandSpec {
     throw new Error('doctor tests never read a version.');
   }
 
-  parseRun(_stdout: string, _lastMessageFile: string): CliRunOutput {
+  public parseRun(_stdout: string, _lastMessageFile: string): CliRunOutput {
     throw new Error('doctor tests never parse a turn.');
   }
 
-  parseModels(_stdout: string): CliModelCatalog {
+  public parseModels(_stdout: string): CliModelCatalog {
     return { ids: [], defaultId: null, optionValues: [], valuesFor: () => null };
   }
 
-  parseVersion(_stdout: string): string | null {
+  public parseVersion(_stdout: string): string | null {
     return null;
   }
 
-  createEventParser(): (line: string) => Record<string, unknown> | null {
+  public createEventParser(): (line: string) => Record<string, unknown> | null {
     return () => null;
   }
 
-  extractFailure(_stdout: string, _exitCode: number): RawFailure | null {
+  public extractFailure(_stdout: string, _exitCode: number): RawFailure | null {
     return null;
   }
 
-  captureUsage(_stdout: string): UsageCapture | null {
+  public captureUsage(_stdout: string): UsageCapture | null {
     return null;
   }
 
-  readUsage(_capture: UsageCapture): CliUsage {
+  public readUsage(_capture: UsageCapture): CliUsage {
     return BLANK_USAGE;
   }
 
-  optionValuesCommand(_option: string, _model: string): CommandSpec | null {
+  public optionValuesCommand(_option: string, _model: string): CommandSpec | null {
     return null;
   }
 
-  parseOptionValues(_option: string, _stdout: string, _model: string): readonly string[] {
+  public parseOptionValues(_option: string, _stdout: string, _model: string): readonly string[] {
     return [];
   }
 }

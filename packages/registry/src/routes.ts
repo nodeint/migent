@@ -16,8 +16,8 @@ import { locateWorkspace,WorkspaceLocationError } from './workspace.js';
 export type Auth = 'required' | 'health';
 
 export class HttpError extends Error {
-  readonly status: number;
-  readonly code: string;
+  public readonly status: number;
+  public readonly code: string;
 
   constructor(status: number, code: string, message: string) {
     super(message);
@@ -35,8 +35,8 @@ export class ValueError extends Error {
 }
 
 export class Result {
-  readonly status: number;
-  readonly payload: Record<string, unknown>;
+  public readonly status: number;
+  public readonly payload: Record<string, unknown>;
 
   constructor(status: number, payload: Record<string, unknown>) {
     this.status = status;
@@ -58,15 +58,15 @@ export interface WorkspaceRecords {
 const noop = (): void => undefined;
 
 export class Call {
-  method: string;
-  path: string;
-  store: WorkspaceRecords;
-  token: string;
-  instanceId: string;
-  authorization: string | null;
-  body: Buffer | null;
-  beforeStore: () => void;
-  params: Record<string, string>;
+  public method: string;
+  public path: string;
+  public store: WorkspaceRecords;
+  public token: string;
+  public instanceId: string;
+  public authorization: string | null;
+  public body: Buffer | null;
+  public beforeStore: () => void;
+  public params: Record<string, string>;
 
   constructor(options: {
     method: string;
@@ -90,7 +90,7 @@ export class Call {
     this.params = options.params ?? {};
   }
 
-  jsonObject(allowed: Set<string>, required: Set<string>): Record<string, unknown> {
+  public jsonObject(allowed: Set<string>, required: Set<string>): Record<string, unknown> {
     const raw = this.body ?? Buffer.alloc(0);
     let payload: unknown;
     try {
@@ -130,22 +130,22 @@ class GatedStore implements WorkspaceRecords {
     this.before = before;
   }
 
-  async list(): Promise<WorkspacePublic[]> {
+  public async list(): Promise<WorkspacePublic[]> {
     this.before();
     return this.inner.list();
   }
 
-  async get(workspaceId: string): Promise<WorkspacePublic> {
+  public async get(workspaceId: string): Promise<WorkspacePublic> {
     this.before();
     return this.inner.get(workspaceId);
   }
 
-  async remove(workspaceId: string): Promise<WorkspacePublic> {
+  public async remove(workspaceId: string): Promise<WorkspacePublic> {
     this.before();
     return this.inner.remove(workspaceId);
   }
 
-  async register(filePath: string, name: string | null, tool: unknown): Promise<[WorkspacePublic, boolean]> {
+  public async register(filePath: string, name: string | null, tool: unknown): Promise<[WorkspacePublic, boolean]> {
     this.before();
     return this.inner.register(filePath, name, tool);
   }
@@ -217,7 +217,7 @@ export function authState(authorization: string | null, token: string): 'ok' | '
 
 export class Router {
   private readonly routes: Route[] = [];
-  readonly hono: Hono;
+  public readonly hono: Hono;
 
   constructor() {
     this.hono = new Hono();
@@ -245,7 +245,7 @@ export class Router {
     });
   }
 
-  route(
+  public route(
     method: string,
     pattern: string,
     options: { auth?: Auth; answerBeforeBody?: boolean } = {},
@@ -263,7 +263,7 @@ export class Router {
     };
   }
 
-  shouldReadBody(method: string, requestPath: string): boolean {
+  public shouldReadBody(method: string, requestPath: string): boolean {
     if (method !== 'POST') return false;
     for (const route of this.routes) {
       if (route.answerBeforeBody && matchPath(route.pattern, requestPath) !== null) return false;
@@ -271,7 +271,7 @@ export class Router {
     return true;
   }
 
-  async dispatch(call: Call): Promise<Result> {
+  public async dispatch(call: Call): Promise<Result> {
     call.store = new GatedStore(call.store, call.beforeStore);
     const matched: [Route, Record<string, string>][] = [];
     for (const route of this.routes) {

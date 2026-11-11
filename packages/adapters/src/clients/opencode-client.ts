@@ -119,23 +119,23 @@ const OPENCODE_EVENT_TYPES: ReadonlySet<string> = new Set([
 ]);
 
 export class OpencodeClient implements CliClient {
-  optionsCommand(): CommandSpec {
+  public optionsCommand(): CommandSpec {
     return { argv: [this.command, 'run', '--help'] };
   }
 
-  parseOptions(help: string) {
+  public parseOptions(help: string) {
     return parseHelpOptions(help, { section: /^Options:\s*$/, inferArgumentType: true });
   }
 
-  readonly effortOption = 'variant';
-  readonly id = 'opencode';
-  readonly command = 'opencode';
+  public readonly effortOption = 'variant';
+  public readonly id = 'opencode';
+  public readonly command = 'opencode';
 
-  options(): readonly ClientOption[] {
+  public options(): readonly ClientOption[] {
     return OPENCODE_OPTIONS;
   }
 
-  validateOptions(options: Readonly<Record<string, string>>): void {
+  public validateOptions(options: Readonly<Record<string, string>>): void {
     const known = new Set(OPENCODE_OPTIONS.map((item) => item.name));
     for (const [key, value] of Object.entries(options)) {
       if (!known.has(key)) throw new Error(`${key} is not an opencode option.`);
@@ -149,7 +149,7 @@ export class OpencodeClient implements CliClient {
     }
   }
 
-  runCommand(input: BuildCommandInput): CommandSpec {
+  public runCommand(input: BuildCommandInput): CommandSpec {
     // The workspace is the process cwd, so input.workspace is not passed.
     const {variant} = input.options;
     if (variant !== undefined && input.model.includes('#')) {
@@ -166,7 +166,7 @@ export class OpencodeClient implements CliClient {
     return { argv, stdin: input.prompt };
   }
 
-  newSessionId(): string {
+  public newSessionId(): string {
     return generateSessionId();
   }
 
@@ -174,12 +174,12 @@ export class OpencodeClient implements CliClient {
    * `opencode api` finds the same background service `run` used, from the same cwd and
    * environment, so no server address is named here.
    */
-  interruptCommand(sessionId: string): CommandSpec | null {
+  public interruptCommand(sessionId: string): CommandSpec | null {
     if (!SESSION_ID.test(sessionId)) return null;
     return { argv: [this.command, 'api', 'session.interrupt', '--param', `sessionID=${sessionId}`] };
   }
 
-  classifyInterrupt(output: string, exitCode: number | null): InterruptOutcome {
+  public classifyInterrupt(output: string, exitCode: number | null): InterruptOutcome {
     if (exitCode === 0) {
       const payload = parseJsonObject(output.trim());
       if (payload?.interrupted === true) return 'interrupted';
@@ -189,20 +189,20 @@ export class OpencodeClient implements CliClient {
     return /not[\s_-]?found|\b404\b/i.test(output) ? 'not-found' : 'failed';
   }
 
-  sessionIdFromLine(line: string): string | null {
+  public sessionIdFromLine(line: string): string | null {
     const id = parseJsonObject(line)?.sessionID;
     return typeof id === 'string' && id !== '' ? id : null;
   }
 
-  modelsCommand(): CommandSpec {
+  public modelsCommand(): CommandSpec {
     return { argv: [this.command, 'models'] };
   }
 
-  versionCommand(): CommandSpec {
+  public versionCommand(): CommandSpec {
     return { argv: [this.command, '--version'] };
   }
 
-  parseRun(stdout: string, lastMessageFile: string): CliRunOutput {
+  public parseRun(stdout: string, lastMessageFile: string): CliRunOutput {
     void lastMessageFile;
     const segments: string[][] = [[]];
     let sessionId: string | null = null;
@@ -230,7 +230,7 @@ export class OpencodeClient implements CliClient {
     return { text: raw, sessionId: null, source: raw === '' ? 'none' : 'error' };
   }
 
-  parseModels(stdout: string): ModelCatalog {
+  public parseModels(stdout: string): ModelCatalog {
     const ids: string[] = [];
     for (const raw of stdout.split(/\r\n|\n|\r/)) {
       const line = raw.trim();
@@ -240,13 +240,13 @@ export class OpencodeClient implements CliClient {
     return new ModelCatalog(ids, null);
   }
 
-  parseVersion(stdout: string): string | null {
+  public parseVersion(stdout: string): string | null {
     const line = (stdout.split(/\r\n|\n|\r/, 1)[0] ?? '').trim();
     const version = line.replace(/^opencode v/i, '').trim();
     return version === '' ? null : version;
   }
 
-  createEventParser(): (line: string) => Record<string, unknown> | null {
+  public createEventParser(): (line: string) => Record<string, unknown> | null {
     return (line) => {
       const payload = parseJsonObject(line);
       if (payload === null) return null;
@@ -278,13 +278,13 @@ export class OpencodeClient implements CliClient {
     };
   }
 
-  eventLabel(line: string): string | null {
+  public eventLabel(line: string): string | null {
     const payload = parseJsonObject(line);
     if (payload === null) return null;
     return labelOf(payload.type, OPENCODE_EVENT_TYPES) ?? 'other';
   }
 
-  extractFailure(stdout: string, exitCode: number): RawFailure | null {
+  public extractFailure(stdout: string, exitCode: number): RawFailure | null {
     // An error event followed by a retry that succeeds still counts as a failure; accepted.
     let errorMessage: string | null = null;
     for (const payload of events(stdout)) {
@@ -299,7 +299,7 @@ export class OpencodeClient implements CliClient {
     return { origin: 'exit-only', message, exitCode };
   }
 
-  captureUsage(stdout: string): UsageCapture | null {
+  public captureUsage(stdout: string): UsageCapture | null {
     const steps: Record<string, unknown>[] = [];
     for (const payload of events(stdout)) {
       if (payload.type !== 'step_finish') continue;
@@ -309,7 +309,7 @@ export class OpencodeClient implements CliClient {
     return steps.length === 0 ? null : { steps };
   }
 
-  readUsage(capture: UsageCapture): CliUsage {
+  public readUsage(capture: UsageCapture): CliUsage {
     const steps = Array.isArray(capture.steps) ? capture.steps : [];
     const sum = (path: readonly string[]): number | null => {
       let total = 0;
@@ -333,12 +333,12 @@ export class OpencodeClient implements CliClient {
     };
   }
 
-  optionValuesCommand(option: string, model: string): CommandSpec | null {
+  public optionValuesCommand(option: string, model: string): CommandSpec | null {
     void model;
     return option === 'variant' ? { argv: [this.command, 'api', 'model.list'] } : null;
   }
 
-  parseOptionValues(option: string, stdout: string, model: string): readonly string[] {
+  public parseOptionValues(option: string, stdout: string, model: string): readonly string[] {
     if (option !== 'variant') throw new Error(`opencode does not list values for ${option}.`);
     const payload = parseJsonObject(stdout);
     if (!Array.isArray(payload?.data)) throw new Error('opencode did not report its model variants.');

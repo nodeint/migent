@@ -139,16 +139,16 @@ export function questionRequestPath(context: ExecutionContext): string {
 }
 
 export class AgentToolRunner {
-  readonly registry: ClientRegistry;
-  readonly executor: CommandExecutor;
-  readonly verifyRunner: VerifyRunner;
-  itemProgress = false;
+  public readonly registry: ClientRegistry;
+  public readonly executor: CommandExecutor;
+  public readonly verifyRunner: VerifyRunner;
+  public itemProgress = false;
   /**
    * Protocol a conversation with no source execution starts under. Continued conversations always
    * inherit their source's. Tests set 2 to build authentic protocol-2 conversations.
    */
-  newConversationProtocol = RESPONSE_PROTOCOL;
-  interruptPolicy: InterruptPolicy = DEFAULT_INTERRUPT_POLICY;
+  public newConversationProtocol = RESPONSE_PROTOCOL;
+  public interruptPolicy: InterruptPolicy = DEFAULT_INTERRUPT_POLICY;
   private readonly cliVersions = new Map<string, string | null>();
 
   constructor(
@@ -161,7 +161,7 @@ export class AgentToolRunner {
     this.executor = new CommandExecutor(timeoutSec);
   }
 
-  async run(request: RunRequest): Promise<RunResult> {
+  public async run(request: RunRequest): Promise<RunResult> {
     const workspacePath = resolveWorkspace(request.workspace);
     const stageAttempt = request.stageAttempt ?? null;
     const executionOrder = request.executionOrder ?? null;
@@ -284,7 +284,7 @@ export class AgentToolRunner {
   }
 
   /** Finish a cancelled execution that has been reopened in place. Does not create an attempt. */
-  async continueCancelled(workspace: string, sessionId: string, executionId: string): Promise<RunResult> {
+  public async continueCancelled(workspace: string, sessionId: string, executionId: string): Promise<RunResult> {
     const workspacePath = resolveWorkspace(workspace);
     const store = new SessionStore(workspacePath, undefined, this.registry);
     const context = store.executionContext(sessionId, executionId);

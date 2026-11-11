@@ -51,11 +51,11 @@ export class ServiceError extends Error {
 }
 
 export class ServiceEndpoint {
-  readonly host: string;
-  readonly port: number;
-  readonly token: string;
-  readonly instanceId: string;
-  readonly pid: number;
+  public readonly host: string;
+  public readonly port: number;
+  public readonly token: string;
+  public readonly instanceId: string;
+  public readonly pid: number;
 
   constructor(host: string, port: number, token: string, instanceId: string, pid: number) {
     this.host = host;
@@ -67,8 +67,8 @@ export class ServiceEndpoint {
 }
 
 export class StopResult {
-  readonly outcome: string;
-  readonly message: string;
+  public readonly outcome: string;
+  public readonly message: string;
 
   constructor(outcome: string, message = '') {
     this.outcome = outcome;

@@ -75,15 +75,15 @@ export function defaultVerifyShell(): string {
 }
 
 export class VerifyRunner {
-  readonly progressIntervalSec: number;
-  readonly shell: string;
+  public readonly progressIntervalSec: number;
+  public readonly shell: string;
 
   constructor(progressIntervalSec = PROGRESS_INTERVAL_SEC, shell = defaultVerifyShell()) {
     this.progressIntervalSec = progressIntervalSec;
     this.shell = shell;
   }
 
-  async run(input: VerifyRunInput): Promise<VerifyRunResult> {
+  public async run(input: VerifyRunInput): Promise<VerifyRunResult> {
     const startedAt = Date.now();
     const deadline = input.timeoutSec === null ? null : startedAt + input.timeoutSec * 1000;
     const commands: VerifyCommandResult[] = [];

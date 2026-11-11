@@ -161,11 +161,11 @@ export interface ClientCall {
 
 /** A CLI client a test fully controls: it launches a node one-liner that prints its reply. */
 export class FakeClient implements CliClient {
-  readonly id: string;
-  readonly command: string;
-  readonly calls: ClientCall[] = [];
-  captureUsage: (stdout: string) => UsageCapture | null = () => null;
-  readUsage: (capture: UsageCapture) => CliUsage = () => ({
+  public readonly id: string;
+  public readonly command: string;
+  public readonly calls: ClientCall[] = [];
+  public captureUsage: (stdout: string) => UsageCapture | null = () => null;
+  public readUsage: (capture: UsageCapture) => CliUsage = () => ({
     values: {
       input_tokens: null,
       output_tokens: null,
@@ -176,26 +176,26 @@ export class FakeClient implements CliClient {
     },
     cumulative: [],
   });
-  versionCommand: () => CommandSpec = () => ({ argv: [this.command, '--version'] });
-  parseVersion: (stdout: string) => string | null = (stdout) => stdout.trim() || null;
+  public versionCommand: () => CommandSpec = () => ({ argv: [this.command, '--version'] });
+  public parseVersion: (stdout: string) => string | null = (stdout) => stdout.trim() || null;
 
   constructor(id = 'fake', command = 'fake') {
     this.id = id;
     this.command = command;
   }
 
-  options() {
+  public options() {
     return [{ name: 'effort', prompt: true, allowDefault: true, overridable: true }];
   }
 
-  validateOptions(options: Readonly<Record<string, string>>): void {
+  public validateOptions(options: Readonly<Record<string, string>>): void {
     for (const [key, value] of Object.entries(options)) {
       if (!optionKey.test(key)) throw new Error(`${key} is not a ${this.id} option.`);
       if (value.trim() === '') throw new Error(`${key} is empty.`);
     }
   }
 
-  buildCommand(input: BuildCommandInput): CommandSpec {
+  public buildCommand(input: BuildCommandInput): CommandSpec {
     this.calls.push({
       model: input.model,
       workspace: input.workspace,
@@ -216,11 +216,11 @@ export class FakeClient implements CliClient {
     };
   }
 
-  runCommand(input: BuildCommandInput): CommandSpec {
+  public runCommand(input: BuildCommandInput): CommandSpec {
     return this.buildCommand(input);
   }
 
-  parseResponse(stdout: string): [string, string | null] {
+  public parseResponse(stdout: string): [string, string | null] {
     const data = JSON.parse(stdout) as { text: string; sessionId?: string };
     return [writeHandoffFromReply(this.parsedPrompt(), data.text), data.sessionId ?? null];
   }
@@ -232,7 +232,7 @@ export class FakeClient implements CliClient {
     return (this.parsingCall === null ? this.calls.at(-1) : this.calls[this.parsingCall])?.prompt ?? '';
   }
 
-  parseRun(stdout: string, lastMessageFile: string): CliRunOutput {
+  public parseRun(stdout: string, lastMessageFile: string): CliRunOutput {
     void lastMessageFile;
     try {
       const {call} = (JSON.parse(stdout) as { call?: unknown });
@@ -244,37 +244,37 @@ export class FakeClient implements CliClient {
     return { text, sessionId, source: 'model' };
   }
 
-  modelsCommand(): CommandSpec {
+  public modelsCommand(): CommandSpec {
     return { argv: [this.command, 'models'] };
   }
 
-  parseModels(stdout: string): CliModelCatalog {
+  public parseModels(stdout: string): CliModelCatalog {
     const ids = stdout.split(/\r\n|\n|\r/).map((line) => line.trim()).filter((line) => line !== '');
     return { ids, defaultId: null, optionValues: [], valuesFor: () => null };
   }
 
-  createEventParser(): (line: string) => Record<string, unknown> | null {
+  public createEventParser(): (line: string) => Record<string, unknown> | null {
     return () => null;
   }
 
-  eventLabel(line: string): string | null {
+  public eventLabel(line: string): string | null {
     void line;
     return null;
   }
 
-  extractFailure(stdout: string, exitCode: number): ReturnType<CliClient['extractFailure']> {
+  public extractFailure(stdout: string, exitCode: number): ReturnType<CliClient['extractFailure']> {
     void stdout;
     if (exitCode === 0) return null;
     return { origin: 'exit-only', message: `exited ${exitCode}`, exitCode };
   }
 
-  optionValuesCommand(option: string, model: string): CommandSpec | null {
+  public optionValuesCommand(option: string, model: string): CommandSpec | null {
     void option;
     void model;
     return null;
   }
 
-  parseOptionValues(option: string, stdout: string, model: string): readonly string[] {
+  public parseOptionValues(option: string, stdout: string, model: string): readonly string[] {
     void option;
     void stdout;
     void model;
@@ -283,13 +283,13 @@ export class FakeClient implements CliClient {
 }
 
 export class BlockedClient extends FakeClient {
-  override parseResponse(): [string, string | null] {
+  public override parseResponse(): [string, string | null] {
     return [writeHandoffFromReply(this.parsedPrompt(), 'status: blocked\nblocker: missing approved design'), 'native-session-1'];
   }
 }
 
 export class MissingOutcomeClient extends FakeClient {
-  override parseResponse(): [string, string | null] {
+  public override parseResponse(): [string, string | null] {
     return ['implementation report without a status header', 'native-session-1'];
   }
 }
@@ -304,7 +304,7 @@ export class ScriptedClient extends FakeClient {
     this.artifacts = artifacts ? [...artifacts] : [];
   }
 
-  override parseResponse(): [string, string | null] {
+  public override parseResponse(): [string, string | null] {
     if (this.artifacts.length > 0) {
       const next = this.artifacts.shift() ?? null;
       const prompt = this.calls.at(-1)?.prompt;

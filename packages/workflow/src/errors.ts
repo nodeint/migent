@@ -19,10 +19,10 @@ export interface ConfigurationErrorDetails {
 }
 
 export class ConfigurationError extends Error {
-  readonly code: string | undefined;
-  readonly path: readonly (string | number)[] | undefined;
-  readonly layer: 'project' | 'local' | undefined;
-  readonly position: SourcePosition | undefined;
+  public readonly code: string | undefined;
+  public readonly path: readonly (string | number)[] | undefined;
+  public readonly layer: 'project' | 'local' | undefined;
+  public readonly position: SourcePosition | undefined;
 
   constructor(message: string, details: ConfigurationErrorDetails = {}) {
     super(message);

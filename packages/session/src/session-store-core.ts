@@ -22,10 +22,10 @@ import { asInt, compareSortKey, isFile, verifyReportPath } from './session-store
 import { readJsonObject, textField } from './session-store-util.js';
 
 export class SessionStoreCore {
-  readonly workspace: string;
-  readonly sessionsDirectory: string;
-  readonly processInspector: ProcessInspector;
-  readonly metricsClients: ClientRegistry | null;
+  public readonly workspace: string;
+  public readonly sessionsDirectory: string;
+  public readonly processInspector: ProcessInspector;
+  public readonly metricsClients: ClientRegistry | null;
 
   constructor(
     workspace: string,
@@ -38,7 +38,7 @@ export class SessionStoreCore {
     this.metricsClients = metricsClients ?? null;
   }
 
-  executionContext(sessionId: string, executionId: string): ExecutionContext | null {
+  public executionContext(sessionId: string, executionId: string): ExecutionContext | null {
     const directory = path.join(this.sessionsDirectory, sessionId, EXECUTIONS_DIRNAME, executionId);
     try {
       if (!statSync(directory).isDirectory()) return null;
@@ -92,11 +92,11 @@ export class SessionStoreCore {
     return snapshots;
   }
 
-  executionSnapshots(sessionId: string): ExecutionSnapshot[] {
+  public executionSnapshots(sessionId: string): ExecutionSnapshot[] {
     return this.snapshotList(sessionId);
   }
 
-  readSessionStatus(sessionId: string): Record<string, unknown> {
+  public readSessionStatus(sessionId: string): Record<string, unknown> {
     return this.readSessionStatusAt(path.join(this.sessionsDirectory, sessionId));
   }
 
@@ -201,14 +201,14 @@ export class SessionStoreCore {
     return textField(outcome.blocker);
   }
 
-  stageId(context: ExecutionContext): string {
+  public stageId(context: ExecutionContext): string {
     const metadata = readJsonObject(path.join(context.directory, 'execution.json'));
     const stageId = metadata.stage_id;
     if (typeof stageId !== 'string') throw new Error(`Execution ${context.executionId} has no stage_id.`);
     return stageId;
   }
 
-  latestExecution(sessionId: string): ExecutionContext | null {
+  public latestExecution(sessionId: string): ExecutionContext | null {
     const contexts = this.executionContexts(sessionId);
     if (contexts.length === 0) return null;
     return contexts.reduce((best, context) =>
@@ -216,12 +216,12 @@ export class SessionStoreCore {
     );
   }
 
-  turnDirectory(context: ExecutionContext, turn: number): string {
+  public turnDirectory(context: ExecutionContext, turn: number): string {
     return path.join(context.directory, 'turns', String(turn).padStart(2, '0'));
   }
 
   /** Resolve and validate provenance before any resume changes persisted state. */
-  executionClient(sessionId: string, executionId: string): string {
+  public executionClient(sessionId: string, executionId: string): string {
     const context = this.executionContext(sessionId, executionId);
     if (context === null) throw new ConfigurationError(`Execution ${executionId} was not found in session ${sessionId}.`);
     const metadata = readJsonObject(path.join(context.directory, 'execution.json'));
@@ -236,7 +236,7 @@ export class SessionStoreCore {
     return decided.client;
   }
 
-  save(record: AgentSessionRecord, context: ExecutionContext): void {
+  public save(record: AgentSessionRecord, context: ExecutionContext): void {
     writeJsonAtomic(context.conversationPath, record.toJson());
   }
 }

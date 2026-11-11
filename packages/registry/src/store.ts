@@ -36,7 +36,7 @@ export class RegistryCorrupt extends Error {
 }
 
 export class WorkspaceNotFound extends Error {
-  readonly workspaceId: string;
+  public readonly workspaceId: string;
 
   constructor(workspaceId: string) {
     super(`Workspace was not found: ${workspaceId}`);
@@ -366,16 +366,16 @@ function ordered(records: WorkspaceRecord[]): WorkspaceRecord[] {
 }
 
 export class RegistryStore {
-  readonly directory: string;
-  readonly timeoutSec: number;
-  lockedHook: () => void | Promise<void> = () => undefined;
+  public readonly directory: string;
+  public readonly timeoutSec: number;
+  public lockedHook: () => void | Promise<void> = () => undefined;
 
   constructor(directory: string, timeoutSec = 2) {
     this.directory = directory;
     this.timeoutSec = timeoutSec;
   }
 
-  async register(filePath: string, name: string | null, tool: unknown): Promise<[WorkspacePublic, boolean]> {
+  public async register(filePath: string, name: string | null, tool: unknown): Promise<[WorkspacePublic, boolean]> {
     const [storedPath, chosenName, storedTool] = prepareRegister(filePath, name, tool);
     return this.lock(false, async () => {
       const records = this.load();
@@ -410,15 +410,15 @@ export class RegistryStore {
     });
   }
 
-  async list(): Promise<WorkspacePublic[]> {
+  public async list(): Promise<WorkspacePublic[]> {
     return this.lock(true, async () => ordered(this.load()).map((record) => asPublic(record)));
   }
 
-  async get(workspaceId: string): Promise<WorkspacePublic> {
+  public async get(workspaceId: string): Promise<WorkspacePublic> {
     return this.lock(true, async () => asPublic(findRecord(this.load(), workspaceId)));
   }
 
-  async remove(workspaceId: string): Promise<WorkspacePublic> {
+  public async remove(workspaceId: string): Promise<WorkspacePublic> {
     return this.lock(false, async () => {
       const records = this.load();
       const found = findRecord(records, workspaceId);

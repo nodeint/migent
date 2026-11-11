@@ -146,23 +146,23 @@ const GROK_EVENT_TYPES: ReadonlySet<string> = new Set([
 ]);
 
 export class GrokClient implements CliClient {
-  optionsCommand(): CommandSpec {
+  public optionsCommand(): CommandSpec {
     return { argv: [this.command, '-p', 'x', '--help'] };
   }
 
-  parseOptions(help: string) {
+  public parseOptions(help: string) {
     return parseHelpOptions(help, { section: /^Options:\s*$/, inferArgumentType: true });
   }
 
-  readonly effortOption = GROK_REASONING_OPTION;
-  readonly id = 'grok';
-  readonly command = 'grok';
+  public readonly effortOption = GROK_REASONING_OPTION;
+  public readonly id = 'grok';
+  public readonly command = 'grok';
 
-  options(): readonly ClientOption[] {
+  public options(): readonly ClientOption[] {
     return GROK_OPTIONS;
   }
 
-  validateOptions(options: Readonly<Record<string, string>>): void {
+  public validateOptions(options: Readonly<Record<string, string>>): void {
     for (const [key, value] of Object.entries(options)) {
       const check = GROK_OPTION_CHECKS[key];
       if (check === undefined) throw new Error(`${key} is not a grok option.`);
@@ -171,7 +171,7 @@ export class GrokClient implements CliClient {
     }
   }
 
-  runCommand(input: BuildCommandInput): CommandSpec {
+  public runCommand(input: BuildCommandInput): CommandSpec {
     const argv = [
       this.command,
       '--prompt-file',
@@ -191,15 +191,15 @@ export class GrokClient implements CliClient {
     return { argv };
   }
 
-  modelsCommand(): CommandSpec {
+  public modelsCommand(): CommandSpec {
     return { argv: [this.command, 'models'] };
   }
 
-  versionCommand(): CommandSpec {
+  public versionCommand(): CommandSpec {
     return { argv: [this.command, '--version'] };
   }
 
-  parseRun(stdout: string, lastMessageFile: string): CliRunOutput {
+  public parseRun(stdout: string, lastMessageFile: string): CliRunOutput {
     void lastMessageFile;
     const segments: string[][] = [[]];
     let sessionId: string | null = null;
@@ -235,7 +235,7 @@ export class GrokClient implements CliClient {
     return { text: raw, sessionId: null, source: raw === '' ? 'none' : 'error' };
   }
 
-  parseModels(stdout: string): ModelCatalog {
+  public parseModels(stdout: string): ModelCatalog {
     const ids: string[] = [];
     let defaultId: string | null = null;
     let inList = false;
@@ -259,12 +259,12 @@ export class GrokClient implements CliClient {
     return new ModelCatalog(ids, defaultId);
   }
 
-  parseVersion(stdout: string): string | null {
+  public parseVersion(stdout: string): string | null {
     const line = (stdout.split(/\r\n|\n|\r/, 1)[0] ?? '').trim();
     return line === '' ? null : line;
   }
 
-  createEventParser(): (line: string) => Record<string, unknown> | null {
+  public createEventParser(): (line: string) => Record<string, unknown> | null {
     const toolCalls: Record<string, Record<string, unknown>> = {};
     return (line) => {
       const payload = parseJsonObject(line);
@@ -297,13 +297,13 @@ export class GrokClient implements CliClient {
     };
   }
 
-  eventLabel(line: string): string | null {
+  public eventLabel(line: string): string | null {
     const payload = parseJsonObject(line);
     if (payload === null) return null;
     return labelOf(payload.type, GROK_EVENT_TYPES) ?? 'other';
   }
 
-  extractFailure(stdout: string, exitCode: number): RawFailure | null {
+  public extractFailure(stdout: string, exitCode: number): RawFailure | null {
     let errorMessage: string | null = null;
     for (const rawLine of stdout.split(/\r\n|\n|\r/)) {
       const payload = parseJsonObject(rawLine);
@@ -318,7 +318,7 @@ export class GrokClient implements CliClient {
     return { origin: 'exit-only', message: text || null, exitCode };
   }
 
-  captureUsage(stdout: string): UsageCapture | null {
+  public captureUsage(stdout: string): UsageCapture | null {
     let end: Record<string, unknown> | null = null;
     let usageEvent: Record<string, unknown> | null = null;
     for (const rawLine of stdout.split(/\r\n|\n|\r/)) {
@@ -332,7 +332,7 @@ export class GrokClient implements CliClient {
     return null;
   }
 
-  readUsage(capture: UsageCapture): CliUsage {
+  public readUsage(capture: UsageCapture): CliUsage {
     const end = isRecord(capture.end) ? capture.end : null;
     const usage = end !== null
       ? (isRecord(end.usage) ? end.usage : null)
@@ -351,7 +351,7 @@ export class GrokClient implements CliClient {
   }
 
   /** Grok lists the accepted efforts only in the error it prints for a bad one. */
-  optionValuesCommand(option: string, model: string): CommandSpec | null {
+  public optionValuesCommand(option: string, model: string): CommandSpec | null {
     if (option !== GROK_REASONING_OPTION) return null;
     return {
       argv: [
@@ -368,7 +368,7 @@ export class GrokClient implements CliClient {
     };
   }
 
-  parseOptionValues(option: string, stdout: string, model: string): readonly string[] {
+  public parseOptionValues(option: string, stdout: string, model: string): readonly string[] {
     void model;
     if (option !== GROK_REASONING_OPTION) throw new Error(`grok does not list values for ${option}.`);
     const match = GROK_EFFORTS.exec(stdout);

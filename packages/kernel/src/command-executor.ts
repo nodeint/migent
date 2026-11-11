@@ -119,7 +119,7 @@ async function notify(hook: ((reason: StopReason) => Promise<void | boolean>) | 
 }
 
 export class CancellationRequested extends Error {
-  readonly signalNumber: number;
+  public readonly signalNumber: number;
 
   constructor(signalNumber: number) {
     super(`Received signal ${signalNumber}.`);
@@ -162,9 +162,9 @@ function throwIfCancelled(): void {
 }
 
 export class CommandExecutor {
-  readonly timeoutSec: number | null;
-  readonly progressIntervalSec: number;
-  interruptExitGraceMs = INTERRUPT_EXIT_GRACE_MS;
+  public readonly timeoutSec: number | null;
+  public readonly progressIntervalSec: number;
+  public interruptExitGraceMs = INTERRUPT_EXIT_GRACE_MS;
 
   constructor(
     timeoutSec: number | null = DEFAULT_TIMEOUT_SEC,
@@ -181,7 +181,7 @@ export class CommandExecutor {
     if (await notify(options.onInterrupt, reason)) await waitForExit(child, this.interruptExitGraceMs);
   }
 
-  async run(spec: CommandSpec, cwd: string, options: RunOptions = {}): Promise<CommandResult> {
+  public async run(spec: CommandSpec, cwd: string, options: RunOptions = {}): Promise<CommandResult> {
     const { onOutput, onHeartbeat, onStart, onDebug } = options;
     const executable = spec.argv[0] ?? 'command';
     let child: ChildProcess | null = null;

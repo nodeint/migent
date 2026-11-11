@@ -15,14 +15,14 @@ export class ResponseContractError extends Error {
 
 export class StageOutcome {
   constructor(
-    readonly status: string,
-    readonly blocker: string | null = null,
-    readonly decision: string | null = null,
-    readonly question: string | null = null,
-    readonly questions: Question[] = [],
+    public readonly status: string,
+    public readonly blocker: string | null = null,
+    public readonly decision: string | null = null,
+    public readonly question: string | null = null,
+    public readonly questions: Question[] = [],
   ) {}
 
-  toJson(): Record<string, unknown> {
+  public toJson(): Record<string, unknown> {
     const outcome: Record<string, unknown> = { status: this.status };
     if (this.blocker) outcome.blocker = this.blocker;
     if (this.decision) outcome.decision = this.decision;

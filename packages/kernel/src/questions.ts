@@ -62,7 +62,7 @@ export type QuestionFileErrorKind = 'missing' | 'empty' | 'invalid_json' | 'inva
 
 /** The question request file cannot be used. The kind and detail are safe to show to the agent. */
 export class QuestionFileError extends Error {
-  constructor(readonly kind: QuestionFileErrorKind, readonly detail: string, readonly file: string) {
+  constructor(public readonly kind: QuestionFileErrorKind, public readonly detail: string, public readonly file: string) {
     super(`Question request file ${file} is invalid (${kind}): ${detail}`);
     this.name = 'QuestionFileError';
   }

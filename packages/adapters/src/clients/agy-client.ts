@@ -174,23 +174,23 @@ const AGY_EVENTS: ReadonlySet<string> = new Set(['init', 'status', 'step_update'
 const AGY_STEP_TYPES: ReadonlySet<string> = new Set(['agent_response', 'system_message', 'user_input', 'tool']);
 
 export class AgyClient implements CliClient {
-  optionsCommand(): CommandSpec {
+  public optionsCommand(): CommandSpec {
     return { argv: [this.command, '-p', '--help'] };
   }
 
-  parseOptions(help: string) {
+  public parseOptions(help: string) {
     return parseHelpOptions(help, { section: /^Usage of agy:/, inferArgumentType: false });
   }
 
-  readonly effortOption = 'effort';
-  readonly id = 'agy';
-  readonly command = 'agy';
+  public readonly effortOption = 'effort';
+  public readonly id = 'agy';
+  public readonly command = 'agy';
 
-  options(): readonly ClientOption[] {
+  public options(): readonly ClientOption[] {
     return AGY_OPTIONS;
   }
 
-  validateOptions(options: Readonly<Record<string, string>>): void {
+  public validateOptions(options: Readonly<Record<string, string>>): void {
     for (const [key, value] of Object.entries(options)) {
       const check = AGY_OPTION_CHECKS[key];
       if (check === undefined) throw new Error(`${key} is not an agy option.`);
@@ -199,7 +199,7 @@ export class AgyClient implements CliClient {
     }
   }
 
-  runCommand(input: BuildCommandInput): CommandSpec {
+  public runCommand(input: BuildCommandInput): CommandSpec {
     const argv = [
       this.command,
       '--input-format',
@@ -224,15 +224,15 @@ export class AgyClient implements CliClient {
     return { argv, stdin };
   }
 
-  modelsCommand(): CommandSpec {
+  public modelsCommand(): CommandSpec {
     return { argv: [this.command, 'models'] };
   }
 
-  versionCommand(): CommandSpec {
+  public versionCommand(): CommandSpec {
     return { argv: [this.command, '--version'] };
   }
 
-  parseRun(stdout: string, lastMessageFile: string): CliRunOutput {
+  public parseRun(stdout: string, lastMessageFile: string): CliRunOutput {
     void lastMessageFile;
     let sessionId: string | null = null;
     let text: string | null = null;
@@ -263,7 +263,7 @@ export class AgyClient implements CliClient {
     return { text: raw, sessionId: null, source: raw === '' ? 'none' : 'error' };
   }
 
-  parseModels(stdout: string): ModelCatalog {
+  public parseModels(stdout: string): ModelCatalog {
     const ids: string[] = [];
     for (const raw of stdout.split(/\r\n|\n|\r/)) {
       const id = modelId(raw);
@@ -277,12 +277,12 @@ export class AgyClient implements CliClient {
     );
   }
 
-  parseVersion(stdout: string): string | null {
+  public parseVersion(stdout: string): string | null {
     const line = (stdout.split(/\r\n|\n|\r/, 1)[0] ?? '').trim();
     return line === '' ? null : line;
   }
 
-  createEventParser(): (line: string) => Record<string, unknown> | null {
+  public createEventParser(): (line: string) => Record<string, unknown> | null {
     const toolSteps: Record<string, Record<string, unknown>> = {};
     return (line) => {
       const payload = parseJsonObject(line);
@@ -326,7 +326,7 @@ export class AgyClient implements CliClient {
     };
   }
 
-  eventLabel(line: string): string | null {
+  public eventLabel(line: string): string | null {
     const payload = parseJsonObject(line);
     if (payload === null) return null;
     const event = labelOf(payload.event, AGY_EVENTS);
@@ -342,7 +342,7 @@ export class AgyClient implements CliClient {
     return event;
   }
 
-  extractFailure(stdout: string, exitCode: number): RawFailure | null {
+  public extractFailure(stdout: string, exitCode: number): RawFailure | null {
     const text = this.parseRun(stdout, '').text.trim();
     // A non-SUCCESS result is the CLI's own error report; anything else is a bare exit.
     let reported = false;
@@ -355,7 +355,7 @@ export class AgyClient implements CliClient {
     return { origin: reported ? 'provider-error' : 'exit-only', message: text || null, exitCode };
   }
 
-  captureUsage(stdout: string): UsageCapture | null {
+  public captureUsage(stdout: string): UsageCapture | null {
     let result: Record<string, unknown> | null = null;
     const steps: Record<string, unknown>[] = [];
     for (const rawLine of stdout.split(/\r\n|\n|\r/)) {
@@ -373,7 +373,7 @@ export class AgyClient implements CliClient {
     return capture;
   }
 
-  readUsage(capture: UsageCapture): CliUsage {
+  public readUsage(capture: UsageCapture): CliUsage {
     const steps = Array.isArray(capture.steps) ? capture.steps : [];
     if (steps.length > 0) return { values: sumSteps(steps), cumulative: [] };
     const result = isRecord(capture.result) ? capture.result : null;
@@ -390,12 +390,12 @@ export class AgyClient implements CliClient {
     };
   }
 
-  optionValuesCommand(option: string, model: string): CommandSpec | null {
+  public optionValuesCommand(option: string, model: string): CommandSpec | null {
     void model;
     return option === 'effort' ? this.modelsCommand() : null;
   }
 
-  parseOptionValues(option: string, stdout: string, model: string): readonly string[] {
+  public parseOptionValues(option: string, stdout: string, model: string): readonly string[] {
     if (option !== 'effort') throw new Error(`agy does not list values for ${option}.`);
     return this.parseModels(stdout).valuesFor(model, option) ?? AGY_EFFORTS;
   }

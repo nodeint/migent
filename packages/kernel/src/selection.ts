@@ -13,16 +13,16 @@ import { type ExecutionSnapshot,isArtifactSchema, missingWorkflowOutputNames } f
 const terminalSessionStatuses = new Set(['blocked', 'question', 'cancelled', 'completed']);
 
 export class NextStage {
-  constructor(readonly stageId: string) {}
+  constructor(public readonly stageId: string) {}
 }
 
 export class Stop {
-  constructor(readonly reason: string) {}
+  constructor(public readonly reason: string) {}
 }
 
 /** Python selection.Error. Named so it does not shadow the global Error. */
 export class NextStageError {
-  constructor(readonly message: string) {}
+  constructor(public readonly message: string) {}
 }
 
 export type NextStageResult = NextStage | Stop | NextStageError;

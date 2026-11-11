@@ -43,15 +43,15 @@ export interface ProcessInspector {
 }
 
 export class SystemProcessInspector implements ProcessInspector {
-  hostname(): string {
+  public hostname(): string {
     return osHostname();
   }
 
-  probePid(pid: number): string {
+  public probePid(pid: number): string {
     return probePid(pid);
   }
 
-  probeEndpoint(endpoint: string): EndpointState {
+  public probeEndpoint(endpoint: string): EndpointState {
     return probeEndpointSync(endpoint, ENDPOINT_PROBE_TIMEOUT_MS);
   }
 }

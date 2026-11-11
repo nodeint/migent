@@ -67,7 +67,7 @@ class SocketFeed {
     }
   }
 
-  readChunk(deadline: number): Promise<Buffer | null> {
+  public readChunk(deadline: number): Promise<Buffer | null> {
     const queued = this.chunks.shift();
     if (queued) return Promise.resolve(queued);
     if (this.ended) return Promise.resolve(null);
@@ -86,7 +86,7 @@ class SocketFeed {
 
 class DeadlineReader {
   private buffer = Buffer.alloc(0);
-  readonly clock: { deadline: number };
+  public readonly clock: { deadline: number };
   private readonly feed: SocketFeed;
 
   constructor(feed: SocketFeed, clock: { deadline: number }) {
@@ -94,11 +94,11 @@ class DeadlineReader {
     this.clock = clock;
   }
 
-  setDeadline(deadline: number): void {
+  public setDeadline(deadline: number): void {
     this.clock.deadline = deadline;
   }
 
-  async read(size: number): Promise<Buffer> {
+  public async read(size: number): Promise<Buffer> {
     if (size === 0) return Buffer.alloc(0);
     if (size < 0) {
       while (await this.fillOne()) {
@@ -116,7 +116,7 @@ class DeadlineReader {
     return Buffer.from(data);
   }
 
-  async readLine(limit: number): Promise<Buffer> {
+  public async readLine(limit: number): Promise<Buffer> {
     for (;;) {
       const newline = this.buffer.indexOf(0x0a);
       if (newline !== -1 && newline + 1 <= limit) {
@@ -185,17 +185,17 @@ async function writeAll(socket: Socket, payload: Buffer, deadlineSec: number): P
 }
 
 export class RegistryHTTPServer {
-  static daemonThreads = true;
-  inFlight = 0;
-  timeout = 0.2;
-  readonly store: RegistryStore;
-  token: string;
-  instanceId: string;
-  readonly readDeadlineSec: number;
-  readonly writeDeadlineSec: number;
-  readonly maxBodyBytes: number;
-  readonly router: Router;
-  port = 0;
+  public static daemonThreads = true;
+  public inFlight = 0;
+  public timeout = 0.2;
+  public readonly store: RegistryStore;
+  public token: string;
+  public instanceId: string;
+  public readonly readDeadlineSec: number;
+  public readonly writeDeadlineSec: number;
+  public readonly maxBodyBytes: number;
+  public readonly router: Router;
+  public port = 0;
   private readonly tcp = createServer();
   private readonly queued: Socket[] = [];
   private readonly sockets = new Set<Socket>();
@@ -234,7 +234,7 @@ export class RegistryHTTPServer {
     });
   }
 
-  static async open(
+  public static async open(
     store: RegistryStore,
     token: string,
     instanceId: string,
@@ -276,7 +276,7 @@ export class RegistryHTTPServer {
     return server;
   }
 
-  async getRequest(): Promise<Socket | null> {
+  public async getRequest(): Promise<Socket | null> {
     const queued = this.queued.shift();
     if (queued) return queued;
     if (this.closed) return null;
@@ -295,13 +295,13 @@ export class RegistryHTTPServer {
     });
   }
 
-  async handleRequest(): Promise<void> {
+  public async handleRequest(): Promise<void> {
     const socket = await this.getRequest();
     if (!socket) return;
     void this.processSocket(socket);
   }
 
-  close(): void {
+  public close(): void {
     if (this.closed) return;
     this.closed = true;
     if (this.acceptWaiter) {

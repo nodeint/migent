@@ -131,7 +131,7 @@ function listenOn(server: Server, endpoint: string): Promise<boolean> {
 
 export class ServiceEndpointServer {
   private readonly server: Server;
-  readonly endpoint: string;
+  public readonly endpoint: string;
 
   private constructor(server: Server, endpoint: string) {
     this.server = server;
@@ -142,7 +142,7 @@ export class ServiceEndpointServer {
    * Take the endpoint for this process, or return null while another live process holds it.
    * Callers hold start.lock, which makes replacing a stale POSIX socket file safe.
    */
-  static async listen(
+  public static async listen(
     home: string,
     hello: EndpointHello,
     token: string,
@@ -177,7 +177,7 @@ export class ServiceEndpointServer {
     return new ServiceEndpointServer(server, endpoint);
   }
 
-  close(): void {
+  public close(): void {
     this.server.close();
     removeSocketFile(this.endpoint);
   }

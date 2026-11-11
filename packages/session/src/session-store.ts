@@ -32,7 +32,7 @@ import { readJsonObject, textField } from './session-store-util.js';
 import { normalizeRenameTitle, writeTitleRecord } from './session-title.js';
 
 export class SessionStore extends SessionStoreResume {
-  loadOrCreate(
+  public loadOrCreate(
     client: string,
     model: string,
     options: Record<string, string> | null,
@@ -93,16 +93,16 @@ export class SessionStore extends SessionStoreResume {
   }
 
   /** Start a verify-only execution. It has no prompt and no provider conversation. */
-  openVerifyExecution(sessionId: string, stageId: string): ExecutionContext {
+  public openVerifyExecution(sessionId: string, stageId: string): ExecutionContext {
     this.ensureSessionIsRunnable(sessionId);
     return this.createExecution('', '', {}, sessionId, stageId, null, null, '', null, 'verify');
   }
 
-  clearVerifyTurn(context: ExecutionContext): void {
+  public clearVerifyTurn(context: ExecutionContext): void {
     rmSync(this.turnDirectory(context, 1), { recursive: true, force: true });
   }
 
-  saveExecution(
+  public saveExecution(
     context: ExecutionContext,
     record: AgentSessionRecord,
     status: string,
@@ -122,7 +122,7 @@ export class SessionStore extends SessionStoreResume {
   }
 
   /** Merge fields into a running execution without touching status.json or events. */
-  saveExecutionProgress(
+  public saveExecutionProgress(
     context: ExecutionContext,
     record: AgentSessionRecord,
     fields: Record<string, unknown>,
@@ -139,7 +139,7 @@ export class SessionStore extends SessionStoreResume {
     });
   }
 
-  clearProcessEndpoint(context: ExecutionContext): void {
+  public clearProcessEndpoint(context: ExecutionContext): void {
     const filePath = path.join(context.directory, 'execution.json');
     this.withExecutionLock(filePath, () => {
       const metadata = readJsonObject(filePath);
@@ -149,15 +149,15 @@ export class SessionStore extends SessionStoreResume {
     });
   }
 
-  saveTurnResponse(context: ExecutionContext, turn: number, text: string): void {
+  public saveTurnResponse(context: ExecutionContext, turn: number, text: string): void {
     this.writeTurnFile(context, turn, 'response.md', text);
   }
 
-  saveTurnOutcome(context: ExecutionContext, turn: number, outcome: StageOutcome): void {
+  public saveTurnOutcome(context: ExecutionContext, turn: number, outcome: StageOutcome): void {
     this.writeTurnFile(context, turn, 'outcome.json', `${JSON.stringify(outcome.toJson(), null, 2)}\n`);
   }
 
-  saveTurnVerify(context: ExecutionContext, turn: number, report: string): string {
+  public saveTurnVerify(context: ExecutionContext, turn: number, report: string): string {
     this.writeTurnFile(context, turn, 'verify.md', report);
     return path.posix.join('turns', String(turn).padStart(2, '0'), 'verify.md');
   }
@@ -169,7 +169,7 @@ export class SessionStore extends SessionStoreResume {
   }
 
   /** Copy the passing turn's report next to the stage artifact. */
-  publishVerifyReport(context: ExecutionContext, turn: number): void {
+  public publishVerifyReport(context: ExecutionContext, turn: number): void {
     mkdirSync(context.artifactDirectory, { recursive: true });
     copyFileSync(
       path.join(this.turnDirectory(context, turn), 'verify.md'),
@@ -180,14 +180,14 @@ export class SessionStore extends SessionStoreResume {
   /**
    * Carry a working artifact across verification retries or question replies.
    */
-  carryVerifyArtifact(previousArtifactDirectory: string, context: ExecutionContext, name: string): void {
+  public carryVerifyArtifact(previousArtifactDirectory: string, context: ExecutionContext, name: string): void {
     const source = path.join(previousArtifactDirectory, name);
     if (name === VERIFY_ARTIFACT || !nonemptyArtifact(source)) return;
     mkdirSync(context.artifactDirectory, { recursive: true });
     copyFileSync(source, path.join(context.artifactDirectory, name));
   }
 
-  saveProcessMetadata(context: ExecutionContext, info: ProcessStartInfo): void {
+  public saveProcessMetadata(context: ExecutionContext, info: ProcessStartInfo): void {
     const filePath = path.join(context.directory, 'execution.json');
     this.withExecutionLock(filePath, () => {
       const metadata = readJsonObject(filePath);
@@ -197,12 +197,12 @@ export class SessionStore extends SessionStoreResume {
   }
 
   /** The latest abnormal provider turn of this execution (a start failure, a non-zero exit, a provider-reported error). Separate from `execution.json`, which is frozen once the execution ends. */
-  saveDiagnostics(context: ExecutionContext, payload: Record<string, unknown>): void {
+  public saveDiagnostics(context: ExecutionContext, payload: Record<string, unknown>): void {
     mkdirSync(context.directory, { recursive: true });
     writeJsonAtomic(path.join(context.directory, DIAGNOSTICS_FILENAME), payload);
   }
 
-  appendDebugLog(context: ExecutionContext, line: string): void {
+  public appendDebugLog(context: ExecutionContext, line: string): void {
     try {
       mkdirSync(context.directory, { recursive: true });
       appendFileSync(path.join(context.directory, DEBUG_LOG_FILENAME), `${line}\n`, 'utf8');
@@ -211,7 +211,7 @@ export class SessionStore extends SessionStoreResume {
     }
   }
 
-  reapOrphanedExecutions(sessionId: string, onLiveOwner: string, inFlight?: ReadonlySet<string>): void {
+  public reapOrphanedExecutions(sessionId: string, onLiveOwner: string, inFlight?: ReadonlySet<string>): void {
     const skip = inFlight ?? inFlightExecutions(sessionId);
     for (const context of this.executionContexts(sessionId)) {
       if (skip?.has(context.executionId)) continue;
@@ -219,7 +219,7 @@ export class SessionStore extends SessionStoreResume {
     }
   }
 
-  recordProviderEvent(context: ExecutionContext, event: Record<string, unknown>): void {
+  public recordProviderEvent(context: ExecutionContext, event: Record<string, unknown>): void {
     const sessionDirectory = path.dirname(path.dirname(context.directory));
     appendRecordedEvent(sessionDirectory, event);
     const name = String(event.event);
@@ -227,7 +227,7 @@ export class SessionStore extends SessionStoreResume {
     commitFoldedStatus(this.workspace, sessionDirectory);
   }
 
-  missingCompletionOutputs(context: ExecutionContext, outcome: StageOutcome | null): string[] {
+  public missingCompletionOutputs(context: ExecutionContext, outcome: StageOutcome | null): string[] {
     const sessionDirectory = path.dirname(path.dirname(context.directory));
     const previousStatus = this.readSessionStatusAt(sessionDirectory);
     const workflow = this.loadWorkflow(previousStatus);
@@ -253,7 +253,7 @@ export class SessionStore extends SessionStoreResume {
   }
 
   /** A run_when skip. The row is terminal from the start: no prompt, no provider, no verify. */
-  recordSkippedExecution(sessionId: string, stageId: string, skip: SkipDetails): ExecutionContext {
+  public recordSkippedExecution(sessionId: string, stageId: string, skip: SkipDetails): ExecutionContext {
     const sessionDirectory = path.join(this.sessionsDirectory, sessionId);
     assertSessionLockHeld(sessionDirectory);
     const order = this.nextExecutionOrder(sessionId);
@@ -346,12 +346,12 @@ export class SessionStore extends SessionStoreResume {
     return context;
   }
 
-  savePrompt(context: ExecutionContext, prompt: string): void {
+  public savePrompt(context: ExecutionContext, prompt: string): void {
     writeFileAtomic(path.join(context.directory, 'prompt.md'), prompt);
   }
 
   /** Save text returned by the model. Never pass Migent error text; a failed turn writes failure.md instead. */
-  saveResponse(context: ExecutionContext, responseText: string): void {
+  public saveResponse(context: ExecutionContext, responseText: string): void {
     writeFileAtomic(path.join(context.directory, 'response.md'), responseText);
   }
 
@@ -517,7 +517,7 @@ export class SessionStore extends SessionStoreResume {
    * Change a session's display title. Takes no session lock, so it works during a live run. Only
    * title.json is written; readers overlay it and the next lifecycle commit folds it into status.json.
    */
-  rename(sessionId: string, rawTitle: string): { sessionId: string; title: string; previousTitle: string | null } {
+  public rename(sessionId: string, rawTitle: string): { sessionId: string; title: string; previousTitle: string | null } {
     const title = normalizeRenameTitle(rawTitle);
     assertSessionId(sessionId);
     const sessionDirectory = path.join(this.sessionsDirectory, sessionId);
@@ -530,7 +530,7 @@ export class SessionStore extends SessionStoreResume {
    * A human marks a stopped workflow session completed. Takes the session lock, so a live run is refused.
    * Publishes what a normal completion would, seals metrics, and writes next.json. Terminal and idempotent.
    */
-  completeManually(sessionId: string): ManualCompletionResult {
+  public completeManually(sessionId: string): ManualCompletionResult {
     assertSessionId(sessionId);
     const sessionDirectory = path.join(this.sessionsDirectory, sessionId);
     if (!isDirectory(sessionDirectory)) throw new ConfigurationError(`Session ${sessionId} does not exist.`);
