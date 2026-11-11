@@ -19,11 +19,29 @@ export default defineConfig({
     },
   },
   test: {
-    include: ['packages/**/*.test.ts', 'integration/**/*.test.ts'],
     // Windows runners start processes and touch files more slowly.
     testTimeout: process.platform === 'win32' ? 30_000 : 10_000,
     reporters: [['dot', { summary: false }]],
     silent: true,
     setupFiles: ['scripts/vitest-quiet-setup.ts'],
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: 'unit',
+          include: ['packages/**/*.test.ts', 'integration/**/*.test.ts'],
+          exclude: ['**/node_modules/**', '**/*.integration.test.ts'],
+        },
+      },
+      {
+        // Real child processes and sockets: run apart from the parallel unit pool.
+        extends: true,
+        test: {
+          name: 'integration',
+          include: ['packages/**/*.integration.test.ts'],
+          fileParallelism: false,
+        },
+      },
+    ],
   },
 });
