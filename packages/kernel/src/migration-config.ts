@@ -218,7 +218,7 @@ function explicitClient(body: Record<string, unknown> | null): string | null {
 
 function setClientType(body: Record<string, unknown>, client: string): void {
   const existing = isRecord(body.client) ? body.client : {};
-  const { type: _type, ...rest } = existing;
+  const { type: ignoredType, ...rest } = existing;
   body.client = { type: client, ...rest };
 }
 

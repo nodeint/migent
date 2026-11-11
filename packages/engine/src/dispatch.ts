@@ -263,7 +263,10 @@ export function selectedStage(
   throw new ConfigurationError('no eligible stage');
 }
 
-export function blockResumes(workspace: string, sessionId: string) {
+export function blockResumes(
+  workspace: string,
+  sessionId: string,
+): Pick<ReturnType<typeof readParsedEvents>[number], 'event' | 'executionId' | 'data'>[] {
   return readParsedEvents(path.join(workspace, '.migent', 'sessions', sessionId, 'events.jsonl')).map((event) => ({
     event: event.event,
     executionId: event.executionId,

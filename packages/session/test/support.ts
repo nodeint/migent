@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import type { BuildCommandInput, CliClient, ClientRegistry, CliModelCatalog, CliRunOutput, CliUsage, CommandSpec, UsageCapture } from '@nodeint/migent-kernel';
+import type { BuildCommandInput, CliClient, ClientOption, ClientRegistry, CliModelCatalog, CliRunOutput, CliUsage, CommandSpec, UsageCapture } from '@nodeint/migent-kernel';
 
 import { createWorkflowSession } from '../src/session-records.ts';
 
@@ -164,7 +164,7 @@ export class FakeClient implements CliClient {
     this.command = command;
   }
 
-  public options() {
+  public options(): readonly ClientOption[] {
     return [{ name: 'effort', prompt: true, allowDefault: true, overridable: true }];
   }
 

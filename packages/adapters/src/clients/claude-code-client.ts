@@ -8,6 +8,7 @@ import type {
   CliRunOutput,
   CliUsage,
   CommandSpec,
+  HeadlessOption,
   RawFailure,
   UsageCapture,
 } from '../types.js';
@@ -138,7 +139,7 @@ export class ClaudeCodeClient implements CliClient {
     return { argv: [this.command, '-p', '--help'] };
   }
 
-  public parseOptions(help: string) {
+  public parseOptions(help: string): HeadlessOption[] {
     return parseHelpOptions(help, { section: /^Options:\s*$/, inferArgumentType: true });
   }
 

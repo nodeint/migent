@@ -128,7 +128,7 @@ export function mergeConfigLayers(
   local?: Record<string, unknown> | null,
 ): MergedConfig {
   if ((local === null || local === undefined)) return { config: project, ownerOf: () => 'project' };
-  const { schema_version: _ignored, ...layer } = local;
+  const { schema_version: ignoredVersion, ...layer } = local;
   const merged = mergeConfig(project, layer);
   // A role agent is a complete selection, including when both values are objects.
   if (isRecord(layer.roles) && isRecord(merged.roles)) {

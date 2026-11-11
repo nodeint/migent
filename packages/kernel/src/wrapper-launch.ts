@@ -171,7 +171,7 @@ export function waitForReady(
       }
       const failed = parseFailedMessage(message);
       if (failed !== null) {
-        const { type: _type, ...rest } = failed;
+        const { type: ignoredType, ...rest } = failed;
         settle({ kind: 'wrapper-reported', ...rest }, 0);
       }
     };
@@ -206,7 +206,7 @@ export function waitForReady(
 }
 
 export function stripType(message: WrapperFailedMessage): Omit<WrapperFailedMessage, 'type'> {
-  const { type: _type, ...rest } = message;
+  const { type: ignoredType, ...rest } = message;
   return rest;
 }
 

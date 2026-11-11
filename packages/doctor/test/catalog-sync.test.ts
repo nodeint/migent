@@ -17,8 +17,8 @@ test('sync and async loaders agree on results and messages', async () => {
   ];
   for (const [which, run] of cases) {
     const sync = (() => { try { return loadCatalogSync(source, which, run).ids; } catch (e) { return (e as Error).message; } })();
-    const async_ = await loadCatalog(source, which, run).then((c) => c.ids, (e) => (e as Error).message);
-    expect(sync).toEqual(async_);
+    const asyncIds = await loadCatalog(source, which, run).then((c) => c.ids, (e) => (e as Error).message);
+    expect(sync).toEqual(asyncIds);
   }
   expect(() => loadCatalogSync(source, () => null, () => '')).toThrow(ClientCommandFailed);
 });

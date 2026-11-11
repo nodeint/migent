@@ -1,4 +1,4 @@
-import Type, { type Static, type TSchema } from 'typebox';
+import Type, { type Static, type TArray, type TNull, type TSchema, type TUnion } from 'typebox';
 
 /** Base for every `$id`. Equals the raw URL of the generated files in `packages/contracts/schemas` on `main`. */
 export const SCHEMA_BASE = 'https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas';
@@ -54,10 +54,10 @@ export const NextSuggestion = Type.Object(
 );
 export type NextSuggestion = Static<typeof NextSuggestion>;
 
-export const nullable = <T extends TSchema>(schema: T) => Type.Union([schema, Type.Null()]);
+export const nullable = <T extends TSchema>(schema: T): TUnion<[T, TNull]> => Type.Union([schema, Type.Null()]);
 
 /** The list form of an item contract. Derived, never declared separately: `…/x.json` becomes `…/x-list.json`. */
-export const listOf = <T extends TSchema>(item: T) => {
+export const listOf = <T extends TSchema>(item: T): TArray<T> => {
   const rawId = (item as { $id?: unknown }).$id;
   const itemId = typeof rawId === 'string' ? rawId : null;
   return Type.Array(item, itemId === null ? {} : { $id: itemId.replace(/\.json$/, '-list.json'), title: `List of ${itemId}` });

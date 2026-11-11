@@ -103,7 +103,7 @@ function trackChild(proc: ChildProcess): SpawnedChild {
     if (ready !== null || !message || typeof message !== 'object') return;
     const payload = message as Record<string, unknown>;
     if (payload.type !== READY) return;
-    const { type: _type, ...rest } = payload;
+    const { type, ...rest } = payload;
     ready = rest;
     wake();
   });

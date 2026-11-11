@@ -115,7 +115,7 @@ export interface TurnDrive {
   keepFile?: boolean;
 }
 
-export function frozenDocument(context: ExecutionContext) {
+export function frozenDocument(context: ExecutionContext): ReturnType<typeof loadFrozenWorkflow> {
   return loadFrozenWorkflow(path.dirname(path.dirname(context.directory)));
 }
 

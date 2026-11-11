@@ -8,6 +8,7 @@ import type {
   CliRunOutput,
   CliUsage,
   CommandSpec,
+  HeadlessOption,
   InterruptOutcome,
   RawFailure,
   UsageCapture,
@@ -123,7 +124,7 @@ export class OpencodeClient implements CliClient {
     return { argv: [this.command, 'run', '--help'] };
   }
 
-  public parseOptions(help: string) {
+  public parseOptions(help: string): HeadlessOption[] {
     return parseHelpOptions(help, { section: /^Options:\s*$/, inferArgumentType: true });
   }
 

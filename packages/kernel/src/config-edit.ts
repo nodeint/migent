@@ -441,7 +441,7 @@ function signature(body: unknown): unknown[] {
 
 function setAgentClient(body: Record<string, unknown>, type: string): void {
   const client = isRecord(body.client) ? body.client : {};
-  const { type: _previous, ...rest } = client;
+  const { type: previousType, ...rest } = client;
   body.client = { type, ...rest };
 }
 

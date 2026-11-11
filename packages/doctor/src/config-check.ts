@@ -95,7 +95,7 @@ export function analyzeConfig(
     // A model the environment rejects drops its effort, so the index verdict on `effort` no longer applies.
     let verdicts: StructuralIndex | undefined = structure;
     if (effortCheck?.problem && isRecord(definition)) {
-      const { effort: _effort, ...rest } = definition;
+      const { effort, ...rest } = definition;
       definition = rest;
       verdicts = undefined;
     }

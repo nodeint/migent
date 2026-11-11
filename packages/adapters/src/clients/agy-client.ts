@@ -6,6 +6,7 @@ import type {
   CliRunOutput,
   CliUsage,
   CommandSpec,
+  HeadlessOption,
   RawFailure,
   TurnUsage,
   UsageCapture,
@@ -178,7 +179,7 @@ export class AgyClient implements CliClient {
     return { argv: [this.command, '-p', '--help'] };
   }
 
-  public parseOptions(help: string) {
+  public parseOptions(help: string): HeadlessOption[] {
     return parseHelpOptions(help, { section: /^Usage of agy:/, inferArgumentType: false });
   }
 

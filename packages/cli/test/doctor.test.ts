@@ -242,10 +242,10 @@ test('doctor and session prepare resolve model effort through adapter clients', 
     expect(checked.value).toBe(0);
     const prepared = await capture(() => main(['session', 'prepare', 'effort test', '--workflow', 'plan'], workspace));
     expect(prepared.value).toBe(0);
-    const { session_id } = JSON.parse(prepared.stdout) as { session_id: string };
-    writeFileSync(path.join(workspace, '.migent', 'sessions', session_id, 'task.md'), 'Check effort at start\n');
-    activatePreparedSession(workspace, session_id, clientRegistry());
-    const frozen = loadYamlMapping(path.join(workspace, '.migent', 'sessions', session_id, 'workflow.frozen.yaml'));
+    const { session_id: sessionId } = JSON.parse(prepared.stdout) as { session_id: string };
+    writeFileSync(path.join(workspace, '.migent', 'sessions', sessionId, 'task.md'), 'Check effort at start\n');
+    activatePreparedSession(workspace, sessionId, clientRegistry());
+    const frozen = loadYamlMapping(path.join(workspace, '.migent', 'sessions', sessionId, 'workflow.frozen.yaml'));
     const targets = Object.values(frozen.targets as Record<string, { client: string; options: Record<string, string> }>);
     expect(targets).toEqual(expect.arrayContaining([
       expect.objectContaining({ client: 'codex', options: { model_reasoning_effort: 'high' } }),
