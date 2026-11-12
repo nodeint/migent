@@ -367,9 +367,13 @@ decide the result.
   verify_timeout: 900  # seconds for the whole list; default none
 ```
 
-- Each item is one shell line run as `/bin/sh -c <item>` in the workspace,
-  without a login profile. Commands that need `nvm` or similar must set it up
-  themselves. Verify supports POSIX shells only.
+- Each item is one shell line run in the workspace by the operating system's
+  own shell, without a login profile: `/bin/sh -c <item>` on Linux and macOS,
+  `%ComSpec% /d /s /c "<item>"` (cmd.exe) on Windows. The item is passed
+  unchanged; stderr is merged into stdout outside the shell. Git Bash or other
+  shells are not used. Write commands that both shells accept (for example
+  `pnpm lint` or `a && b`) when the workflow runs on both. Commands that need
+  `nvm` or similar must set it up themselves.
 - Commands run in order. The first failure stops the run and skips the rest.
 - On a red run the model receives the report with the tail of the failing
   command and continues in the same client conversation. The execution stays

@@ -33,3 +33,8 @@ export function inheritedEnv(): NodeJS.ProcessEnv {
 export function platformHome(): string | undefined {
   return process.env.HOME;
 }
+
+/** Platform `ComSpec` (not a Migent contract): the Windows command interpreter. */
+export function platformComSpec(): string | undefined {
+  return process.env.ComSpec || undefined;
+}

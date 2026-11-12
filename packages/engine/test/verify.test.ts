@@ -119,7 +119,7 @@ test('red verify repairs in the same execution', async () => {
 });
 
 test('blocked runs no verify command', async () => {
-  const { workspace, sessionId } = setup(workflowText('touch ran.flag'));
+  const { workspace, sessionId } = setup(workflowText('node -e "require(\'fs\').writeFileSync(\'ran.flag\', \'\')"'));
   const runner = new AgentToolRunner(
     registryOf({ fake: new ScriptedClient(['status: blocked\nblocker: nope']) }),
     10,
@@ -483,7 +483,7 @@ test('continue redispatches a blocked schema 2 session', async () => {
 });
 
 test('exhausted verify stops with exit 6 and continue resumes without --attempts', async () => {
-  const { workspace, sessionId } = setup(workflowText('echo bad; exit 1', '    max_verify: 1\n'));
+  const { workspace, sessionId } = setup(workflowText('echo bad && exit 1','    max_verify: 1\n'));
   const provider = new ScriptedClient([OK, OK], ['# n\n', null]);
   const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
   const first = await executeNamedWorkflow(
@@ -652,7 +652,7 @@ test('VerifyRunner: first failure skips the rest, tail is bounded, heartbeat fir
   const heartbeats: string[] = [];
   const result = await new VerifyRunner(1).run({
     commands: [
-      'node -e "for(let i=0;i<500;i++)console.log(\'l\'+i);setTimeout(()=>{},1500)" | cat',
+      'node -e "for(let i=0;i<500;i++)console.log(\'l\'+i);setTimeout(()=>{},1500)" | node -e "process.stdin.pipe(process.stdout)"',
       'echo hi && exit 3',
       'echo never',
     ],
@@ -671,11 +671,11 @@ test('VerifyRunner: first failure skips the rest, tail is bounded, heartbeat fir
   expect(log.at(-1)).toBe('l499');
 });
 
-test('VerifyRunner: timeout and exit 127', async () => {
+test('VerifyRunner: timeout and command not found', async () => {
   const workspace = tempDir('migent-vr-');
   const ends: number[] = [];
   const timed = await new VerifyRunner(1).run({
-    commands: ['sleep 30', 'echo after'],
+    commands: ['node -e "setTimeout(()=>{},30000)"', 'echo after'],
     workspace,
     executionDirectory: workspace,
     turnDirectory: path.join(workspace, 't'),
@@ -692,8 +692,39 @@ test('VerifyRunner: timeout and exit 127', async () => {
     timeoutSec: null,
   });
   expect(missing.commands[0]?.status).toBe('fail');
-  expect(missing.commands[0]?.exitCode).toBe(127);
+  // The shell's own "command not found" exit code: 127 for sh, 1 for cmd.exe.
+  expect(missing.commands[0]?.exitCode).toBe(process.platform === 'win32' ? 1 : 127);
   expect(missing.infraError).toBeNull();
+}, 30_000);
+
+test('VerifyRunner: the default OS shell keeps quoting and logs stderr', async () => {
+  const workspace = tempDir('migent-vr-');
+  const turnDirectory = path.join(workspace, 't');
+  const result = await new VerifyRunner(1).run({
+    commands: ['node -e "console.log(\'a  b\');console.error(\'to stderr\')" && exit 4'],
+    workspace,
+    executionDirectory: workspace,
+    turnDirectory,
+    timeoutSec: null,
+  });
+  expect(result.infraError).toBeNull();
+  expect(result.commands[0]?.exitCode).toBe(4);
+  const log = readFileSync(path.join(turnDirectory, 'commands', '01.log'), 'utf8');
+  expect(log).toContain('a  b');
+  expect(log).toContain('to stderr');
+}, 30_000);
+
+test.runIf(process.platform === 'win32')('VerifyRunner: cmd.exe syntax passes through unchanged', async () => {
+  const workspace = tempDir('migent-vr-');
+  const result = await new VerifyRunner(1).run({
+    commands: ['echo hello(world)', 'echo done & rem comment', 'echo a| findstr a >nul 2>&1'],
+    workspace,
+    executionDirectory: workspace,
+    turnDirectory: path.join(workspace, 't'),
+    timeoutSec: null,
+  });
+  expect(result.infraError).toBeNull();
+  expect(result.commands.map((item) => item.status)).toEqual(['pass', 'pass', 'pass']);
 }, 30_000);
 
 test('workflow parsing and path check', () => {
@@ -787,8 +818,24 @@ test('passing verify lets the session move on to the next stage', async () => {
 });
 
 test('the execution is running while the first verify command executes', async () => {
-  const probe = 'cat .migent/sessions/*/executions/*/execution.json | grep -Eq \'"status": *"running"\'';
-  const { workspace, sessionId } = setup(workflowText(probe));
+  // A Node probe, so the check needs no POSIX tools: exits 0 when an execution record is running.
+  const script = path.join(tempDir('migent-verify-probe-'), 'probe.cjs');
+  writeFileSync(
+    script,
+    `const fs = require('fs'), path = require('path');
+const sessions = path.join('.migent', 'sessions');
+const running = fs.readdirSync(sessions).some((session) => {
+  const executions = path.join(sessions, session, 'executions');
+  return fs.existsSync(executions) && fs.readdirSync(executions).some((id) => {
+    const file = path.join(executions, id, 'execution.json');
+    return fs.existsSync(file) && JSON.parse(fs.readFileSync(file, 'utf8')).status === 'running';
+  });
+});
+process.exit(running ? 0 : 1);
+`,
+    'utf8',
+  );
+  const { workspace, sessionId } = setup(workflowText(`"${process.execPath}" "${script}"`));
   const runner = new AgentToolRunner(registryOf({ fake: new ScriptedClient([OK], ['# n\n']) }), 10);
   const result = await runStage(runner, workspace, sessionId);
   const record = execution(workspace, sessionId, result.execution_id);
@@ -864,13 +911,13 @@ test('cancellation during a verify command marks the execution cancelled and kil
   const workspace0 = tempDir('migent-verify-p-');
   const pidFile = path.join(workspace0, 'pid');
   const script = path.join(workspace0, 'hold.cjs');
-  // Git Bash's $$ is an MSYS PID on Windows; process.kill needs the native PID.
+  // The script records its own native PID, so the check works with any shell.
   writeFileSync(
     script,
     `require("fs").writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setTimeout(() => {}, 30_000);`,
     'utf8',
   );
-  const { workspace, sessionId } = setup(workflowText(`exec "${process.execPath}" "${script}"`));
+  const { workspace, sessionId } = setup(workflowText(`"${process.execPath}" "${script}"`));
   const runner = new AgentToolRunner(registryOf({ fake: new ScriptedClient([OK], ['# n\n']) }), 10);
   const timer = setInterval(() => {
     if (!existsSync(pidFile) || readFileSync(pidFile, 'utf8').trim() === '') return;
