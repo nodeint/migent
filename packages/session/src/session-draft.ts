@@ -2,7 +2,7 @@ import { existsSync, lstatSync, realpathSync, statSync } from 'node:fs';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { ConfigurationError } from '@nodeint/migent-kernel';
+import { ConfigurationError, isClosed, isRefreshable } from '@nodeint/migent-kernel';
 import { isRecord } from '@nodeint/migent-workflow';
 import { parseYamlDocument } from '@nodeint/migent-workflow';
 
@@ -31,10 +31,6 @@ function fail(code: string, message: string): never {
   throw new ConfigurationError(message, { code });
 }
 
-/** Statuses a save is refused for: the session can no longer adopt a draft. */
-const TERMINAL_STATUSES = new Set(['completed', 'cancelled']);
-/** Statuses of a started session that stopped and can adopt a draft through `--refresh-workflow`. */
-const REFRESHABLE_STATUSES = new Set(['active', 'blocked', 'question']);
 
 function isDirectoryNoFollow(target: string): boolean {
   try {
@@ -101,10 +97,10 @@ function assertFoldAgrees(
   // The snapshot can lag the events (a crash between an append and the commit). Read the fold, which
   // writes nothing, and refuse a save the two disagree on: only a locked repair can settle which is true.
   const folded: unknown = orMetadataCorrupt(() => readFoldedStatus(workspace, sessionDirectory).status);
-  if (typeof folded === 'string' && TERMINAL_STATUSES.has(folded) && folded !== status) {
+  if (typeof folded === 'string' && isClosed(folded) && folded !== status) {
     fail('session-terminal', `Session ${sessionId} is ${folded} according to its events; it can no longer adopt a workflow draft.`);
   }
-  if (folded !== status && !TERMINAL_STATUSES.has(status)) {
+  if (folded !== status && !isClosed(status)) {
     fail(
       'session-status-inconsistent',
       `Session ${sessionId} status.json says ${status}, but its events say ${String(folded)}. Run \`migent session continue ${sessionId}\` or repair the session first.`,
@@ -113,7 +109,7 @@ function assertFoldAgrees(
 }
 
 function assertRefreshable(sessionDirectory: string, sessionId: string, status: string): void {
-  if (!REFRESHABLE_STATUSES.has(status)) {
+  if (!isRefreshable(status)) {
     fail('session-not-savable', `Session ${sessionId} is ${status}; a draft can be saved only for a prepared or stopped session.`);
   }
   const freezePath = path.join(sessionDirectory, WORKFLOW_FREEZE_FILE);
@@ -131,7 +127,7 @@ function assertRefreshable(sessionDirectory: string, sessionId: string, status: 
 function savableStatus(workspace: string, sessionDirectory: string, sessionId: string): string {
   const status = recordedStatus(sessionDirectory, sessionId);
   assertFoldAgrees({ workspace, sessionDirectory, sessionId }, status);
-  if (TERMINAL_STATUSES.has(status)) {
+  if (isClosed(status)) {
     fail('session-terminal', `Session ${sessionId} is ${status}; it can no longer adopt a workflow draft.`);
   }
   if (status !== 'prepared') assertRefreshable(sessionDirectory, sessionId, status);

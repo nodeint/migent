@@ -27,10 +27,9 @@ import {
   verifyFailedExecution,
 } from './selection-history.js';
 import { declarationOrder } from './selection-pool.js';
+import { endsScheduling, STAGE_STOP_DETECTORS, stageStopsByPrecedence, stageStopStatus, stopResolved } from './session-status-policy.js';
 
 export { runnableNow,type RunPool } from './selection-pool.js';
-
-const terminalSessionStatuses = new Set(['blocked', 'question', 'cancelled', 'completed']);
 
 export class NextStage {
   constructor(public readonly stageId: string) {}
@@ -73,7 +72,7 @@ export function nextStage(
   if (snapshots.some((snapshot) => snapshot.status === 'running')) {
     return new NextStageError('an execution is still running');
   }
-  if (terminalSessionStatuses.has(sessionStatus)) return new Stop(sessionStatus);
+  if (endsScheduling(sessionStatus)) return new Stop(sessionStatus);
   const latest = latestSnapshot(snapshots);
   if (latest !== null && latest.status === 'failed') return afterFailedStage(latest, sessionStatus, resumes);
   if (isWorkflowV2(workflow)) return nextVersion2Stage(workflow, snapshots, sessionStatus);
@@ -190,23 +189,20 @@ function latestAllowsDispatch(
   // Continue reopens this execution. A new dispatch would leave the cancelled one behind.
   if (latest.status === 'cancelled') return false;
   // Snapshots keep the blocked outcome after continue. The resume event is the signal.
-  if ((latest.outcomeStatus === 'blocked' || latest.outcomeStatus === 'question') && !blockResumed(sessionStatus, latest.executionId, resumes)) {
-    return false;
-  }
+  if (unresolvedStageStop(latest, sessionStatus, resumes)) return false;
   if (latest.status !== 'failed') return true;
   if (latest.failureReason === VERIFY_EXHAUSTED || latest.failureReason === VERIFY_FAILED) return false;
   return failedResumed(sessionStatus, latest.executionId, resumes);
 }
 
-function blockResumed(
+/** The latest execution is stopped at a stage stop that no resume event has resolved. */
+function unresolvedStageStop(
+  latest: ExecutionSnapshot,
   sessionStatus: string,
-  executionId: string,
   resumes: readonly BlockResume[] | null | undefined,
 ): boolean {
-  if (sessionStatus !== 'active' || (resumes === null || resumes === undefined)) return false;
-  return resumes.some(
-    (event) => event.event === 'session.active' && event.executionId === executionId && (event.data?.from === 'blocked' || event.data?.from === 'question'),
-  );
+  const stop = stageStopStatus(latest);
+  return stop !== null && !stopResolved(stop, latest.executionId, { sessionStatus, resumes });
 }
 
 function failedResumed(
@@ -430,7 +426,7 @@ function hasBlockingLatest(snapshots: readonly ExecutionSnapshot[]): boolean {
   }
   for (const snapshot of latest.values()) {
     if (snapshot.status === 'failed' || snapshot.status === 'cancelled' || snapshot.status === 'running') return true;
-    if (snapshot.outcomeStatus === 'blocked' || snapshot.outcomeStatus === 'question') return true;
+    if (stageStopStatus(snapshot) !== null) return true;
   }
   return false;
 }
@@ -503,10 +499,15 @@ export function version2IdleReason(
   const latests = Object.keys(workflow.stages)
     .map((stageId) => latestStageSnapshot(snapshots, stageId))
     .filter((latest): latest is ExecutionSnapshot => latest !== null);
-  const unresumed = (latest: ExecutionSnapshot) => !blockResumed(sessionStatus, latest.executionId, resumes);
+  const stopChecks = stageStopsByPrecedence().map(
+    (name): readonly [string, (latest: ExecutionSnapshot) => boolean] => [
+      name,
+      (latest) =>
+        STAGE_STOP_DETECTORS[name](latest) && !stopResolved(name, latest.executionId, { sessionStatus, resumes }),
+    ],
+  );
   const idleChecks: readonly (readonly [string, (latest: ExecutionSnapshot) => boolean])[] = [
-    ['blocked', (latest) => latest.outcomeStatus === 'blocked' && unresumed(latest)],
-    ['question', (latest) => latest.outcomeStatus === 'question' && unresumed(latest)],
+    ...stopChecks,
     ['verify_failed', (latest) => latest.status === 'failed' && latest.failureReason === VERIFY_FAILED],
     ['verify_exhausted', (latest) => latest.status === 'failed' && latest.failureReason === VERIFY_EXHAUSTED],
     ['stage_failed', (latest) => unresumedStageFailure(latest, sessionStatus, resumes)],
@@ -529,9 +530,7 @@ function stoppedStageIds(
   for (const stageId of Object.keys(workflow.stages)) {
     const latest = latestStageSnapshot(snapshots, stageId);
     if (latest === null) continue;
-    if ((latest.outcomeStatus === 'blocked' || latest.outcomeStatus === 'question') && !blockResumed(sessionStatus, latest.executionId, resumes)) {
-      stopped.add(stageId);
-    }
+    if (unresolvedStageStop(latest, sessionStatus, resumes)) stopped.add(stageId);
     if (latest.status === 'failed' && latest.failureReason === VERIFY_EXHAUSTED) stopped.add(stageId);
     if (latest.status === 'failed' && latest.failureReason === VERIFY_FAILED) stopped.add(stageId);
     if (

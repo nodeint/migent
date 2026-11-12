@@ -11,7 +11,7 @@ import {
   selectSourceExecution,
 } from '@nodeint/migent-kernel';
 import { currentCompleteByStage } from '@nodeint/migent-kernel';
-import { ConfigurationError, utcNow } from '@nodeint/migent-kernel';
+import { ConfigurationError, isManuallyCompletable, utcNow } from '@nodeint/migent-kernel';
 import { isRecord, isWorkflowV2, type WorkflowDocument } from '@nodeint/migent-workflow';
 
 import { sealSessionMetrics } from './metrics.js';
@@ -116,15 +116,13 @@ function readCompletableStatus(sessionId: string, sessionDirectory: string): Rec
   return previous;
 }
 
-const MANUALLY_COMPLETABLE = new Set(['active', 'blocked', 'question', 'cancelled']);
-
 function assertCompletableStatus(sessionId: string, from: string): void {
   if (from === 'prepared') {
     throw new ConfigurationError(
       `Session ${sessionId} is prepared and has not run. Start it with: migent session run --session ${sessionId}`,
     );
   }
-  if (!MANUALLY_COMPLETABLE.has(from)) {
+  if (!isManuallyCompletable(from)) {
     throw new ConfigurationError(`Session ${sessionId} has status ${from || 'unknown'} and cannot be completed.`);
   }
 }

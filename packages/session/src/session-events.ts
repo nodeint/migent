@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import { appendLineSynced, isAtomicTempName, sealTornTail } from '@nodeint/migent-kernel';
-import { EXECUTIONS_DIRNAME, utcNow } from '@nodeint/migent-kernel';
+import { changeReason, EXECUTIONS_DIRNAME, utcNow } from '@nodeint/migent-kernel';
 import { isRecord } from '@nodeint/migent-workflow';
 
 import { assertSessionLockHeld } from './session-lock.js';
@@ -186,12 +186,9 @@ export function sessionChangeReason(
   outcome: { blocker?: string | null; decision?: string | null; question?: string | null } | null,
   error: string | null,
 ): string | null {
-  if (sessionStatus === 'question') return outcome?.question || 'question';
-  if (sessionStatus === 'blocked') return outcome?.blocker || 'blocked';
-  if (sessionStatus === 'cancelled') return 'cancelled';
-  if (sessionStatus === 'completed') return outcome?.decision || 'completed';
-  if (error) return error;
-  return null;
+  const reason = changeReason(sessionStatus, outcome);
+  if (reason !== null) return reason;
+  return error ? error : null;
 }
 
 function startedEvents(sessionDirectory: string): ParsedEvent[] {

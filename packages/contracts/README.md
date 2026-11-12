@@ -16,7 +16,7 @@ exit codes, and environment variables.
 - `session metrics` and `session follow --json` records are passthrough ("any JSON object"); `KNOWN_SHAPES`
   is opt-in description, never a guarantee.
 - Every Migent environment variable is listed in `ENV_CATALOG`.
-- After changing a schema, `ENV_CATALOG`, or `EXIT_CATALOG`, run `pnpm generate` and commit `schemas/` and
+- After changing a schema, `ENV_CATALOG`, `EXIT_CATALOG`, or `SESSION_STATUS_CATALOG`, run `pnpm generate` and commit `schemas/` and
   `docs/reference/`. Do not edit either by hand; a test fails when they are stale. Each `$id` is the raw
   GitHub URL on `main`, so a new schema resolves there only after a release.
 
@@ -28,6 +28,7 @@ exit codes, and environment variables.
 | `ConfigLayer`, `EffectiveConfig` | `src/config.ts` | One config file; merged config |
 | `WorkflowDocumentInput` | `src/workflow.ts` | Authored workflow at current `schema_version` |
 | `EXIT_CATALOG` | `src/exits.ts` | Exit codes per command family; CLI help is built from it |
+| `SESSION_STATUS_CATALOG`, `SessionStatusEntry` | `src/session-status.ts` | One row per session status: kind, precedence, exit, flags, resolution |
 | `ENV_CATALOG` | `src/env.ts` | `MIGENT_DEBUG`, `MIGENT_NO_INPUT`, `MIGENT_HOME`, `DISABLE_TELEMETRY` |
 | `KNOWN_SHAPES` | `src/known-shapes.ts` | Opt-in shapes for passthrough files |
 | `isValid`, `validationIssues` | `src/validate.ts` | Validate a value against a schema |

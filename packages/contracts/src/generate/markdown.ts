@@ -1,6 +1,7 @@
 import { ENV_CATALOG } from '../env.js';
 import { EXIT_CATALOG, EXIT_FAMILIES, EXIT_FAMILY_TITLES } from '../exits.js';
 import { CLI_CONTRACTS, KNOWN_SHAPES } from '../index-registry.js';
+import { SESSION_STATUS_CATALOG } from '../session-status.js';
 import { collectIdentities, schemaPath } from './schemas.js';
 
 type Node = { [key: string]: unknown };
@@ -15,6 +16,7 @@ function fileFor(identity: string): string {
   if (path.startsWith('workflow/')) return 'workflow.md';
   if (path.startsWith('exit/')) return 'exit-codes.md';
   if (path.startsWith('env/')) return 'env.md';
+  if (path.startsWith('session/')) return 'session-statuses.md';
   return 'cli-output.md';
 }
 
@@ -188,6 +190,20 @@ function env(): string {
   return `${lines.join('\n')}\n`;
 }
 
+function sessionStatuses(): string {
+  const flags = ['ends_scheduling', 'manually_completable', 'refreshable', 'closed', 'terminal_fields'] as const;
+  const head = ['Name', 'Kind', 'Precedence', 'Exit', ...flags, 'Manifest', 'Resolution'];
+  const lines = [BANNER, '# Session statuses', '', `| ${head.join(' | ')} |`, `| ${head.map(() => '---').join(' | ')} |`];
+  for (const item of SESSION_STATUS_CATALOG) {
+    const stop: { event: string; from?: string } | null = item.resolution;
+    const resolution = [stop?.event, stop?.from && `from ${stop.from}`].filter(Boolean).join(' ');
+    const cells = [code(item.name), item.kind, item.precedence === null ? '' : String(item.precedence), item.exit ?? '', ...flags.map((flag) => (item[flag] ? 'yes' : '')), item.manifest ?? '', resolution];
+    lines.push(`| ${cells.join(' | ')} |`);
+  }
+  lines.push('', sectionsFor('session-statuses.md', ['## Row schema', '']).replace(BANNER, '').trim());
+  return `${lines.join('\n')}\n`;
+}
+
 /** `{ "docs/reference/<file>.md": content }`. */
 export function generateMarkdownFiles(): Record<string, string> {
   return {
@@ -196,5 +212,6 @@ export function generateMarkdownFiles(): Record<string, string> {
     'docs/reference/workflow.md': workflow(),
     'docs/reference/exit-codes.md': exitCodes(),
     'docs/reference/env.md': env(),
+    'docs/reference/session-statuses.md': sessionStatuses(),
   };
 }

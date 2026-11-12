@@ -1,9 +1,9 @@
 import Type, { type Static, type TArray, type TNull, type TSchema, type TUnion } from 'typebox';
 
-/** Base for every `$id`. Equals the raw URL of the generated files in `packages/contracts/schemas` on `main`. */
-export const SCHEMA_BASE = 'https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas';
+import { id } from './schema-id.js';
+import { SESSION_STATUS_CATALOG } from './session-status.js';
 
-export const id = (path: string): string => `${SCHEMA_BASE}/${path}.json`;
+export { id,SCHEMA_BASE } from './schema-id.js';
 
 /** Any JSON object. The only guarantee for persisted passthrough output. */
 export const AnyJsonObject = Type.Record(Type.String(), Type.Unknown(), {
@@ -14,7 +14,7 @@ export const AnyJsonObject = Type.Record(Type.String(), Type.Unknown(), {
 export type AnyJsonObject = Static<typeof AnyJsonObject>;
 
 export const SessionStatus = Type.Union(
-  ['active', 'prepared', 'completed', 'blocked', 'question', 'cancelled', 'corrupt'].map((value) => Type.Literal(value)),
+  SESSION_STATUS_CATALOG.map((entry) => entry.name).map((value) => Type.Literal(value)),
   { $id: id('common/session-status'), title: 'Session status' },
 );
 export type SessionStatus = Static<typeof SessionStatus>;

@@ -4,11 +4,11 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import type { ClientRegistry, ExecutionSnapshot } from '@nodeint/migent-kernel';
-import { ConfigurationError, log, NextStage, readyStages, runnableNow, schedulableStageIds, Stop, utcNow, writeFileAtomic } from '@nodeint/migent-kernel';
+import { ConfigurationError, endsScheduling, log, NextStage, readyStages, runnableNow, schedulableStageIds, Stop, utcNow, writeFileAtomic } from '@nodeint/migent-kernel';
 import { activatePreparedSession, appendLifecycleEvent, assertSingleLineTask, bindPriorSessionId, commitFoldedStatus, createWorkflowSession, loadFrozenWorkflow, readWorkflowFreeze, repairSessionUnlocked, requireLiveWorkflow, requireTaskBody, resolvePriorSessionId, SessionLock, SessionStore, warnIfFrozenDrift, WORKFLOW_FREEZE_FILE, writeWorkflowFreeze } from '@nodeint/migent-session';
 import { isRecord, isWorkflowV2, loadNamedWorkflow, type WorkflowDocument } from '@nodeint/migent-workflow';
 
-import { blockResumes, executeFinal, type ExecuteResult, PendingStageReply, selectedStage, TERMINAL_SESSION_STATUSES, text } from './dispatch.js';
+import { blockResumes, executeFinal, type ExecuteResult, PendingStageReply, selectedStage, text } from './dispatch.js';
 
 export function preflightFailed(sessionId: string): ExecuteResult {
   return {
@@ -289,7 +289,7 @@ async function resumeExistingSession(
   const cancelled = sessionStatus === 'cancelled';
   const reopenLatestCancelled = reopened || resolved.reopenLatestCancelled;
   const resumeCancelled = reopened || cancelled || resolved.resumeCancelled;
-  if (!cancelled && !reopenLatestCancelled && TERMINAL_SESSION_STATUSES.has(sessionStatus)) {
+  if (!cancelled && !reopenLatestCancelled && endsScheduling(sessionStatus)) {
     return { result: executeFinal(existing.status, sessionStatus, []) };
   }
   const { workflowId } = existing;

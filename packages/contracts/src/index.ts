@@ -6,6 +6,7 @@ export * from './exits.js';
 export * from './handoff.js';
 export * from './index-registry.js';
 export * from './known-shapes.js';
+export * from './session-status.js';
 export * from './validate.js';
 export * from './workflow.js';
 export type { Static, TSchema } from 'typebox';
