@@ -20,6 +20,7 @@ export default defineConfig({
       '@nodeint/migent-kernel': path.join(root, 'packages/kernel/src/index.ts'),
       '@nodeint/migent-session': path.join(root, 'packages/session/src/index.ts'),
       '@nodeint/migent-engine': path.join(root, 'packages/engine/src/index.ts'),
+      '@nodeint/migent-registry': path.join(root, 'packages/registry/src/index.ts'),
     },
   },
   test: {
