@@ -10,19 +10,12 @@ import type {
   RawFailure,
   UsageCapture,
 } from '../types.js';
+import type { NativeOptionSupport } from '../types.js';
 import { classifyProviderError, providerErrorMessage } from '../types.js';
+import { NativeOptions } from '../utils/native-options.js';
 import { parseHelpOptions } from '../utils/parse-help-options.js';
 import { compact, finite, isRecord, labelOf, parseJsonObject, picked } from './json.js';
 
-const PERMISSION_MODES = [
-  'default',
-  'acceptEdits',
-  'auto',
-  'dontAsk',
-  'bypassPermissions',
-  'plan',
-] as const;
-const GROK_FLAGS: Record<string, string> = {};
 export const GROK_REASONING_OPTION = 'reasoning-effort';
 const GROK_EFFORT_PROBE = 'migent-probe';
 const GROK_EFFORTS = /use one of: ([^\n]+)/;
@@ -35,52 +28,16 @@ function stripDots(value: string): string {
   return value.slice(start, end);
 }
 
-const GROK_OPTIONS: readonly ClientOption[] = [
-  { name: GROK_REASONING_OPTION, prompt: true, allowDefault: true, overridable: true },
-  { name: 'max_turns' },
-  { name: 'tools' },
-  { name: 'disallowed_tools' },
-  { name: 'permission_mode' },
-  { name: 'rules' },
-  { name: 'allow' },
-  { name: 'deny' },
-  { name: 'sandbox' },
-];
-
-function oneOf(value: string, allowed: readonly string[], field: string): void {
-  if (!allowed.includes(value)) {
-    throw new Error(`${field} must be one of: ${allowed.join(', ')}.`);
-  }
-}
-
-function grokMaxTurns(value: string): void {
-  if (!/^[0-9]+$/.test(value) || Number(value) < 1) {
-    throw new Error('max_turns must be an integer of at least 1.');
-  }
-}
-
-function grokText(value: string): void {
-  void value;
-}
-
-const GROK_OPTION_CHECKS: Record<string, (value: string) => void> = {
-  'reasoning-effort': grokText,
-  max_turns: grokMaxTurns,
-  tools: grokText,
-  disallowed_tools: grokText,
-  permission_mode: (value) => oneOf(value, PERMISSION_MODES, 'permission_mode'),
-  rules: grokText,
-  allow: grokText,
-  deny: grokText,
-  sandbox: grokText,
-};
-
-function appendOptions(argv: string[], options: Readonly<Record<string, string>>): void {
-  for (const [key, value] of Object.entries(options)) {
-    const flag = GROK_FLAGS[key] ?? key.replaceAll('_', '-');
-    argv.push(`--${flag}`, value);
-  }
-}
+const NATIVE = new NativeOptions({
+  label: 'grok',
+  reserved: [
+    '--single', '--model', '--output-format', '--prompt-file', '--prompt-json', '--resume', '--session-id',
+    '--continue', '--cwd', '--always-approve', '--verbatim', '--help', '--version', '--fullscreen',
+    '--worktree', '--leader-socket',
+  ],
+  renames: { [GROK_REASONING_OPTION]: { flag: '--reasoning-effort', aliases: ['--effort'] } },
+  policy: [{ name: GROK_REASONING_OPTION, prompt: true, allowDefault: true, overridable: true }],
+});
 
 function trimToStatusHeader(text: string): string {
   const header = /(?:^|\n)[ \t]*status:[ \t]*(?:complete|blocked)\b/im.exec(text);
@@ -152,7 +109,11 @@ export class GrokClient implements CliClient {
   }
 
   public parseOptions(help: string): HeadlessOption[] {
-    return parseHelpOptions(help, { section: /^Options:\s*$/, inferArgumentType: true });
+    return parseHelpOptions(help, {
+      section: /^Options:\s*$/,
+      inferArgumentType: true,
+      aliasMarkers: [/\[aliases:\s*([^\]]+)\]/, /\(compat alias(?:es)?:\s*([^)]+)\)/],
+    });
   }
 
   public readonly effortOption = GROK_REASONING_OPTION;
@@ -160,16 +121,13 @@ export class GrokClient implements CliClient {
   public readonly command = 'grok';
 
   public options(): readonly ClientOption[] {
-    return GROK_OPTIONS;
+    return NATIVE.rows();
   }
 
+  public readonly nativeOptions: NativeOptionSupport = NATIVE;
+
   public validateOptions(options: Readonly<Record<string, string>>): void {
-    for (const [key, value] of Object.entries(options)) {
-      const check = GROK_OPTION_CHECKS[key];
-      if (check === undefined) throw new Error(`${key} is not a grok option.`);
-      if (value.trim() === '') throw new Error(`${key} is empty.`);
-      check(value);
-    }
+    NATIVE.validate(options);
   }
 
   public runCommand(input: BuildCommandInput): CommandSpec {
@@ -186,7 +144,7 @@ export class GrokClient implements CliClient {
       '--always-approve',
       '--verbatim',
     ];
-    appendOptions(argv, input.options);
+    NATIVE.append(argv, input.options);
     if (input.agentId) argv.push('--resume', input.agentId);
     else if (input.newAgentId) argv.push('--session-id', input.newAgentId);
     return { argv };

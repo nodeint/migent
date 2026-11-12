@@ -13,15 +13,20 @@ import type {
   RawFailure,
   UsageCapture,
 } from '../types.js';
+import type { NativeOptionSupport } from '../types.js';
 import { classifyProviderError, providerErrorMessage } from '../types.js';
+import { NativeOptions } from '../utils/native-options.js';
 import { parseHelpOptions } from '../utils/parse-help-options.js';
 import { compact, finite, isRecord, labelOf, parseJsonObject } from './json.js';
 
-const OPENCODE_OPTIONS: readonly ClientOption[] = [
-  { name: 'agent' },
-  { name: 'thinking' },
-  { name: 'variant', overridable: true },
-];
+const NATIVE = new NativeOptions({
+  label: 'opencode',
+  reserved: [
+    '--format', '--auto', '--model', '--session', '--continue', '--fork', '--command', '--interactive',
+    '--attach', '--dir', '--port', '--password', '--username', '--help', '--version', '--file',
+  ],
+  policy: [{ name: 'variant', overridable: true }],
+});
 
 function trimToStatusHeader(text: string): string {
   const header = /(?:^|\n)[ \t]*status:[ \t]*(?:complete|blocked)\b/im.exec(text);
@@ -143,20 +148,16 @@ export class OpencodeClient implements CliClient {
   public readonly command = 'opencode';
 
   public options(): readonly ClientOption[] {
-    return OPENCODE_OPTIONS;
+    return NATIVE.rows();
   }
 
+  public readonly nativeOptions: NativeOptionSupport = NATIVE;
+
   public validateOptions(options: Readonly<Record<string, string>>): void {
-    const known = new Set(OPENCODE_OPTIONS.map((item) => item.name));
-    for (const [key, value] of Object.entries(options)) {
-      if (!known.has(key)) throw new Error(`${key} is not an opencode option.`);
-      if (value.trim() === '') throw new Error(`${key} is empty.`);
-      if (key === 'variant' && /[\s#]/u.test(value)) {
-        throw new Error('variant must be a single variant name without whitespace or #.');
-      }
-      if (key === 'thinking' && value !== 'true' && value !== 'false') {
-        throw new Error('thinking must be true or false.');
-      }
+    NATIVE.validate(options);
+    const {variant} = options;
+    if (variant !== undefined && /[\s#]/u.test(variant)) {
+      throw new Error('variant must be a single variant name without whitespace or #.');
     }
   }
 
@@ -168,9 +169,10 @@ export class OpencodeClient implements CliClient {
     }
     const model = variant === undefined ? input.model : `${input.model}#${variant}`;
     const argv = [this.command, 'run', '--format', 'json', '--auto', '-m', model];
-    const {agent} = input.options;
-    if (agent !== undefined) argv.push('--agent', agent);
-    if (input.options.thinking === 'true') argv.push('--thinking');
+    // `variant` rides on the model id, not on a flag.
+    const rest = { ...input.options };
+    delete rest.variant;
+    NATIVE.append(argv, rest);
     // A resumed turn reuses the stored id; a fresh one runs under the id Migent already persisted.
     const sessionId = input.agentId || input.newAgentId;
     if (sessionId) argv.push('-s', sessionId);

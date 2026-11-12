@@ -14,6 +14,7 @@ import {
   passed,
 } from './check.js';
 import { checkConfig } from './config-check.js';
+import { analyzeNativeOptions, type NativeOptionFacts } from './native-options.js';
 import { stageAgentKey } from './stage-agents.js';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -23,7 +24,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 export function diagnose(workspace: string, options: DiagnoseOptions): [Check, Check, Check] {
   const which = options.which ?? whichSync;
   const efforts = options.modelEffortChecks ?? {};
-  const configResult = checkConfig(workspace, options.clients, efforts);
+  const configResult = checkConfig(workspace, options.clients, efforts, options.nativeOptionFacts);
   const workflowCheck = checkWorkflows(workspace, {
     clients: options.clients,
     configDiagnostics: configResult.diagnostics,
@@ -31,6 +32,7 @@ export function diagnose(workspace: string, options: DiagnoseOptions): [Check, C
     unmapped: configResult.unmapped,
     invalidEffort: new Set(Object.keys(efforts).filter((key) => efforts[key]?.problem)),
     efforts,
+    nativeOptionFacts: options.nativeOptionFacts,
   });
   const clientCheck = checkClients(
     configResult.executableByClient,
@@ -48,6 +50,7 @@ interface WorkflowCheckContext {
   readonly unmapped: ReadonlySet<string>;
   readonly invalidEffort: ReadonlySet<string>;
   readonly efforts: Readonly<Record<string, ModelEffortCheck>>;
+  readonly nativeOptionFacts?: NativeOptionFacts;
 }
 
 /** Where stage-binding findings are collected. */
@@ -66,13 +69,14 @@ function checkWorkflows(workspace: string, context: WorkflowCheckContext): Check
   if (config !== null) {
     // A stage finding the config check already reported is the same root cause: report it once.
     const known = new Set(configDiagnostics.errors.map(identityKey));
+    const knownWarnings = new Set(configDiagnostics.warnings.map((item) => item.message));
     const knownOptionReasons = new Set(
       configDiagnostics.errors.flatMap((item) => (item.detail === undefined ? [] : [item.detail])),
     );
     for (const document of Object.values(catalog.documents)) {
       checkStageBindings(
         document,
-        { ...context, config, known, knownOptionReasons },
+        { ...context, config, known, knownOptionReasons, knownWarnings },
         { problems, warnings: stageWarnings, failedWorkflows },
       );
     }
@@ -97,6 +101,8 @@ type StageBindingContext = Omit<WorkflowCheckContext, 'config' | 'configDiagnost
   readonly config: Record<string, unknown>;
   readonly known: ReadonlySet<string>;
   readonly knownOptionReasons: ReadonlySet<string>;
+  /** Warnings the config check already reported. */
+  readonly knownWarnings: ReadonlySet<string>;
 };
 
 type RoleStage = Parameters<typeof resolveStageSpec>[1];
@@ -154,9 +160,33 @@ function stageBindingProblem(
     return resolutionProblem(error, context);
   }
   const bound = resolveEffectiveClient(clients, target);
-  if (bound.failure === undefined) return null;
+  if (bound.failure === undefined) return nativeOptionProblem(bound.client, target.options, { context, warnings });
   if (bound.failure.code === 'options-invalid' && knownOptionReasons.has(bound.failure.message)) return null;
   return bound.failure.message;
+}
+
+/**
+ * What the client's help says about the stage's effective options (agent or role merged with the
+ * stage's own). A finding the config check already reported is the same root cause: left out here.
+ * An `option-unverified` warning goes to the stage warnings unless the config check already gave it.
+ */
+function nativeOptionProblem(
+  client: Parameters<typeof analyzeNativeOptions>[0] | undefined,
+  options: Readonly<Record<string, string>>,
+  scope: { context: StageBindingContext; warnings: string[] },
+): string | null {
+  const { context, warnings } = scope;
+  if (client === undefined) return null;
+  const findings = analyzeNativeOptions(client, options, context.nativeOptionFacts);
+  for (const finding of findings) {
+    if (finding.severity === 'warning' && !context.knownWarnings.has(finding.message) && !warnings.includes(finding.message)) {
+      warnings.push(finding.message);
+    }
+  }
+  const messages = findings
+    .filter((finding) => finding.severity === 'error' && !context.knownOptionReasons.has(finding.message))
+    .map((finding) => finding.message);
+  return messages.length === 0 ? null : messages.join('\n');
 }
 
 /** A resolution error's message, or null when the config check already reports it. */

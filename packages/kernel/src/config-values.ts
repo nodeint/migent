@@ -1,4 +1,4 @@
-import { isRecord } from '@nodeint/migent-workflow';
+import { isRecord, optionValueText } from '@nodeint/migent-workflow';
 
 import { QUOTE_PAIR_LENGTH } from './constants.js';
 import { ConfigurationError } from './errors.js';
@@ -24,7 +24,8 @@ export function optionsDict(body: unknown, key: string): Record<string, string> 
 export function stringMap(options: Record<string, unknown>): Record<string, string> {
   const parsed: Record<string, string> = {};
   for (const [key, value] of Object.entries(options)) {
-    if (typeof value === 'string' && value.trim() !== '') parsed[key] = value.trim();
+    const text = optionValueText(value);
+    if (text !== null) parsed[key] = text;
   }
   return parsed;
 }

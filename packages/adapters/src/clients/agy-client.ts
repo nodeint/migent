@@ -11,46 +11,25 @@ import type {
   TurnUsage,
   UsageCapture,
 } from '../types.js';
+import type { NativeOptionSupport } from '../types.js';
 import { classifyProviderError } from '../types.js';
+import { NativeOptions } from '../utils/native-options.js';
 import { parseHelpOptions } from '../utils/parse-help-options.js';
 import { compact, emptyUsage, finite, isRecord, labelOf, parseJsonObject, picked } from './json.js';
 
 // `agy models` lists slugs, not effort levels. `--help` fixes the enum.
 export const AGY_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
-const AGY_MODES = ['accept-edits', 'auto', 'plan'] as const;
+const NATIVE = new NativeOptions({
+  label: 'agy',
+  reserved: [
+    '--print', '--prompt', '--model', '--input-format', '--output-format', '--add-dir',
+    '--disable-slash-commands', '--conversation', '--continue', '--prompt-interactive', '--new-project',
+  ],
+  renames: { skip_permissions: { flag: '--dangerously-skip-permissions' } },
+  policy: [{ name: 'effort', prompt: true, allowDefault: true, overridable: true }],
+});
+
 const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
-
-const AGY_OPTIONS: readonly ClientOption[] = [
-  { name: 'effort', prompt: true, allowDefault: true, overridable: true },
-  { name: 'mode' },
-  { name: 'agent' },
-  { name: 'sandbox' },
-  { name: 'skip_permissions' },
-];
-
-function oneOf(value: string, allowed: readonly string[], field: string): void {
-  if (!allowed.includes(value)) {
-    throw new Error(`${field} must be one of: ${allowed.join(', ')}.`);
-  }
-}
-
-function agyBool(value: string, field: string): void {
-  if (value !== 'true' && value !== 'false') {
-    throw new Error(`${field} must be true or false.`);
-  }
-}
-
-function agyText(value: string): void {
-  void value;
-}
-
-const AGY_OPTION_CHECKS: Record<string, (value: string) => void> = {
-  effort: (value) => oneOf(value, AGY_EFFORTS, 'effort'),
-  mode: (value) => oneOf(value, AGY_MODES, 'mode'),
-  agent: agyText,
-  sandbox: (value) => agyBool(value, 'sandbox'),
-  skip_permissions: (value) => agyBool(value, 'skip_permissions'),
-};
 
 function modelId(line: string): string | null {
   const trimmed = line.trim();
@@ -187,17 +166,14 @@ export class AgyClient implements CliClient {
   public readonly id = 'agy';
   public readonly command = 'agy';
 
+  public readonly nativeOptions: NativeOptionSupport = NATIVE;
+
   public options(): readonly ClientOption[] {
-    return AGY_OPTIONS;
+    return NATIVE.rows();
   }
 
   public validateOptions(options: Readonly<Record<string, string>>): void {
-    for (const [key, value] of Object.entries(options)) {
-      const check = AGY_OPTION_CHECKS[key];
-      if (check === undefined) throw new Error(`${key} is not an agy option.`);
-      if (value.trim() === '') throw new Error(`${key} is empty.`);
-      check(value);
-    }
+    NATIVE.validate(options);
   }
 
   public runCommand(input: BuildCommandInput): CommandSpec {
@@ -215,11 +191,9 @@ export class AgyClient implements CliClient {
     ];
     // `agy -p` takes the prompt as a flag value and does not read stdin.
     // One stream-json user message keeps a long prompt off argv.
-    if (input.options.skip_permissions !== 'false') argv.push('--dangerously-skip-permissions');
-    if (input.options.effort) argv.push('--effort', input.options.effort);
-    if (input.options.mode) argv.push('--mode', input.options.mode);
-    if (input.options.agent) argv.push('--agent', input.options.agent);
-    if (input.options.sandbox === 'true') argv.push('--sandbox');
+    // Execution default only: an explicit skip_permissions (true or false) wins.
+    const options = { skip_permissions: 'true', ...input.options };
+    NATIVE.append(argv, options);
     if (input.agentId) argv.push('--conversation', input.agentId);
     const stdin = `${JSON.stringify({ event: 'user', message: { content: input.prompt } })}\n`;
     return { argv, stdin };

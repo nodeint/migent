@@ -5,7 +5,7 @@ import { type Check,diagnoseWorkspace, sessionDiagnosticsCheck } from '@nodeint/
 import { whichSync } from '@nodeint/migent-kernel';
 import { selectSessionWorkflow, type SessionSource } from '@nodeint/migent-session';
 
-import { clientRegistry, runClientCommand, type RunCommand, type Which } from '../client.js';
+import { clientRegistry, runClientCommand, type RunCommand, runOptionsCommand, type Which } from '../client.js';
 import { printDoctor } from '../display.js';
 import { writeJson } from '../emit.js';
 import { cliHooks } from '../hooks.js';
@@ -23,8 +23,9 @@ export async function runDoctor(
   const clients = clientRegistry();
   const runCommand = options.runCommand ?? cliHooks.runCommand ??
     ((argv, input) => runClientCommand(argv, input, { cwd: workspace, timeoutMs: 10_000 }));
+  const helpCommand = options.runCommand ?? cliHooks.runCommand ?? runOptionsCommand;
   const checks = [
-    ...(await diagnoseWorkspace(workspace, { clients, which, runCommand })),
+    ...(await diagnoseWorkspace(workspace, { clients, which, runCommand, helpCommand })),
     skillCheck(workspace, options.home ?? homedir()),
   ];
   if (options.asJson) writeJson(DoctorReport, payload(checks));
@@ -66,6 +67,7 @@ async function runSessionDoctor(
     clients: clientRegistry(),
     which: options.which,
     runCommand: options.runCommand,
+    helpCommand: options.runCommand ?? cliHooks.runCommand ?? runOptionsCommand,
   });
   // Shown only when something was recorded, so a clean session prints what it always did.
   if (diagnostics.warnings.length > 0) diagnosis.checks.push(diagnostics);

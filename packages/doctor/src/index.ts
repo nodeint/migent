@@ -31,6 +31,8 @@ export type { EffortCheckOptions } from './effort-check.js';
 export { checkModelEfforts } from './effort-check.js';
 export type { AvailabilityCheckOptions, ModelCheckOptions } from './model-check.js';
 export { checkModelAvailability, checkModels, closest } from './model-check.js';
+export type { NativeHelp, NativeOptionFacts, NativeOptionFinding } from './native-options.js';
+export { analyzeNativeOptions, collectNativeOptionFacts } from './native-options.js';
 export type { DiagnoseHooks } from './selection.js';
 export { diagnoseSelection, diagnoseWorkspace } from './selection.js';
 export type { DiagnoseSessionOptions, SessionDiagnosis } from './session.js';

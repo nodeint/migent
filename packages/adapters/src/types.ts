@@ -13,6 +13,12 @@ export interface ClientOption {
   overridable?: boolean;
 }
 
+/** Key-to-flag mapping and the flags Migent owns, for checking a key against live help. */
+export interface NativeOptionSupport {
+  readonly reservedFlags: readonly string[];
+  flagFor(key: string): string | null;
+}
+
 export interface NewSession {
   agentId?: string | null;
   agentIdSource?: string | null;
@@ -132,6 +138,8 @@ export interface CliClient {
   optionsCommand(): CommandSpec;
   parseOptions(help: string): HeadlessOption[];
   options(): readonly ClientOption[];
+  /** Present when the client's options are the flags its own help lists (not Codex's `-c` overrides). */
+  readonly nativeOptions?: NativeOptionSupport;
   validateOptions(options: Readonly<Record<string, string>>): void;
 
   runCommand(input: BuildCommandInput): CommandSpec;

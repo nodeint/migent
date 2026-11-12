@@ -232,9 +232,9 @@ test('rejects provider options before creating a session', async () => {
       model: 'grok-4',
       prompt: 'prompt',
       workspace: tmp,
-      options: { temperature: '0.2' },
+      options: { output_format: 'json' },
     }),
-  ).rejects.toThrow(/temperature is not a grok option/);
+  ).rejects.toThrow(/is set by Migent/);
   expect(existsSync(path.join(tmp, '.migent'))).toBe(false);
 });
 

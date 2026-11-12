@@ -59,10 +59,9 @@ test('runCommand resumes, and maps agent and thinking', () => {
 
 test('validateOptions rejects invalid options before a run', () => {
   const client = new OpencodeClient();
-  expect(() => client.validateOptions({ thinking: 'maybe' })).toThrow(
-    'thinking must be true or false.',
-  );
-  expect(() => client.validateOptions({ nope: 'x' })).toThrow('nope is not an opencode option.');
+  client.validateOptions({ thinking: 'true', nope: 'x' });
+  expect(() => client.validateOptions({ format: 'json' })).toThrow(/is set by Migent/);
+  expect(() => client.validateOptions({ variant: 'a b' })).toThrow(/variant must be a single variant name/);
   expect(() => client.validateOptions({ agent: '  ' })).toThrow('agent is empty.');
 });
 

@@ -78,7 +78,7 @@ test('paths keep dotted and bracketed keys as single segments', () => {
 });
 
 test('option errors carry the exact option path', () => {
-  const config = { agents: { x: { client: { type: 'codex', options: { a: 3 } }, model: 'm' } }, roles: { dev: { agent: 'x' } } };
+  const config = { agents: { x: { client: { type: 'codex', options: { a: { deep: 1 } } }, model: 'm' } }, roles: { dev: { agent: 'x' } } };
   try {
     resolveRoleCascade(config, 'dev', { registry: defaultClients() });
     throw new Error('expected a throw');
