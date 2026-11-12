@@ -19,6 +19,7 @@ export type {
   FailureOrigin,
   InterruptOutcome,
   ModelClientLookup,
+  NativeOptionSupport,
   NewSession,
   ProviderClassification,
   QuotaClassification,

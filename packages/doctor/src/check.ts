@@ -1,6 +1,8 @@
 import type { ClientRegistry, ConfigOwner, SourcePosition } from '@nodeint/migent-kernel';
 import { z } from 'zod';
 
+import type { NativeOptionFacts } from './native-options.js';
+
 export interface Check {
   name: string;
   ok: boolean;
@@ -23,6 +25,8 @@ export interface ModelEffortCheck {
 }
 
 export interface DiagnoseOptions {
+  /** What the clients' help says about their options. Absent: no help-based option diagnostics. */
+  nativeOptionFacts?: NativeOptionFacts;
   clients: ClientRegistry;
   which?: (command: string) => string | null;
   modelEffortChecks?: Readonly<Record<string, ModelEffortCheck>>;

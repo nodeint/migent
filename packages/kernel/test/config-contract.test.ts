@@ -107,7 +107,7 @@ describe('option diagnostics after valid entries', () => {
 
   test.each([
     [{ good: 'x', bad: ' ' }, 'option-invalid', ['agents', 'a', 'client', 'options', 'bad']],
-    [{ good: 'x', n: 3 }, 'option-invalid', ['agents', 'a', 'client', 'options', 'n']],
+    [{ good: 'x', n: { deep: 1 } }, 'option-invalid', ['agents', 'a', 'client', 'options', 'n']],
     [{ good: 'x', '1a': 'y' }, 'option-key-invalid', ['agents', 'a', 'client', 'options', '1a']],
     [{ '1a': 'y', bad: ' ' }, 'option-key-invalid', ['agents', 'a', 'client', 'options', '1a']],
   ])('%j', (options, code, path) => {

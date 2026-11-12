@@ -5,6 +5,7 @@ import { isRoleStage, type RoleStageSpec, type WorkflowDocument } from '@nodeint
 import { optionalArtifactMappings } from './artifact-notes.js';
 import { addUnique, type Check, type DiagnoseOptions,makeCheck } from './check.js';
 import { failureText } from './clients.js';
+import { analyzeNativeOptions } from './native-options.js';
 import { stageAgentKey } from './stage-agents.js';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -112,7 +113,7 @@ function checkBindings(
   if (selection.freeze !== null) {
     checkFrozenBindings(
       selection.freeze,
-      { stages, workflowId: document.id, options, problems: bindingProblems, record },
+      { stages, workflowId: document.id, options, problems: bindingProblems, warnings: bindingWarnings, record },
     );
   } else {
     checkLiveBindings(
@@ -130,6 +131,7 @@ interface BindingScope {
   readonly workflowId: string;
   readonly options: DiagnoseSessionOptions;
   readonly problems: string[];
+  readonly warnings: string[];
   readonly record: (target: StageTarget, effective: ClientInfo, stageId: string) => void;
 }
 
@@ -146,11 +148,15 @@ function checkFrozenBindings(freeze: WorkflowFreeze, scope: BindingScope): void 
       continue;
     }
     const effective = effectiveClient(options.clients, target, { field: `targets.${stage.id}`, where, problems, flat: true });
-    if (effective !== null) record(target, effective, stage.id);
+    if (effective !== null) {
+      // The frozen options are what the run sends.
+      reportNativeOptions(effective, target, { where, options, problems, warnings: scope.warnings });
+      record(target, effective, stage.id);
+    }
   }
 }
 
-type LiveScope = BindingScope & { readonly warnings: string[] };
+type LiveScope = BindingScope;
 
 function checkLiveBindings(workspace: string, scope: LiveScope): void {
   let config: Record<string, unknown>;
@@ -211,7 +217,22 @@ function checkLiveStage(config: Record<string, unknown>, stage: RoleStageSpec, s
   }
   const field = stage.agent !== null ? `stages.${stage.id}.agent` : `roles.${stage.role}.agent`;
   const effective = effectiveClient(options.clients, target, { field, where, problems });
-  if (effective !== null) record(target, effective, stage.id);
+  if (effective !== null) {
+    reportNativeOptions(effective, target, { where, options, problems, warnings });
+    record(target, effective, stage.id);
+  }
+}
+
+/** Reports what the client's help says about the target's effective options. */
+function reportNativeOptions(
+  client: ClientInfo,
+  target: StageTarget,
+  report: { where: string; options: DiagnoseSessionOptions; problems: string[]; warnings: string[] },
+): void {
+  const { where, options, problems, warnings } = report;
+  for (const finding of analyzeNativeOptions(client, target.options, options.nativeOptionFacts)) {
+    addUnique(finding.severity === 'error' ? problems : warnings, `${where}: ${finding.message}`);
+  }
 }
 
 /** Binds the target to its client, reporting a failure as `where: field…`. */

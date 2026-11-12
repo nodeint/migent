@@ -2,12 +2,14 @@ import type { ChildProcess } from 'node:child_process';
 
 import { clientIds, createClient,type HeadlessOption } from '@nodeint/migent-adapters';
 import {
+  analyzeNativeOptions,
   type CatalogOutcome,
   type CatalogSource,
   type ClientCatalogInput,
   clientCatalogSource,
   ClientCommandFailed,
   clientsListingModel,
+  collectNativeOptionFacts,
   loadCatalogSync,
   loadOptionValues,
   type RunCommand,
@@ -122,12 +124,24 @@ export async function acceptedOptions(
     catalog: CliModelCatalog;
     which: Which;
     runCommand: RunCommand;
+    /** Reads client help; defaults to a runner that also reads stderr. */
+    helpCommand?: RunCommand;
+    /** Receives non-blocking notices, such as options accepted without verification. */
+    warn?: (message: string) => void;
     options: Readonly<Record<string, string>>;
   },
 ): Promise<Record<string, string>> {
   const { model, catalog, which, runCommand, options } = request;
   if (Object.keys(options).length === 0) return {};
   client.validateOptions(options);
+  const facts = await collectNativeOptionFacts(
+    { ids: () => [client.id], get: () => client } as unknown as ClientRegistry,
+    { which, runCommand: request.helpCommand ?? runCommand },
+  );
+  const findings = analyzeNativeOptions(client, options, facts);
+  for (const item of findings) if (item.severity === 'warning') request.warn?.(item.message);
+  const errors = findings.filter((item) => item.severity === 'error');
+  if (errors.length > 0) throw new ClientCommandFailed(errors.map((item) => item.message).join('\n'));
   const source = clientCatalogSource(client as unknown as ClientCatalogInput);
   const stored: Record<string, string> = {};
   for (const [name, value] of Object.entries(options)) {

@@ -16,11 +16,13 @@ afterEach(() => {
 const readers: Record<string, () => boolean> = { MIGENT_DEBUG: debugEnabled, MIGENT_NO_INPUT: noInputRequested };
 
 // Names come from the actual `process.env.NAME` accesses in env.ts, not from a hand-kept list.
-// Platform `HOME` is not a Migent contract. Computed access (`process.env[...]`) is not allowed there.
+// Platform `HOME` and `ComSpec` are not Migent contracts. Computed access (`process.env[...]`) is not allowed there.
+const PLATFORM_VARIABLES = new Set(['HOME', 'ComSpec']);
 test('the catalog names exactly the Migent variables env.ts accesses', () => {
   const source = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'env.ts'), 'utf8');
   expect(source).not.toMatch(/process\.env\s*\[/);
-  const accessed = [...new Set([...source.matchAll(/process\.env\.([A-Za-z_][A-Za-z0-9_]*)/g)].map((m) => m[1]!))].filter((name) => name !== 'HOME');
+  const accessed = [...new Set([...source.matchAll(/process\.env\.([A-Za-z_][A-Za-z0-9_]*)/g)].map((m) => m[1]!))]
+    .filter((name) => !PLATFORM_VARIABLES.has(name));
   expect(ENV_CATALOG.map((entry) => entry.name).sort()).toEqual(accessed.sort());
 });
 

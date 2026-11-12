@@ -174,24 +174,31 @@ Each client names its own options and lists the values for the selected
 model. They go in the agent's `client.options`. `migent init` asks for options
 marked as prompts. Leaving one unset keeps the client default.
 
+For `agy`, `claude-code`, `grok` and `opencode`, the valid options are the ones
+the installed CLI lists in its headless help. A key `autocompact` becomes
+`--autocompact`: the key in lowercase snake case, with `_` replaced by `-`.
+Numbers and booleans in YAML are accepted and stored as strings. A value of
+`true` sends the bare flag, `false` sends nothing, and anything else sends
+`--flag value`. `migent doctor`, `migent init` and the agent commands read the
+help and report `option-unknown`, `option-value-invalid` and `option-conflict`
+(or the warning `option-unverified` when the help cannot be read). Offline,
+Migent only refuses the flags it sets itself and non-canonical key spellings.
+
 - Antigravity (`agy`) prompts for `effort` (`low`, `medium`, `high`, `xhigh`, or
-  `max`) and sends it as `agy --effort`. `mode` is `accept-edits`, `auto`, or
-  `plan`. `agent` selects a named agent. `sandbox` and `skip_permissions` are
-  `true` or `false`. Other keys are rejected. Leaving `skip_permissions` unset
-  passes `--dangerously-skip-permissions` for that run.
+  `max`) and sends it as `agy --effort`. `skip_permissions` maps to
+  `--dangerously-skip-permissions`; leaving it unset passes that flag for the
+  run, and `false` omits it.
 - Codex prompts for `model_reasoning_effort`, read from
   `supported_reasoning_levels` in `codex debug models`. Any other option is a
   Codex config override passed as `codex exec -c key=value`.
 - Grok prompts for `reasoning-effort`, read from the `grok` CLI for that
-  model, and sends it as `--reasoning-effort`. Grok also accepts `max_turns`,
-  `tools`, `disallowed_tools`, `permission_mode`, `rules`, `allow`, `deny`,
-  and `sandbox`. Other keys are rejected.
-- OpenCode accepts `agent`, sent as `--agent`; `thinking`, a boolean string
-  controlling display of thinking blocks (`true` sends `--thinking`); and
-  `variant`, rendered as a `#variant` suffix on the model ID for OpenCode V2.
-  Only `variant` is overridable and stored on the session. None of
-  these options is prompted for. Other keys are rejected.
-- Claude Code accepts `permission_mode`. Migent sets
+  model, and sends it as `--reasoning-effort`. `effort` is refused for Grok:
+  use `reasoning-effort`.
+- OpenCode's `variant` is rendered as a `#variant` suffix on the model ID for
+  OpenCode V2. Only `variant` is overridable and stored on the session. No
+  OpenCode option is prompted for.
+- Claude Code takes any option its help lists, for example `autocompact: 200000`.
+  Migent sets
   `permission_mode=bypassPermissions` when the option is unset, and generates a
   session ID for resume.
 
@@ -281,7 +288,7 @@ Omitting `effort` preserves existing behavior. Local effort replaces shared effo
 
 Use either `effort` or its native option in the agent's `client.options`, never
 both (including after shared/local config merge). Unsupported clients, empty
-values, and non-string values are configuration errors. Existing native options
+values, and values that are not strings, numbers or booleans are configuration errors. Existing native options
 still work. Command-line option overrides apply after the resolved native
 option. Sessions freeze the resolved native options.
 
@@ -291,4 +298,4 @@ option. Sessions freeze the resolved native options.
 selected client's supported values.
 Invalid or empty values report the model field and `Valid values`. If the values
 cannot be verified, doctor prints a warning instead of rejecting an otherwise
-well-formed effort. Empty or non-string values remain errors.
+well-formed effort. Empty values and values that are not strings, numbers or booleans remain errors.

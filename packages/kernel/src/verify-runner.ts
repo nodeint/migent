@@ -1,7 +1,6 @@
 import type { ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { accessSync, constants as fsConstants, mkdirSync, writeFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import path from 'node:path';
 
 import {
@@ -15,8 +14,10 @@ import {
   waitForReady,
 } from './command-executor.js';
 import { ENDPOINT_TOKEN_BYTES, MS_PER_SECOND, PAD_WIDTH_2 } from './constants.js';
+import { platformComSpec } from './env.js';
 import { collectProcessStartInfo, type ProcessStartInfo } from './process-ownership.js';
 import { wrapperEndpoint } from './process-wrapper.js';
+import type { CommandSpec } from './wrapper-launch.js';
 import { WRAPPER_START } from './wrapper-protocol.js';
 
 export const VERIFY_TAIL_LINES = 200;
@@ -54,25 +55,27 @@ export interface VerifyRunInput {
   onHeartbeat?: (command: string, elapsedSec: number) => void;
 }
 
-const require = createRequire(import.meta.url);
-const whichSync = (
-  require('which') as { sync(command: string, options?: { nothrow?: boolean }): string | null }
-).sync;
+const WINDOWS_DEFAULT_COMSPEC = 'C:\\Windows\\System32\\cmd.exe';
 
-/** `/bin/sh` when it exists. On Windows, the `sh` on PATH (Git for Windows). */
+/** The operating system's own shell: `%ComSpec%` (cmd.exe) on Windows, `/bin/sh` elsewhere. */
 export function defaultVerifyShell(): string {
-  const posix = '/bin/sh';
-  try {
-    accessSync(posix, fsConstants.X_OK);
-    return posix;
-  } catch {
-    // Missing here is normal on Windows.
+  if (process.platform === 'win32') return platformComSpec() ?? WINDOWS_DEFAULT_COMSPEC;
+  return '/bin/sh';
+}
+
+/** The shell invocation for one command, with stderr merged into stdout in arrival order. */
+export function verifyShellSpec(
+  shell: string,
+  command: string,
+  platform: NodeJS.Platform = process.platform,
+): CommandSpec {
+  if (platform === 'win32') {
+    // `/s /c "..."` strips only the outer quotes, so the command keeps its own syntax. Wrapping it
+    // to redirect (e.g. `(...) 2>&1`) would change how cmd.exe parses it, so the wrapper merges
+    // stderr at the file-descriptor level instead.
+    return { argv: [shell, '/d', '/s', '/c', `"${command}"`], windowsVerbatimArguments: true, mergeStderr: true };
   }
-  if (process.platform === 'win32') {
-    const found = whichSync('sh', { nothrow: true });
-    if (found) return found;
-  }
-  return posix;
+  return { argv: [shell, '-c', `exec 2>&1; ${command}`] };
 }
 
 export class VerifyRunner {
@@ -117,9 +120,8 @@ export class VerifyRunner {
     }
     const cancellation = cancellationSignal();
     const endpoint = wrapperEndpoint(randomBytes(ENDPOINT_TOKEN_BYTES).toString('hex'));
-    // `exec 2>&1` merges stderr into stdout in arrival order.
     const child = startWrapper(
-      { argv: [this.shell, '-c', `exec 2>&1; ${command}`] },
+      verifyShellSpec(this.shell, command),
       { cwd: input.workspace, endpoint, stdio: ['ignore', 'pipe', 'inherit', 'ipc'] },
     );
     try {

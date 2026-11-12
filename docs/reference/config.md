@@ -31,9 +31,9 @@ Type: object
 
 Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/config/client-options.json`
 
-Native options for the selected client. Keys are option names; values are non-blank strings.
+Native options for the selected client. Keys are option names; values are non-blank strings, numbers or booleans (stored as strings).
 
-Type: map of string
+Type: map of (string \| number \| boolean)
 
 <a id="config-client-json"></a>
 ### Client selection
@@ -47,7 +47,7 @@ Type: object
 | Field | Type | Required | Notes | Description |
 | --- | --- | --- | --- | --- |
 | `type` | string \| null | no |  | A string with a non-blank value. |
-| `options` | [Client options](#config-client-options-json) \| null | no |  | Native options for the selected client. Keys are option names; values are non-blank strings. |
+| `options` | [Client options](#config-client-options-json) \| null | no |  | Native options for the selected client. Keys are option names; values are non-blank strings, numbers or booleans (stored as strings). |
 
 <a id="config-effective-json"></a>
 ### Effective config

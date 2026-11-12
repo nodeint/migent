@@ -23,6 +23,7 @@ import {
   parseOptions,
   runClientCommandAsync,
   type RunCommand,
+  runOptionsCommand,
   type Which,
 } from '../client.js';
 import {
@@ -99,6 +100,8 @@ interface InitEnv {
   which: Which;
   prompt: Prompter;
   execute: RunCommand;
+  /** Reads client help, which some CLIs print on stderr. */
+  help: RunCommand;
   getCatalog: (name: string) => Promise<ModelCatalog>;
 }
 
@@ -251,7 +254,8 @@ function initEnv(options: InitOptions): InitEnv {
     }
     return catalog;
   };
-  return { clients, which, prompt: options.prompter ?? new ClackPrompter(), execute, getCatalog };
+  const help: RunCommand = options.runCommand ?? cliHooks.runCommand ?? runOptionsCommand;
+  return { clients, which, prompt: options.prompter ?? new ClackPrompter(), execute, help, getCatalog };
 }
 
 function hasSelectionFlags(options: InitOptions): boolean {
@@ -291,6 +295,7 @@ function slotChoice(env: InitEnv, flags: SlotFlags, models: readonly ModelSelect
     options: parseOptions(flags.pairs),
     effort: flags.effort,
     runCommand: env.execute,
+    helpCommand: env.help,
     models, getCatalog: env.getCatalog,
   });
 }
@@ -356,6 +361,7 @@ interface ChoiceArgs {
   options: Record<string, string>;
   effort: string | null;
   runCommand: RunCommand;
+  helpCommand?: RunCommand;
   models: readonly ModelSelection[];
   getCatalog: (name: string) => Promise<ModelCatalog>;
 }
@@ -407,7 +413,8 @@ async function givenChoice(env: ChoiceEnv, args: ChoiceArgs, client: string): Pr
     ? { ...args.options, [effortOption]: args.effort }
     : args.options;
   const stored = await acceptedOptions(impl, {
-    model, catalog, which: env.which, runCommand: args.runCommand, options: requested,
+    model, catalog, which: env.which, runCommand: args.runCommand, helpCommand: args.helpCommand, options: requested,
+    warn: (message) => process.stderr.write(`Warning: ${message}\n`),
   });
   if (args.effort !== null && effortOption) delete stored[effortOption];
   return { client, model, stored, effort: args.effort };

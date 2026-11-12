@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Fixed
+
+- A Claude Code role can set any option `claude -p --help` lists, such as `autocompact: 200000`, and pass `migent doctor` (#122). Option values in YAML may be numbers or booleans; they are stored as strings.
+- Stage `verify` commands now run in the operating system's own shell: cmd.exe (`%ComSpec%`) on Windows, `/bin/sh` elsewhere (#126). Windows no longer needs Git Bash's `sh` on `PATH`, which previously made every verify fail with "Unable to start the verify shell". Commands written in POSIX-only syntax must work in cmd.exe when the workflow runs on Windows.
+
+### Changed
+
+- For `agy`, `claude-code`, `grok` and `opencode`, the valid options come from the installed CLI's headless help instead of a list kept in Migent. `migent doctor`, `migent init` and the agent commands read the help and report `option-unknown`, `option-value-invalid`, `option-conflict` and `option-unverified`. Offline checks (config load, runs) only refuse flags Migent sets itself and non-canonical key spellings, so a wrong value now reaches the client CLI unless doctor ran first. `migent get options` lists only the options Migent prompts for or stores; `--native` lists everything the help shows. `HeadlessOption.flags` now includes aliases the help declares in descriptions (grok, both `compat alias:` and `compat aliases:`). Codex is unchanged.
+
 ### Changed
 
 

@@ -12,7 +12,9 @@ import type {
   RawFailure,
   UsageCapture,
 } from '../types.js';
+import type { NativeOptionSupport } from '../types.js';
 import { classifyProviderError } from '../types.js';
+import { NativeOptions } from '../utils/native-options.js';
 import { parseHelpOptions } from '../utils/parse-help-options.js';
 import { compact, finite, isRecord, labelOf, parseJsonObject, picked } from './json.js';
 
@@ -27,60 +29,17 @@ const MODEL_CATALOG_REQUEST = JSON.stringify({
   request: { subtype: 'initialize' },
 });
 
-export const CLAUDE_PERMISSION_MODES = [
-  'acceptEdits',
-  'auto',
-  'bypassPermissions',
-  'manual',
-  'dontAsk',
-  'plan',
-] as const;
-
 const DEFAULT_PERMISSION_MODE = 'bypassPermissions';
 
-const CLAUDE_OPTIONS: readonly ClientOption[] = [
-  { name: 'effort', prompt: true, allowDefault: true, overridable: true },
-  { name: 'permission_mode' },
-  { name: 'tools' },
-  { name: 'allowed_tools' },
-  { name: 'disallowed_tools' },
-  { name: 'max_budget_usd' },
-  { name: 'fallback_model' },
-  { name: 'append_system_prompt' },
-];
-
-function oneOf(value: string, allowed: readonly string[], field: string): void {
-  if (!allowed.includes(value)) {
-    throw new Error(`${field} must be one of: ${allowed.join(', ')}.`);
-  }
-}
-
-function claudeBudget(value: string): void {
-  if (!/^[0-9]+(?:\.[0-9]+)?$/.test(value) || Number(value) <= 0) {
-    throw new Error('max_budget_usd must be a positive number.');
-  }
-}
-
-function claudeText(value: string): void {
-  void value;
-}
-
-const CLAUDE_OPTION_CHECKS: Record<string, (value: string) => void> = {
-  effort: claudeText,
-  permission_mode: (value) => oneOf(value, CLAUDE_PERMISSION_MODES, 'permission_mode'),
-  tools: claudeText,
-  allowed_tools: claudeText,
-  disallowed_tools: claudeText,
-  max_budget_usd: claudeBudget,
-  fallback_model: claudeText,
-  append_system_prompt: claudeText,
-};
-
-function appendOptions(argv: string[], options: Readonly<Record<string, string>>): void {
-  for (const [key, value] of Object.entries(options)) {
-    argv.push(`--${key.replaceAll('_', '-')}`, value);
-  }
-}
+const NATIVE = new NativeOptions({
+  label: 'claude',
+  reserved: [
+    '--print', '--model', '--output-format', '--input-format', '--verbose', '--resume', '--session-id',
+    '--continue', '--fork-session', '--help', '--version', '--worktree', '--tmux', '--teleport',
+    '--from-pr', '--cloud', '--desktop', '--ide', '--remote-control', '--bg', '--background',
+  ],
+  policy: [{ name: 'effort', prompt: true, allowDefault: true, overridable: true }],
+});
 
 function contentBlocks(payload: Record<string, unknown>): Record<string, unknown>[] {
   const {message} = payload;
@@ -150,17 +109,14 @@ export class ClaudeCodeClient implements CliClient {
   public readonly id = 'claude-code';
   public readonly command = 'claude';
 
+  public readonly nativeOptions: NativeOptionSupport = NATIVE;
+
   public options(): readonly ClientOption[] {
-    return CLAUDE_OPTIONS;
+    return NATIVE.rows();
   }
 
   public validateOptions(options: Readonly<Record<string, string>>): void {
-    for (const [key, value] of Object.entries(options)) {
-      const check = CLAUDE_OPTION_CHECKS[key];
-      if (check === undefined) throw new Error(`${key} is not a claude option.`);
-      if (value.trim() === '') throw new Error(`${key} is empty.`);
-      check(value);
-    }
+    NATIVE.validate(options);
   }
 
   public runCommand(input: BuildCommandInput): CommandSpec {
@@ -176,7 +132,7 @@ export class ClaudeCodeClient implements CliClient {
       'stream-json',
       '--verbose',
     ];
-    appendOptions(argv, options);
+    NATIVE.append(argv, options);
     if (input.agentId) argv.push('--resume', input.agentId);
     else if (input.newAgentId) argv.push('--session-id', input.newAgentId);
     // The prompt goes on stdin; the workspace is the process cwd.

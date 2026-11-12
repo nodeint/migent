@@ -84,7 +84,12 @@ export interface WrapperLaunch {
 export function startWrapper(spec: CommandSpec, launch: WrapperLaunch): ChildProcess {
   const { cwd, endpoint } = launch;
   const stdio = launch.stdio ?? [(spec.stdin !== null && spec.stdin !== undefined) ? 'pipe' : 'inherit', 'pipe', 'pipe', 'ipc'];
-  const argv = wrapperArgv(spec.argv, { endpoint, graceSec: TERMINATION_GRACE_SEC });
+  const argv = wrapperArgv(spec.argv, {
+    endpoint,
+    graceSec: TERMINATION_GRACE_SEC,
+    windowsVerbatim: spec.windowsVerbatimArguments,
+    mergeStderr: spec.mergeStderr,
+  });
   const child = spawn(argv[0] ?? '', argv.slice(1), {
     cwd,
     // POSIX: a new process group, so the whole provider tree can be signalled at once.
@@ -324,4 +329,8 @@ export function describeStartFailure(
 export interface CommandSpec {
   argv: string[];
   stdin?: string | null;
+  /** Windows: pass `argv` to the process unquoted (for `cmd.exe /s /c "..."`). */
+  windowsVerbatimArguments?: boolean;
+  /** Merge the command's stderr into its stdout at the file-descriptor level. */
+  mergeStderr?: boolean;
 }

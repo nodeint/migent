@@ -108,6 +108,12 @@ export type FailureClassification = QuotaClassification | ProviderClassification
  */
 export type InterruptOutcome = 'interrupted' | 'idle' | 'not-found' | 'failed';
 
+/** Key-to-flag mapping and the flags Migent owns, for checking a key against live help. */
+export interface NativeOptionSupport {
+  readonly reservedFlags: readonly string[];
+  flagFor(key: string): string | null;
+}
+
 /**
  * The CLI itself: how to invoke it and how to read what it prints. A client
  * knows nothing about migent defaults, usage accounting or failure policy.
@@ -119,6 +125,8 @@ export interface CliClient {
   readonly effortOption?: string;
 
   options(): readonly ClientOption[];
+  /** Present when the client's options are the flags its own help lists. */
+  readonly nativeOptions?: NativeOptionSupport;
   validateOptions(options: Readonly<Record<string, string>>): void;
 
   runCommand(input: BuildCommandInput): CommandSpec;
@@ -156,6 +164,7 @@ export interface ClientInfo {
   readonly id: string;
   readonly command: string;
   readonly effortOption?: string;
+  readonly nativeOptions?: NativeOptionSupport;
   options(): readonly ClientOption[];
   validateOptions(options: Readonly<Record<string, string>>): void;
 }

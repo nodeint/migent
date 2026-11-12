@@ -82,7 +82,7 @@ test('a bad model in a later stage stops --workflow before anything is created',
 test.each([
   ['provider', '    provider: nope\n    model: m1', 'provider'],
   ['client', '    client: bogus\n    model: grok-ok', 'client'],
-  ['option', '    client:\n      type: grok\n      options:\n        bogus_option: x\n    model: grok-ok', 'options'],
+  ['option', '    client:\n      type: grok\n      options:\n        output_format: json\n    model: grok-ok', 'options'],
 ])('an unsupported %s stops the run', async (_name, reviewer, message) => {
   const { workspace, provider } = setup(reviewer);
   try {

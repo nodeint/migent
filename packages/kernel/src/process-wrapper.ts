@@ -141,10 +141,25 @@ function runningAsMain(): boolean {
 interface WrapperOptions {
   endpoint: string;
   graceSec: number;
+  /** Pass the command line to Windows unquoted, as `cmd.exe /s /c "..."` requires. */
+  windowsVerbatim: boolean;
+  /** Point the command's fd 2 at the wrapper's fd 1, merging stderr into stdout in arrival order. */
+  mergeStderr: boolean;
   command: string[];
 }
 
-function parseArgv(argv: string[]): WrapperOptions | null {
+/** Removes a value-less flag when it appears before `--`. */
+function takeFlag(argv: string[], flag: string): { present: boolean; rest: string[] } {
+  const flagIndex = argv.indexOf(flag);
+  const separatorIndex = argv.indexOf('--');
+  const present = flagIndex !== -1 && (separatorIndex === -1 || flagIndex < separatorIndex);
+  if (!present) return { present: false, rest: argv };
+  return { present: true, rest: argv.filter((_, index) => index !== flagIndex) };
+}
+
+function parseArgv(fullArgv: string[]): WrapperOptions | null {
+  const { present: windowsVerbatim, rest } = takeFlag(fullArgv, '--windows-verbatim');
+  const { present: mergeStderr, rest: argv } = takeFlag(rest, '--merge-stderr');
   const options: Record<string, string> = {};
   let index = 0;
   while (index < argv.length) {
@@ -154,7 +169,7 @@ function parseArgv(argv: string[]): WrapperOptions | null {
       if (command.length === 0 || options.endpoint === undefined || options.grace_sec === undefined) return null;
       const graceSec = Number(options.grace_sec);
       if (!Number.isFinite(graceSec) || graceSec < 0) return null;
-      return { endpoint: options.endpoint, graceSec, command };
+      return { endpoint: options.endpoint, graceSec, windowsVerbatim, mergeStderr, command };
     }
     if (item === '--endpoint' || item === '--grace-sec') {
       const value = argv[index + 1];
@@ -293,7 +308,11 @@ function superviseProvider(options: WrapperOptions, server: Server): void {
     const {command} = options;
     let started: ChildProcess;
     try {
-      started = spawnProvider(command[0] ?? '', command.slice(1), { stdio: 'inherit', windowsHide: true });
+      started = spawnProvider(command[0] ?? '', command.slice(1), {
+        stdio: options.mergeStderr ? ['inherit', 'inherit', 1] : 'inherit',
+        windowsHide: true,
+        windowsVerbatimArguments: options.windowsVerbatim,
+      });
     } catch (error) {
       server.close();
       removeStaleSocket(options.endpoint);

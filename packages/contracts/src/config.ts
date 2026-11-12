@@ -17,11 +17,16 @@ export const NonBlankString = Type.String({ pattern: '\\S', description: 'A stri
 /** Native option names accepted by Migent, before a client validates them. */
 export const OPTION_KEY_PATTERN = '^[A-Za-z][A-Za-z0-9_.-]*$';
 
-export const ClientOptions = Type.Record(Type.String(), NonBlankString, {
+/** One option value: YAML numbers and booleans are accepted and become strings. */
+export const OptionValue = Type.Union([NonBlankString, Type.Number(), Type.Boolean()], {
+  description: 'A non-blank string, a finite number or a boolean.',
+});
+
+export const ClientOptions = Type.Record(Type.String(), OptionValue, {
   propertyNames: { pattern: OPTION_KEY_PATTERN },
   $id: id('config/client-options'),
   title: 'Client options',
-  description: 'Native options for the selected client. Keys are option names; values are non-blank strings.',
+  description: 'Native options for the selected client. Keys are option names; values are non-blank strings, numbers or booleans (stored as strings).',
 });
 
 /** Closed: an unknown key is an error. */

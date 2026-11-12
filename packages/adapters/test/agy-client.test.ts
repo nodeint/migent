@@ -164,10 +164,12 @@ test('lists model slugs and effort levels', () => {
 
 test('rejects an unknown option', () => {
   const client = new AgyClient();
-  expect(() => client.validateOptions({ temperature: '0.2' })).toThrow(/temperature is not an agy option/);
-  expect(() => client.validateOptions({ mode: 'yolo' })).toThrow(/mode must be one of/);
-  expect(() => client.validateOptions({ effort: 'turbo' })).toThrow(/effort must be one of/);
-  expect(() => client.validateOptions({ sandbox: 'yes' })).toThrow(/sandbox must be true or false/);
+  // Which options exist, and their values, come from help (doctor); offline only Migent's own flags are refused.
+  client.validateOptions({ temperature: '0.2', mode: 'plan', json_schema: '{}' });
+  expect(() => client.validateOptions({ model: 'x' })).toThrow(/--model\) is set by Migent/);
+  expect(() => client.validateOptions({ add_dir: 'x' })).toThrow(/is set by Migent/);
+  expect(() => client.validateOptions({ Mode: 'plan' })).toThrow(/use lowercase snake case such as mode/);
+  expect(() => client.validateOptions({ mode: ' ' })).toThrow(/mode is empty/);
   client.validateOptions({ effort: 'high', mode: 'plan', sandbox: 'true', skip_permissions: 'false' });
 });
 
@@ -257,4 +259,17 @@ test('normalizes agy usage from the resume fixtures', () => {
   expect(client.versionCommand().argv).toEqual(['agy', '--version']);
   expect(client.parseVersion('codex-cli 0.163.0\n')).toBe('codex-cli 0.163.0');
   expect(client.parseVersion('')).toBeNull();
+});
+
+test('skip_permissions keeps its default and rename', () => {
+  const base = { model: 'm', workspace: '/w', prompt: 'p', agentId: null, newAgentId: null, promptFile: '/p', lastMessageFile: '/l' };
+  const client = new AgyClient();
+  const count = (options: Record<string, string>) =>
+    client.runCommand({ ...base, options }).argv.filter((a) => a === '--dangerously-skip-permissions').length;
+  expect(count({})).toBe(1);
+  expect(count({ skip_permissions: 'true' })).toBe(1);
+  expect(count({ skip_permissions: 'false' })).toBe(0);
+  const {argv} = client.runCommand({ ...base, options: { sandbox: 'true', mode: 'plan', effort: 'high' } });
+  expect(argv).toContain('--sandbox');
+  expect(argv[argv.indexOf('--mode') + 1]).toBe('plan');
 });
