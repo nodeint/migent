@@ -6,17 +6,18 @@
 
 ### Breaking
 
-- `migent init` now reads the agents it asks for from the project template instead of fixed planner, reviewer, and developer roles. The per-role flags `--planner-*`, `--reviewer-*`, `--developer-*`, `--client`, `--model`, `--effort`, `--option` and the hidden `--*provider` flags are removed and rejected as unknown options. Use `--agent NAME=CLIENT:MODEL`, `--agent-effort NAME=EFFORT`, and `--agent-option NAME:KEY=VALUE` (all repeatable) with the template's agent names `planning`, `review`, and `coding`, for example `migent init --no-input --agent planning=codex:gpt-5 --agent review=grok:grok-4.7 --agent coding=codex:gpt-5`. ([#128](https://github.com/nodeint/migent/pull/128))
+- `migent init` now takes agents from the project template, and the per-role flags (`--planner-*`, `--reviewer-*`, `--developer-*`, `--client`, `--model`, `--effort`, `--option`, `--*provider`) are rejected. Use `--agent NAME=CLIENT:MODEL`, `--agent-effort NAME=EFFORT` and `--agent-option NAME:KEY=VALUE` with the names `planning`, `review` and `coding`, e.g. `--agent planning=codex:gpt-5`. ([#128](https://github.com/nodeint/migent/pull/128))
+- Stage `verify` commands now run in cmd.exe (`%ComSpec%`) on Windows instead of `sh`; other systems still use `/bin/sh`. On Windows, rewrite POSIX-only `verify` commands (`&&` chains with `$VAR`, `test`, `grep`, `rm`) in cmd.exe syntax or call a script that works there, e.g. `node scripts/check.mjs`. ([#127](https://github.com/nodeint/migent/pull/127))
 
 ### Changed
 
-- The generated project has an `agents` section (`planning`, `review`, `coding`) that roles refer to by name. The `planner` role is renamed `architect` (the `plan` workflow uses it), and a new `operator` role shares `coding` with `developer`. Existing projects are unchanged. ([#128](https://github.com/nodeint/migent/pull/128))
-- For `agy`, `claude-code`, `grok` and `opencode`, the valid options come from the installed CLI's headless help instead of a list kept in Migent. `migent doctor`, `migent init` and the agent commands report `option-unknown`, `option-value-invalid`, `option-conflict` and `option-unverified`. Offline checks (config load, runs) only refuse flags Migent sets itself and non-canonical key spellings, so a wrong value now reaches the client CLI unless doctor ran first. `migent get options` lists only the options Migent prompts for or stores; `--native` lists everything the help shows. Codex is unchanged. (#124)
+- The generated project has an `agents` section (`planning`, `review`, `coding`) that roles refer to by name; `planner` is renamed `architect` and a new `operator` role shares `coding` with `developer`. Existing projects are unchanged. ([#128](https://github.com/nodeint/migent/pull/128))
+- For `agy`, `claude-code`, `grok` and `opencode`, valid options now come from the installed CLI's headless help, and `migent doctor`, `migent init` and the agent commands report `option-unknown`, `option-value-invalid`, `option-conflict` and `option-unverified`. Offline checks only refuse flags Migent sets itself, so a wrong option value reaches the client CLI unless doctor ran first. ([#124](https://github.com/nodeint/migent/pull/124))
 
 ### Fixed
 
-- A Claude Code role can set any option `claude -p --help` lists, such as `autocompact: 200000`, and pass `migent doctor`. Option values in YAML may be numbers or booleans; they are stored as strings. (#124)
-- Stage `verify` commands now run in the operating system's own shell: cmd.exe (`%ComSpec%`) on Windows, `/bin/sh` elsewhere. Windows no longer needs Git Bash's `sh` on `PATH`, which made every verify fail with "Unable to start the verify shell". Commands written in POSIX-only syntax must work in cmd.exe when the workflow runs on Windows. (#127)
+- A Claude Code role can set any option `claude -p --help` lists, such as `autocompact: 200000`, and pass `migent doctor`. Numbers and booleans in YAML option values are stored as strings. ([#124](https://github.com/nodeint/migent/pull/124))
+- Windows no longer needs Git Bash's `sh` on `PATH` to run `verify` commands, which previously failed with "Unable to start the verify shell". ([#127](https://github.com/nodeint/migent/pull/127))
 
 ## 0.5.6
 
