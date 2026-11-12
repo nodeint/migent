@@ -43,7 +43,7 @@ export default defineConfig({
         extends: true,
         test: {
           name: 'integration',
-          include: ['packages/**/*.integration.test.ts'],
+          include: ['packages/**/*.integration.test.ts', 'integration/**/*.integration.test.ts'],
           fileParallelism: false,
         },
       },

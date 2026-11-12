@@ -46,7 +46,9 @@ The workspace root is `migent-monorepo` and is private.
 pnpm install
 pnpm setup:git       # install local branch and push safeguards
 pnpm build           # tsc -b for all packages, then copy CLI templates
-pnpm test            # vitest: packages/**/test and integration/
+pnpm test:unit       # vitest unit project: needs no build output
+pnpm test:integration # vitest integration project (*.integration.test.ts): spawns real processes, needs a build
+pnpm test            # both projects
 pnpm migent --help   # run the local build
 ```
 
