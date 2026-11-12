@@ -1,0 +1,66 @@
+schema_version: 7
+id: design
+constraints:
+  - Design only. Do not modify source code.
+  - Structural design decisions must be approved by the human.
+
+artifacts:
+  design:
+    file: design.md
+    description: Outcome and acceptance criteria, current state, solution structure, numbered decisions with trade-offs, extension points, verification strategy, risks, and the recommended next workflow (plan or implement) with its reason.
+  design_comment:
+    file: design_comment.md
+    required: false
+    description: Non-blocking review comments for the planner or implementer.
+
+stages:
+  - id: design
+    role: architect
+    max_revisions: 3
+    ask: human
+    instructions:
+      - Before starting, check that the workspace is on a working branch created from origin/next (the branch in the prior issue artifact when provided), not on main or next; otherwise ask the human how to proceed.
+      - Follow the design skill in .agents/skills/design/SKILL.md, including its type reference, and use its template for design.md.
+      - Treat a prior issue artifact as sourced triage input; distinguish issue statements from triage observations and proposals, and do not treat proposed solutions as approved decisions.
+      - Derive and clarify acceptance criteria from the issue's desired outcome or the task without inventing requirements or widening scope; ask the human when a change to a requirement or an ambiguity affects scope.
+      - Ask the human when the scope or goal is ambiguous instead of choosing an interpretation.
+      - Favor a clean structure that is easy to extend. Keep the design proportional to the task.
+      - Ask the human to approve structural decisions before finishing.
+      - On revision, obtain approval again if a structural decision or material trade-off changes; otherwise record why the previous approval still applies.
+      - Stay at the solution level. Exclude task breakdown, step order, file-by-file edits, and code; those belong to the plan workflow.
+      - Resolve substantive review findings when revising.
+    artifacts: [design]
+
+  - id: review_design
+    role: reviewer
+    depends_on:
+      - design
+    instructions:
+      - Review the design against the task, repository evidence, and the design skill in .agents/skills/design/SKILL.md, including its template and the chosen type reference.
+      - Assess correctness, clean separation of concerns, maintainability, and extensibility.
+      - Check responsibilities, boundaries, contracts, dependency direction, and material trade-offs or risks.
+      - Check that the verification strategy proves every acceptance criterion and that the scope is not widened.
+      - Flag designs larger than the task requires.
+      - Check that the recommended next workflow fits the size and risk of the change.
+      - Check that approval covers the final structural decisions and material trade-offs, and that required downstream references are usable.
+      - Stay at the solution level. Do not require task breakdown, code, or test procedures.
+      - Report all substantive gaps together with their impact and required corrections.
+      - Choose revise for substantive gaps, approved-with-comments for non-blocking comments, or approved when no comments remain.
+      - Do not revise for style or formatting.
+    decision:
+      - approved:
+          when: No substantive gaps or comments remain.
+          navigate: complete
+      - approved-with-comments:
+          when: No substantive gaps remain, but non-blocking comments are recorded in design_comment.md.
+          navigate: complete
+          artifacts: [design_comment]
+      - revise:
+          when: Substantive gaps require correction.
+          navigate: design
+
+downstream:
+  - workflow: plan
+    task: Break the approved design into implementation tasks.
+  - workflow: implement
+    task: Evaluate the approved design's recommendation and implement if a separate plan is unnecessary.

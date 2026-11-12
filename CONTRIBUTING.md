@@ -51,8 +51,8 @@ not edit `dist/` or `docs/reference/` by hand.
 - `next` is the integration branch; `main` only holds the latest release and is
   advanced by `release.yml`. Never commit or push to either, force-push, use
   `--no-verify`, or bypass protection.
-- Branch from `origin/next` with no upstream: `feat/`, `fix/`, `docs/`,
-  `chore/<slug>`, or `release/X.Y.Z`.
+- Branch from `origin/next` with no upstream, using the prefix of the work type
+  below, or `release/X.Y.Z` for a release.
 - Every change reaches `next` through a draft PR, squash-merged. The PR title is
   the commit subject: one short imperative line.
 - Issues use the forms in `.github/ISSUE_TEMPLATE/`; PRs fill
@@ -61,12 +61,31 @@ not edit `dist/` or `docs/reference/` by hand.
   category of `## Unreleased` in `CHANGELOG.md` (see the release skill) in
   the same PR. Only a release PR changes package versions.
 
+## Work types
+
+Every issue and branch has one primary type.
+
+| Type | Meaning | Signals | Branch | Label |
+| :--- | :--- | :--- | :--- | :--- |
+| feature | Add observable behavior | New command, flag, field, or capability | `feat/<slug>` | `enhancement` |
+| bugfix | Restore an existing expectation | Behavior contradicts docs, contracts, or tests | `fix/<slug>` | `bug` |
+| refactor | Change structure, preserve behavior and contracts | Move, split, rename, or simplify code | `refactor/<slug>` | None |
+| migration | Transition data, contracts, consumers, or runtime state in phases | Staged compatibility, data transformation, or cutover | `feat/<slug>` | None |
+| docs | Change documentation only | No code or contract change | `docs/<slug>` | None |
+| chore | Maintain tooling, dependencies, or CI | No product behavior change | `chore/<slug>` | None |
+
+Adding a type means updating this table and adding its references in the
+`checkout-issue` and `design` skills.
+
 ## Migent workflows
 
-`.migent/workflows/` runs the same path: `issue` (triage, branch) → `plan`
-(only when architecture decisions are needed) → `implement` → `pr` (draft PR,
-no merge). Downstream workflows do not start automatically; start each one from
-the completed session with `--prior` (see [Session handoff](docs/session-handoff.md)).
+`.migent/workflows/` uses `issue` (triage, branch) → `design` (when solution
+decisions are needed) → `plan` (when the approved design needs ordered tasks) →
+`implement` → `pr` (draft PR, no merge). Small changes may skip `design` or
+`plan` as recommended by the preceding artifact. Downstream workflows do not
+start automatically; start each one from the completed session with `--prior`
+(see [Session handoff](docs/session-handoff.md)). Design and plan References
+identify earlier inputs needed downstream; keep the referenced sessions available.
 
 `release` prepares the release PR (version proposed by SemVer, notes reviewed),
 then merges only after you authorize it and watches `release.yml`:

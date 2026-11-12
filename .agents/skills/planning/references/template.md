@@ -1,36 +1,37 @@
 # Plan template
 
 Use these sections in every plan, in the conversation or in a saved file.
-Merge Design and Implementation when they would repeat each other.
 
 ```markdown
-# <Type>: <outcome>
+# Plan: <outcome>
 
-## Outcome and scope
+## Design input
 
-<Outcome, scope, non-goals, and acceptance criteria as AC1, AC2, ...>
+<Link to the approved design, the acceptance criteria AC1, AC2, ... it carries, and design gaps found.>
 
-## Current state
+## Baseline
 
-<Evidence from the repository, and the baseline results of the relevant checks.>
+<Files and existing tests the tasks touch, and the baseline results of the relevant checks.>
 
-## Design
+## Tasks
 
-<Proposed design, trade-offs, and decisions.>
+<T1, T2, ...: each with its goal, the design parts it realizes, files, tests, done condition, and the tasks it depends on.>
 
-## Implementation
+## Acceptance mapping
 
-<Ordered steps S1, S2, ... and dependencies.>
-
-## Testing
-
-<Each AC mapped to a unit or integration test: behavior, location (existing or new), and command; or why no tests are needed.>
+<Each AC mapped to the tasks and tests that prove it, with the command to run.>
 
 ## Documentation
 
-<Documentation to update or add; or why no change is needed.>
+<Documentation to update or add, and the task that owns it; or why no change is needed.>
 
 ## Risks and open questions
 
-<Risks, mitigations, assumptions, and unresolved decisions.>
+<Implementation risks, mitigations, assumptions, and unresolved questions. Solution risks belong to the design.>
+
+## References
+
+<The approved design and other inputs needed downstream, with their purpose and exact paths.
+For prior session artifacts, use the snapshot paths received by this session; carry forward
+relevant earlier references. For repository files, use repository-relative paths.>
 ```

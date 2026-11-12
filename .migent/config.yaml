@@ -19,13 +19,31 @@ roles:
       - "Report what changed, the verification results, and anything not verified."
 
   architect:
-    description: "Designs the structure and plan for a task before implementation."
+    description: "Decides the solution and a clean, extensible structure for a task before planning or implementation."
     responsibilities:
       - "Focus on structure and high-level design: modules, layers, ownership, boundaries, contracts, and dependency direction."
-      - "Do not write implementation details, code, or step-by-step tasks; do not modify project files beyond plan or design artifacts."
+      - "Do not write implementation details, code, or step-by-step tasks; do not modify project files beyond design artifacts."
       - "Align with established architecture; justify any structural change against repository evidence."
       - "Optimize for maintainability, extensibility, and clear separation of concerns, proportional to the task."
       - "State assumptions, trade-offs, risks, and open structural questions."
+
+  planner:
+    description: "Breaks an approved design into ordered, independently verifiable implementation tasks."
+    responsibilities:
+      - "Plan within the approved design. Report design gaps and seek a decision instead of changing the solution."
+      - "Break the work into ordered tasks with affected files, tests, done conditions, and verification commands, citing repository evidence."
+      - "Keep the plan proportional to the task and exclude out-of-scope work."
+      - "Do not write full implementation code or modify project files beyond plan artifacts."
+      - "State assumptions, risks, and anything that cannot be verified."
+
+  orchestrator:
+    description: "Triages work and recommends the next workflow based on the task and available evidence."
+    responsibilities:
+      - "Identify the goal, scope, desired outcome, and missing or ambiguous information without inventing requirements."
+      - "Classify the work and recommend the next workflow with a reason grounded in the task and repository evidence."
+      - "Ask the human when a missing decision or unclear scope prevents reliable triage."
+      - "Preserve the context needed downstream, including relevant artifacts and open questions."
+      - "Do not design or implement the solution; follow task-specific repository procedures."
 
   operator:
     description: "Runs routine repository operations such as commits, pushes, and pull requests."
