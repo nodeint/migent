@@ -1,11 +1,16 @@
-import { statSync } from "node:fs";
-import type { ExecutionFailure, ProcessFacts } from "./command-executor.js";
-import type { FailureClassification, ResponseSource } from "./cli-client.js";
-import { KERNEL_VERSION } from "./package-version.js";
-import { isRecord } from "@nodeint/migent-workflow";
-import { leadingHeaders, outcomeStatuses } from "./stage-outcome.js";
+import { statSync } from 'node:fs';
 
-/** Schema of `diagnostics.json`. 2: `provider-exit` no longer implies stderr; adds `provider-error`, `stream_summary`, `result_state`. */
+import { isRecord } from '@nodeint/migent-workflow';
+
+import type { FailureClassification, ResponseSource } from './cli-client.js';
+import type { ExecutionFailure, ProcessFacts } from './command-executor.js';
+import { KERNEL_VERSION } from './package-version.js';
+import { leadingHeaders, outcomeStatuses } from './stage-outcome.js';
+
+/**
+ * Schema of `diagnostics.json`. 2: `provider-exit` no longer implies stderr; adds `provider-error`,
+ * `stream_summary`, `result_state`.
+ */
 export const DIAGNOSTICS_SCHEMA_VERSION = 2;
 
 const MAX_DISTINCT_LABELS = 32;
@@ -14,16 +19,16 @@ const LAST_EVENTS = 10;
 const MAX_ERROR_MESSAGES = 3;
 const MAX_ERROR_CHARS = 300;
 const LABEL_PATTERN = /^[A-Za-z0-9_.:-]+$/;
-const OTHER = "other";
+const OTHER = 'other';
 
 export function truncateText(text: string, limit = MAX_ERROR_CHARS): string {
-  const flat = text.replace(/\s+/g, " ").trim();
+  const flat = text.replace(/\s+/g, ' ').trim();
   return flat.length <= limit ? flat : `${flat.slice(0, limit - 1)}…`;
 }
 
 function jsonObjectLine(line: string): boolean {
   const text = line.trim();
-  if (!text.startsWith("{")) return false;
+  if (!text.startsWith('{')) return false;
   try {
     return isRecord(JSON.parse(text) as unknown);
   } catch {
@@ -52,9 +57,9 @@ export class StreamSummarizer {
 
   constructor(private readonly labelled: boolean) {}
 
-  add(line: string, label: string | null): void {
+  public add(line: string, label: string | null): void {
     if (label === null) {
-      if (line.trim() !== "" && !jsonObjectLine(line)) this.nonJson += 1;
+      if (line.trim() !== '' && !jsonObjectLine(line)) this.nonJson += 1;
       return;
     }
     const safe = this.safeLabel(label);
@@ -69,7 +74,7 @@ export class StreamSummarizer {
     return OTHER;
   }
 
-  finish(raw: { bytes: number; lines: number }, errorMessages: readonly string[]): StreamSummary {
+  public finish(raw: { bytes: number; lines: number }, errorMessages: readonly string[]): StreamSummary {
     return {
       stdout_bytes: raw.bytes,
       lines: raw.lines,
@@ -83,10 +88,10 @@ export class StreamSummarizer {
 }
 
 export type GateResult =
-  | { state: "passed"; status?: string }
-  | { state: "failed"; reason: string }
-  | { state: "not-evaluated" }
-  | { state: "not-applicable" };
+  | { state: 'passed'; status?: string }
+  | { state: 'failed'; reason: string }
+  | { state: 'not-evaluated' }
+  | { state: 'not-applicable' };
 
 export interface Gates {
   outcome: GateResult;
@@ -96,11 +101,11 @@ export interface Gates {
 
 export interface ObservedTurn {
   reply: {
-    source: ResponseSource | "unknown";
+    source: ResponseSource | 'unknown';
     bytes: number;
-    status_header: { state: "present"; status: string } | { state: "invalid" } | { state: "absent" } | { state: "not-applicable" };
+    status_header: { state: 'present'; status: string } | { state: 'invalid' } | { state: 'absent' } | { state: 'not-applicable' };
   };
-  artifact: { state: "present"; bytes: number } | { state: "empty" } | { state: "absent" } | { state: "not-applicable" };
+  artifact: { state: 'present'; bytes: number } | { state: 'empty' } | { state: 'absent' } | { state: 'not-applicable' };
   response_written: boolean;
   conversation_turns: number;
 }
@@ -117,14 +122,14 @@ export function observeTurn(input: {
   responseWritten: boolean;
   conversationTurns: number;
 }): ObservedTurn {
-  const source = input.source ?? "unknown";
-  let statusHeader: ObservedTurn["reply"]["status_header"] = { state: "not-applicable" };
-  if (source === "model") {
-    const raw = leadingHeaders(input.responseText).get("status");
-    if (raw === undefined) statusHeader = { state: "absent" };
+  const source = input.source ?? 'unknown';
+  let statusHeader: ObservedTurn['reply']['status_header'] = { state: 'not-applicable' };
+  if (source === 'model') {
+    const raw = leadingHeaders(input.responseText).get('status');
+    if (raw === undefined) statusHeader = { state: 'absent' };
     else {
       const token = raw.toLowerCase();
-      statusHeader = outcomeStatuses.has(token) ? { state: "present", status: token } : { state: "invalid" };
+      statusHeader = outcomeStatuses.has(token) ? { state: 'present', status: token } : { state: 'invalid' };
     }
   }
   return {
@@ -135,25 +140,25 @@ export function observeTurn(input: {
   };
 }
 
-function observeArtifact(artifactPath: string | null): ObservedTurn["artifact"] {
-  if (artifactPath === null) return { state: "not-applicable" };
+function observeArtifact(artifactPath: string | null): ObservedTurn['artifact'] {
+  if (artifactPath === null) return { state: 'not-applicable' };
   try {
     const stat = statSync(artifactPath);
-    if (!stat.isFile()) return { state: "absent" };
-    return stat.size === 0 ? { state: "empty" } : { state: "present", bytes: stat.size };
+    if (!stat.isFile()) return { state: 'absent' };
+    return stat.size === 0 ? { state: 'empty' } : { state: 'present', bytes: stat.size };
   } catch {
-    return { state: "absent" };
+    return { state: 'absent' };
   }
 }
 
 export interface ResultState {
   observed: ObservedTurn;
   gates: Gates;
-  turn_verdict: "accepted" | "failed";
+  turn_verdict: 'accepted' | 'failed';
   reason: string | null;
 }
 
-export type DiagnosticsOrigin = "start" | "provider-error" | "exit-only";
+export type DiagnosticsOrigin = 'start' | 'provider-error' | 'exit-only';
 
 export interface TurnDiagnosticsInput {
   turn: number;
@@ -165,40 +170,71 @@ export interface TurnDiagnosticsInput {
   resultState: ResultState;
 }
 
+/** The process-level observations, from the wrapper failure when there is one, else the executor facts. */
+function processObservations(base: ExecutionFailure | ProcessFacts) {
+  return {
+    stderrTail: base.stderrTail,
+    exitCode: base.exitCode,
+    signal: base.signal,
+    recordedAt: 'failedAt' in base ? base.failedAt : base.endedAt,
+    drain: base.drain,
+    stderrTotalBytes: base.stderrTotalBytes,
+  };
+}
+
+/** The wrapper's own failure detail; all null when the process ran to its end. */
+function failureDetail(failure: ExecutionFailure | undefined, classification: FailureClassification | null) {
+  if (!failure) {
+    return {
+      phase: null,
+      code: null,
+      errno: null,
+      syscall: null,
+      path: null,
+      message: truncateText(classification?.message ?? 'provider reported an error'),
+    };
+  }
+  return {
+    phase: failure.phase,
+    code: failure.code,
+    errno: failure.errno,
+    syscall: failure.syscall,
+    path: failure.path,
+    message: failure.message,
+  };
+}
+
 /** The `diagnostics.json` document of one abnormal provider turn. Pure. */
 export function buildTurnDiagnostics(input: TurnDiagnosticsInput): Record<string, unknown> {
   const { failure, facts, classification } = input;
   const base = failure ?? facts;
-  if (base === undefined) throw new Error("A diagnostics record needs a process failure or process facts.");
-  const stderrTail = failure?.stderrTail ?? facts?.stderrTail ?? "";
-  const kind = failure?.kind ?? "provider-error";
-  const origin: DiagnosticsOrigin = kind === "start" ? "start" : (classification?.origin ?? "exit-only");
-  const exitCode = failure ? failure.exitCode : (facts?.exitCode ?? null);
-  const signal = failure ? failure.signal : (facts?.signal ?? null);
-  const recordedAt = failure?.failedAt ?? facts?.endedAt ?? new Date().toISOString();
-  const drain = failure?.drain ?? facts?.drain ?? "closed";
+  if (base === undefined) throw new Error('A diagnostics record needs a process failure or process facts.');
+  const observed = processObservations(base);
+  const kind = failure?.kind ?? 'provider-error';
+  const origin: DiagnosticsOrigin = kind === 'start' ? 'start' : (classification?.origin ?? 'exit-only');
+  const { phase, code, errno, syscall, path, message } = failureDetail(failure, classification);
   return {
     schema_version: DIAGNOSTICS_SCHEMA_VERSION,
     turn: input.turn,
-    recorded_at: recordedAt,
+    recorded_at: observed.recordedAt,
     agent_id: input.agentId,
     failure: {
       kind,
       origin,
-      phase: failure?.phase ?? null,
-      code: failure?.code ?? null,
-      errno: failure?.errno ?? null,
-      syscall: failure?.syscall ?? null,
-      path: failure?.path ?? null,
-      exit_code: exitCode,
-      signal,
-      message: failure?.message ?? truncateText(classification?.message ?? "provider reported an error"),
+      phase,
+      code,
+      errno,
+      syscall,
+      path,
+      exit_code: observed.exitCode,
+      signal: observed.signal,
+      message,
     },
-    stderr_tail: stderrTail,
+    stderr_tail: observed.stderrTail,
     stderr: {
-      tail_bytes: Buffer.byteLength(stderrTail),
-      total_bytes: failure?.stderrTotalBytes ?? facts?.stderrTotalBytes ?? 0,
-      drain,
+      tail_bytes: Buffer.byteLength(observed.stderrTail),
+      total_bytes: observed.stderrTotalBytes,
+      drain: observed.drain,
     },
     stream_summary: input.stream,
     result_state: input.resultState,
@@ -211,14 +247,14 @@ export function buildTurnDiagnostics(input: TurnDiagnosticsInput): Record<string
     node_version: process.version,
     platform: process.platform,
     arch: process.arch,
-    timings: { spawned_at: base.spawnedAt, failed_at: recordedAt },
+    timings: { spawned_at: base.spawnedAt, failed_at: observed.recordedAt },
   };
 }
 
 // ---- failure.md attribution ---------------------------------------------------------------
 
 function text(value: unknown): string | null {
-  return typeof value === "string" && value !== "" ? value : null;
+  return typeof value === 'string' && value !== '' ? value : null;
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -234,17 +270,17 @@ export function providerVerdictLine(diagnostics: Record<string, unknown>): strin
   const header = record(reply.status_header);
   const artifact = record(observed.artifact);
   const origin = text(failure.origin);
-  const exit = typeof failure.exit_code === "number" ? `exited ${failure.exit_code}` : "ended";
-  if (origin === "start") {
-    return `The provider process did not start or was killed (${text(failure.message) ?? "see message"}); no reply is attributable to the model.`;
+  const exit = typeof failure.exit_code === 'number' ? `exited ${failure.exit_code}` : 'ended';
+  if (origin === 'start') {
+    return `The provider process did not start or was killed (${text(failure.message) ?? 'see message'}); no reply is attributable to the model.`;
   }
-  const completeReply = header.state === "present" && header.status === "complete";
-  const hasArtifact = artifact.state === "present";
-  const what = origin === "provider-error" ? "reported an error" : exit;
-  if (completeReply && (hasArtifact || artifact.state === "not-applicable")) {
-    return `The provider ${what} after producing a complete reply${hasArtifact ? " and the artifact exists" : ""}; the work was likely finished — inspect \`diagnostics.json\` → \`result_state.observed\` and \`stream_summary\`.`;
+  const completeReply = header.state === 'present' && header.status === 'complete';
+  const hasArtifact = artifact.state === 'present';
+  const what = origin === 'provider-error' ? 'reported an error' : exit;
+  if (completeReply && (hasArtifact || artifact.state === 'not-applicable')) {
+    return `The provider ${what} after producing a complete reply${hasArtifact ? ' and the artifact exists' : ''}; the work was likely finished — inspect \`diagnostics.json\` → \`result_state.observed\` and \`stream_summary\`.`;
   }
-  if (reply.source === "model" && typeof reply.bytes === "number" && reply.bytes > 0) {
+  if (reply.source === 'model' && typeof reply.bytes === 'number' && reply.bytes > 0) {
     return `The provider ${what} after a model reply that did not pass the stage checks; inspect \`result_state\` and \`stderr_tail\`.`;
   }
   return `The provider ${what} without a usable model reply; inspect \`stderr_tail\` and \`stream_summary\`.`;
@@ -262,66 +298,86 @@ export function renderProviderDiagnostics(input: {
 }): string[] {
   const { diagnostics, finalTurn, failureReason, link } = input;
   const failure = record(diagnostics.failure);
-  const state = record(diagnostics.result_state);
+  const turn = typeof diagnostics.turn === 'number' ? diagnostics.turn : null;
+  const facts: ProviderFacts = {
+    turn,
+    verdict: text(record(diagnostics.result_state).turn_verdict),
+    origin: text(failure.origin) ?? 'unknown',
+    exit: typeof failure.exit_code === 'number' ? failure.exit_code : null,
+    pointer: `See [\`${link}\`](${link}).`,
+  };
+  if (finalTurn === null || turn === null) return unplacedDiagnostics(facts);
+  if (turn < finalTurn) return earlierAnomaly(facts, turn, finalTurn);
+  if (facts.verdict === 'accepted') return acceptedTurnAnomaly(facts, turn, failureReason);
+  return [...providerFailureFacts(diagnostics, facts, turn), '', providerVerdictLine(diagnostics), '', facts.pointer];
+}
+
+interface ProviderFacts {
+  turn: number | null;
+  verdict: string | null;
+  origin: string;
+  exit: number | null;
+  pointer: string;
+}
+
+function unplacedDiagnostics(facts: ProviderFacts): string[] {
+  const turnLabel = facts.turn === null ? 'an unknown turn' : `turn ${facts.turn}`;
+  return [
+    '## Provider diagnostics',
+    '',
+    `A provider record exists for ${turnLabel} (origin \`${facts.origin}\`, verdict \`${facts.verdict ?? 'unknown'}\`). ` +
+      'Whether it relates to this failure is unknown: this execution does not record its final provider turn.',
+    '',
+    facts.pointer,
+  ];
+}
+
+function earlierAnomaly(facts: ProviderFacts, turn: number, finalTurn: number): string[] {
+  return [
+    '## Earlier provider anomaly',
+    '',
+    `Turn ${turn} had a provider anomaly (origin \`${facts.origin}\`, verdict \`${facts.verdict ?? 'unknown'}\`). ` +
+      `It is not the cause of this failure, which happened on turn ${finalTurn}.`,
+    '',
+    facts.pointer,
+  ];
+}
+
+function acceptedTurnAnomaly(facts: ProviderFacts, turn: number, failureReason: string | null): string[] {
+  const { exit } = facts;
+  return [
+    '## Earlier in this turn',
+    '',
+    `Provider ${exit === null ? 'ended abnormally' : `exited ${exit}`} on turn ${turn}; the reply was accepted. ` +
+      `The execution failed later${failureReason === null ? '' : ` at \`${failureReason}\``}. The cause is the error above.`,
+    '',
+    facts.pointer,
+  ];
+}
+
+/** The bullet facts of a provider failure on the execution's final turn. */
+function providerFailureFacts(diagnostics: Record<string, unknown>, facts: ProviderFacts, turn: number): string[] {
+  const failure = record(diagnostics.failure);
   const stderr = record(diagnostics.stderr);
-  const turn = typeof diagnostics.turn === "number" ? diagnostics.turn : null;
-  const verdict = text(state.turn_verdict);
-  const origin = text(failure.origin) ?? "unknown";
-  const exit = typeof failure.exit_code === "number" ? failure.exit_code : null;
-  const pointer = `See [\`${link}\`](${link}).`;
-  const turnLabel = turn === null ? "an unknown turn" : `turn ${turn}`;
-  if (finalTurn === null || turn === null) {
-    return [
-      "## Provider diagnostics",
-      "",
-      `A provider record exists for ${turnLabel} (origin \`${origin}\`, verdict \`${verdict ?? "unknown"}\`). ` +
-        "Whether it relates to this failure is unknown: this execution does not record its final provider turn.",
-      "",
-      pointer,
-    ];
-  }
-  if (turn < finalTurn) {
-    return [
-      "## Earlier provider anomaly",
-      "",
-      `Turn ${turn} had a provider anomaly (origin \`${origin}\`, verdict \`${verdict ?? "unknown"}\`). ` +
-        `It is not the cause of this failure, which happened on turn ${finalTurn}.`,
-      "",
-      pointer,
-    ];
-  }
-  if (verdict === "accepted") {
-    return [
-      "## Earlier in this turn",
-      "",
-      `Provider ${exit === null ? "ended abnormally" : `exited ${exit}`} on turn ${turn}; the reply was accepted. ` +
-        `The execution failed later${failureReason === null ? "" : ` at \`${failureReason}\``}. The cause is the error above.`,
-      "",
-      pointer,
-    ];
-  }
-  const drain = text(stderr.drain) ?? "closed";
+  const { exit } = facts;
+  const drain = text(stderr.drain) ?? 'closed';
   const lines = [
-    "## Provider failure",
-    "",
+    '## Provider failure',
+    '',
     `- Turn: ${turn}`,
-    `- Origin: \`${origin}\``,
-    `- Exit code: ${exit === null ? "none" : exit}${text(failure.signal) === null ? "" : ` (signal ${String(failure.signal)})`}`,
-    `- Stderr: ${typeof stderr.total_bytes === "number" ? stderr.total_bytes : 0} bytes seen, drain \`${drain}\``,
+    `- Origin: \`${facts.origin}\``,
+    `- Exit code: ${exit === null ? 'none' : exit}${text(failure.signal) === null ? '' : ` (signal ${String(failure.signal)})`}`,
+    `- Stderr: ${typeof stderr.total_bytes === 'number' ? stderr.total_bytes : 0} bytes seen, drain \`${drain}\``,
   ];
   const agentId = text(diagnostics.agent_id);
   if (agentId !== null) lines.push(`- Provider session: \`${agentId}\``);
-  const observed = record(state.observed);
+  const observed = record(record(diagnostics.result_state).observed);
   const reply = record(observed.reply);
   const artifact = record(observed.artifact);
   lines.push(
-    `- Reply: source \`${text(reply.source) ?? "unknown"}\`, ${typeof reply.bytes === "number" ? reply.bytes : 0} bytes`,
-    `- Artifact: \`${text(artifact.state) ?? "unknown"}\``,
-    `- Response written: ${observed.response_written === true ? "yes" : "no"}`,
-    "",
-    providerVerdictLine(diagnostics),
-    "",
-    pointer,
+    `- Reply: source \`${text(reply.source) ?? 'unknown'}\`, ${typeof reply.bytes === 'number' ? reply.bytes : 0} bytes`,
+    `- Artifact: \`${text(artifact.state) ?? 'unknown'}\``,
+    `- Response written: ${observed.response_written === true ? 'yes' : 'no'}`,
   );
   return lines;
 }

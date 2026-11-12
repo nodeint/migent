@@ -1,8 +1,10 @@
-import { ConfigSummary } from "@nodeint/migent-contracts";
-import { writeJson } from "../emit.js";
-import { readFileSync } from "node:fs";
-import { configPath, hasLocalConfig, loadWorkspaceConfig, stringifyConfig } from "@nodeint/migent-kernel";
-import { LOCAL_CONFIG_LABEL as LOCAL_LABEL, localAgentNames } from "@nodeint/migent-engine";
+import { readFileSync } from 'node:fs';
+
+import { ConfigSummary } from '@nodeint/migent-contracts';
+import { LOCAL_CONFIG_LABEL as LOCAL_LABEL, localAgentNames } from '@nodeint/migent-engine';
+import { configPath, hasLocalConfig, loadWorkspaceConfig, stringifyConfig } from '@nodeint/migent-kernel';
+
+import { writeJson } from '../emit.js';
 
 export function runConfigShow(workspace: string, options: { asJson?: boolean } = {}): number {
   const local = hasLocalConfig(workspace);
@@ -15,12 +17,12 @@ export function runConfigShow(workspace: string, options: { asJson?: boolean } =
     return 0;
   }
   if (!local) {
-    process.stdout.write(readFileSync(configPath(workspace), "utf8"));
+    process.stdout.write(readFileSync(configPath(workspace), 'utf8'));
     return 0;
   }
   process.stdout.write(stringifyConfig(loadWorkspaceConfig(workspace)));
   const names = localAgentNames(workspace);
-  const detail = names.length > 0 ? ` Local agents: ${names.join(", ")}.` : "";
+  const detail = names.length > 0 ? ` Local agents: ${names.join(', ')}.` : '';
   process.stderr.write(`Merged with ${LOCAL_LABEL}.${detail}\n`);
   return 0;
 }
@@ -30,6 +32,6 @@ export function removedConfigCommand(name: string): string {
   return (
     `\`migent config ${name}\` was removed. Edit .migent/config.yaml (roles and agents) or ` +
     `${LOCAL_LABEL} (this machine's client and model), then run \`migent doctor\`. ` +
-    "`migent config` prints the effective config."
+    '`migent config` prints the effective config.'
   );
 }

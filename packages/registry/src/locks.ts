@@ -1,27 +1,31 @@
-import { AsyncLocalStorage } from "node:async_hooks";
-import { lstatSync, unlinkSync } from "node:fs";
-import path from "node:path";
-import lockfile from "proper-lockfile";
-import { monotonic, sleep } from "./time.js";
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { lstatSync, unlinkSync } from 'node:fs';
+import path from 'node:path';
+
+import { MS_PER_SECOND } from '@nodeint/migent-kernel';
+import lockfile from 'proper-lockfile';
+
+import { MIN_POLL_SEC } from './constants.js';
+import { monotonic, sleep } from './time.js';
 
 export class RegistryBusy extends Error {
-  constructor(message = "Timed out waiting for the registry lock.") {
+  constructor(message = 'Timed out waiting for the registry lock.') {
     super(message);
-    this.name = "RegistryBusy";
+    this.name = 'RegistryBusy';
   }
 }
 
 export class StartLockBusy extends Error {
-  constructor(message = "Timed out waiting for start.lock.") {
+  constructor(message = 'Timed out waiting for start.lock.') {
     super(message);
-    this.name = "StartLockBusy";
+    this.name = 'StartLockBusy';
   }
 }
 
 export class LockNotHeld extends Error {
-  constructor(message = "start.lock is not held.") {
+  constructor(message = 'start.lock is not held.') {
     super(message);
-    this.name = "LockNotHeld";
+    this.name = 'LockNotHeld';
   }
 }
 
@@ -57,7 +61,7 @@ export const lockOps = {
         onCompromised: () => undefined,
       });
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ELOCKED") return null;
+      if ((error as NodeJS.ErrnoException).code === 'ELOCKED') return null;
       throw error;
     }
   },
@@ -70,18 +74,18 @@ export function lockKey(lockPath: string): string {
 
 export class ProcessLock {
   private locked = false;
-  private readonly waiters: Array<{
+  private readonly waiters: {
     resolve: (ok: boolean) => void;
     timer: NodeJS.Timeout;
-  }> = [];
+  }[] = [];
 
-  tryAcquire(): boolean {
+  public tryAcquire(): boolean {
     if (this.locked) return false;
     this.locked = true;
     return true;
   }
 
-  acquireTimeout(seconds: number): Promise<boolean> {
+  public acquireTimeout(seconds: number): Promise<boolean> {
     if (this.tryAcquire()) return Promise.resolve(true);
     if (seconds <= 0) return Promise.resolve(false);
     return new Promise((resolve) => {
@@ -91,13 +95,13 @@ export class ProcessLock {
           const index = this.waiters.indexOf(waiter);
           if (index >= 0) this.waiters.splice(index, 1);
           resolve(false);
-        }, seconds * 1000),
+        }, seconds * MS_PER_SECOND),
       };
       this.waiters.push(waiter);
     });
   }
 
-  release(): void {
+  public release(): void {
     const next = this.waiters.shift();
     if (!next) {
       this.locked = false;
@@ -149,7 +153,7 @@ async function acquireFileLock(
     if (release !== null) return release;
     const remaining = deadline - monotonic();
     if (remaining <= 0) throw busyError();
-    await lockOps.sleep(Math.min(0.05, remaining));
+    await lockOps.sleep(Math.min(MIN_POLL_SEC, remaining));
   }
 }
 
@@ -194,7 +198,7 @@ export async function interprocessLock<T>(
 
 export function holdStartLock<T>(home: string, timeoutSec: number, body: () => Promise<T> | T): Promise<T> {
   return interprocessLock(
-    path.join(home, "start.lock"),
+    path.join(home, 'start.lock'),
     { shared: false, timeoutSec, busyError: startLockBusy },
     body,
   );

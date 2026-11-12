@@ -1,18 +1,22 @@
-import { randomBytes } from "node:crypto";
-import { closeSync, openSync, readFileSync, rmSync, statSync, writeSync } from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { writeJsonAtomic } from "@nodeint/migent-kernel";
-import { isRecord } from "@nodeint/migent-workflow";
-import { utcNow } from "@nodeint/migent-kernel";
+import { randomBytes } from 'node:crypto';
+import { closeSync, openSync, readFileSync, rmSync, statSync, writeSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
-export const SESSION_LOCK_FILENAME = "session.lock";
+import { writeJsonAtomic } from '@nodeint/migent-kernel';
+import { utcNow } from '@nodeint/migent-kernel';
+import { JSON_INDENT } from '@nodeint/migent-kernel';
+import { isRecord } from '@nodeint/migent-workflow';
+/** Random bytes in a lock owner nonce. */
+const LOCK_NONCE_BYTES = 12;
+
+export const SESSION_LOCK_FILENAME = 'session.lock';
 export const SESSION_LOCK_STALE_MS = 30_000;
 export const SESSION_LOCK_HEARTBEAT_MS = 10_000;
-export const CANCEL_REQUEST_FILENAME = "cancel.requested";
+export const CANCEL_REQUEST_FILENAME = 'cancel.requested';
 const CANCEL_POLL_MS = 500;
 
-export type CancelRequestResult = "requested" | "not-running" | "foreign-host";
+export type CancelRequestResult = 'requested' | 'not-running' | 'foreign-host';
 
 /**
  * Ask the process that holds the session lock to stop. Writes `cancel.requested` with the holder's
@@ -24,15 +28,15 @@ export function requestSessionCancel(
 ): CancelRequestResult {
   const directory = path.resolve(sessionDirectory);
   const info = readLock(path.join(directory, SESSION_LOCK_FILENAME));
-  if (info === null) return "not-running";
-  if (info.host !== os.hostname()) return "foreign-host";
-  if (isStale({ heartbeat: info.heartbeat_at, info }, staleMs)) return "not-running";
+  if (info === null) return 'not-running';
+  if (info.host !== os.hostname()) return 'foreign-host';
+  if (isStale({ heartbeat: info.heartbeat_at, info }, staleMs)) return 'not-running';
   writeJsonAtomic(path.join(directory, CANCEL_REQUEST_FILENAME), {
     nonce: info.nonce,
     requested_at: utcNow(),
     requested_by_pid: process.pid,
   });
-  return "requested";
+  return 'requested';
 }
 
 /** True while the lock file exists and its owner is alive. */
@@ -59,13 +63,13 @@ interface LockInfo {
 
 /** A holder lost the lock after another process took it over. */
 export function isSessionLockLost(error: unknown): error is Error {
-  return error instanceof Error && error.message.includes("lock was taken by another process");
+  return error instanceof Error && error.message.includes('lock was taken by another process');
 }
 
 export class SessionLockHeldError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "SessionLockHeldError";
+    this.name = 'SessionLockHeldError';
   }
 }
 
@@ -91,16 +95,20 @@ export class SessionLock {
   private cancelTimer: NodeJS.Timeout | null = null;
   private lost = false;
 
+  public readonly sessionId: string;
+  private readonly lockPath: string;
+
   private constructor(
-    readonly sessionId: string,
     private readonly directory: string,
-    private readonly lockPath: string,
     private readonly info: LockInfo,
     private readonly heartbeatMs: number,
-  ) {}
+  ) {
+    this.sessionId = path.basename(directory);
+    this.lockPath = path.join(directory, SESSION_LOCK_FILENAME);
+  }
 
   /** Take the lock, or return null while a live holder has it. */
-  static tryAcquire(sessionDirectory: string, timing: SessionLockTiming = {}): SessionLock | null {
+  public static tryAcquire(sessionDirectory: string, timing: SessionLockTiming = {}): SessionLock | null {
     const staleMs = timing.staleMs ?? SESSION_LOCK_STALE_MS;
     const heartbeatMs = timing.heartbeatMs ?? SESSION_LOCK_HEARTBEAT_MS;
     const directory = path.resolve(sessionDirectory);
@@ -112,30 +120,30 @@ export class SessionLock {
       host: os.hostname(),
       started_at: now,
       heartbeat_at: now,
-      nonce: randomBytes(12).toString("hex"),
+      nonce: randomBytes(LOCK_NONCE_BYTES).toString('hex'),
     };
     if (!createExclusive(lockPath, info)) {
       if (!takeOverStale(lockPath, staleMs)) return null;
       if (!createExclusive(lockPath, info)) return null;
     }
     removeCancelMarker(directory);
-    const lock = new SessionLock(path.basename(directory), directory, lockPath, info, heartbeatMs);
+    const lock = new SessionLock(directory, info, heartbeatMs);
     held.set(directory, lock);
     lock.startHeartbeat();
     return lock;
   }
 
   /** Take the lock or throw a plain Error naming the holder. */
-  static acquire(sessionDirectory: string, timing: SessionLockTiming = {}): SessionLock {
+  public static acquire(sessionDirectory: string, timing: SessionLockTiming = {}): SessionLock {
     const lock = SessionLock.tryAcquire(sessionDirectory, timing);
     if (lock !== null) return lock;
     const holder = readLock(path.join(path.resolve(sessionDirectory), SESSION_LOCK_FILENAME));
     const sessionId = path.basename(path.resolve(sessionDirectory));
-    const who = holder === null ? "another process" : `pid ${holder.pid} on ${holder.host}`;
+    const who = holder === null ? 'another process' : `pid ${holder.pid} on ${holder.host}`;
     throw new SessionLockHeldError(`Session ${sessionId} is being run by ${who}.`);
   }
 
-  assertHeld(): void {
+  public assertHeld(): void {
     const current = readLock(this.lockPath);
     if (this.lost || current === null || current.nonce !== this.info.nonce) {
       this.lost = true;
@@ -143,7 +151,7 @@ export class SessionLock {
     }
   }
 
-  release(): void {
+  public release(): void {
     if (this.timer !== null) clearInterval(this.timer);
     this.timer = null;
     if (this.cancelTimer !== null) clearInterval(this.cancelTimer);
@@ -164,7 +172,7 @@ export class SessionLock {
    * Call `handler` once when `migent session cancel` writes a marker for this lock. Only a run
    * registers one; a short-lived holder such as repair ignores cancel requests.
    */
-  onCancelRequest(handler: () => void): void {
+  public onCancelRequest(handler: () => void): void {
     if (this.cancelTimer !== null) clearInterval(this.cancelTimer);
     const markerPath = path.join(this.directory, CANCEL_REQUEST_FILENAME);
     this.cancelTimer = setInterval(() => {
@@ -179,7 +187,7 @@ export class SessionLock {
   }
 
   /** Write one heartbeat now. Does nothing once the lock is lost. */
-  refresh(): void {
+  public refresh(): void {
     if (this.lost) return;
     const current = readLock(this.lockPath);
     if (current === null || current.nonce !== this.info.nonce) {
@@ -202,8 +210,8 @@ export class SessionLock {
 
 function readCancelMarker(markerPath: string): string | null {
   try {
-    const parsed = JSON.parse(readFileSync(markerPath, "utf8")) as unknown;
-    if (isRecord(parsed) && typeof parsed.nonce === "string") return parsed.nonce;
+    const parsed = JSON.parse(readFileSync(markerPath, 'utf8')) as unknown;
+    if (isRecord(parsed) && typeof parsed.nonce === 'string') return parsed.nonce;
   } catch {
     // Missing, or created but not yet written.
   }
@@ -221,13 +229,13 @@ function removeCancelMarker(directory: string): void {
 function createExclusive(lockPath: string, info: LockInfo): boolean {
   let fd: number;
   try {
-    fd = openSync(lockPath, "wx");
+    fd = openSync(lockPath, 'wx');
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false;
     throw error;
   }
   try {
-    writeSync(fd, JSON.stringify(info, null, 2));
+    writeSync(fd, JSON.stringify(info, null, JSON_INDENT));
   } finally {
     closeSync(fd);
   }
@@ -236,13 +244,13 @@ function createExclusive(lockPath: string, info: LockInfo): boolean {
 
 function readLock(lockPath: string): LockInfo | null {
   try {
-    const parsed = JSON.parse(readFileSync(lockPath, "utf8")) as unknown;
+    const parsed = JSON.parse(readFileSync(lockPath, 'utf8')) as unknown;
     if (
       isRecord(parsed) &&
-      typeof parsed.pid === "number" &&
-      typeof parsed.host === "string" &&
-      typeof parsed.heartbeat_at === "string" &&
-      typeof parsed.nonce === "string"
+      typeof parsed.pid === 'number' &&
+      typeof parsed.host === 'string' &&
+      typeof parsed.heartbeat_at === 'string' &&
+      typeof parsed.nonce === 'string'
     ) {
       return parsed as unknown as LockInfo;
     }
@@ -257,7 +265,7 @@ function snapshot(lockPath: string): { nonce: string; heartbeat: string; info: L
   const info = readLock(lockPath);
   if (info !== null) return { nonce: info.nonce, heartbeat: info.heartbeat_at, info };
   try {
-    return { nonce: "", heartbeat: statSync(lockPath).mtime.toISOString(), info: null };
+    return { nonce: '', heartbeat: statSync(lockPath).mtime.toISOString(), info: null };
   } catch {
     return null;
   }
@@ -274,7 +282,7 @@ function pidAlive(pid: number): boolean {
     process.kill(pid, 0);
     return true;
   } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
+    return (error as NodeJS.ErrnoException).code === 'EPERM';
   }
 }
 

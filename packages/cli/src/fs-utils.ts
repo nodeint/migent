@@ -1,4 +1,4 @@
-import { statSync } from "node:fs";
+import { statSync } from 'node:fs';
 
 export function exists(filePath: string): boolean {
   try {

@@ -1,22 +1,23 @@
-import { clientIds as registeredClientIds, createClient, type CliClient, type HeadlessOption } from "@nodeint/migent-adapters";
+import { type CliClient, clientIds as registeredClientIds, createClient, type HeadlessOption } from '@nodeint/migent-adapters';
 import {
   cached,
+  type CatalogSource,
   clientCatalogSource,
   loadCatalog,
   loadOptionValues,
-  type CatalogSource,
   type RunCommand,
   type Which,
-} from "@nodeint/migent-doctor";
-import { ConfigurationError, whichSync, type CliModelCatalog } from "@nodeint/migent-kernel";
-import { cliHooks } from "../hooks.js";
-import { loadHeadlessOptions, runOptionsCommand, runClientCommand } from "../client.js";
+} from '@nodeint/migent-doctor';
+import { type CliModelCatalog,ConfigurationError, whichSync } from '@nodeint/migent-kernel';
+
+import { loadHeadlessOptions, runClientCommand,runOptionsCommand } from '../client.js';
+import { cliHooks } from '../hooks.js';
 
 /** What one client's discovery returned. Discovery failures never throw. */
 export type DiscoveryOutcome<T> =
-  | { status: "ok"; value: T }
-  | { status: "skipped"; message: string }
-  | { status: "failed"; message: string };
+  | { status: 'ok'; value: T }
+  | { status: 'skipped'; message: string }
+  | { status: 'failed'; message: string };
 
 export interface EffortRow {
   model: string;
@@ -66,7 +67,7 @@ export function createDiscoveryContext(
     const cachedClient = clients.get(id);
     if (cachedClient !== undefined) return cachedClient;
     if (!ids.includes(id)) {
-      throw new ConfigurationError(`Unknown client: ${id}. Valid clients: ${ids.join(", ")}.`);
+      throw new ConfigurationError(`Unknown client: ${id}. Valid clients: ${ids.join(', ')}.`);
     }
     const created = createClient(id);
     clients.set(id, created);
@@ -84,84 +85,102 @@ export function createDiscoveryContext(
 
   const pathOf = (target: CliClient): string | null => which(target.command);
 
-  const catalog = (target: CliClient): Promise<DiscoveryOutcome<CliModelCatalog>> => {
-    const existing = catalogs.get(target.id);
-    if (existing !== undefined) return existing;
-    const pending = (async (): Promise<DiscoveryOutcome<CliModelCatalog>> => {
-      if (pathOf(target) === null) {
-        return { status: "skipped", message: `${target.command} is not on PATH` };
-      }
-      try {
-        return { status: "ok", value: await loadCatalog(source(target), which, run) };
-      } catch (error) {
-        return { status: "failed", message: messageOf(error) };
-      }
-    })();
-    catalogs.set(target.id, pending);
-    return pending;
-  };
+  const catalog = (target: CliClient): Promise<DiscoveryOutcome<CliModelCatalog>> =>
+    onPathOnce(catalogs, { target, pathOf }, () => loadCatalog(source(target), which, run));
 
-  /**
-   * Effort values for one model, `null` when the model is not in the client's
-   * catalog, or a known (possibly empty) value list. A model the catalog does
-   * not list is never probed, so a per-model command cannot invent a row for
-   * an arbitrary name.
-   */
-  const effort = async (target: CliClient, model: string): Promise<DiscoveryOutcome<readonly string[] | null>> => {
-    const option = target.effortOption;
-    if (option === undefined) return { status: "ok", value: null };
-    const loaded = await catalog(target);
-    if (loaded.status !== "ok") return loaded;
-    if (!loaded.value.ids.includes(model)) return { status: "ok", value: null };
-    const known = loaded.value.valuesFor(model, option);
-    if (known !== null) return { status: "ok", value: known };
-    try {
-      const probed = await loadOptionValues(source(target), option, model, loaded.value, which, run);
-      return { status: "ok", value: probed ?? [] };
-    } catch (error) {
-      return { status: "failed", message: messageOf(error) };
-    }
-  };
+  const probe: EffortProbe = { catalog, source, which, run };
+  const effort = (target: CliClient, model: string): Promise<DiscoveryOutcome<readonly string[] | null>> =>
+    modelEffort(probe, target, model);
+  const efforts = (target: CliClient): Promise<DiscoveryOutcome<EffortRow[]>> => clientEfforts(probe, target);
 
-  const efforts = async (target: CliClient): Promise<DiscoveryOutcome<EffortRow[]>> => {
-    const option = target.effortOption;
-    // A client with no effort option is not probed at all.
-    if (option === undefined) return { status: "ok", value: [] };
-    const loaded = await catalog(target);
-    if (loaded.status !== "ok") return loaded;
-    const rows: EffortRow[] = [];
-    for (const model of loaded.value.ids) {
-      const known = loaded.value.valuesFor(model, option);
-      if (known !== null) {
-        rows.push({ model, option, values: known });
-        continue;
-      }
-      try {
-        const probed = await loadOptionValues(source(target), option, model, loaded.value, which, run);
-        rows.push({ model, option, values: probed ?? [] });
-      } catch (error) {
-        return { status: "failed", message: messageOf(error) };
-      }
-    }
-    return { status: "ok", value: rows };
-  };
-
-  const nativeOptions = (target: CliClient): Promise<DiscoveryOutcome<readonly HeadlessOption[]>> => {
-    const existing = help.get(target.id);
-    if (existing !== undefined) return existing;
-    const pending = (async (): Promise<DiscoveryOutcome<readonly HeadlessOption[]>> => {
-      if (pathOf(target) === null) {
-        return { status: "skipped", message: `${target.command} is not on PATH` };
-      }
-      try {
-        return { status: "ok", value: await loadHeadlessOptions(source(target), optionsRun) };
-      } catch (error) {
-        return { status: "failed", message: messageOf(error) };
-      }
-    })();
-    help.set(target.id, pending);
-    return pending;
-  };
+  const nativeOptions = (target: CliClient): Promise<DiscoveryOutcome<readonly HeadlessOption[]>> =>
+    onPathOnce(help, { target, pathOf }, () => loadHeadlessOptions(source(target), optionsRun));
 
   return { clientIds: ids, client, pathOf, catalog, effort, efforts, nativeOptions, warn };
+}
+
+/** Runs `load` once per client, skipping a client whose command is not on PATH. */
+function onPathOnce<T>(
+  cache: Map<string, Promise<DiscoveryOutcome<T>>>,
+  subject: { target: CliClient; pathOf: (client: CliClient) => string | null },
+  load: () => Promise<T>,
+): Promise<DiscoveryOutcome<T>> {
+  const { target, pathOf } = subject;
+  const existing = cache.get(target.id);
+  if (existing !== undefined) return existing;
+  const pending = (async (): Promise<DiscoveryOutcome<T>> => {
+    if (pathOf(target) === null) {
+      return { status: 'skipped', message: `${target.command} is not on PATH` };
+    }
+    try {
+      return { status: 'ok', value: await load() };
+    } catch (error) {
+      return { status: 'failed', message: messageOf(error) };
+    }
+  })();
+  cache.set(target.id, pending);
+  return pending;
+}
+
+interface EffortProbe {
+  catalog(client: CliClient): Promise<DiscoveryOutcome<CliModelCatalog>>;
+  source(client: CliClient): CatalogSource;
+  which: Which;
+  run: RunCommand;
+}
+
+/** Effort values for one catalog model: the catalog's own, else probed (an empty list when the probe finds none). */
+async function effortValues(
+  probe: EffortProbe,
+  target: CliClient,
+  request: { option: string; model: string; catalog: CliModelCatalog },
+): Promise<readonly string[]> {
+  const { option, model, catalog } = request;
+  const known = catalog.valuesFor(model, option);
+  if (known !== null) return known;
+  const probed = await loadOptionValues(
+    { source: probe.source(target), name: option, model, catalog },
+    { which: probe.which, runCommand: probe.run },
+  );
+  return probed ?? [];
+}
+
+/**
+ * Effort values for one model, `null` when the model is not in the client's
+ * catalog, or a known (possibly empty) value list. A model the catalog does
+ * not list is never probed, so a per-model command cannot invent a row for
+ * an arbitrary name.
+ */
+async function modelEffort(
+  probe: EffortProbe,
+  target: CliClient,
+  model: string,
+): Promise<DiscoveryOutcome<readonly string[] | null>> {
+  const option = target.effortOption;
+  if (option === undefined) return { status: 'ok', value: null };
+  const loaded = await probe.catalog(target);
+  if (loaded.status !== 'ok') return loaded;
+  if (!loaded.value.ids.includes(model)) return { status: 'ok', value: null };
+  try {
+    return { status: 'ok', value: await effortValues(probe, target, { option, model, catalog: loaded.value }) };
+  } catch (error) {
+    return { status: 'failed', message: messageOf(error) };
+  }
+}
+
+async function clientEfforts(probe: EffortProbe, target: CliClient): Promise<DiscoveryOutcome<EffortRow[]>> {
+  const option = target.effortOption;
+  // A client with no effort option is not probed at all.
+  if (option === undefined) return { status: 'ok', value: [] };
+  const loaded = await probe.catalog(target);
+  if (loaded.status !== 'ok') return loaded;
+  const rows: EffortRow[] = [];
+  for (const model of loaded.value.ids) {
+    try {
+      rows.push({ model, option, values: await effortValues(probe, target, { option, model, catalog: loaded.value }) });
+    } catch (error) {
+      return { status: 'failed', message: messageOf(error) };
+    }
+  }
+  return { status: 'ok', value: rows };
 }

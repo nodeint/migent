@@ -1,15 +1,17 @@
-import { DoctorReport, type Static } from "@nodeint/migent-contracts";
-import { writeJson } from "../emit.js";
-import { homedir } from "node:os";
-import { diagnoseWorkspace, sessionDiagnosticsCheck, type Check } from "@nodeint/migent-doctor";
-import { whichSync } from "@nodeint/migent-kernel";
-import { selectSessionWorkflow, type SessionSource } from "@nodeint/migent-session";
-import { diagnoseSelection } from "../preflight.js";
-import { printDoctor } from "../display.js";
-import { cliHooks } from "../hooks.js";
-import { requireCurrentSchema } from "../migrate.js";
-import { clientRegistry, runClientCommand, type RunCommand, type Which } from "../client.js";
-import { skillCheck } from "../skill-check.js";
+import { homedir } from 'node:os';
+
+import { DoctorReport, type Static } from '@nodeint/migent-contracts';
+import { type Check,diagnoseWorkspace, sessionDiagnosticsCheck } from '@nodeint/migent-doctor';
+import { whichSync } from '@nodeint/migent-kernel';
+import { selectSessionWorkflow, type SessionSource } from '@nodeint/migent-session';
+
+import { clientRegistry, runClientCommand, type RunCommand, type Which } from '../client.js';
+import { printDoctor } from '../display.js';
+import { writeJson } from '../emit.js';
+import { cliHooks } from '../hooks.js';
+import { requireCurrentSchema } from '../migrate.js';
+import { diagnoseSelection } from '../preflight.js';
+import { skillCheck } from '../skill-check.js';
 
 export async function runDoctor(
   workspace: string,
@@ -52,23 +54,30 @@ async function runSessionDoctor(
   const selection = selectSessionWorkflow(workspace, sessionId);
   const diagnostics = sessionDiagnosticsCheck(workspace, sessionId);
   // A role session has no workflow: the workflow check does not apply, diagnostics still do.
-  if (selection.manifestWorkflowId === "agent") {
-    const checks = [{ name: "Workflow", ok: true, items: ["Role session: no workflow to validate."], problems: [], warnings: [] }, diagnostics];
+  if (selection.manifestWorkflowId === 'agent') {
+    const checks = [{ name: 'Workflow', ok: true, items: ['Role session: no workflow to validate.'], problems: [], warnings: [] }, diagnostics];
     if (options.asJson) writeJson(DoctorReport, { ...payload(checks), session: sessionPayload(sessionId, null) });
     else printDoctor(checks);
     return 0;
   }
   // A freeze needs no live config, so only a live source requires a current config schema.
   if (selection.document !== null && selection.freeze === null) requireCurrentSchema(workspace, { configOnly: true });
-  const diagnosis = await diagnoseSelection(workspace, selection, { clients: clientRegistry(), which: options.which, runCommand: options.runCommand });
+  const diagnosis = await diagnoseSelection(workspace, selection, {
+    clients: clientRegistry(),
+    which: options.which,
+    runCommand: options.runCommand,
+  });
   // Shown only when something was recorded, so a clean session prints what it always did.
   if (diagnostics.warnings.length > 0) diagnosis.checks.push(diagnostics);
-  if (options.asJson) writeJson(DoctorReport, { ...payload(diagnosis.checks), session: sessionPayload(sessionId, diagnosis.source) });
-  else printDoctor(diagnosis.checks);
+  if (options.asJson) {
+    writeJson(DoctorReport, { ...payload(diagnosis.checks), session: sessionPayload(sessionId, diagnosis.source) });
+  } else {
+    printDoctor(diagnosis.checks);
+  }
   return diagnosis.ok ? 0 : 1;
 }
 
-function sessionPayload(sessionId: string, source: SessionSource | null): NonNullable<Static<typeof DoctorReport>["session"]> {
+function sessionPayload(sessionId: string, source: SessionSource | null): NonNullable<Static<typeof DoctorReport>['session']> {
   return {
     id: sessionId,
     workflow_id: source?.workflowId ?? null,

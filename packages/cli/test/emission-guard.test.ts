@@ -1,29 +1,35 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { expect, test } from "vitest";
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const SRC = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src");
+import { expect, test } from 'vitest';
+
+const SRC = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src');
 
 function sources(directory: string): string[] {
   return readdirSync(directory).flatMap((name) => {
     const full = path.join(directory, name);
-    return statSync(full).isDirectory() ? sources(full) : full.endsWith(".ts") ? [full] : [];
+    return statSync(full).isDirectory() ? sources(full) : full.endsWith('.ts') ? [full] : [];
   });
 }
 
 // JSON output is serialized in one module (emit.ts), so every payload has a contract.
-test("no CLI source serializes JSON to stdout outside the emitter", () => {
+test('no CLI source serializes JSON to stdout outside the emitter', () => {
   const offenders = sources(SRC)
-    .filter((file) => path.basename(file) !== "emit.ts")
+    .filter((file) => path.basename(file) !== 'emit.ts')
     .filter((file) => {
-      const text = readFileSync(file, "utf8");
-      return /process\.stdout\.write\(\s*`?\$\{JSON\.stringify|process\.stdout\.write\(\s*JSON\.stringify|options\.asJson === true \? `\$\{JSON\.stringify/.test(text);
+      const text = readFileSync(file, 'utf8');
+      const directJsonWrite = new RegExp([
+        String.raw`process\.stdout\.write\(\s*` + '`' + String.raw`?\$\{JSON\.stringify`,
+        String.raw`process\.stdout\.write\(\s*JSON\.stringify`,
+        String.raw`options\.asJson === true \? ` + '`' + String.raw`\$\{JSON\.stringify`,
+      ].join('|'));
+      return directJsonWrite.test(text);
     })
     .map((file) => path.relative(SRC, file));
   expect(offenders).toEqual([]);
 });
 
-test("get -o json is serialized by the emitter, not by the renderer", () => {
-  expect(readFileSync(path.join(SRC, "get", "render.ts"), "utf8")).not.toContain("JSON.stringify");
+test('get -o json is serialized by the emitter, not by the renderer', () => {
+  expect(readFileSync(path.join(SRC, 'get', 'render.ts'), 'utf8')).not.toContain('JSON.stringify');
 });

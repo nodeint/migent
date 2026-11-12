@@ -1,17 +1,18 @@
-import { ConfigurationError, type ClientRegistry } from "@nodeint/migent-kernel";
-import { getConfigView, getAgentView, getRoleView, getSessionWorkflowView, getWorkflowView, listAgentViews, listRoleViews, listWorkflowViews } from "@nodeint/migent-engine";
-import { GetAgent, GetConfig, GetRole, GetWorkflow, GetWorkflowSummary } from "@nodeint/migent-contracts";
-import { clientRegistry } from "../client.js";
-import { field, count } from "./columns.js";
-import { MACHINE_RESOURCES } from "./machine-resources.js";
-import { cell, type Column } from "./render.js";
-import { asView, type ProjectResource, type Resource } from "./resource-types.js";
+import { GetAgent, GetConfig, GetRole, GetWorkflow, GetWorkflowSummary } from '@nodeint/migent-contracts';
+import { getAgentView, getConfigView, getRoleView, getSessionWorkflowView, getWorkflowView, listAgentViews, listRoleViews, listWorkflowViews } from '@nodeint/migent-engine';
+import { type ClientRegistry,ConfigurationError } from '@nodeint/migent-kernel';
+
+import { clientRegistry } from '../client.js';
+import { count,field } from './columns.js';
+import { MACHINE_RESOURCES } from './machine-resources.js';
+import { cell, type Column } from './render.js';
+import { asView, type ProjectResource, type Resource } from './resource-types.js';
 
 const targetField = (header: string, key: string): Column => ({
   header,
   cell: (view) => {
-    const target = view.target;
-    return typeof target === "object" && target !== null ? cell((target as Record<string, unknown>)[key]) : "-";
+    const {target} = view;
+    return typeof target === 'object' && target !== null ? cell((target as Record<string, unknown>)[key]) : '-';
   },
 });
 
@@ -21,59 +22,64 @@ function requireName(label: string, name: string | null): string {
 }
 
 const workflowResource: ProjectResource<typeof GetWorkflow, typeof GetWorkflowSummary> = {
-  scope: "project",
-  kind: "workflow",
-  names: ["workflow", "workflows", "wf"],
+  scope: 'project',
+  kind: 'workflow',
+  names: ['workflow', 'workflows', 'wf'],
   contract: GetWorkflow,
   listContract: GetWorkflowSummary,
   summary: "Workflows in .migent/workflows, or one session's workflow with --session.",
-  columns: [field("NAME", "name"), field("FILE", "file"), field("STAGES", "stages"), field("ROLES", "roles"), count("PROBLEMS", "problems")],
+  columns: [field('NAME', 'name'), field('FILE', 'file'), field('STAGES', 'stages'), field('ROLES', 'roles'), count('PROBLEMS', 'problems')],
   list: (workspace) => listWorkflowViews(workspace).map((view) => asView(GetWorkflowSummary, view)),
-  get: (workspace, name, resolve, session) =>
+  get: (workspace, { name, session }, resolve) =>
     asView(
       GetWorkflow,
       session !== null
-        ? getSessionWorkflowView(workspace, session, name, resolve)
-        : getWorkflowView(workspace, requireName("workflow", name), resolve),
+        ? getSessionWorkflowView(workspace, { sessionId: session, name }, resolve)
+        : getWorkflowView(workspace, requireName('workflow', name), resolve),
     ),
 };
 
 const roleResource: ProjectResource<typeof GetRole, typeof GetRole> = {
-  scope: "project",
-  kind: "role",
-  names: ["role", "roles"],
+  scope: 'project',
+  kind: 'role',
+  names: ['role', 'roles'],
   contract: GetRole,
   listContract: GetRole,
-  summary: "Roles in the effective config with their agent and description.",
-  columns: [field("NAME", "name"), field("AGENT", "agent"), targetField("CLIENT", "client"), targetField("MODEL", "model"), field("DESCRIPTION", "description"), count("PROBLEMS", "problems")],
+  summary: 'Roles in the effective config with their agent and description.',
+  columns: [field('NAME', 'name'), field('AGENT', 'agent'), targetField('CLIENT', 'client'), targetField('MODEL', 'model'), field('DESCRIPTION', 'description'), count('PROBLEMS', 'problems')],
   list: (workspace, resolve) => listRoleViews(workspace, resolve).map((view) => asView(GetRole, view)),
-  get: (workspace, name, resolve) => asView(GetRole, getRoleView(workspace, requireName("role", name), resolve)),
+  get: (workspace, { name }, resolve) => asView(GetRole, getRoleView(workspace, requireName('role', name), resolve)),
 };
 
 const agentResource: ProjectResource<typeof GetAgent, typeof GetAgent> = {
-  scope: "project",
-  kind: "agent",
-  names: ["agent", "agents"],
+  scope: 'project',
+  kind: 'agent',
+  names: ['agent', 'agents'],
   contract: GetAgent,
   listContract: GetAgent,
-  summary: "Agents the project names: client, model, effort, and CLI client options (see `migent get clients`).",
-  columns: [field("NAME", "name"), field("CLIENT", "client"), field("MODEL", "model"), field("LOCAL", "local"), count("PROBLEMS", "problems")],
+  summary: 'Agents the project names: client, model, effort, and CLI client options (see `migent get clients`).',
+  columns: [field('NAME', 'name'), field('CLIENT', 'client'), field('MODEL', 'model'), field('LOCAL', 'local'), count('PROBLEMS', 'problems')],
   list: (workspace, resolve) => listAgentViews(workspace, resolve).map((view) => asView(GetAgent, view)),
-  get: (workspace, name, resolve) => asView(GetAgent, getAgentView(workspace, requireName("agent", name), resolve)),
+  get: (workspace, { name }, resolve) => asView(GetAgent, getAgentView(workspace, requireName('agent', name), resolve)),
 };
 
 const configResource: ProjectResource<typeof GetConfig, typeof GetConfig> = {
-  scope: "project",
-  kind: "config",
-  names: ["config"],
+  scope: 'project',
+  kind: 'config',
+  names: ['config'],
   contract: GetConfig,
   listContract: GetConfig,
-  summary: "The effective config: config.yaml with config.local.yaml merged over it.",
+  summary: 'The effective config: config.yaml with config.local.yaml merged over it.',
   columns: [],
   get: (workspace) => asView(GetConfig, getConfigView(workspace)),
 };
 
 const PROJECT_RESOURCES: readonly Resource[] = [workflowResource, roleResource, agentResource, configResource];
+
+/** Aliases shown per resource in listings and usage text. */
+export const LISTED_NAMES = 2;
+/** Column width of the resource-name column in `get` help. */
+export const LIST_NAME_WIDTH = 18;
 
 export const RESOURCES: readonly Resource[] = [...PROJECT_RESOURCES, ...MACHINE_RESOURCES];
 
@@ -82,7 +88,7 @@ export function findResource(type: string): Resource | undefined {
 }
 
 export function resourceTypes(): string {
-  return RESOURCES.map((resource) => resource.names.slice(0, 2).join("|")).join(", ");
+  return RESOURCES.map((resource) => resource.names.slice(0, LISTED_NAMES).join('|')).join(', ');
 }
 
 /** Pure lookup: resolving a client never spawns a CLI. */

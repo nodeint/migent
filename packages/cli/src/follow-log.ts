@@ -1,9 +1,11 @@
-import { readdirSync, statSync } from "node:fs";
-import path from "node:path";
+import { readdirSync, statSync } from 'node:fs';
+import path from 'node:path';
+
+import { NEWLINE_BYTE } from '@nodeint/migent-kernel';
 
 export interface FollowLine {
   line: string;
-  source: "events" | "stream";
+  source: 'events' | 'stream';
   path: string;
 }
 
@@ -51,14 +53,14 @@ export function compareFollowLines(left: FollowLine, right: FollowLine): number 
 export function replayFollowLines(input: {
   cursor: number | null;
   eventsText: string;
-  streams: Array<{ path: string; text: string; appearedAfterStart?: boolean }>;
+  streams: { path: string; text: string; appearedAfterStart?: boolean }[];
 }): string[] {
   const eventsSize = Buffer.byteLength(input.eventsText);
   const eventOffset = input.cursor === null ? eventsSize : input.cursor;
   const lines: FollowLine[] = linesFromByte(input.eventsText, eventOffset).map((line) => ({
     line,
-    source: "events",
-    path: "events.jsonl",
+    source: 'events',
+    path: 'events.jsonl',
   }));
   for (const stream of input.streams) {
     const size = Buffer.byteLength(stream.text);
@@ -67,7 +69,7 @@ export function replayFollowLines(input: {
       : streamFollowStart(input.cursor, input.eventsText, size);
     for (const line of linesFromByte(stream.text, start.offset)) {
       if (!includeStreamLine(line, start.minTimestampMs)) continue;
-      lines.push({ line, source: "stream", path: stream.path });
+      lines.push({ line, source: 'stream', path: stream.path });
     }
   }
   lines.sort(compareFollowLines);
@@ -75,7 +77,7 @@ export function replayFollowLines(input: {
 }
 
 export function listStreamFiles(sessionDirectory: string): string[] {
-  const root = path.join(sessionDirectory, "executions");
+  const root = path.join(sessionDirectory, 'executions');
   let entries;
   try {
     entries = readdirSync(root, { withFileTypes: true });
@@ -84,8 +86,8 @@ export function listStreamFiles(sessionDirectory: string): string[] {
   }
   const files: string[] = [];
   for (const entry of entries) {
-    if (!entry.isDirectory() || (entry.name.startsWith(".") && entry.name.endsWith(".tmp"))) continue;
-    const stream = path.join(root, entry.name, "stream.jsonl");
+    if (!entry.isDirectory() || (entry.name.startsWith('.') && entry.name.endsWith('.tmp'))) continue;
+    const stream = path.join(root, entry.name, 'stream.jsonl');
     try {
       if (statSync(stream).isFile()) files.push(stream);
     } catch {
@@ -102,7 +104,7 @@ function firstCompleteEvent(eventsText: string, cursor: number): { timestamp: st
     const timestamp = eventTimestamp(entry.line);
     if (timestamp === null && !isEventLine(entry.line)) continue;
     if (!isEventLine(entry.line)) continue;
-    return { timestamp: timestamp ?? "" };
+    return { timestamp: timestamp ?? '' };
   }
   return null;
 }
@@ -110,7 +112,7 @@ function firstCompleteEvent(eventsText: string, cursor: number): { timestamp: st
 function isEventLine(line: string): boolean {
   try {
     const value = JSON.parse(line) as unknown;
-    return isRecord(value) && typeof value.event === "string" && value.event !== "";
+    return isRecord(value) && typeof value.event === 'string' && value.event !== '';
   } catch {
     return false;
   }
@@ -119,8 +121,8 @@ function isEventLine(line: string): boolean {
 function eventTimestamp(line: string): string | null {
   try {
     const value = JSON.parse(line) as unknown;
-    if (!isRecord(value) || typeof value.event !== "string") return null;
-    return typeof value.timestamp === "string" ? value.timestamp : "";
+    if (!isRecord(value) || typeof value.event !== 'string') return null;
+    return typeof value.timestamp === 'string' ? value.timestamp : '';
   } catch {
     return null;
   }
@@ -132,40 +134,38 @@ function sortKey(item: FollowLine): { time: number; seq: number; source: number;
   try {
     const value = JSON.parse(item.line) as unknown;
     if (isRecord(value)) {
-      if (typeof value.timestamp === "string") {
-        const parsed = Date.parse(value.timestamp);
-        if (!Number.isNaN(parsed)) time = parsed;
-      }
-      if (typeof value.seq === "number" && Number.isFinite(value.seq)) seq = value.seq;
+      const parsed = typeof value.timestamp === 'string' ? Date.parse(value.timestamp) : Number.NaN;
+      if (!Number.isNaN(parsed)) time = parsed;
+      if (typeof value.seq === 'number' && Number.isFinite(value.seq)) seq = value.seq;
     }
   } catch {
     // Unparseable lines sort after timed events and stay in source order.
   }
-  return { time, seq, source: item.source === "events" ? 0 : 1, path: item.path };
+  return { time, seq, source: item.source === 'events' ? 0 : 1, path: item.path };
 }
 
 function linesFromByte(text: string, offset: number): string[] {
   const buffer = Buffer.from(text);
   if (offset >= buffer.length || offset < 0) return offset < 0 ? linesFromByte(text, 0) : [];
-  const slice = buffer.subarray(offset).toString("utf8");
-  const parts = slice.split("\n");
-  if (!slice.endsWith("\n")) parts.pop();
-  return parts.filter((line) => line !== "");
+  const slice = buffer.subarray(offset).toString('utf8');
+  const parts = slice.split('\n');
+  if (!slice.endsWith('\n')) parts.pop();
+  return parts.filter((line) => line !== '');
 }
 
-function lineSpans(text: string): Array<{ start: number; line: string }> {
+function lineSpans(text: string): { start: number; line: string }[] {
   const buffer = Buffer.from(text);
-  const spans: Array<{ start: number; line: string }> = [];
+  const spans: { start: number; line: string }[] = [];
   let lineStart = 0;
   for (let index = 0; index < buffer.length; index += 1) {
-    if (buffer[index] !== 0x0a) continue;
-    const line = buffer.subarray(lineStart, index).toString("utf8");
-    if (line !== "") spans.push({ start: lineStart, line });
+    if (buffer[index] !== NEWLINE_BYTE) continue;
+    const line = buffer.subarray(lineStart, index).toString('utf8');
+    if (line !== '') spans.push({ start: lineStart, line });
     lineStart = index + 1;
   }
   return spans;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

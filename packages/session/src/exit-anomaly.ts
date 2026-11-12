@@ -1,8 +1,10 @@
-import path from "node:path";
-import { isRecord } from "@nodeint/migent-workflow";
-import { readParsedEvents, type ParsedEvent } from "./session-events.js";
+import path from 'node:path';
 
-export const EXIT_ANOMALY_EVENT = "provider.exit_anomaly";
+import { isRecord } from '@nodeint/migent-workflow';
+
+import { type ParsedEvent,readParsedEvents } from './session-events.js';
+
+export const EXIT_ANOMALY_EVENT = 'provider.exit_anomaly';
 
 /** One provider process that exited non-zero without reporting an error. */
 export interface ExitAnomaly {
@@ -21,17 +23,17 @@ export interface ExitAnomaly {
 export function parseExitAnomaly(event: ParsedEvent): ExitAnomaly | null {
   if (event.event !== EXIT_ANOMALY_EVENT || event.executionId === null) return null;
   const details = isRecord(event.raw.details) ? event.raw.details : {};
-  if (typeof details.accepted !== "boolean") return null;
+  if (typeof details.accepted !== 'boolean') return null;
   return {
     executionId: event.executionId,
     stageId: event.stageId,
-    turn: typeof details.turn === "number" ? details.turn : null,
-    provider: typeof details.provider === "string" ? details.provider : null,
-    exitCode: typeof details.exit_code === "number" ? details.exit_code : null,
-    signal: typeof details.signal === "string" ? details.signal : null,
-    origin: typeof details.origin === "string" ? details.origin : null,
+    turn: typeof details.turn === 'number' ? details.turn : null,
+    provider: typeof details.provider === 'string' ? details.provider : null,
+    exitCode: typeof details.exit_code === 'number' ? details.exit_code : null,
+    signal: typeof details.signal === 'string' ? details.signal : null,
+    origin: typeof details.origin === 'string' ? details.origin : null,
     accepted: details.accepted,
-    reason: typeof details.reason === "string" ? details.reason : null,
+    reason: typeof details.reason === 'string' ? details.reason : null,
   };
 }
 
@@ -47,5 +49,5 @@ export function exitAnomaliesOf(events: ParsedEvent[]): ExitAnomaly[] {
 
 /** Anomalies recorded in a session directory's `events.jsonl`. */
 export function readExitAnomalies(sessionDirectory: string): ExitAnomaly[] {
-  return exitAnomaliesOf(readParsedEvents(path.join(sessionDirectory, "events.jsonl")));
+  return exitAnomaliesOf(readParsedEvents(path.join(sessionDirectory, 'events.jsonl')));
 }

@@ -1,32 +1,33 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { clientIds, createClient } from "@nodeint/migent-adapters";
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+
+import { clientIds, createClient } from '@nodeint/migent-adapters';
 import type {
   BuildCommandInput,
   CliClient,
+  ClientOption,
+  ClientRegistry,
   CliModelCatalog,
   CliRunOutput,
   CliUsage,
-  ClientOption,
-  ClientRegistry,
   CommandSpec,
   RawFailure,
   UsageCapture,
-} from "@nodeint/migent-kernel";
+} from '@nodeint/migent-kernel';
 
 const optionKey = /^[A-Za-z][A-Za-z0-9_.-]*$/;
 
 const grokOptions = new Set([
-  "reasoning-effort",
-  "max_turns",
-  "tools",
-  "disallowed_tools",
-  "permission_mode",
-  "rules",
-  "allow",
-  "deny",
-  "sandbox",
+  'reasoning-effort',
+  'max_turns',
+  'tools',
+  'disallowed_tools',
+  'permission_mode',
+  'rules',
+  'allow',
+  'deny',
+  'sandbox',
 ]);
 
 const BLANK_USAGE: CliUsage = {
@@ -43,75 +44,80 @@ const BLANK_USAGE: CliUsage = {
 
 /** A client for doctor checks: only the metadata the doctor reads carries behavior. */
 class TestClient implements CliClient {
-  readonly optionsList: readonly ClientOption[] = [];
+  public readonly optionsList: readonly ClientOption[] = [];
+
+  private readonly validate: (options: Readonly<Record<string, string>>) => void;
+  public readonly effortOption?: string;
 
   constructor(
-    readonly id: string,
-    readonly command: string,
-    private readonly validate: (options: Readonly<Record<string, string>>) => void,
-    readonly effortOption?: string,
-  ) {}
+    public readonly id: string,
+    public readonly command: string,
+    behavior: { validate: (options: Readonly<Record<string, string>>) => void; effortOption?: string },
+  ) {
+    this.validate = behavior.validate;
+    this.effortOption = behavior.effortOption;
+  }
 
-  options(): readonly ClientOption[] {
+  public options(): readonly ClientOption[] {
     return this.optionsList;
   }
 
-  validateOptions(options: Readonly<Record<string, string>>): void {
+  public validateOptions(options: Readonly<Record<string, string>>): void {
     this.validate(options);
   }
 
-  runCommand(_input: BuildCommandInput): CommandSpec {
-    throw new Error("doctor tests never run a client turn.");
+  public runCommand(_input: BuildCommandInput): CommandSpec {
+    throw new Error('doctor tests never run a client turn.');
   }
 
-  modelsCommand(): CommandSpec {
-    throw new Error("doctor tests never list models.");
+  public modelsCommand(): CommandSpec {
+    throw new Error('doctor tests never list models.');
   }
 
-  versionCommand(): CommandSpec {
-    throw new Error("doctor tests never read a version.");
+  public versionCommand(): CommandSpec {
+    throw new Error('doctor tests never read a version.');
   }
 
-  parseRun(_stdout: string, _lastMessageFile: string): CliRunOutput {
-    throw new Error("doctor tests never parse a turn.");
+  public parseRun(_stdout: string, _lastMessageFile: string): CliRunOutput {
+    throw new Error('doctor tests never parse a turn.');
   }
 
-  parseModels(_stdout: string): CliModelCatalog {
+  public parseModels(_stdout: string): CliModelCatalog {
     return { ids: [], defaultId: null, optionValues: [], valuesFor: () => null };
   }
 
-  parseVersion(_stdout: string): string | null {
+  public parseVersion(_stdout: string): string | null {
     return null;
   }
 
-  createEventParser(): (line: string) => Record<string, unknown> | null {
+  public createEventParser(): (line: string) => Record<string, unknown> | null {
     return () => null;
   }
 
-  extractFailure(_stdout: string, _exitCode: number): RawFailure | null {
+  public extractFailure(_stdout: string, _exitCode: number): RawFailure | null {
     return null;
   }
 
-  captureUsage(_stdout: string): UsageCapture | null {
+  public captureUsage(_stdout: string): UsageCapture | null {
     return null;
   }
 
-  readUsage(_capture: UsageCapture): CliUsage {
+  public readUsage(_capture: UsageCapture): CliUsage {
     return BLANK_USAGE;
   }
 
-  optionValuesCommand(_option: string, _model: string): CommandSpec | null {
+  public optionValuesCommand(_option: string, _model: string): CommandSpec | null {
     return null;
   }
 
-  parseOptionValues(_option: string, _stdout: string, _model: string): readonly string[] {
+  public parseOptionValues(_option: string, _stdout: string, _model: string): readonly string[] {
     return [];
   }
 }
 
 /** A client with no option rules, for tests that only need distinct ids and commands. */
 export function testClient(id: string, command: string): CliClient {
-  return new TestClient(id, command, () => {});
+  return new TestClient(id, command, { validate: () => {} });
 }
 
 export function clientRegistryOf(clients: Record<string, CliClient>): ClientRegistry {
@@ -127,18 +133,24 @@ export function clientRegistryOf(clients: Record<string, CliClient>): ClientRegi
 
 export function defaultClients(): ClientRegistry {
   return clientRegistryOf({
-    codex: new TestClient("codex", "codex", (options) => {
-      for (const [key, value] of Object.entries(options)) {
-        if (!optionKey.test(key)) throw new Error(`${key} is not a codex option.`);
-        if (value.trim() === "") throw new Error(`${key} is empty.`);
-      }
-    }, "model_reasoning_effort"),
-    grok: new TestClient("grok", "grok", (options) => {
-      for (const [key, value] of Object.entries(options)) {
-        if (!grokOptions.has(key)) throw new Error(`${key} is not a grok option.`);
-        if (value.trim() === "") throw new Error(`${key} is empty.`);
-      }
-    }, "reasoning-effort"),
+    codex: new TestClient('codex', 'codex', {
+      validate: (options) => {
+        for (const [key, value] of Object.entries(options)) {
+          if (!optionKey.test(key)) throw new Error(`${key} is not a codex option.`);
+          if (value.trim() === '') throw new Error(`${key} is empty.`);
+        }
+      },
+      effortOption: 'model_reasoning_effort',
+    }),
+    grok: new TestClient('grok', 'grok', {
+      validate: (options) => {
+        for (const [key, value] of Object.entries(options)) {
+          if (!grokOptions.has(key)) throw new Error(`${key} is not a grok option.`);
+          if (value.trim() === '') throw new Error(`${key} is empty.`);
+        }
+      },
+      effortOption: 'reasoning-effort',
+    }),
   });
 }
 
@@ -200,17 +212,17 @@ export function tempDir(prefix: string): string {
 }
 
 export function writeConfig(contents: string): string {
-  const directory = tempDir("migent-config-");
-  const filePath = path.join(directory, "config.yaml");
-  writeFileSync(filePath, contents, "utf8");
+  const directory = tempDir('migent-config-');
+  const filePath = path.join(directory, 'config.yaml');
+  writeFileSync(filePath, contents, 'utf8');
   return filePath;
 }
 
 export function writeStageWorkspace(): string {
-  const workspace = tempDir("migent-stage-");
-  const workflows = path.join(workspace, ".migent", "workflows");
+  const workspace = tempDir('migent-stage-');
+  const workflows = path.join(workspace, '.migent', 'workflows');
   mkdirSync(workflows, { recursive: true });
-  writeFileSync(path.join(workspace, ".migent", "config.yaml"), STAGE_CONFIG, "utf8");
-  writeFileSync(path.join(workflows, "plan-implement.yaml"), STAGE_WORKFLOW, "utf8");
+  writeFileSync(path.join(workspace, '.migent', 'config.yaml'), STAGE_CONFIG, 'utf8');
+  writeFileSync(path.join(workflows, 'plan-implement.yaml'), STAGE_WORKFLOW, 'utf8');
   return workspace;
 }

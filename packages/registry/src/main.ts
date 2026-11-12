@@ -1,4 +1,6 @@
-import { childMain } from "./child.js";
+import { ARGV_USER_OFFSET } from '@nodeint/migent-kernel';
 
-const code = await childMain(process.argv.slice(2));
+import { childMain } from './child.js';
+
+const code = await childMain(process.argv.slice(ARGV_USER_OFFSET));
 process.exit(code);

@@ -1,26 +1,28 @@
-import { randomBytes } from "node:crypto";
-import { closeSync, fstatSync, fsyncSync, openSync, readSync, renameSync, rmSync, writeSync } from "node:fs";
-import path from "node:path";
+import { randomBytes } from 'node:crypto';
+import { closeSync, fstatSync, fsyncSync, openSync, readSync, renameSync, rmSync, writeSync } from 'node:fs';
+import path from 'node:path';
+
+import { INT32_BYTES, JSON_INDENT, NEWLINE_BYTE, TEMP_SUFFIX_BYTES } from './constants.js';
 
 const RENAME_RETRIES = 5;
 const RENAME_BACKOFF_MS = 10;
-const RETRYABLE_RENAME = new Set(["EPERM", "EBUSY"]);
+const RETRYABLE_RENAME = new Set(['EPERM', 'EBUSY']);
 
 /** Temp files are dot-prefixed and end in `.tmp`, so directory scans can skip a leftover. */
 export function isAtomicTempName(name: string): boolean {
-  return name.startsWith(".") && name.endsWith(".tmp");
+  return name.startsWith('.') && name.endsWith('.tmp');
 }
 
 export function tempPathFor(destination: string): string {
   return path.join(
     path.dirname(destination),
-    `.${path.basename(destination)}.${randomBytes(6).toString("hex")}.tmp`,
+    `.${path.basename(destination)}.${randomBytes(TEMP_SUFFIX_BYTES).toString('hex')}.tmp`,
   );
 }
 
 export function fsyncPath(filePath: string): void {
   // Windows FlushFileBuffers rejects a read-only handle with EPERM.
-  const fd = openSync(filePath, "r+");
+  const fd = openSync(filePath, 'r+');
   try {
     fsyncSync(fd);
   } finally {
@@ -35,11 +37,11 @@ export function renameWithRetry(source: string, destination: string): void {
       renameSync(source, destination);
       return;
     } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code ?? "";
-      if (process.platform !== "win32" || !RETRYABLE_RENAME.has(code) || attempt >= RENAME_RETRIES) {
+      const code = (error as NodeJS.ErrnoException).code ?? '';
+      if (process.platform !== 'win32' || !RETRYABLE_RENAME.has(code) || attempt >= RENAME_RETRIES) {
         throw error;
       }
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, RENAME_BACKOFF_MS * (attempt + 1));
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(INT32_BYTES)), 0, 0, RENAME_BACKOFF_MS * (attempt + 1));
     }
   }
 }
@@ -48,7 +50,7 @@ export function renameWithRetry(source: string, destination: string): void {
 export function writeFileAtomic(destination: string, data: string): void {
   const tmp = tempPathFor(destination);
   try {
-    const fd = openSync(tmp, "w");
+    const fd = openSync(tmp, 'w');
     try {
       writeSync(fd, data);
       fsyncSync(fd);
@@ -67,15 +69,15 @@ export function writeFileAtomic(destination: string, data: string): void {
 }
 
 export function writeJsonAtomic(destination: string, value: unknown): void {
-  writeFileAtomic(destination, JSON.stringify(value, null, 2));
+  writeFileAtomic(destination, JSON.stringify(value, null, JSON_INDENT));
 }
 
 /** Append one complete line in a single write, then fsync. A torn tail stays its own skipped line. */
 export function appendLineSynced(filePath: string, line: string): void {
-  const fd = openSync(filePath, "a+");
+  const fd = openSync(filePath, 'a+');
   try {
     separateTornTail(fd);
-    writeSync(fd, line.endsWith("\n") ? line : `${line}\n`);
+    writeSync(fd, line.endsWith('\n') ? line : `${line}\n`);
     fsyncSync(fd);
   } finally {
     closeSync(fd);
@@ -86,7 +88,7 @@ export function appendLineSynced(filePath: string, line: string): void {
 export function sealTornTail(filePath: string): void {
   let fd: number;
   try {
-    fd = openSync(filePath, "r+");
+    fd = openSync(filePath, 'r+');
   } catch {
     return;
   }
@@ -99,12 +101,12 @@ export function sealTornTail(filePath: string): void {
 }
 
 function separateTornTail(fd: number): boolean {
-  const size = fstatSync(fd).size;
+  const {size} = fstatSync(fd);
   if (size === 0) return false;
   const last = Buffer.alloc(1);
   readSync(fd, last, 0, 1, size - 1);
-  if (last[0] === 0x0a) return false;
+  if (last[0] === NEWLINE_BYTE) return false;
   // `r+` leaves the offset at the start. Write the separator at the end.
-  writeSync(fd, "\n", size);
+  writeSync(fd, '\n', size);
   return true;
 }

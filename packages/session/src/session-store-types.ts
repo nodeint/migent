@@ -1,77 +1,104 @@
-import { existsSync } from "node:fs";
-import path from "node:path";
-import { CONVERSATION_FILENAME, LEGACY_CONVERSATION_FILENAME, legacyClientOf } from "@nodeint/migent-kernel";
-import { isRecord } from "@nodeint/migent-workflow";
-import type { NextSuggestion } from "./next-handoff.js";
-import { nonempty } from "./session-store-util.js";
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+
+import type { StageOutcome } from '@nodeint/migent-kernel';
+import { CONVERSATION_FILENAME, LEGACY_CONVERSATION_FILENAME, legacyClientOf } from '@nodeint/migent-kernel';
+import { isRecord } from '@nodeint/migent-workflow';
+
+import type { NextSuggestion } from './next-handoff.js';
+import { nonempty } from './session-store-util.js';
 
 export function stringOptions(value: unknown): Record<string, string> {
   if (!isRecord(value)) return {};
   const options: Record<string, string> = {};
   for (const [key, item] of Object.entries(value)) {
-    if (typeof item === "string") options[key] = item;
+    if (typeof item === 'string') options[key] = item;
   }
   return options;
 }
 
-export class AgentSessionRecord {
+export interface SessionRecordInit {
   client: string;
   model: string;
   workspace: string;
-  agentId: string | null;
-  options: Record<string, string>;
+  agentId?: string | null;
+  options?: Record<string, string>;
+  status?: string;
+  history?: Record<string, string>[];
+}
+
+/** The identity a stored conversation falls back to for fields it does not record. */
+export type SessionRecordFallback = Pick<SessionRecordInit, 'client' | 'model' | 'workspace'>;
+
+/** The facts that start an execution. */
+export interface ExecutionStartInput {
+  client: string;
+  model: string;
+  options: Record<string, string> | null;
+  sessionId: string | null;
+  stageId: string;
+  stageAttempt: number | null;
+  executionOrder: number | null;
+  prompt: string;
+  resumesExecutionId?: string | null;
+  kind?: 'verify' | null;
+}
+
+/** An execution to load or create, with the conversation it may resume. */
+export interface LoadOrCreateInput extends Omit<ExecutionStartInput, 'resumesExecutionId' | 'kind'> {
+  workspace: string;
+  resumeExecutionId?: string | null;
+  validateResume?: (record: AgentSessionRecord) => void;
+}
+
+/** How an execution ended, or its progress. */
+export interface ExecutionSaveInput {
   status: string;
-  history: Array<Record<string, string>>;
+  error?: string | null;
+  outcome?: StageOutcome | null;
+  /** True when the caller already holds the execution lock. */
+  locked?: boolean;
+  extra?: Record<string, unknown> | null;
+}
 
-  constructor(
-    client: string,
-    model: string,
-    workspace: string,
-    agentId: string | null = null,
-    options: Record<string, string> = {},
-    status = "new",
-    history: Array<Record<string, string>> = [],
-  ) {
-    this.client = client;
-    this.model = model;
-    this.workspace = workspace;
-    this.agentId = agentId;
-    this.options = { ...options };
-    this.status = status;
-    this.history = history;
+export class AgentSessionRecord {
+  public client: string;
+  public model: string;
+  public workspace: string;
+  public agentId: string | null;
+  public options: Record<string, string>;
+  public status: string;
+  public history: Record<string, string>[];
+
+  constructor(init: SessionRecordInit) {
+    this.client = init.client;
+    this.model = init.model;
+    this.workspace = init.workspace;
+    this.agentId = init.agentId ?? null;
+    this.options = { ...(init.options ?? {}) };
+    this.status = init.status ?? 'new';
+    this.history = init.history ?? [];
   }
 
-  static fromJson(
-    raw: unknown,
-    client: string,
-    model: string,
-    workspace: string,
-  ): AgentSessionRecord {
+  public static fromJson(raw: unknown, fallback: SessionRecordFallback): AgentSessionRecord {
+    const { client, model, workspace } = fallback;
     if (Array.isArray(raw)) {
-      return new AgentSessionRecord(
-        client,
-        model,
-        workspace,
-        null,
-        {},
-        "new",
-        raw as Array<Record<string, string>>,
-      );
+      return new AgentSessionRecord({ client, model, workspace, status: 'new', history: raw as Record<string, string>[] });
     }
-    if (!isRecord(raw)) return new AgentSessionRecord(client, model, workspace);
-    const history = Array.isArray(raw.history) ? (raw.history as Array<Record<string, string>>) : [];
-    return new AgentSessionRecord(
-      nonempty(raw.client) ?? legacyClientOf(nonempty(raw.provider)) ?? client,
-      nonempty(raw.model) ?? model,
-      nonempty(raw.workspace) ?? workspace,
-      nonempty(raw.agent_id) ?? nonempty(raw.native_session_id),
-      stringOptions(raw.options),
-      nonempty(raw.status) ?? "unknown",
+    if (!isRecord(raw)) return new AgentSessionRecord({ client, model, workspace });
+    const history = Array.isArray(raw.history) ? (raw.history as Record<string, string>[]) : [];
+    return new AgentSessionRecord({
+      client: nonempty(raw.client) ?? legacyClientOf(nonempty(raw.provider)) ?? client,
+      model: nonempty(raw.model) ?? model,
+      workspace: nonempty(raw.workspace) ?? workspace,
+      agentId: nonempty(raw.agent_id) ?? nonempty(raw.native_session_id),
+      options: stringOptions(raw.options),
+      status: nonempty(raw.status) ?? 'unknown',
       history,
-    );
+    });
   }
 
-  toJson(): Record<string, unknown> {
+  public toJson(): Record<string, unknown> {
     return {
       client: this.client,
       model: this.model,
@@ -86,22 +113,22 @@ export class AgentSessionRecord {
 
 export class ExecutionContext {
   constructor(
-    readonly sessionId: string,
-    readonly executionId: string,
-    readonly directory: string,
+    public readonly sessionId: string,
+    public readonly executionId: string,
+    public readonly directory: string,
   ) {}
 
-  get conversationPath(): string {
+  public get conversationPath(): string {
     return path.join(this.directory, CONVERSATION_FILENAME);
   }
 
-  get conversationReadPath(): string {
+  public get conversationReadPath(): string {
     if (existsSync(this.conversationPath)) return this.conversationPath;
     return path.join(this.directory, LEGACY_CONVERSATION_FILENAME);
   }
 
-  get artifactDirectory(): string {
-    return path.join(this.directory, "artifacts");
+  public get artifactDirectory(): string {
+    return path.join(this.directory, 'artifacts');
   }
 }
 
@@ -132,9 +159,9 @@ export function clearInFlightExecutions(sessionId: string): void {
   inFlightBySession.delete(sessionId);
 }
 
-export const DIAGNOSTICS_FILENAME = "diagnostics.json";
-export const FAILURE_FILENAME = "failure.md";
-export const DEBUG_LOG_FILENAME = "debug.log";
+export const DIAGNOSTICS_FILENAME = 'diagnostics.json';
+export const FAILURE_FILENAME = 'failure.md';
+export const DEBUG_LOG_FILENAME = 'debug.log';
 
 export interface ManualCompletionResult {
   alreadyCompleted: boolean;

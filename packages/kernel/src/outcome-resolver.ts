@@ -1,6 +1,8 @@
-import { loadHandoffFile } from "./handoff.js";
-import { loadQuestionFile } from "./questions.js";
-import { parseStageOutcome, StageOutcome, type AskTarget } from "./stage-outcome.js";
+import { HANDOFF_FILE_PROTOCOL } from '@nodeint/migent-prompts';
+
+import { loadHandoffFile } from './handoff.js';
+import { loadQuestionFile } from './questions.js';
+import { type AskTarget,parseStageOutcome, StageOutcome } from './stage-outcome.js';
 
 export interface OutcomeContext {
   required: boolean;
@@ -21,16 +23,20 @@ export interface OutcomeContext {
  * `status: question` the question request file; it throws QuestionFileError when that file is unusable.
  */
 export function resolveStageOutcome(response: string, context: OutcomeContext): StageOutcome | null {
-  if (context.protocol >= 3) {
+  if (context.protocol >= HANDOFF_FILE_PROTOCOL) {
     if (!context.required) return null;
     const handoff = loadHandoffFile(context.handoffFile, { decisionValues: context.decisionValues, ask: context.ask });
-    if (handoff.status === "question") {
-      return new StageOutcome("question", null, null, handoff.questions[0]!.question, handoff.questions);
+    if (handoff.status === 'question') {
+      return new StageOutcome('question', { question: handoff.questions[0].question, questions: handoff.questions });
     }
-    return new StageOutcome(handoff.status, handoff.blocker, handoff.decision);
+    return new StageOutcome(handoff.status, { blocker: handoff.blocker, decision: handoff.decision });
   }
-  const outcome = parseStageOutcome(response, context.required, context.decisionValues, context.ask);
-  if (outcome?.status !== "question") return outcome;
+  const outcome = parseStageOutcome(
+    response,
+    context.required,
+    { decisionValues: context.decisionValues, ask: context.ask },
+  );
+  if (outcome?.status !== 'question') return outcome;
   const questions = loadQuestionFile(context.questionFile);
-  return new StageOutcome("question", null, null, questions[0]!.question, questions);
+  return new StageOutcome('question', { question: questions[0].question, questions });
 }

@@ -1,25 +1,26 @@
-import type { ChildProcess, SpawnOptions, SpawnSyncOptionsWithStringEncoding, SpawnSyncReturns } from "node:child_process";
-import { createRequire } from "node:module";
-import path from "node:path";
-import crossSpawn from "cross-spawn";
+import type { ChildProcess, SpawnOptions, SpawnSyncOptionsWithStringEncoding, SpawnSyncReturns } from 'node:child_process';
+import { createRequire } from 'node:module';
+import path from 'node:path';
+
+import crossSpawn from 'cross-spawn';
 
 // The process wrapper imports this file from source, so it uses Node built-ins and plain
 // JavaScript-compatible TypeScript only.
 
 const require = createRequire(import.meta.url);
-const whichModule = require("which") as {
+const whichModule = require('which') as {
   sync(command: string, options: { nothrow: true }): string | null;
 };
 
-const BATCH_EXTENSIONS = new Set([".cmd", ".bat"]);
+const BATCH_EXTENSIONS = new Set(['.cmd', '.bat']);
 
 export class UnpassableArgument extends Error {
   constructor(command: string) {
     super(
       `${command} is a Windows batch script, and cmd.exe cuts arguments at line breaks. ` +
-        "Remove line breaks from the provider options passed on its command line.",
+        'Remove line breaks from the provider options passed on its command line.',
     );
-    this.name = "UnpassableArgument";
+    this.name = 'UnpassableArgument';
   }
 }
 
@@ -30,10 +31,13 @@ export class UnpassableArgument extends Error {
 export function assertArgumentsPassable(
   command: string,
   args: readonly string[],
-  platform: NodeJS.Platform = process.platform,
-  resolve: (command: string) => string | null = (name) => whichModule.sync(name, { nothrow: true }),
+  environment: { platform?: NodeJS.Platform; resolve?: (command: string) => string | null } = {},
 ): void {
-  if (platform !== "win32") return;
+  const {
+    platform = process.platform,
+    resolve = (name: string) => whichModule.sync(name, { nothrow: true }),
+  } = environment;
+  if (platform !== 'win32') return;
   if (!args.some((arg) => /[\r\n]/.test(arg))) return;
   const resolved = resolve(command) ?? command;
   if (BATCH_EXTENSIONS.has(path.extname(resolved).toLowerCase())) throw new UnpassableArgument(command);

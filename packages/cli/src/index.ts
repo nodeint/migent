@@ -1,39 +1,32 @@
 #!/usr/bin/env node
-import { realpathSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { CommanderError } from "commander";
-import { ConfigurationError } from "@nodeint/migent-kernel";
-import { authoringCommandOf, printInvocationEnvelope } from "./commands/authoring.js";
-import { printError } from "./display.js";
-import { PromptCancelled } from "./errors.js";
-import { EXIT_CANCELLED, EXIT_CONFIG } from "./exits.js";
-import { cliHooks } from "./hooks.js";
-import { createProgram, type CliStatus } from "./program.js";
-import { setInvocationCwd } from "./workspace.js";
+import { realpathSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
-export async function main(argv: string[] = process.argv.slice(2), cwd?: string): Promise<number> {
+import { ARGV_USER_OFFSET, ConfigurationError } from '@nodeint/migent-kernel';
+import { CommanderError } from 'commander';
+
+import { authoringCommandOf, printInvocationEnvelope } from './commands/authoring.js';
+import { printError } from './display.js';
+import { PromptCancelled } from './errors.js';
+import { EXIT_CANCELLED, EXIT_CONFIG, EXIT_OK } from './exits.js';
+import { cliHooks } from './hooks.js';
+import { CliStatus, createProgram } from './program.js';
+import { setInvocationCwd } from './workspace.js';
+
+export async function main(argv: string[] = process.argv.slice(ARGV_USER_OFFSET), cwd?: string): Promise<number> {
   setInvocationCwd(cwd);
-  const status: CliStatus = { code: 0, handled: false };
+  const status = new CliStatus();
   const authoring = authoringCommandOf(argv);
   try {
     const program = createProgram(status, { quietErrors: authoring !== null });
-    await program.parseAsync(argv, { from: "user" });
+    await program.parseAsync(argv, { from: 'user' });
     if (!status.handled) {
       program.outputHelp();
-      return 2;
+      return EXIT_CONFIG;
     }
     return status.code;
   } catch (error) {
-    if (error instanceof PromptCancelled) return EXIT_CANCELLED;
-    if (error instanceof ConfigurationError) {
-      printError(error.message);
-      return EXIT_CONFIG;
-    }
-    if (error instanceof CommanderError) {
-      if (error.exitCode !== 0 && authoring !== null) printInvocationEnvelope(authoring, error.message.replace(/^error: /, ""));
-      return error.exitCode === 0 ? 0 : 2;
-    }
-    throw error;
+    return exitForError(error, authoring);
   } finally {
     setInvocationCwd(undefined);
     cliHooks.which = null;
@@ -42,8 +35,22 @@ export async function main(argv: string[] = process.argv.slice(2), cwd?: string)
   }
 }
 
+/** The exit code for an error the CLI reports itself; rethrows anything else. */
+function exitForError(error: unknown, authoring: string | null): number {
+  if (error instanceof PromptCancelled) return EXIT_CANCELLED;
+  if (error instanceof ConfigurationError) {
+    printError(error.message);
+    return EXIT_CONFIG;
+  }
+  if (error instanceof CommanderError) {
+    if (error.exitCode !== 0 && authoring !== null) printInvocationEnvelope(authoring, error.message.replace(/^error: /, ''));
+    return error.exitCode === 0 ? EXIT_OK : EXIT_CONFIG;
+  }
+  throw error;
+}
+
 function isDirectRun(): boolean {
-  const entry = process.argv[1];
+  const [, entry] = process.argv;
   if (!entry) return false;
   try {
     return realpathSync(entry) === realpathSync(fileURLToPath(import.meta.url));

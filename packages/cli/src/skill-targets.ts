@@ -1,7 +1,7 @@
-import { homedir } from "node:os";
-import path from "node:path";
+import { homedir } from 'node:os';
+import path from 'node:path';
 
-export type SkillScope = "project" | "global";
+export type SkillScope = 'project' | 'global';
 
 export interface SkillTarget {
   /** Migent client id, as in `clientIds()`. */
@@ -20,11 +20,11 @@ export interface SkillTarget {
  * `skills -g` puts them, which is not always where the client's own docs say.
  */
 export const SKILL_TARGETS: readonly SkillTarget[] = [
-  { client: "claude-code", skillsAgent: "claude-code", project: ".claude/skills", global: ".claude/skills" },
-  { client: "codex", skillsAgent: "codex", project: ".agents/skills", global: ".agents/skills" },
-  { client: "opencode", skillsAgent: "opencode", project: ".agents/skills", global: ".agents/skills" },
-  { client: "agy", skillsAgent: "antigravity", project: ".agents/skills", global: ".agents/skills" },
-  { client: "grok", skillsAgent: "grok", project: ".grok/skills", global: ".grok/skills" },
+  { client: 'claude-code', skillsAgent: 'claude-code', project: '.claude/skills', global: '.claude/skills' },
+  { client: 'codex', skillsAgent: 'codex', project: '.agents/skills', global: '.agents/skills' },
+  { client: 'opencode', skillsAgent: 'opencode', project: '.agents/skills', global: '.agents/skills' },
+  { client: 'agy', skillsAgent: 'antigravity', project: '.agents/skills', global: '.agents/skills' },
+  { client: 'grok', skillsAgent: 'grok', project: '.grok/skills', global: '.grok/skills' },
 ];
 
 export interface SkillRoots {
@@ -38,8 +38,8 @@ export function findTarget(client: string): SkillTarget | undefined {
 
 /** Absolute `<skills dir>/migent` for a target. */
 export function resolveDirectory(target: SkillTarget, scope: SkillScope, roots: SkillRoots): string {
-  const base = scope === "project" ? roots.workspace : (roots.home ?? homedir());
-  return path.join(base, ...(scope === "project" ? target.project : target.global).split("/"), "migent");
+  const base = scope === 'project' ? roots.workspace : (roots.home ?? homedir());
+  return path.join(base, ...(scope === 'project' ? target.project : target.global).split('/'), 'migent');
 }
 
 /** Targets that resolve to the same directory, grouped, in table order. */
@@ -47,7 +47,7 @@ export function groupByDirectory(
   targets: readonly SkillTarget[],
   scope: SkillScope,
   roots: SkillRoots,
-): Array<{ directory: string; targets: SkillTarget[] }> {
+): { directory: string; targets: SkillTarget[] }[] {
   const groups = new Map<string, SkillTarget[]>();
   for (const target of targets) {
     const directory = resolveDirectory(target, scope, roots);

@@ -1,17 +1,28 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes } from 'node:crypto';
 import {
   copyFileSync,
   mkdirSync,
   readFileSync,
   rmSync,
   statSync,
-} from "node:fs";
-import path from "node:path";
-import { fsyncPath, renameWithRetry } from "./atomic-file.js";
-import { StageOutcome } from "./stage-outcome.js";
-import type { WorkflowDocument } from "@nodeint/migent-workflow";
+} from 'node:fs';
+import path from 'node:path';
 
-const asciiSpace = new Set([0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x20]);
+import type { WorkflowDocument } from '@nodeint/migent-workflow';
+import { SCHEMA_V7_ARTIFACTS } from '@nodeint/migent-workflow';
+
+import { fsyncPath, renameWithRetry } from './atomic-file.js';
+import { CARRIAGE_RETURN_BYTE, FORM_FEED_BYTE, NEWLINE_BYTE, SPACE_BYTE, TAB_BYTE, TEMP_SUFFIX_BYTES, VERTICAL_TAB_BYTE } from './constants.js';
+import { StageOutcome } from './stage-outcome.js';
+
+const asciiSpace = new Set([
+  TAB_BYTE,
+  NEWLINE_BYTE,
+  VERTICAL_TAB_BYTE,
+  FORM_FEED_BYTE,
+  CARRIAGE_RETURN_BYTE,
+  SPACE_BYTE,
+]);
 
 export interface ExecutionSnapshot {
   executionId: string;
@@ -31,51 +42,52 @@ export interface PublishedOutput {
   publishedByExecutionId: string;
 }
 
-export function sessionStatusAfterExecution(
-  executionStatus: string,
-  outcome: StageOutcome | null,
-  previousStatus: Readonly<Record<string, unknown>>,
-  workflow: WorkflowDocument | null,
-  stageId: string,
-): string {
-  if (outcome && (outcome.status === "blocked" || outcome.status === "question")) return outcome.status;
-  if (executionStatus === "cancelled") return "cancelled";
-  if (previousStatus.workflow_id === "agent") {
-    if (executionStatus === "completed" && outcome !== null && outcome.status === "complete") {
-      return "completed";
+export interface SessionStatusInput {
+  readonly executionStatus: string;
+  readonly outcome: StageOutcome | null;
+  readonly previousStatus: Readonly<Record<string, unknown>>;
+  readonly workflow: WorkflowDocument | null;
+  readonly stageId: string;
+}
+
+export function sessionStatusAfterExecution(input: SessionStatusInput): string {
+  const { executionStatus, outcome, previousStatus, workflow, stageId } = input;
+  if (outcome && (outcome.status === 'blocked' || outcome.status === 'question')) return outcome.status;
+  if (executionStatus === 'cancelled') return 'cancelled';
+  if (previousStatus.workflow_id === 'agent') {
+    if (executionStatus === 'completed' && outcome !== null && outcome.status === 'complete') {
+      return 'completed';
     }
-    return "active";
+    return 'active';
   }
   const workflowId = previousStatus.workflow_id;
   if (
     isCompletionDecision({
-      workflowId: typeof workflowId === "string" ? workflowId : null,
+      workflowId: typeof workflowId === 'string' ? workflowId : null,
       executionStatus,
       outcome,
       workflow,
       stageId,
     })
   ) {
-    return "completed";
+    return 'completed';
   }
-  return "active";
+  return 'active';
 }
 
 export function runnableViolation(
   sessionId: string,
   status: Readonly<Record<string, unknown>>,
 ): string | null {
-  const sessionStatus = Object.hasOwn(status, "status") ? status.status : undefined;
-  if (sessionStatus === "active") return null;
-  if (sessionStatus === "completed" && status.workflow_id === "agent") return null;
-  const terminalBy = Object.hasOwn(status, "blocked_by_execution_id")
-    ? status.blocked_by_execution_id
-    : Object.hasOwn(status, "terminal_execution_id")
-      ? status.terminal_execution_id
-      : "an earlier execution";
+  const sessionStatus = Object.hasOwn(status, 'status') ? status.status : undefined;
+  if (sessionStatus === 'active') return null;
+  if (sessionStatus === 'completed' && status.workflow_id === 'agent') return null;
+  let terminalBy: unknown = 'an earlier execution';
+  if (Object.hasOwn(status, 'blocked_by_execution_id')) terminalBy = status.blocked_by_execution_id;
+  else if (Object.hasOwn(status, 'terminal_execution_id')) terminalBy = status.terminal_execution_id;
   return (
     `Session ${sessionId} is ${pyNone(sessionStatus)} at ${pyNone(terminalBy)}; ` +
-    "start a new session to continue."
+    'start a new session to continue.'
   );
 }
 
@@ -86,11 +98,11 @@ export function isCompletionDecision(input: {
   workflow: WorkflowDocument | null;
   stageId: string;
 }): boolean {
-  if (input.workflowId === "agent") return false;
-  if (input.executionStatus !== "completed") return false;
-  if (input.outcome === null || input.outcome.status !== "complete") return false;
+  if (input.workflowId === 'agent') return false;
+  if (input.executionStatus !== 'completed') return false;
+  if (input.outcome === null || input.outcome.status !== 'complete') return false;
   if (input.workflow === null || input.workflow.completion === null) return false;
-  const completion = input.workflow.completion;
+  const {completion} = input.workflow;
   if (completion.stage !== input.stageId) return false;
   if (completion.decision !== null) {
     const expected = completion.decision.toLowerCase();
@@ -118,7 +130,7 @@ export function shouldPublishOutputs(input: {
   ) {
     return false;
   }
-  const completion = input.workflow.completion;
+  const {completion} = input.workflow;
   return completion !== null && completion.outputs.length > 0;
 }
 
@@ -131,7 +143,7 @@ export function selectSourceExecution(
   for (const snapshot of snapshots) {
     if (snapshot.stageId !== fromStage) continue;
     if (snapshot.executionOrder >= beforeOrder) continue;
-    if (snapshot.status !== "completed" || snapshot.outcomeStatus !== "complete") continue;
+    if (snapshot.status !== 'completed' || snapshot.outcomeStatus !== 'complete') continue;
     if (selected === null || snapshot.executionOrder > selected.executionOrder) {
       selected = snapshot;
     }
@@ -140,7 +152,7 @@ export function selectSourceExecution(
 }
 
 export function isArtifactSchema(workflow: WorkflowDocument): boolean {
-  return (workflow.schemaVersion ?? 1) >= 7;
+  return (workflow.schemaVersion ?? 1) >= SCHEMA_V7_ARTIFACTS;
 }
 
 /**
@@ -151,7 +163,7 @@ export function isArtifactSchema(workflow: WorkflowDocument): boolean {
 export function resolveArtifactSources(
   workflow: WorkflowDocument,
   current: Readonly<Record<string, ExecutionSnapshot>>,
-): Array<{ name: string; file: string; required: boolean; source: ExecutionSnapshot | null }> {
+): { name: string; file: string; required: boolean; source: ExecutionSnapshot | null }[] {
   return (workflow.artifacts ?? []).map((artifact) => {
     const execution = current[artifact.producer.stage];
     const chosen = execution?.outcomeDecision?.toLowerCase() ?? null;
@@ -175,7 +187,8 @@ export function missingWorkflowOutputNames(
 ): string[] {
   if (isArtifactSchema(workflow)) {
     return resolveArtifactSources(workflow, current ?? {})
-      .filter((item) => item.required && (item.source === null || !nonemptyArtifact(path.join(item.source.artifactDirectory, item.file))))
+      .filter((item) => item.required
+        && (item.source === null || !nonemptyArtifact(path.join(item.source.artifactDirectory, item.file))))
       .map((item) => item.name);
   }
   const missing: string[] = [];
@@ -193,7 +206,7 @@ export function missingCompletionOutputNames(input: {
   snapshots: readonly ExecutionSnapshot[];
   beforeOrder: number;
 }): string[] {
-  const completion = input.workflow.completion;
+  const {completion} = input.workflow;
   if (completion === null || completion.outputs.length === 0) return [];
   const missing: string[] = [];
   for (const output of completion.outputs) {
@@ -214,8 +227,8 @@ export function nonemptyArtifact(filePath: string): boolean {
   const data = readFileSync(filePath);
   let start = 0;
   let end = data.length;
-  while (start < end && asciiSpace.has(data[start]!)) start += 1;
-  while (end > start && asciiSpace.has(data[end - 1]!)) end -= 1;
+  while (start < end && asciiSpace.has(data[start])) start += 1;
+  while (end > start && asciiSpace.has(data[end - 1])) end -= 1;
   return end > start;
 }
 
@@ -228,7 +241,7 @@ export function publishOutputFiles(
   for (const [name, [sourcePath, sourceExecutionId]] of Object.entries(sources)) {
     if (!nonemptyArtifact(sourcePath)) continue;
     const fileName = path.basename(sourcePath);
-    const destination = path.join(sessionDirectory, "outputs", fileName);
+    const destination = path.join(sessionDirectory, 'outputs', fileName);
     atomicCopy(sourcePath, destination);
     recorded[name] = {
       path: `outputs/${fileName}`,
@@ -243,7 +256,7 @@ export function atomicCopy(source: string, destination: string): void {
   mkdirSync(path.dirname(destination), { recursive: true });
   const tmp = path.join(
     path.dirname(destination),
-    `.${path.basename(destination)}.${randomBytes(6).toString("hex")}.tmp`,
+    `.${path.basename(destination)}.${randomBytes(TEMP_SUFFIX_BYTES).toString('hex')}.tmp`,
   );
   try {
     copyFileSync(source, tmp);
@@ -260,6 +273,6 @@ export function atomicCopy(source: string, destination: string): void {
 }
 
 function pyNone(value: unknown): string {
-  if (value === null || value === undefined) return "None";
+  if (value === null || value === undefined) return 'None';
   return String(value);
 }

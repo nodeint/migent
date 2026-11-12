@@ -1,7 +1,8 @@
-import type { AgentToolRunner } from "@nodeint/migent-engine";
-import type { SkillRunner } from "./commands/skill.js";
-import type { RunCommand } from "./client.js";
-import type { TSchema } from "@nodeint/migent-contracts";
+import type { TSchema } from '@nodeint/migent-contracts';
+import type { AgentToolRunner } from '@nodeint/migent-engine';
+
+import type { RunCommand } from './client.js';
+import type { SkillRunner } from './commands/skill.js';
 
 /** Test seams. Production leaves all of them null. */
 export const cliHooks: {

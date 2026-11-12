@@ -1,11 +1,12 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import path from "node:path";
-import { expect, test } from "vitest";
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import path from 'node:path';
 
-const root = path.resolve(import.meta.dirname, "..", "..", "..");
+import { expect, test } from 'vitest';
 
-test("docs and skills no longer mention the removed config subcommands", () => {
-  const targets = ["README.md", "docs", "skills"].map((item) => path.join(root, item));
+const root = path.resolve(import.meta.dirname, '..', '..', '..');
+
+test('docs and skills no longer mention the removed config subcommands', () => {
+  const targets = ['README.md', 'docs', 'skills'].map((item) => path.join(root, item));
   const pattern = /config (model|role|show)\b/;
   const offenders: string[] = [];
   const visit = (target: string): void => {
@@ -14,7 +15,7 @@ test("docs and skills no longer mention the removed config subcommands", () => {
       return;
     }
     if (!/\.(md|yaml)$/.test(target)) return;
-    if (pattern.test(readFileSync(target, "utf8"))) offenders.push(path.relative(root, target));
+    if (pattern.test(readFileSync(target, 'utf8'))) offenders.push(path.relative(root, target));
   };
   for (const target of targets) visit(target);
   expect(offenders).toEqual([]);

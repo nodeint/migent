@@ -1,69 +1,114 @@
-import { isArtifactSchema, missingWorkflowOutputNames, type ExecutionSnapshot } from "./outputs.js";
-import { pyRepr } from "@nodeint/migent-workflow";
+import { pyRepr } from '@nodeint/migent-workflow';
 import {
-  conditionalReach,
   dependencyClosure,
   isWorkflowV2,
   routeListsStage,
   type StageSpec,
   type WorkflowDocument,
-} from "@nodeint/migent-workflow";
+} from '@nodeint/migent-workflow';
 
-const terminalSessionStatuses = new Set(["blocked", "question", "cancelled", "completed"]);
+import { type ExecutionSnapshot,isArtifactSchema, missingWorkflowOutputNames } from './outputs.js';
+import {
+  currentCompleteByStage,
+  dependsOnStage,
+  incomingRouters,
+  latestSnapshot,
+  latestStageSnapshot,
+  latestVisitOrder,
+  revisionStop,
+  routersCompletedSince,
+  routerSkippedSince,
+  type ScheduleView,
+  scheduleView,
+  supersedingSkip,
+  VERIFY_EXHAUSTED,
+  VERIFY_FAILED,
+  verifyExhaustedExecution,
+  verifyFailedExecution,
+} from './selection-history.js';
+import { declarationOrder } from './selection-pool.js';
+
+export { runnableNow,type RunPool } from './selection-pool.js';
+
+const terminalSessionStatuses = new Set(['blocked', 'question', 'cancelled', 'completed']);
 
 export class NextStage {
-  constructor(readonly stageId: string) {}
+  constructor(public readonly stageId: string) {}
 }
 
 export class Stop {
-  constructor(readonly reason: string) {}
+  constructor(public readonly reason: string) {}
 }
 
 /** Python selection.Error. Named so it does not shadow the global Error. */
 export class NextStageError {
-  constructor(readonly message: string) {}
+  constructor(public readonly message: string) {}
 }
 
 export type NextStageResult = NextStage | Stop | NextStageError;
 
+/** One resume event of the session, as recorded by the ledger. */
+export interface BlockResume {
+  event: string;
+  executionId?: string | null;
+  data?: { from?: unknown };
+}
+
+/** The session facts a scheduling decision reads next to the workflow and its snapshots. */
+export interface ScheduleState {
+  readonly sessionStatus: string;
+  readonly revisionBaselines?: Readonly<Record<string, number>> | null;
+  readonly resumes?: readonly BlockResume[] | null;
+}
+
+// Tests and callers address these through the scheduling module.
+export { currentCompleteByStage, latestCompleteByStage } from './selection-history.js';
+
 export function nextStage(
   workflow: WorkflowDocument,
   snapshots: readonly ExecutionSnapshot[],
-  sessionStatus: string,
-  resumes?: readonly BlockResume[] | null,
+  state: ScheduleState,
 ): NextStageResult {
-  if (snapshots.some((snapshot) => snapshot.status === "running")) {
-    return new NextStageError("an execution is still running");
+  const { sessionStatus, resumes } = state;
+  if (snapshots.some((snapshot) => snapshot.status === 'running')) {
+    return new NextStageError('an execution is still running');
   }
   if (terminalSessionStatuses.has(sessionStatus)) return new Stop(sessionStatus);
   const latest = latestSnapshot(snapshots);
-  if (latest !== null && latest.status === "failed") {
-    if (
-      latest.failureReason !== VERIFY_EXHAUSTED &&
-      latest.failureReason !== VERIFY_FAILED &&
-      !failedResumed(sessionStatus, latest.executionId, resumes)
-    ) {
-      return new Stop("stage_failed");
-    }
-    return new NextStage(latest.stageId);
-  }
-  if (isWorkflowV2(workflow)) return nextVersion2Stage(workflow, snapshots, sessionStatus, latest);
-  if (
-    latest !== null &&
-    latest.status === "completed" &&
-    latest.outcomeStatus === "complete"
-  ) {
-    const stage = workflow.stages[latest.stageId];
-    if (stage !== undefined && Object.keys(stage.routes).length > 0) {
-      return routedNextStage(workflow, snapshots, stage, latest);
-    }
-  }
+  if (latest !== null && latest.status === 'failed') return afterFailedStage(latest, sessionStatus, resumes);
+  if (isWorkflowV2(workflow)) return nextVersion2Stage(workflow, snapshots, sessionStatus);
+  const routed = latest === null ? null : routingStage(workflow, latest);
+  if (routed !== null && latest !== null) return routedNextStage(workflow, snapshots, { stage: routed, latest });
   const selected = sequentialCandidates(workflow, snapshots, sessionStatus);
-  if (selected.length === 0) return new NextStageError("no eligible stage");
+  if (selected.length === 0) return new NextStageError('no eligible stage');
   if (selected.length > 1) {
-    return new NextStageError(`ambiguous next stage: ${selected.join(", ")}`);
+    return new NextStageError(`ambiguous next stage: ${selected.join(', ')}`);
   }
-  return new NextStage(selected[0]!);
+  return new NextStage(selected[0]);
+}
+
+/** A failed latest stage stops the session unless it failed verification or was resumed. */
+function afterFailedStage(
+  latest: ExecutionSnapshot,
+  sessionStatus: ScheduleState['sessionStatus'],
+  resumes: ScheduleState['resumes'],
+): NextStageResult {
+  if (
+    latest.failureReason !== VERIFY_EXHAUSTED &&
+    latest.failureReason !== VERIFY_FAILED &&
+    !failedResumed(sessionStatus, latest.executionId, resumes)
+  ) {
+    return new Stop('stage_failed');
+  }
+  return new NextStage(latest.stageId);
+}
+
+/** The latest stage when it completed and declares routes, so its decision picks what runs next. */
+function routingStage(workflow: WorkflowDocument, latest: ExecutionSnapshot): StageSpec | null {
+  if (latest.status !== 'completed' || latest.outcomeStatus !== 'complete') return null;
+  const stage = workflow.stages[latest.stageId];
+  if (stage === undefined || Object.keys(stage.routes).length === 0) return null;
+  return stage;
 }
 
 /** Same stage list nextStage uses once a route has been followed. */
@@ -73,7 +118,7 @@ export function sequentialCandidates(
   sessionStatus: string,
 ): string[] {
   const candidates = candidateStageIds(workflow, snapshots);
-  const ready = readyStages(workflow, snapshots, sessionStatus);
+  const ready = readyStages(workflow, snapshots, { sessionStatus });
   // A failed stage stays stopped until continue writes `from: failed` for that execution.
   return sameStageIds(ready, candidates) ? ready : candidates;
 }
@@ -89,7 +134,7 @@ export function version2GraphQuiet(
 ): boolean {
   const progressed = snapshots.some(
     (snapshot) =>
-      snapshot.status === "skipped" || (snapshot.status === "completed" && snapshot.outcomeStatus === "complete"),
+      snapshot.status === 'skipped' || (snapshot.status === 'completed' && snapshot.outcomeStatus === 'complete'),
   );
   if (!progressed) return false;
   if (hasBlockingLatest(snapshots)) return false;
@@ -124,34 +169,33 @@ export function missingOutputProducers(
 export function readyStages(
   workflow: WorkflowDocument,
   snapshots: readonly ExecutionSnapshot[],
-  sessionStatus: string,
-  revisionBaselines?: Readonly<Record<string, number>> | null,
-  resumes?: readonly BlockResume[] | null,
+  state: ScheduleState,
 ): string[] {
+  const { sessionStatus, revisionBaselines, resumes } = state;
   return candidateStageIds(workflow, snapshots).filter((stageId) => {
     const latest = latestStageSnapshot(snapshots, stageId);
-    if (latest !== null) {
-      if (latest.status === "running") return false;
-      // Continue reopens this execution. A new dispatch would leave the cancelled one behind.
-      if (latest.status === "cancelled") return false;
-      // Snapshots keep the blocked outcome after continue. The resume event is the signal.
-      if ((latest.outcomeStatus === "blocked" || latest.outcomeStatus === "question") && !blockResumed(sessionStatus, latest.executionId, resumes)) {
-        return false;
-      }
-      if (latest.status === "failed") {
-        if (latest.failureReason === VERIFY_EXHAUSTED || latest.failureReason === VERIFY_FAILED) return false;
-        if (!failedResumed(sessionStatus, latest.executionId, resumes)) return false;
-      }
-    }
-    if (revisionStop(workflow, snapshots, stageId, revisionBaselines)) return false;
+    if (latest !== null && !latestAllowsDispatch(latest, sessionStatus, resumes)) return false;
+    if (revisionStop(workflow, snapshots, { stageId, revisionBaselines })) return false;
     return true;
   });
 }
 
-interface BlockResume {
-  event: string;
-  executionId?: string | null;
-  data?: { from?: unknown };
+/** Whether a stage's latest execution leaves it free to dispatch again. */
+function latestAllowsDispatch(
+  latest: ExecutionSnapshot,
+  sessionStatus: string,
+  resumes: ScheduleState['resumes'],
+): boolean {
+  if (latest.status === 'running') return false;
+  // Continue reopens this execution. A new dispatch would leave the cancelled one behind.
+  if (latest.status === 'cancelled') return false;
+  // Snapshots keep the blocked outcome after continue. The resume event is the signal.
+  if ((latest.outcomeStatus === 'blocked' || latest.outcomeStatus === 'question') && !blockResumed(sessionStatus, latest.executionId, resumes)) {
+    return false;
+  }
+  if (latest.status !== 'failed') return true;
+  if (latest.failureReason === VERIFY_EXHAUSTED || latest.failureReason === VERIFY_FAILED) return false;
+  return failedResumed(sessionStatus, latest.executionId, resumes);
 }
 
 function blockResumed(
@@ -159,9 +203,9 @@ function blockResumed(
   executionId: string,
   resumes: readonly BlockResume[] | null | undefined,
 ): boolean {
-  if (sessionStatus !== "active" || resumes == null) return false;
+  if (sessionStatus !== 'active' || (resumes === null || resumes === undefined)) return false;
   return resumes.some(
-    (event) => event.event === "session.active" && event.executionId === executionId && (event.data?.from === "blocked" || event.data?.from === "question"),
+    (event) => event.event === 'session.active' && event.executionId === executionId && (event.data?.from === 'blocked' || event.data?.from === 'question'),
   );
 }
 
@@ -170,9 +214,9 @@ function failedResumed(
   executionId: string,
   resumes: readonly BlockResume[] | null | undefined,
 ): boolean {
-  if (sessionStatus !== "active" || resumes == null) return false;
+  if (sessionStatus !== 'active' || (resumes === null || resumes === undefined)) return false;
   return resumes.some(
-    (event) => event.event === "session.active" && event.executionId === executionId && event.data?.from === "failed",
+    (event) => event.event === 'session.active' && event.executionId === executionId && event.data?.from === 'failed',
   );
 }
 
@@ -191,7 +235,7 @@ export function stageDispatchError(
   const view = scheduleView(workflow, snapshots);
   const latestComplete = view.current;
   for (const dep of stage.dependsOn) {
-    if (latestComplete[dep] === undefined) return dependencyError(workflow, snapshots, view, stageId, dep);
+    if (latestComplete[dep] === undefined) return dependencyError({ workflow, snapshots, view }, stageId, dep);
   }
   const incoming = incomingRouters(workflow, stageId);
   if (incoming.length === 0) return null;
@@ -201,13 +245,22 @@ export function stageDispatchError(
     if (stage.dependsOn.length > 0) return `Stage ${stageId} is waiting for a routing decision.`;
     return null;
   }
-  let router = completedIncoming[0]!;
+  return latestRouterError(completedIncoming, latestComplete, stageId);
+}
+
+/** The most recent completed router decides; the stage must be on its chosen route. */
+function latestRouterError(
+  completedIncoming: ReturnType<typeof incomingRouters>,
+  latestComplete: ScheduleView['current'],
+  stageId: string,
+): string | null {
+  let [router] = completedIncoming;
   for (const item of completedIncoming.slice(1)) {
-    const best = latestComplete[router.id]!;
-    const current = latestComplete[item.id]!;
+    const best = latestComplete[router.id];
+    const current = latestComplete[item.id];
     if (current.executionOrder > best.executionOrder) router = item;
   }
-  const decision = (latestComplete[router.id]!.outcomeDecision ?? "").toLowerCase();
+  const decision = (latestComplete[router.id].outcomeDecision ?? '').toLowerCase();
   if (!routeListsStage(router.routes[decision], stageId)) {
     return `Stage ${stageId} is not routed by ${router.id} decision ${pyRepr(decision)}.`;
   }
@@ -215,12 +268,13 @@ export function stageDispatchError(
 }
 
 function dependencyError(
-  workflow: WorkflowDocument,
-  snapshots: readonly ExecutionSnapshot[],
-  view: ScheduleView,
+  scope: {
+    readonly workflow: WorkflowDocument; readonly snapshots: readonly ExecutionSnapshot[]; readonly view: ScheduleView,
+  },
   stageId: string,
   dep: string,
 ): string {
+  const { workflow, snapshots, view } = scope;
   if (view.complete[dep] !== undefined) {
     const skip = supersedingSkip(workflow, snapshots, dep);
     if (skip !== null) {
@@ -233,254 +287,43 @@ function dependencyError(
   return `Stage ${stageId} depends on ${dep}, which has not completed.`;
 }
 
-/** Highest-order skip snapshot of each stage. Only run_when stages have any. */
-function latestSkipByStage(snapshots: readonly ExecutionSnapshot[]): Record<string, ExecutionSnapshot> {
-  const latest: Record<string, ExecutionSnapshot> = {};
-  for (const snapshot of snapshots) {
-    if (snapshot.status !== "skipped") continue;
-    const current = latest[snapshot.stageId];
-    if (current === undefined || snapshot.executionOrder > current.executionOrder) latest[snapshot.stageId] = snapshot;
-  }
-  return latest;
-}
-
-/** The newest skip whose reach includes the stage. A completion that is not newer than it is superseded. */
-export function supersedingSkip(
+/** Follow a single-stage route from the latest router; null when the route leaves the choice to the ready set. */
+function version2RoutedStage(
   workflow: WorkflowDocument,
   snapshots: readonly ExecutionSnapshot[],
-  stageId: string,
-): ExecutionSnapshot | null {
-  return supersedingSkipFrom(workflow, latestSkipByStage(snapshots), stageId);
-}
-
-function supersedingSkipFrom(
-  workflow: WorkflowDocument,
-  skips: Readonly<Record<string, ExecutionSnapshot>>,
-  stageId: string,
-): ExecutionSnapshot | null {
-  let best: ExecutionSnapshot | null = null;
-  for (const skip of Object.values(skips)) {
-    if (!conditionalReach(workflow.stages, skip.stageId).has(stageId)) continue;
-    if (best === null || skip.executionOrder > best.executionOrder) best = skip;
+  { stage, latest, sessionStatus }: { stage: StageSpec; latest: ExecutionSnapshot; sessionStatus: string },
+): NextStageResult | null {
+  const decision = (latest.outcomeDecision ?? '').toLowerCase();
+  const target = stage.routes[decision];
+  if (target === undefined) {
+    return new NextStageError(`stage ${stage.id} decision ${pyRepr(decision)} is not a valid route.`);
   }
-  return best;
-}
-
-/**
- * Latest completion of each stage that scheduling may still read. A skip supersedes the completions of
- * every stage in its reach that are not newer than the skip. Without skips this equals latestCompleteByStage.
- */
-export function currentCompleteByStage(
-  workflow: WorkflowDocument,
-  snapshots: readonly ExecutionSnapshot[],
-): Record<string, ExecutionSnapshot> {
-  return scheduleView(workflow, snapshots).current;
-}
-
-interface ScheduleView {
-  complete: Record<string, ExecutionSnapshot>;
-  skips: Record<string, ExecutionSnapshot>;
-  current: Record<string, ExecutionSnapshot>;
-}
-
-function scheduleView(workflow: WorkflowDocument, snapshots: readonly ExecutionSnapshot[]): ScheduleView {
-  const complete = latestCompleteByStage(snapshots);
-  const skips = latestSkipByStage(snapshots);
-  if (Object.keys(skips).length === 0) return { complete, skips, current: complete };
-  const current: Record<string, ExecutionSnapshot> = {};
-  for (const [stageId, snapshot] of Object.entries(complete)) {
-    const skip = supersedingSkipFrom(workflow, skips, stageId);
-    if (skip === null || snapshot.executionOrder > skip.executionOrder) current[stageId] = snapshot;
-  }
-  return { complete, skips, current };
-}
-
-/** Order of the stage's latest completion or skip, or -1 when it has neither. */
-function latestVisitOrder(view: ScheduleView, stageId: string): number {
-  return Math.max(view.complete[stageId]?.executionOrder ?? -1, view.skips[stageId]?.executionOrder ?? -1);
-}
-
-export function latestCompleteByStage(
-  snapshots: readonly ExecutionSnapshot[],
-): Record<string, ExecutionSnapshot> {
-  const latest: Record<string, ExecutionSnapshot> = {};
-  for (const snapshot of snapshots) {
-    if (snapshot.status !== "completed" || snapshot.outcomeStatus !== "complete") continue;
-    const current = latest[snapshot.stageId];
-    if (current === undefined || snapshot.executionOrder > current.executionOrder) {
-      latest[snapshot.stageId] = snapshot;
-    }
-  }
-  return latest;
-}
-
-export const VERIFY_EXHAUSTED = "verify_exhausted";
-export const VERIFY_FAILED = "verify_failed";
-
-export function failedStageCount(snapshots: readonly ExecutionSnapshot[], stageId: string): number {
-  return snapshots.filter(
-    (snapshot) =>
-      snapshot.stageId === stageId &&
-      snapshot.status === "failed" &&
-      snapshot.failureReason !== VERIFY_EXHAUSTED &&
-      snapshot.failureReason !== VERIFY_FAILED,
-  ).length;
-}
-
-/** The stage's latest execution when that execution is a verify-exhausted failure. */
-export function verifyExhaustedExecution(
-  snapshots: readonly ExecutionSnapshot[],
-  stageId: string,
-): ExecutionSnapshot | null {
-  const latest = latestStageSnapshot(snapshots, stageId);
-  if (latest !== null && latest.status === "failed" && latest.failureReason === VERIFY_EXHAUSTED) {
-    return latest;
-  }
-  return null;
-}
-
-/** The stage's latest execution when that execution is a verify-only failure. */
-export function verifyFailedExecution(
-  snapshots: readonly ExecutionSnapshot[],
-  stageId: string,
-): ExecutionSnapshot | null {
-  const latest = latestStageSnapshot(snapshots, stageId);
-  if (latest !== null && latest.status === "failed" && latest.failureReason === VERIFY_FAILED) {
-    return latest;
-  }
-  return null;
-}
-
-/**
- * Execution that holds a stage's provider agent. Any later visit continues it.
- * A stage that has not run yet has no agent. `resume_from` does not use this:
- * that stage continues the named dependency's agent instead.
- */
-export function stageAgentExecution(
-  snapshots: readonly ExecutionSnapshot[],
-  stageId: string,
-): string | null {
-  let latest: ExecutionSnapshot | null = null;
-  for (const snapshot of snapshots) {
-    if (snapshot.stageId !== stageId || snapshot.status === "skipped") continue;
-    if (latest === null || snapshot.executionOrder > latest.executionOrder) latest = snapshot;
-  }
-  return latest?.executionId ?? null;
-}
-
-/**
- * True when this dispatch continues an execution that already received this
- * stage's prompt. A `resume_from` visit joins the dependency's agent until a
- * route comes back, so that visit still needs the full stage prompt.
- */
-export function stagePromptAlreadyDelivered(
-  workflow: WorkflowDocument,
-  snapshots: readonly ExecutionSnapshot[],
-  stageId: string,
-): boolean {
-  const stage = workflow.stages[stageId];
-  if (stage === undefined) return false;
-  if (stage.resumeFrom) return revisionResumeExecution(workflow, snapshots, stageId) !== null;
-  return stageAgentExecution(snapshots, stageId) !== null;
-}
-
-/**
- * Provider session to continue when a `resume_from` stage is routed back to
- * itself. The latest execution of that stage holds the agent. A visit that
- * was not routed back resolves `resume_from` instead.
- */
-export function revisionResumeExecution(
-  workflow: WorkflowDocument,
-  snapshots: readonly ExecutionSnapshot[],
-  stageId: string,
-): string | null {
-  const own = snapshots.filter((snapshot) => snapshot.stageId === stageId && snapshot.status !== "skipped");
-  if (own.length === 0) return null;
-  let latestOwn = own[0]!;
-  let latestCompleteOwn: ExecutionSnapshot | null = null;
-  for (const snapshot of own) {
-    if (snapshot.executionOrder > latestOwn.executionOrder) latestOwn = snapshot;
-    if (snapshot.status !== "completed" || snapshot.outcomeStatus !== "complete") continue;
-    if (latestCompleteOwn === null || snapshot.executionOrder > latestCompleteOwn.executionOrder) {
-      latestCompleteOwn = snapshot;
-    }
-  }
-  if (latestCompleteOwn === null) return null;
-  const route = latestRouteTo(workflow, snapshots, stageId);
-  if (route === null) return null;
-  const routedBack =
-    route.executionId === latestCompleteOwn.executionId ||
-    route.executionOrder > latestCompleteOwn.executionOrder;
-  if (!routedBack) return null;
-  return latestOwn.executionId;
-}
-
-/**
- * True when another routed visit would pass the stage's maxRevisions.
- * The first successful visit is free. A failed retry of the visit already
- * started does not count. A baseline is the successful visits at the last continue.
- */
-export function revisionStop(
-  workflow: WorkflowDocument,
-  snapshots: readonly ExecutionSnapshot[],
-  stageId: string,
-  revisionBaselines?: Readonly<Record<string, number>> | null,
-): boolean {
-  const stage = workflow.stages[stageId];
-  if (stage === undefined || stage.maxRevisions === null) return false;
-  const latest = latestStageSnapshot(snapshots, stageId);
-  if (latest !== null && latest.status === "failed") return false;
-  const completed = snapshots.filter(
-    (snapshot) =>
-      snapshot.stageId === stageId &&
-      snapshot.status === "completed" &&
-      snapshot.outcomeStatus === "complete",
-  ).length;
-  if (completed === 0) return false;
-  const recorded = revisionBaselines?.[stageId] ?? 1;
-  const baseline = Math.max(1, recorded);
-  return completed - baseline >= stage.maxRevisions;
+  // A list starts each listed stage from the ready set. complete ends this branch only.
+  if (typeof target !== 'string' || target === 'complete') return null;
+  const error = stageDispatchError(workflow, target, snapshots);
+  if (error === null) return new NextStage(target);
+  // A quiet graph with a missing output still reruns the producer.
+  const producers = missingOutputProducers(workflow, snapshots, sessionStatus);
+  if (producers.length > 0) return new NextStage(producers[0]);
+  return new NextStageError(error);
 }
 
 function nextVersion2Stage(
   workflow: WorkflowDocument,
   snapshots: readonly ExecutionSnapshot[],
   sessionStatus: string,
-  latest: ExecutionSnapshot | null,
 ): NextStageResult {
-  if (latest !== null && latest.status === "completed" && latest.outcomeStatus === "complete") {
-    const stage = workflow.stages[latest.stageId];
-    if (stage !== undefined && Object.keys(stage.routes).length > 0) {
-      const decision = (latest.outcomeDecision ?? "").toLowerCase();
-      const target = stage.routes[decision];
-      if (target === undefined) {
-        return new NextStageError(`stage ${stage.id} decision ${pyRepr(decision)} is not a valid route.`);
-      }
-      // A list starts each listed stage from the ready set. complete ends this branch only.
-      if (typeof target === "string" && target !== "complete") {
-        const error = stageDispatchError(workflow, target, snapshots);
-        if (error !== null) {
-          // A quiet graph with a missing output still reruns the producer.
-          const producers = missingOutputProducers(workflow, snapshots, sessionStatus);
-          if (producers.length > 0) return new NextStage(producers[0]!);
-          return new NextStageError(error);
-        }
-        return new NextStage(target);
-      }
-    }
+  const latest = latestSnapshot(snapshots);
+  const stage = latest === null ? null : routingStage(workflow, latest);
+  if (stage !== null && latest !== null) {
+    const routed = version2RoutedStage(workflow, snapshots, { stage, latest, sessionStatus });
+    if (routed !== null) return routed;
   }
   const selected = sequentialCandidates(workflow, snapshots, sessionStatus);
-  if (selected.length > 0) return new NextStage(selected[0]!);
+  if (selected.length > 0) return new NextStage(selected[0]);
   const producers = missingOutputProducers(workflow, snapshots, sessionStatus);
-  if (producers.length > 0) return new NextStage(producers[0]!);
-  return new NextStageError("no eligible stage");
-}
-
-/** The router's latest visit is a skip after `since`. It lists no target. */
-function routerSkippedSince(view: ScheduleView, routerId: string, since: number): boolean {
-  const skip = view.skips[routerId];
-  if (skip === undefined || skip.executionOrder <= since) return false;
-  return skip.executionOrder > (view.complete[routerId]?.executionOrder ?? -1);
+  if (producers.length > 0) return new NextStage(producers[0]);
+  return new NextStageError('no eligible stage');
 }
 
 function version2RouteError(workflow: WorkflowDocument, stageId: string, view: ScheduleView): string | null {
@@ -492,7 +335,7 @@ function version2RouteError(workflow: WorkflowDocument, stageId: string, view: S
     }
     const snapshot = view.current[router.id];
     if (snapshot === undefined || snapshot.executionOrder <= since) continue;
-    const decision = (snapshot.outcomeDecision ?? "").toLowerCase();
+    const decision = (snapshot.outcomeDecision ?? '').toLowerCase();
     if (!routeListsStage(router.routes[decision], stageId)) {
       if (dependsOnStage(workflow, router, stageId)) continue;
       return `Stage ${stageId} is not routed by ${router.id} decision ${pyRepr(decision)}.`;
@@ -504,17 +347,17 @@ function version2RouteError(workflow: WorkflowDocument, stageId: string, view: S
 function routedNextStage(
   workflow: WorkflowDocument,
   snapshots: readonly ExecutionSnapshot[],
-  stage: StageSpec,
-  latest: ExecutionSnapshot,
+  routed: { readonly stage: StageSpec; readonly latest: ExecutionSnapshot },
 ): NextStageResult {
-  const decision = (latest.outcomeDecision ?? "").toLowerCase();
+  const { stage, latest } = routed;
+  const decision = (latest.outcomeDecision ?? '').toLowerCase();
   const target = stage.routes[decision];
-  if (typeof target !== "string") {
+  if (typeof target !== 'string') {
     return new NextStageError(
       `stage ${stage.id} decision ${pyRepr(decision)} is not a valid route.`,
     );
   }
-  if (target === "complete") return new Stop("completed");
+  if (target === 'complete') return new Stop('completed');
   const error = stageDispatchError(workflow, target, snapshots);
   if (error === null) return new NextStage(target);
   return new NextStageError(error);
@@ -533,7 +376,7 @@ function candidateStageIds(
       candidates.push(stageId);
       continue;
     }
-    if (hasLaterRouteTo(workflow, view, stageId, since)) {
+    if (hasLaterRouteTo(workflow, view, { stageId, completeOrder: since })) {
       candidates.push(stageId);
       continue;
     }
@@ -557,85 +400,20 @@ function hasNewerDependency(
 function hasLaterRouteTo(
   workflow: WorkflowDocument,
   view: ScheduleView,
-  stageId: string,
-  completeOrder: number,
+  visit: { readonly stageId: string; readonly completeOrder: number },
 ): boolean {
+  const { stageId, completeOrder } = visit;
   if (isWorkflowV2(workflow)) {
-    const relevant = routersCompletedSince(workflow, view, stageId, completeOrder);
+    const relevant = routersCompletedSince(workflow, view, { stageId, since: completeOrder });
     return relevant !== null && relevant.length > 0;
   }
   for (const router of incomingRouters(workflow, stageId)) {
     const snapshot = view.complete[router.id];
     if (snapshot === undefined || snapshot.executionOrder <= completeOrder) continue;
-    const decision = (snapshot.outcomeDecision ?? "").toLowerCase();
+    const decision = (snapshot.outcomeDecision ?? '').toLowerCase();
     if (routeListsStage(router.routes[decision], stageId)) return true;
   }
   return false;
-}
-
-/** A router downstream of the stage is a route back, so its other decisions do not block it. */
-function dependsOnStage(workflow: WorkflowDocument, router: StageSpec, stageId: string): boolean {
-  return dependencyClosure(workflow.stages, router.id).has(stageId);
-}
-
-/**
- * Null when a router that finished since `since` does not list the stage.
- * A router that depends on the stage does not block it when it goes elsewhere.
- */
-export function relevantRouterSnapshots(
-  workflow: WorkflowDocument,
-  snapshots: readonly ExecutionSnapshot[],
-  stageId: string,
-): ExecutionSnapshot[] | null {
-  const view = scheduleView(workflow, snapshots);
-  return routersCompletedSince(workflow, view, stageId, latestVisitOrder(view, stageId));
-}
-
-function routersCompletedSince(
-  workflow: WorkflowDocument,
-  view: ScheduleView,
-  stageId: string,
-  since: number,
-): ExecutionSnapshot[] | null {
-  const relevant: ExecutionSnapshot[] = [];
-  for (const router of incomingRouters(workflow, stageId)) {
-    if (routerSkippedSince(view, router.id, since)) {
-      if (dependsOnStage(workflow, router, stageId)) continue;
-      return null;
-    }
-    const snapshot = view.current[router.id];
-    if (snapshot === undefined || snapshot.executionOrder <= since) continue;
-    const decision = (snapshot.outcomeDecision ?? "").toLowerCase();
-    if (!routeListsStage(router.routes[decision], stageId)) {
-      if (dependsOnStage(workflow, router, stageId)) continue;
-      return null;
-    }
-    relevant.push(snapshot);
-  }
-  relevant.sort((left, right) => left.executionOrder - right.executionOrder);
-  return relevant;
-}
-
-function latestRouteTo(
-  workflow: WorkflowDocument,
-  snapshots: readonly ExecutionSnapshot[],
-  stageId: string,
-): ExecutionSnapshot | null {
-  if (isWorkflowV2(workflow)) {
-    const relevant = relevantRouterSnapshots(workflow, snapshots, stageId);
-    if (relevant === null || relevant.length === 0) return null;
-    return relevant[relevant.length - 1]!;
-  }
-  let best: ExecutionSnapshot | null = null;
-  for (const snapshot of snapshots) {
-    if (snapshot.status !== "completed" || snapshot.outcomeStatus !== "complete") continue;
-    const source = workflow.stages[snapshot.stageId];
-    if (source === undefined) continue;
-    const decision = (snapshot.outcomeDecision ?? "").toLowerCase();
-    if (!routeListsStage(source.routes[decision], stageId)) continue;
-    if (best === null || snapshot.executionOrder > best.executionOrder) best = snapshot;
-  }
-  return best;
 }
 
 function hasBlockingLatest(snapshots: readonly ExecutionSnapshot[]): boolean {
@@ -651,98 +429,38 @@ function hasBlockingLatest(snapshots: readonly ExecutionSnapshot[]): boolean {
     }
   }
   for (const snapshot of latest.values()) {
-    if (snapshot.status === "failed" || snapshot.status === "cancelled" || snapshot.status === "running") return true;
-    if (snapshot.outcomeStatus === "blocked" || snapshot.outcomeStatus === "question") return true;
+    if (snapshot.status === 'failed' || snapshot.status === 'cancelled' || snapshot.status === 'running') return true;
+    if (snapshot.outcomeStatus === 'blocked' || snapshot.outcomeStatus === 'question') return true;
   }
   return false;
-}
-
-function latestStageSnapshot(
-  snapshots: readonly ExecutionSnapshot[],
-  stageId: string,
-): ExecutionSnapshot | null {
-  let latest: ExecutionSnapshot | null = null;
-  for (const snapshot of snapshots) {
-    if (snapshot.stageId !== stageId) continue;
-    if (latest === null || snapshot.executionOrder > latest.executionOrder) latest = snapshot;
-  }
-  return latest;
-}
-
-function latestSnapshot(snapshots: readonly ExecutionSnapshot[]): ExecutionSnapshot | null {
-  if (snapshots.length === 0) return null;
-  return snapshots.reduce((best, snapshot) =>
-    snapshot.executionOrder > best.executionOrder ? snapshot : best,
-  );
-}
-
-function incomingRouters(workflow: WorkflowDocument, stageId: string): StageSpec[] {
-  return Object.values(workflow.stages).filter((stage) =>
-    Object.values(stage.routes).some((target) => routeListsStage(target, stageId)),
-  );
-}
-
-export function runnableNow(
-  workflow: WorkflowDocument,
-  ready: readonly string[],
-  running: readonly string[],
-  concurrency: number,
-  snapshots: readonly ExecutionSnapshot[] = [],
-): string[] {
-  if (concurrency < 1) return [];
-  const ordered = declarationOrder(workflow, ready);
-  const suspended = suspendedReady(workflow, ordered);
-  const working = new Set(running);
-  if (working.size >= concurrency) return [];
-  const started: string[] = [];
-  for (const stageId of ordered) {
-    if (working.size >= concurrency) break;
-    if (!workflow.stages[stageId] || working.has(stageId) || suspended.has(stageId)) continue;
-    if (overlapsWorking(workflow, stageId, working)) continue;
-    if (mustRunAlone(workflow, stageId, snapshots)) {
-      // Borrowed agent. Skip it while anything else is in this turn; do not block the rest.
-      if (working.size > 0) continue;
-      started.push(stageId);
-      break;
-    }
-    started.push(stageId);
-    working.add(stageId);
-  }
-  return started;
 }
 
 /** Ready stages that are not on a branch already stopped by block, verify, or retries. */
 export function readyOutsideStoppedBranches(
   workflow: WorkflowDocument,
   snapshots: readonly ExecutionSnapshot[],
-  sessionStatus: string,
-  revisionBaselines?: Readonly<Record<string, number>> | null,
-  resumes?: readonly BlockResume[] | null,
+  state: ScheduleState,
 ): string[] {
-  const stopped = stoppedStageIds(workflow, snapshots, sessionStatus, resumes);
-  return readyStages(workflow, snapshots, sessionStatus, revisionBaselines, resumes).filter(
+  const stopped = stoppedStageIds(workflow, snapshots, state);
+  return readyStages(workflow, snapshots, state).filter(
     (stageId) => !onStoppedBranch(workflow, stageId, stopped),
   );
 }
 
 /** What the pool may start. Verify repair and missing outputs are included once per command. */
+export interface SchedulableState extends ScheduleState {
+  readonly verifyTried: ReadonlySet<string>;
+  readonly verifyOnlyTried?: ReadonlySet<string>;
+}
+
 export function schedulableStageIds(
   workflow: WorkflowDocument,
   snapshots: readonly ExecutionSnapshot[],
-  sessionStatus: string,
-  revisionBaselines: Readonly<Record<string, number>> | null | undefined,
-  resumes: readonly BlockResume[] | null | undefined,
-  verifyTried: ReadonlySet<string>,
-  verifyOnlyTried: ReadonlySet<string> = new Set(),
+  state: SchedulableState,
 ): string[] {
-  const stopped = stoppedStageIds(workflow, snapshots, sessionStatus, resumes);
-  const ready = readyOutsideStoppedBranches(
-    workflow,
-    snapshots,
-    sessionStatus,
-    revisionBaselines,
-    resumes,
-  );
+  const { sessionStatus, verifyTried, verifyOnlyTried = new Set<string>() } = state;
+  const stopped = stoppedStageIds(workflow, snapshots, state);
+  const ready = readyOutsideStoppedBranches(workflow, snapshots, state);
   const extra: string[] = [];
   for (const stageId of Object.keys(workflow.stages)) {
     if (ancestorStopped(workflow, stageId, stopped)) continue;
@@ -758,74 +476,66 @@ export function schedulableStageIds(
   ]);
 }
 
+function unresumedStageFailure(
+  latest: ExecutionSnapshot,
+  sessionStatus: ScheduleState['sessionStatus'],
+  resumes: ScheduleState['resumes'],
+): boolean {
+  return (
+    latest.status === 'failed' &&
+    latest.failureReason !== VERIFY_FAILED &&
+    latest.failureReason !== VERIFY_EXHAUSTED &&
+    !failedResumed(sessionStatus, latest.executionId, resumes)
+  );
+}
+
 /** Stop reason once nothing is running and nothing was started. `no eligible stage` means the graph is stuck. */
 export function version2IdleReason(
   workflow: WorkflowDocument,
   snapshots: readonly ExecutionSnapshot[],
-  sessionStatus: string,
-  revisionBaselines?: Readonly<Record<string, number>> | null,
-  resumes?: readonly BlockResume[] | null,
+  state: ScheduleState,
 ): string {
+  const { sessionStatus, revisionBaselines, resumes } = state;
   if (version2GraphQuiet(workflow, snapshots, sessionStatus)) {
-    if (missingOutputNames(workflow, snapshots).length > 0) return "outputs_missing";
-    return "completed";
+    if (missingOutputNames(workflow, snapshots).length > 0) return 'outputs_missing';
+    return 'completed';
   }
-  for (const stageId of Object.keys(workflow.stages)) {
-    const latest = latestStageSnapshot(snapshots, stageId);
-    if (latest?.outcomeStatus === "blocked" && !blockResumed(sessionStatus, latest.executionId, resumes)) {
-      return "blocked";
-    }
-  }
-  for (const stageId of Object.keys(workflow.stages)) {
-    const latest = latestStageSnapshot(snapshots, stageId);
-    if (latest?.outcomeStatus === "question" && !blockResumed(sessionStatus, latest.executionId, resumes)) return "question";
-  }
-  for (const stageId of Object.keys(workflow.stages)) {
-    const latest = latestStageSnapshot(snapshots, stageId);
-    if (latest !== null && latest.status === "failed" && latest.failureReason === VERIFY_FAILED) {
-      return "verify_failed";
-    }
-  }
-  for (const stageId of Object.keys(workflow.stages)) {
-    const latest = latestStageSnapshot(snapshots, stageId);
-    if (latest !== null && latest.status === "failed" && latest.failureReason === VERIFY_EXHAUSTED) {
-      return "verify_exhausted";
-    }
-  }
-  for (const stageId of Object.keys(workflow.stages)) {
-    const latest = latestStageSnapshot(snapshots, stageId);
-    if (
-      latest?.status === "failed" &&
-      latest.failureReason !== VERIFY_FAILED &&
-      latest.failureReason !== VERIFY_EXHAUSTED &&
-      !failedResumed(sessionStatus, latest.executionId, resumes)
-    ) {
-      return "stage_failed";
-    }
-  }
+  const latests = Object.keys(workflow.stages)
+    .map((stageId) => latestStageSnapshot(snapshots, stageId))
+    .filter((latest): latest is ExecutionSnapshot => latest !== null);
+  const unresumed = (latest: ExecutionSnapshot) => !blockResumed(sessionStatus, latest.executionId, resumes);
+  const idleChecks: readonly (readonly [string, (latest: ExecutionSnapshot) => boolean])[] = [
+    ['blocked', (latest) => latest.outcomeStatus === 'blocked' && unresumed(latest)],
+    ['question', (latest) => latest.outcomeStatus === 'question' && unresumed(latest)],
+    ['verify_failed', (latest) => latest.status === 'failed' && latest.failureReason === VERIFY_FAILED],
+    ['verify_exhausted', (latest) => latest.status === 'failed' && latest.failureReason === VERIFY_EXHAUSTED],
+    ['stage_failed', (latest) => unresumedStageFailure(latest, sessionStatus, resumes)],
+  ];
+  const found = idleChecks.find(([, matches]) => latests.some(matches));
+  if (found !== undefined) return found[0];
   for (const stageId of candidateStageIds(workflow, snapshots)) {
-    if (revisionStop(workflow, snapshots, stageId, revisionBaselines)) return "revisions_exhausted";
+    if (revisionStop(workflow, snapshots, { stageId, revisionBaselines })) return 'revisions_exhausted';
   }
-  return "no eligible stage";
+  return 'no eligible stage';
 }
 
 function stoppedStageIds(
   workflow: WorkflowDocument,
   snapshots: readonly ExecutionSnapshot[],
-  sessionStatus: string,
-  resumes: readonly BlockResume[] | null | undefined,
+  state: ScheduleState,
 ): Set<string> {
+  const { sessionStatus, resumes } = state;
   const stopped = new Set<string>();
   for (const stageId of Object.keys(workflow.stages)) {
     const latest = latestStageSnapshot(snapshots, stageId);
     if (latest === null) continue;
-    if ((latest.outcomeStatus === "blocked" || latest.outcomeStatus === "question") && !blockResumed(sessionStatus, latest.executionId, resumes)) {
+    if ((latest.outcomeStatus === 'blocked' || latest.outcomeStatus === 'question') && !blockResumed(sessionStatus, latest.executionId, resumes)) {
       stopped.add(stageId);
     }
-    if (latest.status === "failed" && latest.failureReason === VERIFY_EXHAUSTED) stopped.add(stageId);
-    if (latest.status === "failed" && latest.failureReason === VERIFY_FAILED) stopped.add(stageId);
+    if (latest.status === 'failed' && latest.failureReason === VERIFY_EXHAUSTED) stopped.add(stageId);
+    if (latest.status === 'failed' && latest.failureReason === VERIFY_FAILED) stopped.add(stageId);
     if (
-      latest.status === "failed" &&
+      latest.status === 'failed' &&
       latest.failureReason !== VERIFY_EXHAUSTED &&
       latest.failureReason !== VERIFY_FAILED &&
       !failedResumed(sessionStatus, latest.executionId, resumes)
@@ -845,48 +555,4 @@ function ancestorStopped(workflow: WorkflowDocument, stageId: string, stopped: R
     if (stopped.has(dep)) return true;
   }
   return false;
-}
-
-function declarationOrder(workflow: WorkflowDocument, ids: readonly string[]): string[] {
-  const wanted = new Set(ids);
-  const ordered: string[] = [];
-  for (const stageId of Object.keys(workflow.stages)) {
-    if (wanted.has(stageId)) ordered.push(stageId);
-  }
-  return ordered;
-}
-
-function suspendedReady(workflow: WorkflowDocument, ready: readonly string[]): Set<string> {
-  const readySet = new Set(ready);
-  const suspended = new Set<string>();
-  for (const stageId of ready) {
-    for (const other of dependencyClosure(workflow.stages, stageId)) {
-      if (!readySet.has(other)) continue;
-      suspended.add(stageId);
-      break;
-    }
-  }
-  return suspended;
-}
-
-function overlapsWorking(workflow: WorkflowDocument, stageId: string, working: ReadonlySet<string>): boolean {
-  const closure = dependencyClosure(workflow.stages, stageId);
-  for (const other of working) {
-    if (other === stageId) continue;
-    if (closure.has(other) || dependencyClosure(workflow.stages, other).has(stageId)) return true;
-  }
-  return false;
-}
-
-function mustRunAlone(
-  workflow: WorkflowDocument,
-  stageId: string,
-  snapshots: readonly ExecutionSnapshot[],
-): boolean {
-  const stage = workflow.stages[stageId];
-  if (!stage?.resumeFrom) return false;
-  // Verify repair and a route back continue this stage's own agent.
-  if (verifyExhaustedExecution(snapshots, stageId) !== null) return false;
-  if (revisionResumeExecution(workflow, snapshots, stageId) !== null) return false;
-  return true;
 }

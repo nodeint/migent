@@ -1,9 +1,10 @@
-import path from "node:path";
-import type { WorkflowDocument, WorkflowRequires } from "./model.js";
+
+import { SCHEMA_V2 } from './constants.js';
+import type { WorkflowDocument, WorkflowRequires } from './model.js';
 
 /** A cross-workflow finding. `workflow` is the id it concerns; `files` the declaring files, when known. */
 export interface CatalogProblem {
-  code: "duplicate-id" | "no-stages" | "unknown-downstream" | "requires-invalid";
+  code: 'duplicate-id' | 'no-stages' | 'unknown-downstream' | 'requires-invalid';
   message: string;
   workflow: string;
   files?: string[];
@@ -28,7 +29,7 @@ export interface WorkflowCatalogEntry {
   stagesDeclared: boolean;
   requires: CatalogFact<WorkflowRequires | null>;
   /** `index` is the entry's position in the author's list, kept when earlier entries were unreadable. */
-  downstream: ReadonlyArray<{ workflow: CatalogFact<string>; index?: number }>;
+  downstream: readonly { workflow: CatalogFact<string>; index?: number }[];
 }
 
 /** Adapts a parsed document to a fully known catalog entry. */
@@ -49,12 +50,26 @@ export function catalogEntryFromDocument(file: string, document: WorkflowDocumen
  * know, so the results for fully parsed documents are unchanged.
  */
 export function checkWorkflowCatalog(
-  entries: ReadonlyArray<WorkflowCatalogEntry>,
+  entries: readonly WorkflowCatalogEntry[],
   failedIds: ReadonlySet<string> = new Set(),
   external: WorkflowCatalogEntry | null = null,
 ): { documents: Record<string, WorkflowDocument>; problems: CatalogProblem[] } {
   const failed = new Set(failedIds);
   const problems: CatalogProblem[] = [];
+  const grouped = groupEntriesById(entries);
+  const documents = collectUniqueDocuments(grouped, failed, problems);
+  for (const [workflowId, group] of grouped) {
+    if (group.length > 1) continue;
+    checkEntryReferences(group[0], workflowId, { entries, documents, failed, problems, external: false });
+  }
+  // An external entry (a session draft) is checked against the catalog but is never part of it, so it
+  // may share an id with a catalog workflow without a duplicate-id finding.
+  if (external !== null) checkExternalEntry(external, { entries, documents, failed, problems, external: true });
+  return { documents, problems };
+}
+
+/** Groups the entries that know their id by that id, in input order. */
+function groupEntriesById(entries: readonly WorkflowCatalogEntry[]): Map<string, WorkflowCatalogEntry[]> {
   const grouped = new Map<string, WorkflowCatalogEntry[]>();
   for (const entry of entries) {
     if (!entry.id.known) continue;
@@ -62,59 +77,67 @@ export function checkWorkflowCatalog(
     if (list === undefined) grouped.set(entry.id.value, [entry]);
     else list.push(entry);
   }
+  return grouped;
+}
+
+/** Reports duplicate ids and empty stages, returning the documents of the uniquely declared workflows. */
+function collectUniqueDocuments(
+  grouped: ReadonlyMap<string, WorkflowCatalogEntry[]>,
+  failed: Set<string>,
+  problems: CatalogProblem[],
+): Record<string, WorkflowDocument> {
   const documents: Record<string, WorkflowDocument> = {};
   for (const [workflowId, group] of grouped) {
     if (group.length > 1) {
       const files = group.map((entry) => entry.file);
-      problems.push({ code: "duplicate-id", message: `${workflowId}: id is declared by ${files.join(", ")}.`, workflow: workflowId, files });
+      problems.push({ code: 'duplicate-id', message: `${workflowId}: id is declared by ${files.join(', ')}.`, workflow: workflowId, files });
       failed.add(workflowId);
       continue;
     }
-    const entry = group[0]!;
+    const [entry] = group;
     if (entry.document !== null) documents[workflowId] = entry.document;
     if (!entry.stagesDeclared) {
-      problems.push({ code: "no-stages", message: `${workflowId}: declares no stages.`, workflow: workflowId });
+      problems.push({ code: 'no-stages', message: `${workflowId}: declares no stages.`, workflow: workflowId });
     }
   }
-  for (const [workflowId, group] of grouped) {
-    if (group.length > 1) continue;
-    checkEntryReferences(group[0]!, workflowId, entries, documents, failed, problems, false);
+  return documents;
+}
+
+/** Checks a session draft entry against the catalog without adding it to the catalog. */
+function checkExternalEntry(external: WorkflowCatalogEntry, context: EntryReferenceContext): void {
+  const workflowId = external.id.known ? external.id.value : '';
+  if (external.id.known && !external.stagesDeclared) {
+    context.problems.push({ code: 'no-stages', message: `${workflowId}: declares no stages.`, workflow: workflowId, external: true });
   }
-  // An external entry (a session draft) is checked against the catalog but is never part of it, so it
-  // may share an id with a catalog workflow without a duplicate-id finding.
-  if (external !== null) {
-    const workflowId = external.id.known ? external.id.value : "";
-    if (external.id.known && !external.stagesDeclared) {
-      problems.push({ code: "no-stages", message: `${workflowId}: declares no stages.`, workflow: workflowId, external: true });
-    }
-    checkEntryReferences(external, workflowId, entries, documents, failed, problems, true);
-  }
-  return { documents, problems };
+  checkEntryReferences(external, workflowId, context);
+}
+
+export interface EntryReferenceContext {
+  readonly entries: readonly WorkflowCatalogEntry[];
+  readonly documents: Record<string, WorkflowDocument>;
+  readonly failed: Set<string>;
+  readonly problems: CatalogProblem[];
+  readonly external: boolean;
 }
 
 export function checkEntryReferences(
   entry: WorkflowCatalogEntry,
   workflowId: string,
-  entries: readonly WorkflowCatalogEntry[],
-  documents: Record<string, WorkflowDocument>,
-  failed: Set<string>,
-  problems: CatalogProblem[],
-  external: boolean,
+  context: EntryReferenceContext,
 ): void {
+  const { entries, documents, failed, problems, external } = context;
   const mark = external ? { external: true as const } : {};
   if (entry.requires.known && entry.requires.value !== null && !isDraftEntry(entries, entry.requires.value.workflow)) {
-    const messages: string[] = [];
-    checkRequires(workflowId, entry.requires.value, documents, failed, messages);
-    for (const message of messages) problems.push({ code: "requires-invalid", message, workflow: workflowId, ...mark });
+    for (const message of checkRequires(workflowId, entry.requires.value, { documents, failedIds: failed })) problems.push({ code: 'requires-invalid', message, workflow: workflowId, ...mark });
   }
   for (const [index, next] of entry.downstream.entries()) {
     if (!next.workflow.known) continue;
     if (!Object.hasOwn(documents, next.workflow.value) && !isDraftEntry(entries, next.workflow.value)) {
       problems.push({
-        code: "unknown-downstream",
+        code: 'unknown-downstream',
         message: `${workflowId}: downstream workflow ${next.workflow.value} is not in .migent/workflows.`,
         workflow: workflowId,
-        path: ["downstream", next.index ?? index, "workflow"],
+        path: ['downstream', next.index ?? index, 'workflow'],
         ...mark,
       });
     }
@@ -129,10 +152,10 @@ export function isDraftEntry(entries: readonly WorkflowCatalogEntry[], workflowI
 export function checkRequires(
   workflowId: string,
   requires: WorkflowRequires,
-  documents: Record<string, WorkflowDocument>,
-  failedIds: Set<string>,
-  problems: string[],
-): void {
+  lookup: { readonly documents: Record<string, WorkflowDocument>; readonly failedIds: Set<string> },
+): string[] {
+  const { documents, failedIds } = lookup;
+  const problems: string[] = [];
   const required = documents[requires.workflow];
   if (required === undefined) {
     if (failedIds.has(requires.workflow)) {
@@ -142,14 +165,15 @@ export function checkRequires(
         `${workflowId}: requires workflow ${requires.workflow}, which is not in .migent/workflows.`,
       );
     }
-    return;
+    return problems;
   }
-  if ((documents[workflowId]?.schemaVersion ?? 1) >= 2) return;
+  if ((documents[workflowId]?.schemaVersion ?? 1) >= SCHEMA_V2) return problems;
   const decision = required.completion === null ? null : required.completion.decision;
   if (requires.decision === null || decision === null || decision.toLowerCase() !== requires.decision) {
-    const actual = decision === null ? "no decision" : decision;
+    const actual = decision === null ? 'no decision' : decision;
     problems.push(
       `${workflowId}: requires ${requires.workflow} to complete with ${requires.decision}, but it completes with ${actual}.`,
     );
   }
+  return problems;
 }

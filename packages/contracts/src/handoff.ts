@@ -1,5 +1,6 @@
-import Type, { type Static } from "typebox";
-import { id } from "./common.js";
+import Type, { type Static } from 'typebox';
+
+import { id } from './common.js';
 
 /**
  * Structure of the handoff document an agent writes under response protocol 3. Pure data: the
@@ -10,11 +11,11 @@ import { id } from "./common.js";
 
 export const HANDOFF_SCHEMA_VERSION = 1;
 
-const Text = Type.String({ pattern: "\\S", description: "Non-blank text." });
+const Text = Type.String({ pattern: '\\S', description: 'Non-blank text.' });
 
 export const HandoffQuestionOption = Type.Object(
   {
-    id: Type.Optional(Type.String({ pattern: "^[A-Z]$", description: "Omit it: Migent letters options A, B, C… in order." })),
+    id: Type.Optional(Type.String({ pattern: '^[A-Z]$', description: 'Omit it: Migent letters options A, B, C… in order.' })),
     label: Text,
     description: Type.Optional(Text),
   },
@@ -23,12 +24,12 @@ export const HandoffQuestionOption = Type.Object(
 
 export const HandoffQuestion = Type.Object(
   {
-    id: Type.Optional(Type.String({ pattern: "^[1-9][0-9]*$", description: "Omit it: Migent numbers questions 1, 2, 3… in order." })),
+    id: Type.Optional(Type.String({ pattern: '^[1-9][0-9]*$', description: 'Omit it: Migent numbers questions 1, 2, 3… in order.' })),
     question: Text,
     context: Text,
-    selection: Type.Union([Type.Literal("single"), Type.Literal("multiple")]),
+    selection: Type.Union([Type.Literal('single'), Type.Literal('multiple')]),
     options: Type.Array(HandoffQuestionOption, { minItems: 2, maxItems: 26 }),
-    recommended: Type.Optional(Type.Array(Type.String({ pattern: "^[A-Z]$" }), { minItems: 1, description: "Option letters; at most one for `single`." })),
+    recommended: Type.Optional(Type.Array(Type.String({ pattern: '^[A-Z]$' }), { minItems: 1, description: 'Option letters; at most one for `single`.' })),
   },
   { additionalProperties: false },
 );
@@ -38,29 +39,29 @@ export const HandoffDocument = Type.Union(
     Type.Object(
       {
         schema_version: Type.Literal(HANDOFF_SCHEMA_VERSION),
-        status: Type.Literal("complete"),
+        status: Type.Literal('complete'),
         decision: Type.Optional(Text),
         summary: Type.Optional(Type.String()),
       },
       { additionalProperties: false },
     ),
     Type.Object(
-      { schema_version: Type.Literal(HANDOFF_SCHEMA_VERSION), status: Type.Literal("blocked"), blocker: Text },
+      { schema_version: Type.Literal(HANDOFF_SCHEMA_VERSION), status: Type.Literal('blocked'), blocker: Text },
       { additionalProperties: false },
     ),
     Type.Object(
       {
         schema_version: Type.Literal(HANDOFF_SCHEMA_VERSION),
-        status: Type.Literal("question"),
+        status: Type.Literal('question'),
         questions: Type.Array(HandoffQuestion, { minItems: 1 }),
       },
       { additionalProperties: false },
     ),
   ],
   {
-    $id: id("handoff/document"),
-    title: "Stage handoff document",
-    description: "The one JSON file a stage writes to `handoff.json` in its execution directory (response protocol 3).",
+    $id: id('handoff/document'),
+    title: 'Stage handoff document',
+    description: 'The one JSON file a stage writes to `handoff.json` in its execution directory (response protocol 3).',
   },
 );
 

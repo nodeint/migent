@@ -1,23 +1,30 @@
-import path from "node:path";
-import { z } from "zod";
-import { NonBlankString, WorkflowArtifact, WorkflowLine, WorkflowRunWhen, isValid, schemaIssues } from "@nodeint/migent-contracts";
-import type { TSchema } from "@nodeint/migent-contracts";
-import { ConfigurationError } from "./errors.js";
-import { isRecord, pyRepr } from "./record.js";
-import { RUN_WHEN_KEYS, runWhenPathsMissing, STAGE_FIELD_SCHEMAS, decisionBodyProblems, decisionEntryProblem, decisionListProblem, requireContainer, requireValid, stageField } from "./structure.js";
-import { compileChangedPathPattern } from "./changed-paths.js";
-import type { AskTarget } from "./model.js";
-import type { RunWhen, StageAgent, StageSpec } from "./model.js";
+
+import type { TSchema } from '@nodeint/migent-contracts';
+import { isValid, NonBlankString, schemaIssues,WorkflowArtifact, WorkflowLine, WorkflowRunWhen } from '@nodeint/migent-contracts';
+
+import { compileChangedPathPattern } from './changed-paths.js';
+import { DEFAULT_MAX_VERIFY } from './constants.js';
+import { ConfigurationError } from './errors.js';
+import type { AskTarget } from './model.js';
+import type { RunWhen, StageAgent, StageSpec } from './model.js';
+import { isRecord, pyRepr } from './record.js';
+import type { DecisionBodyProblem } from './structure.js';
+import { decisionBodyProblems, decisionEntryProblem, decisionListProblem, requireContainer, requireValid, RUN_WHEN_KEYS, runWhenPathsMissing, STAGE_FIELD_SCHEMAS, stageField } from './structure.js';
 
 export const optionKey = /^[A-Za-z][A-Za-z0-9_.-]*$/;
+
+export interface StageRunWhenContext {
+  readonly version2: boolean;
+  readonly verify: readonly string[];
+}
 
 export function stageRunWhen(
   stage: Record<string, unknown>,
   stageId: string,
-  version2: boolean,
-  verify: readonly string[],
+  context: StageRunWhenContext,
 ): RunWhen | null {
-  if (!Object.hasOwn(stage, "run_when") || stage.run_when == null) return null;
+  const { version2, verify } = context;
+  if (!Object.hasOwn(stage, 'run_when') || (stage.run_when === null || stage.run_when === undefined)) return null;
   const field = `stages.${stageId}.run_when`;
   if (!version2) throw new ConfigurationError(`${field} requires schema_version 2.`);
   const runWhen = stage.run_when;
@@ -27,13 +34,13 @@ export function stageRunWhen(
     if (!RUN_WHEN_KEYS.includes(key)) throw new ConfigurationError(`${field}.${key} is not supported.`);
   }
   // Reading the value only; whether it is required (absent or null) is the contract's verdict.
-  const rawPaths = Object.hasOwn(runWhenMap, "changed_paths") ? runWhenMap.changed_paths : undefined;
-  if (runWhenPathsMissing(runWhenMap, "changed_paths")) {
+  const rawPaths = Object.hasOwn(runWhenMap, 'changed_paths') ? runWhenMap.changed_paths : undefined;
+  if (runWhenPathsMissing(runWhenMap, 'changed_paths')) {
     throw new ConfigurationError(`${field}.changed_paths is required.`);
   }
   requireContainer(WorkflowRunWhen.properties.changed_paths, rawPaths, `${field}.changed_paths`);
   const raw = rawPaths as unknown[];
-  if (schemaIssues(WorkflowRunWhen.properties.changed_paths, raw).some((issue) => issue.path.length === 0 && issue.keyword === "minItems")) throw new ConfigurationError(`${field}.changed_paths must be a non-empty list.`);
+  if (schemaIssues(WorkflowRunWhen.properties.changed_paths, raw).some((issue) => issue.path.length === 0 && issue.keyword === 'minItems')) throw new ConfigurationError(`${field}.changed_paths must be a non-empty list.`);
   const changedPaths: string[] = [];
   raw.forEach((entry, index) => {
     const pattern = requiredString(entry, `${field}.changed_paths[${index}]`);
@@ -41,7 +48,7 @@ export function stageRunWhen(
       throw new ConfigurationError(`Duplicate ${field}.changed_paths item: ${pattern}`);
     }
     const compiled = compileChangedPathPattern(pattern);
-    if ("error" in compiled) {
+    if ('error' in compiled) {
       throw new ConfigurationError(
         `Invalid ${field}.changed_paths[${index}]: ${pyRepr(pattern)} (${compiled.error}).`,
       );
@@ -53,13 +60,13 @@ export function stageRunWhen(
 }
 
 export function stringItems(raw: unknown, field: string): string[] {
-  if (raw == null) return [];
+  if ((raw === null || raw === undefined)) return [];
   requireContainer(STAGE_FIELD_SCHEMAS.instructions, raw, field);
   return (raw as unknown[]).map((item, index) => requiredString(item, `${field}[${index}]`));
 }
 
 export function stageDependsOn(stage: Record<string, unknown>, stageId: string): string[] {
-  if (!Object.hasOwn(stage, "depends_on") || stage.depends_on == null) return [];
+  if (!Object.hasOwn(stage, 'depends_on') || (stage.depends_on === null || stage.depends_on === undefined)) return [];
   requireContainer(STAGE_FIELD_SCHEMAS.depends_on, stage.depends_on, `stages.${stageId}.depends_on`);
   const raw = stage.depends_on as unknown[];
   const parsed: string[] = [];
@@ -95,7 +102,7 @@ export function stageResumeFrom(
 
 /** Normalize the public v3 list into the scheduler's decision names and routes. */
 export function normalizeStageDecision(stage: Record<string, unknown>, version7 = false): Record<string, unknown> {
-  if (stage.decision == null) return stage;
+  if ((stage.decision === null || stage.decision === undefined)) return stage;
   const field = `stages.${String(stage.id)}.decision`;
   if (decisionListProblem(stage.decision)) {
     throw new ConfigurationError(`${field} must be a non-empty list in schema_version 3. Run \`migent migrate\` for older workflows.`);
@@ -104,39 +111,55 @@ export function normalizeStageDecision(stage: Record<string, unknown>, version7 
   const routes: Record<string, unknown> = Object.create(null);
   const instructions: Record<string, string> = Object.create(null);
   for (const entry of stage.decision as Record<string, unknown>[]) {
-    if (decisionEntryProblem(entry)) {
-      throw new ConfigurationError(`${field} entries must each declare exactly one decision.`);
-    }
-    const rawName = Object.keys(entry)[0]!;
-    const name = requiredString(rawName, field).toLowerCase();
+    const { name, body } = normalizeDecisionEntry(entry, { field, version7 });
     if (Object.hasOwn(routes, name)) throw new ConfigurationError(`Duplicate decision value on ${field}: ${name}`);
-    const body = entry[rawName];
-    const found = decisionBodyProblems(body, version7)[0];
-    if (found !== undefined) {
-      if (found.kind === "body") throw new ConfigurationError(`${field}.${name} must be a mapping.`);
-      if (found.kind === "key") throw new ConfigurationError(`${field}.${name}.${found.key} is not allowed.`);
-      if (found.kind === "when") throw new ConfigurationError(`Missing or invalid ${field}.${name}.when.`);
-      throw new ConfigurationError(`${field}.${name}.navigate is required.`);
-    }
-    const accepted = body as Record<string, unknown>;
-    if (accepted.when !== undefined) instructions[name] = requiredString(accepted.when, `${field}.${name}.when`);
+    if (body.when !== undefined) instructions[name] = requiredString(body.when, `${field}.${name}.when`);
     values.push(name);
-    routes[name] = accepted.navigate;
+    routes[name] = body.navigate;
   }
   return { ...stage, decision: { values, routes, instructions } };
+}
+
+/** Error message for one decision body problem at `path`. */
+function decisionBodyMessage(found: DecisionBodyProblem, path: string): string {
+  if (found.kind === 'body') return `${path} must be a mapping.`;
+  if (found.kind === 'key') return `${path}.${found.key} is not allowed.`;
+  if (found.kind === 'when') return `Missing or invalid ${path}.when.`;
+  return `${path}.navigate is required.`;
+}
+
+/** Validates one single-key decision entry and returns its lowercased name and accepted body. */
+function normalizeDecisionEntry(
+  entry: Record<string, unknown>,
+  { field, version7 }: { field: string; version7: boolean },
+): { name: string; body: Record<string, unknown> } {
+  if (decisionEntryProblem(entry)) {
+    throw new ConfigurationError(`${field} entries must each declare exactly one decision.`);
+  }
+  const [rawName] = Object.keys(entry);
+  const name = requiredString(rawName, field).toLowerCase();
+  const body = entry[rawName];
+  const [found] = decisionBodyProblems(body, version7);
+  if (found !== undefined) throw new ConfigurationError(decisionBodyMessage(found, `${field}.${name}`));
+  return { name, body: body as Record<string, unknown> };
+}
+
+export interface StageRoutesContext {
+  readonly values: readonly string[];
+  readonly stages: Record<string, StageSpec>;
+  readonly version2?: boolean;
 }
 
 export function stageRoutes(
   stage: Record<string, unknown>,
   stageId: string,
-  values: readonly string[],
-  stages: Record<string, StageSpec>,
-  version2 = false,
+  context: StageRoutesContext,
 ): Record<string, string | string[]> {
+  const { values, stages, version2 = false } = context;
   if (values.length === 0) return {};
-  const decision = stage.decision;
+  const {decision} = stage;
   if (!isRecord(decision)) return {};
-  const routes = decision.routes;
+  const {routes} = decision;
   if (!isRecord(routes) || Object.keys(routes).length === 0) {
     throw new ConfigurationError(`stages.${stageId}.decision.routes must be a mapping.`);
   }
@@ -144,8 +167,8 @@ export function stageRoutes(
   for (const [rawKey, rawTarget] of Object.entries(routes)) {
     const key = requiredString(rawKey, `stages.${stageId}.decision.routes`).toLowerCase();
     const field = `stages.${stageId}.decision.routes.${key}`;
-    const target = routeTarget(rawTarget, field, stages, version2);
-    if (typeof target === "string" && target !== "complete" && !Object.hasOwn(stages, target)) {
+    const target = routeTarget(rawTarget, field, { stages, version2 });
+    if (typeof target === 'string' && target !== 'complete' && !Object.hasOwn(stages, target)) {
       throw new ConfigurationError(`${field} is not a declared stage: ${target}`);
     }
     if (Object.hasOwn(parsed, key)) {
@@ -153,9 +176,7 @@ export function stageRoutes(
     }
     parsed[key] = target;
   }
-  const left = Object.keys(parsed).sort();
-  const right = [...values].sort();
-  if (left.length !== right.length || left.some((key, index) => key !== right[index])) {
+  if (!sameKeys(Object.keys(parsed), values)) {
     throw new ConfigurationError(
       `stages.${stageId}.decision.routes keys must match decision.values.`,
     );
@@ -163,18 +184,25 @@ export function stageRoutes(
   return parsed;
 }
 
+/** True when both lists hold the same names, ignoring order. */
+function sameKeys(keys: readonly string[], values: readonly string[]): boolean {
+  const left = [...keys].sort();
+  const right = [...values].sort();
+  return left.length === right.length && left.every((key, index) => key === right[index]);
+}
+
 export function routeTarget(
   raw: unknown,
   field: string,
-  stages: Record<string, StageSpec>,
-  version2: boolean,
+  scope: { readonly stages: Record<string, StageSpec>; readonly version2: boolean },
 ): string | string[] {
+  const { stages, version2 } = scope;
   if (!Array.isArray(raw)) return requiredString(raw, field);
   // A list is a fan-out route. Reporting it as a bad string would hide that.
   if (!version2) return requiredString(raw, field);
   if (raw.length === 0) throw new ConfigurationError(`${field} must be a non-empty list.`);
   const targets = raw.map((item, index) => requiredString(item, `${field}[${index}]`));
-  if (targets.includes("complete")) throw new ConfigurationError(`${field} cannot list complete.`);
+  if (targets.includes('complete')) throw new ConfigurationError(`${field} cannot list complete.`);
   for (const target of targets) {
     if (!Object.hasOwn(stages, target)) {
       throw new ConfigurationError(`${field} is not a declared stage: ${target}`);
@@ -189,45 +217,45 @@ export function stageAsk(stage: Record<string, unknown>, stageId: string): AskTa
 }
 
 export const ROLE_ONLY_KEYS = [
-  "ask",
-  "instructions",
-  "model",
-  "options",
-  "agent",
-  "session",
-  "produces",
-  "decision",
-  "max_revisions",
-  "max_verify",
+  'ask',
+  'instructions',
+  'model',
+  'options',
+  'agent',
+  'session',
+  'produces',
+  'decision',
+  'max_revisions',
+  'max_verify',
 ] as const;
 
 export function stageHasRole(stage: Record<string, unknown>): boolean {
-  return Object.hasOwn(stage, "role") && stage.role != null;
+  return Object.hasOwn(stage, 'role') && (stage.role !== null && stage.role !== undefined);
 }
 
 export function rejectRoleOnlyKeys(stage: Record<string, unknown>, stageId: string): void {
-  if (Object.hasOwn(stage, "ask")) throw new ConfigurationError(`stages.${stageId}.ask requires a role.`);
+  if (Object.hasOwn(stage, 'ask')) throw new ConfigurationError(`stages.${stageId}.ask requires a role.`);
   for (const key of ROLE_ONLY_KEYS) {
-    if (Object.hasOwn(stage, key) && stage[key] != null) {
+    if (Object.hasOwn(stage, key) && (stage[key] !== null && stage[key] !== undefined)) {
       throw new ConfigurationError(`stages.${stageId}.${key} requires a role.`);
     }
   }
 }
 
 export function stageDescription(stage: Record<string, unknown>, stageId: string): string | null {
-  const description = optionalStageString(stage, "description", stageId);
-  if (description !== null) requireValid(stageField("description"), description, `stages.${stageId}.description must be one line.`);
+  const description = optionalStageString(stage, 'description', stageId);
+  if (description !== null) requireValid(stageField('description'), description, `stages.${stageId}.description must be one line.`);
   return description;
 }
 
 export function stageDecisionValues(stage: Record<string, unknown>, stageId: string): string[] {
-  if (!Object.hasOwn(stage, "decision") || stage.decision == null) return [];
-  const decision = stage.decision;
+  if (!Object.hasOwn(stage, 'decision') || (stage.decision === null || stage.decision === undefined)) return [];
+  const {decision} = stage;
   if (isRecord(decision) && Object.keys(decision).length === 0) return [];
   if (!isRecord(decision)) {
     throw new ConfigurationError(`stages.${stageId}.decision must be a mapping.`);
   }
-  const values = decision.values;
+  const {values} = decision;
   if (!Array.isArray(values) || values.length === 0) {
     throw new ConfigurationError(`stages.${stageId}.decision.values must be a non-empty list.`);
   }
@@ -245,40 +273,40 @@ export function stageDecisionValues(stage: Record<string, unknown>, stageId: str
 }
 
 export function stageArtifact(stage: Record<string, unknown>, stageId: string): string | null {
-  if (!Object.hasOwn(stage, "produces") || stage.produces == null) return null;
-  const produces = stage.produces;
+  if (!Object.hasOwn(stage, 'produces') || (stage.produces === null || stage.produces === undefined)) return null;
+  const {produces} = stage;
   if (isRecord(produces) && Object.keys(produces).length === 0) return null;
   if (!isRecord(produces)) {
     throw new ConfigurationError(`stages.${stageId}.produces must be a mapping.`);
   }
-  if (!Object.hasOwn(produces, "artifact") || produces.artifact == null) return null;
+  if (!Object.hasOwn(produces, 'artifact') || (produces.artifact === null || produces.artifact === undefined)) return null;
   return filename(produces.artifact, `stages.${stageId}.produces.artifact`);
 }
 
 export function stageMaxRevisions(stage: Record<string, unknown>, stageId: string): number | null {
-  if (!Object.hasOwn(stage, "max_revisions")) return null;
+  if (!Object.hasOwn(stage, 'max_revisions')) return null;
   const raw = stage.max_revisions;
   const field = `stages.${stageId}.max_revisions`;
   // yaml@2 yields numbers. Digit strings match the subset parser.
-  requireValid(stageField("max_revisions"), raw, `${field} must be a non-negative integer.`);
-  return Number(typeof raw === "string" ? raw.trim() : raw);
+  requireValid(stageField('max_revisions'), raw, `${field} must be a non-negative integer.`);
+  return Number(typeof raw === 'string' ? raw.trim() : raw);
 }
 
 export function stageVerify(stage: Record<string, unknown>, stageId: string): string[] {
-  if (!Object.hasOwn(stage, "verify") || stage.verify == null) return [];
+  if (!Object.hasOwn(stage, 'verify') || (stage.verify === null || stage.verify === undefined)) return [];
   const field = `stages.${stageId}.verify`;
   const raw = Array.isArray(stage.verify) ? stage.verify : [stage.verify];
-  if (!isValid(stageField("verify"), stage.verify)) {
+  if (!isValid(stageField('verify'), stage.verify)) {
     if (raw.length === 0) throw new ConfigurationError(`${field} must not be empty.`);
     const bad = raw.find((entry) => !isValid(VERIFY_LINE, entry));
-    if (typeof bad !== "string" || bad.trim() === "") throw new ConfigurationError(`Missing or invalid ${field} item.`);
+    if (typeof bad !== 'string' || bad.trim() === '') throw new ConfigurationError(`Missing or invalid ${field} item.`);
     throw new ConfigurationError(`${field} items must be one shell line.`);
   }
   return raw.map((entry) => (entry as string).trim());
 }
 
 export function stageMaxVerify(stage: Record<string, unknown>, stageId: string, verify: string[]): number {
-  if (!Object.hasOwn(stage, "max_verify") || stage.max_verify == null) return 3;
+  if (!Object.hasOwn(stage, 'max_verify') || (stage.max_verify === null || stage.max_verify === undefined)) return DEFAULT_MAX_VERIFY;
   const field = `stages.${stageId}.max_verify`;
   if (verify.length === 0) throw new ConfigurationError(`${field} requires verify.`);
   return positiveInteger(stage.max_verify, field);
@@ -289,36 +317,36 @@ export function stageVerifyTimeout(
   stageId: string,
   verify: string[],
 ): number | null {
-  if (!Object.hasOwn(stage, "verify_timeout") || stage.verify_timeout == null) return null;
+  if (!Object.hasOwn(stage, 'verify_timeout') || (stage.verify_timeout === null || stage.verify_timeout === undefined)) return null;
   const field = `stages.${stageId}.verify_timeout`;
   if (verify.length === 0) throw new ConfigurationError(`${field} requires verify.`);
-  return positiveInteger(stage.verify_timeout, field, stageField("verify_timeout"));
+  return positiveInteger(stage.verify_timeout, field, stageField('verify_timeout'));
 }
 
-export function positiveInteger(raw: unknown, field: string, schema: TSchema = stageField("max_verify")): number {
+export function positiveInteger(raw: unknown, field: string, schema: TSchema = stageField('max_verify')): number {
   requireValid(schema, raw, `${field} must be an integer of at least 1.`);
-  return Number(typeof raw === "string" ? raw.trim() : raw);
+  return Number(typeof raw === 'string' ? raw.trim() : raw);
 }
 
 /** Schema_version 5: `agent` is a name in `agents` or a complete inline definition. */
 export function stageAgent(stage: Record<string, unknown>, stageId: string): StageAgent | null {
-  if (!Object.hasOwn(stage, "agent") || stage.agent == null) return null;
+  if (!Object.hasOwn(stage, 'agent') || (stage.agent === null || stage.agent === undefined)) return null;
   const raw = stage.agent;
-  if (isRecord(raw)) return { kind: "inline", value: structuredClone(raw) };
-  if (typeof raw !== "string" || raw.trim() === "") {
+  if (isRecord(raw)) return { kind: 'inline', value: structuredClone(raw) };
+  if (typeof raw !== 'string' || raw.trim() === '') {
     throw new ConfigurationError(`Missing or invalid stages.${stageId}.agent.`);
   }
-  return { kind: "named", name: raw.trim() };
+  return { kind: 'named', name: raw.trim() };
 }
 
 /** Schema_version 4 and earlier: `model` names an entry of the config's model aliases. */
 export function legacyStageModel(stage: Record<string, unknown>, stageId: string): StageAgent | null {
-  const name = optionalStageString(stage, "model", stageId);
-  return name === null ? null : { kind: "named", name };
+  const name = optionalStageString(stage, 'model', stageId);
+  return name === null ? null : { kind: 'named', name };
 }
 
 export function stageOptions(stage: Record<string, unknown>, stageId: string): Record<string, string> {
-  if (!Object.hasOwn(stage, "options") || stage.options == null) return {};
+  if (!Object.hasOwn(stage, 'options') || (stage.options === null || stage.options === undefined)) return {};
   const raw = stage.options;
   if (!isRecord(raw)) throw new ConfigurationError(`Missing or invalid stages.${stageId}.options.`);
   return readOptionMap(raw, `stages.${stageId}.options`);
@@ -334,13 +362,13 @@ export function readOptionMap(
   for (const [key, item] of Object.entries(raw)) {
     if (!optionKey.test(key)) {
       throw new ConfigurationError(`Missing or invalid ${field} key.`, {
-        code: "option-key-invalid",
+        code: 'option-key-invalid',
         ...(path === undefined ? {} : { path: [...path, key] }),
       });
     }
-    if (typeof item !== "string" || item.trim() === "") {
+    if (typeof item !== 'string' || item.trim() === '') {
       throw new ConfigurationError(`Missing or invalid ${field}.${key}.`, {
-        code: "option-invalid",
+        code: 'option-invalid',
         ...(path === undefined ? {} : { path: [...path, key] }),
       });
     }
@@ -377,11 +405,11 @@ export const VERIFY_LINE: TSchema = WorkflowLine;
 
 /** Reads `session.resume_from` without the dependency rule, for stages whose depends_on is unreadable. */
 export function stageResumeFromUnchecked(stage: Record<string, unknown>, stageId: string): string | null {
-  if (!Object.hasOwn(stage, "session") || stage.session == null) return null;
-  const session = stage.session;
+  if (!Object.hasOwn(stage, 'session') || (stage.session === null || stage.session === undefined)) return null;
+  const {session} = stage;
   if (isRecord(session) && Object.keys(session).length === 0) return null;
   requireContainer(STAGE_FIELD_SCHEMAS.session, session, `stages.${stageId}.session`);
   const sessionMap = session as Record<string, unknown>;
-  if (!Object.hasOwn(sessionMap, "resume_from") || sessionMap.resume_from == null) return null;
+  if (!Object.hasOwn(sessionMap, 'resume_from') || (sessionMap.resume_from === null || sessionMap.resume_from === undefined)) return null;
   return requiredString(sessionMap.resume_from, `stages.${stageId}.session.resume_from`);
 }

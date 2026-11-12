@@ -1,52 +1,54 @@
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { raiseCancellation, type BuildCommandInput, type CommandSpec, type RawFailure } from "@nodeint/migent-kernel";
-import { AgentToolRunner } from "@nodeint/migent-engine";
-import { expect, test, vi } from "vitest";
-import { cliHooks } from "../src/hooks.ts";
-import { main } from "../src/index.ts";
-import { ScriptedClient, FakeClient, capture, registryOf, removeWorkspace, repoWorkflowText, writeFakeWorkflowWorkspace } from "./support.ts";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+
+import { AgentToolRunner } from '@nodeint/migent-engine';
+import { type BuildCommandInput, type CommandSpec, raiseCancellation, type RawFailure } from '@nodeint/migent-kernel';
+import { expect, test, vi } from 'vitest';
+
+import { cliHooks } from '../src/hooks.ts';
+import { main } from '../src/index.ts';
+import { capture, FakeClient, registryOf, removeWorkspace, repoWorkflowText, ScriptedClient, writeFakeWorkflowWorkspace } from './support.ts';
 
 // Each stage spawns a wrapper and a provider process, which is slow on Windows CI.
 vi.setConfig({ testTimeout: 60_000 });
 
 function writeWatchSession(workspace: string, status: string): void {
-  const root = path.join(workspace, ".migent");
+  const root = path.join(workspace, '.migent');
   mkdirSync(root, { recursive: true });
-  writeFileSync(path.join(root, "config.yaml"), "schema_version: 1\n", "utf8");
-  const sessionDirectory = path.join(workspace, ".migent", "sessions", "run-1");
-  const executionDirectory = path.join(sessionDirectory, "executions", "0001-implement--attempt-01");
+  writeFileSync(path.join(root, 'config.yaml'), 'schema_version: 1\n', 'utf8');
+  const sessionDirectory = path.join(workspace, '.migent', 'sessions', 'run-1');
+  const executionDirectory = path.join(sessionDirectory, 'executions', '0001-implement--attempt-01');
   mkdirSync(executionDirectory, { recursive: true });
   writeFileSync(
-    path.join(sessionDirectory, "events.jsonl"),
-    `${JSON.stringify({ event: "provider.heartbeat", stage_id: "implement", timestamp: "2026-09-19T10:20:30Z" })}\n`,
-    "utf8",
+    path.join(sessionDirectory, 'events.jsonl'),
+    `${JSON.stringify({ event: 'provider.heartbeat', stage_id: 'implement', timestamp: '2026-09-19T10:20:30Z' })}\n`,
+    'utf8',
   );
   writeFileSync(
-    path.join(executionDirectory, "execution.json"),
-    JSON.stringify({ execution_id: "0001-implement--attempt-01", stage_id: "implement", status: "running" }),
-    "utf8",
+    path.join(executionDirectory, 'execution.json'),
+    JSON.stringify({ execution_id: '0001-implement--attempt-01', stage_id: 'implement', status: 'running' }),
+    'utf8',
   );
   writeFileSync(
-    path.join(sessionDirectory, "status.json"),
+    path.join(sessionDirectory, 'status.json'),
     JSON.stringify({
-      session_id: "run-1",
+      session_id: 'run-1',
       status,
-      latest_execution_id: "0001-implement--attempt-01",
-      updated_at: "2026-09-19T10:20:30Z",
-      task: "ship the feature",
+      latest_execution_id: '0001-implement--attempt-01',
+      updated_at: '2026-09-19T10:20:30Z',
+      task: 'ship the feature',
     }),
-    "utf8",
+    'utf8',
   );
 }
 
 const STAGE_DURATION = String.raw`(?:\d+h )?(?:\d+m )?\d+s`;
 
 function artifactPathsFrom(stderr: string): string[] {
-  const prefix = "[migent] artifact: ";
+  const prefix = '[migent] artifact: ';
   return stderr
-    .split("\n")
+    .split('\n')
     .filter((line) => line.startsWith(prefix))
     .map((line) => line.slice(prefix.length));
 }
@@ -57,28 +59,28 @@ function sessionIdFrom(stderr: string): string {
   return match[1];
 }
 
-test("start --once and continue --once match a single stage", async () => {
-  const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
+test('start --once and continue --once match a single stage', async () => {
+  const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText('plan') });
   try {
-    cliHooks.runner = new AgentToolRunner(registryOf({ fake: new ScriptedClient(["status: complete\n\nplanned", "status: complete\ndecision: approved\n\nshould not run"], ["# Plan\n", null]) }), 10);
-    const started = await capture(() => main(["session", "run", "--workflow", "plan", "--task", "Write a plan", "--once"], workspace));
+    cliHooks.runner = new AgentToolRunner(registryOf({ fake: new ScriptedClient(['status: complete\n\nplanned', 'status: complete\ndecision: approved\n\nshould not run'], ['# Plan\n', null]) }), 10);
+    const started = await capture(() => main(['session', 'run', '--workflow', 'plan', '--task', 'Write a plan', '--once'], workspace));
     expect(started.value).toBe(0);
-    expect(started.stdout).toBe("");
+    expect(started.stdout).toBe('');
     expect(started.stderr).toMatch(new RegExp(String.raw`stage plan · attempt 1 · \d{2}:\d{2}:\d{2} ·`));
     expect(started.stderr).toMatch(new RegExp(String.raw`stage plan · attempt 1 · ${STAGE_DURATION} · complete\.`));
-    expect(started.stderr).not.toContain("completed ·");
-    expect(started.stderr).not.toContain("planned");
+    expect(started.stderr).not.toContain('completed ·');
+    expect(started.stderr).not.toContain('planned');
     const sessionId = sessionIdFrom(started.stderr);
 
-    cliHooks.runner = new AgentToolRunner(registryOf({ fake: new ScriptedClient(["status: complete\ndecision: revise\n\nneeds work", "status: complete\n\nshould not run"], [null, "# Plan\n"]) }), 10);
-    const continued = await capture(() => main(["session", "continue", sessionId, "--once", "--verbose"], workspace));
+    cliHooks.runner = new AgentToolRunner(registryOf({ fake: new ScriptedClient(['status: complete\ndecision: revise\n\nneeds work', 'status: complete\n\nshould not run'], [null, '# Plan\n']) }), 10);
+    const continued = await capture(() => main(['session', 'continue', sessionId, '--once', '--verbose'], workspace));
     expect(continued.value).toBe(0);
-    expect(continued.stdout).toBe("");
+    expect(continued.stdout).toBe('');
     expect(continued.stderr).toMatch(
       new RegExp(String.raw`stage review-plan · attempt 1 · ${STAGE_DURATION} · complete decision=revise\.`),
     );
-    expect(continued.stderr).not.toContain("needs work");
-    expect(continued.stderr).not.toContain("completed ·");
+    expect(continued.stderr).not.toContain('needs work');
+    expect(continued.stderr).not.toContain('completed ·');
   } finally {
     removeWorkspace(workspace);
   }
@@ -87,104 +89,104 @@ test("start --once and continue --once match a single stage", async () => {
 class ItemProvider extends ScriptedClient {
   override buildCommand(input: BuildCommandInput): CommandSpec {
     super.buildCommand(input);
-    return { argv: [process.execPath, "-e", "console.log('ITEM_START');console.log('ITEM_DONE');console.log('HEARTBEAT')"] };
+    return { argv: [process.execPath, '-e', "console.log('ITEM_START');console.log('ITEM_DONE');console.log('HEARTBEAT')"] };
   }
 
   createEventParser(): (line: string) => Record<string, unknown> | null {
     return (line) => {
-      if (line === "ITEM_START") return { event: "provider.item_started", summary: "command started: echo hi" };
-      if (line === "ITEM_DONE") return { event: "provider.item_completed", summary: "command completed: echo hi" };
-      if (line === "HEARTBEAT") return { event: "provider.heartbeat", summary: "running for 30s" };
+      if (line === 'ITEM_START') return { event: 'provider.item_started', summary: 'command started: echo hi' };
+      if (line === 'ITEM_DONE') return { event: 'provider.item_completed', summary: 'command completed: echo hi' };
+      if (line === 'HEARTBEAT') return { event: 'provider.heartbeat', summary: 'running for 30s' };
       return null;
     };
   }
 }
 
-test("start keeps tool traces out of the coordinator result", async () => {
-  const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
+test('start keeps tool traces out of the coordinator result', async () => {
+  const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText('plan') });
   try {
-    cliHooks.runner = new AgentToolRunner(registryOf({ fake: new ItemProvider(["status: complete\n\nUNIQUE_PLAN_BODY"], ["# Plan\n"]) }), 10);
-    const started = await capture(() => main(["session", "run", "--workflow", "plan", "--task", "Write a plan", "--once"], workspace));
+    cliHooks.runner = new AgentToolRunner(registryOf({ fake: new ItemProvider(['status: complete\n\nUNIQUE_PLAN_BODY'], ['# Plan\n']) }), 10);
+    const started = await capture(() => main(['session', 'run', '--workflow', 'plan', '--task', 'Write a plan', '--once'], workspace));
     expect(started.value).toBe(0);
-    expect(started.stdout).toBe("");
-    expect(started.stderr).not.toContain("UNIQUE_PLAN_BODY");
+    expect(started.stdout).toBe('');
+    expect(started.stderr).not.toContain('UNIQUE_PLAN_BODY');
     expect(started.stderr).toMatch(new RegExp(String.raw`stage plan · attempt 1 · ${STAGE_DURATION} · complete\.`));
-    expect(started.stderr).not.toContain("command started");
-    expect(started.stderr).not.toContain("command completed");
-    expect(started.stderr).not.toContain("running for 30s");
-    const sessionDirectory = path.join(workspace, ".migent", "sessions", sessionIdFrom(started.stderr));
-    const events = readFileSync(path.join(sessionDirectory, "events.jsonl"), "utf8");
-    expect(events).not.toContain("provider.item_started");
-    expect(events).not.toContain("provider.heartbeat");
-    const status = JSON.parse(readFileSync(path.join(sessionDirectory, "status.json"), "utf8")) as {
+    expect(started.stderr).not.toContain('command started');
+    expect(started.stderr).not.toContain('command completed');
+    expect(started.stderr).not.toContain('running for 30s');
+    const sessionDirectory = path.join(workspace, '.migent', 'sessions', sessionIdFrom(started.stderr));
+    const events = readFileSync(path.join(sessionDirectory, 'events.jsonl'), 'utf8');
+    expect(events).not.toContain('provider.item_started');
+    expect(events).not.toContain('provider.heartbeat');
+    const status = JSON.parse(readFileSync(path.join(sessionDirectory, 'status.json'), 'utf8')) as {
       latest_execution_id?: string;
     };
     const stream = readFileSync(
-      path.join(sessionDirectory, "executions", String(status.latest_execution_id), "stream.jsonl"),
-      "utf8",
+      path.join(sessionDirectory, 'executions', String(status.latest_execution_id), 'stream.jsonl'),
+      'utf8',
     );
-    expect(stream).toContain("provider.item_started");
-    expect(stream).toContain("provider.item_completed");
-    expect(stream).toContain("provider.heartbeat");
+    expect(stream).toContain('provider.item_started');
+    expect(stream).toContain('provider.item_completed');
+    expect(stream).toContain('provider.heartbeat');
 
-    cliHooks.runner = new AgentToolRunner(registryOf({ fake: new ItemProvider(["status: complete\ndecision: revise\n\nUNIQUE_REVIEW"], [null]) }), 10);
+    cliHooks.runner = new AgentToolRunner(registryOf({ fake: new ItemProvider(['status: complete\ndecision: revise\n\nUNIQUE_REVIEW'], [null]) }), 10);
     const verbose = await capture(() =>
-      main(["session", "continue", sessionIdFrom(started.stderr), "--once", "--progress", "--verbose"], workspace),
+      main(['session', 'continue', sessionIdFrom(started.stderr), '--once', '--progress', '--verbose'], workspace),
     );
     expect(verbose.value).toBe(0);
-    expect(verbose.stdout).toBe("");
-    expect(verbose.stderr).not.toContain("UNIQUE_REVIEW");
-    const reviewExecution = readdirSync(path.join(sessionDirectory, "executions")).find((name) => name.includes("review"));
+    expect(verbose.stdout).toBe('');
+    expect(verbose.stderr).not.toContain('UNIQUE_REVIEW');
+    const reviewExecution = readdirSync(path.join(sessionDirectory, 'executions')).find((name) => name.includes('review'));
     const reviewResponse = readFileSync(
-      path.join(sessionDirectory, "executions", String(reviewExecution), "response.md"),
-      "utf8",
+      path.join(sessionDirectory, 'executions', String(reviewExecution), 'response.md'),
+      'utf8',
     );
-    expect(reviewResponse).toContain("UNIQUE_REVIEW");
-    const completed = verbose.stderr.split("\n").filter((line) => line.includes("command completed"));
+    expect(reviewResponse).toContain('UNIQUE_REVIEW');
+    const completed = verbose.stderr.split('\n').filter((line) => line.includes('command completed'));
     expect(completed).toHaveLength(1);
-    expect(verbose.stderr).not.toContain("command started");
-    expect(verbose.stderr).not.toContain("running for 30s");
+    expect(verbose.stderr).not.toContain('command started');
+    expect(verbose.stderr).not.toContain('running for 30s');
   } finally {
     removeWorkspace(workspace);
   }
 });
 
-test("continue --once does not reset revision counts", async () => {
-  const workflow = repoWorkflowText("plan").replace("max_revisions: 3", "max_revisions: 0");
+test('continue --once does not reset revision counts', async () => {
+  const workflow = repoWorkflowText('plan').replace('max_revisions: 3', 'max_revisions: 0');
   const workspace = writeFakeWorkflowWorkspace({ plan: workflow });
   try {
     cliHooks.runner = new AgentToolRunner(registryOf({
         fake: new ScriptedClient(
-          ["status: complete\n\nplanned", "status: complete\ndecision: revise\n\nrevise"],
-          ["# Plan\n", null],
+          ['status: complete\n\nplanned', 'status: complete\ndecision: revise\n\nrevise'],
+          ['# Plan\n', null],
         ),
       }), 10);
-    const started = await capture(() => main(["session", "run", "--workflow", "plan", "--task", "Write a plan"], workspace));
+    const started = await capture(() => main(['session', 'run', '--workflow', 'plan', '--task', 'Write a plan'], workspace));
     expect(started.value).toBe(4);
-    expect(started.stdout).toBe("");
+    expect(started.stdout).toBe('');
     const sessionId = sessionIdFrom(started.stderr);
     expect(resumeCommand(started.stderr)).toBe(`migent session continue ${sessionId}`);
 
-    cliHooks.runner = new AgentToolRunner(registryOf({ fake: new ScriptedClient(["status: complete\n\nshould not run"], [null]) }), 10);
-    const once = await capture(() => main(["session", "continue", sessionId, "--once"], workspace));
+    cliHooks.runner = new AgentToolRunner(registryOf({ fake: new ScriptedClient(['status: complete\n\nshould not run'], [null]) }), 10);
+    const once = await capture(() => main(['session', 'continue', sessionId, '--once'], workspace));
     expect(once.value).toBe(4);
-    expect(once.stdout).toBe("");
+    expect(once.stdout).toBe('');
   } finally {
     removeWorkspace(workspace);
   }
 });
 
-test("--once rejects attempt and dispatch flags from the raw options", async () => {
-  const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
+test('--once rejects attempt and dispatch flags from the raw options', async () => {
+  const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText('plan') });
   try {
     for (const argv of [
-      ["session", "continue", "session", "--once", "--max-dispatches", "2"],
-      ["session", "run", "--workflow", "plan", "--task", "Write a plan", "--once", "--unlimited-dispatches"],
+      ['session', 'continue', 'session', '--once', '--max-dispatches', '2'],
+      ['session', 'run', '--workflow', 'plan', '--task', 'Write a plan', '--once', '--unlimited-dispatches'],
     ]) {
       const captured = await capture(() => main(argv, workspace));
       expect(captured.value).toBe(2);
-      expect(captured.stderr).toContain("--once cannot be combined");
-      expect(captured.stdout).toBe("");
+      expect(captured.stderr).toContain('--once cannot be combined');
+      expect(captured.stdout).toBe('');
     }
   } finally {
     removeWorkspace(workspace);
@@ -192,69 +194,69 @@ test("--once rejects attempt and dispatch flags from the raw options", async () 
 });
 
 function resumeCommand(stderr: string): string | undefined {
-  const lines = stderr.trimEnd().split("\n");
-  const label = lines.lastIndexOf("Resume with:");
+  const lines = stderr.trimEnd().split('\n');
+  const label = lines.lastIndexOf('Resume with:');
   if (label === -1) return undefined;
   return lines[label + 1];
 }
 
-test("a stopped session prints the continue command", async () => {
-  const blockedWorkspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
+test('a stopped session prints the continue command', async () => {
+  const blockedWorkspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText('plan') });
   try {
     cliHooks.runner = new AgentToolRunner(registryOf({
         fake: new ScriptedClient(
-          ["status: complete\n\nplanned", "status: blocked\nblocker: missing design\n\nnope"],
-          ["# Plan\n", null],
+          ['status: complete\n\nplanned', 'status: blocked\nblocker: missing design\n\nnope'],
+          ['# Plan\n', null],
         ),
       }), 10);
-    const blocked = await capture(() => main(["session", "run", "--workflow", "plan", "--task", "Write a plan"], blockedWorkspace));
+    const blocked = await capture(() => main(['session', 'run', '--workflow', 'plan', '--task', 'Write a plan'], blockedWorkspace));
     expect(blocked.value).toBe(1);
-    expect(blocked.stdout).toBe("");
+    expect(blocked.stdout).toBe('');
     expect(blocked.stderr).toMatch(new RegExp(String.raw`· blocked\.`));
-    expect(blocked.stderr).toContain("response: executions/");
-    expect(blocked.stderr).not.toContain("nope");
+    expect(blocked.stderr).toContain('response: executions/');
+    expect(blocked.stderr).not.toContain('nope');
     const blockedId = sessionIdFrom(blocked.stderr);
     expect(resumeCommand(blocked.stderr)).toBe(`migent session continue ${blockedId}`);
-    expect(blocked.stdout).not.toContain("migent session continue");
+    expect(blocked.stdout).not.toContain('migent session continue');
   } finally {
     removeWorkspace(blockedWorkspace);
   }
 
-  const onceWorkspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
+  const onceWorkspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText('plan') });
   try {
-    cliHooks.runner = new AgentToolRunner(registryOf({ fake: new ScriptedClient(["status: complete\n\nplanned"], ["# Plan\n"]) }), 10);
+    cliHooks.runner = new AgentToolRunner(registryOf({ fake: new ScriptedClient(['status: complete\n\nplanned'], ['# Plan\n']) }), 10);
     const once = await capture(() =>
-      main(["session", "run", "--workflow", "plan", "--task", "Write a plan", "--once"], onceWorkspace),
+      main(['session', 'run', '--workflow', 'plan', '--task', 'Write a plan', '--once'], onceWorkspace),
     );
     expect(once.value).toBe(0);
-    expect(once.stdout).toBe("");
-    expect(once.stderr).not.toContain("completed ·");
+    expect(once.stdout).toBe('');
+    expect(once.stderr).not.toContain('completed ·');
     expect(resumeCommand(once.stderr)).toBe(`migent session continue ${sessionIdFrom(once.stderr)}`);
   } finally {
     removeWorkspace(onceWorkspace);
   }
 
-  const doneWorkspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
+  const doneWorkspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText('plan') });
   try {
     cliHooks.runner = new AgentToolRunner(registryOf({
         fake: new ScriptedClient(
-          ["status: complete\n\nplanned", "status: complete\ndecision: approved\n\nok"],
-          ["# Plan\n", null],
+          ['status: complete\n\nplanned', 'status: complete\ndecision: approved\n\nok'],
+          ['# Plan\n', null],
         ),
       }), 10);
-    const done = await capture(() => main(["session", "run", "--workflow", "plan", "--task", "Write a plan"], doneWorkspace));
+    const done = await capture(() => main(['session', 'run', '--workflow', 'plan', '--task', 'Write a plan'], doneWorkspace));
     expect(done.value).toBe(0);
-    expect(done.stdout).toBe("");
+    expect(done.stdout).toBe('');
     expect(done.stderr).toMatch(new RegExp(String.raw`completed · ${STAGE_DURATION}`));
     const artifacts = artifactPathsFrom(done.stderr);
     expect(artifacts).toHaveLength(1);
-    expect(path.isAbsolute(artifacts[0] ?? "")).toBe(true);
+    expect(path.isAbsolute(artifacts[0] ?? '')).toBe(true);
     expect(artifacts[0]).toMatch(/[/\\]outputs[/\\]plan\.md$/);
-    expect(readFileSync(artifacts[0] ?? "", "utf8")).toBe("# Plan\n");
-    expect(done.stderr).not.toContain("artifacts:");
-    expect(done.stderr).not.toContain("planned");
-    expect(done.stderr).not.toContain("Resume with:");
-    expect(done.stderr).not.toContain("migent session continue");
+    expect(readFileSync(artifacts[0] ?? '', 'utf8')).toBe('# Plan\n');
+    expect(done.stderr).not.toContain('artifacts:');
+    expect(done.stderr).not.toContain('planned');
+    expect(done.stderr).not.toContain('Resume with:');
+    expect(done.stderr).not.toContain('migent session continue');
   } finally {
     removeWorkspace(doneWorkspace);
   }
@@ -264,89 +266,89 @@ class CancelOnCommand extends ScriptedClient {
   override buildCommand(input: BuildCommandInput): CommandSpec {
     super.buildCommand(input);
     raiseCancellation(2);
-    return { argv: [process.execPath, "-e", "process.exit(0)"] };
+    return { argv: [process.execPath, '-e', 'process.exit(0)'] };
   }
 }
 
-test("a cancelled session prints the continue command", async () => {
-  const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
+test('a cancelled session prints the continue command', async () => {
+  const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText('plan') });
   try {
     cliHooks.runner = new AgentToolRunner(registryOf({ fake: new CancelOnCommand([], []) }), 10);
-    const cancelled = await capture(() => main(["session", "run", "--workflow", "plan", "--task", "Write a plan"], workspace));
+    const cancelled = await capture(() => main(['session', 'run', '--workflow', 'plan', '--task', 'Write a plan'], workspace));
     expect(cancelled.value).toBe(130);
-    expect(cancelled.stdout).toBe("");
+    expect(cancelled.stdout).toBe('');
     const sessionId = sessionIdFrom(cancelled.stderr);
     const status = JSON.parse(
-      readFileSync(path.join(workspace, ".migent", "sessions", sessionId, "status.json"), "utf8"),
+      readFileSync(path.join(workspace, '.migent', 'sessions', sessionId, 'status.json'), 'utf8'),
     ) as { status?: string };
-    expect(status.status).toBe("cancelled");
+    expect(status.status).toBe('cancelled');
     expect(resumeCommand(cancelled.stderr)).toBe(`migent session continue ${sessionId}`);
   } finally {
     removeWorkspace(workspace);
   }
 });
 
-test("session show and follow keep snapshot and exit-when-done behavior", async () => {
-  const workspace = mkdtempSync(path.join(tmpdir(), "migent-cli-"));
+test('session show and follow keep snapshot and exit-when-done behavior', async () => {
+  const workspace = mkdtempSync(path.join(tmpdir(), 'migent-cli-'));
   try {
-    writeWatchSession(workspace, "blocked");
-    const snapshot = await capture(() => main(["session", "show", "run-1", "--json"], workspace));
+    writeWatchSession(workspace, 'blocked');
+    const snapshot = await capture(() => main(['session', 'show', 'run-1', '--json'], workspace));
     expect(snapshot.value).toBe(0);
     const body = JSON.parse(snapshot.stdout) as { session_id: string; status: string };
-    expect(body.session_id).toBe("run-1");
-    expect(body.status).toBe("blocked");
-    expect(body).not.toHaveProperty("task");
-    expect(body).toHaveProperty("events_cursor");
-    expect(snapshot.stdout).not.toContain("ship the feature");
-    const human = await capture(() => main(["session", "show", "run-1"], workspace));
+    expect(body.session_id).toBe('run-1');
+    expect(body.status).toBe('blocked');
+    expect(body).not.toHaveProperty('task');
+    expect(body).toHaveProperty('events_cursor');
+    expect(snapshot.stdout).not.toContain('ship the feature');
+    const human = await capture(() => main(['session', 'show', 'run-1'], workspace));
     expect(human.value).toBe(0);
-    expect(human.stdout).toContain("ship the feature");
+    expect(human.stdout).toContain('ship the feature');
 
-    const followed = await capture(() => main(["session", "follow", "run-1", "--exit-when-done"], workspace));
+    const followed = await capture(() => main(['session', 'follow', 'run-1', '--exit-when-done'], workspace));
     expect(followed.value).toBe(1);
-    expect(followed.stderr).toContain("Watching session run-1.");
+    expect(followed.stderr).toContain('Watching session run-1.');
 
-    const until = await capture(() => main(["session", "follow", "run-1", "--until"], workspace));
+    const until = await capture(() => main(['session', 'follow', 'run-1', '--until'], workspace));
     expect(until.value).toBe(2);
-    expect(until.stderr).toContain("--until requires --execution.");
+    expect(until.stderr).toContain('--until requires --execution.');
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }
 });
 
-test("session inspect help names list, show, and follow", async () => {
-  const list = await capture(() => main(["session", "list", "--help"]));
+test('session inspect help names list, show, and follow', async () => {
+  const list = await capture(() => main(['session', 'list', '--help']));
   expect(list.value).toBe(0);
-  expect(list.stdout).toContain("migent session list");
-  expect(list.stdout).toContain("migent session list --latest --json");
-  const show = await capture(() => main(["session", "show", "--help"]));
-  expect(show.stdout).toContain("migent session show <session>");
-  const follow = await capture(() => main(["session", "follow", "--help"]));
-  expect(follow.stdout).toContain("migent session follow <session>");
-  expect(follow.stdout).toContain("--exit-when-done");
+  expect(list.stdout).toContain('migent session list');
+  expect(list.stdout).toContain('migent session list --latest --json');
+  const show = await capture(() => main(['session', 'show', '--help']));
+  expect(show.stdout).toContain('migent session show <session>');
+  const follow = await capture(() => main(['session', 'follow', '--help']));
+  expect(follow.stdout).toContain('migent session follow <session>');
+  expect(follow.stdout).toContain('--exit-when-done');
 });
 
 class UnstartableProvider extends FakeClient {
   override buildCommand(input: BuildCommandInput): CommandSpec {
     super.buildCommand(input);
-    return { argv: ["migent-no-such-binary-xyz"] };
+    return { argv: ['migent-no-such-binary-xyz'] };
   }
 
   override parseResponse(stdout: string): [string, string | null] {
-    return stdout ? super.parseResponse(stdout, "") : ["", null];
+    return stdout ? super.parseResponse(stdout, '') : ['', null];
   }
 }
 
-test("a stage that never ran the model points at failure.md, not response.md", async () => {
-  const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText("plan") });
+test('a stage that never ran the model points at failure.md, not response.md', async () => {
+  const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText('plan') });
   try {
     cliHooks.runner = new AgentToolRunner(registryOf({ fake: new UnstartableProvider() }), 10);
     const failed = await capture(() =>
-      main(["session", "run", "--workflow", "plan", "--task", "Write a plan", "--once"], workspace),
+      main(['session', 'run', '--workflow', 'plan', '--task', 'Write a plan', '--once'], workspace),
     );
     expect(failed.value).not.toBe(0);
-    expect(failed.stderr).toContain("failure: executions/");
-    expect(failed.stderr).not.toContain("response: executions/");
+    expect(failed.stderr).toContain('failure: executions/');
+    expect(failed.stderr).not.toContain('response: executions/');
   } finally {
     removeWorkspace(workspace);
   }
@@ -355,19 +357,19 @@ test("a stage that never ran the model points at failure.md, not response.md", a
 class SlowSiblingProvider extends FakeClient {
   override buildCommand(input: BuildCommandInput): CommandSpec {
     super.buildCommand(input);
-    if (input.prompt.includes("## Stage: b ")) {
-      return { argv: [process.execPath, "-e", "setTimeout(() => process.stdout.write('STAGE_B'), 800)"] };
+    if (input.prompt.includes('## Stage: b ')) {
+      return { argv: [process.execPath, '-e', "setTimeout(() => process.stdout.write('STAGE_B'), 800)"] };
     }
-    return { argv: [process.execPath, "-e", "process.stdout.write('STAGE_A')"] };
+    return { argv: [process.execPath, '-e', "process.stdout.write('STAGE_A')"] };
   }
 
   override parseResponse(stdout: string, _lastMessageFile: string): [string, string | null] {
-    if (stdout.includes("STAGE_A")) return ["report without a status header", null];
-    return ["status: complete\n\nb done", null];
+    if (stdout.includes('STAGE_A')) return ['report without a status header', null];
+    return ['status: complete\n\nb done', null];
   }
 }
 
-test("a failed stage is named even when a concurrent sibling finishes last", async () => {
+test('a failed stage is named even when a concurrent sibling finishes last', async () => {
   const workspace = writeFakeWorkflowWorkspace({
     concurrent: `schema_version: 7
 concurrency: 2
@@ -382,17 +384,17 @@ stages:
   try {
     cliHooks.runner = new AgentToolRunner(registryOf({ fake: new SlowSiblingProvider() }), 10);
     const run = await capture(() =>
-      main(["session", "run", "--workflow", "concurrent", "--task", "Review changes"], workspace),
+      main(['session', 'run', '--workflow', 'concurrent', '--task', 'Review changes'], workspace),
     );
     expect(run.value).not.toBe(0);
     const sessionId = sessionIdFrom(run.stderr);
-    const directory = path.join(workspace, ".migent", "sessions", sessionId);
-    const executions = readdirSync(path.join(directory, "executions")).sort();
-    const failedId = executions.find((name) => name.includes("-a--attempt-"));
-    const latestId = executions.find((name) => name.includes("-b--attempt-"));
+    const directory = path.join(workspace, '.migent', 'sessions', sessionId);
+    const executions = readdirSync(path.join(directory, 'executions')).sort();
+    const failedId = executions.find((name) => name.includes('-a--attempt-'));
+    const latestId = executions.find((name) => name.includes('-b--attempt-'));
     expect(failedId).toBeDefined();
     expect(latestId).toBeDefined();
-    const status = JSON.parse(readFileSync(path.join(directory, "status.json"), "utf8")) as {
+    const status = JSON.parse(readFileSync(path.join(directory, 'status.json'), 'utf8')) as {
       latest_execution_id: string;
     };
     expect(status.latest_execution_id).toBe(latestId);
@@ -403,12 +405,12 @@ stages:
 });
 
 class QuotaThenCompleteProvider extends ScriptedClient {
-  private readonly failures: Array<RawFailure | null> = [
+  private readonly failures: (RawFailure | null)[] = [
     {
-      origin: "provider-error",
-      message: "limited",
+      origin: 'provider-error',
+      message: 'limited',
       exitCode: 1,
-      rateLimit: { resetAt: "2000-01-01T00:00:00.000Z", window: null },
+      rateLimit: { resetAt: '2000-01-01T00:00:00.000Z', window: null },
     },
     null,
   ];
@@ -418,7 +420,7 @@ class QuotaThenCompleteProvider extends ScriptedClient {
   }
 }
 
-test("a quota failure is not retried and session continue completes it", async () => {
+test('a quota failure is not retried and session continue completes it', async () => {
   const workspace = writeFakeWorkflowWorkspace({
     solo: `schema_version: 7
 id: solo
@@ -429,26 +431,26 @@ stages:
   });
   try {
     const provider = new QuotaThenCompleteProvider([
-      "status: complete\n\nlimited",
-      "status: complete\n\nwork done",
+      'status: complete\n\nlimited',
+      'status: complete\n\nwork done',
     ]);
     cliHooks.runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
     const run = await capture(() =>
-      main(["session", "run", "--workflow", "solo", "--task", "Write"], workspace),
+      main(['session', 'run', '--workflow', 'solo', '--task', 'Write'], workspace),
     );
     expect(run.value).toBe(3);
     const sessionId = sessionIdFrom(run.stderr);
-    const executionsDir = path.join(workspace, ".migent", "sessions", sessionId, "executions");
+    const executionsDir = path.join(workspace, '.migent', 'sessions', sessionId, 'executions');
     expect(readdirSync(executionsDir)).toHaveLength(1);
     const failed = readdirSync(executionsDir)[0]!;
     expect(run.stderr).toContain(`failure: executions/${failed}/failure.md`);
     expect(provider.calls).toHaveLength(1);
     cliHooks.runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
-    const continued = await capture(() => main(["session", "continue", sessionId], workspace));
+    const continued = await capture(() => main(['session', 'continue', sessionId], workspace));
     expect(continued.value).toBe(0);
     expect(provider.calls).toHaveLength(2);
     expect(readdirSync(executionsDir)).toHaveLength(2);
-    expect(continued.stderr).toContain("completed");
+    expect(continued.stderr).toContain('completed');
   } finally {
     removeWorkspace(workspace);
   }

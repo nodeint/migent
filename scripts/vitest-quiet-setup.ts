@@ -7,28 +7,32 @@ process.stderr.write = noop as typeof process.stderr.write;
 // Workflow tests run a scripted provider whose CLI is not installed. `main` resets the hooks after
 // every call, so a getter keeps "every command is found" as the default for the session preflight
 // of `session run`. Tests that care assign their own `which`.
-import { cliHooks } from "../packages/cli/src/hooks.ts";
+import { cliHooks } from '../packages/cli/src/hooks.ts';
+
+/** Schema issues included in a violation message. */
+const MAX_REPORTED_ISSUES = 5;
 
 let injected: typeof cliHooks.which = null;
-Object.defineProperty(cliHooks, "which", {
+Object.defineProperty(cliHooks, 'which', {
   get: () => injected ?? ((command: string) => `/fake/${command}`),
   set: (value: typeof cliHooks.which) => { injected = value; },
 });
 
 // Every `--json` payload a test emits is checked against its contract, and the contract is recorded
 // so a guard test can prove each one is exercised.
-import { validationIssues } from "../packages/contracts/src/index.ts";
+import { validationIssues } from '../packages/contracts/src/index.ts';
 
-const emitted = ((globalThis as { __migentEmittedContracts?: Set<string> }).__migentEmittedContracts ??= new Set<string>());
+type EmittedContractsGlobal = { __migentEmittedContracts?: Set<string> };
+const emitted = ((globalThis as EmittedContractsGlobal).__migentEmittedContracts ??= new Set<string>());
 cliHooks.validateJson = (schema, value) => {
   const issues = validationIssues(schema, value);
   if (issues.length > 0) {
-    throw new Error(`JSON output violates ${String(schema.$id)}: ${JSON.stringify(issues.slice(0, 5))}`);
+    throw new Error(`JSON output violates ${String(schema.$id)}: ${JSON.stringify(issues.slice(0, MAX_REPORTED_ISSUES))}`);
   }
   // Record the schema and, for a union, the variant this value matched.
-  const shape = schema as { $id?: string; anyOf?: Array<{ $id?: string }> };
-  if (typeof shape.$id === "string") emitted.add(shape.$id);
+  const shape = schema as { $id?: string; anyOf?: { $id?: string }[] };
+  if (typeof shape.$id === 'string') emitted.add(shape.$id);
   for (const variant of shape.anyOf ?? []) {
-    if (typeof variant.$id === "string" && validationIssues(variant as never, value).length === 0) emitted.add(variant.$id);
+    if (typeof variant.$id === 'string' && validationIssues(variant as never, value).length === 0) emitted.add(variant.$id);
   }
 };

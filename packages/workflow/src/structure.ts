@@ -1,4 +1,7 @@
 import {
+  isValid,
+  schemaIssues,
+  type TSchema,
   WorkflowDecisionEntry,
   WorkflowDecisionItem,
   WorkflowDecisionList,
@@ -6,11 +9,9 @@ import {
   WorkflowDownstream,
   WorkflowRunWhen,
   WorkflowStage,
-  isValid,
-  schemaIssues,
-  type TSchema,
-} from "@nodeint/migent-contracts";
-import { ConfigurationError } from "./errors.js";
+} from '@nodeint/migent-contracts';
+
+import { ConfigurationError } from './errors.js';
 
 /**
  * Translates the workflow contract in `@nodeint/migent-contracts` into Migent errors. The contract
@@ -28,14 +29,14 @@ export const RUN_WHEN_KEYS: readonly string[] = Object.keys(WorkflowRunWhen.prop
 export const DOWNSTREAM_KEYS: readonly string[] = Object.keys(WorkflowDownstream.properties);
 
 const typeIssue = (schema: TSchema, value: unknown): string | null =>
-  schemaIssues(schema, value).find((issue) => issue.path.length === 0 && issue.keyword === "type")?.message ?? null;
+  schemaIssues(schema, value).find((issue) => issue.path.length === 0 && issue.keyword === 'type')?.message ?? null;
 
 /** `must be a list.` / `must be a mapping.` for a node of the wrong container type; null when it is fine. */
 export function containerError(schema: TSchema, value: unknown, field: string): ConfigurationError | null {
-  if (value == null || isValid(schema, value)) return null;
+  if ((value === null || value === undefined) || isValid(schema, value)) return null;
   const problem = typeIssue(schema, value);
-  if (problem === "must be array") return new ConfigurationError(`${field} must be a list.`);
-  if (problem === "must be object") return new ConfigurationError(`${field} must be a mapping.`);
+  if (problem === 'must be array') return new ConfigurationError(`${field} must be a list.`);
+  if (problem === 'must be object') return new ConfigurationError(`${field} must be a mapping.`);
   return null;
 }
 
@@ -67,10 +68,10 @@ export const decisionEntryProblem = (entry: unknown): boolean =>
   schemaIssues(WorkflowDecisionItem, entry).some((issue) => issue.path.length === 0);
 
 export type DecisionBodyProblem =
-  | { kind: "body" }
-  | { kind: "key"; key: string }
-  | { kind: "when" }
-  | { kind: "navigate" };
+  | { kind: 'body' }
+  | { kind: 'key'; key: string }
+  | { kind: 'when' }
+  | { kind: 'navigate' };
 
 /**
  * Problems of one decision body, in reading order: a body that is not a mapping stops the rest, then
@@ -79,15 +80,15 @@ export type DecisionBodyProblem =
  */
 export function decisionBodyProblems(body: unknown, version7: boolean): DecisionBodyProblem[] {
   const issues = schemaIssues(WorkflowDecisionEntry, body);
-  if (issues.some((issue) => issue.path.length === 0 && issue.keyword === "type")) return [{ kind: "body" }];
+  if (issues.some((issue) => issue.path.length === 0 && issue.keyword === 'type')) return [{ kind: 'body' }];
   const record = body as Record<string, unknown>;
   const problems: DecisionBodyProblem[] = [];
   for (const key of Object.keys(record)) {
-    const unknown = issues.some((issue) => issue.keyword === "boolean" && issue.path.length === 1 && issue.path[0] === key);
-    if (unknown || (key === "artifacts" && !version7)) problems.push({ kind: "key", key });
+    const unknown = issues.some((issue) => issue.keyword === 'boolean' && issue.path.length === 1 && issue.path[0] === key);
+    if (unknown || (key === 'artifacts' && !version7)) problems.push({ kind: 'key', key });
   }
-  if (issues.some((issue) => issue.path[0] === "when")) problems.push({ kind: "when" });
-  if (record.navigate == null) problems.push({ kind: "navigate" });
+  if (issues.some((issue) => issue.path[0] === 'when')) problems.push({ kind: 'when' });
+  if ((record.navigate === null || record.navigate === undefined)) problems.push({ kind: 'navigate' });
   return problems;
 }
 
@@ -95,45 +96,48 @@ export function decisionBodyProblems(body: unknown, version7: boolean): Decision
 
 /** A stage list item that is not a mapping. */
 export const stageMappingProblem = (raw: unknown): boolean =>
-  schemaIssues(WorkflowStage, raw).some((issue) => issue.path.length === 0 && issue.keyword === "type");
+  schemaIssues(WorkflowStage, raw).some((issue) => issue.path.length === 0 && issue.keyword === 'type');
 
 /** `run_when.changed_paths` is absent (or null), which the contract requires. */
 export const runWhenPathsMissing = (runWhen: Record<string, unknown>, key: string): boolean => {
   const { [key]: paths, ...rest } = runWhen;
-  return paths == null && schemaIssues(WorkflowRunWhen, rest).some((issue) => issue.path.length === 0 && issue.keyword === "required");
+  return (paths === null || paths === undefined) && schemaIssues(WorkflowRunWhen, rest).some((issue) => issue.path.length === 0 && issue.keyword === 'required');
 };
 
 export type DownstreamProblem =
-  | { kind: "entry" }
-  | { kind: "key"; key: string }
-  | { kind: "workflow" }
-  | { kind: "task-missing" }
-  | { kind: "task-line" }
-  | { kind: "artifacts" };
+  | { kind: 'entry' }
+  | { kind: 'key'; key: string }
+  | { kind: 'workflow' }
+  | { kind: 'task-missing' }
+  | { kind: 'task-line' }
+  | { kind: 'artifacts' };
 
-/** Structural problems of one downstream entry in reading order. Id syntax, uniqueness and outputs stay with the readers. */
+/**
+ * Structural problems of one downstream entry in reading order. Id syntax, uniqueness and outputs
+ * stay with the readers.
+ */
 export function downstreamProblems(entry: unknown): DownstreamProblem[] {
   const issues = schemaIssues(WorkflowDownstream, entry);
-  if (issues.some((issue) => issue.path.length === 0 && issue.keyword === "type")) return [{ kind: "entry" }];
+  if (issues.some((issue) => issue.path.length === 0 && issue.keyword === 'type')) return [{ kind: 'entry' }];
   const record = entry as Record<string, unknown>;
   const problems: DownstreamProblem[] = [];
   for (const key of Object.keys(record)) {
-    if (issues.some((issue) => issue.keyword === "boolean" && issue.path.length === 1 && issue.path[0] === key)) problems.push({ kind: "key", key });
+    if (issues.some((issue) => issue.keyword === 'boolean' && issue.path.length === 1 && issue.path[0] === key)) problems.push({ kind: 'key', key });
   }
   const missing = (name: string): boolean =>
-    issues.some((issue) => issue.keyword === "required" && issue.path.length === 0 && JSON.stringify(issue.params).includes(`"${name}"`));
-  if (missing("workflow") || issues.some((issue) => issue.path[0] === "workflow")) problems.push({ kind: "workflow" });
-  if (missing("task") || issues.some((issue) => issue.path[0] === "task")) {
-    problems.push(typeof record.task === "string" && record.task.trim() !== "" ? { kind: "task-line" } : { kind: "task-missing" });
+    issues.some((issue) => issue.keyword === 'required' && issue.path.length === 0 && JSON.stringify(issue.params).includes(`"${name}"`));
+  if (missing('workflow') || issues.some((issue) => issue.path[0] === 'workflow')) problems.push({ kind: 'workflow' });
+  if (missing('task') || issues.some((issue) => issue.path[0] === 'task')) {
+    problems.push(typeof record.task === 'string' && record.task.trim() !== '' ? { kind: 'task-line' } : { kind: 'task-missing' });
   }
-  if (issues.some((issue) => issue.path[0] === "artifacts" && issue.path.length === 1)) problems.push({ kind: "artifacts" });
+  if (issues.some((issue) => issue.path[0] === 'artifacts' && issue.path.length === 1)) problems.push({ kind: 'artifacts' });
   return problems;
 }
 
 /** The `downstream` value is not a list. */
 export const downstreamListProblem = (raw: unknown): boolean =>
-  schemaIssues(DOCUMENT_FIELD_SCHEMAS.downstream, raw).some((issue) => issue.path.length === 0 && issue.keyword === "type");
+  schemaIssues(DOCUMENT_FIELD_SCHEMAS.downstream, raw).some((issue) => issue.path.length === 0 && issue.keyword === 'type');
 
 /** A downstream artifact source that is not a non-blank string. */
 export const downstreamArtifactSourceProblem = (source: unknown): boolean =>
-  !isValid(WorkflowDownstream, { workflow: "w", task: "t", artifacts: { a: source } });
+  !isValid(WorkflowDownstream, { workflow: 'w', task: 't', artifacts: { a: source } });

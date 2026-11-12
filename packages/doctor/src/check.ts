@@ -1,5 +1,5 @@
-import { z } from "zod";
-import type { ClientRegistry, ConfigOwner, SourcePosition } from "@nodeint/migent-kernel";
+import type { ClientRegistry, ConfigOwner, SourcePosition } from '@nodeint/migent-kernel';
+import { z } from 'zod';
 
 export interface Check {
   name: string;
@@ -33,7 +33,7 @@ export interface DiagnoseOptions {
  * `message` is the text users see today; the rest is internal until the public schema is fixed.
  */
 export interface Diagnostic {
-  severity: "error" | "warning";
+  severity: 'error' | 'warning';
   /** Stable rule id. Kernel rules keep the code they were thrown with. */
   code: string;
   message: string;
@@ -48,15 +48,15 @@ export interface Diagnostic {
 }
 
 /** Identity of a finding independent of its wording: the rule and where it applies. */
-export function diagnosticKey(diagnostic: Pick<Diagnostic, "code" | "path" | "message">): string {
-  return `${diagnostic.code}|${diagnostic.path === undefined ? "" : JSON.stringify(diagnostic.path)}|${diagnostic.message}`;
+export function diagnosticKey(diagnostic: Pick<Diagnostic, 'code' | 'path' | 'message'>): string {
+  return `${diagnostic.code}|${diagnostic.path === undefined ? '' : JSON.stringify(diagnostic.path)}|${diagnostic.message}`;
 }
 
 /**
  * What two findings must share to be the same root cause: the rule and the path when there is one,
  * otherwise the text.
  */
-export function identityKey(diagnostic: Pick<Diagnostic, "code" | "path" | "message">): string {
+export function identityKey(diagnostic: Pick<Diagnostic, 'code' | 'path' | 'message'>): string {
   return diagnostic.path === undefined
     ? `text|${diagnostic.message}`
     : `${diagnostic.code}|${JSON.stringify(diagnostic.path)}`;
@@ -64,22 +64,22 @@ export function identityKey(diagnostic: Pick<Diagnostic, "code" | "path" | "mess
 
 /** Collects findings in order and drops exact repeats. */
 export class DiagnosticList {
-  readonly items: Diagnostic[] = [];
+  public readonly items: Diagnostic[] = [];
   private readonly seen = new Set<string>();
 
-  add(diagnostic: Diagnostic): void {
+  public add(diagnostic: Diagnostic): void {
     const key = `${diagnostic.severity}|${diagnosticKey(diagnostic)}`;
     if (this.seen.has(key)) return;
     this.seen.add(key);
     this.items.push(diagnostic);
   }
 
-  get errors(): Diagnostic[] {
-    return this.items.filter((item) => item.severity === "error");
+  public get errors(): Diagnostic[] {
+    return this.items.filter((item) => item.severity === 'error');
   }
 
-  get warnings(): Diagnostic[] {
-    return this.items.filter((item) => item.severity === "warning");
+  public get warnings(): Diagnostic[] {
+    return this.items.filter((item) => item.severity === 'warning');
   }
 }
 
@@ -90,9 +90,9 @@ export function passed(name: string, items: readonly string[], warnings: readonl
 export function failed(
   name: string,
   problems: readonly string[],
-  items: readonly string[] = [],
-  warnings: readonly string[] = [],
+  extra: { items?: readonly string[]; warnings?: readonly string[] } = {},
 ): Check {
+  const { items = [], warnings = [] } = extra;
   return checkSchema.parse({
     name,
     ok: false,
@@ -102,7 +102,8 @@ export function failed(
   });
 }
 
-export function makeCheck(name: string, items: string[], problems: string[], warnings: string[]): Check {
+export function makeCheck(name: string, parts: { items: string[]; problems: string[]; warnings: string[] }): Check {
+  const { items, problems, warnings } = parts;
   return { name, ok: problems.length === 0, items, problems, warnings };
 }
 

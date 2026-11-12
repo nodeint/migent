@@ -43,6 +43,7 @@
     "prepack": "pnpm -w run build && cp ../../LICENSE ."
   },
   "dependencies": {
+    "@nodeint/migent-contracts": "workspace:*",
     "@nodeint/migent-kernel": "workspace:*",
     "@nodeint/migent-session": "workspace:*",
     "@nodeint/migent-prompts": "workspace:*",
@@ -50,6 +51,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.6.4",
+    "typescript": "^6.0.3",
     "yaml": "^2.9.1"
   }
 }

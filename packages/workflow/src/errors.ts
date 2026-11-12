@@ -13,20 +13,20 @@ export interface ConfigurationErrorDetails {
   /** Field path in the effective config, e.g. `["roles", "dev", "default_model"]`. */
   path?: readonly (string | number)[];
   /** Config layer the problem was found in, when a single file was read. */
-  layer?: "project" | "local";
+  layer?: 'project' | 'local';
   /** One-based line and column, for YAML syntax errors. */
   position?: SourcePosition;
 }
 
 export class ConfigurationError extends Error {
-  readonly code: string | undefined;
-  readonly path: readonly (string | number)[] | undefined;
-  readonly layer: "project" | "local" | undefined;
-  readonly position: SourcePosition | undefined;
+  public readonly code: string | undefined;
+  public readonly path: readonly (string | number)[] | undefined;
+  public readonly layer: 'project' | 'local' | undefined;
+  public readonly position: SourcePosition | undefined;
 
   constructor(message: string, details: ConfigurationErrorDetails = {}) {
     super(message);
-    this.name = "ConfigurationError";
+    this.name = 'ConfigurationError';
     this.code = details.code;
     this.path = details.path;
     this.layer = details.layer;

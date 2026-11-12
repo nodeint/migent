@@ -1,13 +1,15 @@
-import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync } from "node:fs";
-import path from "node:path";
-import { writeJsonAtomic } from "@nodeint/migent-kernel";
-import { ConfigurationError } from "@nodeint/migent-kernel";
-import { atomicCopy, nonemptyArtifact } from "@nodeint/migent-kernel";
-import { corruptStatusMessage, readStatusFileState } from "./query.js";
-import { isRecord } from "@nodeint/migent-workflow";
-import { log } from "@nodeint/migent-kernel";
-import { loadFrozenWorkflow } from "./session-freeze.js";
+import { createHash } from 'node:crypto';
+import { mkdirSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+
+import { writeJsonAtomic } from '@nodeint/migent-kernel';
+import { ConfigurationError } from '@nodeint/migent-kernel';
+import { atomicCopy, nonemptyArtifact } from '@nodeint/migent-kernel';
+import { log } from '@nodeint/migent-kernel';
+import { isRecord } from '@nodeint/migent-workflow';
+
+import { corruptStatusMessage, readStatusFileState } from './query.js';
+import { loadFrozenWorkflow } from './session-freeze.js';
 
 export interface NextSuggestion {
   workflow: string;
@@ -29,18 +31,18 @@ export interface HandoffSnapshot {
 
 function sessionDirectory(workspace: string, sessionId: string): string {
   // IDs can come from the command line or historical manifests.
-  if (!sessionId || sessionId === "." || sessionId === ".." || /[\\/]/.test(sessionId) || path.isAbsolute(sessionId)) {
+  if (!sessionId || sessionId === '.' || sessionId === '..' || /[\\/]/.test(sessionId) || path.isAbsolute(sessionId)) {
     throw new ConfigurationError(`Invalid session id: ${sessionId}.`);
   }
-  return path.resolve(workspace, ".migent", "sessions", sessionId);
+  return path.resolve(workspace, '.migent', 'sessions', sessionId);
 }
 
 export function completedPriorStatus(workspace: string, sessionId: string): Record<string, unknown> {
-  const statusPath = path.join(sessionDirectory(workspace, sessionId), "status.json");
+  const statusPath = path.join(sessionDirectory(workspace, sessionId), 'status.json');
   const read = readStatusFileState(statusPath);
-  if (read.state === "corrupt") throw new ConfigurationError(corruptStatusMessage(statusPath));
-  if (read.state === "missing") throw new ConfigurationError(`Prior session not found: ${sessionId}.`);
-  if (read.status.status !== "completed") throw new ConfigurationError(`--prior ${sessionId} is ${String(read.status.status)}, not completed.`);
+  if (read.state === 'corrupt') throw new ConfigurationError(corruptStatusMessage(statusPath));
+  if (read.state === 'missing') throw new ConfigurationError(`Prior session not found: ${sessionId}.`);
+  if (read.status.status !== 'completed') throw new ConfigurationError(`--prior ${sessionId} is ${String(read.status.status)}, not completed.`);
   return read.status;
 }
 
@@ -50,28 +52,44 @@ interface SuggestionResult {
   errors: Map<string, ConfigurationError>;
 }
 
+interface PriorOutputs {
+  sessionId: string;
+  outputs: Record<string, unknown>;
+  optional: ReadonlySet<string>;
+}
+
+function resolveEntryArtifacts(
+  mapping: Record<string, string>,
+  prior: PriorOutputs,
+): { artifacts: NextSuggestion['artifacts']; failure: ConfigurationError | null } {
+  const { sessionId, outputs, optional } = prior;
+  const artifacts: NextSuggestion['artifacts'] = {};
+  for (const [name, output] of Object.entries(mapping)) {
+    const record = outputs[output];
+    if (!isRecord(record) || typeof record.path !== 'string' || !record.path) {
+      // A mapping to an optional artifact selects it only when it was published.
+      if (optional.has(output)) continue;
+      return { artifacts, failure: new ConfigurationError(`Prior session ${sessionId} has no published output ${output}.`) };
+    }
+    artifacts[name] = { output, path: record.path };
+  }
+  return { artifacts, failure: null };
+}
+
 function resolveSuggestionEntries(workspace: string, sessionId: string): SuggestionResult {
   const directory = sessionDirectory(workspace, sessionId);
   const status = completedPriorStatus(workspace, sessionId);
   const workflow = loadFrozenWorkflow(directory);
   const outputs = isRecord(status.outputs) ? status.outputs : {};
-  const optional = new Set((workflow?.artifacts ?? []).filter((artifact) => !artifact.required).map((artifact) => artifact.id));
+  const optional = new Set(
+    (workflow?.artifacts ?? []).filter((artifact) => !artifact.required).map((artifact) => artifact.id),
+  );
   const result: SuggestionResult = { suggestions: [], errors: new Map() };
   for (const entry of workflow?.downstream ?? []) {
-    const artifacts: NextSuggestion["artifacts"] = {};
-    let failure: ConfigurationError | null = null;
     // Omitted `artifacts` passes every published output under its own name.
-    const mapping: Record<string, string> = entry.artifacts ?? Object.fromEntries(Object.keys(outputs).map((name) => [name, name]));
-    for (const [name, output] of Object.entries(mapping)) {
-      const record = outputs[output];
-      if (!isRecord(record) || typeof record.path !== "string" || !record.path) {
-        // A mapping to an optional artifact selects it only when it was published.
-        if (optional.has(output)) continue;
-        failure = new ConfigurationError(`Prior session ${sessionId} has no published output ${output}.`);
-        break;
-      }
-      artifacts[name] = { output, path: record.path };
-    }
+    const mapping: Record<string, string> =
+      entry.artifacts ?? Object.fromEntries(Object.keys(outputs).map((name) => [name, name]));
+    const { artifacts, failure } = resolveEntryArtifacts(mapping, { sessionId, outputs, optional });
     if (failure !== null) {
       result.errors.set(entry.workflow, failure);
       continue;
@@ -80,7 +98,7 @@ function resolveSuggestionEntries(workspace: string, sessionId: string): Suggest
       workflow: entry.workflow,
       task: entry.task,
       artifacts,
-      argv: ["migent", "session", "run", "--workflow", entry.workflow, "--prior", sessionId],
+      argv: ['migent', 'session', 'run', '--workflow', entry.workflow, '--prior', sessionId],
     });
   }
   return result;
@@ -95,14 +113,17 @@ export function resolveNextSuggestions(workspace: string, sessionId: string): Ne
 }
 
 /** Publication failure cannot undo a successfully completed workflow. Safe to retry. */
-export function publishNextSuggestions(workspace: string, sessionId: string): { path: string | null; next: NextSuggestion[] } {
+export function publishNextSuggestions(
+  workspace: string,
+  sessionId: string,
+): { path: string | null; next: NextSuggestion[] } {
   let next: NextSuggestion[] = [];
   try {
     const resolved = resolveSuggestionEntries(workspace, sessionId);
     for (const [workflow, error] of resolved.errors) log(`next.json omits ${workflow}: ${error.message}`);
     next = resolved.suggestions;
     if (next.length === 0) return { path: null, next };
-    const filePath = path.join(sessionDirectory(workspace, sessionId), "next.json");
+    const filePath = path.join(sessionDirectory(workspace, sessionId), 'next.json');
     writeJsonAtomic(filePath, { schema_version: 1, source_session_id: sessionId, next });
     return { path: filePath, next };
   } catch (error) {
@@ -111,7 +132,11 @@ export function publishNextSuggestions(workspace: string, sessionId: string): { 
   }
 }
 
-export function resolveHandoff(workspace: string, workflowId: string, priorSessionId?: string | null): ResolvedHandoff | null {
+export function resolveHandoff(
+  workspace: string,
+  workflowId: string,
+  priorSessionId?: string | null,
+): ResolvedHandoff | null {
   if (!priorSessionId) return null;
   const status = completedPriorStatus(workspace, priorSessionId);
   const resolved = resolveSuggestionEntries(workspace, priorSessionId);
@@ -119,17 +144,21 @@ export function resolveHandoff(workspace: string, workflowId: string, priorSessi
   if (failure !== undefined) throw failure;
   const suggestion = resolved.suggestions.find((entry) => entry.workflow === workflowId);
   const outputs = isRecord(status.outputs) ? status.outputs : {};
-  const mappings = suggestion?.artifacts ?? Object.fromEntries(Object.keys(outputs).map((name) => [name, { output: name }]));
-  const artifacts: ResolvedHandoff["artifacts"] = {};
+  const mappings =
+    suggestion?.artifacts ?? Object.fromEntries(Object.keys(outputs).map((name) => [name, { output: name }]));
+  const artifacts: ResolvedHandoff['artifacts'] = {};
   for (const [name, mapping] of Object.entries(mappings)) {
     // Fallback output names historically allow punctuation. They are labels, never path components.
     const record = outputs[mapping.output];
-    if (!isRecord(record) || typeof record.path !== "string" || !record.path) {
+    if (!isRecord(record) || typeof record.path !== 'string' || !record.path) {
       throw new ConfigurationError(`Prior session ${priorSessionId} has no published output ${mapping.output}.`);
     }
     const sourcePath = path.resolve(sessionDirectory(workspace, priorSessionId), record.path);
     if (!nonemptyArtifact(sourcePath)) throw new ConfigurationError(`Prior output ${mapping.output} is missing or empty: ${sourcePath}.`);
-    Object.defineProperty(artifacts, name, { value: { output: mapping.output, source_path: sourcePath }, enumerable: true });
+    Object.defineProperty(artifacts, name, {
+      value: { output: mapping.output, source_path: sourcePath },
+      enumerable: true,
+    });
   }
   return { source_session_id: priorSessionId, task: suggestion?.task ?? null, artifacts };
 }
@@ -137,7 +166,7 @@ export function resolveHandoff(workspace: string, workflowId: string, priorSessi
 /** Bind actual bytes only at target start; names cannot escape the handoff directory. */
 export function snapshotHandoff(directory: string, resolved: ResolvedHandoff | null): HandoffSnapshot | null {
   if (resolved === null) return null;
-  const artifacts: HandoffSnapshot["artifacts"] = {};
+  const artifacts: HandoffSnapshot['artifacts'] = {};
   let index = 0;
   for (const [name, source] of Object.entries(resolved.artifacts)) {
     const relative = `handoff/${++index}/${path.basename(source.source_path)}`;
@@ -145,15 +174,16 @@ export function snapshotHandoff(directory: string, resolved: ResolvedHandoff | n
     mkdirSync(path.dirname(destination), { recursive: true });
     atomicCopy(source.source_path, destination);
     if (!nonemptyArtifact(destination)) throw new ConfigurationError(`Prior output ${source.output} is missing or empty.`);
-    const sha256 = createHash("sha256").update(readFileSync(destination)).digest("hex");
+    const sha256 = createHash('sha256').update(readFileSync(destination)).digest('hex');
     Object.defineProperty(artifacts, name, { value: { ...source, path: relative, sha256 }, enumerable: true });
   }
   return { source_session_id: resolved.source_session_id, artifacts };
 }
 
 /** Windows' default terminal shell is PowerShell; POSIX uses single-quoted shell words. */
-export function formatNextCommand(argv: readonly string[], windows = process.platform === "win32"): string {
-  return argv.map((word) => /^[A-Za-z0-9_./:=-]+$/.test(word) ? word : windows
+export function formatNextCommand(argv: readonly string[], windows = process.platform === 'win32'): string {
+  const quote = (word: string): string => (windows
     ? `'${word.replaceAll("'", "''")}'`
-    : `'${word.replaceAll("'", "'\\''")}'`).join(" ");
+    : `'${word.replaceAll("'", "'\\''")}'`);
+  return argv.map((word) => (/^[A-Za-z0-9_./:=-]+$/.test(word) ? word : quote(word))).join(' ');
 }

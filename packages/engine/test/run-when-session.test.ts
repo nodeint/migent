@@ -1,11 +1,13 @@
-import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import path from "node:path";
-import { expect, test, vi } from "vitest";
-import { SessionStore, createWorkflowSession, readFoldedStatus, sessionMetrics, statusDriftMessage, watchSnapshot } from "@nodeint/migent-session";
-import { AgentToolRunner, executeNamedWorkflow } from "../src/index.ts";
-import { loadFrozenWorkflow } from "@nodeint/migent-session";
-import { ScriptedClient, tempDir, registryOf } from "./support.ts";
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+
+import { createWorkflowSession, readFoldedStatus, sessionMetrics, SessionStore, statusDriftMessage, watchSnapshot } from '@nodeint/migent-session';
+import { loadFrozenWorkflow } from '@nodeint/migent-session';
+import { expect, test, vi } from 'vitest';
+
+import { AgentToolRunner, executeNamedWorkflow } from '../src/index.ts';
+import { registryOf,ScriptedClient, tempDir } from './support.ts';
 
 // Git setup and wrapper/provider process startup can exceed 10 seconds on Windows CI.
 vi.setConfig({ testTimeout: 60_000 });
@@ -44,13 +46,13 @@ outputs:
     artifact: impl.md
 `;
 
-const DONE = "status: complete\n\ndone";
+const DONE = 'status: complete\n\ndone';
 
 /** Runs each hook when the matching provider call is parsed, so a test can edit files mid-session. */
 class EditingProvider extends ScriptedClient {
-  private hooks: Array<() => void>;
+  private hooks: (() => void)[];
 
-  constructor(responses: string[], artifacts: Array<string | null>, hooks: Array<() => void>) {
+  constructor(responses: string[], artifacts: (string | null)[], hooks: (() => void)[]) {
     super(responses, artifacts);
     this.hooks = [...hooks];
   }
@@ -64,30 +66,30 @@ class EditingProvider extends ScriptedClient {
 
 function git(cwd: string, ...args: string[]): string {
   return execFileSync(
-    "git",
-    ["-c", "user.email=test@example.com", "-c", "user.name=Test", "-c", "commit.gpgsign=false", ...args],
-    { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+    'git',
+    ['-c', 'user.email=test@example.com', '-c', 'user.name=Test', '-c', 'commit.gpgsign=false', ...args],
+    { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
   ).trim();
 }
 
 function workspace(): { repo: string; sessionId: string; base: string } {
-  const repo = tempDir("migent-run-when-session-");
-  git(repo, "init", "-b", "main");
-  writeFileSync(path.join(repo, ".gitignore"), ".migent/config.yaml\n.migent/workflows/\n");
-  writeFileSync(path.join(repo, "a.txt"), "a\n");
-  git(repo, "add", "-A");
-  git(repo, "commit", "-m", "initial");
-  mkdirSync(path.join(repo, ".migent", "workflows"), { recursive: true });
-  writeFileSync(path.join(repo, ".migent", "config.yaml"), CONFIG, "utf8");
-  writeFileSync(path.join(repo, ".migent", "workflows", "flow.yaml"), WORKFLOW, "utf8");
-  const sessionId = createWorkflowSession(repo, "flow", "Do it");
-  return { repo, sessionId, base: git(repo, "rev-parse", "HEAD") };
+  const repo = tempDir('migent-run-when-session-');
+  git(repo, 'init', '-b', 'main');
+  writeFileSync(path.join(repo, '.gitignore'), '.migent/config.yaml\n.migent/workflows/\n');
+  writeFileSync(path.join(repo, 'a.txt'), 'a\n');
+  git(repo, 'add', '-A');
+  git(repo, 'commit', '-m', 'initial');
+  mkdirSync(path.join(repo, '.migent', 'workflows'), { recursive: true });
+  writeFileSync(path.join(repo, '.migent', 'config.yaml'), CONFIG, 'utf8');
+  writeFileSync(path.join(repo, '.migent', 'workflows', 'flow.yaml'), WORKFLOW, 'utf8');
+  const sessionId = createWorkflowSession(repo, 'flow', { task: 'Do it' });
+  return { repo, sessionId, base: git(repo, 'rev-parse', 'HEAD') };
 }
 
 function write(repo: string, relative: string, body: string): () => void {
   return () => {
     mkdirSync(path.dirname(path.join(repo, relative)), { recursive: true });
-    writeFileSync(path.join(repo, relative), body, "utf8");
+    writeFileSync(path.join(repo, relative), body, 'utf8');
   };
 }
 
@@ -96,138 +98,138 @@ function runner(provider: ScriptedClient): AgentToolRunner {
 }
 
 function eventNames(repo: string, sessionId: string): string[] {
-  const text = readFileSync(path.join(repo, ".migent", "sessions", sessionId, "events.jsonl"), "utf8");
+  const text = readFileSync(path.join(repo, '.migent', 'sessions', sessionId, 'events.jsonl'), 'utf8');
   return text
-    .split("\n")
-    .filter((line) => line !== "")
+    .split('\n')
+    .filter((line) => line !== '')
     .map((line) => (JSON.parse(line) as { event: string }).event);
 }
 
-test("a stage whose paths did not change is skipped and the session completes", async () => {
+test('a stage whose paths did not change is skipped and the session completes', async () => {
   const { repo, sessionId, base } = workspace();
-  const provider = new EditingProvider([DONE], ["# impl\n"], [write(repo, "src/x.ts", "x\n")]);
-  const result = await executeNamedWorkflow(repo, { workflowId: "flow", sessionId }, runner(provider));
+  const provider = new EditingProvider([DONE], ['# impl\n'], [write(repo, 'src/x.ts', 'x\n')]);
+  const result = await executeNamedWorkflow(repo, { workflowId: 'flow', sessionId }, runner(provider));
   expect(result.code).toBe(0);
-  expect(result.stopReason).toBe("completed");
-  expect(result.status).toBe("completed");
+  expect(result.stopReason).toBe('completed');
+  expect(result.status).toBe('completed');
   expect(provider.calls).toHaveLength(1);
   const snapshots = new SessionStore(repo).executionSnapshots(sessionId);
   expect(snapshots.map((item) => [item.stageId, item.status])).toEqual([
-    ["implement", "completed"],
-    ["review_docs", "skipped"],
+    ['implement', 'completed'],
+    ['review_docs', 'skipped'],
   ]);
-  const skipped = snapshots.find((item) => item.status === "skipped")!;
-  const record = JSON.parse(readFileSync(path.join(path.dirname(skipped.artifactDirectory), "execution.json"), "utf8"));
+  const skipped = snapshots.find((item) => item.status === 'skipped')!;
+  const record = JSON.parse(readFileSync(path.join(path.dirname(skipped.artifactDirectory), 'execution.json'), 'utf8'));
   expect(record).toMatchObject({
-    kind: "skip",
-    status: "skipped",
+    kind: 'skip',
+    status: 'skipped',
     client: null,
     skip: {
-      reason: "no changed path matches run_when.changed_paths",
+      reason: 'no changed path matches run_when.changed_paths',
       baseline: base,
-      patterns: ["docs/**/*", "**/README.md"],
+      patterns: ['docs/**/*', '**/README.md'],
       changed_paths: 1,
     },
   });
-  expect(Object.keys(result.outputs)).toEqual(["impl"]);
+  expect(Object.keys(result.outputs)).toEqual(['impl']);
 
-  const status = readFoldedStatus(repo, path.join(repo, ".migent", "sessions", sessionId));
+  const status = readFoldedStatus(repo, path.join(repo, '.migent', 'sessions', sessionId));
   expect(status.baseline).toMatchObject({ commit: base });
-  expect(status.skipped_stages).toEqual([{ stage_id: "review_docs", execution_id: skipped.executionId }]);
+  expect(status.skipped_stages).toEqual([{ stage_id: 'review_docs', execution_id: skipped.executionId }]);
   expect(statusDriftMessage(repo, sessionId)).toBeNull();
-  const snapshot = watchSnapshot(path.join(repo, ".migent", "sessions", sessionId));
+  const snapshot = watchSnapshot(path.join(repo, '.migent', 'sessions', sessionId));
   expect(snapshot.skipped_stages).toEqual(status.skipped_stages);
   expect(snapshot.baseline).toMatchObject({ commit: base });
 
   const metrics = sessionMetrics(repo, sessionId, registryOf({ fake: provider }));
   expect(metrics.totals).toMatchObject({ executions: 1, skipped: 1 });
   expect((metrics.stages as Record<string, unknown>).review_docs).toMatchObject({ executions: 0, skipped: 1 });
-  const row = (metrics.executions as Array<Record<string, unknown>>).find((item) => item.status === "skipped")!;
+  const row = (metrics.executions as Record<string, unknown>[]).find((item) => item.status === 'skipped')!;
   expect(row).toMatchObject({ client: null, model: null, turns: 0, verify: null });
   expect(row.skip).toMatchObject({ baseline: base });
 
-  const frozen = loadFrozenWorkflow(path.join(repo, ".migent", "sessions", sessionId));
-  expect(frozen?.stages.review_docs?.runWhen).toEqual({ changedPaths: ["docs/**/*", "**/README.md"] });
+  const frozen = loadFrozenWorkflow(path.join(repo, '.migent', 'sessions', sessionId));
+  expect(frozen?.stages.review_docs?.runWhen).toEqual({ changedPaths: ['docs/**/*', '**/README.md'] });
 
-  const again = await executeNamedWorkflow(repo, { workflowId: "flow", sessionId }, runner(provider));
-  expect(again.status).toBe("completed");
+  const again = await executeNamedWorkflow(repo, { workflowId: 'flow', sessionId }, runner(provider));
+  expect(again.status).toBe('completed');
   expect(new SessionStore(repo).executionSnapshots(sessionId)).toHaveLength(2);
   const names = eventNames(repo, sessionId);
-  expect(names.filter((name) => name === "execution.skipped")).toHaveLength(1);
-  expect(names.filter((name) => name === "baseline.captured")).toHaveLength(1);
+  expect(names.filter((name) => name === 'execution.skipped')).toHaveLength(1);
+  expect(names.filter((name) => name === 'baseline.captured')).toHaveLength(1);
 });
 
-test("a stage whose paths changed runs", async () => {
+test('a stage whose paths changed runs', async () => {
   const { repo, sessionId } = workspace();
-  const provider = new EditingProvider([DONE, DONE], ["# impl\n", null], [write(repo, "docs/a.md", "doc\n")]);
-  const result = await executeNamedWorkflow(repo, { workflowId: "flow", sessionId }, runner(provider));
-  expect(result.status).toBe("completed");
+  const provider = new EditingProvider([DONE, DONE], ['# impl\n', null], [write(repo, 'docs/a.md', 'doc\n')]);
+  const result = await executeNamedWorkflow(repo, { workflowId: 'flow', sessionId }, runner(provider));
+  expect(result.status).toBe('completed');
   expect(provider.calls).toHaveLength(2);
   expect(new SessionStore(repo).executionSnapshots(sessionId).map((item) => item.status)).toEqual([
-    "completed",
-    "completed",
+    'completed',
+    'completed',
   ]);
 });
 
-test("the root README alone matches the OR pattern", async () => {
+test('the root README alone matches the OR pattern', async () => {
   const { repo, sessionId } = workspace();
-  const provider = new EditingProvider([DONE, DONE], ["# impl\n", null], [write(repo, "README.md", "root\n")]);
-  await executeNamedWorkflow(repo, { workflowId: "flow", sessionId }, runner(provider));
+  const provider = new EditingProvider([DONE, DONE], ['# impl\n', null], [write(repo, 'README.md', 'root\n')]);
+  await executeNamedWorkflow(repo, { workflowId: 'flow', sessionId }, runner(provider));
   expect(provider.calls).toHaveLength(2);
 });
 
-test("a committed change also matches, and the baseline stays at the first dispatch", async () => {
+test('a committed change also matches, and the baseline stays at the first dispatch', async () => {
   const { repo, sessionId, base } = workspace();
   const commit = () => {
-    write(repo, "docs/committed.md", "c\n")();
-    git(repo, "add", "-A");
-    git(repo, "commit", "-m", "doc");
+    write(repo, 'docs/committed.md', 'c\n')();
+    git(repo, 'add', '-A');
+    git(repo, 'commit', '-m', 'doc');
   };
-  const provider = new EditingProvider([DONE, DONE], ["# impl\n", null], [commit]);
-  await executeNamedWorkflow(repo, { workflowId: "flow", sessionId }, runner(provider));
+  const provider = new EditingProvider([DONE, DONE], ['# impl\n', null], [commit]);
+  await executeNamedWorkflow(repo, { workflowId: 'flow', sessionId }, runner(provider));
   expect(provider.calls).toHaveLength(2);
-  const status = readFoldedStatus(repo, path.join(repo, ".migent", "sessions", sessionId));
+  const status = readFoldedStatus(repo, path.join(repo, '.migent', 'sessions', sessionId));
   expect(status.baseline).toMatchObject({ commit: base });
 });
 
-test("--once exits 0 on a skip", async () => {
+test('--once exits 0 on a skip', async () => {
   const { repo, sessionId } = workspace();
-  const provider = new EditingProvider([DONE], ["# impl\n"], [write(repo, "src/x.ts", "x\n")]);
-  const first = await executeNamedWorkflow(repo, { workflowId: "flow", sessionId, once: true }, runner(provider));
-  expect(first.stopReason).toBe("stage");
-  const second = await executeNamedWorkflow(repo, { workflowId: "flow", sessionId, once: true }, runner(provider));
+  const provider = new EditingProvider([DONE], ['# impl\n'], [write(repo, 'src/x.ts', 'x\n')]);
+  const first = await executeNamedWorkflow(repo, { workflowId: 'flow', sessionId, once: true }, runner(provider));
+  expect(first.stopReason).toBe('stage');
+  const second = await executeNamedWorkflow(repo, { workflowId: 'flow', sessionId, once: true }, runner(provider));
   expect(second.code).toBe(0);
-  expect(second.stages[0]).toMatchObject({ execution_status: "skipped" });
-  expect(second.status).toBe("completed");
+  expect(second.stages[0]).toMatchObject({ execution_status: 'skipped' });
+  expect(second.status).toBe('completed');
 });
 
-test("a Git failure stops the command without a skip and recovers once Git is back", async () => {
+test('a Git failure stops the command without a skip and recovers once Git is back', async () => {
   const { repo, sessionId } = workspace();
-  const away = path.join(repo, ".git-away");
-  const hide = () => renameSync(path.join(repo, ".git"), away);
-  const provider = new EditingProvider([DONE], ["# impl\n"], [hide]);
-  await expect(executeNamedWorkflow(repo, { workflowId: "flow", sessionId }, runner(provider))).rejects.toThrow(
+  const away = path.join(repo, '.git-away');
+  const hide = () => renameSync(path.join(repo, '.git'), away);
+  const provider = new EditingProvider([DONE], ['# impl\n'], [hide]);
+  await expect(executeNamedWorkflow(repo, { workflowId: 'flow', sessionId }, runner(provider))).rejects.toThrow(
     /stages\.review_docs\.run_when: the workspace is not in a Git work tree/,
   );
   const store = new SessionStore(repo);
-  expect(store.executionSnapshots(sessionId).map((item) => item.stageId)).toEqual(["implement"]);
-  expect(store.readSessionStatus(sessionId).status).toBe("active");
+  expect(store.executionSnapshots(sessionId).map((item) => item.stageId)).toEqual(['implement']);
+  expect(store.readSessionStatus(sessionId).status).toBe('active');
   expect(provider.calls).toHaveLength(1);
-  renameSync(away, path.join(repo, ".git"));
-  const result = await executeNamedWorkflow(repo, { workflowId: "flow", sessionId }, runner(provider));
-  expect(result.status).toBe("completed");
-  expect(store.executionSnapshots(sessionId).map((item) => item.status)).toEqual(["completed", "skipped"]);
+  renameSync(away, path.join(repo, '.git'));
+  const result = await executeNamedWorkflow(repo, { workflowId: 'flow', sessionId }, runner(provider));
+  expect(result.status).toBe('completed');
+  expect(store.executionSnapshots(sessionId).map((item) => item.status)).toEqual(['completed', 'skipped']);
   rmSync(away, { recursive: true, force: true });
 });
 
-test("a run_when workflow in a non-Git workspace fails before any execution", async () => {
-  const repo = tempDir("migent-run-when-nogit-session-");
-  mkdirSync(path.join(repo, ".migent", "workflows"), { recursive: true });
-  writeFileSync(path.join(repo, ".migent", "config.yaml"), CONFIG, "utf8");
-  writeFileSync(path.join(repo, ".migent", "workflows", "flow.yaml"), WORKFLOW, "utf8");
-  const sessionId = createWorkflowSession(repo, "flow", "Do it");
-  const provider = new EditingProvider([DONE], ["# impl\n"], []);
-  await expect(executeNamedWorkflow(repo, { workflowId: "flow", sessionId }, runner(provider))).rejects.toThrow(
+test('a run_when workflow in a non-Git workspace fails before any execution', async () => {
+  const repo = tempDir('migent-run-when-nogit-session-');
+  mkdirSync(path.join(repo, '.migent', 'workflows'), { recursive: true });
+  writeFileSync(path.join(repo, '.migent', 'config.yaml'), CONFIG, 'utf8');
+  writeFileSync(path.join(repo, '.migent', 'workflows', 'flow.yaml'), WORKFLOW, 'utf8');
+  const sessionId = createWorkflowSession(repo, 'flow', { task: 'Do it' });
+  const provider = new EditingProvider([DONE], ['# impl\n'], []);
+  await expect(executeNamedWorkflow(repo, { workflowId: 'flow', sessionId }, runner(provider))).rejects.toThrow(
     new RegExp(`^Session ${sessionId} needs a Git commit for run_when: `),
   );
   expect(new SessionStore(repo).executionSnapshots(sessionId)).toEqual([]);
@@ -269,36 +271,36 @@ stages:
         revise: implement
 `;
 
-test("a skip stops the transitive downstream stages that completed before it", async () => {
+test('a skip stops the transitive downstream stages that completed before it', async () => {
   const { repo } = workspace();
-  writeFileSync(path.join(repo, ".migent", "workflows", "flow.yaml"), TRANSITIVE, "utf8");
-  const sessionId = createWorkflowSession(repo, "flow", "Do it");
-  const docs = path.join(repo, "docs", "x.md");
+  writeFileSync(path.join(repo, '.migent', 'workflows', 'flow.yaml'), TRANSITIVE, 'utf8');
+  const sessionId = createWorkflowSession(repo, 'flow', { task: 'Do it' });
+  const docs = path.join(repo, 'docs', 'x.md');
   const restore = () => rmSync(docs, { force: true });
   const provider = new EditingProvider(
     [
-      "status: complete\ndecision: done\n\nok", // implement
+      'status: complete\ndecision: done\n\nok', // implement
       DONE, // B
       DONE, // C
       DONE, // E
       DONE, // D
-      "status: complete\ndecision: revise\n\nrevise", // check
-      "status: complete\ndecision: done\n\nok", // implement again
+      'status: complete\ndecision: revise\n\nrevise', // check
+      'status: complete\ndecision: done\n\nok', // implement again
       DONE, // E again
     ],
     [],
-    [write(repo, "docs/x.md", "doc\n"), () => {}, () => {}, () => {}, () => {}, () => {}, restore],
+    [write(repo, 'docs/x.md', 'doc\n'), () => {}, () => {}, () => {}, () => {}, () => {}, restore],
   );
-  const result = await executeNamedWorkflow(repo, { workflowId: "flow", sessionId }, runner(provider));
-  expect(result.status).toBe("completed");
+  const result = await executeNamedWorkflow(repo, { workflowId: 'flow', sessionId }, runner(provider));
+  expect(result.status).toBe('completed');
   const snapshots = new SessionStore(repo).executionSnapshots(sessionId);
   const order = snapshots.map((item) => `${item.stageId}:${item.status}`);
-  const skipIndex = order.indexOf("B:skipped");
+  const skipIndex = order.indexOf('B:skipped');
   expect(skipIndex).toBeGreaterThan(0);
   const after = order.slice(skipIndex + 1);
-  expect(after.some((entry) => entry.startsWith("C:") || entry.startsWith("D:") || entry.startsWith("check:"))).toBe(
+  expect(after.some((entry) => entry.startsWith('C:') || entry.startsWith('D:') || entry.startsWith('check:'))).toBe(
     false,
   );
-  const status = readFoldedStatus(repo, path.join(repo, ".migent", "sessions", sessionId));
-  expect(status.skipped_stages).toEqual([expect.objectContaining({ stage_id: "B" })]);
+  const status = readFoldedStatus(repo, path.join(repo, '.migent', 'sessions', sessionId));
+  expect(status.skipped_stages).toEqual([expect.objectContaining({ stage_id: 'B' })]);
 });

@@ -1,12 +1,14 @@
-export { addArtifactContext, addStageOutcomeContract, flattenHistory, renderProviderPrompt, type ProviderPromptOptions } from "@nodeint/migent-prompts";
-export const MIGENT_DIRNAME = ".migent";
-export const EXECUTIONS_DIRNAME = "executions";
-export const SESSIONS_DIRNAME = "sessions";
-export const CONVERSATION_FILENAME = "conversation.json";
-export const LEGACY_CONVERSATION_FILENAME = "session.json";
+import { MS_PER_SECOND, PAD_WIDTH_2, SECONDS_PER_HOUR, SECONDS_PER_MINUTE } from './constants.js';
+
+export { addArtifactContext, addStageOutcomeContract, flattenHistory, type ProviderPromptOptions,renderProviderPrompt } from '@nodeint/migent-prompts';
+export const MIGENT_DIRNAME = '.migent';
+export const EXECUTIONS_DIRNAME = 'executions';
+export const SESSIONS_DIRNAME = 'sessions';
+export const CONVERSATION_FILENAME = 'conversation.json';
+export const LEGACY_CONVERSATION_FILENAME = 'session.json';
 export const EXECUTION_SCHEMA_VERSION = 2;
 
-export { debugEnabled } from "./env.js";
+export { debugEnabled } from './env.js';
 
 export function log(message: string): void {
   process.stderr.write(`[migent] ${message}\n`);
@@ -14,18 +16,18 @@ export function log(message: string): void {
 
 /** Local time, `HH:MM:SS`. */
 export function formatClock(date = new Date()): string {
-  const hh = String(date.getHours()).padStart(2, "0");
-  const mm = String(date.getMinutes()).padStart(2, "0");
-  const ss = String(date.getSeconds()).padStart(2, "0");
+  const hh = String(date.getHours()).padStart(PAD_WIDTH_2, '0');
+  const mm = String(date.getMinutes()).padStart(PAD_WIDTH_2, '0');
+  const ss = String(date.getSeconds()).padStart(PAD_WIDTH_2, '0');
   return `${hh}:${mm}:${ss}`;
 }
 
 /** Whole seconds, as `12s`, `3m 4s`, or `1h 2m 3s`. */
 export function formatDuration(milliseconds: number): string {
-  const total = Math.max(0, Math.round(milliseconds / 1000));
-  const hours = Math.floor(total / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  const seconds = total % 60;
+  const total = Math.max(0, Math.round(milliseconds / MS_PER_SECOND));
+  const hours = Math.floor(total / SECONDS_PER_HOUR);
+  const minutes = Math.floor((total % SECONDS_PER_HOUR) / SECONDS_PER_MINUTE);
+  const seconds = total % SECONDS_PER_MINUTE;
   if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
   if (minutes > 0) return `${minutes}m ${seconds}s`;
   return `${seconds}s`;
@@ -38,7 +40,7 @@ export function logProgress(message: string): void {
 
 /** Python `datetime.now(timezone.utc).isoformat()` uses `+00:00`. */
 export function utcNow(): string {
-  return new Date().toISOString().replace(/Z$/, "+00:00");
+  return new Date().toISOString().replace(/Z$/, '+00:00');
 }
 
 export function isUnicodeAlnum(character: string): boolean {
@@ -46,12 +48,12 @@ export function isUnicodeAlnum(character: string): boolean {
 }
 
 export function safeComponent(value: string): string {
-  let normalized = "";
+  let normalized = '';
   for (const character of value) {
     normalized +=
-      isUnicodeAlnum(character) || character === "-" || character === "_" ? character : "-";
+      isUnicodeAlnum(character) || character === '-' || character === '_' ? character : '-';
   }
-  normalized = normalized.replace(/^[-_]+/u, "").replace(/[-_]+$/u, "");
-  if (!normalized) throw new Error("Stage ID must contain at least one letter or number.");
+  normalized = normalized.replace(/^[-_]+/u, '').replace(/[-_]+$/u, '');
+  if (!normalized) throw new Error('Stage ID must contain at least one letter or number.');
   return normalized;
 }

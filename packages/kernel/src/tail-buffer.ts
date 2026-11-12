@@ -4,10 +4,10 @@ export class TailBuffer {
   private size = 0;
   private seen = 0;
 
-  constructor(readonly limit = 8192) {}
+  constructor(public readonly limit = 8192) {}
 
-  append(chunk: Buffer | string): void {
-    const data = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
+  public append(chunk: Buffer | string): void {
+    const data = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
     if (data.length === 0) return;
     this.seen += data.length;
     this.chunks.push(data);
@@ -18,17 +18,17 @@ export class TailBuffer {
   }
 
   /** Every byte ever appended, kept or not. */
-  get totalBytes(): number {
+  public get totalBytes(): number {
     return this.seen;
   }
 
   /** Bytes currently kept. */
-  get keptBytes(): number {
+  public get keptBytes(): number {
     return Math.min(this.size, this.limit);
   }
 
-  toString(): string {
+  public toString(): string {
     const joined = Buffer.concat(this.chunks);
-    return joined.subarray(Math.max(0, joined.length - this.limit)).toString("utf8").replace(/^�+/, "");
+    return joined.subarray(Math.max(0, joined.length - this.limit)).toString('utf8').replace(/^�+/, '');
   }
 }

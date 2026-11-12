@@ -1,6 +1,9 @@
-import { readFileSync } from "node:fs";
-import { z } from "zod";
-import { ConfigurationError } from "./errors.js";
+import { readFileSync } from 'node:fs';
+
+import { z } from 'zod';
+
+import { MAX_QUESTION_OPTIONS, MIN_QUESTION_OPTIONS, OPTION_LETTER_BASE } from './constants.js';
+import { ConfigurationError } from './errors.js';
 
 const text = z.string().trim().min(1);
 const questionId = text.regex(/^[1-9][0-9]*$/);
@@ -9,42 +12,69 @@ const questionSchema = z.object({
   id: questionId.optional(),
   question: text,
   context: text,
-  selection: z.enum(["single", "multiple"]),
-  options: z.array(z.object({ id: optionId.optional(), label: text, description: text.optional() }).strict()).min(2).max(26),
+  selection: z.enum(['single', 'multiple']),
+  options: z.array(z.object({ id: optionId.optional(), label: text, description: text.optional() }).strict())
+    .min(MIN_QUESTION_OPTIONS)
+    .max(MAX_QUESTION_OPTIONS),
   recommended: z.array(optionId).min(1).optional(),
-}).strict().superRefine((question, ctx) => {
-  const ids = question.options.map((_, index) => String.fromCharCode(65 + index));
-  if (question.options.some((option, index) => option.id !== undefined && option.id !== ids[index])) {
-    ctx.addIssue({ code: "custom", message: "Option IDs must follow order A, B, C, ..." });
+}).strict().superRefine(refineQuestion);
+
+type ParsedQuestion = z.output<typeof questionSchema>;
+
+/** Option letters for a question with this many options: A, B, C, ... */
+function optionLetter(index: number): string {
+  return String.fromCharCode(OPTION_LETTER_BASE + index);
+}
+
+function refineQuestion(
+  question: { options: readonly { id?: string }[]; recommended?: readonly string[]; selection: string },
+  ctx: z.RefinementCtx,
+): void {
+  const optionIds = question.options.map((option) => option.id);
+  if (optionIds.some((id, index) => id !== undefined && id !== optionLetter(index))) {
+    ctx.addIssue({ code: 'custom', message: 'Option IDs must follow order A, B, C, ...' });
   }
+  const letters = new Set(question.options.map((_, index) => optionLetter(index)));
   const recommended = question.recommended ?? [];
-  if (recommended.some((value) => !ids.includes(value)) || new Set(recommended).size !== recommended.length) {
-    ctx.addIssue({ code: "custom", message: "recommended must contain distinct option IDs." });
+  if (recommended.some((value) => !letters.has(value)) || new Set(recommended).size !== recommended.length) {
+    ctx.addIssue({ code: 'custom', message: 'recommended must contain distinct option IDs.' });
   }
-  if (question.selection === "single" && recommended.length > 1) {
-    ctx.addIssue({ code: "custom", message: "single selection permits only one recommendation." });
+  if (question.selection === 'single' && recommended.length > 1) {
+    ctx.addIssue({ code: 'custom', message: 'single selection permits only one recommendation.' });
   }
-});
+}
+
+function refineQuestionBatch(questions: readonly ParsedQuestion[], ctx: z.RefinementCtx): void {
+  const ids = questions.flatMap((question) => (question.id === undefined ? [] : [question.id]));
+  if (new Set(ids).size !== ids.length) ctx.addIssue({ code: 'custom', message: 'Duplicate question id.' });
+  const outOfOrder = questions.some((question, index) =>
+    question.id !== undefined && question.id !== String(index + 1));
+  if (outOfOrder) ctx.addIssue({ code: 'custom', message: 'Question IDs must follow order 1, 2, 3, ...' });
+}
+
+type ParsedOption = ParsedQuestion['options'][number];
+type NumberedQuestion = Omit<ParsedQuestion, 'id' | 'options'> & {
+  id: string;
+  options: (ParsedOption & { id: string })[];
+};
+
+/** Assigns the question number and its option letters. */
+function numberQuestion(question: ParsedQuestion, index: number): NumberedQuestion {
+  const options = question.options.map((option, optionIndex) => ({ ...option, id: optionLetter(optionIndex) }));
+  return { ...question, id: String(index + 1), options };
+}
 
 /** The question list shared by both protocols: batch invariants plus ID and letter assignment. */
-export const questionBatchSchema = z.array(questionSchema).min(1).superRefine((questions, ctx) => {
-  const ids = questions.map((question) => question.id).filter((id) => id !== undefined);
-  if (new Set(ids).size !== ids.length) ctx.addIssue({ code: "custom", message: "Duplicate question id." });
-  if (questions.some((question, index) => question.id !== undefined && question.id !== String(index + 1))) {
-    ctx.addIssue({ code: "custom", message: "Question IDs must follow order 1, 2, 3, ..." });
-  }
-}).transform((questions) => questions.map((question, index) => ({
-  ...question, id: String(index + 1), options: question.options.map((option, optionIndex) => ({
-    ...option, id: String.fromCharCode(65 + optionIndex),
-  })),
-})));
+export const questionBatchSchema = z.array(questionSchema).min(1)
+  .superRefine(refineQuestionBatch)
+  .transform((questions) => questions.map(numberQuestion));
 
 export const questionDocumentSchema = z.object({
   schema_version: z.literal(1),
   questions: questionBatchSchema,
 }).strict();
 
-export type Question = z.output<typeof questionDocumentSchema>["questions"][number];
+export type Question = z.output<typeof questionDocumentSchema>['questions'][number];
 export interface QuestionAnswer {
   question_id: string;
   selected: string[];
@@ -56,13 +86,17 @@ export function storedQuestions(outcome: Record<string, unknown> | null): Questi
   return questionDocumentSchema.parse({ schema_version: 1, questions: outcome.questions }).questions;
 }
 
-export type QuestionFileErrorKind = "missing" | "empty" | "invalid_json" | "invalid_schema";
+export type QuestionFileErrorKind = 'missing' | 'empty' | 'invalid_json' | 'invalid_schema';
 
 /** The question request file cannot be used. The kind and detail are safe to show to the agent. */
 export class QuestionFileError extends Error {
-  constructor(readonly kind: QuestionFileErrorKind, readonly detail: string, readonly file: string) {
+  constructor(
+    public readonly kind: QuestionFileErrorKind,
+    public readonly detail: string,
+    public readonly file: string,
+  ) {
     super(`Question request file ${file} is invalid (${kind}): ${detail}`);
-    this.name = "QuestionFileError";
+    this.name = 'QuestionFileError';
   }
 }
 
@@ -70,22 +104,22 @@ export class QuestionFileError extends Error {
 export function loadQuestionFile(file: string): Question[] {
   let text: string;
   try {
-    text = readFileSync(file, "utf8");
+    text = readFileSync(file, 'utf8');
   } catch (error) {
-    const code = (error as { code?: unknown }).code;
-    throw new QuestionFileError("missing", code === "ENOENT" ? "the file was not written" : `the file cannot be read (${String(code ?? error)})`, file);
+    const {code} = (error as { code?: unknown });
+    throw new QuestionFileError('missing', code === 'ENOENT' ? 'the file was not written' : `the file cannot be read (${String(code ?? error)})`, file);
   }
-  if (text.trim() === "") throw new QuestionFileError("empty", "the file has no content", file);
+  if (text.trim() === '') throw new QuestionFileError('empty', 'the file has no content', file);
   let value: unknown;
   try {
-    value = JSON.parse(text.replace(/^﻿/, ""));
+    value = JSON.parse(text.replace(/^\uFEFF/, ''));
   } catch (error) {
-    throw new QuestionFileError("invalid_json", error instanceof Error ? error.message : String(error), file);
+    throw new QuestionFileError('invalid_json', error instanceof Error ? error.message : String(error), file);
   }
   const parsed = questionDocumentSchema.safeParse(value);
   if (!parsed.success) {
-    const detail = parsed.error.issues.map((issue) => `${issue.path.length > 0 ? issue.path.join(".") : "document"}: ${issue.message}`).join("; ");
-    throw new QuestionFileError("invalid_schema", detail, file);
+    const detail = parsed.error.issues.map((issue) => `${issue.path.length > 0 ? issue.path.join('.') : 'document'}: ${issue.message}`).join('; ');
+    throw new QuestionFileError('invalid_schema', detail, file);
   }
   return parsed.data.questions;
 }
@@ -96,60 +130,75 @@ export function answerQuestions(questions: readonly Question[], reply: string): 
   try {
     const parsed: unknown = JSON.parse(reply);
     // Numeric/boolean/null-looking replies are still free text for one question.
-    if (typeof parsed === "string" || (typeof parsed === "object" && parsed !== null)) value = parsed;
+    if (typeof parsed === 'string' || (typeof parsed === 'object' && parsed !== null)) value = parsed;
   } catch { /* Plain option IDs and free text are allowed for one question. */ }
-  if (typeof value === "string") {
+  if (typeof value === 'string') {
     const numbered = numberedAnswers(questions, value);
     if (numbered !== null) value = numbered;
   }
   let values: Record<string, unknown>;
-  if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+  if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
     values = value as Record<string, unknown>;
   } else if (questions.length === 1) {
-    values = { [questions[0]!.id]: typeof value === "string" && /^[A-Za-z](?:\s*\+\s*[A-Za-z])+$/.test(value.trim())
+    values = { [questions[0].id]: typeof value === 'string' && /^[A-Za-z](?:\s*\+\s*[A-Za-z])+$/.test(value.trim())
       ? value.trim().toUpperCase().split(/\s*\+\s*/) : value };
   } else {
-    throw new ConfigurationError("Answer every question using its number, for example: 1A, 2B, 3 explain further.");
+    throw new ConfigurationError('Answer every question using its number, for example: 1A, 2B, 3 explain further.');
   }
-  if (Object.keys(values).length !== questions.length || Object.keys(values).some((key) => !questions.some((question) => question.id === key))) {
-    throw new ConfigurationError("The reply must answer exactly the pending question IDs.");
+  const pendingIds = new Set(questions.map((question) => question.id));
+  const keys = Object.keys(values);
+  if (keys.length !== questions.length || keys.some((key) => !pendingIds.has(key))) {
+    throw new ConfigurationError('The reply must answer exactly the pending question IDs.');
   }
-  return questions.map((question) => {
-    const rawAnswer = values[question.id];
-    const answer = typeof rawAnswer === "string" && /^[a-z]$/.test(rawAnswer) ? rawAnswer.toUpperCase() : rawAnswer;
-    const ids = question.options.map((option) => option.id);
-    if (typeof answer === "string" && !ids.includes(answer) && answer.trim()) {
-      return { question_id: question.id, selected: [], text: answer };
-    }
-    const selected = typeof answer === "string" ? [answer] : Array.isArray(answer)
-      ? answer.map((value) => typeof value === "string" && /^[a-z]$/.test(value) ? value.toUpperCase() : value) : answer;
-    if (!Array.isArray(selected) || selected.length === 0 || selected.some((option) => typeof option !== "string" || !ids.includes(option)) || new Set(selected).size !== selected.length) {
-      throw new ConfigurationError(`Question ${question.id}: select distinct IDs from its options.`);
-    }
-    if (question.selection === "single" && selected.length !== 1) {
-      throw new ConfigurationError(`Question ${question.id}: select exactly one option.`);
-    }
-    return { question_id: question.id, selected: selected as string[] };
-  });
+  return questions.map((question) => answerQuestion(question, values[question.id]));
+}
+
+/** A lone lowercase option letter is read as its uppercase ID. */
+function upperOptionLetter(value: unknown): unknown {
+  return typeof value === 'string' && /^[a-z]$/.test(value) ? value.toUpperCase() : value;
+}
+
+function answerQuestion(question: Question, rawAnswer: unknown): QuestionAnswer {
+  const answer = upperOptionLetter(rawAnswer);
+  const ids = new Set(question.options.map((option) => option.id));
+  if (typeof answer === 'string' && !ids.has(answer) && answer.trim()) {
+    return { question_id: question.id, selected: [], text: answer };
+  }
+  let selected: unknown = answer;
+  if (typeof answer === 'string') selected = [answer];
+  else if (Array.isArray(answer)) selected = answer.map(upperOptionLetter);
+  if (!isDistinctSelection(selected, ids)) {
+    throw new ConfigurationError(`Question ${question.id}: select distinct IDs from its options.`);
+  }
+  if (question.selection === 'single' && selected.length !== 1) {
+    throw new ConfigurationError(`Question ${question.id}: select exactly one option.`);
+  }
+  return { question_id: question.id, selected };
+}
+
+function isDistinctSelection(selected: unknown, ids: ReadonlySet<string>): selected is string[] {
+  if (!Array.isArray(selected) || selected.length === 0) return false;
+  const valid = selected.every((option) => typeof option === 'string' && ids.has(option));
+  return valid && new Set(selected).size === selected.length;
 }
 
 /** Commas/newlines before numbered entries delimit answers; other commas stay in free text. */
 function numberedAnswers(questions: readonly Question[], reply: string): Record<string, unknown> | null {
   const entries = reply.trim().split(/[,\n]\s*(?=[1-9][0-9]*(?:[A-Za-z]|\s|[.):]))/);
   const pattern = /^([1-9][0-9]*)(?:[.):]\s*|\s+|(?=[A-Za-z]))([\s\S]+)$/;
-  if (!pattern.test(entries[0] ?? "")) return null;
+  if (!pattern.test(entries[0] ?? '')) return null;
   const values: Record<string, unknown> = {};
   for (const entry of entries) {
     const match = pattern.exec(entry.trim());
-    if (!match) throw new ConfigurationError("Use a question number followed by a letter or free text.");
-    const number = match[1]!;
+    if (!match) throw new ConfigurationError('Use a question number followed by a letter or free text.');
+    const [, number] = match;
     if (!questions.some((question) => question.id === number)) throw new ConfigurationError(`Unknown question number: ${number}.`);
     if (Object.hasOwn(values, number)) throw new ConfigurationError(`Question ${number} is answered more than once. Use A+C for multiple selections.`);
-    const answer = match[2]!.trim();
+    const answer = match[2].trim();
     values[number] = /^[A-Za-z](?:\s*\+\s*[A-Za-z])*$/.test(answer)
       ? answer.toUpperCase().split(/\s*\+\s*/) : answer;
   }
   return values;
 }
 
-export { formatQuestionAnswers } from "@nodeint/migent-prompts";
+export { formatQuestionAnswers } from '@nodeint/migent-prompts';

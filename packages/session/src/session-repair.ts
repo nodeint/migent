@@ -1,34 +1,37 @@
-import { createHash } from "node:crypto";
-import { existsSync, readFileSync, statSync } from "node:fs";
-import path from "node:path";
-import { writeJsonAtomic } from "@nodeint/migent-kernel";
-import { publishNextSuggestions } from "./next-handoff.js";
-import { ConfigurationError } from "@nodeint/migent-kernel";
-import { storedQuestions } from "@nodeint/migent-kernel";
-import { sessionStatusAfterExecution } from "@nodeint/migent-kernel";
-import { sessionStatusFromExecutions, type StatusExecution } from "./session-ledger.js";
-import { isRecord } from "@nodeint/migent-workflow";
-import { isWorkflowV2 } from "@nodeint/migent-workflow";
-import { utcNow } from "@nodeint/migent-kernel";
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import path from 'node:path';
+
+import { writeJsonAtomic } from '@nodeint/migent-kernel';
+import { ConfigurationError } from '@nodeint/migent-kernel';
+import { storedQuestions } from '@nodeint/migent-kernel';
+import { sessionStatusAfterExecution } from '@nodeint/migent-kernel';
+import { utcNow } from '@nodeint/migent-kernel';
+import { StageOutcome } from '@nodeint/migent-kernel';
+import { isRecord } from '@nodeint/migent-workflow';
+import { isWorkflowV2 } from '@nodeint/migent-workflow';
+
+import { MANIFEST_SCHEMA_EVENT_LOG } from './constants.js';
+import { publishNextSuggestions } from './next-handoff.js';
 import {
   appendLifecycleEvent,
+  EVENT_VERSION,
+  type EventDraft,
   eventRecord,
   parseableTornTail,
+  type ParsedEvent,
   sealSessionEventLogs,
   sessionChangeReason,
-  type EventDraft,
-  type ParsedEvent,
-} from "./session-events.js";
+} from './session-events.js';
 import {
-  foldStatus,
-  writeQuestionsFile,
-  loadFoldInputs,
-  readSessionManifest,
   type FoldExecution,
   type FoldInputs,
-} from "./session-fold.js";
-import { SessionLock } from "./session-lock.js";
-import { StageOutcome } from "@nodeint/migent-kernel";
+  foldStatus,
+  writeQuestionsFile,
+} from './session-fold.js';
+import { loadFoldInputs, readSessionManifest } from './session-fold-read.js';
+import { sessionStatusFromExecutions, type StatusExecution } from './session-ledger.js';
+import { SessionLock } from './session-lock.js';
 
 export interface RepairOptions {
   /** The only way past a v1 status.json that does not parse. `continue` never sets this. */
@@ -51,6 +54,58 @@ export function repairSession(
   }
 }
 
+interface RepairPlan {
+  inputs: FoldInputs;
+  drafts: EventDraft[];
+  torn: ParsedEvent | null;
+}
+
+function planRepairDrafts(
+  sessionDirectory: string,
+  loaded: FoldInputs,
+  options: { eventLog: boolean; acceptDraft: EventDraft | null },
+): RepairPlan {
+  const { eventLog, acceptDraft } = options;
+  const draftsFor = (inputs: FoldInputs): EventDraft[] => {
+    const drafts = eventLog ? reconcileDrafts(inputs) : [];
+    if (acceptDraft) drafts.push(acceptDraft);
+    return drafts;
+  };
+  const drafts = draftsFor(loaded);
+  // Appending seals a torn tail. Fold that line first, and leave the file untouched on refusal.
+  const torn = drafts.length > 0 ? parseableTornTail(path.join(sessionDirectory, 'events.jsonl')) : null;
+  if (!torn) return { inputs: loaded, drafts, torn };
+  const inputs = { ...loaded, events: [...loaded.events, torn] };
+  return { inputs, drafts: draftsFor(inputs), torn };
+}
+
+function writeRepairedEvents(sessionDirectory: string, plan: RepairPlan): void {
+  const { inputs, drafts, torn } = plan;
+  if (torn) sealSessionEventLogs(sessionDirectory);
+  for (const draft of drafts) appendLifecycleEvent(sessionDirectory, draft);
+  writeExecutionQuestions(sessionDirectory, inputs);
+  writeQuestionsFile(sessionDirectory, withDrafts(inputs, drafts));
+}
+
+function assertTaskHash(folded: Record<string, unknown>, sessionId: string): void {
+  const hash = typeof folded.task_sha256 === 'string' ? folded.task_sha256 : '';
+  if (hash !== '') return;
+  throw new ConfigurationError(
+    `Session ${sessionId} cannot store a task hash. Write task.md, then run: migent session repair ${sessionId} --accept-task`,
+  );
+}
+
+function writeExecutionQuestions(sessionDirectory: string, inputs: FoldInputs): void {
+  for (const execution of inputs.executions) {
+    if (execution.outcome?.status !== 'question') continue;
+    writeJsonAtomic(path.join(sessionDirectory, 'executions', execution.executionId, 'questions.json'), {
+      schema_version: 1, stage_id: execution.stageId, execution_id: execution.executionId,
+      recipient: inputs.workflow?.stages[execution.stageId]?.ask ?? 'human',
+      questions: storedQuestions(execution.outcome),
+    });
+  }
+}
+
 /**
  * Rebuild status.json. The caller holds the session lock.
  * A normal save does not call this: refusal applies only to repair and continue.
@@ -65,43 +120,20 @@ export function repairSessionUnlocked(
   assertSessionDirectory(sessionDirectory, sessionId);
   const manifest = readSessionManifest(sessionDirectory);
   const loaded = loadFoldInputs(workspace, sessionDirectory);
-  const statusPath = path.join(sessionDirectory, "status.json");
-  const before = loaded.previousStatus === null ? statusFileKind(statusPath) : "ok";
-  const acceptDraft = acceptTask && before === "corrupt" ? acceptedTaskDraft(sessionDirectory, sessionId) : null;
-  let inputs = loaded;
-  let drafts: EventDraft[] = manifest.schemaVersion >= 2 ? reconcileDrafts(inputs) : [];
-  if (acceptDraft) drafts.push(acceptDraft);
-  // Appending seals a torn tail. Fold that line first, and leave the file untouched on refusal.
-  const torn = drafts.length > 0 ? parseableTornTail(path.join(sessionDirectory, "events.jsonl")) : null;
-  if (torn) {
-    inputs = { ...loaded, events: [...loaded.events, torn] };
-    drafts = manifest.schemaVersion >= 2 ? reconcileDrafts(inputs) : [];
-    if (acceptDraft) drafts.push(acceptDraft);
-  }
+  const statusPath = path.join(sessionDirectory, 'status.json');
+  const before = loaded.previousStatus === null ? statusFileKind(statusPath) : 'ok';
+  const acceptDraft = acceptTask && before === 'corrupt' ? acceptedTaskDraft(sessionDirectory, sessionId) : null;
+  const { inputs, drafts, torn } = planRepairDrafts(sessionDirectory, loaded, {
+    eventLog: manifest.schemaVersion >= MANIFEST_SCHEMA_EVENT_LOG,
+    acceptDraft,
+  });
   const folded = foldStatus(withDrafts(inputs, drafts));
-  if (acceptTask && before === "corrupt") {
-    const hash = typeof folded.task_sha256 === "string" ? folded.task_sha256 : "";
-    if (hash === "") {
-      throw new ConfigurationError(
-        `Session ${sessionId} cannot store a task hash. Write task.md, then run: migent session repair ${sessionId} --accept-task`,
-      );
-    }
-  }
-  const reasons = replacementRefusal(folded, inputs, before, acceptTask);
+  if (acceptTask && before === 'corrupt') assertTaskHash(folded, sessionId);
+  const reasons = replacementRefusal(folded, inputs, { before, acceptTask });
   if (reasons.length > 0) throw new ConfigurationError(repairRefusalMessage(sessionId, reasons));
-  if (torn) sealSessionEventLogs(sessionDirectory);
-  for (const draft of drafts) appendLifecycleEvent(sessionDirectory, draft);
-  for (const execution of inputs.executions) {
-    if (execution.outcome?.status !== "question") continue;
-    writeJsonAtomic(path.join(sessionDirectory, "executions", execution.executionId, "questions.json"), {
-      schema_version: 1, stage_id: execution.stageId, execution_id: execution.executionId,
-      recipient: inputs.workflow?.stages[execution.stageId]?.ask ?? "human",
-      questions: storedQuestions(execution.outcome),
-    });
-  }
-  writeQuestionsFile(sessionDirectory, withDrafts(inputs, drafts));
+  writeRepairedEvents(sessionDirectory, { inputs, drafts, torn });
   writeJsonAtomic(statusPath, folded);
-  if (folded.status === "completed") publishNextSuggestions(workspace, sessionId);
+  if (folded.status === 'completed') publishNextSuggestions(workspace, sessionId);
   return folded;
 }
 
@@ -114,7 +146,7 @@ function parsedFromDraft(draft: EventDraft): ParsedEvent {
   const raw = eventRecord(0, draft);
   return {
     raw,
-    v: 2,
+    v: EVENT_VERSION,
     seq: null,
     event: draft.event,
     timestamp: draft.timestamp,
@@ -125,15 +157,47 @@ function parsedFromDraft(draft: EventDraft): ParsedEvent {
   };
 }
 
-function reconcileDrafts(inputs: FoldInputs): EventDraft[] {
-  const drafts: EventDraft[] = [];
-  const executions = [...inputs.executions].sort(compareExecutions);
-  const fromStatus = manifestSessionStatus(inputs.manifest.manifestStatus);
-  const cursor: Record<string, unknown> = {
-    workflow_id: inputs.manifest.workflowId,
-    status: fromStatus,
+type RepairExecution = FoldInputs['executions'][number];
+
+/** The missing `execution.started` event of an execution. */
+function startedDraft(execution: RepairExecution): EventDraft {
+  return {
+    event: 'execution.started',
+    timestamp: execution.createdAt ?? utcNow(),
+    executionId: execution.executionId,
+    stageId: execution.stageId,
+    data: {
+      execution_order: execution.executionOrder,
+      stage_attempt: execution.stageAttempt,
+      client: execution.client,
+      model: execution.model,
+      resumes_execution_id: execution.resumesExecutionId,
+    },
   };
-  const rows = executions.map((execution) => ({
+}
+
+/** The single session event the reduction attaches to the execution that settled the session. */
+function sessionDraft(
+  execution: RepairExecution,
+  change: { finalStatus: string; fromStatus: string; outcome: ReturnType<typeof stageOutcome> },
+): EventDraft {
+  const { finalStatus, outcome } = change;
+  const reason = sessionChangeReason(finalStatus, outcome, execution.error);
+  const data: Record<string, unknown> = { from: change.fromStatus || null };
+  if (reason !== null) data.reason = reason;
+  if (outcome !== null) data.outcome = outcome.toJson();
+  return {
+    event: `session.${finalStatus}`,
+    timestamp: execution.completedAt ?? execution.createdAt ?? utcNow(),
+    executionId: execution.executionId,
+    stageId: execution.stageId,
+    outcomeTopLevel: outcome ? outcome.toJson() : null,
+    data,
+  };
+}
+
+function statusRow(execution: RepairExecution) {
+  return {
     executionId: execution.executionId,
     stageId: execution.stageId,
     executionOrder: execution.executionOrder,
@@ -141,76 +205,91 @@ function reconcileDrafts(inputs: FoldInputs): EventDraft[] {
     outcome: stageOutcome(execution),
     artifactDirectory: execution.artifactDirectory,
     failureReason: execution.failureReason,
-  }));
+  };
+}
+
+/** The missing terminal `execution.<status>` event of an execution. */
+function terminalExecutionDraft(
+  execution: RepairExecution,
+  outcome: ReturnType<typeof stageOutcome>,
+  finalStatus: string,
+): EventDraft {
+  return {
+    event: `execution.${execution.status}`,
+    timestamp: execution.completedAt ?? execution.createdAt ?? utcNow(),
+    executionId: execution.executionId,
+    stageId: execution.stageId,
+    data: {
+      outcome: outcome ? outcome.toJson() : null,
+      failure_reason: execution.failureReason,
+      error: execution.error,
+      session_status: finalStatus,
+    },
+  };
+}
+
+interface ReconcileTarget {
+  fromStatus: string;
+  cursor: Record<string, unknown>;
+  finalStatus: string;
+  completingId: string | null;
+}
+
+/** The session status the executions reduce to, and the execution that owns its event. */
+function reconcileTarget(inputs: FoldInputs, executions: readonly RepairExecution[]): ReconcileTarget {
+  const fromStatus = manifestSessionStatus(inputs.manifest.manifestStatus);
+  const cursor: Record<string, unknown> = {
+    workflow_id: inputs.manifest.workflowId,
+    status: fromStatus,
+  };
+  const rows = executions.map(statusRow);
   const finalStatus = sessionStatusFromExecutions(rows, cursor, inputs.workflow);
   const completingId =
-    finalStatus === "completed" ? version2CompletingExecution(rows, cursor, inputs.workflow) : null;
+    finalStatus === 'completed' ? version2CompletingExecution(rows, cursor, inputs.workflow) : null;
+  return { fromStatus, cursor, finalStatus, completingId };
+}
+
+/**
+ * One session event for the whole reduction. A later sibling must not clear a blocked stage.
+ * Version 2 has no completion decision, so the quiet execution owns session.completed.
+ */
+function ownsSessionEvent(
+  execution: RepairExecution,
+  outcome: ReturnType<typeof stageOutcome>,
+  context: { inputs: FoldInputs; target: ReconcileTarget },
+): boolean {
+  const { inputs, target } = context;
+  if (target.finalStatus === 'active') return false;
+  if (execution.executionId === target.completingId) return true;
+  return sessionStatusAfterExecution({
+    executionStatus: execution.status,
+    outcome,
+    previousStatus: target.cursor,
+    workflow: inputs.workflow,
+    stageId: execution.stageId,
+  }) === target.finalStatus;
+}
+
+function reconcileDrafts(inputs: FoldInputs): EventDraft[] {
+  const drafts: EventDraft[] = [];
+  const executions = [...inputs.executions].sort(compareExecutions);
+  const target = reconcileTarget(inputs, executions);
+  const { finalStatus, fromStatus } = target;
   const planned = (name: string, executionId: string) =>
     hasEvent(inputs.events, name, executionId) ||
     drafts.some((draft) => draft.event === name && draft.executionId === executionId);
-  const sessionPlanned = (name: string) =>
-    inputs.events.some((event) => event.event === name) || drafts.some((draft) => draft.event === name);
-  let attachedSession = false;
+  let attachedSession = inputs.events.some((event) => event.event === `session.${finalStatus}`);
   for (const execution of executions) {
-    if (!planned("execution.started", execution.executionId)) {
-      drafts.push({
-        event: "execution.started",
-        timestamp: execution.createdAt ?? utcNow(),
-        executionId: execution.executionId,
-        stageId: execution.stageId,
-        data: {
-          execution_order: execution.executionOrder,
-          stage_attempt: execution.stageAttempt,
-          client: execution.client,
-          model: execution.model,
-          resumes_execution_id: execution.resumesExecutionId,
-        },
-      });
+    if (!planned('execution.started', execution.executionId)) {
+      drafts.push(startedDraft(execution));
     }
     if (!isTerminalExecution(execution.status)) continue;
     const outcome = stageOutcome(execution);
-    const ownStatus = sessionStatusAfterExecution(
-      execution.status,
-      outcome,
-      cursor,
-      inputs.workflow,
-      execution.stageId,
-    );
     if (!planned(`execution.${execution.status}`, execution.executionId)) {
-      drafts.push({
-        event: `execution.${execution.status}`,
-        timestamp: execution.completedAt ?? execution.createdAt ?? utcNow(),
-        executionId: execution.executionId,
-        stageId: execution.stageId,
-        data: {
-          outcome: outcome ? outcome.toJson() : null,
-          failure_reason: execution.failureReason,
-          error: execution.error,
-          session_status: finalStatus,
-        },
-      });
+      drafts.push(terminalExecutionDraft(execution, outcome, finalStatus));
     }
-    // One session event for the whole reduction. A later sibling must not clear a blocked stage.
-    // Version 2 has no completion decision, so the quiet execution owns session.completed.
-    const completesSession = execution.executionId === completingId;
-    if (
-      finalStatus !== "active" &&
-      (ownStatus === finalStatus || completesSession) &&
-      !attachedSession &&
-      !sessionPlanned(`session.${finalStatus}`)
-    ) {
-      const reason = sessionChangeReason(finalStatus, outcome, execution.error);
-      const data: Record<string, unknown> = { from: fromStatus || null };
-      if (reason !== null) data.reason = reason;
-      if (outcome !== null) data.outcome = outcome.toJson();
-      drafts.push({
-        event: `session.${finalStatus}`,
-        timestamp: execution.completedAt ?? execution.createdAt ?? utcNow(),
-        executionId: execution.executionId,
-        stageId: execution.stageId,
-        outcomeTopLevel: outcome ? outcome.toJson() : null,
-        data,
-      });
+    if (!attachedSession && ownsSessionEvent(execution, outcome, { inputs, target })) {
+      drafts.push(sessionDraft(execution, { finalStatus, fromStatus, outcome }));
       attachedSession = true;
     }
   }
@@ -218,21 +297,21 @@ function reconcileDrafts(inputs: FoldInputs): EventDraft[] {
 }
 
 function acceptedTaskDraft(sessionDirectory: string, sessionId: string): EventDraft {
-  const filePath = path.join(sessionDirectory, "task.md");
-  let text: string | null = null;
+  const filePath = path.join(sessionDirectory, 'task.md');
+  let text: string | null;
   try {
-    text = readFileSync(filePath, "utf8");
+    text = readFileSync(filePath, 'utf8');
   } catch {
     text = null;
   }
-  if (text === null || text.trim() === "") {
+  if (text === null || text.trim() === '') {
     throw new ConfigurationError(
       `Session ${sessionId} has no task.md. migent session repair ${sessionId} --accept-task cannot store a task hash.`,
     );
   }
-  const hash = createHash("sha256").update(text, "utf8").digest("hex");
+  const hash = createHash('sha256').update(text, 'utf8').digest('hex');
   return {
-    event: "task.frozen",
+    event: 'task.frozen',
     timestamp: utcNow(),
     data: { sha256: hash },
   };
@@ -241,21 +320,21 @@ function acceptedTaskDraft(sessionDirectory: string, sessionId: string): EventDr
 function replacementRefusal(
   folded: Record<string, unknown>,
   inputs: FoldInputs,
-  before: "ok" | "missing" | "corrupt",
-  acceptTask: boolean,
+  state: { before: 'ok' | 'missing' | 'corrupt'; acceptTask: boolean },
 ): string[] {
+  const { before, acceptTask } = state;
   const reasons: string[] = [];
-  if (typeof folded.workflow_id !== "string" || folded.workflow_id === "") {
-    reasons.push("workflow_id is missing from manifest.yaml");
+  if (typeof folded.workflow_id !== 'string' || folded.workflow_id === '') {
+    reasons.push('workflow_id is missing from manifest.yaml');
   }
-  if (inputs.schemaVersion < 2 && before === "corrupt" && !acceptTask) {
-    reasons.push("task_sha256 cannot be kept because status.json does not parse");
+  if (inputs.schemaVersion < MANIFEST_SCHEMA_EVENT_LOG && before === 'corrupt' && !acceptTask) {
+    reasons.push('task_sha256 cannot be kept because status.json does not parse');
   }
   const previous = inputs.previousStatus;
   if (previous !== null) {
-    const previousHash = typeof previous.task_sha256 === "string" ? previous.task_sha256 : "";
-    const foldedHash = typeof folded.task_sha256 === "string" ? folded.task_sha256 : "";
-    if (previousHash !== "" && foldedHash !== previousHash) reasons.push("task_sha256 would be dropped");
+    const previousHash = typeof previous.task_sha256 === 'string' ? previous.task_sha256 : '';
+    const foldedHash = typeof folded.task_sha256 === 'string' ? folded.task_sha256 : '';
+    if (previousHash !== '' && foldedHash !== previousHash) reasons.push('task_sha256 would be dropped');
     reasons.push(...outputDrops(previous, folded));
   }
   return reasons;
@@ -272,9 +351,9 @@ function outputDrops(previous: Record<string, unknown>, folded: Record<string, u
       drops.push(`outputs.${name} would be dropped`);
       continue;
     }
-    for (const field of ["source_execution_id", "published_by_execution_id"] as const) {
+    for (const field of ['source_execution_id', 'published_by_execution_id'] as const) {
       const stored = value[field];
-      if (typeof stored === "string" && stored !== "" && kept[field] !== stored) {
+      if (typeof stored === 'string' && stored !== '' && kept[field] !== stored) {
         drops.push(`outputs.${name}.${field} would be dropped`);
       }
     }
@@ -283,8 +362,8 @@ function outputDrops(previous: Record<string, unknown>, folded: Record<string, u
 }
 
 export function repairRefusalMessage(sessionId: string, reasons: readonly string[]): string {
-  const lead = `Session ${sessionId} cannot be repaired because ${reasons.join("; ")}.`;
-  const unparseable = reasons.some((reason) => reason.includes("does not parse"));
+  const lead = `Session ${sessionId} cannot be repaired because ${reasons.join('; ')}.`;
+  const unparseable = reasons.some((reason) => reason.includes('does not parse'));
   if (!unparseable) return lead;
   return (
     `${lead} When a v1 status.json is destroyed, the task hash and output provenance cannot be recovered. ` +
@@ -295,31 +374,31 @@ export function repairRefusalMessage(sessionId: string, reasons: readonly string
 function version2CompletingExecution(
   rows: readonly StatusExecution[],
   cursor: Readonly<Record<string, unknown>>,
-  workflow: FoldInputs["workflow"],
+  workflow: FoldInputs['workflow'],
 ): string | null {
   if (!isWorkflowV2(workflow)) return null;
   for (let index = 0; index < rows.length; index += 1) {
-    if (sessionStatusFromExecutions(rows.slice(0, index + 1), cursor, workflow) === "completed") {
-      return rows[index]!.executionId;
+    if (sessionStatusFromExecutions(rows.slice(0, index + 1), cursor, workflow) === 'completed') {
+      return rows[index].executionId;
     }
   }
   return null;
 }
 
-function hasEvent(events: FoldInputs["events"], name: string, executionId: string): boolean {
+function hasEvent(events: FoldInputs['events'], name: string, executionId: string): boolean {
   return events.some((event) => event.event === name && event.executionId === executionId);
 }
 
 function isTerminalExecution(status: string): boolean {
-  return status === "completed" || status === "failed" || status === "cancelled" || status === "skipped";
+  return status === 'completed' || status === 'failed' || status === 'cancelled' || status === 'skipped';
 }
 
 function stageOutcome(execution: FoldExecution): StageOutcome | null {
-  const outcome = execution.outcome;
-  if (!isRecord(outcome) || typeof outcome.status !== "string" || outcome.status === "") return null;
-  const blocker = typeof outcome.blocker === "string" && outcome.blocker ? outcome.blocker : null;
-  const decision = typeof outcome.decision === "string" && outcome.decision ? outcome.decision : null;
-  return new StageOutcome(outcome.status, blocker, decision, typeof outcome.question === "string" ? outcome.question : null, storedQuestions(outcome));
+  const {outcome} = execution;
+  if (!isRecord(outcome) || typeof outcome.status !== 'string' || outcome.status === '') return null;
+  const blocker = typeof outcome.blocker === 'string' && outcome.blocker ? outcome.blocker : null;
+  const decision = typeof outcome.decision === 'string' && outcome.decision ? outcome.decision : null;
+  return new StageOutcome(outcome.status, { blocker, decision, question: typeof outcome.question === 'string' ? outcome.question : null, questions: storedQuestions(outcome) });
 }
 
 function compareExecutions(left: FoldExecution, right: FoldExecution): number {
@@ -330,29 +409,29 @@ function compareExecutions(left: FoldExecution, right: FoldExecution): number {
 }
 
 function manifestSessionStatus(manifestStatus: string | null): string {
-  if (manifestStatus === "prepared") return "prepared";
-  if (manifestStatus === "completed" || manifestStatus === "blocked" || manifestStatus === "question" || manifestStatus === "cancelled") {
+  if (manifestStatus === 'prepared') return 'prepared';
+  if (manifestStatus === 'completed' || manifestStatus === 'blocked' || manifestStatus === 'question' || manifestStatus === 'cancelled') {
     return manifestStatus;
   }
-  return "active";
+  return 'active';
 }
 
-function statusFileKind(filePath: string): "ok" | "missing" | "corrupt" {
+function statusFileKind(filePath: string): 'ok' | 'missing' | 'corrupt' {
   try {
-    if (!statSync(filePath).isFile()) return "missing";
+    if (!statSync(filePath).isFile()) return 'missing';
   } catch {
-    return "missing";
+    return 'missing';
   }
   try {
-    const payload = JSON.parse(readFileSync(filePath, "utf8")) as unknown;
-    return isRecord(payload) ? "ok" : "corrupt";
+    const payload = JSON.parse(readFileSync(filePath, 'utf8')) as unknown;
+    return isRecord(payload) ? 'ok' : 'corrupt';
   } catch {
-    return "corrupt";
+    return 'corrupt';
   }
 }
 
 function sessionDirectoryOf(workspace: string, sessionId: string): string {
-  return path.join(workspace, ".migent", "sessions", sessionId);
+  return path.join(workspace, '.migent', 'sessions', sessionId);
 }
 
 function assertSessionDirectory(sessionDirectory: string, sessionId: string): void {

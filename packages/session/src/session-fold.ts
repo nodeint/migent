@@ -1,49 +1,37 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
-import { writeJsonAtomic } from "@nodeint/migent-kernel";
-import { ConfigurationError } from "@nodeint/migent-kernel";
-import {
-  applyTerminalFields,
-  blockedExecutions,
-  latestPerStage,
-  decisionOfOutcome,
-  latestDecision,
-  recordLatestDecision,
-  sessionStatusFromExecutions,
-  type StatusExecution,
-} from "./session-ledger.js";
-import { readStatusFileState, type StatusFileState } from "./query.js";
-import { isRecord } from "@nodeint/migent-workflow";
+import path from 'node:path';
+
+import { writeJsonAtomic } from '@nodeint/migent-kernel';
+import { storedQuestions } from '@nodeint/migent-kernel';
+import { isRecord } from '@nodeint/migent-workflow';
+
+import { MANIFEST_SCHEMA_EVENT_LOG } from './constants.js';
+import { readStatusFileState } from './query.js';
 import {
   CANCELLED_REPLY,
-  parseExecutionId,
-  readParsedEvents,
-  skipsStatusWrite,
   type ParsedEvent,
-} from "./session-events.js";
-import { effectiveTitleFrom, overlayTitle, readTitleRecord } from "./session-title.js";
-import { StageOutcome } from "@nodeint/migent-kernel";
-import { storedQuestions } from "@nodeint/migent-kernel";
-import type { FoldExecution, FoldInputs, SessionManifest } from "./session-fold-types.js";
-import { asInt, cloneRecord, differingKeys, identityText, later, textOr } from "./session-fold-util.js";
-import { listOutputFiles, loadSessionWorkflow, readExecutions } from "./session-fold-read.js";
-import { parseYamlDocument } from "@nodeint/migent-workflow";
-
-/** A missing schema_version is 1. This is not config documentVersion, which maps a missing version to 0. */
-export function sessionSchemaVersion(document: Record<string, unknown> | null): number {
-  if (document === null || !Object.hasOwn(document, "schema_version") || document.schema_version == null) return 1;
-  const raw = document.schema_version;
-  if (typeof raw === "number" && Number.isInteger(raw) && raw >= 1) return raw;
-  if (typeof raw === "string" && /^[1-9][0-9]*$/.test(raw)) return Number(raw);
-  return 1;
-}
+  skipsStatusWrite,
+} from './session-events.js';
+import { EVENT_VERSION } from './session-events.js';
+import { loadFoldInputs, readSessionManifest } from './session-fold-read.js';
+import type { FoldExecution, FoldInputs, SessionManifest } from './session-fold-types.js';
+import { cloneRecord, decisionOf, differingKeys, eventExecutionOrder, isExecutionScoped, later, latestExecution, outcomeRecord, textOr, toStageOutcome } from './session-fold-util.js';
+import {
+  blockedExecutions,
+  decisionOfOutcome,
+  latestDecision,
+  latestPerStage,
+  sessionStatusFromExecutions,
+  type StatusExecution,
+} from './session-ledger.js';
+import { StatusDraft } from './session-status-draft.js';
+import { effectiveTitleFrom, overlayTitle } from './session-title.js';
 
 export function foldStatus(inputs: FoldInputs): Record<string, unknown> {
-  const status = inputs.schemaVersion >= 2 ? foldSchema2(inputs) : foldV1(inputs);
-  applyManualCompletion(status, inputs.events);
-  applyEffectiveTitle(status, inputs);
-  addPathOnlyOutputs(status, inputs.outputFiles);
-  return status;
+  const draft = inputs.schemaVersion >= MANIFEST_SCHEMA_EVENT_LOG ? foldSchema2(inputs) : foldV1(inputs);
+  applyManualCompletion(draft, inputs.events);
+  draft.applyTitle(effectiveTitleFrom(inputs.titleRecord, inputs.manifest.title));
+  draft.addPathOnlyOutputs(inputs.outputFiles);
+  return draft.toRecord();
 }
 
 /**
@@ -53,50 +41,20 @@ export function foldStatus(inputs: FoldInputs): Record<string, unknown> {
 export function manualCompletionEvent(events: readonly ParsedEvent[]): ParsedEvent | null {
   let found: ParsedEvent | null = null;
   for (const event of events) {
-    if (event.event === "session.completed" && event.executionId === null && event.data.manual === true) found = event;
+    if (event.event === 'session.completed' && event.executionId === null && event.data.manual === true) found = event;
   }
   return found;
 }
 
-function applyManualCompletion(status: Record<string, unknown>, events: readonly ParsedEvent[]): void {
+function applyManualCompletion(draft: StatusDraft, events: readonly ParsedEvent[]): void {
   const event = manualCompletionEvent(events);
   if (event === null) return;
-  status.status = "completed";
-  status.completion_method = "manual";
-  applyTerminalFields(status, "completed", null, null);
-  delete status.questions;
-  status.manual_completion = { completed_at: event.timestamp, from: textOr(event.data.from) };
-  status.updated_at = later(textOr(status.updated_at), event.timestamp);
-}
-
-export function readSessionManifest(sessionDirectory: string): SessionManifest {
-  const manifestPath = path.join(sessionDirectory, "manifest.yaml");
-  let text: string;
-  try {
-    text = readFileSync(manifestPath, "utf8");
-  } catch {
-    return emptyManifest(path.basename(sessionDirectory));
-  }
-  let parsed: unknown;
-  try {
-    parsed = parseYamlDocument(text);
-  } catch (error) {
-    if (error instanceof ConfigurationError) throw error;
-    throw new ConfigurationError(`Session manifest is corrupt: ${manifestPath}.`);
-  }
-  if (!isRecord(parsed)) throw new ConfigurationError(`Session manifest is corrupt: ${manifestPath}.`);
-  return {
-    sessionId: identityText(parsed.session_id) ?? path.basename(sessionDirectory),
-    title: textOr(parsed.title),
-    workflowId: textOr(parsed.workflow_id),
-    workflowPath: textOr(parsed.workflow_path),
-    role: textOr(parsed.role),
-    task: textOr(parsed.task),
-    createdAt: textOr(parsed.created_at),
-    priorSessionId: identityText(parsed.prior_session_id),
-    manifestStatus: textOr(parsed.status),
-    schemaVersion: sessionSchemaVersion(parsed),
-  };
+  draft.set('status', 'completed');
+  draft.set('completion_method', 'manual');
+  draft.applyTerminalFields('completed', { source: null, reason: null });
+  draft.clear('questions');
+  draft.set('manual_completion', { completed_at: event.timestamp, from: textOr(event.data.from) });
+  draft.set('updated_at', later(textOr(draft.get('updated_at')), event.timestamp));
 }
 
 export function readFoldedStatus(workspace: string, sessionDirectory: string): Record<string, unknown> {
@@ -107,7 +65,7 @@ export function commitFoldedStatus(workspace: string, sessionDirectory: string):
   const inputs = loadFoldInputs(workspace, sessionDirectory);
   const folded = foldStatus(inputs);
   writeQuestionsFile(sessionDirectory, inputs);
-  writeJsonAtomic(path.join(sessionDirectory, "status.json"), folded);
+  writeJsonAtomic(path.join(sessionDirectory, 'status.json'), folded);
   return folded;
 }
 
@@ -115,79 +73,77 @@ export function commitFoldedStatus(workspace: string, sessionDirectory: string):
 export function writeQuestionsFile(sessionDirectory: string, inputs: FoldInputs): void {
   const latest = new Set(latestPerStage(statusExecutionsFromFolds(inputs.executions)).map((row) => row.executionId));
   const manuallyCompleted = manualCompletionEvent(inputs.events) !== null;
+  const newestFirst = [...inputs.events].reverse();
   const questions = inputs.executions.flatMap((execution) => {
-    if (execution.outcome?.status !== "question") return [];
-    const reply = [...inputs.events].reverse().find((event) =>
-      event.event === "session.active" && event.executionId === execution.executionId && event.data.from === "question",
-    );
-    const answers = Array.isArray(reply?.data.answers) ? reply.data.answers.filter(isRecord) : [];
-    return storedQuestions(execution.outcome).map((question) => ({
-      ...question, execution_id: execution.executionId, stage_id: execution.stageId,
-      recipient: inputs.workflow?.stages[execution.stageId]?.ask ?? "human",
-      status: reply ? "answered" : latest.has(execution.executionId) && !manuallyCompleted ? "pending" : "superseded",
-      answer: answers.find((answer) => answer.question_id === question.id) ?? null,
-      ...(reply ? { answered_at: reply.timestamp } : {}),
-    }));
+    if (execution.outcome?.status !== 'question') return [];
+    const reply = questionReply(newestFirst, execution.executionId);
+    let questionStatus: QuestionRecordStatus = 'superseded';
+    if (reply) questionStatus = 'answered';
+    else if (latest.has(execution.executionId) && !manuallyCompleted) questionStatus = 'pending';
+    return questionRecords(execution, { reply, status: questionStatus, workflow: inputs.workflow });
   });
-  writeJsonAtomic(path.join(sessionDirectory, "questions.json"), { schema_version: 1, questions });
+  writeJsonAtomic(path.join(sessionDirectory, 'questions.json'), { schema_version: 1, questions });
+}
+
+type QuestionRecordStatus = 'answered' | 'pending' | 'superseded';
+
+/** The newest `session.active` event that answered this execution's questions. */
+function questionReply(newestFirst: readonly ParsedEvent[], executionId: string): ParsedEvent | undefined {
+  return newestFirst.find((event) =>
+    event.event === 'session.active' && event.executionId === executionId && event.data.from === 'question');
+}
+
+/** One questions.json row per question the execution asked, with its answer when replied. */
+function questionRecords(
+  execution: FoldExecution,
+  context: { reply: ParsedEvent | undefined; status: QuestionRecordStatus; workflow: FoldInputs['workflow'] },
+): Record<string, unknown>[] {
+  const { reply } = context;
+  const answers = Array.isArray(reply?.data.answers) ? reply.data.answers.filter(isRecord) : [];
+  const answerFor = (questionId: string): Record<string, unknown> | null =>
+    answers.find((answer) => answer.question_id === questionId) ?? null;
+  return storedQuestions(execution.outcome).map((question) => ({
+    ...question, execution_id: execution.executionId, stage_id: execution.stageId,
+    recipient: context.workflow?.stages[execution.stageId]?.ask ?? 'human',
+    status: context.status,
+    answer: answerFor(question.id),
+    ...(reply ? { answered_at: reply.timestamp } : {}),
+  }));
 }
 
 /** Schema 2 only. Show prints this on stderr and does not rewrite status.json. */
 export function statusDriftMessage(workspace: string, sessionId: string): string | null {
-  const sessionDirectory = path.join(workspace, ".migent", "sessions", sessionId);
+  const sessionDirectory = path.join(workspace, '.migent', 'sessions', sessionId);
   const manifest = readSessionManifest(sessionDirectory);
-  if (manifest.schemaVersion < 2) return null;
-  const read = readStatusFileState(path.join(sessionDirectory, "status.json"));
-  if (read.state !== "ok") return null;
+  if (manifest.schemaVersion < MANIFEST_SCHEMA_EVENT_LOG) return null;
+  const read = readStatusFileState(path.join(sessionDirectory, 'status.json'));
+  if (read.state !== 'ok') return null;
   let folded: Record<string, unknown>;
   try {
     folded = readFoldedStatus(workspace, sessionDirectory);
   } catch {
     return null;
   }
-  const fields = differingKeys(overlayTitle({ ...read.status }, sessionDirectory), folded);
+  const fields = differingKeys(overlayTitle(read.status, sessionDirectory), folded);
   if (fields.length === 0) return null;
-  return `status.json differs from the event fold: ${fields.join(", ")}.`;
+  return `status.json differs from the event fold: ${fields.join(', ')}.`;
 }
 
-export function loadFoldInputs(workspace: string, sessionDirectory: string): FoldInputs {
-  const manifest = readSessionManifest(sessionDirectory);
-  const previous = readStatusFileState(path.join(sessionDirectory, "status.json"));
-  const previousStatus = previous.state === "ok" ? previous.status : null;
-  const executions = readExecutions(sessionDirectory);
-  const identity = statusIdentity(manifest, previousStatus);
-  return {
-    schemaVersion: manifest.schemaVersion,
-    manifest,
-    events: readParsedEvents(path.join(sessionDirectory, "events.jsonl")),
-    executions,
-    presentExecutionIds: new Set(executions.map((execution) => execution.executionId)),
-    previousStatus,
-    outputFiles: listOutputFiles(sessionDirectory),
-    workflow: loadSessionWorkflow(workspace, sessionDirectory, identity),
-    titleRecord: readTitleRecord(sessionDirectory),
-  };
-}
-
-export function statusFileState(sessionDirectory: string): StatusFileState {
-  return readStatusFileState(path.join(sessionDirectory, "status.json"));
-}
-
-function foldV1(inputs: FoldInputs): Record<string, unknown> {
-  const status: Record<string, unknown> = inputs.previousStatus ? cloneRecord(inputs.previousStatus) : {};
-  applyManifestIdentity(status, inputs.manifest);
-  if (inputs.executions.length === 0) status.status = manifestStatusToSession(inputs.manifest.manifestStatus);
+function foldV1(inputs: FoldInputs): StatusDraft {
+  const draft = new StatusDraft(inputs.previousStatus ? cloneRecord(inputs.previousStatus) : {});
+  draft.applyManifestIdentity(inputs.manifest);
+  if (inputs.executions.length === 0) draft.set('status', manifestStatusToSession(inputs.manifest.manifestStatus));
   const noted = new Map<string, RunningStage>();
-  let updatedAt = textOr(status.updated_at) ?? inputs.manifest.createdAt;
+  let updatedAt = textOr(draft.get('updated_at')) ?? inputs.manifest.createdAt;
   for (const event of inputs.events) {
-    if (event.v < 2) continue;
-    if (event.event === "workflow.refreshed") continue;
-    if (applySharedEvent(status, event, noted)) updatedAt = later(updatedAt, event.timestamp);
+    if (event.v < EVENT_VERSION) continue;
+    if (event.event === 'workflow.refreshed') continue;
+    if (applySharedEvent(draft, event, noted)) updatedAt = later(updatedAt, event.timestamp);
   }
-  updatedAt = publishExecutionStatus(status, inputs, updatedAt);
-  publishRunningStages(status, noted, inputs.executions);
-  if (updatedAt) status.updated_at = updatedAt;
-  return status;
+  updatedAt = publishExecutionStatus(draft, inputs, updatedAt);
+  publishRunningStages(draft, noted, inputs.executions);
+  if (updatedAt) draft.set('updated_at', updatedAt);
+  return draft;
 }
 
 interface SeenExecution {
@@ -197,31 +153,31 @@ interface SeenExecution {
   outcome: Record<string, unknown> | null;
 }
 
-function foldSchema2(inputs: FoldInputs): Record<string, unknown> {
-  const status = initialStatus(inputs.manifest, inputs.schemaVersion);
+function foldSchema2(inputs: FoldInputs): StatusDraft {
+  const draft = initialStatus(inputs.manifest, inputs.schemaVersion);
   const seen = new Map<string, SeenExecution>();
   const noted = new Map<string, RunningStage>();
   let updatedAt = inputs.manifest.createdAt;
   for (const event of inputs.events) {
-    if (event.event === "workflow.refreshed") continue;
+    if (event.event === 'workflow.refreshed') continue;
     if (event.executionId && !inputs.presentExecutionIds.has(event.executionId) && isExecutionScoped(event.event)) {
       continue;
     }
-    const applied = applySharedEvent(status, event, noted) || applySchema2Execution(status, event, seen);
+    const applied = applySharedEvent(draft, event, noted) || applySchema2Execution(draft, event, seen);
     if (applied) updatedAt = later(updatedAt, event.timestamp);
   }
   // Reconcile appends missing events at the end of the file. Latest is the highest order, not the last line.
-  publishLatestExecution(status, seen);
-  updatedAt = publishExecutionStatus(status, inputs, updatedAt);
-  publishRunningStages(status, noted, inputs.executions);
-  publishSkippedStages(status, inputs.executions);
-  if (updatedAt) status.updated_at = updatedAt;
-  return status;
+  publishLatestExecution(draft, seen);
+  updatedAt = publishExecutionStatus(draft, inputs, updatedAt);
+  publishRunningStages(draft, noted, inputs.executions);
+  publishSkippedStages(draft, inputs.executions);
+  if (updatedAt) draft.set('updated_at', updatedAt);
+  return draft;
 }
 
 /** Stages whose latest execution is a run_when skip. The key is absent when there are none. */
-function publishSkippedStages(status: Record<string, unknown>, executions: readonly FoldExecution[]): void {
-  delete status.skipped_stages;
+function publishSkippedStages(draft: StatusDraft, executions: readonly FoldExecution[]): void {
+  draft.clear('skipped_stages');
   const latest = new Map<string, FoldExecution>();
   for (const execution of executions) {
     const current = latest.get(execution.stageId);
@@ -234,10 +190,10 @@ function publishSkippedStages(status: Record<string, unknown>, executions: reado
     }
   }
   const rows = [...latest.values()]
-    .filter((execution) => execution.status === "skipped")
+    .filter((execution) => execution.status === 'skipped')
     .sort((left, right) => left.executionOrder - right.executionOrder)
     .map((execution) => ({ stage_id: execution.stageId, execution_id: execution.executionId }));
-  if (rows.length > 0) status.skipped_stages = rows;
+  if (rows.length > 0) draft.set('skipped_stages', rows);
 }
 
 interface RunningStage {
@@ -249,212 +205,221 @@ interface RunningStage {
   updated_at: string | null;
 }
 
+type SharedEventHandler = (draft: StatusDraft, event: ParsedEvent) => boolean;
+
+function applyBaselineCaptured(draft: StatusDraft, event: ParsedEvent): boolean {
+  if (isRecord(draft.get('baseline'))) return true;
+  const baseline: Record<string, unknown> = {
+    commit: typeof event.data.commit === 'string' ? event.data.commit : null,
+    captured_at: event.timestamp,
+  };
+  const error = textOr(event.data.error);
+  if (error) baseline.error = error;
+  draft.set('baseline', baseline);
+  return true;
+}
+
+const SHARED_EVENT_HANDLERS: Readonly<Record<string, SharedEventHandler>> = {
+  'workflow.refreshed': () => false,
+  'session.created': (draft, event) => {
+    if (isRecord(event.data.handoff)) draft.set('handoff', cloneRecord(event.data.handoff));
+    if (event.data.prepared !== true) return false;
+    draft.set('status', 'prepared');
+    return true;
+  },
+  'handoff.bound': (draft, event) => {
+    if (isRecord(event.data.handoff)) draft.set('handoff', cloneRecord(event.data.handoff));
+    return true;
+  },
+  'task.frozen': (draft, event) => {
+    const hash = textOr(event.data.sha256);
+    if (hash) draft.set('task_sha256', hash);
+    return true;
+  },
+  'baseline.captured': applyBaselineCaptured,
+  'revisions.reset': (draft, event) => {
+    if (isRecord(event.data.baselines)) draft.set('revision_baselines', cloneRecord(event.data.baselines));
+    return true;
+  },
+  'outputs.published': (draft, event) => {
+    draft.mergePublished(event.data.outputs);
+    return true;
+  },
+  'session.activated': (draft) => {
+    draft.set('status', 'active');
+    return true;
+  },
+};
+
+function applyProviderEvent(draft: StatusDraft, event: ParsedEvent, noted: Map<string, RunningStage>): boolean {
+  if (skipsStatusWrite(event.event)) return false;
+  draft.set('latest_provider_event', event.raw);
+  if (event.executionId) {
+    noted.set(event.executionId, {
+      execution_id: event.executionId,
+      stage_id: event.stageId,
+      client: event.raw.client ?? null,
+      event: event.event,
+      summary: event.summary,
+      updated_at: event.timestamp,
+    });
+  }
+  return true;
+}
+
 function applySharedEvent(
-  status: Record<string, unknown>,
+  draft: StatusDraft,
   event: ParsedEvent,
   noted: Map<string, RunningStage>,
 ): boolean {
-  if (event.event === "workflow.refreshed") return false;
-  if (event.event === "session.created") {
-    if (isRecord(event.data.handoff)) status.handoff = cloneRecord(event.data.handoff);
-    if (event.data.prepared === true) {
-      status.status = "prepared";
-      return true;
-    }
-    return false;
-  }
-  if (event.event === "handoff.bound") {
-    if (isRecord(event.data.handoff)) status.handoff = cloneRecord(event.data.handoff);
-    return true;
-  }
-  if (event.event === "task.frozen") {
-    const hash = textOr(event.data.sha256);
-    if (hash) status.task_sha256 = hash;
-    return true;
-  }
-  if (event.event === "baseline.captured") {
-    if (!isRecord(status.baseline)) {
-      const baseline: Record<string, unknown> = {
-        commit: typeof event.data.commit === "string" ? event.data.commit : null,
-        captured_at: event.timestamp,
-      };
-      const error = textOr(event.data.error);
-      if (error) baseline.error = error;
-      status.baseline = baseline;
-    }
-    return true;
-  }
-  if (event.event === "revisions.reset") {
-    if (isRecord(event.data.baselines)) status.revision_baselines = cloneRecord(event.data.baselines);
-    return true;
-  }
-  if (event.event === "outputs.published") {
-    mergePublished(status, event.data.outputs);
-    return true;
-  }
-  if (event.event === "session.activated") {
-    status.status = "active";
-    return true;
-  }
-  if (event.event.startsWith("provider.") || event.event.startsWith("verify.")) {
-    if (skipsStatusWrite(event.event)) return false;
-    status.latest_provider_event = event.raw;
-    if (event.executionId) {
-      noted.set(event.executionId, {
-        execution_id: event.executionId,
-        stage_id: event.stageId,
-        client: event.raw.client ?? null,
-        event: event.event,
-        summary: event.summary,
-        updated_at: event.timestamp,
-      });
-    }
-    return true;
+  const handler = Object.hasOwn(SHARED_EVENT_HANDLERS, event.event) ? SHARED_EVENT_HANDLERS[event.event] : undefined;
+  if (handler !== undefined) return handler(draft, event);
+  if (event.event.startsWith('provider.') || event.event.startsWith('verify.')) {
+    return applyProviderEvent(draft, event, noted);
   }
   return false;
+}
+
+function applySessionLevelEvent(draft: StatusDraft, event: ParsedEvent): boolean {
+  if (!event.event.startsWith('session.') || event.event === 'session.created' || event.event === 'session.activated') {
+    return false;
+  }
+  const sessionStatus = event.event.slice('session.'.length);
+  draft.set('status', sessionStatus);
+  if (sessionStatus === 'completed' && event.data.manual !== true) {
+    draft.set('completion_method', 'agent');
+  }
+  draft.applyTerminalFields(sessionStatus, { source: null, reason: textOr(event.data.reason) });
+  return true;
+}
+
+function applyExecutionStarted(event: ParsedEvent, executionId: string, seen: Map<string, SeenExecution>): void {
+  const current = seen.get(executionId);
+  const order = Math.max(current?.order ?? 0, eventExecutionOrder(event));
+  if (current && current.status !== 'running') {
+    current.order = order;
+    if (event.stageId) current.stageId = event.stageId;
+    return;
+  }
+  seen.set(executionId, {
+    order,
+    stageId: event.stageId ?? current?.stageId ?? '',
+    status: 'running',
+    outcome: null,
+  });
+}
+
+function applyExecutionTransition(event: ParsedEvent, executionId: string, seen: Map<string, SeenExecution>): void {
+  const executionStatus = event.event.slice('execution.'.length);
+  const current = seen.get(executionId) ?? {
+    order: 0,
+    stageId: event.stageId ?? '',
+    status: executionStatus,
+    outcome: null,
+  };
+  current.status = executionStatus;
+  current.outcome = isRecord(event.data.outcome) ? event.data.outcome : null;
+  current.order = Math.max(current.order, eventExecutionOrder(event));
+  if (event.stageId) current.stageId = event.stageId;
+  seen.set(executionId, current);
 }
 
 function applySchema2Execution(
-  status: Record<string, unknown>,
+  draft: StatusDraft,
   event: ParsedEvent,
   seen: Map<string, SeenExecution>,
 ): boolean {
-  if (event.event === "workflow.refreshed") return false;
-  if (!event.executionId) {
-    if (event.event.startsWith("session.") && event.event !== "session.created" && event.event !== "session.activated") {
-      const sessionStatus = event.event.slice("session.".length);
-      status.status = sessionStatus;
-      if (sessionStatus === "completed" && event.data.manual !== true) {
-        status.completion_method = "agent";
-      }
-      applyTerminalFields(status, sessionStatus, null, textOr(event.data.reason));
-      return true;
-    }
-    return false;
-  }
-  if (event.event === "execution.started") {
-    const current = seen.get(event.executionId);
-    const order = Math.max(current?.order ?? 0, eventExecutionOrder(event));
-    if (current && current.status !== "running") {
-      current.order = order;
-      if (event.stageId) current.stageId = event.stageId;
-      return true;
-    }
-    seen.set(event.executionId, {
-      order,
-      stageId: event.stageId ?? current?.stageId ?? "",
-      status: "running",
-      outcome: null,
-    });
+  if (event.event === 'workflow.refreshed') return false;
+  const { executionId } = event;
+  if (!executionId) return applySessionLevelEvent(draft, event);
+  if (event.event === 'execution.started') {
+    applyExecutionStarted(event, executionId, seen);
     return true;
   }
-  if (event.event.startsWith("execution.")) {
-    const executionStatus = event.event.slice("execution.".length);
-    const current = seen.get(event.executionId) ?? {
-      order: 0,
-      stageId: event.stageId ?? "",
-      status: executionStatus,
-      outcome: null,
-    };
-    current.status = executionStatus;
-    current.outcome = isRecord(event.data.outcome) ? event.data.outcome : null;
-    current.order = Math.max(current.order, eventExecutionOrder(event));
-    if (event.stageId) current.stageId = event.stageId;
-    seen.set(event.executionId, current);
+  if (event.event.startsWith('execution.')) {
+    applyExecutionTransition(event, executionId, seen);
     return true;
   }
-  if (event.event.startsWith("stage.")) {
-    const outcome = outcomeRecord(event);
-    return decisionOf(outcome) !== null;
-  }
-  if (event.event.startsWith("session.") && event.event !== "session.created") return true;
-  return false;
+  if (event.event.startsWith('stage.')) return decisionOf(outcomeRecord(event)) !== null;
+  return event.event.startsWith('session.') && event.event !== 'session.created';
 }
 
-function publishLatestExecution(status: Record<string, unknown>, seen: ReadonlyMap<string, SeenExecution>): void {
+function publishLatestExecution(draft: StatusDraft, seen: ReadonlyMap<string, SeenExecution>): void {
   const latestId = latestSeenId(seen);
   if (latestId === null) return;
   const latest = seen.get(latestId);
   if (!latest) return;
-  noteLatest(status, latestId, latest.status, latest.stageId);
-  recordLatestDecision(
-    status,
+  draft.noteLatestExecution(latestId, latest.status, latest.stageId);
+  draft.recordLatestDecision(
     latestDecision([...seen.values()].map((row) => ({ order: row.order, outcome: row.outcome }))),
   );
 }
 
 function publishRunningStages(
-  status: Record<string, unknown>,
+  draft: StatusDraft,
   noted: ReadonlyMap<string, RunningStage>,
   executions: readonly FoldExecution[],
 ): void {
-  delete status.current_stage;
-  delete status.running_stages;
+  draft.clear('current_stage');
+  draft.clear('running_stages');
   const rows = executions
-    .filter((execution) => execution.status === "running" && noted.has(execution.executionId))
+    .filter((execution) => execution.status === 'running')
     .sort((left, right) => {
       if (left.executionOrder !== right.executionOrder) return left.executionOrder - right.executionOrder;
       if (left.executionId < right.executionId) return -1;
       if (left.executionId > right.executionId) return 1;
       return 0;
     })
-    .map((execution) => ({ ...noted.get(execution.executionId)!, client: execution.client || null }));
-  if (rows.length > 0) status.running_stages = rows;
+    .flatMap((execution) => {
+      const stage = noted.get(execution.executionId);
+      return stage === undefined ? [] : [{ ...stage, client: execution.client || null }];
+    });
+  if (rows.length > 0) draft.set('running_stages', rows);
 }
 
 /** Session status is the latest execution of each stage, not the highest-order row's stored status. */
 function publishExecutionStatus(
-  status: Record<string, unknown>,
+  draft: StatusDraft,
   inputs: FoldInputs,
   updatedAt: string | null,
 ): string | null {
   const latest = latestExecution(inputs.executions);
   if (latest === null) return updatedAt;
   const rows = statusExecutionsFromFolds(inputs.executions);
-  const sessionStatus = sessionStatusFromExecutions(rows, status, inputs.workflow);
-  status.status = sessionStatus;
-  if (sessionStatus === "completed" && !status.completion_method) {
-    status.completion_method = "agent";
+  const sessionStatus = sessionStatusFromExecutions(rows, draft.view, inputs.workflow);
+  draft.set('status', sessionStatus);
+  if (sessionStatus === 'completed' && !draft.get('completion_method')) {
+    draft.set('completion_method', 'agent');
   }
-  if (inputs.schemaVersion < 2) {
-    noteLatest(status, latest.executionId, latest.status, latest.stageId);
-    recordLatestDecision(status, decisionOfOutcome(latest.outcome));
+  if (inputs.schemaVersion < MANIFEST_SCHEMA_EVENT_LOG) {
+    draft.noteLatestExecution(latest.executionId, latest.status, latest.stageId);
+    draft.recordLatestDecision(decisionOfOutcome(latest.outcome));
   }
-  const questions = latestPerStage(rows).filter((row) => row.outcome?.status === "question" && row.status !== "running");
-  status.questions = questions.flatMap((row) => row.outcome!.questions.map((question) => ({
-    ...question, execution_id: row.executionId, stage_id: row.stageId,
-    recipient: inputs.workflow?.stages[row.stageId]?.ask ?? "human",
-    file: "executions/" + row.executionId + "/questions.json",
-  })));
-  if (questions.length === 0) delete status.questions;
-  const blocked = blockedExecutions(rows, status, inputs.workflow).map((row) => ({
+  const questions = latestPerStage(rows).filter((row) => row.outcome?.status === 'question' && row.status !== 'running');
+  draft.set('questions', questions.flatMap((row) => pendingQuestionRows(row, inputs.workflow)));
+  if (questions.length === 0) draft.clear('questions');
+  const blocked = blockedExecutions(rows, draft.view, inputs.workflow).map((row) => ({
     executionId: row.executionId,
     stageId: row.stageId,
-    blocker: textOr(inputs.executions.find((execution) => execution.executionId === row.executionId)?.outcome?.blocker),
+    blocker: executionBlocker(inputs.executions, row.executionId),
   }));
-  applyTerminalFields(
-    status,
-    sessionStatus,
-    {
+  draft.applyTerminalFields(sessionStatus, {
+    source: {
       executionId: latest.executionId,
       stageId: latest.stageId,
       blocker: textOr(latest.outcome?.blocker),
     },
-    null,
+    reason: null,
     blocked,
-  );
-  const resumedAt = applyBlockedResume(
-    status,
-    inputs.events,
-    [...blocked, ...questions].map((row) => row.executionId),
-    later(updatedAt, latest.completedAt ?? latest.createdAt),
-  );
-  return applyCancelledReply(
-    status,
-    inputs.events,
-    latestPerStage(rows).filter((row) => row.status === "cancelled").map((row) => row.executionId),
-    resumedAt,
-  );
+  });
+  const resumedAt = applyBlockedResume(draft, inputs.events, {
+    blockedIds: [...blocked, ...questions].map((row) => row.executionId),
+    updatedAt: later(updatedAt, latest.completedAt ?? latest.createdAt),
+  });
+  return applyCancelledReply(draft, inputs.events, {
+    cancelledIds: latestPerStage(rows).filter((row) => row.status === 'cancelled').map((row) => row.executionId),
+    updatedAt: resumedAt,
+  });
 }
 
 /**
@@ -463,25 +428,25 @@ function publishExecutionStatus(
  * the other cancelled stages in place.
  */
 function applyCancelledReply(
-  status: Record<string, unknown>,
+  draft: StatusDraft,
   events: readonly ParsedEvent[],
-  cancelledIds: readonly string[],
-  updatedAt: string | null,
+  stopped: { cancelledIds: readonly string[]; updatedAt: string | null },
 ): string | null {
-  const current = status.status;
-  if ((current !== "cancelled" && current !== "blocked" && current !== "question") || cancelledIds.length === 0) return updatedAt;
+  const { cancelledIds, updatedAt } = stopped;
+  const current = draft.get('status');
+  if ((current !== 'cancelled' && current !== 'blocked' && current !== 'question') || cancelledIds.length === 0) return updatedAt;
   let next = updatedAt;
   let replied = 0;
   for (const executionId of cancelledIds) {
     const replies = events.filter((event) =>
-      event.event === "session.active" && event.executionId === executionId && event.data.from === CANCELLED_REPLY);
+      event.event === 'session.active' && event.executionId === executionId && event.data.from === CANCELLED_REPLY);
     if (replies.length === 0) continue;
     replied += 1;
     for (const reply of replies) next = later(next, reply.timestamp);
   }
   if (replied === 0) return updatedAt;
-  status.status = "active";
-  applyTerminalFields(status, "active", null, null);
+  draft.set('status', 'active');
+  draft.applyTerminalFields('active', { source: null, reason: null });
   return next;
 }
 
@@ -497,9 +462,15 @@ function statusExecutionsFromFolds(executions: readonly FoldExecution[]): Status
   }));
 }
 
-function eventExecutionOrder(event: ParsedEvent): number {
-  const fromId = event.executionId ? (parseExecutionId(event.executionId)?.order ?? 0) : 0;
-  return Math.max(asInt(event.data.execution_order), fromId);
+/** The last `session.active` event resuming this execution from blocked or question. */
+function lastResumeOf(events: readonly ParsedEvent[], executionId: string): ParsedEvent | null {
+  let resume: ParsedEvent | null = null;
+  for (const event of events) {
+    if (event.event !== 'session.active' || event.executionId !== executionId) continue;
+    if (event.data.from !== 'blocked' && event.data.from !== 'question') continue;
+    resume = event;
+  }
+  return resume;
 }
 
 /**
@@ -507,34 +478,23 @@ function eventExecutionOrder(event: ParsedEvent): number {
  * Each stopped execution still requires its own resume event before dispatch.
  */
 function applyBlockedResume(
-  status: Record<string, unknown>,
+  draft: StatusDraft,
   events: readonly ParsedEvent[],
-  blockedIds: readonly string[],
-  updatedAt: string | null,
+  stopped: { blockedIds: readonly string[]; updatedAt: string | null },
 ): string | null {
-  if ((status.status !== "blocked" && status.status !== "question") || blockedIds.length === 0) return updatedAt;
-  const resumes: ParsedEvent[] = [];
-  for (const executionId of blockedIds) {
-    let resume: ParsedEvent | null = null;
-    for (const event of events) {
-      if (event.event !== "session.active" || event.executionId !== executionId) continue;
-      if (event.data.from !== "blocked" && event.data.from !== "question") continue;
-      resume = event;
-    }
-    if (resume !== null) resumes.push(resume);
-  }
+  const { blockedIds, updatedAt } = stopped;
+  const current = draft.get('status');
+  if ((current !== 'blocked' && current !== 'question') || blockedIds.length === 0) return updatedAt;
+  const resumes = blockedIds.flatMap((executionId) => {
+    const resume = lastResumeOf(events, executionId);
+    return resume === null ? [] : [resume];
+  });
   if (resumes.length === 0) return updatedAt;
-  status.status = "active";
-  applyTerminalFields(status, "active", null, null);
+  draft.set('status', 'active');
+  draft.applyTerminalFields('active', { source: null, reason: null });
   let next = updatedAt;
   for (const resume of resumes) next = later(next, resume.timestamp);
   return next;
-}
-
-function noteLatest(status: Record<string, unknown>, executionId: string, executionStatus: string, stageId: string): void {
-  status.latest_execution_id = executionId;
-  status.latest_execution_status = executionStatus;
-  status.latest_stage_id = stageId;
 }
 
 function latestSeenId(seen: ReadonlyMap<string, SeenExecution>): string | null {
@@ -549,137 +509,36 @@ function latestSeenId(seen: ReadonlyMap<string, SeenExecution>): string | null {
   return best;
 }
 
-function isExecutionScoped(eventName: string): boolean {
-  return (
-    eventName.startsWith("execution.") ||
-    eventName.startsWith("stage.") ||
-    eventName.startsWith("provider.") ||
-    eventName.startsWith("verify.") ||
-    (eventName.startsWith("session.") && eventName !== "session.created" && eventName !== "session.activated")
-  );
-}
-
-function mergePublished(status: Record<string, unknown>, raw: unknown): void {
-  if (!Array.isArray(raw)) return;
-  const outputs = isRecord(status.outputs) ? cloneRecord(status.outputs) : {};
-  for (const entry of raw) {
-    if (!isRecord(entry) || typeof entry.name !== "string" || entry.name === "") continue;
-    const row: Record<string, unknown> = {};
-    if (typeof entry.path === "string") row.path = entry.path;
-    if (typeof entry.source_execution_id === "string") row.source_execution_id = entry.source_execution_id;
-    if (typeof entry.published_by_execution_id === "string") {
-      row.published_by_execution_id = entry.published_by_execution_id;
-    }
-    outputs[entry.name] = row;
-  }
-  if (Object.keys(outputs).length > 0) status.outputs = outputs;
-}
-
-function addPathOnlyOutputs(status: Record<string, unknown>, outputFiles: readonly string[]): void {
-  if (outputFiles.length === 0) return;
-  const outputs = isRecord(status.outputs) ? cloneRecord(status.outputs) : {};
-  const recorded = new Set<string>();
-  for (const value of Object.values(outputs)) {
-    if (isRecord(value) && typeof value.path === "string" && value.path !== "") recorded.add(path.basename(value.path));
-  }
-  for (const name of outputFiles) {
-    if (Object.hasOwn(outputs, name) || recorded.has(name)) continue;
-    outputs[name] = { path: `outputs/${name}` };
-  }
-  if (Object.keys(outputs).length > 0) status.outputs = outputs;
-}
-
-function initialStatus(manifest: SessionManifest, schemaVersion: number): Record<string, unknown> {
-  const status: Record<string, unknown> = {
+function initialStatus(manifest: SessionManifest, schemaVersion: number): StatusDraft {
+  const draft = new StatusDraft({
     session_id: manifest.sessionId,
-    status: schemaVersion >= 2 ? "active" : manifestStatusToSession(manifest.manifestStatus),
-  };
-  applyManifestIdentity(status, manifest);
-  if (manifest.createdAt) status.updated_at = manifest.createdAt;
-  return status;
-}
-
-function applyEffectiveTitle(status: Record<string, unknown>, inputs: FoldInputs): void {
-  const title = effectiveTitleFrom(inputs.titleRecord, inputs.manifest.title);
-  if (title !== null) status.title = title;
-  else delete status.title;
-}
-
-function applyManifestIdentity(status: Record<string, unknown>, manifest: SessionManifest): void {
-  status.session_id = manifest.sessionId || status.session_id;
-  if (manifest.title) status.title = manifest.title;
-  if (manifest.workflowId) status.workflow_id = manifest.workflowId;
-  if (manifest.workflowPath) status.workflow_path = manifest.workflowPath;
-  if (manifest.role) status.role = manifest.role;
-  if (manifest.task !== null) status.task = manifest.task;
-  if (manifest.createdAt) status.created_at = manifest.createdAt;
-  if (manifest.priorSessionId) status.prior_session_id = manifest.priorSessionId;
+    status: schemaVersion >= MANIFEST_SCHEMA_EVENT_LOG ? 'active' : manifestStatusToSession(manifest.manifestStatus),
+  });
+  draft.applyManifestIdentity(manifest);
+  if (manifest.createdAt) draft.set('updated_at', manifest.createdAt);
+  return draft;
 }
 
 function manifestStatusToSession(manifestStatus: string | null): string {
-  if (manifestStatus === "prepared") return "prepared";
-  if (manifestStatus === "completed" || manifestStatus === "blocked" || manifestStatus === "question" || manifestStatus === "cancelled") {
+  if (manifestStatus === 'prepared') return 'prepared';
+  if (manifestStatus === 'completed' || manifestStatus === 'blocked' || manifestStatus === 'question' || manifestStatus === 'cancelled') {
     return manifestStatus;
   }
-  return "active";
+  return 'active';
 }
 
-function outcomeRecord(event: ParsedEvent): Record<string, unknown> | null {
-  if (isRecord(event.data.outcome)) return event.data.outcome;
-  const top: Record<string, unknown> = {};
-  if (typeof event.raw.status === "string") top.status = event.raw.status;
-  if (typeof event.raw.blocker === "string") top.blocker = event.raw.blocker;
-  if (typeof event.raw.decision === "string") top.decision = event.raw.decision;
-  if (typeof event.raw.question === "string") top.question = event.raw.question;
-  return Object.keys(top).length > 0 ? top : null;
+export { readExecutions, readSessionManifest } from './session-fold-read.js';
+export type { FoldExecution, FoldInputs, SessionManifest } from './session-fold-types.js';
+
+function executionBlocker(executions: readonly FoldExecution[], executionId: string): string | null {
+  return textOr(executions.find((execution) => execution.executionId === executionId)?.outcome?.blocker);
 }
 
-function decisionOf(outcome: Record<string, unknown> | null): string | null {
-  if (outcome === null) return null;
-  return textOr(outcome.decision);
+/** The status.json question rows for one stopped question execution. */
+function pendingQuestionRows(row: StatusExecution, workflow: FoldInputs['workflow']): Record<string, unknown>[] {
+  return (row.outcome?.questions ?? []).map((question) => ({
+    ...question, execution_id: row.executionId, stage_id: row.stageId,
+    recipient: workflow?.stages[row.stageId]?.ask ?? 'human',
+    file: 'executions/' + row.executionId + '/questions.json',
+  }));
 }
-
-function toStageOutcome(outcome: Record<string, unknown> | null): StageOutcome | null {
-  if (outcome === null || typeof outcome.status !== "string") return null;
-  return new StageOutcome(outcome.status, textOr(outcome.blocker), textOr(outcome.decision), textOr(outcome.question), storedQuestions(outcome));
-}
-
-function latestExecution(executions: readonly FoldExecution[]): FoldExecution | null {
-  let best: FoldExecution | null = null;
-  for (const execution of executions) {
-    if (best === null) {
-      best = execution;
-      continue;
-    }
-    if (execution.executionOrder > best.executionOrder) best = execution;
-    else if (execution.executionOrder === best.executionOrder && execution.executionId > best.executionId) {
-      best = execution;
-    }
-  }
-  return best;
-}
-
-function statusIdentity(manifest: SessionManifest, previous: Record<string, unknown> | null): Record<string, unknown> {
-  return {
-    workflow_id: manifest.workflowId ?? previous?.workflow_id ?? null,
-    workflow_path: manifest.workflowPath ?? previous?.workflow_path ?? null,
-  };
-}
-
-function emptyManifest(sessionId: string): SessionManifest {
-  return {
-    sessionId,
-    title: null,
-    workflowId: null,
-    workflowPath: null,
-    role: null,
-    task: null,
-    createdAt: null,
-    priorSessionId: null,
-    manifestStatus: null,
-    schemaVersion: 1,
-  };
-}
-
-export type { FoldExecution, FoldInputs, SessionManifest } from "./session-fold-types.js";
-export { readExecutions } from "./session-fold-read.js";

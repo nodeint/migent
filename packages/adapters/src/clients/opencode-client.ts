@@ -1,24 +1,26 @@
-import { parseHelpOptions } from "../utils/parse-help-options.js";
-import { randomBytes } from "node:crypto";
-import { classifyProviderError, providerErrorMessage } from "../types.js";
+import { randomBytes } from 'node:crypto';
+
+import { ModelCatalog } from '../catalog.js';
 import type {
   BuildCommandInput,
   CliClient,
+  ClientOption,
   CliRunOutput,
   CliUsage,
   CommandSpec,
+  HeadlessOption,
   InterruptOutcome,
-  ClientOption,
   RawFailure,
   UsageCapture,
-} from "../types.js";
-import { ModelCatalog } from "../catalog.js";
-import { compact, finite, isRecord, labelOf, parseJsonObject } from "./json.js";
+} from '../types.js';
+import { classifyProviderError, providerErrorMessage } from '../types.js';
+import { parseHelpOptions } from '../utils/parse-help-options.js';
+import { compact, finite, isRecord, labelOf, parseJsonObject } from './json.js';
 
 const OPENCODE_OPTIONS: readonly ClientOption[] = [
-  { name: "agent" },
-  { name: "thinking" },
-  { name: "variant", overridable: true },
+  { name: 'agent' },
+  { name: 'thinking' },
+  { name: 'variant', overridable: true },
 ];
 
 function trimToStatusHeader(text: string): string {
@@ -37,16 +39,16 @@ function hasStatusHeader(text: string): boolean {
 }
 
 function textWithStatusHeader(segments: readonly (readonly string[])[]): string {
-  let lastNonempty = "";
+  let lastNonempty = '';
   for (let index = segments.length - 1; index >= 0; index -= 1) {
-    const text = (segments[index] ?? []).join("").trim();
+    const text = (segments[index] ?? []).join('').trim();
     if (!text) continue;
     if (!lastNonempty) lastNonempty = text;
     const trimmed = trimToStatusHeader(text);
     if (hasStatusHeader(trimmed)) return trimmed;
   }
   if (lastNonempty) return trimToStatusHeader(lastNonempty);
-  return "";
+  return '';
 }
 
 function events(stdout: string): Record<string, unknown>[] {
@@ -65,13 +67,13 @@ function partOf(payload: Record<string, unknown>): Record<string, unknown> {
 function errorString(payload: Record<string, unknown>): string {
   const message = providerErrorMessage(payload);
   if (message !== null) return message;
-  const error = payload.error;
-  if (isRecord(error) && typeof error.type === "string" && error.type !== "") return error.type;
-  return "opencode reported an error.";
+  const {error} = payload;
+  if (isRecord(error) && typeof error.type === 'string' && error.type !== '') return error.type;
+  return 'opencode reported an error.';
 }
 
 /** Reads "exceeded the 5-hour usage quota … reset at 2026-10-22 18:43:08 +0800 CST". */
-function quotaFromMessage(message: string): Pick<RawFailure, "rateLimit"> {
+function quotaFromMessage(message: string): Pick<RawFailure, 'rateLimit'> {
   if (!/exceeded[^.]*quota/i.test(message)) return {};
   const window = /(\d+)-hour/i.exec(message);
   const reset = /(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}) ([+-]\d{2})(\d{2})/.exec(message);
@@ -84,19 +86,29 @@ function quotaFromMessage(message: string): Pick<RawFailure, "rateLimit"> {
   };
 }
 
-const BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+/** Random bytes behind the 12 hex digits of a session id. */
+const HEX_PREFIX_BYTES = 6;
+const HEX_RADIX = 16;
+const HEX_PAIR_WIDTH = 2;
+/** Base62 characters after the hex digits, and random bytes drawn per round. */
+const TAIL_LENGTH = 14;
+const TAIL_DRAW_BYTES = 16;
+const BASE62_SIZE = 62;
+/** Largest multiple of 62 that fits in a byte; larger bytes are rejected to keep digits uniform. */
+const BASE62_BYTE_LIMIT = 248;
+const BASE62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
 
 /**
  * An OpenCode session id in the shape the server itself issues: `ses_`, 12 hex digits, then 14
  * base62 characters. The server creates a session under any unused `ses_` id passed to `run -s`.
  */
 export function generateSessionId(random: (size: number) => Uint8Array = randomBytes): string {
-  const hex = Array.from(random(6), (byte) => byte.toString(16).padStart(2, "0")).join("");
-  let tail = "";
+  const hex = Array.from(random(HEX_PREFIX_BYTES), (byte) => byte.toString(HEX_RADIX).padStart(HEX_PAIR_WIDTH, '0')).join('');
+  let tail = '';
   // Rejection sampling keeps the base62 digits uniform.
-  while (tail.length < 14) {
-    for (const byte of random(16)) {
-      if (byte < 248 && tail.length < 14) tail += BASE62[byte % 62];
+  while (tail.length < TAIL_LENGTH) {
+    for (const byte of random(TAIL_DRAW_BYTES)) {
+      if (byte < BASE62_BYTE_LIMIT && tail.length < TAIL_LENGTH) tail += BASE62[byte % BASE62_SIZE];
     }
   }
   return `ses_${hex}${tail}`;
@@ -114,58 +126,58 @@ export function lookup(source: unknown, path: readonly string[]): unknown {
 }
 
 const OPENCODE_EVENT_TYPES: ReadonlySet<string> = new Set([
-  "step_start", "step_finish", "text", "reasoning", "tool_use", "error",
+  'step_start', 'step_finish', 'text', 'reasoning', 'tool_use', 'error',
 ]);
 
 export class OpencodeClient implements CliClient {
-  optionsCommand(): CommandSpec {
-    return { argv: [this.command, "run", "--help"] };
+  public optionsCommand(): CommandSpec {
+    return { argv: [this.command, 'run', '--help'] };
   }
 
-  parseOptions(help: string) {
+  public parseOptions(help: string): HeadlessOption[] {
     return parseHelpOptions(help, { section: /^Options:\s*$/, inferArgumentType: true });
   }
 
-  readonly effortOption = "variant";
-  readonly id = "opencode";
-  readonly command = "opencode";
+  public readonly effortOption = 'variant';
+  public readonly id = 'opencode';
+  public readonly command = 'opencode';
 
-  options(): readonly ClientOption[] {
+  public options(): readonly ClientOption[] {
     return OPENCODE_OPTIONS;
   }
 
-  validateOptions(options: Readonly<Record<string, string>>): void {
+  public validateOptions(options: Readonly<Record<string, string>>): void {
     const known = new Set(OPENCODE_OPTIONS.map((item) => item.name));
     for (const [key, value] of Object.entries(options)) {
       if (!known.has(key)) throw new Error(`${key} is not an opencode option.`);
-      if (value.trim() === "") throw new Error(`${key} is empty.`);
-      if (key === "variant" && /[\s#]/u.test(value)) {
-        throw new Error("variant must be a single variant name without whitespace or #.");
+      if (value.trim() === '') throw new Error(`${key} is empty.`);
+      if (key === 'variant' && /[\s#]/u.test(value)) {
+        throw new Error('variant must be a single variant name without whitespace or #.');
       }
-      if (key === "thinking" && value !== "true" && value !== "false") {
-        throw new Error("thinking must be true or false.");
+      if (key === 'thinking' && value !== 'true' && value !== 'false') {
+        throw new Error('thinking must be true or false.');
       }
     }
   }
 
-  runCommand(input: BuildCommandInput): CommandSpec {
+  public runCommand(input: BuildCommandInput): CommandSpec {
     // The workspace is the process cwd, so input.workspace is not passed.
-    const variant = input.options.variant;
-    if (variant !== undefined && input.model.includes("#")) {
-      throw new Error("Model already selects a #variant; use either the model suffix or effort/options.variant, not both.");
+    const {variant} = input.options;
+    if (variant !== undefined && input.model.includes('#')) {
+      throw new Error('Model already selects a #variant; use either the model suffix or effort/options.variant, not both.');
     }
     const model = variant === undefined ? input.model : `${input.model}#${variant}`;
-    const argv = [this.command, "run", "--format", "json", "--auto", "-m", model];
-    const agent = input.options.agent;
-    if (agent !== undefined) argv.push("--agent", agent);
-    if (input.options.thinking === "true") argv.push("--thinking");
+    const argv = [this.command, 'run', '--format', 'json', '--auto', '-m', model];
+    const {agent} = input.options;
+    if (agent !== undefined) argv.push('--agent', agent);
+    if (input.options.thinking === 'true') argv.push('--thinking');
     // A resumed turn reuses the stored id; a fresh one runs under the id Migent already persisted.
     const sessionId = input.agentId || input.newAgentId;
-    if (sessionId) argv.push("-s", sessionId);
+    if (sessionId) argv.push('-s', sessionId);
     return { argv, stdin: input.prompt };
   }
 
-  newSessionId(): string {
+  public newSessionId(): string {
     return generateSessionId();
   }
 
@@ -173,35 +185,35 @@ export class OpencodeClient implements CliClient {
    * `opencode api` finds the same background service `run` used, from the same cwd and
    * environment, so no server address is named here.
    */
-  interruptCommand(sessionId: string): CommandSpec | null {
+  public interruptCommand(sessionId: string): CommandSpec | null {
     if (!SESSION_ID.test(sessionId)) return null;
-    return { argv: [this.command, "api", "session.interrupt", "--param", `sessionID=${sessionId}`] };
+    return { argv: [this.command, 'api', 'session.interrupt', '--param', `sessionID=${sessionId}`] };
   }
 
-  classifyInterrupt(output: string, exitCode: number | null): InterruptOutcome {
+  public classifyInterrupt(output: string, exitCode: number | null): InterruptOutcome {
     if (exitCode === 0) {
       const payload = parseJsonObject(output.trim());
-      if (payload?.interrupted === true) return "interrupted";
-      if (payload?.interrupted === false) return "idle";
-      return "failed";
+      if (payload?.interrupted === true) return 'interrupted';
+      if (payload?.interrupted === false) return 'idle';
+      return 'failed';
     }
-    return /not[\s_-]?found|\b404\b/i.test(output) ? "not-found" : "failed";
+    return /not[\s_-]?found|\b404\b/i.test(output) ? 'not-found' : 'failed';
   }
 
-  sessionIdFromLine(line: string): string | null {
+  public sessionIdFromLine(line: string): string | null {
     const id = parseJsonObject(line)?.sessionID;
-    return typeof id === "string" && id !== "" ? id : null;
+    return typeof id === 'string' && id !== '' ? id : null;
   }
 
-  modelsCommand(): CommandSpec {
-    return { argv: [this.command, "models"] };
+  public modelsCommand(): CommandSpec {
+    return { argv: [this.command, 'models'] };
   }
 
-  versionCommand(): CommandSpec {
-    return { argv: [this.command, "--version"] };
+  public versionCommand(): CommandSpec {
+    return { argv: [this.command, '--version'] };
   }
 
-  parseRun(stdout: string, lastMessageFile: string): CliRunOutput {
+  public parseRun(stdout: string, lastMessageFile: string): CliRunOutput {
     void lastMessageFile;
     const segments: string[][] = [[]];
     let sessionId: string | null = null;
@@ -210,105 +222,100 @@ export class OpencodeClient implements CliClient {
     for (const payload of events(stdout)) {
       sawEvent = true;
       const id = payload.sessionID;
-      if (typeof id === "string" && id) sessionId = id;
+      if (typeof id === 'string' && id) sessionId = id;
       const eventType = payload.type;
-      if (eventType === "text") {
-        const text = partOf(payload).text;
-        if (typeof text === "string" && text) segments[segments.length - 1]?.push(text);
-      } else if (eventType === "tool_use") {
+      if (eventType === 'text') {
+        const {text} = partOf(payload);
+        if (typeof text === 'string' && text) segments[segments.length - 1]?.push(text);
+      } else if (eventType === 'tool_use') {
         if (segments[segments.length - 1]?.length) segments.push([]);
-      } else if (eventType === "error") {
+      } else if (eventType === 'error') {
         errorMessage = errorString(payload);
       }
     }
-    const text = textWithStatusHeader(segments);
-    if (text) return { text, sessionId, source: "model" };
-    if (errorMessage) return { text: errorMessage, sessionId, source: "error" };
-    if (sawEvent) return { text: "", sessionId, source: "none" };
-    const raw = stdout.trim();
-    return { text: raw, sessionId: null, source: raw === "" ? "none" : "error" };
+    return segmentedRunOutput(stdout, { segments, sessionId, errorMessage, sawEvent });
   }
 
-  parseModels(stdout: string): ModelCatalog {
+  public parseModels(stdout: string): ModelCatalog {
     const ids: string[] = [];
     for (const raw of stdout.split(/\r\n|\n|\r/)) {
       const line = raw.trim();
       if (line && !ids.includes(line)) ids.push(line);
     }
-    if (ids.length === 0) throw new Error("opencode model catalog is empty.");
+    if (ids.length === 0) throw new Error('opencode model catalog is empty.');
     return new ModelCatalog(ids, null);
   }
 
-  parseVersion(stdout: string): string | null {
-    const line = (stdout.split(/\r\n|\n|\r/, 1)[0] ?? "").trim();
-    const version = line.replace(/^opencode v/i, "").trim();
-    return version === "" ? null : version;
+  public parseVersion(stdout: string): string | null {
+    const line = (stdout.split(/\r\n|\n|\r/, 1)[0] ?? '').trim();
+    const version = line.replace(/^opencode v/i, '').trim();
+    return version === '' ? null : version;
   }
 
-  createEventParser(): (line: string) => Record<string, unknown> | null {
+  public createEventParser(): (line: string) => Record<string, unknown> | null {
     return (line) => {
       const payload = parseJsonObject(line);
       if (payload === null) return null;
-      if (payload.type === "error") return classifyProviderError(providerErrorMessage(payload));
-      if (payload.type !== "tool_use") return null;
+      if (payload.type === 'error') return classifyProviderError(providerErrorMessage(payload));
+      if (payload.type !== 'tool_use') return null;
       const part = partOf(payload);
       const state = isRecord(part.state) ? part.state : {};
       let event: string;
       let action: string;
-      if (state.status === "running" || state.status === "pending") {
-        event = "provider.item_started";
-        action = "started";
-      } else if (state.status === "completed") {
-        event = "provider.item_completed";
-        action = "completed";
-      } else if (state.status === "error") {
-        event = "provider.item_completed";
-        action = "failed";
+      if (state.status === 'running' || state.status === 'pending') {
+        event = 'provider.item_started';
+        action = 'started';
+      } else if (state.status === 'completed') {
+        event = 'provider.item_completed';
+        action = 'completed';
+      } else if (state.status === 'error') {
+        event = 'provider.item_completed';
+        action = 'failed';
       } else {
         return null;
       }
-      const tool = typeof part.tool === "string" && part.tool !== "" ? part.tool : null;
-      const command = lookup(state, ["input", "command"]);
+      const tool = typeof part.tool === 'string' && part.tool !== '' ? part.tool : null;
+      const command = lookup(state, ['input', 'command']);
       const summary =
-        typeof command === "string" && command !== ""
+        typeof command === 'string' && command !== ''
           ? `command ${action}: ${compact(command)}`
-          : `${tool ?? "tool"} ${action}`;
+          : `${tool ?? 'tool'} ${action}`;
       return { event, summary, details: tool === null ? {} : { item_type: tool } };
     };
   }
 
-  eventLabel(line: string): string | null {
+  public eventLabel(line: string): string | null {
     const payload = parseJsonObject(line);
     if (payload === null) return null;
-    return labelOf(payload.type, OPENCODE_EVENT_TYPES) ?? "other";
+    return labelOf(payload.type, OPENCODE_EVENT_TYPES) ?? 'other';
   }
 
-  extractFailure(stdout: string, exitCode: number): RawFailure | null {
+  public extractFailure(stdout: string, exitCode: number): RawFailure | null {
     // An error event followed by a retry that succeeds still counts as a failure; accepted.
     let errorMessage: string | null = null;
     for (const payload of events(stdout)) {
-      if (payload.type === "error") errorMessage = errorString(payload);
+      if (payload.type === 'error') errorMessage = errorString(payload);
     }
     if (errorMessage !== null) {
-      return { origin: "provider-error", message: errorMessage, exitCode, ...quotaFromMessage(errorMessage) };
+      return { origin: 'provider-error', message: errorMessage, exitCode, ...quotaFromMessage(errorMessage) };
     }
     if (exitCode === 0) return null;
     // Model text is never read for a rate limit: only the protocol's own error payload names one.
-    const message = this.parseRun(stdout, "").text.trim() || null;
-    return { origin: "exit-only", message, exitCode };
+    const message = this.parseRun(stdout, '').text.trim() || null;
+    return { origin: 'exit-only', message, exitCode };
   }
 
-  captureUsage(stdout: string): UsageCapture | null {
+  public captureUsage(stdout: string): UsageCapture | null {
     const steps: Record<string, unknown>[] = [];
     for (const payload of events(stdout)) {
-      if (payload.type !== "step_finish") continue;
+      if (payload.type !== 'step_finish') continue;
       const part = partOf(payload);
       steps.push({ tokens: part.tokens, cost: part.cost });
     }
     return steps.length === 0 ? null : { steps };
   }
 
-  readUsage(capture: UsageCapture): CliUsage {
+  public readUsage(capture: UsageCapture): CliUsage {
     const steps = Array.isArray(capture.steps) ? capture.steps : [];
     const sum = (path: readonly string[]): number | null => {
       let total = 0;
@@ -321,35 +328,56 @@ export class OpencodeClient implements CliClient {
     };
     return {
       values: {
-        input_tokens: sum(["tokens", "input"]),
-        output_tokens: sum(["tokens", "output"]),
-        reasoning_tokens: sum(["tokens", "reasoning"]),
-        cache_read_tokens: sum(["tokens", "cache", "read"]),
-        cache_write_tokens: sum(["tokens", "cache", "write"]),
-        cost_usd: sum(["cost"]),
+        input_tokens: sum(['tokens', 'input']),
+        output_tokens: sum(['tokens', 'output']),
+        reasoning_tokens: sum(['tokens', 'reasoning']),
+        cache_read_tokens: sum(['tokens', 'cache', 'read']),
+        cache_write_tokens: sum(['tokens', 'cache', 'write']),
+        cost_usd: sum(['cost']),
       },
       cumulative: [],
     };
   }
 
-  optionValuesCommand(option: string, model: string): CommandSpec | null {
+  public optionValuesCommand(option: string, model: string): CommandSpec | null {
     void model;
-    return option === "variant" ? { argv: [this.command, "api", "model.list"] } : null;
+    return option === 'variant' ? { argv: [this.command, 'api', 'model.list'] } : null;
   }
 
-  parseOptionValues(option: string, stdout: string, model: string): readonly string[] {
-    if (option !== "variant") throw new Error(`opencode does not list values for ${option}.`);
+  public parseOptionValues(option: string, stdout: string, model: string): readonly string[] {
+    if (option !== 'variant') throw new Error(`opencode does not list values for ${option}.`);
     const payload = parseJsonObject(stdout);
-    if (!Array.isArray(payload?.data)) throw new Error("opencode did not report its model variants.");
+    if (!Array.isArray(payload?.data)) throw new Error('opencode did not report its model variants.');
     const entry = payload.data.find((item) => isRecord(item) && `${item.providerID}/${item.id}` === model);
     if (!isRecord(entry) || !Array.isArray(entry.variants)) {
       throw new Error(`opencode does not list variants for ${model}.`);
     }
     return [...new Set(entry.variants.map((item) => {
-      if (!isRecord(item) || typeof item.id !== "string" || item.id.trim() === "") {
+      if (!isRecord(item) || typeof item.id !== 'string' || item.id.trim() === '') {
         throw new Error(`opencode returned an invalid variant for ${model}.`);
       }
       return item.id;
     }))];
   }
+}
+
+interface SegmentedRun {
+  segments: readonly (readonly string[])[];
+  sessionId: string | null;
+  errorMessage: string | null;
+  sawEvent: boolean;
+}
+
+/** Picks the run output: model text, else the reported error, else the raw stdout when no event parsed. */
+function segmentedRunOutput(
+  stdout: string,
+  parsed: SegmentedRun,
+): CliRunOutput {
+  const { segments, sessionId, errorMessage, sawEvent } = parsed;
+  const text = textWithStatusHeader(segments);
+  if (text) return { text, sessionId, source: 'model' };
+  if (errorMessage) return { text: errorMessage, sessionId, source: 'error' };
+  if (sawEvent) return { text: '', sessionId, source: 'none' };
+  const raw = stdout.trim();
+  return { text: raw, sessionId: null, source: raw === '' ? 'none' : 'error' };
 }

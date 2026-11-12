@@ -12,7 +12,7 @@ stages:
     max_revisions: 3
     ask: human
     instructions:
-      - Before starting, check that the workspace is on the default branch at its latest remote commit; otherwise ask the human how to proceed.
+      - Before starting, check that the workspace is on the default branch(next) at its latest remote commit; otherwise ask the human how to proceed.
       - Implement within scope, following repository conventions and any agreed architecture.
       - Follow the plan when provided, and address its non-blocking comments or explain why not.
       - Work directly from the task when no architectural decisions are needed.
@@ -21,6 +21,9 @@ stages:
       - Run relevant checks and tests, and report results and anything unverified.
       - When revising, address all required review findings and rerun the affected checks.
     artifacts: [implement_summary]
+    verify:
+      - pnpm lint
+      - pnpm test
 
   - id: review_work
     role: reviewer

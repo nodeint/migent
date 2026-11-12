@@ -1,15 +1,17 @@
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { ConfigurationError } from "@nodeint/migent-kernel";
-import { ServiceEndpoint, ServiceError, StopResult } from "@nodeint/migent-registry";
-import { expect, test } from "vitest";
-import { parsePort, serviceApi } from "../src/commands/service.ts";
-import { main } from "../src/index.ts";
-import { capture } from "./support.ts";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+
+import { ConfigurationError } from '@nodeint/migent-kernel';
+import { ServiceEndpoint, ServiceError, StopResult } from '@nodeint/migent-registry';
+import { expect, test } from 'vitest';
+
+import { parsePort, serviceApi } from '../src/commands/service.ts';
+import { main } from '../src/index.ts';
+import { capture } from './support.ts';
 
 async function withHome(fn: (home: string) => Promise<void>): Promise<void> {
-  const home = mkdtempSync(path.join(tmpdir(), "migent-cli-"));
+  const home = mkdtempSync(path.join(tmpdir(), 'migent-cli-'));
   const previous = process.env.MIGENT_HOME;
   const api = { ...serviceApi };
   process.env.MIGENT_HOME = home;
@@ -23,73 +25,73 @@ async function withHome(fn: (home: string) => Promise<void>): Promise<void> {
   }
 }
 
-test("status json is stopped without a service file", async () => {
+test('status json is stopped without a service file', async () => {
   await withHome(async () => {
-    const captured = await capture(() => main(["service", "status", "--json"]));
+    const captured = await capture(() => main(['service', 'status', '--json']));
     expect(captured.value).toBe(1);
-    expect(JSON.parse(captured.stdout)).toEqual({ state: "stopped" });
+    expect(JSON.parse(captured.stdout)).toEqual({ state: 'stopped' });
   });
 });
 
-test("status json is stopped when identity does not match", async () => {
+test('status json is stopped when identity does not match', async () => {
   await withHome(async (home) => {
-    const registry = path.join(home, "registry");
+    const registry = path.join(home, 'registry');
     mkdirSync(registry);
     writeFileSync(
-      path.join(registry, "service.json"),
+      path.join(registry, 'service.json'),
       JSON.stringify({
         schema_version: 1,
-        instance_id: "instance-under-test",
+        instance_id: 'instance-under-test',
         pid: 424242,
         pgid: 424242,
-        start_key: "start-key",
-        boot_id: "boot-1",
-        hostname: "host.example",
-        host: "127.0.0.1",
+        start_key: 'start-key',
+        boot_id: 'boot-1',
+        hostname: 'host.example',
+        host: '127.0.0.1',
         port: 9,
-        token: "secret-token-value",
-        started_at: "2026-09-26T08:07:57Z",
+        token: 'secret-token-value',
+        started_at: '2026-09-26T08:07:57Z',
       }),
-      "utf8",
+      'utf8',
     );
-    const captured = await capture(() => main(["service", "status", "--json"]));
+    const captured = await capture(() => main(['service', 'status', '--json']));
     expect(captured.value).toBe(1);
-    expect(JSON.parse(captured.stdout)).toEqual({ state: "stopped" });
-    expect(captured.stdout).not.toContain("secret-token-value");
-    expect(captured.stderr).not.toContain("secret-token-value");
+    expect(JSON.parse(captured.stdout)).toEqual({ state: 'stopped' });
+    expect(captured.stdout).not.toContain('secret-token-value');
+    expect(captured.stderr).not.toContain('secret-token-value');
   });
 });
 
-test("start unverified identity exits 1 without a token", async () => {
+test('start unverified identity exits 1 without a token', async () => {
   await withHome(async () => {
     serviceApi.startDetached = async () => {
-      throw new ServiceError("Service identity is unverified.");
+      throw new ServiceError('Service identity is unverified.');
     };
-    const captured = await capture(() => main(["service", "start"]));
+    const captured = await capture(() => main(['service', 'start']));
     expect(captured.value).toBe(1);
-    expect(captured.stdout).toBe("");
-    expect(captured.stderr).toContain("Service identity is unverified.");
+    expect(captured.stdout).toBe('');
+    expect(captured.stderr).toContain('Service identity is unverified.');
   });
 });
 
-test("stop still alive exits 1 and leaves the file", async () => {
+test('stop still alive exits 1 and leaves the file', async () => {
   await withHome(async (home) => {
-    const registry = path.join(home, "registry");
+    const registry = path.join(home, 'registry');
     mkdirSync(registry);
-    const file = path.join(registry, "service.json");
-    writeFileSync(file, '{"keep": true}\n', "utf8");
+    const file = path.join(registry, 'service.json');
+    writeFileSync(file, '{"keep": true}\n', 'utf8');
     const original = readFileSync(file);
-    serviceApi.stop = async () => new StopResult("error", "The process is still alive.");
-    const captured = await capture(() => main(["service", "stop"]));
+    serviceApi.stop = async () => new StopResult('error', 'The process is still alive.');
+    const captured = await capture(() => main(['service', 'stop']));
     expect(captured.value).toBe(1);
-    expect(captured.stderr).toContain("The process is still alive.");
+    expect(captured.stderr).toContain('The process is still alive.');
     expect(readFileSync(file)).toEqual(original);
   });
 });
 
-test("detached start prints the endpoint and not the token", async () => {
+test('detached start prints the endpoint and not the token', async () => {
   await withHome(async () => {
-    const endpoint = new ServiceEndpoint("127.0.0.1", 47321, "secret-token-value", "instance", 3);
+    const endpoint = new ServiceEndpoint({ host: '127.0.0.1', port: 47321, token: 'secret-token-value', instanceId: 'instance', pid: 3 });
     let started = 0;
     let foreground = 0;
     serviceApi.startDetached = async () => {
@@ -100,18 +102,18 @@ test("detached start prints the endpoint and not the token", async () => {
       foreground += 1;
       return endpoint;
     };
-    const captured = await capture(() => main(["service", "start"]));
+    const captured = await capture(() => main(['service', 'start']));
     expect(captured.value).toBe(0);
     expect(started).toBe(1);
     expect(foreground).toBe(0);
-    expect(captured.stdout.trim()).toBe("127.0.0.1:47321");
-    expect(captured.stdout).not.toContain("secret-token-value");
+    expect(captured.stdout.trim()).toBe('127.0.0.1:47321');
+    expect(captured.stdout).not.toContain('secret-token-value');
   });
 });
 
-test("foreground start serves in process", async () => {
+test('foreground start serves in process', async () => {
   await withHome(async () => {
-    const endpoint = new ServiceEndpoint("127.0.0.1", 47321, "secret-token-value", "instance", 3);
+    const endpoint = new ServiceEndpoint({ host: '127.0.0.1', port: 47321, token: 'secret-token-value', instanceId: 'instance', pid: 3 });
     let started = 0;
     let foreground = 0;
     serviceApi.serveForeground = async () => {
@@ -122,37 +124,37 @@ test("foreground start serves in process", async () => {
       started += 1;
       return endpoint;
     };
-    const captured = await capture(() => main(["service", "start", "--foreground"]));
+    const captured = await capture(() => main(['service', 'start', '--foreground']));
     expect(captured.value).toBe(0);
     expect(foreground).toBe(1);
     expect(started).toBe(0);
-    expect(captured.stdout).not.toContain("secret-token-value");
+    expect(captured.stdout).not.toContain('secret-token-value');
   });
 });
 
-test("stop absent exits 0", async () => {
+test('stop absent exits 0', async () => {
   await withHome(async () => {
-    serviceApi.stop = async () => new StopResult("absent");
-    const captured = await capture(() => main(["service", "stop"]));
+    serviceApi.stop = async () => new StopResult('absent');
+    const captured = await capture(() => main(['service', 'stop']));
     expect(captured.value).toBe(0);
-    expect(captured.stderr).toContain("Not running.");
+    expect(captured.stderr).toContain('Not running.');
   });
 });
 
-test("stop prints Stopped when the service exits", async () => {
+test('stop prints Stopped when the service exits', async () => {
   await withHome(async () => {
-    serviceApi.stop = async () => new StopResult("stopped");
-    const captured = await capture(() => main(["service", "stop"]));
+    serviceApi.stop = async () => new StopResult('stopped');
+    const captured = await capture(() => main(['service', 'stop']));
     expect(captured.value).toBe(0);
-    expect(captured.stderr).toContain("Stopped.");
+    expect(captured.stderr).toContain('Stopped.');
   });
 });
 
-test("parsePort rejects values outside 1 to 65535", () => {
-  for (const raw of ["0", "65536", "abc", "-1"]) {
+test('parsePort rejects values outside 1 to 65535', () => {
+  for (const raw of ['0', '65536', 'abc', '-1']) {
     expect(() => parsePort(raw)).toThrow(ConfigurationError);
-    expect(() => parsePort(raw)).toThrow("--port must be an integer from 1 to 65535.");
+    expect(() => parsePort(raw)).toThrow('--port must be an integer from 1 to 65535.');
   }
-  expect(parsePort("1")).toBe(1);
-  expect(parsePort("65535")).toBe(65535);
+  expect(parsePort('1')).toBe(1);
+  expect(parsePort('65535')).toBe(65535);
 });

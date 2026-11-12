@@ -1,7 +1,7 @@
-import type { WorkflowDocument } from "@nodeint/migent-workflow";
+import type { WorkflowDocument } from '@nodeint/migent-workflow';
 
 /** Code of the informational finding for a downstream mapping to an optional artifact. */
-export const OPTIONAL_MAPPING_CODE = "downstream-optional-artifact";
+export const OPTIONAL_MAPPING_CODE = 'downstream-optional-artifact';
 
 export interface OptionalMapping {
   /** Index of the downstream entry. */
@@ -20,9 +20,11 @@ export interface OptionalMapping {
  * draft validation, project doctor and session doctor so every path reports the same finding.
  */
 export function optionalArtifactMappings(
-  document: Pick<WorkflowDocument, "artifacts" | "downstream">,
+  document: Pick<WorkflowDocument, 'artifacts' | 'downstream'>,
 ): OptionalMapping[] {
-  const optional = new Set((document.artifacts ?? []).filter((artifact) => !artifact.required).map((artifact) => artifact.id));
+  const optional = new Set(
+    (document.artifacts ?? []).filter((artifact) => !artifact.required).map((artifact) => artifact.id),
+  );
   const found: OptionalMapping[] = [];
   (document.downstream ?? []).forEach((entry, index) => {
     for (const [name, artifact] of Object.entries(entry.artifacts ?? {})) {
@@ -32,7 +34,7 @@ export function optionalArtifactMappings(
         name,
         artifact,
         message: `downstream.artifacts.${name} maps to optional artifact ${artifact}; the target receives it only when it was produced.`,
-        path: ["downstream", index, "artifacts", name],
+        path: ['downstream', index, 'artifacts', name],
       });
     }
   });

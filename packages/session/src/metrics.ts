@@ -1,19 +1,21 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
-import { writeJsonAtomic } from "@nodeint/migent-kernel";
-import type { CliClient, ClientRegistry, TurnUsage, UsageCapture } from "@nodeint/migent-kernel";
-import { normalizeUsage } from "@nodeint/migent-kernel";
-import { clientOfCommand } from "@nodeint/migent-kernel";
-import { executionCommands, legacyExecutionClient } from "./legacy-execution-client.js";
-import { listSessionRows, readStatusFileState } from "./query.js";
-import { exitAnomaliesOf } from "./exit-anomaly.js";
-import { isRecord } from "@nodeint/migent-workflow";
-import { MIGENT_DIRNAME, SESSIONS_DIRNAME } from "@nodeint/migent-kernel";
-import { type ParsedEvent } from "./session-events.js";
-import { addTurn, addUsageRecord, blankUsage, coerceUsage, missingObject, newUsageTotals, usageObject, type UsageField } from "./metrics-usage.js";
-import { detailsOf, elapsedMs, parseTime, roundSeconds, stringList, text, wallSeconds } from "./metrics-values.js";
-import { loadMetricsWorkflow, orderedEvents, readExecutions, sessionIsCorrupt, type ExecutionRow } from "./metrics-read.js";
-import { routeTargets, type WorkflowDocument } from "@nodeint/migent-workflow";
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
+import type { CliClient, ClientRegistry, TurnUsage, UsageCapture } from '@nodeint/migent-kernel';
+import { writeJsonAtomic } from '@nodeint/migent-kernel';
+import { normalizeUsage } from '@nodeint/migent-kernel';
+import { clientOfCommand } from '@nodeint/migent-kernel';
+import { MIGENT_DIRNAME, SESSIONS_DIRNAME } from '@nodeint/migent-kernel';
+import { isRecord } from '@nodeint/migent-workflow';
+import { routeTargets, type WorkflowDocument } from '@nodeint/migent-workflow';
+
+import { exitAnomaliesOf } from './exit-anomaly.js';
+import { executionCommands, legacyExecutionClient } from './legacy-execution-client.js';
+import { type ExecutionRow,loadMetricsWorkflow, orderedEvents, readExecutions, sessionIsCorrupt } from './metrics-read.js';
+import { addTurn, addUsageRecord, blankUsage, coerceUsage, missingObject, newUsageTotals, type UsageField,usageObject } from './metrics-usage.js';
+import { detailsOf, elapsedMs, parseTime, roundSeconds, stringList, text, wallSeconds } from './metrics-values.js';
+import { listSessionRows, readStatusFileState } from './query.js';
+import { type ParsedEvent } from './session-events.js';
 
 interface NormalizedTurn {
   executionId: string;
@@ -27,17 +29,17 @@ export function sessionMetrics(
   clients: ClientRegistry,
 ): Record<string, unknown> {
   const sessionDirectory = path.join(workspace, MIGENT_DIRNAME, SESSIONS_DIRNAME, sessionId);
-  if (sessionIsCorrupt(sessionDirectory)) return { session_id: sessionId, status: "corrupt" };
-  const statusRead = readStatusFileState(path.join(sessionDirectory, "status.json"));
-  const status = statusRead.state === "ok" ? statusRead.status : {};
+  if (sessionIsCorrupt(sessionDirectory)) return { session_id: sessionId, status: 'corrupt' };
+  const statusRead = readStatusFileState(path.join(sessionDirectory, 'status.json'));
+  const status = statusRead.state === 'ok' ? statusRead.status : {};
   const workflow = loadMetricsWorkflow(workspace, sessionDirectory, status);
   const executions = readExecutions(sessionDirectory);
   const events = orderedEvents(sessionDirectory);
-  const agentRole =
-    status.workflow_id === "agent"
-      ? (typeof status.role === "string" ? status.role : manifestRole(sessionDirectory))
-      : null;
-  return sessionObject(sessionId, status, workflow, executions, events, clients, agentRole);
+  let agentRole: ReturnType<typeof manifestRole> | null = null;
+  if (status.workflow_id === 'agent') {
+    agentRole = typeof status.role === 'string' ? status.role : manifestRole(sessionDirectory);
+  }
+  return sessionObject({ sessionId, status, workflow, executions, events }, clients, agentRole);
 }
 
 export function listSessionMetrics(
@@ -47,35 +49,37 @@ export function listSessionMetrics(
 ): Record<string, unknown>[] {
   let rows = listSessionRows(workspace);
   // Columns are updated_at, session, workflow, status. Same order as session list.
-  if (filters.workflow != null) rows = rows.filter((row) => row[2] === filters.workflow);
-  if (filters.status != null) rows = rows.filter((row) => row[3] === filters.status);
-  if (filters.limit != null) rows = rows.slice(0, filters.limit);
-  return rows.map((row) => sessionMetrics(workspace, row[1] ?? "", clients));
+  if ((filters.workflow !== null && filters.workflow !== undefined)) {
+    rows = rows.filter((row) => row[2] === filters.workflow);
+  }
+  if ((filters.status !== null && filters.status !== undefined)) rows = rows.filter((row) => row[3] === filters.status);
+  if ((filters.limit !== null && filters.limit !== undefined)) rows = rows.slice(0, filters.limit);
+  return rows.map((row) => sessionMetrics(workspace, row[1] ?? '', clients));
 }
 
 export function sealedMetricsPath(workspace: string, sessionId: string): string {
-  return path.join(workspace, MIGENT_DIRNAME, SESSIONS_DIRNAME, sessionId, "metrics.json");
+  return path.join(workspace, MIGENT_DIRNAME, SESSIONS_DIRNAME, sessionId, 'metrics.json');
 }
 
 /** The sealed file, or why it cannot be used. A present file is never rewritten. */
 export function readSealedMetrics(
   workspace: string,
   sessionId: string,
-): { state: "ok"; metrics: Record<string, unknown> } | { state: "missing" } | { state: "corrupt" } {
+): { state: 'ok'; metrics: Record<string, unknown> } | { state: 'missing' } | { state: 'corrupt' } {
   let text: string;
   try {
-    text = readFileSync(sealedMetricsPath(workspace, sessionId), "utf8");
+    text = readFileSync(sealedMetricsPath(workspace, sessionId), 'utf8');
   } catch {
-    return { state: "missing" };
+    return { state: 'missing' };
   }
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch {
-    return { state: "corrupt" };
+    return { state: 'corrupt' };
   }
-  if (!isRecord(parsed)) return { state: "corrupt" };
-  return { state: "ok", metrics: parsed };
+  if (!isRecord(parsed)) return { state: 'corrupt' };
+  return { state: 'ok', metrics: parsed };
 }
 
 /** Write metrics.json once when a session is completed. An existing file stays. */
@@ -84,9 +88,9 @@ export function sealSessionMetrics(
   sessionId: string,
   clients: ClientRegistry,
 ): void {
-  if (readSealedMetrics(workspace, sessionId).state !== "missing") return;
+  if (readSealedMetrics(workspace, sessionId).state !== 'missing') return;
   const metrics = sessionMetrics(workspace, sessionId, clients);
-  if (metrics.status !== "completed") return;
+  if (metrics.status !== 'completed') return;
   writeJsonAtomic(sealedMetricsPath(workspace, sessionId), metrics);
 }
 
@@ -97,30 +101,35 @@ export function listSealedMetrics(
 ): Record<string, unknown>[] {
   const sealed: Record<string, unknown>[] = [];
   for (const row of listSessionRows(workspace)) {
-    const read = readSealedMetrics(workspace, row[1] ?? "");
-    if (read.state !== "ok") continue;
+    const read = readSealedMetrics(workspace, row[1] ?? '');
+    if (read.state !== 'ok') continue;
     sealed.push(read.metrics);
   }
   let rows = sealed;
-  if (filters.workflow != null) rows = rows.filter((row) => row.workflow_id === filters.workflow);
-  if (filters.status != null) rows = rows.filter((row) => row.status === filters.status);
-  if (filters.limit != null) rows = rows.slice(0, filters.limit);
+  if ((filters.workflow !== null && filters.workflow !== undefined)) {
+    rows = rows.filter((row) => row.workflow_id === filters.workflow);
+  }
+  if ((filters.status !== null && filters.status !== undefined)) {
+    rows = rows.filter((row) => row.status === filters.status);
+  }
+  if ((filters.limit !== null && filters.limit !== undefined)) rows = rows.slice(0, filters.limit);
   return rows;
 }
 
-function sessionObject(
-  sessionId: string,
-  status: Record<string, unknown>,
-  workflow: WorkflowDocument | null,
-  executions: ExecutionRow[],
+/** What one session's metrics are read from. */
+interface SessionSource {
+  readonly sessionId: string;
+  readonly status: Record<string, unknown>;
+  readonly workflow: WorkflowDocument | null;
+  readonly executions: ExecutionRow[];
+  readonly events: ParsedEvent[];
+}
+
+/** Provider exit anomalies per known execution, with how many of them were accepted. */
+function anomalyCounts(
   events: ParsedEvent[],
-  clients: ClientRegistry,
-  agentRole: string | null,
-): Record<string, unknown> {
-  const known = new Set(executions.map((execution) => execution.id));
-  const executionClients = resolveExecutionClients(events, executions, status);
-  const turns = normalizeTurns(events, executionClients, clients).filter((turn) => known.has(turn.executionId));
-  const cancelled = countByExecution(events, "provider.cancelled", known);
+  known: ReadonlySet<string>,
+): Map<string, { total: number; accepted: number }> {
   const anomalies = new Map<string, { total: number; accepted: number }>();
   for (const anomaly of exitAnomaliesOf(events)) {
     if (!known.has(anomaly.executionId)) continue;
@@ -129,22 +138,19 @@ function sessionObject(
     if (anomaly.accepted) count.accepted += 1;
     anomalies.set(anomaly.executionId, count);
   }
-  const revisionTargets = revisionMap(executions, workflow);
-  const routed = routedFrom(executions, workflow);
-  const executionObjects = executions.map((execution) =>
-    executionObject(
-      execution,
-      events,
-      turns,
-      cancelled.get(execution.id) ?? 0,
-      anomalies.get(execution.id) ?? { total: 0, accepted: 0 },
-      workflow,
-      routed.get(execution.id) ?? null,
-      agentRole,
-      executionClients.get(execution.id) ?? null,
-    ),
-  );
-  const sessionTotals = newUsageTotals();
+  return anomalies;
+}
+
+/** Sums the per-execution counters and usage into session totals. */
+function sumExecutions(executionObjects: readonly ReturnType<typeof executionObject>[]): {
+  sessionTotals: ReturnType<typeof newUsageTotals>;
+  turnsCount: number;
+  uncaptured: number;
+  verifyMs: number;
+  anomalyTotal: number;
+  anomalyAccepted: number;
+} {
+  let sessionTotals = newUsageTotals();
   let turnsCount = 0;
   let uncaptured = 0;
   let verifyMs = 0;
@@ -156,8 +162,42 @@ function sessionObject(
     turnsCount += execution.turns as number;
     uncaptured += execution.uncaptured_turns as number;
     verifyMs += execution.verifyMs as number;
-    addUsageRecord(sessionTotals, execution.usage as TurnUsage, execution.usage_missing as Record<UsageField, number>);
+    sessionTotals = addUsageRecord(
+      sessionTotals,
+      execution.usage as TurnUsage,
+      execution.usage_missing as Record<UsageField, number>,
+    );
   }
+  return { sessionTotals, turnsCount, uncaptured, verifyMs, anomalyTotal, anomalyAccepted };
+}
+
+function sessionObject(
+  source: SessionSource,
+  clients: ClientRegistry,
+  agentRole: string | null,
+): Record<string, unknown> {
+  const { sessionId, status, workflow, executions, events } = source;
+  const known = new Set(executions.map((execution) => execution.id));
+  const executionClients = resolveExecutionClients(events, executions, status);
+  const turns = normalizeTurns(events, executionClients, clients).filter((turn) => known.has(turn.executionId));
+  const cancelled = countByExecution(events, 'provider.cancelled', known);
+  const anomalies = anomalyCounts(events, known);
+  const revisionTargets = revisionMap(executions, workflow);
+  const routed = routedFrom(executions, workflow);
+  const executionObjects = executions.map((execution) =>
+    executionObject(
+      execution,
+      { events, turns, workflow, agentRole },
+      {
+        cancelled: cancelled.get(execution.id) ?? 0,
+        anomalies: anomalies.get(execution.id) ?? { total: 0, accepted: 0 },
+        routedFromId: routed.get(execution.id) ?? null,
+        client: executionClients.get(execution.id) ?? null,
+      },
+    ),
+  );
+  const totals = sumExecutions(executionObjects);
+  const { sessionTotals, turnsCount, uncaptured, verifyMs, anomalyTotal, anomalyAccepted } = totals;
   const wallMs = sessionWallMs(executions);
   const activeMs = executions.reduce((sum, execution) => {
     const elapsed = elapsedMs(execution.createdAt, execution.completedAt);
@@ -176,8 +216,8 @@ function sessionObject(
     created_at: text(status.created_at),
     updated_at: text(status.updated_at),
     totals: {
-      executions: executions.filter((execution) => execution.status !== "skipped").length,
-      skipped: executions.filter((execution) => execution.status === "skipped").length,
+      executions: executions.filter((execution) => execution.status !== 'skipped').length,
+      skipped: executions.filter((execution) => execution.status === 'skipped').length,
       wall_seconds: wallMs === null ? null : roundSeconds(wallMs),
       active_seconds: executions.some((execution) => elapsedMs(execution.createdAt, execution.completedAt) !== null)
         ? roundSeconds(activeMs)
@@ -190,29 +230,35 @@ function sessionObject(
       usage: usageObject(sessionTotals),
       usage_missing: missingObject(sessionTotals),
       cost_partial: sessionTotals.seen.cost_usd && sessionTotals.missing.cost_usd > 0,
-      failed_executions: executions.filter((execution) => execution.status === "failed").length,
-      blocked: executions.filter((execution) => execution.outcomeStatus === "blocked").length,
-      cancelled: executions.filter((execution) => execution.status === "cancelled").length,
+      failed_executions: executions.filter((execution) => execution.status === 'failed').length,
+      blocked: executions.filter((execution) => execution.outcomeStatus === 'blocked').length,
+      cancelled: executions.filter((execution) => execution.status === 'cancelled').length,
       verify_red: executionObjects.reduce((sum, execution) => sum + (execution.verifyRed as number), 0),
       revisions,
-      revisions_reset: events.filter((event) => event.event === "revisions.reset").length,
+      revisions_reset: events.filter((event) => event.event === 'revisions.reset').length,
     },
     stages,
     executions: executionObjects.map((execution) => execution.public),
   };
 }
 
-function executionObject(
-  execution: ExecutionRow,
-  events: ParsedEvent[],
-  turns: NormalizedTurn[],
-  cancelled: number,
-  anomalies: { total: number; accepted: number },
-  workflow: WorkflowDocument | null,
-  routedFromId: string | null,
-  agentRole: string | null,
-  client: string | null,
-): {
+/** What every execution of the session shares. */
+interface ExecutionShared {
+  readonly events: ParsedEvent[];
+  readonly turns: NormalizedTurn[];
+  readonly workflow: WorkflowDocument | null;
+  readonly agentRole: string | null;
+}
+
+/** What is known about one execution besides its row. */
+interface ExecutionFacts {
+  readonly cancelled: number;
+  readonly anomalies: { total: number; accepted: number };
+  readonly routedFromId: string | null;
+  readonly client: string | null;
+}
+
+function executionObject(execution: ExecutionRow, shared: ExecutionShared, facts: ExecutionFacts): {
   public: Record<string, unknown>;
   turns: number;
   uncaptured_turns: number;
@@ -222,15 +268,17 @@ function executionObject(
   verifyMs: number;
   verifyRed: number;
 } {
+  const { events, turns, workflow, agentRole } = shared;
+  const { cancelled, anomalies, routedFromId, client } = facts;
   const ownEvents = events.filter((event) => event.executionId === execution.id);
   const ownTurns = turns.filter((turn) => turn.executionId === execution.id);
-  const totals = newUsageTotals();
+  let totals = newUsageTotals();
   let uncaptured = cancelled;
   for (const turn of ownTurns) {
     if (!turn.captured) uncaptured += 1;
-    addTurn(totals, turn.usage);
+    totals = addTurn(totals, turn.usage);
   }
-  const started = ownEvents.find((event) => event.event === "provider.stage_started");
+  const started = ownEvents.find((event) => event.event === 'provider.stage_started');
   const startedDetails = detailsOf(started);
   const firstTurn = ownEvents.find((event) => isRunnerTurn(event));
   const verify = verifyStats(ownEvents, (workflow?.stages[execution.stageId]?.verify.length ?? 0) > 0);
@@ -256,7 +304,7 @@ function executionObject(
       resumes_execution_id: execution.resumes,
       routed_from: routedFromId,
       git_head: text(startedDetails.git_head),
-      git_dirty: typeof startedDetails.git_dirty === "boolean" ? startedDetails.git_dirty : null,
+      git_dirty: typeof startedDetails.git_dirty === 'boolean' ? startedDetails.git_dirty : null,
       status: execution.status,
       outcome_status: execution.outcomeStatus,
       decision: execution.decision,
@@ -282,15 +330,15 @@ function executionObject(
 function manifestRole(sessionDirectory: string): string | null {
   let textBody: string;
   try {
-    textBody = readFileSync(path.join(sessionDirectory, "manifest.yaml"), "utf8");
+    textBody = readFileSync(path.join(sessionDirectory, 'manifest.yaml'), 'utf8');
   } catch {
     return null;
   }
-  for (const line of textBody.split("\n")) {
+  for (const line of textBody.split('\n')) {
     const match = /^role:\s*(.*?)\s*$/.exec(line);
-    const value = match?.[1] ?? "";
-    if (value === "" || value === "null" || value === "~") continue;
-    return value.replace(/^["']|["']$/g, "");
+    const value = match?.[1] ?? '';
+    if (value === '' || value === 'null' || value === '~') continue;
+    return value.replace(/^["']|["']$/g, '');
   }
   return null;
 }
@@ -299,9 +347,9 @@ function manifestRole(sessionDirectory: string): string | null {
 // turn_completed, so those still count. A turn_failed counts only with details.turn,
 // because the progress path emits the same event without it.
 function isRunnerTurn(event: ParsedEvent): boolean {
-  if (event.event === "provider.turn_completed") return true;
-  if (event.event !== "provider.turn_failed") return false;
-  return typeof detailsOf(event).turn === "number";
+  if (event.event === 'provider.turn_completed') return true;
+  if (event.event !== 'provider.turn_failed') return false;
+  return typeof detailsOf(event).turn === 'number';
 }
 
 function resolveExecutionClients(
@@ -310,16 +358,45 @@ function resolveExecutionClients(
   status: Record<string, unknown>,
 ): Map<string, string | null> {
   const executables = executionCommands(events);
-  const roleSession = status.workflow_id === "agent";
+  const roleSession = status.workflow_id === 'agent';
   return new Map(executions.map((execution) => {
-    const client = legacyExecutionClient({
+    const {client} = legacyExecutionClient({
       recorded: execution.client,
       provider: execution.provider,
       executables: executables.get(execution.id),
       roleSession,
-    }).client;
+    });
     return [execution.id, client];
   }));
+}
+
+function turnClientId(details: Record<string, unknown>, recorded: string | null | undefined): string | null {
+  const {argv} = details;
+  const command = Array.isArray(argv) && typeof argv[0] === 'string' ? argv[0] : null;
+  // A conflicting history cannot be resumed, but each turn still proves its own output format.
+  return clientOfCommand(command) ?? recorded ?? null;
+}
+
+function usageReader(clients: ClientRegistry, clientId: string | null): Pick<CliClient, 'readUsage'> | null {
+  if (clientId === null) return null;
+  try {
+    return clients.get(clientId);
+  } catch {
+    return null;
+  }
+}
+
+function turnUsage(
+  reader: Pick<CliClient, 'readUsage'> | null,
+  capture: Record<string, unknown> | null,
+  prior: UsageCapture | null,
+): TurnUsage {
+  if (capture === null || reader === null) return blankUsage();
+  try {
+    return coerceUsage(normalizeUsage(reader, capture, prior));
+  } catch {
+    return blankUsage();
+  }
 }
 
 function normalizeTurns(
@@ -334,29 +411,12 @@ function normalizeTurns(
     const details = detailsOf(event);
     // Usage is read with the CLI that actually ran the turn. Legacy records name no
     // client, so this follows the same evidence policy as resume.
-    const argv = details.argv;
-    const command = Array.isArray(argv) && typeof argv[0] === "string" ? argv[0] : null;
-    // A conflicting history cannot be resumed, but each turn still proves its own output format.
-    const clientId = clientOfCommand(command) ?? executionClients.get(event.executionId) ?? null;
-    const agentId = typeof details.agent_id === "string" ? details.agent_id : null;
+    const clientId = turnClientId(details, executionClients.get(event.executionId));
+    const agentId = typeof details.agent_id === 'string' ? details.agent_id : null;
     const key = JSON.stringify([clientId, agentId]);
     const capture = isRecord(details.usage) ? details.usage : null;
-    let reader: Pick<CliClient, "readUsage"> | null = null;
-    if (clientId !== null) {
-      try {
-        reader = clients.get(clientId);
-      } catch {
-        reader = null;
-      }
-    }
-    let usage = blankUsage();
-    if (capture !== null && reader !== null) {
-      try {
-        usage = coerceUsage(normalizeUsage(reader, capture, previous.get(key) ?? null));
-      } catch {
-        usage = blankUsage();
-      }
-    }
+    const reader = usageReader(clients, clientId);
+    const usage = turnUsage(reader, capture, previous.get(key) ?? null);
     if (capture !== null) previous.set(key, capture);
     turns.push({ executionId: event.executionId, usage, captured: capture !== null && reader !== null });
   }
@@ -367,7 +427,7 @@ function revisionMap(executions: ExecutionRow[], workflow: WorkflowDocument | nu
   const counts = new Map<string, number>();
   if (workflow === null) return counts;
   for (const execution of executions) {
-    if (execution.status !== "completed") continue;
+    if (execution.status !== 'completed') continue;
     for (const target of decisionTargets(workflow, execution.stageId, execution.decision)) {
       counts.set(target, (counts.get(target) ?? 0) + 1);
     }
@@ -380,7 +440,7 @@ function routedFrom(executions: ExecutionRow[], workflow: WorkflowDocument | nul
   const candidate = new Map<string, string | null>();
   for (const execution of executions) {
     routed.set(execution.id, candidate.get(execution.stageId) ?? null);
-    if (workflow === null || execution.status !== "completed") continue;
+    if (workflow === null || execution.status !== 'completed') continue;
     candidate.set(execution.stageId, null);
     for (const target of decisionTargets(workflow, execution.stageId, execution.decision)) {
       candidate.set(target, execution.id);
@@ -393,7 +453,7 @@ function decisionTargets(workflow: WorkflowDocument, stageId: string, decision: 
   if (decision === null) return [];
   const stage = workflow.stages[stageId];
   if (stage === undefined) return [];
-  return routeTargets(stage.routes[decision]).filter((target) => target !== "complete");
+  return routeTargets(stage.routes[decision]).filter((target) => target !== 'complete');
 }
 
 function stageObjects(
@@ -416,14 +476,30 @@ function stageObjects(
     const own = executions.filter((execution) => execution.stageId === stageId);
     if (own.length === 0 && (revisions.get(stageId) ?? 0) === 0) continue;
     stages[stageId] = {
-      executions: own.filter((execution) => execution.status !== "skipped").length,
-      skipped: own.filter((execution) => execution.status === "skipped").length,
+      executions: own.filter((execution) => execution.status !== 'skipped').length,
+      skipped: own.filter((execution) => execution.status === 'skipped').length,
       revisions: workflow === null ? null : (revisions.get(stageId) ?? 0),
-      failed: own.filter((execution) => execution.status === "failed").length,
-      blocked: own.filter((execution) => execution.outcomeStatus === "blocked").length,
+      failed: own.filter((execution) => execution.status === 'failed').length,
+      blocked: own.filter((execution) => execution.outcomeStatus === 'blocked').length,
     };
   }
   return stages;
+}
+
+const VERIFY_RESULTS = new Set(['verify.passed', 'verify.failed']);
+
+/** Time from each `verify.started` to the result that closes it. */
+function verifyMilliseconds(events: readonly ParsedEvent[]): number {
+  let openStart: number | null = null;
+  let milliseconds = 0;
+  for (const event of events) {
+    if (event.event === 'verify.started') openStart = parseTime(event.timestamp);
+    if (!VERIFY_RESULTS.has(event.event)) continue;
+    const finished = parseTime(event.timestamp);
+    if (openStart !== null && finished !== null) milliseconds += finished - openStart;
+    openStart = null;
+  }
+  return milliseconds;
 }
 
 function verifyStats(
@@ -433,43 +509,23 @@ function verifyStats(
   public: { runs: number; red: number; first_pass: boolean; failed_commands: string[] } | null;
   milliseconds: number;
 } {
-  let runs = 0;
-  let red = 0;
-  let firstPass: boolean | null = null;
-  const failedCommands: string[] = [];
-  let openStart: number | null = null;
-  let milliseconds = 0;
-  let saw = false;
-  for (const event of events) {
-    if (event.event === "verify.started") {
-      saw = true;
-      openStart = parseTime(event.timestamp);
-      continue;
-    }
-    if (event.event !== "verify.passed" && event.event !== "verify.failed") continue;
-    saw = true;
-    runs += 1;
-    if (firstPass === null) firstPass = event.event === "verify.passed";
-    if (event.event === "verify.failed") {
-      red += 1;
-      const command = detailsOf(event).command;
-      if (typeof command === "string") failedCommands.push(command);
-    }
-    const finished = parseTime(event.timestamp);
-    if (openStart !== null && finished !== null) milliseconds += finished - openStart;
-    openStart = null;
-  }
+  const results = events.filter((event) => VERIFY_RESULTS.has(event.event));
+  const saw = results.length > 0 || events.some((event) => event.event === 'verify.started');
   if (!saw && !hasCommands) return { public: null, milliseconds: 0 };
+  const failed = results.filter((event) => event.event === 'verify.failed');
+  const failedCommands = failed
+    .map((event) => detailsOf(event).command)
+    .filter((command): command is string => typeof command === 'string');
   return {
-    milliseconds,
-    public: { runs, red, first_pass: firstPass === true, failed_commands: failedCommands },
+    milliseconds: verifyMilliseconds(events),
+    public: { runs: results.length, red: failed.length, first_pass: results[0]?.event === 'verify.passed', failed_commands: failedCommands },
   };
 }
 
 function sessionWallMs(executions: ExecutionRow[]): number | null {
   if (executions.length === 0) return null;
   if (executions.some((execution) => execution.completedAt === null || execution.createdAt === null)) return null;
-  const first = executions[0];
+  const [first] = executions;
   if (first === undefined) return null;
   let latest = parseTime(first.completedAt);
   const start = parseTime(first.createdAt);
@@ -493,7 +549,7 @@ function countByExecution(events: ParsedEvent[], name: string, known: Set<string
 
 function workflowHash(events: ParsedEvent[]): string | null {
   for (const event of events) {
-    if ((event.event === "session.created" || event.event === "handoff.bound") && typeof event.data.hash === "string") return event.data.hash;
+    if ((event.event === 'session.created' || event.event === 'handoff.bound') && typeof event.data.hash === 'string') return event.data.hash;
   }
   return null;
 }

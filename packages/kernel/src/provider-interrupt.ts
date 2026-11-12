@@ -1,6 +1,6 @@
-import { spawnProvider } from "./provider-spawn.js";
-import { killProcessTree } from "./process-wrapper.js";
-import type { CliClient, InterruptOutcome } from "./cli-client.js";
+import type { CliClient, InterruptOutcome } from './cli-client.js';
+import { killProcessTree } from './process-wrapper.js';
+import { spawnProvider } from './provider-spawn.js';
 
 /** Bounds for one explicit server-side interrupt. The whole cleanup stays within a few seconds. */
 export interface InterruptPolicy {
@@ -36,11 +36,11 @@ interface CommandRun {
 /** Runs one cleanup command. It never consults the cancellation flag: it must finish after a cancel. */
 function runCleanupCommand(argv: readonly string[], cwd: string, timeoutMs: number): Promise<CommandRun> {
   return new Promise((resolve) => {
-    let output = "";
+    let output = '';
     let timedOut = false;
     let settled = false;
     let timer: NodeJS.Timeout | null = null;
-    const finish = (run: Omit<CommandRun, "output" | "timedOut">) => {
+    const finish = (run: Omit<CommandRun, 'output' | 'timedOut'>) => {
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
@@ -48,11 +48,11 @@ function runCleanupCommand(argv: readonly string[], cwd: string, timeoutMs: numb
     };
     let child;
     try {
-      child = spawnProvider(argv[0] ?? "", argv.slice(1), {
+      child = spawnProvider(argv[0] ?? '', argv.slice(1), {
         cwd,
         // POSIX: its own process group, so a timeout can signal the whole tree. Windows uses taskkill /T.
-        detached: process.platform !== "win32",
-        stdio: ["ignore", "pipe", "pipe"],
+        detached: process.platform !== 'win32',
+        stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
       });
     } catch (error) {
@@ -60,19 +60,19 @@ function runCleanupCommand(argv: readonly string[], cwd: string, timeoutMs: numb
       return;
     }
     const collect = (chunk: Buffer) => {
-      if (output.length < OUTPUT_LIMIT) output += chunk.toString("utf8");
+      if (output.length < OUTPUT_LIMIT) output += chunk.toString('utf8');
     };
-    child.stdout?.on("data", collect);
-    child.stderr?.on("data", collect);
-    child.once("error", (error) => finish({ exitCode: null, spawnError: error.message }));
-    child.once("close", (code) => finish({ exitCode: code, spawnError: null }));
+    child.stdout?.on('data', collect);
+    child.stderr?.on('data', collect);
+    child.once('error', (error) => finish({ exitCode: null, spawnError: error.message }));
+    child.once('close', (code) => finish({ exitCode: code, spawnError: null }));
     timer = setTimeout(() => {
       timedOut = true;
       try {
-        if (child.pid !== undefined) killProcessTree(child.pid, "SIGKILL");
+        if (child.pid !== undefined) killProcessTree(child.pid, 'SIGKILL');
       } catch {
         try {
-          child.kill("SIGKILL");
+          child.kill('SIGKILL');
         } catch {
           // already gone
         }
@@ -96,37 +96,42 @@ function sleep(ms: number): Promise<void> {
  */
 export async function interruptSession(
   provider: CliClient,
-  agentId: string,
-  cwd: string,
+  target: { agentId: string; cwd: string },
   policy: InterruptPolicy = DEFAULT_INTERRUPT_POLICY,
 ): Promise<InterruptReport | null> {
+  const { agentId, cwd } = target;
   const spec = provider.interruptCommand?.(agentId) ?? null;
   if (spec === null) return null;
-  let outcome: InterruptOutcome = "failed";
-  let detail = "";
+  let outcome: InterruptOutcome = 'failed';
+  let detail = '';
   let attempts = 0;
   while (attempts < Math.max(1, policy.attempts)) {
     if (attempts > 0) await sleep(policy.retryDelayMs);
     attempts += 1;
     const run = await runCleanupCommand(spec.argv, cwd, policy.commandTimeoutMs);
-    if (run.spawnError !== null) {
-      outcome = "failed";
-      detail = `could not run the interrupt command: ${run.spawnError}`;
-      break;
-    }
-    if (run.timedOut) {
-      outcome = "failed";
-      detail = `the interrupt command did not finish within ${policy.commandTimeoutMs}ms`;
-      break;
-    }
-    outcome = provider.classifyInterrupt?.(run.output, run.exitCode) ?? "failed";
-    detail = outcome === "failed" ? `interrupt exited with code ${run.exitCode ?? "null"}` : outcome;
-    if (outcome !== "not-found") break;
+    ({ outcome, detail } = classifyAttempt(provider, run, policy));
+    if (outcome !== 'not-found') break;
   }
   return { agentId, outcome, attempts, detail };
 }
 
+/** The outcome of one interrupt attempt; a command that could not run or finish is a failure. */
+function classifyAttempt(
+  provider: CliClient,
+  run: Awaited<ReturnType<typeof runCleanupCommand>>,
+  policy: InterruptPolicy,
+): { outcome: InterruptOutcome; detail: string } {
+  if (run.spawnError !== null) {
+    return { outcome: 'failed', detail: `could not run the interrupt command: ${run.spawnError}` };
+  }
+  if (run.timedOut) {
+    return { outcome: 'failed', detail: `the interrupt command did not finish within ${policy.commandTimeoutMs}ms` };
+  }
+  const outcome = provider.classifyInterrupt?.(run.output, run.exitCode) ?? 'failed';
+  return { outcome, detail: outcome === 'failed' ? `interrupt exited with code ${run.exitCode ?? 'null'}` : outcome };
+}
+
 /** True when the report shows the server holds no running turn for the session. */
 export function isSettled(report: InterruptReport | undefined): boolean {
-  return report !== undefined && (report.outcome === "interrupted" || report.outcome === "idle");
+  return report !== undefined && (report.outcome === 'interrupted' || report.outcome === 'idle');
 }

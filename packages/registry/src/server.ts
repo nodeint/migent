@@ -1,27 +1,31 @@
-import { createServer, type AddressInfo, type Socket } from "node:net";
-import { Call, Router, buildRouter, type WorkspaceRecords } from "./routes.js";
-import type { RegistryStore } from "./store.js";
-import { monotonic } from "./time.js";
+import { type AddressInfo, createServer, type Socket } from 'node:net';
+
+import { MS_PER_SECOND, NEWLINE_BYTE } from '@nodeint/migent-kernel';
+
+import { MAX_LINE_BYTES, MAX_LINE_PROBE_BYTES } from './constants.js';
+import { buildRouter, Call, Router, type WorkspaceRecords } from './routes.js';
+import type { RegistryStore } from './store.js';
+import { monotonic } from './time.js';
 
 export const DEFAULT_PORT = 47321;
 export const MAX_BODY_BYTES = 65536;
 
 const REASONS: Record<number, string> = {
-  200: "OK",
-  201: "Created",
-  400: "Bad Request",
-  401: "Unauthorized",
-  404: "Not Found",
-  405: "Method Not Allowed",
-  408: "Request Timeout",
-  409: "Conflict",
-  413: "Payload Too Large",
+  200: 'OK',
+  201: 'Created',
+  400: 'Bad Request',
+  401: 'Unauthorized',
+  404: 'Not Found',
+  405: 'Method Not Allowed',
+  408: 'Request Timeout',
+  409: 'Conflict',
+  413: 'Payload Too Large',
 };
 
 export class RequestTimeout extends Error {
   constructor() {
-    super("request timeout");
-    this.name = "RequestTimeout";
+    super('request timeout');
+    this.name = 'RequestTimeout';
   }
 }
 
@@ -34,7 +38,7 @@ class SocketFeed {
   private timer: NodeJS.Timeout | null = null;
 
   constructor(socket: Socket) {
-    socket.on("data", (chunk: Buffer) => {
+    socket.on('data', (chunk: Buffer) => {
       const data = Buffer.from(chunk);
       if (this.waiter) {
         const resolve = this.waiter;
@@ -54,9 +58,9 @@ class SocketFeed {
         resolve(null);
       }
     };
-    socket.on("end", finish);
-    socket.on("close", finish);
-    socket.on("error", finish);
+    socket.on('end', finish);
+    socket.on('close', finish);
+    socket.on('error', finish);
   }
 
   private clearTimer(): void {
@@ -66,7 +70,7 @@ class SocketFeed {
     }
   }
 
-  readChunk(deadline: number): Promise<Buffer | null> {
+  public readChunk(deadline: number): Promise<Buffer | null> {
     const queued = this.chunks.shift();
     if (queued) return Promise.resolve(queued);
     if (this.ended) return Promise.resolve(null);
@@ -77,7 +81,7 @@ class SocketFeed {
         this.waiter = null;
         this.timer = null;
         reject(new RequestTimeout());
-      }, remaining * 1000);
+      }, remaining * MS_PER_SECOND);
       this.waiter = (chunk) => resolve(chunk);
     });
   }
@@ -85,7 +89,7 @@ class SocketFeed {
 
 class DeadlineReader {
   private buffer = Buffer.alloc(0);
-  readonly clock: { deadline: number };
+  public readonly clock: { deadline: number };
   private readonly feed: SocketFeed;
 
   constructor(feed: SocketFeed, clock: { deadline: number }) {
@@ -93,11 +97,11 @@ class DeadlineReader {
     this.clock = clock;
   }
 
-  setDeadline(deadline: number): void {
+  public setDeadline(deadline: number): void {
     this.clock.deadline = deadline;
   }
 
-  async read(size: number): Promise<Buffer> {
+  public async read(size: number): Promise<Buffer> {
     if (size === 0) return Buffer.alloc(0);
     if (size < 0) {
       while (await this.fillOne()) {
@@ -115,9 +119,9 @@ class DeadlineReader {
     return Buffer.from(data);
   }
 
-  async readLine(limit: number): Promise<Buffer> {
+  public async readLine(limit: number): Promise<Buffer> {
     for (;;) {
-      const newline = this.buffer.indexOf(0x0a);
+      const newline = this.buffer.indexOf(NEWLINE_BYTE);
       if (newline !== -1 && newline + 1 <= limit) {
         const data = this.buffer.subarray(0, newline + 1);
         this.buffer = this.buffer.subarray(newline + 1);
@@ -150,17 +154,17 @@ function errorBody(code: string, message: string): Record<string, string> {
   return { error: code, message };
 }
 
-function contentLength(values: string[], cap: number): ["ok", number] | ["invalid", null] | ["too_large", null] {
-  if (values.length !== 1) return ["invalid", null];
-  const text = values[0] ?? "";
-  if (text.trim() !== text || !/^\d+$/.test(text)) return ["invalid", null];
-  const significant = text.replace(/^0+/, "");
-  if (significant === "") return ["ok", 0];
+function contentLength(values: string[], cap: number): ['ok', number] | ['invalid', null] | ['too_large', null] {
+  if (values.length !== 1) return ['invalid', null];
+  const text = values[0] ?? '';
+  if (text.trim() !== text || !/^\d+$/.test(text)) return ['invalid', null];
+  const significant = text.replace(/^0+/, '');
+  if (significant === '') return ['ok', 0];
   const capText = String(cap);
   if (significant.length > capText.length || (significant.length === capText.length && significant > capText)) {
-    return ["too_large", null];
+    return ['too_large', null];
   }
-  return ["ok", Number(significant)];
+  return ['ok', Number(significant)];
 }
 
 async function writeAll(socket: Socket, payload: Buffer, deadlineSec: number): Promise<void> {
@@ -174,7 +178,7 @@ async function writeAll(socket: Socket, payload: Buffer, deadlineSec: number): P
     const timer = setTimeout(() => {
       socket.destroy();
       reject(new RequestTimeout());
-    }, remaining * 1000);
+    }, remaining * MS_PER_SECOND);
     socket.write(payload, (error) => {
       clearTimeout(timer);
       if (error) reject(error);
@@ -183,18 +187,47 @@ async function writeAll(socket: Socket, payload: Buffer, deadlineSec: number): P
   });
 }
 
-export class RegistryHTTPServer {
-  static daemonThreads = true;
-  inFlight = 0;
-  timeout = 0.2;
+export interface RegistryServerConfig {
   readonly store: RegistryStore;
-  token: string;
-  instanceId: string;
-  readonly readDeadlineSec: number;
-  readonly writeDeadlineSec: number;
-  readonly maxBodyBytes: number;
-  readonly router: Router;
-  port = 0;
+  readonly token: string;
+  readonly instanceId: string;
+  readonly host?: string;
+  readonly port?: number;
+  readonly readDeadlineSec?: number;
+  readonly writeDeadlineSec?: number;
+  readonly maxBodyBytes?: number;
+}
+
+/** One response in flight on a connection: `state.responseStarted` keeps a second reply from being written. */
+interface Exchange {
+  readonly socket: Socket;
+  readonly state: { responseStarted: boolean };
+}
+
+interface Reply {
+  readonly status: number;
+  readonly close: boolean;
+}
+
+/** Default socket timeout, in seconds. */
+const DEFAULT_SOCKET_TIMEOUT_SEC = 0.2;
+/** Default read and write deadline per request, in seconds. */
+const DEFAULT_DEADLINE_SEC = 5;
+/** A request line is `METHOD TARGET VERSION`. */
+const REQUEST_LINE_PARTS = 3;
+
+export class RegistryHTTPServer {
+  public static daemonThreads = true;
+  public inFlight = 0;
+  public timeout = DEFAULT_SOCKET_TIMEOUT_SEC;
+  public readonly store: RegistryStore;
+  public token: string;
+  public instanceId: string;
+  public readonly readDeadlineSec: number;
+  public readonly writeDeadlineSec: number;
+  public readonly maxBodyBytes: number;
+  public readonly router: Router;
+  public port = 0;
   private readonly tcp = createServer();
   private readonly queued: Socket[] = [];
   private readonly sockets = new Set<Socket>();
@@ -203,26 +236,18 @@ export class RegistryHTTPServer {
   private closed = false;
 
   private constructor(
-    store: RegistryStore,
-    token: string,
-    instanceId: string,
-    readDeadlineSec: number,
-    writeDeadlineSec: number,
-    maxBodyBytes: number,
+    identity: { store: RegistryStore; token: string; instanceId: string },
+    limits: { readDeadlineSec: number; writeDeadlineSec: number; maxBodyBytes: number },
   ) {
-    this.store = store;
-    this.token = token;
-    this.instanceId = instanceId;
-    this.readDeadlineSec = readDeadlineSec;
-    this.writeDeadlineSec = writeDeadlineSec;
-    this.maxBodyBytes = maxBodyBytes;
+    this.store = identity.store;
+    this.token = identity.token;
+    this.instanceId = identity.instanceId;
+    this.readDeadlineSec = limits.readDeadlineSec;
+    this.writeDeadlineSec = limits.writeDeadlineSec;
+    this.maxBodyBytes = limits.maxBodyBytes;
     this.router = buildRouter();
-    this.tcp.on("connection", (socket) => {
-      socket.on("error", () => undefined);
-      const feed = new SocketFeed(socket);
-      this.feeds.set(socket, feed);
-      this.sockets.add(socket);
-      socket.on("close", () => this.sockets.delete(socket));
+    this.tcp.on('connection', (socket) => {
+      this.track(socket);
       if (this.acceptWaiter) {
         const waiter = this.acceptWaiter;
         this.acceptWaiter = null;
@@ -233,53 +258,51 @@ export class RegistryHTTPServer {
     });
   }
 
-  static async open(
-    store: RegistryStore,
-    token: string,
-    instanceId: string,
-    host = "127.0.0.1",
-    port = DEFAULT_PORT,
-    options: {
-      readDeadlineSec?: number;
-      writeDeadlineSec?: number;
-      maxBodyBytes?: number;
-    } = {},
-  ): Promise<RegistryHTTPServer> {
-    if (host !== "127.0.0.1") throw new Error("The registry service binds 127.0.0.1 only.");
+  /** Keeps a connected socket's feed and forgets the socket once it closes. */
+  private track(socket: Socket): void {
+    socket.on('error', () => undefined);
+    this.feeds.set(socket, new SocketFeed(socket));
+    this.sockets.add(socket);
+    socket.on('close', () => this.sockets.delete(socket));
+  }
+
+  public static async open(config: RegistryServerConfig): Promise<RegistryHTTPServer> {
+    const { store, token, instanceId, host = '127.0.0.1', port = DEFAULT_PORT } = config;
+    if (host !== '127.0.0.1') throw new Error('The registry service binds 127.0.0.1 only.');
     const server = new RegistryHTTPServer(
-      store,
-      token,
-      instanceId,
-      options.readDeadlineSec ?? 5,
-      options.writeDeadlineSec ?? 5,
-      options.maxBodyBytes ?? MAX_BODY_BYTES,
+      { store, token, instanceId },
+      {
+        readDeadlineSec: config.readDeadlineSec ?? DEFAULT_DEADLINE_SEC,
+        writeDeadlineSec: config.writeDeadlineSec ?? DEFAULT_DEADLINE_SEC,
+        maxBodyBytes: config.maxBodyBytes ?? MAX_BODY_BYTES,
+      },
     );
     await new Promise<void>((resolve, reject) => {
       const onError = (error: Error): void => {
-        server.tcp.off("listening", onListening);
+        server.tcp.off('listening', onListening);
         reject(error);
       };
       const onListening = (): void => {
-        server.tcp.off("error", onError);
+        server.tcp.off('error', onError);
         resolve();
       };
-      server.tcp.once("error", onError);
+      server.tcp.once('error', onError);
       server.tcp.listen(port, host, onListening);
     });
     const address = server.tcp.address() as AddressInfo;
-    if (!address || address.address !== "127.0.0.1") {
+    if (!address || address.address !== '127.0.0.1') {
       server.close();
-      throw new Error("The registry service binds 127.0.0.1 only.");
+      throw new Error('The registry service binds 127.0.0.1 only.');
     }
     server.port = address.port;
     return server;
   }
 
-  async getRequest(): Promise<Socket | null> {
+  public async getRequest(): Promise<Socket | null> {
     const queued = this.queued.shift();
     if (queued) return queued;
     if (this.closed) return null;
-    const timeout = this.timeout;
+    const {timeout} = this;
     return new Promise((resolve) => {
       let settled = false;
       const finish = (socket: Socket | null): void => {
@@ -289,18 +312,18 @@ export class RegistryHTTPServer {
         if (this.acceptWaiter === finish) this.acceptWaiter = null;
         resolve(socket);
       };
-      const timer = setTimeout(() => finish(null), Math.max(0, timeout) * 1000);
+      const timer = setTimeout(() => finish(null), Math.max(0, timeout) * MS_PER_SECOND);
       this.acceptWaiter = finish;
     });
   }
 
-  async handleRequest(): Promise<void> {
+  public async handleRequest(): Promise<void> {
     const socket = await this.getRequest();
     if (!socket) return;
     void this.processSocket(socket);
   }
 
-  close(): void {
+  public close(): void {
     if (this.closed) return;
     this.closed = true;
     if (this.acceptWaiter) {
@@ -336,131 +359,139 @@ export class RegistryHTTPServer {
     }
   }
 
-  private async handleOne(socket: Socket, reader: DeadlineReader, state: { responseStarted: boolean }): Promise<boolean> {
+  private async handleOne(
+    socket: Socket,
+    reader: DeadlineReader,
+    state: { responseStarted: boolean },
+  ): Promise<boolean> {
+    const exchange: Exchange = { socket, state };
     state.responseStarted = false;
     reader.setDeadline(monotonic() + this.readDeadlineSec);
-    const line = await reader.readLine(65537);
-    if (line.length === 0) return true;
-    if (line.length > 65536) {
-      await this.sendJson(socket, 400, errorBody("invalid_request", "Request line is too long."), true, state);
-      return true;
+    const head = await this.readRequestHead(exchange, reader);
+    if (head === null) return true;
+    const { method, headers } = head;
+    const closeRequested = connectionClose(head.version, headers);
+    const path = decodePath(head.target);
+    let body: Buffer | null = null;
+    if (this.router.shouldReadBody(method, path)) {
+      body = await this.readLimitedBody(exchange, reader, { method, headers });
+      if (body === null) return true;
+    }
+    const response = await this.dispatch({ method, path, headers, body });
+    const payload = Buffer.from(await response.arrayBuffer());
+    await this.sendRaw(exchange, { status: response.status, close: closeRequested }, payload);
+    return closeRequested;
+  }
+
+  /** Reads the request line and headers; answers 400 and returns null when either is invalid or empty. */
+  private async readRequestHead(
+    exchange: Exchange,
+    reader: DeadlineReader,
+  ): Promise<(NonNullable<ReturnType<typeof parseRequestLine>> & { headers: Map<string, string[]> }) | null> {
+    const line = await reader.readLine(MAX_LINE_PROBE_BYTES);
+    if (line.length === 0) return null;
+    if (line.length > MAX_LINE_BYTES) {
+      await this.sendJson(exchange, { status: 400, close: true }, errorBody('invalid_request', 'Request line is too long.'));
+      return null;
     }
     const parsed = parseRequestLine(line);
-    if (!parsed) {
-      await this.sendJson(socket, 400, errorBody("invalid_request", "Invalid request."), true, state);
-      return true;
+    const headerBytes = parsed ? await readHeaders(reader) : null;
+    if (!parsed || headerBytes === null) {
+      await this.sendJson(exchange, { status: 400, close: true }, errorBody('invalid_request', 'Invalid request.'));
+      return null;
     }
-    const headerBytes = await readHeaders(reader);
-    if (headerBytes === null) {
-      await this.sendJson(socket, 400, errorBody("invalid_request", "Invalid request."), true, state);
-      return true;
-    }
-    const headers = parseHeaders(headerBytes);
-    const closeRequested = connectionClose(parsed.version, headers);
-    const path = decodePath(parsed.target);
-    let body: Buffer | null = null;
-    if (this.router.shouldReadBody(parsed.method, path)) {
-      const limited = await this.readLimitedBody(socket, reader, parsed.method, headers, state);
-      if (limited === null) return true;
-      body = limited;
-    }
+    return { ...parsed, headers: parseHeaders(headerBytes) };
+  }
+
+  private async dispatch(request: {
+    method: string;
+    path: string;
+    headers: Map<string, string[]>;
+    body: Buffer | null;
+  }): Promise<Response> {
+    const { method, path, headers, body } = request;
     const call = new Call({
-      method: parsed.method,
+      method,
       path,
       store: this.store as WorkspaceRecords,
       token: this.token,
       instanceId: this.instanceId,
-      authorization: headerValue(headers, "authorization"),
+      authorization: headerValue(headers, 'authorization'),
       body,
       beforeStore: () => undefined,
     });
-    const response = await this.router.hono.request(new Request(`http://127.0.0.1${path}`, { method: parsed.method }), undefined, {
-      call,
-    });
-    const payload = Buffer.from(await response.arrayBuffer());
-    await this.sendRaw(socket, response.status, payload, closeRequested, state);
-    return closeRequested;
+    return this.router.hono.request(new Request(`http://127.0.0.1${path}`, { method }), undefined, { call });
   }
 
   private async readLimitedBody(
-    socket: Socket,
+    exchange: Exchange,
     reader: DeadlineReader,
-    method: string,
-    headers: Map<string, string[]>,
-    state: { responseStarted: boolean },
+    request: { method: string; headers: Map<string, string[]> },
   ): Promise<Buffer | null> {
-    if (method !== "POST") return Buffer.alloc(0);
-    if (headers.has("transfer-encoding")) {
-      await this.sendJson(socket, 400, errorBody("invalid_request", "Transfer-Encoding is not accepted."), false, state);
-      return null;
-    }
-    const lengths = headers.get("content-length") ?? [];
-    const [kind, length] = contentLength(lengths, this.maxBodyBytes);
-    if (kind === "too_large") {
-      await this.sendJson(socket, 413, errorBody("payload_too_large", "Content-Length exceeds 65536 bytes."), true, state);
-      return null;
-    }
-    if (kind !== "ok" || length === null) {
-      await this.sendJson(socket, 400, errorBody("invalid_request", "Content-Length is missing or invalid."), false, state);
-      return null;
-    }
+    const { method, headers } = request;
+    if (method !== 'POST') return Buffer.alloc(0);
+    const length = await this.acceptedBodyLength(exchange, headers);
+    if (length === null) return null;
     try {
       const body = await reader.read(length);
-      if (body.length !== length) {
-        await this.sendJson(socket, 400, errorBody("invalid_request", "Request body was truncated."), false, state);
-        return null;
-      }
-      return body;
+      if (body.length === length) return body;
     } catch (error) {
       if (error instanceof RequestTimeout) throw error;
-      await this.sendJson(socket, 400, errorBody("invalid_request", "Request body was truncated."), false, state);
+    }
+    await this.sendJson(exchange, { status: 400, close: false }, errorBody('invalid_request', 'Request body was truncated.'));
+    return null;
+  }
+
+  /** Validates body framing headers; answers the error and returns null when the body cannot be read. */
+  private async acceptedBodyLength(exchange: Exchange, headers: Map<string, string[]>): Promise<number | null> {
+    if (headers.has('transfer-encoding')) {
+      await this.sendJson(exchange, { status: 400, close: false }, errorBody('invalid_request', 'Transfer-Encoding is not accepted.'));
       return null;
     }
+    const lengths = headers.get('content-length') ?? [];
+    const [kind, length] = contentLength(lengths, this.maxBodyBytes);
+    if (kind === 'too_large') {
+      await this.sendJson(exchange, { status: 413, close: true }, errorBody('payload_too_large', 'Content-Length exceeds 65536 bytes.'));
+      return null;
+    }
+    if (kind !== 'ok' || length === null) {
+      await this.sendJson(exchange, { status: 400, close: false }, errorBody('invalid_request', 'Content-Length is missing or invalid.'));
+      return null;
+    }
+    return length;
   }
 
   private async writeTimeout(socket: Socket, state: { responseStarted: boolean }): Promise<void> {
     if (state.responseStarted || socket.destroyed) return;
     try {
       await this.sendJson(
-        socket,
-        408,
-        errorBody("request_timeout", "The request was not fully read before the deadline."),
-        true,
-        state,
+        { socket, state },
+        { status: 408, close: true },
+        errorBody('request_timeout', 'The request was not fully read before the deadline.'),
       );
     } catch {
       socket.destroy();
     }
   }
 
-  private async sendJson(
-    socket: Socket,
-    status: number,
-    payload: Record<string, unknown>,
-    close: boolean,
-    state: { responseStarted: boolean },
-  ): Promise<void> {
-    await this.sendRaw(socket, status, Buffer.from(JSON.stringify(payload)), close, state);
+  private async sendJson(exchange: Exchange, reply: Reply, payload: Record<string, unknown>): Promise<void> {
+    await this.sendRaw(exchange, reply, Buffer.from(JSON.stringify(payload)));
   }
 
-  private async sendRaw(
-    socket: Socket,
-    status: number,
-    payload: Buffer,
-    close: boolean,
-    state: { responseStarted: boolean },
-  ): Promise<void> {
+  private async sendRaw(exchange: Exchange, reply: Reply, payload: Buffer): Promise<void> {
+    const { socket, state } = exchange;
+    const { status, close } = reply;
     if (state.responseStarted) return;
     state.responseStarted = true;
-    const reason = REASONS[status] ?? "Error";
+    const reason = REASONS[status] ?? 'Error';
     const headers = [
       `HTTP/1.1 ${status} ${reason}`,
-      "Content-Type: application/json",
+      'Content-Type: application/json',
       `Content-Length: ${payload.length}`,
-      "Cache-Control: no-store",
+      'Cache-Control: no-store',
     ];
-    if (close) headers.push("Connection: close");
-    const raw = Buffer.concat([Buffer.from(`${headers.join("\r\n")}\r\n\r\n`), payload]);
+    if (close) headers.push('Connection: close');
+    const raw = Buffer.concat([Buffer.from(`${headers.join('\r\n')}\r\n\r\n`), payload]);
     try {
       await writeAll(socket, raw, this.writeDeadlineSec);
     } catch {
@@ -470,36 +501,36 @@ export class RegistryHTTPServer {
 }
 
 function parseRequestLine(line: Buffer): { method: string; target: string; version: string } | null {
-  const text = line.toString("utf8").replace(/\r?\n$/, "");
-  const parts = text.split(" ");
-  if (parts.length !== 3) return null;
+  const text = line.toString('utf8').replace(/\r?\n$/, '');
+  const parts = text.split(' ');
+  if (parts.length !== REQUEST_LINE_PARTS) return null;
   const [method, target, version] = parts;
-  if (!method || !target || !version?.startsWith("HTTP/")) return null;
+  if (!method || !target || !version?.startsWith('HTTP/')) return null;
   return { method, target, version };
 }
 
 async function readHeaders(reader: DeadlineReader): Promise<Buffer | null> {
   const chunks: Buffer[] = [];
   let total = 0;
-  while (total < 65536) {
-    const line = await reader.readLine(65537);
+  while (total < MAX_LINE_BYTES) {
+    const line = await reader.readLine(MAX_LINE_PROBE_BYTES);
     if (line.length === 0) return null;
     chunks.push(line);
     total += line.length;
-    if (line.equals(Buffer.from("\r\n")) || line.equals(Buffer.from("\n"))) return Buffer.concat(chunks);
+    if (line.equals(Buffer.from('\r\n')) || line.equals(Buffer.from('\n'))) return Buffer.concat(chunks);
   }
   return null;
 }
 
 function parseHeaders(raw: Buffer): Map<string, string[]> {
   const headers = new Map<string, string[]>();
-  const text = raw.toString("utf8");
-  for (const line of text.split("\r\n")) {
-    if (line === "") continue;
-    const index = line.indexOf(":");
+  const text = raw.toString('utf8');
+  for (const line of text.split('\r\n')) {
+    if (line === '') continue;
+    const index = line.indexOf(':');
     if (index <= 0) continue;
     const name = line.slice(0, index).trim().toLowerCase();
-    const value = line.slice(index + 1).replace(/^[ \t]+/, "");
+    const value = line.slice(index + 1).replace(/^[ \t]+/, '');
     const existing = headers.get(name);
     if (existing) existing.push(value);
     else headers.set(name, [value]);
@@ -514,15 +545,15 @@ function headerValue(headers: Map<string, string[]>, name: string): string | nul
 }
 
 function connectionClose(version: string, headers: Map<string, string[]>): boolean {
-  const connection = (headers.get("connection") ?? []).join(",");
-  const tokens = connection.split(",").map((item) => item.trim().toLowerCase());
-  if (tokens.includes("close")) return true;
-  if (version === "HTTP/1.0") return !tokens.includes("keep-alive");
+  const connection = (headers.get('connection') ?? []).join(',');
+  const tokens = connection.split(',').map((item) => item.trim().toLowerCase());
+  if (tokens.includes('close')) return true;
+  if (version === 'HTTP/1.0') return !tokens.includes('keep-alive');
   return false;
 }
 
 function decodePath(target: string): string {
-  const withoutQuery = target.split("?")[0] ?? target;
+  const withoutQuery = target.split('?')[0] ?? target;
   try {
     return decodeURIComponent(withoutQuery);
   } catch {

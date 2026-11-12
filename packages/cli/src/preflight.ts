@@ -1,14 +1,16 @@
+import path from 'node:path';
+
 import {
-  diagnoseSelection as diagnose,
   type DiagnoseHooks as DoctorHooks,
+  diagnoseSelection as diagnose,
   type SessionDiagnosis,
-} from "@nodeint/migent-doctor";
-import { whichSync, type ClientRegistry } from "@nodeint/migent-kernel";
-import { readStatusFileState, selectRunWorkflow, selectSessionWorkflow, type SessionSelection } from "@nodeint/migent-session";
-import path from "node:path";
-import { printDoctor } from "./display.js";
-import { cliHooks } from "./hooks.js";
-import { runClientCommandAsync, type RunCommand, type Which } from "./client.js";
+} from '@nodeint/migent-doctor';
+import { type ClientRegistry,whichSync } from '@nodeint/migent-kernel';
+import { readStatusFileState, selectRunWorkflow, selectSessionWorkflow, type SessionSelection } from '@nodeint/migent-session';
+
+import { runClientCommandAsync, type RunCommand, type Which } from './client.js';
+import { printDoctor } from './display.js';
+import { cliHooks } from './hooks.js';
 
 export interface DiagnoseHooks {
   clients: ClientRegistry;
@@ -47,9 +49,9 @@ export async function runPreflight(workspace: string, target: PreflightTarget, h
   let selection: SessionSelection;
   if (target.sessionId !== null) {
     selection = selectSessionWorkflow(workspace, target.sessionId);
-    const status = readStatusFileState(path.join(workspace, ".migent", "sessions", target.sessionId, "status.json"));
+    const status = readStatusFileState(path.join(workspace, '.migent', 'sessions', target.sessionId, 'status.json'));
     // Anything but a prepared session is rejected by the run itself with its own message.
-    if (selection.problems.length === 0 && !(status.state === "ok" && status.status.status === "prepared")) return true;
+    if (selection.problems.length === 0 && !(status.state === 'ok' && status.status.status === 'prepared')) return true;
   } else if (target.workflowId !== null) {
     selection = selectRunWorkflow(workspace, target.workflowId);
   } else {
@@ -58,11 +60,11 @@ export async function runPreflight(workspace: string, target: PreflightTarget, h
   const diagnosis = await diagnoseSelection(workspace, selection, hooks);
   if (!diagnosis.ok) {
     printDoctor(diagnosis.checks, process.stderr);
-    process.stderr.write("Preflight failed: fix the problems above and run again, or pass --skip-preflight.\n");
+    process.stderr.write('Preflight failed: fix the problems above and run again, or pass --skip-preflight.\n');
     return false;
   }
   const warnings = diagnosis.checks.flatMap((check) => check.warnings);
-  for (const warning of warnings) process.stderr.write(`preflight warning: ${warning.replaceAll("\n", "\n  ")}\n`);
-  process.stderr.write("preflight ok\n");
+  for (const warning of warnings) process.stderr.write(`preflight warning: ${warning.replaceAll('\n', '\n  ')}\n`);
+  process.stderr.write('preflight ok\n');
   return true;
 }

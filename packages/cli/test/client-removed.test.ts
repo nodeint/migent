@@ -1,23 +1,25 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { expect, test } from "vitest";
-import { main } from "../src/index.ts";
-import { capture } from "./support.ts";
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+
+import { expect, test } from 'vitest';
+
+import { main } from '../src/index.ts';
+import { capture } from './support.ts';
 
 function tempDir(): string {
-  return mkdtempSync(path.join(tmpdir(), "migent-provider-removed-"));
+  return mkdtempSync(path.join(tmpdir(), 'migent-provider-removed-'));
 }
 
-test("provider list exits 2 and names the replacement commands", async () => {
+test('provider list exits 2 and names the replacement commands', async () => {
   const workspace = tempDir();
   try {
-    for (const argv of [["provider", "list"], ["provider", "list", "--json"]]) {
+    for (const argv of [['provider', 'list'], ['provider', 'list', '--json']]) {
       const captured = await capture(() => main(argv, workspace));
-      expect(captured.value, argv.join(" ")).toBe(2);
-      expect(captured.stdout).toBe("");
-      expect(captured.stderr).toContain("provider list has been removed");
-      for (const replacement of ["get clients", "get models", "get options", "get efforts"]) {
+      expect(captured.value, argv.join(' ')).toBe(2);
+      expect(captured.stdout).toBe('');
+      expect(captured.stderr).toContain('provider list has been removed');
+      for (const replacement of ['get clients', 'get models', 'get options', 'get efforts']) {
         expect(captured.stderr).toContain(replacement);
       }
     }
@@ -26,26 +28,26 @@ test("provider list exits 2 and names the replacement commands", async () => {
   }
 });
 
-test("get providers exits 2 and points at get clients", async () => {
+test('get providers exits 2 and points at get clients', async () => {
   const workspace = tempDir();
   try {
-    for (const argv of [["get", "providers"], ["get", "provider"]]) {
+    for (const argv of [['get', 'providers'], ['get', 'provider']]) {
       const captured = await capture(() => main(argv, workspace));
-      expect(captured.value, argv.join(" ")).toBe(2);
-      expect(captured.stderr).toContain("get providers has been removed; use `migent get clients`.");
+      expect(captured.value, argv.join(' ')).toBe(2);
+      expect(captured.stderr).toContain('get providers has been removed; use `migent get clients`.');
     }
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }
 });
 
-test("provider no longer appears in help", async () => {
+test('provider no longer appears in help', async () => {
   const workspace = tempDir();
   try {
-    const captured = await capture(() => main(["--help"], workspace));
+    const captured = await capture(() => main(['--help'], workspace));
     expect(captured.value).toBe(0);
     expect(captured.stdout).not.toMatch(/\n {2}provider\b/);
-    expect(captured.stdout).not.toContain("provider list");
+    expect(captured.stdout).not.toContain('provider list');
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }

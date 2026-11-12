@@ -1,42 +1,53 @@
-import { asInt, compareSortKey, isFile, verifyReportPath } from "./session-store-util.js";
-import { AgentSessionRecord, ExecutionContext } from "./session-store-types.js";
-import { readJsonObject, textField } from "./session-store-util.js";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import path from "node:path";
-import type { ClientRegistry } from "@nodeint/migent-kernel";
-import { readExecutionClient } from "./legacy-execution-client.js";
-import { writeFileAtomic, writeJsonAtomic } from "@nodeint/migent-kernel";
-import { ConfigurationError } from "@nodeint/migent-kernel";
-import { reservedExecutionOrders, reservedStageAttempts } from "./session-events.js";
-import { readSessionManifest } from "./session-fold.js";
-import { loadFrozenWorkflow, readWorkflowFreeze } from "./session-freeze.js";
-import { corruptStatusMessage, readStatusFileState } from "./query.js";
-import { runnableViolation, type ExecutionSnapshot } from "@nodeint/migent-kernel";
-import { SystemProcessInspector, type ProcessInspector } from "@nodeint/migent-kernel";
-import { isRecord } from "@nodeint/migent-workflow";
-import { MIGENT_DIRNAME, EXECUTIONS_DIRNAME, SESSIONS_DIRNAME, safeComponent } from "@nodeint/migent-kernel";
-import { withFileLockSync } from "@nodeint/migent-kernel";
-import type { } from "@nodeint/migent-kernel";
-import { loadNamedWorkflow, loadWorkflowDocument, type WorkflowDocument } from "@nodeint/migent-workflow";
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import path from 'node:path';
+
+import type { ClientRegistry } from '@nodeint/migent-kernel';
+import type { } from '@nodeint/migent-kernel';
+import { writeFileAtomic, writeJsonAtomic } from '@nodeint/migent-kernel';
+import { ConfigurationError } from '@nodeint/migent-kernel';
+import { type ExecutionSnapshot,runnableViolation } from '@nodeint/migent-kernel';
+import { type ProcessInspector,SystemProcessInspector } from '@nodeint/migent-kernel';
+import { EXECUTIONS_DIRNAME, MIGENT_DIRNAME, safeComponent,SESSIONS_DIRNAME } from '@nodeint/migent-kernel';
+import { withFileLockSync } from '@nodeint/migent-kernel';
+import { isRecord } from '@nodeint/migent-workflow';
+import { loadNamedWorkflow, loadWorkflowDocument, type WorkflowDocument } from '@nodeint/migent-workflow';
+
+import { MANIFEST_SCHEMA_EVENT_LOG, TURN_PAD_WIDTH } from './constants.js';
+import { readExecutionClient } from './legacy-execution-client.js';
+import { corruptStatusMessage, readStatusFileState } from './query.js';
+import { reservedExecutionOrders, reservedStageAttempts } from './session-events.js';
+import { readSessionManifest } from './session-fold-read.js';
+import { loadFrozenWorkflow, readWorkflowFreeze } from './session-freeze.js';
+import { AgentSessionRecord, ExecutionContext } from './session-store-types.js';
+import { asInt, compareSortKey, isFile, verifyReportPath } from './session-store-util.js';
+import { readJsonObject, textField } from './session-store-util.js';
+
+function outcomeFields(outcome: unknown): { outcomeStatus: string | null; outcomeDecision: string | null } {
+  if (!isRecord(outcome)) return { outcomeStatus: null, outcomeDecision: null };
+  return {
+    outcomeStatus: typeof outcome.status === 'string' ? outcome.status : null,
+    outcomeDecision: typeof outcome.decision === 'string' && outcome.decision ? outcome.decision : null,
+  };
+}
 
 export class SessionStoreCore {
-  readonly workspace: string;
-  readonly sessionsDirectory: string;
-  readonly processInspector: ProcessInspector;
-  readonly metricsClients: ClientRegistry | null;
+  public readonly workspace: string;
+  public readonly sessionsDirectory: string;
+  public readonly processInspector: ProcessInspector;
+  public readonly metricsClients: ClientRegistry | null;
 
   constructor(
     workspace: string,
-    processInspector?: ProcessInspector,
-    metricsClients?: ClientRegistry,
+    processInspector: ProcessInspector = new SystemProcessInspector(),
+    metricsClients: ClientRegistry | null = null,
   ) {
     this.workspace = workspace;
     this.sessionsDirectory = path.join(workspace, MIGENT_DIRNAME, SESSIONS_DIRNAME);
-    this.processInspector = processInspector ?? new SystemProcessInspector();
-    this.metricsClients = metricsClients ?? null;
+    this.processInspector = processInspector;
+    this.metricsClients = metricsClients;
   }
 
-  executionContext(sessionId: string, executionId: string): ExecutionContext | null {
+  public executionContext(sessionId: string, executionId: string): ExecutionContext | null {
     const directory = path.join(this.sessionsDirectory, sessionId, EXECUTIONS_DIRNAME, executionId);
     try {
       if (!statSync(directory).isDirectory()) return null;
@@ -53,55 +64,49 @@ export class SessionStoreCore {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
       const executionDirectory = path.join(directory, entry.name);
-      if (!existsSync(path.join(executionDirectory, "execution.json"))) continue;
+      if (!existsSync(path.join(executionDirectory, 'execution.json'))) continue;
       contexts.push(new ExecutionContext(sessionId, entry.name, executionDirectory));
     }
     return contexts;
   }
 
   protected executionSortKey(context: ExecutionContext): [number, string] {
-    const metadata = readJsonObject(path.join(context.directory, "execution.json"));
+    const metadata = readJsonObject(path.join(context.directory, 'execution.json'));
     return [asInt(metadata.execution_order), context.executionId];
   }
 
   protected snapshotList(sessionId: string): ExecutionSnapshot[] {
     const snapshots: ExecutionSnapshot[] = [];
     for (const context of this.executionContexts(sessionId)) {
-      const metadata = readJsonObject(path.join(context.directory, "execution.json"));
-      const outcome = metadata.outcome;
-      let outcomeStatus: string | null = null;
-      let outcomeDecision: string | null = null;
-      if (isRecord(outcome)) {
-        if (typeof outcome.status === "string") outcomeStatus = outcome.status;
-        if (typeof outcome.decision === "string" && outcome.decision) outcomeDecision = outcome.decision;
-      }
+      const metadata = readJsonObject(path.join(context.directory, 'execution.json'));
+      const { outcomeStatus, outcomeDecision } = outcomeFields(metadata.outcome);
       snapshots.push({
         executionId: context.executionId,
-        stageId: typeof metadata.stage_id === "string" ? metadata.stage_id : "",
+        stageId: typeof metadata.stage_id === 'string' ? metadata.stage_id : '',
         executionOrder: asInt(metadata.execution_order),
-        status: typeof metadata.status === "string" ? metadata.status : "",
+        status: typeof metadata.status === 'string' ? metadata.status : '',
         outcomeStatus,
         artifactDirectory: context.artifactDirectory,
         outcomeDecision,
-        failureReason: typeof metadata.failure_reason === "string" ? metadata.failure_reason : null,
+        failureReason: typeof metadata.failure_reason === 'string' ? metadata.failure_reason : null,
         verifyReport: verifyReportPath(context.directory, metadata.verify),
       });
     }
     return snapshots;
   }
 
-  executionSnapshots(sessionId: string): ExecutionSnapshot[] {
+  public executionSnapshots(sessionId: string): ExecutionSnapshot[] {
     return this.snapshotList(sessionId);
   }
 
-  readSessionStatus(sessionId: string): Record<string, unknown> {
+  public readSessionStatus(sessionId: string): Record<string, unknown> {
     return this.readSessionStatusAt(path.join(this.sessionsDirectory, sessionId));
   }
 
   protected readSessionStatusAt(sessionDirectory: string): Record<string, unknown> {
-    const statusPath = path.join(sessionDirectory, "status.json");
+    const statusPath = path.join(sessionDirectory, 'status.json');
     const read = readStatusFileState(statusPath);
-    if (read.state === "corrupt") throw new ConfigurationError(corruptStatusMessage(statusPath));
+    if (read.state === 'corrupt') throw new ConfigurationError(corruptStatusMessage(statusPath));
     return read.status;
   }
 
@@ -111,39 +116,42 @@ export class SessionStoreCore {
   }
 
   protected rewriteManifestStatus(sessionDirectory: string, status: string): void {
-    if (readSessionManifest(sessionDirectory).schemaVersion >= 2) return;
-    const manifestPath = path.join(sessionDirectory, "manifest.yaml");
+    if (readSessionManifest(sessionDirectory).schemaVersion >= MANIFEST_SCHEMA_EVENT_LOG) return;
+    const manifestPath = path.join(sessionDirectory, 'manifest.yaml');
     try {
       if (!statSync(manifestPath).isFile()) return;
     } catch {
       return;
     }
-    const text = readFileSync(manifestPath, "utf8");
+    const text = readFileSync(manifestPath, 'utf8');
     const pattern = /^status: \S+\s*$/m;
     if (!pattern.test(text)) return;
     writeFileAtomic(manifestPath, text.replace(pattern, `status: ${status}`));
   }
 
+  private loadWorkflowAtPath(workflowPath: unknown): WorkflowDocument | null {
+    if (typeof workflowPath !== 'string' || !workflowPath) return null;
+    const filePath = path.isAbsolute(workflowPath) ? workflowPath : path.join(this.workspace, workflowPath);
+    if (!isFile(filePath)) return null;
+    try {
+      return loadWorkflowDocument(filePath);
+    } catch (error) {
+      if (!(error instanceof ConfigurationError)) throw error;
+      return null;
+    }
+  }
+
   protected loadWorkflow(previousStatus: Record<string, unknown>): WorkflowDocument | null {
-    if (previousStatus.workflow_id === "agent") return null;
+    if (previousStatus.workflow_id === 'agent') return null;
     const sessionId = previousStatus.session_id;
-    if (typeof sessionId === "string" && sessionId !== "") {
+    if (typeof sessionId === 'string' && sessionId !== '') {
       const frozen = loadFrozenWorkflow(path.join(this.sessionsDirectory, sessionId));
       if (frozen) return frozen;
     }
-    const workflowPath = previousStatus.workflow_path;
-    if (typeof workflowPath === "string" && workflowPath) {
-      const filePath = path.isAbsolute(workflowPath) ? workflowPath : path.join(this.workspace, workflowPath);
-      if (isFile(filePath)) {
-        try {
-          return loadWorkflowDocument(filePath);
-        } catch (error) {
-          if (!(error instanceof ConfigurationError)) throw error;
-        }
-      }
-    }
+    const fromPath = this.loadWorkflowAtPath(previousStatus.workflow_path);
+    if (fromPath !== null) return fromPath;
     const workflowId = previousStatus.workflow_id;
-    if (typeof workflowId !== "string" || workflowId === "") return null;
+    if (typeof workflowId !== 'string' || workflowId === '') return null;
     try {
       return loadNamedWorkflow(this.workspace, workflowId);
     } catch (error) {
@@ -154,11 +162,11 @@ export class SessionStoreCore {
 
   protected ensureSessionIsRunnable(sessionId: string | null): void {
     if (sessionId === null) return;
-    const statusPath = path.join(this.sessionsDirectory, sessionId, "status.json");
+    const statusPath = path.join(this.sessionsDirectory, sessionId, 'status.json');
     const read = readStatusFileState(statusPath);
-    if (read.state === "corrupt") throw new ConfigurationError(corruptStatusMessage(statusPath));
-    if (read.state === "missing") return;
-    const status = read.status;
+    if (read.state === 'corrupt') throw new ConfigurationError(corruptStatusMessage(statusPath));
+    if (read.state === 'missing') return;
+    const {status} = read;
     const message = runnableViolation(sessionId, status);
     if (message) throw new Error(message);
   }
@@ -175,10 +183,10 @@ export class SessionStoreCore {
   protected nextStageAttempt(sessionId: string, stageId: string): number {
     const attempts: number[] = [];
     for (const context of this.executionContexts(sessionId)) {
-      const metadata = readJsonObject(path.join(context.directory, "execution.json"));
+      const metadata = readJsonObject(path.join(context.directory, 'execution.json'));
       if (metadata.stage_id === stageId) attempts.push(asInt(metadata.stage_attempt));
     }
-    let safe = stageId;
+    let safe: string;
     try {
       safe = safeComponent(stageId);
     } catch {
@@ -194,19 +202,19 @@ export class SessionStoreCore {
   protected executionBlocker(sessionId: string, executionId: string): string | null {
     const context = this.executionContext(sessionId, executionId);
     if (context === null) return null;
-    const outcome = readJsonObject(path.join(context.directory, "execution.json")).outcome;
+    const {outcome} = readJsonObject(path.join(context.directory, 'execution.json'));
     if (!isRecord(outcome)) return null;
     return textField(outcome.blocker);
   }
 
-  stageId(context: ExecutionContext): string {
-    const metadata = readJsonObject(path.join(context.directory, "execution.json"));
+  public stageId(context: ExecutionContext): string {
+    const metadata = readJsonObject(path.join(context.directory, 'execution.json'));
     const stageId = metadata.stage_id;
-    if (typeof stageId !== "string") throw new Error(`Execution ${context.executionId} has no stage_id.`);
+    if (typeof stageId !== 'string') throw new Error(`Execution ${context.executionId} has no stage_id.`);
     return stageId;
   }
 
-  latestExecution(sessionId: string): ExecutionContext | null {
+  public latestExecution(sessionId: string): ExecutionContext | null {
     const contexts = this.executionContexts(sessionId);
     if (contexts.length === 0) return null;
     return contexts.reduce((best, context) =>
@@ -214,27 +222,27 @@ export class SessionStoreCore {
     );
   }
 
-  turnDirectory(context: ExecutionContext, turn: number): string {
-    return path.join(context.directory, "turns", String(turn).padStart(2, "0"));
+  public turnDirectory(context: ExecutionContext, turn: number): string {
+    return path.join(context.directory, 'turns', String(turn).padStart(TURN_PAD_WIDTH, '0'));
   }
 
   /** Resolve and validate provenance before any resume changes persisted state. */
-  executionClient(sessionId: string, executionId: string): string {
+  public executionClient(sessionId: string, executionId: string): string {
     const context = this.executionContext(sessionId, executionId);
     if (context === null) throw new ConfigurationError(`Execution ${executionId} was not found in session ${sessionId}.`);
-    const metadata = readJsonObject(path.join(context.directory, "execution.json"));
+    const metadata = readJsonObject(path.join(context.directory, 'execution.json'));
     const sessionDirectory = path.join(this.sessionsDirectory, sessionId);
     const freeze = readWorkflowFreeze(sessionDirectory);
-    const stageId = typeof metadata.stage_id === "string" ? metadata.stage_id : "";
+    const stageId = typeof metadata.stage_id === 'string' ? metadata.stage_id : '';
     const frozen = freeze?.targets[stageId]?.client;
-    const decided = readExecutionClient(sessionDirectory, executionId, metadata, frozen);
+    const decided = readExecutionClient(sessionDirectory, { executionId, metadata, frozen });
     if (decided.client === null) {
       throw new ConfigurationError(`Cannot resume execution ${executionId}: ${decided.reason}. Start a new attempt.`);
     }
     return decided.client;
   }
 
-  save(record: AgentSessionRecord, context: ExecutionContext): void {
+  public save(record: AgentSessionRecord, context: ExecutionContext): void {
     writeJsonAtomic(context.conversationPath, record.toJson());
   }
 }

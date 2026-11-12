@@ -1,28 +1,30 @@
-import path from "node:path";
+import path from 'node:path';
+
+import type { ClientRegistry } from '@nodeint/migent-kernel';
 import {
-  LOCAL_CONFIG_FILE,
   hasLocalConfig,
   loadAgentTarget,
   loadRoleDescription,
   loadRoleResponsibilities,
   loadWorkspaceConfig,
   loadYamlMapping,
+  LOCAL_CONFIG_FILE,
   resolveRoleCascade,
   resolveStageSpec,
   type StageTarget,
-} from "@nodeint/migent-kernel";
-import { selectSessionWorkflow } from "@nodeint/migent-session";
-import { ConfigurationError } from "@nodeint/migent-kernel";
-import type { ClientRegistry } from "@nodeint/migent-kernel";
-import { isRecord } from "@nodeint/migent-workflow";
+} from '@nodeint/migent-kernel';
+import { ConfigurationError } from '@nodeint/migent-kernel';
+import { selectSessionWorkflow } from '@nodeint/migent-session';
+import { isRecord } from '@nodeint/migent-workflow';
 import {
   isRoleStage,
   loadNamedWorkflow,
   loadWorkflowCatalog,
+  type RoleStageSpec,
+  type StageArtifact,
   type StageSpec,
   type WorkflowDocument,
-  type StageArtifact,
-} from "@nodeint/migent-workflow";
+} from '@nodeint/migent-workflow';
 
 /**
  * Read-only views of what a project defines. They are the public contract of `migent get`: plain,
@@ -35,8 +37,8 @@ export const LOCAL_CONFIG_LABEL = `.migent/${LOCAL_CONFIG_FILE}`;
 
 /** Names of the agents entries that `config.local.yaml` sets. */
 export function localAgentNames(workspace: string): string[] {
-  const local = loadYamlMapping(path.join(workspace, ".migent", LOCAL_CONFIG_FILE));
-  const agents = local.agents;
+  const local = loadYamlMapping(path.join(workspace, '.migent', LOCAL_CONFIG_FILE));
+  const {agents} = local;
   return isRecord(agents) ? Object.keys(agents).sort() : [];
 }
 
@@ -69,13 +71,13 @@ function targetView(target: StageTarget): View {
 
 function display(workspace: string, target: string): string {
   const relative = path.relative(workspace, target);
-  if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) return target;
-  return relative.split(path.sep).join("/");
+  if (relative === '' || relative.startsWith('..') || path.isAbsolute(relative)) return target;
+  return relative.split(path.sep).join('/');
 }
 
 // ---------------------------------------------------------------- workflows
 
-export type WorkflowSourceKind = "project" | "draft" | "frozen" | "live";
+export type WorkflowSourceKind = 'project' | 'draft' | 'frozen' | 'live';
 
 interface WorkflowOrigin {
   kind: WorkflowSourceKind;
@@ -88,28 +90,49 @@ interface WorkflowOrigin {
   problems?: readonly string[];
 }
 
-function stageView(stage: StageSpec, config: Loaded, origin: WorkflowOrigin, resolve?: ClientRegistry): View {
-  const problems: string[] = [];
-  let target: View | null = null;
-  if (isRoleStage(stage)) {
-    const pinned = origin.frozenTargets?.[stage.id];
-    if (pinned !== undefined) target = targetView(pinned);
-    else if (origin.frozenTargets !== undefined) problems.push(`No pinned target for stage ${stage.id}.`);
-    else if (config.config === null) problems.push(config.problem ?? "Config could not be loaded.");
-    else {
-      try {
-        target = targetView(resolveStageSpec(config.config, stage, null, resolve));
-      } catch (error) {
-        problems.push(message(error));
-      }
-    }
+// Resolves a role stage's target view, preferring a frozen session's pinned target; records problems.
+function stageTargetView(
+  stage: RoleStageSpec,
+  context: { config: Loaded; origin: WorkflowOrigin; resolve?: ClientRegistry },
+  problems: string[],
+): View | null {
+  const { config, origin, resolve } = context;
+  const pinned = origin.frozenTargets?.[stage.id];
+  if (pinned !== undefined) return targetView(pinned);
+  if (origin.frozenTargets !== undefined) {
+    problems.push(`No pinned target for stage ${stage.id}.`);
+    return null;
   }
+  if (config.config === null) {
+    problems.push(config.problem ?? 'Config could not be loaded.');
+    return null;
+  }
+  try {
+    return targetView(resolveStageSpec(config.config, stage, { registry: resolve }));
+  } catch (error) {
+    problems.push(message(error));
+    return null;
+  }
+}
+
+function stageAgentField(stage: StageSpec): string | { inline: boolean } | null {
+  if (stage.agent === null) return null;
+  return stage.agent.kind === 'named' ? stage.agent.name : { inline: true };
+}
+
+function stageView(
+  stage: StageSpec,
+  context: { config: Loaded; origin: WorkflowOrigin; resolve?: ClientRegistry },
+): View {
+  const problems: string[] = [];
+  const target = isRoleStage(stage) ? stageTargetView(stage, context, problems) : null;
+  const agentField = stageAgentField(stage);
   return {
     id: stage.id,
     role: isRoleStage(stage) ? stage.role : null,
     description: stage.description,
     depends_on: [...stage.dependsOn],
-    agent: stage.agent === null ? null : stage.agent.kind === "named" ? stage.agent.name : { inline: true },
+    agent: agentField,
     options: { ...stage.options },
     artifact: stage.artifacts[0]?.file ?? null,
     artifacts: stage.artifacts.map(artifactView),
@@ -126,7 +149,9 @@ function stageView(stage: StageSpec, config: Loaded, origin: WorkflowOrigin, res
     verify: [...stage.verify],
     max_verify: stage.maxVerify,
     verify_timeout: stage.verifyTimeoutSec,
-    run_when: stage.runWhen === null || stage.runWhen === undefined ? null : { changed_paths: [...stage.runWhen.changedPaths] },
+    run_when: stage.runWhen === null || stage.runWhen === undefined
+      ? null
+      : { changed_paths: [...stage.runWhen.changedPaths] },
     ask: stage.ask ?? null,
     target,
     problems,
@@ -142,11 +167,11 @@ function roleNames(document: WorkflowDocument): string[] {
 }
 
 function roleResponsibilities(
-  config: Loaded,
+  scope: { config: Loaded; origin: WorkflowOrigin },
   roles: readonly string[],
-  origin: WorkflowOrigin,
   problems: string[],
 ): Record<string, string[]> {
+  const { config, origin } = scope;
   const result: Record<string, string[]> = {};
   for (const role of roles) {
     if (origin.frozenRoles !== undefined) {
@@ -167,15 +192,15 @@ function roleResponsibilities(
 function workflowView(
   workspace: string,
   document: WorkflowDocument,
-  origin: WorkflowOrigin,
-  resolve?: ClientRegistry,
+  source: { origin: WorkflowOrigin; resolve?: ClientRegistry },
 ): View {
+  const { origin, resolve } = source;
   const config = tryConfig(workspace);
-  const stages = Object.values(document.stages).map((stage) => stageView(stage, config, origin, resolve));
+  const stages = Object.values(document.stages).map((stage) => stageView(stage, { config, origin, resolve }));
   const instructionProblems: string[] = [];
-  const responsibilities = roleResponsibilities(config, roleNames(document), origin, instructionProblems);
+  const responsibilities = roleResponsibilities({ config, origin }, roleNames(document), instructionProblems);
   const view: View = {
-    kind: "workflow",
+    kind: 'workflow',
     name: document.id,
     file: document.source === null ? origin.path : display(workspace, document.source),
     source: { kind: origin.kind, path: origin.path },
@@ -205,18 +230,24 @@ function workflowView(
     })),
     role_responsibilities: responsibilities,
     warnings: [...(document.warnings ?? [])],
-    problems: [...(origin.problems ?? []), ...instructionProblems, ...stages.flatMap((stage) => (stage.problems as string[]).map((p) => `${String(stage.id)}: ${p}`))],
+    problems: [...(origin.problems ?? []), ...instructionProblems, ...stages.flatMap(stageProblems)],
   });
   return view;
 }
 
 /** Catalog messages that only say the project has no workflows; an empty list says the same. */
-const EMPTY_DIRECTORY_PROBLEMS = ["No workflows in ", "Workflows directory not found"];
+const EMPTY_DIRECTORY_PROBLEMS = ['No workflows in ', 'Workflows directory not found'];
 
 /** The file name a catalog problem starts with (`broken.yaml: ...`), or null. */
 function problemFile(problem: string): string | null {
-  const name = problem.split(":", 1)[0] ?? "";
-  return name.endsWith(".yaml") || name.endsWith(".yml") ? name : null;
+  const name = problem.split(':', 1)[0] ?? '';
+  return name.endsWith('.yaml') || name.endsWith('.yml') ? name : null;
+}
+
+/** Catalog problems that name this workflow id or its file. */
+function workflowProblems(problems: readonly string[], workflowId: string, base: string | null): string[] {
+  return problems.filter((problem) =>
+    problem.startsWith(`${workflowId}:`) || (base !== null && problemFile(problem) === base));
 }
 
 /** Summaries of every workflow in the project. A broken file is listed with its problems. */
@@ -227,12 +258,10 @@ export function listWorkflowViews(workspace: string): View[] {
   const views: View[] = documents.map((document) => {
     const file = document.source === null ? null : display(workspace, document.source);
     const base = document.source === null ? null : path.basename(document.source);
-    const problems = catalog.problems.filter(
-      (problem) => problem.startsWith(`${document.id}:`) || (base !== null && problemFile(problem) === base),
-    );
+    const problems = workflowProblems(catalog.problems, document.id, base);
     for (const problem of problems) claimed.add(problem);
     return {
-      kind: "workflow",
+      kind: 'workflow',
       name: document.id,
       file,
       stages: Object.keys(document.stages),
@@ -249,7 +278,7 @@ export function listWorkflowViews(workspace: string): View[] {
   for (const [file, problems] of broken) {
     for (const problem of problems) claimed.add(problem);
     views.push({
-      kind: "workflow",
+      kind: 'workflow',
       name: path.parse(file).name,
       file: `.migent/workflows/${file}`,
       stages: [],
@@ -259,13 +288,13 @@ export function listWorkflowViews(workspace: string): View[] {
   }
   for (const problem of catalog.problems) {
     if (EMPTY_DIRECTORY_PROBLEMS.some((prefix) => problem.startsWith(prefix))) continue;
-    if (!claimed.has(problem)) views.push({ kind: "workflow", name: null, file: null, stages: [], roles: [], problems: [problem] });
+    if (!claimed.has(problem)) views.push({ kind: 'workflow', name: null, file: null, stages: [], roles: [], problems: [problem] });
   }
   return views;
 }
 
 function notFound(label: string, name: string, available: readonly string[]): ConfigurationError {
-  const list = available.length > 0 ? ` Available: ${available.join(", ")}.` : "";
+  const list = available.length > 0 ? ` Available: ${available.join(', ')}.` : '';
   return new ConfigurationError(`${label} not found: ${name}.${list}`);
 }
 
@@ -277,22 +306,22 @@ export function getWorkflowView(workspace: string, name: string, resolve?: Clien
       (problem) => problem.startsWith(`${name}:`) || problemFile(problem) === `${name}.yaml` || problemFile(problem) === `${name}.yml`,
     );
     if (failed !== undefined) throw new ConfigurationError(failed);
-    throw notFound("Workflow", name, Object.keys(catalog.documents));
+    throw notFound('Workflow', name, Object.keys(catalog.documents));
   }
   const document = loadNamedWorkflow(workspace, name, { quiet: true });
   const file = document.source === null ? null : display(workspace, document.source);
-  return workflowView(workspace, document, { kind: "project", path: file }, resolve);
+  return workflowView(workspace, document, { origin: { kind: 'project', path: file }, resolve });
 }
 
 /** The workflow a session runs: its draft, its frozen copy, or the live project file. */
 export function getSessionWorkflowView(
   workspace: string,
-  sessionId: string,
-  name: string | null,
+  session: { sessionId: string; name: string | null },
   resolve?: ClientRegistry,
 ): View {
+  const { sessionId, name } = session;
   const selection = selectSessionWorkflow(workspace, sessionId);
-  const document = selection.document;
+  const {document} = selection;
   if (document === null || selection.source === null) {
     throw new ConfigurationError(selection.problems[0] ?? `Session workflow could not be read: ${sessionId}.`);
   }
@@ -309,7 +338,7 @@ export function getSessionWorkflowView(
     origin.frozenTargets = selection.freeze.targets;
     origin.frozenRoles = selection.freeze.roles;
   }
-  const view = workflowView(workspace, document, origin, resolve);
+  const view = workflowView(workspace, document, { origin, resolve });
   view.file = selection.source.path;
   view.warnings = [...(view.warnings as string[]), ...selection.warnings];
   return view;
@@ -321,99 +350,107 @@ function projectWorkflows(workspace: string): WorkflowDocument[] {
   return Object.values(loadWorkflowCatalog(workspace, { quiet: true }).documents);
 }
 
-function configRecord(workspace: string, key: "roles" | "agents"): { config: Record<string, unknown>; table: Record<string, unknown> } {
+function configRecord(workspace: string, key: 'roles' | 'agents'): { config: Record<string, unknown>; table: Record<string, unknown> } {
   const config = loadWorkspaceConfig(workspace);
   const table = config[key];
   return { config, table: isRecord(table) ? table : {} };
 }
 
-function roleView(
-  workspace: string,
-  config: Record<string, unknown>,
-  name: string,
-  role: unknown,
-  workflows: readonly WorkflowDocument[],
-  resolve?: ClientRegistry,
-): View {
-  const problems: string[] = [];
-  const selection = isRecord(role) ? role.agent : undefined;
-  let agent: unknown = null;
-  if (typeof selection === "string") agent = selection;
-  else if (isRecord(selection)) agent = { inline: true };
-  let target: View | null = null;
+// Runs a loader, recording its error message as a problem and returning the fallback on failure.
+function collectProblem<T>(problems: string[], fallback: T, load: () => T): T {
   try {
-    target = targetView(resolveRoleCascade(config, name, undefined, resolve));
+    return load();
   } catch (error) {
     problems.push(message(error));
+    return fallback;
   }
-  let responsibilities: string[] = [];
-  try {
-    responsibilities = loadRoleResponsibilities(config, name);
-  } catch (error) {
-    problems.push(message(error));
-  }
-  let description: string | null = null;
-  try {
-    description = loadRoleDescription(config, name);
-  } catch (error) {
-    problems.push(message(error));
-  }
+}
+
+// Lists the workflow stages that match a predicate as `{ workflow, stage }` views.
+function stageUsers(workflows: readonly WorkflowDocument[], matches: (stage: StageSpec) => boolean): View[] {
   const usedBy: View[] = [];
   for (const workflow of workflows) {
     for (const stage of Object.values(workflow.stages)) {
-      if (isRoleStage(stage) && stage.role === name) usedBy.push({ workflow: workflow.id, stage: stage.id });
+      if (matches(stage)) usedBy.push({ workflow: workflow.id, stage: stage.id });
     }
   }
-  return { kind: "role", name, description, agent, target, responsibilities, used_by: usedBy, problems };
+  return usedBy;
+}
+
+function roleView(
+  config: Record<string, unknown>,
+  entry: { name: string; role: unknown },
+  scope: { workflows: readonly WorkflowDocument[]; resolve?: ClientRegistry },
+): View {
+  const { name, role } = entry;
+  const { workflows, resolve } = scope;
+  const problems: string[] = [];
+  const selection = isRecord(role) ? role.agent : undefined;
+  let agent: unknown = null;
+  if (typeof selection === 'string') agent = selection;
+  else if (isRecord(selection)) agent = { inline: true };
+  const target = collectProblem<View | null>(problems, null, () =>
+    targetView(resolveRoleCascade(config, name, { registry: resolve })));
+  const responsibilities = collectProblem<string[]>(problems, [], () => loadRoleResponsibilities(config, name));
+  const description = collectProblem<string | null>(problems, null, () => loadRoleDescription(config, name));
+  const usedBy = stageUsers(workflows, (stage) => isRoleStage(stage) && stage.role === name);
+  return { kind: 'role', name, description, agent, target, responsibilities, used_by: usedBy, problems };
 }
 
 export function listRoleViews(workspace: string, resolve?: ClientRegistry): View[] {
-  const { config, table } = configRecord(workspace, "roles");
+  const { config, table } = configRecord(workspace, 'roles');
   const workflows = projectWorkflows(workspace);
-  return Object.entries(table).map(([name, role]) => roleView(workspace, config, name, role, workflows, resolve));
+  return Object.entries(table).map(([name, role]) => roleView(config, { name, role }, { workflows, resolve }));
 }
 
 export function getRoleView(workspace: string, name: string, resolve?: ClientRegistry): View {
-  const { config, table } = configRecord(workspace, "roles");
-  if (!Object.hasOwn(table, name)) throw notFound("Role", name, Object.keys(table));
-  return roleView(workspace, config, name, table[name], projectWorkflows(workspace), resolve);
+  const { config, table } = configRecord(workspace, 'roles');
+  if (!Object.hasOwn(table, name)) throw notFound('Role', name, Object.keys(table));
+  return roleView(config, { name, role: table[name] }, { workflows: projectWorkflows(workspace), resolve });
 }
 
 // ------------------------------------------------------------------- agents
 
+// Reads the model, client type, and effort an agent declares in config; null where absent.
+function declaredAgentFields(
+  config: Record<string, unknown>,
+  name: string,
+): { model: string | null; client: string | null; effort: string | null } {
+  const definition = isRecord(config.agents) && isRecord(config.agents[name]) ? config.agents[name] : {};
+  if (!isRecord(definition)) return { model: null, client: null, effort: null };
+  const clientConfig = isRecord(definition.client) ? definition.client : {};
+  return {
+    model: typeof definition.model === 'string' ? definition.model : null,
+    client: typeof clientConfig.type === 'string' ? clientConfig.type : null,
+    effort: typeof definition.effort === 'string' ? definition.effort : null,
+  };
+}
+
 function agentView(
   config: Record<string, unknown>,
   name: string,
-  roles: Record<string, unknown>,
-  workflows: readonly WorkflowDocument[],
-  local: ReadonlySet<string>,
-  resolve?: ClientRegistry,
+  scope: {
+    roles: Record<string, unknown>;
+    workflows: readonly WorkflowDocument[];
+    local: ReadonlySet<string>;
+    resolve?: ClientRegistry;
+  },
 ): View {
+  const { roles, workflows, local, resolve } = scope;
   const problems: string[] = [];
-  let target: StageTarget | null = null;
-  try {
-    target = loadAgentTarget(config, name, resolve);
-  } catch (error) {
-    problems.push(message(error));
-  }
-  const definition = isRecord(config.agents) && isRecord(config.agents[name]) ? config.agents[name] : {};
-  const clientConfig = isRecord(definition) && isRecord(definition.client) ? definition.client : {};
-  const effort = isRecord(definition) && typeof definition.effort === "string" ? definition.effort : null;
-  const usedBy: View[] = [];
-  for (const [role, value] of Object.entries(roles)) {
-    if (isRecord(value) && value.agent === name) usedBy.push({ role });
-  }
-  for (const workflow of workflows) {
-    for (const stage of Object.values(workflow.stages)) {
-      if (isRoleStage(stage) && stage.agent?.kind === "named" && stage.agent.name === name) usedBy.push({ workflow: workflow.id, stage: stage.id });
-    }
-  }
+  const target = collectProblem<StageTarget | null>(problems, null, () =>
+    loadAgentTarget(config, name, { registry: resolve }));
+  const declared = declaredAgentFields(config, name);
+  const usedBy: View[] = [
+    ...Object.entries(roles).filter(([, value]) => isRecord(value) && value.agent === name).map(([role]) => ({ role })),
+    ...stageUsers(workflows, (stage) => isRoleStage(stage) && stage.agent?.kind === 'named' && stage.agent.name === name),
+  ];
   return {
-    kind: "agent",
+    kind: 'agent',
     name,
-    model: target?.model ?? (isRecord(definition) && typeof definition.model === "string" ? definition.model : null),
-    client: target?.client ?? (typeof clientConfig.type === "string" ? clientConfig.type : null),
-    effort,
+    model: target?.model ?? declared.model,
+    client: target?.client ?? declared.client,
+    effort: declared.effort,
     options: target === null ? {} : { ...target.options },
     local: local.has(name),
     used_by: usedBy,
@@ -422,11 +459,11 @@ function agentView(
 }
 
 function agentViews(workspace: string, resolve?: ClientRegistry): { views: View[] } {
-  const { config, table } = configRecord(workspace, "agents");
+  const { config, table } = configRecord(workspace, 'agents');
   const roles = isRecord(config.roles) ? config.roles : {};
   const workflows = projectWorkflows(workspace);
   const local = new Set(hasLocalConfig(workspace) ? localAgentNames(workspace) : []);
-  return { views: Object.keys(table).map((name) => agentView(config, name, roles, workflows, local, resolve)) };
+  return { views: Object.keys(table).map((name) => agentView(config, name, { roles, workflows, local, resolve })) };
 }
 
 export function listAgentViews(workspace: string, resolve?: ClientRegistry): View[] {
@@ -434,9 +471,9 @@ export function listAgentViews(workspace: string, resolve?: ClientRegistry): Vie
 }
 
 export function getAgentView(workspace: string, name: string, resolve?: ClientRegistry): View {
-  const views = agentViews(workspace, resolve).views;
+  const {views} = agentViews(workspace, resolve);
   const found = views.find((view) => view.name === name);
-  if (found === undefined) throw notFound("Agent", name, views.map((view) => String(view.name)));
+  if (found === undefined) throw notFound('Agent', name, views.map((view) => String(view.name)));
   return found;
 }
 
@@ -446,8 +483,8 @@ export function getAgentView(workspace: string, name: string, resolve?: ClientRe
 export function getConfigView(workspace: string): View {
   const local = hasLocalConfig(workspace);
   return {
-    kind: "config",
-    name: "config",
+    kind: 'config',
+    name: 'config',
     local_file: local ? LOCAL_CONFIG_LABEL : null,
     local_agents: local ? localAgentNames(workspace) : [],
     config: loadWorkspaceConfig(workspace),
@@ -462,4 +499,9 @@ function artifactView(artifact: StageArtifact): Record<string, unknown> {
     required: artifact.required,
     scope: artifact.scope,
   };
+}
+
+/** A stage view's problems, each prefixed with the stage id. */
+function stageProblems(stage: View): string[] {
+  return (stage.problems as string[]).map((problem) => `${String(stage.id)}: ${problem}`);
 }

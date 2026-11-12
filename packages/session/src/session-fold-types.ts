@@ -1,6 +1,7 @@
-import type { WorkflowDocument } from "@nodeint/migent-workflow";
-import type { ParsedEvent } from "./session-events.js";
-import type { TitleRecord } from "./session-title.js";
+import type { WorkflowDocument } from '@nodeint/migent-workflow';
+
+import type { ParsedEvent } from './session-events.js';
+import type { TitleRecord } from './session-title.js';
 
 export interface SessionManifest {
   sessionId: string;

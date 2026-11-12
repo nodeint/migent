@@ -1,5 +1,6 @@
-import { parse, YAMLParseError } from "yaml";
-import { ConfigurationError } from "./errors.js";
+import { parse, YAMLParseError } from 'yaml';
+
+import { ConfigurationError } from './errors.js';
 
 export function parseYamlDocument(text: string): unknown {
   try {
@@ -8,7 +9,7 @@ export function parseYamlDocument(text: string): unknown {
     if (error instanceof YAMLParseError) {
       const [position, end] = error.linePos ?? [];
       throw new ConfigurationError(error.message, {
-        code: error.code === "DUPLICATE_KEY" ? "duplicate-key" : "yaml-syntax",
+        code: error.code === 'DUPLICATE_KEY' ? 'duplicate-key' : 'yaml-syntax',
         ...(position === undefined
           ? {}
           : {

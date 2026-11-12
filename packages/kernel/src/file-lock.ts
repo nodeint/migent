@@ -1,4 +1,6 @@
-import lockfile from "proper-lockfile";
+import lockfile from 'proper-lockfile';
+
+import { INT32_BYTES } from './constants.js';
 
 // proper-lockfile holds a lock as a `<file>.lock` directory, which works the same on every
 // platform. A holder that dies without releasing leaves it stale after STALE_MS.
@@ -9,7 +11,7 @@ export const FILE_LOCK_TIMEOUT_MS = 30_000;
 export class FileLockTimeout extends Error {
   constructor(filePath: string) {
     super(`Timed out waiting for the lock on ${filePath}.`);
-    this.name = "FileLockTimeout";
+    this.name = 'FileLockTimeout';
   }
 }
 
@@ -24,12 +26,12 @@ export const fileLockOps = {
         onCompromised: () => undefined,
       });
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ELOCKED") return null;
+      if ((error as NodeJS.ErrnoException).code === 'ELOCKED') return null;
       throw error;
     }
   },
   sleepMs(ms: number): void {
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(INT32_BYTES)), 0, 0, ms);
   },
 };
 
