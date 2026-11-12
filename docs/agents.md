@@ -2,35 +2,43 @@
 
 An agent describes execution: a CLI client, a model, an optional effort, and the
 options passed to that client. A role describes intent: its responsibilities and
-which agent it uses. `migent init` creates `planner`, `reviewer`, and `developer`
-roles with an independent agent object in each `agent`:
+which agent it uses. `migent init` creates the `architect`, `reviewer`, `developer`,
+and `operator` roles. They use the named agents `planning`, `review`, and `coding`
+(`developer` and `operator` share `coding`):
 
 ```yaml
 # .migent/config.yaml
 schema_version: 7
+agents:
+  planning:
+    model: gpt-5
+    client:
+      type: codex
+      options:
+        model_reasoning_effort: high
+  review:
+    model: grok-4
+    client:
+      type: grok
+  coding:
+    model: gpt-5
+    client:
+      type: codex
+      options:
+        model_reasoning_effort: medium
 roles:
-  planner:
-    description: Designs the approach and writes the plan.
-    agent:
-      model: gpt-5
-      client:
-        type: codex
-        options:
-          model_reasoning_effort: high
-  developer:
-    description: Implements the change and verifies it.
-    agent:
-      model: gpt-5
-      client:
-        type: codex
-        options:
-          model_reasoning_effort: medium
+  architect:
+    description: Designs the structure and plan for a task before implementation.
+    agent: planning
   reviewer:
     description: Reviews plans and implementations against the task.
-    agent:
-      model: grok-4
-      client:
-        type: grok
+    agent: review
+  developer:
+    description: Implements the change and verifies it.
+    agent: coding
+  operator:
+    description: Runs routine repository operations such as commits, pushes, and pull requests.
+    agent: coding
 ```
 
 The generated [config field reference](reference/config.md) lists every field.

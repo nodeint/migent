@@ -3,7 +3,6 @@ import { DEFAULT_MAX_DISPATCHES } from '@nodeint/migent-engine';
 import { noInputRequested } from '@nodeint/migent-kernel';
 import { Command, Option, type OptionValues } from 'commander';
 
-import { CLIENT_MAPPING } from './commands/agent.js';
 import { type AuthoringKind, type AuthoringMode,runAuthoring } from './commands/authoring.js';
 import { removedConfigCommand, runConfigShow } from './commands/config.js';
 import { runDoctor } from './commands/doctor.js';
@@ -215,27 +214,10 @@ ${exitText([
 function registerInitCommand(program: Command, status: CliStatus): void {
   const init = program
     .command('init')
-    .description('Set up planner, reviewer, and developer models with implement and plan workflows.')
-    .option('--planner-client <client>', 'Planner CLI client. Pass with --planner-model.')
-    .option('--planner-model <model>', 'Planner model ID. Pass with --planner-client.')
-    .option('--planner-effort <effort>', 'Planner model effort.')
-    .option('--planner-option <pair>', 'Planner model option, KEY=VALUE.', collect, [])
-    .option('--reviewer-client <client>', 'Reviewer CLI client. Pass with --reviewer-model.')
-    .option('--reviewer-model <model>', 'Reviewer model ID. Pass with --reviewer-client.')
-    .option('--reviewer-effort <effort>', 'Reviewer model effort.')
-    .option('--reviewer-option <pair>', 'Reviewer model option, KEY=VALUE.', collect, [])
-    .option('--developer-client <client>', 'Developer CLI client. Pass with --developer-model.')
-    .option('--developer-model <model>', 'Developer model ID. Pass with --developer-client.')
-    .option('--developer-effort <effort>', 'Developer model effort.')
-    .option('--developer-option <pair>', 'Developer model option, KEY=VALUE.', collect, [])
-    .option('--client <client>', 'Alias for --developer-client.')
-    .option('--model <model>', 'Alias for --developer-model.')
-    .option('--effort <effort>', 'Alias for --developer-effort.')
-    .option('--option <pair>', 'Alias for --developer-option, KEY=VALUE.', collect, [])
-    .addOption(new Option('--planner-provider <provider>').hideHelp())
-    .addOption(new Option('--reviewer-provider <provider>').hideHelp())
-    .addOption(new Option('--developer-provider <provider>').hideHelp())
-    .addOption(new Option('--provider <provider>').hideHelp())
+    .description('Set up the project agents and workflows from the project template.')
+    .option('--agent <spec>', 'Model for a template agent, NAME=CLIENT:MODEL. Repeat per agent.', collect, [])
+    .option('--agent-effort <spec>', 'Effort for an agent given with --agent, NAME=EFFORT.', collect, [])
+    .option('--agent-option <spec>', 'Model option for an agent given with --agent, NAME:KEY=VALUE.', collect, [])
     .addOption(new Option('--skill').hideHelp())
     .option('--no-input', 'Do not prompt. Same as MIGENT_NO_INPUT=1.');
   init.action(act(status, (options: OptionValues) => {
@@ -243,40 +225,11 @@ function registerInitCommand(program: Command, status: CliStatus): void {
         printError('init --skill has been removed. Run `migent init`, then `migent skill install --project`.');
         return EXIT_CONFIG;
       }
-      for (const [legacy, replacement] of [
-        ['plannerProvider', '--planner-client'],
-        ['reviewerProvider', '--reviewer-client'],
-        ['developerProvider', '--developer-client'],
-        ['provider', '--client'],
-      ] as const) {
-        if (options[legacy] !== undefined) {
-          const flag = kebabFlag(legacy);
-          printError(`${flag} has been removed; use ${replacement} <id> (${CLIENT_MAPPING}).`);
-          return EXIT_CONFIG;
-        }
-      }
-      for (const [name, legacy] of [['developerClient', 'client'], ['developerModel', 'model'], ['developerEffort', 'effort']] as const) {
-        if (options[name] !== undefined && options[legacy] !== undefined) {
-          printError(`Use only one of ${kebabFlag(name)} and --${legacy}.`);
-          return EXIT_CONFIG;
-        }
-      }
-      const client = optionalText(options.developerClient ?? options.client);
-      const model = optionalText(options.developerModel ?? options.model);
       const interactive = !inputDisabled(options) && Boolean(process.stdin.isTTY);
       return runInit(invocationCwdPath(), {
-        client,
-        model,
-        effort: optionalText(options.developerEffort ?? options.effort),
-        options: [...stringList(options.developerOption), ...stringList(options.option)],
-        plannerClient: optionalText(options.plannerClient),
-        plannerModel: optionalText(options.plannerModel),
-        plannerEffort: optionalText(options.plannerEffort),
-        plannerOptions: stringList(options.plannerOption),
-        reviewerClient: optionalText(options.reviewerClient),
-        reviewerModel: optionalText(options.reviewerModel),
-        reviewerEffort: optionalText(options.reviewerEffort),
-        reviewerOptions: stringList(options.reviewerOption),
+        agents: stringList(options.agent),
+        agentEfforts: stringList(options.agentEffort),
+        agentOptions: stringList(options.agentOption),
         interactive,
       });
     }),
@@ -544,11 +497,6 @@ function act<A extends unknown[]>(
   handler: (...args: A) => number | Promise<number>,
 ): (...args: A) => Promise<void> {
   return (...args) => settle(status, handler(...args));
-}
-
-/** `developerClient` -> `--developer-client`. */
-function kebabFlag(optionName: string): string {
-  return `--${optionName.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`;
 }
 
 function inputDisabled(options: OptionValues): boolean {

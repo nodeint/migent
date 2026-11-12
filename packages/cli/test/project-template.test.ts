@@ -7,7 +7,7 @@ import { loadWorkflowDocument } from '@nodeint/migent-workflow';
 import { expect, test } from 'vitest';
 import { parse } from 'yaml';
 
-import { type ModelChoice,projectTemplateDirectory, renderProject } from '../src/project-template.js';
+import { discoverAgentSlots, type ModelChoice, projectTemplateDirectory, renderProject } from '../src/project-template.js';
 
 const root = new URL('../../../templates/', import.meta.url);
 const choice = (client: string, model: string, options: Record<string, string> = {}): ModelChoice => ({
@@ -16,26 +16,65 @@ const choice = (client: string, model: string, options: Record<string, string> =
   options,
 });
 const models = {
-  planner: choice('codex', 'gpt-5', { model_reasoning_effort: 'high' }),
-  reviewer: choice('grok', '123'),
-  developer: choice('claude-code', 'true'),
+  planning: choice('codex', 'gpt-5', { model_reasoning_effort: 'high' }),
+  review: choice('grok', '123'),
+  coding: { ...choice('claude-code', 'true'), effort: 'low' },
 };
 
-test('renders config models independently and keeps template content', () => {
+function templateCopy(edit: (config: string) => string = (config) => config): string {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'migent-tpl-'));
+  cpSync(new URL('.', root), dir, { recursive: true });
+  writeFileSync(path.join(dir, 'config.yaml'), edit(readFileSync(path.join(dir, 'config.yaml'), 'utf8')));
+  return dir;
+}
+
+test('discovers ordered agent slots with the roles that use them', () => {
+  expect(discoverAgentSlots()).toEqual([
+    { name: 'planning', roles: ['architect'] },
+    { name: 'review', roles: ['reviewer'] },
+    { name: 'coding', roles: ['developer', 'operator'] },
+  ]);
+});
+
+test('renders each agent slot once and keeps roles pointing at them', () => {
   const files = renderProject(models);
   type TemplateRole = { agent?: unknown; responsibilities: string[]; description?: string };
-  const config = parse(files[0]!.content) as { roles: Record<string, TemplateRole> };
+  const config = parse(files[0]!.content) as { agents: Record<string, unknown>; roles: Record<string, TemplateRole> };
   const local = parse(files[1]!.content) as { roles: Record<string, unknown> };
   const template = parse(readFileSync(new URL('config.yaml', root), 'utf8')) as typeof config;
-  expect(config.roles.planner?.agent).toEqual({ model: 'gpt-5', client: { type: 'codex', options: { model_reasoning_effort: 'high' } } });
-  expect(config.roles.reviewer?.agent).toEqual({ model: '123', client: { type: 'grok' } });
-  expect(config.roles.developer?.agent).toEqual({ model: 'true', client: { type: 'claude-code' } });
-  for (const role of ['planner', 'reviewer', 'developer']) {
-    expect(config.roles[role]?.responsibilities).toEqual(template.roles[role]?.responsibilities);
+  expect(config.agents).toEqual({
+    planning: { model: 'gpt-5', client: { type: 'codex', options: { model_reasoning_effort: 'high' } } },
+    review: { model: '123', client: { type: 'grok' } },
+    coding: { model: 'true', effort: 'low', client: { type: 'claude-code' } },
+  });
+  expect(Object.keys(config.agents)).toEqual(['planning', 'review', 'coding']);
+  for (const [role, node] of Object.entries(template.roles)) {
+    expect(config.roles[role]?.agent).toBe(node.agent);
+    expect(config.roles[role]?.responsibilities).toEqual(node.responsibilities);
     expect(config.roles[role]?.description).toMatch(/\S/);
-    expect(local.roles).toEqual({});
   }
+  expect(Object.keys(config.roles)).toEqual(['architect', 'reviewer', 'developer', 'operator']);
+  expect(local.roles).toEqual({});
   expect(files[0]!.content).not.toContain('{{');
+});
+
+test('render requires models for exactly the template agents', () => {
+  expect(() => renderProject({ planning: models.planning })).toThrow(/exactly the template agents/);
+  expect(() => renderProject({ ...models, extra: models.coding })).toThrow(/exactly the template agents/);
+});
+
+test('extra role and slot in a template are rendered without code changes', () => {
+  const dir = templateCopy((config) => config.replace('agents:\n', 'agents:\n  docs:\n    model: "{{agent}}"\n')
+    + '  writer:\n    description: Writes docs.\n    agent: docs\n    responsibilities:\n      - "Write."\n');
+  try {
+    expect(discoverAgentSlots(dir).map((slot) => slot.name)).toEqual(['docs', 'planning', 'review', 'coding']);
+    const config = parse(renderProject({ ...models, docs: choice('codex', 'gpt-5') }, dir)[0]!.content) as {
+      agents: Record<string, unknown>;
+    };
+    expect(config.agents.docs).toEqual({ model: 'gpt-5', client: { type: 'codex' } });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('copies workflows byte for byte and they validate', () => {
@@ -56,7 +95,7 @@ test('copies workflows byte for byte and they validate', () => {
   }
 });
 
-test('missing assets and missing role nodes fail naming the asset', () => {
+test('missing assets fail naming the asset', () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'migent-tpl-'));
   try {
     expect(() => renderProject(models, dir)).toThrow(/config\.yaml/);
@@ -69,38 +108,39 @@ test('missing assets and missing role nodes fail naming the asset', () => {
   }
 });
 
-test('a template without a role fails with the role path', () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'migent-tpl-'));
-  try {
-    cpSync(new URL('.', root), dir, { recursive: true });
-    cpSync(new URL('workflows/plan.yaml', root), path.join(dir, 'config.yaml'));
-    expect(() => renderProject(models, dir)).toThrow(/roles\.planner/);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
+test('template integrity failures name the file and node path', () => {
+  const cases: [string, (config: string) => string, RegExp][] = [
+    ['no agents', (config) => config.replace(/agents:\n( {2}.*\n){6}/, ''), /config\.yaml.*agents/],
+    ['filled agent', (config) => config.replace('model: "{{agent}}"', 'model: gpt-5'), /agents\.planning/],
+    ['role without agent', (config) => config.replace('    agent: planning\n', ''), /roles\.architect\.agent/],
+    ['undefined agent', (config) => config.replace('agent: coding', 'agent: missing'), /roles\.developer\.agent/],
+    ['unused slot', (config) => config.replace('agents:\n', 'agents:\n  spare:\n    model: "{{agent}}"\n'), /agents\.spare is used by no role/],
+    ['no roles', (config) => config.slice(0, config.indexOf('roles:')), /config\.yaml.*roles/],
+  ];
+  for (const [name, edit, message] of cases) {
+    const dir = templateCopy(edit);
+    try {
+      expect(() => discoverAgentSlots(dir), name).toThrow(message);
+      expect(() => renderProject(models, dir), name).toThrow(message);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   }
 });
 
-test('a template without agent fails with the full node path', () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'migent-tpl-'));
-  try {
-    cpSync(new URL('.', root), dir, { recursive: true });
-    const config = readFileSync(path.join(dir, 'config.yaml'), 'utf8').replace('    agent: "{{planner.agent}}"', '    other: value');
-    writeFileSync(path.join(dir, 'config.yaml'), config);
-    expect(() => renderProject(models, dir)).toThrow(/roles\.planner\.agent/);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test('a wrong model placeholder fails with the full node path', () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'migent-tpl-'));
-  try {
-    cpSync(new URL('.', root), dir, { recursive: true });
-    const config = readFileSync(path.join(dir, 'config.yaml'), 'utf8').replace('{{planner.agent}}', '{{reviewer.agent}}');
-    writeFileSync(path.join(dir, 'config.yaml'), config);
-    expect(() => renderProject(models, dir)).toThrow(/roles\.planner\.agent/);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
+test('a preset naming an undefined role or agent fails validation', () => {
+  for (const [from, to, message] of [
+    ['role: architect', 'role: ghost', /workflows\/plan\.yaml.*stages\[0\]\.role.*ghost/],
+    ['role: architect', 'role: architect\n    agent: ghost', /workflows\/plan\.yaml.*stages\[0\]\.agent.*ghost/],
+  ] as const) {
+    const dir = templateCopy();
+    try {
+      const file = path.join(dir, 'workflows', 'plan.yaml');
+      writeFileSync(file, readFileSync(file, 'utf8').replace(from, to));
+      expect(() => discoverAgentSlots(dir)).toThrow(message);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   }
 });
 

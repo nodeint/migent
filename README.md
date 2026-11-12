@@ -181,7 +181,7 @@ After setup, your project contains:
 
 ```text
 .migent/
-├── config.yaml        # developer, planner, reviewer: models and instructions
+├── config.yaml        # agents and the architect, reviewer, developer, operator roles
 ├── config.local.yaml  # local configuration overrides
 ├── .gitignore         # keeps run history and local overrides out of Git
 └── workflows/

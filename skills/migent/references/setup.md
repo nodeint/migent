@@ -14,7 +14,7 @@ and the available models.
 
 The default workflows use three roles:
 
-- **Planner:** designs the approach and identifies trade-offs.
+- **Architect:** designs the approach and identifies trade-offs.
 - **Reviewer:** checks the plan or implementation and identifies required fixes.
 - **Developer:** implements and verifies the work.
 
@@ -22,15 +22,16 @@ Use the selected client and model IDs:
 
 ```bash
 migent init --no-input \
-  --planner-client <client> --planner-model <model> --planner-effort <effort> \
-  --reviewer-client <client> --reviewer-model <model> --reviewer-effort <effort> \
-  --developer-client <client> --developer-model <model> --developer-effort <effort>
+  --agent planning=<client>:<model> --agent-effort planning=<effort> \
+  --agent review=<client>:<model> --agent-effort review=<effort> \
+  --agent coding=<client>:<model> --agent-effort coding=<effort>
 ```
 
-Effort flags are optional. Use values supported by each model; see
+The `planning` agent serves the architect, `review` the reviewer, and `coding`
+the developer and operator. Effort flags are optional. Use values supported by each model; see
 [config.md](config.md).
 
-Init writes role responsibilities and selected agents to `.migent/config.yaml`.
+Init writes the agents and role responsibilities to `.migent/config.yaml`.
 It also creates an empty `.migent/config.local.yaml` for machine-specific
 overrides; Git ignores the local file.
 

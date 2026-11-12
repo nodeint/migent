@@ -36,14 +36,31 @@ import { PromptCancelled } from '../errors.js';
 import { EXIT_CONFIG } from '../exits.js';
 import { exists, isDirectory, isFile } from '../fs-utils.js';
 import { cliHooks } from '../hooks.js';
-import { type ModelChoice, type RenderedFile,renderProject } from '../project-template.js';
+import {
+  type AgentSlot,
+  discoverAgentSlots,
+  type ModelChoice,
+  PRESETS,
+  type RenderedFile,
+  renderProject,
+} from '../project-template.js';
 import { runDoctor } from './doctor.js';
 
 /** Column width of role names in the init summary. */
 const ROLE_NAME_WIDTH = 10;
 
-const INIT_EXAMPLE = 'Example: migent init --planner-client codex --planner-model gpt-5 --reviewer-client grok --reviewer-model grok-4.7 --client codex --developer-model gpt-5 --no-input';
+const EXAMPLE_CHOICES = ['codex:gpt-5', 'grok:grok-4.7'];
 
+/** A generated example invocation that fills every slot of the template. */
+function initExample(slots: readonly AgentSlot[]): string {
+  const flags = slots.map((slot, index) => `--agent ${slot.name}=${EXAMPLE_CHOICES[index % EXAMPLE_CHOICES.length]}`);
+  return `Example: migent init ${flags.join(' ')} --no-input`;
+}
+
+/** The slot name with the roles it serves, for prompts, errors, and the summary. */
+function slotLabel(slot: AgentSlot): string {
+  return `${slot.name} (${slot.roles.join(', ')})`;
+}
 
 export interface ModelSelection { client: string; model: string }
 
@@ -53,18 +70,14 @@ export interface Prompter {
 }
 
 export interface InitOptions {
-  client?: string | null;
-  model?: string | null;
-  effort?: string | null;
-  options?: readonly string[];
-  plannerClient?: string | null;
-  plannerModel?: string | null;
-  plannerEffort?: string | null;
-  plannerOptions?: readonly string[];
-  reviewerClient?: string | null;
-  reviewerModel?: string | null;
-  reviewerEffort?: string | null;
-  reviewerOptions?: readonly string[];
+  /** Raw `--agent NAME=CLIENT:MODEL` values. */
+  agents?: readonly string[];
+  /** Raw `--agent-effort NAME=EFFORT` values. */
+  agentEfforts?: readonly string[];
+  /** Raw `--agent-option NAME:KEY=VALUE` values. */
+  agentOptions?: readonly string[];
+  /** Project template directory; defaults to the packaged template. */
+  templateDirectory?: string;
   interactive?: boolean;
   clients?: import('@nodeint/migent-kernel').ClientRegistry | null;
   which?: Which | null;
@@ -72,14 +85,13 @@ export interface InitOptions {
   runCommand?: RunCommand | null;
 }
 
-/** The model selection flags given for one role. */
-interface RoleFlags {
-  role: 'planner' | 'reviewer' | 'developer';
+/** The model selection flags given for one agent slot. */
+interface SlotFlags {
+  slot: AgentSlot;
   client: string | null;
   model: string | null;
-  pairs: readonly string[];
+  pairs: string[];
   effort: string | null;
-  prefix: string;
 }
 
 interface InitEnv {
@@ -92,45 +104,60 @@ interface InitEnv {
 
 export async function runInit(workspace: string, options: InitOptions = {}): Promise<number> {
   const interactive = options.interactive ?? false;
-  const [planner, reviewer, developer] = roleFlagsOf(options);
-  const roles = [planner, reviewer, developer];
   const env = initEnv(options);
-  const early = preflight(workspace, { env, roles, interactive });
-  if (early !== null) return early;
-  const models = roles.some((flags) => flags.client === null) ? await loadModels(env, Boolean(options.prompter)) : [];
-  if (models === null) return EXIT_CONFIG;
-  let selected: { planner: ModelChoice; reviewer: ModelChoice; developer: ModelChoice };
+  let slots: AgentSlot[];
+  let flags: SlotFlags[];
   try {
-    selected = {
-      planner: await roleChoice(env, planner, models),
-      reviewer: await roleChoice(env, reviewer, models),
-      developer: await roleChoice(env, developer, models),
-    };
+    slots = discoverAgentSlots(options.templateDirectory);
+    flags = parseSlotFlags(slots, options);
   } catch (error) {
-    if (error instanceof PromptCancelled) throw error;
     printError(error instanceof Error ? error.message : String(error));
     return EXIT_CONFIG;
   }
-  return writeInitProject(workspace, selected, { env, interactive });
+  const early = preflight(workspace, { env, slots: flags, interactive });
+  if (early !== null) return early;
+  const models = flags.some((item) => item.client === null) ? await loadModels(env, Boolean(options.prompter)) : [];
+  if (models === null) return EXIT_CONFIG;
+  const selected = await selectAll(env, flags, models);
+  if (selected === null) return EXIT_CONFIG;
+  const context = { env, interactive, templateDirectory: options.templateDirectory };
+  return writeInitProject(workspace, { slots, selected }, context);
+}
+
+/** The choice for every slot; null after reporting a configuration problem. */
+async function selectAll(
+  env: InitEnv,
+  flags: readonly SlotFlags[],
+  models: readonly ModelSelection[],
+): Promise<Record<string, ModelChoice> | null> {
+  const selected: Record<string, ModelChoice> = {};
+  try {
+    for (const item of flags) selected[item.slot.name] = await slotChoice(env, item, models);
+  } catch (error) {
+    if (error instanceof PromptCancelled) throw error;
+    printError(error instanceof Error ? error.message : String(error));
+    return null;
+  }
+  return selected;
 }
 
 /** The exit code when init stops before selecting models; null to continue. */
 function preflight(
   workspace: string,
-  context: { env: InitEnv; roles: readonly RoleFlags[]; interactive: boolean },
+  context: { env: InitEnv; slots: readonly SlotFlags[]; interactive: boolean },
 ): number | null {
-  const { env, roles } = context;
+  const { env, slots } = context;
   const classified = classify(workspace, env.clients, env.which);
   if (classified.state === 'ready') {
-    if (roles.some(hasSelectionFlags)) printError('Already initialized; ignoring model selection flags.');
+    if (slots.some(hasSelectionFlags)) printError('Already initialized; ignoring model selection flags.');
     printAlreadyInitialized();
     printInitNextSteps();
     return 0;
   }
-  for (const flags of roles) {
-    const problem = roleFlagProblem(flags, context.interactive);
-    if (problem !== null) {
-      printError(problem);
+  if (!context.interactive) {
+    const missing = slots.filter((item) => item.client === null).map((item) => slotLabel(item.slot));
+    if (missing.length > 0) {
+      printError(`Pass --agent NAME=CLIENT:MODEL for ${missing.join(', ')} when init is not interactive.\n${initExample(slots.map((item) => item.slot))}`);
       return EXIT_CONFIG;
     }
   }
@@ -141,21 +168,59 @@ function preflight(
   return null;
 }
 
-function roleFlagsOf(options: InitOptions): [RoleFlags, RoleFlags, RoleFlags] {
-  return [
-    {
-      role: 'planner', client: options.plannerClient ?? null, model: options.plannerModel ?? null,
-      pairs: options.plannerOptions ?? [], effort: options.plannerEffort ?? null, prefix: 'planner-',
-    },
-    {
-      role: 'reviewer', client: options.reviewerClient ?? null, model: options.reviewerModel ?? null,
-      pairs: options.reviewerOptions ?? [], effort: options.reviewerEffort ?? null, prefix: 'reviewer-',
-    },
-    {
-      role: 'developer', client: options.client ?? null, model: options.model ?? null,
-      pairs: options.options ?? [], effort: options.effort ?? null, prefix: 'developer-',
-    },
-  ];
+/** Splits `text` at the first `separator`; null when the separator is absent or a side is empty. */
+function splitFirst(text: string, separator: string): [string, string] | null {
+  const at = text.indexOf(separator);
+  if (at <= 0 || at === text.length - 1) return null;
+  return [text.slice(0, at), text.slice(at + 1)];
+}
+
+/** Maps the raw agent flags onto the template slots; throws a `ConfigurationError` for malformed input. */
+function parseSlotFlags(slots: readonly AgentSlot[], options: InitOptions): SlotFlags[] {
+  const bySlot = new Map<string, SlotFlags>(
+    slots.map((slot) => [slot.name, { slot, client: null, model: null, pairs: [], effort: null }]),
+  );
+  const known = `Agents in this template: ${slots.map(slotLabel).join(', ')}.`;
+  const find = (name: string, flag: string): SlotFlags => {
+    const found = bySlot.get(name);
+    if (!found) throw new ConfigurationError(`Unknown agent "${name}" for ${flag}. ${known}`);
+    return found;
+  };
+  for (const value of options.agents ?? []) applyAgent(find, slots, value);
+  for (const value of options.agentEfforts ?? []) applyEffort(find, value);
+  for (const value of options.agentOptions ?? []) applyOption(find, value);
+  return [...bySlot.values()];
+}
+
+type FindSlot = (name: string, flag: string) => SlotFlags;
+
+function applyAgent(find: FindSlot, slots: readonly AgentSlot[], value: string): void {
+  const named = splitFirst(value, '=');
+  const choice = named === null ? null : splitFirst(named[1], ':');
+  if (named === null || choice === null) {
+    throw new ConfigurationError(`Invalid --agent "${value}"; use NAME=CLIENT:MODEL.
+${initExample(slots)}`);
+  }
+  const target = find(named[0], '--agent');
+  if (target.client !== null) throw new ConfigurationError(`--agent ${named[0]} was given more than once.`);
+  [target.client, target.model] = choice;
+}
+
+function applyEffort(find: FindSlot, value: string): void {
+  const named = splitFirst(value, '=');
+  if (named === null) throw new ConfigurationError(`Invalid --agent-effort "${value}"; use NAME=EFFORT.`);
+  const target = find(named[0], '--agent-effort');
+  if (target.client === null) throw new ConfigurationError(`Pass --agent ${named[0]}=CLIENT:MODEL with --agent-effort.`);
+  if (target.effort !== null) throw new ConfigurationError(`--agent-effort ${named[0]} was given more than once.`);
+  target.effort = named[1];
+}
+
+function applyOption(find: FindSlot, value: string): void {
+  const named = splitFirst(value, ':');
+  if (named === null) throw new ConfigurationError(`Invalid --agent-option "${value}"; use NAME:KEY=VALUE.`);
+  const target = find(named[0], '--agent-option');
+  if (target.client === null) throw new ConfigurationError(`Pass --agent ${named[0]}=CLIENT:MODEL with --agent-option.`);
+  target.pairs.push(named[1]);
 }
 
 /** Resolves injected seams and memoizes client commands and catalogs for one init run. */
@@ -185,23 +250,8 @@ function initEnv(options: InitOptions): InitEnv {
   return { clients, which, prompt: options.prompter ?? new ClackPrompter(), execute, getCatalog };
 }
 
-function hasSelectionFlags(flags: RoleFlags): boolean {
+function hasSelectionFlags(flags: SlotFlags): boolean {
   return flags.client !== null || flags.model !== null || flags.effort !== null || flags.pairs.length > 0;
-}
-
-function roleFlagProblem(flags: RoleFlags, interactive: boolean): string | null {
-  const { role, prefix } = flags;
-  const clientFlag = role === 'developer' ? '--client' : `--${prefix}client`;
-  const names = `${clientFlag} and --${prefix}model`;
-  if ((flags.client === null) !== (flags.model === null)) {
-    return `Pass both ${names} for ${role}, or omit both.\n${INIT_EXAMPLE}`;
-  }
-  if (flags.pairs.length > 0 && flags.client === null) return `Pass ${names} with --${prefix}option.`;
-  if (flags.effort !== null && flags.client === null) return `Pass ${names} with --${prefix}effort.`;
-  if (flags.client === null && !interactive) {
-    return `Pass ${names} for ${role} when init is not interactive.\n${INIT_EXAMPLE}`;
-  }
-  return null;
 }
 
 /** Every model the installed clients list; null when none is available. */
@@ -229,9 +279,9 @@ async function loadModels(env: InitEnv, injectedPrompter: boolean): Promise<Mode
   return models;
 }
 
-function roleChoice(env: InitEnv, flags: RoleFlags, models: readonly ModelSelection[]): Promise<ModelChoice> {
+function slotChoice(env: InitEnv, flags: SlotFlags, models: readonly ModelSelection[]): Promise<ModelChoice> {
   return choices({ clients: env.clients, which: env.which, prompt: env.prompt }, {
-    role: flags.role.charAt(0).toUpperCase() + flags.role.slice(1),
+    role: slotLabel(flags.slot),
     client: flags.client,
     model: flags.model,
     options: parseOptions(flags.pairs),
@@ -243,23 +293,23 @@ function roleChoice(env: InitEnv, flags: RoleFlags, models: readonly ModelSelect
 
 async function writeInitProject(
   workspace: string,
-  selected: { planner: ModelChoice; reviewer: ModelChoice; developer: ModelChoice },
-  context: { env: InitEnv; interactive: boolean },
+  chosen: { slots: readonly AgentSlot[]; selected: Record<string, ModelChoice> },
+  context: { env: InitEnv; interactive: boolean; templateDirectory?: string },
 ): Promise<number> {
-  const { planner, reviewer, developer } = selected;
   const { env } = context;
   let files: RenderedFile[];
   try {
-    files = renderProject(selected);
+    files = renderProject(chosen.selected, context.templateDirectory);
   } catch (error) {
     printError(error instanceof Error ? error.message : String(error));
     return EXIT_CONFIG;
   }
   const paths = writeProject(workspace, files);
-  printCreated(
-    paths,
-    `Planner: ${planner.client}/${planner.model}. Reviewer: ${reviewer.client}/${reviewer.model}. Developer: ${developer.client}/${developer.model}. Workflows: implement, plan.`,
-  );
+  const picks = chosen.slots.flatMap((slot) => {
+    const choice = chosen.selected[slot.name];
+    return choice ? [`${slotLabel(slot)}: ${choice.client}/${choice.model}`] : [];
+  });
+  printCreated(paths, `${picks.join('. ')}. Workflows: ${PRESETS.join(', ')}.`);
   printRoleDescriptions(workspace);
   if (context.interactive) {
     const doctorCode = await runDoctor(workspace, { which: env.which, runCommand: env.execute });

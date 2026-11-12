@@ -17,7 +17,7 @@ artifacts:
 
 stages:
   - id: plan
-    role: planner
+    role: architect
     depends_on: []
     max_revisions: 3
     ask: human
