@@ -1,7 +1,29 @@
 # @nodeint/migent-session
 
-Session store for Migent: sessions, events, ledger, metrics, and diagnostics.
+> For installation and usage, see [the Migent CLI on npm](https://www.npmjs.com/package/@nodeint/migent).
 
-This package is an internal dependency of the Migent CLI and has no stable public API.
+Stored session state for Migent: store, events, fold, ledger, lock, freeze, repair, query, metrics, and
+diagnostics. Depends on the kernel. Internal; no stable public API. Behavior:
+[docs/sessions.md](../../docs/sessions.md).
 
-For installation, usage, and documentation, see [the Migent CLI on npm](https://www.npmjs.com/package/@nodeint/migent).
+## Rules
+
+- `status.json` is derived: fold it from events (`foldStatus`) and write it atomically; record changes as
+  events first.
+- Mutate a session only while holding `SessionLock`.
+- Resume reads the frozen workflow and config (`session-freeze`), not live files.
+- Files from any past Migent version must stay readable; a schema change needs a read path for old sessions.
+
+## Key symbols
+
+| Symbol | File | Purpose |
+|---|---|---|
+| `createSessionDirectory` | `src/session-records.ts` | New session |
+| `appendLifecycleEvent`, `EVENT_VERSION` | `src/session-events.ts` | Event log |
+| `foldStatus`, `commitFoldedStatus`, `readSessionManifest` | `src/session-fold.ts` | Status fold |
+| `SessionLock`, `requestSessionCancel` | `src/session-lock.ts` | Locking and cancel |
+| `loadFrozenWorkflow`, `writeWorkflowFreeze` | `src/session-freeze.ts` | Frozen configuration |
+| `repairSession` | `src/session-repair.ts` | Repair broken state |
+| `selectRunWorkflow`, `selectSessionWorkflow` | `src/session-selection.ts` | Resolve workflow for a run |
+| `publishNextSuggestions`, `resolveHandoff` | `src/next-handoff.ts` | Downstream handoff |
+| metrics exports | `src/metrics.ts` | `metrics.json` |

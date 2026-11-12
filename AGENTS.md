@@ -49,7 +49,13 @@ Explicit user instructions take precedence over skill guidance.
 | [`create-pr`](.agents/skills/create-pr/SKILL.md) | Committing, pushing, and opening a pull request into `next` |
 | [`release`](.agents/skills/release/SKILL.md) | Preparing or publishing an extension release and synchronizing `main` |
 
-## Documentation entry point
+## Repository rules and documentation
 
-For every task, read the [documentation load map](docs/README.md#start-here) before opening any other repository documentation.
-Follow every matching route when a task touches multiple areas.
+Read these before acting, in this order:
+
+1. [CONTRIBUTING.md](CONTRIBUTING.md): rules for every change, including setup, tests, branches, and pull requests.
+2. The [documentation load map](docs/README.md#start-here): pick the documents for the task.
+   Follow every matching route when the task touches more than one area.
+3. The `README.md` of each package you will change: its rules and key symbols.
+
+Read only what the task needs. A narrower rule in a package README or skill takes precedence over a general one.

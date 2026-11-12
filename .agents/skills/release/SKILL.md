@@ -11,7 +11,7 @@ metadata:
 
 # Release Migent
 
-Follow the release pull request flow and pitfalls in `CONTRIBUTING.md`.
+Follow the rules in `CONTRIBUTING.md` and the flow and pitfalls below.
 Never commit directly to `main` or `next`, push feature/release changes directly
 to either branch, bypass branch protection, or tag an unmerged release branch.
 `main` is advanced only by `release.yml`, never by hand.
@@ -20,17 +20,28 @@ Work from the repository root. Reply in the user's language.
 
 ## Version and authorization
 
-Use the version the user names. If they do not name one, propose the next
-patch after the highest of `packages/*/package.json` and the `v*` tags and
-confirm the version before publishing. An explicit request to release a named
+Use the version the user names. Otherwise propose one by Semantic Versioning
+from the categories in `## Unreleased`, relative to the highest of
+`packages/*/package.json` and the `v*` tags, give the reason, and confirm it
+before publishing:
+
+| Unreleased contains | Before 1.0 | From 1.0 |
+|---|---|---|
+| `Breaking` or `Removed` | minor (0.5.6 → 0.6.0) | major |
+| `Added` or `Deprecated` | minor | minor |
+| only `Changed`, `Fixed`, `Security` | patch | patch |
+
+A breaking wire change in `@nodeint/migent-contracts` or in CLI behavior is
+`Breaking`. Changes to internal packages that leave CLI behavior unchanged are
+not. An explicit request to release a named
 version authorizes preparing and pushing a release PR. Merging that PR tags,
 publishes to npm, and advances `main`, so merge only when the user has
 explicitly authorized the merge.
 Do not ask again for actions already authorized.
 
-Before merging, check the migration prerequisites in `CONTRIBUTING.md`: the
-npm trusted publishers allow `npm publish` and no `main` ruleset restricts
-updates (only `main: immutable release history` remains). Stop if they do not.
+Before merging, check the repository prerequisites below: the npm trusted
+publishers allow `npm publish` and no `main` ruleset restricts updates (only
+`main: immutable release history` remains). Stop if they do not.
 
 ## Prepare the release branch
 
@@ -61,9 +72,30 @@ The release commit changes only `CHANGELOG.md`, `packages/*/package.json`, and
 
 Every release updates `CHANGELOG.md`. Stop when it is unchanged.
 
-Move the body of `## Unreleased` under `## X.Y.Z`. Leave `## Unreleased` empty
-above that heading. Keep `### Added`, `### Changed`, and `### Removed`. Do not
-rewrite a version section that is already released.
+Move the body of `## Unreleased` under `## X.Y.Z` (no date; `release.yml`
+matches the exact heading). Leave `## Unreleased` empty above that heading. Do
+not rewrite a version section that is already released.
+
+Notes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/):
+
+- Categories in this order, omitting empty ones: `Breaking`, `Added`,
+  `Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`.
+- One bullet per change, one or two sentences on what users see or must do,
+  ending with the PR link, e.g. `(#120)`. Details belong in the PR and docs.
+- Every `Breaking` bullet says how to migrate.
+- Leave out changes users cannot see: refactors, CI, tests, internal docs.
+
+```markdown
+## 0.6.0
+
+### Breaking
+
+- `session_id` is now a string in `--json` output. Compare ids as strings. (#117)
+
+### Added
+
+- `migent session rename <session> "<title>"` changes a session title. (#118)
+```
 
 Compare `git log <previous-tag>..HEAD` with those notes. Add every user-facing
 change the notes missed, in the same voice. If `## Unreleased` is empty, write
@@ -96,8 +128,8 @@ pnpm test
 reads its version from `packages/cli/package.json`. Do not edit
 `packages/cli/src/version.ts`.
 
-Build and tests must pass locally. Follow the client isolation guidance in
-`CONTRIBUTING.md`. Stop and report failures. Stage only the release files
+Build and tests must pass locally. Run the suite with client CLIs off `PATH`
+as `CONTRIBUTING.md` requires. Stop and report failures. Stage only the release files
 named above, commit with `Release X.Y.Z`, then push the branch explicitly:
 
 ```bash
@@ -143,3 +175,41 @@ After a successful run, confirm `origin/main` equals the tag's commit and
 `migent --version` from `npm i -g --prefer-online @nodeint/migent@X.Y.Z`
 reports `X.Y.Z`. Report the version, tag, run URL, GitHub Release URL, and the
 `main` result.
+
+## Repository prerequisites
+
+- The default branch is `next`. `.github/next-ruleset.json` requires PRs,
+  current-base `test (ubuntu-latest)`, `test (macos-latest)`, and
+  `test (windows-latest)`, linear history, and resolved conversations, with no
+  bypass actors. Squash merges; working branches are deleted after merge.
+- `.github/main-ruleset.json` blocks deletion and force-push with no
+  exceptions and has no update restriction, so the workflow's `GITHUB_TOKEN`
+  can fast-forward `main`. Delete any older `main: release maintainers only`
+  ruleset.
+- `v*` tags are immutable once pushed; only the workflow creates them.
+- Each package on npmjs.com has a GitHub Actions trusted publisher:
+  organization `nodeint`, repository `migent`, workflow `release.yml`, empty
+  environment, allowed action `npm publish`. A new package needs it before its
+  first release. Renaming `release.yml`, moving the repository, or changing a
+  manifest's `repository.url` breaks publishing until updated.
+- Publish order: `@nodeint/migent-contracts`, `-workflow`, `-prompts`,
+  `-kernel`, `-session`, `-engine`, `-doctor`, `-adapters`, `-registry`, then
+  `@nodeint/migent`. `pnpm -r pack` turns `workspace:*` into exact versions.
+
+## Pitfalls
+
+- Merge other PRs before the release PR, or rebase it and redo the changelog
+  after they land.
+- Version numbers are single-use on npm, even after unpublishing. Do not move
+  tags; release the next patch instead.
+- Deprecate a bad release, do not delete it:
+  `npm deprecate "@nodeint/migent@X.Y.Z" "Upgrade to X.Y.W"`.
+- `npm install` may fail with `ETARGET` for a few minutes after publishing;
+  use `--prefer-online`. Check each package with
+  `npm view "@nodeint/<package>@X.Y.Z" version`.
+- For a manual publish, `pnpm -r publish` hangs on the hidden 2FA prompt. Pack
+  with `pnpm -r pack --pack-destination <dir>` and `npm publish` each tarball in
+  the order above. Never run plain `npm publish` in a package directory; it
+  leaves `workspace:*` unresolved.
+- Everything is under the `@nodeint` org; npm rejected the unscoped `migent`,
+  and `@migent` is held only against squatting.

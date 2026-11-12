@@ -11,7 +11,7 @@ metadata:
 
 # Create a pull request
 
-Read `CONTRIBUTING.md` from `## Pull requests` to `## Releasing`. Work from the
+Follow the branch and pull request rules in `CONTRIBUTING.md`. Work from the
 repository root. Reply in the user's language.
 
 ## Check
@@ -56,8 +56,10 @@ git push -u origin refs/heads/<branch>:refs/heads/<branch>
 gh pr create --draft --base next --head <branch> --title "<subject>" --body-file <notes>
 ```
 
-The title is the squash commit subject. The body says what changed and why, and
-relevant validation. Add `Fixes #<n>` when the work closes an issue. End it with
+The title is the squash commit subject. Write the body from
+`.github/pull_request_template.md` and fill every section: what changed and why,
+verification commands and results, and anything not verified. Put `Fixes #<n>`
+under Related issue when the work closes an issue. End it with
 the attribution line the session gives, when provided. Never force-push or
 push to `main` or `next`; use the explicit same-name refspec above, never a bare push or
 push based on the upstream. Verify the upstream is `origin/<branch>` afterward.
