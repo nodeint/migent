@@ -20,6 +20,7 @@ export type {
   CommandSpec,
   FailureClassification,
   FailureOrigin,
+  NativeOptionSupport,
   NewSession,
   ProviderClassification,
   QuotaClassification,

@@ -352,6 +352,14 @@ export function stageOptions(stage: Record<string, unknown>, stageId: string): R
   return readOptionMap(raw, `stages.${stageId}.options`);
 }
 
+/** An option value as Migent keeps it: a trimmed non-blank string, finite number or boolean; else null. */
+export function optionValueText(value: unknown): string | null {
+  if (typeof value === 'string') return value.trim() === '' ? null : value.trim();
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : null;
+  if (typeof value === 'boolean') return String(value);
+  return null;
+}
+
 /** `path` is the literal key path of `field`, for errors that must say where the problem sits. */
 export function readOptionMap(
   raw: Record<string, unknown>,
@@ -366,13 +374,14 @@ export function readOptionMap(
         ...(path === undefined ? {} : { path: [...path, key] }),
       });
     }
-    if (typeof item !== 'string' || item.trim() === '') {
-      throw new ConfigurationError(`Missing or invalid ${field}.${key}.`, {
+    const text = optionValueText(item);
+    if (text === null) {
+      throw new ConfigurationError(`Missing or invalid ${field}.${key}: expected a non-blank string, a number or a boolean.`, {
         code: 'option-invalid',
         ...(path === undefined ? {} : { path: [...path, key] }),
       });
     }
-    parsed[key] = item.trim();
+    parsed[key] = text;
   }
   return parsed;
 }

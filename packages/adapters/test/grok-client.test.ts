@@ -122,11 +122,10 @@ test('reads effort values for the selected model', () => {
 
 test('rejects an unknown option', () => {
   const client = new GrokClient();
-  expect(() => client.validateOptions({ temperature: '0.2' })).toThrow(
-    /temperature is not a grok option/,
-  );
+  client.validateOptions({ temperature: '0.2', max_turns: '0', allowed_tools: 'x' });
   client.validateOptions({ 'reasoning-effort': 'ultra' });
-  expect(() => client.validateOptions({ max_turns: '0' })).toThrow(/max_turns must be an integer/);
+  expect(() => client.validateOptions({ output_format: 'json' })).toThrow(/is set by Migent/);
+  expect(() => client.validateOptions({ 'max-turns': '3' })).toThrow(/use lowercase snake case such as max_turns/);
 });
 
 test('maps options onto grok flags', () => {

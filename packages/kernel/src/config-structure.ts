@@ -13,6 +13,7 @@ import {
   schemaIssues,
   type TSchema,
 } from '@nodeint/migent-contracts';
+import { optionValueText } from '@nodeint/migent-workflow';
 
 import { ConfigurationError } from './errors.js';
 
@@ -98,7 +99,7 @@ function translate(issue: SchemaIssue, where: Field): ConfigurationError {
     return new ConfigurationError(`Missing or invalid ${parent} key.`, { code: 'option-key-invalid', path: at.path });
   }
   if (isOptionEntry(at.path)) {
-    return new ConfigurationError(`Missing or invalid ${at.label}.`, { code: 'option-invalid', path: at.path });
+    return new ConfigurationError(`Missing or invalid ${at.label}: expected a non-blank string, a number or a boolean.`, { code: 'option-invalid', path: at.path });
   }
   if (isClientNode(at.path) && typeof issue.value === 'string') {
     return new ConfigurationError(
@@ -165,7 +166,7 @@ function optionErrors(value: Record<string, unknown>, where: Field): Map<string,
     if (keyIssue !== undefined) {
       errors.set(key, new ConfigurationError(`Missing or invalid ${where.label} key.`, { code: 'option-key-invalid', path: at }));
     } else if (valueIssue !== undefined) {
-      errors.set(key, new ConfigurationError(`Missing or invalid ${where.label}.${key}.`, { code: 'option-invalid', path: at }));
+      errors.set(key, new ConfigurationError(`Missing or invalid ${where.label}.${key}: expected a non-blank string, a number or a boolean.`, { code: 'option-invalid', path: at }));
     }
   }
   return errors;
@@ -246,7 +247,7 @@ export function readOptions(value: unknown, where: Field, index?: StructuralInde
     if (problem !== undefined) throw problem;
   }
   const options: Record<string, string> = {};
-  for (const [key, item] of Object.entries(raw)) options[key] = (item as string).trim();
+  for (const [key, item] of Object.entries(raw)) options[key] = optionValueText(item) ?? '';
   return options;
 }
 

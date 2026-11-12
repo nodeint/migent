@@ -2,6 +2,7 @@ schema_version: 7
 id: plan
 constraints:
   - Plan only. Do not modify source code.
+  - Structural design decisions must be approved by the human.
 
 artifacts:
   plan:

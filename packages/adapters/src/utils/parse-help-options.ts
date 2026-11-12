@@ -4,6 +4,8 @@ export interface HelpOptionsFormat {
   section: RegExp;
   /** False when help omits argument placeholders and types. */
   inferArgumentType: boolean;
+  /** Markers after which the description lists long-flag aliases, for example `[aliases: --effort]`. */
+  aliasMarkers?: readonly RegExp[];
 }
 
 const ESC = '\u001B';
@@ -25,8 +27,8 @@ export function parseHelpOptions(help: string, format: HelpOptionsFormat): Headl
     }
   }
   const options = blocks.map(({ header, description }): HeadlessOption => {
-    const flags = header.match(/--?[A-Za-z][\w-]*/g) ?? [];
     const text = description.join(' ');
+    const flags = [...new Set([...(header.match(/--?[A-Za-z][\w-]*/g) ?? []), ...descriptionAliases(text, format)])];
     const argument = header.match(/\[<[^>]+>\]|<[^>]+>|\[[^\]]+\]/)?.[0] ?? null;
     const explicitType = text.match(/\[(string|number|boolean|array)\]/)?.[1] as HeadlessOption['type'] | undefined;
     const type = explicitType ?? inferredType(format.inferArgumentType, argument);
@@ -71,4 +73,14 @@ function optionName(flags: readonly string[]): string {
 
 function isLongFlag(flag: string): boolean {
   return flag.startsWith('--');
+}
+
+/** Long flags the description declares as aliases, in the client's own marker format. */
+function descriptionAliases(text: string, format: HelpOptionsFormat): string[] {
+  const found: string[] = [];
+  for (const marker of format.aliasMarkers ?? []) {
+    const match = marker.exec(text);
+    if (match?.[1] !== undefined) found.push(...(match[1].match(/--[A-Za-z][\w-]*/g) ?? []));
+  }
+  return found;
 }

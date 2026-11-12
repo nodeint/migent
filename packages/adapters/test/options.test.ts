@@ -39,3 +39,33 @@ test('reads wrapped yargs metadata and does not guess Agy arity', () => {
   expect(options.find(o => o.name === 'interactive')?.defaultValue).toBe('false');
   expect(parseAgyOptions(help('agy')).options.find(o => o.name === 'effort')?.valueMode).toBe('unknown');
 });
+
+test('grok help puts description aliases in the option alias group', () => {
+  const { options } = parseGrokOptions(help('grok'));
+  expect(options.find((o) => o.name === 'reasoning-effort')!.flags).toEqual(['--reasoning-effort', '--effort']);
+  expect(options.find((o) => o.name === 'allow')!.flags).toEqual(['--allow', '--allowedTools', '--allowed-tools']);
+});
+
+test('claude help keeps header aliases in one group', () => {
+  const { options } = parseClaudeCodeOptions(help('claude-code'));
+  expect(options.find((o) => o.name === 'bg')!.flags).toEqual(['--bg', '--background']);
+  expect(options.find((o) => o.name === 'allowedTools')!.flags).toEqual(['--allowedTools', '--allowed-tools']);
+});
+
+test('every reserved flag of a flag-style client is a long flag of its help sample or a known alias', () => {
+  const clients = [
+    ['claude-code', new ClaudeCodeClient()], ['grok', new GrokClient()],
+    ['agy', new AgyClient()], ['opencode', new OpencodeClient()],
+  ] as const;
+  for (const [id, client] of clients) {
+    const flags = new Set(client.parseOptions(help(id)).flatMap((o) => o.flags));
+    const missing = client.nativeOptions.reservedFlags.filter((flag) => !flags.has(flag));
+    expect(missing, `${id} reserves flags that help does not list`).toEqual([]);
+  }
+});
+
+test('grok singular compat alias markers are parsed too', () => {
+  const { options } = parseGrokOptions(help('grok'));
+  expect(options.find((o) => o.name === 'system-prompt-override')!.flags).toEqual(['--system-prompt-override', '--system-prompt']);
+  expect(options.find((o) => o.name === 'deny')!.flags).toEqual(['--deny', '--disallowedTools']);
+});

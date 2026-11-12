@@ -140,14 +140,13 @@ test('lists models and effort levels from the initialize response', () => {
 
 test('rejects an unknown option', () => {
   const client = new ClaudeCodeClient();
-  expect(() => client.validateOptions({ temperature: '0.2' })).toThrow(
-    /temperature is not a claude option/,
-  );
-  expect(() => client.validateOptions({ permission_mode: 'yolo' })).toThrow(
-    /permission_mode must be one of/,
-  );
-  expect(() => client.validateOptions({ max_budget_usd: '-1' })).toThrow(/max_budget_usd/);
+  // Existence and values come from help (doctor); offline only Migent's own flags and key syntax are checked.
+  client.validateOptions({ autocompact: '200000', temperature: '0.2', permission_mode: 'yolo' });
   client.validateOptions({ effort: 'high', max_budget_usd: '2.5' });
+  expect(() => client.validateOptions({ output_format: 'json' })).toThrow(/is set by Migent/);
+  expect(() => client.validateOptions({ allowed_tools: 'x', model: 'y' })).toThrow(/is set by Migent/);
+  expect(() => client.validateOptions({ allowedTools: 'x' })).toThrow(/use lowercase snake case such as allowed_tools/);
+  expect(() => client.validateOptions({ autocompact: ' ' })).toThrow(/autocompact is empty/);
 });
 
 test('maps options onto claude flags', () => {
@@ -226,4 +225,17 @@ test('normalizes claude usage from the resume fixtures', () => {
   expect(client.versionCommand().argv).toEqual(['claude', '--version']);
   expect(client.parseVersion('codex-cli 0.163.0\n')).toBe('codex-cli 0.163.0');
   expect(client.parseVersion('')).toBeNull();
+});
+
+test('option values are encoded generically: true is a bare flag, false is omitted, others are --flag value', () => {
+  const client = new ClaudeCodeClient();
+  const {argv} = client.runCommand({
+    model: 'opus', workspace: '/w', prompt: 'p', agentId: null, newAgentId: null, promptFile: '/p', lastMessageFile: '/l',
+    options: { autocompact: '200000', brief: 'true', bare: 'false', allowed_tools: 'Bash' },
+  });
+  expect(argv).toContain('--autocompact');
+  expect(argv[argv.indexOf('--autocompact') + 1]).toBe('200000');
+  expect(argv).toContain('--brief');
+  expect(argv).not.toContain('--bare');
+  expect(argv.filter((a) => a === '--permission-mode')).toHaveLength(1);
 });

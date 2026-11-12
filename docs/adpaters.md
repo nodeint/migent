@@ -192,20 +192,34 @@ agent-level `effort` alias resolves to the selected client's `effortOption`. An
 alias and its native option cannot both be set on an agent. See
 [Agent effort](agents.md#agent-effort).
 
-The existing `options()` metadata controls prompting, default selection, and
-which settings `sessionOptions()` retains on a session. These are Migent
-policies, not facts that a CLI help parser can determine.
+The set of valid options of `agy`, `claude-code`, `grok` and `opencode` is the
+installed CLI's headless help, read through `optionsCommand()`/`parseOptions()`.
+Each of those clients also declares a small policy overlay, the only option list
+Migent keeps:
 
-`validateOptions()` currently remains client-owned. Configuration resolution and
-the runner call it; interactive configuration also checks discovered per-model
-values where available. The new headless catalog does **not yet replace** these
-validators, populate configuration prompts, or drive argv generation.
+- the long flags (with aliases) Migent sets itself, which a config cannot set;
+- renamed keys (`skip_permissions` for agy, `reasoning-effort` for grok);
+- the `options()` rows that control prompting, default selection, and which
+  settings `sessionOptions()` retains on a session (the effort option, and
+  `variant` for opencode). `options()` returns only these rows.
 
-Before using it for validation, the integration must account for options Migent
-controls, such as prompts, output protocol, model selection, and session IDs.
-Native flag names may differ from stored configuration names. CLI config-key
-overrides may also expose a different surface from execution flags. The client
-must retain responsibility for that mapping and encoding.
+A config key maps to its native flag as `--` plus the key with `_` replaced by
+`-`; keys must be lowercase snake case. The client exposes this mapping and its
+reserved flags as `nativeOptions`. `validateOptions()` is offline and never runs
+a process: it checks key spelling, reserved flags and blank values. Values are
+encoded without help: `true` sends the bare flag, `false` sends nothing, any
+other value sends `--flag value`.
+
+Live checks run in doctor (`analyzeNativeOptions`) on help collected once per
+client (`collectNativeOptionFacts`), and in `migent init` and the agent
+commands. They report `option-unknown`, `option-value-invalid`,
+`option-conflict`, and the warning `option-unverified` when the help cannot be
+read. `HeadlessOption.flags` is the complete alias group: header flags plus the
+long flags a client's help declares as aliases in the description
+(`HelpOptionsFormat.aliasMarkers`). Codex keeps its own `-c key=value` checks.
+
+Configuration resolution and the runner call `validateOptions()`; interactive
+configuration also checks discovered per-model values where available.
 
 ## Failures and usage
 

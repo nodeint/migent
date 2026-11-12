@@ -8,6 +8,7 @@ import { stringify } from 'yaml';
 import {
   type ClientRegistry,
   ConfigurationError,
+  loadAgentDefinition,
   loadAgentTarget,
   loadRoleResponsibilities,
   loadWorkspaceConfig,
@@ -174,7 +175,7 @@ test('rejects a non-scalar model option', () => {
   );
   expect(() => resolveRoleTarget(workspace, 'developer', { registry })).toThrow(ConfigurationError);
   expect(() => resolveRoleTarget(workspace, 'developer', { registry })).toThrow(
-    /Missing or invalid agents\.grok\.client\.options\.reasoning-effort\./,
+    /Missing or invalid agents\.grok\.client\.options\.reasoning-effort: expected a non-blank string/,
   );
 });
 
@@ -431,4 +432,15 @@ test('client.options without client.type is rejected, and a registry without loo
   );
   const plain = inferenceWorkspace('      model: gpt-5\n');
   expect(() => resolveRoleTarget(plain, 'developer', { registry })).toThrow(/Missing roles\.developer\.agent\.client\.type/);
+});
+
+test('option values: numbers and booleans become strings, others are refused', () => {
+  const load = (options: Record<string, unknown>) =>
+    loadAgentDefinition({ model: 'm', client: { type: 'codex', options } }, 'agents.a');
+  expect(load({ autocompact: 200000, flag: true, off: false, ratio: 1.5, text: ' x ' }).options)
+    .toEqual({ autocompact: '200000', flag: 'true', off: 'false', ratio: '1.5', text: 'x' });
+  for (const bad of [{ a: Number.NaN }, { a: ' ' }, { a: [1] }, { a: { b: 1 } }]) {
+    expect(() => load(bad)).toThrowError(expect.objectContaining({ code: 'option-invalid' }));
+  }
+  expect(() => load({ a: { b: 1 } })).toThrow(/expected a non-blank string, a number or a boolean/);
 });

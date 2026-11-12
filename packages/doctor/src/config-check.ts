@@ -25,6 +25,7 @@ import {
 
 import { type Check, type Diagnostic, DiagnosticList, failed, type ModelEffortCheck,passed } from './check.js';
 import { failurePath, failureText } from './clients.js';
+import { analyzeNativeOptions, type NativeOptionFacts } from './native-options.js';
 
 /** What the structural rules found in one effective config. Pure: no files, PATH or catalogs. */
 export interface ConfigAnalysis {
@@ -51,10 +52,11 @@ export function analyzeConfig(
   clients: ClientRegistry,
   source: {
     readonly effortChecks: Readonly<Record<string, ModelEffortCheck>>;
+    readonly nativeOptionFacts?: NativeOptionFacts;
     readonly ownerOf: (path: readonly (string | number)[]) => ConfigOwner;
   },
 ): ConfigAnalysis {
-  const { effortChecks, ownerOf } = source;
+  const { effortChecks, ownerOf, nativeOptionFacts } = source;
   const diagnostics = new DiagnosticList();
   const { error, fromError } = errorReporters(diagnostics, ownerOf);
 
@@ -71,7 +73,9 @@ export function analyzeConfig(
   if (unmapped.size > 0) error('agent-unmapped', unmappedMessage([...unmapped].sort()), { path: ['agents'] });
 
   checkRoleKeys(roles, fromError);
-  const ctx: AnalysisContext = { config, clients, effortChecks, structure, unmapped, diagnostics, error, fromError };
+  const ctx: AnalysisContext = {
+    config, clients, effortChecks, nativeOptionFacts, structure, unmapped, diagnostics, error, fromError, ownerOf,
+  };
   const executableByClient = checkAgentDefinitions(ctx);
   const { roleNames, roleDescriptions } = checkRoles(ctx, roles);
 
@@ -130,11 +134,13 @@ interface AnalysisContext {
   readonly config: Record<string, unknown>;
   readonly clients: ClientRegistry;
   readonly effortChecks: Readonly<Record<string, ModelEffortCheck>>;
+  readonly nativeOptionFacts: NativeOptionFacts | undefined;
   readonly structure: StructuralIndex;
   readonly unmapped: ReadonlySet<string>;
   readonly diagnostics: DiagnosticList;
   readonly error: ReportError;
   readonly fromError: ReportCaught;
+  readonly ownerOf: (path: readonly (string | number)[]) => ConfigOwner;
 }
 
 type AgentEntry = ReturnType<typeof listAgentDefinitions>[number];
@@ -193,7 +199,31 @@ function checkAgentEntry(ctx: AnalysisContext, entry: AgentEntry): { client: str
       { path: [...entry.path, ...failurePath(failure)], detail: failure.code === 'options-invalid' ? failure.message : undefined },
     );
   }
+  if (bound.client !== undefined && bound.failure === undefined) {
+    reportNativeOptions(ctx, bound.client, target.options, [...entry.path, 'client', 'options']);
+  }
   return bound.client === undefined ? null : { client: target.client, command: bound.client.command };
+}
+
+/** Reports what the client's help says about the effective options of one agent or role. */
+function reportNativeOptions(
+  ctx: AnalysisContext,
+  client: Parameters<typeof analyzeNativeOptions>[0],
+  options: Readonly<Record<string, string>>,
+  path: readonly (string | number)[],
+): void {
+  for (const finding of analyzeNativeOptions(client, options, ctx.nativeOptionFacts)) {
+    // A role that resolves to an analyzed agent repeats its findings: one root cause, one message.
+    if (ctx.diagnostics.items.some((item) => item.code === finding.code && item.message === finding.message)) continue;
+    ctx.diagnostics.add({
+      severity: finding.severity,
+      code: finding.code,
+      message: finding.message,
+      path,
+      detail: finding.message,
+      source: { layer: ctx.ownerOf(path) },
+    });
+  }
 }
 
 /** Resolves every role's cascade in name order; unmapped roles count as known without further checks. */
@@ -237,7 +267,11 @@ function checkRole(ctx: AnalysisContext, roleKey: string, role: unknown): RoleCh
     fromError(caught, ['roles', roleKey]);
     return { known: false, description: null };
   }
-  reportRoleBinding(ctx, roleKey, resolveEffectiveClient(clients, resolved));
+  const bound = resolveEffectiveClient(clients, resolved);
+  reportRoleBinding(ctx, roleKey, bound);
+  if (bound.client !== undefined && bound.failure === undefined) {
+    reportNativeOptions(ctx, bound.client, resolved.options, ['roles', roleKey, 'options']);
+  }
   return { known: true, description };
 }
 
@@ -294,6 +328,7 @@ export function checkConfig(
   workspace: string,
   clients: ClientRegistry,
   effortChecks: Readonly<Record<string, ModelEffortCheck>>,
+  nativeOptionFacts?: NativeOptionFacts,
 ): ConfigCheckResult {
   let merged;
   try {
@@ -318,7 +353,7 @@ export function checkConfig(
     };
   }
   const { config, ownerOf } = merged;
-  const analysis = analyzeConfig(config, clients, { effortChecks, ownerOf });
+  const analysis = analyzeConfig(config, clients, { effortChecks, nativeOptionFacts, ownerOf });
   const warnings = [
     ...trackedLocalConfigWarnings(workspace),
     ...analysis.diagnostics.warnings.map((warning) => warning.message),

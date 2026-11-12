@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Fixed
+
+- A Claude Code role can set any option `claude -p --help` lists, such as `autocompact: 200000`, and pass `migent doctor` (#122). Option values in YAML may be numbers or booleans; they are stored as strings.
+
+### Changed
+
+- For `agy`, `claude-code`, `grok` and `opencode`, the valid options come from the installed CLI's headless help instead of a list kept in Migent. `migent doctor`, `migent init` and the agent commands read the help and report `option-unknown`, `option-value-invalid`, `option-conflict` and `option-unverified`. Offline checks (config load, runs) only refuse flags Migent sets itself and non-canonical key spellings, so a wrong value now reaches the client CLI unless doctor ran first. `migent get options` lists only the options Migent prompts for or stores; `--native` lists everything the help shows. `HeadlessOption.flags` now includes aliases the help declares in descriptions (grok, both `compat alias:` and `compat aliases:`). Codex is unchanged.
+
 ### Changed
 
 - Workflow execution moved from `@nodeint/migent-kernel` into a new internal npm package, `@nodeint/migent-engine`, and the session store moved into `@nodeint/migent-session`. CLI behavior and `--json` output are unchanged.

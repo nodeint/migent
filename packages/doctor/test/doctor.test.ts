@@ -405,14 +405,14 @@ test('an invalid model option is reported once, however many roles use the model
   const diagnostics = validateConfigLayers(
     {
       project: {
-        agents: { x: { client: { type: 'codex', options: { a: 3 } }, model: 'm' } },
+        agents: { x: { client: { type: 'codex', options: { a: { deep: 1 } } }, model: 'm' } },
         roles: { dev: { agent: 'x' }, qa: { agent: 'x' } },
       },
     },
     defaultClients(),
   );
   const errors = diagnostics.filter((item) => item.severity === 'error');
-  expect(errors.map((item) => item.message)).toEqual(['Missing or invalid agents.x.client.options.a.']);
+  expect(errors.map((item) => item.message)).toEqual(['Missing or invalid agents.x.client.options.a: expected a non-blank string, a number or a boolean.']);
   expect(errors[0]!.path).toEqual(['agents', 'x', 'client', 'options', 'a']);
 });
 

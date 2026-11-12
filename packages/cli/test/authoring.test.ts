@@ -242,15 +242,15 @@ test("paths use the draft's own coordinates for routes and for a stage named id"
 test('client option errors keep the origin of the bad options', async () => {
   const local = (options: string) => writeFileSync(path.join(root, '.migent', 'config.local.yaml'), `schema_version: 7\nagents:\n  fast:\n    client:\n      options:\n        ${options}\n`);
   const validate = async (text: string) => (await run(['workflow', 'validate', '@draft', '--format', 'yaml', '--json'], text)).json.diagnostics;
-  local('max_turns: abc');
+  local('output_format: json');
   const plain = (await validate(WORKFLOW)).find((d: { code: string }) => d.code === 'options-invalid');
   expect(plain).toMatchObject({ source: 'local', draft: false, path: ['agents', 'fast', 'client', 'options'] });
-  const withOwn = (await validate(WORKFLOW.replace('depends_on: []', 'depends_on: []\n    agent:\n      client:\n        type: grok\n        options:\n          max_turns: "3"\n      model: grok-4.7')))
+  const withOwn = (await validate(WORKFLOW.replace('depends_on: []', 'depends_on: []\n    agent:\n      client:\n        type: grok\n        options:\n          temperature: "3"\n      model: grok-4.7')))
     .find((d: { code: string }) => d.code === 'options-invalid');
   // The stage overrides the bad value, so nothing is wrong any more.
   expect(withOwn).toBeUndefined();
-  local('max_turns: "3"');
-  const own = (await validate(WORKFLOW.replace('depends_on: []', 'depends_on: []\n    agent:\n      client:\n        type: grok\n        options:\n          max_turns: abc\n      model: grok-4.7')))
+  local('temperature: "3"');
+  const own = (await validate(WORKFLOW.replace('depends_on: []', 'depends_on: []\n    agent:\n      client:\n        type: grok\n        options:\n          output_format: json\n      model: grok-4.7')))
     .find((d: { code: string }) => d.code === 'options-invalid');
   expect(own).toMatchObject({ source: 'workflow', draft: true, path: ['stages', 0, 'agent'] });
 });

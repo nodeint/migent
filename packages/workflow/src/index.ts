@@ -69,5 +69,5 @@ export {
 } from './model.js';
 export { parseWorkflowMapping } from './parse.js';
 export { documentVersion, isRecord, pyRepr } from './record.js';
-export { readOptionMap } from './stage-fields.js';
+export { optionValueText, readOptionMap } from './stage-fields.js';
 export { parseYamlDocument } from './yaml.js';
