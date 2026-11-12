@@ -1,6 +1,6 @@
 {
   "name": "@nodeint/migent-kernel",
-  "version": "0.5.6",
+  "version": "0.6.0",
   "description": "Configuration, authoring, and process execution for Migent.",
   "keywords": [
     "ai",
