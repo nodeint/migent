@@ -118,7 +118,13 @@ export function probeEndpointSync(endpoint: string, timeoutMs: number): Endpoint
 
 export function wrapperArgv(
   specArgv: readonly string[],
-  options: { endpoint: string; graceSec: number; executable?: string },
+  options: {
+    endpoint: string;
+    graceSec: number;
+    executable?: string;
+    windowsVerbatim?: boolean;
+    mergeStderr?: boolean;
+  },
 ): string[] {
   return [
     options.executable ?? process.execPath,
@@ -127,6 +133,8 @@ export function wrapperArgv(
     options.endpoint,
     '--grace-sec',
     String(options.graceSec),
+    ...(options.windowsVerbatim === true ? ['--windows-verbatim'] : []),
+    ...(options.mergeStderr === true ? ['--merge-stderr'] : []),
     '--',
     ...specArgv,
   ];

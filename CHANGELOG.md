@@ -5,6 +5,7 @@
 ### Fixed
 
 - A Claude Code role can set any option `claude -p --help` lists, such as `autocompact: 200000`, and pass `migent doctor` (#122). Option values in YAML may be numbers or booleans; they are stored as strings.
+- Stage `verify` commands now run in the operating system's own shell: cmd.exe (`%ComSpec%`) on Windows, `/bin/sh` elsewhere (#126). Windows no longer needs Git Bash's `sh` on `PATH`, which previously made every verify fail with "Unable to start the verify shell". Commands written in POSIX-only syntax must work in cmd.exe when the workflow runs on Windows.
 
 ### Changed
 
