@@ -105,6 +105,8 @@ interface InitEnv {
 export async function runInit(workspace: string, options: InitOptions = {}): Promise<number> {
   const interactive = options.interactive ?? false;
   const env = initEnv(options);
+  const classified = classify(workspace, env.clients, env.which);
+  if (alreadyInitialized(classified, options)) return 0;
   let slots: AgentSlot[];
   let flags: SlotFlags[];
   try {
@@ -114,7 +116,7 @@ export async function runInit(workspace: string, options: InitOptions = {}): Pro
     printError(error instanceof Error ? error.message : String(error));
     return EXIT_CONFIG;
   }
-  const early = preflight(workspace, { env, slots: flags, interactive });
+  const early = preflight(classified, { slots: flags, interactive });
   if (early !== null) return early;
   const models = flags.some((item) => item.client === null) ? await loadModels(env, Boolean(options.prompter)) : [];
   if (models === null) return EXIT_CONFIG;
@@ -141,19 +143,21 @@ async function selectAll(
   return selected;
 }
 
+/** Reports an existing valid project before parsing model selection flags. */
+function alreadyInitialized(classified: ReturnType<typeof classify>, options: InitOptions): boolean {
+  if (classified.state !== 'ready') return false;
+  if (hasSelectionFlags(options)) printError('Already initialized; ignoring model selection flags.');
+  printAlreadyInitialized();
+  printInitNextSteps();
+  return true;
+}
+
 /** The exit code when init stops before selecting models; null to continue. */
 function preflight(
-  workspace: string,
-  context: { env: InitEnv; slots: readonly SlotFlags[]; interactive: boolean },
+  classified: ReturnType<typeof classify>,
+  context: { slots: readonly SlotFlags[]; interactive: boolean },
 ): number | null {
-  const { env, slots } = context;
-  const classified = classify(workspace, env.clients, env.which);
-  if (classified.state === 'ready') {
-    if (slots.some(hasSelectionFlags)) printError('Already initialized; ignoring model selection flags.');
-    printAlreadyInitialized();
-    printInitNextSteps();
-    return 0;
-  }
+  const { slots } = context;
   if (!context.interactive) {
     const missing = slots.filter((item) => item.client === null).map((item) => slotLabel(item.slot));
     if (missing.length > 0) {
@@ -250,8 +254,8 @@ function initEnv(options: InitOptions): InitEnv {
   return { clients, which, prompt: options.prompter ?? new ClackPrompter(), execute, getCatalog };
 }
 
-function hasSelectionFlags(flags: SlotFlags): boolean {
-  return flags.client !== null || flags.model !== null || flags.effort !== null || flags.pairs.length > 0;
+function hasSelectionFlags(options: InitOptions): boolean {
+  return [options.agents, options.agentEfforts, options.agentOptions].some((values) => (values?.length ?? 0) > 0);
 }
 
 /** Every model the installed clients list; null when none is available. */

@@ -452,6 +452,39 @@ test('already initialized ignores model selection flags', async () => {
   }
 });
 
+test.each([
+  { agentEfforts: ['coding=high'] },
+  { agentOptions: ['coding:model_reasoning_effort=high'] },
+  { agents: ['oldslot=codex:gpt-5'] },
+  { agents: ['coding=codex:gpt-5', 'coding=codex:gpt-5'] },
+  { agents: ['malformed'] },
+])('already initialized ignores invalid selection flags: %j', async (flags) => {
+  const workspace = tempDir();
+  try {
+    const created = await capture(() => runInit(workspace, {
+      agents: ALL_CODEX, runCommand, which: which(new Set(['codex'])),
+    }));
+    expect(created.value, created.stderr).toBe(0);
+    const configPath = path.join(workspace, '.migent', 'config.yaml');
+    const before = readFileSync(configPath, 'utf8');
+    const calls: string[][] = [];
+    const result = await capture(() => runInit(workspace, {
+      ...flags,
+      interactive: true,
+      which: which(new Set()),
+      runCommand: (argv) => { calls.push(argv); throw new Error('Unexpected client command'); },
+      prompter: new ScriptedPrompt([]),
+    }));
+    expect(result.value, result.stderr).toBe(0);
+    expect(result.stdout).toContain('Already initialized.');
+    expect(result.stderr).toContain('Already initialized; ignoring model selection flags.');
+    expect(readFileSync(configPath, 'utf8')).toBe(before);
+    expect(calls).toEqual([]);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
 test('requires every agent when not interactive', async () => {
   const workspace = tempDir();
   const message = 'Pass --agent NAME=CLIENT:MODEL for planning (architect), review (reviewer), coding (developer, operator)';
