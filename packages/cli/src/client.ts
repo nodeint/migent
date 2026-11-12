@@ -1,3 +1,5 @@
+import type { ChildProcess } from 'node:child_process';
+
 import { clientIds, createClient,type HeadlessOption } from '@nodeint/migent-adapters';
 import {
   type CatalogOutcome,
@@ -172,40 +174,62 @@ export function runClientCommandAsync(
   const [command, ...args] = argv;
   if (command === undefined) return Promise.reject(new ClientCommandFailed('Client command is empty.'));
   return new Promise((resolve, reject) => {
-    const child = spawnProvider(command, args, {
-      ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-      windowsHide: true,
-      // Its own process group on POSIX, so a timeout can end the whole tree.
-      detached: process.platform !== 'win32',
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-    let stdout = '';
-    let stderr = '';
-    let settled = false;
-    const finish = (action: () => void): void => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      action();
-    };
-    const timer = setTimeout(() => {
-      try {
-        if (child.pid !== undefined) killProcessTree(child.pid, 'SIGKILL');
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ESRCH') child.kill();
-      }
-      finish(() => reject(new Error(`${command} timed out after ${options.timeoutMs ?? DEFAULT_CLIENT_TIMEOUT_MS}ms.`)));
-    }, options.timeoutMs ?? DEFAULT_CLIENT_TIMEOUT_MS);
-    child.stdout?.setEncoding('utf8').on('data', (chunk: string) => { stdout += chunk; });
-    child.stderr?.setEncoding('utf8').on('data', (chunk: string) => { stderr += chunk; });
-    child.on('error', (error) => finish(() => reject(new Error(error.message))));
-    child.on('close', (status) => finish(() => {
-      if (status === 0) resolve(stdout);
-      else reject(new ClientCommandFailed((stderr || stdout).trim() || `${command} exited ${status}.`));
-    }));
-    child.stdin?.on('error', () => {});
-    child.stdin?.end(input);
+    superviseClientCommand({ command, args, input, ...options }, { resolve, reject });
   });
+}
+
+interface ClientCommandRun {
+  command: string;
+  args: string[];
+  input: string | undefined;
+  cwd?: string;
+  timeoutMs?: number;
+}
+
+/** Spawns the command and settles exactly once: on close, on spawn error, or on timeout. */
+function superviseClientCommand(
+  run: ClientCommandRun,
+  settle: { resolve: (stdout: string) => void; reject: (error: Error) => void },
+): void {
+  const { command } = run;
+  const timeoutMs = run.timeoutMs ?? DEFAULT_CLIENT_TIMEOUT_MS;
+  const child = spawnProvider(command, run.args, {
+    ...(run.cwd === undefined ? {} : { cwd: run.cwd }),
+    windowsHide: true,
+    // Its own process group on POSIX, so a timeout can end the whole tree.
+    detached: process.platform !== 'win32',
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  let stdout = '';
+  let stderr = '';
+  let settled = false;
+  const finish = (outcome: { stdout: string } | { error: Error }): void => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timer);
+    if ('error' in outcome) settle.reject(outcome.error);
+    else settle.resolve(outcome.stdout);
+  };
+  const timer = setTimeout(() => {
+    killClientTree(child);
+    finish({ error: new Error(`${command} timed out after ${timeoutMs}ms.`) });
+  }, timeoutMs);
+  child.stdout?.setEncoding('utf8').on('data', (chunk: string) => { stdout += chunk; });
+  child.stderr?.setEncoding('utf8').on('data', (chunk: string) => { stderr += chunk; });
+  child.on('error', (error) => finish({ error: new Error(error.message) }));
+  child.on('close', (status) => finish(status === 0
+    ? { stdout }
+    : { error: new ClientCommandFailed((stderr || stdout).trim() || `${command} exited ${status}.`) }));
+  child.stdin?.on('error', () => {});
+  child.stdin?.end(run.input);
+}
+
+function killClientTree(child: ChildProcess): void {
+  try {
+    if (child.pid !== undefined) killProcessTree(child.pid, 'SIGKILL');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ESRCH') child.kill();
+  }
 }
 
 /** Discover native headless CLI options independently of model availability. */

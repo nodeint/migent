@@ -121,6 +121,18 @@ function draftDiagnostics(draft: Mapping, parsed: WorkflowDraft, source: Diagnos
   return out;
 }
 
+/** A parsed sibling's catalog entry, or the configuration error that rejected it. */
+function siblingCatalogEntry(
+  sibling: { file: string; document: Mapping },
+): { entry: WorkflowCatalogEntry } | { error: ConfigurationError } {
+  try {
+    return { entry: catalogEntryFromDocument(sibling.file, parseWorkflowMapping(sibling.document, sibling.file)) };
+  } catch (caught) {
+    if (!(caught instanceof ConfigurationError)) throw caught;
+    return { error: caught };
+  }
+}
+
 /** Siblings go through the same parser and catalog rules the runtime applies to the directory. */
 function siblingCatalog(siblings: WorkflowDraftInput['siblings']): {
   entries: WorkflowCatalogEntry[];
@@ -132,17 +144,9 @@ function siblingCatalog(siblings: WorkflowDraftInput['siblings']): {
   const diagnostics: Diagnostic[] = [];
   for (const sibling of siblings) {
     const sibSource = { workflow: sibling.file };
-    let error: ConfigurationError | null = null;
-    if ('error' in sibling) {
-      error = sibling.error;
-    } else {
-      try {
-        entries.push(catalogEntryFromDocument(sibling.file, parseWorkflowMapping(sibling.document, sibling.file)));
-      } catch (caught) {
-        if (!(caught instanceof ConfigurationError)) throw caught;
-        error = caught;
-      }
-    }
+    const parsed = 'error' in sibling ? { error: sibling.error } : siblingCatalogEntry(sibling);
+    const error = 'error' in parsed ? parsed.error : null;
+    if ('entry' in parsed) entries.push(parsed.entry);
     if (error !== null) {
       failedIds.add(sibling.file.replace(/\.yaml$/, ''));
       diagnostics.push({ ...fromError(error, sibSource, 'workflow-invalid'), severity: 'warning', message: `${sibling.file}: ${error.message}` });

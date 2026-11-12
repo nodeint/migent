@@ -134,10 +134,8 @@ function sortKey(item: FollowLine): { time: number; seq: number; source: number;
   try {
     const value = JSON.parse(item.line) as unknown;
     if (isRecord(value)) {
-      if (typeof value.timestamp === 'string') {
-        const parsed = Date.parse(value.timestamp);
-        if (!Number.isNaN(parsed)) time = parsed;
-      }
+      const parsed = typeof value.timestamp === 'string' ? Date.parse(value.timestamp) : Number.NaN;
+      if (!Number.isNaN(parsed)) time = parsed;
       if (typeof value.seq === 'number' && Number.isFinite(value.seq)) seq = value.seq;
     }
   } catch {

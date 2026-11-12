@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, unlinkSync } from 'node:fs';
+import type { IncomingMessage } from 'node:http';
 import path from 'node:path';
 
 import { JSON_INDENT, MS_PER_SECOND } from '@nodeint/migent-kernel';
@@ -173,12 +174,7 @@ export async function requestLocal(port: number, request: LocalRequest): Promise
         timeout: Math.max(1, timeoutSec * MS_PER_SECOND),
       },
       (response) => {
-        const chunks: Buffer[] = [];
-        response.on('data', (chunk: Buffer) => chunks.push(Buffer.from(chunk)));
-        response.on('end', () => {
-          resolve({ status: response.statusCode ?? 0, raw: Buffer.concat(chunks) });
-        });
-        response.on('error', reject);
+        readResponse(response).then(resolve, reject);
       },
     );
     req.on('timeout', () => {
@@ -188,4 +184,10 @@ export async function requestLocal(port: number, request: LocalRequest): Promise
     if (body) req.end(body);
     else req.end();
   });
+}
+
+async function readResponse(response: IncomingMessage): Promise<{ status: number; raw: Buffer }> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of response) chunks.push(Buffer.from(chunk as Buffer));
+  return { status: response.statusCode ?? 0, raw: Buffer.concat(chunks) };
 }

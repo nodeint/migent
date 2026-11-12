@@ -233,18 +233,20 @@ function parseCursor(raw: string | undefined): number | null {
   return cursor;
 }
 
-/** Runs a command action and records its exit code; supplied by the program. */
-export type Settle = (action: () => number | Promise<number>) => Promise<void>;
+/** Wraps a command handler so its exit code is recorded; supplied by the program. */
+export type Act = <A extends unknown[]>(
+  handler: (...args: A) => number | Promise<number>,
+) => (...args: A) => Promise<void>;
 
 /** cancel, complete, rename, and repair. */
-export function registerSessionLifecycleCommands(session: Command, settle: Settle): void {
-  registerCancel(session, settle);
-  registerComplete(session, settle);
-  registerRename(session, settle);
-  registerRepair(session, settle);
+export function registerSessionLifecycleCommands(session: Command, act: Act): void {
+  registerCancel(session, act);
+  registerComplete(session, act);
+  registerRename(session, act);
+  registerRepair(session, act);
 }
 
-function registerCancel(session: Command, settle: Settle): void {
+function registerCancel(session: Command, act: Act): void {
   session
     .command('cancel')
     .description('Ask the process running a session to stop. Works on Windows, where signals cannot reach it.')
@@ -259,8 +261,7 @@ function registerCancel(session: Command, settle: Settle): void {
         'Exit 2 when the session does not exist, is not running, or runs on another machine.',
       ])}Examples:\n  migent session cancel <session>\n  migent session cancel <session> --wait 60 --json\n`,
     )
-    .action((id: string, options: OptionValues) =>
-      settle(() => {
+    .action(act((id: string, options: OptionValues) => {
         const wait = Number(options.wait);
         if (!Number.isFinite(wait) || wait < 0) {
           printError('--wait must be a number of seconds, 0 or more.');
@@ -272,7 +273,7 @@ function registerCancel(session: Command, settle: Settle): void {
     );
 }
 
-function registerComplete(session: Command, settle: Settle): void {
+function registerComplete(session: Command, act: Act): void {
   session
     .command('complete')
     .description('Mark a stopped workflow session completed without running another stage.')
@@ -288,12 +289,12 @@ function registerComplete(session: Command, settle: Settle): void {
   migent session complete <session> --json
 `,
     )
-    .action((id: string, options: OptionValues) =>
-      settle(() => completeSession(findWorkspace(invocationCwdPath()), id, options.json === true)),
+    .action(act((id: string, options: OptionValues) =>
+      completeSession(findWorkspace(invocationCwdPath()), id, options.json === true)),
     );
 }
 
-function registerRename(session: Command, settle: Settle): void {
+function registerRename(session: Command, act: Act): void {
   session
     .command('rename')
     .description("Change a session's display title. The task and the session state stay unchanged.")
@@ -310,12 +311,12 @@ function registerRename(session: Command, settle: Settle): void {
   migent session rename <session> "New title" --json
 `,
     )
-    .action((id: string, title: string, options: OptionValues) =>
-      settle(() => renameSession(findWorkspace(invocationCwdPath()), { sessionId: id, title }, options.json === true)),
-    );
+    .action(act((id: string, title: string, options: OptionValues) =>
+      renameSession(findWorkspace(invocationCwdPath()), { sessionId: id, title }, options.json === true),
+    ));
 }
 
-function registerRepair(session: Command, settle: Settle): void {
+function registerRepair(session: Command, act: Act): void {
   session
     .command('repair')
     .description('Rebuild status.json from the session directory.')
@@ -328,22 +329,21 @@ function registerRepair(session: Command, settle: Settle): void {
         'Exit 2 when the session cannot be repaired, or another process holds the session lock.',
       ])}Examples:\n  migent session repair <session>\n  migent session repair <session> --accept-task\n`,
     )
-    .action((id: string, options: OptionValues) =>
-      settle(() =>
+    .action(act((id: string, options: OptionValues) =>
         repairWorkflowSession(findWorkspace(invocationCwdPath()), id, options.acceptTask === true),
       ),
     );
 }
 
 /** list, show, metrics, and follow. */
-export function registerSessionQueryCommands(session: Command, settle: Settle): void {
-  registerList(session, settle);
-  registerShow(session, settle);
-  registerMetrics(session, settle);
-  registerFollow(session, settle);
+export function registerSessionQueryCommands(session: Command, act: Act): void {
+  registerList(session, act);
+  registerShow(session, act);
+  registerMetrics(session, act);
+  registerFollow(session, act);
 }
 
-function registerList(session: Command, settle: Settle): void {
+function registerList(session: Command, act: Act): void {
   session
     .command('list')
     .description('List sessions, newest first.')
@@ -356,8 +356,7 @@ function registerList(session: Command, settle: Settle): void {
       'after',
       `${exitText(['Exit 0 after a list, including an empty list.', 'Exit 2 on a configuration error.'])}Examples:\n  migent session list\n  migent session list --latest --json\n  migent session list --workflow <id> --status completed --json\n`,
     )
-    .action((options: OptionValues) =>
-      settle(() =>
+    .action(act((options: OptionValues) =>
         runSessions(findWorkspace(invocationCwdPath()), undefined, {
           asJson: options.json === true,
           follow: false,
@@ -374,7 +373,7 @@ function registerList(session: Command, settle: Settle): void {
     );
 }
 
-function registerShow(session: Command, settle: Settle): void {
+function registerShow(session: Command, act: Act): void {
   session
     .command('show')
     .description('Print one session snapshot.')
@@ -384,8 +383,7 @@ function registerShow(session: Command, settle: Settle): void {
       'after',
       `${exitText(['Exit 0 after a snapshot, including a blocked session.', 'Exit 2 on a configuration error.'])}Examples:\n  migent session show <session>\n  migent session show <session> --json\n`,
     )
-    .action((id: string, options: OptionValues) =>
-      settle(() =>
+    .action(act((id: string, options: OptionValues) =>
         runSessions(findWorkspace(invocationCwdPath()), id, {
           asJson: options.json === true,
           follow: false,
@@ -402,7 +400,7 @@ function registerShow(session: Command, settle: Settle): void {
     );
 }
 
-function registerMetrics(session: Command, settle: Settle): void {
+function registerMetrics(session: Command, act: Act): void {
   session
     .command('metrics')
     .description('Print usage, time, and revision counts recorded for a completed workflow session.')
@@ -418,8 +416,7 @@ function registerMetrics(session: Command, settle: Settle): void {
         'Exit 2 when --json is missing, the session has no metrics.json, that file is corrupt, or a list flag is invalid.',
       ])}Examples:\n  migent session metrics <session> --json\n  migent session metrics --json --workflow <id> --status completed --limit 10\n`,
     )
-    .action((id: string | undefined, options: OptionValues) =>
-      settle(() =>
+    .action(act((id: string | undefined, options: OptionValues) =>
         runSessionMetrics(findWorkspace(invocationCwdPath()), id, {
           asJson: options.json === true,
           workflow: typeof options.workflow === 'string' ? options.workflow : null,
@@ -430,7 +427,7 @@ function registerMetrics(session: Command, settle: Settle): void {
     );
 }
 
-function registerFollow(session: Command, settle: Settle): void {
+function registerFollow(session: Command, act: Act): void {
   session
     .command('follow')
     .description("Follow a session's events until a signal.")
@@ -452,8 +449,7 @@ function registerFollow(session: Command, settle: Settle): void {
         'Exit 2 on a configuration error.',
       ])}Examples:\n  migent session follow <session>\n  migent session follow <session> --exit-when-done\n`,
     )
-    .action((id: string, options: OptionValues) =>
-      settle(() =>
+    .action(act((id: string, options: OptionValues) =>
         runSessions(findWorkspace(invocationCwdPath()), id, {
           asJson: options.json === true,
           follow: true,

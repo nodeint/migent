@@ -73,24 +73,42 @@ export function commitFoldedStatus(workspace: string, sessionDirectory: string):
 export function writeQuestionsFile(sessionDirectory: string, inputs: FoldInputs): void {
   const latest = new Set(latestPerStage(statusExecutionsFromFolds(inputs.executions)).map((row) => row.executionId));
   const manuallyCompleted = manualCompletionEvent(inputs.events) !== null;
+  const newestFirst = [...inputs.events].reverse();
   const questions = inputs.executions.flatMap((execution) => {
     if (execution.outcome?.status !== 'question') return [];
-    const reply = [...inputs.events].reverse().find((event) =>
-      event.event === 'session.active' && event.executionId === execution.executionId && event.data.from === 'question',
-    );
-    const answers = Array.isArray(reply?.data.answers) ? reply.data.answers.filter(isRecord) : [];
-    let questionStatus: 'answered' | 'pending' | 'superseded' = 'superseded';
+    const reply = questionReply(newestFirst, execution.executionId);
+    let questionStatus: QuestionRecordStatus = 'superseded';
     if (reply) questionStatus = 'answered';
     else if (latest.has(execution.executionId) && !manuallyCompleted) questionStatus = 'pending';
-    return storedQuestions(execution.outcome).map((question) => ({
-      ...question, execution_id: execution.executionId, stage_id: execution.stageId,
-      recipient: inputs.workflow?.stages[execution.stageId]?.ask ?? 'human',
-      status: questionStatus,
-      answer: answers.find((answer) => answer.question_id === question.id) ?? null,
-      ...(reply ? { answered_at: reply.timestamp } : {}),
-    }));
+    return questionRecords(execution, { reply, status: questionStatus, workflow: inputs.workflow });
   });
   writeJsonAtomic(path.join(sessionDirectory, 'questions.json'), { schema_version: 1, questions });
+}
+
+type QuestionRecordStatus = 'answered' | 'pending' | 'superseded';
+
+/** The newest `session.active` event that answered this execution's questions. */
+function questionReply(newestFirst: readonly ParsedEvent[], executionId: string): ParsedEvent | undefined {
+  return newestFirst.find((event) =>
+    event.event === 'session.active' && event.executionId === executionId && event.data.from === 'question');
+}
+
+/** One questions.json row per question the execution asked, with its answer when replied. */
+function questionRecords(
+  execution: FoldExecution,
+  context: { reply: ParsedEvent | undefined; status: QuestionRecordStatus; workflow: FoldInputs['workflow'] },
+): Record<string, unknown>[] {
+  const { reply } = context;
+  const answers = Array.isArray(reply?.data.answers) ? reply.data.answers.filter(isRecord) : [];
+  const answerFor = (questionId: string): Record<string, unknown> | null =>
+    answers.find((answer) => answer.question_id === questionId) ?? null;
+  return storedQuestions(execution.outcome).map((question) => ({
+    ...question, execution_id: execution.executionId, stage_id: execution.stageId,
+    recipient: context.workflow?.stages[execution.stageId]?.ask ?? 'human',
+    status: context.status,
+    answer: answerFor(question.id),
+    ...(reply ? { answered_at: reply.timestamp } : {}),
+  }));
 }
 
 /** Schema 2 only. Show prints this on stderr and does not rewrite status.json. */
@@ -378,16 +396,12 @@ function publishExecutionStatus(
     draft.recordLatestDecision(decisionOfOutcome(latest.outcome));
   }
   const questions = latestPerStage(rows).filter((row) => row.outcome?.status === 'question' && row.status !== 'running');
-  draft.set('questions', questions.flatMap((row) => (row.outcome?.questions ?? []).map((question) => ({
-    ...question, execution_id: row.executionId, stage_id: row.stageId,
-    recipient: inputs.workflow?.stages[row.stageId]?.ask ?? 'human',
-    file: 'executions/' + row.executionId + '/questions.json',
-  }))));
+  draft.set('questions', questions.flatMap((row) => pendingQuestionRows(row, inputs.workflow)));
   if (questions.length === 0) draft.clear('questions');
   const blocked = blockedExecutions(rows, draft.view, inputs.workflow).map((row) => ({
     executionId: row.executionId,
     stageId: row.stageId,
-    blocker: textOr(inputs.executions.find((execution) => execution.executionId === row.executionId)?.outcome?.blocker),
+    blocker: executionBlocker(inputs.executions, row.executionId),
   }));
   draft.applyTerminalFields(sessionStatus, {
     source: {
@@ -515,3 +529,16 @@ function manifestStatusToSession(manifestStatus: string | null): string {
 
 export { readExecutions, readSessionManifest } from './session-fold-read.js';
 export type { FoldExecution, FoldInputs, SessionManifest } from './session-fold-types.js';
+
+function executionBlocker(executions: readonly FoldExecution[], executionId: string): string | null {
+  return textOr(executions.find((execution) => execution.executionId === executionId)?.outcome?.blocker);
+}
+
+/** The status.json question rows for one stopped question execution. */
+function pendingQuestionRows(row: StatusExecution, workflow: FoldInputs['workflow']): Record<string, unknown>[] {
+  return (row.outcome?.questions ?? []).map((question) => ({
+    ...question, execution_id: row.executionId, stage_id: row.stageId,
+    recipient: workflow?.stages[row.stageId]?.ask ?? 'human',
+    file: 'executions/' + row.executionId + '/questions.json',
+  }));
+}

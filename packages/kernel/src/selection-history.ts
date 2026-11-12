@@ -310,7 +310,9 @@ export function latestSnapshot(snapshots: readonly ExecutionSnapshot[]): Executi
 }
 
 export function incomingRouters(workflow: WorkflowDocument, stageId: string): StageSpec[] {
-  return Object.values(workflow.stages).filter((stage) =>
-    Object.values(stage.routes).some((target) => routeListsStage(target, stageId)),
-  );
+  return Object.values(workflow.stages).filter((stage) => routesToStage(stage, stageId));
+}
+
+function routesToStage(stage: StageSpec, stageId: string): boolean {
+  return Object.values(stage.routes).some((target) => routeListsStage(target, stageId));
 }

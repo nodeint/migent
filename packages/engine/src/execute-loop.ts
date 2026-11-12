@@ -263,7 +263,7 @@ class Version2Pool {
   // Starts as many runnable stages as concurrency and the dispatch ceiling allow.
   private startRunnable(state: PassState, schedule: Schedule): void {
     const { workspace, workflow, sessionId } = this.run;
-    const { snapshots, status } = state;
+    const { snapshots } = state;
     const room = (this.maxDispatches ?? Number.POSITIVE_INFINITY) - this.dispatched;
     if (room <= 0) return;
     const { verifyTried, verifyOnlyTried } = this;
@@ -271,8 +271,11 @@ class Version2Pool {
     const running = runningStageIds(snapshots);
     const cap = Math.min(workflow.concurrency ?? 1, running.length + room);
     const starting = runnableNow(workflow, schedulable, { running, concurrency: cap, snapshots });
-    if (schedule.sessionStatus === 'blocked' && starting.length > 0) reactivateBlockedSession(workspace, sessionId, status);
-    for (const stageId of starting) this.startStage(stageId, state);
+    if (starting.length === 0) return;
+    const started = schedule.sessionStatus === 'blocked'
+      ? { snapshots, status: reactivateBlockedSession(workspace, sessionId, state.status) }
+      : state;
+    for (const stageId of starting) this.startStage(stageId, started);
   }
 
   private startStage(stageId: string, state: PassState): void {
@@ -350,15 +353,25 @@ function dispatchLimitResult(
   return executeFinal(endStatus, reason, stages);
 }
 
-// Marks a blocked session active again because a stage is about to start.
-function reactivateBlockedSession(workspace: string, sessionId: string, status: Record<string, unknown>): void {
-  status.status = 'active';
-  delete status.blocked_by_execution_id;
-  delete status.blocked_by_execution_ids;
-  delete status.blocked_by_stage_id;
-  delete status.blocker;
-  delete status.terminal_execution_id;
-  writeJsonAtomic(path.join(workspace, '.migent', 'sessions', sessionId, 'status.json'), status);
+const BLOCKED_STATUS_FIELDS: ReadonlySet<string> = new Set([
+  'blocked_by_execution_id',
+  'blocked_by_execution_ids',
+  'blocked_by_stage_id',
+  'blocker',
+  'terminal_execution_id',
+]);
+
+// Marks a blocked session active again because a stage is about to start; returns the written status.
+function reactivateBlockedSession(
+  workspace: string,
+  sessionId: string,
+  status: Readonly<Record<string, unknown>>,
+): Record<string, unknown> {
+  const kept = Object.entries(status).filter(([key]) => !BLOCKED_STATUS_FIELDS.has(key));
+  const active: Record<string, unknown> = { ...Object.fromEntries(kept) };
+  active.status = 'active';
+  writeJsonAtomic(path.join(workspace, '.migent', 'sessions', sessionId, 'status.json'), active);
+  return active;
 }
 
 function runningStageIds(snapshots: readonly ExecutionSnapshot[]): string[] {

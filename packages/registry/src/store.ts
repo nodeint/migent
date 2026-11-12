@@ -423,7 +423,7 @@ export class RegistryStore {
   }
 
   public async list(): Promise<WorkspacePublic[]> {
-    return this.lock(true, async () => ordered(this.load()).map((record) => asPublic(record)));
+    return this.lock(true, async () => ordered(this.load()).map(asPublic));
   }
 
   public async get(workspaceId: string): Promise<WorkspacePublic> {
@@ -435,7 +435,7 @@ export class RegistryStore {
       const records = this.load();
       const found = findRecord(records, workspaceId);
       await this.lockedHook();
-      this.publish(records.filter((record) => record.id !== workspaceId));
+      this.publish(withoutRecord(records, workspaceId));
       return asPublic(found);
     });
   }
@@ -469,4 +469,8 @@ export class RegistryStore {
     const payload = Buffer.from(`${JSON.stringify(document, null, JSON_INDENT)}\n`, 'utf8');
     atomicReplace(path.join(this.directory, 'registry.json'), payload);
   }
+}
+
+function withoutRecord(records: readonly WorkspaceRecord[], workspaceId: string): WorkspaceRecord[] {
+  return records.filter((record) => record.id !== workspaceId);
 }

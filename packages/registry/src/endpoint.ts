@@ -159,24 +159,7 @@ export class ServiceEndpointServer {
     const { token, onStop } = stop;
     const endpoint = serviceEndpointPath(home);
     const helloLine = `${JSON.stringify(hello)}\n`;
-    const server = createServer((socket) => {
-      socket.setEncoding('utf8');
-      socket.on('error', () => undefined);
-      let buffer = '';
-      socket.on('data', (chunk: string) => {
-        buffer += chunk;
-        if (buffer.length > HELLO_LIMIT) return socket.destroy();
-        const newline = buffer.indexOf('\n');
-        if (newline < 0) return;
-        if (buffer.slice(0, newline) === `stop ${token}`) {
-          socket.end('ok\n');
-          onStop();
-        } else {
-          socket.end('denied\n');
-        }
-      });
-      socket.write(helloLine);
-    });
+    const server = createServer((socket) => serveEndpointSocket(socket, helloLine, { token, onStop }));
     if (process.platform !== 'win32') {
       const current = await exchange(endpoint, 1, null);
       if (current.status.state !== 'gone') return null;
@@ -190,4 +173,24 @@ export class ServiceEndpointServer {
     this.server.close();
     removeSocketFile(this.endpoint);
   }
+}
+
+/** Greets one endpoint client, then honours a `stop <token>` line or denies anything else. */
+function serveEndpointSocket(socket: Socket, helloLine: string, stop: { token: string; onStop: () => void }): void {
+  socket.setEncoding('utf8');
+  socket.on('error', () => undefined);
+  let buffer = '';
+  socket.on('data', (chunk: string) => {
+    buffer += chunk;
+    if (buffer.length > HELLO_LIMIT) return socket.destroy();
+    const newline = buffer.indexOf('\n');
+    if (newline < 0) return;
+    if (buffer.slice(0, newline) === `stop ${stop.token}`) {
+      socket.end('ok\n');
+      stop.onStop();
+    } else {
+      socket.end('denied\n');
+    }
+  });
+  socket.write(helloLine);
 }

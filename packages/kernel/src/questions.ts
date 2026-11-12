@@ -17,32 +17,57 @@ const questionSchema = z.object({
     .min(MIN_QUESTION_OPTIONS)
     .max(MAX_QUESTION_OPTIONS),
   recommended: z.array(optionId).min(1).optional(),
-}).strict().superRefine((question, ctx) => {
-  const ids = question.options.map((_, index) => String.fromCharCode(OPTION_LETTER_BASE + index));
-  if (question.options.some((option, index) => option.id !== undefined && option.id !== ids[index])) {
+}).strict().superRefine(refineQuestion);
+
+type ParsedQuestion = z.output<typeof questionSchema>;
+
+/** Option letters for a question with this many options: A, B, C, ... */
+function optionLetter(index: number): string {
+  return String.fromCharCode(OPTION_LETTER_BASE + index);
+}
+
+function refineQuestion(
+  question: { options: readonly { id?: string }[]; recommended?: readonly string[]; selection: string },
+  ctx: z.RefinementCtx,
+): void {
+  const optionIds = question.options.map((option) => option.id);
+  if (optionIds.some((id, index) => id !== undefined && id !== optionLetter(index))) {
     ctx.addIssue({ code: 'custom', message: 'Option IDs must follow order A, B, C, ...' });
   }
+  const letters = new Set(question.options.map((_, index) => optionLetter(index)));
   const recommended = question.recommended ?? [];
-  if (recommended.some((value) => !ids.includes(value)) || new Set(recommended).size !== recommended.length) {
+  if (recommended.some((value) => !letters.has(value)) || new Set(recommended).size !== recommended.length) {
     ctx.addIssue({ code: 'custom', message: 'recommended must contain distinct option IDs.' });
   }
   if (question.selection === 'single' && recommended.length > 1) {
     ctx.addIssue({ code: 'custom', message: 'single selection permits only one recommendation.' });
   }
-});
+}
+
+function refineQuestionBatch(questions: readonly ParsedQuestion[], ctx: z.RefinementCtx): void {
+  const ids = questions.flatMap((question) => (question.id === undefined ? [] : [question.id]));
+  if (new Set(ids).size !== ids.length) ctx.addIssue({ code: 'custom', message: 'Duplicate question id.' });
+  const outOfOrder = questions.some((question, index) =>
+    question.id !== undefined && question.id !== String(index + 1));
+  if (outOfOrder) ctx.addIssue({ code: 'custom', message: 'Question IDs must follow order 1, 2, 3, ...' });
+}
+
+type ParsedOption = ParsedQuestion['options'][number];
+type NumberedQuestion = Omit<ParsedQuestion, 'id' | 'options'> & {
+  id: string;
+  options: (ParsedOption & { id: string })[];
+};
+
+/** Assigns the question number and its option letters. */
+function numberQuestion(question: ParsedQuestion, index: number): NumberedQuestion {
+  const options = question.options.map((option, optionIndex) => ({ ...option, id: optionLetter(optionIndex) }));
+  return { ...question, id: String(index + 1), options };
+}
 
 /** The question list shared by both protocols: batch invariants plus ID and letter assignment. */
-export const questionBatchSchema = z.array(questionSchema).min(1).superRefine((questions, ctx) => {
-  const ids = questions.map((question) => question.id).filter((id) => id !== undefined);
-  if (new Set(ids).size !== ids.length) ctx.addIssue({ code: 'custom', message: 'Duplicate question id.' });
-  if (questions.some((question, index) => question.id !== undefined && question.id !== String(index + 1))) {
-    ctx.addIssue({ code: 'custom', message: 'Question IDs must follow order 1, 2, 3, ...' });
-  }
-}).transform((questions) => questions.map((question, index) => ({
-  ...question, id: String(index + 1), options: question.options.map((option, optionIndex) => ({
-    ...option, id: String.fromCharCode(OPTION_LETTER_BASE + optionIndex),
-  })),
-})));
+export const questionBatchSchema = z.array(questionSchema).min(1)
+  .superRefine(refineQuestionBatch)
+  .transform((questions) => questions.map(numberQuestion));
 
 export const questionDocumentSchema = z.object({
   schema_version: z.literal(1),
@@ -120,32 +145,41 @@ export function answerQuestions(questions: readonly Question[], reply: string): 
   } else {
     throw new ConfigurationError('Answer every question using its number, for example: 1A, 2B, 3 explain further.');
   }
-  if (
-    Object.keys(values).length !== questions.length
-    || Object.keys(values).some((key) => !questions.some((question) => question.id === key))
-  ) {
+  const pendingIds = new Set(questions.map((question) => question.id));
+  const keys = Object.keys(values);
+  if (keys.length !== questions.length || keys.some((key) => !pendingIds.has(key))) {
     throw new ConfigurationError('The reply must answer exactly the pending question IDs.');
   }
-  return questions.map((question) => {
-    const rawAnswer = values[question.id];
-    const answer = typeof rawAnswer === 'string' && /^[a-z]$/.test(rawAnswer) ? rawAnswer.toUpperCase() : rawAnswer;
-    const ids = question.options.map((option) => option.id);
-    if (typeof answer === 'string' && !ids.includes(answer) && answer.trim()) {
-      return { question_id: question.id, selected: [], text: answer };
-    }
-    let selected: unknown = answer;
-    if (typeof answer === 'string') selected = [answer];
-    else if (Array.isArray(answer)) {
-      selected = answer.map((value) => typeof value === 'string' && /^[a-z]$/.test(value) ? value.toUpperCase() : value);
-    }
-    if (!Array.isArray(selected) || selected.length === 0 || selected.some((option) => typeof option !== 'string' || !ids.includes(option)) || new Set(selected).size !== selected.length) {
-      throw new ConfigurationError(`Question ${question.id}: select distinct IDs from its options.`);
-    }
-    if (question.selection === 'single' && selected.length !== 1) {
-      throw new ConfigurationError(`Question ${question.id}: select exactly one option.`);
-    }
-    return { question_id: question.id, selected: selected as string[] };
-  });
+  return questions.map((question) => answerQuestion(question, values[question.id]));
+}
+
+/** A lone lowercase option letter is read as its uppercase ID. */
+function upperOptionLetter(value: unknown): unknown {
+  return typeof value === 'string' && /^[a-z]$/.test(value) ? value.toUpperCase() : value;
+}
+
+function answerQuestion(question: Question, rawAnswer: unknown): QuestionAnswer {
+  const answer = upperOptionLetter(rawAnswer);
+  const ids = new Set(question.options.map((option) => option.id));
+  if (typeof answer === 'string' && !ids.has(answer) && answer.trim()) {
+    return { question_id: question.id, selected: [], text: answer };
+  }
+  let selected: unknown = answer;
+  if (typeof answer === 'string') selected = [answer];
+  else if (Array.isArray(answer)) selected = answer.map(upperOptionLetter);
+  if (!isDistinctSelection(selected, ids)) {
+    throw new ConfigurationError(`Question ${question.id}: select distinct IDs from its options.`);
+  }
+  if (question.selection === 'single' && selected.length !== 1) {
+    throw new ConfigurationError(`Question ${question.id}: select exactly one option.`);
+  }
+  return { question_id: question.id, selected };
+}
+
+function isDistinctSelection(selected: unknown, ids: ReadonlySet<string>): selected is string[] {
+  if (!Array.isArray(selected) || selected.length === 0) return false;
+  const valid = selected.every((option) => typeof option === 'string' && ids.has(option));
+  return valid && new Set(selected).size === selected.length;
 }
 
 /** Commas/newlines before numbered entries delimit answers; other commas stay in free text. */

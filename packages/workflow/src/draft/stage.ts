@@ -526,7 +526,7 @@ export function collectStringItems(raw: unknown, field: string, problems: DraftP
     problems.addMessage('invalid-value', `${field} must be a list.`, [field]);
     return;
   }
-  raw.forEach((item, index) => {
+  for (const [index, item] of raw.entries()) {
     draftUnit(() => requiredString(item, `${field}[${index}]`), problems, [field, index]);
-  });
+  }
 }

@@ -16,15 +16,26 @@ function yamlText(value: unknown): string {
 }
 
 function table(views: readonly Record<string, unknown>[], columns: readonly Column[]): string {
-  const rows = [
-    columns.map((column) => column.header),
-    ...views.map((view) => columns.map((column) => column.cell(view))),
-  ];
-  const widths = columns.map((_, index) => Math.max(...rows.map((row) => row[index].length)));
-  return rows
-    .map((row) => row.map((cell, index) => (index === row.length - 1 ? cell : cell.padEnd(widths[index]))).join('  ').trimEnd())
-    .join('\n')
-    .concat('\n');
+  const rows = [columns.map((column) => column.header), ...views.map((view) => tableCells(view, columns))];
+  const widths = columns.map((_, index) => columnWidth(rows, index));
+  return rows.map((row) => tableLine(row, widths)).join('\n').concat('\n');
+}
+
+function tableCells(view: Record<string, unknown>, columns: readonly Column[]): string[] {
+  return columns.map((column) => column.cell(view));
+}
+
+function columnWidth(rows: readonly string[][], index: number): number {
+  let width = 0;
+  for (const row of rows) width = Math.max(width, row[index].length);
+  return width;
+}
+
+/** Pads every cell but the last to its column width. */
+function tableLine(row: readonly string[], widths: readonly number[]): string {
+  const last = row.length - 1;
+  const cells = row.map((cell, index) => (index === last ? cell : cell.padEnd(widths[index])));
+  return cells.join('  ').trimEnd();
 }
 
 function names(views: readonly Record<string, unknown>[]): string {

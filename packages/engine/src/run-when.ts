@@ -169,7 +169,7 @@ export function evaluateRunWhen(workspace: string, sessionId: string, stage: Sta
   const changed = changedPathsSinceBaseline(workspace, baseline.commit, label);
   const matchers = runWhen.changedPaths.map((pattern) => compileChangedPathPattern(pattern));
   const regexes = matchers.flatMap((compiled) => ('ok' in compiled ? [compiled.ok] : []));
-  const matched = changed.find((candidate) => regexes.some((regex) => regex.test(candidate)));
+  const matched = changed.find((candidate) => matchesAny(regexes, candidate));
   if (matched !== undefined) return { matched };
   return {
     skip: {
@@ -179,4 +179,8 @@ export function evaluateRunWhen(workspace: string, sessionId: string, stage: Sta
       changedPaths: changed.length,
     },
   };
+}
+
+function matchesAny(regexes: readonly RegExp[], candidate: string): boolean {
+  return regexes.some((regex) => regex.test(candidate));
 }

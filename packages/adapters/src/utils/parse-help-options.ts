@@ -32,9 +32,9 @@ export function parseHelpOptions(help: string, format: HelpOptionsFormat): Headl
     const type = explicitType ?? inferredType(format.inferArgumentType, argument);
     const choice = text.match(/\[(?:possible values|choices):\s*([^\]]+)\]/)
       ?? text.match(/\(choices:\s*([^)]+)\)/);
-    const choices = choice ? choice[1].split(',').map(value => value.trim().replace(/^"|"$/g, '')) : null;
+    const choices = choice ? choice[1].split(',').map(unquoteChoice) : null;
     return {
-      name: (flags.find(flag => flag.startsWith('--')) ?? flags[0] ?? '').replace(/^-+/, ''),
+      name: optionName(flags),
       flags, description: text, argument,
       valueMode: valueModeOf(format.inferArgumentType, argument, explicitType),
       type, choices,
@@ -58,4 +58,17 @@ function valueModeOf(
   if (!infer) return 'unknown';
   if (argument) return argument.startsWith('[') ? 'optional' : 'required';
   return explicitType && explicitType !== 'boolean' ? 'required' : 'none';
+}
+
+function unquoteChoice(value: string): string {
+  return value.trim().replace(/^"|"$/g, '');
+}
+
+/** The long flag without dashes, else the first flag. */
+function optionName(flags: readonly string[]): string {
+  return (flags.find(isLongFlag) ?? flags[0] ?? '').replace(/^-+/, '');
+}
+
+function isLongFlag(flag: string): boolean {
+  return flag.startsWith('--');
 }

@@ -247,11 +247,7 @@ export class RegistryHTTPServer {
     this.maxBodyBytes = limits.maxBodyBytes;
     this.router = buildRouter();
     this.tcp.on('connection', (socket) => {
-      socket.on('error', () => undefined);
-      const feed = new SocketFeed(socket);
-      this.feeds.set(socket, feed);
-      this.sockets.add(socket);
-      socket.on('close', () => this.sockets.delete(socket));
+      this.track(socket);
       if (this.acceptWaiter) {
         const waiter = this.acceptWaiter;
         this.acceptWaiter = null;
@@ -260,6 +256,14 @@ export class RegistryHTTPServer {
         this.queued.push(socket);
       }
     });
+  }
+
+  /** Keeps a connected socket's feed and forgets the socket once it closes. */
+  private track(socket: Socket): void {
+    socket.on('error', () => undefined);
+    this.feeds.set(socket, new SocketFeed(socket));
+    this.sockets.add(socket);
+    socket.on('close', () => this.sockets.delete(socket));
   }
 
   public static async open(config: RegistryServerConfig): Promise<RegistryHTTPServer> {

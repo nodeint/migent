@@ -230,7 +230,7 @@ function workflowView(
     })),
     role_responsibilities: responsibilities,
     warnings: [...(document.warnings ?? [])],
-    problems: [...(origin.problems ?? []), ...instructionProblems, ...stages.flatMap((stage) => (stage.problems as string[]).map((p) => `${String(stage.id)}: ${p}`))],
+    problems: [...(origin.problems ?? []), ...instructionProblems, ...stages.flatMap(stageProblems)],
   });
   return view;
 }
@@ -244,6 +244,12 @@ function problemFile(problem: string): string | null {
   return name.endsWith('.yaml') || name.endsWith('.yml') ? name : null;
 }
 
+/** Catalog problems that name this workflow id or its file. */
+function workflowProblems(problems: readonly string[], workflowId: string, base: string | null): string[] {
+  return problems.filter((problem) =>
+    problem.startsWith(`${workflowId}:`) || (base !== null && problemFile(problem) === base));
+}
+
 /** Summaries of every workflow in the project. A broken file is listed with its problems. */
 export function listWorkflowViews(workspace: string): View[] {
   const catalog = loadWorkflowCatalog(workspace, { quiet: true });
@@ -252,9 +258,7 @@ export function listWorkflowViews(workspace: string): View[] {
   const views: View[] = documents.map((document) => {
     const file = document.source === null ? null : display(workspace, document.source);
     const base = document.source === null ? null : path.basename(document.source);
-    const problems = catalog.problems.filter(
-      (problem) => problem.startsWith(`${document.id}:`) || (base !== null && problemFile(problem) === base),
-    );
+    const problems = workflowProblems(catalog.problems, document.id, base);
     for (const problem of problems) claimed.add(problem);
     return {
       kind: 'workflow',
@@ -495,4 +499,9 @@ function artifactView(artifact: StageArtifact): Record<string, unknown> {
     required: artifact.required,
     scope: artifact.scope,
   };
+}
+
+/** A stage view's problems, each prefixed with the stage id. */
+function stageProblems(stage: View): string[] {
+  return (stage.problems as string[]).map((problem) => `${String(stage.id)}: ${problem}`);
 }

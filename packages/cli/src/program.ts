@@ -12,7 +12,7 @@ import { runInit } from './commands/init.js';
 import { prepareWorkflowSession } from './commands/prepare.js';
 import { parsePort, runServiceStart, runServiceStatus, runServiceStop } from './commands/service.js';
 import { continueSession, runSessionCommand } from './commands/session-run.js';
-import { registerSessionLifecycleCommands, registerSessionQueryCommands } from './commands/sessions.js';
+import { type Act, registerSessionLifecycleCommands, registerSessionQueryCommands } from './commands/sessions.js';
 import { installSkill, printSkillPath, type SkillOptions,updateSkill } from './commands/skill.js';
 import { runUpdate } from './commands/update.js';
 import { runRegister, runRemove, runWorkspaceList } from './commands/workspace-registry.js';
@@ -98,8 +98,8 @@ function registerLookupCommands(program: Command, status: CliStatus): void {
     .command('config')
     .description('Print the effective config: .migent/config.yaml with .migent/config.local.yaml merged over it.')
     .option('--json', "Print one JSON object with the merged config and the local file's agent names.");
-  config.action((options: OptionValues) =>
-    settle(status, () => runConfigShow(findWorkspace(invocationCwdPath()), { asJson: options.json === true })),
+  config.action(act(status, (options: OptionValues) =>
+    runConfigShow(findWorkspace(invocationCwdPath()), { asJson: options.json === true })),
   );
   registerAuthoringCommands(program, status, config);
 
@@ -131,22 +131,20 @@ ${exitText(['Exit 0 on success, including an empty list.', 'Exit 2 on a usage or
 `,
     );
   getCommand.action((type: string | undefined, name: string | null = null) => {
-      const options = getCommand.opts<OptionValues>();
-      if (type === undefined) {
-        getCommand.outputHelp();
-        status.showedHelp();
-        return;
-      }
-      return settle(status, () =>
-        runGet(invocationCwdPath(), { type, name }, {
-          output: optionalText(options.output) ?? undefined,
-          json: options.json === true,
-          session: optionalText(options.session) ?? undefined,
-          client: optionalText(options.client) ?? undefined,
-          native: options.native === true,
-        }),
-      );
-    });
+    if (type === undefined) {
+      getCommand.outputHelp();
+      status.showedHelp();
+      return;
+    }
+    const options = getCommand.opts<OptionValues>();
+    return settle(status, runGet(invocationCwdPath(), { type, name }, {
+      output: optionalText(options.output) ?? undefined,
+      json: options.json === true,
+      session: optionalText(options.session) ?? undefined,
+      client: optionalText(options.client) ?? undefined,
+      native: options.native === true,
+    }));
+  });
 }
 
 /** doctor, update, the hidden removed provider command, and migrate. */
@@ -169,8 +167,7 @@ ${exitText([
         'Exit 2 for an invalid session id or an outdated schema.',
       ])}`,
     )
-    .action((options: OptionValues) =>
-      settle(status, () =>
+    .action(act(status, (options: OptionValues) =>
         runDoctor(findWorkspace(invocationCwdPath()), {
           asJson: options.json === true,
           ...(typeof options.session === 'string' ? { session: options.session } : {}),
@@ -184,8 +181,7 @@ ${exitText([
     .option('--dry-run', 'Same as --check.')
     .option('--json', 'Print the result as one JSON object.')
     .addHelpText('after', exitText(['Exit 0 when up to date, when only checking, or after a successful update.', 'Exit 1 when the registry or the upgrade command fails.']))
-    .action((options: OptionValues) =>
-      settle(status, () =>
+    .action(act(status, (options: OptionValues) =>
         runUpdate({ check: options.check === true || options.dryRun === true, asJson: options.json === true }),
       ),
     );
@@ -197,11 +193,11 @@ ${exitText([
     .allowUnknownOption()
     .allowExcessArguments()
     .helpOption(false)
-    .action(() => settle(status, () => {
+    .action(act(status, () => {
       printError(PROVIDER_LIST_REMOVED);
       return EXIT_CONFIG;
     }));
-  provider.action(() => settle(status, () => {
+  provider.action(act(status, () => {
     printError(PROVIDER_LIST_REMOVED);
     return EXIT_CONFIG;
   }));
@@ -210,8 +206,8 @@ ${exitText([
     .command('migrate')
     .description('Upgrade config and workflows to the current schema version.')
     .option('-y, --yes', 'Upgrade without asking. Use this when no terminal is available.')
-    .action((options: OptionValues) =>
-      settle(status, () => runMigrate(findWorkspace(invocationCwdPath()), { assumeYes: options.yes === true })),
+    .action(act(status, (options: OptionValues) =>
+      runMigrate(findWorkspace(invocationCwdPath()), { assumeYes: options.yes === true })),
     );
 }
 
@@ -242,8 +238,7 @@ function registerInitCommand(program: Command, status: CliStatus): void {
     .addOption(new Option('--provider <provider>').hideHelp())
     .addOption(new Option('--skill').hideHelp())
     .option('--no-input', 'Do not prompt. Same as MIGENT_NO_INPUT=1.');
-  init.action((options: OptionValues) =>
-    settle(status, () => {
+  init.action(act(status, (options: OptionValues) => {
       if (options.skill === true) {
         printError('init --skill has been removed. Run `migent init`, then `migent skill install --project`.');
         return EXIT_CONFIG;
@@ -255,14 +250,14 @@ function registerInitCommand(program: Command, status: CliStatus): void {
         ['provider', '--client'],
       ] as const) {
         if (options[legacy] !== undefined) {
-          const flag = `--${legacy.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`;
+          const flag = kebabFlag(legacy);
           printError(`${flag} has been removed; use ${replacement} <id> (${CLIENT_MAPPING}).`);
           return EXIT_CONFIG;
         }
       }
       for (const [name, legacy] of [['developerClient', 'client'], ['developerModel', 'model'], ['developerEffort', 'effort']] as const) {
         if (options[name] !== undefined && options[legacy] !== undefined) {
-          printError(`Use only one of --${name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)} and --${legacy}.`);
+          printError(`Use only one of ${kebabFlag(name)} and --${legacy}.`);
           return EXIT_CONFIG;
         }
       }
@@ -304,11 +299,10 @@ function registerAuthoringCommands(program: Command, status: CliStatus, config: 
     }
     if (mode !== 'validate') sub.option('--preserve-comments', "Keep the target's comments, key order and line endings.");
     if (mode === 'save') sub.option('--base-hash <sha256>', 'SHA-256 of the file being replaced. Without it, save only creates a new file.');
-    sub.action((draft: string, _local: OptionValues, self: Command) => {
+    sub.action(act(status, (draft: string, _local: OptionValues, self: Command) => {
       // `config --json` is also declared on the parent, which consumes the flag first.
       const options = self.optsWithGlobals();
-      return settle(status, () =>
-        runAuthoring({
+      return runAuthoring({
           kind,
           mode,
           draft,
@@ -318,10 +312,9 @@ function registerAuthoringCommands(program: Command, status: CliStatus, config: 
           ...(typeof options.session === 'string' ? { session: options.session } : {}),
           ...(typeof options.baseHash === 'string' ? { baseHash: options.baseHash } : {}),
           preserveComments: options.preserveComments === true,
-          asJson: options.json === true,
-        }),
-      );
-    });
+        asJson: options.json === true,
+      });
+    }));
   };
   const modeVerbs = { validate: 'Validate', render: 'Print canonical YAML for', save: 'Validate and save' } as const;
   for (const mode of ['validate', 'render', 'save'] as const) {
@@ -337,8 +330,7 @@ function registerAuthoringCommands(program: Command, status: CliStatus, config: 
       .allowUnknownOption()
       .allowExcessArguments()
       .helpOption(false)
-      .action(() =>
-        settle(status, () => {
+      .action(act(status, () => {
           printError(removedConfigCommand(removed));
           return EXIT_CONFIG;
         }),
@@ -380,13 +372,13 @@ function registerSkillCommands(program: Command, status: CliStatus): void {
     };
   };
   scoped(skill.command('install').description("Install the Migent skill into the clients' skill directories.")).action(
-    (options: OptionValues) => settle(status, () => {
+    act(status, (options: OptionValues) => {
       const resolved = skillOptions(options);
       return resolved === null ? EXIT_CONFIG : installSkill(resolved);
     }),
   );
   scoped(skill.command('update').description('Reinstall installed Migent skill copies that differ from the bundled skill.')).action(
-    (options: OptionValues) => settle(status, () => {
+    act(status, (options: OptionValues) => {
       const resolved = skillOptions(options);
       return resolved === null ? EXIT_CONFIG : updateSkill(resolved);
     }),
@@ -394,7 +386,7 @@ function registerSkillCommands(program: Command, status: CliStatus): void {
   skill
     .command('path')
     .description('Print the directory of the skill bundled with this CLI.')
-    .action(() => settle(status, () => printSkillPath()));
+    .action(act(status, () => printSkillPath()));
   showHelpWhenBare(status, skill);
 }
 
@@ -405,8 +397,7 @@ function registerServiceCommands(program: Command, status: CliStatus): void {
     .description('Start the registry service, or adopt one that is already running.')
     .option('--port <port>', 'Bind 127.0.0.1 on this port. The default is 47321.')
     .option('--foreground', 'Serve in this process instead of detaching.')
-    .action((options: OptionValues) =>
-      settle(status, () => {
+    .action(act(status, (options: OptionValues) => {
         const port = options.port === undefined ? null : parsePort(String(options.port));
         return runServiceStart(port, options.foreground === true);
       }),
@@ -414,13 +405,13 @@ function registerServiceCommands(program: Command, status: CliStatus): void {
   service
     .command('stop')
     .description('Stop the registry service when its process identity matches. Stop is idempotent and exits 0 when the service is already absent.')
-    .action(() => settle(status, () => runServiceStop()));
+    .action(act(status, () => runServiceStop()));
   service
     .command('status')
     .description('Report whether the registry service is running. Status is a query and exits 1 when the service is stopped.')
     .option('--json', 'Print one JSON object.')
     .addHelpText('after', exitText(['Exit 0 when the service is running.', 'Exit 1 when the service is stopped.']))
-    .action((options: OptionValues) => settle(status, () => runServiceStatus(options.json === true)));
+    .action(act(status, (options: OptionValues) => runServiceStatus(options.json === true)));
   showHelpWhenBare(status, service);
 }
 
@@ -431,27 +422,27 @@ function registerWorkspaceCommands(program: Command, status: CliStatus): void {
     .description('Register the workspace that contains .migent/config.yaml.')
     .option('--path <path>', 'Workspace root or a directory inside it.')
     .option('--name <name>', 'Display name. Defaults to the directory name.')
-    .action((options: OptionValues) =>
-      settle(status, () => runRegister(optionalText(options.path), optionalText(options.name))),
+    .action(act(status, (options: OptionValues) => runRegister(optionalText(options.path), optionalText(options.name))),
     );
   workspace
     .command('list')
     .description('List registered workspaces.')
     .option('--json', 'Print one JSON object.')
-    .action((options: OptionValues) => settle(status, () => runWorkspaceList(options.json === true)));
+    .action(act(status, (options: OptionValues) => runWorkspaceList(options.json === true)));
   workspace
     .command('remove')
     .description('Remove one registered workspace by id.')
     .argument('<id>', 'Workspace id to remove.')
-    .action((id: string) => settle(status, () => runRemove(id)));
+    .action(act(status, (id: string) => runRemove(id)));
   showHelpWhenBare(status, workspace);
 }
 
 function registerSessionCommand(program: Command, status: CliStatus): void {
   const session = program.command('session').description('Create, run, resume, and inspect sessions.');
   registerSessionRunCommands(session, status);
-  registerSessionLifecycleCommands(session, (action) => settle(status, action));
-  registerSessionQueryCommands(session, (action) => settle(status, action));
+  const sessionAct: Act = (handler) => act(status, handler);
+  registerSessionLifecycleCommands(session, sessionAct);
+  registerSessionQueryCommands(session, sessionAct);
   showHelpWhenBare(status, session);
 }
 
@@ -479,7 +470,7 @@ function registerSessionRunCommands(session: Command, status: CliStatus): void {
       'after',
       `Before a workflow run starts (--workflow, or --session on a prepared session), the doctor checks run over every stage. ${PREFLIGHT_EXIT}\nWorkflow run:\n${exitText(LOOP_EXITS)}Workflow run with --once:\n${exitText(STAGE_EXITS)}Role run:\n${exitText(ROLE_EXITS)}Examples:\n  migent session run --workflow plan --task "<one line>"\n  migent session run --session <prepared-session>\n  migent session run --role reviewer --prompt "<prompt>"\n`,
     )
-    .action((options: OptionValues) => settle(status, () => runSessionCommand(options)));
+    .action(act(status, (options: OptionValues) => runSessionCommand(options)));
 
   session
     .command('prepare')
@@ -491,8 +482,7 @@ function registerSessionRunCommands(session: Command, status: CliStatus): void {
       'after',
       `${exitText(['Exit 0 when the session is prepared.', 'Exit 2 on a configuration error.'])}Examples:\n  migent session prepare "some task title" --workflow plan\n`,
     )
-    .action((id: string, options: OptionValues) =>
-      settle(status, () =>
+    .action(act(status, (id: string, options: OptionValues) =>
         prepareWorkflowSession(
           findWorkspace(invocationCwdPath()),
           { sessionId: id, workflowId: String(options.workflow), priorSessionId: optionalText(options.prior) },
@@ -515,7 +505,7 @@ function registerSessionRunCommands(session: Command, status: CliStatus): void {
       'after',
       `Workflow session:\n${exitText(LOOP_EXITS)}With --once:\n${exitText(STAGE_EXITS)}Role session:\n${exitText(ROLE_EXITS)}Examples:\n  migent session continue <session>\n  migent session continue <session> --once\n  migent session continue <session> --reply "<reply>"\n  migent session continue <session> --stage plan --reply-file answer.md\n`,
     )
-    .action((id: string, options: OptionValues) => settle(status, () => continueSession(id, options)));
+    .action(act(status, (id: string, options: OptionValues) => continueSession(id, options)));
 }
 
 function addDispatchOptions(command: Command, onceDescription: string): void {
@@ -543,10 +533,22 @@ function showHelpWhenBare(status: CliStatus, command: Command): void {
   });
 }
 
-function settle(status: CliStatus, action: () => number | Promise<number>): Promise<void> {
-  return Promise.resolve(action()).then((code) => {
-    status.finish(code);
-  });
+/** Records a command's exit code once it settles. */
+async function settle(status: CliStatus, code: number | Promise<number>): Promise<void> {
+  status.finish(await code);
+}
+
+/** Wraps a command handler so Commander's action records its exit code. */
+function act<A extends unknown[]>(
+  status: CliStatus,
+  handler: (...args: A) => number | Promise<number>,
+): (...args: A) => Promise<void> {
+  return (...args) => settle(status, handler(...args));
+}
+
+/** `developerClient` -> `--developer-client`. */
+function kebabFlag(optionName: string): string {
+  return `--${optionName.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`;
 }
 
 function inputDisabled(options: OptionValues): boolean {

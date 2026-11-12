@@ -261,7 +261,7 @@ async function resumeReopenedExecutions(
     log(`session ${sessionId} was cancelled during ${item.executionId}. Resuming that execution.`);
   }
   const continued = await continueReopened(run, reopened);
-  logReopenedFinishes(run, reopened, continued, stageJsons);
+  stageJsons.push(...logReopenedFinishes(run, reopened, continued));
   const stopped = reopenedStopResult(store.readSessionStatus(sessionId), limits, { continued, stageJsons });
   if (stopped !== null) return stopped;
   if (reopenLatestCancelled) return null;
@@ -325,36 +325,44 @@ async function continueReopened(
   run: ExecuteRun,
   reopened: readonly { executionId: string; stageId: string }[],
 ): Promise<RunResult[]> {
-  const { workspace, workflow, sessionId, runner: activeRunner, tasks } = run;
-  const settled = await Promise.allSettled(
-    reopened.map((item) =>
-      startTracked({ sessionId, executionId: item.executionId, tasks }, () =>
-        verifyOnlyExecution(workspace, sessionId, item.executionId)
-          ? runVerifyOnlyStage({
-              workspace,
-              sessionId,
-              stage: verifyOnlyStage(workflow, item.stageId),
-              verifyRunner: activeRunner.verifyRunner,
-              clients: activeRunner.registry,
-              executionId: item.executionId,
-            })
-          : activeRunner.continueCancelled(workspace, sessionId, item.executionId),
-      ),
-    ),
-  );
+  const settled = await Promise.allSettled(reopened.map((item) => trackReopenedExecution(run, item)));
   const rejected = settled.find((item) => item.status === 'rejected');
   if (rejected && rejected.status === 'rejected') throw rejected.reason;
   return settled.flatMap((item) => (item.status === 'fulfilled' ? [item.value] : []));
 }
 
-// Logs each reopened execution's finish line and records its stage JSON.
+function trackReopenedExecution(run: ExecuteRun, item: { executionId: string; stageId: string }): Promise<RunResult> {
+  const { sessionId, tasks } = run;
+  return startTracked({ sessionId, executionId: item.executionId, tasks }, () => continueReopenedExecution(run, item));
+}
+
+// A reopened verify-only execution reruns its verify; any other continues its cancelled turn.
+function continueReopenedExecution(
+  run: ExecuteRun,
+  item: { executionId: string; stageId: string },
+): Promise<RunResult> {
+  const { workspace, workflow, sessionId, runner: activeRunner } = run;
+  if (!verifyOnlyExecution(workspace, sessionId, item.executionId)) {
+    return activeRunner.continueCancelled(workspace, sessionId, item.executionId);
+  }
+  return runVerifyOnlyStage({
+    workspace,
+    sessionId,
+    stage: verifyOnlyStage(workflow, item.stageId),
+    verifyRunner: activeRunner.verifyRunner,
+    clients: activeRunner.registry,
+    executionId: item.executionId,
+  });
+}
+
+// Logs each reopened execution's finish line; returns their stage JSONs.
 function logReopenedFinishes(
   run: ExecuteRun,
   reopened: readonly { executionId: string; stageId: string }[],
   continued: readonly RunResult[],
-  stageJsons: Record<string, unknown>[],
-): void {
+): Record<string, unknown>[] {
   const { workspace, sessionId } = run;
+  const stageJsons: Record<string, unknown>[] = [];
   for (let index = 0; index < reopened.length; index += 1) {
     const item = reopened[index];
     const result = continued[index];
@@ -374,6 +382,7 @@ function logReopenedFinishes(
     );
     stageJsons.push(runResultJson(result));
   }
+  return stageJsons;
 }
 
 function verifyOnlyStage(workflow: WorkflowDocument, stageId: string) {

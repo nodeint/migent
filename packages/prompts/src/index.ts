@@ -260,21 +260,25 @@ export function formatQuestionAnswers(
   questions: readonly AnsweredQuestion[],
   answers: readonly QuestionAnswerInput[],
 ): string {
-  return answers.map((answer) => {
-    const question = questions.find((row) => row.id === answer.question_id);
-    if (question === undefined) throw new Error(`Answer references unknown question: ${answer.question_id}`);
-    const selected = answer.selected.map((id) => {
-      const option = question.options.find((candidate) => candidate.id === id);
-      if (option === undefined) throw new Error(`Answer references unknown option ${id} of question ${answer.question_id}`);
-      return `${id}. ${option.label}`;
-    });
-    const lines = [
-      `${answer.question_id}. ${question.question} (${question.selection})`,
-      `   - Selected: ${selected.length > 0 ? selected.join('; ') : 'none'}`,
-    ];
-    if (answer.text) lines.push(`   - Free text: ${JSON.stringify(answer.text)}`);
-    return lines.join('\n');
-  }).join('\n\n');
+  return answers.map((answer) => formatQuestionAnswer(questions, answer)).join('\n\n');
+}
+
+function formatQuestionAnswer(questions: readonly AnsweredQuestion[], answer: QuestionAnswerInput): string {
+  const question = questions.find((row) => row.id === answer.question_id);
+  if (question === undefined) throw new Error(`Answer references unknown question: ${answer.question_id}`);
+  const selected = answer.selected.map((id) => selectedOptionLine(question, id));
+  const lines = [
+    `${answer.question_id}. ${question.question} (${question.selection})`,
+    `   - Selected: ${selected.length > 0 ? selected.join('; ') : 'none'}`,
+  ];
+  if (answer.text) lines.push(`   - Free text: ${JSON.stringify(answer.text)}`);
+  return lines.join('\n');
+}
+
+function selectedOptionLine(question: AnsweredQuestion, id: string): string {
+  const option = question.options.find((candidate) => candidate.id === id);
+  if (option === undefined) throw new Error(`Answer references unknown option ${id} of question ${question.id}`);
+  return `${id}. ${option.label}`;
 }
 
 export interface QuestionCorrectionContext {

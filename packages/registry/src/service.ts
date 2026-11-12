@@ -344,15 +344,7 @@ export async function serveUntilSignal(
   }
   const stopping = (): boolean => signalled || stopRequested.aborted || (stopEvent?.isSet() ?? false);
   try {
-    while (!stopping()) {
-      try {
-        await server.handleRequest();
-      } catch (error) {
-        if (stopping()) break;
-        if ((error as NodeJS.ErrnoException).code === 'EINTR') continue;
-        throw error;
-      }
-    }
+    while (!stopping()) await handleOneRequest(server, stopping);
   } finally {
     if (install) {
       process.off('SIGINT', onSignal);
@@ -568,3 +560,13 @@ function endpointFrom(record: ServiceRecord): ServiceEndpoint {
 }
 
 export { CORRUPT, readService, serviceJsonPath, startLockPath, writeServiceJson };
+
+/** Serves one request. An error after a stop request, or an EINTR, is not a failure. */
+async function handleOneRequest(server: RegistryHTTPServer, stopping: () => boolean): Promise<void> {
+  try {
+    await server.handleRequest();
+  } catch (error) {
+    if (stopping() || (error as NodeJS.ErrnoException).code === 'EINTR') return;
+    throw error;
+  }
+}

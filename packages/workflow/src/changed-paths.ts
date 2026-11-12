@@ -32,14 +32,7 @@ export function compileChangedPathPattern(pattern: string): { ok: RegExp } | { e
       return;
     }
     if (separator) source += '/';
-    source += segment
-      .split('')
-      .map((char) => {
-        if (char === '*') return '[^/]*';
-        if (char === '?') return '[^/]';
-        return char.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
-      })
-      .join('');
+    source += segment.split('').map(globCharSource).join('');
     separator = true;
   });
   return { ok: new RegExp(`^${source}$`, 's') };
@@ -51,4 +44,11 @@ export function matchesChangedPaths(patterns: readonly string[], candidate: stri
     const compiled = compileChangedPathPattern(pattern);
     return 'ok' in compiled && compiled.ok.test(candidate);
   });
+}
+
+/** The regex source for one glob character inside a path segment. */
+function globCharSource(char: string): string {
+  if (char === '*') return '[^/]*';
+  if (char === '?') return '[^/]';
+  return char.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
 }

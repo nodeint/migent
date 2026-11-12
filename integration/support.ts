@@ -154,7 +154,7 @@ export function providerInvocations(root: string): Record<string, unknown>[] {
 export function invocationArgv(root: string): string[][] {
   return providerInvocations(root).map((item) => {
     if (!Array.isArray(item.argv)) throw new Error('provider invocation is missing argv');
-    return item.argv.map((part) => String(part));
+    return item.argv.map(String);
   });
 }
 

@@ -248,6 +248,12 @@ async function main(argv: string[]): Promise<void> {
     });
   }
   debug('listening');
+  superviseProvider(options, server);
+  process.send({ type: WRAPPER_READY });
+}
+
+/** Spawns the provider on the owner's start message and relays its exit, or stops it on disconnect. */
+function superviseProvider(options: WrapperOptions, server: Server): void {
   const exit = (code: number): never => {
     server.close();
     removeStaleSocket(options.endpoint);
@@ -269,6 +275,18 @@ async function main(argv: string[]): Promise<void> {
   process.on('disconnect', () => {
     void stopProvider();
   });
+  const onProviderError = (error: NodeJS.ErrnoException): void => {
+    if (stopping) return;
+    server.close();
+    removeStaleSocket(options.endpoint);
+    const exitCode = error.code === 'ENOENT' ? EXIT_COMMAND_NOT_FOUND : EXIT_WRAPPER_FAILURE;
+    void fail('spawn', error, { exitCode, extra: { path: error.path ?? options.command[0] } });
+  };
+  const onProviderExit = (code: number | null, signal: NodeJS.Signals | null): void => {
+    if (stopping) return;
+    debug(`provider exit code=${code} signal=${signal}`);
+    exitWithProviderStatus(code, signal, exit);
+  };
   process.on('message', (message: unknown) => {
     if (provider !== null || stopping) return;
     if (!message || typeof message !== 'object' || (message as { type?: unknown }).type !== WRAPPER_START) return;
@@ -285,19 +303,9 @@ async function main(argv: string[]): Promise<void> {
     }
     provider = started;
     debug(`provider spawned pid=${started.pid}`);
-    started.on('error', (error: NodeJS.ErrnoException) => {
-      if (stopping) return;
-      server.close();
-      removeStaleSocket(options.endpoint);
-      void fail('spawn', error, { exitCode: error.code === 'ENOENT' ? EXIT_COMMAND_NOT_FOUND : EXIT_WRAPPER_FAILURE, extra: { path: error.path ?? command[0] } });
-    });
-    started.on('exit', (code, signal) => {
-      if (stopping) return;
-      debug(`provider exit code=${code} signal=${signal}`);
-      exitWithProviderStatus(code, signal, exit);
-    });
+    started.on('error', onProviderError);
+    started.on('exit', onProviderExit);
   });
-  process.send({ type: WRAPPER_READY });
 }
 
 if (runningAsMain()) {

@@ -223,13 +223,7 @@ function reconcileValue(doc: Document, node: YamlNode | null | undefined, value:
 /** Stages and outputs are matched by `id` when every item has one, so reordering keeps comments. */
 function reconcileSeq(doc: Document, seq: YAMLSeq, items: readonly unknown[]): void {
   const ids = items.map((item) => (isRecord(item) && typeof item.id === 'string' ? item.id : null));
-  const baseIds = seq.items.map((item) => {
-    if (!isMap(item)) return null;
-    const pair = item.items.find((entry) => isNode(entry.key) && String(entry.key.toJSON()) === 'id');
-    return pair !== undefined && isNode(pair.value) && typeof pair.value.toJSON() === 'string'
-      ? String(pair.value.toJSON())
-      : null;
-  });
+  const baseIds = seq.items.map(mapItemId);
   const byId = ids.every((id) => id !== null) && baseIds.every((id) => id !== null);
   let nodes: YamlNode[];
   if (byId) {
@@ -298,4 +292,17 @@ export function checkDocumentSchemaVersion(document: Record<string, unknown>): S
   }
   if (version === SCHEMA_VERSION) return { status: 'current', version };
   return { status: version > SCHEMA_VERSION ? 'newer' : 'outdated', version };
+}
+
+/** The string `id` of a YAML map item, or null. */
+function mapItemId(item: unknown): string | null {
+  if (!isMap(item)) return null;
+  const pair = item.items.find(isIdPair);
+  return pair !== undefined && isNode(pair.value) && typeof pair.value.toJSON() === 'string'
+    ? String(pair.value.toJSON())
+    : null;
+}
+
+function isIdPair(entry: { key: unknown }): boolean {
+  return isNode(entry.key) && String(entry.key.toJSON()) === 'id';
 }

@@ -110,11 +110,13 @@ function hasStartableOutsideStops(
   return readyOutsideStoppedBranches(workflow, snapshots, {
     sessionStatus: 'active',
     revisionBaselines: revisionBaselinesFrom(previousStatus),
-  }).some((stageId) => {
-    const row = latest.find((execution) => execution.stageId === stageId);
-    // A failed stage stays stopped until continue writes `from: failed` for that execution.
-    return row === undefined || (row.status !== 'cancelled' && row.status !== 'failed');
-  });
+  }).some((stageId) => stageCanStart(latest, stageId));
+}
+
+/** A failed stage stays stopped until continue writes `from: failed` for that execution. */
+function stageCanStart(latest: readonly StatusExecution[], stageId: string): boolean {
+  const row = latest.find((execution) => execution.stageId === stageId);
+  return row === undefined || (row.status !== 'cancelled' && row.status !== 'failed');
 }
 
 function version2CompletionStatus(

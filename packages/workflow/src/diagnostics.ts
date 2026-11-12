@@ -114,12 +114,12 @@ export function unknownWorkflowKeyEntries(data: Record<string, unknown>): Unknow
     if (isRecord(stage.produces)) entries.push(...unknownKeyEntries(stage.produces, { valid: PRODUCES_KEYS, location: `${location}.produces`, base: [...base, 'produces'] }));
     if (isRecord(stage.session)) entries.push(...unknownKeyEntries(stage.session, { valid: SESSION_KEYS, location: `${location}.session`, base: [...base, 'session'] }));
     if (!Array.isArray(stage.decision)) return;
-    stage.decision.forEach((entry, entryIndex) => {
-      if (!isRecord(entry) || Object.keys(entry).length !== 1) return;
+    for (const [entryIndex, entry] of stage.decision.entries()) {
+      if (!isRecord(entry) || Object.keys(entry).length !== 1) continue;
       const [name] = Object.keys(entry);
       const body = entry[name];
       if (isRecord(body)) entries.push(...unknownKeyEntries(body, { valid: DECISION_ENTRY_KEYS, location: `${location}.decision.${name}`, base: [...base, 'decision', entryIndex, name] }));
-    });
+    }
   });
   return entries;
 }

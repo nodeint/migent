@@ -2,7 +2,7 @@
 import type { CollectedOutputs } from '../draft/outputs.js';
 import type { DraftStage } from '../draft/problems.js';
 import { DraftProblems } from '../draft/problems.js';
-import { dependencyClosure, isLeafStage, routeTargets } from '../graph.js';
+import { dependencyClosure, isLeafStage, routeTargets, stageRouteTargets } from '../graph.js';
 import type { StageSpec } from '../model.js';
 import { pyRepr } from '../record.js';
 
@@ -103,10 +103,8 @@ function definiteSuccessors(
   if (stage === undefined || stage.routes.state !== 'valid') return found;
   if (!dependencyClosureKnown(byId, scope.declaredIds, member)) return found;
   const closure = dependencyClosure(scope.graph, member);
-  for (const value of Object.values(stage.routes.value)) {
-    for (const target of routeTargets(value)) {
-      if (target !== 'complete' && !closure.has(target)) found.push(target);
-    }
+  for (const target of stageRouteTargets(stage.routes.value)) {
+    if (!closure.has(target)) found.push(target);
   }
   return found;
 }
@@ -154,9 +152,7 @@ export function collectGraphProblems(stages: readonly DraftStage[], context: Gra
 function collectMaxRevisionsProblems(scope: GraphScope, problems: DraftProblems): void {
   const targets = new Set<string>();
   for (const stage of Object.values(scope.graph)) {
-    for (const value of Object.values(stage.routes)) {
-      for (const target of routeTargets(value)) if (target !== 'complete') targets.add(target);
-    }
+    for (const target of stageRouteTargets(stage.routes)) targets.add(target);
   }
   for (const stage of scope.stages) {
     if (stage.maxRevisions.state === 'invalid' || stage.maxRevisions.value === null) continue;

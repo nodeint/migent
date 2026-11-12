@@ -93,6 +93,13 @@ export function routeTargets(target: string | readonly string[] | undefined): re
   return [];
 }
 
+/** Every stage id a route set names, without `complete`. Repeats are kept. */
+export function stageRouteTargets(
+  routes: Readonly<Record<string, string | readonly string[] | undefined>>,
+): string[] {
+  return Object.values(routes).flatMap(routeTargets).filter((target) => target !== 'complete');
+}
+
 export function routeListsStage(target: string | readonly string[] | undefined, stageId: string): boolean {
   return routeTargets(target).includes(stageId);
 }
@@ -106,11 +113,7 @@ export function validateStageGraph(stages: Record<string, StageSpec>): void {
 function routedStageIds(stages: Record<string, StageSpec>): Set<string> {
   const targets = new Set<string>();
   for (const stage of Object.values(stages)) {
-    for (const value of Object.values(stage.routes)) {
-      for (const target of routeTargets(value)) {
-        if (target !== 'complete') targets.add(target);
-      }
-    }
+    for (const target of stageRouteTargets(stage.routes)) targets.add(target);
   }
   return targets;
 }
