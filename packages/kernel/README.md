@@ -28,6 +28,7 @@ Configuration, authoring, migration, outputs, selection, and process execution f
 | authoring exports, `buildDraftSourceMap` | `src/authoring.ts`, `src/draft-source.ts` | Draft validate/render/save |
 | `schedulableStageIds`, `NextStageResult` | `src/selection.ts` | Next-stage selection |
 | `parseStageOutcome`, `resolveStageOutcome` | `src/stage-outcome.ts`, `src/outcome-resolver.ts` | Stage outcome |
+| `endsScheduling`, `stageStopStatus`, `stopResolved`, `exitFor`, `acceptsBlockedResume` | `src/session-status-policy.ts` | Session-status rules derived from `SESSION_STATUS_CATALOG` |
 | `decideCorrection`, `CORRECTION_POLICY` | `src/correction-policy.ts` | Correction turns |
 | `VerifyRunner` | `src/verify-runner.ts` | Verification commands |
 | `killProcessTree`, `wrapperEndpoint` | `src/process-wrapper.ts` | Process wrapper |

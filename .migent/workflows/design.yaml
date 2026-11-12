@@ -1,0 +1,60 @@
+schema_version: 7
+id: design
+constraints:
+  - Design only. Do not modify source code.
+  - Follow .agents/skills/design/SKILL.md, its chosen type reference, and fixed template.
+  - Obtain human approval for new structural decisions; reuse approval unless the decision or material trade-off changes.
+
+artifacts:
+  design:
+    file: design.md
+    description: Completed solution design using the design skill template.
+  design_comment:
+    file: design_comment.md
+    required: false
+    description: Non-blocking review observations; no unresolved solution decisions.
+
+stages:
+  - id: design
+    role: architect
+    max_revisions: 3
+    ask: human
+    instructions:
+      - Check the working branch against CONTRIBUTING.md and any prior issue artifact; ask if it does not comply.
+      - Write the completed solution design to design.md.
+      - Treat prior issue artifacts as sourced input, not approval of proposed solutions.
+      - Complete the design only after required answers and approvals are recorded.
+      - Resolve substantive review findings when revising.
+    artifacts: [design]
+
+  - id: review_design
+    role: reviewer
+    depends_on:
+      - design
+    instructions:
+      - Review against the task, repository evidence, and shared constraints.
+      - Trace each acceptance criterion through the solution's behavior and verification evidence.
+      - Check affected ownership, contracts, dependencies, compatibility, and required transition states.
+      - Flag scope expansion, unsupported extension points, and unnecessary complexity.
+      - Require resolved solution decisions, applicable approvals, and risks with mitigation or explicit acceptance.
+      - Check that cited evidence and required artifact references are usable.
+      - Report substantive gaps together with their impact and required corrections; do not demand execution task lists or code.
+      - Keep comments observational; do not defer required corrections or solution decisions to later work.
+      - Enforce the fixed template, but do not revise for stylistic preferences.
+    decision:
+      - approved:
+          when: The solution meets the review criteria, required decisions and approvals are resolved, and no comments remain.
+          navigate: complete
+      - approved-with-comments:
+          when: The solution meets the review criteria; design_comment.md contains only observations requiring no solution changes or deferred decisions.
+          navigate: complete
+          artifacts: [design_comment]
+      - revise:
+          when: Required corrections, unanswered solution questions, missing approvals, or risks without mitigation or explicit acceptance remain.
+          navigate: design
+
+downstream:
+  - workflow: plan
+    task: Break the approved design into implementation tasks.
+  - workflow: implement
+    task: Implement the approved design when the task is ready for direct implementation.

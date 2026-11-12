@@ -1,52 +1,45 @@
 ---
 name: planning
 description: >
-  Draft a repository-grounded implementation plan before changing code, then report the result against it.
-  Covers features, bugfixes, refactors, and migrations.
-  Excludes research, option analysis, and status reports.
+  Break an approved design into ordered, independently verifiable implementation tasks, then
+  report the result against them. Requires an approved design as input.
+  Excludes solution design, research, option analysis, and status reports.
 ---
 
 # Implementation planning
 
-Plan before changing code.
-Keep the plan in the conversation; save it only when the user asks.
+Turn an approved design into tasks; do not decide or change the solution.
+Keep the plan in the conversation; save it only when the user or workflow asks.
 
-## Choose a type
+## Input
 
-Pick one primary outcome and read its reference:
-
-- [Feature](references/types/feature.md): add observable behavior.
-- [Bugfix](references/types/bugfix.md): restore an existing expectation.
-- [Refactor](references/types/refactor.md): change structure, preserve behavior and contracts.
-- [Migration](references/types/migration.md): transition data, contracts, consumers, or runtime state in phases.
-
-Choose migration when staged compatibility, data transformation, or cutover is central.
-Supporting work stays in the primary plan; independently shippable outcomes get separate plans.
+Start from an approved design (see the `design` skill) and the task's acceptance criteria.
+Without a design, stop and ask for one instead of deciding the solution.
+Report design gaps; a gap that blocks a task goes back to the human.
 
 ## Investigate
 
-1. Follow the repository documentation routes and inspect the working tree.
-2. Trace entry points, ownership, contracts, consumers, and tests.
-   Search for consumers; do not infer them from exports.
-3. Run the baseline checks relevant to the change scope and record the results.
-4. Ask when a missing product or architecture decision would change the design.
+1. Read the design and the README of each package its solution touches.
+2. Read relevant references in the design; stop and report missing or inconsistent required inputs.
+3. Locate the files, symbols, and existing tests each part of the design touches.
+4. Run the baseline checks relevant to the change scope and record the results.
 
 ## Draft the plan
 
-Use the [template](references/template.md) with the adjustments in the type reference.
-Scale detail to the work: one line per section for a small change, more for large work.
-Never omit Testing or Documentation; if nothing changes, say why.
+Use the [template](references/template.md).
+Scale detail to the work: a few tasks for a small change, more for large work.
 
-- Number acceptance criteria (AC1, ...) and steps (S1, ...); map each criterion to a unit or integration test (layer per the `testing` skill).
+- Number tasks (T1, ...); each realizes cited design parts or decisions (D1, ..., P1, ...).
+- Keep every task independently verifiable and leave the codebase coherent after it.
+- Order tasks by dependency; follow the design's phases or intermediate states when it defines them.
+- Map each acceptance criterion to the tasks and tests that prove it, following the design's verification strategy.
 - Cite exact paths and symbols; confirm named paths and commands exist, or mark them as new.
-- Separate verified facts, decisions, assumptions, and open questions.
 - Say what is unverified and how to resolve it; never claim planned checks have run.
-
-Proceed when no open question blocks the design.
-Ask for approval when one does, or when the work is destructive, irreversible, or externally visible.
+- List the approved design, relevant comments, and other inputs needed downstream in References.
+  Use this session's snapshot paths for prior artifacts and carry forward relevant earlier references.
+- Exclude full code; short signatures only when they remove ambiguity.
 
 ## Saving a plan
 
 Update the existing plan that owns the outcome, if any.
 Use repository-relative links, not line numbers.
-Validate the Markdown with the repository Markdown skill.

@@ -7,7 +7,7 @@ import { writeJsonAtomic } from '@nodeint/migent-kernel';
 import { ConfigurationError } from '@nodeint/migent-kernel';
 import { type ExecutionSnapshot } from '@nodeint/migent-kernel';
 import { EXECUTIONS_DIRNAME, utcNow } from '@nodeint/migent-kernel';
-import { answerQuestions, formatQuestionAnswers, type Question,storedQuestions } from '@nodeint/migent-kernel';
+import { acceptsBlockedResume, answerQuestions, BLOCKED_RESUME_FROM, formatQuestionAnswers, type Question, resolutionFrom, storedQuestions } from '@nodeint/migent-kernel';
 import { isRecord } from '@nodeint/migent-workflow';
 
 import { appendLifecycleEvent, CANCELLED_REPLY, readParsedEvents } from './session-events.js';
@@ -123,7 +123,7 @@ export class SessionStoreResume extends SessionStoreCore {
     // Persist the answer before unlocking dispatch, including if dispatch fails before creating an execution.
     appendLifecycleEvent(directory, {
       event: 'session.active', timestamp: utcNow(), executionId: target.executionId, stageId,
-      data: { from: 'question', reply: formatted, answers, input: reply },
+      data: { from: resolutionFrom('question'), reply: formatted, answers, input: reply },
     });
     commitFoldedStatus(this.workspace, directory);
     return formatted;
@@ -132,7 +132,7 @@ export class SessionStoreResume extends SessionStoreCore {
   public questionReply(sessionId: string, executionId: string): string | null {
     const events = readParsedEvents(path.join(this.sessionsDirectory, sessionId, 'events.jsonl'));
     const event = events.reverse().find((row) =>
-      row.event === 'session.active' && row.executionId === executionId && row.data.from === 'question',
+      row.event === 'session.active' && row.executionId === executionId && row.data.from === resolutionFrom('question'),
     );
     return typeof event?.data.reply === 'string' ? event.data.reply : null;
   }
@@ -174,13 +174,13 @@ export class SessionStoreResume extends SessionStoreCore {
     const sessionDirectory = path.join(this.sessionsDirectory, sessionId);
     assertSessionLockHeld(sessionDirectory);
     const status = this.readSessionStatus(sessionId);
-    if (status.status !== 'blocked' && status.status !== 'active') {
+    if (!acceptsBlockedResume(String(status.status))) {
       throw new ConfigurationError(`Session ${sessionId} is ${String(status.status)}, not blocked.`);
     }
     const targets = this.blockedResumeTargets(sessionId, stageId);
     const timestamp = utcNow();
     for (const target of targets) {
-      const data: Record<string, unknown> = { from: 'blocked' };
+      const data: Record<string, unknown> = { from: BLOCKED_RESUME_FROM };
       const blocker = target.blocker ?? (targets.length === 1 ? textField(status.blocker) : null);
       if (blocker) data.blocker = blocker;
       appendLifecycleEvent(sessionDirectory, {

@@ -1,6 +1,6 @@
 import Type, { type Static } from 'typebox';
 
-import { id } from './common.js';
+import { id } from './schema-id.js';
 
 /**
  * Process exit codes of user-facing commands. Pure data describing current behavior. The CLI builds

@@ -46,6 +46,8 @@ Explicit user instructions take precedence over skill guidance.
 | :--- | :--- |
 | `migent` | Setting up Migent, or configuring, running, inspecting, or resuming its workflows, roles, models, sessions, stages, or outputs |
 | [`checkout-issue`](.agents/skills/checkout-issue/SKILL.md) | Reading or starting work on a repository GitHub issue |
+| [`design`](.agents/skills/design/SKILL.md) | Deciding the solution and its structure for a triaged task before planning or implementing |
+| [`planning`](.agents/skills/planning/SKILL.md) | Breaking an approved design into ordered implementation tasks |
 | [`create-pr`](.agents/skills/create-pr/SKILL.md) | Committing, pushing, and opening a pull request into `next` |
 | [`release`](.agents/skills/release/SKILL.md) | Preparing or publishing an extension release and synchronizing `main` |
 

@@ -2,7 +2,7 @@
 import path from 'node:path';
 
 import { exitCode } from '@nodeint/migent-contracts';
-import { cancellationSignal, ConfigurationError,type ExecutionSnapshot } from '@nodeint/migent-kernel';
+import { cancellationSignal, ConfigurationError, endsScheduling, type ExecutionSnapshot, exitFor, stageStopStatus } from '@nodeint/migent-kernel';
 import { readyStages, revisionStop, runnableNow, schedulableStageIds, Stop, VERIFY_EXHAUSTED, VERIFY_FAILED, version2IdleReason, writeJsonAtomic } from '@nodeint/migent-kernel';
 import { clearInFlightExecution, noteInFlightExecution } from '@nodeint/migent-session';
 import { isRecord, isWorkflowV2 } from '@nodeint/migent-workflow';
@@ -15,7 +15,6 @@ import {
   type ExecuteResult,
   type ExecuteRun,
   selectedStage,
-  TERMINAL_SESSION_STATUSES,
   text,
 } from './dispatch.js';
 
@@ -26,7 +25,7 @@ export async function runExecuteOnce(run: ExecuteRun, stageId: string | null): P
   const snapshots = store.executionSnapshots(sessionId);
   const status = store.readSessionStatus(sessionId);
   const sessionStatus = text(status.status);
-  if (TERMINAL_SESSION_STATUSES.has(sessionStatus)) return executeFinal(status, sessionStatus, []);
+  if (endsScheduling(sessionStatus)) return executeFinal(status, sessionStatus, []);
   const chosen = isWorkflowV2(workflow)
     ? version2OnceStage(run, { snapshots, status }, stageId)
     : version1OnceStage(run, { snapshots, status }, stageId);
@@ -46,14 +45,15 @@ function onceResult(status: Record<string, unknown>, stage: Record<string, unkno
   if (STAGE_STOP_REASONS.includes(failureReason)) return executeFinal(status, failureReason, [stage]);
   if (stage.failure_kind === 'quota') return executeFinal(status, 'quota', [stage]);
   const after = text(status.status);
-  const stopReason = TERMINAL_SESSION_STATUSES.has(after) ? after : 'stage';
+  const stopReason = endsScheduling(after) ? after : 'stage';
   const result = executeFinal(status, stopReason, [stage]);
-  if (stage.outcome_status === 'question') {
-    result.code = 9;
+  const stageStop = stageStopStatus({ outcomeStatus: text(stage.outcome_status) });
+  if (stageStop === 'question') {
+    result.code = exitFor(stageStop) ?? exitCode('question');
     result.stopReason = 'question';
   }
   if (stopReason === 'stage' && stage.outcome_status !== 'complete' && stage.execution_status !== 'skipped') {
-    result.code = stage.outcome_status === 'question' ? exitCode('question') : exitCode('blocked');
+    result.code = (stageStop === null ? null : exitFor(stageStop)) ?? exitCode('blocked');
   }
   return result;
 }

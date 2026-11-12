@@ -4,7 +4,7 @@ id: implement
 artifacts:
   implement_summary:
     file: implement_summary.md
-    description: Changes made, files touched, checks run with results, deviations from the plan, and anything unverified.
+    description: Changes made, files touched, checks run with results, deviations from the plan, anything unverified, and References to inputs needed for the pull request.
 
 stages:
   - id: implement
@@ -13,12 +13,18 @@ stages:
     ask: human
     instructions:
       - Before starting, check that the workspace is on a working branch created from origin/next (the branch in the prior issue artifact when provided), not on main or next; otherwise ask the human how to proceed.
-      - Implement within scope, following repository conventions and any agreed architecture.
-      - Follow the plan when provided, and address its non-blocking comments or explain why not.
-      - Work directly from the task when no architectural decisions are needed.
+      - Read prior artifacts and their required References before starting; stop and report missing or inconsistent required inputs.
+      - When the immediate prior artifact recommends a next workflow, check it; if direct implementation is inappropriate, stop and ask the human how to proceed.
+      - Follow the prior design and plan when provided, and address their non-blocking comments or explain why not.
+      - With a plan, implement its tasks in order and report each task's result.
+      - Without a design, work directly from the task and resolve the root cause yourself.
+      - For a bugfix, reproduce the reported behavior before changing code; if it does not reproduce, stop and ask the human how to proceed.
+      - When working directly from an issue, distinguish its stated requirements from triage observations and proposed solutions. Establish the intended outcome and verification criteria from the issue and task; ask the human if an ambiguity affects the result.
+      - If work without a design reveals a material structural or contract decision, stop and seek a design decision before proceeding.
       - Resolve implementation details and edge cases. Add or update relevant tests.
       - Report architectural blockers with evidence. Seek a decision before changing the agreed design.
       - Run relevant checks and tests, and report results and anything unverified.
+      - End implement_summary.md with a References section listing inputs needed for the pull request, including the issue artifact when available. Give their purpose and exact paths; use this session's snapshot paths for prior artifacts, carry forward relevant earlier references, and use repository-relative paths for repository files. If there are no inputs, say so.
       - When revising, address all required review findings and rerun the affected checks.
     artifacts: [implement_summary]
     verify:
@@ -30,15 +36,17 @@ stages:
     depends_on:
       - implement
     instructions:
-      - Review the actual code and diff against the task, repository conventions, and the agreed architecture when provided.
+      - Review the actual code and diff against the task, repository conventions, and the prior design and plan when provided.
+      - Read required References in the prior artifacts; report missing or inconsistent inputs as required fixes.
+      - Check that implement_summary.md References identify the inputs needed for the pull request with usable paths.
       - Check correctness, edge cases, regressions, maintainability, test coverage, and verification evidence.
-      - Respect agreed architectural decisions. Report concrete design problems with implementation evidence, not personal preference.
+      - Respect the approved design. Report concrete design problems with implementation evidence, not personal preference.
       - Flag unrelated or out-of-scope changes.
       - Report all required fixes together with file locations, impact, and required corrections.
       - Choose approved when the task is complete and verified; otherwise choose revise.
     decision:
       - approved:
-          when: The change meets the task and the plan when provided, has no required fixes, and verification evidence passes.
+          when: The change meets the task, and the design and plan when provided, has no required fixes, and verification evidence passes.
           navigate: complete
       - revise:
           when: Required fixes remain, or verification evidence is missing or failing.

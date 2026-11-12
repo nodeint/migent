@@ -272,6 +272,30 @@ export { DEFAULT_INTERRUPT_POLICY, interruptSession, isSettled } from './provide
 export { missingOutputNames, missingOutputProducers, readyOutsideStoppedBranches, schedulableStageIds, version2IdleReason } from './selection.js';
 export { version2GraphQuiet } from './selection.js';
 export { currentCompleteByStage, VERIFY_EXHAUSTED } from './selection-history.js';
+export type { ResolutionEvent, StageStopName, StopFacts } from './session-status-policy.js';
+export {
+  acceptsBlockedResume,
+  BLOCKED_RESUME_FROM,
+  changeReason,
+  endsScheduling,
+  exitFor,
+  foldStoppedStatus,
+  hasTerminalFields,
+  isClosed,
+  isManifestMirrored,
+  isManuallyCompletable,
+  isRefreshable,
+  isSessionStop,
+  isStageStop,
+  isStopped,
+  isStopResolutionEvent,
+  manifestStatusToSession,
+  resolutionFrom,
+  STAGE_STOP_DETECTORS,
+  stageStopsByPrecedence,
+  stageStopStatus,
+  stopResolved,
+} from './session-status-policy.js';
 export { ResponseContractError } from './stage-outcome.js';
 export type { Gates } from './turn-diagnostics.js';
 export { buildTurnDiagnostics, observeTurn, StreamSummarizer, truncateText } from './turn-diagnostics.js';

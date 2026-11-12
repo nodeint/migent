@@ -3,7 +3,7 @@ import { constants as osConstants } from 'node:os';
 import { exitCode } from '@nodeint/migent-contracts';
 import { CancellationRequested, raiseCancellation, resetCancellation } from '@nodeint/migent-kernel';
 import { ConfigurationError, OutputsMissing } from '@nodeint/migent-kernel';
-import { log } from '@nodeint/migent-kernel';
+import { endsScheduling, exitFor, log, stageStopStatus } from '@nodeint/migent-kernel';
 import { VERIFY_EXHAUSTED, VERIFY_FAILED } from '@nodeint/migent-kernel';
 import { clearInFlightExecutions, isSessionLockLost, SessionLockHeldError, SessionStore } from '@nodeint/migent-session';
 import { isRoleStage, isWorkflowV2, type WorkflowDocument } from '@nodeint/migent-workflow';
@@ -16,7 +16,6 @@ import {
   type ExecuteResult,
   type ExecuteRun,
   stageFinishLine,
-  TERMINAL_SESSION_STATUSES,
   text,
 } from './dispatch.js';
 import { runExecuteLoop, runExecuteOnce, startTracked, trackDispatch } from './execute-loop.js';
@@ -194,14 +193,20 @@ function replyStopResult(
 ): ExecuteResult {
   if (replyResult?.failure_kind === 'quota') return executeFinal(status, 'quota', stageJsons);
   const after = text(status.status);
-  const stopReason = TERMINAL_SESSION_STATUSES.has(after) ? after : 'stage';
+  const stopReason = endsScheduling(after) ? after : 'stage';
   const result = executeFinal(status, stopReason, stageJsons);
-  if (replyResult?.outcome_status === 'question') {
-    result.code = 9;
+  if (stageStopStatus({ outcomeStatus: text(replyResult?.outcome_status) }) === 'question') {
+    result.code = exitFor('question') ?? exitCode('question');
     result.stopReason = 'question';
   }
-  if (stopReason === 'stage' && stageJsons.some((item) => item.outcome_status !== 'complete' && item.execution_status !== 'skipped')) result.code = stageJsons.some((item) => item.outcome_status === 'question') ? exitCode('question') : exitCode('blocked');
+  if (stopReason === 'stage' && stageJsons.some((item) => item.outcome_status !== 'complete' && item.execution_status !== 'skipped')) result.code = unfinishedStageExit(stageJsons);
   return result;
+}
+
+/** The exit code for stages that did not complete: a question wins over any other stop, else the blocked exit. */
+function unfinishedStageExit(stages: readonly { outcome_status?: unknown }[]): number {
+  const asked = stages.some((item) => stageStopStatus({ outcomeStatus: text(item.outcome_status) }) === 'question');
+  return exitFor(asked ? 'question' : 'blocked') ?? exitCode('blocked');
 }
 
 // Maps an execute failure to its final result, or rethrows it.
@@ -287,10 +292,10 @@ function reopenedStopResult(
     return executeFinal(status, 'quota', stageJsons);
   }
   // A cancelled session stops here for one stage. A blocked sibling still needs dispatch.
-  if (limits.reopenLatestCancelled || !(singleStage || TERMINAL_SESSION_STATUSES.has(after))) return null;
-  const stopReason = TERMINAL_SESSION_STATUSES.has(after) ? after : 'stage';
+  if (limits.reopenLatestCancelled || !(singleStage || endsScheduling(after))) return null;
+  const stopReason = endsScheduling(after) ? after : 'stage';
   const result = executeFinal(status, stopReason, stageJsons);
-  if (stopReason === 'stage' && continued.some((item) => item.outcome_status !== 'complete' && item.execution_status !== 'skipped')) result.code = continued.some((item) => item.outcome_status === 'question') ? exitCode('question') : exitCode('blocked');
+  if (stopReason === 'stage' && continued.some((item) => item.outcome_status !== 'complete' && item.execution_status !== 'skipped')) result.code = unfinishedStageExit(continued);
   return result;
 }
 

@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import { writeJsonAtomic } from '@nodeint/migent-kernel';
 import { ConfigurationError } from '@nodeint/migent-kernel';
-import { storedQuestions } from '@nodeint/migent-kernel';
+import { manifestStatusToSession, storedQuestions } from '@nodeint/migent-kernel';
 import { sessionStatusAfterExecution } from '@nodeint/migent-kernel';
 import { utcNow } from '@nodeint/migent-kernel';
 import { StageOutcome } from '@nodeint/migent-kernel';
@@ -237,7 +237,7 @@ interface ReconcileTarget {
 
 /** The session status the executions reduce to, and the execution that owns its event. */
 function reconcileTarget(inputs: FoldInputs, executions: readonly RepairExecution[]): ReconcileTarget {
-  const fromStatus = manifestSessionStatus(inputs.manifest.manifestStatus);
+  const fromStatus = manifestStatusToSession(inputs.manifest.manifestStatus);
   const cursor: Record<string, unknown> = {
     workflow_id: inputs.manifest.workflowId,
     status: fromStatus,
@@ -406,14 +406,6 @@ function compareExecutions(left: FoldExecution, right: FoldExecution): number {
   if (left.executionId < right.executionId) return -1;
   if (left.executionId > right.executionId) return 1;
   return 0;
-}
-
-function manifestSessionStatus(manifestStatus: string | null): string {
-  if (manifestStatus === 'prepared') return 'prepared';
-  if (manifestStatus === 'completed' || manifestStatus === 'blocked' || manifestStatus === 'question' || manifestStatus === 'cancelled') {
-    return manifestStatus;
-  }
-  return 'active';
 }
 
 function statusFileKind(filePath: string): 'ok' | 'missing' | 'corrupt' {

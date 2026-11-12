@@ -12,6 +12,7 @@ import {
 } from '@nodeint/migent-kernel';
 import { currentCompleteByStage, missingOutputNames, readyOutsideStoppedBranches, version2GraphQuiet } from '@nodeint/migent-kernel';
 import { StageOutcome } from '@nodeint/migent-kernel';
+import { foldStoppedStatus, hasTerminalFields, isManifestMirrored, isSessionStop } from '@nodeint/migent-kernel';
 import { isRecord } from '@nodeint/migent-workflow';
 import { isWorkflowV2, type WorkflowDocument } from '@nodeint/migent-workflow';
 
@@ -81,21 +82,21 @@ export function sessionStatusFromExecutions(
     workflow,
     stageId: execution.stageId,
   }));
-  const stopped = stoppedStatus(statuses);
+  const stopped = foldStoppedStatus(statuses);
   if (stopped !== null) {
     return hasStartableOutsideStops({ executions, latest }, previousStatus, workflow) ? 'active' : stopped;
   }
-  if (statuses.includes('cancelled')) return 'cancelled';
+  const sessionStop = sessionStopStatus(statuses);
+  if (sessionStop !== null) return sessionStop;
   if (workflow !== null && isWorkflowV2(workflow)) {
     return version2CompletionStatus(executions, previousStatus, workflow);
   }
   return statuses.includes('completed') ? 'completed' : 'active';
 }
 
-/** Blocked wins over question; null when no stage stopped. */
-function stoppedStatus(statuses: readonly string[]): 'blocked' | 'question' | null {
-  if (statuses.includes('blocked')) return 'blocked';
-  return statuses.includes('question') ? 'question' : null;
+/** The session-stop status among `statuses`, or null. */
+function sessionStopStatus(statuses: readonly string[]): string | null {
+  return statuses.find(isSessionStop) ?? null;
 }
 
 /** Version 2: a stop does not hold the session while another branch can still start. */
@@ -255,7 +256,7 @@ export function terminalFields(
   terminal: TerminalContext,
 ): Record<string, unknown> {
   const { source, reason, blocked = [] } = terminal;
-  if (!TERMINAL_FIELD_STATUSES.has(sessionStatus)) return {};
+  if (!hasTerminalFields(sessionStatus)) return {};
   const fallbackRows = source ? [source] : [];
   const rows = blocked.length > 0 ? blocked : fallbackRows;
   const [first] = rows;
@@ -264,8 +265,6 @@ export function terminalFields(
   if (sessionStatus === 'blocked') Object.assign(fields, blockedFields(rows, first, source?.blocker || reason));
   return fields;
 }
-
-const TERMINAL_FIELD_STATUSES = new Set(['blocked', 'completed', 'cancelled']);
 
 function blockedFields(
   rows: readonly TerminalSource[],
@@ -428,12 +427,7 @@ function manifestLine(
   if (schemaVersion >= MANIFEST_SCHEMA_EVENT_LOG || manifestStatus === null) return null;
   let desired: string | null = null;
   if (executionStatus === 'running' && previousSessionStatus === 'completed') desired = 'running';
-  if (
-    sessionStatus !== previousSessionStatus &&
-    (sessionStatus === 'completed' || sessionStatus === 'blocked' || sessionStatus === 'question' || sessionStatus === 'cancelled')
-  ) {
-    desired = sessionStatus;
-  }
+  if (sessionStatus !== previousSessionStatus && isManifestMirrored(sessionStatus)) desired = sessionStatus;
   if (desired === null || desired === manifestStatus) return null;
   return desired;
 }

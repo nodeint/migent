@@ -2,11 +2,12 @@ schema_version: 7
 id: plan
 constraints:
   - Plan only. Do not modify source code.
-  - Structural design decisions must be approved by the human.
+  - Do not change the approved design or the acceptance criteria; report gaps instead.
 
 artifacts:
   plan:
     file: plan.md
+    description: Design input, baseline, ordered tasks with design references, files, tests, and done conditions, acceptance mapping, documentation, and implementation risks.
   plan_comment:
     file: plan_comment.md
     required: false
@@ -14,19 +15,15 @@ artifacts:
 
 stages:
   - id: plan
-    role: architect
+    role: planner
     max_revisions: 3
     ask: human
     instructions:
       - Before starting, check that the workspace is on a working branch created from origin/next (the branch in the prior issue artifact when provided), not on main or next; otherwise ask the human how to proceed.
-      - Define the goal, scope, and architectural constraints from the task and repository evidence.
-      - Ask the human when the scope or goal is ambiguous instead of choosing an interpretation.
-      - Design component responsibilities, boundaries, contracts, and dependencies.
-      - Favor maintainability and extensibility. Keep the design proportional to the task.
-      - Explain key decisions, trade-offs, risks, and open questions.
-      - Identify the affected modules and files, citing repository evidence.
-      - State acceptance criteria and the verification approach (which checks prove it works).
-      - Stay at the architecture level. Exclude step-by-step implementation, code snippets, and detailed test procedures.
+      - Follow the planning skill in .agents/skills/planning/SKILL.md and use its template for plan.md.
+      - Require an approved prior design. When it is missing, or wrong or incomplete for a task, stop and ask the human instead of deciding the solution yourself.
+      - Address the design's non-blocking comments when provided, or explain why not.
+      - Read required references in the design and include the design, relevant comments, and earlier inputs needed by the implementer in plan.md References; stop and report missing or inconsistent required inputs.
       - Resolve substantive review findings when revising.
     artifacts: [plan]
 
@@ -35,12 +32,11 @@ stages:
     depends_on:
       - plan
     instructions:
-      - Review the architecture against the task and repository evidence.
-      - Assess correctness, feasibility, maintainability, and extensibility.
-      - Check responsibilities, boundaries, contracts, dependencies, and material trade-offs or risks.
-      - Check that acceptance criteria and the verification approach are present and testable.
-      - Flag designs larger than the task requires.
-      - Stay at the architecture level. Do not require step-by-step implementation, code snippets, or detailed test procedures.
+      - Review the plan against the prior design, the task, repository evidence, and the planning skill in .agents/skills/planning/SKILL.md and its template.
+      - Check that the plan realizes the design without changing it, covers its full scope, and adds no out-of-scope work.
+      - Check that each task cites the design parts it realizes, is independently verifiable, and is ordered by its dependencies.
+      - Check that every acceptance criterion maps to tasks and tests with runnable commands.
+      - Check that References identify the approved design and other inputs needed downstream with usable paths.
       - Report all substantive gaps together with their impact and required corrections.
       - Choose revise for substantive gaps, approved-with-comments for non-blocking comments, or approved when no comments remain.
       - Do not revise for style or formatting.

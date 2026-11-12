@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 
 import { AgentToolRunner, DEFAULT_MAX_DISPATCHES, executeNamedWorkflow, type ExecuteResult } from '@nodeint/migent-engine';
-import { ConfigurationError, CORRECTION_FAILURE_REASONS,formatDuration, log } from '@nodeint/migent-kernel';
+import { ConfigurationError, CORRECTION_FAILURE_REASONS,formatDuration, isSessionStop, log } from '@nodeint/migent-kernel';
 import { FAILURE_FILENAME, formatNextCommand,publishNextSuggestions, SessionStore } from '@nodeint/migent-session';
 import { type OptionValues } from 'commander';
 
@@ -121,7 +121,7 @@ function printResumeHint(workspace: string, result: ExecuteResult): void {
     if (result.status !== 'blocked') return;
   }
   printResumeCommand(result.sessionId);
-  if (result.status === 'cancelled' || result.code === EXIT_CANCELLED) {
+  if (isSessionStop(result.status) || result.code === EXIT_CANCELLED) {
     const cancelled = new SessionStore(workspace).cancelledStages(result.sessionId);
     printReplyCommand(result.sessionId, cancelled.length === 1 ? cancelled[0].stageId : undefined);
   }

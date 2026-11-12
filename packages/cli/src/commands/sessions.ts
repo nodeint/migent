@@ -1,4 +1,4 @@
-import { SealedMetrics, SealedMetricsLine, SessionRow, SessionRowOrNull, SessionRows, type Static } from '@nodeint/migent-contracts';
+import { SealedMetrics, SealedMetricsLine, SESSION_STATUS_CATALOG, SessionRow, SessionRowOrNull, SessionRows, type Static } from '@nodeint/migent-contracts';
 import { ConfigurationError } from '@nodeint/migent-kernel';
 import { listSealedMetrics, listSessionRows, readSealedMetrics } from '@nodeint/migent-session';
 import { Command, type OptionValues } from 'commander';
@@ -15,7 +15,7 @@ import { renameSession } from './rename.js';
 import { repairWorkflowSession } from './repair.js';
 import { followSession } from './watch.js';
 
-const SESSION_STATUSES = new Set(['active', 'prepared', 'completed', 'blocked', 'question', 'cancelled', 'corrupt']);
+const SESSION_STATUSES = new Set<string>(SESSION_STATUS_CATALOG.map((entry) => entry.name));
 
 export interface SessionListOptions {
   asJson?: boolean;

@@ -31,7 +31,7 @@ import { skipUnlessRunWhenMatches } from './run-when-skip.js';
 import { roleStartLine, stageFinishLine } from './stage-lines.js';
 import { runVerifyOnlyStage } from './verify-only.js';
 
-export { EXECUTE_EXIT_CODES, type ExecuteResult, PendingStageReply, TERMINAL_SESSION_STATUSES } from './execute-state.js';
+export { EXECUTE_EXIT_CODES, type ExecuteResult, PendingStageReply } from './execute-state.js';
 export { blockResumes, executeFinal, optionalText, selectedStage, text } from './execute-state.js';
 export { roleStartLine, stageFinishLine } from './stage-lines.js';
 

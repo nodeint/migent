@@ -17,10 +17,10 @@ body:
     validations:
       required: true
   - type: textarea
-    id: acceptance
+    id: outcome
     attributes:
-      label: Acceptance criteria
-      description: Observable conditions that show the change is done.
+      label: Desired outcome
+      description: What should be true for users when this is done.
       placeholder: |
         - ...
     validations:

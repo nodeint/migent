@@ -12,7 +12,6 @@ export const EXECUTE_EXIT_CODES: Record<string, number> = {
   stage: exitCode('completed'),
 };
 
-export const TERMINAL_SESSION_STATUSES = new Set(['completed', 'blocked', 'question', 'cancelled']);
 
 /**
  * A human reply waiting for its stage. The stage that receives it takes the text once; the

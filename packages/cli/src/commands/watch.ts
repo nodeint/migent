@@ -2,12 +2,12 @@ import { closeSync, openSync, readFileSync, readSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import { SessionFollowRecord, SessionSnapshot, SessionSnapshotLine, type Static } from '@nodeint/migent-contracts';
-import { BYTES_PER_KIB, CancellationRequested, ConfigurationError, log } from '@nodeint/migent-kernel';
+import { BYTES_PER_KIB, CancellationRequested, ConfigurationError, exitFor, log, stageStopStatus } from '@nodeint/migent-kernel';
 import { corruptStatusMessage, readExecutionFile, readStatusFileState, SessionLock, SessionStore, statusDriftMessage, watchSnapshot } from '@nodeint/migent-session';
 
 import { printNotice, printWatchEvent, printWatchSnapshot } from '../display.js';
 import { writeJson } from '../emit.js';
-import { EXIT_BLOCKED, EXIT_CANCELLED, EXIT_OK, EXIT_QUESTION } from '../exits.js';
+import { EXIT_CANCELLED, EXIT_QUESTION } from '../exits.js';
 import {
   compareFollowLines,
   type FollowLine,
@@ -23,13 +23,6 @@ const POLL_MS = 250;
 /** Bytes read from a log per call. */
 const READ_CHUNK_KIB = 64;
 const READ_CHUNK_BYTES = READ_CHUNK_KIB * BYTES_PER_KIB;
-
-const SESSION_DONE_EXITS: Record<string, number> = {
-  completed: EXIT_OK,
-  blocked: EXIT_BLOCKED,
-  question: EXIT_QUESTION,
-  cancelled: EXIT_CANCELLED,
-};
 
 const TERMINAL_EXECUTION_STATUSES = new Set(['completed', 'failed', 'cancelled', 'skipped']);
 
@@ -187,8 +180,8 @@ function followExit(
   }
   if (stop.exitWhenDone) {
     const status = String(watchSnapshot(sessionDirectory, null).status ?? '');
-    const done = SESSION_DONE_EXITS[status];
-    if (done !== undefined) return done;
+    const done = exitFor(status);
+    if (done !== null) return done;
   }
   return null;
 }
@@ -233,7 +226,8 @@ function untilTerminalExitCode(record: Record<string, unknown>): number {
   if (record.status === 'completed') {
     const {outcome} = record;
     if (isRecord(outcome) && outcome.status === 'complete') return 0;
-    if (isRecord(outcome) && outcome.status === 'question') return EXIT_QUESTION;
+    const stop = isRecord(outcome) ? stageStopStatus({ outcomeStatus: String(outcome.status) }) : null;
+    if (stop === 'question') return exitFor(stop) ?? EXIT_QUESTION;
     return 1;
   }
   return 1;

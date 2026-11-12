@@ -1,7 +1,7 @@
 import path from 'node:path';
 
 import { writeJsonAtomic } from '@nodeint/migent-kernel';
-import { storedQuestions } from '@nodeint/migent-kernel';
+import { isStageStop, isStopped, isStopResolutionEvent, manifestStatusToSession, resolutionFrom, storedQuestions } from '@nodeint/migent-kernel';
 import { isRecord } from '@nodeint/migent-workflow';
 
 import { MANIFEST_SCHEMA_EVENT_LOG } from './constants.js';
@@ -90,7 +90,7 @@ type QuestionRecordStatus = 'answered' | 'pending' | 'superseded';
 /** The newest `session.active` event that answered this execution's questions. */
 function questionReply(newestFirst: readonly ParsedEvent[], executionId: string): ParsedEvent | undefined {
   return newestFirst.find((event) =>
-    event.event === 'session.active' && event.executionId === executionId && event.data.from === 'question');
+    isStopResolutionEvent(event, 'question', executionId) && event.data.from === resolutionFrom('question'));
 }
 
 /** One questions.json row per question the execution asked, with its answer when replied. */
@@ -434,7 +434,7 @@ function applyCancelledReply(
 ): string | null {
   const { cancelledIds, updatedAt } = stopped;
   const current = draft.get('status');
-  if ((current !== 'cancelled' && current !== 'blocked' && current !== 'question') || cancelledIds.length === 0) return updatedAt;
+  if (typeof current !== 'string' || !isStopped(current) || cancelledIds.length === 0) return updatedAt;
   let next = updatedAt;
   let replied = 0;
   for (const executionId of cancelledIds) {
@@ -466,9 +466,7 @@ function statusExecutionsFromFolds(executions: readonly FoldExecution[]): Status
 function lastResumeOf(events: readonly ParsedEvent[], executionId: string): ParsedEvent | null {
   let resume: ParsedEvent | null = null;
   for (const event of events) {
-    if (event.event !== 'session.active' || event.executionId !== executionId) continue;
-    if (event.data.from !== 'blocked' && event.data.from !== 'question') continue;
-    resume = event;
+    if (isStopResolutionEvent(event, 'blocked', executionId)) resume = event;
   }
   return resume;
 }
@@ -484,7 +482,7 @@ function applyBlockedResume(
 ): string | null {
   const { blockedIds, updatedAt } = stopped;
   const current = draft.get('status');
-  if ((current !== 'blocked' && current !== 'question') || blockedIds.length === 0) return updatedAt;
+  if (typeof current !== 'string' || !isStageStop(current) || blockedIds.length === 0) return updatedAt;
   const resumes = blockedIds.flatMap((executionId) => {
     const resume = lastResumeOf(events, executionId);
     return resume === null ? [] : [resume];
@@ -517,14 +515,6 @@ function initialStatus(manifest: SessionManifest, schemaVersion: number): Status
   draft.applyManifestIdentity(manifest);
   if (manifest.createdAt) draft.set('updated_at', manifest.createdAt);
   return draft;
-}
-
-function manifestStatusToSession(manifestStatus: string | null): string {
-  if (manifestStatus === 'prepared') return 'prepared';
-  if (manifestStatus === 'completed' || manifestStatus === 'blocked' || manifestStatus === 'question' || manifestStatus === 'cancelled') {
-    return manifestStatus;
-  }
-  return 'active';
 }
 
 export { readExecutions, readSessionManifest } from './session-fold-read.js';

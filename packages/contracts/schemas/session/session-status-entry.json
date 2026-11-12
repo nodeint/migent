@@ -1,0 +1,178 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/session/session-status-entry.json",
+  "type": "object",
+  "required": [
+    "name",
+    "kind",
+    "precedence",
+    "exit",
+    "ends_scheduling",
+    "manually_completable",
+    "refreshable",
+    "closed",
+    "terminal_fields",
+    "manifest",
+    "resolution"
+  ],
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "The status name as it appears in session records."
+    },
+    "kind": {
+      "anyOf": [
+        {
+          "type": "string",
+          "const": "running"
+        },
+        {
+          "type": "string",
+          "const": "not_started"
+        },
+        {
+          "type": "string",
+          "const": "stage_stop"
+        },
+        {
+          "type": "string",
+          "const": "session_stop"
+        },
+        {
+          "type": "string",
+          "const": "terminal"
+        },
+        {
+          "type": "string",
+          "const": "invalid"
+        }
+      ],
+      "description": "Classifies the status: a running session, one not started, a stop of a stage or of the session, a finished session, or an unreadable one."
+    },
+    "precedence": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 0
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Stage-stop rows only: the fold and the idle checks take the lowest value first."
+    },
+    "exit": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "const": "completed"
+        },
+        {
+          "type": "string",
+          "const": "blocked"
+        },
+        {
+          "type": "string",
+          "const": "config"
+        },
+        {
+          "type": "string",
+          "const": "stage_failed"
+        },
+        {
+          "type": "string",
+          "const": "revisions_exhausted"
+        },
+        {
+          "type": "string",
+          "const": "dispatch_limit"
+        },
+        {
+          "type": "string",
+          "const": "verify_exhausted"
+        },
+        {
+          "type": "string",
+          "const": "verify_failed"
+        },
+        {
+          "type": "string",
+          "const": "quota"
+        },
+        {
+          "type": "string",
+          "const": "question"
+        },
+        {
+          "type": "string",
+          "const": "cancelled"
+        }
+      ],
+      "description": "Name of the exit code that `session follow --exit-when-done` returns for this status, or null."
+    },
+    "ends_scheduling": {
+      "type": "boolean",
+      "description": "No further stage is dispatched in this status."
+    },
+    "manually_completable": {
+      "type": "boolean",
+      "description": "`session complete` accepts the status."
+    },
+    "refreshable": {
+      "type": "boolean",
+      "description": "A draft can refresh the frozen config of a session in this status."
+    },
+    "closed": {
+      "type": "boolean",
+      "description": "The session can no longer adopt a draft."
+    },
+    "terminal_fields": {
+      "type": "boolean",
+      "description": "status.json carries the terminal keys in this status."
+    },
+    "manifest": {
+      "anyOf": [
+        {
+          "type": "string",
+          "const": "read"
+        },
+        {
+          "type": "string",
+          "const": "mirrored"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "`read`: the manifest status is read back. `mirrored`: it is also written. null: neither."
+    },
+    "resolution": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "event"
+          ],
+          "properties": {
+            "event": {
+              "type": "string"
+            },
+            "from": {
+              "type": "string"
+            }
+          },
+          "description": "The event that resolves the stop, and its `from` value when the event has one."
+        }
+      ],
+      "description": "How a stop is resolved. null for a status that is not a stop."
+    }
+  },
+  "title": "Session status entry",
+  "description": "One session status and the rules it carries."
+}
