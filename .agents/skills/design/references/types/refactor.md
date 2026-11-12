@@ -2,16 +2,15 @@
 
 ## Investigate
 
-- Map ownership, exports, importers, runtime consumers, and placement rules.
-- Verify consumers by search and note the action each needs.
-- Define the observable behavior that must not change and find the tests that pin it.
-- Check the target against existing repository patterns.
+- Map owners, exports, actual consumers, and placement rules.
+- Identify consumer compatibility needs and preserved behavior.
+- Check existing patterns and evidence protecting that behavior.
 
-## The design must
+## Design
 
 - Describe current and target ownership, dependencies, and public surface.
-- List non-goals and the preserved behavior under Current state.
-- Require tests that pin current behavior before structure changes, under Verification strategy.
-- Define coherent intermediate states when the change cannot land at once.
-- List obsolete exports, adapters, files, tests, and artifacts to remove.
-- Verify both the structural outcome and the preserved behavior.
+- State non-goals and preserved behavior.
+- Identify verification gaps and required evidence.
+- Define intermediate states when the change cannot land at once.
+- Identify obsolete surfaces and temporary paths to remove.
+- Verify target structure and preserved behavior.

@@ -1,46 +1,49 @@
 # Design template
 
-Use these sections in every design, in the conversation or in a saved file.
+Keep all headings and their order. Replace placeholders with concise content.
+For inapplicable sections, state why. Resolve questions before completing the design.
 
 ```markdown
 # <Type>: <outcome>
 
 ## Outcome and scope
 
-<Goal, scope, non-goals, constraints, and acceptance criteria AC1, AC2, ... from the task.>
+<Goal, scope, constraints, and relevant non-goals.>
+
+- AC1: <Observable acceptance criterion.>
 
 ## Current state
 
-<Evidence from the repository: owners, modules, contracts, consumers, dependency direction,
-and the baseline results of the relevant checks.>
+<Relevant behavior, owners, contracts, consumers, dependencies, and tests.
+Cite evidence; distinguish facts from hypotheses. Include checks already run.>
 
 ## Solution
 
-<Components and their responsibilities, boundaries, contracts, and dependency direction.>
+<Show how each AC is met: inputs, state changes, outputs, and failure behavior.
+Define affected responsibilities, boundaries, contracts, and dependencies.
+Mark new paths. Include required transition states and ordering constraints.>
 
-## Decisions
+## Decisions and trade-offs
 
-<D1, D2, ...: options considered, the choice, and its trade-off.>
+- D1: <Choice, reasoning, realistic alternatives, and material trade-offs.>
 
-## Extension points
-
-<How the solution extends for expected future changes, and what it deliberately does not support.>
+<Identify prior approvals or conventions that settle choices; invent no alternatives.>
 
 ## Verification strategy
 
-<What evidence proves each AC: test layer and the behavior it pins; not test procedures.>
+- AC1: <Evidence, verification layer, and whether it exists or is still needed.>
 
-## Risks and open questions
+<Cover relevant preserved behavior and structural constraints.>
 
-<Risks, mitigations, assumptions, and unresolved decisions.>
+## Risks and mitigations
 
-## Recommended next
-
-<`plan` or `implement`, and why.>
+<Risks with mitigations or explicit acceptance. Support assumptions with evidence.
+Include extension and compatibility concerns only when relevant and supported.>
 
 ## References
 
-<Inputs needed downstream, with their purpose and exact paths. For prior session artifacts,
-use the snapshot paths received by this session; carry forward relevant earlier references.
-For repository files, use repository-relative paths. If there are no inputs, say so.>
+- <Source path>: <Purpose.>
+
+<Use repository-relative paths or supplied artifact snapshots. Retain relevant earlier
+references. If none are needed, state why.>
 ```
