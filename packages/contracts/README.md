@@ -1,35 +1,34 @@
 # @nodeint/migent-contracts
 
-Public data contracts for Migent, as [TypeBox](https://github.com/sinclairzx81/typebox) schemas
-(plain JSON Schema) with derived TypeScript types.
+> For installation and usage, see [the Migent CLI on npm](https://www.npmjs.com/package/@nodeint/migent).
 
-This release covers every `migent … --json` / `-o json` stdout payload (`CLI_CONTRACTS`) and the
-structure of `.migent/config.yaml` / `config.local.yaml`: `ConfigLayer` describes one file (named
-agents may be partial, because layers merge) and `EffectiveConfig` describes the merged result
-(`roles` required, named agents complete or an empty placeholder). The config schemas are input
-contracts and are not part of `CLI_CONTRACTS`. They validate structure only; error codes, semantic
-rules (client registry, effort, model availability) stay in `@nodeint/migent-kernel`.
-The environment catalog (`ENV_CATALOG`) describes `MIGENT_DEBUG`, `MIGENT_NO_INPUT`, `MIGENT_HOME`, and
-`DISABLE_TELEMETRY`; only those four are a contract. `WorkflowDocumentInput` describes an authored
-workflow file at the current `schema_version`. `EXIT_CATALOG` describes every exit code per command family.
+Public data contracts for Migent as [TypeBox](https://github.com/sinclairzx81/typebox) schemas with
+derived TypeScript types: every `--json` / `-o json` payload, config and workflow file structure,
+exit codes, and environment variables.
 
-- **Input vs. output contracts.** Config and workflow contracts are input contracts. Workflow objects are
-  closed: an unknown key is an error. Config is closed only where the schema says so (`ClientSelection`,
-  `AgentPlaceholder`); `ConfigLayer`, `InlineAgent`, and the other config objects accept unknown keys, and
-  the kernel rejects the ones it does not know. Output contracts stay open.
-- **Schema files.** `pnpm generate` writes one JSON Schema file per `$id` to `schemas/<id path>.json`
-  (shipped in this package, importable as `@nodeint/migent-contracts/schemas/…`). `$id` is the raw GitHub URL
-  of that file on `main`. Nested identified schemas are `$ref`s to their own files, so the files are not
-  self-contained: load the directory, or resolve `$ref` by `$id`. A schema added on `next` is not served at
-  its URL until a release moves `main`; the npm copy has no such gap.
-- **Reference tables.** The same command writes [`docs/reference/`](../../docs/reference/).
+## Rules
 
-- **Leaf package.** Its only runtime dependency is `typebox`. It imports no other Migent package.
-- **Open objects.** Consumers must ignore unknown fields. Adding a field is not a breaking change.
-- **Produced vs. passthrough.** Most contracts describe what the CLI builds. `session metrics`
-  and the record lines of `session follow --json` re-emit files written by any past Migent version,
-  so their contract is exactly "any JSON object". `KNOWN_SHAPES` holds opt-in descriptions of what
-  those files may contain; they are never the command's guarantee.
-- **Validation.** `isValid(schema, value)` and `validationIssues(schema, value)`.
+- This is the only stable API. Additive changes ship in minor releases; a breaking wire change needs a
+  major release.
+- Leaf package: the only runtime dependency is `typebox`. Import no other Migent package.
+- Output objects stay open; consumers ignore unknown fields. Workflow input objects are closed; config is
+  closed only where the schema says so. Structure only; semantic rules stay in the kernel.
+- `session metrics` and `session follow --json` records are passthrough ("any JSON object"); `KNOWN_SHAPES`
+  is opt-in description, never a guarantee.
+- Every Migent environment variable is listed in `ENV_CATALOG`.
+- After changing a schema, `ENV_CATALOG`, or `EXIT_CATALOG`, run `pnpm generate` and commit `schemas/` and
+  `docs/reference/`. Do not edit either by hand; a test fails when they are stale. Each `$id` is the raw
+  GitHub URL on `main`, so a new schema resolves there only after a release.
 
-The stability promise for this package is documented in [CONTRIBUTING.md](../../CONTRIBUTING.md).
+## Key symbols
+
+| Symbol | File | Purpose |
+|---|---|---|
+| `CLI_CONTRACTS` | `src/cli-output.ts` | Schema per CLI JSON payload |
+| `ConfigLayer`, `EffectiveConfig` | `src/config.ts` | One config file; merged config |
+| `WorkflowDocumentInput` | `src/workflow.ts` | Authored workflow at current `schema_version` |
+| `EXIT_CATALOG` | `src/exits.ts` | Exit codes per command family; CLI help is built from it |
+| `ENV_CATALOG` | `src/env.ts` | `MIGENT_DEBUG`, `MIGENT_NO_INPUT`, `MIGENT_HOME`, `DISABLE_TELEMETRY` |
+| `KNOWN_SHAPES` | `src/known-shapes.ts` | Opt-in shapes for passthrough files |
+| `isValid`, `validationIssues` | `src/validate.ts` | Validate a value against a schema |
+| `pnpm generate` | `src/generate/` | Writes `schemas/` and `docs/reference/` |

@@ -1,7 +1,22 @@
 # @nodeint/migent-registry
 
-Machine-local workspace registry service for Migent.
+> For installation and usage, see [the Migent CLI on npm](https://www.npmjs.com/package/@nodeint/migent).
 
-This package is an internal dependency of the Migent CLI and has no stable public API.
+Machine-local workspace registry service for Migent. Internal; no stable public API.
 
-For installation, usage, and documentation, see [the Migent CLI on npm](https://www.npmjs.com/package/@nodeint/migent).
+## Rules
+
+- Liveness is proven by connecting to the service endpoint, never by pid. Keep socket paths under
+  100 bytes; `serviceEndpointPath` falls back to a short temp path.
+- The child re-executes its own module and watches IPC `disconnect` before it is published; do not bundle.
+- Process code uses Node built-ins and `proper-lockfile` only.
+
+## Key symbols
+
+| Symbol | File | Purpose |
+|---|---|---|
+| `startDetached`, `serveForeground`, `stop`, `serviceStatus` | `src/service.ts` | Service lifecycle |
+| `callService`, `ServiceError` | `src/service.ts` | Client calls |
+| `serviceEndpointPath`, `queryEndpoint` | `src/endpoint.ts` | Endpoint and liveness |
+| `registryHomePath`, `migentHomePath` | `src/home.ts` | Registry home |
+| routes, store | `src/routes.ts`, `src/store.ts` | Request handling, persistence |

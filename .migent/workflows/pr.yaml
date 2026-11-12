@@ -11,7 +11,9 @@ stages:
     role: operator
     ask: human
     instructions:
-      - Use the prior implement-summary when provided for the commit message and the pull request title and body; otherwise derive them from the diff. Link the related issue when one exists.
+      - Follow the create-pr skill in .agents/skills/create-pr/SKILL.md for committing, pushing, and opening the pull request against next.
+      - Fill every section of .github/pull_request_template.md. Use the prior implement-summary when provided for the summary, changes, and verification; otherwise derive them from the diff.
+      - Write Fixes #<n> under Related issue when a prior issue artifact names an issue; otherwise write None.
       - Stage files by name. Add a CHANGELOG line under Unreleased for a user-visible change.
       - Do not merge. Report the branch, commit, pull request URL, and CI result.
     artifacts: [pr]

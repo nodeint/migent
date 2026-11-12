@@ -1,0 +1,43 @@
+name: Bug report
+description: Something in Migent does not work as documented.
+labels: [bug]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What went wrong, in a few sentences.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Commands, workflow or config snippets, and the session id if relevant.
+      placeholder: |
+        1. migent session run ...
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Output, error messages, or relevant lines from diagnostics.json / failure.md.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Output of `migent --version`, your OS, and the client CLIs involved (`migent doctor` helps).
+      render: text
+    validations:
+      required: true
