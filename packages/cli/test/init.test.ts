@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -76,6 +76,8 @@ function which(found: ReadonlySet<string>): (command: string) => string | null {
   return (command) => (found.has(command) ? `/bin/${command}` : null);
 }
 
+const ALL_CODEX = ['planning=codex:gpt-5', 'review=codex:gpt-5', 'coding=codex:gpt-5'];
+
 function tempDir(): string {
   return mkdtempSync(path.join(tmpdir(), 'migent-cli-'));
 }
@@ -85,11 +87,7 @@ test('writes inline role models and both working presets', async () => {
   try {
     const captured = await capture(() =>
       runInit(workspace, {
-        client: 'codex',
-        model: 'gpt-5',
-        plannerClient: 'codex', plannerModel: 'gpt-5',
-        reviewerClient: 'codex',
-        reviewerModel: 'gpt-5',
+        agents: ALL_CODEX,
         runCommand,
         which: which(new Set(['codex', 'grok'])),
       }),
@@ -99,26 +97,33 @@ test('writes inline role models and both working presets', async () => {
     const gitignore = readFileSync(path.join(workspace, '.migent', '.gitignore'), 'utf8');
     expect(captured.value).toBe(0);
     expect(captured.stdout).toContain('Roles:');
-    expect(captured.stdout).toMatch(/planner\s+Designs the approach/);
+    expect(captured.stdout).toMatch(/architect\s+Designs the structure and plan/);
+    expect(captured.stdout).toContain('planning (architect): codex/gpt-5. review (reviewer): codex/gpt-5. coding (developer, operator): codex/gpt-5. Workflows: implement, plan.');
     expect(config).toContain('schema_version: 7');
     expect(config).toContain('agent');
     expect(workflow).toContain('schema_version: 7');
     expect(loadWorkspaceConfig(workspace)).toMatchObject({
       schema_version: 7,
       roles: {
-        developer: { agent: { model: 'gpt-5', client: { type: 'codex' } } },
-        planner: { agent: { model: 'gpt-5', client: { type: 'codex' } } },
-        reviewer: { agent: { model: 'gpt-5', client: { type: 'codex' } } },
+        developer: { agent: 'coding' },
+        architect: { agent: 'planning' },
+        reviewer: { agent: 'review' },
+        operator: { agent: 'coding' },
+      },
+      agents: {
+        planning: { model: 'gpt-5', client: { type: 'codex' } },
+        review: { model: 'gpt-5', client: { type: 'codex' } },
+        coding: { model: 'gpt-5', client: { type: 'codex' } },
       },
     });
     type RoleShape = { responsibilities: string[]; description: string };
     const roles = loadWorkspaceConfig(workspace).roles as Record<string, RoleShape>;
-    expect(Object.keys(roles).sort()).toEqual(['developer', 'planner', 'reviewer']);
+    expect(Object.keys(roles).sort()).toEqual(['architect', 'developer', 'operator', 'reviewer']);
     for (const role of Object.values(roles)) {
       expect(role.responsibilities.length).toBeGreaterThan(0);
       expect(role.description).toMatch(/\S/);
     }
-    expect(roles.planner?.responsibilities.join('\n')).toContain('do not modify project files');
+    expect(roles.architect?.responsibilities.join('\n')).toContain('do not modify project files');
     expect(roles.reviewer?.responsibilities.join('\n')).toContain('Do not modify project files');
     const localConfig = readFileSync(path.join(workspace, '.migent', 'config.local.yaml'), 'utf8');
     expect(localConfig).not.toContain('{{');
@@ -152,11 +157,7 @@ test('refuses a partial project and leaves it unchanged', async () => {
     writeFileSync(config, 'partial: true\n', 'utf8');
     const captured = await capture(() =>
       runInit(workspace, {
-        client: 'codex',
-        model: 'gpt-5',
-        plannerClient: 'codex', plannerModel: 'gpt-5',
-        reviewerClient: 'codex',
-        reviewerModel: 'gpt-5',
+        agents: ALL_CODEX,
         runCommand,
         which: which(new Set(['codex'])),
       }),
@@ -175,11 +176,7 @@ test('reports an existing valid project without changing it', async () => {
   try {
     expect(
       await runInit(workspace, {
-        client: 'codex',
-        model: 'gpt-5',
-        plannerClient: 'codex', plannerModel: 'gpt-5',
-        reviewerClient: 'codex',
-        reviewerModel: 'gpt-5',
+        agents: ALL_CODEX,
         runCommand,
         which: which(new Set(['codex'])),
       }),
@@ -188,11 +185,7 @@ test('reports an existing valid project without changing it', async () => {
     const original = readFileSync(config, 'utf8');
     const captured = await capture(() =>
       runInit(workspace, {
-        client: 'grok',
-        model: 'grok-4',
-        plannerClient: 'codex', plannerModel: 'gpt-5',
-        reviewerClient: 'codex',
-        reviewerModel: 'gpt-5',
+        agents: ['planning=codex:gpt-5', 'review=codex:gpt-5', 'coding=grok:grok-4'],
         runCommand,
         which: which(new Set()),
       }),
@@ -213,7 +206,7 @@ test('a lone config.local.yaml is a conflict and is left unchanged', async () =>
     const local = path.join(root, 'config.local.yaml');
     writeFileSync(local, 'agents: {}\n', 'utf8');
     const captured = await capture(() =>
-      runInit(workspace, { client: 'codex', model: 'gpt-5', plannerClient: 'codex', plannerModel: 'gpt-5', reviewerClient: 'codex', reviewerModel: 'gpt-5', runCommand, which: which(new Set(['codex'])) }),
+      runInit(workspace, { agents: ALL_CODEX, runCommand, which: which(new Set(['codex'])) }),
     );
     expect(captured.value).toBe(1);
     expect(readFileSync(local, 'utf8')).toBe('agents: {}\n');
@@ -224,15 +217,11 @@ test('a lone config.local.yaml is a conflict and is left unchanged', async () =>
   }
 });
 
-test('planner has its own model and each workflow uses the reviewer model', async () => {
+test('architect has its own model and each workflow uses the reviewer model', async () => {
   const workspace = tempDir();
   try {
     const code = await runInit(workspace, {
-      client: 'codex',
-      model: 'gpt-5',
-      plannerClient: 'grok', plannerModel: 'grok-4.6',
-      reviewerClient: 'grok',
-      reviewerModel: 'grok-4.7',
+      agents: ['planning=grok:grok-4.6', 'review=grok:grok-4.7', 'coding=codex:gpt-5'],
       runCommand,
       which: which(new Set(['codex', 'grok'])),
     });
@@ -242,9 +231,9 @@ test('planner has its own model and each workflow uses the reviewer model', asyn
     const resolve = clientRegistry();
     expect(resolveStageTarget(workspace, { workflowId: 'plan', stageId: 'plan' }, { registry: resolve })).toMatchObject({ client: 'grok', model: 'grok-4.6' });
     expect(resolveStageTarget(workspace, { workflowId: 'plan', stageId: 'review_plan' }, { registry: resolve })).toMatchObject({ client: 'grok', model: 'grok-4.7' });
-    expect(config).not.toContain('agents:');
-    expect(config).toContain('planner:');
-    expect(workflow).toContain('role: planner');
+    expect(config).toContain('agents:');
+    expect(config).toContain('architect:');
+    expect(workflow).toContain('role: architect');
     expect(resolveStageTarget(workspace, { workflowId: 'implement', stageId: 'review_work' }, { registry: resolve })).toMatchObject({ client: 'grok', model: 'grok-4.7' });
     expect(workflow).toContain('id: plan');
     expect(loadWorkflowDocument(path.join(workspace, '.migent', 'workflows', 'plan.yaml')).stages.review_plan?.routes.revise).toBe('plan');
@@ -282,12 +271,8 @@ test('writes an option only when it is passed', async () => {
   const workspace = tempDir();
   try {
     const code = await runInit(workspace, {
-      client: 'codex',
-      model: 'gpt-5',
-      plannerClient: 'codex', plannerModel: 'gpt-5',
-      reviewerClient: 'codex',
-      reviewerModel: 'gpt-5',
-      options: ['model_reasoning_effort=high'],
+      agents: ALL_CODEX,
+      agentOptions: ['coding:model_reasoning_effort=high'],
       runCommand,
       which: which(new Set(['codex'])),
     });
@@ -304,11 +289,7 @@ test('rejects a model the client cli did not list', async () => {
   try {
     const captured = await capture(() =>
       runInit(workspace, {
-        client: 'codex',
-        model: 'hidden',
-        plannerClient: 'codex', plannerModel: 'gpt-5',
-        reviewerClient: 'codex',
-        reviewerModel: 'gpt-5',
+        agents: ['planning=codex:gpt-5', 'review=codex:gpt-5', 'coding=codex:hidden'],
         runCommand,
         which: which(new Set(['codex'])),
       }),
@@ -326,12 +307,8 @@ test('rejects an option value the client does not list', async () => {
   try {
     const captured = await capture(() =>
       runInit(workspace, {
-        client: 'codex',
-        model: 'gpt-5',
-        plannerClient: 'codex', plannerModel: 'gpt-5',
-        reviewerClient: 'codex',
-        reviewerModel: 'gpt-5',
-        options: ['model_reasoning_effort=max'],
+        agents: ALL_CODEX,
+        agentOptions: ['coding:model_reasoning_effort=max'],
         runCommand,
         which: which(new Set(['codex'])),
       }),
@@ -349,9 +326,7 @@ test('init succeeds without npx and suggests a separate skill command', async ()
   const { calls } = skillRecorder(1);
   try {
     const result = await capture(() => runInit(workspace, {
-      client: 'codex', model: 'gpt-5',
-      plannerClient: 'codex', plannerModel: 'gpt-5',
-      reviewerClient: 'codex', reviewerModel: 'gpt-5',
+      agents: ALL_CODEX,
       runCommand, which: which(new Set(['codex'])),
     }));
     expect(result.value).toBe(0);
@@ -371,9 +346,8 @@ test.each(['missing npx', 'installer failure'])('skill %s after init preserves t
   const { calls } = skillRecorder(1);
   try {
     const initialized = await capture(() => runInit(workspace, {
-      client: 'codex', model: 'gpt-5', options: ['model_reasoning_effort=low'],
-      plannerClient: 'codex', plannerModel: 'gpt-5',
-      reviewerClient: 'grok', reviewerModel: 'grok-4.7', reviewerOptions: ['reasoning-effort=high'],
+      agents: ['planning=codex:gpt-5', 'review=grok:grok-4.7', 'coding=codex:gpt-5'],
+      agentOptions: ['coding:model_reasoning_effort=low', 'review:reasoning-effort=high'],
       runCommand, which: which(new Set(['codex', 'grok'])),
     }));
     expect(initialized.value, initialized.stderr).toBe(0);
@@ -433,11 +407,7 @@ test('init exits 0 when doctor later reports a missing client', async () => {
     let seen = 0;
     const captured = await capture(() =>
       runInit(workspace, {
-        client: 'codex',
-        model: 'gpt-5',
-        plannerClient: 'codex', plannerModel: 'gpt-5',
-        reviewerClient: 'codex',
-        reviewerModel: 'gpt-5',
+        agents: ALL_CODEX,
         runCommand,
         which: (command) => {
           seen += 1;
@@ -461,23 +431,15 @@ test('already initialized ignores model selection flags', async () => {
   try {
     expect(
       await runInit(workspace, {
-        client: 'codex',
-        model: 'gpt-5',
-        plannerClient: 'codex', plannerModel: 'gpt-5',
-        reviewerClient: 'codex',
-        reviewerModel: 'gpt-5',
+        agents: ALL_CODEX,
         runCommand,
         which: which(new Set(['codex'])),
       }),
     ).toBe(0);
     const captured = await capture(() =>
       runInit(workspace, {
-        client: 'grok',
-        model: 'grok-4',
-        plannerClient: 'codex', plannerModel: 'gpt-5',
-        reviewerClient: 'codex',
-        reviewerModel: 'gpt-5',
-        options: ['reasoning=high'],
+        agents: ['planning=codex:gpt-5', 'review=codex:gpt-5', 'coding=grok:grok-4'],
+        agentOptions: ['coding:reasoning=high'],
         runCommand,
         which: which(new Set()),
       }),
@@ -490,22 +452,57 @@ test('already initialized ignores model selection flags', async () => {
   }
 });
 
-test('requires client and model when not interactive', async () => {
+test.each([
+  { agentEfforts: ['coding=high'] },
+  { agentOptions: ['coding:model_reasoning_effort=high'] },
+  { agents: ['oldslot=codex:gpt-5'] },
+  { agents: ['coding=codex:gpt-5', 'coding=codex:gpt-5'] },
+  { agents: ['malformed'] },
+])('already initialized ignores invalid selection flags: %j', async (flags) => {
   const workspace = tempDir();
+  try {
+    const created = await capture(() => runInit(workspace, {
+      agents: ALL_CODEX, runCommand, which: which(new Set(['codex'])),
+    }));
+    expect(created.value, created.stderr).toBe(0);
+    const configPath = path.join(workspace, '.migent', 'config.yaml');
+    const before = readFileSync(configPath, 'utf8');
+    const calls: string[][] = [];
+    const result = await capture(() => runInit(workspace, {
+      ...flags,
+      interactive: true,
+      which: which(new Set()),
+      runCommand: (argv) => { calls.push(argv); throw new Error('Unexpected client command'); },
+      prompter: new ScriptedPrompt([]),
+    }));
+    expect(result.value, result.stderr).toBe(0);
+    expect(result.stdout).toContain('Already initialized.');
+    expect(result.stderr).toContain('Already initialized; ignoring model selection flags.');
+    expect(readFileSync(configPath, 'utf8')).toBe(before);
+    expect(calls).toEqual([]);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test('requires every agent when not interactive', async () => {
+  const workspace = tempDir();
+  const message = 'Pass --agent NAME=CLIENT:MODEL for planning (architect), review (reviewer), coding (developer, operator)';
   try {
     const first = await capture(() => main(['init'], workspace));
     expect(first.value).toBe(2);
     expect(existsSync(path.join(workspace, '.migent'))).toBe(false);
-    expect(first.stderr).toContain('Pass --planner-client and --planner-model for planner when init is not interactive.');
-    const second = await capture(() => main(['init', '--client', 'codex'], workspace));
+    expect(first.stderr).toContain(message + ' when init is not interactive.');
+    expect(first.stderr).toContain('Example: migent init --agent planning=codex:gpt-5');
+    const second = await capture(() => main(['init', '--agent', 'coding=codex:gpt-5'], workspace));
     expect(second.value).toBe(2);
-    expect(second.stderr).toContain('--developer-model');
+    expect(second.stderr).toContain('Pass --agent NAME=CLIENT:MODEL for planning (architect), review (reviewer) when');
     const previous = process.env.MIGENT_NO_INPUT;
     process.env.MIGENT_NO_INPUT = '1';
     try {
       const third = await capture(() => main(['init'], workspace));
       expect(third.value).toBe(2);
-      expect(third.stderr).toContain('Pass --planner-client and --planner-model for planner when init is not interactive.');
+      expect(third.stderr).toContain(message);
     } finally {
       if (previous === undefined) delete process.env.MIGENT_NO_INPUT;
       else process.env.MIGENT_NO_INPUT = previous;
@@ -520,7 +517,7 @@ test('initializes over an empty .migent directory', async () => {
   try {
     mkdirSync(path.join(workspace, '.migent'));
     const captured = await capture(() =>
-      runInit(workspace, { client: 'codex', model: 'gpt-5', plannerClient: 'codex', plannerModel: 'gpt-5', reviewerClient: 'codex', reviewerModel: 'gpt-5', runCommand, which: which(new Set(['codex'])) }),
+      runInit(workspace, { agents: ALL_CODEX, runCommand, which: which(new Set(['codex'])) }),
     );
     expect(captured.value).toBe(0);
     expect(existsSync(path.join(workspace, '.migent', 'config.yaml'))).toBe(true);
@@ -534,7 +531,7 @@ test('initializes over an empty .migent/workflows directory', async () => {
   try {
     mkdirSync(path.join(workspace, '.migent', 'workflows'), { recursive: true });
     const captured = await capture(() =>
-      runInit(workspace, { client: 'codex', model: 'gpt-5', plannerClient: 'codex', plannerModel: 'gpt-5', reviewerClient: 'codex', reviewerModel: 'gpt-5', runCommand, which: which(new Set(['codex'])) }),
+      runInit(workspace, { agents: ALL_CODEX, runCommand, which: which(new Set(['codex'])) }),
     );
     expect(captured.value).toBe(0);
     expect(existsSync(path.join(workspace, '.migent', 'workflows', 'implement.yaml'))).toBe(true);
@@ -548,11 +545,7 @@ test('init runs only catalog listing commands, never an inference call', async (
   try {
     const seen: string[][] = [];
     const code = await runInit(workspace, {
-      client: 'codex',
-      model: 'gpt-5',
-      plannerClient: 'codex', plannerModel: 'gpt-5',
-      reviewerClient: 'codex',
-      reviewerModel: 'gpt-5',
+      agents: ALL_CODEX,
       runCommand: (argv) => {
         seen.push(argv);
         return runCommand(argv);
@@ -568,23 +561,22 @@ test('init runs only catalog listing commands, never an inference call', async (
 });
 
 
-test('non-interactive CLI requires all three role models and accepts the same model for each', async () => {
+test('non-interactive CLI requires every agent and accepts the same model for several', async () => {
   const workspace = tempDir();
   cliHooks.which = which(new Set(['codex']));
   cliHooks.runCommand = runCommand;
   try {
-    const missing = await capture(() => main(['init', '--no-input', '--client', 'codex', '--model', 'gpt-5'], workspace));
+    const missing = await capture(() => main(['init', '--no-input', '--agent', 'coding=codex:gpt-5'], workspace));
     expect(missing.value).toBe(2);
-    expect(missing.stderr).toContain('--planner-client and --planner-model');
+    expect(missing.stderr).toContain('planning (architect)');
     expect(existsSync(path.join(workspace, '.migent'))).toBe(false);
     cliHooks.which = which(new Set(['codex']));
     cliHooks.runCommand = runCommand;
     const result = await capture(() => main([
-      'init', '--no-input', '--client', 'codex', '--model', 'gpt-5',
-      '--planner-client', 'codex', '--planner-model', 'gpt-5',
-      '--planner-option', 'model_reasoning_effort=medium',
-      '--reviewer-client', 'codex', '--reviewer-model', 'gpt-5',
-      '--option', 'model_reasoning_effort=low', '--reviewer-option', 'model_reasoning_effort=high',
+      'init', '--no-input',
+      '--agent', 'coding=codex:gpt-5', '--agent', 'planning=codex:gpt-5', '--agent', 'review=codex:gpt-5',
+      '--agent-option', 'planning:model_reasoning_effort=medium',
+      '--agent-option', 'coding:model_reasoning_effort=low', '--agent-option', 'review:model_reasoning_effort=high',
     ], workspace));
     expect(result.value, result.stderr).toBe(0);
     const resolve = clientRegistry();
@@ -598,29 +590,20 @@ test('non-interactive CLI requires all three role models and accepts the same mo
 
 test('init accepts independent effort flags and rejects conflicting or invalid values', async () => {
   const workspace = tempDir();
-  cliHooks.which = which(new Set(['codex']));
-  cliHooks.runCommand = runCommand;
-  const args = ['init', '--no-input', '--client', 'codex', '--model', 'gpt-5',
-    '--planner-client', 'codex', '--planner-model', 'gpt-5',
-    '--reviewer-client', 'codex', '--reviewer-model', 'gpt-5'];
-  try {
-    const aliases = await capture(() => main([...args, '--developer-client', 'codex'], workspace));
-    expect(aliases.value).toBe(2);
-    expect(aliases.stderr).toContain('Use only one of --developer-client and --client');
+  const args = ['init', '--no-input', '--agent', 'planning=codex:gpt-5', '--agent', 'review=codex:gpt-5', '--agent', 'coding=codex:gpt-5'];
+  const attempt = (extra: string[]) => {
     cliHooks.which = which(new Set(['codex']));
     cliHooks.runCommand = runCommand;
-    const conflict = await capture(() => main([...args, '--effort', 'high', '--option', 'model_reasoning_effort=low'], workspace));
+    return capture(() => main([...args, ...extra], workspace));
+  };
+  try {
+    const conflict = await attempt(['--agent-effort', 'coding=high', '--agent-option', 'coding:model_reasoning_effort=low']);
     expect(conflict.value).toBe(2);
     expect(conflict.stderr).toContain('conflicts');
-    cliHooks.which = which(new Set(['codex']));
-    cliHooks.runCommand = runCommand;
-    const invalid = await capture(() => main([...args, '--planner-effort', 'invalid'], workspace));
+    const invalid = await attempt(['--agent-effort', 'planning=invalid']);
     expect(invalid.value).toBe(2);
     expect(existsSync(path.join(workspace, '.migent'))).toBe(false);
-    cliHooks.which = which(new Set(['codex']));
-    cliHooks.runCommand = runCommand;
-    const developerArgs = args.map((arg) => arg === '--client' ? '--developer-client' : arg === '--model' ? '--developer-model' : arg);
-    const result = await capture(() => main([...developerArgs, '--planner-effort', 'medium', '--reviewer-effort', 'high', '--developer-effort', 'low'], workspace));
+    const result = await attempt(['--agent-effort', 'planning=medium', '--agent-effort', 'review=high', '--agent-effort', 'coding=low']);
     expect(result.value, result.stderr).toBe(0);
     const local = readFileSync(path.join(workspace, '.migent', 'config.yaml'), 'utf8');
     expect(local).toContain('effort: medium');
@@ -650,8 +633,8 @@ test('interactive init saves each role independently without installing the skil
       interactive: true, prompter, runCommand, which: which(new Set(['codex', 'grok'])),
     }));
     expect(result.value, result.stderr).toBe(0);
-    expect(messages).toEqual(['Planner model', 'Reviewer model', 'Developer model']);
-    expect(Object.keys(loadWorkspaceConfig(workspace).roles)).toEqual(['planner', 'reviewer', 'developer']);
+    expect(messages).toEqual(['planning (architect) model', 'review (reviewer) model', 'coding (developer, operator) model']);
+    expect(Object.keys(loadWorkspaceConfig(workspace).roles)).toEqual(['architect', 'reviewer', 'developer', 'operator']);
     expect(result.stdout).toContain('migent skill install --project');
     const resolve = clientRegistry();
     expect(resolveStageTarget(workspace, { workflowId: 'implement', stageId: 'implement' }, { registry: resolve })).toEqual({
@@ -670,18 +653,14 @@ test('interactive init saves each role independently without installing the skil
 });
 
 test.each([
-  { plannerClient: 'codex', plannerModel: 'hidden' },
-  { plannerClient: 'codex' },
-  { plannerModel: 'gpt-5' },
-  { plannerOptions: ['model_reasoning_effort=high'] },
-  { plannerClient: 'codex', plannerModel: 'gpt-5', plannerOptions: ['model_reasoning_effort=max'] },
-])('invalid planner selection leaves the project unwritten: %j', async (planner) => {
+  [['planning=codex:hidden']],
+  [['planning=codex:gpt-5', 'review=codex:gpt-5', 'coding=codex:gpt-5', 'review=codex:hidden']],
+  [['planning=codex:gpt-5', 'review=codex:gpt-5', 'coding=codex:gpt-5', 'review=codex:gpt-5']],
+])('invalid agent selection leaves the project unwritten: %j', async (agents) => {
   const workspace = tempDir();
   try {
     const result = await capture(() => runInit(workspace, {
-      ...planner,
-      reviewerClient: 'codex', reviewerModel: 'gpt-5',
-      client: 'codex', model: 'gpt-5',
+      agents: agents.length === 1 ? [...agents, 'review=codex:gpt-5', 'coding=codex:gpt-5'] : agents,
       runCommand, which: which(new Set(['codex'])),
     }));
     expect(result.value).toBe(2);
@@ -692,25 +671,123 @@ test.each([
 });
 
 test.each([
-  { reviewerClient: 'codex', reviewerModel: 'hidden' },
-  { reviewerClient: 'codex' },
-  { reviewerModel: 'gpt-5' },
-  { reviewerOptions: ['model_reasoning_effort=high'] },
-])('invalid reviewer selection leaves the project unwritten: %j', async (reviewer) => {
+  [{ agentOptions: ['planning:model_reasoning_effort=high'] }, 'Pass --agent planning=CLIENT:MODEL with --agent-option.'],
+  [{ agentEfforts: ['planning=high'] }, 'Pass --agent planning=CLIENT:MODEL with --agent-effort.'],
+  [{ agents: ['nope=codex:gpt-5'] }, 'Unknown agent "nope" for --agent. Agents in this template: planning (architect)'],
+  [{ agents: ['planning=codex:gpt-5', 'planning=codex:gpt-5'] }, '--agent planning was given more than once.'],
+  [{ agents: ['planning=codex'] }, 'Invalid --agent "planning=codex"; use NAME=CLIENT:MODEL.'],
+  [{ agents: ['planning=:gpt-5'] }, 'Invalid --agent "planning=:gpt-5"'],
+  [{ agents: ['planning=codex:gpt-5'], agentEfforts: ['planning'] }, 'Invalid --agent-effort "planning"; use NAME=EFFORT.'],
+  [{ agents: ALL_CODEX, agentOptions: ['planning:key'] }, 'Option must be KEY=VALUE: key.'],
+] as const)('malformed agent flags exit 2 before writing: %j', async (flags, message) => {
   const workspace = tempDir();
   try {
-    const result = await capture(() => runInit(workspace, {
-      plannerClient: 'codex', plannerModel: 'gpt-5',
-      client: 'codex', model: 'gpt-5', ...reviewer,
-      runCommand, which: which(new Set(['codex'])),
-    }));
+    const result = await capture(() => runInit(workspace, { ...flags, runCommand, which: which(new Set(['codex'])) }));
     expect(result.value).toBe(2);
+    expect(result.stderr).toContain(message);
     expect(existsSync(path.join(workspace, '.migent'))).toBe(false);
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }
 });
 
+test('--agent splits at the first colon so model IDs may contain colons', async () => {
+  const workspace = tempDir();
+  try {
+    const result = await capture(() => runInit(workspace, {
+      agents: ['planning=codex:gpt-5', 'review=codex:gpt-5', 'coding=codex:hidden:1'],
+      runCommand, which: which(new Set(['codex'])),
+    }));
+    expect(result.value).toBe(2);
+    expect(result.stderr).toContain('Unknown model: hidden:1');
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test('removed per-role flags are rejected as unknown options', async () => {
+  const workspace = tempDir();
+  try {
+    for (const flag of ['--planner-client', '--reviewer-model', '--developer-effort', '--client', '--model', '--effort', '--option', '--provider', '--planner-provider']) {
+      const result = await capture(() => main(['init', '--no-input', flag, 'x'], workspace));
+      expect(result.value, flag).toBe(2);
+      expect(result.stderr, flag).toContain('unknown option');
+    }
+    const help = await capture(() => main(['init', '--help'], workspace));
+    expect(help.stdout).toContain('--agent <spec>');
+    expect(help.stdout).toContain('--agent-effort <spec>');
+    expect(help.stdout).toContain('--agent-option <spec>');
+    expect(help.stdout).not.toMatch(/--(planner|reviewer|developer|client|model|effort|option)\b/);
+    expect(existsSync(path.join(workspace, '.migent'))).toBe(false);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test('fully flagged init loads only the selected client catalogs', async () => {
+  const workspace = tempDir();
+  const seen: string[] = [];
+  try {
+    const result = await capture(() => runInit(workspace, {
+      agents: ALL_CODEX,
+      runCommand: (argv) => { seen.push(argv[0] ?? ''); return runCommand(argv); },
+      which: which(new Set(['codex', 'grok'])),
+    }));
+    expect(result.value, result.stderr).toBe(0);
+    expect(new Set(seen)).toEqual(new Set(['codex']));
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test('a template with an extra role and slot needs no code change', async () => {
+  const workspace = tempDir();
+  const template = path.join(workspace, 'template');
+  try {
+    cpSync(new URL('../../../templates/', import.meta.url), template, { recursive: true });
+    const config = readFileSync(path.join(template, 'config.yaml'), 'utf8')
+      .replace('agents:\n', 'agents:\n  docs:\n    model: "{{agent}}"\n')
+      .concat('  writer:\n    description: Writes docs.\n    agent: docs\n    responsibilities:\n      - "Write docs."\n');
+    writeFileSync(path.join(template, 'config.yaml'), config);
+    const project = path.join(workspace, 'project');
+    mkdirSync(project);
+    const missing = await capture(() => runInit(project, { agents: ALL_CODEX, templateDirectory: template, runCommand, which: which(new Set(['codex'])) }));
+    expect(missing.value).toBe(2);
+    expect(missing.stderr).toContain('docs (writer)');
+    const result = await capture(() => runInit(project, {
+      agents: [...ALL_CODEX, 'docs=grok:grok-4.6'], templateDirectory: template, runCommand, which: which(new Set(['codex', 'grok'])),
+    }));
+    expect(result.value, result.stderr).toBe(0);
+    expect(result.stdout).toContain('docs (writer): grok/grok-4.6');
+    const roles = loadWorkspaceConfig(project).roles as Record<string, { agent: unknown }>;
+    expect(roles.writer?.agent).toBe('docs');
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test('a broken template fails before any prompt or catalog load', async () => {
+  const workspace = tempDir();
+  const template = path.join(workspace, 'template');
+  try {
+    cpSync(new URL('../../../templates/', import.meta.url), template, { recursive: true });
+    const config = readFileSync(path.join(template, 'config.yaml'), 'utf8').replace('agent: coding', 'agent: missing');
+    writeFileSync(path.join(template, 'config.yaml'), config);
+    const project = path.join(workspace, 'project');
+    mkdirSync(project);
+    const seen: string[][] = [];
+    const result = await capture(() => runInit(project, {
+      interactive: true, templateDirectory: template, which: which(new Set(['codex'])),
+      runCommand: (argv) => { seen.push(argv); return runCommand(argv); },
+    }));
+    expect(result.value).toBe(2);
+    expect(result.stderr).toContain('roles.developer.agent');
+    expect(seen).toEqual([]);
+    expect(existsSync(path.join(project, '.migent'))).toBe(false);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
 
 test('interactive init loads each available catalog once and tolerates a failed client', async () => {
   const workspace = tempDir();

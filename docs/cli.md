@@ -180,15 +180,16 @@ exit codes.
 
 ```bash
 migent init
-migent init --no-input --planner-client codex --planner-model gpt-5 --reviewer-client grok --reviewer-model grok-4.7 --client codex --model gpt-5
+migent init --no-input --agent planning=codex:gpt-5 --agent review=grok:grok-4.7 --agent coding=codex:gpt-5
 ```
 
-In a terminal, choose a client and model for the planner, then the reviewer,
-then the developer. Each selection can include the client's prompted options.
-All three roles are configured independently and can use the same model.
-Each role includes instructions for its responsibilities. Init saves these
-selections and creates the
-project. Install the Migent skill separately afterward:
+The project template decides which agents init asks for. The packaged template
+defines three agents: `planning` (used by the `architect` role), `review`
+(`reviewer`), and `coding` (`developer` and `operator`). In a terminal, choose a
+client and model for each agent in turn; each selection can include the client's
+prompted options. Agents are configured independently and can use the same
+model. Each role includes instructions for its responsibilities. Init saves
+these selections and creates the project. Install the Migent skill separately afterward:
 
 ```bash
 migent skill install --project
@@ -202,31 +203,36 @@ Init always writes both workflows:
 
 ```text
 .migent/
-??? config.yaml        # developer, planner, reviewer with inline agents and responsibilities
+??? config.yaml        # agents (planning, review, coding) and the architect, reviewer, developer, operator roles
 ??? .gitignore         # ignores sessions/ and optional config.local.yaml
 ??? workflows/
     ??? implement.yaml # developer implements, reviewer approves or requests revision
-    ??? plan.yaml      # planner plans, reviewer approves or requests revision
+    ??? plan.yaml      # architect plans, reviewer approves or requests revision
 ```
 
 Both workflows route `approved` to completion and `revise` back to the
 work stage, with `max_revisions: 3`. The implement workflow can run
 independently; it does not require a prior plan session.
 
-There is no preset selection. `config.yaml` contains each role's client,
-model ID, and selected options directly; no `agents` section or
-`config.local.yaml` is generated. Commit the configuration and workflows.
-Use the optional local file later for machine-specific overrides.
+There is no preset selection. `config.yaml` has an `agents` section holding
+each agent's client, model ID, and selected options; roles refer to agents by
+name, so `developer` and `operator` share `coding`. Init also writes an empty
+`config.local.yaml` for machine-specific overrides, which Git ignores. Commit
+the configuration and workflows. Renaming roles or regrouping them onto agents
+is a change to the project template, not to the CLI.
 
 | Flag | Input / purpose |
 | --- | --- |
-| `--planner-client`, `--planner-model` | Planner CLI client and model ID; pass together. |
-| `--planner-option KEY=VALUE` | Planner model option; repeat for multiple options. |
-| `--reviewer-client`, `--reviewer-model` | Reviewer CLI client and model ID; pass together. |
-| `--reviewer-option KEY=VALUE` | Reviewer model option; repeat for multiple options. |
-| `--client`, `--model` | Developer CLI client and model ID; pass together. |
-| `--option KEY=VALUE` | Developer model option; repeat for multiple options. |
-| `--no-input` | Disable prompts; also set by `MIGENT_NO_INPUT=1`. All three role selections are required. |
+| `--agent NAME=CLIENT:MODEL` | CLI client and model ID for the template agent `NAME`; repeat per agent. The value splits at the first `=` and then the first `:`, so model IDs may contain `:`. |
+| `--agent-effort NAME=EFFORT` | Effort for an agent; requires `--agent NAME=...`. |
+| `--agent-option NAME:KEY=VALUE` | Model option for an agent; repeat for multiple options. Requires `--agent NAME=...`. |
+| `--no-input` | Disable prompts; also set by `MIGENT_NO_INPUT=1`. Every template agent must be given with `--agent`. |
+
+Agents without `--agent` are prompted for in a terminal. An unknown agent name
+exits 2 and lists the template's agents. The earlier per-role flags
+(`--planner-*`, `--reviewer-*`, `--developer-*`, `--client`, `--model`,
+`--effort`, `--option`, and the `--*provider` flags) have been removed and are
+rejected as unknown options.
 
 Model IDs and prompted option values come from the selected client CLI.
 Omit options to keep client defaults. Invalid selections exit 2 before
