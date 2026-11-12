@@ -1,6 +1,6 @@
 {
   "name": "@nodeint/migent",
-  "version": "0.5.6",
+  "version": "0.6.0",
   "description": "Compose AI coding agents into repeatable engineering workflows.",
   "keywords": [
     "ai",
@@ -52,8 +52,8 @@
     "@nodeint/migent-doctor": "workspace:*",
     "@nodeint/migent-engine": "workspace:*",
     "@nodeint/migent-kernel": "workspace:*",
-    "@nodeint/migent-session": "workspace:*",
     "@nodeint/migent-registry": "workspace:*",
+    "@nodeint/migent-session": "workspace:*",
     "@nodeint/migent-workflow": "workspace:*",
     "commander": "^14.0.2",
     "picocolors": "^1.1.1",

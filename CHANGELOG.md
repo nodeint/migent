@@ -2,20 +2,22 @@
 
 ## Unreleased
 
-### Fixed
+## 0.6.0
 
-- A Claude Code role can set any option `claude -p --help` lists, such as `autocompact: 200000`, and pass `migent doctor` (#122). Option values in YAML may be numbers or booleans; they are stored as strings.
-- Stage `verify` commands now run in the operating system's own shell: cmd.exe (`%ComSpec%`) on Windows, `/bin/sh` elsewhere (#126). Windows no longer needs Git Bash's `sh` on `PATH`, which previously made every verify fail with "Unable to start the verify shell". Commands written in POSIX-only syntax must work in cmd.exe when the workflow runs on Windows.
+### Breaking
+
+- `migent init` now takes agents from the project template, and the per-role flags (`--planner-*`, `--reviewer-*`, `--developer-*`, `--client`, `--model`, `--effort`, `--option`, `--*provider`) are rejected. Use `--agent NAME=CLIENT:MODEL`, `--agent-effort NAME=EFFORT` and `--agent-option NAME:KEY=VALUE` with the names `planning`, `review` and `coding`, e.g. `--agent planning=codex:gpt-5`. ([#128](https://github.com/nodeint/migent/pull/128))
+- Stage `verify` commands now run in cmd.exe (`%ComSpec%`) on Windows instead of `sh`; other systems still use `/bin/sh`. On Windows, rewrite POSIX-only `verify` commands (`&&` chains with `$VAR`, `test`, `grep`, `rm`) in cmd.exe syntax or call a script that works there, e.g. `node scripts/check.mjs`. ([#127](https://github.com/nodeint/migent/pull/127))
 
 ### Changed
 
-- For `agy`, `claude-code`, `grok` and `opencode`, the valid options come from the installed CLI's headless help instead of a list kept in Migent. `migent doctor`, `migent init` and the agent commands read the help and report `option-unknown`, `option-value-invalid`, `option-conflict` and `option-unverified`. Offline checks (config load, runs) only refuse flags Migent sets itself and non-canonical key spellings, so a wrong value now reaches the client CLI unless doctor ran first. `migent get options` lists only the options Migent prompts for or stores; `--native` lists everything the help shows. `HeadlessOption.flags` now includes aliases the help declares in descriptions (grok, both `compat alias:` and `compat aliases:`). Codex is unchanged.
+- The generated project has an `agents` section (`planning`, `review`, `coding`) that roles refer to by name; `planner` is renamed `architect` and a new `operator` role shares `coding` with `developer`. Existing projects are unchanged. ([#128](https://github.com/nodeint/migent/pull/128))
+- For `agy`, `claude-code`, `grok` and `opencode`, valid options now come from the installed CLI's headless help, and `migent doctor`, `migent init` and the agent commands report `option-unknown`, `option-value-invalid`, `option-conflict` and `option-unverified`. Offline checks only refuse flags Migent sets itself, so a wrong option value reaches the client CLI unless doctor ran first. ([#124](https://github.com/nodeint/migent/pull/124))
 
-- **Breaking:** `migent init` now reads the agents it asks for from the project template instead of fixed planner, reviewer, and developer roles. The per-role flags `--planner-*`, `--reviewer-*`, `--developer-*`, `--client`, `--model`, `--effort`, `--option` and the hidden `--*provider` flags are removed and rejected as unknown options. Use `--agent NAME=CLIENT:MODEL`, `--agent-effort NAME=EFFORT`, and `--agent-option NAME:KEY=VALUE` (all repeatable) with the template's agent names `planning`, `review`, and `coding`. For example, `migent init --no-input --agent planning=codex:gpt-5 --agent review=grok:grok-4.7 --agent coding=codex:gpt-5`. ([#128](https://github.com/nodeint/migent/pull/128))
-- The generated project has an `agents` section (`planning`, `review`, `coding`) that roles refer to by name. The `planner` role is renamed `architect` (the `plan` workflow uses it), and a new `operator` role shares `coding` with `developer`. Existing projects are unchanged. ([#128](https://github.com/nodeint/migent/pull/128))
-- Workflow execution moved from `@nodeint/migent-kernel` into a new internal npm package, `@nodeint/migent-engine`, and the session store moved into `@nodeint/migent-session`. CLI behavior and `--json` output are unchanged.
-- `migrateConfig` and `migrateWorkflow` in `@nodeint/migent-kernel` no longer change the document they receive. They return `{ document, notes }`; use `document` instead of the argument you passed in.
-- Exported functions, methods, and constructors that took more than three positional parameters now take a named options or input object (the `max-params` lint rule is at zero). Call shapes changed in `@nodeint/migent-kernel` (`nextStage`, `readyStages`, `runnableNow`, `schedulableStageIds`, `version2IdleReason`, `readyOutsideStoppedBranches`, `revisionStop`, `resolveStageTarget`, `resolveStageSpec`, `resolveRoleTarget`, `loadAgentTarget`, `loadAgentDefinition`, `resolveRoleCascade`, `assignRoles`, `describeChange`, `migrateConfig`, `migrateWorkflow`, `parseStageOutcome`, `buildVerifyRepairPrompt`, `writeFileConditional`, `interruptSession`, `sessionStatusAfterExecution`, the `StageOutcome` constructor), `@nodeint/migent-session` (`SessionStore.loadOrCreate`, `saveExecution`, the `AgentSessionRecord` constructor and `fromJson`, `createWorkflowSession`, `createPreparedSession`, `writeWorkflowFreeze`, `warnIfFrozenDrift`, `collectFrozenDrift`, `readExecutionClient`), `@nodeint/migent-prompts` (`addStageOutcomeContract`), `@nodeint/migent-workflow` (`unknownKeyEntries`), `@nodeint/migent-doctor` (`loadOptionValues`, `checkModels`, `checkModelEfforts`, `checkModelAvailability`, `analyzeConfig`), `@nodeint/migent-registry` (`callService`, `stop`, `requestStop`, `serveUntilSignal`, `requestLocal`, `ServiceEndpoint`, `ServiceEndpointServer.listen`, `RegistryHTTPServer.open`), and the engine (`dispatchExecuteStage`, `dispatchNamedStage`, `StageDispatchResult`, `getSessionWorkflowView`). CLI behavior, `--json` output, and on-disk formats are unchanged.
+### Fixed
+
+- A Claude Code role can set any option `claude -p --help` lists, such as `autocompact: 200000`, and pass `migent doctor`. Numbers and booleans in YAML option values are stored as strings. ([#124](https://github.com/nodeint/migent/pull/124))
+- Windows no longer needs Git Bash's `sh` on `PATH` to run `verify` commands, which previously failed with "Unable to start the verify shell". ([#127](https://github.com/nodeint/migent/pull/127))
 
 ## 0.5.6
 
@@ -56,14 +58,9 @@
 
 - `client.type` is optional on an agent. When omitted, Migent runs each installed client's model-list command and uses the one client that lists the agent's `model` (OpenCode's `#variant` suffix is ignored), on every resolution and with no cache on disk. `effort` maps to the inferred client. No client listing the model is a `client-not-found` error, and several clients listing it is a `client-ambiguous` error; doctor reports both and a run refuses to start. `client.type` stays required when `client.options` is set (even an empty mapping). Inference is slower and depends on the machine's installed CLIs; set `client.type` to avoid both. Started sessions keep their frozen client.
 
-## 0.5.2
-
-### Added
-
-- `migent session complete <session-id>` marks a stopped workflow session completed without dispatching another stage. Takes the session lock and applies to `active`, `blocked`, `question`, or `cancelled` sessions. Rejects `prepared` and role sessions, and any session a live process is running. Completes manually by appending `session.completed` (with `data.manual: true`) to the event log; the fold derives this and survives `session repair`. Publishes outputs by normal rules (schema 7: artifact registry, schema 2–6: top-level outputs, v1: completion.outputs), records `published_by_execution_id: "manual"`, seals metrics.json, and writes next.json. Warns on stderr about each missing required artifact but completes anyway. Idempotent on already-completed sessions. Exit 0 on success or already-completed; exit 2 when the session is missing, prepared, a role, running (with live lock), or unreadable. A completed session's `status.json` records `completion_method`: `"manual"` for this command (with `manual_completion` holding the timestamp and previous status), and `"agent"` when stage executions completed it; sessions completed earlier gain `"agent"` the next time their status is folded, for example by `migent session repair`.
-
 ## Older versions
 
+- [0.5.2](https://github.com/nodeint/migent/releases/tag/v0.5.2)
 - [0.5.1](https://github.com/nodeint/migent/releases/tag/v0.5.1)
 - [0.5.0](https://github.com/nodeint/migent/releases/tag/v0.5.0)
 - [0.4.1](https://github.com/nodeint/migent/releases/tag/v0.4.1)
