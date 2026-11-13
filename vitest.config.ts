@@ -26,7 +26,8 @@ export default defineConfig({
   test: {
     // Windows runners start processes and touch files more slowly.
     testTimeout: process.platform === 'win32' ? WINDOWS_TEST_TIMEOUT_MS : TEST_TIMEOUT_MS,
-    reporters: [['dot', { summary: false }]],
+    // Print failures only: no per-test dots, no passing output.
+    reporters: ['agent'],
     silent: true,
     setupFiles: ['scripts/vitest-quiet-setup.ts'],
     projects: [
