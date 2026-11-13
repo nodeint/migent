@@ -405,6 +405,26 @@ export const CancelResult = Type.Object(
   { session_id: Type.String(), cancelled: Type.Boolean(), status: nullable(Type.String()) },
   { $id: id('cli/cancel'), title: 'session cancel --json' },
 );
+export const DeleteResult = Type.Object(
+  {
+    outcome: Type.Union([Type.Literal('deleted'), Type.Literal('dry-run'), Type.Literal('declined'), Type.Literal('confirmation-required')], { description: '`deleted`: deletion ran, even if some sessions failed. `confirmation-required`: no terminal and no `--yes`.' }),
+    planned: Type.Array(
+      Type.Object({
+        session_id: Type.String(),
+        title: nullable(Type.String()),
+        status: nullable(Type.String()),
+        updated_at: nullable(Type.String()),
+        bytes: Type.Integer({ minimum: 0 }),
+      }),
+      { description: 'Sessions selected for deletion. Only the IDs in `deleted` are gone.' },
+    ),
+    deleted: Type.Array(Type.String(), { description: 'IDs removed by this run. Empty unless `outcome` is `deleted`.' }),
+    failed: Type.Array(Type.Object({ session_id: Type.String(), error: Type.String() }), { description: 'Planned sessions that deletion did not remove.' }),
+    refused: Type.Array(Type.Object({ session_id: Type.String(), reason: Type.Union([Type.Literal('running'), Type.Literal('running-elsewhere'), Type.Literal('not-found')]) }), { description: 'Sessions excluded before planning.' }),
+    total_bytes: Type.Integer({ minimum: 0, description: 'Bytes freed for `deleted`; otherwise the bytes of `planned`.' }),
+  },
+  { $id: id('cli/delete'), title: 'session delete --json' },
+);
 export const CompleteResult = Type.Object(
   {
     session_id: Type.String(),

@@ -1,22 +1,13 @@
 schema_version: 7
 roles:
-  reviewer:
-    description: "Evaluates designs and implementations against the task and approves or requests revisions."
+  product:
+    description: "Defines product requirements, user scenarios, UX flows, and observable acceptance criteria before architectural design or implementation."
     responsibilities:
-      - "Assess correctness, completeness, scope, and maintainability using evidence appropriate to the work."
-      - "Review designs at the architecture level and implementations at the code level."
-      - "Do not modify project files or implement fixes while reviewing."
-      - "Report all substantive findings together. Identify the affected part, evidence, impact, and required correction."
-      - "Approve only when the work meets the task and stage criteria. Do not block on personal preference."
-  
-  developer:
-    description: "Implements the task in code with minimal, verified changes."
-    responsibilities:
-      - "Address the root cause with the smallest change that meets the task. Follow project conventions."
-      - "Preserve unrelated work and behavior outside the requested scope."
-      - "Follow any agreed architecture. Report blockers and seek a decision before changing it."
-      - "Run relevant checks or tests and fix failures caused by your changes."
-      - "Report what changed, the verification results, and anything not verified."
+      - "Focus on user value, use cases, CLI/API ergonomics, business rules, and acceptance criteria."
+      - "Define what the user experiences and why; do not specify internal architecture, schemas, or implementation tasks."
+      - "Clarify ambiguous requirements with the human before finalizing product behavior."
+      - "Define clear scope boundaries, non-goals, and edge cases from a user perspective."
+      - "State assumptions, trade-offs, and open product questions."
 
   architect:
     description: "Decides the solution and a clean, extensible structure for a task before planning or implementation."
@@ -36,14 +27,23 @@ roles:
       - "Do not write full implementation code or modify project files beyond plan artifacts."
       - "State assumptions, risks, and anything that cannot be verified."
 
-  orchestrator:
-    description: "Triages work and recommends the next workflow based on the task and available evidence."
+  reviewer:
+    description: "Evaluates designs and implementations against the task and approves or requests revisions."
     responsibilities:
-      - "Identify the goal, scope, desired outcome, and missing or ambiguous information without inventing requirements."
-      - "Classify the work and recommend the next workflow with a reason grounded in the task and repository evidence."
-      - "Ask the human when a missing decision or unclear scope prevents reliable triage."
-      - "Preserve the context needed downstream, including relevant artifacts and open questions."
-      - "Do not design or implement the solution; follow task-specific repository procedures."
+      - "Assess correctness, completeness, scope, and maintainability using evidence appropriate to the work."
+      - "Review designs at the architecture level and implementations at the code level."
+      - "Do not modify project files or implement fixes while reviewing."
+      - "Report all substantive findings together. Identify the affected part, evidence, impact, and required correction."
+      - "Approve only when the work meets the task and stage criteria. Do not block on personal preference."
+  
+  developer:
+    description: "Implements the task in code with minimal, verified changes."
+    responsibilities:
+      - "Address the root cause with the smallest change that meets the task. Follow project conventions."
+      - "Preserve unrelated work and behavior outside the requested scope."
+      - "Follow any agreed architecture. Report blockers and seek a decision before changing it."
+      - "Run relevant checks or tests and fix failures caused by your changes."
+      - "Report what changed, the verification results, and anything not verified."
 
   operator:
     description: "Runs routine repository operations such as commits, pushes, and pull requests."

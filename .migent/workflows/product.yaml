@@ -1,0 +1,65 @@
+schema_version: 7
+id: product
+constraints:
+  - Product specification only. Do not modify source code or design internal software architecture.
+  - Follow .agents/skills/product/SKILL.md and its template.
+  - Obtain human approval for major scope, user experience, and behavior decisions.
+
+artifacts:
+  prd:
+    file: prd.md
+    description: Completed product requirements document (PRD) using the product skill template.
+  prd_comment:
+    file: prd_comment.md
+    required: false
+    description: Non-blocking product review observations.
+
+stages:
+  - id: product
+    role: product
+    max_revisions: 3
+    ask: human
+    instructions:
+      - Before starting, check that the workspace is on a working branch created from origin/next (the branch in the prior issue artifact when provided), not on main or next; otherwise ask the human how to proceed.
+      - Read prior issue artifacts and their required References; stop and report missing or inconsistent required inputs.
+      - Follow the product skill in .agents/skills/product/SKILL.md and write prd.md using its template.
+      - Define primary use cases and workflows covering both interactive developer CLI UX and non-interactive agent/automation ergonomics.
+      - Detail functional requirements, business rules, validations, and edge cases from the user's perspective.
+      - "Explicitly define scope boundaries: in-scope vs non-goals (out-of-scope)."
+      - Formulate observable acceptance criteria focused on user experience and product behavior.
+      - Do not make internal architecture or code choices (modules, classes, database schemas); focus on what and why, not how.
+      - Resolve substantive review findings when revising.
+    artifacts: [prd]
+
+  - id: review_product
+    role: reviewer
+    depends_on:
+      - product
+    instructions:
+      - Review against the issue, task, user requirements, and shared constraints.
+      - Check that user problems are clearly articulated and the proposed behavior directly addresses them.
+      - Verify that CLI UX and user interactions are intuitive, consistent with existing tool patterns, and well-specified.
+      - Check that acceptance criteria are observable, unambiguous, and testable from a product perspective.
+      - Ensure non-goals and scope boundaries are explicitly stated to prevent scope creep.
+      - Check that no premature internal implementation details or architectural restrictions are imposed unnecessarily.
+      - Report substantive gaps together with their impact and required corrections.
+      - Keep comments observational; do not defer required product decisions.
+    decision:
+      - approved:
+          when: The product specification meets review criteria, requirements are clear, and no comments remain.
+          navigate: complete
+      - approved-with-comments:
+          when: The specification meets review criteria; prd_comment.md contains only non-blocking observations.
+          navigate: complete
+          artifacts: [prd_comment]
+      - revise:
+          when: Missing requirements, ambiguous user flows, unclear scope, or missing acceptance criteria remain.
+          navigate: product
+
+downstream:
+  - workflow: design
+    task: Design the architectural solution for the approved product specification.
+  - workflow: plan
+    task: Break the approved product specification into implementation tasks when architectural design is not required.
+  - workflow: implement
+    task: Implement the approved product specification directly when architecture and planning are obvious.

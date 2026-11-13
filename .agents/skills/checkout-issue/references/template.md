@@ -60,7 +60,7 @@ Authorization: triage only or implementation requested, with its source.>
 
 ## Recommended next
 
-<design | implement; evidence, confidence/assumptions, readiness, and prerequisites.
+<product | design | implement; evidence, confidence/assumptions, readiness, and prerequisites.
 Do not mark implementation ready when required inputs are missing.>
 
 ## References

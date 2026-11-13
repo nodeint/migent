@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- `migent session delete` removes stopped sessions by ID or by `--older-than` and `--status` filters, with `--dry-run`, `--yes`, and `--json`. It never deletes a running session, and a deleted numeric ID is never reissued ([CLI](https://github.com/nodeint/migent/blob/main/docs/cli.md#inspect-sessions)).
+
 ## 0.7.0
 
 ### Added

@@ -55,6 +55,7 @@ export const CLI_CONTRACTS: readonly ContractEntry[] = [
   e('session-metrics', O.SealedMetrics, { class: 'passthrough', framing: 'document', commands: ['session metrics <id> --json'] }),
   e('session-metrics-line', O.SealedMetricsLine, { class: 'passthrough', framing: 'json-lines', commands: ['session metrics --json'] }),
   e('cancel', O.CancelResult, { class: 'produced', framing: 'document', commands: ['session cancel --json'] }),
+  e('delete', O.DeleteResult, { class: 'produced', framing: 'document', commands: ['session delete --json'] }),
   e('complete', O.CompleteResult, { class: 'produced', framing: 'document', commands: ['session complete --json'] }),
   e('session-resume', O.SessionResumeOutput, { class: 'produced', framing: 'document', commands: ['session resume --json'] }),
   e('rename', O.RenameResult, { class: 'produced', framing: 'document', commands: ['session rename --json'] }),

@@ -26,6 +26,8 @@ export {
 } from './query.js';
 export type { ResumeFacts } from './resume-facts.js';
 export { resumeFacts } from './resume-facts.js';
+export type { DeleteHooks, DeleteOutcome, DeletionPlan, DeletionSelection, PlannedSession, Refusal } from './session-delete.js';
+export { deletePlannedSession, DELETING_DIRNAME, planSessionDeletion, sessionsRootReal, setDeleteHooks, sweepDeletionLeftovers } from './session-delete.js';
 export type { RecordedDiagnostics } from './session-diagnostics.js';
 export { latestDiagnosticsPath, readRecordedDiagnostics } from './session-diagnostics.js';
 export type { SessionDraft } from './session-draft.js';
@@ -53,14 +55,20 @@ export { readExecutions, readSessionManifest, sessionSchemaVersion } from './ses
 export type { FreezeSource, LiveWorkflowRef, WorkflowFreeze } from './session-freeze.js';
 export { collectFrozenDrift,WORKFLOW_FREEZE_FILE } from './session-freeze.js';
 export { frozenResumePolicy, frozenRoleInstructions, frozenStageTarget, loadFrozenWorkflow, readWorkflowFreeze, requireLiveWorkflow, warnIfFrozenDrift, writeWorkflowFreeze } from './session-freeze.js';
+export { LAST_ID_FILENAME, readLastIdMark, retireSessionNumber, setAfterNumericClaim, setBeforeNumericClaim } from './session-id.js';
 export type { CancelRequestResult } from './session-lock.js';
+export type { SessionLockState } from './session-lock.js';
 export {
   assertSessionLockHeld,
   isSessionLockLost,
+  NUMBERING_LOCK_FILENAME,
+  NumberingLockHeldError,
   requestSessionCancel,
   SessionLock,
   sessionLockAlive,
   SessionLockHeldError,
+  sessionLockState,
+  withNumberingLock,
 } from './session-lock.js';
 export { CANCEL_REQUEST_FILENAME, setBetweenStaleLockReads } from './session-lock.js';
 export type { CreatePreparedSessionInput, CreateWorkflowSessionOptions } from './session-records.js';

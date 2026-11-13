@@ -22,6 +22,8 @@ diagnostics. Depends on the kernel. Internal; no stable public API. Behavior:
 | `appendLifecycleEvent`, `EVENT_VERSION` | `src/session-events.ts` | Event log |
 | `foldStatus`, `commitFoldedStatus`, `readSessionManifest` | `src/session-fold.ts` | Status fold |
 | `SessionLock`, `requestSessionCancel` | `src/session-lock.ts` | Locking and cancel |
+| `sessionLockState`, `withNumberingLock` | `src/session-lock.ts` | Read-only lock state; workspace numbering lock |
+| `retireSessionNumber`, `readLastIdMark` | `src/session-id.ts` | `.last-id` high-water mark so deleted numbers are never reissued |
 | `loadFrozenWorkflow`, `writeWorkflowFreeze` | `src/session-freeze.ts` | Frozen configuration |
 | `repairSession` | `src/session-repair.ts` | Repair broken state |
 | `selectRunWorkflow`, `selectSessionWorkflow` | `src/session-selection.ts` | Resolve workflow for a run |

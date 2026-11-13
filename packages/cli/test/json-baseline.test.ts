@@ -392,6 +392,15 @@ test('session metrics and cancel --json success payloads', async () => {
   expect(await json(['session', 'cancel', 's1', '--json'], undefined, workspace)).toMatchSnapshot();
 });
 
+test('session delete --json payload', async () => {
+  const workspace = fakeWorkspace();
+  const directory = path.join(workspace, '.migent', 'sessions', 'old-1');
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(path.join(directory, 'status.json'), JSON.stringify({ status: 'completed', updated_at: '2026-01-01T00:00:00.000+00:00' }));
+  const dry = await json(['session', 'delete', 'old-1', '--dry-run', '--json'], undefined, workspace);
+  expect(dry.stdout).toMatchObject({ outcome: 'dry-run', deleted: [] });
+});
+
 test('service status and workspace list --json with a running service', async () => {
   // The running payload is pinned by the real serviceStatus in packages/registry/test/service.test.ts
   // (state, host, port, pid and no token); the CLI only prints it, so the fake returns that shape.

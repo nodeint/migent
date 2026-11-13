@@ -20,9 +20,9 @@ stages:
     max_revisions: 3
     ask: human
     instructions:
-      - Check the working branch against CONTRIBUTING.md and any prior issue artifact; ask if it does not comply.
+      - Check the working branch against CONTRIBUTING.md and any prior issue or prd artifact; ask if it does not comply.
       - Write the completed solution design to design.md.
-      - Treat prior issue artifacts as sourced input, not approval of proposed solutions.
+      - Treat prior issue or prd artifacts as sourced input, not approval of proposed solutions.
       - Complete the design only after required answers and approvals are recorded.
       - Resolve substantive review findings when revising.
     artifacts: [design]

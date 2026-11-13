@@ -48,6 +48,83 @@ export function sessionLockAlive(
   return info !== null && !isStale({ heartbeat: info.heartbeat_at, info }, staleMs);
 }
 
+export type SessionLockState = 'running' | 'running-elsewhere' | 'stopped';
+
+/**
+ * Read-only lock state. `running` is a live lock on this host, `running-elsewhere` a live lock on
+ * another host. A missing, unparsable, or stale lock is `stopped`, as `SessionLock.tryAcquire`
+ * would take it over.
+ */
+export function sessionLockState(
+  sessionDirectory: string,
+  staleMs: number = SESSION_LOCK_STALE_MS,
+): SessionLockState {
+  const info = readLock(path.join(path.resolve(sessionDirectory), SESSION_LOCK_FILENAME));
+  if (info === null || isStale({ heartbeat: info.heartbeat_at, info }, staleMs)) return 'stopped';
+  return info.host === os.hostname() ? 'running' : 'running-elsewhere';
+}
+
+export const NUMBERING_LOCK_FILENAME = '.last-id.lock';
+const NUMBERING_LOCK_WAIT_MS = 2000;
+const NUMBERING_LOCK_BACKOFF_MS = 10;
+
+export class NumberingLockHeldError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'NumberingLockHeldError';
+  }
+}
+
+const INT32_BYTES = 4;
+
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(INT32_BYTES)), 0, 0, ms);
+}
+
+/**
+ * Run `action` while holding the workspace numbering lock (`.last-id.lock` in the sessions
+ * directory). Same lock-file rules as `SessionLock`. The lock is held for milliseconds, so a live
+ * holder is waited for a bounded time, then `NumberingLockHeldError` is thrown.
+ */
+export function withNumberingLock<T>(
+  sessionsDirectory: string,
+  action: () => T,
+  timing: { staleMs?: number; waitMs?: number } = {},
+): T {
+  const staleMs = timing.staleMs ?? SESSION_LOCK_STALE_MS;
+  const waitMs = timing.waitMs ?? NUMBERING_LOCK_WAIT_MS;
+  const lockPath = path.join(path.resolve(sessionsDirectory), NUMBERING_LOCK_FILENAME);
+  const now = utcNow();
+  const info: LockInfo = {
+    pid: process.pid,
+    host: os.hostname(),
+    started_at: now,
+    heartbeat_at: now,
+    nonce: randomBytes(LOCK_NONCE_BYTES).toString('hex'),
+  };
+  const deadline = Date.now() + waitMs;
+  for (;;) {
+    if (createExclusive(lockPath, info)) break;
+    if (takeOverStale(lockPath, staleMs) && createExclusive(lockPath, info)) break;
+    if (Date.now() >= deadline) {
+      throw new NumberingLockHeldError(`The session numbering lock ${lockPath} is held by another process.`);
+    }
+    sleepSync(NUMBERING_LOCK_BACKOFF_MS);
+  }
+  try {
+    return action();
+  } finally {
+    const current = readLock(lockPath);
+    if (current !== null && current.nonce === info.nonce) {
+      try {
+        rmSync(lockPath, { force: true });
+      } catch {
+        // A lock nobody refreshes goes stale.
+      }
+    }
+  }
+}
+
 export interface SessionLockTiming {
   staleMs?: number;
   heartbeatMs?: number;
@@ -149,6 +226,19 @@ export class SessionLock {
       this.lost = true;
       throw new Error(`Session ${this.sessionId} lock was taken by another process. Stopping.`);
     }
+  }
+
+  /**
+   * Drop this handle without touching the lock file. For a lock whose path is no longer trusted
+   * (swapped or renamed away); an orphaned lock file goes stale when this process exits.
+   */
+  public abandon(): void {
+    if (this.timer !== null) clearInterval(this.timer);
+    this.timer = null;
+    if (this.cancelTimer !== null) clearInterval(this.cancelTimer);
+    this.cancelTimer = null;
+    this.lost = true;
+    if (held.get(this.directory) === this) held.delete(this.directory);
   }
 
   public release(): void {
