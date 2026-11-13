@@ -587,6 +587,9 @@ migent session complete <session-id>
 migent session complete <session-id> --json
 migent session rename <session-id> "<title>"
 migent session rename <session-id> "<title>" --json
+migent session delete <session-id>...
+migent session delete --older-than 30d --status completed --status cancelled --dry-run
+migent session delete --older-than 14d --yes --json
 ```
 
 `session cancel` stops a session that another process is running, without a
@@ -599,6 +602,38 @@ stopped, 1 when it is still running after the wait, 2 when the session does not
 exist, no live process holds its lock, or the lock belongs to another machine.
 A session that is not running is left unchanged. `--json` prints
 `{"session_id", "cancelled", "status"}`.
+
+`session delete` removes stopped sessions, by ID or by filter. A deleted session
+cannot be recovered. Name sessions (`<session-id>...`), or select with
+`--older-than <duration>` (a positive integer and `m`, `h`, `d`, or `w`, such as
+`30d`) and `--status <status>` (repeatable, one of `active`, `prepared`,
+`completed`, `blocked`, `question`, `expired`, `cancelled`). IDs and filters
+cannot be combined, and `--status` combines with `--older-than` by AND. With no
+selector the command prints usage and exits 2. A session's age is its
+`updated_at`, then its creation time; a session without readable status uses the
+directory's modification time and never matches `--status`.
+
+It prints the plan (each session, status, last update, size, and the total),
+then asks `Delete N sessions (X)?` with the default answer no. `--yes` skips the
+prompt; `--dry-run` prints the plan and changes nothing. Without a terminal, or
+with `MIGENT_NO_INPUT=1`, and without `--yes`, it deletes nothing, prints
+`Pass --yes to delete without confirmation.`, and exits 2. A session that a live
+process runs is never deleted: it is refused with `migent session cancel <id>`
+as the hint (`running-elsewhere` when the lock belongs to another machine). A
+stale lock does not count as running. Sessions are deleted one at a time; a
+failure is reported and the rest continue. The command ends with
+`Deleted N sessions, freed X.` and ` M failed.` when any failed.
+
+Exit 0 when every planned session was deleted, and for `--dry-run`, a declined
+prompt, or an empty filter match. Exit 1 when a session failed to delete, or a
+named session was refused or unknown (the valid ones are still deleted). Exit 2
+for invalid input or no terminal without `--yes`. Exit 130 when the prompt is
+cancelled. `--json` prints one object on stdout:
+`{"outcome", "planned", "deleted", "failed", "refused", "total_bytes"}`, where
+`outcome` is `deleted`, `dry-run`, `declined`, or `confirmation-required`. Only
+the IDs in `deleted` are gone. Invalid input prints nothing on stdout. See
+[Sessions](sessions.md#deleting-sessions) for numbering, `--prior` dependents,
+and the containment guarantee.
 
 `session rename <session-id> "<title>"` changes only the session's display title.
 It takes no session lock, so it works in any status, including while a process

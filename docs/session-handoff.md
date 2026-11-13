@@ -52,6 +52,10 @@ event log. Every agent stage receives named snapshot paths. Resume uses those
 snapshots rather than reading mutable source files. Historical sessions without
 handoff records retain their original live context behavior.
 
+Deleting a source with `migent session delete` does not check dependents (see [Sessions](sessions.md#deleting-sessions)):
+a started dependent keeps its snapshot, a historical dependent without handoff records loses its live files,
+and an unstarted prepared dependent fails with the missing-source error because deleted IDs are never reused.
+
 `prepare --prior` records the source ID without snapshotting artifacts or freezing
 the target workflow. Starting a newly prepared session reads its `workflow.yaml`
 and current model settings, then binds context. A prepared session from an

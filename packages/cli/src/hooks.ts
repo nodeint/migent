@@ -12,10 +12,16 @@ export const cliHooks: {
   skillRunner: SkillRunner | null;
   /** Validates every JSON payload against its contract. Tests only. */
   validateJson: ((schema: TSchema, value: unknown) => void) | null;
+  /** Answers the `session delete` confirmation. Tests only. */
+  confirm: ((message: string) => boolean | Promise<boolean>) | null;
+  /** Overrides the terminal check for prompts. Tests only. */
+  interactive: boolean | null;
 } = {
   which: null,
   runner: null,
   runCommand: null,
   skillRunner: null,
   validateJson: null,
+  confirm: null,
+  interactive: null,
 };

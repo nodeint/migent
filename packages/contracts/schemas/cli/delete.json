@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/cli/delete.json",
+  "type": "object",
+  "required": [
+    "outcome",
+    "planned",
+    "deleted",
+    "failed",
+    "refused",
+    "total_bytes"
+  ],
+  "properties": {
+    "outcome": {
+      "anyOf": [
+        {
+          "type": "string",
+          "const": "deleted"
+        },
+        {
+          "type": "string",
+          "const": "dry-run"
+        },
+        {
+          "type": "string",
+          "const": "declined"
+        },
+        {
+          "type": "string",
+          "const": "confirmation-required"
+        }
+      ],
+      "description": "`deleted`: deletion ran, even if some sessions failed. `confirmation-required`: no terminal and no `--yes`."
+    },
+    "planned": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "session_id",
+          "title",
+          "status",
+          "updated_at",
+          "bytes"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "description": "Sessions selected for deletion. Only the IDs in `deleted` are gone."
+    },
+    "deleted": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "IDs removed by this run. Empty unless `outcome` is `deleted`."
+    },
+    "failed": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "session_id",
+          "error"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          }
+        }
+      },
+      "description": "Planned sessions that deletion did not remove."
+    },
+    "refused": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "session_id",
+          "reason"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "running"
+              },
+              {
+                "type": "string",
+                "const": "running-elsewhere"
+              },
+              {
+                "type": "string",
+                "const": "not-found"
+              }
+            ]
+          }
+        }
+      },
+      "description": "Sessions excluded before planning."
+    },
+    "total_bytes": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Bytes freed for `deleted`; otherwise the bytes of `planned`."
+    }
+  },
+  "title": "session delete --json"
+}

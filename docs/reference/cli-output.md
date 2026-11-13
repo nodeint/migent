@@ -82,6 +82,33 @@ Type: object
 | `local.file` | string | yes |  |  |
 | `local.agents` | string[] | yes |  |  |
 
+<a id="cli-delete-json"></a>
+### session delete --json
+
+Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/cli/delete.json`
+
+Emitted by: `session delete --json` (produced, document)
+
+Type: object
+
+| Field | Type | Required | Notes | Description |
+| --- | --- | --- | --- | --- |
+| `outcome` | `"deleted"` \| `"dry-run"` \| `"declined"` \| `"confirmation-required"` | yes |  | `deleted`: deletion ran, even if some sessions failed. `confirmation-required`: no terminal and no `--yes`. |
+| `planned` | object[] | yes |  | Sessions selected for deletion. Only the IDs in `deleted` are gone. |
+| `planned[].session_id` | string | yes |  |  |
+| `planned[].title` | string \| null | yes |  |  |
+| `planned[].status` | string \| null | yes |  |  |
+| `planned[].updated_at` | string \| null | yes |  |  |
+| `planned[].bytes` | integer | yes | minimum: `0` |  |
+| `deleted` | string[] | yes |  | IDs removed by this run. Empty unless `outcome` is `deleted`. |
+| `failed` | object[] | yes |  | Planned sessions that deletion did not remove. |
+| `failed[].session_id` | string | yes |  |  |
+| `failed[].error` | string | yes |  |  |
+| `refused` | object[] | yes |  | Sessions excluded before planning. |
+| `refused[].session_id` | string | yes |  |  |
+| `refused[].reason` | `"running"` \| `"running-elsewhere"` \| `"not-found"` | yes |  |  |
+| `total_bytes` | integer | yes | minimum: `0` | Bytes freed for `deleted`; otherwise the bytes of `planned`. |
+
 <a id="cli-doctor-json"></a>
 ### doctor --json
 

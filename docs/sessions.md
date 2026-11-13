@@ -20,6 +20,10 @@ pass, creates an empty `task.md`, and copies the workflow to an editable
 `workflow.yaml`. The title is for display, so spaces and capitals stay. A session written by an older Migent has no `title`. List and
 show use `session_id` for that session.
 
+Next to the session directories, `.migent/sessions/` holds Migent bookkeeping that `session list` ignores:
+`.last-id` (the highest number retired by `session delete`), `.last-id.lock` (held for milliseconds
+while it is updated), and `.deleting/` (sessions being removed).
+
 ```text
 .migent/sessions/<session-id>/
 ├── manifest.yaml
@@ -204,6 +208,29 @@ Prefer the CLI commands below for inspection and automation.
 Older executions may contain the former name `session.json`. Migent still
 reads that file when resuming, but all new checkpoints are written as
 `conversation.json`.
+
+## Deleting sessions
+
+`migent session delete` ([CLI](cli.md#inspect-sessions)) takes the session lock, retires the session's
+number, renames the directory into `.deleting/`, and removes it there, so a session is either whole or gone.
+If removal fails after the rename, the session is already hidden from every command; the next `session delete`
+(naming the ID, or any other run) finishes the removal.
+
+- **Numbering.** A numeric ID deleted with `session delete` is never reissued: `.last-id` records the
+  highest retired number and new sessions continue above it. A directory removed by hand (`rm -rf`) leaves no
+  mark, so its number can be reused. An older Migent version ignores `.last-id` and can reissue a number.
+- **Dependents.** Deletion does not check `--prior`. A dependent that started has its own `handoff/`
+  snapshot and is unaffected. A historical dependent without handoff records reads the source's live files, so
+  it breaks when it resumes. An unstarted prepared dependent fails with the missing `--prior` source error; it
+  never binds to another session.
+- **Foreign-host locks.** A lock from another machine whose heartbeat has expired is stale and the session is
+  deletable, although `session cancel` reports it as running elsewhere.
+- **Containment.** `session delete` rejects session folders, `.deleting/`, `.last-id`, and a sessions root that are
+  links when it checks them, immediately before each change. It does not defend against another process that
+  writes to `.migent/sessions/` and swaps a folder for a link while a delete is running. Such a process can
+  redirect the delete's lock file, move, or recursive removal to a folder outside `.migent/sessions/` that the
+  user can write to, as with `rm -rf` on a tree that another writer controls. Do not run `session delete` while
+  other tools rewrite `.migent/sessions/`.
 
 ## Published outputs
 

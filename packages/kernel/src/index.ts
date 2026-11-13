@@ -1,6 +1,7 @@
 export {
   appendLineSynced,
   isAtomicTempName,
+  renameWithRetry,
   sealTornTail,
   writeFileAtomic,
   writeJsonAtomic,

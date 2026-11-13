@@ -11,6 +11,7 @@ import { optionalText } from '../text.js';
 import { findWorkspace, invocationCwdPath } from '../workspace.js';
 import { cancelSession } from './cancel.js';
 import { completeSession } from './complete.js';
+import { deleteSessions } from './delete.js';
 import { renameSession } from './rename.js';
 import { repairWorkflowSession } from './repair.js';
 import { resumeSession } from './resume.js';
@@ -246,6 +247,7 @@ export function registerSessionLifecycleCommands(session: Command, act: Act): vo
   registerResume(session, act);
   registerRename(session, act);
   registerRepair(session, act);
+  registerDelete(session, act);
 }
 
 function registerCancel(session: Command, act: Act): void {
@@ -351,6 +353,41 @@ function registerRepair(session: Command, act: Act): void {
         repairWorkflowSession(findWorkspace(invocationCwdPath()), id, options.acceptTask === true),
       ),
     );
+}
+
+function registerDelete(session: Command, act: Act): void {
+  session
+    .command('delete')
+    .description('Delete stopped sessions by ID or by filter. A deleted session cannot be recovered.')
+    .argument('[session...]', 'Sessions to delete. Cannot be combined with filters.')
+    .option('--older-than <duration>', 'Select sessions last updated longer ago than this: a positive integer and m, h, d, or w (for example 30d).')
+    .option('--status <status>', 'Select sessions with this status. Repeat for several.', (value: string, previous: string[] = []) => [...previous, value])
+    .option('--dry-run', 'Print what would be deleted and change nothing.')
+    .option('--yes', 'Delete without asking for confirmation.')
+    .option('--json', 'Print one {outcome, planned, deleted, failed, refused, total_bytes} object on stdout.')
+    .addHelpText(
+      'after',
+      `${exitText([
+        'Exit 0 when every planned session was deleted, and for --dry-run, a declined prompt, or an empty filter match.',
+        'Exit 1 when a session failed to delete, or a named session was refused or unknown.',
+        'Exit 2 for invalid input, or when there is no terminal and no --yes. Nothing is deleted.',
+        'Exit 130 when the prompt is cancelled.',
+      ])}Running sessions are never deleted; cancel them first. Examples:
+  migent session delete 12 13
+  migent session delete --older-than 30d --status completed --status cancelled --dry-run
+  migent session delete --older-than 14d --yes --json
+`,
+    )
+    .action(act((ids: string[], options: OptionValues) =>
+      deleteSessions(findWorkspace(invocationCwdPath()), {
+        ids,
+        olderThan: optionalText(options.olderThan),
+        statuses: (options.status as string[] | undefined) ?? [],
+        dryRun: options.dryRun === true,
+        yes: options.yes === true,
+        asJson: options.json === true,
+      }),
+    ));
 }
 
 /** list, show, metrics, and follow. */
