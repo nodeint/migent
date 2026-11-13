@@ -3,8 +3,8 @@ name: release
 description: >
   Release Migent through a release pull request: update the changelog, bump all
   workspace packages, build and test, then squash-merge it. Watch release.yml
-  tag the commit, fast-forward main, publish to npm, and create the GitHub
-  Release. Use when the user asks to release, tag a version, or runs /release.
+  tag the commit, fast-forward main, create the GitHub Release, then publish
+  to npm. Use when the user asks to release, tag a version, or runs /release.
 metadata:
   short-description: "Release Migent on npm"
 ---
@@ -157,17 +157,25 @@ gh release view vX.Y.Z
 
 If the run list is empty, wait 30 seconds and list again, up to five times.
 
-The workflow checks the package versions against the subject, takes the
-`## X.Y.Z` section of `CHANGELOG.md` as the notes, builds and tests, tags the
-commit, fast-forwards `main` to it, runs `npm publish` in dependency order with
-GitHub OIDC (no npm token), installs the published CLI, then creates the GitHub
-Release. Nobody approves packages on npm. Say the run succeeded only when its
-conclusion is success, and include the run URL.
+The workflow runs three jobs. `plan` checks the package versions against the
+subject. `github` takes the `## X.Y.Z` section of `CHANGELOG.md` as the notes,
+tags the commit, fast-forwards `main` to it, and creates the GitHub Release.
+`npm` then checks out the tag, builds, runs `npm publish` in dependency order
+with GitHub OIDC (no npm token), and installs the published CLI. Nobody
+approves packages on npm. Say the run succeeded only when its conclusion is
+success, and include the run URL.
 
-If the run fails, report the failing step. Do not move the tag or force `main`.
-Once the tag exists, `main` is already at the release commit. Rerun the failed
-run (`gh run rerun <id> --failed`) after the cause is fixed; each step skips
-work already done. If the version cannot be completed, release the next patch.
+If the run fails, report the failing job and step. Do not move the tag or force
+`main`. Once the tag exists, `main` is already at the release commit. Rerun the
+failed jobs (`gh run rerun <id> --failed`) after the cause is fixed; each step
+skips work already done. To publish an existing tag again without a run to
+rerun, dispatch only the `npm` job:
+
+```bash
+gh workflow run release.yml --ref next -f version=X.Y.Z
+```
+
+If the version cannot be completed, release the next patch.
 
 ## Verify
 
@@ -190,7 +198,9 @@ reports `X.Y.Z`. Report the version, tag, run URL, GitHub Release URL, and the
 - Each package on npmjs.com has a GitHub Actions trusted publisher:
   organization `nodeint`, repository `migent`, workflow `release.yml`, empty
   environment, allowed action `npm publish`. A new package needs it before its
-  first release. Renaming `release.yml`, moving the repository, or changing a
+  first release; trusted publishing cannot create a package, so publish its
+  first version by hand (see Pitfalls), add the trusted publisher, then
+  dispatch the `npm` job. Renaming `release.yml`, moving the repository, or changing a
   manifest's `repository.url` breaks publishing until updated.
 - Publish order: `@nodeint/migent-contracts`, `-workflow`, `-prompts`,
   `-kernel`, `-session`, `-engine`, `-doctor`, `-adapters`, `-registry`, then
