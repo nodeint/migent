@@ -197,6 +197,8 @@ export {
 } from './provider-spawn.js';
 export type { Question, QuestionAnswer } from './questions.js';
 export { answerQuestions, formatQuestionAnswers, loadQuestionFile, QuestionFileError, storedQuestions } from './questions.js';
+export type { OnExpired, OnExpiredInput, OnExpiredOrigin, PolicySelection, ResolvedResumePolicy, ResumeEstimate, ResumeEvaluation, ResumeFacts } from './resume-policy.js';
+export { agentResumePolicyName, DEFAULT_RESUME_POLICY, effectiveOnExpired, evaluateResume, globMatches, ON_EXPIRED_ACTIONS, parseDuration, selectResumePolicy, validateResumePolicies } from './resume-policy.js';
 export { log, utcNow } from './runtime.js';
 export {
   addArtifactContext,
@@ -269,16 +271,19 @@ export type { OutcomeContext } from './outcome-resolver.js';
 export { buildVerifyRepairPrompt } from './prompt.js';
 export type { InterruptPolicy, InterruptReport } from './provider-interrupt.js';
 export { DEFAULT_INTERRUPT_POLICY, interruptSession, isSettled } from './provider-interrupt.js';
+export type { PendingEstimate, PendingResumeStop, ResumeEventRecord } from './resume-stops.js';
+export { hasPendingResume, pendingResumeStops, stageStopFacts } from './resume-stops.js';
 export { missingOutputNames, missingOutputProducers, readyOutsideStoppedBranches, schedulableStageIds, version2IdleReason } from './selection.js';
 export { version2GraphQuiet } from './selection.js';
 export { currentCompleteByStage, VERIFY_EXHAUSTED } from './selection-history.js';
-export type { ResolutionEvent, StageStopName, StopFacts } from './session-status-policy.js';
+export type { ResolutionEvent, StageStopName, StopFacts, StopResolutionState } from './session-status-policy.js';
 export {
   acceptsBlockedResume,
   BLOCKED_RESUME_FROM,
   changeReason,
   endsScheduling,
   exitFor,
+  firstUnresolvedStop,
   foldStoppedStatus,
   hasTerminalFields,
   isClosed,
@@ -294,7 +299,9 @@ export {
   STAGE_STOP_DETECTORS,
   stageStopsByPrecedence,
   stageStopStatus,
+  stopReasonFor,
   stopResolved,
+  unresolvedStageStops,
 } from './session-status-policy.js';
 export { ResponseContractError } from './stage-outcome.js';
 export type { Gates } from './turn-diagnostics.js';

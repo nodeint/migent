@@ -199,6 +199,11 @@ loads. `routed_from` is the latest earlier completed execution whose decision
 routes to this stage, when no completed execution of this stage sits between
 them. A failed retry of that visit keeps the same `routed_from`.
 
+`fresh_starts` in `totals` counts executions that started a new conversation because a resume policy found the
+prompt cache expired; each such execution has `fresh_reason: "expired"`, otherwise null. `expired_resumes` counts
+expired resumes that continued the old conversation anyway, by policy or by `session resume ... resume`. Both
+are absent in metrics written before resume policies existed.
+
 A turn with no capture still counts. Its usage fields are null and
 `usage_missing` includes it. A session completed before `metrics.json` existed
 has no metrics. The command does not build them.

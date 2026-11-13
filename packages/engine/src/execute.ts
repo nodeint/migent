@@ -3,7 +3,7 @@ import { constants as osConstants } from 'node:os';
 import { exitCode } from '@nodeint/migent-contracts';
 import { CancellationRequested, raiseCancellation, resetCancellation } from '@nodeint/migent-kernel';
 import { ConfigurationError, OutputsMissing } from '@nodeint/migent-kernel';
-import { endsScheduling, exitFor, log, stageStopStatus } from '@nodeint/migent-kernel';
+import { endsScheduling, exitFor, log, stageStopStatus, stopReasonFor } from '@nodeint/migent-kernel';
 import { VERIFY_EXHAUSTED, VERIFY_FAILED } from '@nodeint/migent-kernel';
 import { clearInFlightExecutions, isSessionLockLost, SessionLockHeldError, SessionStore } from '@nodeint/migent-session';
 import { isRoleStage, isWorkflowV2, type WorkflowDocument } from '@nodeint/migent-workflow';
@@ -15,11 +15,13 @@ import {
   executeFinal,
   type ExecuteResult,
   type ExecuteRun,
+  PendingStageReply,
   stageFinishLine,
   text,
 } from './dispatch.js';
 import { runExecuteLoop, runExecuteOnce, startTracked, trackDispatch } from './execute-loop.js';
 import { type ExecuteRequest, HeldSession, openExecuteSession, verifyOnlyExecution } from './execute-session.js';
+import { judgeCancelled } from './resume-reopen.js';
 import { runVerifyOnlyStage } from './verify-only.js';
 
 export type { ExecuteResult } from './dispatch.js';
@@ -85,17 +87,33 @@ async function executeLocked(
     reply: stageReply,
   };
   try {
-    const stageJsons = await sendStageReply(run);
-    if (resumeCancelled) {
-      const resumed = await resumeReopenedExecutions(run, { ...limits, reopenLatestCancelled }, stageJsons);
-      if (resumed !== null) return resumed;
-    }
-    return await continueAfterReply(run, limits, stageJsons);
+    const scoped = request.resumeTarget === true;
+    return await runOpened(run, { limits, resumeCancelled, reopenLatestCancelled, scoped });
   } catch (error) {
     return await handleExecuteError(error, { store, sessionId, tasks });
   } finally {
     removeSignalHandlers();
   }
+}
+
+// Sends a pending reply, reopens cancelled executions when asked, then dispatches onward.
+async function runOpened(
+  run: ExecuteRun,
+  opened: {
+    limits: ReturnType<typeof dispatchLimits>;
+    resumeCancelled: boolean;
+    reopenLatestCancelled: boolean;
+    scoped: boolean;
+  },
+): Promise<ExecuteResult> {
+  const { limits, resumeCancelled, reopenLatestCancelled, scoped } = opened;
+  const stageJsons = await sendStageReply(run);
+  if (resumeCancelled) {
+    const reopening = { ...limits, reopenLatestCancelled, onlyStage: scoped ? limits.stageId : null };
+    const resumed = await resumeReopenedExecutions(run, reopening, stageJsons);
+    if (resumed !== null) return resumed;
+  }
+  return await continueAfterReply(run, { ...limits, resumeTarget: scoped }, stageJsons);
 }
 
 // Sends a pending stage reply first, so a cancelled sibling cannot end the command or fold the session blocked.
@@ -119,7 +137,7 @@ async function sendStageReply(run: ExecuteRun): Promise<Record<string, unknown>[
 // Stops after a sent reply when the run is scoped to it, else dispatches onward.
 async function continueAfterReply(
   run: ExecuteRun,
-  limits: { stageId: string | null; once: boolean; maxDispatches: number | null },
+  limits: { stageId: string | null; once: boolean; maxDispatches: number | null; resumeTarget?: boolean },
   stageJsons: Record<string, unknown>[],
 ): Promise<ExecuteResult> {
   const { store, workflow, sessionId, reply: stageReply } = run;
@@ -135,7 +153,7 @@ async function continueAfterReply(
     return replyStopResult(store.readSessionStatus(sessionId), replyResult, stageJsons);
   }
   const continued = singleStage
-    ? await runExecuteOnce(run, stageId)
+    ? await runExecuteOnce(run, stageId, { scoped: limits.resumeTarget === true })
     : await runExecuteLoop(run, {
         maxDispatches,
         alreadyDispatched: replySent ? 1 : 0,
@@ -193,7 +211,7 @@ function replyStopResult(
 ): ExecuteResult {
   if (replyResult?.failure_kind === 'quota') return executeFinal(status, 'quota', stageJsons);
   const after = text(status.status);
-  const stopReason = endsScheduling(after) ? after : 'stage';
+  const stopReason = endsScheduling(after) ? stopReasonFor(after) : 'stage';
   const result = executeFinal(status, stopReason, stageJsons);
   if (stageStopStatus({ outcomeStatus: text(replyResult?.outcome_status) }) === 'question') {
     result.code = exitFor('question') ?? exitCode('question');
@@ -247,6 +265,8 @@ interface ReopenLimits {
   stageId: string | null;
   maxDispatches: number | null;
   reopenLatestCancelled: boolean;
+  /** Judge and reopen only this stage's cancelled executions (`session resume`). */
+  onlyStage: string | null;
 }
 
 /**
@@ -260,8 +280,14 @@ async function resumeReopenedExecutions(
 ): Promise<ExecuteResult | null> {
   const { store, sessionId } = run;
   const { reopenLatestCancelled } = limits;
-  const reopened = store.reopenCancelledExecutions(sessionId, reopenLatestCancelled);
-  if (reopenLatestCancelled && reopened.length === 0) return null;
+  // Every verdict is decided before anything changes: an `ask` leaves its execution exactly as it was.
+  const verdicts = judgeCancelled(run, reopenLatestCancelled, limits.onlyStage);
+  for (const item of verdicts.fresh) store.supersedeCancelled(sessionId, item.stageId, item.reply);
+  const scope = { skip: verdicts.skip, onlyStage: limits.onlyStage };
+  const reopened = store.reopenCancelledExecutions(sessionId, reopenLatestCancelled, scope);
+  stageJsons.push(...(await dispatchFreshAttempts(run, verdicts.fresh)));
+  const scoped = reopenLatestCancelled || verdicts.skip.size > 0 || limits.onlyStage !== null;
+  if (reopened.length === 0 && scoped) return null;
   for (const item of reopened) {
     log(`session ${sessionId} was cancelled during ${item.executionId}. Resuming that execution.`);
   }
@@ -271,6 +297,27 @@ async function resumeReopenedExecutions(
   if (stopped !== null) return stopped;
   if (reopenLatestCancelled) return null;
   return await dispatchAfterReopen(run, limits.maxDispatches, { reopened, continued, stageJsons });
+}
+
+/**
+ * A cancelled execution whose resume expired and whose action is `fresh` stays cancelled and superseded. Its stage
+ * starts a new attempt in a new conversation, carrying the cut-off turn.
+ */
+async function dispatchFreshAttempts(
+  run: ExecuteRun,
+  fresh: readonly { executionId: string; stageId: string; reply: string }[],
+): Promise<Record<string, unknown>[]> {
+  const { store, sessionId, tasks } = run;
+  const started: Record<string, unknown>[] = [];
+  for (const item of fresh) {
+    const reply = new PendingStageReply(item.stageId, item.reply);
+    const status = store.readSessionStatus(sessionId);
+    const snapshots = store.executionSnapshots(sessionId);
+    const target = { stageId: item.stageId, status, snapshots, judgedFresh: item.executionId };
+    const dispatch = (note: (executionId: string) => void) => dispatchExecuteStage({ ...run, reply }, target, note);
+    started.push(await trackDispatch(sessionId, tasks, dispatch));
+  }
+  return started;
 }
 
 // Returns the final result when the reopened executions end the command, else null.
@@ -293,7 +340,7 @@ function reopenedStopResult(
   }
   // A cancelled session stops here for one stage. A blocked sibling still needs dispatch.
   if (limits.reopenLatestCancelled || !(singleStage || endsScheduling(after))) return null;
-  const stopReason = endsScheduling(after) ? after : 'stage';
+  const stopReason = endsScheduling(after) ? stopReasonFor(after) : 'stage';
   const result = executeFinal(status, stopReason, stageJsons);
   if (stopReason === 'stage' && continued.some((item) => item.outcome_status !== 'complete' && item.execution_status !== 'skipped')) result.code = unfinishedStageExit(continued);
   return result;

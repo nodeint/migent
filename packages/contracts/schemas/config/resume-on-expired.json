@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/config/resume-on-expired.json",
+  "anyOf": [
+    {
+      "type": "string",
+      "const": "ask"
+    },
+    {
+      "type": "string",
+      "const": "fresh"
+    },
+    {
+      "type": "string",
+      "const": "resume"
+    }
+  ],
+  "title": "Resume on expired",
+  "description": "`ask` stops for a human decision, `fresh` starts a new conversation, `resume` resumes anyway."
+}

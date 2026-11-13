@@ -87,13 +87,14 @@ Type: object
 
 Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/workflow/session.json`
 
-Continue the client session of a dependency.
+Continue the client session of a dependency, and what to do when its cache may have expired.
 
 Type: object
 
 | Field | Type | Required | Notes | Description |
 | --- | --- | --- | --- | --- |
 | `resume_from` | string \| null | no |  | A string with a non-blank value. |
+| `on_expired` | [Resume on expired](config.md#config-resume-on-expired-json) \| null | no |  | `ask` stops for a human decision, `fresh` starts a new conversation, `resume` resumes anyway. |
 
 <a id="workflow-stage-json"></a>
 ### Workflow stage
@@ -119,6 +120,6 @@ Type: object
 | `verify_timeout` | integer \| string \| null | no |  | A whole number of at least 1, written as an integer or a digit string. |
 | `artifacts` | string[] \| null | no |  | Registry artifact ids the stage produces. |
 | `decision` | (map of [Decision entry](#workflow-decision-entry-json))[] \| null | no |  | Decision values and their routes. |
-| `session` | [Stage session](#workflow-session-json) \| null | no |  | Continue the client session of a dependency. |
+| `session` | [Stage session](#workflow-session-json) \| null | no |  | Continue the client session of a dependency, and what to do when its cache may have expired. |
 | `run_when` | [Run condition](#workflow-run-when-json) \| null | no |  | Runs the stage only when the session changed matching files. |
 

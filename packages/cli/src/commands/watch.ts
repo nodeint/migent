@@ -124,7 +124,7 @@ function pollOnce(
   watch: WatchState,
 ): number | 'more' | null {
   const emitBatch = (batch: readonly FollowLine[]): void => {
-    for (const item of batch) emitWatchEvent(item.line, watch.executionId, watch.jsonLines);
+    for (const item of batch) emitWatchEvent(item.line, watch, path.basename(sessionDirectory));
   };
   throwIfCliCancelled();
   discoverStreams(sessionDirectory, logs);
@@ -205,7 +205,8 @@ function snapshotJson(snapshot: Record<string, unknown>): Static<typeof SessionS
   return body as Static<typeof SessionSnapshot>;
 }
 
-function emitWatchEvent(line: string, executionId: string | null, jsonLines: boolean): void {
+function emitWatchEvent(line: string, watch: WatchState, sessionId: string): void {
+  const { executionId, jsonLines } = watch;
   let event: unknown;
   try {
     event = JSON.parse(line);
@@ -218,7 +219,7 @@ function emitWatchEvent(line: string, executionId: string | null, jsonLines: boo
     writeJson(SessionFollowRecord, event);
     return;
   }
-  printWatchEvent(event);
+  printWatchEvent(event, sessionId);
 }
 
 function untilTerminalExitCode(record: Record<string, unknown>): number {

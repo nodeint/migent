@@ -254,6 +254,12 @@
         },
         "revisions_reset": {
           "type": "number"
+        },
+        "fresh_starts": {
+          "type": "number"
+        },
+        "expired_resumes": {
+          "type": "number"
         }
       }
     },
@@ -672,6 +678,16 @@
                 "patternProperties": {
                   "^.*$": {}
                 }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fresh_reason": {
+            "anyOf": [
+              {
+                "type": "string"
               },
               {
                 "type": "null"

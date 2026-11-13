@@ -48,6 +48,8 @@ export interface ExecutionStartInput {
 export interface LoadOrCreateInput extends Omit<ExecutionStartInput, 'resumesExecutionId' | 'kind'> {
   workspace: string;
   resumeExecutionId?: string | null;
+  /** `session resume`: start this execution although another stage's cancel holds the session at `cancelled`. */
+  allowCancelledSibling?: boolean;
   validateResume?: (record: AgentSessionRecord) => void;
 }
 

@@ -321,6 +321,27 @@ sends the saved reply. A newer `--reply` replaces it. Without `--reply`,
 turn again, except one a reply already replaced. When a cancelled stage waits
 beside a blocked stage or pending question, `--reply` needs `--stage` to pick
 the target. Replying to the cancelled stage leaves the blocked stage blocked.
+## Expired resumes
+
+When a resume policy finds the prompt cache expired and the action is `ask`, the session gets the status
+`expired` (exit 10). Its precedence is below `blocked` and `question`: with several stops, the session shows the
+higher one. The stop belongs to the **target stage** (the stage that would resume), keyed by the source
+execution. A `session.resume_from` target with no execution of its own can therefore wait for a decision.
+
+- `migent session show` lists each pending decision and the exact command.
+- `migent session resume <session> resume|fresh [--stage <stage>] [--no-continue]` records the decision and
+  continues only that stage. Other blockers, questions, and cancelled stages stay as they are. Use
+  `session continue` for those.
+- `fresh` starts a new conversation with the full stage prompt and the saved reply, blocker, or verify output.
+  The execution records `resume_skipped`.
+- `session complete` marks pending decisions as superseded.
+- A decision applies to one use of one source execution. Once the stage has started on it, or the source was reopened
+  in place after a cancel, a later resume of the same source is judged again and can ask again.
+- Downgrade limitation: Migent versions without resume policies ignore `resume.expired` and `resume.decided` events,
+  and ignore the frozen policy. Continuing an `expired` session with such a version resumes the stale conversation
+  without the guard, and that version reads the status `expired` as unknown. Finish or complete such sessions with
+  the version that created them.
+
 ## Completion method
 
 Every completed session records how it completed:

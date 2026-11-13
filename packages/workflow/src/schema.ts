@@ -18,6 +18,7 @@ export const stageFieldSchema = {
   decisionInstructions: z.record(z.string(), z.string()).optional(),
   dependsOn: z.array(z.string()),
   resumeFrom: z.string().nullable(),
+  onExpired: z.enum(['ask', 'fresh', 'resume']).nullable(),
   instructions: z.array(z.string()),
   agent: z
     .discriminatedUnion('kind', [

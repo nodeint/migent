@@ -14,9 +14,19 @@
           "type": "null"
         }
       ]
+    },
+    "on_expired": {
+      "anyOf": [
+        {
+          "$ref": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/config/resume-on-expired.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
     }
   },
   "title": "Stage session",
-  "description": "Continue the client session of a dependency.",
+  "description": "Continue the client session of a dependency, and what to do when its cache may have expired.",
   "additionalProperties": false
 }

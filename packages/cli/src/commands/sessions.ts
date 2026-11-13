@@ -5,7 +5,7 @@ import { Command, type OptionValues } from 'commander';
 
 import { printError, printSessions } from '../display.js';
 import { writeJson } from '../emit.js';
-import { EXIT_CONFIG, exitText } from '../exits.js';
+import { EXIT_CONFIG, exitText, RESUME_EXITS } from '../exits.js';
 import { SESSION_COLUMN, sessionFields } from '../session-row.js';
 import { optionalText } from '../text.js';
 import { findWorkspace, invocationCwdPath } from '../workspace.js';
@@ -13,6 +13,7 @@ import { cancelSession } from './cancel.js';
 import { completeSession } from './complete.js';
 import { renameSession } from './rename.js';
 import { repairWorkflowSession } from './repair.js';
+import { resumeSession } from './resume.js';
 import { followSession } from './watch.js';
 
 const SESSION_STATUSES = new Set<string>(SESSION_STATUS_CATALOG.map((entry) => entry.name));
@@ -242,6 +243,7 @@ export type Act = <A extends unknown[]>(
 export function registerSessionLifecycleCommands(session: Command, act: Act): void {
   registerCancel(session, act);
   registerComplete(session, act);
+  registerResume(session, act);
   registerRename(session, act);
   registerRepair(session, act);
 }
@@ -292,6 +294,22 @@ function registerComplete(session: Command, act: Act): void {
     .action(act((id: string, options: OptionValues) =>
       completeSession(findWorkspace(invocationCwdPath()), id, options.json === true)),
     );
+}
+
+function registerResume(session: Command, act: Act): void {
+  session
+    .command('resume')
+    .description('Decide a resume that stopped because the prompt cache had expired, then continue the session. Unlike `session continue`, it records a decision for one stage and runs only that stage.')
+    .argument('<session>', 'Session with a pending resume decision.')
+    .argument('<choice>', '`resume` to continue the old conversation, or `fresh` to start a new one with the full prompt.')
+    .option('--stage <stage>', 'The stage to decide. Required when several decisions wait.')
+    .option('--no-continue', 'Record the decision and stop; run `session continue` later.')
+    .option('--json', 'With --no-continue: print the decision, the status, and the decisions that still wait.')
+    .addHelpText(
+      'after',
+      `${exitText(RESUME_EXITS)}Examples:\n  migent session resume <session> resume\n  migent session resume <session> fresh --stage plan\n  migent session resume <session> fresh --no-continue --json\n`,
+    )
+    .action(act((id: string, choice: string, options: OptionValues) => resumeSession(id, choice, options)));
 }
 
 function registerRename(session: Command, act: Act): void {

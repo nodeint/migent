@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/known/resume-decided-data.json",
+  "type": "object",
+  "required": [
+    "stage_id",
+    "source_execution_id",
+    "choice",
+    "origin"
+  ],
+  "properties": {
+    "stage_id": {
+      "type": "string"
+    },
+    "source_execution_id": {
+      "type": "string"
+    },
+    "choice": {
+      "anyOf": [
+        {
+          "type": "string",
+          "const": "resume"
+        },
+        {
+          "type": "string",
+          "const": "fresh"
+        },
+        {
+          "type": "string",
+          "const": "superseded"
+        }
+      ]
+    },
+    "origin": {
+      "type": "string",
+      "const": "human"
+    }
+  },
+  "title": "`resume.decided` event data"
+}

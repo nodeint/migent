@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/cli/session-resume.json",
+  "type": "object",
+  "required": [
+    "session_id",
+    "stage_id",
+    "source_execution_id",
+    "choice",
+    "continued",
+    "status",
+    "exit_code",
+    "remaining"
+  ],
+  "properties": {
+    "session_id": {
+      "type": "string"
+    },
+    "stage_id": {
+      "type": "string"
+    },
+    "source_execution_id": {
+      "type": "string"
+    },
+    "choice": {
+      "anyOf": [
+        {
+          "type": "string",
+          "const": "resume"
+        },
+        {
+          "type": "string",
+          "const": "fresh"
+        }
+      ]
+    },
+    "continued": {
+      "type": "boolean",
+      "description": "`false` with `--no-continue`: only the decision was recorded."
+    },
+    "status": {
+      "type": "string",
+      "description": "The session status after the decision, and after the run when `continued` is true."
+    },
+    "exit_code": {
+      "type": "integer",
+      "description": "Exit code of the continued run; 0 with `--no-continue`."
+    },
+    "remaining": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "stage_id",
+          "source_execution_id"
+        ],
+        "properties": {
+          "stage_id": {
+            "type": "string"
+          },
+          "source_execution_id": {
+            "type": "string"
+          }
+        }
+      },
+      "description": "Resume decisions that still wait."
+    }
+  },
+  "title": "session resume --json"
+}

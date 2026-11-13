@@ -163,6 +163,18 @@ export const SESSION_STATUS_CATALOG = [
     resolution: { event: 'session.active', from: 'question' },
   },
   {
+    name: 'expired',
+    kind: 'stage_stop',
+    precedence: 2,
+    exit: 'resume_expired',
+    ...OFF,
+    ends_scheduling: true,
+    manually_completable: true,
+    refreshable: true,
+    manifest: 'mirrored',
+    resolution: { event: 'resume.decided' },
+  },
+  {
     name: 'cancelled',
     kind: 'session_stop',
     precedence: null,

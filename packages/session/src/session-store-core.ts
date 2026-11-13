@@ -160,13 +160,14 @@ export class SessionStoreCore {
     }
   }
 
-  protected ensureSessionIsRunnable(sessionId: string | null): void {
+  protected ensureSessionIsRunnable(sessionId: string | null, allowCancelled = false): void {
     if (sessionId === null) return;
     const statusPath = path.join(this.sessionsDirectory, sessionId, 'status.json');
     const read = readStatusFileState(statusPath);
     if (read.state === 'corrupt') throw new ConfigurationError(corruptStatusMessage(statusPath));
     if (read.state === 'missing') return;
     const {status} = read;
+    if (allowCancelled && status.status === 'cancelled') return;
     const message = runnableViolation(sessionId, status);
     if (message) throw new Error(message);
   }
@@ -212,6 +213,15 @@ export class SessionStoreCore {
     const stageId = metadata.stage_id;
     if (typeof stageId !== 'string') throw new Error(`Execution ${context.executionId} has no stage_id.`);
     return stageId;
+  }
+
+  /** The session's first execution: the turn that carried the original task. */
+  public firstExecution(sessionId: string): ExecutionContext | null {
+    const contexts = this.executionContexts(sessionId);
+    if (contexts.length === 0) return null;
+    return contexts.reduce((best, context) =>
+      compareSortKey(this.executionSortKey(context), this.executionSortKey(best)) < 0 ? context : best,
+    );
   }
 
   public latestExecution(sessionId: string): ExecutionContext | null {

@@ -24,6 +24,10 @@
     },
     {
       "type": "string",
+      "const": "expired"
+    },
+    {
+      "type": "string",
       "const": "cancelled"
     },
     {

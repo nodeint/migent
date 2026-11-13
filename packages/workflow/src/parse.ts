@@ -9,7 +9,7 @@ import type { ArtifactSpec, StageSpec, WorkflowDocument, WorkflowDownstream, Wor
 import { isPathReference,SCHEMA_VERSION, VERIFY_ARTIFACT } from './model.js';
 import { documentVersion, isRecord } from './record.js';
 import { stageSpecSchema, workflowDocumentSchema, workflowRequiresSchema } from './schema.js';
-import { legacyStageModel, normalizeStageDecision, rejectRoleOnlyKeys, requiredString, stageAgent, stageArtifact, stageAsk, stageDecisionValues, stageDependsOn, stageDescription, stageHasRole, stageMaxRevisions, stageMaxVerify, stageOptions, stageResumeFrom, stageRoutes, stageRunWhen, stageVerify, stageVerifyTimeout, stringItems } from './stage-fields.js';
+import { legacyStageModel, normalizeStageDecision, rejectRoleOnlyKeys, requiredString, stageAgent, stageArtifact, stageAsk, stageDecisionValues, stageDependsOn, stageDescription, stageHasRole, stageMaxRevisions, stageMaxVerify, stageOnExpired, stageOptions, stageResumeFrom, stageRoutes, stageRunWhen, stageVerify, stageVerifyTimeout, stringItems } from './stage-fields.js';
 import { DOCUMENT_FIELD_SCHEMAS, downstreamProblems, requireContainer, requireValid,stageMappingProblem } from './structure.js';
 
 /** Parse a workflow mapping. `source` is stored on the document and is not read from `data`. */
@@ -243,6 +243,7 @@ function parseVerifyStage(
     decisionValues: [],
     dependsOn,
     resumeFrom: null,
+    onExpired: null,
     instructions: [],
     agent: null,
     options: {},
@@ -285,6 +286,7 @@ function parseRoleStage(
     ...(version3 && isRecord(item.decision) ? { decisionInstructions: item.decision.instructions } : {}),
     dependsOn,
     resumeFrom: stageResumeFrom(item, stageId, dependsOn),
+    onExpired: stageOnExpired(item, stageId),
     instructions: stringItems(item.instructions, `stages.${stageId}.instructions`),
     agent: version5 ? stageAgent(item, stageId) : legacyStageModel(item, stageId),
     options: version5 ? {} : stageOptions(item, stageId),

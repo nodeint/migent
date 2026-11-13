@@ -45,6 +45,15 @@ export interface RunRequest {
   options?: Record<string, string> | null;
   /** Called as soon as the execution id exists, before the first await. */
   onExecution?: (executionId: string) => void;
+  /**
+   * Role sessions: the policy chosen when the session was created, as `{ name, policies }`. It is stamped on
+   * `execution.json` so continued and fresh executions inherit it, as `response_protocol` is.
+   */
+  resumePolicy?: { name: string; policies: Record<string, unknown> } | null;
+  /** `session resume`: the decided stage may start although another stage's cancel holds the session. */
+  allowCancelledSibling?: boolean;
+  /** Set when a fresh conversation replaced an expired resume: recorded on `execution.json`. */
+  resumeSkipped?: { source_execution_id: string; reason: 'expired' } | null;
 }
 
 export function carryExhaustedArtifact(

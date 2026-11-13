@@ -34,6 +34,8 @@ export interface StageFields {
   decisionInstructions?: Record<string, string>;
   dependsOn: string[];
   resumeFrom: string | null;
+  /** `session.on_expired`: what a resume does when the prompt cache may have expired. */
+  onExpired: 'ask' | 'fresh' | 'resume' | null;
   instructions: string[];
   agent: StageAgent | null;
   /** Stage option layer of schema_version 4 and earlier. Always empty from version 5 on. */

@@ -25,6 +25,11 @@
           "type": "null"
         }
       ]
+    },
+    "resume_policy": {
+      "type": "string",
+      "pattern": "\\S",
+      "description": "A string with a non-blank value."
     }
   },
   "title": "Inline agent",

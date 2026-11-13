@@ -32,6 +32,30 @@ export const LegacyLifecycleEvent = Type.Object(
   { $id: id('known/lifecycle-event-legacy'), title: 'Lifecycle event (unversioned or v1)' },
 );
 
+/** `data` of a `resume.expired` event: a resume was guarded because the prompt cache may have expired. */
+export const ResumeExpiredData = Type.Object(
+  {
+    stage_id: str(),
+    source_execution_id: str(),
+    action: Type.Union([Type.Literal('ask'), Type.Literal('fresh'), Type.Literal('resume')]),
+    origin: Type.Union([Type.Literal('human'), Type.Literal('stage'), Type.Literal('policy'), Type.Literal('default')]),
+    policy: nullable(str()),
+    estimate: Type.Record(str(), Type.Unknown()),
+  },
+  { $id: id('known/resume-expired-data'), title: '`resume.expired` event data' },
+);
+
+/** `data` of a `resume.decided` event. `superseded` is written by `session complete`, never chosen. */
+export const ResumeDecidedData = Type.Object(
+  {
+    stage_id: str(),
+    source_execution_id: str(),
+    choice: Type.Union([Type.Literal('resume'), Type.Literal('fresh'), Type.Literal('superseded')]),
+    origin: Type.Literal('human'),
+  },
+  { $id: id('known/resume-decided-data'), title: '`resume.decided` event data' },
+);
+
 export const ProviderStreamRecord = Type.Record(str(), Type.Unknown(), {
   $id: id('known/provider-stream-record'),
   title: 'Provider stream record',
@@ -76,6 +100,8 @@ const CurrentTotals = Type.Object({
   verify_red: num(),
   revisions: nullable(num()),
   revisions_reset: num(),
+  fresh_starts: num(),
+  expired_resumes: num(),
 });
 
 const CurrentStage = Type.Object({
@@ -124,6 +150,7 @@ const CurrentExecution = Type.Object({
     failed_commands: Type.Array(str()),
   })),
   skip: nullable(Type.Record(str(), Type.Unknown())),
+  fresh_reason: nullable(str()),
 });
 
 /** What the current producer writes (`sessionMetrics` in the kernel) for a sealed session. */

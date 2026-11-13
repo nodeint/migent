@@ -392,6 +392,118 @@
         }
       }
     },
+    "resume_decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "stage_id",
+          "source_execution_id",
+          "raised_at",
+          "policy",
+          "estimate"
+        ],
+        "properties": {
+          "stage_id": {
+            "type": "string"
+          },
+          "source_execution_id": {
+            "type": "string"
+          },
+          "raised_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "policy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "estimate": {
+            "anyOf": [
+              {
+                "type": "object",
+                "required": [
+                  "idle_seconds",
+                  "threshold_seconds",
+                  "cache_ttl_seconds",
+                  "margin_seconds",
+                  "context_tokens"
+                ],
+                "properties": {
+                  "idle_seconds": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "threshold_seconds": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "cache_ttl_seconds": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "margin_seconds": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "context_tokens": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "description": "Null: the client reported no usage, so the context size is unknown."
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "description": "Resume decisions the session waits for. `session resume` decides them."
+    },
     "diagnostics": {
       "type": "string"
     },

@@ -3,11 +3,11 @@ import path from 'node:path';
 
 import { AgentToolRunner, DEFAULT_MAX_DISPATCHES, executeNamedWorkflow, type ExecuteResult } from '@nodeint/migent-engine';
 import { ConfigurationError, CORRECTION_FAILURE_REASONS,formatDuration, isSessionStop, log } from '@nodeint/migent-kernel';
-import { FAILURE_FILENAME, formatNextCommand,publishNextSuggestions, SessionStore } from '@nodeint/migent-session';
+import { FAILURE_FILENAME, formatNextCommand,publishNextSuggestions, SessionStore, watchSnapshot } from '@nodeint/migent-session';
 import { type OptionValues } from 'commander';
 
 import { clientRegistry } from '../client.js';
-import { formatQuestion,printError, printReplyCommand, printResumeCommand } from '../display.js';
+import { formatQuestion, formatResumeDecision, printError, printReplyCommand, printResumeCommand } from '../display.js';
 import { EXIT_BLOCKED, EXIT_CANCELLED, EXIT_CONFIG, EXIT_QUOTA, EXIT_STAGE_FAILED, EXIT_VERIFY, EXIT_VERIFY_FAILED } from '../exits.js';
 import { cliHooks } from '../hooks.js';
 import { requireCurrentSchema } from '../migrate.js';
@@ -31,6 +31,8 @@ export interface ExecuteWorkflowOptions {
   skipPreflight?: boolean;
   reply?: string | null;
   replyStageId?: string | null;
+  /** `session resume`: `stageId` is the target of a recorded resume decision; no other cancelled stage is touched. */
+  resumeTarget?: boolean;
 }
 
 export async function executeWorkflow(workspace: string, options: ExecuteWorkflowOptions): Promise<number> {
@@ -84,6 +86,7 @@ function runRequest(options: ExecuteWorkflowOptions, once: boolean): {
   refreshWorkflow: boolean;
   reply: string | null;
   replyStageId: string | null;
+  resumeTarget: boolean;
 } {
   const maxDispatches = options.maxDispatches === undefined ? DEFAULT_MAX_DISPATCHES : options.maxDispatches;
   return {
@@ -95,6 +98,7 @@ function runRequest(options: ExecuteWorkflowOptions, once: boolean): {
     refreshWorkflow: options.refreshWorkflow === true,
     reply: options.reply ?? null,
     replyStageId: options.replyStageId ?? null,
+    resumeTarget: options.resumeTarget === true,
   };
 }
 
@@ -115,7 +119,11 @@ function preflightHook(
 function printResumeHint(workspace: string, result: ExecuteResult): void {
   if (result.sessionId === '' || result.status === 'completed' || result.stopReason === 'completed') return;
   if (result.stopReason === 'configuration') return;
-  const questions = new SessionStore(workspace).questionStages(result.sessionId);
+  const store = new SessionStore(workspace);
+  for (const decision of watchSnapshot(path.join(workspace, '.migent', 'sessions', result.sessionId)).resume_decisions as Record<string, unknown>[] | undefined ?? []) {
+    log(formatResumeDecision(decision, result.sessionId));
+  }
+  const questions = store.questionStages(result.sessionId);
   if (questions.length > 0) {
     for (const question of questions) printReplyCommand(result.sessionId, question.stageId);
     if (result.status !== 'blocked') return;

@@ -146,6 +146,7 @@ function stageView(
     })),
     max_revisions: stage.maxRevisions,
     resume_from: stage.resumeFrom,
+    on_expired: stage.onExpired,
     verify: [...stage.verify],
     max_verify: stage.maxVerify,
     verify_timeout: stage.verifyTimeoutSec,

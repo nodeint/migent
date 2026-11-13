@@ -26,20 +26,20 @@ import {
   stopResolved,
 } from '../src/session-status-policy.ts';
 
-const ALL = ['active', 'prepared', 'completed', 'blocked', 'question', 'cancelled', 'corrupt'];
+const ALL = ['active', 'prepared', 'completed', 'blocked', 'question', 'expired', 'cancelled', 'corrupt'];
 const setOf = (predicate: (status: string) => boolean) => ALL.filter(predicate).sort();
 const sorted = (...names: string[]) => [...names].sort();
 
 describe('derived sets equal the literal sets they replace', () => {
   test('flags', () => {
-    expect(setOf(endsScheduling)).toEqual(sorted('blocked', 'question', 'cancelled', 'completed'));
-    expect(setOf(isManuallyCompletable)).toEqual(sorted('active', 'blocked', 'question', 'cancelled'));
-    expect(setOf(isRefreshable)).toEqual(sorted('active', 'blocked', 'question'));
+    expect(setOf(endsScheduling)).toEqual(sorted('blocked', 'question', 'expired', 'cancelled', 'completed'));
+    expect(setOf(isManuallyCompletable)).toEqual(sorted('active', 'blocked', 'question', 'expired', 'cancelled'));
+    expect(setOf(isRefreshable)).toEqual(sorted('active', 'blocked', 'question', 'expired'));
     expect(setOf(isClosed)).toEqual(sorted('completed', 'cancelled'));
     expect(setOf(hasTerminalFields)).toEqual(sorted('blocked', 'completed', 'cancelled'));
-    expect(setOf(isManifestMirrored)).toEqual(sorted('completed', 'blocked', 'question', 'cancelled'));
-    expect(setOf(isStopped)).toEqual(sorted('blocked', 'question', 'cancelled'));
-    expect(setOf(isStageStop)).toEqual(sorted('blocked', 'question'));
+    expect(setOf(isManifestMirrored)).toEqual(sorted('completed', 'blocked', 'question', 'expired', 'cancelled'));
+    expect(setOf(isStopped)).toEqual(sorted('blocked', 'question', 'expired', 'cancelled'));
+    expect(setOf(isStageStop)).toEqual(sorted('blocked', 'question', 'expired'));
     expect(setOf(isSessionStop)).toEqual(['cancelled']);
   });
 
@@ -51,7 +51,7 @@ describe('derived sets equal the literal sets they replace', () => {
 
   test('manifestStatusToSession', () => {
     expect(manifestStatusToSession('prepared')).toBe('prepared');
-    for (const name of ['completed', 'blocked', 'question', 'cancelled']) expect(manifestStatusToSession(name)).toBe(name);
+    for (const name of ['completed', 'blocked', 'question', 'expired', 'cancelled']) expect(manifestStatusToSession(name)).toBe(name);
     for (const value of [null, 'running', 'weird', 'corrupt', 'active']) expect(manifestStatusToSession(value)).toBe('active');
   });
 
@@ -62,6 +62,7 @@ describe('derived sets equal the literal sets they replace', () => {
       completed: 0,
       blocked: 1,
       question: 9,
+      expired: 10,
       cancelled: 130,
       corrupt: null,
     });
@@ -75,10 +76,27 @@ describe('derived sets equal the literal sets they replace', () => {
 
 describe('stage stops', () => {
   test('precedence and fold order', () => {
-    expect(stageStopsByPrecedence()).toEqual(['blocked', 'question']);
+    expect(stageStopsByPrecedence()).toEqual(['blocked', 'question', 'expired']);
     expect(foldStoppedStatus(['question', 'blocked'])).toBe('blocked');
     expect(foldStoppedStatus(['question'])).toBe('question');
     expect(foldStoppedStatus(['cancelled', 'completed'])).toBeNull();
+  });
+
+  test('expired follows question and folds below both', () => {
+    expect(foldStoppedStatus(['expired', 'question'])).toBe('question');
+    expect(foldStoppedStatus(['expired', 'blocked'])).toBe('blocked');
+    expect(foldStoppedStatus(['expired'])).toBe('expired');
+    expect(exitFor('expired')).toBe(10);
+    expect(changeReason('expired', null)).toBe('resume_expired');
+  });
+
+  test('a pending resume is a stage-level fact', () => {
+    expect(stageStopStatus({ pendingResume: true })).toBe('expired');
+    expect(stageStopStatus({ outcomeStatus: 'question', pendingResume: true })).toBe('question');
+    expect(stageStopStatus({ pendingResume: false })).toBeNull();
+    const decided = { event: 'resume.decided', executionId: 'e1', data: { choice: 'resume' } };
+    expect(isStopResolutionEvent(decided, 'expired', 'e1')).toBe(true);
+    expect(isStopResolutionEvent(decided, 'question', 'e1')).toBe(false);
   });
 
   test('one detector per stage-stop row', () => {

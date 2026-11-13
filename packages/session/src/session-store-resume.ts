@@ -3,13 +3,14 @@ import path from 'node:path';
 
 import type { } from '@nodeint/migent-kernel';
 import type { } from '@nodeint/migent-kernel';
-import { writeJsonAtomic } from '@nodeint/migent-kernel';
+import { type PendingResumeStop, writeJsonAtomic } from '@nodeint/migent-kernel';
 import { ConfigurationError } from '@nodeint/migent-kernel';
 import { type ExecutionSnapshot } from '@nodeint/migent-kernel';
 import { EXECUTIONS_DIRNAME, utcNow } from '@nodeint/migent-kernel';
 import { acceptsBlockedResume, answerQuestions, BLOCKED_RESUME_FROM, formatQuestionAnswers, type Question, resolutionFrom, storedQuestions } from '@nodeint/migent-kernel';
 import { isRecord } from '@nodeint/migent-workflow';
 
+import { readPendingResumes } from './resume-pending.js';
 import { appendLifecycleEvent, CANCELLED_REPLY, readParsedEvents } from './session-events.js';
 import { commitFoldedStatus } from './session-fold.js';
 import { blockedExecutions, statusExecutionsFromSnapshots } from './session-ledger.js';
@@ -18,6 +19,24 @@ import { SessionStoreCore } from './session-store-core.js';
 import { AgentSessionRecord, type ExecutionContext } from './session-store-types.js';
 import { asInt, compareSortKey, latestExecutionPerStage } from './session-store-util.js';
 import { readJsonObject, textField } from './session-store-util.js';
+/** The record of a guarded resume. `policy` and `estimate` are free-form facts for the log and the metrics. */
+export interface ResumeExpiredRecord {
+  stageId: string;
+  sourceExecutionId: string;
+  action: 'ask' | 'fresh' | 'resume';
+  origin: 'human' | 'stage' | 'policy' | 'default';
+  policy: string | null;
+  estimate: Record<string, unknown>;
+}
+
+export interface ResumeDecisionRecord {
+  stageId: string;
+  sourceExecutionId: string;
+  /** `superseded` is internal: `session complete` closes the decision without choosing. */
+  choice: 'resume' | 'fresh' | 'superseded';
+  origin: 'human';
+}
+
 interface CancelledRow {
   context: ExecutionContext;
   metadata: Record<string, unknown>;
@@ -127,6 +146,52 @@ export class SessionStoreResume extends SessionStoreCore {
     });
     commitFoldedStatus(this.workspace, directory);
     return formatted;
+  }
+
+  /**
+   * Record that a resume was guarded: the prompt cache may have expired. With `ask` the session stops for a decision
+   * on the target stage; the caller holds the session lock. The status is re-folded.
+   */
+  public recordResumeExpired(sessionId: string, record: ResumeExpiredRecord): void {
+    const directory = path.join(this.sessionsDirectory, sessionId);
+    assertSessionLockHeld(directory);
+    appendLifecycleEvent(directory, {
+      event: 'resume.expired',
+      timestamp: utcNow(),
+      stageId: record.stageId,
+      data: {
+        stage_id: record.stageId,
+        source_execution_id: record.sourceExecutionId,
+        action: record.action,
+        origin: record.origin,
+        policy: record.policy,
+        estimate: record.estimate,
+      },
+    });
+    commitFoldedStatus(this.workspace, directory);
+  }
+
+  /** Record a decision for a pending resume, then re-fold. Idempotent for a pair with no pending stop. */
+  public recordResumeDecision(sessionId: string, record: ResumeDecisionRecord): void {
+    const directory = path.join(this.sessionsDirectory, sessionId);
+    assertSessionLockHeld(directory);
+    appendLifecycleEvent(directory, {
+      event: 'resume.decided',
+      timestamp: utcNow(),
+      stageId: record.stageId,
+      data: {
+        stage_id: record.stageId,
+        source_execution_id: record.sourceExecutionId,
+        choice: record.choice,
+        origin: record.origin,
+      },
+    });
+    commitFoldedStatus(this.workspace, directory);
+  }
+
+  /** The resume decisions the session waits for, from its events. */
+  public pendingResumes(sessionId: string): PendingResumeStop[] {
+    return readPendingResumes(path.join(this.sessionsDirectory, sessionId));
   }
 
   public questionReply(sessionId: string, executionId: string): string | null {
@@ -318,24 +383,46 @@ export class SessionStoreResume extends SessionStoreCore {
   public reopenCancelledExecutions(
     sessionId: string,
     latestPerStage = false,
+    scope: { skip?: ReadonlySet<string>; onlyStage?: string | null } = {},
   ): { executionId: string; stageId: string }[] {
+    const skip = scope.skip ?? new Set<string>();
+    const onlyStage = scope.onlyStage ?? null;
     const sessionDirectory = path.join(this.sessionsDirectory, sessionId);
     assertSessionLockHeld(sessionDirectory);
     const status = this.readSessionStatus(sessionId);
     // A blocked session is not cancelled. Continue still reopens each stage's latest cancelled execution.
-    if (!latestPerStage && status.status !== 'cancelled') {
+    // With a skip set the resume gate has already judged the batch, and what it recorded moved the status on.
+    if (!latestPerStage && skip.size === 0 && onlyStage === null && status.status !== 'cancelled') {
       throw new ConfigurationError(`Session ${sessionId} is ${String(status.status)}, not cancelled.`);
     }
-    const cancelled = this.cancelledRows(sessionId, latestPerStage);
-    if (cancelled.length === 0) {
-      if (latestPerStage) return [];
+    const found = this.cancelledRows(sessionId, latestPerStage)
+      .filter((item) => onlyStage === null || item.metadata.stage_id === onlyStage);
+    if (found.length === 0) {
+      // The gate may have judged every cancelled execution already; a fresh verdict supersedes its row.
+      if (latestPerStage || skip.size > 0 || onlyStage !== null) return [];
       throw new ConfigurationError(`Session ${sessionId} is cancelled without an execution.`);
     }
+    // An execution the resume gate held back stays cancelled and untouched; the rest are validated together.
+    const cancelled = found.filter((item) => !skip.has(item.context.executionId));
     const records = this.resumableRecords(sessionId, cancelled);
     const timestamp = utcNow();
     const reopened = cancelled.map((item) => this.reopenCancelledRow(item, { sessionDirectory, records, timestamp }));
-    this.commitResumed(sessionId, sessionDirectory);
+    if (reopened.length > 0) this.commitResumed(sessionId, sessionDirectory);
     return reopened;
+  }
+
+  /** The cancelled executions a reopen would act on: the same selection as `reopenCancelledExecutions`. */
+  public reopenableCancelled(
+    sessionId: string,
+    latestPerStage = false,
+    onlyStage: string | null = null,
+  ): { executionId: string; stageId: string }[] {
+    return this.cancelledRows(sessionId, latestPerStage)
+      .filter((item) => onlyStage === null || item.metadata.stage_id === onlyStage)
+      .map((item) => ({
+      executionId: item.context.executionId,
+      stageId: typeof item.metadata.stage_id === 'string' ? item.metadata.stage_id : '',
+    }));
   }
 
   public resetRevisionCounts(sessionId: string, snapshots: readonly ExecutionSnapshot[]): void {

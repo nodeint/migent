@@ -8,6 +8,7 @@ import {
 } from '@nodeint/migent-workflow';
 
 import { type ExecutionSnapshot,isArtifactSchema, missingWorkflowOutputNames } from './outputs.js';
+import { hasPendingResume, type PendingResumeStop } from './resume-stops.js';
 import {
   currentCompleteByStage,
   dependsOnStage,
@@ -27,7 +28,8 @@ import {
   verifyFailedExecution,
 } from './selection-history.js';
 import { declarationOrder } from './selection-pool.js';
-import { endsScheduling, STAGE_STOP_DETECTORS, stageStopsByPrecedence, stageStopStatus, stopResolved } from './session-status-policy.js';
+import { failedResumed, idleStopReason, stoppedLatest, unresolvedStageStop } from './selection-stops.js';
+import { endsScheduling, stageStopStatus, stopReasonFor } from './session-status-policy.js';
 
 export { runnableNow,type RunPool } from './selection-pool.js';
 
@@ -58,7 +60,14 @@ export interface ScheduleState {
   readonly sessionStatus: string;
   readonly revisionBaselines?: Readonly<Record<string, number>> | null;
   readonly resumes?: readonly BlockResume[] | null;
+  /** Resume decisions the session waits for. Absent: behavior is as without resume policies. */
+  readonly pendingResumes?: readonly PendingResumeStop[] | null;
 }
+
+/** A bare session status, or the part of the schedule state a quiet check reads. */
+type QuietState = Pick<ScheduleState, 'sessionStatus' | 'pendingResumes'>;
+export type StatusInput = string | QuietState;
+const scheduleStateOf = (status: StatusInput): QuietState => (typeof status === 'string' ? { sessionStatus: status } : status);
 
 // Tests and callers address these through the scheduling module.
 export { currentCompleteByStage, latestCompleteByStage } from './selection-history.js';
@@ -72,10 +81,12 @@ export function nextStage(
   if (snapshots.some((snapshot) => snapshot.status === 'running')) {
     return new NextStageError('an execution is still running');
   }
-  if (endsScheduling(sessionStatus)) return new Stop(sessionStatus);
+  if (endsScheduling(sessionStatus)) return new Stop(stopReasonFor(sessionStatus));
   const latest = latestSnapshot(snapshots);
   if (latest !== null && latest.status === 'failed') return afterFailedStage(latest, sessionStatus, resumes);
   if (isWorkflowV2(workflow)) return nextVersion2Stage(workflow, snapshots, sessionStatus);
+  const pendingStop = pendingResumeStop(workflow, snapshots, state);
+  if (pendingStop !== null) return pendingStop;
   const routed = latest === null ? null : routingStage(workflow, latest);
   if (routed !== null && latest !== null) return routedNextStage(workflow, snapshots, { stage: routed, latest });
   const selected = sequentialCandidates(workflow, snapshots, sessionStatus);
@@ -84,6 +95,19 @@ export function nextStage(
     return new NextStageError(`ambiguous next stage: ${selected.join(', ')}`);
   }
   return new NextStage(selected[0]);
+}
+
+/** A v1 run stops at once when the stage it would pick waits for a resume decision. */
+function pendingResumeStop(
+  workflow: WorkflowDocument,
+  snapshots: readonly ExecutionSnapshot[],
+  state: ScheduleState,
+): Stop | null {
+  const latest = latestSnapshot(snapshots);
+  const routed = latest === null ? null : routingStage(workflow, latest);
+  const route = routed?.routes[(latest?.outcomeDecision ?? '').toLowerCase()];
+  const targets = routed === null ? candidateStageIds(workflow, snapshots) : [route ?? []].flat();
+  return targets.some((stageId) => hasPendingResume(state.pendingResumes, stageId)) ? new Stop(stopReasonFor('expired')) : null;
 }
 
 /** A failed latest stage stops the session unless it failed verification or was resumed. */
@@ -114,10 +138,10 @@ function routingStage(workflow: WorkflowDocument, latest: ExecutionSnapshot): St
 export function sequentialCandidates(
   workflow: WorkflowDocument,
   snapshots: readonly ExecutionSnapshot[],
-  sessionStatus: string,
+  status: StatusInput,
 ): string[] {
   const candidates = candidateStageIds(workflow, snapshots);
-  const ready = readyStages(workflow, snapshots, { sessionStatus });
+  const ready = readyStages(workflow, snapshots, scheduleStateOf(status));
   // A failed stage stays stopped until continue writes `from: failed` for that execution.
   return sameStageIds(ready, candidates) ? ready : candidates;
 }
@@ -129,15 +153,16 @@ export function sequentialCandidates(
 export function version2GraphQuiet(
   workflow: WorkflowDocument,
   snapshots: readonly ExecutionSnapshot[],
-  sessionStatus: string,
+  status: StatusInput,
 ): boolean {
+  const state = scheduleStateOf(status);
   const progressed = snapshots.some(
     (snapshot) =>
       snapshot.status === 'skipped' || (snapshot.status === 'completed' && snapshot.outcomeStatus === 'complete'),
   );
   if (!progressed) return false;
-  if (hasBlockingLatest(snapshots)) return false;
-  return sequentialCandidates(workflow, snapshots, sessionStatus).length === 0;
+  if (hasBlockingLatest(snapshots) || (state.pendingResumes?.length ?? 0) > 0) return false;
+  return sequentialCandidates(workflow, snapshots, state).length === 0;
 }
 
 /** Missing output names under the workflow's schema: v7 reads the skip-aware current completions. */
@@ -152,9 +177,9 @@ export function missingOutputNames(workflow: WorkflowDocument, snapshots: readon
 export function missingOutputProducers(
   workflow: WorkflowDocument,
   snapshots: readonly ExecutionSnapshot[],
-  sessionStatus: string,
+  status: StatusInput,
 ): string[] {
-  if (!isWorkflowV2(workflow) || !version2GraphQuiet(workflow, snapshots, sessionStatus)) return [];
+  if (!isWorkflowV2(workflow) || !version2GraphQuiet(workflow, snapshots, status)) return [];
   const missing = new Set(missingOutputNames(workflow, snapshots));
   const producers: string[] = [];
   for (const output of workflow.outputs ?? []) {
@@ -170,9 +195,10 @@ export function readyStages(
   snapshots: readonly ExecutionSnapshot[],
   state: ScheduleState,
 ): string[] {
-  const { sessionStatus, revisionBaselines, resumes } = state;
+  const { sessionStatus, revisionBaselines, resumes, pendingResumes } = state;
   return candidateStageIds(workflow, snapshots).filter((stageId) => {
     const latest = latestStageSnapshot(snapshots, stageId);
+    if (hasPendingResume(pendingResumes, stageId)) return false;
     if (latest !== null && !latestAllowsDispatch(latest, sessionStatus, resumes)) return false;
     if (revisionStop(workflow, snapshots, { stageId, revisionBaselines })) return false;
     return true;
@@ -193,27 +219,6 @@ function latestAllowsDispatch(
   if (latest.status !== 'failed') return true;
   if (latest.failureReason === VERIFY_EXHAUSTED || latest.failureReason === VERIFY_FAILED) return false;
   return failedResumed(sessionStatus, latest.executionId, resumes);
-}
-
-/** The latest execution is stopped at a stage stop that no resume event has resolved. */
-function unresolvedStageStop(
-  latest: ExecutionSnapshot,
-  sessionStatus: string,
-  resumes: readonly BlockResume[] | null | undefined,
-): boolean {
-  const stop = stageStopStatus(latest);
-  return stop !== null && !stopResolved(stop, latest.executionId, { sessionStatus, resumes });
-}
-
-function failedResumed(
-  sessionStatus: string,
-  executionId: string,
-  resumes: readonly BlockResume[] | null | undefined,
-): boolean {
-  if (sessionStatus !== 'active' || (resumes === null || resumes === undefined)) return false;
-  return resumes.some(
-    (event) => event.event === 'session.active' && event.executionId === executionId && event.data?.from === 'failed',
-  );
 }
 
 function sameStageIds(left: readonly string[], right: readonly string[]): boolean {
@@ -454,7 +459,7 @@ export function schedulableStageIds(
   snapshots: readonly ExecutionSnapshot[],
   state: SchedulableState,
 ): string[] {
-  const { sessionStatus, verifyTried, verifyOnlyTried = new Set<string>() } = state;
+  const { verifyTried, verifyOnlyTried = new Set<string>() } = state;
   const stopped = stoppedStageIds(workflow, snapshots, state);
   const ready = readyOutsideStoppedBranches(workflow, snapshots, state);
   const extra: string[] = [];
@@ -468,21 +473,8 @@ export function schedulableStageIds(
   return declarationOrder(workflow, [
     ...ready,
     ...extra,
-    ...missingOutputProducers(workflow, snapshots, sessionStatus),
+    ...missingOutputProducers(workflow, snapshots, state),
   ]);
-}
-
-function unresumedStageFailure(
-  latest: ExecutionSnapshot,
-  sessionStatus: ScheduleState['sessionStatus'],
-  resumes: ScheduleState['resumes'],
-): boolean {
-  return (
-    latest.status === 'failed' &&
-    latest.failureReason !== VERIFY_FAILED &&
-    latest.failureReason !== VERIFY_EXHAUSTED &&
-    !failedResumed(sessionStatus, latest.executionId, resumes)
-  );
 }
 
 /** Stop reason once nothing is running and nothing was started. `no eligible stage` means the graph is stuck. */
@@ -491,29 +483,13 @@ export function version2IdleReason(
   snapshots: readonly ExecutionSnapshot[],
   state: ScheduleState,
 ): string {
-  const { sessionStatus, revisionBaselines, resumes } = state;
-  if (version2GraphQuiet(workflow, snapshots, sessionStatus)) {
+  const { revisionBaselines } = state;
+  if (version2GraphQuiet(workflow, snapshots, state)) {
     if (missingOutputNames(workflow, snapshots).length > 0) return 'outputs_missing';
     return 'completed';
   }
-  const latests = Object.keys(workflow.stages)
-    .map((stageId) => latestStageSnapshot(snapshots, stageId))
-    .filter((latest): latest is ExecutionSnapshot => latest !== null);
-  const stopChecks = stageStopsByPrecedence().map(
-    (name): readonly [string, (latest: ExecutionSnapshot) => boolean] => [
-      name,
-      (latest) =>
-        STAGE_STOP_DETECTORS[name](latest) && !stopResolved(name, latest.executionId, { sessionStatus, resumes }),
-    ],
-  );
-  const idleChecks: readonly (readonly [string, (latest: ExecutionSnapshot) => boolean])[] = [
-    ...stopChecks,
-    ['verify_failed', (latest) => latest.status === 'failed' && latest.failureReason === VERIFY_FAILED],
-    ['verify_exhausted', (latest) => latest.status === 'failed' && latest.failureReason === VERIFY_EXHAUSTED],
-    ['stage_failed', (latest) => unresumedStageFailure(latest, sessionStatus, resumes)],
-  ];
-  const found = idleChecks.find(([, matches]) => latests.some(matches));
-  if (found !== undefined) return found[0];
+  const found = idleStopReason(workflow, snapshots, state);
+  if (found !== null) return found;
   for (const stageId of candidateStageIds(workflow, snapshots)) {
     if (revisionStop(workflow, snapshots, { stageId, revisionBaselines })) return 'revisions_exhausted';
   }
@@ -525,22 +501,12 @@ function stoppedStageIds(
   snapshots: readonly ExecutionSnapshot[],
   state: ScheduleState,
 ): Set<string> {
-  const { sessionStatus, resumes } = state;
+  const { sessionStatus, resumes, pendingResumes } = state;
   const stopped = new Set<string>();
   for (const stageId of Object.keys(workflow.stages)) {
     const latest = latestStageSnapshot(snapshots, stageId);
-    if (latest === null) continue;
-    if (unresolvedStageStop(latest, sessionStatus, resumes)) stopped.add(stageId);
-    if (latest.status === 'failed' && latest.failureReason === VERIFY_EXHAUSTED) stopped.add(stageId);
-    if (latest.status === 'failed' && latest.failureReason === VERIFY_FAILED) stopped.add(stageId);
-    if (
-      latest.status === 'failed' &&
-      latest.failureReason !== VERIFY_EXHAUSTED &&
-      latest.failureReason !== VERIFY_FAILED &&
-      !failedResumed(sessionStatus, latest.executionId, resumes)
-    ) {
-      stopped.add(stageId);
-    }
+    if (hasPendingResume(pendingResumes, stageId)) stopped.add(stageId);
+    if (latest !== null && stoppedLatest(latest, { sessionStatus, resumes })) stopped.add(stageId);
   }
   return stopped;
 }

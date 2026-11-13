@@ -90,6 +90,7 @@ export const StageView = Type.Object(
     ),
     max_revisions: nullable(int()),
     resume_from: nullable(Type.String()),
+    on_expired: Type.Optional(nullable(Type.String())),
     verify: strings(),
     max_verify: int(),
     verify_timeout: nullable(int()),
@@ -343,6 +344,26 @@ const snapshotProperties = {
       }),
     ),
   ),
+  resume_decisions: Type.Optional(
+    Type.Array(
+      Type.Object({
+        stage_id: Type.String(),
+        source_execution_id: Type.String(),
+        raised_at: nullable(Type.String()),
+        policy: nullable(Type.String()),
+        estimate: nullable(
+          Type.Object({
+            idle_seconds: nullable(Type.Number()),
+            threshold_seconds: nullable(Type.Number()),
+            cache_ttl_seconds: nullable(Type.Number()),
+            margin_seconds: nullable(Type.Number()),
+            context_tokens: nullable(Type.Number({ description: 'Null: the client reported no usage, so the context size is unknown.' })),
+          }),
+        ),
+      }),
+      { description: 'Resume decisions the session waits for. `session resume` decides them.' },
+    ),
+  ),
   diagnostics: Type.Optional(Type.String()),
   exit_anomalies: Type.Optional(
     Type.Array(
@@ -394,6 +415,22 @@ export const CompleteResult = Type.Object(
     next: Type.Object({ path: nullable(Type.String()), suggestions: Type.Array(NextSuggestion) }),
   },
   { $id: id('cli/complete'), title: 'session complete --json' },
+);
+export const SessionResumeOutput = Type.Object(
+  {
+    session_id: Type.String(),
+    stage_id: Type.String(),
+    source_execution_id: Type.String(),
+    choice: Type.Union([Type.Literal('resume'), Type.Literal('fresh')]),
+    continued: Type.Boolean({ description: '`false` with `--no-continue`: only the decision was recorded.' }),
+    status: Type.String({ description: 'The session status after the decision, and after the run when `continued` is true.' }),
+    exit_code: Type.Integer({ description: 'Exit code of the continued run; 0 with `--no-continue`.' }),
+    remaining: Type.Array(
+      Type.Object({ stage_id: Type.String(), source_execution_id: Type.String() }),
+      { description: 'Resume decisions that still wait.' },
+    ),
+  },
+  { $id: id('cli/session-resume'), title: 'session resume --json' },
 );
 export const RenameResult = Type.Object(
   {

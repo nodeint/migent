@@ -182,6 +182,20 @@ migration, then the v3 decision migration. Config files only advance their
 version for this step. Running migration again leaves current files unchanged.
 Existing sessions keep their frozen workflow and original decision format.
 
+## Expired resumes
+
+`session.on_expired` (`ask`, `fresh`, or `resume`) overrides the policy's `on_expired` for one stage. It can be
+set with or without `session.resume_from`, and has no effect when no `resume_policies` apply.
+
+```yaml
+stages:
+  - id: review
+    role: reviewer
+    session:
+      resume_from: implement
+      on_expired: fresh
+```
+
 ## Conditional stages
 
 A stage in a version 2 or newer workflow can run only when the session changed certain

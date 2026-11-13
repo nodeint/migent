@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 
-import { writeJsonAtomic } from '@nodeint/migent-kernel';
+import { type PendingResumeStop, writeJsonAtomic } from '@nodeint/migent-kernel';
 import { ConfigurationError } from '@nodeint/migent-kernel';
 import { manifestStatusToSession, storedQuestions } from '@nodeint/migent-kernel';
 import { sessionStatusAfterExecution } from '@nodeint/migent-kernel';
@@ -13,6 +13,7 @@ import { isWorkflowV2 } from '@nodeint/migent-workflow';
 
 import { MANIFEST_SCHEMA_EVENT_LOG } from './constants.js';
 import { publishNextSuggestions } from './next-handoff.js';
+import { pendingResumesOf } from './resume-pending.js';
 import {
   appendLifecycleEvent,
   EVENT_VERSION,
@@ -30,7 +31,7 @@ import {
   writeQuestionsFile,
 } from './session-fold.js';
 import { loadFoldInputs, readSessionManifest } from './session-fold-read.js';
-import { sessionStatusFromExecutions, type StatusExecution } from './session-ledger.js';
+import { sessionStatusWithPending, type StatusExecution } from './session-ledger.js';
 import { SessionLock } from './session-lock.js';
 
 export interface RepairOptions {
@@ -243,9 +244,10 @@ function reconcileTarget(inputs: FoldInputs, executions: readonly RepairExecutio
     status: fromStatus,
   };
   const rows = executions.map(statusRow);
-  const finalStatus = sessionStatusFromExecutions(rows, cursor, inputs.workflow);
+  const pending = pendingResumesOf(inputs.events);
+  const finalStatus = sessionStatusWithPending(rows, cursor, { workflow: inputs.workflow, pending });
   const completingId =
-    finalStatus === 'completed' ? version2CompletingExecution(rows, cursor, inputs.workflow) : null;
+    finalStatus === 'completed' ? version2CompletingExecution(rows, { cursor, workflow: inputs.workflow, pending }) : null;
   return { fromStatus, cursor, finalStatus, completingId };
 }
 
@@ -373,12 +375,16 @@ export function repairRefusalMessage(sessionId: string, reasons: readonly string
 
 function version2CompletingExecution(
   rows: readonly StatusExecution[],
-  cursor: Readonly<Record<string, unknown>>,
-  workflow: FoldInputs['workflow'],
+  context: {
+    cursor: Readonly<Record<string, unknown>>;
+    workflow: FoldInputs['workflow'];
+    pending: readonly PendingResumeStop[];
+  },
 ): string | null {
+  const { cursor, workflow, pending } = context;
   if (!isWorkflowV2(workflow)) return null;
   for (let index = 0; index < rows.length; index += 1) {
-    if (sessionStatusFromExecutions(rows.slice(0, index + 1), cursor, workflow) === 'completed') {
+    if (sessionStatusWithPending(rows.slice(0, index + 1), cursor, { workflow, pending }) === 'completed') {
       return rows[index].executionId;
     }
   }

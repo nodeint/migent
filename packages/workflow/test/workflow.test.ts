@@ -495,3 +495,26 @@ test('verify-only stages reject a missing list and role-only keys', () => {
   );
   expect(() => loadWorkflowDocument(flow)).toThrow(/description must be one line/);
 });
+
+const sessionFlow = (session: string) => {
+  const dir = tempDir('migent-flow-');
+  const flow = path.join(dir, 'flow.yaml');
+  writeFileSync(
+    flow,
+    `id: f\nstages:\n  - id: a\n    role: dev\n  - id: b\n    role: dev\n    depends_on: [a]\n    session:\n${session}\n`,
+    'utf8',
+  );
+  return flow;
+};
+
+test('session.on_expired parses alone and with resume_from', () => {
+  const alone = loadWorkflowDocument(sessionFlow('      on_expired: fresh'));
+  expect(alone.stages.b).toMatchObject({ resumeFrom: null, onExpired: 'fresh' });
+  const both = loadWorkflowDocument(sessionFlow('      resume_from: a\n      on_expired: resume'));
+  expect(both.stages.b).toMatchObject({ resumeFrom: 'a', onExpired: 'resume' });
+  expect(loadWorkflowDocument(sessionFlow('      resume_from: a')).stages.b).toMatchObject({ onExpired: null });
+});
+
+test('session.on_expired rejects an invalid value', () => {
+  expect(() => loadWorkflowDocument(sessionFlow('      on_expired: later'))).toThrow(/stages\.b\.session\.on_expired/);
+});

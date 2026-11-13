@@ -17,6 +17,7 @@ import { isRecord, isWorkflowV2, type WorkflowDocument } from '@nodeint/migent-w
 import { sealSessionMetrics } from './metrics.js';
 import { publishNextSuggestions } from './next-handoff.js';
 import { readStatusFileState } from './query.js';
+import { readPendingResumes } from './resume-pending.js';
 import { appendLifecycleEvent } from './session-events.js';
 import { commitFoldedStatus } from './session-fold.js';
 import { readSessionManifest } from './session-fold-read.js';
@@ -127,6 +128,18 @@ function assertCompletableStatus(sessionId: string, from: string): void {
   }
 }
 
+/** A manual completion closes every pending resume decision without choosing one. */
+function supersedePendingResumes(sessionDirectory: string): void {
+  for (const stop of readPendingResumes(sessionDirectory)) {
+    appendLifecycleEvent(sessionDirectory, {
+      event: 'resume.decided',
+      timestamp: utcNow(),
+      stageId: stop.stageId,
+      data: { stage_id: stop.stageId, source_execution_id: stop.sourceExecutionId, choice: 'superseded', origin: 'human' },
+    });
+  }
+}
+
 function appendManualCompletionEvents(sessionDirectory: string, from: string, plan: ManualCompletionPlan): void {
   const timestamp = utcNow();
   if (plan.outputs.length > 0) {
@@ -163,6 +176,7 @@ export function completeManuallyLocked(
       );
     }
     const plan = publishManualCompletion(sessionDirectory, workflow, ops.snapshotList(sessionId));
+    supersedePendingResumes(sessionDirectory);
     appendManualCompletionEvents(sessionDirectory, from, plan);
     ops.rewriteManifestStatus(sessionDirectory, 'completed');
     const folded = commitFoldedStatus(ops.workspace, sessionDirectory);

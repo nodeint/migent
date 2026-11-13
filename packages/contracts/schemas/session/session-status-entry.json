@@ -108,6 +108,10 @@
         },
         {
           "type": "string",
+          "const": "resume_expired"
+        },
+        {
+          "type": "string",
           "const": "cancelled"
         }
       ],

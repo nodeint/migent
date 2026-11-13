@@ -30,6 +30,11 @@ import { parseYamlDocument } from '@nodeint/migent-workflow';
 import { DEFAULT_MAX_VERIFY, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4_DOWNSTREAM, SCHEMA_V5, SCHEMA_V7_ARTIFACTS } from '@nodeint/migent-workflow';
 import { stringify } from 'yaml';
 
+import { freezeStagePolicy, frozenPolicyMap, readResumePolicyNames } from './freeze-resume-policy.js';
+import { sessionMapping } from './freeze-session-mapping.js';
+
+export { frozenResumePolicy } from './freeze-resume-policy.js';
+
 export const WORKFLOW_FREEZE_FILE = 'workflow.frozen.yaml';
 
 /** Canonical YAML for an editable workflow source. The id is always written. */
@@ -42,6 +47,10 @@ export interface WorkflowFreeze {
   workflow: WorkflowDocument;
   roles: Record<string, string[]>;
   targets: Record<string, StageTarget>;
+  /** The `resume_policies` of the config at creation; empty when none was configured. */
+  resumePolicies: Record<string, unknown>;
+  /** The name of the policy each stage selected at creation; null when none applies. */
+  resumePolicyNames: Record<string, string | null>;
 }
 
 export interface WrittenFreeze {
@@ -60,18 +69,27 @@ export function writeWorkflowFreeze(sessionDirectory: string, source: FreezeSour
   const config = loadWorkspaceConfig(workspace);
   const roles: Record<string, string[]> = {};
   for (const role of roleNames(workflow)) roles[role] = loadRoleResponsibilities(config, role);
-  const targets: Record<string, StageTarget> = {};
+  const targets: Record<string, Record<string, unknown>> = {};
+  const resumePolicies = frozenPolicyMap(config);
   for (const stage of Object.values(workflow.stages)) {
     if (!isRoleStage(stage)) continue;
     const target = resolveStageSpec(config, stage, { registry: resolveClient });
-    targets[stage.id] = copyTarget(target);
+    const policy = freezeStagePolicy(config, stage, target);
+    targets[stage.id] = { ...copyTarget(target), ...(resumePolicies === null ? {} : { resume_policy: policy }) };
   }
   const sourceSha256 = sourceFileHash(workflow.source);
   const filePath = path.join(sessionDirectory, WORKFLOW_FREEZE_FILE);
   const workflowBody = workflowMapping(workflow);
   parseWorkflowMapping(workflowBody, filePath);
   const text = stringify(
-    { schema_version: 2, source_sha256: sourceSha256, workflow: workflowBody, roles, targets },
+    {
+      schema_version: 2,
+      source_sha256: sourceSha256,
+      workflow: workflowBody,
+      roles,
+      targets,
+      ...(resumePolicies === null ? {} : { resume_policies: resumePolicies }),
+    },
     { lineWidth: 0 },
   );
   writeFileAtomic(filePath, text);
@@ -124,6 +142,8 @@ export function readWorkflowFreeze(sessionDirectory: string): WorkflowFreeze | n
     workflow,
     roles: readRoles(parsed.roles, filePath),
     targets: readTargets(parsed.targets, filePath, parsed.schema_version),
+    resumePolicies: isRecord(parsed.resume_policies) ? parsed.resume_policies : {},
+    resumePolicyNames: readResumePolicyNames(parsed.targets),
   };
 }
 
@@ -438,7 +458,8 @@ function stageMapping(stage: StageSpec, versions: MappingVersions = {}): Record<
   if (stage.decisionValues.length > 0) mapped.decision = decisionMapping(stage, version3, version7);
   Object.assign(mapped, agentFields(stage, version5));
   if (stage.maxRevisions !== null) mapped.max_revisions = stage.maxRevisions;
-  if (stage.resumeFrom !== null) mapped.session = { resume_from: stage.resumeFrom };
+  const session = sessionMapping(stage);
+  if (session !== null) mapped.session = session;
   if ((stage.runWhen !== null && stage.runWhen !== undefined)) {
     mapped.run_when = { changed_paths: stage.runWhen.changedPaths };
   }

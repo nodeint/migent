@@ -9,6 +9,7 @@
 | `completed` | terminal |  | completed | yes |  |  | yes | yes | mirrored |  |
 | `blocked` | stage_stop | 0 | blocked | yes | yes | yes |  | yes | mirrored | session.active from blocked |
 | `question` | stage_stop | 1 | question | yes | yes | yes |  |  | mirrored | session.active from question |
+| `expired` | stage_stop | 2 | resume_expired | yes | yes | yes |  |  | mirrored | resume.decided |
 | `cancelled` | session_stop |  | cancelled | yes | yes |  | yes | yes | mirrored | session.active from cancelled |
 | `corrupt` | invalid |  |  |  |  |  |  |  |  |  |
 
@@ -28,7 +29,7 @@ Type: object
 | `name` | string | yes |  | The status name as it appears in session records. |
 | `kind` | `"running"` \| `"not_started"` \| `"stage_stop"` \| `"session_stop"` \| `"terminal"` \| `"invalid"` | yes |  | Classifies the status: a running session, one not started, a stop of a stage or of the session, a finished session, or an unreadable one. |
 | `precedence` | integer \| null | yes |  | Stage-stop rows only: the fold and the idle checks take the lowest value first. |
-| `exit` | null \| `"completed"` \| `"blocked"` \| `"config"` \| `"stage_failed"` \| `"revisions_exhausted"` \| `"dispatch_limit"` \| `"verify_exhausted"` \| `"verify_failed"` \| `"quota"` \| `"question"` \| `"cancelled"` | yes |  | Name of the exit code that `session follow --exit-when-done` returns for this status, or null. |
+| `exit` | null \| `"completed"` \| `"blocked"` \| `"config"` \| `"stage_failed"` \| `"revisions_exhausted"` \| `"dispatch_limit"` \| `"verify_exhausted"` \| `"verify_failed"` \| `"quota"` \| `"question"` \| `"resume_expired"` \| `"cancelled"` | yes |  | Name of the exit code that `session follow --exit-when-done` returns for this status, or null. |
 | `ends_scheduling` | boolean | yes |  | No further stage is dispatched in this status. |
 | `manually_completable` | boolean | yes |  | `session complete` accepts the status. |
 | `refreshable` | boolean | yes |  | A draft can refresh the frozen config of a session in this status. |
