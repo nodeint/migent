@@ -54,7 +54,7 @@ Use the [summary template](references/template.md); preserve its headings and or
 Separate requirements, proposals, and observations. Record missing inputs, their effect
 on readiness, references, branch/base SHA, workspace state, and authorization.
 
-Recommend design for cross-package/contracts work, an unclear bug cause, or structural
+Recommend product for new features or unclear user requirements/scenarios; design for cross-package/contracts work, an unclear bug cause, or structural
 choices; implement only for an obvious, single-module change. A recommendation is not
 human approval. Resolve routing blockers; identify remaining prerequisites explicitly.
 Continue implementation only when requested. Retain the issue number for `Fixes #<n>`.
