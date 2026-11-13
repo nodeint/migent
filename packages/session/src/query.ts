@@ -5,6 +5,7 @@ import { MIGENT_DIRNAME, SESSIONS_DIRNAME } from '@nodeint/migent-kernel';
 import { isRecord } from '@nodeint/migent-workflow';
 
 import { readExitAnomalies } from './exit-anomaly.js';
+import { readPendingResumes } from './resume-pending.js';
 import { latestDiagnosticsPathIn } from './session-diagnostics.js';
 import { parseExecutionId } from './session-events.js';
 import { loadFrozenWorkflow } from './session-freeze.js';
@@ -141,6 +142,19 @@ function optionalWatchFields(source: WatchSource): Record<string, unknown> {
   const title = effectiveTitle(sessionDirectory);
   const diagnostics = latestDiagnosticsPathIn(sessionDirectory);
   const exitAnomalies = exitAnomalySummaries(sessionDirectory);
+  const resumeDecisions = readPendingResumes(sessionDirectory).map((stop) => ({
+    stage_id: stop.stageId,
+    source_execution_id: stop.sourceExecutionId,
+    raised_at: stop.raisedAt,
+    policy: stop.policy,
+    estimate: stop.estimate === null ? null : {
+      idle_seconds: stop.estimate.idleSec,
+      threshold_seconds: stop.estimate.thresholdSec,
+      cache_ttl_seconds: stop.estimate.cacheTtlSec,
+      margin_seconds: stop.estimate.marginSec,
+      context_tokens: stop.estimate.contextTokens,
+    },
+  }));
   return {
     ...whenPresent('handoff', status.handoff, isRecord(status.handoff)),
     skipped_stages: recordList(status.skipped_stages),
@@ -149,6 +163,7 @@ function optionalWatchFields(source: WatchSource): Record<string, unknown> {
     ...whenPresent('title', title, title !== null),
     ...whenPresent('diagnostics', diagnostics, diagnostics !== null),
     ...whenPresent('exit_anomalies', exitAnomalies, exitAnomalies.length > 0),
+    ...whenPresent('resume_decisions', resumeDecisions, resumeDecisions.length > 0),
   };
 }
 

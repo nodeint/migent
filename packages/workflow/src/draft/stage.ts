@@ -10,7 +10,7 @@ import type { RoleStageSpec, StageAgent, StageSpec } from '../model.js';
 import { VERIFY_ARTIFACT } from '../model.js';
 import { isRecord } from '../record.js';
 import { stageSpecSchema } from '../schema.js';
-import { legacyStageModel, positiveInteger, requiredString, ROLE_ONLY_KEYS, routeTarget, stageAgent, stageArtifact, stageAsk, stageDecisionValues, stageDependsOn, stageDescription, stageHasRole, stageMaxRevisions, stageMaxVerify, stageOptions, stageResumeFrom, stageResumeFromUnchecked, stageRoutes, stageRunWhen, stageVerify, stageVerifyTimeout, stringItems } from '../stage-fields.js';
+import { legacyStageModel, positiveInteger, requiredString, ROLE_ONLY_KEYS, routeTarget, stageAgent, stageArtifact, stageAsk, stageDecisionValues, stageDependsOn, stageDescription, stageHasRole, stageMaxRevisions, stageMaxVerify, stageOnExpired, stageOptions, stageResumeFrom, stageResumeFromUnchecked, stageRoutes, stageRunWhen, stageVerify, stageVerifyTimeout, stringItems } from '../stage-fields.js';
 import { decisionBodyProblems, decisionEntryProblem, decisionListProblem, stageMappingProblem } from '../structure.js';
 
 export interface CollectedDecision {
@@ -223,6 +223,7 @@ interface CollectedStageFields {
   readonly maxVerify: DraftUnit<number>;
   readonly verifyTimeoutSec: DraftUnit<number | null>;
   readonly resumeFrom: DraftUnit<string | null>;
+  readonly onExpired: DraftUnit<'ask' | 'fresh' | 'resume' | null>;
 }
 
 export function collectStage(rawItem: unknown, index: number, context: DraftStageContext): DraftStage | null {
@@ -254,6 +255,7 @@ export function collectStage(rawItem: unknown, index: number, context: DraftStag
     verifyTimeoutSec: fields.verifyTimeoutSec,
     artifact,
     resumeFrom: fields.resumeFrom,
+    onExpired: fields.onExpired,
     runWhen,
     routes: decision.routes,
     spec: clean && kind !== null ? parseCollectedStageSpec(reader, fields, kind) : null,
@@ -315,6 +317,7 @@ function readStageFields(reader: StageReader): CollectedStageFields {
         ? stageResumeFromUnchecked(rawItem, stageId)
         : stageResumeFrom(rawItem, stageId, dependsOn.value),
     ),
+    onExpired: read(() => stageOnExpired(rawItem, stageId)),
   };
 }
 
@@ -499,7 +502,7 @@ function unitOr<T>(unit: DraftUnit<T>, fallback: T): T {
 
 /** The stage spec fields both the role and verify views share, with a fallback for each failed unit. */
 function collectedCommonFields(stageId: string, fields: CollectedStageFields) {
-  const { description, artifact, decision, dependsOn, resumeFrom, instructions, maxRevisions } = fields;
+  const { description, artifact, decision, dependsOn, resumeFrom, onExpired, instructions, maxRevisions } = fields;
   const { verify, maxVerify, verifyTimeoutSec, runWhen } = fields;
   return {
     id: stageId,
@@ -509,6 +512,7 @@ function collectedCommonFields(stageId: string, fields: CollectedStageFields) {
     decisionValues: unitOr(decision.values, []),
     dependsOn: unitOr(dependsOn, []),
     resumeFrom: unitOr(resumeFrom, null),
+    onExpired: unitOr(onExpired, null),
     instructions: unitOr(instructions, []),
     maxRevisions: unitOr(maxRevisions, null),
     routes: unitOr(decision.routes, {}),

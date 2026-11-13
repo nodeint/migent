@@ -564,6 +564,28 @@ Emitted by: `session list --latest --json` (produced, document)
 
 Type: null
 
+<a id="cli-session-resume-json"></a>
+### session resume --json
+
+Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/cli/session-resume.json`
+
+Emitted by: `session resume --json` (produced, document)
+
+Type: object
+
+| Field | Type | Required | Notes | Description |
+| --- | --- | --- | --- | --- |
+| `session_id` | string | yes |  |  |
+| `stage_id` | string | yes |  |  |
+| `source_execution_id` | string | yes |  |  |
+| `choice` | `"resume"` \| `"fresh"` | yes |  |  |
+| `continued` | boolean | yes |  | `false` with `--no-continue`: only the decision was recorded. |
+| `status` | string | yes |  | The session status after the decision, and after the run when `continued` is true. |
+| `exit_code` | integer | yes |  | Exit code of the continued run; 0 with `--no-continue`. |
+| `remaining` | object[] | yes |  | Resume decisions that still wait. |
+| `remaining[].stage_id` | string | yes |  |  |
+| `remaining[].source_execution_id` | string | yes |  |  |
+
 <a id="cli-session-row-list-json"></a>
 ### List of https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/cli/session-row.json
 
@@ -653,6 +675,17 @@ Type: object
 | `quota_failures[].message` | string \| null | yes |  |  |
 | `quota_failures[].reset_at` | string \| null | yes |  |  |
 | `quota_failures[].window` | string \| null | yes |  |  |
+| `resume_decisions` | object[] | no |  | Resume decisions the session waits for. `session resume` decides them. |
+| `resume_decisions[].stage_id` | string | yes |  |  |
+| `resume_decisions[].source_execution_id` | string | yes |  |  |
+| `resume_decisions[].raised_at` | string \| null | yes |  |  |
+| `resume_decisions[].policy` | string \| null | yes |  |  |
+| `resume_decisions[].estimate` | object \| null | yes |  |  |
+| `resume_decisions[].estimate.idle_seconds` | number \| null | yes |  |  |
+| `resume_decisions[].estimate.threshold_seconds` | number \| null | yes |  |  |
+| `resume_decisions[].estimate.cache_ttl_seconds` | number \| null | yes |  |  |
+| `resume_decisions[].estimate.margin_seconds` | number \| null | yes |  |  |
+| `resume_decisions[].estimate.context_tokens` | number \| null | yes |  | Null: the client reported no usage, so the context size is unknown. |
 | `diagnostics` | string | no |  |  |
 | `exit_anomalies` | object[] | no |  |  |
 | `exit_anomalies[].stage_id` | string | yes |  |  |
@@ -724,6 +757,17 @@ Type: object
 | `quota_failures[].message` | string \| null | yes |  |  |
 | `quota_failures[].reset_at` | string \| null | yes |  |  |
 | `quota_failures[].window` | string \| null | yes |  |  |
+| `resume_decisions` | object[] | no |  | Resume decisions the session waits for. `session resume` decides them. |
+| `resume_decisions[].stage_id` | string | yes |  |  |
+| `resume_decisions[].source_execution_id` | string | yes |  |  |
+| `resume_decisions[].raised_at` | string \| null | yes |  |  |
+| `resume_decisions[].policy` | string \| null | yes |  |  |
+| `resume_decisions[].estimate` | object \| null | yes |  |  |
+| `resume_decisions[].estimate.idle_seconds` | number \| null | yes |  |  |
+| `resume_decisions[].estimate.threshold_seconds` | number \| null | yes |  |  |
+| `resume_decisions[].estimate.cache_ttl_seconds` | number \| null | yes |  |  |
+| `resume_decisions[].estimate.margin_seconds` | number \| null | yes |  |  |
+| `resume_decisions[].estimate.context_tokens` | number \| null | yes |  | Null: the client reported no usage, so the context size is unknown. |
 | `diagnostics` | string | no |  |  |
 | `exit_anomalies` | object[] | no |  |  |
 | `exit_anomalies[].stage_id` | string | yes |  |  |
@@ -908,7 +952,7 @@ Type: object
 
 Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/common/session-status.json`
 
-Type: `"active"` \| `"prepared"` \| `"completed"` \| `"blocked"` \| `"question"` \| `"cancelled"` \| `"corrupt"`
+Type: `"active"` \| `"prepared"` \| `"completed"` \| `"blocked"` \| `"question"` \| `"expired"` \| `"cancelled"` \| `"corrupt"`
 
 <a id="common-severity-json"></a>
 ### Diagnostic severity
@@ -967,6 +1011,7 @@ Type: object
 | `decisions[].navigate` | string \| string[] \| null | yes |  |  |
 | `max_revisions` | number \| null | yes |  |  |
 | `resume_from` | string \| null | yes |  |  |
+| `on_expired` | string \| null | no |  |  |
 | `verify` | string[] | yes |  |  |
 | `max_verify` | number | yes |  |  |
 | `verify_timeout` | number \| null | yes |  |  |
@@ -1092,6 +1137,8 @@ Type: object
 | `totals.verify_red` | number | yes |  |  |
 | `totals.revisions` | number \| null | yes |  |  |
 | `totals.revisions_reset` | number | yes |  |  |
+| `totals.fresh_starts` | number | yes |  |  |
+| `totals.expired_resumes` | number | yes |  |  |
 | `stages` | map of object | yes |  |  |
 | `stages.*.executions` | number | yes |  |  |
 | `stages.*.skipped` | number | yes |  |  |
@@ -1147,6 +1194,7 @@ Type: object
 | `executions[].verify.first_pass` | boolean | yes |  |  |
 | `executions[].verify.failed_commands` | string[] | yes |  |  |
 | `executions[].skip` | map of any \| null | yes |  |  |
+| `executions[].fresh_reason` | string \| null | yes |  |  |
 
 <a id="known-metrics-historical-json"></a>
 ### Sealed metrics, known historical fields
@@ -1201,6 +1249,8 @@ Type: object
 | `totals.verify_red` | number | no |  |  |
 | `totals.revisions` | number \| null | no |  |  |
 | `totals.revisions_reset` | number | no |  |  |
+| `totals.fresh_starts` | number | no |  |  |
+| `totals.expired_resumes` | number | no |  |  |
 | `stages` | map of object | no |  |  |
 | `stages.*.executions` | number | no |  |  |
 | `stages.*.skipped` | number | no |  |  |
@@ -1256,6 +1306,7 @@ Type: object
 | `executions[].verify.first_pass` | boolean | yes |  |  |
 | `executions[].verify.failed_commands` | string[] | yes |  |  |
 | `executions[].skip` | map of any \| null | no |  |  |
+| `executions[].fresh_reason` | string \| null | no |  |  |
 
 <a id="known-provider-stream-record-json"></a>
 ### Provider stream record
@@ -1267,4 +1318,38 @@ Opaque; documentation only.
 Opt-in description of a persisted file. No command guarantees it: such files are written by any past Migent version, so treat every field as optional.
 
 Type: map of any
+
+<a id="known-resume-decided-data-json"></a>
+### `resume.decided` event data
+
+Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/known/resume-decided-data.json`
+
+Opt-in description of a persisted file. No command guarantees it: such files are written by any past Migent version, so treat every field as optional.
+
+Type: object
+
+| Field | Type | Required | Notes | Description |
+| --- | --- | --- | --- | --- |
+| `stage_id` | string | yes |  |  |
+| `source_execution_id` | string | yes |  |  |
+| `choice` | `"resume"` \| `"fresh"` \| `"superseded"` | yes |  |  |
+| `origin` | `"human"` | yes |  |  |
+
+<a id="known-resume-expired-data-json"></a>
+### `resume.expired` event data
+
+Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/known/resume-expired-data.json`
+
+Opt-in description of a persisted file. No command guarantees it: such files are written by any past Migent version, so treat every field as optional.
+
+Type: object
+
+| Field | Type | Required | Notes | Description |
+| --- | --- | --- | --- | --- |
+| `stage_id` | string | yes |  |  |
+| `source_execution_id` | string | yes |  |  |
+| `action` | `"ask"` \| `"fresh"` \| `"resume"` | yes |  |  |
+| `origin` | `"human"` \| `"stage"` \| `"policy"` \| `"default"` | yes |  |  |
+| `policy` | string \| null | yes |  |  |
+| `estimate` | map of any | yes |  |  |
 

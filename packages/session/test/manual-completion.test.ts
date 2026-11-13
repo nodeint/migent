@@ -6,6 +6,7 @@ import { StageOutcome } from '@nodeint/migent-kernel';
 import { SessionLock, SessionLockHeldError } from '@nodeint/migent-session';
 import { expect, test } from 'vitest';
 
+import { watchSnapshot } from '../src/query.ts';
 import { readParsedEvents } from '../src/session-events.ts';
 import { readFoldedStatus } from '../src/session-fold.ts';
 import { createAgentSession, createPreparedSession, createWorkflowSession } from '../src/session-records.ts';
@@ -223,4 +224,60 @@ test('agent-driven completion sets completion_method: agent', () => {
   expect(status.status).toBe('completed');
   expect(status.completion_method).toBe('agent');
   expect(status).not.toHaveProperty('manual_completion');
+});
+
+test('a manual completion supersedes a pending resume decision', () => {
+  const { workspace, store, sessionId } = started();
+  stageRun(workspace, store, sessionId, 'draft', 'completed', new StageOutcome('complete'), { 'plan.md': '# Plan\n' });
+  const lock = SessionLock.acquire(directoryOf(workspace, sessionId));
+  try {
+    store.recordResumeExpired(sessionId, {
+      stageId: 'extra',
+      sourceExecutionId: '0001-draft--attempt-01',
+      action: 'ask',
+      origin: 'policy',
+      policy: 'default',
+      estimate: { idle_seconds: 900 },
+    });
+  } finally {
+    lock.release();
+  }
+  expect(statusOf(workspace, sessionId).status).toBe('expired');
+  expect(store.pendingResumes(sessionId)).toHaveLength(1);
+  store.completeManually(sessionId);
+  expect(statusOf(workspace, sessionId).status).toBe('completed');
+  expect(store.pendingResumes(sessionId)).toEqual([]);
+  const decided = readParsedEvents(path.join(directoryOf(workspace, sessionId), 'events.jsonl')).find((item) => item.event === 'resume.decided');
+  expect(decided?.data).toMatchObject({ stage_id: 'extra', choice: 'superseded', origin: 'human' });
+});
+
+function expire(workspace: string, store: SessionStore, sessionId: string, stageId: string, source: string): void {
+  const lock = SessionLock.acquire(directoryOf(workspace, sessionId));
+  try {
+    store.recordResumeExpired(sessionId, { stageId, sourceExecutionId: source, action: 'ask', origin: 'default', policy: null, estimate: {} });
+  } finally {
+    lock.release();
+  }
+}
+
+test('a pending decision on a target with no execution folds to expired, is listed, survives repair, and is cleared by a decision', () => {
+  const { workspace, store, sessionId } = started();
+  stageRun(workspace, store, sessionId, 'draft', 'completed', new StageOutcome('complete'), { 'plan.md': '# Plan\n' });
+  expire(workspace, store, sessionId, 'extra', '0001-draft--attempt-01');
+  const directory = directoryOf(workspace, sessionId);
+  expect(statusOf(workspace, sessionId).status).toBe('expired');
+  expect(watchSnapshot(directory).resume_decisions).toEqual([
+    { stage_id: 'extra', source_execution_id: '0001-draft--attempt-01', raised_at: expect.any(String), policy: null, estimate: { idle_seconds: null, threshold_seconds: null, cache_ttl_seconds: null, margin_seconds: null, context_tokens: null } },
+  ]);
+  // Re-reading after a crash shows the same decision, and repair rebuilds the same status.
+  expect(new SessionStore(workspace, undefined, defaultClients()).pendingResumes(sessionId)).toHaveLength(1);
+  expect(repairSession(workspace, sessionId).status).toBe('expired');
+  const lock = SessionLock.acquire(directory);
+  try {
+    store.recordResumeDecision(sessionId, { stageId: 'extra', sourceExecutionId: '0001-draft--attempt-01', choice: 'resume', origin: 'human' });
+  } finally {
+    lock.release();
+  }
+  expect(statusOf(workspace, sessionId).status).toBe('active');
+  expect(watchSnapshot(directory)).not.toHaveProperty('resume_decisions');
 });

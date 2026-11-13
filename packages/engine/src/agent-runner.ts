@@ -104,7 +104,12 @@ export class AgentToolRunner {
     const turnPrompt = renderFirstPrompt({ request, opened, stage, facts, prior });
     store.savePrompt(context, turnPrompt);
     const turnKind = request.turn ?? null;
-    store.saveExecutionProgress(context, record, { response_protocol: prior.protocol, turn_kind: turnKind });
+    store.saveExecutionProgress(context, record, {
+      response_protocol: prior.protocol,
+      turn_kind: turnKind,
+      ...(request.resumeSkipped ? { resume_skipped: request.resumeSkipped } : {}),
+      ...(request.resumePolicy ? { resume_policy: request.resumePolicy } : {}),
+    });
     this.emitStageStarted(opened, opened.eventReporter);
     const { progress, previous } = prior;
     return this.driveTurns({
@@ -487,6 +492,7 @@ function loadOrCreateRun(
       executionOrder,
       prompt: request.prompt,
       resumeExecutionId: request.resumeExecutionId ?? null,
+      allowCancelledSibling: request.allowCancelledSibling === true,
       validateResume: (record) => validateSessionProfile(
         record,
         { client: clientId, model: request.model, options: profile },

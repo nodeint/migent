@@ -17,7 +17,7 @@ import { detailsOf, elapsedMs, parseTime, roundSeconds, stringList, text, wallSe
 import { listSessionRows, readStatusFileState } from './query.js';
 import { type ParsedEvent } from './session-events.js';
 
-interface NormalizedTurn {
+export interface NormalizedTurn {
   executionId: string;
   usage: TurnUsage;
   captured: boolean;
@@ -236,6 +236,8 @@ function sessionObject(
       verify_red: executionObjects.reduce((sum, execution) => sum + (execution.verifyRed as number), 0),
       revisions,
       revisions_reset: events.filter((event) => event.event === 'revisions.reset').length,
+      fresh_starts: executions.filter((execution) => execution.freshReason !== null).length,
+      expired_resumes: events.filter(isExpiredResume).length,
     },
     stages,
     executions: executionObjects.map((execution) => execution.public),
@@ -323,9 +325,15 @@ function executionObject(execution: ExecutionRow, shared: ExecutionShared, facts
       usage_missing: missingObject(totals),
       verify: verify.public,
       skip: execution.skip,
+      fresh_reason: execution.freshReason,
     },
   };
 }
+
+/** A resume the policy found expired that went ahead on the old conversation, by the policy or by a human. */
+const isExpiredResume = (event: ParsedEvent): boolean =>
+  (event.event === 'resume.expired' && event.data.action === 'resume')
+  || (event.event === 'resume.decided' && event.data.choice === 'resume');
 
 function manifestRole(sessionDirectory: string): string | null {
   let textBody: string;
@@ -352,7 +360,7 @@ function isRunnerTurn(event: ParsedEvent): boolean {
   return typeof detailsOf(event).turn === 'number';
 }
 
-function resolveExecutionClients(
+export function resolveExecutionClients(
   events: ParsedEvent[],
   executions: ExecutionRow[],
   status: Record<string, unknown>,
@@ -399,7 +407,7 @@ function turnUsage(
   }
 }
 
-function normalizeTurns(
+export function normalizeTurns(
   events: ParsedEvent[],
   executionClients: ReadonlyMap<string, string | null>,
   clients: ClientRegistry,

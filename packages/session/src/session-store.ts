@@ -28,6 +28,7 @@ import { TURN_PAD_WIDTH } from './constants.js';
 import { completeManuallyLocked } from './manual-completion.js';
 import { sealSessionMetrics } from './metrics.js';
 import { publishNextSuggestions } from './next-handoff.js';
+import { readPendingResumes } from './resume-pending.js';
 import { appendRecordedEvent, skipsStatusWrite } from './session-events.js';
 import { writeFailureReport } from './session-failure-report.js';
 import { commitFoldedStatus } from './session-fold.js';
@@ -88,7 +89,7 @@ export class SessionStore extends SessionStoreResume {
       throw new Error('Resuming an execution requires a session.');
     }
     if (sessionId !== null) this.reapOrphanedExecutions(sessionId, 'raise');
-    this.ensureSessionIsRunnable(sessionId);
+    this.ensureSessionIsRunnable(sessionId, input.allowCancelledSibling === true);
     let previous: ExecutionContext | null = null;
     if (resumeExecutionId !== null) {
       previous = this.executionContext(sessionId as string, resumeExecutionId);
@@ -312,6 +313,7 @@ export class SessionStore extends SessionStoreResume {
       schemaVersion: manifest.schemaVersion,
       manifestStatus: manifest.manifestStatus,
       snapshots: this.snapshotList(sessionId),
+      pendingResumes: readPendingResumes(sessionDirectory),
     });
     appendExecutionStarted(sessionDirectory, { timestamp, executionId, stageId }, {
       execution_order: order,
@@ -405,6 +407,7 @@ export class SessionStore extends SessionStoreResume {
         artifactDirectory: context.artifactDirectory,
         failureReason,
       }),
+      pendingResumes: readPendingResumes(sessionDirectory),
     });
     writeJsonAtomic(filePath, metadata);
     if (status === 'failed') writeFailureReport(context, metadata, error ?? storedError);

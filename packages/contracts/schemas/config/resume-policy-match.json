@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/config/resume-policy-match.json",
+  "type": "object",
+  "properties": {
+    "client": {
+      "type": "string",
+      "pattern": "\\S",
+      "description": "A string with a non-blank value."
+    },
+    "model": {
+      "type": "string",
+      "pattern": "\\S",
+      "description": "A model name glob."
+    }
+  },
+  "title": "Resume policy match",
+  "description": "The client and model glob a policy applies to.",
+  "additionalProperties": false
+}

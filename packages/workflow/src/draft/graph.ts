@@ -35,6 +35,7 @@ export function graphStageOf(stage: DraftStage): StageSpec {
     decisionValues: [],
     dependsOn: stage.dependsOn.state === 'valid' ? stage.dependsOn.value : [],
     resumeFrom: null,
+    onExpired: null,
     instructions: [],
     agent: null,
     options: {},

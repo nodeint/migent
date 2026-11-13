@@ -4,11 +4,11 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import type { ClientRegistry, ExecutionSnapshot } from '@nodeint/migent-kernel';
-import { ConfigurationError, endsScheduling, log, NextStage, readyStages, runnableNow, schedulableStageIds, Stop, utcNow, writeFileAtomic } from '@nodeint/migent-kernel';
+import { ConfigurationError, endsScheduling, log, NextStage, readyStages, runnableNow, schedulableStageIds, Stop, stopReasonFor, utcNow, writeFileAtomic } from '@nodeint/migent-kernel';
 import { activatePreparedSession, appendLifecycleEvent, assertSingleLineTask, bindPriorSessionId, commitFoldedStatus, createWorkflowSession, loadFrozenWorkflow, readWorkflowFreeze, repairSessionUnlocked, requireLiveWorkflow, requireTaskBody, resolvePriorSessionId, SessionLock, SessionStore, warnIfFrozenDrift, WORKFLOW_FREEZE_FILE, writeWorkflowFreeze } from '@nodeint/migent-session';
 import { isRecord, isWorkflowV2, loadNamedWorkflow, type WorkflowDocument } from '@nodeint/migent-workflow';
 
-import { blockResumes, executeFinal, type ExecuteResult, PendingStageReply, selectedStage, text } from './dispatch.js';
+import { executeFinal, type ExecuteResult, PendingStageReply, resumeInputs, selectedStage, text } from './dispatch.js';
 
 export function preflightFailed(sessionId: string): ExecuteResult {
   return {
@@ -169,6 +169,11 @@ export interface ExecuteRequest {
   preflight?: (target: { workflowId: string | null; sessionId: string | null }) => Promise<boolean>;
   /** Reply for one blocked stage or pending question. */
   reply?: string | null;
+  /**
+   * `session resume`: `stageId` is the target of a recorded resume decision. Only that stage's cancelled executions
+   * are judged and reopened; every other cancelled stage stays as it is.
+   */
+  resumeTarget?: boolean;
 }
 
 /**
@@ -286,14 +291,18 @@ async function resumeExistingSession(
   const blocked = { sessionStatus: started.sessionStatus, stageReply, cancelledReplyStage };
   const reopened = resumeBlockedStages(store, { sessionId, stageId }, blocked) !== null;
   const sessionStatus = reopened ? 'active' : started.sessionStatus;
-  const cancelled = sessionStatus === 'cancelled';
   const reopenLatestCancelled = reopened || resolved.reopenLatestCancelled;
-  const resumeCancelled = reopened || cancelled || resolved.resumeCancelled;
-  if (!cancelled && !reopenLatestCancelled && endsScheduling(sessionStatus)) {
-    return { result: executeFinal(existing.status, sessionStatus, []) };
-  }
+  const stops = stopsBeforeRun({ sessionStatus, scoped: request.resumeTarget === true, reopenLatestCancelled });
+  if (stops) return { result: executeFinal(existing.status, stopReasonFor(sessionStatus), []) };
+  const resumeCancelled = request.resumeTarget === true || reopened || sessionStatus === 'cancelled' || resolved.resumeCancelled;
   const { workflowId } = existing;
   return { sessionId, workflow: null, workflowId, stageReply, resumeCancelled, reopenLatestCancelled };
+}
+
+/** A session that ends scheduling stops the run, unless cancelled work will be reopened or a decision is scoped. */
+function stopsBeforeRun(state: { sessionStatus: string; scoped: boolean; reopenLatestCancelled: boolean }): boolean {
+  const { sessionStatus, scoped, reopenLatestCancelled } = state;
+  return !scoped && sessionStatus !== 'cancelled' && !reopenLatestCancelled && endsScheduling(sessionStatus);
 }
 
 /** Existing session: existence check, lock, repair, optional refresh, run binding, drift warning, status. */
@@ -554,7 +563,7 @@ function resetRevisionsIfStartable(
   store.reapOrphanedExecutions(sessionId, 'raise');
   const snapshots = store.executionSnapshots(sessionId);
   const current = text(store.readSessionStatus(sessionId).status);
-  const resumes = (): ReturnType<typeof blockResumes> => blockResumes(workspace, sessionId);
+  const inputs = (): ReturnType<typeof resumeInputs> => resumeInputs(workspace, sessionId);
   let reset: boolean;
   if (current === 'cancelled') {
     reset = true;
@@ -565,12 +574,12 @@ function resetRevisionsIfStartable(
     const startable = schedulableStageIds(workflow, snapshots, {
       sessionStatus: current,
       revisionBaselines: openBaselines,
-      resumes: resumes(),
+      ...inputs(),
       verifyTried: new Set(),
     });
     reset = startable.length > 0;
   } else {
-    const selected = selectedStage(workflow, snapshots, { sessionStatus: current, resumes: resumes() });
+    const selected = selectedStage(workflow, snapshots, { sessionStatus: current, ...inputs() });
     reset = selected instanceof NextStage;
   }
   if (reset) store.resetRevisionCounts(sessionId, snapshots);

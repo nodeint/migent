@@ -199,3 +199,18 @@ test('--skip-preflight is rejected for a role run', async () => {
     removeWorkspace(workspace);
   }
 });
+
+test('an agent naming an unknown resume policy stops the run before anything is created, even with no policies', async () => {
+  const { workspace, provider } = setup(GROK_OK);
+  try {
+    const file = path.join(workspace, '.migent', 'config.yaml');
+    writeFileSync(file, readFileSync(file, 'utf8').replace('  good:\n', '  good:\n    resume_policy: typo\n'), 'utf8');
+    const result = await capture(() => main(PLAN, workspace));
+    expect(result.value).toBe(2);
+    expect(result.stderr).toContain('typo');
+    expect(sessionDirectories(workspace)).toEqual([]);
+    expect(provider.calls).toHaveLength(0);
+  } finally {
+    removeWorkspace(workspace);
+  }
+});

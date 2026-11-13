@@ -1,7 +1,7 @@
 import Type, { type Static } from 'typebox';
 
 import { id, nullable } from './common.js';
-import { NonBlankString, RoleAgent } from './config.js';
+import { NonBlankString, ResumeOnExpired, RoleAgent } from './config.js';
 
 /**
  * Structure of an authored workflow file at the current `schema_version` (7). Pure data: error
@@ -82,8 +82,11 @@ export const WorkflowDecisionItem = Type.Record(Type.String(), WorkflowDecisionE
 export const WorkflowDecisionList = Type.Array(WorkflowDecisionItem, { minItems: 1, description: 'Decision values and their routes.' });
 
 export const WorkflowSession = Type.Object(
-  { resume_from: Type.Optional(nullable(NonBlankString)) },
-  { $id: id('workflow/session'), title: 'Stage session', description: 'Continue the client session of a dependency.', additionalProperties: false },
+  {
+    resume_from: Type.Optional(nullable(NonBlankString)),
+    on_expired: Type.Optional(nullable(ResumeOnExpired)),
+  },
+  { $id: id('workflow/session'), title: 'Stage session', description: 'Continue the client session of a dependency, and what to do when its cache may have expired.', additionalProperties: false },
 );
 
 export const WorkflowRunWhen = Type.Object(

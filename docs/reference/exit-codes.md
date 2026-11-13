@@ -39,6 +39,10 @@
 | 8 | `quota` | Workflow run with `--once` or `--stage` | when --once or --stage hits a client quota. |
 | 9 | `question` | Workflow run (`session run`, `session continue`) | when waiting for a reply to a question. |
 | 9 | `question` | Workflow run with `--once` or `--stage` | when waiting for a reply to a question. |
+| 10 | `resume_expired` | Workflow run (`session run`, `session continue`) | when a resume waits for a decision after the prompt cache expired. session resume decides it. |
+| 10 | `resume_expired` | Workflow run with `--once` or `--stage` | when a resume waits for a decision after the prompt cache expired. |
+| 10 | `resume_expired` | Role run (`session run --role`) | when a resume waits for a decision after the prompt cache expired. |
+| 10 | `resume_expired` | Resume after the prompt cache expired (`session resume`) | when another resume still waits for a decision. |
 | 130 | `cancelled` | Workflow run (`session run`, `session continue`) | when cancelled. session continue resumes that execution. |
 | 130 | `cancelled` | Workflow run with `--once` or `--stage` | when cancelled. session continue resumes that execution. |
 | 130 | `cancelled` | Role run (`session run --role`) | when cancelled. session continue resumes that execution. |

@@ -23,6 +23,7 @@ import { updateHooks } from '../src/commands/update.ts';
 import { workspaceApi } from '../src/commands/workspace-registry.ts';
 import { cliHooks } from '../src/hooks.ts';
 import { main } from '../src/index.ts';
+import { waiting } from './resume-support.ts';
 import { CancelOnCommand, capture, registryOf, removeWorkspace, ScriptedClient, writeFakeWorkflowWorkspace } from './support.ts';
 
 // Epic #97 step 1: baseline of every `--json` output on fixed fixtures. Later steps replace
@@ -360,6 +361,18 @@ test('session rename --json', async () => {
   const result = await json(['session', 'rename', sessionId, 'Better title', '--json'], undefined, workspace);
   expect(result.stdout).toEqual({ session_id: sessionId, title: 'Better title', previous_title: 'Write a plan' });
 });
+
+test('session resume --no-continue --json prints the recorded decision', async () => {
+  const run = await waiting(['status: complete\n\nDone']);
+  try {
+    cliHooks.runner = run.runner;
+    const result = await json(['session', 'resume', run.id, 'fresh', '--no-continue', '--json'], undefined, run.root);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toMatchObject({ stage_id: 'plan', choice: 'fresh', continued: false, remaining: [] });
+  } finally {
+    removeWorkspace(run.root);
+  }
+}, 30_000);
 
 test('session metrics and cancel --json success payloads', async () => {
   const workspace = fakeWorkspace();

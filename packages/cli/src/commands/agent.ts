@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import { RoleRunResult, RoleRunResults } from '@nodeint/migent-contracts';
 import { AgentToolRunner, type RunResult } from '@nodeint/migent-engine';
-import { buildStageReplyPrompt, CancellationRequested, ConfigurationError, legacyClientOf, loadRoleResponsibilities, loadWorkspaceConfig, log, prependRoleInstructions, resolveRoleTarget, type TurnKind } from '@nodeint/migent-kernel';
+import { buildStageReplyPrompt, CancellationRequested, ConfigurationError, legacyClientOf, log, resolveRoleTarget, type TurnKind } from '@nodeint/migent-kernel';
 import { createAgentSession, isSessionLockLost, repairSessionUnlocked, requireAgentSession, SessionLock, SessionStore, stringOptions } from '@nodeint/migent-session';
 import { type OptionValues } from 'commander';
 
@@ -16,10 +16,11 @@ import { requireCurrentSchema } from '../migrate.js';
 import { bindCancellationSignals } from '../signals.js';
 import { optionalText, stringList } from '../text.js';
 import { findWorkspace, invocationCwdPath, resolvePrompt } from '../workspace.js';
+import { freshRolePrompt, gateRole, judgeRoleCancelled, newRolePolicy, recordAnswer, resumeSource, rolePrompt, roleResumeExpired, runFreshAttempt } from './agent-resume.js';
 
 export const CLIENT_MAPPING = 'claude→claude-code, codex→codex, grok→grok, agy→agy, opencode→opencode';
 
-type AgentProfile = { client: string; model: string; options: Record<string, string> };
+export type AgentProfile = { client: string; model: string; options: Record<string, string> };
 
 type DispatchArgs = {
   role: string;
@@ -64,14 +65,21 @@ async function dispatchLocked(context: {
   runner: AgentToolRunner;
   lock: SessionLock;
 }): Promise<number> {
-  const { workspace, sessionId, args, target, runner, lock } = context;
+  const { workspace, sessionId, createdSession, args, target, runner, lock } = context;
   const resume = context.createdSession
     ? { cancelled: false, executionId: null }
     : resumeState(workspace, sessionId);
   printProfileNotice(args.role, target);
   const outcome = await guardRoleRun(lock, sessionId, async () => {
-    if (resume.cancelled) return continueCancelledExecutions(workspace, sessionId, runner);
-    const prompt = dispatchPrompt(workspace, sessionId, args);
+    const scope = { role: args.role, runner, profile: target };
+    if (resume.cancelled) return continueCancelledExecutions(workspace, sessionId, scope);
+    // The answer is recorded before the gate, so an `ask` stop keeps it for the decision.
+    const input = dispatchInput(workspace, sessionId, args);
+    const gated = gateRole({ workspace, sessionId, role: args.role, runner }, resume.executionId);
+    if (gated.verdict === 'ask') return roleResumeExpired(workspace, sessionId);
+    const prompt = gated.verdict === 'fresh'
+      ? freshRolePrompt({ workspace, sessionId, role: args.role }, input)
+      : rolePrompt(workspace, args.role, input);
     const result = await runner.run({
       client: target.client,
       model: target.model,
@@ -79,8 +87,10 @@ async function dispatchLocked(context: {
       prompt,
       workspace,
       sessionId,
-      resumeExecutionId: resume.executionId,
+      resumeExecutionId: gated.verdict === 'fresh' ? null : resume.executionId,
       stageId: args.role,
+      resumePolicy: gated.stamp ?? newRolePolicy(workspace, { createdSession, role: args.role, target }),
+      resumeSkipped: gated.skipped,
     });
     return [result];
   });
@@ -103,7 +113,7 @@ function resumeState(
   return { cancelled: false, executionId: previous === null ? null : previous.executionId };
 }
 
-function dispatchPrompt(workspace: string, sessionId: string, args: DispatchArgs): string {
+function dispatchInput(workspace: string, sessionId: string, args: DispatchArgs): string {
   let input = resolvePrompt({
     prompt: args.prompt ?? null,
     promptFile: args.promptFile ?? null,
@@ -113,7 +123,7 @@ function dispatchPrompt(workspace: string, sessionId: string, args: DispatchArgs
     .questionStages(sessionId)
     .find((row) => row.stageId === args.role);
   if (question) input = new SessionStore(workspace).resumeQuestion(sessionId, args.role, input);
-  return rolePrompt(workspace, args.role, input);
+  return input;
 }
 
 async function withSessionLock(
@@ -185,7 +195,7 @@ export async function continueAgent(
   return withSessionLock(workspace, args.sessionId, (lock) => continueLocked(workspace, args, lock));
 }
 
-type ContinueState = {
+export type ContinueState = {
   role: string;
   sessionStatus: string;
   cancelledReply: { executionId: string; text: string } | null;
@@ -219,8 +229,12 @@ async function continueLocked(
     if (state.sessionStatus === 'cancelled') {
       return await runCancelledRole(workspace, args.sessionId, { role, profile, runner, asJson: false });
     }
+    // The answer is recorded before the gate, so an `ask` stop leaves it saved and the decision consumes it once.
+    const recordedAnswer = recordAnswer(store, { sessionId: args.sessionId, state, explicitReply: args.reply });
+    const gated = gateRole({ workspace, sessionId: args.sessionId, role, runner }, resumeSource(state, latest));
+    if (gated.verdict === 'ask') return roleResumeExpired(workspace, args.sessionId);
     const next = continueTurn(
-      { workspace, store, sessionId: args.sessionId, explicitReply: args.reply },
+      { workspace, store, sessionId: args.sessionId, explicitReply: args.reply, recordedAnswer },
       state,
       latest,
     );
@@ -228,12 +242,14 @@ async function continueLocked(
       client: profile.client,
       model: profile.model,
       options: { ...profile.options },
-      prompt: next.prompt,
+      prompt: gated.verdict === 'fresh' ? freshRolePrompt({ workspace, sessionId: args.sessionId, role }, next.prompt) : next.prompt,
       turn: next.turn,
       workspace,
       sessionId: args.sessionId,
-      resumeExecutionId: next.resumeId,
+      resumeExecutionId: gated.verdict === 'fresh' ? null : next.resumeId,
       stageId: role,
+      resumePolicy: gated.stamp,
+      resumeSkipped: gated.skipped,
     });
     printAgent({ ...result }, { role: role, client: profile.client, model: profile.model }, workspace);
     return finishRole(args.sessionId, roleExitCode(result.outcome_status));
@@ -269,7 +285,14 @@ function continueState(store: SessionStore, sessionId: string, explicitReply: st
 }
 
 function continueTurn(
-  context: { workspace: string; store: SessionStore; sessionId: string; explicitReply: string | null },
+  context: {
+    workspace: string;
+    store: SessionStore;
+    sessionId: string;
+    explicitReply: string | null;
+    /** The formatted answers, when `recordAnswer` already saved them. */
+    recordedAnswer?: string | null;
+  },
   state: ContinueState,
   latest: { executionId: string; directory: string },
 ): { prompt: string; turn: TurnKind | null; resumeId: string } {
@@ -282,7 +305,7 @@ function continueTurn(
   }
   if (reply !== null) {
     const answers = pending !== undefined && context.explicitReply !== null;
-    const answer = answers ? store.resumeQuestion(sessionId, role, reply) : reply;
+    const answer = answers ? (context.recordedAnswer ?? store.resumeQuestion(sessionId, role, reply)) : reply;
     const prompt = rolePrompt(workspace, role, buildStageReplyPrompt(answer, { answers }));
     return { prompt, turn: answers ? 'answers' : 'reply', resumeId: latest.executionId };
   }
@@ -314,21 +337,32 @@ function blockedPrompt(
   return rolePrompt(workspace, role, lines.join('\n'));
 }
 
+/**
+ * Gates each cancelled execution before any is reopened (D12), from the `completed_at` it was given when it was
+ * cancelled. `resume` reopens in place, `fresh` leaves it cancelled and starts a new attempt with the cut-off turn, and
+ * `ask` leaves it untouched: the run ends with exit 10 once the others have finished.
+ */
 async function continueCancelledExecutions(
   workspace: string,
   sessionId: string,
-  runner: AgentToolRunner,
-): Promise<RunResult[]> {
-  const reopened = new SessionStore(workspace).reopenCancelledExecutions(sessionId);
+  scope: { role: string; runner: AgentToolRunner; profile: AgentProfile },
+): Promise<RunResult[] | number> {
+  const { role, runner, profile } = scope;
+  const store = new SessionStore(workspace);
+  const verdicts = judgeRoleCancelled({ workspace, sessionId, role, runner }, store.reopenableCancelled(sessionId));
+  const reopened = store.reopenCancelledExecutions(sessionId, false, { skip: verdicts.skip });
   for (const item of reopened) {
     log(`session ${sessionId} was cancelled during ${item.executionId}. Resuming that execution.`);
   }
-  const settled = await Promise.allSettled(
-    reopened.map((item) => runner.continueCancelled(workspace, sessionId, item.executionId)),
-  );
+  const fresh = verdicts.fresh.map((item) => runFreshAttempt({ workspace, sessionId, role, runner, profile }, item));
+  const settled = await Promise.allSettled([
+    ...reopened.map((item) => runner.continueCancelled(workspace, sessionId, item.executionId)),
+    ...fresh,
+  ]);
   const rejected = settled.find((item) => item.status === 'rejected');
   if (rejected && rejected.status === 'rejected') throw rejected.reason;
   const continued = settled.flatMap((item) => (item.status === 'fulfilled' ? [item.value] : []));
+  if (verdicts.asked) return roleResumeExpired(workspace, sessionId);
   if (continued.length === 0) {
     throw new ConfigurationError(`Session ${sessionId} is cancelled without an execution.`);
   }
@@ -363,8 +397,8 @@ async function runCancelledRole(
   sessionId: string,
   spec: { role: string; profile: AgentProfile; runner: AgentToolRunner; asJson: boolean },
 ): Promise<number> {
-  const finished = await continueCancelledExecutions(workspace, sessionId, spec.runner);
-  return reportRoleResults({ workspace, sessionId }, finished, spec);
+  const finished = await continueCancelledExecutions(workspace, sessionId, spec);
+  return typeof finished === 'number' ? finished : reportRoleResults({ workspace, sessionId }, finished, spec);
 }
 
 function lastUserPrompt(workspace: string, sessionId: string, executionId: string): string {
@@ -392,13 +426,6 @@ function finishRole(sessionId: string, code: number): number {
   if (code === 1 || code === EXIT_VERIFY || code === EXIT_CANCELLED) printResumeCommand(sessionId);
   if (code === EXIT_CANCELLED) printReplyCommand(sessionId);
   return code;
-}
-
-function rolePrompt(workspace: string, role: string, text: string): string {
-  return prependRoleInstructions(
-    loadRoleResponsibilities(loadWorkspaceConfig(workspace), role),
-    text,
-  );
 }
 
 function executionProfile(directory: string, executionId: string): AgentProfile {

@@ -2,37 +2,46 @@
 import path from 'node:path';
 
 import { exitCode } from '@nodeint/migent-contracts';
-import { cancellationSignal, ConfigurationError, endsScheduling, type ExecutionSnapshot, exitFor, stageStopStatus } from '@nodeint/migent-kernel';
+import { cancellationSignal, ConfigurationError, endsScheduling, type ExecutionSnapshot, exitFor, type PendingResumeStop, stageStopStatus, stopReasonFor } from '@nodeint/migent-kernel';
 import { readyStages, revisionStop, runnableNow, schedulableStageIds, Stop, VERIFY_EXHAUSTED, VERIFY_FAILED, version2IdleReason, writeJsonAtomic } from '@nodeint/migent-kernel';
 import { clearInFlightExecution, noteInFlightExecution } from '@nodeint/migent-session';
 import { isRecord, isWorkflowV2 } from '@nodeint/migent-workflow';
 
 import {
   assertStageDispatchable,
-  blockResumes,
   dispatchExecuteStage,
   executeFinal,
   type ExecuteResult,
   type ExecuteRun,
+  resumeInputs,
   selectedStage,
   text,
 } from './dispatch.js';
 
 
-export async function runExecuteOnce(run: ExecuteRun, stageId: string | null): Promise<ExecuteResult> {
+/**
+ * `scoped`: a `session resume` dispatches its decided stage even though another stage is cancelled. That stage
+ * stays cancelled, and the session status says so after the run.
+ */
+export async function runExecuteOnce(
+  run: ExecuteRun,
+  stageId: string | null,
+  options: { scoped?: boolean } = {},
+): Promise<ExecuteResult> {
   const { workspace, store, workflow, sessionId, tasks } = run;
   store.reapOrphanedExecutions(sessionId, 'raise');
   const snapshots = store.executionSnapshots(sessionId);
   const status = store.readSessionStatus(sessionId);
   const sessionStatus = text(status.status);
-  if (endsScheduling(sessionStatus)) return executeFinal(status, sessionStatus, []);
+  const scoped = options.scoped === true && stageId !== null;
+  if (!scoped && endsScheduling(sessionStatus)) return executeFinal(status, stopReasonFor(sessionStatus), []);
   const chosen = isWorkflowV2(workflow)
-    ? version2OnceStage(run, { snapshots, status }, stageId)
-    : version1OnceStage(run, { snapshots, status }, stageId);
+    ? version2OnceStage(run, { snapshots, status: schedulingStatus(status, scoped) }, stageId)
+    : version1OnceStage(run, { snapshots, status: schedulingStatus(status, scoped) }, stageId);
   if (typeof chosen !== 'string') return chosen;
   assertStageDispatchable(workspace, workflow, { sessionId, stageId: chosen });
   const stage = await trackDispatch(sessionId, tasks, (note) =>
-    dispatchExecuteStage(run, { stageId: chosen, status, snapshots }, note),
+    dispatchExecuteStage(run, { stageId: chosen, status, snapshots, scoped }, note),
   );
   return onceResult(store.readSessionStatus(sessionId), stage);
 }
@@ -45,7 +54,7 @@ function onceResult(status: Record<string, unknown>, stage: Record<string, unkno
   if (STAGE_STOP_REASONS.includes(failureReason)) return executeFinal(status, failureReason, [stage]);
   if (stage.failure_kind === 'quota') return executeFinal(status, 'quota', [stage]);
   const after = text(status.status);
-  const stopReason = endsScheduling(after) ? after : 'stage';
+  const stopReason = endsScheduling(after) ? stopReasonFor(after) : 'stage';
   const result = executeFinal(status, stopReason, [stage]);
   const stageStop = stageStopStatus({ outcomeStatus: text(stage.outcome_status) });
   if (stageStop === 'question') {
@@ -59,6 +68,11 @@ function onceResult(status: Record<string, unknown>, stage: Record<string, unkno
 }
 
 /** The executions and session status read at the start of a pass. */
+/** A scoped run schedules its decided stage as if the session were active; the other cancelled stages stay put. */
+function schedulingStatus(status: Record<string, unknown>, scoped: boolean): Record<string, unknown> {
+  return scoped && text(status.status) === 'cancelled' ? { ...status, status: 'active' } : status;
+}
+
 interface PassState {
   readonly snapshots: readonly ExecutionSnapshot[];
   readonly status: Record<string, unknown>;
@@ -74,7 +88,7 @@ function version1OnceStage(
   const selected = selectedStage(
     workflow,
     snapshots,
-    { sessionStatus: text(status.status), resumes: blockResumes(workspace, sessionId) },
+    { sessionStatus: text(status.status), ...resumeInputs(workspace, sessionId) },
   );
   if (selected instanceof Stop) return executeFinal(status, selected.reason, []);
   if (stageId !== null && selected.stageId !== stageId) {
@@ -93,8 +107,9 @@ function version2OnceStage(
 ): string | ExecuteResult {
   const { workspace, workflow, sessionId } = run;
   const { snapshots, status } = state;
-  const resumes = blockResumes(workspace, sessionId);
-  const schedule = { sessionStatus: text(status.status), revisionBaselines: revisionBaselines(status), resumes };
+  const inputs = resumeInputs(workspace, sessionId);
+  const { resumes } = inputs;
+  const schedule = { sessionStatus: text(status.status), revisionBaselines: revisionBaselines(status), ...inputs };
   const schedulable = schedulableStageIds(workflow, snapshots, { ...schedule, verifyTried: new Set() });
   const runnable = runnableNow(workflow, schedulable, {
     running: runningStageIds(snapshots),
@@ -144,13 +159,14 @@ function unresumedFailure(snapshots: readonly ExecutionSnapshot[], resumes: Resu
   );
 }
 
-type Resumes = ReturnType<typeof blockResumes>;
+type Resumes = ReturnType<typeof resumeInputs>['resumes'];
 
 /** Scheduling inputs shared by the version 2 stage selectors. */
 interface Schedule {
   readonly sessionStatus: string;
   readonly revisionBaselines: Record<string, number> | null;
   readonly resumes: Resumes;
+  readonly pendingResumes: readonly PendingResumeStop[];
 }
 
 /** How far a loop may go, and what earlier dispatches of the run already used. */
@@ -185,7 +201,7 @@ export async function runExecuteLoop(run: ExecuteRun, limits: LoopLimits): Promi
     const selected = selectedStage(
       workflow,
       snapshots,
-      { sessionStatus: text(status.status), resumes: blockResumes(workspace, sessionId) },
+      { sessionStatus: text(status.status), ...resumeInputs(workspace, sessionId) },
     );
     if (selected instanceof Stop) return executeFinal(status, selected.reason, stages);
     if (
@@ -250,8 +266,8 @@ class Version2Pool {
     }
     const capped = await this.settleCeiling();
     if (capped) return capped;
-    const resumes = blockResumes(workspace, sessionId);
-    const schedule = { sessionStatus, revisionBaselines: revisionBaselines(status), resumes };
+    const baselines = revisionBaselines(status);
+    const schedule = { sessionStatus, revisionBaselines: baselines, ...resumeInputs(workspace, sessionId) };
     this.startRunnable({ snapshots, status }, schedule);
     const cappedAfterStart = await this.settleCeiling();
     if (cappedAfterStart) return cappedAfterStart;
@@ -344,8 +360,8 @@ function dispatchLimitResult(
   const endSnapshots = store.executionSnapshots(sessionId);
   const endSession = text(endStatus.status);
   const endBaselines = revisionBaselines(endStatus);
-  const endResumes = blockResumes(workspace, sessionId);
-  const endSchedule = { sessionStatus: endSession, revisionBaselines: endBaselines, resumes: endResumes };
+  const endInputs = resumeInputs(workspace, sessionId);
+  const endSchedule = { sessionStatus: endSession, revisionBaselines: endBaselines, ...endInputs };
   const remaining = schedulableStageIds(workflow, endSnapshots, { ...endSchedule, verifyTried, verifyOnlyTried });
   if (remaining.length > 0) return executeFinal(endStatus, 'dispatch_limit', stages);
   const reason = version2IdleReason(workflow, endSnapshots, endSchedule);

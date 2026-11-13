@@ -1,6 +1,6 @@
 import path from 'node:path';
 
-import type { SessionStatusInput } from '@nodeint/migent-kernel';
+import type { PendingResumeStop, SessionStatusInput } from '@nodeint/migent-kernel';
 import {
   type ExecutionSnapshot,
   isArtifactSchema,
@@ -73,6 +73,16 @@ export function sessionStatusFromExecutions(
   previousStatus: Readonly<Record<string, unknown>>,
   workflow: WorkflowDocument | null,
 ): string {
+  return sessionStatusWithPending(executions, previousStatus, { workflow, pending: [] });
+}
+
+/** The same reduction when the session also waits for resume decisions, each a stop of its target stage. */
+export function sessionStatusWithPending(
+  executions: readonly StatusExecution[],
+  previousStatus: Readonly<Record<string, unknown>>,
+  scope: { workflow: WorkflowDocument | null; pending: readonly PendingResumeStop[] },
+): string {
+  const { workflow, pending } = scope;
   const latest = latestPerStage(executions);
   if (latest.some((execution) => execution.status === 'running')) return 'active';
   const statuses = latest.map((execution) => sessionStatusForExecution({
@@ -82,9 +92,10 @@ export function sessionStatusFromExecutions(
     workflow,
     stageId: execution.stageId,
   }));
-  const stopped = foldStoppedStatus(statuses);
+  // A pending resume decision stops its target stage, whether or not that stage has an execution.
+  const stopped = foldStoppedStatus(pending.length > 0 ? [...statuses, 'expired'] : statuses);
   if (stopped !== null) {
-    return hasStartableOutsideStops({ executions, latest }, previousStatus, workflow) ? 'active' : stopped;
+    return hasStartableOutsideStops({ executions, latest, pending }, previousStatus, workflow) ? 'active' : stopped;
   }
   const sessionStop = sessionStopStatus(statuses);
   if (sessionStop !== null) return sessionStop;
@@ -100,17 +111,22 @@ function sessionStopStatus(statuses: readonly string[]): string | null {
 }
 
 /** Version 2: a stop does not hold the session while another branch can still start. */
-function hasStartableOutsideStops(
-  rows: { executions: readonly StatusExecution[]; latest: readonly StatusExecution[] },
+export function hasStartableOutsideStops(
+  rows: {
+    executions: readonly StatusExecution[];
+    latest: readonly StatusExecution[];
+    pending: readonly PendingResumeStop[];
+  },
   previousStatus: Readonly<Record<string, unknown>>,
   workflow: WorkflowDocument | null,
 ): boolean {
-  const { executions, latest } = rows;
+  const { executions, latest, pending } = rows;
   if (workflow === null || !isWorkflowV2(workflow)) return false;
   const snapshots = snapshotsFromStatus(executions);
   return readyOutsideStoppedBranches(workflow, snapshots, {
     sessionStatus: 'active',
     revisionBaselines: revisionBaselinesFrom(previousStatus),
+    pendingResumes: pending,
   }).some((stageId) => stageCanStart(latest, stageId));
 }
 
@@ -186,12 +202,13 @@ export function planExecutionSave(input: {
   schemaVersion: number;
   manifestStatus: string | null;
   snapshots: readonly ExecutionSnapshot[];
+  /** Resume decisions the session waits for, from its events. Absent: none. */
+  pendingResumes?: readonly PendingResumeStop[];
 }): PlannedExecutionSave {
-  const sessionStatus = sessionStatusFromExecutions(
-    statusExecutionsFromSnapshots(input.snapshots),
-    input.previousStatus,
-    input.workflow,
-  );
+  const sessionStatus = sessionStatusWithPending(statusExecutionsFromSnapshots(input.snapshots), input.previousStatus, {
+    workflow: input.workflow,
+    pending: input.pendingResumes ?? [],
+  });
   const published = publishForSave(input);
   const previousSessionStatus = typeof input.previousStatus.status === 'string' ? input.previousStatus.status : '';
   return {

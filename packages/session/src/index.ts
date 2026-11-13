@@ -24,6 +24,8 @@ export {
   readStatusFileState,
   watchSnapshot,
 } from './query.js';
+export type { ResumeFacts } from './resume-facts.js';
+export { resumeFacts } from './resume-facts.js';
 export type { RecordedDiagnostics } from './session-diagnostics.js';
 export { latestDiagnosticsPath, readRecordedDiagnostics } from './session-diagnostics.js';
 export type { SessionDraft } from './session-draft.js';
@@ -50,7 +52,7 @@ export {
 export { readExecutions, readSessionManifest, sessionSchemaVersion } from './session-fold-read.js';
 export type { FreezeSource, LiveWorkflowRef, WorkflowFreeze } from './session-freeze.js';
 export { collectFrozenDrift,WORKFLOW_FREEZE_FILE } from './session-freeze.js';
-export { frozenRoleInstructions, frozenStageTarget, loadFrozenWorkflow, readWorkflowFreeze, requireLiveWorkflow, warnIfFrozenDrift, writeWorkflowFreeze } from './session-freeze.js';
+export { frozenResumePolicy, frozenRoleInstructions, frozenStageTarget, loadFrozenWorkflow, readWorkflowFreeze, requireLiveWorkflow, warnIfFrozenDrift, writeWorkflowFreeze } from './session-freeze.js';
 export type { CancelRequestResult } from './session-lock.js';
 export {
   assertSessionLockHeld,

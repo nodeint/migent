@@ -8,13 +8,14 @@ import { id } from './schema-id.js';
  */
 
 /** Command families that share one exit vocabulary. */
-export const EXIT_FAMILIES = ['run', 'run_once', 'role_run', 'preflight', 'authoring', 'doctor', 'get', 'complete'] as const;
+export const EXIT_FAMILIES = ['run', 'run_once', 'role_run', 'resume', 'preflight', 'authoring', 'doctor', 'get', 'complete'] as const;
 export type ExitFamily = (typeof EXIT_FAMILIES)[number];
 
 export const EXIT_FAMILY_TITLES: Record<ExitFamily, string> = {
   run: 'Workflow run (`session run`, `session continue`)',
   run_once: 'Workflow run with `--once` or `--stage`',
   role_run: 'Role run (`session run --role`)',
+  resume: 'Resume after the prompt cache expired (`session resume`)',
   preflight: 'Preflight before a workflow run',
   authoring: 'Authoring (`config|workflow validate|render|save`)',
   doctor: '`doctor`',
@@ -127,6 +128,16 @@ export const EXIT_CATALOG = [
     descriptions: {
       run: 'when waiting for a reply to a question.',
       run_once: 'when waiting for a reply to a question.',
+    },
+  },
+  {
+    code: 10,
+    name: 'resume_expired',
+    descriptions: {
+      run: 'when a resume waits for a decision after the prompt cache expired. session resume decides it.',
+      run_once: 'when a resume waits for a decision after the prompt cache expired.',
+      role_run: 'when a resume waits for a decision after the prompt cache expired.',
+      resume: 'when another resume still waits for a decision.',
     },
   },
   {

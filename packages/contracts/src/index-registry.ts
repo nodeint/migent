@@ -1,7 +1,7 @@
 import type { TSchema } from 'typebox';
 
 import * as O from './cli-output.js';
-import { LegacyLifecycleEvent, LifecycleEventV2, ProviderStreamRecord, SealedMetricsCurrent, SealedMetricsHistorical } from './known-shapes.js';
+import { LegacyLifecycleEvent, LifecycleEventV2, ProviderStreamRecord, ResumeDecidedData, ResumeExpiredData, SealedMetricsCurrent, SealedMetricsHistorical } from './known-shapes.js';
 
 export type Framing = 'document' | 'json-lines';
 export type ContractClass = 'produced' | 'passthrough';
@@ -56,6 +56,7 @@ export const CLI_CONTRACTS: readonly ContractEntry[] = [
   e('session-metrics-line', O.SealedMetricsLine, { class: 'passthrough', framing: 'json-lines', commands: ['session metrics --json'] }),
   e('cancel', O.CancelResult, { class: 'produced', framing: 'document', commands: ['session cancel --json'] }),
   e('complete', O.CompleteResult, { class: 'produced', framing: 'document', commands: ['session complete --json'] }),
+  e('session-resume', O.SessionResumeOutput, { class: 'produced', framing: 'document', commands: ['session resume --json'] }),
   e('rename', O.RenameResult, { class: 'produced', framing: 'document', commands: ['session rename --json'] }),
   e('role-run', O.RoleRunResult, { class: 'produced', framing: 'document', commands: ['session run --role --json'] }),
   e('role-run-many', O.RoleRunResults, { class: 'produced', framing: 'document', commands: ['session run --role --json (resumed cancelled executions)'] }),
@@ -73,6 +74,8 @@ export const KNOWN_SHAPES: readonly TSchema[] = [
   LifecycleEventV2,
   LegacyLifecycleEvent,
   ProviderStreamRecord,
+  ResumeExpiredData,
+  ResumeDecidedData,
   SealedMetricsHistorical,
   SealedMetricsCurrent,
 ];

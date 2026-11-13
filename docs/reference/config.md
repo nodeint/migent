@@ -16,6 +16,7 @@ Type: object
 | `model` | string | no | pattern: `"\\S"` | A string with a non-blank value. |
 | `effort` | string | no | pattern: `"\\S"` | A string with a non-blank value. |
 | `client` | [Client selection](#config-client-json) \| null | no |  | The CLI client that runs the model. `type` is required when `options` is set. |
+| `resume_policy` | string | no | pattern: `"\\S"` | A string with a non-blank value. |
 
 <a id="config-agent-placeholder-json"></a>
 ### Unmapped agent
@@ -63,6 +64,7 @@ Type: object
 | `schema_version` | number | no |  | Document version. The local file's value is ignored. |
 | `agents` | map of ([Agent (effective)](#config-resolved-agent-json) \| [Unmapped agent](#config-agent-placeholder-json)) | no |  |  |
 | `roles` | map of [Role](#config-role-json) | yes |  |  |
+| `resume_policies` | map of [Resume policy](#config-resume-policy-json) | no |  |  |
 
 <a id="config-inline-agent-json"></a>
 ### Inline agent
@@ -78,6 +80,7 @@ Type: object
 | `model` | string | yes | pattern: `"\\S"` | A string with a non-blank value. |
 | `effort` | string | no | pattern: `"\\S"` | A string with a non-blank value. |
 | `client` | [Client selection](#config-client-json) \| null | no |  | The CLI client that runs the model. `type` is required when `options` is set. |
+| `resume_policy` | string | no | pattern: `"\\S"` | A string with a non-blank value. |
 
 <a id="config-layer-json"></a>
 ### Config file
@@ -93,6 +96,7 @@ Type: object
 | `schema_version` | number | no |  | Document version. The local file's value is ignored. |
 | `agents` | map of [Named agent (layer)](#config-named-agent-fragment-json) | no |  |  |
 | `roles` | map of [Role](#config-role-json) | no |  |  |
+| `resume_policies` | map of [Resume policy](#config-resume-policy-json) | no |  |  |
 
 <a id="config-named-agent-fragment-json"></a>
 ### Named agent (layer)
@@ -108,6 +112,7 @@ Type: object
 | `model` | string | no | pattern: `"\\S"` | A string with a non-blank value. |
 | `effort` | string | no | pattern: `"\\S"` | A string with a non-blank value. |
 | `client` | [Client selection](#config-client-json) \| null | no |  | The CLI client that runs the model. `type` is required when `options` is set. |
+| `resume_policy` | string | no | pattern: `"\\S"` | A string with a non-blank value. |
 
 <a id="config-resolved-agent-json"></a>
 ### Agent (effective)
@@ -123,6 +128,47 @@ Type: object
 | `model` | string | yes | pattern: `"\\S"` | A string with a non-blank value. |
 | `effort` | string | no | pattern: `"\\S"` | A string with a non-blank value. |
 | `client` | [Client selection](#config-client-json) \| null | no |  | The CLI client that runs the model. `type` is required when `options` is set. |
+| `resume_policy` | string | no | pattern: `"\\S"` | A string with a non-blank value. |
+
+<a id="config-resume-on-expired-json"></a>
+### Resume on expired
+
+Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/config/resume-on-expired.json`
+
+`ask` stops for a human decision, `fresh` starts a new conversation, `resume` resumes anyway.
+
+Type: `"ask"` \| `"fresh"` \| `"resume"`
+
+<a id="config-resume-policy-match-json"></a>
+### Resume policy match
+
+Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/config/resume-policy-match.json`
+
+The client and model glob a policy applies to.
+
+Type: object
+
+| Field | Type | Required | Notes | Description |
+| --- | --- | --- | --- | --- |
+| `client` | string | no | pattern: `"\\S"` | A string with a non-blank value. |
+| `model` | string | no | pattern: `"\\S"` | A model name glob. |
+
+<a id="config-resume-policy-json"></a>
+### Resume policy
+
+Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/config/resume-policy.json`
+
+A guard for resuming a conversation after the prompt cache may have expired.
+
+Type: object
+
+| Field | Type | Required | Notes | Description |
+| --- | --- | --- | --- | --- |
+| `match` | [Resume policy match](#config-resume-policy-match-json) | no |  | The client and model glob a policy applies to. |
+| `cache_ttl` | string | yes | pattern: `"^\\d+(s\\|m\\|h)$"` | How long the prompt cache lives, such as `5m` or `1h`. |
+| `margin` | string | no | pattern: `"^\\d+(s\\|m\\|h)$"` | Safety margin subtracted from `cache_ttl`. |
+| `min_context_tokens` | integer | no | minimum: `0` | Below this context size an expired cache is not worth guarding. |
+| `on_expired` | [Resume on expired](#config-resume-on-expired-json) | no |  | `ask` stops for a human decision, `fresh` starts a new conversation, `resume` resumes anyway. |
 
 <a id="config-role-agent-json"></a>
 ### Role agent

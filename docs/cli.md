@@ -176,6 +176,14 @@ format because a terminal is attached. `--json` selects machine output where a
 command has a human form. Run `migent <command> --help` for stop reasons and
 exit codes.
 
+### Session resume
+
+`migent session resume <session> <resume|fresh> [--stage <stage>] [--no-continue] [--json]` decides a resume that
+stopped with status `expired` (exit 10). Unlike `session continue`, which continues whatever can run, it records
+one decision and runs only that stage. `--no-continue` records and re-folds the status. `--json` (with
+`--no-continue`) prints the decision and the decisions still waiting. Exit 2 when the choice, the stage, or the
+session state is wrong, or when several decisions wait and `--stage` is missing.
+
 ## Init
 
 ```bash

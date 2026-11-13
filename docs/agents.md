@@ -204,6 +204,48 @@ Migent only refuses the flags it sets itself and non-canonical key spellings.
 
 Only options the client marks as overridable are part of the session.
 
+## Resume policies
+
+A resumed conversation relies on the provider's prompt cache. Once the cache has expired, resuming it re-reads
+the whole history at full price. `resume_policies` tells Migent when that has happened and what to do about it.
+Without `resume_policies`, nothing changes: every resume continues the old conversation.
+
+```yaml
+resume_policies:
+  default:
+    cache_ttl: 5m          # required: how long the provider keeps the cache
+    margin: 30s            # optional: treat the cache as gone this long before its TTL
+    min_context_tokens: 20000   # optional: below this size a fresh start costs little, so resume anyway
+    on_expired: ask        # ask (default) | fresh | resume
+  claude-opus:
+    match: { client: claude-code, model: "claude-opus-*" }
+    cache_ttl: 1h
+agents:
+  reviewer-model:
+    client: { type: claude-code }
+    model: claude-opus-5-5
+    resume_policy: claude-opus   # optional explicit choice
+```
+
+- `cache_ttl` and `margin` are durations such as `90s`, `5m`, `1h`. `margin` must be shorter than `cache_ttl`.
+- A policy applies to an agent in this order: the agent's `resume_policy` name, the one policy whose `match`
+  (`client`, and a `model` glob) fits, then `default`. Two matching policies, or an unknown name, is a
+  configuration error. `migent doctor` reports it.
+- A resume counts as expired when the time since the source execution finished is at least
+  `cache_ttl − margin`, and the context is not below `min_context_tokens`. A client that reports no usage has an
+  unknown context size, which counts as expired. Use `on_expired: resume` for such clients.
+- `on_expired` is `ask` (stop with status `expired`, exit 10), `fresh` (start a new conversation that carries the
+  prompt and the saved reply), or `resume` (continue anyway). A workflow stage can override it with
+  `session.on_expired`; see [workflows](workflows.md).
+- Typical TTLs: Anthropic prompt cache 5 minutes by default, 1 hour when extended. Check your provider.
+- `resume_policies` merge key by key across `config.yaml` and `config.local.yaml`: a local file can change one key of
+  a shared policy (for example a longer `cache_ttl` for a machine behind a proxy) and add policies of its own, without
+  repeating the rest. An agent's `resume_policy` name is a scalar, so a local value replaces the shared one.
+- A `resume_policy` name that no policy defines is a configuration error, even when `resume_policies` is absent.
+  An agent that names no policy and matches none keeps today's behavior.
+- The resolved policy is frozen into the session when it is created, so a later `config.yaml` edit does not change
+  a running session. Role sessions keep the policy across `continue`.
+
 ## Schema version
 
 `schema_version` on `.migent/config.yaml` and on each workflow file is the

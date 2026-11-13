@@ -99,6 +99,6 @@ describe('reference tables', () => {
 
   test('known shapes are marked opt-in', () => {
     expect(cli).toMatch(/Lifecycle event[^\n]*\n[\s\S]*?Opt-in description of a persisted file/);
-    expect(cli.match(/Opt-in description of a persisted file/g)?.length).toBe(5);
+    expect(cli.match(/Opt-in description of a persisted file/g)?.length).toBe(7);
   });
 });

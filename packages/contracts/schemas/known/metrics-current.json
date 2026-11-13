@@ -120,7 +120,9 @@
         "cancelled",
         "verify_red",
         "revisions",
-        "revisions_reset"
+        "revisions_reset",
+        "fresh_starts",
+        "expired_resumes"
       ],
       "properties": {
         "executions": {
@@ -288,6 +290,12 @@
         },
         "revisions_reset": {
           "type": "number"
+        },
+        "fresh_starts": {
+          "type": "number"
+        },
+        "expired_resumes": {
+          "type": "number"
         }
       }
     },
@@ -366,7 +374,8 @@
           "usage",
           "usage_missing",
           "verify",
-          "skip"
+          "skip",
+          "fresh_reason"
         ],
         "properties": {
           "execution_id": {
@@ -747,6 +756,16 @@
                 "patternProperties": {
                   "^.*$": {}
                 }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fresh_reason": {
+            "anyOf": [
+              {
+                "type": "string"
               },
               {
                 "type": "null"

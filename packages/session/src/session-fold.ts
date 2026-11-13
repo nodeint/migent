@@ -1,17 +1,19 @@
 import path from 'node:path';
 
-import { writeJsonAtomic } from '@nodeint/migent-kernel';
+import { type PendingResumeStop, writeJsonAtomic } from '@nodeint/migent-kernel';
 import { isStageStop, isStopped, isStopResolutionEvent, manifestStatusToSession, resolutionFrom, storedQuestions } from '@nodeint/migent-kernel';
 import { isRecord } from '@nodeint/migent-workflow';
 
 import { MANIFEST_SCHEMA_EVENT_LOG } from './constants.js';
 import { readStatusFileState } from './query.js';
+import { pendingResumesOf } from './resume-pending.js';
 import {
   CANCELLED_REPLY,
   type ParsedEvent,
   skipsStatusWrite,
 } from './session-events.js';
 import { EVENT_VERSION } from './session-events.js';
+import { pendingExpiryStatus } from './session-fold-pending.js';
 import { loadFoldInputs, readSessionManifest } from './session-fold-read.js';
 import type { FoldExecution, FoldInputs, SessionManifest } from './session-fold-types.js';
 import { cloneRecord, decisionOf, differingKeys, eventExecutionOrder, isExecutionScoped, later, latestExecution, outcomeRecord, textOr, toStageOutcome } from './session-fold-util.js';
@@ -20,7 +22,7 @@ import {
   decisionOfOutcome,
   latestDecision,
   latestPerStage,
-  sessionStatusFromExecutions,
+  sessionStatusWithPending,
   type StatusExecution,
 } from './session-ledger.js';
 import { StatusDraft } from './session-status-draft.js';
@@ -386,7 +388,8 @@ function publishExecutionStatus(
   const latest = latestExecution(inputs.executions);
   if (latest === null) return updatedAt;
   const rows = statusExecutionsFromFolds(inputs.executions);
-  const sessionStatus = sessionStatusFromExecutions(rows, draft.view, inputs.workflow);
+  const pending = pendingResumesOf(inputs.events);
+  const sessionStatus = sessionStatusWithPending(rows, draft.view, { workflow: inputs.workflow, pending });
   draft.set('status', sessionStatus);
   if (sessionStatus === 'completed' && !draft.get('completion_method')) {
     draft.set('completion_method', 'agent');
@@ -416,10 +419,41 @@ function publishExecutionStatus(
     blockedIds: [...blocked, ...questions].map((row) => row.executionId),
     updatedAt: later(updatedAt, latest.completedAt ?? latest.createdAt),
   });
-  return applyCancelledReply(draft, inputs.events, {
+  const repliedAt = applyCancelledReply(draft, inputs.events, {
     cancelledIds: latestPerStage(rows).filter((row) => row.status === 'cancelled').map((row) => row.executionId),
     updatedAt: resumedAt,
   });
+  applyPendingExpiry(draft, inputs, { rows, pending });
+  return repliedAt;
+}
+
+/** With a pending resume decision, a resume or reply must not hide the stop recorded on the same stage. */
+function applyPendingExpiry(
+  draft: StatusDraft,
+  inputs: FoldInputs,
+  held: { rows: readonly StatusExecution[]; pending: readonly PendingResumeStop[] },
+): void {
+  if (held.pending.length === 0 || draft.get('status') !== 'active') return;
+  const adjusted = pendingExpiryStatus({
+    rows: held.rows,
+    previousStatus: draft.view,
+    workflow: inputs.workflow,
+    pending: held.pending,
+    events: inputs.events,
+  });
+  if (adjusted === null) return;
+  draft.set('status', adjusted.status);
+  const latest = latestExecution(inputs.executions);
+  const stageOf = new Map(held.rows.map((row) => [row.executionId, row.stageId]));
+  const source = latest === null
+    ? null
+    : { executionId: latest.executionId, stageId: latest.stageId, blocker: textOr(latest.outcome?.blocker) };
+  const blocked = adjusted.blockedIds.map((executionId) => ({
+    executionId,
+    stageId: stageOf.get(executionId) ?? '',
+    blocker: executionBlocker(inputs.executions, executionId),
+  }));
+  draft.applyTerminalFields(adjusted.status, { source, reason: null, blocked });
 }
 
 /**

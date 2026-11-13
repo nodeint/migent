@@ -30,6 +30,7 @@
           "run",
           "run_once",
           "role_run",
+          "resume",
           "preflight",
           "authoring",
           "doctor",

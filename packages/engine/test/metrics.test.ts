@@ -93,6 +93,7 @@ interface ExecInput {
   createdAt?: string;
   completedAt?: string | null;
   outcome?: Record<string, unknown> | null;
+  resumeSkipped?: Record<string, unknown>;
 }
 
 function writeSession(
@@ -128,6 +129,7 @@ function writeSession(
         outcome: execution.outcome === undefined ? { status: 'complete' } : execution.outcome,
         error: null,
         failure_reason: null,
+        ...(execution.resumeSkipped ? { resume_skipped: execution.resumeSkipped } : {}),
       }),
     );
   }
@@ -226,6 +228,23 @@ test('counts a revision and keeps routed_from across a failed retry', () => {
   expect((metrics.totals as Record<string, unknown>).revisions).toBe(1);
   expect((metrics.totals as Record<string, unknown>).revisions_reset).toBe(1);
   expect(metrics.workflow_hash).toBe('abc123');
+});
+
+test('counts fresh starts and expired resumes, and a session without them reports zero', () => {
+  const workspace = workspaceWith('once.yaml', ONCE);
+  const status = { session_id: 'exp', workflow_id: 'once', workflow_path: '.migent/workflows/once.yaml', status: 'completed', created_at: at(0), updated_at: at(10) };
+  writeSession(workspace, 'exp', status, [
+    { id: '0001-plan--attempt-01', order: 1, stage: 'plan', status: 'completed' },
+    { id: '0002-plan--attempt-02', order: 2, stage: 'plan', status: 'completed', resumeSkipped: { source_execution_id: '0001-plan--attempt-01', reason: 'expired' } },
+  ], [
+    event(1, 'resume.expired', null, { data: { stage_id: 'plan', source_execution_id: 'x', action: 'resume', origin: 'policy' } }),
+    event(2, 'resume.expired', null, { data: { stage_id: 'plan', source_execution_id: 'y', action: 'fresh', origin: 'policy' } }),
+    event(3, 'resume.decided', null, { data: { stage_id: 'plan', source_execution_id: 'z', choice: 'resume', origin: 'human' } }),
+  ]);
+  const metrics = sessionMetrics(workspace, 'exp', registryOf({ fake: new FakeClient() }));
+  expect(metrics.totals).toMatchObject({ fresh_starts: 1, expired_resumes: 2 });
+  const executions = metrics.executions as Record<string, unknown>[];
+  expect(executions.map((item) => item.fresh_reason)).toEqual([null, 'expired']);
 });
 
 test('a failed attempt then a success is not a revision', () => {

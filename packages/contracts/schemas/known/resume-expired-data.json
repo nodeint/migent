@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/known/resume-expired-data.json",
+  "type": "object",
+  "required": [
+    "stage_id",
+    "source_execution_id",
+    "action",
+    "origin",
+    "policy",
+    "estimate"
+  ],
+  "properties": {
+    "stage_id": {
+      "type": "string"
+    },
+    "source_execution_id": {
+      "type": "string"
+    },
+    "action": {
+      "anyOf": [
+        {
+          "type": "string",
+          "const": "ask"
+        },
+        {
+          "type": "string",
+          "const": "fresh"
+        },
+        {
+          "type": "string",
+          "const": "resume"
+        }
+      ]
+    },
+    "origin": {
+      "anyOf": [
+        {
+          "type": "string",
+          "const": "human"
+        },
+        {
+          "type": "string",
+          "const": "stage"
+        },
+        {
+          "type": "string",
+          "const": "policy"
+        },
+        {
+          "type": "string",
+          "const": "default"
+        }
+      ]
+    },
+    "policy": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "estimate": {
+      "type": "object",
+      "patternProperties": {
+        "^.*$": {}
+      }
+    }
+  },
+  "title": "`resume.expired` event data"
+}

@@ -30,6 +30,11 @@ export function manifestStatusToSession(manifestStatus: string | null): string {
 /** The latest execution facts a detector reads. Structurally compatible with `ExecutionSnapshot`. */
 export interface StopFacts {
   readonly outcomeStatus?: string | null;
+  /**
+   * A stage-level fact, not a property of an execution row: the stage has a resume decision pending
+   * (`resume.expired` with `ask` and no later `resume.decided`).
+   */
+  readonly pendingResume?: boolean;
 }
 
 export type StageStopName = Extract<(typeof SESSION_STATUS_CATALOG)[number], { kind: 'stage_stop' }>['name'];
@@ -38,6 +43,7 @@ export type StageStopName = Extract<(typeof SESSION_STATUS_CATALOG)[number], { k
 export const STAGE_STOP_DETECTORS: Record<StageStopName, (latest: StopFacts) => boolean> = {
   blocked: (latest) => latest.outcomeStatus === 'blocked',
   question: (latest) => latest.outcomeStatus === 'question',
+  expired: (latest) => latest.pendingResume === true,
 };
 
 /** Stage-stop statuses, lowest precedence first. */
@@ -50,6 +56,43 @@ export function stageStopsByPrecedence(): StageStopName[] {
 /** The stage-stop status the latest execution is in, or null. */
 export function stageStopStatus(latest: StopFacts): StageStopName | null {
   return stageStopsByPrecedence().find((name) => STAGE_STOP_DETECTORS[name](latest)) ?? null;
+}
+
+/** The session state a stop's resolution is judged against. */
+export interface StopResolutionState {
+  sessionStatus: string;
+  resumes?: readonly ResolutionEvent[] | null;
+}
+
+/**
+ * Every stage stop of one stage that no event has resolved, lowest precedence first. Without a pending resume this is
+ * exactly `stageStopStatus` kept when `stopResolved` is false: zero or one stop. With one, each `session.active`
+ * stop is resolved by its events alone: the pending expiry is recorded after that resolution, and it is what keeps
+ * the session out of `active`, so the session-status precondition of `stopResolved` would misread the reply.
+ */
+export function unresolvedStageStops(
+  facts: StopFacts,
+  executionId: string | null,
+  state: StopResolutionState,
+): StageStopName[] {
+  if (facts.pendingResume !== true) {
+    const stop = stageStopStatus(facts);
+    const resolved = stop !== null && executionId !== null && stopResolved(stop, executionId, state);
+    return stop === null || resolved ? [] : [stop];
+  }
+  const resolvedByEvent = (name: StageStopName): boolean =>
+    executionId !== null && (state.resumes ?? []).some((event) => isStopResolutionEvent(event, name, executionId));
+  return stageStopsByPrecedence()
+    .filter((name) => STAGE_STOP_DETECTORS[name](facts))
+    .filter((name) => rowOf(name)?.resolution?.event !== 'session.active' || !resolvedByEvent(name));
+}
+
+/** The stop that wins among a stage's unresolved stops (they arrive in precedence order). */
+export const firstUnresolvedStop = (stops: readonly StageStopName[]): StageStopName | null => stops[0] ?? null;
+
+/** The stop reason a run reports for a status: the catalog exit name (`resume_expired` for `expired`). */
+export function stopReasonFor(status: string): string {
+  return rowOf(status)?.exit ?? status;
 }
 
 /** The highest-precedence stage stop among `statuses`, or null. */
@@ -122,6 +165,7 @@ export function changeReason(
   outcome: { blocker?: string | null; decision?: string | null; question?: string | null } | null,
 ): string | null {
   if (status === 'question') return outcome?.question || 'question';
+  if (status === 'expired') return 'resume_expired';
   if (status === 'blocked') return outcome?.blocker || 'blocked';
   if (status === 'cancelled') return 'cancelled';
   if (status === 'completed') return outcome?.decision || 'completed';

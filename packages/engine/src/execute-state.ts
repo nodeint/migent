@@ -1,8 +1,8 @@
 import path from 'node:path';
 
 import { EXIT_CATALOG, exitCode } from '@nodeint/migent-contracts';
-import type { ExecutionSnapshot, ScheduleState } from '@nodeint/migent-kernel';
-import { ConfigurationError, NextStage, nextStage, NextStageError, Stop } from '@nodeint/migent-kernel';
+import type { ExecutionSnapshot, PendingResumeStop, ScheduleState } from '@nodeint/migent-kernel';
+import { ConfigurationError, NextStage, nextStage, NextStageError, pendingResumeStops, Stop } from '@nodeint/migent-kernel';
 import { readParsedEvents } from '@nodeint/migent-session';
 import { isRecord, type WorkflowDocument } from '@nodeint/migent-workflow';
 
@@ -59,6 +59,21 @@ export function selectedStage(
   if (selected instanceof NextStageError) throw new ConfigurationError(selected.message);
   if (selected instanceof NextStage || selected instanceof Stop) return selected;
   throw new ConfigurationError('no eligible stage');
+}
+
+/**
+ * Both scheduling inputs that come from the session's events, from one read: the resume events that resolve
+ * stops, and the resume decisions the session waits for.
+ */
+export function resumeInputs(
+  workspace: string,
+  sessionId: string,
+): { resumes: ReturnType<typeof blockResumes>; pendingResumes: PendingResumeStop[] } {
+  const events = readParsedEvents(path.join(workspace, '.migent', 'sessions', sessionId, 'events.jsonl'));
+  return {
+    resumes: events.map((event) => ({ event: event.event, executionId: event.executionId, data: event.data })),
+    pendingResumes: pendingResumeStops(events),
+  };
 }
 
 export function blockResumes(

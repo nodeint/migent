@@ -26,13 +26,14 @@ import { isRoleStage, loadNamedWorkflow, type RoleStageSpec, type StageSpec, typ
 
 import { AgentToolRunner, type RunResult } from './agent-runner.js';
 import { PendingStageReply } from './execute-state.js';
+import { answersQuestion, freshStagePrompt, gateStageResume, resumeExpiredStage } from './resume-dispatch.js';
 import { ensureSessionBaseline } from './run-when.js';
 import { skipUnlessRunWhenMatches } from './run-when-skip.js';
 import { roleStartLine, stageFinishLine } from './stage-lines.js';
 import { runVerifyOnlyStage } from './verify-only.js';
 
 export { EXECUTE_EXIT_CODES, type ExecuteResult, PendingStageReply } from './execute-state.js';
-export { blockResumes, executeFinal, optionalText, selectedStage, text } from './execute-state.js';
+export { blockResumes, executeFinal, optionalText, resumeInputs, selectedStage, text } from './execute-state.js';
 export { roleStartLine, stageFinishLine } from './stage-lines.js';
 
 export interface StageDispatchRequest {
@@ -121,10 +122,16 @@ export class StageDispatchResult {
   }
 }
 
+/** `execution_status` of the stage result of a resume that stopped for a decision. */
+export const RESUME_EXPIRED_STAGE = 'resume_expired';
+
 export interface NamedStageRun {
   readonly runner: AgentToolRunner;
+  /** An expired resume the gate turned into a fresh conversation: the source it would have resumed. */
+  readonly freshFrom?: string | null;
   readonly resolved?: { workflow: WorkflowDocument; target: StageTarget } | null;
   readonly onExecution?: (executionId: string) => void;
+  readonly scoped?: boolean;
 }
 
 export async function dispatchNamedStage(
@@ -135,8 +142,12 @@ export async function dispatchNamedStage(
   const { runner, onExecution } = run;
   const { sessionId, workflow, target } = resolveDispatchSession(workspace, request, run);
   assertStageDispatchable(workspace, workflow, { sessionId, stageId: request.stageId });
-  const resumeExecutionId = dispatchResumeExecution(workspace, workflow, { sessionId, stageId: request.stageId });
+  const fresh = run.freshFrom ?? null;
+  const resumeExecutionId = fresh === null
+    ? dispatchResumeExecution(workspace, workflow, { sessionId, stageId: request.stageId })
+    : null;
   const result = await runner.run({
+    resumeSkipped: fresh === null ? null : { source_execution_id: fresh, reason: 'expired' },
     client: target.client,
     model: target.model,
     options: { ...target.options },
@@ -148,6 +159,7 @@ export async function dispatchNamedStage(
     stageId: request.stageId,
     stageAttempt: request.stageAttempt,
     executionOrder: request.executionOrder,
+    allowCancelledSibling: run.scoped === true,
     onExecution,
   });
   return resultFromRun(result, sessionId);
@@ -175,7 +187,7 @@ function resolveDispatchSession(
 }
 
 // The execution whose conversation a dispatched stage continues, if any.
-function dispatchResumeExecution(
+export function dispatchResumeExecution(
   workspace: string,
   workflow: WorkflowDocument,
   target: { sessionId: string; stageId: string },
@@ -293,6 +305,10 @@ export interface StageDispatchTarget {
   readonly stageId: string;
   readonly status: Record<string, unknown>;
   readonly snapshots: readonly ExecutionSnapshot[];
+  /** The resume gate already judged this dispatch `fresh` and recorded it; do not judge it again. */
+  readonly judgedFresh?: string;
+  /** `session resume`: dispatch although another stage is cancelled. */
+  readonly scoped?: boolean;
 }
 
 export async function dispatchExecuteStage(
@@ -317,18 +333,20 @@ export async function dispatchExecuteStage(
   const target = freeze
     ? frozenStageTarget(freeze, stageId)
     : resolveStageTarget(workspace, { workflowId, stageId }, { registry: runner.registry });
-  const optionLabel =
-    Object.entries(target.options)
-      .map(([key, value]) => `${key}: ${value}`)
-      .join(', ') || 'default';
+  const gate = dispatch.judgedFresh === undefined
+    ? gateStageResume(run, { stageId, stageSpec, freeze })
+    : { verdict: 'fresh' as const, sourceExecutionId: dispatch.judgedFresh };
+  if (gate.verdict === 'ask') return resumeExpiredStage(sessionId);
   const { turn, prompt } = buildRoleStageTurn(
     { workspace, workflow, sessionId, stageId, stageSpec, snapshots },
-    { status, freeze, reply },
+    { status, freeze, reply, fresh: gate.verdict === 'fresh' },
   );
   const request: StageDispatchRequest = { workflowId, stageId, prompt, turn, sessionId };
   let loggedStart = false;
   const result: StageDispatchResult = await dispatchNamedStage(workspace, request, {
     runner,
+    freshFrom: gate.verdict === 'fresh' ? gate.sourceExecutionId : null,
+    scoped: dispatch.scoped,
     resolved: { workflow, target },
     onExecution: (executionId) => {
       onExecution?.(executionId);
@@ -337,7 +355,7 @@ export async function dispatchExecuteStage(
       log(
         roleStartLine(
           stageId,
-          { client: target.client, model: target.model, optionLabel },
+          { client: target.client, model: target.model, optionLabel: optionLabelOf(target) },
           { description: stageSpec.description, attempt: parseExecutionId(executionId)?.attempt ?? null },
         ),
       );
@@ -347,6 +365,11 @@ export async function dispatchExecuteStage(
   return result.toJson();
 }
 
+function optionLabelOf(target: StageTarget): string {
+  const label = Object.entries(target.options).map(([key, value]) => `${key}: ${value}`);
+  return label.join(', ') || 'default';
+}
+
 // Gathers the prompt inputs for a role stage and picks its turn kind and prompt.
 function buildRoleStageTurn(
   stage: Parameters<typeof selectStageTurn>[0],
@@ -354,10 +377,12 @@ function buildRoleStageTurn(
     status: Record<string, unknown>;
     freeze: ReturnType<typeof readWorkflowFreeze>;
     reply: PendingStageReply | null;
+    /** The expired resume became a fresh conversation: send the full stage prompt plus what the turn carried. */
+    fresh: boolean;
   },
 ): { turn: TurnKind; prompt: string } {
   const { workspace, workflow, sessionId, stageId, stageSpec, snapshots } = stage;
-  const { status, freeze, reply } = inputs;
+  const { status, freeze, reply, fresh } = inputs;
   const priorSessionId = storedPriorSessionId(status);
   const frozen = freezeSessionTask(workspace, sessionId);
   const roleInstructions = freeze
@@ -379,6 +404,7 @@ function buildRoleStageTurn(
     exhausted: verifyExhaustedExecution(snapshots, stageId),
     frozen,
     promptInput,
+    fresh,
   });
 }
 
@@ -436,12 +462,13 @@ function selectStageTurn(
     exhausted: ReturnType<typeof verifyExhaustedExecution>;
     frozen: ReturnType<typeof freezeSessionTask>;
     promptInput: Parameters<typeof buildStagePrompt>[0];
+    fresh: boolean;
   },
 ): { turn: TurnKind; prompt: string } {
   const { workspace, workflow, sessionId, stageId, stageSpec, snapshots } = stage;
   const { stageReply, exhausted, frozen, promptInput } = inputs;
-  const answers = stageReply !== null
-    && new SessionStore(workspace).questionStages(sessionId).some((row) => row.stageId === stageId);
+  const answers = stageReply !== null && answersQuestion(workspace, sessionId, stageId);
+  if (inputs.fresh) return freshStagePrompt(inputs, { stageSpec, answers });
   const interrupted = stageReply !== null && interruptedExecutionId(snapshots, stageId) !== undefined;
   if (stageReply !== null) {
     const turn = answers && !interrupted ? 'answers' : 'reply';

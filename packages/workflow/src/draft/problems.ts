@@ -43,6 +43,7 @@ export interface DraftStage {
   verifyTimeoutSec: DraftUnit<number | null>;
   artifact: DraftUnit<string | null>;
   resumeFrom: DraftUnit<string | null>;
+  onExpired: DraftUnit<'ask' | 'fresh' | 'resume' | null>;
   runWhen: DraftUnit<RunWhen | null>;
   routes: DraftUnit<Record<string, string | string[]>>;
   /** The stage's agent selection: empty for schema <=4 when `model` is absent. */

@@ -43,10 +43,39 @@ export const ClientSelection = Type.Object(
   },
 );
 
+/** What a resume does once the prompt cache may have expired. */
+export const ResumeOnExpired = Type.Union([Type.Literal('ask'), Type.Literal('fresh'), Type.Literal('resume')], {
+  $id: id('config/resume-on-expired'),
+  title: 'Resume on expired',
+  description: '`ask` stops for a human decision, `fresh` starts a new conversation, `resume` resumes anyway.',
+});
+
+/** Closed: an unknown key is an error. Both keys are optional here; `match` is the client and model it applies to. */
+export const ResumePolicyMatch = Type.Object(
+  {
+    client: Type.Optional(NonBlankString),
+    model: Type.Optional(Type.String({ pattern: '\\S', description: 'A model name glob.' })),
+  },
+  { $id: id('config/resume-policy-match'), title: 'Resume policy match', description: 'The client and model glob a policy applies to.', additionalProperties: false },
+);
+
+/** Closed: an unknown key is an error. */
+export const ResumePolicy = Type.Object(
+  {
+    match: Type.Optional(ResumePolicyMatch),
+    cache_ttl: Type.String({ pattern: '^\\d+(s|m|h)$', description: 'How long the prompt cache lives, such as `5m` or `1h`.' }),
+    margin: Type.Optional(Type.String({ pattern: '^\\d+(s|m|h)$', description: 'Safety margin subtracted from `cache_ttl`.' })),
+    min_context_tokens: Type.Optional(Type.Integer({ minimum: 0, description: 'Below this context size an expired cache is not worth guarding.' })),
+    on_expired: Type.Optional(ResumeOnExpired),
+  },
+  { $id: id('config/resume-policy'), title: 'Resume policy', description: 'A guard for resuming a conversation after the prompt cache may have expired.', additionalProperties: false },
+);
+
 const agentFields = {
   model: NonBlankString,
   effort: NonBlankString,
   client: nullable(ClientSelection),
+  resume_policy: NonBlankString,
 };
 
 /** Field definitions shared by every agent shape, none required. */
@@ -55,6 +84,7 @@ export const AgentFields = Type.Object(
     model: Type.Optional(agentFields.model),
     effort: Type.Optional(agentFields.effort),
     client: Type.Optional(agentFields.client),
+    resume_policy: Type.Optional(agentFields.resume_policy),
   },
   { $id: id('config/agent-fields'), title: 'Agent fields' },
 );
@@ -67,12 +97,22 @@ export const NamedAgentFragment = Type.Object(
 
 /** An inline agent replaces wholesale, so it is complete when supplied. */
 export const InlineAgent = Type.Object(
-  { model: agentFields.model, effort: Type.Optional(agentFields.effort), client: Type.Optional(agentFields.client) },
+  {
+    model: agentFields.model,
+    effort: Type.Optional(agentFields.effort),
+    client: Type.Optional(agentFields.client),
+    resume_policy: Type.Optional(agentFields.resume_policy),
+  },
   { $id: id('config/inline-agent'), title: 'Inline agent', description: 'A complete agent definition.' },
 );
 
 export const ResolvedAgent = Type.Object(
-  { model: agentFields.model, effort: Type.Optional(agentFields.effort), client: Type.Optional(agentFields.client) },
+  {
+    model: agentFields.model,
+    effort: Type.Optional(agentFields.effort),
+    client: Type.Optional(agentFields.client),
+    resume_policy: Type.Optional(agentFields.resume_policy),
+  },
   { $id: id('config/resolved-agent'), title: 'Agent (effective)', description: 'A named agent after layers merge.' },
 );
 
@@ -115,6 +155,7 @@ export const ConfigLayer = Type.Object(
     schema_version: Type.Optional(SchemaVersion),
     agents: Type.Optional(Type.Record(Type.String(), NamedAgentFragment)),
     roles: Type.Optional(Type.Record(Type.String(), RoleEntry)),
+    resume_policies: Type.Optional(Type.Record(Type.String(), ResumePolicy)),
   },
   { $id: id('config/layer'), title: 'Config file', description: '`config.yaml` or `config.local.yaml`.' },
 );
@@ -124,6 +165,7 @@ export const EffectiveConfig = Type.Object(
     schema_version: Type.Optional(SchemaVersion),
     agents: Type.Optional(Type.Record(Type.String(), Type.Union([ResolvedAgent, AgentPlaceholder]))),
     roles: Type.Record(Type.String(), RoleEntry),
+    resume_policies: Type.Optional(Type.Record(Type.String(), ResumePolicy)),
   },
   { $id: id('config/effective'), title: 'Effective config', description: 'The config after layers merge.' },
 );
@@ -131,4 +173,5 @@ export const EffectiveConfig = Type.Object(
 export type ConfigLayer = Static<typeof ConfigLayer>;
 export type EffectiveConfig = Static<typeof EffectiveConfig>;
 export type RoleEntry = Static<typeof RoleEntry>;
+export type ResumePolicy = Static<typeof ResumePolicy>;
 export type InlineAgent = Static<typeof InlineAgent>;

@@ -29,6 +29,8 @@ export interface ExecutionRow {
   createdAt: string | null;
   completedAt: string | null;
   skip: Record<string, unknown> | null;
+  /** Why this execution started a new conversation instead of resuming (`expired`), from `resume_skipped`. */
+  freshReason: string | null;
 }
 
 export function sessionIsCorrupt(sessionDirectory: string): boolean {
@@ -132,6 +134,7 @@ export function executionRow(directoryName: string, raw: Record<string, unknown>
     createdAt: text(raw.created_at),
     completedAt: text(raw.completed_at),
     skip: isRecord(raw.skip) ? raw.skip : null,
+    freshReason: isRecord(raw.resume_skipped) ? text(raw.resume_skipped.reason) : null,
   };
 }
 

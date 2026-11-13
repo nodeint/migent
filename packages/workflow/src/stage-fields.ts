@@ -422,3 +422,22 @@ export function stageResumeFromUnchecked(stage: Record<string, unknown>, stageId
   if (!Object.hasOwn(sessionMap, 'resume_from') || (sessionMap.resume_from === null || sessionMap.resume_from === undefined)) return null;
   return requiredString(sessionMap.resume_from, `stages.${stageId}.session.resume_from`);
 }
+
+const ON_EXPIRED_VALUES = ['ask', 'fresh', 'resume'] as const;
+type OnExpired = (typeof ON_EXPIRED_VALUES)[number];
+
+/** Reads `session.on_expired`; it needs no dependency, so the checked and unchecked reads are the same. */
+export function stageOnExpired(stage: Record<string, unknown>, stageId: string): OnExpired | null {
+  if (!Object.hasOwn(stage, 'session') || (stage.session === null || stage.session === undefined)) return null;
+  const { session } = stage;
+  // The shape of `session` itself is reported once, by `stageResumeFromUnchecked`.
+  if (!isRecord(session)) return null;
+  const value = session.on_expired;
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'string' || !(ON_EXPIRED_VALUES as readonly string[]).includes(value)) {
+    throw new ConfigurationError(`stages.${stageId}.session.on_expired must be one of ${ON_EXPIRED_VALUES.join(', ')}: ${pyRepr(String(value))}`);
+  }
+  return value as OnExpired;
+}
+
+export const stageOnExpiredUnchecked = stageOnExpired;

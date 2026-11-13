@@ -287,6 +287,12 @@ stage again. The invalid file stays in the execution directory for diagnosis. Un
 protocol 2 the same flow applies to `question-request.json`, recorded as
 `corrections.question_file` with `failure_reason: question_file_invalid`.
 
+## Expired resumes
+
+A third stop kind, besides blockers and questions: the resume policy found the prompt cache expired and asked
+you. The session status is `expired` and `migent session resume <session> resume|fresh` answers it. Replies you
+gave with `--reply` are kept and used once, after the decision. See [sessions](sessions.md#expired-resumes).
+
 ## Resume and verification
 
 After an answer, Migent creates a new execution and continues the same

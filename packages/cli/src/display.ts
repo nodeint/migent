@@ -202,10 +202,33 @@ function executionLines(snapshot: Record<string, unknown>): Line[] {
   return [['execution', value]];
 }
 
+/** What a human needs to choose a resume: idle time against the threshold, policy, TTL, margin, and context size. */
+export function describeResumeEstimate(decision: Record<string, unknown>): string {
+  const estimate = isRecord(decision.estimate) ? decision.estimate : null;
+  if (estimate === null) return 'no estimate recorded';
+  const seconds = (value: unknown): string => (typeof value === 'number' ? `${value}s` : 'unknown');
+  const context = typeof estimate.context_tokens === 'number' ? `${estimate.context_tokens} tokens` : 'unknown (no usage reported)';
+  const policy = nonEmptyString(decision.policy) ? `policy ${decision.policy}, ` : '';
+  return `${policy}idle ${seconds(estimate.idle_seconds)} of ${seconds(estimate.threshold_seconds)} allowed `
+    + `(cache_ttl ${seconds(estimate.cache_ttl_seconds)}, margin ${seconds(estimate.margin_seconds)}), context ${context}`;
+}
+
+/** One pending resume decision: the waiting stage, its source, the evidence, and the command that decides it. */
+export function formatResumeDecision(decision: Record<string, unknown>, sessionId: string): string {
+  const stage = String(decision.stage_id ?? '');
+  const source = String(decision.source_execution_id ?? '');
+  const since = nonEmptyString(decision.raised_at) ? `, waiting since ${decision.raised_at}` : '';
+  return `${stage} waits for a decision (prompt cache expired; source ${source}${since}; ${describeResumeEstimate(decision)}). `
+    + `Run: migent session resume ${sessionId} <resume|fresh> --stage ${stage}`;
+}
+
 function attentionLines(snapshot: Record<string, unknown>): Line[] {
   const lines: Line[] = recordList(snapshot.exit_anomalies).map((anomaly) => ['exit_anomaly', formatExitAnomaly(anomaly)]);
   if (nonEmptyString(snapshot.blocker)) lines.push(['blocked', snapshot.blocker]);
   for (const item of recordList(snapshot.questions)) lines.push(['question', formatQuestion(item)]);
+  for (const decision of recordList(snapshot.resume_decisions)) {
+    lines.push(['resume', formatResumeDecision(decision, nonEmptyString(snapshot.session_id) ? snapshot.session_id : '<session>')]);
+  }
   const skippedStages = recordList(snapshot.skipped_stages);
   if (skippedStages.length > 0) {
     lines.push(['skipped', skippedStages.map((stage) => String(stage.stage_id ?? '')).join(', ')]);
@@ -253,11 +276,32 @@ export function printWatchSnapshot(snapshot: Record<string, unknown>): void {
   for (const [label, value] of lines) process.stdout.write(`${label}  ${value}\n`);
 }
 
-export function printWatchEvent(event: Record<string, unknown>): void {
+/** A live `resume.expired` event as the pending decision it raises, so follow shows what show shows. */
+function expiredDecision(event: Record<string, unknown>, sessionId: string): string | null {
+  const data = isRecord(event.data) ? event.data : null;
+  if (data === null || data.action !== 'ask' || !isRecord(data.estimate)) return null;
+  const { estimate } = data;
+  return formatResumeDecision({
+    stage_id: data.stage_id,
+    source_execution_id: data.source_execution_id,
+    policy: data.policy,
+    estimate: {
+      idle_seconds: estimate.idleSec,
+      threshold_seconds: estimate.thresholdSec,
+      cache_ttl_seconds: estimate.cacheTtlSec,
+      margin_seconds: estimate.marginSec,
+      context_tokens: estimate.contextTokens,
+    },
+  }, sessionId);
+}
+
+export function printWatchEvent(event: Record<string, unknown>, sessionId = '<session>'): void {
   const eventName = event.event;
   const stageId = event.stage_id;
   if (typeof eventName !== 'string' || typeof stageId !== 'string') return;
-  const summary = typeof event.summary === 'string' && event.summary ? ` · ${event.summary}` : '';
+  const decision = eventName === 'resume.expired' ? expiredDecision(event, sessionId) : null;
+  const text = decision ?? (typeof event.summary === 'string' ? event.summary : '');
+  const summary = text === '' ? '' : ` · ${text}`;
   const label = eventName.replace(/^provider\./, '').replaceAll('_', ' ');
   process.stdout.write(`${formatWatchTimestamp(event.timestamp)} ${stageId} ${label}${summary}\n`);
 }

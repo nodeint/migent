@@ -127,6 +127,7 @@ export function continueSession(session: string, options: OptionValues): number 
       continueFailed: true,
       refreshWorkflow: options.refreshWorkflow === true,
       reply,
+      resumeTarget: options.resumeTarget === true,
       ...outputFlags(options),
     });
   }
