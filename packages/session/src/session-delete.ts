@@ -131,7 +131,9 @@ function containmentError(workspace: string, id: string | null): string | null {
 function treeBytes(target: string): number {
   const stat = lstatOrNull(target);
   if (stat === null) return 0;
-  let total = typeof stat.blocks === 'number' ? stat.blocks * BLOCK_BYTES : stat.size;
+  // Windows reports `blocks` as 0 for every entry, so only there the logical size stands in for allocation.
+  const allocated = typeof stat.blocks === 'number' && process.platform !== 'win32';
+  let total = allocated ? (stat.blocks as number) * BLOCK_BYTES : stat.size;
   if (stat.isDirectory()) {
     for (const name of readdirSync(target)) total += treeBytes(path.join(target, name));
   }
