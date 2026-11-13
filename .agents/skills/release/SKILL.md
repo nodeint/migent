@@ -1,121 +1,59 @@
 ---
 name: release
 description: >
-  Release Migent through a release pull request: update the changelog, bump all
-  workspace packages, build and test, then squash-merge it. Watch release.yml
-  tag the commit, fast-forward main, create the GitHub Release, then publish
-  to npm. Use when the user asks to release, tag a version, or runs /release.
+  Release Migent: prepare and review notes before opening a release PR,
+  wait for CI, then merge with authorization and verify GitHub and npm publishing.
+  Use for release requests, a named version, or /release.
 metadata:
   short-description: "Release Migent on npm"
 ---
 
 # Release Migent
 
-Follow the rules in `CONTRIBUTING.md` and the flow and pitfalls below.
-Never commit directly to `main` or `next`, push feature/release changes directly
-to either branch, bypass branch protection, or tag an unmerged release branch.
-`main` is advanced only by `release.yml`, never by hand.
+Follow `CONTRIBUTING.md`. Work from the repository root and reply in the user's language.
+Sequence: prepare -> review notes -> open PR and pass CI -> authorized merge -> verify.
+The release workflow owns stage routing; this skill defines each step's requirements.
 
-Work from the repository root. Reply in the user's language.
+## Prepare
 
-## Version and authorization
+- Fetch `origin` and tags. Require a clean tree on entry; preserve unrelated changes.
+  On revisions, retain only this release's expected edits. Resume an existing release
+  branch/PR instead of duplicating it.
+- Check changes since the previous release tag, including changes missing from Unreleased.
+  Stop if there is no user-facing change to release.
+- Use the named version; otherwise propose and confirm one before editing, relative to
+  the highest workspace package version or release tag:
 
-Use the version the user names. Otherwise propose one by Semantic Versioning
-from the categories in `## Unreleased`, relative to the highest of
-`packages/*/package.json` and the `v*` tags, give the reason, and confirm it
-before publishing:
+| Categories | Before 1.0 | From 1.0 |
+| --- | --- | --- |
+| Breaking, Removed | minor | major |
+| Added, Deprecated | minor | minor |
+| Changed, Fixed, Security only | patch | patch |
 
-| Unreleased contains | Before 1.0 | From 1.0 |
-|---|---|---|
-| `Breaking` or `Removed` | minor (0.5.6 → 0.6.0) | major |
-| `Added` or `Deprecated` | minor | minor |
-| only `Changed`, `Fixed`, `Security` | patch | patch |
+- CLI or public wire incompatibilities are Breaking; internal-only changes are not.
+  Stop if the target tag exists locally/remotely or the version was ever published to npm.
+- Run `pnpm setup:git`; create `release/X.Y.Z` from current `origin/next` with
+  `git switch --no-track -c release/X.Y.Z origin/next`.
+  Its upstream must be absent or `origin/release/X.Y.Z`.
+- Draft `CHANGELOG.md` locally. Do not bump versions, commit, push, or open a PR yet.
 
-A breaking wire change in `@nodeint/migent-contracts` or in CLI behavior is
-`Breaking`. Changes to internal packages that leave CLI behavior unchanged are
-not. An explicit request to release a named
-version authorizes preparing and pushing a release PR. Merging that PR tags,
-publishes to npm, and advances `main`, so merge only when the user has
-explicitly authorized the merge.
-Do not ask again for actions already authorized.
+## Notes and review
 
-Before merging, check the repository prerequisites below: the npm trusted
-publishers allow `npm publish` and no `main` ruleset restricts updates (only
-`main: immutable release history` remains). Stop if they do not.
+- Compare notes with `git log <previous-tag>..HEAD` for completeness and categorization.
+- Move Unreleased under exact heading `## X.Y.Z`, without a date; leave Unreleased empty.
+  Never rewrite released notes. An unchanged changelog blocks the release.
+- Category order: Breaking, Added, Changed, Deprecated, Removed, Fixed, Security;
+  omit empty categories. Each bullet explains the user-visible change in one or two
+  sentences and ends with its PR link. Breaking entries include migration steps.
+  Exclude internal refactors, CI, tests, and internal docs.
+- Keep full notes for the five newest versions; replace older notes with GitHub Release
+  links under `## Older versions`, newest first, preserving existing links.
+- Review the version, notes, and local diff before opening a PR. Resolve findings locally;
+  do not require CI or an existing release commit for notes approval.
 
-## Prepare the release branch
+## Open PR and pass CI
 
-```bash
-git fetch origin --tags
-git status --short
-```
-
-Require a clean working tree. If unrelated changes are present, stop and
-explain; do not stash, discard, or include them. Feature work must reach next
-through its own PR before the release.
-
-Run `pnpm setup:git`, then create `release/X.Y.Z` from current `origin/next`
-using `git switch --no-track -c release/X.Y.Z origin/next`. For an existing
-release branch/PR, inspect and resume it instead of creating a duplicate.
-Its upstream must be absent or `origin/release/X.Y.Z`, never `origin/main` or `origin/next`.
-
-Stop if `vX.Y.Z` exists locally or on `origin`. Versions already sent to npm
-are single-use, including versions that were unpublished. Use the next patch
-for a failed release; never move an existing release tag.
-
-## Prepare the release
-
-The release commit changes only `CHANGELOG.md`, `packages/*/package.json`, and
-`pnpm-lock.yaml` when that file changed.
-
-### Changelog
-
-Every release updates `CHANGELOG.md`. Stop when it is unchanged.
-
-Move the body of `## Unreleased` under `## X.Y.Z` (no date; `release.yml`
-matches the exact heading). Leave `## Unreleased` empty above that heading. Do
-not rewrite a version section that is already released.
-
-Notes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/):
-
-- Categories in this order, omitting empty ones: `Breaking`, `Added`,
-  `Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`.
-- One bullet per change, one or two sentences on what users see or must do,
-  ending with the PR link, e.g. `(#120)`. Details belong in the PR and docs.
-- Every `Breaking` bullet says how to migrate.
-- Leave out changes users cannot see: refactors, CI, tests, internal docs.
-
-```markdown
-## 0.6.0
-
-### Breaking
-
-- `session_id` is now a string in `--json` output. Compare ids as strings. (#117)
-
-### Added
-
-- `migent session rename <session> "<title>"` changes a session title. (#118)
-```
-
-Compare `git log <previous-tag>..HEAD` with those notes. Add every user-facing
-change the notes missed, in the same voice. If `## Unreleased` is empty, write
-that section from the log before moving it. Stop when the log has no
-user-facing change to record.
-
-Keep the full notes of the five newest versions, newest first. Replace the
-notes of every older version with one link, newest of those first. Keep links
-that are already there.
-
-```markdown
-## Older versions
-
-- [0.1.1](https://github.com/nodeint/migent/releases/tag/v0.1.1)
-```
-
-Do not put the version in `docs/backlogs.md`. That line records when the
-backlog was written.
-
-### Validate and open the release PR
+Only after notes approval:
 
 ```bash
 pnpm -r exec npm pkg set version=X.Y.Z
@@ -124,102 +62,37 @@ pnpm build
 pnpm test
 ```
 
-`pnpm -r` sets the same version on every package under `packages/`. The CLI
-reads its version from `packages/cli/package.json`. Do not edit
-`packages/cli/src/version.ts`.
-
-Build and tests must pass locally. Run the suite with client CLIs off `PATH`
-as `CONTRIBUTING.md` requires. Stop and report failures. Stage only the release files
-named above, commit with `Release X.Y.Z`, then push the branch explicitly:
+- All workspace packages use the same version. Run tests with client CLIs off PATH
+  as required by `CONTRIBUTING.md`; stop and report failures.
+- Verify the final diff matches the reviewed notes and version. Only `CHANGELOG.md`,
+  `packages/*/package.json`, and a changed `pnpm-lock.yaml` belong in the release commit.
+  Do not edit `packages/cli/src/version.ts` or the version recorded in `docs/backlogs.md`.
+- Commit as `Release X.Y.Z`, then push and open a draft PR:
 
 ```bash
 git push -u origin refs/heads/release/X.Y.Z:refs/heads/release/X.Y.Z
 gh pr create --draft --base next --head release/X.Y.Z --title "Release X.Y.Z" --body-file <notes>
 ```
 
-Wait for all three CI jobs to pass. Mark the PR ready when green. If merging
-has not been authorized, report the PR URL and stop before merging.
-After authorization, squash-merge the green PR with the subject
-`Release X.Y.Z (#N)`; the workflow acts only on that subject. Never bypass
-required checks.
+Wait for Ubuntu, macOS, and Windows CI on the current head; mark ready only when green.
+If new commits land on next, update the branch and repeat notes review and checks before
+merging. Any change to reviewed notes or version requires another notes review.
 
-## Watch release.yml
+## Merge and verify
 
-Merging pushes to `next` and starts `.github/workflows/release.yml`. Do not
-create or push the tag yourself. Find the run for the merge commit and watch it:
-
-```bash
-gh run list --workflow release.yml --branch next --commit <merge-sha> \
-  --json databaseId,status,conclusion,url
-gh run watch <databaseId> --exit-status
-gh release view vX.Y.Z
-```
-
-If the run list is empty, wait 30 seconds and list again, up to five times.
-
-The workflow runs three jobs. `plan` checks the package versions against the
-subject. `github` takes the `## X.Y.Z` section of `CHANGELOG.md` as the notes,
-tags the commit, fast-forwards `main` to it, and creates the GitHub Release.
-`npm` then checks out the tag, builds, runs `npm publish` in dependency order
-with GitHub OIDC (no npm token), and installs the published CLI. Nobody
-approves packages on npm. Say the run succeeded only when its conclusion is
-success, and include the run URL.
-
-If the run fails, report the failing job and step. Do not move the tag or force
-`main`. Once the tag exists, `main` is already at the release commit. Rerun the
-failed jobs (`gh run rerun <id> --failed`) after the cause is fixed; each step
-skips work already done. To publish an existing tag again without a run to
-rerun, dispatch only the `npm` job:
-
-```bash
-gh workflow run release.yml --ref next -f version=X.Y.Z
-```
-
-If the version cannot be completed, release the next patch.
-
-## Verify
-
-After a successful run, confirm `origin/main` equals the tag's commit and
-`migent --version` from `npm i -g --prefer-online @nodeint/migent@X.Y.Z`
-reports `X.Y.Z`. Report the version, tag, run URL, GitHub Release URL, and the
-`main` result.
-
-## Repository prerequisites
-
-- The default branch is `next`. `.github/next-ruleset.json` requires PRs,
-  current-base `test (ubuntu-latest)`, `test (macos-latest)`, and
-  `test (windows-latest)`, linear history, and resolved conversations, with no
-  bypass actors. Squash merges; working branches are deleted after merge.
-- `.github/main-ruleset.json` blocks deletion and force-push with no
-  exceptions and has no update restriction, so the workflow's `GITHUB_TOKEN`
-  can fast-forward `main`. Delete any older `main: release maintainers only`
-  ruleset.
-- `v*` tags are immutable once pushed; only the workflow creates them.
-- Each package on npmjs.com has a GitHub Actions trusted publisher:
-  organization `nodeint`, repository `migent`, workflow `release.yml`, empty
-  environment, allowed action `npm publish`. A new package needs it before its
-  first release; trusted publishing cannot create a package, so publish its
-  first version by hand (see Pitfalls), add the trusted publisher, then
-  dispatch the `npm` job. Renaming `release.yml`, moving the repository, or changing a
-  manifest's `repository.url` breaks publishing until updated.
-- Publish order: `@nodeint/migent-contracts`, `-workflow`, `-prompts`,
-  `-kernel`, `-session`, `-engine`, `-doctor`, `-adapters`, `-registry`, then
-  `@nodeint/migent`. `pnpm -r pack` turns `workspace:*` into exact versions.
-
-## Pitfalls
-
-- Merge other PRs before the release PR, or rebase it and redo the changelog
-  after they land.
-- Version numbers are single-use on npm, even after unpublishing. Do not move
-  tags; release the next patch instead.
-- Deprecate a bad release, do not delete it:
-  `npm deprecate "@nodeint/migent@X.Y.Z" "Upgrade to X.Y.W"`.
-- `npm install` may fail with `ETARGET` for a few minutes after publishing;
-  use `--prefer-online`. Check each package with
-  `npm view "@nodeint/<package>@X.Y.Z" version`.
-- For a manual publish, `pnpm -r publish` hangs on the hidden 2FA prompt. Pack
-  with `pnpm -r pack --pack-destination <dir>` and `npm publish` each tarball in
-  the order above. Never run plain `npm publish` in a package directory; it
-  leaves `workspace:*` unresolved.
-- Everything is under the `@nodeint` org; npm rejected the unscoped `migent`,
-  and `@migent` is held only against squatting.
+- A named-version release request authorizes preparation and pushing the PR.
+  Merge requires explicit authorization; reuse authorization already given.
+- Before merging, check [publishing prerequisites](references/publishing.md).
+  Never bypass branch protection, push releases directly to main/next, force main,
+  or create/move release tags manually.
+- Squash-merge the green PR with subject `Release X.Y.Z (#N)`; this starts
+  `.github/workflows/release.yml`. It validates versions, tags, advances main,
+  creates the GitHub Release, and publishes to npm using OIDC.
+- Find the run by merge SHA with `gh run list --workflow release.yml --branch next
+  --commit <sha> --json databaseId,status,conclusion,url`, then watch with
+  `gh run watch <id> --exit-status`. If absent, retry every 30 seconds up to five times.
+- On failure, report the job and step and stop. See [recovery](references/publishing.md)
+  before retrying; a tag alone does not prove main or npm succeeded.
+- After success, fetch and confirm `origin/main` equals the tag commit; install
+  `npm i -g --prefer-online @nodeint/migent@X.Y.Z` and confirm `migent --version`.
+  Report version, tag, run URL/conclusion, GitHub Release URL, npm and main results.

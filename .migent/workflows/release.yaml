@@ -2,12 +2,18 @@ schema_version: 7
 id: release
 
 artifacts:
+  release_notes:
+    file: release_notes.md
+    description: Version, SemVer reason, source commit, previous tag, and draft release notes.
   release_pr:
     file: release_pr.md
-    description: Proposed version with its SemVer reason, release notes, release PR URL, and CI result.
+    description: Reviewed version and notes, PR URL, head commit, and CI results.
   release:
     file: release.md
-    description: Version, tag, release.yml run URL and conclusion, GitHub Release URL, npm and main verification.
+    description: Version, tag, run and Release URLs, npm and main verification.
+
+constraints:
+  - Follow .agents/skills/release/SKILL.md for release rules and step requirements.
 
 stages:
   - id: prepare
@@ -15,37 +21,43 @@ stages:
     max_revisions: 3
     ask: human
     instructions:
-      - Follow the release skill in .agents/skills/release/SKILL.md up to opening the release pull request. Do not merge.
-      - Use the version named in the task; otherwise propose one by the skill's version table and ask the human to confirm it before writing anything.
-      - Write the release notes by the skill's release-note rules, checking them against git log since the previous tag.
-      - Stop and ask when the working tree is not clean, the tag already exists, or build or tests fail.
-      - When revising, apply every review finding to the notes or version and update the pull request.
-    artifacts: [release_pr]
+      - Follow Prepare and Notes and review; draft the changelog locally without bumping versions, committing, pushing, or opening a PR.
+      - Confirm a proposed version with the human when none was named. Record the source commit and previous tag.
+      - On revisions, apply review findings locally and preserve only expected release edits.
+    artifacts: [release_notes]
 
   - id: review_notes
     role: reviewer
-    depends_on:
-      - prepare
+    depends_on: [prepare]
     instructions:
-      - Review the release pull request diff and release_pr.md against the release skill.
-      - Check that the version follows the version table for the recorded categories, and that no user-facing change since the previous tag is missing or miscategorized.
-      - Check the notes follow the release-note rules, including PR links and migration steps for Breaking entries.
-      - Check the release commit changes only CHANGELOG.md, packages/*/package.json, and pnpm-lock.yaml.
+      - Review release_notes.md and the local changelog diff against the source history and skill; check version, completeness, categories, PR links, and migration guidance.
+      - Review content only; no release commit, PR, or CI is required yet.
     decision:
       - approved:
-          when: Version and notes follow the skill, and CI on the release pull request passes.
-          navigate: publish
+          navigate: open_pr
       - revise:
-          when: The version, notes, or release commit need correction, or CI fails.
+          when: Version or notes need correction; list all findings.
           navigate: prepare
+
+  - id: open_pr
+    role: operator
+    ask: human
+    depends_on: [prepare, review_notes]
+    session:
+      resume_from: prepare
+    instructions:
+      - Follow Open PR and pass CI using the approved version and notes; verify the final diff and record the PR head and CI results.
+      - If source history or reviewed content changes, stop and request a return to notes preparation and review before proceeding.
+      - Stop and report check failures. Complete only when all required CI passes on the current head; do not merge.
+    artifacts: [release_pr]
 
   - id: publish
     role: operator
     ask: human
-    depends_on:
-      - review_notes
+    depends_on: [open_pr]
+    session:
+      resume_from: open_pr
     instructions:
-      - Ask the human to authorize the merge, showing the version, PR URL, and notes. Do not merge without that answer.
-      - After authorization, follow the release skill from merging through watching release.yml and verifying npm and main.
-      - Report a failing release.yml step and stop; never move a tag or force main.
+      - Follow Merge and verify. Show the version, notes, and PR URL; obtain merge authorization unless already given.
+      - Recheck current-head CI and publishing prerequisites before merging. Report release failures and stop.
     artifacts: [release]

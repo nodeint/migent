@@ -1,37 +1,36 @@
 # Plan template
 
-Use these sections in every plan, in the conversation or in a saved file.
+Keep it concise. Repeat the phase block as needed; omit inapplicable optional details.
 
 ```markdown
 # Plan: <outcome>
 
-## Design input
+## Goal and scope
 
-<Link to the approved design, the acceptance criteria AC1, AC2, ... it carries, and design gaps found.>
+<Goal, scope, constraints, and acceptance criteria.>
 
 ## Baseline
 
-<Files and existing tests the tasks touch, and the baseline results of the relevant checks.>
+<Relevant current state, checks run and results, and anything unverified.>
 
-## Tasks
+## Phases
 
-<T1, T2, ...: each with its goal, the design parts it realizes, files, tests, done condition, and the tasks it depends on.>
+### P1: <outcome> — <pending | in progress | blocked | complete>
 
-## Acceptance mapping
+- Scope and boundary: <What belongs here, why, and the resulting codebase state.>
+- Dependencies: <Prerequisites and any intermediate compatibility requirements.>
+- Completion and review: <Evidence and review conditions required before proceeding.>
 
-<Each AC mapped to the tasks and tests that prove it, with the command to run.>
+## Acceptance coverage
 
-## Documentation
+<Criteria mapped to phases and verification, including documentation and final integration.>
 
-<Documentation to update or add, and the task that owns it; or why no change is needed.>
+## Progress and blockers
 
-## Risks and open questions
-
-<Implementation risks, mitigations, assumptions, and unresolved questions. Solution risks belong to the design.>
+<Current phase, actual evidence, risks or unresolved questions, and next action.
+Note material plan revisions when applicable.>
 
 ## References
 
-<The approved design and other inputs needed downstream, with their purpose and exact paths.
-For prior session artifacts, use the snapshot paths received by this session; carry forward
-relevant earlier references. For repository files, use repository-relative paths.>
+<Sources needed to understand or resume the work, if any.>
 ```
