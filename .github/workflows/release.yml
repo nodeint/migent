@@ -191,14 +191,38 @@ jobs:
           done
 
       - name: Verify the published CLI
+        timeout-minutes: 16
         run: |
           version="${{ needs.plan.outputs.version }}"
-          for attempt in 1 2 3 4 5 6; do
-            if npm install -g --prefer-online "@nodeint/migent@$version" \
-              && [ "$(migent --version)" = "$version" ]; then
+          deadline=$((SECONDS + 900))
+          install_log="$RUNNER_TEMP/verify-cli.log"
+          while (( SECONDS < deadline )); do
+            remaining=$((deadline - SECONDS))
+            if timeout "${remaining}s" npm install -g --prefer-online \
+              --fetch-retries=0 --fetch-timeout=30000 \
+              "@nodeint/migent@$version" >"$install_log" 2>&1; then
+              cat "$install_log"
+              actual=$(migent --version) || exit 1
+              if [ "$actual" != "$version" ]; then
+                echo "::error::Expected CLI $version, got $actual"
+                exit 1
+              fi
               exit 0
+            else
+              install_status=$?
             fi
-            sleep 20
+            cat "$install_log"
+            if [ "$install_status" -ne 124 ] && ! grep -Eq \
+              '(ETARGET|E404|EAI_AGAIN|ENOTFOUND|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ESOCKETTIMEDOUT|E408|E429|E500|E502|E503|E504)' "$install_log"; then
+              echo "::error::CLI installation failed with a non-transient error"
+              exit "$install_status"
+            fi
+            remaining=$((deadline - SECONDS))
+            if (( remaining <= 0 )); then break; fi
+            delay=30
+            if (( remaining < delay )); then delay=$remaining; fi
+            echo "Registry not ready; retrying in ${delay}s (${remaining}s remaining)"
+            sleep "$delay"
           done
-          echo "::error::@nodeint/migent@$version did not install with the expected version"
+          echo "::error::@nodeint/migent@$version was not installable within 15 minutes"
           exit 1
