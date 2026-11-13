@@ -1,6 +1,6 @@
 {
   "name": "@nodeint/migent-workflow",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Workflow definition model, strict parser, draft collector, and catalog for Migent.",
   "keywords": [
     "ai",

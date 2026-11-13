@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.7.0
+
 ### Added
 
 - Resume policies decide whether a role resumes its conversation or starts fresh once the prompt cache has expired. Set `resume_policy` on an agent; `migent session resume <session> <decision>` answers a pending `ask` decision. See `docs/sessions.md`. ([#92](https://github.com/nodeint/migent/issues/92))
@@ -56,14 +58,9 @@
 - `@nodeint/migent-workflow` is a new package released with the others.
 - Schema `$id`s now use the raw GitHub URL of the schema file on `main` instead of `https://migent.dev/schemas`. A schema added on `next` is served at its URL only after a release. `StageView` is now exported. CLI `--help` exit text now comes from `EXIT_CATALOG` and is unchanged.
 
-## 0.5.3
-
-### Added
-
-- `client.type` is optional on an agent. When omitted, Migent runs each installed client's model-list command and uses the one client that lists the agent's `model` (OpenCode's `#variant` suffix is ignored), on every resolution and with no cache on disk. `effort` maps to the inferred client. No client listing the model is a `client-not-found` error, and several clients listing it is a `client-ambiguous` error; doctor reports both and a run refuses to start. `client.type` stays required when `client.options` is set (even an empty mapping). Inference is slower and depends on the machine's installed CLIs; set `client.type` to avoid both. Started sessions keep their frozen client.
-
 ## Older versions
 
+- [0.5.3](https://github.com/nodeint/migent/releases/tag/v0.5.3)
 - [0.5.2](https://github.com/nodeint/migent/releases/tag/v0.5.2)
 - [0.5.1](https://github.com/nodeint/migent/releases/tag/v0.5.1)
 - [0.5.0](https://github.com/nodeint/migent/releases/tag/v0.5.0)
