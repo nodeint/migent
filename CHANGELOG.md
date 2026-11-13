@@ -6,7 +6,7 @@
 
 ### Added
 
-- Resume policies decide whether a role resumes its conversation or starts fresh once the prompt cache has expired. Set `resume_policy` on an agent; `migent session resume <session> <decision>` answers a pending `ask` decision. See `docs/sessions.md`. ([#92](https://github.com/nodeint/migent/issues/92))
+- Once the prompt cache has expired, a resumed role can ask, start fresh or resume anyway. Define a `resume_policies` entry with `cache_ttl`, then set `resume_policy` on an agent or let `default` apply; answer a pending `ask` with `migent session resume <session> <decision>` ([configuration](https://github.com/nodeint/migent/blob/main/docs/agents.md#resume-policies)). ([#135](https://github.com/nodeint/migent/pull/135))
 
 ## 0.6.0
 
