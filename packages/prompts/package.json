@@ -1,6 +1,6 @@
 {
   "name": "@nodeint/migent-prompts",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Prompt templates and renderers for Migent.",
   "keywords": [
     "ai",

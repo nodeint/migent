@@ -1,6 +1,6 @@
 {
   "name": "@nodeint/migent-session",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Session store for Migent: sessions, events, ledger, metrics, and diagnostics.",
   "keywords": [
     "ai",

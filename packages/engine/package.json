@@ -1,6 +1,6 @@
 {
   "name": "@nodeint/migent-engine",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Workflow execution engine for Migent: stage dispatch, agent runs, verification, and views.",
   "keywords": [
     "ai",
