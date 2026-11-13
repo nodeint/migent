@@ -9,6 +9,7 @@ Node.js 22 or later (CI uses 24), pnpm 12.6.0; macOS, Linux, or Windows.
 ```bash
 pnpm install
 pnpm setup:git       # local branch and push safeguards; rerun after pulling hook changes
+pnpm lint
 pnpm build
 pnpm test:unit       # unit project: needs no build output
 pnpm test:integration # *.integration.test.ts: spawns real processes, needs a build
