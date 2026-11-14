@@ -2,6 +2,8 @@ import type { TSchema } from 'typebox';
 
 import * as O from './cli-output.js';
 import { LegacyLifecycleEvent, LifecycleEventV2, ProviderStreamRecord, ResumeDecidedData, ResumeExpiredData, SealedMetricsCurrent, SealedMetricsHistorical } from './known-shapes.js';
+import { SESSION_EVENT_SCHEMAS, SessionEvent } from './session-events.js';
+import { ExecutionQuestions, SessionDiagnostics, SessionExecution, SessionLockFile, SessionManifest, SessionNext, SessionQuestions, SessionStatusFile } from './session-files.js';
 
 export type Framing = 'document' | 'json-lines';
 export type ContractClass = 'produced' | 'passthrough';
@@ -79,4 +81,85 @@ export const KNOWN_SHAPES: readonly TSchema[] = [
   ResumeDecidedData,
   SealedMetricsHistorical,
   SealedMetricsCurrent,
+];
+
+// ---- persisted session files ------------------------------------------------------------------
+
+/** `guaranteed`: a breaking change needs a major release. `known`: opt-in description, never a guarantee. */
+export type StabilityClass = 'guaranteed' | 'known';
+export type SessionFileFraming = 'yaml' | 'document' | 'json-lines';
+
+export interface SessionFileEntry {
+  /** Stable key, used by the coverage guard. */
+  key: string;
+  /** Pattern relative to the session directory. */
+  path: string;
+  schema: TSchema;
+  class: StabilityClass;
+  framing: SessionFileFraming;
+}
+
+interface FileShape {
+  schema: TSchema;
+  class: StabilityClass;
+  framing: SessionFileFraming;
+}
+
+const f = (key: string, path: string, shape: FileShape): SessionFileEntry => ({ key, path, ...shape });
+
+export const SESSION_FILES: readonly SessionFileEntry[] = [
+  f('manifest', 'manifest.yaml', { schema: SessionManifest, class: 'guaranteed', framing: 'yaml' }),
+  f('status', 'status.json', { schema: SessionStatusFile, class: 'known', framing: 'document' }),
+  f('lock', 'session.lock', { schema: SessionLockFile, class: 'guaranteed', framing: 'document' }),
+  f('execution', 'executions/<id>/execution.json', { schema: SessionExecution, class: 'known', framing: 'document' }),
+  f('questions', 'questions.json', { schema: SessionQuestions, class: 'guaranteed', framing: 'document' }),
+  f('execution-questions', 'executions/<id>/questions.json', { schema: ExecutionQuestions, class: 'guaranteed', framing: 'document' }),
+  f('next', 'next.json', { schema: SessionNext, class: 'guaranteed', framing: 'document' }),
+  f('diagnostics', 'executions/<id>/diagnostics.json', { schema: SessionDiagnostics, class: 'known', framing: 'document' }),
+  f('events', 'events.jsonl', { schema: SessionEvent, class: 'guaranteed', framing: 'json-lines' }),
+];
+
+export interface SessionEventEntry {
+  event: string;
+  schema: TSchema;
+  class: 'known';
+}
+
+/** Every event name written to `events.jsonl`, in documentation order. */
+export const SESSION_EVENTS: readonly SessionEventEntry[] = SESSION_EVENT_SCHEMAS.map((entry) => ({ ...entry, class: 'known' as const }));
+
+export interface SessionEventTemplate {
+  /** Producer source file, relative to the repository root. */
+  file: string;
+  /** Template head, including the dot. */
+  head: string;
+  /** The suffix type that the type checker proves is a union of registered names. */
+  suffixType: 'SessionStatusName' | 'ExecutionStatus' | 'StageOutcomeStatus';
+}
+
+/** Event names built from a template. Each `<head><suffix>` is registered in `SESSION_EVENTS`. */
+export const SESSION_EVENT_TEMPLATES: readonly SessionEventTemplate[] = [
+  { file: 'packages/session/src/session-store-execution.ts', head: 'execution.', suffixType: 'ExecutionStatus' },
+  { file: 'packages/session/src/session-store-execution.ts', head: 'stage.', suffixType: 'StageOutcomeStatus' },
+  { file: 'packages/session/src/session-store-execution.ts', head: 'session.', suffixType: 'SessionStatusName' },
+  { file: 'packages/session/src/session-repair.ts', head: 'execution.', suffixType: 'ExecutionStatus' },
+  { file: 'packages/session/src/session-repair.ts', head: 'session.', suffixType: 'SessionStatusName' },
+];
+
+/** Persisted file names that producers write and this change does not describe. */
+export const SESSION_FILE_EXCLUSIONS: readonly { name: string; reason: string }[] = [
+  { name: 'config.yaml', reason: 'Project config; described by the config contracts.' },
+  { name: 'config.local.yaml', reason: 'Local config; described by the config contracts.' },
+  { name: 'workflow.yaml', reason: 'Authored workflow; described by the workflow contract.' },
+  { name: 'workflow.frozen.yaml', reason: 'Frozen copy of the workflow; not a session contract.' },
+  { name: 'title.json', reason: 'Non-goal: session title cache.' },
+  { name: 'conversation.json', reason: 'Non-goal: provider conversation history.' },
+  { name: 'outcome.json', reason: 'Non-goal: per-turn outcome copy.' },
+  { name: 'question-request.json', reason: 'Non-goal: question request inside an execution.' },
+  { name: 'session.json', reason: 'Non-goal: not a session file.' },
+  { name: 'metrics.json', reason: 'Described by KNOWN_SHAPES (sealed metrics).' },
+  { name: 'handoff.json', reason: 'Described by `handoff/document`.' },
+  { name: 'stream.jsonl', reason: 'Non-goal: opaque provider stream.' },
+  { name: '.last-id.lock', reason: 'Non-goal: internal id allocation lock.' },
+  { name: 'cancel.requested', reason: 'Non-goal: cancel marker.' },
 ];

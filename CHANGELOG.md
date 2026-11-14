@@ -4,6 +4,7 @@
 
 ### Added
 
+- TypeBox schemas, generated JSON Schema and a [reference page](https://github.com/nodeint/migent/blob/main/docs/reference/session-files.md) for the session files and every `events.jsonl` event, a typebox-free `@nodeint/migent-contracts/data` subpath, and tests that check each writer and event producer against them.
 - `migent session delete` removes stopped sessions by ID or by `--older-than` and `--status` filters, with `--dry-run`, `--yes`, and `--json`. It never deletes a running session, and a deleted numeric ID is never reissued ([CLI](https://github.com/nodeint/migent/blob/main/docs/cli.md#inspect-sessions)).
 
 ## 0.7.0

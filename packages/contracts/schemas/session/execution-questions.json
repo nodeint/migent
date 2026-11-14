@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/session/execution-questions.json",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "stage_id",
+    "execution_id",
+    "recipient",
+    "questions"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "number",
+      "const": 1
+    },
+    "stage_id": {
+      "type": "string"
+    },
+    "execution_id": {
+      "type": "string"
+    },
+    "recipient": {
+      "type": "string"
+    },
+    "questions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "question": {
+            "type": "string"
+          },
+          "context": {
+            "type": "string"
+          },
+          "selection": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "single"
+              },
+              {
+                "type": "string",
+                "const": "multiple"
+              }
+            ]
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "patternProperties": {
+                "^.*$": {}
+              }
+            }
+          },
+          "recommended": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "title": "Execution questions (`executions/<id>/questions.json`)"
+}

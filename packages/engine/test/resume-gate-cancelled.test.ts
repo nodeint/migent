@@ -7,6 +7,7 @@ import { createWorkflowSession, SessionLock, SessionStore } from '@nodeint/migen
 import { afterEach, describe, expect, test } from 'vitest';
 
 import { AgentToolRunner, executeNamedWorkflow } from '../src/index.ts';
+import { assertEventsValid } from './event-validation.ts';
 import { registryOf, ScriptedClient, tempDir as makeTempDir } from './support.ts';
 
 const roots: string[] = [];
@@ -96,6 +97,12 @@ async function cancelled(onExpired: string) {
   return { provider, resume, executionId: executionId!, metadataNow, completedAt, events, workspace, sessionId };
 }
 
+/** Validates every event line against its schema and returns the event names. */
+function parsed(text: string): string[] {
+  const records = text.split('\n').filter(Boolean).map((line) => JSON.parse(line) as Record<string, unknown>);
+  return [...assertEventsValid(records)];
+}
+
 describe('resume gate on a cancelled execution', () => {
   test('ask leaves it cancelled and untouched, with a pending decision and exit 10', async () => {
     const run = await cancelled('ask');
@@ -108,6 +115,7 @@ describe('resume gate on a cancelled execution', () => {
     expect(metadata.completed_at).toBe(run.completedAt);
     expect((run.events().match(/"event":"execution.running"/g) ?? []).length).toBe(running);
     expect(run.events()).toContain('"event":"resume.expired"');
+    expect(parsed(run.events())).toEqual(expect.arrayContaining(['session.cancelled', 'execution.cancelled', 'resume.expired']));
     expect(run.provider.calls).toHaveLength(1);
   }, 30_000);
 
@@ -118,6 +126,7 @@ describe('resume gate on a cancelled execution', () => {
     expect(run.metadataNow().status).toBe('cancelled');
     expect(run.provider.calls).toHaveLength(2);
     expect(run.provider.calls[1]?.agentId).toBeNull();
+    expect(parsed(run.events())).toContain('revisions.reset');
     const ids = readdirSync(path.join(run.workspace, '.migent', 'sessions', run.sessionId, 'executions'));
     expect(ids).toHaveLength(2);
   }, 30_000);
@@ -129,6 +138,7 @@ describe('resume gate on a cancelled execution', () => {
     expect(result.latestExecutionId).toBe(run.executionId);
     expect(run.provider.calls).toHaveLength(2);
     expect(run.events()).toContain('"action":"resume"');
+    expect(parsed(run.events())).toEqual(expect.arrayContaining(['resume.expired']));
   }, 30_000);
 });
 
@@ -193,6 +203,7 @@ describe('a decision for one stage leaves an unrelated cancelled stage alone (R1
       expect(readFileSync(cFile, 'utf8')).toBe(cBefore);
       expect(rows.find((row) => row.executionId === cancelledC!.executionId)?.status).toBe('cancelled');
       expect(provider.calls.at(-1)?.agentId).toBe(choice === 'resume' ? 'native-session-1' : null);
+      expect(parsed(readFileSync(path.join(sessionDirectory, 'events.jsonl'), 'utf8'))).toEqual(expect.arrayContaining(['resume.expired', 'resume.decided']));
     }, 30_000);
   }
 });

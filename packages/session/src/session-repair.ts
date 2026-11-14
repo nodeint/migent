@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 
+import type { SessionStatusName, StageOutcomeStatus } from '@nodeint/migent-contracts';
 import { type PendingResumeStop, writeJsonAtomic } from '@nodeint/migent-kernel';
 import { ConfigurationError } from '@nodeint/migent-kernel';
 import { manifestStatusToSession, storedQuestions } from '@nodeint/migent-kernel';
@@ -180,7 +181,7 @@ function startedDraft(execution: RepairExecution): EventDraft {
 /** The single session event the reduction attaches to the execution that settled the session. */
 function sessionDraft(
   execution: RepairExecution,
-  change: { finalStatus: string; fromStatus: string; outcome: ReturnType<typeof stageOutcome> },
+  change: { finalStatus: SessionStatusName; fromStatus: SessionStatusName; outcome: ReturnType<typeof stageOutcome> },
 ): EventDraft {
   const { finalStatus, outcome } = change;
   const reason = sessionChangeReason(finalStatus, outcome, execution.error);
@@ -213,7 +214,7 @@ function statusRow(execution: RepairExecution) {
 function terminalExecutionDraft(
   execution: RepairExecution,
   outcome: ReturnType<typeof stageOutcome>,
-  finalStatus: string,
+  finalStatus: SessionStatusName,
 ): EventDraft {
   return {
     event: `execution.${execution.status}`,
@@ -230,9 +231,9 @@ function terminalExecutionDraft(
 }
 
 interface ReconcileTarget {
-  fromStatus: string;
+  fromStatus: SessionStatusName;
   cursor: Record<string, unknown>;
-  finalStatus: string;
+  finalStatus: SessionStatusName;
   completingId: string | null;
 }
 
@@ -404,7 +405,8 @@ function stageOutcome(execution: FoldExecution): StageOutcome | null {
   if (!isRecord(outcome) || typeof outcome.status !== 'string' || outcome.status === '') return null;
   const blocker = typeof outcome.blocker === 'string' && outcome.blocker ? outcome.blocker : null;
   const decision = typeof outcome.decision === 'string' && outcome.decision ? outcome.decision : null;
-  return new StageOutcome(outcome.status, { blocker, decision, question: typeof outcome.question === 'string' ? outcome.question : null, questions: storedQuestions(outcome) });
+  return new StageOutcome(outcome.status as StageOutcomeStatus, { // event-template: unchecked (stored outcome)
+     blocker, decision, question: typeof outcome.question === 'string' ? outcome.question : null, questions: storedQuestions(outcome) });
 }
 
 function compareExecutions(left: FoldExecution, right: FoldExecution): number {

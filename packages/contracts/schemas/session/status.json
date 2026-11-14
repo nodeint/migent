@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/session/status.json",
+  "type": "object",
+  "required": [
+    "session_id",
+    "status"
+  ],
+  "properties": {
+    "session_id": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "workflow_id": {
+      "type": "string"
+    },
+    "workflow_path": {
+      "type": "string"
+    },
+    "task": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "string"
+    },
+    "updated_at": {
+      "type": "string"
+    },
+    "prior_session_id": {
+      "type": "string"
+    },
+    "handoff": {
+      "type": "object",
+      "patternProperties": {
+        "^.*$": {}
+      }
+    },
+    "baseline": {
+      "type": "object",
+      "patternProperties": {
+        "^.*$": {}
+      }
+    },
+    "task_sha256": {
+      "type": "string"
+    },
+    "latest_provider_event": {
+      "type": "object",
+      "patternProperties": {
+        "^.*$": {}
+      }
+    },
+    "outputs": {
+      "type": "object",
+      "patternProperties": {
+        "^.*$": {}
+      }
+    },
+    "latest_execution_id": {
+      "type": "string"
+    },
+    "latest_execution_status": {
+      "type": "string"
+    },
+    "latest_stage_id": {
+      "type": "string"
+    },
+    "latest_decision": {
+      "type": "string"
+    },
+    "completion_method": {
+      "type": "string"
+    },
+    "terminal_execution_id": {
+      "type": "string"
+    }
+  },
+  "title": "Session status (`status.json`)",
+  "description": "Derived from `events.jsonl`. It has no `schema_version`; fields added over time are optional."
+}

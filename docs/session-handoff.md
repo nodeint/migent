@@ -2,6 +2,8 @@
 
 Workflows run independently and hand context to each other through `next.json` and `--prior`. For the session directory and resume behavior, see [Sessions](sessions.md).
 
+The structure of `next.json` is in the [session files reference](reference/session-files.md#session-next-json).
+
 Workflows run independently. A completed producer with `downstream` publishes
 `next.json` under its session directory and prints its path and runnable commands:
 

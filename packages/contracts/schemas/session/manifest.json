@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/session/manifest.json",
+  "anyOf": [
+    {
+      "type": "object",
+      "required": [
+        "session_id",
+        "created_at",
+        "schema_version",
+        "workflow_id"
+      ],
+      "properties": {
+        "session_id": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "schema_version": {
+          "type": "number",
+          "const": 2
+        },
+        "workflow_id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "workflow_path": {
+          "type": "string"
+        },
+        "task": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "prior_session_id": {
+          "type": "string"
+        },
+        "handoff": {
+          "type": "object",
+          "patternProperties": {
+            "^.*$": {}
+          }
+        }
+      },
+      "title": "Manifest (schema 2)",
+      "description": "Identity only. The status lives in `status.json`."
+    },
+    {
+      "type": "object",
+      "required": [
+        "session_id",
+        "created_at",
+        "status"
+      ],
+      "properties": {
+        "session_id": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "schema_version": {
+          "type": "number",
+          "const": 1
+        },
+        "title": {
+          "type": "string"
+        },
+        "workflow_id": {
+          "type": "string"
+        }
+      },
+      "title": "Manifest (schema 1)",
+      "description": "Version 1, or a manifest with no `schema_version`. It carries a `status` line."
+    }
+  ],
+  "title": "Session manifest (`manifest.yaml`)",
+  "description": "The parsed YAML document of `manifest.yaml`."
+}

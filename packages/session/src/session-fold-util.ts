@@ -1,3 +1,4 @@
+import type { StageOutcomeStatus } from '@nodeint/migent-contracts';
 import { StageOutcome, storedQuestions } from '@nodeint/migent-kernel';
 import { isRecord } from '@nodeint/migent-workflow';
 
@@ -89,7 +90,7 @@ export function decisionOf(outcome: Record<string, unknown> | null): string | nu
 export function toStageOutcome(outcome: Record<string, unknown> | null): StageOutcome | null {
   if (outcome === null || typeof outcome.status !== 'string') return null;
   return new StageOutcome(
-    outcome.status,
+    outcome.status as StageOutcomeStatus, // event-template: unchecked (stored outcome)
     {
       blocker: textOr(outcome.blocker),
       decision: textOr(outcome.decision),

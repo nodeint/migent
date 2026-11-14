@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 
+import type { ExecutionStatus } from '@nodeint/migent-contracts';
 import type { StageOutcome } from '@nodeint/migent-kernel';
 import { CONVERSATION_FILENAME, LEGACY_CONVERSATION_FILENAME, legacyClientOf } from '@nodeint/migent-kernel';
 import { isRecord } from '@nodeint/migent-workflow';
@@ -55,7 +56,7 @@ export interface LoadOrCreateInput extends Omit<ExecutionStartInput, 'resumesExe
 
 /** How an execution ended, or its progress. */
 export interface ExecutionSaveInput {
-  status: string;
+  status: ExecutionStatus;
   error?: string | null;
   outcome?: StageOutcome | null;
   /** True when the caller already holds the execution lock. */

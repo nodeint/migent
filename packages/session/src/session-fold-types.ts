@@ -1,3 +1,4 @@
+import type { ExecutionStatus } from '@nodeint/migent-contracts';
 import type { WorkflowDocument } from '@nodeint/migent-workflow';
 
 import type { ParsedEvent } from './session-events.js';
@@ -24,7 +25,7 @@ export interface FoldExecution {
   client: string;
   model: string;
   resumesExecutionId: string | null;
-  status: string;
+  status: ExecutionStatus;
   outcome: Record<string, unknown> | null;
   error: string | null;
   failureReason: string | null;

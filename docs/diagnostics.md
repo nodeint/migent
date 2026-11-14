@@ -47,6 +47,8 @@ failure.
 
 ## What is recorded
 
+The field-level structure of `diagnostics.json` is in the [session files reference](reference/session-files.md#session-diagnostics-json).
+
 Migent writes `diagnostics.json` in the execution directory, next to
 `execution.json`, for every **abnormal client turn**:
 
