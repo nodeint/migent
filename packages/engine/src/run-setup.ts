@@ -6,7 +6,7 @@ import {
   classifyFailure, ConfigurationError, isShellSignalExitCode, platformHome, VERIFY_EXHAUSTED,
 } from '@nodeint/migent-kernel';
 import type { TurnKind } from '@nodeint/migent-prompts';
-import { type ExecutionContext, loadFrozenWorkflow, type SessionStore } from '@nodeint/migent-session';
+import { type ExecutionContext, type HumanInput, loadFrozenWorkflow, type SessionStore } from '@nodeint/migent-session';
 import { allStageArtifacts, loadNamedWorkflow, loadStage, type StageSpec } from '@nodeint/migent-workflow';
 
 export function classifyFinishedProcess(
@@ -50,6 +50,8 @@ export interface RunRequest {
    * `execution.json` so continued and fresh executions inherit it, as `response_protocol` is.
    */
   resumePolicy?: { name: string; policies: Record<string, unknown> } | null;
+  /** The human input this prompt carries. It is recorded in `input.json`; omit it for text Migent wrote. */
+  humanInput?: HumanInput | null;
   /** `session resume`: the decided stage may start although another stage's cancel holds the session. */
   allowCancelledSibling?: boolean;
   /** Set when a fresh conversation replaced an expired resume: recorded on `execution.json`. */

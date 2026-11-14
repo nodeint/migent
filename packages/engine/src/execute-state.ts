@@ -3,7 +3,7 @@ import path from 'node:path';
 import { EXIT_CATALOG, exitCode } from '@nodeint/migent-contracts';
 import type { ExecutionSnapshot, PendingResumeStop, ScheduleState } from '@nodeint/migent-kernel';
 import { ConfigurationError, NextStage, nextStage, NextStageError, pendingResumeStops, Stop } from '@nodeint/migent-kernel';
-import { readParsedEvents } from '@nodeint/migent-session';
+import { type HumanInput, readParsedEvents } from '@nodeint/migent-session';
 import { isRecord, type WorkflowDocument } from '@nodeint/migent-workflow';
 
 /** Stop reason to exit code, derived from the contracts exit catalog. `stage` ends a one-stage run cleanly. */
@@ -19,23 +19,27 @@ export const EXECUTE_EXIT_CODES: Record<string, number> = {
  */
 export class PendingStageReply {
   public readonly stageId: string;
-  private pending: string | null;
+  /** The reply text, as the run reads it before the stage takes it. */
+  public readonly text: string;
+  private pending: { text: string; human: HumanInput | null } | null;
 
-  constructor(stageId: string, text: string) {
+  /** `human` is null for text Migent wrote itself, which is never recorded as human input. */
+  constructor(stageId: string, text: string, human: HumanInput | null = null) {
     this.stageId = stageId;
-    this.pending = text;
+    this.text = text;
+    this.pending = { text, human };
   }
 
   public get consumed(): boolean {
     return this.pending === null;
   }
 
-  /** The reply text when it is addressed to `stageId` and not yet taken; null otherwise. */
-  public take(stageId: string): string | null {
+  /** The reply when it is addressed to `stageId` and not yet taken; null otherwise. */
+  public take(stageId: string): { text: string; human: HumanInput | null } | null {
     if (this.stageId !== stageId || this.pending === null) return null;
-    const text = this.pending;
+    const taken = this.pending;
     this.pending = null;
-    return text;
+    return taken;
   }
 }
 

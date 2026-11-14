@@ -3,7 +3,7 @@ import type { TSchema } from 'typebox';
 import * as O from './cli-output.js';
 import { LegacyLifecycleEvent, LifecycleEventV2, ProviderStreamRecord, ResumeDecidedData, ResumeExpiredData, SealedMetricsCurrent, SealedMetricsHistorical } from './known-shapes.js';
 import { SESSION_EVENT_SCHEMAS, SessionEvent } from './session-events.js';
-import { ExecutionQuestions, SessionDiagnostics, SessionExecution, SessionLockFile, SessionManifest, SessionNext, SessionQuestions, SessionStatusFile } from './session-files.js';
+import { ExecutionInput, ExecutionQuestions, SessionDiagnostics, SessionExecution, SessionLockFile, SessionManifest, SessionNext, SessionQuestions, SessionStatusFile } from './session-files.js';
 
 export type Framing = 'document' | 'json-lines';
 export type ContractClass = 'produced' | 'passthrough';
@@ -114,6 +114,7 @@ export const SESSION_FILES: readonly SessionFileEntry[] = [
   f('execution', 'executions/<id>/execution.json', { schema: SessionExecution, class: 'known', framing: 'document' }),
   f('questions', 'questions.json', { schema: SessionQuestions, class: 'guaranteed', framing: 'document' }),
   f('execution-questions', 'executions/<id>/questions.json', { schema: ExecutionQuestions, class: 'guaranteed', framing: 'document' }),
+  f('execution-input', 'executions/<id>/input.json', { schema: ExecutionInput, class: 'guaranteed', framing: 'document' }),
   f('next', 'next.json', { schema: SessionNext, class: 'guaranteed', framing: 'document' }),
   f('diagnostics', 'executions/<id>/diagnostics.json', { schema: SessionDiagnostics, class: 'known', framing: 'document' }),
   f('events', 'events.jsonl', { schema: SessionEvent, class: 'guaranteed', framing: 'json-lines' }),

@@ -5,7 +5,7 @@ import path from 'node:path';
 
 import type { ClientRegistry, ExecutionSnapshot } from '@nodeint/migent-kernel';
 import { ConfigurationError, endsScheduling, log, NextStage, readyStages, runnableNow, schedulableStageIds, Stop, stopReasonFor, utcNow, writeFileAtomic } from '@nodeint/migent-kernel';
-import { activatePreparedSession, appendLifecycleEvent, assertSingleLineTask, bindPriorSessionId, commitFoldedStatus, createWorkflowSession, loadFrozenWorkflow, readWorkflowFreeze, repairSessionUnlocked, requireLiveWorkflow, requireTaskBody, resolvePriorSessionId, SessionLock, SessionStore, warnIfFrozenDrift, WORKFLOW_FREEZE_FILE, writeWorkflowFreeze } from '@nodeint/migent-session';
+import { activatePreparedSession, appendLifecycleEvent, assertSingleLineTask, bindPriorSessionId, commitFoldedStatus, createWorkflowSession, type HumanInput, loadFrozenWorkflow, type QuestionAnswerRecord, readWorkflowFreeze, repairSessionUnlocked, requireLiveWorkflow, requireTaskBody, resolvePriorSessionId, SessionLock, SessionStore, warnIfFrozenDrift, WORKFLOW_FREEZE_FILE, writeWorkflowFreeze } from '@nodeint/migent-session';
 import { isRecord, isWorkflowV2, loadNamedWorkflow, type WorkflowDocument } from '@nodeint/migent-workflow';
 
 import { executeFinal, type ExecuteResult, PendingStageReply, resumeInputs, selectedStage, text } from './dispatch.js';
@@ -411,8 +411,8 @@ function applyExplicitReply(
   const target = replyTarget(waiting, replyStageId);
   const cancelledTarget = cancelled.find((row) => row.stageId === target);
   if (store.questionStages(sessionId).some((row) => row.stageId === target)) {
-    const answer = store.resumeQuestion(sessionId, target, replyText);
-    return { stageReply: new PendingStageReply(target, answer), sessionStatus: 'active' };
+    const saved = store.resumeQuestion(sessionId, target, replyText);
+    return { stageReply: new PendingStageReply(target, saved.formatted, answersInput(saved)), sessionStatus: 'active' };
   }
   if (cancelledTarget) {
     if (verifyOnlyExecution(workspace, sessionId, cancelledTarget.executionId)) {
@@ -420,10 +420,13 @@ function applyExplicitReply(
         `Stage ${target} has no agent to reply to. Omit --reply to run its verify list again.`,
       );
     }
-    store.supersedeCancelled(sessionId, target, replyText);
-    return cancelledReply(new PendingStageReply(target, replyText));
+    store.supersedeCancelled(sessionId, target, { text: replyText, origin: 'human' });
+    const human = replyInput(replyText, cancelledTarget.executionId);
+    return cancelledReply(new PendingStageReply(target, replyText, human));
   }
-  return { stageReply: new PendingStageReply(target, replyText) };
+  const blockedTarget = store.blockedStages(sessionId).find((row) => row.stageId === target);
+  const human = blockedTarget ? replyInput(replyText, blockedTarget.executionId) : null;
+  return { stageReply: new PendingStageReply(target, replyText, human) };
 }
 
 // Recovers a question answer or cancelled-stage reply recorded before an interrupted dispatch.
@@ -434,15 +437,30 @@ function recoverRecordedReply(
   const { sessionId, replyStageId } = reply;
   // Recover an answer recorded before a dispatch was interrupted or failed preflight.
   const [answered] = store.questionStages(sessionId).flatMap((row) => {
-    const recorded = store.questionReply(sessionId, row.executionId);
+    const saved = store.questionAnswer(sessionId, row.executionId);
     const matches = replyStageId === null || replyStageId === row.stageId;
-    return recorded !== null && matches ? [{ ...row, reply: recorded }] : [];
+    return saved !== null && matches ? [{ ...row, saved }] : [];
   });
-  if (answered) return { stageReply: new PendingStageReply(answered.stageId, answered.reply) };
+  if (answered) {
+    const { saved } = answered;
+    return { stageReply: new PendingStageReply(answered.stageId, saved.formatted, answersInput(saved)) };
+  }
   // Recover a reply to a cancelled stage that was recorded before its dispatch.
   const pending = store.pendingCancelledReply(sessionId, replyStageId);
-  if (pending) return cancelledReply(new PendingStageReply(pending.stageId, pending.reply));
+  if (pending) {
+    // Only a human reply is human input. Cut-off text and replies saved without an origin are not.
+    const human = pending.origin === 'human' ? replyInput(pending.reply, pending.executionId) : null;
+    return cancelledReply(new PendingStageReply(pending.stageId, pending.reply, human));
+  }
   return {};
+}
+
+function replyInput(text: string, respondsToExecutionId: string): HumanInput {
+  return { kind: 'reply', sent: text, input: text, respondsToExecutionId };
+}
+
+function answersInput(saved: QuestionAnswerRecord): HumanInput {
+  return { kind: 'answers', sent: saved.formatted, input: saved.input, answers: saved.answers, respondsToExecutionId: saved.target };
 }
 
 /**
@@ -491,6 +509,7 @@ function resumeBlockedStages(
   const resumed = store.resumeBlockedSession(
     sessionId,
     stageReply?.stageId ?? stageId,
+    blockedReply ? stageReply.text : null,
   );
   for (const item of resumed) {
     const stageLabel = item.stageId || 'its stage';

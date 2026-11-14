@@ -31,6 +31,18 @@ export interface SessionRecordInit {
 /** The identity a stored conversation falls back to for fields it does not record. */
 export type SessionRecordFallback = Pick<SessionRecordInit, 'client' | 'model' | 'workspace'>;
 
+/** The human input an attempt opens with. It is recorded in `input.json`; synthetic text is never one. */
+export interface HumanInput {
+  kind: 'reply' | 'answers';
+  /** The text the agent received. */
+  sent: string;
+  /** The raw text the human typed. */
+  input: string;
+  /** Structured answers, for `answers` only. */
+  answers?: Record<string, unknown>[];
+  respondsToExecutionId: string;
+}
+
 /** The facts that start an execution. */
 export interface ExecutionStartInput {
   client: string;
@@ -43,6 +55,7 @@ export interface ExecutionStartInput {
   prompt: string;
   resumesExecutionId?: string | null;
   kind?: 'verify' | null;
+  humanInput?: HumanInput | null;
 }
 
 /** An execution to load or create, with the conversation it may resume. */

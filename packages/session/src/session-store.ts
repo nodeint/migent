@@ -1,6 +1,7 @@
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 
+import { EXECUTION_INPUT_SCHEMA_VERSION } from '@nodeint/migent-contracts';
 import type { StageOutcome } from '@nodeint/migent-kernel';
 import {
   classifyOrphanedExecution,
@@ -53,6 +54,7 @@ import { SessionStoreResume } from './session-store-resume.js';
 import type {
   ExecutionSaveInput,
   ExecutionStartInput,
+  HumanInput,
   LoadOrCreateInput,
   ManualCompletionResult,
   SkipDetails,
@@ -70,6 +72,20 @@ import { savedOutcomeFields, snapshotsIncludingSave, storedFailure, textField } 
 import { writeQuestionRequest } from './session-store-util.js';
 import { normalizeRenameTitle, writeTitleRecord } from './session-title.js';
 
+function writeExecutionInput(context: ExecutionContext, stageId: string, human: HumanInput): void {
+  writeJsonAtomic(path.join(context.directory, 'input.json'), {
+    schema_version: EXECUTION_INPUT_SCHEMA_VERSION,
+    execution_id: context.executionId,
+    stage_id: stageId,
+    kind: human.kind,
+    responds_to_execution_id: human.respondsToExecutionId,
+    recorded_at: utcNow(),
+    sent: human.sent,
+    input: human.input,
+    ...(human.answers ? { answers: human.answers } : {}),
+  });
+}
+
 export class SessionStore extends SessionStoreResume {
   public loadOrCreate(input: LoadOrCreateInput): [AgentSessionRecord, boolean, ExecutionContext] {
     const {
@@ -83,6 +99,7 @@ export class SessionStore extends SessionStoreResume {
       executionOrder,
       prompt,
       validateResume,
+      humanInput,
     } = input;
     const resumeExecutionId = input.resumeExecutionId ?? null;
     if (resumeExecutionId !== null && sessionId === null) {
@@ -99,7 +116,7 @@ export class SessionStore extends SessionStoreResume {
     }
     if (previous === null) {
       const context = this.createExecution(
-        { client, model, options, sessionId, stageId, stageAttempt, executionOrder, prompt },
+        { client, model, options, sessionId, stageId, stageAttempt, executionOrder, prompt, humanInput },
       );
       return [
         new AgentSessionRecord({ client, model, workspace, options: { ...(options ?? {}) } }),
@@ -121,6 +138,7 @@ export class SessionStore extends SessionStoreResume {
         stageAttempt,
         executionOrder,
         prompt,
+        humanInput,
         resumesExecutionId: previous.executionId,
       },
     );
@@ -546,6 +564,8 @@ export class SessionStore extends SessionStoreResume {
     createSessionFiles(context);
     const verifyOnly = kind === 'verify';
     if (!verifyOnly) writeFileAtomic(path.join(directory, 'prompt.md'), prompt);
+    // Before execution.json: an execution whose prompt carries human input always has its input.json.
+    if (input.humanInput) writeExecutionInput(context, stageId, input.humanInput);
     const start = { order, stageId, attempt, verifyOnly, client, model, options, resumesExecutionId };
     writeStartedExecution(context, start);
     commitFoldedStatus(this.workspace, sessionDirectory);
@@ -553,7 +573,8 @@ export class SessionStore extends SessionStoreResume {
   }
 }
 
-export type { ExecutionSaveInput, ExecutionStartInput, LoadOrCreateInput, ManualCompletionResult, SessionRecordFallback, SessionRecordInit, SkipDetails } from './session-store-types.js';
+export type { CancelledReplyOrigin, QuestionAnswerRecord } from './session-store-resume.js';
+export type { ExecutionSaveInput, ExecutionStartInput, HumanInput, LoadOrCreateInput, ManualCompletionResult, SessionRecordFallback, SessionRecordInit, SkipDetails } from './session-store-types.js';
 export {
   AgentSessionRecord,
   clearInFlightExecution,

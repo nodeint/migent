@@ -106,5 +106,6 @@
       "description": "Every question and answer of the session, across executions."
     }
   },
-  "title": "Session questions (`questions.json`)"
+  "title": "Session questions (`questions.json`)",
+  "description": "Historical. Written by Migent up to 0.7. No longer written or updated. Old sessions may still contain it."
 }

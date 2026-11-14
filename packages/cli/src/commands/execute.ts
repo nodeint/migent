@@ -166,7 +166,7 @@ function printCompleted(workspace: string, result: ExecuteResult): void {
 
 function printStopped(workspace: string, result: ExecuteResult): void {
   const questions = result.sessionId === '' ? [] : new SessionStore(workspace).questionStages(result.sessionId);
-  if (questions.length > 0) log(`questions: .migent/sessions/${result.sessionId}/questions.json`);
+  if (questions.length > 0) log(`questions: migent session show ${result.sessionId}`);
   for (const stage of questions) {
     for (const question of stage.questions) log(formatQuestion({ ...question, stage_id: stage.stageId }));
   }

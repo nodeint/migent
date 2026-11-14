@@ -282,7 +282,7 @@ async function resumeReopenedExecutions(
   const { reopenLatestCancelled } = limits;
   // Every verdict is decided before anything changes: an `ask` leaves its execution exactly as it was.
   const verdicts = judgeCancelled(run, reopenLatestCancelled, limits.onlyStage);
-  for (const item of verdicts.fresh) store.supersedeCancelled(sessionId, item.stageId, item.reply);
+  for (const item of verdicts.fresh) store.supersedeCancelled(sessionId, item.stageId, { text: item.reply, origin: 'cut_off' });
   const scope = { skip: verdicts.skip, onlyStage: limits.onlyStage };
   const reopened = store.reopenCancelledExecutions(sessionId, reopenLatestCancelled, scope);
   stageJsons.push(...(await dispatchFreshAttempts(run, verdicts.fresh)));
