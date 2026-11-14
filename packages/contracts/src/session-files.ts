@@ -1,7 +1,7 @@
 import Type, { type Static } from 'typebox';
 
 import { id, nullable } from './common.js';
-import { DIAGNOSTICS_SCHEMA_VERSION, EXECUTION_SCHEMA_VERSION, MANIFEST_SCHEMA_VERSION, NEXT_SCHEMA_VERSION, QUESTIONS_SCHEMA_VERSION } from './data/versions.js';
+import { DIAGNOSTICS_SCHEMA_VERSION, EXECUTION_INPUT_SCHEMA_VERSION, EXECUTION_SCHEMA_VERSION, MANIFEST_SCHEMA_VERSION, NEXT_SCHEMA_VERSION, QUESTIONS_SCHEMA_VERSION } from './data/versions.js';
 
 /**
  * Persisted files under `.migent/sessions/<id>/`. Objects are open: readers ignore unknown fields.
@@ -86,7 +86,11 @@ export const SessionQuestions = Type.Object(
       { description: 'Every question and answer of the session, across executions.' },
     ),
   },
-  { $id: id('session/questions'), title: 'Session questions (`questions.json`)' },
+  {
+    $id: id('session/questions'),
+    title: 'Session questions (`questions.json`)',
+    description: 'Historical. Written by Migent up to 0.7. No longer written or updated. Old sessions may still contain it.',
+  },
 );
 export type SessionQuestions = Static<typeof SessionQuestions>;
 
@@ -101,6 +105,26 @@ export const ExecutionQuestions = Type.Object(
   { $id: id('session/execution-questions'), title: 'Execution questions (`executions/<id>/questions.json`)' },
 );
 export type ExecutionQuestions = Static<typeof ExecutionQuestions>;
+
+export const ExecutionInput = Type.Object(
+  {
+    schema_version: Type.Literal(EXECUTION_INPUT_SCHEMA_VERSION),
+    execution_id: str(),
+    stage_id: str(),
+    kind: Type.Union([Type.Literal('reply'), Type.Literal('answers')]),
+    responds_to_execution_id: str(),
+    recorded_at: str(),
+    sent: str(),
+    input: str(),
+    answers: opt(Type.Array(obj())),
+  },
+  {
+    $id: id('session/execution-input'),
+    title: 'Execution input (`executions/<id>/input.json`)',
+    description: 'The human input that opened this attempt. Written once, before execution.json. Absent when no human input was sent.',
+  },
+);
+export type ExecutionInput = Static<typeof ExecutionInput>;
 
 // ---- next.json --------------------------------------------------------------------------------
 

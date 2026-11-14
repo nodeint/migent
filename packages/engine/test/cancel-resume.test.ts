@@ -522,7 +522,7 @@ completion:
   const store = new SessionStore(workspace);
   const lock = SessionLock.acquire(path.join(workspace, '.migent', 'sessions', sessionId));
   try {
-    store.supersedeCancelled(sessionId, 'implement', 'Take another approach');
+    store.supersedeCancelled(sessionId, 'implement', { text: 'Take another approach', origin: 'human' });
     expect(store.readSessionStatus(sessionId).status).toBe('active');
     expect(store.pendingCancelledReply(sessionId)?.reply).toBe('Take another approach');
     expect(() => store.reopenCancelledExecutions(sessionId, true)).not.toThrow();

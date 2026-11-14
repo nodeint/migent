@@ -1,7 +1,7 @@
 import path from 'node:path';
 
 import { type PendingResumeStop, writeJsonAtomic } from '@nodeint/migent-kernel';
-import { isStageStop, isStopped, isStopResolutionEvent, manifestStatusToSession, resolutionFrom, storedQuestions } from '@nodeint/migent-kernel';
+import { isStageStop, isStopped, isStopResolutionEvent, manifestStatusToSession } from '@nodeint/migent-kernel';
 import { isRecord } from '@nodeint/migent-workflow';
 
 import { MANIFEST_SCHEMA_EVENT_LOG } from './constants.js';
@@ -66,51 +66,8 @@ export function readFoldedStatus(workspace: string, sessionDirectory: string): R
 export function commitFoldedStatus(workspace: string, sessionDirectory: string): Record<string, unknown> {
   const inputs = loadFoldInputs(workspace, sessionDirectory);
   const folded = foldStatus(inputs);
-  writeQuestionsFile(sessionDirectory, inputs);
   writeJsonAtomic(path.join(sessionDirectory, 'status.json'), folded);
   return folded;
-}
-
-/** A stable machine-readable list of every question and answer, across execution boundaries. */
-export function writeQuestionsFile(sessionDirectory: string, inputs: FoldInputs): void {
-  const latest = new Set(latestPerStage(statusExecutionsFromFolds(inputs.executions)).map((row) => row.executionId));
-  const manuallyCompleted = manualCompletionEvent(inputs.events) !== null;
-  const newestFirst = [...inputs.events].reverse();
-  const questions = inputs.executions.flatMap((execution) => {
-    if (execution.outcome?.status !== 'question') return [];
-    const reply = questionReply(newestFirst, execution.executionId);
-    let questionStatus: QuestionRecordStatus = 'superseded';
-    if (reply) questionStatus = 'answered';
-    else if (latest.has(execution.executionId) && !manuallyCompleted) questionStatus = 'pending';
-    return questionRecords(execution, { reply, status: questionStatus, workflow: inputs.workflow });
-  });
-  writeJsonAtomic(path.join(sessionDirectory, 'questions.json'), { schema_version: 1, questions });
-}
-
-type QuestionRecordStatus = 'answered' | 'pending' | 'superseded';
-
-/** The newest `session.active` event that answered this execution's questions. */
-function questionReply(newestFirst: readonly ParsedEvent[], executionId: string): ParsedEvent | undefined {
-  return newestFirst.find((event) =>
-    isStopResolutionEvent(event, 'question', executionId) && event.data.from === resolutionFrom('question'));
-}
-
-/** One questions.json row per question the execution asked, with its answer when replied. */
-function questionRecords(
-  execution: FoldExecution,
-  context: { reply: ParsedEvent | undefined; status: QuestionRecordStatus; workflow: FoldInputs['workflow'] },
-): Record<string, unknown>[] {
-  const { reply } = context;
-  const answers = Array.isArray(reply?.data.answers) ? reply.data.answers.filter(isRecord) : [];
-  const answerFor = (questionId: string): Record<string, unknown> | null =>
-    answers.find((answer) => answer.question_id === questionId) ?? null;
-  return storedQuestions(execution.outcome).map((question) => ({
-    ...question, execution_id: execution.executionId, stage_id: execution.stageId,
-    recipient: context.workflow?.stages[execution.stageId]?.ask ?? 'human',
-    status: context.status,
-    answer: answerFor(question.id),
-    ...(reply ? { answered_at: reply.timestamp } : {}),
-  }));
 }
 
 /** Schema 2 only. Show prints this on stderr and does not rewrite status.json. */

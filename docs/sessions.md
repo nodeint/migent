@@ -285,9 +285,9 @@ question-and-answer flow, including numbered replies and structured history.
 
 Stages with `ask: human` can stop with outcome `question`. `session show` lists
 each pending question with its context, options, and `single`/`multiple`
-selection mode. The machine-readable session `questions.json` contains all
-rounds and their answers; each execution's `questions.json` preserves its
-original batch. Questions are identified by execution ID and question ID.
+selection mode. Each execution's `questions.json` preserves the batch it asked, and the
+`input.json` of the execution that received the answers records them
+(see [Human-in-the-loop interaction](human-in-the-loop.md#files-and-question-history)). Questions are identified by execution ID and question ID.
 These requests remain visible while independent branches run or another stage
 is blocked. A quiet session is `blocked` if any stage is blocked, otherwise
 `question` if an answer is pending. A question exits 9 and is not a failure.
@@ -407,8 +407,8 @@ omits `questions`, and records `manual_completion`:
 { "status": "completed", "manual_completion": { "completed_at": "2026-11-07T12:00:00+00:00", "from": "blocked" } }
 ```
 
-`questions.json` keeps the history, and an unanswered question is marked
-`superseded` rather than `pending`.
+An unanswered question stays in its execution's `questions.json` and is no
+longer listed as pending in `status.json`.
 
 Outputs resolve by the normal rules: schema 7 resolves the artifact registry
 against the skip-aware current completions; schema 2 to 6 publish the top-level

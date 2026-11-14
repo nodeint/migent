@@ -1,4 +1,4 @@
-import { readdirSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { AgentToolRunner } from '@nodeint/migent-engine';
@@ -60,7 +60,7 @@ test('workflow run prints the pending question and its response after a newer si
     expect(result.value).toBe(9);
     expect(result.stderr).toContain('1. Include old sessions? (choose one; stage plan)');
     expect(result.stderr).toContain('A. New sessions only');
-    expect(result.stderr).toContain('questions.json');
+    expect(result.stderr).toContain('migent session show');
     expect(result.stderr).toContain('--stage plan --reply "<answer>"');
   } finally { removeWorkspace(root); }
 });
@@ -132,5 +132,92 @@ test('continue with a reply for a named stage keeps running the workflow after t
     expect(provider.calls).toHaveLength(3);
     expect(provider.calls[1]?.prompt).toContain('New sessions only');
     expect(new SessionStore(root).readSessionStatus(id).status).toBe('completed');
+  } finally { removeWorkspace(root); }
+});
+
+function inputsOf(root: string, id: string): Record<string, Record<string, unknown>> {
+  const directory = path.join(root, '.migent/sessions', id, 'executions');
+  const found: Record<string, Record<string, unknown>> = {};
+  for (const name of readdirSync(directory)) {
+    const file = path.join(directory, name, 'input.json');
+    if (existsSync(file)) found[name] = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+  }
+  return found;
+}
+
+test('role continue --reply to a question records answers in the new attempt input.json only', async () => {
+  const root = writeFakeWorkflowWorkspace({});
+  const provider = new ScriptedClient([question, 'status: complete\n\nDone']);
+  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
+  try {
+    await capture(() => dispatchAgent(root, { role: 'reviewer', prompt: 'Review scope', runner, asJson: true }));
+    const id = readdirSync(path.join(root, '.migent/sessions'))[0]!;
+    expect(inputsOf(root, id)).toEqual({});
+    await capture(() => continueAgent(root, { sessionId: id, reply: 'New only', runner }));
+    const inputs = inputsOf(root, id);
+    expect(Object.keys(inputs)).toHaveLength(1);
+    const [[executionId, input]] = Object.entries(inputs) as [string, Record<string, unknown>][];
+    expect(executionId).not.toBe(readdirSync(path.join(root, '.migent/sessions', id, 'executions'))[0]);
+    expect(input).toMatchObject({ kind: 'answers', input: 'New only', stage_id: 'reviewer' });
+    expect(String(input.sent)).toContain('New only');
+    expect(input.answers).toHaveLength(1);
+    expect(input.responds_to_execution_id).toBe(readdirSync(path.join(root, '.migent/sessions', id, 'executions'))[0]);
+    expect(existsSync(path.join(root, '.migent/sessions', id, 'questions.json'))).toBe(false);
+  } finally { removeWorkspace(root); }
+});
+
+test('role dispatch that answers a pending question records answers in input.json', async () => {
+  const root = writeFakeWorkflowWorkspace({});
+  const provider = new ScriptedClient([question, 'status: complete\n\nDone']);
+  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
+  try {
+    await capture(() => dispatchAgent(root, { role: 'reviewer', prompt: 'Review scope', runner, asJson: true }));
+    const id = readdirSync(path.join(root, '.migent/sessions'))[0]!;
+    await capture(() => dispatchAgent(root, { role: 'reviewer', sessionId: id, prompt: 'New only', runner }));
+    const inputs = Object.values(inputsOf(root, id));
+    expect(inputs).toHaveLength(1);
+    expect(inputs[0]).toMatchObject({ kind: 'answers', input: 'New only' });
+  } finally { removeWorkspace(root); }
+});
+
+test('role: a plain continue and a plain dispatch write no input.json; continue --reply records a reply', async () => {
+  const root = writeFakeWorkflowWorkspace({});
+  const provider = new ScriptedClient(['status: blocked\nblocker: need a call\n\nstuck', 'status: complete\n\nDone', 'status: complete\n\nAgain', 'status: complete\n\nLast']);
+  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
+  try {
+    await capture(() => dispatchAgent(root, { role: 'reviewer', prompt: 'Review scope', runner, asJson: true }));
+    const id = readdirSync(path.join(root, '.migent/sessions'))[0]!;
+    expect((await capture(() => continueAgent(root, { sessionId: id, reply: null, runner }))).value).toBe(0);
+    expect((await capture(() => dispatchAgent(root, { role: 'reviewer', sessionId: id, prompt: 'One more thing', runner }))).value).toBe(0);
+    expect(inputsOf(root, id)).toEqual({});
+
+    expect((await capture(() => continueAgent(root, { sessionId: id, reply: 'Also check docs', runner }))).value).toBe(0);
+    const inputs = Object.values(inputsOf(root, id));
+    expect(inputs).toHaveLength(1);
+    expect(inputs[0]).toMatchObject({ kind: 'reply', input: 'Also check docs', stage_id: 'reviewer' });
+  } finally { removeWorkspace(root); }
+});
+
+test('role continue --reply to a blocked turn delivers the reply and records it against the blocked execution', async () => {
+  const root = writeFakeWorkflowWorkspace({});
+  const provider = new ScriptedClient(['status: blocked\nblocker: need a call\n\nstuck', 'status: complete\n\nDone']);
+  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
+  try {
+    await capture(() => dispatchAgent(root, { role: 'reviewer', prompt: 'Review scope', runner, asJson: true }));
+    const id = readdirSync(path.join(root, '.migent/sessions'))[0]!;
+    expect(new SessionStore(root).readSessionStatus(id).status).toBe('blocked');
+    const blockedExecution = readdirSync(path.join(root, '.migent/sessions', id, 'executions'))[0]!;
+    expect(inputsOf(root, id)).toEqual({});
+
+    const replied = await capture(() => continueAgent(root, { sessionId: id, reply: 'Use option two', runner }));
+    expect(replied.value).toBe(0);
+    expect(provider.calls[1]?.prompt).toContain('Use option two');
+    const inputs = Object.entries(inputsOf(root, id));
+    expect(inputs).toHaveLength(1);
+    const [[executionId, input]] = inputs as [string, Record<string, unknown>][];
+    expect(executionId).not.toBe(blockedExecution);
+    expect(input).toMatchObject({
+      kind: 'reply', input: 'Use option two', stage_id: 'reviewer', responds_to_execution_id: blockedExecution,
+    });
   } finally { removeWorkspace(root); }
 });

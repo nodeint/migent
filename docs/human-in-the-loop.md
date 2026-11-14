@@ -48,7 +48,7 @@ sequenceDiagram
     participant M as Migent
     participant H as Human
     A->>M: question outcome and structured questions
-    M->>M: Save questions.json and end this execution
+    M->>M: Save the execution's questions.json and end this execution
     M->>H: Show numbered questions and lettered options
     H->>M: session continue --reply "1A, 2A+C, 3 explain further"
     M->>M: Validate and save the answers
@@ -78,7 +78,7 @@ migent session run --workflow plan --task "Plan support for existing sessions"
 For a batch of three questions, the question portion of the output can look like:
 
 ```text
-[migent] questions: .migent/sessions/<session-id>/questions.json
+[migent] questions: migent session show <session-id>
 [migent] 1. Should existing sessions be supported? (choose one; stage plan)
 Existing sessions require migration.
   A. New sessions only (recommended)
@@ -155,7 +155,7 @@ the CLI. The `ask` recipient determines who should make the decision.
 | Caller | Handling a question with `ask: human` |
 | --- | --- |
 | Human at the terminal | Read the printed questions, then run `continue` with the answers. |
-| Agent operating Migent | Read `questions.json` or `session show --json`, present the questions and options to the user, then pass their answers to `continue`. |
+| Agent operating Migent | Read `session show --json`, present the questions and options to the user, then pass their answers to `continue`. |
 
 An agent operating Migent preserves the human's decision. A recommendation in
 the question is not permission to answer on the user's behalf.
@@ -185,20 +185,20 @@ commands such as `session show` exit 0.
 
 ## Files and question history
 
-All files are under `.migent/sessions/<session-id>/`. Their field-level structure is in the [session files reference](reference/session-files.md#session-questions-json):
+All files are under `.migent/sessions/<session-id>/`. Their field-level structure is in the [session files reference](reference/session-files.md):
 
 | File | Purpose |
 | --- | --- |
-| `questions.json` | Full question history across stages and rounds, with context, options, selection modes, statuses, and answers. |
 | `executions/<execution-id>/questions.json` | Original question batch from that execution, with assigned numbers and letters. |
+| `executions/<execution-id>/input.json` | The human input that opened this attempt: the reply or answers the agent received (`sent`), the text the human typed (`input`), structured `answers` for question answers, and `responds_to_execution_id`. Written once, before `execution.json`, and never changed. Absent when no human input was sent. An execution directory without `execution.json` is not an execution. |
 | `status.json` | Current snapshot; `questions` lists the pending questions. |
 | `events.jsonl` | Session events, including the submitted reply and normalized answers. |
 
-The session question file has `schema_version: 1` and a `questions` array.
-Each record includes `id`, `question`, `context`, `selection`, `options`,
-`stage_id`, `execution_id`, `recipient`, `status`, and `answer`.
-Question status is `pending`, `answered`, or `superseded` when an unanswered
-question is replaced by a later execution of that stage.
+Migent 0.7 and earlier also wrote a session-level `questions.json` with every
+question and status. Migent no longer writes, updates or reads it. Existing files in
+old sessions are left as they are. A question that was asked and never answered
+is an asking execution with no later `input.json` that responds to it and no
+pending row in `status.json`.
 
 The pair `(execution_id, id)` identifies a question across rounds. For example,
 question 1 in a follow-up execution is a different record from question 1 in
@@ -217,7 +217,8 @@ Answers use one of these structures:
 The original agent response is also retained in `response.md`, but reading it
 is unnecessary to obtain the structured questions. Use the CLI to submit
 answers; do not edit generated session files. `session repair` can rebuild
-question files from the saved execution outcomes and events.
+the per-execution question files from the saved execution outcomes and events.
+It does not rebuild `input.json`.
 
 ## Agent response format
 
@@ -227,7 +228,7 @@ in the execution directory, outside `artifacts/`). To ask, it sets `status: ques
 and lists the questions. The response body is an ordinary report; Migent never reads
 the outcome or the questions from it. Migent removes a leftover file before each client
 turn so an old file is never read as a new outcome. The file is not `questions.json`,
-which Migent writes from the validated outcome.
+which Migent writes per execution from the validated outcome.
 
 ```json
 {

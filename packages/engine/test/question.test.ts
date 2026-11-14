@@ -1,8 +1,8 @@
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { parseStageOutcome } from '@nodeint/migent-kernel';
+import { parseStageOutcome, raiseCancellation } from '@nodeint/migent-kernel';
 import { SessionStore } from '@nodeint/migent-session';
 import { watchSnapshot } from '@nodeint/migent-session';
 import { repairSession } from '@nodeint/migent-session';
@@ -51,16 +51,14 @@ test('question persists through repair, waits without reply, and resumes the con
     expect(first.code).toBe(9);
     expect(first.stopReason).toBe('question');
     const sessionDir = path.join(root, '.migent/sessions', first.sessionId);
-    const history = () => JSON.parse(readFileSync(path.join(sessionDir, 'questions.json'), 'utf8'));
-    expect(history().questions).toMatchObject([{ id: '1', status: 'pending', selection: 'single', options: scopeQuestion.options }]);
+    expect(existsSync(path.join(sessionDir, 'questions.json'))).toBe(false);
     const questionFile = path.join(sessionDir, 'executions/0001-plan--attempt-01/questions.json');
     expect(JSON.parse(readFileSync(questionFile, 'utf8')).questions).toEqual([scopeQuestion]);
     rmSync(questionFile);
-    rmSync(path.join(sessionDir, 'questions.json'));
     expect(readFileSync(path.join(sessionDir, 'workflow.frozen.yaml'), 'utf8')).toContain('ask: human');
     repairSession(root, first.sessionId);
     expect(JSON.parse(readFileSync(questionFile, 'utf8')).questions).toEqual([scopeQuestion]);
-    expect(history().questions[0].status).toBe('pending');
+    expect(existsSync(path.join(sessionDir, 'questions.json'))).toBe(false);
     expect(new SessionStore(root).readSessionStatus(first.sessionId).questions).toMatchObject([{ stage_id: 'plan', question: 'Support existing sessions?' }]);
     const again = await executeNamedWorkflow(root, { sessionId: first.sessionId }, runner);
     expect(again.code).toBe(9);
@@ -74,7 +72,9 @@ test('question persists through repair, waits without reply, and resumes the con
     expect(readFileSync(path.join(sessionDir, 'outputs/plan.md'), 'utf8')).toBe('# Partial plan');
     expect(new SessionStore(root).executionSnapshots(first.sessionId)).toHaveLength(2);
     expect(new SessionStore(root).readSessionStatus(first.sessionId).questions).toBeUndefined();
-    expect(history().questions).toMatchObject([{ status: 'answered', answer: { question_id: '1', text: 'New sessions only' } }]);
+    const input = JSON.parse(readFileSync(path.join(sessionDir, 'executions/0002-plan--attempt-02/input.json'), 'utf8'));
+    expect(input).toMatchObject({ kind: 'answers', input: 'New sessions only', responds_to_execution_id: '0001-plan--attempt-01', answers: [{ question_id: '1', text: 'New sessions only' }] });
+    expect(existsSync(path.join(sessionDir, 'executions/0001-plan--attempt-01/input.json'))).toBe(false);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -167,8 +167,10 @@ test('multiple questions require a target and an answered stage can ask again', 
     expect(provider.calls).toHaveLength(3);
     await executeNamedWorkflow(root, { sessionId: first.sessionId, stageId: 'plan', reply: 'Confirmed' }, runner);
     expect(new SessionStore(root).questionStages(first.sessionId).map((row) => row.stageId)).toEqual(['other']);
-    const history = JSON.parse(readFileSync(path.join(root, '.migent/sessions', first.sessionId, 'questions.json'), 'utf8'));
-    expect(history.questions.map((row: { status: string }) => row.status)).toEqual(['answered', 'pending', 'answered']);
+    expect(existsSync(path.join(root, '.migent/sessions', first.sessionId, 'questions.json'))).toBe(false);
+    const inputs = readdirSync(path.join(root, '.migent/sessions', first.sessionId, 'executions'))
+      .filter((name) => existsSync(path.join(root, '.migent/sessions', first.sessionId, 'executions', name, 'input.json')));
+    expect(inputs).toHaveLength(2);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -245,17 +247,19 @@ test('a batch validates single and multiple selections before resuming and recor
     const provider = new ScriptedClient([batch, 'status: complete\n']);
     const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
     const first = await executeNamedWorkflow(root, { workflowId: 'plan', task: 'Plan' }, runner);
-    const file = path.join(root, '.migent/sessions', first.sessionId, 'questions.json');
-    expect(JSON.parse(readFileSync(file, 'utf8')).questions).toHaveLength(3);
+    const sessionDir = path.join(root, '.migent/sessions', first.sessionId);
+    expect(JSON.parse(readFileSync(path.join(sessionDir, 'executions/0001-plan--attempt-01/questions.json'), 'utf8')).questions).toHaveLength(3);
     await expect(executeNamedWorkflow(root, { sessionId: first.sessionId, reply: '{"1":["A","B"],"2":["A"],"3":"unclear"}' }, runner)).rejects.toThrow('exactly one');
     expect(provider.calls).toHaveLength(1);
     expect(new SessionStore(root).readSessionStatus(first.sessionId).status).toBe('question');
     const result = await executeNamedWorkflow(root, { sessionId: first.sessionId, reply: '1A, 2A+B, 3 chưa rõ - giải thích thêm' }, runner);
     expect(result.code).toBe(0);
-    expect(JSON.parse(readFileSync(file, 'utf8')).questions).toMatchObject([
-      { status: 'answered', answer: { selected: ['A'] } },
-      { status: 'answered', answer: { selected: ['A', 'B'] } },
-      { status: 'answered', answer: { selected: [], text: 'chưa rõ - giải thích thêm' } },
+    const recorded = JSON.parse(readFileSync(path.join(sessionDir, 'executions/0002-plan--attempt-02/input.json'), 'utf8'));
+    expect(recorded).toMatchObject({ kind: 'answers', input: '1A, 2A+B, 3 chưa rõ - giải thích thêm', responds_to_execution_id: '0001-plan--attempt-01' });
+    expect(recorded.answers).toMatchObject([
+      { selected: ['A'] },
+      { selected: ['A', 'B'] },
+      { selected: [], text: 'chưa rõ - giải thích thêm' },
     ]);
     const reply = provider.calls[1]?.prompt ?? '';
     expect(reply).toContain('1. Support existing sessions? (single)\n   - Selected: A. New sessions only');
@@ -394,5 +398,84 @@ test('a conversation continued from a legacy stamp gets the protocol 2 update an
     const records = executionRecords(root, first.sessionId);
     expect(records[1]!.response_protocol).toBe(2);
     expect(provider.calls[1]?.prompt).not.toContain('Handoff file');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+class HangOnCall extends ScriptedClient {
+  private count = 0;
+
+  constructor(
+    private readonly hangOn: number,
+    private readonly pidFile: string,
+    responses: string[],
+    private readonly onCall?: (call: number) => void,
+  ) {
+    super(responses);
+  }
+
+  override buildCommand(input: Parameters<ScriptedClient['buildCommand']>[0]): ReturnType<ScriptedClient['buildCommand']> {
+    this.count += 1;
+    this.onCall?.(this.count);
+    if (this.count === this.hangOn) {
+      this.calls.push({
+        model: input.model, workspace: input.workspace, prompt: input.prompt, agentId: input.agentId,
+        newAgentId: input.newAgentId, promptFile: input.promptFile, options: { ...input.options },
+      });
+      const code = `require("fs").writeFileSync(${JSON.stringify(this.pidFile)}, String(process.pid)); setInterval(() => {}, 1000);`;
+      return { argv: [process.execPath, '-e', code] };
+    }
+    return super.buildCommand(input);
+  }
+}
+
+test('input.json survives an interrupted reply turn: continue reopens the same execution without rewriting it', async () => {
+  const root = workspace(askStage);
+  try {
+    const pidFile = path.join(root, 'pid');
+    const provider = new HangOnCall(2, pidFile, [question, 'status: complete\n']);
+    const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
+    const first = await executeNamedWorkflow(root, { workflowId: 'plan', task: 'Plan' }, runner);
+    const executions = path.join(root, '.migent/sessions', first.sessionId, 'executions');
+    const timer = setInterval(() => {
+      if (!existsSync(pidFile) || readFileSync(pidFile, 'utf8').trim() === '') return;
+      clearInterval(timer);
+      try { raiseCancellation(15); } catch { /* waiters woken */ }
+    }, 50);
+    const cancelled = await executeNamedWorkflow(root, { sessionId: first.sessionId, reply: '1A' }, runner);
+    clearInterval(timer);
+    expect(cancelled.stopReason).toBe('cancelled');
+    const inputFile = path.join(executions, '0002-plan--attempt-02/input.json');
+    const written = readFileSync(inputFile, 'utf8');
+    expect(JSON.parse(written)).toMatchObject({ kind: 'answers', input: '1A', responds_to_execution_id: '0001-plan--attempt-01' });
+    const before = readdirSync(executions).sort();
+
+    const resumed = await executeNamedWorkflow(root, { sessionId: first.sessionId, resetRevisions: true }, runner);
+    expect(resumed.code).toBe(0);
+    expect(readdirSync(executions).sort()).toEqual(before);
+    expect(readFileSync(inputFile, 'utf8')).toBe(written);
+    expect(readdirSync(path.join(executions, '0002-plan--attempt-02')).filter((name) => name.startsWith('input'))).toEqual(['input.json']);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+}, 30_000);
+
+test('a correction turn in a reply execution leaves input.json byte-identical', async () => {
+  const root = workspace(askStage);
+  try {
+    let snapshot = '';
+    let inputFile = '';
+    const provider = new HangOnCall(-1, '', [
+      question,
+      'status: question\n\nBad.\n<<FILE>>{"schema_version":1,"questions":[',
+      'status: complete\n',
+    ], (call) => {
+      if (call === 3) snapshot = readFileSync(inputFile, 'utf8');
+    });
+    const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
+    const first = await executeNamedWorkflow(root, { workflowId: 'plan', task: 'Plan' }, runner);
+    inputFile = path.join(root, '.migent/sessions', first.sessionId, 'executions/0002-plan--attempt-02/input.json');
+    const result = await executeNamedWorkflow(root, { sessionId: first.sessionId, reply: '1A' }, runner);
+    expect(result.code).toBe(0);
+    expect(provider.calls[2]?.prompt).toContain('## Invalid handoff file');
+    expect(snapshot).not.toBe('');
+    expect(readFileSync(inputFile, 'utf8')).toBe(snapshot);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
