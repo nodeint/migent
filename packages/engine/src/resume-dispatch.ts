@@ -69,7 +69,7 @@ export function answersQuestion(workspace: string, sessionId: string, stageId: s
  */
 export function freshStagePrompt(
   inputs: {
-    stageReply: string | null;
+    stageReply: { text: string } | null;
     exhausted: ReturnType<typeof verifyExhaustedExecution>;
     frozen: ReturnType<typeof freezeSessionTask>;
     promptInput: Parameters<typeof buildStagePrompt>[0];
@@ -79,7 +79,7 @@ export function freshStagePrompt(
   const { stageReply, exhausted, frozen, promptInput } = inputs;
   const parts = [buildStagePrompt(promptInput)];
   const { answers } = stage;
-  if (stageReply !== null) parts.push(buildStageReplyPrompt(stageReply, { answers, interrupted: false }));
+  if (stageReply !== null) parts.push(buildStageReplyPrompt(stageReply.text, { answers, interrupted: false }));
   if (exhausted?.verifyReport) {
     const { maxVerify } = stage.stageSpec;
     parts.push(

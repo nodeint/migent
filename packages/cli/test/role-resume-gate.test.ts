@@ -1,4 +1,4 @@
-import { appendFileSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { AgentToolRunner } from '@nodeint/migent-engine';
@@ -202,7 +202,7 @@ test('run --session ask: the answer is saved before the stop and printed with th
     const stopped = await capture(() => dispatchAgent(run.root, args));
     expect(stopped.value).toBe(10);
     expect(run.provider.calls).toHaveLength(1);
-    expect(new SessionStore(run.root).questionReply(run.id, 'reviewer')).toBeDefined();
+    expect(new SessionStore(run.root).questionAnswer(run.id, 'reviewer')).toBeDefined();
     expect(stopped.stderr + stopped.stdout).toMatch(/idle \d+s of \d+s allowed/);
     expect(stopped.stderr + stopped.stdout).toContain('context unknown (no usage reported)');
     const lock = SessionLock.acquire(path.join(run.root, '.migent/sessions', run.id));
@@ -216,6 +216,10 @@ test('run --session ask: the answer is saved before the stop and printed with th
     const prompt = run.provider.calls[1]?.prompt ?? '';
     expect(prompt).toContain('Review scope');
     expect(prompt).toContain('Include old sessions');
+    // The answer saved before the stop is still the human's input once the decision lets it through.
+    const files = inputFiles(run.root, run.id);
+    expect(files).toHaveLength(1);
+    expect(JSON.parse(readFileSync(path.join(run.root, '.migent/sessions', run.id, 'executions', files[0]!, 'input.json'), 'utf8'))).toMatchObject({ kind: 'answers', input: 'New only' });
   } finally { removeWorkspace(run.root); }
 }, 30_000);
 
@@ -302,4 +306,76 @@ test('human-selected fresh after a later cancelled turn carries the task and the
     expect(handoffFiles(prompt)).toHaveLength(1);
     expect(sourceStillCancelled(run.file)).toBe(true);
   } finally { cliHooks.runner = null; removeWorkspace(run.root); }
+}, 30_000);
+
+function inputFiles(root: string, id: string): string[] {
+  const directory = path.join(root, '.migent/sessions', id, 'executions');
+  return readdirSync(directory).filter((name) => existsSync(path.join(directory, name, 'input.json')));
+}
+
+test('a reply to a cancelled role turn is recorded in input.json of the new turn', async () => {
+  const run = await cancelledRole('resume', ['status: complete\n\nDone']);
+  try {
+    const done = await capture(() => continueAgent(run.root, { sessionId: run.id, reply: 'Take another approach', runner: run.runner }));
+    expect(done.value).toBe(0);
+    const files = inputFiles(run.root, run.id);
+    expect(files).toHaveLength(1);
+    const input = JSON.parse(readFileSync(path.join(run.root, '.migent/sessions', run.id, 'executions', files[0]!, 'input.json'), 'utf8')) as Record<string, unknown>;
+    expect(input).toMatchObject({ kind: 'reply', input: 'Take another approach', stage_id: 'reviewer' });
+    expect(String(input.sent)).toContain('Take another approach');
+  } finally { removeWorkspace(run.root); }
+}, 30_000);
+
+test('a cut-off fresh attempt and a plain continue write no input.json', async () => {
+  const run = await cancelledRole('fresh', ['status: complete\n\nDone']);
+  try {
+    const done = await capture(() => continueAgent(run.root, { sessionId: run.id, reply: null, runner: run.runner }));
+    expect(done.value).toBe(0);
+    expect(inputFiles(run.root, run.id)).toEqual([]);
+  } finally { removeWorkspace(run.root); }
+}, 30_000);
+
+/** Persist a cancelled-turn reply (the durable origin event), then recover it with a plain continue. */
+async function recoverRoleReply(origin: 'human' | 'cut_off' | null) {
+  const run = await cancelledRole('resume', ['status: complete\n\nDone']);
+  const directory = path.join(run.root, '.migent/sessions', run.id);
+  const lock = SessionLock.acquire(directory);
+  try {
+    new SessionStore(run.root).supersedeCancelled(run.id, 'reviewer', { text: 'saved steer', origin: origin ?? 'human' });
+    if (origin === null) {
+      const file = path.join(directory, 'events.jsonl');
+      writeFileSync(file, readFileSync(file, 'utf8').replace(',"origin":"human"', '').replace('"origin":"human",', ''));
+    }
+  } finally { lock.release(); }
+  expect(inputFiles(run.root, run.id)).toEqual([]);
+  const done = await capture(() => continueAgent(run.root, { sessionId: run.id, reply: null, runner: run.runner }));
+  expect(done.value).toBe(0);
+  expect(run.provider.calls[1]?.prompt).toContain('saved steer');
+  return { run, directory };
+}
+
+test('role session: a recovered human cancelled reply is delivered and recorded in input.json', async () => {
+  const { run, directory } = await recoverRoleReply('human');
+  try {
+    const files = inputFiles(run.root, run.id);
+    expect(files).toHaveLength(1);
+    expect(JSON.parse(readFileSync(path.join(directory, 'executions', files[0]!, 'input.json'), 'utf8'))).toMatchObject({
+      kind: 'reply', input: 'saved steer', stage_id: 'reviewer',
+    });
+  } finally { removeWorkspace(run.root); }
+}, 30_000);
+
+test('role session: a recovered cut-off cancelled reply is re-sent without input.json', async () => {
+  const { run } = await recoverRoleReply('cut_off');
+  try {
+    expect(inputFiles(run.root, run.id)).toEqual([]);
+  } finally { removeWorkspace(run.root); }
+}, 30_000);
+
+test('role session: a legacy cancelled reply without origin is re-sent without input.json', async () => {
+  const { run, directory } = await recoverRoleReply(null);
+  try {
+    expect(readFileSync(path.join(directory, 'events.jsonl'), 'utf8')).not.toContain('"origin":"human"');
+    expect(inputFiles(run.root, run.id)).toEqual([]);
+  } finally { removeWorkspace(run.root); }
 }, 30_000);

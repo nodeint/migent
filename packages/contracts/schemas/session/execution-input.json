@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/session/execution-input.json",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "execution_id",
+    "stage_id",
+    "kind",
+    "responds_to_execution_id",
+    "recorded_at",
+    "sent",
+    "input"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "number",
+      "const": 1
+    },
+    "execution_id": {
+      "type": "string"
+    },
+    "stage_id": {
+      "type": "string"
+    },
+    "kind": {
+      "anyOf": [
+        {
+          "type": "string",
+          "const": "reply"
+        },
+        {
+          "type": "string",
+          "const": "answers"
+        }
+      ]
+    },
+    "responds_to_execution_id": {
+      "type": "string"
+    },
+    "recorded_at": {
+      "type": "string"
+    },
+    "sent": {
+      "type": "string"
+    },
+    "input": {
+      "type": "string"
+    },
+    "answers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "patternProperties": {
+          "^.*$": {}
+        }
+      }
+    }
+  },
+  "title": "Execution input (`executions/<id>/input.json`)",
+  "description": "The human input that opened this attempt. Written once, before execution.json. Absent when no human input was sent."
+}

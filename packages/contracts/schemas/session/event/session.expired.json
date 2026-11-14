@@ -72,6 +72,9 @@
         "reply": {
           "type": "string"
         },
+        "origin": {
+          "type": "string"
+        },
         "answers": {
           "type": "array",
           "items": {

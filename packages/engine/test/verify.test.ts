@@ -74,6 +74,15 @@ function runStage(runner: AgentToolRunner, workspace: string, sessionId: string,
   });
 }
 
+interface RawEvent { event: string; stageId?: string; stage_id?: string; data: Record<string, unknown> }
+
+function resumeEvents(sessionDir: string): { stageId: string; data: Record<string, unknown> }[] {
+  return readFileSync(path.join(sessionDir, 'events.jsonl'), 'utf8').split('\n').filter(Boolean)
+    .map((line) => JSON.parse(line) as RawEvent)
+    .filter((event) => event.event === 'session.active')
+    .map((event) => ({ stageId: event.stageId ?? event.stage_id ?? '', data: event.data }));
+}
+
 function execution(workspace: string, sessionId: string, executionId: string): Record<string, unknown> {
   const file = path.join(workspace, '.migent', 'sessions', sessionId, 'executions', executionId, 'execution.json');
   return JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
@@ -195,6 +204,63 @@ test('continue with a reply sends only that reply to the blocked stage', async (
   expect(sent).not.toContain('## Previous attempt');
   expect(provider.calls[1]?.agentId).toBe('native-session-1');
   expect(provider.calls[2]?.prompt ?? '').not.toContain(reply);
+});
+
+test('a blocked reply is recorded on the resume event and in the new attempt input.json', async () => {
+  const { workspace, sessionId } = setup(workflowText('node -e "process.exit(0)"'));
+  const provider = new ScriptedClient([BLOCKED, OK, OK], [null, '# notes\n', null]);
+  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
+  await executeNamedWorkflow(workspace, { workflowId: 'wf', sessionId }, runner);
+  const sessionDir = path.join(workspace, '.migent', 'sessions', sessionId);
+  const [blockedId] = readdirSync(path.join(sessionDir, 'executions')).sort();
+  expect(existsSync(path.join(sessionDir, 'executions', blockedId!, 'input.json'))).toBe(false);
+  await executeNamedWorkflow(workspace, { workflowId: 'wf', sessionId, resetRevisions: true, reply: 'use docs/api.yaml' }, runner);
+  const resumes = resumeEvents(sessionDir).filter((event) => event.data.from === 'blocked');
+  expect(resumes).toHaveLength(1);
+  expect(resumes[0]?.data.reply).toBe('use docs/api.yaml');
+  const [, secondId] = readdirSync(path.join(sessionDir, 'executions')).sort();
+  const input = JSON.parse(readFileSync(path.join(sessionDir, 'executions', secondId!, 'input.json'), 'utf8')) as Record<string, unknown>;
+  expect(input).toMatchObject({
+    schema_version: 1, execution_id: secondId, stage_id: 'implement', kind: 'reply',
+    sent: 'use docs/api.yaml', input: 'use docs/api.yaml', responds_to_execution_id: blockedId,
+  });
+  expect(input.answers).toBeUndefined();
+});
+
+test('a plain blocked resume has no reply and no input.json', async () => {
+  const { workspace, sessionId } = setup(workflowText('node -e "process.exit(0)"'));
+  const provider = new ScriptedClient([BLOCKED, OK, OK], [null, '# notes\n', null]);
+  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
+  await executeNamedWorkflow(workspace, { workflowId: 'wf', sessionId }, runner);
+  await executeNamedWorkflow(workspace, { workflowId: 'wf', sessionId, resetRevisions: true }, runner);
+  const sessionDir = path.join(workspace, '.migent', 'sessions', sessionId);
+  const resumes = resumeEvents(sessionDir).filter((event) => event.data.from === 'blocked');
+  expect(resumes).toHaveLength(1);
+  expect(resumes[0]?.data).not.toHaveProperty('reply');
+  for (const name of readdirSync(path.join(sessionDir, 'executions'))) {
+    expect(existsSync(path.join(sessionDir, 'executions', name, 'input.json')), name).toBe(false);
+  }
+});
+
+test('a blocked sibling resumed by a reply to another stage has no reply on its event', async () => {
+  const workflow = `\
+schema_version: 2
+concurrency: 2
+id: wf
+stages:
+  - id: a
+    role: developer
+  - id: b
+    role: developer
+`;
+  const { workspace, sessionId } = setup(workflow);
+  const provider = new ScriptedClient([BLOCKED, BLOCKED, OK]);
+  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
+  await executeNamedWorkflow(workspace, { workflowId: 'wf', sessionId }, runner);
+  await executeNamedWorkflow(workspace, { workflowId: 'wf', sessionId, stageId: 'a', reply: 'answer a' }, runner);
+  const sessionDir = path.join(workspace, '.migent', 'sessions', sessionId);
+  const resumes = resumeEvents(sessionDir).filter((event) => event.data.from === 'blocked');
+  expect(resumes.map((event) => [event.stageId, event.data.reply])).toEqual([['a', 'answer a']]);
 });
 
 test('reply is rejected unless the session is blocked', async () => {
@@ -1170,7 +1236,7 @@ test('a saved reply to a cancelled stage is recovered beside a blocked sibling',
   ]);
   const lock = SessionLock.acquire(path.join(workspace, '.migent', 'sessions', sessionId));
   try {
-    store.supersedeCancelled(sessionId, 'b', 'saved steer');
+    store.supersedeCancelled(sessionId, 'b', { text: 'saved steer', origin: 'human' });
   } finally {
     lock.release();
   }
@@ -1180,6 +1246,52 @@ test('a saved reply to a cancelled stage is recovered beside a blocked sibling',
   expect(provider.calls[0]?.agentId).toBe('native-b');
   expect(store.blockedStages(sessionId).map((item) => item.stageId)).toEqual(['a']);
   expect(store.pendingCancelledReply(sessionId)).toBeNull();
+});
+
+async function recoverSavedReply(origin: 'human' | 'cut_off' | null): Promise<{ sessionDir: string; ids: string[] }> {
+  const { workspace, sessionId } = setup(PARALLEL);
+  const { store } = seedStages(workspace, sessionId, [
+    { stageId: 'a', agentId: 'native-a', status: 'completed', outcome: new StageOutcome('blocked', { blocker: 'a gate' }) },
+    { stageId: 'b', agentId: 'native-b', status: 'cancelled' },
+  ]);
+  const sessionDir = path.join(workspace, '.migent', 'sessions', sessionId);
+  const lock = SessionLock.acquire(sessionDir);
+  try {
+    if (origin !== null) store.supersedeCancelled(sessionId, 'b', { text: 'saved steer', origin });
+    else {
+      store.supersedeCancelled(sessionId, 'b', { text: 'saved steer', origin: 'human' });
+      const file = path.join(sessionDir, 'events.jsonl');
+      writeFileSync(file, readFileSync(file, 'utf8').replace(',"origin":"human"', '').replace('"origin":"human",', ''));
+    }
+  } finally {
+    lock.release();
+  }
+  const provider = new ScriptedClient([OK]);
+  await executeNamedWorkflow(workspace, { workflowId: 'wf', sessionId }, new AgentToolRunner(registryOf({ fake: provider }), 10));
+  expect(provider.calls[0]?.prompt).toContain('saved steer');
+  return { sessionDir, ids: readdirSync(path.join(sessionDir, 'executions')).sort() };
+}
+
+test('a recovered human cancelled reply is recorded in input.json', async () => {
+  const { sessionDir, ids } = await recoverSavedReply('human');
+  const files = ids.filter((id) => existsSync(path.join(sessionDir, 'executions', id, 'input.json')));
+  expect(files).toHaveLength(1);
+  expect(JSON.parse(readFileSync(path.join(sessionDir, 'executions', files[0]!, 'input.json'), 'utf8'))).toMatchObject({
+    kind: 'reply', sent: 'saved steer', input: 'saved steer', stage_id: 'b',
+  });
+});
+
+test('a recovered cut-off cancelled reply is re-sent without input.json', async () => {
+  const { sessionDir, ids } = await recoverSavedReply('cut_off');
+  expect(ids.filter((id) => existsSync(path.join(sessionDir, 'executions', id, 'input.json')))).toEqual([]);
+});
+
+test('a recovered cancelled reply saved without origin is re-sent without input.json', async () => {
+  const raw = readFileSync(new URL(import.meta.url), 'utf8');
+  expect(raw).toContain('origin');
+  const { sessionDir, ids } = await recoverSavedReply(null);
+  expect(readFileSync(path.join(sessionDir, 'events.jsonl'), 'utf8')).not.toContain('"origin":"human"');
+  expect(ids.filter((id) => existsSync(path.join(sessionDir, 'executions', id, 'input.json')))).toEqual([]);
 });
 
 test('a reply to a cancelled resume_from stage continues its own conversation', async () => {
@@ -1248,7 +1360,7 @@ test('a saved reply to one of two cancelled stages is recovered and the sibling 
   ]);
   const lock = SessionLock.acquire(path.join(workspace, '.migent', 'sessions', sessionId));
   try {
-    store.supersedeCancelled(sessionId, 'b', 'saved steer');
+    store.supersedeCancelled(sessionId, 'b', { text: 'saved steer', origin: 'human' });
   } finally {
     lock.release();
   }

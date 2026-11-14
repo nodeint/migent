@@ -8,9 +8,9 @@ migent session continue <session-id> --reply "<reply>"
 
 When several workflow stages are waiting, add `--stage <stage>` to select one;
 other stages remain pending. `session show --json` lists pending questions even
-when the session is blocked. Session `questions.json` contains context, options,
-selection mode, and answer history; original batches are in
-`executions/<execution-id>/questions.json`. Identify questions by execution ID
+when the session is blocked. Each execution's `questions.json` contains context, options, and
+selection mode, and the `input.json` of the execution that received the answers
+records them (`executions/<execution-id>/`). Identify questions by execution ID
 and question ID.
 
 Present each question's context and `single`/`multiple` selection mode. Number

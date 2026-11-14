@@ -62,7 +62,7 @@ test('every session file key is exercised by a writer test', () => {
   const text = guards.flatMap((name) => OWNERS.flatMap((owner) => testFiles(path.join(repo, 'packages', owner, 'test')).filter((file) => file.endsWith(name)))).map((file) => readFileSync(file, 'utf8')).join('\n');
   const schemaNames: Record<string, string> = {
     manifest: 'SessionManifest', status: 'SessionStatusFile', lock: 'SessionLockFile', execution: 'SessionExecution', questions: 'SessionQuestions',
-    'execution-questions': 'ExecutionQuestions', next: 'SessionNext', diagnostics: 'SessionDiagnostics', events: 'SessionEvent',
+    'execution-questions': 'ExecutionQuestions', 'execution-input': 'ExecutionInput', next: 'SessionNext', diagnostics: 'SessionDiagnostics', events: 'SessionEvent',
   };
   for (const entry of SESSION_FILES) {
     expect(schemaNames[entry.key], `no schema name for ${entry.key}`).toBeDefined();

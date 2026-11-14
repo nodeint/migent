@@ -37,6 +37,18 @@ export interface ResumeDecisionRecord {
   origin: 'human';
 }
 
+/** Who wrote a cancelled reply: a human, or Migent's own cut-off text. Events from Migent 0.7 and earlier have none. */
+export type CancelledReplyOrigin = 'human' | 'cut_off';
+
+/** A saved answer: the text sent, its structured records, and the execution that asked. */
+export interface QuestionAnswerRecord {
+  formatted: string;
+  /** The raw text the human typed. */
+  input: string;
+  answers: Record<string, unknown>[];
+  target: string;
+}
+
 interface CancelledRow {
   context: ExecutionContext;
   metadata: Record<string, unknown>;
@@ -79,16 +91,20 @@ export class SessionStoreResume extends SessionStoreCore {
    * Record a reply that supersedes a cancelled stage execution. The execution stays cancelled;
    * the reply is dispatched as a new execution that continues its conversation.
    */
-  public supersedeCancelled(sessionId: string, stageId: string, reply: string): void {
+  public supersedeCancelled(
+    sessionId: string,
+    stageId: string,
+    reply: { text: string; origin: CancelledReplyOrigin },
+  ): void {
     const directory = path.join(this.sessionsDirectory, sessionId);
     assertSessionLockHeld(directory);
     const target = this.cancelledStages(sessionId).find((row) => row.stageId === stageId);
     if (!target) throw new ConfigurationError(`Stage ${stageId} has no cancelled execution.`);
-    if (!reply.trim()) throw new ConfigurationError('--reply is empty.');
+    if (!reply.text.trim()) throw new ConfigurationError('--reply is empty.');
     // Persist the reply before dispatch so an interrupted dispatch can be recovered.
     appendLifecycleEvent(directory, {
       event: 'session.active', timestamp: utcNow(), executionId: target.executionId, stageId: stageId || null,
-      data: { from: CANCELLED_REPLY, reply },
+      data: { from: CANCELLED_REPLY, reply: reply.text, origin: reply.origin },
     });
     this.rewriteManifestStatus(directory, 'running');
     commitFoldedStatus(this.workspace, directory);
@@ -98,14 +114,17 @@ export class SessionStoreResume extends SessionStoreCore {
   public pendingCancelledReply(
     sessionId: string,
     stageId: string | null = null,
-  ): { executionId: string; stageId: string; reply: string } | null {
+  ): { executionId: string; stageId: string; reply: string; origin: CancelledReplyOrigin | 'unknown' } | null {
     const events = readParsedEvents(path.join(this.sessionsDirectory, sessionId, 'events.jsonl'));
     for (const row of this.cancelledStages(sessionId)) {
       if (stageId !== null && row.stageId !== stageId) continue;
       const event = [...events].reverse().find((item) =>
         item.event === 'session.active' && item.executionId === row.executionId && item.data.from === CANCELLED_REPLY,
       );
-      if (typeof event?.data.reply === 'string') return { ...row, reply: event.data.reply };
+      if (typeof event?.data.reply === 'string') {
+        const { origin } = event.data;
+        return { ...row, reply: event.data.reply, origin: origin === 'human' || origin === 'cut_off' ? origin : 'unknown' };
+      }
     }
     return null;
   }
@@ -131,7 +150,7 @@ export class SessionStoreResume extends SessionStoreCore {
   }
 
   /** A reply unlocks only its selected question. No automatic resume without a reply. */
-  public resumeQuestion(sessionId: string, stageId: string, reply: string): string {
+  public resumeQuestion(sessionId: string, stageId: string, reply: string): QuestionAnswerRecord {
     const directory = path.join(this.sessionsDirectory, sessionId);
     assertSessionLockHeld(directory);
     const target = this.questionStages(sessionId).find((row) => row.stageId === stageId);
@@ -145,7 +164,8 @@ export class SessionStoreResume extends SessionStoreCore {
       data: { from: resolutionFrom('question'), reply: formatted, answers, input: reply },
     });
     commitFoldedStatus(this.workspace, directory);
-    return formatted;
+    const records = answers as unknown as Record<string, unknown>[];
+    return { formatted, input: reply, answers: records, target: target.executionId };
   }
 
   /**
@@ -194,12 +214,16 @@ export class SessionStoreResume extends SessionStoreCore {
     return readPendingResumes(path.join(this.sessionsDirectory, sessionId));
   }
 
-  public questionReply(sessionId: string, executionId: string): string | null {
+  /** The saved answer to this execution's questions, as `resumeQuestion` returned it. */
+  public questionAnswer(sessionId: string, executionId: string): QuestionAnswerRecord | null {
     const events = readParsedEvents(path.join(this.sessionsDirectory, sessionId, 'events.jsonl'));
     const event = events.reverse().find((row) =>
       row.event === 'session.active' && row.executionId === executionId && row.data.from === resolutionFrom('question'),
     );
-    return typeof event?.data.reply === 'string' ? event.data.reply : null;
+    if (typeof event?.data.reply !== 'string') return null;
+    const answers = Array.isArray(event.data.answers) ? event.data.answers.filter(isRecord) : [];
+    const input = typeof event.data.input === 'string' ? event.data.input : event.data.reply;
+    return { formatted: event.data.reply, input, answers, target: executionId };
   }
 
   private blockedResumeTargets(
@@ -235,6 +259,7 @@ export class SessionStoreResume extends SessionStoreCore {
   public resumeBlockedSession(
     sessionId: string,
     stageId: string | null = null,
+    reply: string | null = null,
   ): { executionId: string; stageId: string }[] {
     const sessionDirectory = path.join(this.sessionsDirectory, sessionId);
     assertSessionLockHeld(sessionDirectory);
@@ -248,6 +273,7 @@ export class SessionStoreResume extends SessionStoreCore {
       const data: Record<string, unknown> = { from: BLOCKED_RESUME_FROM };
       const blocker = target.blocker ?? (targets.length === 1 ? textField(status.blocker) : null);
       if (blocker) data.blocker = blocker;
+      if (reply !== null && stageId !== null && target.stageId === stageId) data.reply = reply;
       appendLifecycleEvent(sessionDirectory, {
         event: 'session.active',
         timestamp,

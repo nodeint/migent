@@ -2,8 +2,13 @@
 
 ## Unreleased
 
+### Breaking
+
+- Migent no longer writes or updates the session-level `questions.json`, and no longer reads it. Existing files in old sessions stay as they are, and the `SessionQuestions` schema stays published as historical. Read pending questions from `status.json` or `migent session show --json`, each asked batch from `executions/<id>/questions.json`, and answers from `executions/<id>/input.json`.
+
 ### Added
 
+- `executions/<id>/input.json` records the human input an attempt opened with: what the agent received, what the human typed, and structured answers. It is written before `execution.json`, and executions without human input have none. Replies to a blocked stage add `data.reply` to its `session.active` resume event, and replies to a cancelled stage add `data.origin` (`human` or `cut_off`).
 - TypeBox schemas, generated JSON Schema and a [reference page](https://github.com/nodeint/migent/blob/main/docs/reference/session-files.md) for the session files and every `events.jsonl` event, a typebox-free `@nodeint/migent-contracts/data` subpath, and tests that check each writer and event producer against them.
 - `migent session delete` removes stopped sessions by ID or by `--older-than` and `--status` filters, with `--dry-run`, `--yes`, and `--json`. It never deletes a running session, and a deleted numeric ID is never reissued ([CLI](https://github.com/nodeint/migent/blob/main/docs/cli.md#inspect-sessions)).
 

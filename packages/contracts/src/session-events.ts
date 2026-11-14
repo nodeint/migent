@@ -69,6 +69,7 @@ const sessionStatusData = {
   reason: opt(str()),
   manual: opt(Type.Boolean()),
   reply: opt(str()),
+  origin: opt(str()),
   answers: opt(Type.Array(obj())),
   ...outcomeData,
 };
