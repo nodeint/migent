@@ -491,6 +491,7 @@ function loadOrCreateRun(
       stageAttempt,
       executionOrder,
       prompt: request.prompt,
+      humanInput: request.humanInput ?? null,
       resumeExecutionId: request.resumeExecutionId ?? null,
       allowCancelledSibling: request.allowCancelledSibling === true,
       validateResume: (record) => validateSessionProfile(

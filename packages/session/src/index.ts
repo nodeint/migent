@@ -94,7 +94,7 @@ export {
   selectRunWorkflow,
   selectSessionWorkflow,
 } from './session-selection.js';
-export type { ExecutionSaveInput, LoadOrCreateInput, ManualCompletionResult, SessionRecordFallback, SessionRecordInit, SkipDetails } from './session-store.js';
+export type { CancelledReplyOrigin, ExecutionSaveInput, HumanInput, LoadOrCreateInput, ManualCompletionResult, QuestionAnswerRecord, SessionRecordFallback, SessionRecordInit, SkipDetails } from './session-store.js';
 export {
   AgentSessionRecord,
   ExecutionContext,

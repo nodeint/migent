@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import { type AgentToolRunner, gateRoleResume, type RolePolicy, type RunResult, selectRolePolicy, storedRolePolicy } from '@nodeint/migent-engine';
 import { buildStageReplyPrompt, loadRoleResponsibilities, loadWorkspaceConfig, prependRoleInstructions } from '@nodeint/migent-kernel';
-import { SessionStore, watchSnapshot } from '@nodeint/migent-session';
+import { type HumanInput, type QuestionAnswerRecord, SessionStore, watchSnapshot } from '@nodeint/migent-session';
 
 import { formatResumeDecision, printNotice } from '../display.js';
 import { EXIT_RESUME_EXPIRED } from '../exits.js';
@@ -46,11 +46,21 @@ export function newRolePolicy(
   return selectRolePolicy(workspace, { role: session.role, client, model });
 }
 
+/** A free-text reply the human typed, which the agent receives unchanged. */
+export function replyInput(text: string, respondsToExecutionId: string): HumanInput {
+  return { kind: 'reply', sent: text, input: text, respondsToExecutionId };
+}
+
+/** An answer to a question: the text the agent receives, the human's own text, and the structured records. */
+export function answersInput(saved: QuestionAnswerRecord): HumanInput {
+  return { kind: 'answers', sent: saved.formatted, input: saved.input, answers: saved.answers, respondsToExecutionId: saved.target };
+}
+
 /** Saves the human's answer to a pending question once, and returns its formatted text; null when there is none. */
 export function recordAnswer(
   store: SessionStore,
   turn: { sessionId: string; state: ContinueState; explicitReply: string | null },
-): string | null {
+): QuestionAnswerRecord | null {
   const { sessionId, state, explicitReply } = turn;
   if (explicitReply === null || state.pending === undefined || state.cancelledReply !== null) return null;
   return store.resumeQuestion(sessionId, state.role, explicitReply);
@@ -104,7 +114,7 @@ export async function runFreshAttempt(
 ): Promise<RunResult> {
   const { workspace, sessionId, role, runner, profile } = scope;
   const store = new SessionStore(workspace);
-  store.supersedeCancelled(sessionId, role, item.text);
+  store.supersedeCancelled(sessionId, role, { text: item.text, origin: 'cut_off' });
   const stamp = sourceStamp(workspace, sessionId, item.executionId);
   return runner.run({
     client: profile.client,

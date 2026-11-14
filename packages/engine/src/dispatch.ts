@@ -20,7 +20,7 @@ import { frozenRoleInstructions, frozenStageTarget, readWorkflowFreeze } from '@
 import { commitFoldedStatus, parseExecutionId } from '@nodeint/migent-session';
 import { freezeSessionTask } from '@nodeint/migent-session';
 import { bindPriorSessionId, createWorkflowSession } from '@nodeint/migent-session';
-import { SessionStore, stringOptions } from '@nodeint/migent-session';
+import { type HumanInput, SessionStore, stringOptions } from '@nodeint/migent-session';
 import { isRecord } from '@nodeint/migent-workflow';
 import { isRoleStage, loadNamedWorkflow, type RoleStageSpec, type StageSpec, type WorkflowDocument } from '@nodeint/migent-workflow';
 
@@ -40,6 +40,8 @@ export interface StageDispatchRequest {
   workflowId: string;
   stageId: string;
   prompt: string;
+  /** The human input the prompt carries, recorded in the attempt's `input.json`. */
+  humanInput?: HumanInput | null;
   /** What the prompt is; it picks the closing instruction. */
   turn?: TurnKind | null;
   task?: string | null;
@@ -152,6 +154,7 @@ export async function dispatchNamedStage(
     model: target.model,
     options: { ...target.options },
     prompt: request.prompt,
+    humanInput: request.humanInput ?? null,
     turn: request.turn ?? null,
     workspace,
     sessionId,
@@ -337,11 +340,11 @@ export async function dispatchExecuteStage(
     ? gateStageResume(run, { stageId, stageSpec, freeze })
     : { verdict: 'fresh' as const, sourceExecutionId: dispatch.judgedFresh };
   if (gate.verdict === 'ask') return resumeExpiredStage(sessionId);
-  const { turn, prompt } = buildRoleStageTurn(
+  const { turn, prompt, humanInput } = buildRoleStageTurn(
     { workspace, workflow, sessionId, stageId, stageSpec, snapshots },
     { status, freeze, reply, fresh: gate.verdict === 'fresh' },
   );
-  const request: StageDispatchRequest = { workflowId, stageId, prompt, turn, sessionId };
+  const request: StageDispatchRequest = { workflowId, stageId, prompt, humanInput, turn, sessionId };
   let loggedStart = false;
   const result: StageDispatchResult = await dispatchNamedStage(workspace, request, {
     runner,
@@ -370,6 +373,13 @@ function optionLabelOf(target: StageTarget): string {
   return label.join(', ') || 'default';
 }
 
+/** A role stage's turn kind and prompt, with the human input the prompt carries. */
+interface StageTurn {
+  turn: TurnKind;
+  prompt: string;
+  humanInput: HumanInput | null;
+}
+
 // Gathers the prompt inputs for a role stage and picks its turn kind and prompt.
 function buildRoleStageTurn(
   stage: Parameters<typeof selectStageTurn>[0],
@@ -380,7 +390,7 @@ function buildRoleStageTurn(
     /** The expired resume became a fresh conversation: send the full stage prompt plus what the turn carried. */
     fresh: boolean;
   },
-): { turn: TurnKind; prompt: string } {
+): StageTurn {
   const { workspace, workflow, sessionId, stageId, stageSpec, snapshots } = stage;
   const { status, freeze, reply, fresh } = inputs;
   const priorSessionId = storedPriorSessionId(status);
@@ -458,21 +468,22 @@ function selectStageTurn(
     snapshots: readonly ExecutionSnapshot[];
   },
   inputs: {
-    stageReply: string | null;
+    stageReply: { text: string; human: HumanInput | null } | null;
     exhausted: ReturnType<typeof verifyExhaustedExecution>;
     frozen: ReturnType<typeof freezeSessionTask>;
     promptInput: Parameters<typeof buildStagePrompt>[0];
     fresh: boolean;
   },
-): { turn: TurnKind; prompt: string } {
+): StageTurn {
   const { workspace, workflow, sessionId, stageId, stageSpec, snapshots } = stage;
   const { stageReply, exhausted, frozen, promptInput } = inputs;
   const answers = stageReply !== null && answersQuestion(workspace, sessionId, stageId);
-  if (inputs.fresh) return freshStagePrompt(inputs, { stageSpec, answers });
+  const humanInput = stageReply?.human ?? null;
+  if (inputs.fresh) return { ...freshStagePrompt(inputs, { stageSpec, answers }), humanInput };
   const interrupted = stageReply !== null && interruptedExecutionId(snapshots, stageId) !== undefined;
   if (stageReply !== null) {
     const turn = answers && !interrupted ? 'answers' : 'reply';
-    return { turn, prompt: buildStageReplyPrompt(stageReply, { answers, interrupted }) };
+    return { turn, prompt: buildStageReplyPrompt(stageReply.text, { answers, interrupted }), humanInput };
   }
   if (exhausted?.verifyReport) {
     const prompt = buildVerifyRepairPrompt(
@@ -480,10 +491,10 @@ function selectStageTurn(
       { red: stageSpec.maxVerify, maxVerify: stageSpec.maxVerify, artifactPath: null },
       { taskFile: frozen.taskFile, sessionDirectory: frozen.sessionDirectory },
     );
-    return { turn: 'repair', prompt };
+    return { turn: 'repair', prompt, humanInput: null };
   }
   const turn = stagePromptAlreadyDelivered(workflow, snapshots, stageId) ? 'continue' : 'start';
-  return { turn, prompt: turn === 'continue' ? buildStageResumePrompt(promptInput) : buildStagePrompt(promptInput) };
+  return { turn, prompt: turn === 'continue' ? buildStageResumePrompt(promptInput) : buildStagePrompt(promptInput), humanInput: null };
 }
 
 /** Execution id of the stage's latest attempt when the human stopped it before it finished. */

@@ -321,7 +321,11 @@ function createExclusive(lockPath: string, info: LockInfo): boolean {
   try {
     fd = openSync(lockPath, 'wx');
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false;
+    const { code } = error as NodeJS.ErrnoException;
+    if (code === 'EEXIST') return false;
+    // Windows: a lock file another process is deleting while someone still holds a handle on it
+    // (delete pending) cannot be opened and reports EPERM/EACCES. Treat it as still held; retry.
+    if (process.platform === 'win32' && (code === 'EPERM' || code === 'EACCES')) return false;
     throw error;
   }
   try {

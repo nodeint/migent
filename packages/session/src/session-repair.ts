@@ -29,7 +29,6 @@ import {
   type FoldExecution,
   type FoldInputs,
   foldStatus,
-  writeQuestionsFile,
 } from './session-fold.js';
 import { loadFoldInputs, readSessionManifest } from './session-fold-read.js';
 import { sessionStatusWithPending, type StatusExecution } from './session-ledger.js';
@@ -86,7 +85,6 @@ function writeRepairedEvents(sessionDirectory: string, plan: RepairPlan): void {
   if (torn) sealSessionEventLogs(sessionDirectory);
   for (const draft of drafts) appendLifecycleEvent(sessionDirectory, draft);
   writeExecutionQuestions(sessionDirectory, inputs);
-  writeQuestionsFile(sessionDirectory, withDrafts(inputs, drafts));
 }
 
 function assertTaskHash(folded: Record<string, unknown>, sessionId: string): void {

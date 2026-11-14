@@ -139,9 +139,7 @@ test('blocked, question, and cancelled sessions lose their stopped presentation'
       expect(status).not.toHaveProperty(key);
     }
     expect(status.manual_completion).toMatchObject({ from: expected });
-    const file = path.join(directoryOf(workspace, sessionId), 'questions.json');
-    const listed = JSON.parse(readFileSync(file, 'utf8')).questions as { status: string }[];
-    expect(listed.filter((item) => item.status === 'pending')).toEqual([]);
+    expect(existsSync(path.join(directoryOf(workspace, sessionId), 'questions.json'))).toBe(false);
     expect(repairSession(workspace, sessionId).status).toBe('completed');
   }
 });

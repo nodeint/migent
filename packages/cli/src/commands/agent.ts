@@ -4,7 +4,7 @@ import path from 'node:path';
 import { RoleRunResult, RoleRunResults } from '@nodeint/migent-contracts';
 import { AgentToolRunner, type RunResult } from '@nodeint/migent-engine';
 import { buildStageReplyPrompt, CancellationRequested, ConfigurationError, legacyClientOf, log, resolveRoleTarget, type TurnKind } from '@nodeint/migent-kernel';
-import { createAgentSession, isSessionLockLost, repairSessionUnlocked, requireAgentSession, SessionLock, SessionStore, stringOptions } from '@nodeint/migent-session';
+import { createAgentSession, type HumanInput, isSessionLockLost, type QuestionAnswerRecord, repairSessionUnlocked, requireAgentSession, SessionLock, SessionStore, stringOptions } from '@nodeint/migent-session';
 import { type OptionValues } from 'commander';
 
 import { clientRegistry, parseOptions } from '../client.js';
@@ -16,7 +16,7 @@ import { requireCurrentSchema } from '../migrate.js';
 import { bindCancellationSignals } from '../signals.js';
 import { optionalText, stringList } from '../text.js';
 import { findWorkspace, invocationCwdPath, resolvePrompt } from '../workspace.js';
-import { freshRolePrompt, gateRole, judgeRoleCancelled, newRolePolicy, recordAnswer, resumeSource, rolePrompt, roleResumeExpired, runFreshAttempt } from './agent-resume.js';
+import { answersInput, freshRolePrompt, gateRole, judgeRoleCancelled, newRolePolicy, recordAnswer, replyInput, resumeSource, rolePrompt, roleResumeExpired, runFreshAttempt } from './agent-resume.js';
 
 export const CLIENT_MAPPING = 'claude→claude-code, codex→codex, grok→grok, agy→agy, opencode→opencode';
 
@@ -74,7 +74,7 @@ async function dispatchLocked(context: {
     const scope = { role: args.role, runner, profile: target };
     if (resume.cancelled) return continueCancelledExecutions(workspace, sessionId, scope);
     // The answer is recorded before the gate, so an `ask` stop keeps it for the decision.
-    const input = dispatchInput(workspace, sessionId, args);
+    const { text: input, human } = dispatchInput(workspace, sessionId, args);
     const gated = gateRole({ workspace, sessionId, role: args.role, runner }, resume.executionId);
     if (gated.verdict === 'ask') return roleResumeExpired(workspace, sessionId);
     const prompt = gated.verdict === 'fresh'
@@ -85,6 +85,7 @@ async function dispatchLocked(context: {
       model: target.model,
       options: { ...target.options },
       prompt,
+      humanInput: human,
       workspace,
       sessionId,
       resumeExecutionId: gated.verdict === 'fresh' ? null : resume.executionId,
@@ -113,17 +114,20 @@ function resumeState(
   return { cancelled: false, executionId: previous === null ? null : previous.executionId };
 }
 
-function dispatchInput(workspace: string, sessionId: string, args: DispatchArgs): string {
-  let input = resolvePrompt({
+function dispatchInput(
+  workspace: string,
+  sessionId: string,
+  args: DispatchArgs,
+): { text: string; human: HumanInput | null } {
+  const input = resolvePrompt({
     prompt: args.prompt ?? null,
     promptFile: args.promptFile ?? null,
     promptStdin: args.promptStdin ?? false,
   });
-  const question = new SessionStore(workspace)
-    .questionStages(sessionId)
-    .find((row) => row.stageId === args.role);
-  if (question) input = new SessionStore(workspace).resumeQuestion(sessionId, args.role, input);
-  return input;
+  const store = new SessionStore(workspace);
+  if (!store.questionStages(sessionId).some((row) => row.stageId === args.role)) return { text: input, human: null };
+  const saved = store.resumeQuestion(sessionId, args.role, input);
+  return { text: saved.formatted, human: answersInput(saved) };
 }
 
 async function withSessionLock(
@@ -198,9 +202,11 @@ export async function continueAgent(
 export type ContinueState = {
   role: string;
   sessionStatus: string;
-  cancelledReply: { executionId: string; text: string } | null;
+  cancelledReply: { executionId: string; text: string; human: HumanInput | null } | null;
   pending: { executionId: string } | undefined;
   reply: string | null;
+  /** The saved answer when the reply answers a question that was answered before this run. */
+  savedAnswer: QuestionAnswerRecord | null;
 };
 
 async function continueLocked(
@@ -244,6 +250,7 @@ async function continueLocked(
       options: { ...profile.options },
       prompt: gated.verdict === 'fresh' ? freshRolePrompt({ workspace, sessionId: args.sessionId, role }, next.prompt) : next.prompt,
       turn: next.turn,
+      humanInput: next.human,
       workspace,
       sessionId: args.sessionId,
       resumeExecutionId: gated.verdict === 'fresh' ? null : next.resumeId,
@@ -263,25 +270,30 @@ function continueState(store: SessionStore, sessionId: string, explicitReply: st
   if (role === '') throw new ConfigurationError(`Session ${sessionId} has no role.`);
   // A reply to a stopped turn supersedes it: the cancelled execution stays cancelled
   // and the reply runs as a new turn.
-  let cancelledReply: { executionId: string; text: string } | null = null;
+  let cancelledReply: ContinueState['cancelledReply'] = null;
   const pendingCancelled = store.pendingCancelledReply(sessionId, role);
   if (explicitReply !== null && (sessionStatus === 'cancelled' || pendingCancelled !== null)) {
     const target = store.cancelledStages(sessionId).find((row) => row.stageId === role);
     if (!target) throw new ConfigurationError(`Session ${sessionId} has no cancelled execution to reply to.`);
-    store.supersedeCancelled(sessionId, role, explicitReply);
-    cancelledReply = { executionId: target.executionId, text: explicitReply };
+    store.supersedeCancelled(sessionId, role, { text: explicitReply, origin: 'human' });
+    cancelledReply = {
+      executionId: target.executionId, text: explicitReply, human: replyInput(explicitReply, target.executionId),
+    };
   } else if (pendingCancelled !== null) {
-    cancelledReply = { executionId: pendingCancelled.executionId, text: pendingCancelled.reply };
+    // Cut-off text and replies saved before origin existed are re-sent but are not human input.
+    const human = pendingCancelled.origin === 'human' ? replyInput(pendingCancelled.reply, pendingCancelled.executionId) : null;
+    cancelledReply = { executionId: pendingCancelled.executionId, text: pendingCancelled.reply, human };
   }
   if (cancelledReply !== null) sessionStatus = 'active';
   if (sessionStatus === 'completed' && explicitReply === null) {
-    return { role, sessionStatus, cancelledReply, pending: undefined, reply: null };
+    return { role, sessionStatus, cancelledReply, pending: undefined, reply: null, savedAnswer: null };
   }
   const pending = cancelledReply === null
     ? store.questionStages(sessionId).find((row) => row.stageId === role)
     : undefined;
-  const reply = explicitReply ?? (pending ? store.questionReply(sessionId, pending.executionId) : null);
-  return { role, sessionStatus, cancelledReply, pending, reply };
+  const savedAnswer = explicitReply === null && pending ? store.questionAnswer(sessionId, pending.executionId) : null;
+  const reply = explicitReply ?? savedAnswer?.formatted ?? null;
+  return { role, sessionStatus, cancelledReply, pending, reply, savedAnswer };
 }
 
 function continueTurn(
@@ -290,34 +302,50 @@ function continueTurn(
     store: SessionStore;
     sessionId: string;
     explicitReply: string | null;
-    /** The formatted answers, when `recordAnswer` already saved them. */
-    recordedAnswer?: string | null;
+    /** The saved answer, when `recordAnswer` already saved it. */
+    recordedAnswer?: QuestionAnswerRecord | null;
   },
   state: ContinueState,
   latest: { executionId: string; directory: string },
-): { prompt: string; turn: TurnKind | null; resumeId: string } {
+): { prompt: string; turn: TurnKind | null; resumeId: string; human: HumanInput | null } {
   const { workspace, store, sessionId } = context;
   const { role, sessionStatus, cancelledReply, pending, reply } = state;
   if (cancelledReply !== null) {
     log(`session ${sessionId} was stopped during ${cancelledReply.executionId}. Sending your reply to ${role}.`);
     const prompt = rolePrompt(workspace, role, buildStageReplyPrompt(cancelledReply.text, { interrupted: true }));
-    return { prompt, turn: 'reply', resumeId: cancelledReply.executionId };
+    return { prompt, turn: 'reply', resumeId: cancelledReply.executionId, human: cancelledReply.human };
   }
   if (reply !== null) {
+    if (sessionStatus === 'blocked') resumeBlockedWithReply(context, role, reply);
     const answers = pending !== undefined && context.explicitReply !== null;
-    const answer = answers ? (context.recordedAnswer ?? store.resumeQuestion(sessionId, role, reply)) : reply;
-    const prompt = rolePrompt(workspace, role, buildStageReplyPrompt(answer, { answers }));
-    return { prompt, turn: answers ? 'answers' : 'reply', resumeId: latest.executionId };
+    const saved = answers ? (context.recordedAnswer ?? store.resumeQuestion(sessionId, role, reply)) : null;
+    // A saved answer recovered with no explicit reply is a reply of the human's too.
+    const answered = saved ?? state.savedAnswer;
+    const text = saved?.formatted ?? reply;
+    const prompt = rolePrompt(workspace, role, buildStageReplyPrompt(text, { answers }));
+    const human = answered ? answersInput(answered) : replyInput(reply, latest.executionId);
+    return { prompt, turn: answers ? 'answers' : 'reply', resumeId: latest.executionId, human };
   }
   if (sessionStatus === 'blocked') {
-    return { prompt: blockedPrompt(context, role, latest), turn: 'continue', resumeId: latest.executionId };
+    return { prompt: blockedPrompt(context, role, latest), turn: 'continue', resumeId: latest.executionId, human: null };
   }
   if (sessionStatus === 'active') {
     log(`session ${sessionId} is active. Resuming ${role} with its last prompt.`);
     const prompt = lastUserPrompt(workspace, sessionId, latest.executionId);
-    return { prompt, turn: null, resumeId: latest.executionId };
+    return { prompt, turn: null, resumeId: latest.executionId, human: null };
   }
   throw new ConfigurationError(`Session ${sessionId} is ${sessionStatus || 'unknown'}.`);
+}
+
+/** A reply to a blocked turn reactivates the session first, so the reply turn can be created and recorded. */
+function resumeBlockedWithReply(
+  context: { store: SessionStore; sessionId: string },
+  role: string,
+  reply: string,
+): void {
+  for (const item of context.store.resumeBlockedSession(context.sessionId, role, reply)) {
+    log(`session ${context.sessionId} was blocked by ${item.executionId}. Sending your reply to ${role}.`);
+  }
 }
 
 function blockedPrompt(

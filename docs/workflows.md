@@ -655,16 +655,15 @@ Each option requires `label`, with optional `description`.
 selections. Optional `recommended` is an array of option IDs, with at most one
 entry for single selection. A recommendation is never an answer.
 
-Migent writes the full questions, context, and options to
-`.migent/sessions/<session-id>/questions.json`. This file contains all rounds,
-including each question's `stage_id`, `execution_id`, `recipient`, `status`
-(`pending`, `answered`, or `superseded`), and structured `answer` when answered.
-The pair `(execution_id, id)` identifies a question across rounds. Question
-numbering restarts at 1 for each stage's new batch. The original
-batch is also stored in `executions/<execution-id>/questions.json`. Neither
-humans nor programs need to read `response.md` to obtain the questions.
+Migent writes the full questions, context, and options of each round to
+`executions/<execution-id>/questions.json`. The answers are in the
+`executions/<execution-id>/input.json` of the execution that received them, and
+pending questions are in `status.json` and `session show --json`. The pair
+`(execution_id, id)` identifies a question across rounds. Question numbering
+restarts at 1 for each stage's new batch. Neither humans nor programs need to
+read `response.md` to obtain the questions.
 `session show` prints the options and selection mode; `--json` exposes full
-pending questions in `questions`. Repair can rebuild both question files.
+pending questions in `questions`. Repair can rebuild the per-execution question batches (`executions/<id>/questions.json`). It does not rebuild `input.json`.
 
 Use `blocked` for an obstacle the agent cannot resolve (missing resources or
 an unrecoverable command error); use `question` to ask for information or a

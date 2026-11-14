@@ -140,6 +140,8 @@ Type: object
 
 Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/session/questions.json`
 
+Historical. Written by Migent up to 0.7. No longer written or updated. Old sessions may still contain it.
+
 Path: `questions.json`; class: guaranteed; framing: document
 
 Type: object
@@ -183,6 +185,29 @@ Type: object
 | `questions[].selection` | `"single"` \| `"multiple"` | no |  |  |
 | `questions[].options` | (map of any)[] | no |  |  |
 | `questions[].recommended` | string[] | no |  |  |
+
+<a id="session-execution-input-json"></a>
+### Execution input (`executions/<id>/input.json`)
+
+Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/session/execution-input.json`
+
+The human input that opened this attempt. Written once, before execution.json. Absent when no human input was sent.
+
+Path: `executions/<id>/input.json`; class: guaranteed; framing: document
+
+Type: object
+
+| Field | Type | Required | Notes | Description |
+| --- | --- | --- | --- | --- |
+| `schema_version` | `1` | yes |  |  |
+| `execution_id` | string | yes |  |  |
+| `stage_id` | string | yes |  |  |
+| `kind` | `"reply"` \| `"answers"` | yes |  |  |
+| `responds_to_execution_id` | string | yes |  |  |
+| `recorded_at` | string | yes |  |  |
+| `sent` | string | yes |  |  |
+| `input` | string | yes |  |  |
+| `answers` | (map of any)[] | no |  |  |
 
 <a id="session-next-json"></a>
 ### Next suggestions (`next.json`)
@@ -346,6 +371,7 @@ Type: object
 | `data.reason` | string | no |  |  |
 | `data.manual` | boolean | no |  |  |
 | `data.reply` | string | no |  |  |
+| `data.origin` | string | no |  |  |
 | `data.answers` | (map of any)[] | no |  |  |
 | `data.outcome` | map of any \| null | no |  |  |
 
@@ -377,6 +403,7 @@ Type: object
 | `data.reason` | string | no |  |  |
 | `data.manual` | boolean | no |  |  |
 | `data.reply` | string | no |  |  |
+| `data.origin` | string | no |  |  |
 | `data.answers` | (map of any)[] | no |  |  |
 | `data.outcome` | map of any \| null | no |  |  |
 
@@ -408,6 +435,7 @@ Type: object
 | `data.reason` | string | no |  |  |
 | `data.manual` | boolean | no |  |  |
 | `data.reply` | string | no |  |  |
+| `data.origin` | string | no |  |  |
 | `data.answers` | (map of any)[] | no |  |  |
 | `data.outcome` | map of any \| null | no |  |  |
 
@@ -439,6 +467,7 @@ Type: object
 | `data.reason` | string | no |  |  |
 | `data.manual` | boolean | no |  |  |
 | `data.reply` | string | no |  |  |
+| `data.origin` | string | no |  |  |
 | `data.answers` | (map of any)[] | no |  |  |
 | `data.outcome` | map of any \| null | no |  |  |
 
@@ -470,6 +499,7 @@ Type: object
 | `data.reason` | string | no |  |  |
 | `data.manual` | boolean | no |  |  |
 | `data.reply` | string | no |  |  |
+| `data.origin` | string | no |  |  |
 | `data.answers` | (map of any)[] | no |  |  |
 | `data.outcome` | map of any \| null | no |  |  |
 
@@ -501,6 +531,7 @@ Type: object
 | `data.reason` | string | no |  |  |
 | `data.manual` | boolean | no |  |  |
 | `data.reply` | string | no |  |  |
+| `data.origin` | string | no |  |  |
 | `data.answers` | (map of any)[] | no |  |  |
 | `data.outcome` | map of any \| null | no |  |  |
 
@@ -532,6 +563,7 @@ Type: object
 | `data.reason` | string | no |  |  |
 | `data.manual` | boolean | no |  |  |
 | `data.reply` | string | no |  |  |
+| `data.origin` | string | no |  |  |
 | `data.answers` | (map of any)[] | no |  |  |
 | `data.outcome` | map of any \| null | no |  |  |
 
@@ -563,6 +595,7 @@ Type: object
 | `data.reason` | string | no |  |  |
 | `data.manual` | boolean | no |  |  |
 | `data.reply` | string | no |  |  |
+| `data.origin` | string | no |  |  |
 | `data.answers` | (map of any)[] | no |  |  |
 | `data.outcome` | map of any \| null | no |  |  |
 
