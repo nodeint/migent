@@ -1,45 +1,32 @@
 ---
 name: planning
-description: >
-  Organize implementation work into coherent phases for coding, review,
-  verification, and progress tracking. Create or revise plans from available
-  context without requiring a design document or another skill.
+description: Organize implementation work into reviewable, independently verifiable phases from available requirements and design decisions.
 ---
 
 # Implementation planning
 
-Divide work sensibly, not as finely as possible. Plan outcomes and boundaries;
-leave implementation details to coding.
+Plan outcomes and boundaries; leave implementation details to coding.
+Use the [template](references/template.md).
 
-## Establish context
+## Establish the basis
 
-- Use available context to establish the goal, scope, constraints, and acceptance criteria.
-  Ask only for missing information that affects the plan; no input format is required.
-- Read relevant repository guidance and inspect responsibilities, dependencies,
-  and verification evidence. Follow repository baseline requirements.
-- Preserve settled decisions; surface unresolved choices instead of inventing a solution.
+- Confirm goal, scope, constraints, and acceptance criteria from available inputs and repository evidence.
+- Preserve settled decisions. Resolve choices affecting scope, behavior, contracts, architecture, or phase boundaries before approval; ask the human when needed.
+- Follow repository baseline requirements. Distinguish checks run from checks planned and record anything unverified.
 
-## Plan phases
+## Define phases
 
-Use the [template](references/template.md), scaled to the work.
+- Give each phase one complete outcome, reviewable and verifiable on its own; aim for one commit.
+- Split parts that can each merge green and be reviewed without reading the other's implementation. Explain why coupled parts belong together.
+- Order by dependency, then risk. Confirm assumptions before phases that rely on them.
+- Leave the codebase coherent after every phase. Do not defer a phase's promised behavior or verification to a later phase; later phases may extend completed outcomes.
+- Include rules, enforcement, and the documentation needed to use the outcome in the same phase. Reserve only cross-phase integration and overview documentation for the end.
+- Make each phase self-contained for its implementer: scope, exclusions, dependencies, relevant decisions and references, runnable verification commands, and measurable expected results.
+- Exclude code, pseudocode, signatures, and file-by-file edit instructions.
 
-- Group tightly coupled changes; separate outcomes that can be meaningfully reviewed
-  on their own. Avoid arbitrary size limits or unnecessary fragmentation.
-- Order phases by dependency. Leave a coherent, verifiable codebase after each phase,
-  including any required intermediate compatibility.
-- Give each phase an outcome, scope, boundary rationale, dependencies, completion
-  evidence, and review conditions for proceeding. Add outcome-level tasks only if useful.
-- Cover every acceptance criterion, documentation need, and final integration check.
-- Reference modules or contracts only as needed to clarify scope. Exclude code,
-  pseudocode, signatures, file-by-file edits, and test implementations.
+## Hand off
 
-## Track and hand off
-
-- Track phase status, actual verification evidence, blockers, and the next action.
-  Distinguish baseline results and planned checks from completed verification.
-- Revise remaining phases when evidence changes the plan; retain completed outcomes
-  and explain material revisions. Surface decisions affecting scope or solution.
-- Planning alone does not authorize implementation or create new approval gates.
-- Keep the plan in the conversation unless saving is requested. When saving, update
-  the owning plan and retain references needed to resume, using repository-relative
-  links or supplied artifact snapshots.
+- Map every acceptance criterion to phases and concrete verification; check that the phases actually provide that coverage.
+- Leave no open decisions that block implementation. Planning does not authorize implementation.
+- Keep the plan in the conversation unless saving is requested. Retain usable references to required inputs.
+- Treat a workflow artifact as a snapshot, not a progress tracker. For a live plan, track actual progress separately and revise remaining phases when evidence changes; explain changes to completed outcomes or settled decisions.

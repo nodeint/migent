@@ -1,36 +1,37 @@
 # Plan template
 
-Keep it concise. Repeat the phase block as needed; omit inapplicable optional details.
+Keep it concise. Repeat the phase block as needed.
 
 ```markdown
 # Plan: <outcome>
 
 ## Goal and scope
 
-<Goal, scope, constraints, and acceptance criteria.>
+<Goal, constraints, exclusions, and acceptance criteria with stable IDs.>
 
 ## Baseline
 
-<Relevant current state, checks run and results, and anything unverified.>
+<Current behavior, checks run and results, and anything unverified.>
 
 ## Phases
 
-### P1: <outcome> — <pending | in progress | blocked | complete>
+### P1: <one complete outcome>
 
-- Scope and boundary: <What belongs here, why, and the resulting codebase state.>
-- Dependencies: <Prerequisites and any intermediate compatibility requirements.>
-- Completion and review: <Evidence and review conditions required before proceeding.>
+- Outcome and scope: <Result, boundaries, and coherent state after this phase.>
+- Boundary rationale: <Why this is one review unit; why coupled parts belong together.>
+- Dependencies and inputs: <Earlier phases, confirmed assumptions, decisions, and references needed to implement this phase.>
+- Verify: <Runnable commands and the behavior each must demonstrate.>
+- Done: <Measurable completion and review criteria, including relevant rules and docs.>
 
 ## Acceptance coverage
 
-<Criteria mapped to phases and verification, including documentation and final integration.>
+<Each criterion → phase(s) → concrete verification; include final integration.>
 
-## Progress and blockers
+## Open decisions
 
-<Current phase, actual evidence, risks or unresolved questions, and next action.
-Note material plan revisions when applicable.>
+<Choices that block implementation and who must resolve them. None at approval.>
 
 ## References
 
-<Sources needed to understand or resume the work, if any.>
+<Required inputs and their purpose, using repository paths or supplied artifact snapshot paths.>
 ```

@@ -80,14 +80,17 @@ Adding a type means updating this table and adding its references in the
 
 ## Migent workflows
 
-`.migent/workflows/` uses `issue` (triage, branch) → `product` (when requirements
-or user scenarios need definition) → `design` (when solution
-decisions are needed) → `plan` (when the approved design needs ordered tasks) →
-`implement` → `pr` (draft PR, no merge). Small changes may skip `product`, `design`, or
-`plan` as recommended by the preceding artifact. Downstream workflows do not
-start automatically; start each one from the completed session with `--prior`
-(see [Session handoff](docs/session-handoff.md)). PRD, design, and plan References
-identify earlier inputs needed downstream; keep the referenced sessions available.
+`.migent/workflows/` follows `issue` → `product` → `design` → `plan` →
+`implement_plan` → `pr` (draft, no merge). Skip optional steps as recommended by
+the prior artifact; use `implement` for single-pass work.
+
+`implement_plan` creates one reviewed local commit per session. Start each phase
+manually with `--prior` pointing to the plan or previous phase session;
+`phase_commit` identifies the next step. New phases require a clean tree;
+resume interrupted work with `migent session continue`.
+
+Keep sessions named in artifact References available for
+[handoff](docs/session-handoff.md). Downstream workflows never start automatically.
 
 `release` prepares the release PR (version proposed by SemVer, notes reviewed),
 then merges only after you authorize it and watches `release.yml`:
