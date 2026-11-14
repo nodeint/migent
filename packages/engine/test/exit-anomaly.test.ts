@@ -9,6 +9,7 @@ import { expect, test, vi } from 'vitest';
 import { ClaudeCodeClient } from '../../adapters/src/clients/claude-code-client.ts';
 import { CodexClient } from '../../adapters/src/clients/codex-client.ts';
 import { AgentToolRunner } from '../src/index.ts';
+import { assertEventsValid } from './event-validation.ts';
 import { registryOf, ScriptedClient, tempDir, writeHandoffFromReply } from './support.ts';
 
 vi.setConfig({ testTimeout: 60_000 });
@@ -143,6 +144,7 @@ test('AC1/AC7: an exit-1 turn with a valid reply and artifact is completed and l
   expect(details(anomalies[0])).toMatchObject({
     turn: 1, exit_code: 1, signal: null, origin: 'exit-only', accepted: true, reason: null,
   });
+  assertEventsValid(list);
   expect(existsSync(path.join(result.artifact_directory, 'notes.md'))).toBe(true);
 });
 
@@ -157,6 +159,8 @@ test('AC2: a provider error with a reply persists nothing and logs no anomaly', 
   const list = events(workspace, sessionId);
   expect(named(list, 'provider.turn_failed')).toHaveLength(1);
   expect(named(list, 'provider.exit_anomaly')).toHaveLength(0);
+  assertEventsValid(list);
+  expect(named(list, 'execution.failed')).toHaveLength(1);
 });
 
 test('AC3: an exit-1 reply with no outcome fails with the model text and is logged as rejected', async () => {

@@ -1,0 +1,219 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/session/diagnostics.json",
+  "anyOf": [
+    {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "turn",
+        "recorded_at",
+        "agent_id",
+        "failure",
+        "stderr_tail",
+        "stderr",
+        "stream_summary",
+        "result_state",
+        "command"
+      ],
+      "properties": {
+        "schema_version": {
+          "type": "number",
+          "const": 2
+        },
+        "turn": {
+          "type": "number"
+        },
+        "recorded_at": {
+          "type": "string"
+        },
+        "agent_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "failure": {
+          "type": "object",
+          "required": [
+            "kind",
+            "origin",
+            "message"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string"
+            },
+            "origin": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "phase": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "code": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "errno": {},
+            "syscall": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "path": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "exit_code": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "signal": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        "stderr_tail": {
+          "type": "string"
+        },
+        "stderr": {
+          "type": "object",
+          "patternProperties": {
+            "^.*$": {}
+          }
+        },
+        "stream_summary": {
+          "anyOf": [
+            {
+              "type": "object",
+              "patternProperties": {
+                "^.*$": {}
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "result_state": {
+          "type": "object",
+          "patternProperties": {
+            "^.*$": {}
+          }
+        },
+        "command": {
+          "type": "object",
+          "required": [
+            "executable",
+            "argument_count"
+          ],
+          "properties": {
+            "executable": {
+              "type": "string"
+            },
+            "argument_count": {
+              "type": "number"
+            }
+          }
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "endpoint": {
+          "type": "string"
+        },
+        "endpoint_length": {
+          "type": "number"
+        },
+        "migent_version": {
+          "type": "string"
+        },
+        "node_version": {
+          "type": "string"
+        },
+        "platform": {
+          "type": "string"
+        },
+        "arch": {
+          "type": "string"
+        },
+        "timings": {
+          "type": "object",
+          "patternProperties": {
+            "^.*$": {}
+          }
+        }
+      },
+      "title": "Diagnostics (schema 2)"
+    },
+    {
+      "type": "object",
+      "required": [
+        "schema_version"
+      ],
+      "properties": {
+        "schema_version": {
+          "type": "number",
+          "const": 1
+        },
+        "failure": {
+          "type": "object",
+          "patternProperties": {
+            "^.*$": {}
+          }
+        },
+        "stderr_tail": {
+          "type": "string"
+        }
+      },
+      "title": "Diagnostics (schema 1)",
+      "description": "Wrapper failures only. Still read."
+    }
+  ],
+  "title": "Diagnostics (`executions/<id>/diagnostics.json`)",
+  "description": "The record of one abnormal provider turn."
+}

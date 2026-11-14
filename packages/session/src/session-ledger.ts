@@ -1,5 +1,6 @@
 import path from 'node:path';
 
+import type { SessionStatusName, StageOutcomeStatus } from '@nodeint/migent-contracts';
 import type { PendingResumeStop, SessionStatusInput } from '@nodeint/migent-kernel';
 import {
   type ExecutionSnapshot,
@@ -32,7 +33,7 @@ export interface LedgerSessionEvent {
 }
 
 export interface PlannedExecutionSave {
-  sessionStatus: string;
+  sessionStatus: SessionStatusName;
   outputs: LedgerOutput[];
   sessionEvent: LedgerSessionEvent | null;
   /** v1 manifest line to write. Null leaves the file untouched. */
@@ -53,7 +54,7 @@ export interface StatusExecution {
 }
 
 /** Session status for one execution. The session status is the reduction over each stage's latest. */
-export function sessionStatusForExecution(input: SessionStatusInput): string {
+export function sessionStatusForExecution(input: SessionStatusInput): SessionStatusName {
   return sessionStatusAfterExecution(input);
 }
 
@@ -81,7 +82,7 @@ export function sessionStatusWithPending(
   executions: readonly StatusExecution[],
   previousStatus: Readonly<Record<string, unknown>>,
   scope: { workflow: WorkflowDocument | null; pending: readonly PendingResumeStop[] },
-): string {
+): SessionStatusName {
   const { workflow, pending } = scope;
   const latest = latestPerStage(executions);
   if (latest.some((execution) => execution.status === 'running')) return 'active';
@@ -106,7 +107,7 @@ export function sessionStatusWithPending(
 }
 
 /** The session-stop status among `statuses`, or null. */
-function sessionStopStatus(statuses: readonly string[]): string | null {
+function sessionStopStatus(statuses: readonly SessionStatusName[]): SessionStatusName | null {
   return statuses.find(isSessionStop) ?? null;
 }
 
@@ -140,7 +141,7 @@ function version2CompletionStatus(
   executions: readonly StatusExecution[],
   previousStatus: Readonly<Record<string, unknown>>,
   workflow: WorkflowDocument,
-): string {
+): SessionStatusName {
   const snapshots = snapshotsFromStatus(executions);
   const sessionStatus = typeof previousStatus.status === 'string' ? previousStatus.status : 'active';
   // Quiescence, not one stage's decision. A missing output keeps the session active.
@@ -179,7 +180,8 @@ export function statusExecutionsFromSnapshots(snapshots: readonly ExecutionSnaps
     outcome:
       snapshot.outcomeStatus === null
         ? null
-        : new StageOutcome(snapshot.outcomeStatus, { decision: snapshot.outcomeDecision }),
+        : new StageOutcome(snapshot.outcomeStatus as StageOutcomeStatus, { // event-template: unchecked (stored outcome)
+          decision: snapshot.outcomeDecision }),
     artifactDirectory: snapshot.artifactDirectory,
     failureReason: snapshot.failureReason ?? null,
   }));

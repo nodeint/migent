@@ -1,6 +1,6 @@
 import Type, { type Static } from 'typebox';
 
-import { EXIT_CATALOG, type ExitName } from './exits.js';
+import { EXIT_CATALOG, type ExitName } from './data/exits.js';
 import { id } from './schema-id.js';
 
 /**

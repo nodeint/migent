@@ -1,3 +1,5 @@
+import type { StageOutcomeStatus } from '@nodeint/migent-contracts';
+
 import type { Question } from './questions.js';
 
 export const outcomeStatuses = new Set(['complete', 'blocked', 'question']);
@@ -26,7 +28,7 @@ export class StageOutcome {
   public readonly question: string | null;
   public readonly questions: Question[];
 
-  constructor(public readonly status: string, init: StageOutcomeInit = {}) {
+  constructor(public readonly status: StageOutcomeStatus, init: StageOutcomeInit = {}) {
     this.blocker = init.blocker ?? null;
     this.decision = init.decision ?? null;
     this.question = init.question ?? null;
@@ -61,7 +63,8 @@ export function parseStageOutcome(
     }
     return null;
   }
-  const status = rawStatus.toLowerCase();
+  // event-template: unchecked (validated against outcomeStatuses below)
+  const status = rawStatus.toLowerCase() as StageOutcomeStatus;
   if (!outcomeStatuses.has(status)) {
     const allowed = [...outcomeStatuses].sort().join(', ');
     throw new ResponseContractError(`Invalid workflow stage status: ${rawStatus}. Allowed: ${allowed}.`);

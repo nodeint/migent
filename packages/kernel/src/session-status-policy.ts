@@ -1,4 +1,4 @@
-import { exitCode, SESSION_STATUS_CATALOG, type SessionStatusEntry } from '@nodeint/migent-contracts';
+import { exitCode, SESSION_STATUS_CATALOG, type SessionStatusEntry, type SessionStatusName } from '@nodeint/migent-contracts';
 
 /**
  * Session-status rules derived from `SESSION_STATUS_CATALOG`. Every status set, precedence, exit code, and
@@ -22,9 +22,9 @@ export const isSessionStop = (status: string): boolean => rowOf(status)?.kind ==
 export const isStopped = (status: string): boolean => isStageStop(status) || isSessionStop(status);
 
 /** The session status a manifest line reads as: read or mirrored rows read through, anything else is active. */
-export function manifestStatusToSession(manifestStatus: string | null): string {
+export function manifestStatusToSession(manifestStatus: string | null): SessionStatusName {
   const row = manifestStatus === null ? undefined : rowOf(manifestStatus);
-  return row !== undefined && row.manifest !== null ? row.name : 'active';
+  return row !== undefined && row.manifest !== null ? (row.name as SessionStatusName) : 'active'; // event-template: unchecked (catalog row name)
 }
 
 /** The latest execution facts a detector reads. Structurally compatible with `ExecutionSnapshot`. */

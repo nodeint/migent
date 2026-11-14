@@ -1,6 +1,6 @@
 import { ENV_CATALOG } from '../env.js';
 import { EXIT_CATALOG, EXIT_FAMILIES, EXIT_FAMILY_TITLES } from '../exits.js';
-import { CLI_CONTRACTS, KNOWN_SHAPES } from '../index-registry.js';
+import { CLI_CONTRACTS, KNOWN_SHAPES, SESSION_EVENTS, SESSION_FILES } from '../index-registry.js';
 import { SESSION_STATUS_CATALOG } from '../session-status.js';
 import { collectIdentities, schemaPath } from './schemas.js';
 
@@ -16,7 +16,8 @@ function fileFor(identity: string): string {
   if (path.startsWith('workflow/')) return 'workflow.md';
   if (path.startsWith('exit/')) return 'exit-codes.md';
   if (path.startsWith('env/')) return 'env.md';
-  if (path.startsWith('session/')) return 'session-statuses.md';
+  if (path === 'session/session-status-entry.json') return 'session-statuses.md';
+  if (path.startsWith('session/')) return 'session-files.md';
   return 'cli-output.md';
 }
 
@@ -204,6 +205,29 @@ function sessionStatuses(): string {
   return `${lines.join('\n')}\n`;
 }
 
+function sessionFiles(): string {
+  const file = 'session-files.md';
+  const header = [
+    '# Session files reference',
+    '',
+    'Structure of the files under `.migent/sessions/<id>/` and of every `events.jsonl` record. Objects are open: readers must ignore unknown fields.',
+    '',
+    'Each entry has a stability class. `guaranteed`: a breaking change needs a major release, and a format change bumps `schema_version` and adds a union member. `known`: an opt-in description, never a guarantee.',
+    '',
+  ];
+  const parts = [BANNER, ...header, '## Files', ''];
+  for (const entry of SESSION_FILES) {
+    const node = entry.schema as Node;
+    parts.push(section(node.$id as string, node, { from: file, extra: `Path: ${code(entry.path)}; class: ${entry.class}; framing: ${entry.framing}` }));
+  }
+  parts.push('## Events', '', 'One record schema per event name. Client events (`provider.*`, `verify.*` and the correction events) accept a current and a historical form.', '');
+  for (const entry of SESSION_EVENTS) {
+    const node = entry.schema as Node;
+    parts.push(section(node.$id as string, node, { from: file, extra: `Event: ${code(entry.event)}; class: ${entry.class}` }));
+  }
+  return `${parts.join('\n')}\n`.replace(/\n{3,}/g, '\n\n');
+}
+
 /** `{ "docs/reference/<file>.md": content }`. */
 export function generateMarkdownFiles(): Record<string, string> {
   return {
@@ -213,5 +237,6 @@ export function generateMarkdownFiles(): Record<string, string> {
     'docs/reference/exit-codes.md': exitCodes(),
     'docs/reference/env.md': env(),
     'docs/reference/session-statuses.md': sessionStatuses(),
+    'docs/reference/session-files.md': sessionFiles(),
   };
 }

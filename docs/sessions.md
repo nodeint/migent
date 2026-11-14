@@ -11,6 +11,8 @@ override and stays uncommitted.
 
 ## On-disk layout
 
+The field-level structure of every file below, and of each `events.jsonl` event, is in the [session files reference](reference/session-files.md).
+
 Each run has its own directory, named by its session ID. A new session id is the
 next number in the workspace (`1`, `2`, `3`, …): the highest numeric directory name plus one.
 Older UUID and timestamp ids stay valid and are ignored when numbering. `manifest.yaml`

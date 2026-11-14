@@ -12,6 +12,7 @@ import { expect, test, vi } from 'vitest';
 
 import { AgentToolRunner } from '../src/agent-runner.ts';
 import { executeNamedWorkflow } from '../src/index.ts';
+import { assertEventsValid } from './event-validation.ts';
 import { registryOf,ScriptedClient, tempDir, writeStageWorkspace } from './support.ts';
 
 // Each stage spawns a wrapper and a provider process, which is slow on Windows CI.
@@ -181,6 +182,7 @@ test('refresh adopts the edited route and does not change status by itself', asy
   expect(refreshed?.data?.previous_hash).toMatch(/^[a-f0-9]{64}$/);
   expect(refreshed?.data?.source_sha256).toMatch(/^[a-f0-9]{64}$/);
   expect(refreshed?.data?.hash).not.toBe(refreshed?.data?.previous_hash);
+  assertEventsValid(events.trim().split('\n').map((line) => JSON.parse(line) as Record<string, unknown>));
 
   const provider = new ScriptedClient(['status: complete\n\ndone']);
   const captured = await captureStderr(() =>

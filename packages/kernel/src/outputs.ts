@@ -8,6 +8,7 @@ import {
 } from 'node:fs';
 import path from 'node:path';
 
+import type { SessionStatusName } from '@nodeint/migent-contracts';
 import type { WorkflowDocument } from '@nodeint/migent-workflow';
 import { SCHEMA_V7_ARTIFACTS } from '@nodeint/migent-workflow';
 
@@ -50,7 +51,7 @@ export interface SessionStatusInput {
   readonly stageId: string;
 }
 
-export function sessionStatusAfterExecution(input: SessionStatusInput): string {
+export function sessionStatusAfterExecution(input: SessionStatusInput): SessionStatusName {
   const { executionStatus, outcome, previousStatus, workflow, stageId } = input;
   if (outcome && (outcome.status === 'blocked' || outcome.status === 'question')) return outcome.status;
   if (executionStatus === 'cancelled') return 'cancelled';

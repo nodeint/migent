@@ -1,6 +1,7 @@
 /** The turn loop of one execution: provider turns, gates, corrections, verify, and repair turns. */
 import { rmSync } from 'node:fs';
 
+import type { ExecutionStatus } from '@nodeint/migent-contracts';
 import {
   CancellationRequested, type CliClient, CORRECTION_FAILURE_REASONS, CORRECTION_POLICY, type CorrectionFiles,
   type CorrectionLedger, decideCorrection, type FailureClassification, flattenHistory, formatVerifyReport,
@@ -356,7 +357,7 @@ export class TurnLoop {
         context,
         record,
         {
-          status: record.status,
+          status: record.status as ExecutionStatus, // event-template: unchecked (persistTurn set completed or failed)
           error: it.invokeError,
           outcome: it.outcome,
           extra: this.finalFields(this.outcomeFields()),
@@ -387,13 +388,14 @@ export class TurnLoop {
   private finishWithoutVerify(it: Iteration): boolean {
     const { record, store, context } = this;
     if (it.invokeError !== null || it.outcome === null || it.outcome.status !== 'complete' || this.verifyCommands.length === 0) {
-      record.status = it.invokeError === null && it.outcome !== null ? 'completed' : 'failed';
+      const finished: ExecutionStatus = it.invokeError === null && it.outcome !== null ? 'completed' : 'failed';
+      record.status = finished;
       store.save(record, context);
       store.saveExecution(
         context,
         record,
         {
-          status: record.status,
+          status: finished,
           error: it.invokeError,
           outcome: it.outcome,
           extra: this.finalFields(this.outcomeFields()),

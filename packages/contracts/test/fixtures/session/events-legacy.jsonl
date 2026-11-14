@@ -1,0 +1,4 @@
+{"event":"session.created","timestamp":"2026-10-20T00:00:00.000+00:00","data":{}}
+{"v":1,"seq":2,"event":"execution.started","timestamp":"2026-10-20T00:00:01.000+00:00","execution_id":"e1","stage_id":"work","data":{"execution_order":1,"stage_attempt":1,"client":"fake","model":"m","resumes_execution_id":null}}
+{"v":2,"seq":3,"event":"provider.turn_completed","timestamp":"2026-10-20T00:00:10.000+00:00","execution_id":"e1","provider":"fake","data":{},"details":{"turn":1,"agent_id":"agent-1","argv":["fake"]}}
+{"v":2,"seq":4,"event":"provider.stage_started","timestamp":"2026-10-20T00:00:02.000+00:00","execution_id":"e1","provider":"fake","data":{},"details":{"cli_version":"1"}}

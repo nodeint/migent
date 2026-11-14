@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/session/next.json",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "source_session_id",
+    "next"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "number",
+      "const": 1
+    },
+    "source_session_id": {
+      "type": "string"
+    },
+    "next": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "workflow",
+          "task",
+          "artifacts",
+          "argv"
+        ],
+        "properties": {
+          "workflow": {
+            "type": "string"
+          },
+          "task": {
+            "type": "string"
+          },
+          "artifacts": {
+            "type": "object",
+            "patternProperties": {
+              "^.*$": {
+                "type": "object",
+                "required": [
+                  "output",
+                  "path"
+                ],
+                "properties": {
+                  "output": {
+                    "type": "string"
+                  },
+                  "path": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "argv": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "command": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "title": "Next suggestions (`next.json`)"
+}

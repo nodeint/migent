@@ -2,6 +2,7 @@
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 
+import type { ExecutionStatus } from '@nodeint/migent-contracts';
 import type { StageOutcome } from '@nodeint/migent-kernel';
 import {
   EXECUTION_SCHEMA_VERSION,
@@ -23,7 +24,7 @@ import { ExecutionContext, type SkipDetails } from './session-store-types.js';
 export interface FinishExecutionSaveInput {
   context: ExecutionContext;
   sessionDirectory: string;
-  status: string;
+  status: ExecutionStatus;
   outcome: StageOutcome | null;
   plan: PlannedExecutionSave;
   previousStatus: Record<string, unknown>;

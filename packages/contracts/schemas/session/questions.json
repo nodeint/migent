@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/session/questions.json",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "questions"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "number",
+      "const": 1
+    },
+    "questions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "execution_id",
+          "stage_id",
+          "recipient",
+          "status",
+          "answer"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "execution_id": {
+            "type": "string"
+          },
+          "stage_id": {
+            "type": "string"
+          },
+          "recipient": {
+            "type": "string"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "answered"
+              },
+              {
+                "type": "string",
+                "const": "pending"
+              },
+              {
+                "type": "string",
+                "const": "superseded"
+              }
+            ]
+          },
+          "answer": {
+            "anyOf": [
+              {
+                "type": "object",
+                "patternProperties": {
+                  "^.*$": {}
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "answered_at": {
+            "type": "string"
+          },
+          "question": {
+            "type": "string"
+          },
+          "context": {
+            "type": "string"
+          },
+          "selection": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "single"
+              },
+              {
+                "type": "string",
+                "const": "multiple"
+              }
+            ]
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "patternProperties": {
+                "^.*$": {}
+              }
+            }
+          },
+          "recommended": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "description": "Every question and answer of the session, across executions."
+    }
+  },
+  "title": "Session questions (`questions.json`)"
+}

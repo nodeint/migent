@@ -185,7 +185,7 @@ commands such as `session show` exit 0.
 
 ## Files and question history
 
-All files are under `.migent/sessions/<session-id>/`:
+All files are under `.migent/sessions/<session-id>/`. Their field-level structure is in the [session files reference](reference/session-files.md#session-questions-json):
 
 | File | Purpose |
 | --- | --- |

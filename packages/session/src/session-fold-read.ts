@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 
+import type { ExecutionStatus } from '@nodeint/migent-contracts';
 import { ConfigurationError, EXECUTIONS_DIRNAME, isAtomicTempName } from '@nodeint/migent-kernel';
 import { isRecord, loadNamedWorkflow, loadWorkflowDocument, parseYamlDocument, type WorkflowDocument } from '@nodeint/migent-workflow';
 
@@ -68,7 +69,8 @@ export function executionFromRecord(
     client: client === null ? '' : client,
     model: textOr(metadata.model) ?? '',
     resumesExecutionId: textOr(metadata.resumes_execution_id),
-    status: textOr(metadata.status) ?? '',
+    // A stored status outside the union passes through unchanged, as before.
+    status: (textOr(metadata.status) ?? '') as ExecutionStatus, // event-template: unchecked
     outcome,
     error: textOr(metadata.error),
     failureReason: textOr(metadata.failure_reason),

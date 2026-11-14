@@ -1,6 +1,9 @@
 import Type, { type Static } from 'typebox';
 
 import { id } from './common.js';
+import { HANDOFF_SCHEMA_VERSION } from './data/versions.js';
+
+export { HANDOFF_SCHEMA_VERSION };
 
 /**
  * Structure of the handoff document an agent writes under response protocol 3. Pure data: the
@@ -8,8 +11,6 @@ import { id } from './common.js';
  * needs `ask: human`) and normalizes questions (assigns IDs and option letters). Closed objects:
  * an unknown key is an error.
  */
-
-export const HANDOFF_SCHEMA_VERSION = 1;
 
 const Text = Type.String({ pattern: '\\S', description: 'Non-blank text.' });
 

@@ -1,6 +1,9 @@
 import Type, { type Static } from 'typebox';
 
 import { id, nullable } from './common.js';
+import { LIFECYCLE_EVENT_VERSION } from './data/versions.js';
+
+export { LIFECYCLE_EVENT_VERSION };
 
 /**
  * Opt-in descriptions of persisted files written by Migent. They are never the guarantee of a
@@ -11,9 +14,6 @@ const num = () => Type.Number();
 const str = () => Type.String();
 
 // ---- lifecycle events -------------------------------------------------------------------------
-
-/** Version tag of the v2 lifecycle event record. */
-export const LIFECYCLE_EVENT_VERSION = 2;
 
 export const LifecycleEventV2 = Type.Object(
   {

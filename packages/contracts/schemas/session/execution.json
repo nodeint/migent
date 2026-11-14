@@ -1,0 +1,181 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/session/execution.json",
+  "type": "object",
+  "required": [
+    "session_id",
+    "execution_id",
+    "execution_order",
+    "stage_id",
+    "stage_attempt",
+    "status",
+    "created_at"
+  ],
+  "properties": {
+    "session_id": {
+      "type": "string"
+    },
+    "execution_id": {
+      "type": "string"
+    },
+    "execution_order": {
+      "type": "number"
+    },
+    "stage_id": {
+      "type": "string"
+    },
+    "stage_attempt": {
+      "type": "number"
+    },
+    "status": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "string"
+    },
+    "schema_version": {
+      "anyOf": [
+        {
+          "type": "number",
+          "const": 2
+        },
+        {
+          "type": "number",
+          "const": 1
+        }
+      ]
+    },
+    "completed_at": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "client": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "model": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "options": {
+      "type": "object",
+      "patternProperties": {
+        "^.*$": {}
+      }
+    },
+    "agent_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "resumes_execution_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "artifact_directory": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string"
+    },
+    "skip": {
+      "type": "object",
+      "patternProperties": {
+        "^.*$": {}
+      }
+    },
+    "error": {
+      "type": "string"
+    },
+    "failure_reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "outcome": {
+      "type": "object",
+      "patternProperties": {
+        "^.*$": {}
+      }
+    },
+    "final_turn": {
+      "type": "number"
+    },
+    "turns": {},
+    "verify": {},
+    "corrections": {
+      "type": "object",
+      "patternProperties": {
+        "^.*$": {}
+      }
+    },
+    "response_protocol": {
+      "type": "number"
+    },
+    "turn_kind": {
+      "type": "string"
+    },
+    "hostname": {
+      "type": "string"
+    },
+    "owner_pid": {
+      "type": "number"
+    },
+    "provider_pid": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "provider_endpoint": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "title": "Execution (`executions/<id>/execution.json`)",
+  "description": "`schema_version` is 2, 1, or absent. `final_turn` and `response_protocol` are missing from older files."
+}
