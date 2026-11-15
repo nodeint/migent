@@ -55,5 +55,6 @@ must be checked against the current source when changing behavior.
 | Update this map with documentation changes | Add or revise a row when a document is added, renamed, or takes ownership of a topic. |
 
 For installation and the product overview, see the [root README](../README.md).
-For repository setup, package structure, development checks, and release work,
-see [Contributing](../CONTRIBUTING.md).
+For repository setup, package structure, checks, and contribution policy, see
+[Contributing](../CONTRIBUTING.md). Issue, PR, and release procedures live in
+[repository skills](../.agents/skills).

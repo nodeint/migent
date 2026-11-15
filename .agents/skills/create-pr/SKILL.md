@@ -23,6 +23,7 @@ description: Commit, push, open a non-release PR, and report CI; stop before mer
    Do not use `git add -A` or `git commit -am`; exclude secrets and build output.
 6. Draft the PR body using the repository template, closing references, and required
    attribution. Include changes, purpose, checks, and anything unverified.
+   Name the PR and squash subject per CONTRIBUTING.md.
    Write the body to a temporary file.
 7. When authorized, push with
    `git push -u <remote> refs/heads/<branch>:refs/heads/<branch>`.

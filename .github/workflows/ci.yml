@@ -3,6 +3,7 @@ name: CI
 on:
   pull_request:
     branches: [main, next]
+    types: [opened, synchronize, reopened, edited, ready_for_review]
 
 permissions:
   contents: read
@@ -12,6 +13,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  conventions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - run: node scripts/git-flow.mjs pr
+
   test:
     strategy:
       fail-fast: false
