@@ -1,11 +1,6 @@
 ---
 name: release
-description: >
-  Prepare and review a release, open its pull request, wait for required checks,
-  then merge and publish with authorization. Use for release requests,
-  a named version, or /release.
-metadata:
-  short-description: "Prepare and publish a repository release"
+description: Prepare release notes and PRs; merge and publish with authorization.
 ---
 
 # Release

@@ -1,6 +1,7 @@
 # Plan template
 
-Keep it concise. Repeat the phase block as needed.
+Keep applicable sections concise; omit empty sections unless a required format says otherwise.
+Repeat the phase block as needed.
 
 ```markdown
 # Plan: <outcome>

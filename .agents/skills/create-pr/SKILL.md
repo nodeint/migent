@@ -1,12 +1,6 @@
 ---
 name: create-pr
-description: >
-  Commit the work on the current branch, push it, and open a pull request
-  against the repository's configured base, then report CI results.
-  Use for create PR, tạo PR, open a pull request, or push and open a PR.
-  Stops before merging. For a release, use release instead.
-metadata:
-  short-description: "Open a pull request for the current branch"
+description: Commit, push, open a non-release PR, and report CI; stop before merging.
 ---
 
 # Create a pull request
@@ -33,7 +27,7 @@ metadata:
 7. When authorized, push with
    `git push -u <remote> refs/heads/<branch>:refs/heads/<branch>`.
    Verify upstream, then open the PR with the required draft status:
-   `gh pr create --repo <owner>/<repo> --base <base> --head <branch> --title "<subject>" --body-file <notes>`.
+   `gh pr create --draft --repo <owner>/<repo> --base <base> --head <branch> --title "<subject>" --body-file <notes>`.
 8. Inspect CI for the current PR head and base. Wait when repository rules require it;
    report failures and stop. Report branch, commit, PR URL, and check results in the
    user's language. Do not merge without the user's instruction.

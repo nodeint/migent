@@ -1,9 +1,6 @@
 ---
 name: eslint
-description: >
-  Check and write repository TypeScript to the ESLint config. Use when
-  creating or changing `.ts` or `.tsx` files, or when validating ESLint.
-user-invocable: true
+description: Write and validate TypeScript against repository ESLint rules.
 ---
 
 # ESLint

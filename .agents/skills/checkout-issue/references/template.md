@@ -1,6 +1,6 @@
 # Issue summary template
 
-Keep headings and order; use `None.` for empty sections. Choose Requested behavior
+Keep applicable headings in order; omit empty sections unless a required format says otherwise. Choose Requested behavior
 for non-bugs or Reproduction for bugs. Summarize with source links, not copied bodies.
 
 ```markdown
@@ -55,8 +55,9 @@ and questions requiring clarification.>
 
 ## Workspace
 
-<Branch, base branch and SHA, upstream, final changes and their disposition.
-Authorization: triage only or implementation requested, with its source.>
+<For read-only triage: no workspace changes. Otherwise: branch, base branch and SHA,
+upstream, final changes and their disposition.
+Authorization: triage, checkout, or implementation requested, with its source.>
 
 ## References
 

@@ -1,8 +1,6 @@
 ---
 name: design
-description: >
-  Decide a solution for unresolved behavior, ownership, contract, or architecture choices.
-  Covers features, bugfixes, refactors, and migrations. Excludes status reports and research alone.
+description: Resolve behavior, contract, ownership, and architecture choices.
 ---
 
 # Solution design
@@ -30,8 +28,8 @@ description: >
    Give material risks a mitigation or explicit acceptance decision.
 8. Resolve required decisions before completing the design. Keep it as a draft when
    answers are pending; record the blocker rather than hiding it as an assumption.
-9. Fill the [design template](references/template.md), preserving headings and order.
-   Explain inapplicable sections briefly and distinguish facts, decisions, and assumptions.
+9. Fill the applicable sections of the [design template](references/template.md).
+   Distinguish facts, decisions, and assumptions.
 
 ## Type references
 

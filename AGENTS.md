@@ -8,8 +8,6 @@
 2. If the request, scope, or goal is unclear, stop and ask the user instead of choosing an interpretation independently.
 3. Review the proposed approach against repository evidence;
    surface material weaknesses, assumptions, risks, and trade-offs before proceeding.
-4. Before implementation, run tests, lint, typecheck, build, and gate checks relevant to the estimated change scope;
-   report any failure and stop so the user can decide whether to continue.
 
 ### Implementation discipline
 
@@ -30,8 +28,7 @@
 
 1. After implementation, test the changed behavior and run the checks relevant to the actual change scope.
 2. Never delete, skip, weaken, or rewrite verification merely to make the implementation pass.
-3. Compare final results with the baseline so pre-existing failures remain distinguishable from introduced regressions.
-4. Report the changes, commands run, results, unresolved risks, and anything not verified without overstating completion.
+3. Report the changes, commands run, results, unresolved risks, and anything not verified without overstating completion.
 
 ## Skills
 
@@ -51,11 +48,11 @@ Explicit user instructions take precedence over skill guidance.
 | [`checkout-issue`](.agents/skills/checkout-issue/SKILL.md) | Reading or starting work on a repository GitHub issue |
 | [`product`](.agents/skills/product/SKILL.md) | Defining product requirements, user scenarios, CLI UX, and acceptance criteria before design |
 | [`design`](.agents/skills/design/SKILL.md) | Deciding the solution and its structure for a triaged task before planning or implementing |
-| [`planning`](.agents/skills/planning/SKILL.md) | Breaking an approved design into ordered implementation tasks |
+| [`planning`](.agents/skills/planning/SKILL.md) | Splitting requirements and design decisions into independently verifiable phases |
 | [`implement`](.agents/skills/implement/SKILL.md) | Implementing a task or selected plan phase |
 | [`review-implementation`](.agents/skills/review-implementation/SKILL.md) | Reviewing implemented changes for a task or selected plan phase |
 | [`create-pr`](.agents/skills/create-pr/SKILL.md) | Committing, pushing, and opening a pull request into `next` |
-| [`release`](.agents/skills/release/SKILL.md) | Preparing or publishing an extension release and synchronizing `main` |
+| [`release`](.agents/skills/release/SKILL.md) | Preparing or publishing a package release and synchronizing `main` |
 
 ## Repository rules and documentation
 

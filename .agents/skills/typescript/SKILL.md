@@ -1,9 +1,6 @@
 ---
 name: typescript
-description: >
-  TypeScript principles and practices that lint cannot check. Use when creating,
-  changing, or reviewing `.ts` or `.tsx` files.
-user-invocable: true
+description: Write and review TypeScript using principles beyond lint and typechecking.
 ---
 
 # TypeScript
@@ -46,8 +43,8 @@ Each rule states its default level. Report a different level only with a reason.
 | `rule-of-three` | major | Rule of three | Extract shared logic when the third copy appears within the same module or package | Shapes that match by coincidence; test fixtures; generated code |
 | `guard-clauses` | major | Guard clauses | Keep the main path flat: reject invalid input at the top with an early `return` or `throw`. | Do not split a single domain condition into several guards only to reduce nesting |
 | `fail-fast` | blocker | Fail fast | When an invariant is violated, throw instead of returning `null`, `undefined`, or a default. When code requires a value, obtain it through a function that throws if it is missing (for example `requireUser`), so interior code receives a non-null value | Absence that is a valid domain state stays representable |
-| `nullable-at-edge` | major | Nullable at the edge | Return `T \| null` or `T \| undefined` only from lookup functions (for example `findUser`). Resolve absence once at the caller; interior functions and mutators take `T` and do not re-check | — |
-| `catch-at-boundary` | blocker | Catch at the boundary | Catch errors only where they become user output, a log entry, a response, or an exit code. Interior code lets errors propagate | Not allowed: catching to return `[]` or `null`; rewrapping as `new Error(String(error))` and losing the cause; wrapping every `await` in `try/catch` |
+| `nullable-at-edge` | major | Nullable at the edge | Resolve absence before passing values to functions that require them; avoid repeated null checks | Lookups, parsers, transformations, and domain operations may return nullable values when absence is a valid result |
+| `catch-at-boundary` | blocker | Catch at the boundary | Let errors propagate unless handling them at an output boundary or performing explicit recovery. Preserve the cause; do not hide failures behind empty results or wrap every `await` | Interior catches may implement bounded retries, domain error translation, or cleanup followed by rethrow |
 | `no-invalid-states` | major | Make invalid states unrepresentable | Model each state as one variant of a discriminated union instead of optional fields that allow impossible combinations | Persisted or wire formats may keep their external shape; narrow them at the boundary |
 | `domain-not-delivery` | major | Separate domain from delivery | Keep domain logic out of UI, CLI, HTTP, and framework adapter modules; adapters call the domain | — |
 

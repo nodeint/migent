@@ -1,6 +1,6 @@
 ---
 name: planning
-description: Organize implementation work into reviewable, independently verifiable phases from available requirements and design decisions.
+description: Split requirements and design into independently verifiable phases.
 ---
 
 # Implementation planning

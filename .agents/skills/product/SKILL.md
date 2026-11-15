@@ -1,7 +1,6 @@
 ---
 name: product
-description: >
-  Define product requirements, user scenarios, UX/CLI interaction flows, and observable acceptance criteria before architectural design or implementation.
+description: Define product requirements, interaction flows, and acceptance criteria.
 ---
 
 # Product specification
@@ -20,8 +19,7 @@ description: >
    functional requirement is covered and can be verified from the user's perspective.
 6. Resolve open product questions with the user. Record scope and UX decisions;
    leave the specification as a draft while required answers are pending.
-7. Fill the [PRD template](references/template.md), preserving headings and order.
-   State why a section is inapplicable instead of omitting it.
+7. Fill the applicable sections of the [PRD template](references/template.md).
 
 ## Output
 

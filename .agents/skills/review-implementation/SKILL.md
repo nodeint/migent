@@ -1,6 +1,6 @@
 ---
 name: review-implementation
-description: Review implementation and verification evidence. Report required fixes or approval. Excludes product, design, and plan review.
+description: Review implementation and verification; report fixes or approval.
 ---
 
 # Implementation review

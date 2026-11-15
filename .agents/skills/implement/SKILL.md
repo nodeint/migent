@@ -1,6 +1,6 @@
 ---
 name: implement
-description: Implement a task or selected plan phase, verify the result, and report changes for review.
+description: Implement and verify a task or plan phase.
 ---
 
 # Implementation
