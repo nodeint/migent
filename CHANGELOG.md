@@ -2,15 +2,17 @@
 
 ## Unreleased
 
+## 0.8.0
+
 ### Breaking
 
-- Migent no longer writes or updates the session-level `questions.json`, and no longer reads it. Existing files in old sessions stay as they are, and the `SessionQuestions` schema stays published as historical. Read pending questions from `status.json` or `migent session show --json`, each asked batch from `executions/<id>/questions.json`, and answers from `executions/<id>/input.json`.
+- Migent no longer writes or reads the session-level `questions.json`; old files stay as they are and the `SessionQuestions` schema stays published as historical. Migrate by reading pending questions from `status.json` or `migent session show --json`, each asked batch from `executions/<id>/questions.json`, and answers from `executions/<id>/input.json`. ([#146](https://github.com/nodeint/migent/pull/146))
 
 ### Added
 
-- `executions/<id>/input.json` records the human input an attempt opened with: what the agent received, what the human typed, and structured answers. It is written before `execution.json`, and executions without human input have none. Replies to a blocked stage add `data.reply` to its `session.active` resume event, and replies to a cancelled stage add `data.origin` (`human` or `cut_off`).
-- TypeBox schemas, generated JSON Schema and a [reference page](https://github.com/nodeint/migent/blob/main/docs/reference/session-files.md) for the session files and every `events.jsonl` event, a typebox-free `@nodeint/migent-contracts/data` subpath, and tests that check each writer and event producer against them.
-- `migent session delete` removes stopped sessions by ID or by `--older-than` and `--status` filters, with `--dry-run`, `--yes`, and `--json`. It never deletes a running session, and a deleted numeric ID is never reissued ([CLI](https://github.com/nodeint/migent/blob/main/docs/cli.md#inspect-sessions)).
+- `executions/<id>/input.json` records the human input an attempt opened with: what the agent received, what the human typed, and structured answers. Replies to a blocked stage add `data.reply` to its `session.active` resume event, and replies to a cancelled stage add `data.origin` (`human` or `cut_off`). ([#146](https://github.com/nodeint/migent/pull/146))
+- TypeBox schemas, generated JSON Schema and a [reference page](https://github.com/nodeint/migent/blob/main/docs/reference/session-files.md) for the session files and every `events.jsonl` event, a typebox-free `@nodeint/migent-contracts/data` subpath. ([#144](https://github.com/nodeint/migent/pull/144))
+- `migent session delete` removes stopped sessions by ID or by `--older-than` and `--status` filters, with `--dry-run`, `--yes`, and `--json`. It never deletes a running session, and a deleted numeric ID is never reissued ([CLI](https://github.com/nodeint/migent/blob/main/docs/cli.md#inspect-sessions)). ([#139](https://github.com/nodeint/migent/pull/139))
 
 ## 0.7.0
 
@@ -56,20 +58,9 @@
 - **Response protocol 3.** A stage now reports its outcome (`complete`, `blocked` or `question`) by writing one JSON file, `handoff.json`, in its execution directory, instead of `status:`/`decision:`/`blocker:` header lines plus a separate `question-request.json`. The response text is a free-form report. An unusable handoff (missing, empty, not JSON, not matching the schema, a decision the stage does not allow, or a question on a stage without `ask: human`) gets one correction turn, recorded as `corrections.handoff`, then fails with `handoff_file_invalid`. New event: `handoff.file_invalid`. The handoff document's JSON Schema is published as `HandoffDocument` in `@nodeint/migent-contracts`. A conversation keeps the protocol it started with: existing sessions finish their conversations on protocol 2 (headers and `question-request.json`, with the earlier corrections), and `execution.json` records `response_protocol`. Only a stage that starts with no source execution uses protocol 3. Custom clients and scripts that fake a stage reply must now write `handoff.json`.
 - The missing-status error lists every status the stage allows, including `question` when the stage has `ask: human`.
 
-## 0.5.4
-
-### Added
-
-- `@nodeint/migent-contracts` publishes a JSON Schema file for every contract under `schemas/` (importable as `@nodeint/migent-contracts/schemas/…`), and exports `EXIT_CATALOG`, which describes every exit code per command family. Generated field tables for CLI output, config, workflow files, exit codes, and environment variables are in `docs/reference/`. Run `pnpm generate` after changing a contract.
-
-### Changed
-
-- **Breaking for `@nodeint/migent-kernel` consumers:** workflow definition code moved to the new `@nodeint/migent-workflow` package (model, strict parser, draft collector, catalog, file loading, `SCHEMA_VERSION`, `unknownWorkflowKeyEntries`, `parseYamlDocument`). The kernel no longer re-exports these symbols; import them from `@nodeint/migent-workflow`. `ConfigurationError` and `AskTarget` are still exported by the kernel, and `ConfigurationError` is the same class. Behavior, messages, and codes are unchanged.
-- `@nodeint/migent-workflow` is a new package released with the others.
-- Schema `$id`s now use the raw GitHub URL of the schema file on `main` instead of `https://migent.dev/schemas`. A schema added on `next` is served at its URL only after a release. `StageView` is now exported. CLI `--help` exit text now comes from `EXIT_CATALOG` and is unchanged.
-
 ## Older versions
 
+- [0.5.4](https://github.com/nodeint/migent/releases/tag/v0.5.4)
 - [0.5.3](https://github.com/nodeint/migent/releases/tag/v0.5.3)
 - [0.5.2](https://github.com/nodeint/migent/releases/tag/v0.5.2)
 - [0.5.1](https://github.com/nodeint/migent/releases/tag/v0.5.1)
