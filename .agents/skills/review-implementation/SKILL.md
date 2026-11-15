@@ -5,30 +5,27 @@ description: Review implementation and verification evidence. Report required fi
 
 # Implementation review
 
-Review only the task or plan phase selected by the user.
-Do not modify project code or implement fixes while reviewing.
+## Steps
 
-## Review
+1. Read the selected task or phase, implementation report, and required design and
+   plan inputs. Stop if required inputs are missing or inconsistent.
+2. Establish scope and Git comparison base from the request and repository evidence.
+   Check branch and status; ask if the intended diff is ambiguous.
+3. Inspect relevant committed, staged, unstaged, and new files. Flag unrelated work
+   without changing it. Do not modify project code or implement fixes during review.
+4. Compare behavior with acceptance criteria and approved decisions. Check correctness,
+   failure paths, regressions, maintainability, tests, docs, and references.
+   Support findings with evidence rather than personal preference.
+5. Compare reported verification with task and repository requirements. Distinguish
+   completed checks from planned checks and known failures from introduced regressions
+   where evidence permits. Run relevant checks when evidence is insufficient.
+6. For revisions, recheck required findings and inspect the fixes for regressions.
+7. Report required fixes together, each with location, evidence, impact, and correction.
+   Separate optional suggestions. State scope, comparison base, inspected evidence,
+   blockers, and anything unverified; include revision or file state when requested.
+8. Approve only when implementation is complete, verified, and has no required fixes.
+   Approval does not authorize commits, pushes, or pull requests.
 
-- Read the supplied report and required references, including approved design and plan inputs.
-- Stop if required inputs are missing or inconsistent.
-- Establish the scope and Git comparison base from the task, report, and repository evidence.
-- Ask if the intended diff is ambiguous. Do not assume all working-tree changes belong to the task.
-- Inspect staged, unstaged, and new files against acceptance criteria and approved decisions.
-- Flag unrelated work without changing it.
-- Check correctness, edge cases, regressions, maintainability, tests, documentation, and references.
-- Support design concerns with evidence. Do not block on personal preference.
-- Compare verification commands and results with repository and task requirements.
-- Separate baseline failures from regressions, and planned checks from completed checks.
-- Run relevant checks when evidence is insufficient. Note anything unverified.
-- On revision, recheck required findings and look for regressions from the fixes.
+## Output
 
-## Report
-
-- Use the requested format and location; otherwise report in the conversation.
-- Report required fixes together, with locations, evidence, impact, and corrections.
-- Separate optional suggestions from required fixes.
-- State scope, comparison base, checks or evidence inspected, blockers, and anything unverified.
-- Record the reviewed revision or file state when requested.
-- Approve only when the implementation is complete, verified, and has no required fixes.
-- Approval does not authorize commits, pushes, or pull requests.
+Use the requested format and location; otherwise report in the conversation.

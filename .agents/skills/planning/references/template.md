@@ -9,9 +9,9 @@ Keep it concise. Repeat the phase block as needed.
 
 <Goal, constraints, exclusions, and acceptance criteria with stable IDs.>
 
-## Baseline
+## Current state
 
-<Current behavior, checks run and results, and anything unverified.>
+<Relevant behavior and constraints from repository evidence.>
 
 ## Phases
 
@@ -33,5 +33,5 @@ Keep it concise. Repeat the phase block as needed.
 
 ## References
 
-<Required inputs and their purpose, using repository paths or supplied artifact snapshot paths.>
+<Required inputs and their purpose, using repository paths or supplied input paths.>
 ```

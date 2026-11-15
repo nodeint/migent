@@ -6,30 +6,25 @@ description: >
 
 # Product specification
 
-Explain what to build, why it matters, who it is for, and how the user interacts with it.
-Keep it in the conversation unless the user or workflow requests a file.
+## Steps
 
-## Scope
+1. Read the request and relevant product docs. State the user problem, goal,
+   constraints, scope, and explicit non-goals. Ask about conflicting or missing inputs.
+2. Identify target users and primary use cases. For each use case, record its
+   trigger, user action, and expected result.
+3. Write the interaction flow: commands, arguments, flags, prompts, outputs,
+   and error feedback. Define defaults and validation rules.
+4. Specify behavior for invalid input, cancellation, and missing resources.
+   Keep architecture and internal code structure out of product decisions.
+5. Assign observable acceptance criteria (AC IDs). Check that each use case and
+   functional requirement is covered and can be verified from the user's perspective.
+6. Resolve open product questions with the user. Record scope and UX decisions;
+   leave the specification as a draft while required answers are pending.
+7. Fill the [PRD template](references/template.md), preserving headings and order.
+   State why a section is inapplicable instead of omitting it.
 
-- Confirm user problem, goal, constraints, and success criteria.
-- Define target users (interactive developers or automated agents) and primary use cases.
-- Separate in-scope outcomes from explicit non-goals to prevent scope creep.
-- Focus on user-observable behavior and product capabilities; do not make internal code structure or software architecture choices.
+## Output
 
-## Define requirements
-
-- Describe user interaction flow, CLI commands, arguments/options, interactive prompts, and output presentation.
-- Define functional requirements and business rules (validations, defaults, error messaging).
-- Identify user-facing edge cases (cancellation, missing resources, invalid inputs).
-- Formulate clear, observable acceptance criteria (AC) focused on user experience.
-
-## Complete
-
-- Resolve open product questions with the user before completing the specification.
-- Record decisions on scope and user experience trade-offs.
-
-## Save
-
-- Write to `prd.md` using the fixed [template](references/template.md).
-- Use repository-relative links without line numbers.
-- Carry forward relevant earlier references.
+Report in the conversation unless saving is requested. When saving, write `prd.md`
+(or the requested path). Use repository-relative links without line numbers and
+carry forward relevant earlier references.

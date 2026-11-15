@@ -5,28 +5,31 @@ description: Organize implementation work into reviewable, independently verifia
 
 # Implementation planning
 
-Plan outcomes and boundaries; leave implementation details to coding.
-Use the [template](references/template.md).
+## Steps
 
-## Establish the basis
+1. Read the requirements, design decisions, and repository evidence. State goal,
+   scope, constraints, exclusions, and acceptance criteria with stable IDs.
+2. Resolve choices affecting behavior, contracts, architecture, or phase boundaries.
+   Preserve settled decisions; ask the user when a required decision is missing.
+3. Group work into complete outcomes, each independently reviewable and verifiable;
+   aim for one commit per phase. Split outcomes that can merge green independently.
+   Explain why coupled parts must stay together.
+4. Order phases by dependency, then risk. Confirm assumptions before dependent work.
+   Each phase must leave the repository coherent and deliver its promised behavior
+   and verification without relying on a later phase.
+5. Fill each phase in the [plan template](references/template.md): outcome, scope,
+   exclusions, boundary rationale, dependencies, decisions, references, runnable
+   verification commands, expected results, and completion criteria.
+6. Put rules, enforcement, tests, and usage documentation in the phase delivering
+   the outcome. Reserve only integration across phases and overview docs for the end.
+7. Map every acceptance criterion to phases and verification. Check for missing
+   coverage, incomplete outcomes, and unresolved implementation decisions.
+8. Deliver the plan only after blocking decisions are resolved. Exclude code,
+   pseudocode, signatures, and file-by-file edit instructions.
 
-- Confirm goal, scope, constraints, and acceptance criteria from available inputs and repository evidence.
-- Preserve settled decisions. Resolve choices affecting scope, behavior, contracts, architecture, or phase boundaries before approval; ask the human when needed.
-- Follow repository baseline requirements. Distinguish checks run from checks planned and record anything unverified.
+## Output
 
-## Define phases
-
-- Give each phase one complete outcome, reviewable and verifiable on its own; aim for one commit.
-- Split parts that can each merge green and be reviewed without reading the other's implementation. Explain why coupled parts belong together.
-- Order by dependency, then risk. Confirm assumptions before phases that rely on them.
-- Leave the codebase coherent after every phase. Do not defer a phase's promised behavior or verification to a later phase; later phases may extend completed outcomes.
-- Include rules, enforcement, and the documentation needed to use the outcome in the same phase. Reserve only cross-phase integration and overview documentation for the end.
-- Make each phase self-contained for its implementer: scope, exclusions, dependencies, relevant decisions and references, runnable verification commands, and measurable expected results.
-- Exclude code, pseudocode, signatures, and file-by-file edit instructions.
-
-## Hand off
-
-- Map every acceptance criterion to phases and concrete verification; check that the phases actually provide that coverage.
-- Leave no open decisions that block implementation. Planning does not authorize implementation.
-- Keep the plan in the conversation unless saving is requested. Retain usable references to required inputs.
-- Treat a workflow artifact as a snapshot, not a progress tracker. For a live plan, track actual progress separately and revise remaining phases when evidence changes; explain changes to completed outcomes or settled decisions.
+Keep the plan in the conversation unless saving is requested. Retain usable input
+references. Planning does not authorize implementation.
+Treat an approved saved handoff as a snapshot. Track live progress separately;
+revise remaining phases when evidence changes and explain changes to settled outcomes.

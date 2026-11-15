@@ -9,7 +9,7 @@ for non-bugs or Reproduction for bugs. Summarize with source links, not copied b
 ## Source
 
 - URL, state, labels: <values>
-- Type: <work type>; form: <bug | feature | none>
+- Type: <work type>; template: <selected template | none>
 - Comments: <count; relevant clarifications with URLs>
 - Related: <issue/PR URL, relationship, and effect on this work>
 
@@ -46,8 +46,8 @@ Record paths and observations, not causes or fixes.>
 
 ## Gaps
 
-<Missing or conflicting inputs, affected next step, and how to resolve them.
-Distinguish routing blockers from questions for design or implementation.>
+<Missing or conflicting inputs, their impact on understanding the issue,
+and questions requiring clarification.>
 
 ## Human decisions
 
@@ -55,16 +55,11 @@ Distinguish routing blockers from questions for design or implementation.>
 
 ## Workspace
 
-<Branch, origin/next base SHA, upstream, final changes and their disposition.
+<Branch, base branch and SHA, upstream, final changes and their disposition.
 Authorization: triage only or implementation requested, with its source.>
-
-## Recommended next
-
-<product | design | implement; evidence, confidence/assumptions, readiness, and prerequisites.
-Do not mark implementation ready when required inputs are missing.>
 
 ## References
 
 <Required docs/contracts/tests/artifacts: path and purpose; flag missing sources.
-Use repository-relative links or supplied artifact snapshots.>
+Use repository-relative links or supplied input paths.>
 ```

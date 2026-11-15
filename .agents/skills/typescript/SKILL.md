@@ -8,11 +8,18 @@ user-invocable: true
 
 # TypeScript
 
-## Scope
+## Steps
 
-Applies to every created, changed, or reviewed `.ts` or `.tsx` file.
-Lists only the engineering principles and TypeScript practices that lint and the compiler cannot check; it is not a complete standard.
-Run the project's lint and typecheck separately, and do not re-report what they already report.
+1. Identify the created, changed, or reviewed `.ts` and `.tsx` files in scope.
+   Read narrower project rules; they take precedence.
+2. Apply the engineering and TypeScript rules below to those files. Preserve stable
+   rule IDs and default severities; explain any severity adjustment.
+3. For implementation, correct applicable violations within the authorized scope.
+   For review, report findings without editing code.
+4. After edits, run the project's lint and typecheck separately. These rules cover
+   what lint and the compiler cannot check; do not duplicate their diagnostics.
+5. Report each finding with rule ID, level, file and line, and a one-line fix.
+   Group by severity, blockers first. If there are no findings, say so.
 
 ## Rule IDs
 
@@ -108,8 +115,3 @@ Catch placement and fail-fast behavior follow `fail-fast` and `catch-at-boundary
 | `why-comments` | minor | Comments explain why, not what |
 | `jsdoc-when-needed` | minor | Add JSDoc to new public API only when types cannot express it (thrown errors, units, invariants) |
 | `no-dead-code` | minor | Do not leave commented-out code |
-
-## Report
-
-For each finding, give the rule ID, level, file and line, and a one-line fix.
-Group findings by level, blockers first. If nothing applies, say so.

@@ -1,39 +1,22 @@
 # Publishing prerequisites and recovery
 
-Read before merging or recovering a failed release.
+Read the repository release docs before these steps.
 
 ## Prerequisites
 
-- Default branch is `next`. Its ruleset requires current-base Ubuntu, macOS, and
-  Windows tests, resolved conversations, linear history, and no bypass actors.
-  Use squash merges; working branches are deleted after merge.
-- `main: immutable release history` blocks deletion and force-push, but permits the
-  workflow token to fast-forward main. An older `main: release maintainers only`
-  update restriction blocks releases: stop and obtain approval for ruleset changes.
-- Tags `v*` are immutable and created only by `.github/workflows/release.yml`.
-- Every npm package needs a trusted publisher: organization `nodeint`, repository
-  `migent`, workflow `release.yml`, empty environment, allowed action `npm publish`.
-  Renaming that workflow, moving the repository, or changing `repository.url`
-  requires updating trusted publishers.
-- Trusted publishing cannot create a package. Its first publish must be manual,
-  then configure its trusted publisher before dispatching npm publishing.
+1. Confirm required branch checks, merge method, tag ownership, and release permissions.
+2. Identify registry, package names, publishing automation, trusted publisher or
+   credential setup, and any first-publication requirements.
+3. Verify publisher identity matches repository, workflow, and environment.
+4. Confirm build output, dependency order, and version availability.
+5. Stop and report missing prerequisites. Change protections or publisher settings
+   only with explicit authorization.
 
 ## Recovery
 
-- After fixing the cause, rerun failed jobs with `gh run rerun <id> --failed`.
-  Existing tags/releases and published packages are reused; verify actual state.
-- With an existing tag but no run to retry, publish through
-  `gh workflow run release.yml --ref next -f version=X.Y.Z` (npm job only).
-- Versions are single-use even after unpublishing. Never move a tag; if the version
-  cannot be completed, release the next patch.
-- Deprecate a bad release instead of deleting it:
-  `npm deprecate "@nodeint/migent@X.Y.Z" "Upgrade to X.Y.W"`.
-- Registry propagation may briefly cause ETARGET; use `--prefer-online` and check
-  `npm view "@nodeint/<package>@X.Y.Z" version`.
-- Manual publishing: `pnpm -r publish` can hang on 2FA; use
-  `pnpm -r pack --pack-destination <dir>` then `npm publish <tarball> --access public`.
-  Never publish directly from package directories: workspace references remain unresolved.
-- Publish dependency order: `@nodeint/migent-contracts`, `-workflow`, `-prompts`,
-  `-kernel`, `-session`, `-engine`, `-doctor`, `-adapters`, `-registry`, then
-  `@nodeint/migent`. All packages belong to `@nodeint`; unscoped `migent` was rejected
-  and `@migent` is held only against squatting.
+1. Inspect the failed run, existing tags, release records, and published package versions.
+2. Select the documented recovery path. Confirm repeatable steps and required
+   authorization; ask before an undocumented recovery or new external mutation.
+3. Retry only the authorized steps. Preserve published tags and versions; follow
+   registry version-reuse rules and repository corrective-release or deprecation policy.
+4. Verify registry propagation and installable artifacts before reporting success.

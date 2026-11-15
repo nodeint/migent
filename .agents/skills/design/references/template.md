@@ -44,6 +44,6 @@ Include extension and compatibility concerns only when relevant and supported.>
 
 - <Source path>: <Purpose.>
 
-<Use repository-relative paths or supplied artifact snapshots. Retain relevant earlier
+<Use repository-relative paths or supplied input paths. Retain relevant earlier
 references. If none are needed, state why.>
 ```

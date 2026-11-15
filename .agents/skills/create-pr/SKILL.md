@@ -2,71 +2,38 @@
 name: create-pr
 description: >
   Commit the work on the current branch, push it, and open a pull request
-  against next, then report the CI result. Stops before merging. Use when the
-  user says create PR, tạo PR, open a pull request, or push and open a PR. For
-  a release, use release instead.
+  against the repository's configured base, then report CI results.
+  Use for create PR, tạo PR, open a pull request, or push and open a PR.
+  Stops before merging. For a release, use release instead.
 metadata:
   short-description: "Open a pull request for the current branch"
 ---
 
 # Create a pull request
 
-Follow the branch and pull request rules in `CONTRIBUTING.md`. Work from the
-repository root. Reply in the user's language.
+## Steps
 
-## Check
-
-```bash
-git fetch origin
-git branch --show-current
-git status --short
-git branch -vv
-git rev-list --count origin/next..HEAD
-```
-
-- On `main` or `next`, create a branch with `git switch --no-track -c <branch> origin/next`.
-  Never commit on `main` or `next`. Run `pnpm setup:git` once to install local safeguards.
-- A working branch must have no upstream or track `origin/<same-branch-name>`.
-  Remove a wrong upstream with `git branch --unset-upstream <branch>`.
-- Stop and ask when the changes look unrelated to each other, or when nothing
-  differs from `origin/next`.
-
-Require `origin/next` to exist; do not fall back to `main`. All required CI
-checks must pass against the current `next` base before merging.
-
-## Verify
-
-Run the tests for the packages you changed, and `pnpm gate` when it exists.
-`packages/cli/test/skill-sync.test.ts` compares the two. Do not edit `dist/`.
-A user-visible change adds a line under `## Unreleased` in `CHANGELOG.md`.
-Report any test that fails and stop.
-
-## Commit
-
-Stage files by name. Do not use `git add -A` or `git commit -am`. Skip secrets
-and build output. Write the message in the style of `git log`, one short
-imperative subject. End it with the attribution line the session gives.
-
-## Push
-
-Push `<branch>` and open a pull request against `next`.
-
-```bash
-git push -u origin refs/heads/<branch>:refs/heads/<branch>
-gh pr create --draft --base next --head <branch> --title "<subject>" --body-file <notes>
-```
-
-The title is the squash commit subject. Write the body from
-`.github/pull_request_template.md` and fill every section: what changed and why,
-verification commands and results, and anything not verified. Put `Fixes #<n>`
-under Related issue when the work closes an issue. End it with
-the attribution line the session gives, when provided. Never force-push or
-push to `main` or `next`; use the explicit same-name refspec above, never a bare push or
-push based on the upstream. Verify the upstream is `origin/<branch>` afterward.
-If work is already on `main` or `next`, report it; do not rewrite published
-history to manufacture a PR.
-
-## Report
-
-Show the pull request URL. Check the result once with `gh pr checks <number>`
-and say which checks pass, fail, or are pending. Do not merge. Merging requires the user's instruction.
+1. Read contribution rules for repository, remote, base, branches, setup, checks,
+   changelog, PR template, and attribution. Ask about missing required settings.
+2. Fetch the configured remote. Check branch, status, upstream, and diff against
+   the required base; require that ref to exist. Follow setup and branch rules.
+   If on a protected branch, preserve changes and create an allowed branch when
+   permitted. Stop and ask about unrelated changes or an empty diff.
+3. Resolve incorrect tracking under repository rules. Confirm the push destination
+   uses the current branch name; never rewrite published history or force-push.
+4. Complete required changelog updates. Run checks and gates for the changed scope.
+   Report failures and stop. Inspect the diff for unrelated or sensitive files;
+   do not edit generated output or bypass verification.
+5. Stage outstanding files by name, inspect the staged diff, and commit using
+   repository subject and attribution rules. Preserve existing commits.
+   Do not use `git add -A` or `git commit -am`; exclude secrets and build output.
+6. Draft the PR body using the repository template, closing references, and required
+   attribution. Include changes, purpose, checks, and anything unverified.
+   Write the body to a temporary file.
+7. When authorized, push with
+   `git push -u <remote> refs/heads/<branch>:refs/heads/<branch>`.
+   Verify upstream, then open the PR with the required draft status:
+   `gh pr create --repo <owner>/<repo> --base <base> --head <branch> --title "<subject>" --body-file <notes>`.
+8. Inspect CI for the current PR head and base. Wait when repository rules require it;
+   report failures and stop. Report branch, commit, PR URL, and check results in the
+   user's language. Do not merge without the user's instruction.
