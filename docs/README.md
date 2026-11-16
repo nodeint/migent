@@ -19,7 +19,6 @@ must be checked against the current source when changing behavior.
 | [Diagnostics](diagnostics.md) | Process startup, wrapper failures, diagnostic artifacts, debug traces, troubleshooting | Investigating failed launches, permissions, timeouts, or client exits | `diagnostics.json`, `failure.md`, `stderr_tail`, `MIGENT_DEBUG`, `EACCES`, `ENOEXEC` |
 | [Output contracts](../packages/contracts/README.md) | `@nodeint/migent-contracts`: TypeBox schemas for every CLI `--json` payload and for the structure of config and workflow files, exit codes, produced vs. passthrough rules, opt-in known shapes | Reading or changing the shape of `--json` / `-o json` output, or the structure of `config.yaml`; changing the workflow contract, exit-code catalog, or generated JSON Schema files | `CLI_CONTRACTS`, `ConfigLayer`, `EffectiveConfig`, `writeJson`, `passthrough`, `$id`, `KNOWN_SHAPES`, `ENV_CATALOG`, `SESSION_STATUS_CATALOG`, `MIGENT_HOME`, `MIGENT_NO_INPUT`, `DISABLE_TELEMETRY` |
 | [Reference (generated)](reference/cli-output.md) | Generated field tables: [CLI output](reference/cli-output.md), [config](reference/config.md), [workflow](reference/workflow.md), [exit codes](reference/exit-codes.md), [environment variables](reference/env.md), [session statuses](reference/session-statuses.md), [session files and events](reference/session-files.md). Do not edit; run `pnpm generate` | Looking up a field, exit code, or environment variable | `pnpm generate`, `EXIT_CATALOG`, `ENV_CATALOG`, `SESSION_STATUS_CATALOG`, `SESSION_FILES`, `SESSION_EVENTS`, `schemas/` |
-| [Backlog](backlogs.md) | Dated proposals and priorities for long refactor workflows | Evaluating planned work or historical motivation | `P0`, `P1`, `P2`, `budget`, `scope`, `for_each`, `hooks` |
 
 ## Task lookup
 
@@ -42,14 +41,12 @@ must be checked against the current source when changing behavior.
 | Validate, render, or save draft configuration/workflows, including a session's `workflow.yaml` | [CLI: Authoring drafts](cli.md#authoring-drafts) | [CLI: Session drafts](cli.md#session-drafts), [Sessions](sessions.md), [Agent configuration](agents.md), [Workflows](workflows.md) |
 | Add or change a `--json` / `-o json` payload | [Output contracts](../packages/contracts/README.md) | [CLI](cli.md) |
 | Look up a field, exit code, environment variable, session file, or event | [Reference (generated)](reference/cli-output.md) | The owning document above for behavior |
-| Find proposals rather than implemented behavior | [Backlog](backlogs.md) | Verify current source before relying on a proposal |
 
 ## Reading and maintenance rules
 
 | Rule | Application |
 | --- | --- |
 | Keep one topic owner | Put adapter contracts in `adpaters.md`, command syntax in `cli.md`, and session persistence in `sessions.md`; link instead of duplicating explanations. |
-| Separate current behavior from proposals | `backlogs.md` is a dated proposal, not a specification of available features. Explicit limitations in implementation docs describe current boundaries. |
 | Distinguish native discovery from accepted configuration | A discovered headless option does not automatically become a supported model option; consult the adapter validation section. |
 | Preserve existing paths | The adapter document is named `adpaters.md`; use that exact filename in links. |
 | Update this map with documentation changes | Add or revise a row when a document is added, renamed, or takes ownership of a topic. |

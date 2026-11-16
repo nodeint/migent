@@ -17,7 +17,7 @@ Behavior: [docs/workflows.md](../../docs/workflows.md).
 ## Key symbols
 
 | Symbol | File | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | `parseWorkflowMapping` | `src/parse.ts` | Strict parse to `WorkflowDocument` |
 | `collectWorkflowDraft` | `src/draft/` | Collect all draft problems |
 | `loadNamedWorkflow`, `loadWorkflowCatalog`, `loadWorkflowDocument` | `src/load.ts` | Load from `.migent/workflows` |

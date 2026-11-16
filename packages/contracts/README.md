@@ -26,14 +26,15 @@ exit codes, and environment variables.
 - `@nodeint/migent-contracts/data` holds plain data (version constants, exit catalog, status unions) and does
   not load `typebox`. The root export re-exports all of it.
 - Every Migent environment variable is listed in `ENV_CATALOG`.
-- After changing a schema, `ENV_CATALOG`, `EXIT_CATALOG`, or `SESSION_STATUS_CATALOG`, run `pnpm generate` and commit `schemas/` and
+- After changing a schema, `ENV_CATALOG`, `EXIT_CATALOG`, or `SESSION_STATUS_CATALOG`, run `pnpm generate` and commit
+  `schemas/` and
   `docs/reference/`. Do not edit either by hand; a test fails when they are stale. Each `$id` is the raw
   GitHub URL on `main`, so a new schema resolves there only after a release.
 
 ## Key symbols
 
 | Symbol | File | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | `CLI_CONTRACTS` | `src/cli-output.ts` | Schema per CLI JSON payload |
 | `ConfigLayer`, `EffectiveConfig` | `src/config.ts` | One config file; merged config |
 | `WorkflowDocumentInput` | `src/workflow.ts` | Authored workflow at current `schema_version` |

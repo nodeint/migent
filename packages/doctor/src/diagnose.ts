@@ -24,7 +24,11 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 export function diagnose(workspace: string, options: DiagnoseOptions): [Check, Check, Check] {
   const which = options.which ?? whichSync;
   const efforts = options.modelEffortChecks ?? {};
-  const configResult = checkConfig(workspace, options.clients, efforts, options.nativeOptionFacts);
+  const configResult = checkConfig(
+    workspace,
+    options.clients,
+    { effortChecks: efforts, nativeOptionFacts: options.nativeOptionFacts },
+  );
   const workflowCheck = checkWorkflows(workspace, {
     clients: options.clients,
     configDiagnostics: configResult.diagnostics,

@@ -1,10 +1,13 @@
+<!-- markdownlint-disable-file MD041 -->
+
 <p align="center">
   <img src="https://raw.githubusercontent.com/nodeint/migent/main/assets/migent.svg" alt="Migent logo" width="150" /><br>
     <strong>Compose AI coding agents into repeatable engineering workflows.</strong>
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/@nodeint/migent"><img src="https://img.shields.io/npm/v/@nodeint/migent.svg?style=flat-square" alt="npm version" /></a>
+  <a href="https://www.npmjs.com/package/@nodeint/migent"><img
+  src="https://img.shields.io/npm/v/@nodeint/migent.svg?style=flat-square" alt="npm version" /></a>
 </p>
 
 ---
@@ -14,12 +17,10 @@ repository-defined workflows. One model can plan, another can review, and the
 first can revise—while Migent passes artifacts between them and tracks
 the workflow's progress.
 
-
 <p align="center">
-  <img src="https://raw.githubusercontent.com/nodeint/migent/main/assets/migent-workflow.svg" alt="Migent workflow: Task, Planner, Reviewer, Complete, with a revision loop from Reviewer back to Planner" />
+  <img src="https://raw.githubusercontent.com/nodeint/migent/main/assets/migent-workflow.svg" alt="Migent workflow:
+  Task, Planner, Reviewer, Complete, with a revision loop from Reviewer back to Planner" />
 </p>
-
-
 
 ## Contents
 
@@ -49,7 +50,8 @@ the workflow's progress.
 ## What you can do
 
 - **Define roles, choose models.** Define each role's responsibilities and assign a client and model suited to its work.
-- **Run a single role.** Ask a planner, developer, or reviewer to work on a task, then continue the conversation in the same session.
+- **Run a single role.** Ask a planner, developer, or reviewer to work on a task, then continue the conversation in the
+  same session.
 - **Automate workflows.** Connect roles with artifact handoffs, verification checks, and review cycles.
 - **Keep people involved.** Let agents ask questions and continue with your answers.
 - **Track and resume work.** Inspect sessions, follow live activity, and continue stopped work.
@@ -373,7 +375,7 @@ migent session run --workflow plan --task "Plan a --json flag for the export com
 ```
 
 `max_revisions` limits the number of revisions. The file declared in `produces`
-is an **artifact**; 
+is an **artifact**;
 
 `depends_on` makes it available to the reviewer. The
 **decision** selects a route: `approved` completes the workflow, while `revise`

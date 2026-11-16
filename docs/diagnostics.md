@@ -145,7 +145,8 @@ be done even though the turn failed; Migent does not accept it.
 `stream_summary` holds counts and labels from the CLI client's own vocabulary
 (`text`, `tool_use:completed`, `result:error`). Each client lists its
 labels in a closed vocabulary and any other value counts as `other`; labels are
-also limited to short identifier characters and at most 32 distinct ones per turn. No reply text, tool arguments or prompt text is stored. The
+also limited to short identifier characters and at most 32 distinct ones per turn.
+No reply text, tool arguments or prompt text is stored. The
 `command` field keeps only the executable and argument count, because other
 arguments can carry API keys or prompt text. `stderr_tail` is raw output; read it
 before you share the file. A raw stdout tap is not provided.
@@ -169,7 +170,7 @@ directory, when the file exists. It is a pointer only. The file also exists afte
 an **accepted** exit-only turn, so a `completed` execution can have one.
 An exit-only turn also adds an `exit_anomaly` line (`exit_anomalies` in JSON), and
 `metrics.json` counts it under `provider_exit_anomalies`; see
-[CLI](cli.md#session-commands) and [Session metrics](session-metrics.md#provider-exit-anomalies).
+[CLI](cli.md#session-commands) and [Session metrics](session-metrics.md#client-exit-anomalies).
 
 `doctor --session` adds a **Recorded diagnostics** check when something was
 recorded. It prints the message, `kind`, `origin`, `phase`, `code`, the `turn`, the

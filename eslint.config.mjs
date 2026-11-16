@@ -1,6 +1,7 @@
 import eslint from '@eslint/js';
 import { defineConfig } from 'eslint/config';
 import globals from 'globals';
+import onlyWarn from 'eslint-plugin-only-warn';
 import simpleImportSort from 'eslint-plugin-simple-import-sort';
 import sonarjs from 'eslint-plugin-sonarjs';
 import tseslint from 'typescript-eslint';
@@ -71,6 +72,7 @@ const baseConfig = {
     globals: globals.node,
   },
   plugins: {
+    'only-warn': onlyWarn,
     'simple-import-sort': simpleImportSort,
     sonarjs,
     unicorn,

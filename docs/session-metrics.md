@@ -1,6 +1,7 @@
 # Session metrics
 
-Metrics summarize time, usage, verification, and revisions for a completed workflow session. For the session directory and `status.json`, see [Sessions](sessions.md).
+Metrics summarize time, usage, verification, and revisions for a completed workflow session.
+For the session directory and `status.json`, see [Sessions](sessions.md).
 
 ```bash
 migent session metrics <session-id> --json
@@ -134,7 +135,8 @@ is null on every other row. `totals.executions` and a stage's `executions` do no
 count skips; `totals.skipped` and the stage's `skipped` do. A stage that only
 skipped is still listed.
 
-`workflow_hash` is the bare hex hash on `session.created`, or the start-time `handoff.bound` event for a prepared session. It is null for an
+`workflow_hash` is the bare hex hash on `session.created`, or the start-time `handoff.bound` event for a prepared
+session. It is null for an
 agent session. `task_sha256` and `prior_session_id` come from `status.json`.
 `role` is the stage role in the frozen workflow, otherwise the live workflow.
 An agent session uses the manifest role. `stage_attempt` counts every execution
@@ -159,7 +161,7 @@ with no usage or no identifiable client to read the capture, plus
 evidence has `client: null`; each turn with a known executable still uses its
 own client's usage parser.
 
-### Client exit anomalies
+## Client exit anomalies
 
 `provider_exit_anomalies` counts `provider.exit_anomaly` events: client
 processes that exited non-zero without reporting an error (`origin: exit-only`).

@@ -20,7 +20,8 @@ import {
   text,
 } from './dispatch.js';
 import { runExecuteLoop, runExecuteOnce, startTracked, trackDispatch } from './execute-loop.js';
-import { type ExecuteRequest, HeldSession, openExecuteSession, verifyOnlyExecution } from './execute-session.js';
+import { verifyOnlyExecution } from './execute-reply.js';
+import { type ExecuteRequest, HeldSession, openExecuteSession } from './execute-session.js';
 import { judgeCancelled } from './resume-reopen.js';
 import { runVerifyOnlyStage } from './verify-only.js';
 

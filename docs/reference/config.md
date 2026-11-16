@@ -5,7 +5,8 @@
 Structure of `.migent/config.yaml` and `.migent/config.local.yaml`.
 
 <a id="config-agent-fields-json"></a>
-### Agent fields
+
+## Agent fields
 
 Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/config/agent-fields.json`
 
@@ -15,11 +16,12 @@ Type: object
 | --- | --- | --- | --- | --- |
 | `model` | string | no | pattern: `"\\S"` | A string with a non-blank value. |
 | `effort` | string | no | pattern: `"\\S"` | A string with a non-blank value. |
-| `client` | [Client selection](#config-client-json) \| null | no |  | The CLI client that runs the model. `type` is required when `options` is set. |
+| `client` | [Client selection](#config-client-json) \| null | no | | The CLI client that runs the model. `type` is required when `options` is set. |
 | `resume_policy` | string | no | pattern: `"\\S"` | A string with a non-blank value. |
 
 <a id="config-agent-placeholder-json"></a>
-### Unmapped agent
+
+## Unmapped agent
 
 Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/config/agent-placeholder.json`
 
@@ -28,30 +30,35 @@ An empty entry that a local config file maps to a client and model.
 Type: object
 
 <a id="config-client-options-json"></a>
-### Client options
+
+## Client options
 
 Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/config/client-options.json`
 
-Native options for the selected client. Keys are option names; values are non-blank strings, numbers or booleans (stored as strings).
+Native options for the selected client.
+Keys are option names; values are non-blank strings, numbers or booleans (stored as strings).
 
 Type: map of (string \| number \| boolean)
 
 <a id="config-client-json"></a>
-### Client selection
+
+## Client selection
 
 Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/config/client.json`
 
-The CLI client that runs the model. `type` is required when `options` is set.
+The CLI client that runs the model.
+`type` is required when `options` is set.
 
 Type: object
 
 | Field | Type | Required | Notes | Description |
 | --- | --- | --- | --- | --- |
-| `type` | string \| null | no |  | A string with a non-blank value. |
-| `options` | [Client options](#config-client-options-json) \| null | no |  | Native options for the selected client. Keys are option names; values are non-blank strings, numbers or booleans (stored as strings). |
+| `type` | string \| null | no | | A string with a non-blank value. |
+| `options` | [Client options](#config-client-options-json) \| null | no | | Native options for the selected client. Keys are option names; values are non-blank strings, numbers or booleans (stored as strings). |
 
 <a id="config-effective-json"></a>
-### Effective config
+
+## Effective config
 
 Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/config/effective.json`
 
@@ -61,13 +68,14 @@ Type: object
 
 | Field | Type | Required | Notes | Description |
 | --- | --- | --- | --- | --- |
-| `schema_version` | number | no |  | Document version. The local file's value is ignored. |
-| `agents` | map of ([Agent (effective)](#config-resolved-agent-json) \| [Unmapped agent](#config-agent-placeholder-json)) | no |  |  |
-| `roles` | map of [Role](#config-role-json) | yes |  |  |
-| `resume_policies` | map of [Resume policy](#config-resume-policy-json) | no |  |  |
+| `schema_version` | number | no | | Document version. The local file's value is ignored. |
+| `agents` | map of ([Agent (effective)](#config-resolved-agent-json) \| [Unmapped agent](#config-agent-placeholder-json)) | no | | |
+| `roles` | map of [Role](#config-role-json) | yes | | |
+| `resume_policies` | map of [Resume policy](#config-resume-policy-json) | no | | |
 
 <a id="config-inline-agent-json"></a>
-### Inline agent
+
+## Inline agent
 
 Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/config/inline-agent.json`
 
@@ -79,11 +87,12 @@ Type: object
 | --- | --- | --- | --- | --- |
 | `model` | string | yes | pattern: `"\\S"` | A string with a non-blank value. |
 | `effort` | string | no | pattern: `"\\S"` | A string with a non-blank value. |
-| `client` | [Client selection](#config-client-json) \| null | no |  | The CLI client that runs the model. `type` is required when `options` is set. |
+| `client` | [Client selection](#config-client-json) \| null | no | | The CLI client that runs the model. `type` is required when `options` is set. |
 | `resume_policy` | string | no | pattern: `"\\S"` | A string with a non-blank value. |
 
 <a id="config-layer-json"></a>
-### Config file
+
+## Config file
 
 Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/config/layer.json`
 
@@ -93,13 +102,14 @@ Type: object
 
 | Field | Type | Required | Notes | Description |
 | --- | --- | --- | --- | --- |
-| `schema_version` | number | no |  | Document version. The local file's value is ignored. |
-| `agents` | map of [Named agent (layer)](#config-named-agent-fragment-json) | no |  |  |
-| `roles` | map of [Role](#config-role-json) | no |  |  |
-| `resume_policies` | map of [Resume policy](#config-resume-policy-json) | no |  |  |
+| `schema_version` | number | no | | Document version. The local file's value is ignored. |
+| `agents` | map of [Named agent (layer)](#config-named-agent-fragment-json) | no | | |
+| `roles` | map of [Role](#config-role-json) | no | | |
+| `resume_policies` | map of [Resume policy](#config-resume-policy-json) | no | | |
 
 <a id="config-named-agent-fragment-json"></a>
-### Named agent (layer)
+
+## Named agent (layer)
 
 Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/config/named-agent-fragment.json`
 
@@ -111,11 +121,12 @@ Type: object
 | --- | --- | --- | --- | --- |
 | `model` | string | no | pattern: `"\\S"` | A string with a non-blank value. |
 | `effort` | string | no | pattern: `"\\S"` | A string with a non-blank value. |
-| `client` | [Client selection](#config-client-json) \| null | no |  | The CLI client that runs the model. `type` is required when `options` is set. |
+| `client` | [Client selection](#config-client-json) \| null | no | | The CLI client that runs the model. `type` is required when `options` is set. |
 | `resume_policy` | string | no | pattern: `"\\S"` | A string with a non-blank value. |
 
 <a id="config-resolved-agent-json"></a>
-### Agent (effective)
+
+## Agent (effective)
 
 Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/config/resolved-agent.json`
 
@@ -127,11 +138,12 @@ Type: object
 | --- | --- | --- | --- | --- |
 | `model` | string | yes | pattern: `"\\S"` | A string with a non-blank value. |
 | `effort` | string | no | pattern: `"\\S"` | A string with a non-blank value. |
-| `client` | [Client selection](#config-client-json) \| null | no |  | The CLI client that runs the model. `type` is required when `options` is set. |
+| `client` | [Client selection](#config-client-json) \| null | no | | The CLI client that runs the model. `type` is required when `options` is set. |
 | `resume_policy` | string | no | pattern: `"\\S"` | A string with a non-blank value. |
 
 <a id="config-resume-on-expired-json"></a>
-### Resume on expired
+
+## Resume on expired
 
 Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/config/resume-on-expired.json`
 
@@ -140,7 +152,8 @@ Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contract
 Type: `"ask"` \| `"fresh"` \| `"resume"`
 
 <a id="config-resume-policy-match-json"></a>
-### Resume policy match
+
+## Resume policy match
 
 Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/config/resume-policy-match.json`
 
@@ -154,7 +167,8 @@ Type: object
 | `model` | string | no | pattern: `"\\S"` | A model name glob. |
 
 <a id="config-resume-policy-json"></a>
-### Resume policy
+
+## Resume policy
 
 Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/config/resume-policy.json`
 
@@ -164,14 +178,15 @@ Type: object
 
 | Field | Type | Required | Notes | Description |
 | --- | --- | --- | --- | --- |
-| `match` | [Resume policy match](#config-resume-policy-match-json) | no |  | The client and model glob a policy applies to. |
-| `cache_ttl` | string | yes | pattern: `"^\\d+(s\\|m\\|h)$"` | How long the prompt cache lives, such as `5m` or `1h`. |
-| `margin` | string | no | pattern: `"^\\d+(s\\|m\\|h)$"` | Safety margin subtracted from `cache_ttl`. |
+| `match` | [Resume policy match](#config-resume-policy-match-json) | no | | The client and model glob a policy applies to. |
+| `cache_ttl` | string | yes | pattern: `"^\\d+(s\|m\|h)$"` | How long the prompt cache lives, such as `5m` or `1h`. |
+| `margin` | string | no | pattern: `"^\\d+(s\|m\|h)$"` | Safety margin subtracted from `cache_ttl`. |
 | `min_context_tokens` | integer | no | minimum: `0` | Below this context size an expired cache is not worth guarding. |
-| `on_expired` | [Resume on expired](#config-resume-on-expired-json) | no |  | `ask` stops for a human decision, `fresh` starts a new conversation, `resume` resumes anyway. |
+| `on_expired` | [Resume on expired](#config-resume-on-expired-json) | no | | `ask` stops for a human decision, `fresh` starts a new conversation, `resume` resumes anyway. |
 
 <a id="config-role-agent-json"></a>
-### Role agent
+
+## Role agent
 
 Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/config/role-agent.json`
 
@@ -180,7 +195,8 @@ The name of an `agents` entry, or a complete inline agent.
 Type: string \| [Inline agent](#config-inline-agent-json)
 
 <a id="config-role-json"></a>
-### Role
+
+## Role
 
 Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/config/role.json`
 
@@ -190,7 +206,6 @@ Type: object
 
 | Field | Type | Required | Notes | Description |
 | --- | --- | --- | --- | --- |
-| `description` | string \| null | no |  | A string with a non-blank value. |
-| `agent` | [Role agent](#config-role-agent-json) | no |  | The name of an `agents` entry, or a complete inline agent. |
-| `responsibilities` | string[] \| null | no |  | Instructions included before stage instructions in every prompt for the role. |
-
+| `description` | string \| null | no | | A string with a non-blank value. |
+| `agent` | [Role agent](#config-role-agent-json) | no | | The name of an `agents` entry, or a complete inline agent. |
+| `responsibilities` | string[] \| null | no | | Instructions included before stage instructions in every prompt for the role. |

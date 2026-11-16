@@ -53,17 +53,11 @@ pnpm test             # both; focused: pnpm vitest run <file> [-t "<name>"]
 ## Lint
 
 ```bash
-pnpm lint        # inspect
-pnpm lint:fix    # automatic fixes
-pnpm lint:strict # zero warnings
+pnpm lint:fix    # automatic fixes; fails on remaining warnings
+pnpm lint        # inspect; fails on any warning
 ```
 
 Append `-- <paths>` for scoped checks. See `scripts/wrappers/run-eslint.mjs`.
-
-## Issues
-
-Use `.github/ISSUE_TEMPLATE/`: `bug.yml` for bugfixes, `feature.yml` otherwise;
-labels follow Work types. Blank issues are disabled; write issues in English.
 
 ## Work types
 
@@ -78,6 +72,11 @@ in the `checkout-issue` and `design` skills updated.
 | migration | Staged compatibility, data transformation, or cutover | `feat/<slug>` | None |
 | docs | Documentation only | `docs/<slug>` | None |
 | chore | Tooling, dependencies, or CI; no product behavior change | `chore/<slug>` | None |
+
+## Issues
+
+Use the `.github/ISSUE_TEMPLATE/` form matching the work type: `<type>.yml`; labels follow Work types.
+Blank issues are disabled; write issues in English.
 
 ## Branch and pull request rules
 
@@ -96,7 +95,6 @@ in the `checkout-issue` and `design` skills updated.
 
 ### Naming conventions
 
-- Types: `feat`, `fix`, `refactor`, `docs`, `chore`; migrations use `feat`.
 - Branch: `<type>/<issue-number>-<slug>`; omit the number without an issue.
   Slug: `[a-z][a-z0-9]*(-[a-z0-9]+)*`; issue number positive, no leading zeros.
 - Commit/PR: `<type>: <imperative summary>`; short English line, no scope or final period.
@@ -117,4 +115,4 @@ in the `checkout-issue` and `design` skills updated.
 - npm trusted publisher: `nodeint/migent`, workflow `release.yml`, empty environment,
   action `npm publish`; keep it aligned with workflow, repository, and `repository.url`.
 - Release commits contain only `CHANGELOG.md`, `packages/*/package.json`, and changed
-  `pnpm-lock.yaml`; never edit `packages/cli/src/version.ts` or `docs/backlogs.md` versions.
+  `pnpm-lock.yaml`; never edit `packages/cli/src/version.ts` versions.

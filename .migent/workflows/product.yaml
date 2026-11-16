@@ -59,7 +59,5 @@ stages:
 downstream:
   - workflow: design
     task: Design the architectural solution for the approved product specification.
-  - workflow: plan
-    task: Break the approved product specification into implementation tasks when architectural design is not required.
   - workflow: implement
     task: Implement the approved product specification directly when architecture and planning are obvious.

@@ -14,7 +14,7 @@ Machine-local workspace registry service for Migent. Internal; no stable public 
 ## Key symbols
 
 | Symbol | File | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | `startDetached`, `serveForeground`, `stop`, `serviceStatus` | `src/service.ts` | Service lifecycle |
 | `callService`, `ServiceError` | `src/service.ts` | Client calls |
 | `serviceEndpointPath`, `queryEndpoint` | `src/endpoint.ts` | Endpoint and liveness |

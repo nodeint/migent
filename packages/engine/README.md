@@ -14,7 +14,7 @@ and session. Internal; no stable public API.
 ## Key symbols
 
 | Symbol | File | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | `executeNamedWorkflow`, `DEFAULT_MAX_DISPATCHES` | `src/execute.ts` | Run a workflow |
 | `dispatchNamedStage`, `resolveResumeExecution` | `src/dispatch.ts` | Dispatch one stage |
 | `AgentToolRunner` | `src/agent-runner.ts` | Run an agent turn |

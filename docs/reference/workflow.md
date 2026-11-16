@@ -2,10 +2,12 @@
 
 # Workflow reference
 
-Structure of a workflow file at the current `schema_version`. Unknown keys are errors.
+Structure of a workflow file at the current `schema_version`.
+Unknown keys are errors.
 
 <a id="workflow-artifact-json"></a>
-### Workflow artifact
+
+## Workflow artifact
 
 Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/workflow/artifact.json`
 
@@ -16,11 +18,12 @@ Type: object
 | Field | Type | Required | Notes | Description |
 | --- | --- | --- | --- | --- |
 | `file` | string | yes | pattern: `"^\\s*(?!\\.{1,2}\\s*$)[^/\\\\\\s][^/\\\\]*$"` | File name inside the session's output directory. No path separators. |
-| `description` | string \| null | no |  | A string with a non-blank value. |
-| `required` | boolean \| null | no |  | Default `true`. A required artifact must exist when its producer completes. |
+| `description` | string \| null | no | | A string with a non-blank value. |
+| `required` | boolean \| null | no | | Default `true`. A required artifact must exist when its producer completes. |
 
 <a id="workflow-decision-entry-json"></a>
-### Decision entry
+
+## Decision entry
 
 Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/workflow/decision-entry.json`
 
@@ -31,11 +34,12 @@ Type: object
 | Field | Type | Required | Notes | Description |
 | --- | --- | --- | --- | --- |
 | `when` | string | no | pattern: `"\\S"` | A string with a non-blank value. |
-| `navigate` | string \| string[] | yes |  | A stage id, `complete`, or a list of stage ids to run next. |
-| `artifacts` | string[] \| map of [Workflow artifact](#workflow-artifact-json) | no |  | Artifacts produced under this decision: registry ids, or a mapping of inline artifact definitions. |
+| `navigate` | string \| string[] | yes | | A stage id, `complete`, or a list of stage ids to run next. |
+| `artifacts` | string[] \| map of [Workflow artifact](#workflow-artifact-json) | no | | Artifacts produced under this decision: registry ids, or a mapping of inline artifact definitions. |
 
 <a id="workflow-document-json"></a>
-### Workflow file
+
+## Workflow file
 
 Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/workflow/document.json`
 
@@ -45,17 +49,18 @@ Type: object
 
 | Field | Type | Required | Notes | Description |
 | --- | --- | --- | --- | --- |
-| `schema_version` | integer \| string | no |  | Document version, an integer or a digit string. |
-| `id` | string \| null | no |  | A string with a non-blank value. |
-| `stages` | [Workflow stage](#workflow-stage-json)[] | no |  | The workflow's stages. |
-| `artifacts` | map of [Workflow artifact](#workflow-artifact-json) \| null | no |  | Published artifacts by id. |
-| `concurrency` | integer \| string \| null | no |  | A whole number of at least 1, written as an integer or a digit string. |
-| `constraints` | string[] \| null | no |  | Constraints included in every prompt. |
-| `downstream` | [Downstream suggestion](#workflow-downstream-json)[] | no |  | Workflows to suggest next. |
-| `completion` | null | no |  | Not allowed from schema_version 2; kept so older files report a migration hint. |
+| `schema_version` | integer \| string | no | | Document version, an integer or a digit string. |
+| `id` | string \| null | no | | A string with a non-blank value. |
+| `stages` | [Workflow stage](#workflow-stage-json)[] | no | | The workflow's stages. |
+| `artifacts` | map of [Workflow artifact](#workflow-artifact-json) \| null | no | | Published artifacts by id. |
+| `concurrency` | integer \| string \| null | no | | A whole number of at least 1, written as an integer or a digit string. |
+| `constraints` | string[] \| null | no | | Constraints included in every prompt. |
+| `downstream` | [Downstream suggestion](#workflow-downstream-json)[] | no | | Workflows to suggest next. |
+| `completion` | null | no | | Not allowed from schema_version 2; kept so older files report a migration hint. |
 
 <a id="workflow-downstream-json"></a>
-### Downstream suggestion
+
+## Downstream suggestion
 
 Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/workflow/downstream.json`
 
@@ -67,10 +72,11 @@ Type: object
 | --- | --- | --- | --- | --- |
 | `workflow` | string | yes | pattern: `"\\S"` | A string with a non-blank value. |
 | `task` | string | yes | pattern: `"^[^\\r\\n]*\\S[^\\r\\n]*$"` | A single non-blank line. |
-| `artifacts` | map of string | no |  | Downstream artifact name mapped to a registry artifact id. |
+| `artifacts` | map of string | no | | Downstream artifact name mapped to a registry artifact id. |
 
 <a id="workflow-run-when-json"></a>
-### Run condition
+
+## Run condition
 
 Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/workflow/run-when.json`
 
@@ -83,7 +89,8 @@ Type: object
 | `changed_paths` | string[] | yes | minItems: `1` | Glob patterns. The stage runs only when a changed path matches. |
 
 <a id="workflow-session-json"></a>
-### Stage session
+
+## Stage session
 
 Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/workflow/session.json`
 
@@ -93,11 +100,12 @@ Type: object
 
 | Field | Type | Required | Notes | Description |
 | --- | --- | --- | --- | --- |
-| `resume_from` | string \| null | no |  | A string with a non-blank value. |
-| `on_expired` | [Resume on expired](config.md#config-resume-on-expired-json) \| null | no |  | `ask` stops for a human decision, `fresh` starts a new conversation, `resume` resumes anyway. |
+| `resume_from` | string \| null | no | | A string with a non-blank value. |
+| `on_expired` | [Resume on expired](config.md#config-resume-on-expired-json) \| null | no | | `ask` stops for a human decision, `fresh` starts a new conversation, `resume` resumes anyway. |
 
 <a id="workflow-stage-json"></a>
-### Workflow stage
+
+## Workflow stage
 
 Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/workflow/stage.json`
 
@@ -108,18 +116,17 @@ Type: object
 | Field | Type | Required | Notes | Description |
 | --- | --- | --- | --- | --- |
 | `id` | string | yes | pattern: `"\\S"` | A string with a non-blank value. |
-| `description` | string \| null | no |  | A single non-blank line. |
-| `role` | string \| null | no |  | A string with a non-blank value. |
-| `depends_on` | string[] \| null | no |  | Stage ids that must complete first. |
-| `instructions` | string[] \| null | no |  | Instructions added to the stage prompt. |
-| `agent` | [Role agent](config.md#config-role-agent-json) \| null | no |  | The name of an `agents` entry, or a complete inline agent. |
-| `ask` | `"human"` | no |  | `human` lets the stage ask the user a question. |
-| `max_revisions` | integer \| string | no |  | A whole number, written as an integer or a digit string. |
-| `verify` | string \| string[] \| null | no |  | Shell command or commands run after the stage. |
-| `max_verify` | integer \| string \| null | no |  | A whole number of at least 1, written as an integer or a digit string. |
-| `verify_timeout` | integer \| string \| null | no |  | A whole number of at least 1, written as an integer or a digit string. |
-| `artifacts` | string[] \| null | no |  | Registry artifact ids the stage produces. |
-| `decision` | (map of [Decision entry](#workflow-decision-entry-json))[] \| null | no |  | Decision values and their routes. |
-| `session` | [Stage session](#workflow-session-json) \| null | no |  | Continue the client session of a dependency, and what to do when its cache may have expired. |
-| `run_when` | [Run condition](#workflow-run-when-json) \| null | no |  | Runs the stage only when the session changed matching files. |
-
+| `description` | string \| null | no | | A single non-blank line. |
+| `role` | string \| null | no | | A string with a non-blank value. |
+| `depends_on` | string[] \| null | no | | Stage ids that must complete first. |
+| `instructions` | string[] \| null | no | | Instructions added to the stage prompt. |
+| `agent` | [Role agent](config.md#config-role-agent-json) \| null | no | | The name of an `agents` entry, or a complete inline agent. |
+| `ask` | `"human"` | no | | `human` lets the stage ask the user a question. |
+| `max_revisions` | integer \| string | no | | A whole number, written as an integer or a digit string. |
+| `verify` | string \| string[] \| null | no | | Shell command or commands run after the stage. |
+| `max_verify` | integer \| string \| null | no | | A whole number of at least 1, written as an integer or a digit string. |
+| `verify_timeout` | integer \| string \| null | no | | A whole number of at least 1, written as an integer or a digit string. |
+| `artifacts` | string[] \| null | no | | Registry artifact ids the stage produces. |
+| `decision` | (map of [Decision entry](#workflow-decision-entry-json))[] \| null | no | | Decision values and their routes. |
+| `session` | [Stage session](#workflow-session-json) \| null | no | | Continue the client session of a dependency, and what to do when its cache may have expired. |
+| `run_when` | [Run condition](#workflow-run-when-json) \| null | no | | Runs the stage only when the session changed matching files. |

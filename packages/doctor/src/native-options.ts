@@ -105,30 +105,11 @@ export function analyzeNativeOptions(
   }
   const findings: NativeOptionFinding[] = [];
   const claimed = new Map<HeadlessOptionFact, string[]>();
+  const optionHelp = { clientId: client.id, support, help };
   for (const key of keys) {
-    const flag = support.flagFor(key);
-    if (flag === null) continue; // The offline check reports it.
-    const entry = help.options.find((option) => option.flags.includes(flag));
-    if (entry === undefined) {
-      findings.push({
-        severity: 'error',
-        code: 'option-unknown',
-        message: `${key} is not an option of ${client.id}: ${flag} is not listed by \`${help.helpCommand}\`.`,
-      });
-      continue;
-    }
-    claimed.set(entry, [...(claimed.get(entry) ?? []), key]);
-    const reserved = entry.flags.find((other) => other !== flag && support.reservedFlags.includes(other));
-    if (reserved !== undefined) {
-      findings.push({
-        severity: 'error',
-        code: 'option-conflict',
-        message: `${key} (${flag}) is an alias of ${reserved}, which Migent sets itself.`,
-      });
-      continue;
-    }
-    const invalid = valueProblem(key, options[key] ?? '', entry);
-    if (invalid !== null) findings.push({ severity: 'error', code: 'option-value-invalid', message: invalid });
+    const checked = checkOption(optionHelp, key, options[key] ?? '');
+    if (checked.entry !== null) claimed.set(checked.entry, [...(claimed.get(checked.entry) ?? []), key]);
+    if (checked.finding !== null) findings.push(checked.finding);
   }
   for (const [entry, reached] of claimed) {
     if (reached.length === 1) continue;
@@ -139,6 +120,29 @@ export function analyzeNativeOptions(
     });
   }
   return findings;
+}
+
+/** Checks one option key; `entry` is the help entry it reaches, used to find keys that set the same option. */
+function checkOption(
+  optionHelp: { clientId: string; support: NativeOptionSupport; help: Extract<NativeHelp, { status: 'loaded' }> },
+  key: string,
+  value: string,
+): { entry: HeadlessOptionFact | null; finding: NativeOptionFinding | null } {
+  const { clientId, support, help } = optionHelp;
+  const flag = support.flagFor(key);
+  if (flag === null) return { entry: null, finding: null }; // The offline check reports it.
+  const entry = help.options.find((option) => option.flags.includes(flag));
+  if (entry === undefined) {
+    const message = `${key} is not an option of ${clientId}: ${flag} is not listed by \`${help.helpCommand}\`.`;
+    return { entry: null, finding: { severity: 'error', code: 'option-unknown', message } };
+  }
+  const reserved = entry.flags.find((other) => other !== flag && support.reservedFlags.includes(other));
+  if (reserved !== undefined) {
+    const message = `${key} (${flag}) is an alias of ${reserved}, which Migent sets itself.`;
+    return { entry, finding: { severity: 'error', code: 'option-conflict', message } };
+  }
+  const invalid = valueProblem(key, value, entry);
+  return { entry, finding: invalid === null ? null : { severity: 'error', code: 'option-value-invalid', message: invalid } };
 }
 
 function valueProblem(key: string, value: string, entry: HeadlessOptionFact): string | null {

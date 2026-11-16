@@ -1,7 +1,6 @@
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 
-import { EXECUTION_INPUT_SCHEMA_VERSION } from '@nodeint/migent-contracts';
 import type { StageOutcome } from '@nodeint/migent-kernel';
 import {
   classifyOrphanedExecution,
@@ -26,7 +25,7 @@ import {
 import { VERIFY_ARTIFACT, type WorkflowDocument } from '@nodeint/migent-workflow';
 
 import { TURN_PAD_WIDTH } from './constants.js';
-import { completeManuallyLocked } from './manual-completion.js';
+import { completeManuallyLocked, type ManualCompletionOps } from './manual-completion.js';
 import { sealSessionMetrics } from './metrics.js';
 import { publishNextSuggestions } from './next-handoff.js';
 import { readPendingResumes } from './resume-pending.js';
@@ -48,13 +47,13 @@ import {
   openExecutionDirectory,
   skippedExecutionMetadata,
   skipRecordOf,
+  writeExecutionInput,
   writeStartedExecution,
 } from './session-store-execution.js';
 import { SessionStoreResume } from './session-store-resume.js';
 import type {
   ExecutionSaveInput,
   ExecutionStartInput,
-  HumanInput,
   LoadOrCreateInput,
   ManualCompletionResult,
   SkipDetails,
@@ -71,20 +70,6 @@ import { asInt, executionPosition, executionResultFields, isDirectory, readJsonO
 import { savedOutcomeFields, snapshotsIncludingSave, storedFailure, textField } from './session-store-util.js';
 import { writeQuestionRequest } from './session-store-util.js';
 import { normalizeRenameTitle, writeTitleRecord } from './session-title.js';
-
-function writeExecutionInput(context: ExecutionContext, stageId: string, human: HumanInput): void {
-  writeJsonAtomic(path.join(context.directory, 'input.json'), {
-    schema_version: EXECUTION_INPUT_SCHEMA_VERSION,
-    execution_id: context.executionId,
-    stage_id: stageId,
-    kind: human.kind,
-    responds_to_execution_id: human.respondsToExecutionId,
-    recorded_at: utcNow(),
-    sent: human.sent,
-    input: human.input,
-    ...(human.answers ? { answers: human.answers } : {}),
-  });
-}
 
 export class SessionStore extends SessionStoreResume {
   public loadOrCreate(input: LoadOrCreateInput): [AgentSessionRecord, boolean, ExecutionContext] {
@@ -491,25 +476,18 @@ export class SessionStore extends SessionStoreResume {
         `Session ${sessionId} is being run by another process. Stop it first with: migent session cancel ${sessionId}`,
       );
     }
+    const ops: ManualCompletionOps = {
+      workspace: this.workspace,
+      metricsClients: this.metricsClients,
+      loadWorkflow: (status) => this.loadWorkflow(status),
+      snapshotList: (id) => this.snapshotList(id),
+      rewriteManifestStatus: (directory, status) => this.rewriteManifestStatus(directory, status),
+    };
     try {
-      return this.completeManuallyLocked(sessionId, sessionDirectory);
+      return completeManuallyLocked(ops, sessionId, sessionDirectory);
     } finally {
       lock.release();
     }
-  }
-
-  private completeManuallyLocked(sessionId: string, sessionDirectory: string): ManualCompletionResult {
-    return completeManuallyLocked(
-      {
-        workspace: this.workspace,
-        metricsClients: this.metricsClients,
-        loadWorkflow: (status) => this.loadWorkflow(status),
-        snapshotList: (id) => this.snapshotList(id),
-        rewriteManifestStatus: (directory, status) => this.rewriteManifestStatus(directory, status),
-      },
-      sessionId,
-      sessionDirectory,
-    );
   }
 
   private reapExecution(context: ExecutionContext, onLiveOwner: string): void {

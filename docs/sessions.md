@@ -19,7 +19,8 @@ Older UUID and timestamp ids stay valid and are ignored when numbering. `manifes
 stores `session_id` and `prior_session_id` as quoted strings, and also records `title`. A workflow or role session sets
 `title` to its one-line task. `session prepare` sets `title` to the text you
 pass, creates an empty `task.md`, and copies the workflow to an editable
-`workflow.yaml`. The title is for display, so spaces and capitals stay. A session written by an older Migent has no `title`. List and
+`workflow.yaml`. The title is for display, so spaces and capitals stay.
+A session written by an older Migent has no `title`. List and
 show use `session_id` for that session.
 
 Next to the session directories, `.migent/sessions/` holds Migent bookkeeping that `session list` ignores:
@@ -63,7 +64,8 @@ The session-level files have distinct purposes:
   names its editable `workflow.yaml`. The manifest has no status line.
   Status lives in `status.json`. A v1 manifest still has a `status` line, and
   that line is still updated. An ad hoc agent session records its role; a
-  workflow started with prior context records `prior_session_id` and a `handoff` mapping with source output names, snapshot paths and SHA-256 hashes.
+  workflow started with prior context records `prior_session_id` and a `handoff` mapping with source output names,
+  snapshot paths and SHA-256 hashes.
 - `workflow.yaml` is the editable draft that `session prepare` writes from the
   named workflow, with an explicit `id`. It is this session's workflow source:
   edit it before starting, keep its `id`, and run
@@ -287,7 +289,8 @@ Stages with `ask: human` can stop with outcome `question`. `session show` lists
 each pending question with its context, options, and `single`/`multiple`
 selection mode. Each execution's `questions.json` preserves the batch it asked, and the
 `input.json` of the execution that received the answers records them
-(see [Human-in-the-loop interaction](human-in-the-loop.md#files-and-question-history)). Questions are identified by execution ID and question ID.
+(see [Human-in-the-loop interaction](human-in-the-loop.md#files-and-question-history)).
+Questions are identified by execution ID and question ID.
 These requests remain visible while independent branches run or another stage
 is blocked. A quiet session is `blocked` if any stage is blocked, otherwise
 `question` if an answer is pending. A question exits 9 and is not a failure.
@@ -350,6 +353,7 @@ sends the saved reply. A newer `--reply` replaces it. Without `--reply`,
 turn again, except one a reply already replaced. When a cancelled stage waits
 beside a blocked stage or pending question, `--reply` needs `--stage` to pick
 the target. Replying to the cancelled stage leaves the blocked stage blocked.
+
 ## Expired resumes
 
 When a resume policy finds the prompt cache expired and the action is `ask`, the session gets the status
@@ -374,6 +378,7 @@ execution. A `session.resume_from` target with no execution of its own can there
 ## Completion method
 
 Every completed session records how it completed:
+
 - `completion_method: "agent"`: normal agent-driven completion (execution reached decision or quiescence)
 - `completion_method: "manual"`: human-initiated completion via `migent session complete`
 
@@ -381,7 +386,9 @@ Every completed session records how it completed:
 { "status": "completed", "completion_method": "manual" }
 ```
 
-This enables audit queries (e.g., `jq '.completion_method' *.json | grep manual`) and distinguishes deliberate human decisions from automatic workflow outcomes. Future versions could add `migent session reopen` if manual completions need reversal.
+This enables audit queries (e.g., `jq '.completion_method' *.json | grep manual`) and distinguishes deliberate human
+decisions from automatic workflow outcomes.
+Future versions could add `migent session reopen` if manual completions need reversal.
 
 `completed` sessions stay stopped. `session continue --once`
 advances one stage and does not reset revision counts.

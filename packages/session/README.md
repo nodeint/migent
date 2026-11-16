@@ -17,7 +17,7 @@ diagnostics. Depends on the kernel. Internal; no stable public API. Behavior:
 ## Key symbols
 
 | Symbol | File | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | `createSessionDirectory` | `src/session-records.ts` | New session |
 | `appendLifecycleEvent`, `EVENT_VERSION` | `src/session-events.ts` | Event log |
 | `foldStatus`, `commitFoldedStatus`, `readSessionManifest` | `src/session-fold.ts` | Status fold |

@@ -6,11 +6,11 @@ import { fileURLToPath } from 'node:url';
 
 import { expect, test } from 'vitest';
 
-import { branchProblem, commitProblem, pullRequestProblems, pushProblems, subjectProblem } from '../../../scripts/git-flow.mjs';
+import { branchProblem, commitProblem, pullRequestProblems, pushProblems, subjectProblem } from './git-flow.mjs';
 
-const root = fileURLToPath(new URL('../../../', import.meta.url));
+const root = fileURLToPath(new URL('../', import.meta.url));
 const sha = 'a'.repeat(40);
-const update = (source: string, target: string) => `${source} ${sha} ${target} ${sha}\n`;
+const update = (source, target) => `${source} ${sha} ${target} ${sha}\n`;
 
 test.each([
   'feat/123-session-export', 'fix/1-resume', 'refactor/session-store',
@@ -70,12 +70,24 @@ test('push guard rejects main updates, deletion, and mismatched branches', () =>
   expect(commitProblem('release/1.0.0')).toBeNull();
 });
 
+test('hooks reject force-pushes and mismatched upstreams', () => {
+  const old = 'b'.repeat(40);
+  const input = `refs/heads/feat/work ${sha} refs/heads/feat/work ${old}\n`;
+  expect(pushProblems(input, 'refs/heads/feat/work', () => false)).toEqual([expect.stringContaining('Force-push')]);
+  expect(pushProblems(input, 'refs/heads/feat/work', () => true)).toEqual([]);
+  const created = `refs/heads/feat/work ${sha} refs/heads/feat/work ${'0'.repeat(40)}\n`;
+  expect(pushProblems(created, 'refs/heads/feat/work', () => false)).toEqual([]);
+  expect(commitProblem('feat/work', 'origin/feat/work')).toBeNull();
+  expect(commitProblem('feat/work', 'origin/next')).toContain('Upstream origin/next');
+  expect(commitProblem('feat/work', 'fork/feat/work')).toBeTruthy();
+});
+
 test('installed hooks enforce PR flow in a real isolated clone', () => {
   const directory = mkdtempSync(path.join(tmpdir(), 'migent-git-flow-'));
   const repo = path.join(directory, 'repo');
   const remote = path.join(directory, 'remote.git');
   mkdirSync(repo);
-  const git = (...args: string[]) => execFileSync('git', args, { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   try {
     execFileSync('git', ['init', '--bare', remote], { stdio: 'pipe' });
     git('init', '-b', 'main');
@@ -107,11 +119,17 @@ test('installed hooks enforce PR flow in a real isolated clone', () => {
     expect(invalidCommit.stderr).toContain('<type>: <imperative summary>');
     expect(git('rev-parse', 'HEAD')).toBe(initialHead);
     git('commit', '--allow-empty', '-m', 'feat: add work', '-m', 'Body and attribution remain unrestricted.');
-    const push = (...args: string[]) => spawnSync('git', ['push', ...args], { cwd: repo, encoding: 'utf8' });
+    const push = (...args) => spawnSync('git', ['push', ...args], { cwd: repo, encoding: 'utf8' });
     expect(push('origin', 'refs/heads/feat/work:refs/heads/main').stderr).toContain('Direct pushes to main are blocked');
     expect(push('origin', 'refs/heads/feat/work:refs/heads/wrong').stderr).toContain('Branch destination mismatch');
     expect(push('-u', 'origin', 'refs/heads/feat/work:refs/heads/feat/work').status).toBe(0);
     expect(git('rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}')).toBe('origin/feat/work');
+    git('commit', '--amend', '--allow-empty', '-m', 'feat: rewrite work');
+    expect(push('--force', 'origin', 'refs/heads/feat/work:refs/heads/feat/work').stderr).toContain('Force-push to feat/work is blocked');
+    git('branch', '--set-upstream-to=origin/main');
+    const wrongUpstream = spawnSync('git', ['commit', '--allow-empty', '-m', 'feat: add more'], { cwd: repo, encoding: 'utf8' });
+    expect(wrongUpstream.stderr).toContain('Upstream origin/main');
+    git('branch', '--set-upstream-to=origin/feat/work');
     git('tag', 'v-test');
     expect(push('origin', 'refs/tags/v-test:refs/tags/v-test').status).toBe(0);
     git('switch', '--no-track', '-c', 'next', 'origin/main');
@@ -133,7 +151,7 @@ test('installed hooks enforce PR flow in a real isolated clone', () => {
     }).status).not.toBe(0);
 
     const eventPath = path.join(directory, 'event.json');
-    const checkPr = (title: string) => {
+    const checkPr = (title) => {
       writeFileSync(eventPath, JSON.stringify({ pull_request: { head: { ref: 'fix/123-resume' }, title } }));
       return spawnSync(process.execPath, ['scripts/git-flow.mjs', 'pr'], {
         cwd: repo, encoding: 'utf8', env: { ...process.env, GITHUB_EVENT_PATH: eventPath },

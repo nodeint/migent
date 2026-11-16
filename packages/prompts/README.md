@@ -12,7 +12,7 @@ Prompt templates and renderers for Migent. Internal; no stable public API.
 ## Key symbols
 
 | Symbol | File | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | `renderStageStart`, `renderStageContinue` | `src/index.ts` | Stage turn prompts |
 | `buildStageReplyPrompt`, `formatQuestionAnswers` | `src/index.ts` | Human reply and answers |
 | `renderProviderPrompt`, `addStageOutcomeContract` | `src/index.ts` | Outcome contract wrapping |

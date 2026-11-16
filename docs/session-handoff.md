@@ -1,6 +1,7 @@
 # Session handoff
 
-Workflows run independently and hand context to each other through `next.json` and `--prior`. For the session directory and resume behavior, see [Sessions](sessions.md).
+Workflows run independently and hand context to each other through `next.json` and `--prior`.
+For the session directory and resume behavior, see [Sessions](sessions.md).
 
 The structure of `next.json` is in the [session files reference](reference/session-files.md#session-next-json).
 

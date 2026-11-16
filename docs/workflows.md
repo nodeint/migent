@@ -2,7 +2,8 @@
 
 A workflow is a set of stages connected by dependencies and explicit decision
 routes. Definitions live in `.migent/workflows/` as YAML files. The Migent skill
-lists every accepted key in `references/schema-workflow.yaml` in the installed Migent skill (`migent skill path` prints the bundled copy).
+lists every accepted key in `references/schema-workflow.yaml` in the installed Migent skill (`migent skill path` prints
+the bundled copy).
 The generated [workflow field reference](reference/workflow.md) lists the same structure.
 `id` is optional. When it is omitted, the id is the file name without `.yaml`. When
 `id` is set, that value is the workflow name used by `migent session run --workflow`,
@@ -635,7 +636,8 @@ is unusable, then the stage fails with `handoff_file_invalid`.
 When a provider turn ends normally and the reply fails a check the agent can fix, Migent
 sends one **correction turn** per failure kind instead of failing at once. The kernel
 policy table (`correction-policy.ts`) is the only place that decides this. The budget is
-one per kind per execution (so a protocol 3 execution gets at most two correction turns, one `handoff` and one `stage_output`); a new attempt starts with fresh budgets.
+one per kind per execution (so a protocol 3 execution gets at most two correction turns, one `handoff` and one
+`stage_output`); a new attempt starts with fresh budgets.
 
 | Kind | Trigger | Contract in the correction | `failure_reason` when still wrong | Event |
 | --- | --- | --- | --- | --- |
@@ -663,7 +665,9 @@ pending questions are in `status.json` and `session show --json`. The pair
 restarts at 1 for each stage's new batch. Neither humans nor programs need to
 read `response.md` to obtain the questions.
 `session show` prints the options and selection mode; `--json` exposes full
-pending questions in `questions`. Repair can rebuild the per-execution question batches (`executions/<id>/questions.json`). It does not rebuild `input.json`.
+pending questions in `questions`.
+Repair can rebuild the per-execution question batches (`executions/<id>/questions.json`).
+It does not rebuild `input.json`.
 
 Use `blocked` for an obstacle the agent cannot resolve (missing resources or
 an unrecoverable command error); use `question` to ask for information or a

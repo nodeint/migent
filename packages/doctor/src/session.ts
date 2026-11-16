@@ -199,20 +199,26 @@ function isUnmappedAgent(config: Record<string, unknown>, key: string | null): k
     && Object.keys(config.agents[key]).length === 0;
 }
 
+/** Reports the stage model's effort warning; returns why the stage cannot run on this machine, if it cannot. */
+function stageModelFault(config: Record<string, unknown>, stage: RoleStageSpec, scope: LiveScope): string | null {
+  const key = modelKey(config, stage, scope.workflowId);
+  const effort = key === null ? undefined : (scope.options.modelEffortChecks ?? {})[key];
+  if (effort?.warning) addUnique(scope.warnings, effort.warning);
+  if (effort?.problem) return effort.problem;
+  if (isUnmappedAgent(config, key)) {
+    return `agents.${key} has no client and model on this machine. Map it in .migent/config.local.yaml.`;
+  }
+  return null;
+}
+
 /** Resolves one stage against live config and records its client, reporting the first fault. */
 function checkLiveStage(config: Record<string, unknown>, stage: RoleStageSpec, scope: LiveScope): void {
   const { workflowId, options, problems, warnings, record } = scope;
   const where = `${workflowId}.${stage.id}`;
-  const key = modelKey(config, stage, workflowId);
   warnUnusedOnExpired(config, stage, scope);
-  const effort = key === null ? undefined : (options.modelEffortChecks ?? {})[key];
-  if (effort?.warning) addUnique(warnings, effort.warning);
-  if (effort?.problem) {
-    addUnique(problems, `${where}: ${effort.problem}`);
-    return;
-  }
-  if (isUnmappedAgent(config, key)) {
-    addUnique(problems, `${where}: agents.${key} has no client and model on this machine. Map it in .migent/config.local.yaml.`);
+  const fault = stageModelFault(config, stage, scope);
+  if (fault !== null) {
+    addUnique(problems, `${where}: ${fault}`);
     return;
   }
   let target: StageTarget;
