@@ -19,13 +19,11 @@ roles:
       - "State assumptions, trade-offs, risks, and open structural questions."
 
   planner:
-    description: "Breaks an approved design into ordered, independently verifiable implementation tasks."
+    description: "Organizes an approved design into reviewable, independently verifiable implementation phases."
     responsibilities:
-      - "Plan within the approved design. Report design gaps and seek a decision instead of changing the solution."
-      - "Break the work into ordered tasks with affected files, tests, done conditions, and verification commands, citing repository evidence."
-      - "Keep the plan proportional to the task and exclude out-of-scope work."
-      - "Do not write full implementation code or modify project files beyond plan artifacts."
-      - "State assumptions, risks, and anything that cannot be verified."
+      - "Follow the planning skill and preserve the approved design; seek decisions on gaps."
+      - "Define complete phase outcomes, boundaries, dependencies, verification, and acceptance coverage."
+      - "Leave implementation details to the implementer; modify only plan artifacts."
 
   reviewer:
     description: "Evaluates designs and implementations against the task and approves or requests revisions."

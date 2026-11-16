@@ -1,39 +1,44 @@
-# Publishing prerequisites and recovery
+# Publishing and recovery
 
-Read before merging or recovering a failed release.
+Read [repository policy](../../../../CONTRIBUTING.md) first.
 
 ## Prerequisites
 
-- Default branch is `next`. Its ruleset requires current-base Ubuntu, macOS, and
-  Windows tests, resolved conversations, linear history, and no bypass actors.
-  Use squash merges; working branches are deleted after merge.
-- `main: immutable release history` blocks deletion and force-push, but permits the
-  workflow token to fast-forward main. An older `main: release maintainers only`
-  update restriction blocks releases: stop and obtain approval for ruleset changes.
-- Tags `v*` are immutable and created only by `.github/workflows/release.yml`.
-- Every npm package needs a trusted publisher: organization `nodeint`, repository
-  `migent`, workflow `release.yml`, empty environment, allowed action `npm publish`.
-  Renaming that workflow, moving the repository, or changing `repository.url`
-  requires updating trusted publishers.
-- Trusted publishing cannot create a package. Its first publish must be manual,
-  then configure its trusted publisher before dispatching npm publishing.
+- Verify required checks, merge permissions, tag ownership, and publisher settings
+  against repository policy. Stop on missing prerequisites; changing protections or
+  publisher settings requires explicit authorization.
+- First publication must be manual; configure trusted publishing before subsequent runs.
+
+## Merge and verify
+
+- A named-version request authorizes preparation and pushing the PR; merging needs
+  explicit authorization (reuse existing authorization). Confirm publishing
+  prerequisites before merging.
+- Squash-merge with the release subject from CONTRIBUTING.md to trigger publishing.
+- Find the run with `gh run list --workflow release.yml --branch next --commit <sha>
+  --json databaseId,status,conclusion,url`; watch with `gh run watch <id> --exit-status`.
+  If absent, retry every 30 seconds, at most five times. On failure, report job/step and stop.
+- After success, fetch; confirm `origin/main` equals the tag commit; install
+  `npm i -g --prefer-online @nodeint/migent@X.Y.Z` and check `migent --version`.
+  Report version, tag, run URL/result, GitHub Release URL, npm and `main` results.
 
 ## Recovery
 
-- After fixing the cause, rerun failed jobs with `gh run rerun <id> --failed`.
-  Existing tags/releases and published packages are reused; verify actual state.
-- With an existing tag but no run to retry, publish through
-  `gh workflow run release.yml --ref next -f version=X.Y.Z` (npm job only).
-- Versions are single-use even after unpublishing. Never move a tag; if the version
-  cannot be completed, release the next patch.
-- Deprecate a bad release instead of deleting it:
+Inspect the failed run and existing artifacts first. Retry only authorized steps;
+ask before undocumented recovery or new external mutations.
+
+- After fixing the cause, use `gh run rerun <id> --failed`; verify reused tags,
+  releases, and packages. A tag alone does not prove npm or `main` succeeded.
+- Existing tag without a retryable run: `gh workflow run release.yml --ref next -f version=X.Y.Z`
+  (npm job only).
+- Versions are single-use even after unpublishing. If completion is impossible,
+  release the next patch. Deprecate bad releases rather than deleting:
   `npm deprecate "@nodeint/migent@X.Y.Z" "Upgrade to X.Y.W"`.
-- Registry propagation may briefly cause ETARGET; use `--prefer-online` and check
+- For propagation/ETARGET, use `--prefer-online` and check
   `npm view "@nodeint/<package>@X.Y.Z" version`.
-- Manual publishing: `pnpm -r publish` can hang on 2FA; use
-  `pnpm -r pack --pack-destination <dir>` then `npm publish <tarball> --access public`.
-  Never publish directly from package directories: workspace references remain unresolved.
-- Publish dependency order: `@nodeint/migent-contracts`, `-workflow`, `-prompts`,
-  `-kernel`, `-session`, `-engine`, `-doctor`, `-adapters`, `-registry`, then
-  `@nodeint/migent`. All packages belong to `@nodeint`; unscoped `migent` was rejected
-  and `@migent` is held only against squatting.
+- Manual publishing: avoid `pnpm -r publish` (2FA hangs); use
+  `pnpm -r pack --pack-destination <dir>`,
+  then `npm publish <tarball> --access public`. Never publish package directories
+  directly: workspace references remain unresolved.
+- Dependency order: `@nodeint/migent-{contracts,workflow,prompts,kernel,session,engine,doctor,adapters,registry}`,
+  then `@nodeint/migent`.

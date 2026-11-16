@@ -1,7 +1,7 @@
 # Design template
 
-Keep all headings and their order. Replace placeholders with concise content.
-For inapplicable sections, state why. Resolve questions before completing the design.
+Keep applicable headings in order; omit empty sections unless a required format says otherwise.
+Replace placeholders concisely. Resolve questions before completing the design.
 
 ```markdown
 # <Type>: <outcome>
@@ -44,6 +44,6 @@ Include extension and compatibility concerns only when relevant and supported.>
 
 - <Source path>: <Purpose.>
 
-<Use repository-relative paths or supplied artifact snapshots. Retain relevant earlier
+<Use repository-relative paths or supplied input paths. Retain relevant earlier
 references. If none are needed, state why.>
 ```

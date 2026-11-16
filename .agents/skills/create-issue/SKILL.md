@@ -1,56 +1,29 @@
 ---
 name: create-issue
-description: >
-  Create a GitHub issue in this repository that follows the issue forms in
-  .github/ISSUE_TEMPLATE/. Pick the form, write each form section as a heading,
-  apply the form's label, and confirm with the user before creating it. Use
-  when the user says create issue, tạo issue, open an issue, or file a bug.
-metadata:
-  short-description: "Create a GitHub issue that follows the issue forms"
+description: Create or update GitHub issues using repository templates and labels.
 ---
 
 # Create an issue
 
-Work from the repository root. Reply in the user's language, but write the
-issue in English. The repository is `nodeint/migent`.
+## Steps
 
-## Pick the form
-
-Read `.github/ISSUE_TEMPLATE/` before writing; the forms are the source of truth.
-Blank issues are disabled.
-
-Pick the work type from the table in `CONTRIBUTING.md`, then:
-
-- bugfix: `bug.yml`, label `bug`.
-- every other type: `feature.yml`, with the label from that table. Types
-  without a label (refactor, migration, docs, chore) get none.
-
-Ask when the type is unclear.
-
-## Write the body
-
-`gh issue create --body` bypasses issue forms, so rebuild the form by hand:
-
-- Use each field's `label` as a `### ` heading, in form order.
-- Fill every required field. Omit an optional field rather than leaving it
-  empty.
-- Ground every claim in repository evidence or the user's report: link run
-  URLs, cite files as `path`, and quote short error text.
-- Keep it concise. Never include secrets, tokens, or private user data.
-
-## Create
-
-Show the title, label, and body to the user, and create the issue only after they
-approve it. Write the body to a file in the scratchpad to avoid quoting problems.
-
-```bash
-gh issue create --title "<title>" [--label <label>] --body-file <file>
-```
-
-Report the issue URL. To fix an existing issue, use
-`gh issue edit <n> --body-file <file>`.
-
-## Next
-
-Do not start the work. The `checkout-issue` skill reads the issue and creates
-the branch.
+1. Resolve the repository from contribution rules or Git remotes. Read its issue
+   language, templates, configuration, work types, and labels. Ask if the target
+   or required policy is unclear.
+2. Select the matching template and labels. If no template exists, use problem,
+   expected behavior, evidence, and constraints only when repository rules permit it.
+3. Gather required fields from the user's report and repository evidence.
+   Ask for missing required information or an unclear work type.
+4. Draft the title and body in the repository's issue language. For YAML forms,
+   reproduce field labels as headings in order, fill required fields, and omit empty
+   optional fields. For Markdown templates, retain the required structure.
+5. Link supporting sources and remove secrets or private data. Show the title,
+   labels, and body for approval; reuse approval for that exact content.
+6. Write the approved body to a temporary file. Create or update using the explicit
+   repository, title, and labels:
+   `gh issue create --repo <owner>/<repo> --title "<title>" --body-file <file> --label "<label>"` or
+   `gh issue edit <n> --repo <owner>/<repo> --title "<title>" --body-file <file> --add-label "<label>"`.
+   Repeat label flags as needed; omit them when none apply. On edits, preserve
+   unrelated labels and use `--remove-label` only for approved removals.
+7. Report the issue URL in the user's language. Do not create a branch or start
+   implementation unless requested.

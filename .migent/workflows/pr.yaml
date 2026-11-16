@@ -11,6 +11,7 @@ stages:
     role: operator
     ask: human
     instructions:
+      - With phase_commit, require a clean tree and all phases committed in current history; otherwise stop.
       - Follow the create-pr skill in .agents/skills/create-pr/SKILL.md for committing, pushing, and opening the pull request against next.
       - Fill every section of .github/pull_request_template.md. Use the prior implement-summary when provided for the summary, changes, and verification; otherwise derive them from the diff.
       - Write Fixes #<n> under Related issue when a prior issue artifact names an issue; otherwise write None.

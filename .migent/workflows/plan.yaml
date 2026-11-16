@@ -1,13 +1,12 @@
 schema_version: 7
 id: plan
 constraints:
-  - Plan only. Do not modify source code.
-  - Do not change the approved design or the acceptance criteria; report gaps instead.
+  - Plan only. Do not modify source code or change the approved design or acceptance criteria.
 
 artifacts:
   plan:
     file: plan.md
-    description: Design input, baseline, ordered tasks with design references, files, tests, and done conditions, acceptance mapping, documentation, and implementation risks.
+    description: Reviewable implementation phases with boundaries, dependencies, verification, acceptance coverage, and required references.
   plan_comment:
     file: plan_comment.md
     required: false
@@ -19,33 +18,29 @@ stages:
     max_revisions: 3
     ask: human
     instructions:
-      - Before starting, check that the workspace is on a working branch created from origin/next (the branch in the prior issue artifact when provided), not on main or next; otherwise ask the human how to proceed.
-      - Follow the planning skill in .agents/skills/planning/SKILL.md and use its template for plan.md.
-      - Require an approved prior design. When it is missing, or wrong or incomplete for a task, stop and ask the human instead of deciding the solution yourself.
-      - Address the design's non-blocking comments when provided, or explain why not.
-      - Read required references in the design and include the design, relevant comments, and earlier inputs needed by the implementer in plan.md References; stop and report missing or inconsistent required inputs.
-      - Resolve substantive review findings when revising.
+      - Require a working branch created from origin/next and an approved prior design; ask the human if either is missing or unsuitable.
+      - Read prior artifacts and required References, including earlier inputs needed downstream. Report missing or inconsistent inputs and seek decisions on design gaps.
+      - Write plan.md using .agents/skills/planning/SKILL.md and its template. Address prior review comments or explain why not.
+      - Resolve substantive review findings when revising. Retain usable snapshot paths for prior artifacts and repository-relative paths for repository references.
     artifacts: [plan]
 
   - id: review_plan
     role: reviewer
-    depends_on:
-      - plan
+    depends_on: [plan]
     instructions:
-      - Review the plan against the prior design, the task, repository evidence, and the planning skill in .agents/skills/planning/SKILL.md and its template.
-      - Check that the plan realizes the design without changing it, covers its full scope, and adds no out-of-scope work.
-      - Check that each task cites the design parts it realizes, is independently verifiable, and is ordered by its dependencies.
-      - Check that every acceptance criterion maps to tasks and tests with runnable commands.
-      - Check that References identify the approved design and other inputs needed downstream with usable paths.
-      - Report all substantive gaps together with their impact and required corrections.
-      - Choose revise for substantive gaps, approved-with-comments for non-blocking comments, or approved when no comments remain.
-      - Do not revise for style or formatting.
+      - Review against the approved design, acceptance criteria, repository evidence, and the planning skill and template.
+      - Check that each phase is one complete review unit, aims for one commit, and explains its boundary. Flag independently shippable parts grouped without justification.
+      - Check dependency and risk ordering, confirmation of assumptions before use, and a coherent codebase after each phase. No phase may depend on later work to complete or verify its promised outcome.
+      - Check that each phase includes its rules, enforcement, needed documentation, implementer inputs, runnable verification, and measurable completion criteria.
+      - Check acceptance coverage against the actual phase scope and verification, including final integration. Flag missing or invented coverage and out-of-scope work.
+      - Require no open decisions affecting scope, behavior, contracts, architecture, or phase boundaries, and usable References to all required inputs.
+      - Report substantive findings together with impact and required corrections. Do not block on style or routine implementation choices.
     decision:
       - approved:
           when: No substantive gaps or comments remain.
           navigate: complete
       - approved-with-comments:
-          when: No substantive gaps remain, but non-blocking comments are recorded in plan_comment.md.
+          when: Only non-blocking comments remain, recorded in plan_comment.md.
           navigate: complete
           artifacts: [plan_comment]
       - revise:
@@ -53,5 +48,5 @@ stages:
           navigate: plan
 
 downstream:
-  - workflow: implement
-    task: Implement the approved plan.
+  - workflow: implement_plan
+    task: Implement the next pending phase of the approved plan.
